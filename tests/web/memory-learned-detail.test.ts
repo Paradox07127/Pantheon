@@ -209,7 +209,7 @@ describe('learned improvement detail', () => {
     const onClose = vi.fn();
     const h = await mount({ onClose });
     const head = byClass(tree(h), 'mld-head')[0]!;
-    expect(text(head)).toMatch(/^等你确认今天 \d\d:\d\d 提出/);
+    expect(text(head)).toMatch(/^等你确认\d\d:\d\d 提出/);
     find(
       tree(h),
       (n) => n.props['aria-label'] === zh('memory.learnedDetail.close'),
@@ -269,9 +269,9 @@ describe('learned improvement detail', () => {
     ]);
     const rows = byClass(tree(h), 'mld-rr');
     expect(rows.map((r) => text(r))).toEqual([
-      expect.stringMatching(/^Replay protection第 3 次过门禁今天 \d\d:\d\d$/),
-      expect.stringMatching(/^task-r2第 2 次过门禁今天 \d\d:\d\d$/),
-      expect.stringMatching(/^task-r3第 2 次过门禁(11 月 11 日|2024 年 11 月 11 日)$/),
+      expect.stringMatching(/^Replay protection第 3 次过门禁今天$/),
+      expect.stringMatching(/^task-r2第 2 次过门禁今天$/),
+      expect.stringMatching(/^task-r3第 2 次过门禁(11月11日|2024年11月11日)$/),
     ]);
     rows[1]!.props.onClick();
     expect(onOpenRetro).toHaveBeenCalledWith('r2');
@@ -366,7 +366,7 @@ describe('learned improvement detail', () => {
     const active = await mount({
       item: improvement({ status: 'active', decided_at: noon - hour }),
     });
-    expect(text(byClass(tree(active), 'mld-head')[0]!)).toMatch(/^生效中今天 \d\d:\d\d 生效/);
+    expect(text(byClass(tree(active), 'mld-head')[0]!)).toMatch(/^生效中\d\d:\d\d 生效/);
     expect(actionLabels(tree(active))).toEqual([zh('memory.learnedDetail.revert')]);
     for (const status of ['reverted', 'rejected'] as const) {
       const ended = await mount({ item: improvement({ status, decided_at: noon - hour }) });
@@ -413,7 +413,7 @@ describe('learned improvement detail', () => {
       '对照试用前试用中',
       '一次过门禁1 / 33 / 3',
       '输入 token184k151k',
-      '用时42 分35 分',
+      '用时42 分钟35 分钟',
       '空唤醒2.01.5',
     ]);
   });

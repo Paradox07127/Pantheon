@@ -94,7 +94,7 @@ describe('call detail', () => {
     try {
       const html = detail({ call: call('a'), events: true });
       expect(html).toMatch(/role="alert"[^>]*>.*history read failed/);
-      expect(html).toContain(zh('runtime.retry'));
+      expect(html).toContain(zh('components.retry'));
       expect(html).not.toContain('cd-code');
     } finally {
       history.error = null;

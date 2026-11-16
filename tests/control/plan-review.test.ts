@@ -18,7 +18,7 @@ import type {
 } from '@pantheon/domain';
 import { reviewerDirectory } from '../../packages/control/src/review.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
-import { eventually, settle } from '../helpers.js';
+import { eventually, settle, user } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -216,6 +216,13 @@ it('returns plan review findings to the lead inbox and wakes the lead', async ()
   reviewer.emit({ kind: 'turn.completed', status: 'completed' });
   await ended(review!, 'completed');
   expect(f.store.must<Review>('reviews', review!.id).findings[0]!.status).toBe('open');
+  // The board lists it with the lead whose plan it reviews, as the review matrix counts it.
+  expect(f.control.boardView(user, f.project.id, 1).findings).toEqual([
+    expect.objectContaining({
+      session_id: lead.id,
+      text: 'The session cannot tell when it is done',
+    }),
+  ]);
   const completed = notes(f, 'plan_review_completed');
   expect(completed).toHaveLength(1);
   expect(completed[0]!.text).toContain(review!.id);

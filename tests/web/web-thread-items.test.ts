@@ -115,7 +115,8 @@ describe('who sent a turn', () => {
     );
   };
 
-  it.each(['tracker', 'sync', 'baseline', 'continuation'] as const)(
+  // A baseline turn folds into the confirmed baseline card instead.
+  it.each(['tracker', 'sync', 'continuation'] as const)(
     'shows a %s turn as a note from Pantheon, not a bubble of the user',
     (origin) => {
       const html = header({ origin, input: '[Pantheon] Task t1 reported done.' });
@@ -150,19 +151,19 @@ describe('durations', () => {
     expect(elapsedText(0)).toBe('0.0 秒');
     expect(elapsedText(3_420)).toBe('3.4 秒');
     expect(elapsedText(59_940)).toBe('59.9 秒');
-    expect(elapsedText(59_960)).toBe('1 分 00 秒');
-    expect(elapsedText(125_000)).toBe('2 分 05 秒');
-    expect(elapsedText(3_780_000)).toBe('1 时 03 分');
+    expect(elapsedText(59_960)).toBe('1 分钟');
+    expect(elapsedText(125_000)).toBe('2 分 5 秒');
+    expect(elapsedText(3_780_000)).toBe('1 小时 3 分');
   });
 
   it.each([
-    [0, '0.0 秒'],
-    [187, '0.2 秒'],
-    [29_000, '29.0 秒'],
-    [59_940, '59.9 秒'],
-    [59_960, '1 分'],
-    [64_000, '1 分'],
-    [3_780_000, '1 时 3 分'],
+    [0, '<1 秒'],
+    [187, '<1 秒'],
+    [29_000, '29 秒'],
+    [59_940, '59 秒'],
+    [59_960, '59 秒'],
+    [64_000, '1 分 4 秒'],
+    [3_780_000, '1 小时 3 分'],
   ])('rounds %d ms to the coarse duration %s, in seconds under a minute', (ms, shown) => {
     expect(durationText(ms)).toBe(shown);
   });

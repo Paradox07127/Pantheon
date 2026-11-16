@@ -11,7 +11,13 @@ import {
   type SessionTurn,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
-import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
+import {
+  projectAccess,
+  sessionAdapter,
+  userOnly,
+  type ControlContext,
+  type Handlers,
+} from './context.js';
 import { runtime } from './admission.js';
 import { answerApproval } from './approvals.js';
 import { buildHandoff } from './handoff.js';
@@ -76,7 +82,7 @@ export function compactionInstructions(
       event.sequence > (restored?.compaction_sequence ?? 0),
   );
   if (!pending.length) return;
-  const text = workerInstructions(ctx, session.task);
+  const text = workerInstructions(ctx, session.task, sessionAdapter(ctx, session)?.questionTool);
   return {
     text: pending.map(() => text).join('\n\n'),
     sequence: pending.at(-1)!.sequence,

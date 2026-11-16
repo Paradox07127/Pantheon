@@ -537,6 +537,8 @@ export interface Session extends Entity {
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
   /** A session debugging the running app; while the desktop has written its CDP port file, its runtime reaches the renderer through chrome-devtools-mcp. */
   app_debug?: true;
+  /** A session starting a project from an empty folder with the setup guide. */
+  project_setup?: true;
   /** Native history fork applied before the next input; after is a runtime message or turn id. */
   native_fork?: { session_id: string; after: string };
   baseline?: import('./planning.js').BaselineTag;

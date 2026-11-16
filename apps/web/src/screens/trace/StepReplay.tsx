@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Pause, Play, Undo2 } from 'lucide-react';
 import { DiffFiles } from '../../components/DiffReview';
 import { SessionStateIcon } from '../../components/SessionStateIcon';
@@ -20,6 +21,7 @@ import { ContextRing } from '../board/FlowNode';
 import { tokenText } from '../board/panels-model';
 import type { ReplaySpeed, TraceSpan } from './model';
 import { ReplayKeys, useReplayKeys } from './Replay';
+import { EmptyState } from '../../components/EmptyState';
 import './step-replay.css';
 
 export interface StepReplayProps {
@@ -120,20 +122,14 @@ export function StepReplay({ sessionId, projectId, speed = 1 }: StepReplayProps)
           aria-label={t({ id: 'trace.stepReplay.steps', defaultMessage: 'Steps' })}
         >
           {trace.data === null && trace.error ? (
-            <div className="df-err">
-              <span className="run-err ln" role="alert" title={trace.error}>
-                {trace.error}
-              </span>
-              <button type="button" className="btn ghost" onClick={trace.reload}>
-                {t({ id: 'trace.stepReplay.retry', defaultMessage: 'Retry' })}
-              </button>
-            </div>
+            <LoadError message={trace.error} onRetry={trace.reload} />
           ) : trace.data === null ? (
             <Skeleton className="srp-skel" />
           ) : steps.length === 0 ? (
-            <span className="srp-empty">
-              {t({ id: 'trace.stepReplay.empty', defaultMessage: 'No tool calls recorded' })}
-            </span>
+            <EmptyState
+              inline
+              title={t({ id: 'trace.stepReplay.empty', defaultMessage: 'No tool calls recorded' })}
+            />
           ) : (
             <div
               className="srp-list"
@@ -187,12 +183,13 @@ export function StepReplay({ sessionId, projectId, speed = 1 }: StepReplayProps)
                 </span>
               </div>
               {diff.data?.files.length === 0 ? (
-                <span className="srp-none">
-                  {t({
+                <EmptyState
+                  inline
+                  title={t({
                     id: 'trace.stepReplay.noChanges',
                     defaultMessage: 'This step changed no files',
                   })}
-                </span>
+                />
               ) : (
                 <DiffFiles diff={diff} />
               )}

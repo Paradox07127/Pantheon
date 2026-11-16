@@ -307,6 +307,14 @@ describe('default models page', () => {
     ]);
   });
 
+  it('names where the routing table of the writer lives, since this page shows none', async () => {
+    const h = await mount(() => SessionDefaults({ project: null }));
+    expect(nodes(tree(h)).some((n) => n.props['aria-label'] === zh('settings.routing.title'))).toBe(
+      false,
+    );
+    expect(text(chosen(open(h, WRITER_MODEL)))).toContain('项目设置');
+  });
+
   it('sends the chosen writer model and keeps the reviewer and the fallbacks already saved', async () => {
     const h = await mount(() => SessionDefaults({ project: kept as never }));
     pick(open(h, WRITER_MODEL), 'claude-sonnet');

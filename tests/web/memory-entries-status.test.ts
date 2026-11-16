@@ -6,7 +6,7 @@ vi.mock('react', async (actual) =>
 );
 import { DeliveryList, EntriesFooter, type DeliverySession } from '@/screens/memory/EntriesFooter';
 import { EntriesEmpty, EntriesError, EntriesLoading } from '@/screens/memory/EntryStates';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const NOW = new Date(2026, 10, 13, 10, 30, 0).getTime();
 afterEach(() => {
@@ -209,11 +209,10 @@ it('loads as a busy skeleton of a group head and four rows, then says how long r
 it('fails to read in a centred alert with the error and a retry', () => {
   const retry = vi.fn();
   const tree = EntriesError({ message: 'connect ECONNREFUSED', onRetry: retry });
-  expect(tree!.props.role).toBe('alert');
-  expect(text(tree)).toContain(zh('memory.status.failed'));
-  expect(text(find(tree, (n) => n.props.className === 'mes-err'))).toBe('connect ECONNREFUSED');
-  const button = find(tree, (n) => n.type === 'button');
-  expect(text(button)).toBe(zh('memory.status.retry'));
+  const alert = find(tree, (n) => n.props.role === 'alert');
+  expect(text(alert)).toContain(zhf('memory.status.failed', { error: 'connect ECONNREFUSED' }));
+  const button = find(alert, (n) => n.type === 'button');
+  expect(text(button)).toBe(zh('components.retry'));
   button.props.onClick();
   expect(retry).toHaveBeenCalledOnce();
 });

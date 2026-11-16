@@ -112,34 +112,6 @@
   flex-direction: column;
   gap: var(--sp-2);
 }
-.mgs-fail {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-2);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-sm);
-}
-.mgs-fail-t {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  color: var(--tx);
-}
-.mgs-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--bad);
-}
-.mgs-err {
-  flex-basis: 100%;
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  color: var(--bad);
-  user-select: text;
-}
 .mgs-sep {
   flex: none;
   height: var(--hair);

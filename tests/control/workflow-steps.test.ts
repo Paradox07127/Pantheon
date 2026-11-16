@@ -1348,5 +1348,5 @@ it("lists each parallel worker with its part's goal and keeps briefing it after 
   );
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   for (const worker of workers)
-    expect(workerInstructions(ctx, worker.task!)).toContain('"Export the report"');
+    expect(workerInstructions(ctx, worker.task!, undefined)).toContain('"Export the report"');
 });

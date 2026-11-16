@@ -7,7 +7,7 @@ import { startDaemon } from '@pantheon/daemon';
 import type { TerminalSpawn } from '@pantheon/control';
 import type { Project, Session } from '@pantheon/domain';
 import { command } from '@pantheon/protocol';
-import { eventually, user } from '../helpers.js';
+import { eventually, ptyUsable, user } from '../helpers.js';
 import { FakePty } from '../fixtures/fake-pty.js';
 
 // ws is a dependency of the daemon only; its types come from the root @types/ws.
@@ -130,18 +130,21 @@ try {
   // Native loading is optional so the daemon can still start without a usable binary.
 }
 
-it.skipIf(!nativeSpawn)('streams ready and the exit frame from a real node-pty shell', async () => {
-  const f = await terminalDaemon(nativeSpawn!);
-  try {
-    const { terminal_id } = await f.open();
-    const client = f.connect(terminal_id);
-    expect(await client.closed).toBe(1000);
-    const output = Buffer.concat(
-      client.frames.filter((frame) => frame.binary).map((frame) => frame.data),
-    );
-    expect(output.toString()).toContain('ready');
-    expect(JSON.parse(client.frames.at(-1)!.data.toString())).toEqual({ type: 'exit', code: 0 });
-  } finally {
-    await f.close();
-  }
-});
+it.skipIf(!nativeSpawn || !ptyUsable)(
+  'streams ready and the exit frame from a real node-pty shell',
+  async () => {
+    const f = await terminalDaemon(nativeSpawn!);
+    try {
+      const { terminal_id } = await f.open();
+      const client = f.connect(terminal_id);
+      expect(await client.closed).toBe(1000);
+      const output = Buffer.concat(
+        client.frames.filter((frame) => frame.binary).map((frame) => frame.data),
+      );
+      expect(output.toString()).toContain('ready');
+      expect(JSON.parse(client.frames.at(-1)!.data.toString())).toEqual({ type: 'exit', code: 0 });
+    } finally {
+      await f.close();
+    }
+  },
+);

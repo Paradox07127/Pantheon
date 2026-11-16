@@ -325,23 +325,10 @@
 }
 .bd-nstg i[data-at='now'] {
   transform: scaleY(2);
-  background: var(--e-pend);
+  background: var(--nd-c);
 }
 .bd-nd[data-look='run'] .bd-nstg i[data-at='now'] {
-  background: var(--run);
   animation: bd-breathe 2.4s ease-in-out infinite alternate;
-}
-.bd-nd:is([data-look='approval'], [data-look='answer']) .bd-nstg i[data-at='now'] {
-  background: var(--wait);
-}
-.bd-nd[data-look='review'] .bd-nstg i[data-at='now'] {
-  background: var(--ready);
-}
-.bd-nd[data-look='failed'] .bd-nstg i[data-at='now'] {
-  background: var(--bad);
-}
-.bd-nd[data-look='stuck'] .bd-nstg i[data-at='now'] {
-  background: var(--idle);
 }
 @keyframes bd-breathe {
   from {
@@ -632,7 +619,7 @@
   padding: 0;
 }
 .bd-main > .bd-fc,
-.bd-main > .bp-empty {
+.bd-main > .es-in {
   grid-row: 1;
 }
 .bd-main > .bd-focus {
@@ -791,16 +778,6 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-}
-.bd-add {
-  color: var(--ok);
-}
-.bd-del {
-  color: var(--bad);
-}
-.bd-add[data-zero],
-.bd-del[data-zero] {
-  color: var(--mu);
 }
 .bd-dchk {
   display: inline-flex;

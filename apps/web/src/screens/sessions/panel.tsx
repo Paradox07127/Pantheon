@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Dialog } from '@base-ui/react/dialog';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
@@ -13,6 +14,7 @@ import type {
 } from '@pantheon/protocol';
 import { Check, ChevronRight, FolderOpen, MapPinOff, Minus, Timer, X } from 'lucide-react';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
+import { Skeleton } from '../../components/Skeleton';
 import { GateMark } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
 import type { DiffFile } from '../../data/patch';
@@ -53,6 +55,7 @@ import './merge-bar.css';
 import { ReadStatus } from '../../components/ReadStatus';
 import { ReviewCoverage } from '../../components/ReviewCoverage';
 import { t } from '../../i18n';
+import { EmptyState } from '../../components/EmptyState';
 
 interface Read<T> {
   data: T | null;
@@ -69,20 +72,13 @@ const fail = (reason: unknown): BridgeResult<unknown> => ({
 });
 
 function ReadFailed({ read }: { read: Read<unknown> }) {
-  return (
-    <div className="tr-fail" role="alert">
-      <span title={read.error!}>{read.error}</span>
-      <button type="button" className="btn" onClick={read.reload}>
-        {t({ id: 'sessions.panel.read.retry', defaultMessage: 'Retry' })}
-      </button>
-    </div>
-  );
+  return <LoadError message={read.error!} onRetry={read.reload} />;
 }
 
 function Loading() {
   return (
     <div aria-busy="true">
-      <span className="sk" style={{ display: 'block', height: 10, width: '70%' }} />
+      <Skeleton style={{ display: 'block', height: 10, width: '70%' }} />
     </div>
   );
 }
@@ -491,9 +487,10 @@ export function PlanTab(props: {
   const { steps } = props;
   if (!steps)
     return (
-      <div className="empty">
-        {t({ id: 'sessions.panel.dock.noPlan', defaultMessage: 'No plan yet' })}
-      </div>
+      <EmptyState
+        inline
+        title={t({ id: 'sessions.panel.dock.noPlan', defaultMessage: 'No plan yet' })}
+      />
     );
   const done = steps.filter((step) => step.status === 'completed').length;
   return (
@@ -1474,7 +1471,13 @@ export function MergeDialog(props: {
   const target = preflight.target_branch ?? '—';
   const loading = reading && !failed;
   const value = (shown: ReactNode) =>
-    loading ? <dd className="sk" style={{ width: 48 }} /> : <dd>{shown}</dd>;
+    loading ? (
+      <dd>
+        <Skeleton style={{ width: 48 }} />
+      </dd>
+    ) : (
+      <dd>{shown}</dd>
+    );
 
   const merge = async () => {
     if (busy || reading || changed || blocked || failed) return;

@@ -26,6 +26,7 @@ import {
 } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
+import { EmptyState } from '../../components/EmptyState';
 import './files-panel.css';
 
 type Failed = { error: string };
@@ -291,9 +292,10 @@ export function FilesPanel({
     if (!loaded) return null;
     if (loaded.mime && loaded.data === undefined)
       return (
-        <div className="empty">
-          {t({ id: 'sessions.panel.files.tooLarge', defaultMessage: 'Too large to preview' })}
-        </div>
+        <EmptyState
+          inline
+          title={t({ id: 'sessions.panel.files.tooLarge', defaultMessage: 'Too large to preview' })}
+        />
       );
     if (pdf)
       return (
@@ -313,9 +315,10 @@ export function FilesPanel({
       );
     if (loaded.binary)
       return (
-        <div className="empty">
-          {t({ id: 'sessions.panel.files.binary', defaultMessage: 'Binary file' })}
-        </div>
+        <EmptyState
+          inline
+          title={t({ id: 'sessions.panel.files.binary', defaultMessage: 'Binary file' })}
+        />
       );
     if (rendered && !source)
       return rendered.startsWith('htm') ? (

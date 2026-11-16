@@ -74,12 +74,6 @@ button.pm-src:hover .pm-cut {
   height: 14px;
 }
 
-.pm-fail {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-}
-
 /* A rule for every project: pattern, when it was added, delete. */
 .pm-row.pm-gl {
   grid-template-columns: minmax(0, 1fr) 96px auto;

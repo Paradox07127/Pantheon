@@ -6,6 +6,7 @@ import { appSender, appToolCaller, readAppResource } from '../../data/mcp-app';
 import { failureText } from '../../data/needs-you';
 import type { ToolItem, ToolState } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
+import { LoadError } from '../LoadError';
 import { createAppHost, loadAppHost, type AppHostContext } from './host';
 import { hostStyles } from './host-styles';
 import './app-frame.css';
@@ -286,18 +287,14 @@ export function AppFrame(props: {
           {...('url' in ready.src ? { src: ready.src.url } : { srcDoc: ready.src.doc })}
         />
       ) : failed ? (
-        <div className="apf-err" role="alert" style={sized}>
-          <span className="apf-msg">{failed}</span>
-          <button
-            type="button"
-            className="btn sm"
-            onClick={() => {
+        <div className="apf-err" style={sized}>
+          <LoadError
+            message={failed}
+            onRetry={() => {
               dropAppResource(sessionId, app.server, app.resource_uri);
               setAttempt((n) => n + 1);
             }}
-          >
-            {t({ id: 'components.mcpApp.retry', defaultMessage: 'Retry' })}
-          </button>
+          />
         </div>
       ) : (
         <div className="apf-wait" aria-busy="true" style={sized} />

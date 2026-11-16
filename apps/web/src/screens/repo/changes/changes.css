@@ -503,16 +503,6 @@
   line-height: var(--lh-xs);
   font-variant-numeric: tabular-nums;
 }
-.rpl-add {
-  color: var(--ok);
-}
-.rpl-del {
-  color: var(--bad);
-}
-.rpl-add[data-zero],
-.rpl-del[data-zero] {
-  color: var(--mu);
-}
 .rpl-commit {
   display: flex;
   flex-wrap: wrap;

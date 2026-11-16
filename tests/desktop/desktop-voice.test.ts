@@ -18,7 +18,7 @@ import {
   VoiceRecognizer,
   type VoiceEvent,
 } from '../../apps/desktop/src/main/voice.js';
-import { eventually } from '../helpers.js';
+import { eventually, psUsable } from '../helpers.js';
 
 const ELECTRON = '../../apps/desktop/node_modules/electron/index.js';
 type Handler = (...args: any[]) => unknown;
@@ -198,7 +198,7 @@ describe('voice recognizer', () => {
     expect(existsSync(recording)).toBe(false);
   });
 
-  it.skipIf(process.platform === 'win32')(
+  it.skipIf(process.platform === 'win32' || !psUsable)(
     'ends what a wrapper engine started when cancelled',
     async () => {
       const root = tempRoot();

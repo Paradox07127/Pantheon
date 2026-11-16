@@ -176,10 +176,7 @@ const HISTORY: SessionGatesHistory = {
       commit: '7d02b51000000000',
       started_at: new Date(START + 20 * 60_000).toISOString(),
       finished_at: new Date(START + 21 * 60_000).toISOString(),
-      results: [
-        { name: 'typecheck', command: ['tsc'], state: 'failed', exit_code: 2 },
-        { name: 'format', command: ['prettier'], skipped: true },
-      ],
+      results: [{ name: 'typecheck', command: ['tsc'], state: 'failed', exit_code: 2 }],
     },
   ],
 };
@@ -362,6 +359,28 @@ describe('session branch passage', () => {
       zh('repo.passage.step.failed'),
       zh('repo.passage.step.notRun'),
     ]);
+  });
+
+  it('names a step recorded only as skipped “skipped”, not “not run”', () => {
+    mock.history = {
+      runs: [
+        {
+          ...HISTORY.runs[1]!,
+          results: [
+            { name: 'typecheck', command: ['tsc'], skipped: true },
+            { name: 'format', command: ['prettier'], state: 'passed', exit_code: 0 },
+          ],
+        },
+      ],
+    };
+    const table = labelled(
+      section(passage(), zh('repo.passage.gates')),
+      zh('repo.passage.gatesTable'),
+    );
+    const skipped = nodes(table)
+      .filter((n) => n.type === 'td')
+      .map((n) => nodes(n).find((c) => c.props.role === 'img')?.props['aria-label'] ?? text(n));
+    expect(skipped).toEqual([zh('repo.passage.step.skipped'), zh('repo.passage.step.passed')]);
   });
 
   it('opens a changed file’s history from its name in the file table', () => {

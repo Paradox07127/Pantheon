@@ -1,13 +1,11 @@
 {
-  "memory.actions.today": "今天 {time}",
-  "memory.actions.yesterday": "昨天 {time}",
-  "memory.actions.yesterdayShort": "昨天",
   "memory.actions.retracted": "已撤回「{title}」",
   "memory.actions.retractedWith": "已撤回「{title}」和依据它的 {count} 条",
   "memory.actions.undo": "撤销",
   "memory.actions.showInGraph": "在图谱里看",
   "memory.actions.commit": "确认生效",
   "memory.actions.discard": "丢弃",
+  "memory.actions.cancel": "取消",
   "memory.actions.rewrite": "改写",
   "memory.actions.retract": "撤回",
   "memory.actions.supersededBy": "被第 {n} 版替代",
@@ -33,5 +31,5 @@
   "memory.pending.overBudget": "当前决定放不下，没有生效。",
   "memory.pending.overBudgetMeter": "当前决定 {used} 字节，预算 {limit} 字节",
   "memory.pending.shorten": "去缩短",
-  "memory.pending.retry": "再试"
+  "memory.pending.retry": "重试"
 }

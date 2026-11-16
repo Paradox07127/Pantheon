@@ -7,7 +7,6 @@
   "trace.stepReplay.tests.failed": "未通过",
   "trace.stepReplay.tests.none": "还没跑",
   "trace.stepReplay.steps": "步骤",
-  "trace.stepReplay.retry": "重试",
   "trace.stepReplay.empty": "没有记录到工具调用",
   "trace.stepReplay.diff": "这一步改了什么",
   "trace.stepReplay.position": "第 {n} 步，共 {total} 步",

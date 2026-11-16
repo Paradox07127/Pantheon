@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent } from 'react';
-import { ChartLine, RefreshCw } from 'lucide-react';
+import { LoadError } from '../../components/LoadError';
+import { ChartLine } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
-import { StateGlyph } from '../../components/SessionStateIcon';
 import { Skeleton } from '../../components/Skeleton';
 import { useImprovements, useWorkflowPolicy, type Improvement } from '../../data/workflow-policy';
 import { t } from '../../i18n';
@@ -107,24 +107,16 @@ export function LearnedPage({
           onSelect={setPicked}
         />
         {list.error && (
-          <div className="lp-err" role="alert">
-            <span className="lp-st" aria-hidden="true">
-              <StateGlyph name="failed" />
-            </span>
-            <span className="lp-why">
-              {t(
-                {
-                  id: 'memory.learnedPage.readFailed',
-                  defaultMessage: 'Couldn’t read the learned rules: {error}',
-                },
-                { error: list.error },
-              )}
-            </span>
-            <button type="button" className="btn sm" onClick={list.reload}>
-              <RefreshCw aria-hidden="true" />
-              {t({ id: 'memory.learnedPage.retry', defaultMessage: 'Retry' })}
-            </button>
-          </div>
+          <LoadError
+            message={t(
+              {
+                id: 'memory.learnedPage.readFailed',
+                defaultMessage: 'Couldn’t read the learned rules: {error}',
+              },
+              { error: list.error },
+            )}
+            onRetry={list.reload}
+          />
         )}
       </div>
       {item && (

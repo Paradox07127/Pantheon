@@ -22,6 +22,7 @@ import {
   sessionKinds,
   unavailableReason,
   useRuntimeStatus,
+  versionNumber,
   type SessionKind,
 } from '../../data/runtime-status';
 import { t } from '../../i18n';
@@ -29,6 +30,7 @@ import { ipcFailure } from './editors';
 import { Loading, Row, Section } from './ProjectSettingsScreen';
 import { registerPageHeader } from './settings-header';
 import { openBoardTab } from './settings-jump';
+import { EmptyState } from '../../components/EmptyState';
 import './harness-page.css';
 
 type LoginRuntime = Parameters<DesktopBridge['runtimeLogin']>[0];
@@ -248,7 +250,9 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
           <span className="hp-hd-tx">
             <b>{runtimeName(runtime)}</b>
             <span className="hp-sub">
-              {s.installed && s.version !== null && <span className="mono">{s.version}</span>}
+              {s.installed && s.version !== null && (
+                <span className="mono">{versionNumber(s.version)}</span>
+              )}
               {s.installed && (
                 <time dateTime={s.checked_at}>
                   {t(
@@ -384,6 +388,7 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
           {s.installed && runtime === 'claude' && (
             <Row
               label={t({ id: 'settings.harness.artifacts', defaultMessage: 'Publish artifacts' })}
+              settingId="harness.artifacts"
             >
               <input
                 type="checkbox"
@@ -404,6 +409,12 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
                 id: 'settings.runtimes.unverifiedIsolation',
                 defaultMessage: 'Allow without verified isolation',
               })}
+              hint={t({
+                id: 'settings.runtimes.unverifiedIsolationHint',
+                defaultMessage:
+                  'Code, review and text sessions start on this runtime though nothing verified that it stays in its worktree',
+              })}
+              settingId="harness.unverifiedIsolation"
             >
               <input
                 type="checkbox"
@@ -421,7 +432,10 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
             </Row>
           )}
           {s.installed && kinds.length > 0 && (
-            <Row label={t({ id: 'settings.harness.kinds', defaultMessage: 'Session kinds' })}>
+            <Row
+              label={t({ id: 'settings.harness.kinds', defaultMessage: 'Session kinds' })}
+              settingId="harness.kinds"
+            >
               <ul
                 className="hp-chips"
                 aria-label={t({ id: 'settings.harness.kinds', defaultMessage: 'Session kinds' })}
@@ -443,7 +457,10 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
             </Row>
           )}
           {s.installed && projectId !== null && (s.quota?.windows.length ?? 0) > 0 && (
-            <Row label={t({ id: 'settings.harness.quota', defaultMessage: 'Quota' })}>
+            <Row
+              label={t({ id: 'settings.harness.quota', defaultMessage: 'Quota' })}
+              settingId="harness.quota"
+            >
               <button type="button" className="btn ghost sm" onClick={() => openBoardTab('usage')}>
                 {t({ id: 'settings.runtimes.seeUsage', defaultMessage: 'See usage' })}
               </button>
@@ -469,9 +486,13 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
     );
   else if (statuses.length === 0)
     body = (
-      <div className="empty">
-        {t({ id: 'settings.harness.none', defaultMessage: 'The daemon reported no harnesses' })}
-      </div>
+      <EmptyState
+        inline
+        title={t({
+          id: 'settings.harness.none',
+          defaultMessage: 'The daemon reported no harnesses',
+        })}
+      />
     );
   else {
     const sorted = [...statuses].sort((a, b) => compareRuntimes(a.runtime, b.runtime));

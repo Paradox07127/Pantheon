@@ -25,6 +25,7 @@ import {
   type WindowSnapshotSource,
   type WorkbenchSession,
 } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { SessionStateIcon, sessionStateLabel } from '../../components/SessionStateIcon';
 import { Skeleton } from '../../components/Skeleton';
@@ -550,7 +551,7 @@ function AttachmentTile(props: {
         <>
           <span className="cp-ft">
             {state === 'uploading' ? (
-              <span className="sk cp-sk" aria-hidden="true" />
+              <Skeleton className="cp-sk" />
             ) : props.mime.startsWith('image/') ? (
               <ImageIcon className="ic-sm" aria-hidden="true" />
             ) : (
@@ -670,14 +671,9 @@ export function sessionRefCard(s: WorkbenchSession, onRemove: (id: string) => vo
       <span className="cr-cdt">{title}</span>
       <span className="cr-rst">{sessionStateLabel(s)}</span>
       {s.changes && (
-        <>
-          <span className="cr-dif df-add" data-zero={s.changes.additions === 0 || undefined}>
-            +{s.changes.additions}
-          </span>
-          <span className="cr-dif df-del" data-zero={s.changes.deletions === 0 || undefined}>
-            −{s.changes.deletions}
-          </span>
-        </>
+        <span className="cr-dif">
+          <DiffCounts additions={s.changes.additions} deletions={s.changes.deletions} />
+        </span>
       )}
       <button
         type="button"

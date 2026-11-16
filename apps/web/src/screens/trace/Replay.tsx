@@ -21,7 +21,7 @@ import {
   useShortcutOverrides,
   type ShortcutId,
 } from '../../lib/shortcuts';
-import { whenText } from '../board/panels-model';
+import { dayText } from '../../lib/time-text';
 import {
   eventReplayStep,
   replayStep,
@@ -95,7 +95,7 @@ export function useReplayKeys(onStep: (delta: 1 | -1) => void, onToggle: () => v
 }
 
 const positionText = (time: number, steps: readonly number[], to: number) => {
-  const when = whenText(time, to);
+  const when = dayText(time, to, { time: true });
   if (steps.length === 0) return when;
   return t(
     {
@@ -199,7 +199,7 @@ export function useTraceReplay(
         scrub.current.setAttribute('aria-valuenow', String(Math.round(share * SCRUB_MAX)));
         scrub.current.setAttribute('aria-valuetext', positionText(time, steps, full.to));
       }
-      if (at.current) at.current.textContent = whenText(time, full.to);
+      if (at.current) at.current.textContent = dayText(time, full.to, { time: true });
     },
     [host, preview],
   );
@@ -608,7 +608,7 @@ export function ReplayBar({
         slider
       )}
       <span ref={replay.at} className="trc-at" aria-hidden="true">
-        {replay.time === null && live !== undefined ? live : whenText(time, full.to)}
+        {replay.time === null && live !== undefined ? live : dayText(time, full.to, { time: true })}
       </span>
       {end ?? (
         <>

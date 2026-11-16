@@ -4,11 +4,13 @@ import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { ChevronDown, ChevronRight, Flag, RotateCcw, Route, Undo2 } from 'lucide-react';
 import type { BoardHistory, BoardTaskState } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { ModelMark, RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { useBoard } from '../../data/board';
 import { currentProject, useCurrentProject } from '../../data/current-project';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import {
   currentMilestone,
@@ -24,7 +26,15 @@ import {
   type HistoryTask,
 } from './history-model';
 import { durationText } from './panels-model';
-import { runtimeName, STATE, StateIcon, StatusIcon, TASK_TYPE, type TaskType } from './status';
+import {
+  runtimeName,
+  STATE,
+  StateIcon,
+  StatusIcon,
+  TASK_STATE_TONE,
+  TASK_TYPE,
+  type TaskType,
+} from './status';
 import './history.css';
 
 const BANDS: { key: HistoryBands; label: () => string }[] = [
@@ -79,7 +89,8 @@ export function HistoryRangeControl({
 
 const CARD_W = 248;
 
-const dateText = (at: number, day = true) =>
+/** An axis tick: the month, with the day on the first tick. */
+const tickText = (at: number, day: boolean) =>
   new Intl.DateTimeFormat(
     currentLocale(),
     day ? { month: 'short', day: 'numeric' } : { month: 'short' },
@@ -99,22 +110,13 @@ function taskFacts(task: HistoryTask) {
   return (
     <span className="bd-hs-cm">
       {task.commit !== null && <span className="bd-hs-sha">{task.commit.slice(0, 7)}</span>}
-      {task.additions !== null && (
-        <span className="df-add" data-zero={!task.additions || undefined}>
-          +{task.additions}
-        </span>
-      )}
-      {task.deletions !== null && (
-        <span className="df-del" data-zero={!task.deletions || undefined}>
-          −{task.deletions}
-        </span>
-      )}
+      <DiffCounts additions={task.additions} deletions={task.deletions} />
       {took !== null && <span className="bd-hs-took">{durationText(took)}</span>}
     </span>
   );
 }
 
-function taskLabel(task: HistoryTask): string {
+function taskLabel(task: HistoryTask, now: number): string {
   if (task.merged_at === null) return task.title;
   return task.handbacks
     ? t(
@@ -123,11 +125,11 @@ function taskLabel(task: HistoryTask): string {
           defaultMessage:
             '{title}, merged {date}, reworked {count, plural, one {# time} other {# times}}',
         },
-        { title: task.title, date: dateText(task.merged_at), count: task.handbacks },
+        { title: task.title, date: dayText(task.merged_at, now), count: task.handbacks },
       )
     : t(
         { id: 'board.history.dot', defaultMessage: '{title}, merged {date}' },
-        { title: task.title, date: dateText(task.merged_at) },
+        { title: task.title, date: dayText(task.merged_at, now) },
       );
 }
 
@@ -379,7 +381,7 @@ export function HistoryView({
               id: 'board.history.since',
               defaultMessage: '{date} to now, {days, plural, one {# day} other {# days}}',
             },
-            { date: dateText(history.started_at), days: nowDay },
+            { date: dayText(history.started_at, now), days: nowDay },
           )}
         </span>
         {history.truncated && (
@@ -462,7 +464,11 @@ export function HistoryView({
           )}
         >
           {summary.states.map(({ state, count }) => (
-            <i key={state} data-state={state} style={{ flexGrow: count }} />
+            <i
+              key={state}
+              data-state={state}
+              style={{ flexGrow: count, background: `var(${TASK_STATE_TONE[state]})` }}
+            />
           ))}
         </div>
         {summary.milestoneCount > 0 && (
@@ -607,7 +613,7 @@ export function HistoryView({
                       data-off={(layout.critical && !layout.critical.has(dot.task.id)) || undefined}
                       role="button"
                       tabIndex={0}
-                      aria-label={taskLabel(dot.task)}
+                      aria-label={taskLabel(dot.task, now)}
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter' && e.key !== ' ') return;
                         e.preventDefault();
@@ -635,7 +641,7 @@ export function HistoryView({
                           defaultMessage:
                             '{date}: {count, plural, one {# failed attempt} other {# failed attempts}}',
                         },
-                        { date: dateText(m.at), count: m.count },
+                        { date: dayText(m.at, now), count: m.count },
                       )
                     : t(
                         {
@@ -643,7 +649,7 @@ export function HistoryView({
                           defaultMessage:
                             '{date}: {count, plural, one {# request waiting on you} other {# requests waiting on you}}',
                         },
-                        { date: dateText(m.at), count: m.count },
+                        { date: dayText(m.at, now), count: m.count },
                       )
                 }
                 cx={m.x}
@@ -660,7 +666,7 @@ export function HistoryView({
                   role="img"
                   aria-label={t(
                     { id: 'board.history.decisionList', defaultMessage: '{date}: {items}' },
-                    { date: dateText(d.at), items: listText(...items) },
+                    { date: dayText(d.at, now), items: listText(...items) },
                   )}
                 >
                   <title>{items.join('\n')}</title>
@@ -693,7 +699,7 @@ export function HistoryView({
           </svg>
           {layout.ticks.map((tick) => (
             <span key={tick.at} className="bd-hs-tick" style={{ left: tick.x + 4, top: 36 }}>
-              {dateText(tick.at, tick.first)}
+              {tickText(tick.at, tick.first)}
             </span>
           ))}
           {layout.milestones.map((m) => (
@@ -816,7 +822,7 @@ export function HistoryView({
               <span className="bd-hs-ch">
                 <StateIcon state={glyph(shown.task)} />
                 <b>{shown.task.title}</b>
-                {shown.task.merged_at !== null && <span>{dateText(shown.task.merged_at)}</span>}
+                {shown.task.merged_at !== null && <span>{dayText(shown.task.merged_at, now)}</span>}
               </span>
               {(shown.task.runtime || shown.task.model) && (
                 <span className="bd-hs-rt">

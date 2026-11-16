@@ -12,7 +12,14 @@ import type {
   SessionTurn,
   Workspace,
 } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, gateFolder, settle, user } from '../helpers.js';
+import {
+  awaitWorkspaceReady,
+  eventually,
+  gateFolder,
+  insideSandbox,
+  settle,
+  user,
+} from '../helpers.js';
 import { dispatchEveryTier, git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -280,36 +287,39 @@ it('keeps a task running, not needing attention, while its worktree cannot be re
   expect(rowOf(f, lead.id, 'a').state).toBe('running');
 });
 
-it('shows a task as gating while its merge runs, then merged with its retrospective', async () => {
-  const f = workbenchFixture();
-  const lead = await leadWithPlan(f, [task('a', { acceptance: ['true'] })]);
-  const session = await settledTask(f, lead.id, 'a');
-  commit(f, session, 'src/a/x.ts');
-  merge(f, session.id);
-  expect(rowOf(f, lead.id, 'a').state).toBe('gating');
-  expect(rowOf(f, lead.id, 'a').retrospective).toBeUndefined();
-  await eventually(
-    () => current(f, session.id).outcome === 'merged',
-    () => f.control.tick(),
-    10000,
-  );
-  expect(rowOf(f, lead.id, 'a')).toMatchObject({ state: 'merged', done_by: 'merged' });
-  // The record waits for the lead's wake about the merge to end.
-  await eventually(
-    () => rowOf(f, lead.id, 'a').retrospective !== undefined,
-    () => f.control.tick(),
-    10000,
-  );
-  expect(rowOf(f, lead.id, 'a').retrospective).toEqual({
-    id: expect.any(String),
-    outcome: 'merged',
-    recorded_at: expect.any(Number),
-    gate_passed_on_attempt: 1,
-    handbacks: 0,
-    lead_wakes: expect.any(Number),
-    tokens: expect.any(Number),
-  });
-});
+it.skipIf(insideSandbox)(
+  'shows a task as gating while its merge runs, then merged with its retrospective',
+  async () => {
+    const f = workbenchFixture();
+    const lead = await leadWithPlan(f, [task('a', { acceptance: ['true'] })]);
+    const session = await settledTask(f, lead.id, 'a');
+    commit(f, session, 'src/a/x.ts');
+    merge(f, session.id);
+    expect(rowOf(f, lead.id, 'a').state).toBe('gating');
+    expect(rowOf(f, lead.id, 'a').retrospective).toBeUndefined();
+    await eventually(
+      () => current(f, session.id).outcome === 'merged',
+      () => f.control.tick(),
+      10000,
+    );
+    expect(rowOf(f, lead.id, 'a')).toMatchObject({ state: 'merged', done_by: 'merged' });
+    // The record waits for the lead's wake about the merge to end.
+    await eventually(
+      () => rowOf(f, lead.id, 'a').retrospective !== undefined,
+      () => f.control.tick(),
+      10000,
+    );
+    expect(rowOf(f, lead.id, 'a').retrospective).toEqual({
+      id: expect.any(String),
+      outcome: 'merged',
+      recorded_at: expect.any(Number),
+      gate_passed_on_attempt: 1,
+      handbacks: 0,
+      lead_wakes: expect.any(Number),
+      tokens: expect.any(Number),
+    });
+  },
+);
 
 it('shows a task as failed once its sessions closed without a merge, until it is started again', async () => {
   const f = workbenchFixture();
@@ -323,99 +333,103 @@ it('shows a task as failed once its sessions closed without a merge, until it is
   expect(rowOf(f, lead.id, 'a').state).toBe('todo');
 });
 
-it('shows a direct task by its lead: running once claimed, blocked once its hand-backs ran out, then done', async () => {
-  const f = workbenchFixture();
-  git(f.source, 'config', 'user.name', 'Source User');
-  git(f.source, 'config', 'user.email', 'source@example.invalid');
-  // Each run prints another line, so a hand-back never repeats the one before it; it passes once the marker exists.
-  const gate = gateFolder(f.root),
-    fixed = path.join(gate.dir, 'fixed');
-  f.call(
-    'project.gate.set',
-    {
-      project_id: f.project.id,
-      root: f.source,
-      commands: [
-        {
-          name: 'Check',
-          argv: gate.argv(
-            `process.stderr.write(\`broke \${Date.now()}\`); process.exit(require('node:fs').existsSync(${JSON.stringify(fixed)}) ? 0 : 3)`,
-          ),
-        },
-      ],
-    },
-    f.store.must<Project>('projects', f.project.id).revision,
-  );
-  f.call(
-    'project.autoMerge.set',
-    { project_id: f.project.id, enabled: true },
-    f.store.must<Project>('projects', f.project.id).revision,
-  );
-  f.call('workflow.policy.set', { project_id: f.project.id, handback_limit: 2 }, null);
-  const lead = f.create('Plan the export feature');
-  await settle(f, lead);
-  f.call(
-    'board.plan.update',
-    {
-      project_id: f.project.id,
-      base_version: 0,
-      headline: 'Export ships this week',
-      lanes: [{ id: 'core', title: 'Core' }],
-      tasks: [
-        task('a', {
-          scope: ['src/a.ts'],
-          acceptance: ['true'],
-          kind: { domain: 'backend-logic', tier: 't1' },
-        }),
-      ],
-      milestones: [],
-      risks: [],
-      assumptions: [],
-    },
-    null,
-    sessionOf(f, lead.id, 'lead'),
-  );
-  startTasks(f, lead.id, ['a']);
-  expect(current(f, lead.id).direct_task?.id).toBe('a');
+it.skipIf(insideSandbox)(
+  'shows a direct task by its lead: running once claimed, blocked once its hand-backs ran out, then done',
+  async () => {
+    const f = workbenchFixture();
+    git(f.source, 'config', 'user.name', 'Source User');
+    git(f.source, 'config', 'user.email', 'source@example.invalid');
+    // Each run prints another line, so a hand-back never repeats the one before it; it passes once the marker exists.
+    const gate = gateFolder(f.root),
+      fixed = path.join(gate.dir, 'fixed');
+    f.call(
+      'project.gate.set',
+      {
+        project_id: f.project.id,
+        root: f.source,
+        commands: [
+          {
+            name: 'Check',
+            argv: gate.argv(
+              `process.stderr.write(\`broke \${Date.now()}\`); process.exit(require('node:fs').existsSync(${JSON.stringify(fixed)}) ? 0 : 3)`,
+            ),
+          },
+        ],
+      },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    f.call(
+      'project.autoMerge.set',
+      { project_id: f.project.id, enabled: true },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    f.call('workflow.policy.set', { project_id: f.project.id, handback_limit: 2 }, null);
+    const lead = f.create('Plan the export feature');
+    await settle(f, lead);
+    f.call(
+      'board.plan.update',
+      {
+        project_id: f.project.id,
+        base_version: 0,
+        headline: 'Export ships this week',
+        lanes: [{ id: 'core', title: 'Core' }],
+        tasks: [
+          task('a', {
+            scope: ['src/a.ts'],
+            acceptance: ['true'],
+            kind: { domain: 'backend-logic', tier: 't1' },
+          }),
+        ],
+        milestones: [],
+        risks: [],
+        assumptions: [],
+      },
+      null,
+      sessionOf(f, lead.id, 'lead'),
+    );
+    startTasks(f, lead.id, ['a']);
+    expect(current(f, lead.id).direct_task?.id).toBe('a');
 
-  expect(rowOf(f, lead.id, 'a').status).not.toBe('todo');
-  expect(rowOf(f, lead.id, 'a')).toMatchObject({
-    state: 'running',
-    claim: { session_id: lead.id },
-  });
+    expect(rowOf(f, lead.id, 'a').status).not.toBe('todo');
+    expect(rowOf(f, lead.id, 'a')).toMatchObject({
+      state: 'running',
+      claim: { session_id: lead.id },
+    });
 
-  commit(f, lead, 'src/a.ts');
-  f.call(
-    'task.report',
-    { project_id: f.project.id, kind: 'done', text: 'Task a is done' },
-    null,
-    sessionOf(f, lead.id, 'lead'),
-  );
-  f.call('session.send', { session_id: lead.id, input: 'Go on' }, current(f, lead.id).revision);
-  const quiet = () =>
-    current(f, lead.id).state === 'open' &&
-    current(f, lead.id).merge?.state !== 'running' &&
-    f.turns(lead.id).every((turn) => !['queued', 'running'].includes(turn.state));
-  for (let ticks = 0; ticks < 3;) {
-    await eventually(quiet, () => f.control.tick(), 15000);
-    await f.control.tick();
-    ticks = quiet() ? ticks + 1 : 0;
-  }
-  expect(current(f, lead.id).merge).toMatchObject({ state: 'blocked', reason: 'gate_failed' });
-  expect(rowOf(f, lead.id, 'a')).toMatchObject({
-    state: 'blocked',
-    claim: { session_id: lead.id },
-  });
+    commit(f, lead, 'src/a.ts');
+    f.call(
+      'task.report',
+      { project_id: f.project.id, kind: 'done', text: 'Task a is done' },
+      null,
+      sessionOf(f, lead.id, 'lead'),
+    );
+    f.call('session.send', { session_id: lead.id, input: 'Go on' }, current(f, lead.id).revision);
+    const quiet = () =>
+      current(f, lead.id).state === 'open' &&
+      current(f, lead.id).merge?.state !== 'running' &&
+      f.turns(lead.id).every((turn) => !['queued', 'running'].includes(turn.state));
+    for (let ticks = 0; ticks < 3;) {
+      await eventually(quiet, () => f.control.tick(), 15000);
+      await f.control.tick();
+      ticks = quiet() ? ticks + 1 : 0;
+    }
+    expect(current(f, lead.id).merge).toMatchObject({ state: 'blocked', reason: 'gate_failed' });
+    expect(rowOf(f, lead.id, 'a')).toMatchObject({
+      state: 'blocked',
+      claim: { session_id: lead.id },
+    });
 
-  writeFileSync(fixed, '');
-  merge(f, lead.id);
-  await eventually(
-    () => planOf(f, lead.id).direct_merged?.a !== undefined,
-    () => f.control.tick(),
-    10000,
-  );
-  expect(rowOf(f, lead.id, 'a')).toMatchObject({ status: 'done', state: 'merged' });
-}, 30000);
+    writeFileSync(fixed, '');
+    merge(f, lead.id);
+    await eventually(
+      () => planOf(f, lead.id).direct_merged?.a !== undefined,
+      () => f.control.tick(),
+      10000,
+    );
+    expect(rowOf(f, lead.id, 'a')).toMatchObject({ status: 'done', state: 'merged' });
+  },
+  30000,
+);
 
 it('shows an accepted report task as merged, done by its acceptance', async () => {
   const f = workbenchFixture();

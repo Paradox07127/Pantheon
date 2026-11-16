@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Tabs } from '@base-ui/react/tabs';
 import { Lock as LockIcon, RefreshCw } from 'lucide-react';
 import { createStore } from 'zustand/vanilla';
@@ -47,6 +48,7 @@ import {
 } from './ProjectSettingsScreen';
 import { registerPageHeader } from './settings-header';
 import { useSettingsView } from './view';
+import { EmptyState } from '../../components/EmptyState';
 import './extensions-page.css';
 
 type Project = BoardSnapshot['projects'][number];
@@ -149,18 +151,13 @@ export function ExtensionsPage({ project }: { project: Project }) {
   if (state.state === 'unsupported')
     panel = (
       <Section title={toolsTitle(runtimeName(runtime))}>
-        <div className="empty">{unsupportedText()}</div>
+        <EmptyState inline title={unsupportedText()} />
       </Section>
     );
   else if (state.state === 'error')
     panel = (
       <Section title={toolsTitle(runtimeName(runtime))}>
-        <div className="ps-err" role="alert">
-          {failureText(state)}
-        </div>
-        <button type="button" className="btn" onClick={reload}>
-          {t({ id: 'settings.common.retry', defaultMessage: 'Retry' })}
-        </button>
+        <LoadError message={failureText(state)} onRetry={reload} />
       </Section>
     );
   else if (state.state === 'loading')
@@ -476,12 +473,13 @@ function Groups(props: {
     <>
       <Section title={mcpTitle()} action={countText(state.mcp_servers)} settingId="extensions.mcp">
         {state.mcp_servers.length === 0 ? (
-          <div className="empty">
-            {t({
+          <EmptyState
+            inline
+            title={t({
               id: 'settings.extensions.noMcp',
               defaultMessage: "No MCP servers in this machine's inventory",
             })}
-          </div>
+          />
         ) : (
           <div className="ps-rows">
             {state.mcp_servers.map((s) => (
@@ -516,12 +514,13 @@ function Groups(props: {
         settingId="extensions.plugins"
       >
         {state.plugins.length === 0 ? (
-          <div className="empty">
-            {t({
+          <EmptyState
+            inline
+            title={t({
               id: 'settings.extensions.noPlugins',
               defaultMessage: "No plugins in this machine's inventory",
             })}
-          </div>
+          />
         ) : (
           <div className="ps-rows">
             {state.plugins.map((p) => (
@@ -546,12 +545,13 @@ function Groups(props: {
       </Section>
       <Section title={skillsTitle()} action={countText(state.skills)} settingId="extensions.skills">
         {state.skills.length === 0 ? (
-          <div className="empty">
-            {t({
+          <EmptyState
+            inline
+            title={t({
               id: 'settings.extensions.noSkills',
               defaultMessage: "No skills in this machine's inventory",
             })}
-          </div>
+          />
         ) : (
           <div className="ps-rows">
             {state.skills.map((s) => (
@@ -579,15 +579,16 @@ function Groups(props: {
       </Section>
       <Section title={apps} action={countText(state.connectors)} settingId="extensions.apps">
         {state.connectors.length === 0 ? (
-          <div className="empty">
-            {t(
+          <EmptyState
+            inline
+            title={t(
               {
                 id: 'settings.extensions.noApps',
                 defaultMessage: "No {apps} in this machine's inventory",
               },
               { apps },
             )}
-          </div>
+          />
         ) : (
           <div className="ps-rows">
             {state.connectors.map((c) => (

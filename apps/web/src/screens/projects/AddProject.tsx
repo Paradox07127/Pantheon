@@ -13,6 +13,7 @@ import { ageText, failureText, reasonText, useNow } from '../../data/needs-you';
 import { nameFromPath, openRejectText } from '../../data/projects';
 import { t } from '../../i18n';
 import { useShortcut } from '../../lib/shortcuts';
+import { durationText } from '../../lib/time-text';
 import { Result, ReviewBaseline, RunningBaseline, StartBaseline } from './BaselineBlocks';
 import { baselineEntry, baselineStartRequest } from './baseline';
 import { briefRequest } from './brief';
@@ -669,12 +670,8 @@ export function Setup({
         <span className="ap-took">
           <StateGlyph name="running" />
           {t(
-            {
-              id: 'projects.add.reading',
-              defaultMessage:
-                'Reading the repository {count, plural, one {# second} other {# seconds}}',
-            },
-            { count: Math.max(0, Math.floor((now - entry.baseline.created_at) / 1000)) },
+            { id: 'projects.add.reading', defaultMessage: 'Reading the repository {duration}' },
+            { duration: durationText(now - entry.baseline.created_at) },
           )}
         </span>
       )}
@@ -746,7 +743,7 @@ export function Setup({
           ) : (
             <>
               <Button
-                label={t({ id: 'projects.add.skipScan', defaultMessage: 'Skip scan' })}
+                label={t({ id: 'projects.add.skipBaseline', defaultMessage: 'Skip baseline' })}
                 onPress={onNext}
               />
               {entry.kind === 'running' && (

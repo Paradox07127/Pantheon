@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { WorkbenchSession } from '@pantheon/protocol';
+import { Collapsible } from '../../apps/web/node_modules/@base-ui/react/collapsible/index.mjs';
 import { Dialog } from '../../apps/web/node_modules/@base-ui/react/dialog/index.mjs';
 import { find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
@@ -216,5 +217,22 @@ describe('the expandable rows of the context breakdown', () => {
       `${zh('sessions.compose.context.memoryFiles')}2`,
       `${zh('sessions.compose.context.customAgents')}1`,
     ]);
+  });
+});
+
+describe('the confirmed baseline a lead starts from', () => {
+  it('folds into a closed card named for the baseline that opens to its whole text', () => {
+    const input =
+      '[Pantheon] This is the confirmed baseline of the project.\n\nWorkstreams: importer';
+    const h = turnHost(listed('running'), { turn: turn({ input, origin: 'baseline' }) });
+    const card = find(h.value, (n) => n.type === Collapsible.Root);
+    expect(card.props.defaultOpen).toBeFalsy();
+    expect(text(find(card, (n) => n.type === Collapsible.Trigger))).toBe(
+      zh('sessions.thread.confirmedBaseline'),
+    );
+    const shown = 'This is the confirmed baseline of the project.\n\nWorkstreams: importer';
+    expect(text(find(card, (n) => n.type === Collapsible.Panel))).toBe(shown);
+    // The text shows only inside the card.
+    expect(nodes(h.value).filter((n) => n.props.children === shown)).toHaveLength(1);
   });
 });

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JsonRpcProcess, readProcessIdentity } from '../../packages/adapters/src/process.js';
+import { psUsable } from '../helpers.js';
 
 const fakeSsh = fileURLToPath(new URL('./fake-ssh.mjs', import.meta.url));
 const marker = `device-stop-${randomUUID()}`;
@@ -124,49 +125,58 @@ exec /bin/sh -c "$script"
   return ['/bin/sh', link, path.join(root, 'stops'), String(group)];
 }
 
-it('keeps checking a device descendant that left the group at a later stop', async () => {
-  const { rpc, tool } = await escapingRuntime(tempRoot(), ['/bin/sh', '-c']);
+it.skipIf(!psUsable)(
+  'keeps checking a device descendant that left the group at a later stop',
+  async () => {
+    const { rpc, tool } = await escapingRuntime(tempRoot(), ['/bin/sh', '-c']);
 
-  expect(await rpc.close(Date.now() + 5000)).toMatchObject({
-    stopped: false,
-    reason: 'Descendants that left the device process group are still running',
-  });
-  expect((await rpc.close(Date.now() + 5000)).stopped, 'the tool still runs').toBe(false);
+    expect(await rpc.close(Date.now() + 5000)).toMatchObject({
+      stopped: false,
+      reason: 'Descendants that left the device process group are still running',
+    });
+    expect((await rpc.close(Date.now() + 5000)).stopped, 'the tool still runs').toBe(false);
 
-  killStarted();
-  await vi.waitFor(() => expect(running(tool)).toBe(false));
-  expect((await rpc.close(Date.now() + 5000)).stopped).toBe(true);
-});
+    killStarted();
+    await vi.waitFor(() => expect(running(tool)).toBe(false));
+    expect((await rpc.close(Date.now() + 5000)).stopped).toBe(true);
+  },
+);
 
-it('never signals a device group number again once a stop saw the group empty', async () => {
-  const root = tempRoot();
-  const decoy = decoyGroup();
-  const { rpc } = await escapingRuntime(root, retargetingLink(root, decoy));
+it.skipIf(!psUsable)(
+  'never signals a device group number again once a stop saw the group empty',
+  async () => {
+    const root = tempRoot();
+    const decoy = decoyGroup();
+    const { rpc } = await escapingRuntime(root, retargetingLink(root, decoy));
 
-  expect((await rpc.close(Date.now() + 5000)).stopped).toBe(false);
-  await rpc.close(Date.now() + 5000);
+    expect((await rpc.close(Date.now() + 5000)).stopped).toBe(false);
+    await rpc.close(Date.now() + 5000);
 
-  expect(running(decoy), 'the group that took over the number still runs').toBe(true);
-});
+    expect(running(decoy), 'the group that took over the number still runs').toBe(true);
+  },
+);
 
-it('does not signal a device group number none of its recorded processes still holds', async () => {
-  const root = tempRoot();
-  const decoy = decoyGroup();
-  const pidFile = path.join(root, 'runtime.pid');
-  const markerFile = path.join(root, marker);
-  writeFileSync(markerFile, '');
-  // The runtime ignores SIGTERM, so its group outlives the first stop's deadline.
-  const rpc = deviceProcess(root, retargetingLink(root, decoy), '/bin/sh', [
-    '-c',
-    `trap '' TERM; echo $$ > '${pidFile}'; exec cat - '${markerFile}'`,
-  ]);
-  const runtime = await written(pidFile);
+it.skipIf(!psUsable)(
+  'does not signal a device group number none of its recorded processes still holds',
+  async () => {
+    const root = tempRoot();
+    const decoy = decoyGroup();
+    const pidFile = path.join(root, 'runtime.pid');
+    const markerFile = path.join(root, marker);
+    writeFileSync(markerFile, '');
+    // The runtime ignores SIGTERM, so its group outlives the first stop's deadline.
+    const rpc = deviceProcess(root, retargetingLink(root, decoy), '/bin/sh', [
+      '-c',
+      `trap '' TERM; echo $$ > '${pidFile}'; exec cat - '${markerFile}'`,
+    ]);
+    const runtime = await written(pidFile);
 
-  expect((await rpc.close(Date.now() + 1000)).stopped).toBe(false);
-  killStarted();
-  await vi.waitFor(() => expect(running(runtime)).toBe(false));
-  const again = await rpc.close(Date.now() + 5000);
+    expect((await rpc.close(Date.now() + 1000)).stopped).toBe(false);
+    killStarted();
+    await vi.waitFor(() => expect(running(runtime)).toBe(false));
+    const again = await rpc.close(Date.now() + 5000);
 
-  expect(running(decoy), 'the group that took over the number still runs').toBe(true);
-  expect(again.stopped).toBe(false);
-});
+    expect(running(decoy), 'the group that took over the number still runs').toBe(true);
+    expect(again.stopped).toBe(false);
+  },
+);

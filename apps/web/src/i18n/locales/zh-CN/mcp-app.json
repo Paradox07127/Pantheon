@@ -1,6 +1,5 @@
 {
   "components.mcpApp.title": "{server} 的 {tool}",
-  "components.mcpApp.retry": "重试",
   "sessions.app.dock": "停靠到侧栏",
   "sessions.app.fullscreen": "全屏",
   "sessions.app.reload": "重新加载",

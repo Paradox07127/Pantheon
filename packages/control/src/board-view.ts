@@ -2406,9 +2406,12 @@ export function boardView(
     .sort((a, b) => b.unblocks - a.unblocks || a.created_at - b.created_at);
   const findings: BoardModel['findings'] = ctx.store
     .list<Review>('reviews')
-    .filter((review) => review.project_id === projectId && review.session_id)
-    .flatMap((review) =>
-      review.findings
+    .filter((review) => review.project_id === projectId)
+    .flatMap((review) => {
+      // A plan review has no session of its own; its findings belong to the lead whose plan it is.
+      const sessionId = review.session_id ?? review.requester?.lead_session_id;
+      if (!sessionId) return [];
+      return review.findings
         .filter((finding) => finding.status === 'open')
         .map((finding) => {
           const place = /^(.+?):(\d+)(?:-\d+)?$/.exec(finding.location);
@@ -2416,7 +2419,7 @@ export function boardView(
             id: finding.id,
             review_id: finding.review_id,
             review_revision: review.revision,
-            session_id: review.session_id!,
+            session_id: sessionId,
             reviewer: finding.runtime,
             text: finding.impact,
             severity: finding.blocking ? ('blocker' as const) : ('minor' as const),
@@ -2424,8 +2427,8 @@ export function boardView(
             line: place ? Number(place[2]) : null,
             state: finding.resolution?.outcome ?? ('open' as const),
           };
-        }),
-    );
+        });
+    });
   return {
     since,
     now,

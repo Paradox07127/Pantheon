@@ -80,12 +80,6 @@
   display: block;
   height: var(--row);
 }
-.srp-empty,
-.srp-none {
-  display: block;
-  padding: var(--sp-3);
-  color: var(--mu);
-}
 .srp-diff {
   min-height: 0;
   overflow: auto;

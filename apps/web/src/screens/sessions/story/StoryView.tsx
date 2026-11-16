@@ -16,6 +16,7 @@ import { cardFindings, cardLines, pointFacts, type LandedPoint } from './model';
 import { CommandLine, HunkLines } from './parts';
 import { StoryDiagram } from './StoryDiagram';
 import { t } from '../../../i18n';
+import { EmptyState } from '../../../components/EmptyState';
 import './evidence.css';
 
 // Labels are getters, so each is read in the language loaded by then.
@@ -328,12 +329,13 @@ export function StoryView({
                     <td>{text}</td>
                     <td className="gs-cites">
                       {cited.length === 0 ? (
-                        <span className="gs-none">
-                          {t({
+                        <EmptyState
+                          inline
+                          title={t({
                             id: 'sessions.panel.story.noMatch',
                             defaultMessage: 'No matching change',
                           })}
-                        </span>
+                        />
                       ) : (
                         cited.map((j) => (
                           <button
@@ -679,12 +681,13 @@ function Card({
               {t({ id: 'sessions.panel.story.evidence', defaultMessage: 'Command evidence' })}
             </h3>
             {card.evidence.length === 0 ? (
-              <span className="gs-none">
-                {t({
+              <EmptyState
+                inline
+                title={t({
                   id: 'sessions.panel.story.modelOnly',
                   defaultMessage: 'Model interpretation only',
                 })}
-              </span>
+              />
             ) : (
               <ul className="gs-ev">
                 {card.evidence.map((e) => (

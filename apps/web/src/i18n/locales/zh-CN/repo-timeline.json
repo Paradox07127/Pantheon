@@ -12,7 +12,7 @@
   "repo.timeline.legendBad": "失败或回退",
   "repo.timeline.fitAll": "适应全部",
   "repo.timeline.state.merged": "已合并",
-  "repo.timeline.state.running": "进行中",
+  "repo.timeline.state.running": "运行中",
   "repo.timeline.state.review": "等你",
   "repo.timeline.state.failed": "失败",
   "repo.timeline.state.idle": "空闲",

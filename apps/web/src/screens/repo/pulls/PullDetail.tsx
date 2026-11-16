@@ -1,6 +1,7 @@
 import { useState, type ReactElement } from 'react';
 import type { GithubReviewDecision, WorkbenchSession } from '@pantheon/protocol';
 import { ArrowUpRight, Check, CircleDot, GitPullRequest, Minus, User, X } from 'lucide-react';
+import { DiffCounts } from '../../../components/DiffCounts';
 import { SessionStateIcon } from '../../../components/SessionStateIcon';
 import { toast } from '../../../components/Toast';
 import { useBoard } from '../../../data/board';
@@ -192,12 +193,7 @@ export function PullDetail({
           )}
           <dt>{t({ id: 'repo.pulls.changes', defaultMessage: 'Changes' })}</dt>
           <dd className="mono rpr-n">
-            <span className="df-add" data-zero={pull.additions === 0 || undefined}>
-              +{pull.additions}
-            </span>{' '}
-            <span className="df-del" data-zero={pull.deletions === 0 || undefined}>
-              −{pull.deletions}
-            </span>
+            <DiffCounts additions={pull.additions} deletions={pull.deletions} />
           </dd>
         </dl>
 

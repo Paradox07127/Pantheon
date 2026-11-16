@@ -5,22 +5,35 @@ import { defaultDataDirectory } from '@pantheon/protocol/paths';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createMcpServer } from './mcp.js';
 
-const { values, positionals } = parseArgs({
-  allowPositionals: true,
-  options: {
-    'data-dir': { type: 'string' },
-    file: { type: 'string' },
-    json: { type: 'string' },
-    project: { type: 'string' },
-    after: { type: 'string' },
-    param: { type: 'string', multiple: true },
-  },
-});
+const usage =
+  'Usage: pnpm cli mcp|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]';
+let parsed;
+try {
+  parsed = parseArgs({
+    allowPositionals: true,
+    options: {
+      help: { type: 'boolean', short: 'h' },
+      'data-dir': { type: 'string' },
+      file: { type: 'string' },
+      json: { type: 'string' },
+      project: { type: 'string' },
+      after: { type: 'string' },
+      param: { type: 'string', multiple: true },
+    },
+  });
+} catch (error) {
+  if (!(error as { code?: string }).code?.startsWith('ERR_PARSE_ARGS_')) throw error;
+  console.error((error as Error).message);
+  process.exit(64);
+}
+const { values, positionals } = parsed;
+if (values.help) {
+  console.log(usage);
+  process.exit(0);
+}
 const directory = values['data-dir'] ?? process.env.PANTHEON_DATA_DIR ?? defaultDataDirectory();
 if (!positionals[0]) {
-  console.error(
-    'Usage: pnpm cli mcp|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]',
-  );
+  console.error(usage);
   process.exit(64);
 }
 try {

@@ -58,7 +58,7 @@
   "board.history.legend": "图例",
   "board.history.legend.merged": "已合并",
   "board.history.legend.reworked": "返工过",
-  "board.history.legend.running": "进行中",
+  "board.history.legend.running": "运行中",
   "board.history.legend.decisions": "你做的决定",
   "board.history.legend.milestones": "里程碑",
   "board.history.since": "{date}至今，{days, plural, other {# 天}}",

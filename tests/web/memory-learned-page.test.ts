@@ -197,7 +197,7 @@ describe('learned rules page', () => {
     expect(text(alert)).toMatch(/^读不到经验列表：.*no answer/);
     expect(details(h)).toEqual([]);
     const reads = bridge.reads;
-    button(alert, zh('memory.learnedPage.retry')).props.onClick();
+    button(alert, zh('components.retry')).props.onClick();
     h.render();
     await h.flush();
     expect(bridge.reads).toBe(reads + 1);

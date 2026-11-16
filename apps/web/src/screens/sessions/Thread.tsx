@@ -11,6 +11,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Tooltip } from '@base-ui/react/tooltip';
 import {
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react';
 import type { BoardHistory, BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
 import { MarkdownLinks } from '../../components/Markdown';
+import { Skeleton } from '../../components/Skeleton';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { useBoard } from '../../data/board';
 import { useBoardHistory } from '../../data/board-history';
@@ -52,6 +54,7 @@ import {
 } from '../../data/transcript';
 import { t } from '../../i18n';
 import { useShortcut } from '../../lib/shortcuts';
+import { clockText } from '../../lib/time-text';
 import {
   arrivals,
   endedText,
@@ -68,18 +71,12 @@ import {
 } from './model';
 import { appCallsOf, appDisplay } from './app-display';
 import type { Panel } from './inspector-model';
-import {
-  shownInput,
-  statusTicks,
-  timelineNodes,
-  turnClock,
-  type TimelineNode,
-} from './thread-model';
+import { shownInput, statusTicks, timelineNodes, type TimelineNode } from './thread-model';
 import { ThreadFind, useThreadFind } from './ThreadFind';
 import { MemoryUsed } from './MemoryUsed';
 import { Items, ResolveButtons, ThreadMark, TurnWork } from './parts';
 import { showThreadTurns } from './trace';
-import { BaselineReview, RequestCard, RequestSlot } from './RequestCards';
+import { BaselineReview, PendingQuestions, RequestCard, RequestSlot } from './RequestCards';
 import {
   checkpointed,
   SessionHeader,
@@ -408,19 +405,12 @@ export function Thread(props: {
               <div className="tr-live" aria-live="polite">
                 {spoken}
               </div>
-              {history.error && (
-                <div className="tr-fail" role="alert">
-                  <span title={history.error}>{history.error}</span>
-                  <button type="button" className="btn" onClick={history.reload}>
-                    {t({ id: 'sessions.screen.retry', defaultMessage: 'Retry' })}
-                  </button>
-                </div>
-              )}
+              {history.error && <LoadError message={history.error} onRetry={history.reload} />}
               {!view
                 ? !history.error && (
                     <div className="tr-typing" aria-busy="true">
-                      <span className="sk" style={{ height: 10, width: '80%' }} />
-                      <span className="sk" style={{ height: 10, width: '50%' }} />
+                      <Skeleton style={{ height: 10, width: '80%' }} />
+                      <Skeleton style={{ height: 10, width: '50%' }} />
                     </div>
                   )
                 : view.turns.map((t, i) => (
@@ -482,6 +472,7 @@ export function Thread(props: {
           usage={kept?.findLast((t) => t.usage != null)?.usage ?? null}
           running={runningTurn ?? null}
           waiting={waitingFor}
+          asks={<PendingQuestions session={session} pending={pending} scroller={flow} />}
           {...(active ? {} : { active })}
           {...(props.sessions ? { sessions: props.sessions } : {})}
         />
@@ -558,7 +549,7 @@ export function ThreadTurn(props: {
     const lead = s.board?.sessions.find((k) => k.id === turn.session_id)?.task?.lead_session_id;
     return lead ? s.board?.sessions.find((k) => k.id === lead)?.runtime : undefined;
   });
-  const sent = view.at === null ? null : turnClock.format(view.at);
+  const sent = view.at === null ? null : clockText(view.at);
   const entering = props.fresh.has(`turn:${turn.id}`) ? ' tr-in' : '';
   const expanded = useLook().transcript === 'expanded';
   // An expanded transcript shows the whole turn.
@@ -609,7 +600,24 @@ export function ThreadTurn(props: {
                     <b>Pantheon</b>
                     {sent && <span>{sent}</span>}
                   </div>
-                  <span data-find="input">{shownInput(turn)}</span>
+                  {turn.origin === 'baseline' ? (
+                    <Collapsible.Root className="ss-hof">
+                      <Collapsible.Trigger className="ss-hoft">
+                        <ChevronRight aria-hidden="true" />
+                        {t({
+                          id: 'sessions.thread.confirmedBaseline',
+                          defaultMessage: 'Confirmed baseline',
+                        })}
+                      </Collapsible.Trigger>
+                      <Collapsible.Panel className="ss-hofp">
+                        <div className="ss-hofx" data-find="input">
+                          {shownInput(turn)}
+                        </div>
+                      </Collapsible.Panel>
+                    </Collapsible.Root>
+                  ) : (
+                    <span data-find="input">{shownInput(turn)}</span>
+                  )}
                 </div>
               </div>
             ) : from === 'lead' ? (
@@ -667,7 +675,7 @@ export function ThreadTurn(props: {
           {/* The main agent's mark, named by the word before it; the session need not be a lead. */}
           <Crown className="lead-crown" aria-hidden="true" />
           {model && <span>{model}</span>}
-          {spoke !== null && <span className="ss-whot">{turnClock.format(spoke)}</span>}
+          {spoke !== null && <span className="ss-whot">{clockText(spoke)}</span>}
         </div>
       )}
       {fold ? (
@@ -716,9 +724,7 @@ export function ThreadTurn(props: {
               defaultMessage: 'Changes so far are kept',
             })}
           </span>
-          {view.ended_at !== null && (
-            <span className="ss-nbt">{turnClock.format(view.ended_at)}</span>
-          )}
+          {view.ended_at !== null && <span className="ss-nbt">{clockText(view.ended_at)}</span>}
         </div>
       ) : view.end?.state === 'failed' ? (
         <FailedNotice
@@ -746,9 +752,7 @@ export function ThreadTurn(props: {
       {rollable && props.checkpoint && (
         <ThreadMark glyph={<Undo2 />} at={null}>
           <span>{t({ id: 'sessions.thread.checkpoint', defaultMessage: 'Checkpoint' })}</span>
-          {view.ended_at !== null && (
-            <span className="ss-markt">{turnClock.format(view.ended_at)}</span>
-          )}
+          {view.ended_at !== null && <span className="ss-markt">{clockText(view.ended_at)}</span>}
           <CheckpointBack sessionId={turn.session_id} turnId={props.checkpoint} busy={busy} />
         </ThreadMark>
       )}
@@ -1005,7 +1009,7 @@ export function RequestIndex({
                   aria-current={i === current ? 'true' : undefined}
                   aria-label={t(
                     { id: 'sessions.thread.timeline.node', defaultMessage: '{time} {label}' },
-                    { time: turnClock.format(node.at), label: node.name },
+                    { time: clockText(node.at), label: node.name },
                   )}
                   onClick={() => jump(node)}
                 >

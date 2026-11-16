@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Dialog } from '@base-ui/react/dialog';
 import { Check, ShieldCheck, X } from 'lucide-react';
 import type { BoardSnapshot, BridgeResult, ProjectPermissionRule } from '@pantheon/protocol';
@@ -11,37 +12,14 @@ import { removePermissionRule, usePermissionRules } from '../../data/permission-
 import { addGlobalRule, removeGlobalRule, useProjectDefaults } from '../../data/project-defaults';
 import { visibleProjects } from '../../data/projects';
 import { sessionTitle } from '../../data/transcript';
-import { currentLocale, t } from '../../i18n';
+import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { failureText, Loading, type Failure } from './ProjectSettingsScreen';
 import { useSettingsView } from './view';
 import './permissions-page.css';
 
 type Project = BoardSnapshot['projects'][number];
-
-/** Today and yesterday with the time in hours and minutes, an earlier day as its date. */
-export function addedText(at: number, now: number): string {
-  const day = new Date(at).toDateString();
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const time = () =>
-    new Intl.DateTimeFormat(currentLocale(), {
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).format(at);
-  if (day === new Date(now).toDateString())
-    return t(
-      { id: 'settings.permissions.addedToday', defaultMessage: 'Today {time}' },
-      { time: time() },
-    );
-  if (day === yesterday.toDateString())
-    return t(
-      { id: 'settings.permissions.addedYesterday', defaultMessage: 'Yesterday {time}' },
-      { time: time() },
-    );
-  return new Intl.DateTimeFormat(currentLocale(), { month: 'short', day: 'numeric' }).format(at);
-}
 
 const removeLabel = (rule: string) =>
   t({ id: 'settings.permissions.removeRule', defaultMessage: 'Remove rule {rule}' }, { rule });
@@ -117,14 +95,7 @@ export function GlobalPermissions() {
     <div className="pm-pg" data-setting-id="permissions.rules">
       {rules === null ? (
         defaults.error !== null ? (
-          <div className="pm-fail">
-            <div className="ps-err" role="alert">
-              {defaults.error}
-            </div>
-            <button type="button" className="btn sm" onClick={defaults.reload}>
-              {t({ id: 'settings.permissions.retry', defaultMessage: 'Retry' })}
-            </button>
-          </div>
+          <LoadError message={defaults.error} onRetry={defaults.reload} />
         ) : (
           <Loading />
         )
@@ -143,7 +114,7 @@ export function GlobalPermissions() {
                   <span className="mono pm-rule" title={entry.rule}>
                     {entry.rule}
                   </span>
-                  <span className="mu pm-at">{addedText(entry.added_at, now)}</span>
+                  <span className="mu pm-at">{dayText(entry.added_at, now, { time: true })}</span>
                   <button
                     type="button"
                     className="ib"
@@ -271,14 +242,7 @@ export function PermissionsPage({ project, readOnly }: { project: Project; readO
   const body =
     rules.data === null ? (
       rules.error !== null ? (
-        <div className="pm-fail">
-          <div className="ps-err" role="alert">
-            {rules.error}
-          </div>
-          <button type="button" className="btn sm" onClick={rules.reload}>
-            {t({ id: 'settings.permissions.retry', defaultMessage: 'Retry' })}
-          </button>
-        </div>
+        <LoadError message={rules.error} onRetry={rules.reload} />
       ) : (
         <Loading />
       )
@@ -341,7 +305,7 @@ export function PermissionsPage({ project, readOnly }: { project: Project; readO
                 {entry.rule}
               </span>
               {ruleSource(project, entry, board)}
-              <span className="mu pm-at">{addedText(entry.added_at, now)}</span>
+              <span className="mu pm-at">{dayText(entry.added_at, now, { time: true })}</span>
               {readOnly ? (
                 <span />
               ) : (

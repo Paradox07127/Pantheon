@@ -6,7 +6,7 @@ import { Equalizer } from '../../components/Equalizer';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { useNow } from '../../data/needs-you';
 import { t } from '../../i18n';
-import { whenText } from '../board/panels-model';
+import { dayText } from '../../lib/time-text';
 import './entries-footer.css';
 
 /** A session of `memory.read`, with the runtime it runs on from the board. */
@@ -161,7 +161,7 @@ export function EntriesFooter({
       <button key="document" type="button" className="mef-doc" onClick={onOpenOverview}>
         <span className="mst" data-st="ok" aria-hidden="true" />
         {t({ id: 'memory.status.document.ready', defaultMessage: 'Progress document updated' })}
-        {at !== undefined && <span className="mef-time">{whenText(at, now)}</span>}
+        {at !== undefined && <span className="mef-time">{dayText(at, now, { time: true })}</span>}
       </button>,
     );
   else if (job?.state === 'pending' || job?.state === 'running')

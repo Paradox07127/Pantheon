@@ -95,5 +95,14 @@
   "settings.search.keywords.contextUsage": "token, 上下文窗口, 用量",
   "settings.search.keywords.baselineRounds": "摸底, 问题, 提问, 追问",
   "settings.search.keywords.baselineVisuals": "摸底, 图表, 可视化, 置顶",
-  "settings.search.keywords.baselineRangeStory": "摸底, 提交, 区间解读, 30 天"
+  "settings.search.keywords.baselineRangeStory": "摸底, 提交, 区间解读, 30 天",
+  "settings.search.keywords.sessionRecap": "摘要, 进度, 近况, 标题, recap",
+  "settings.search.keywords.backdrop": "背景, 壁纸, 主题, 动效",
+  "settings.search.keywords.savedTheme": "自定义主题, 导出, 删除",
+  "settings.search.keywords.unverifiedIsolation": "沙箱, 隔离, 工作树, 不安全, 准入",
+  "settings.search.keywords.harnessKinds": "写代码, 审查, 文本, 能力",
+  "settings.search.keywords.harnessQuota": "用量, 限额, 速率限制",
+  "settings.search.keywords.personalExport": "备份, 保存设置",
+  "settings.search.keywords.personalImport": "恢复, 载入设置",
+  "settings.search.keywords.gateRunner": "门禁运行位置, daemon, 会话工作树"
 }

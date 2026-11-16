@@ -10,6 +10,7 @@ import { t } from '../i18n';
 import { durationText } from '../screens/board/panels-model';
 import { runningSince, useProjectSessions } from '../shell/TrayPopover';
 import { useShell } from '../store';
+import { DiffCounts } from './DiffCounts';
 import { ProjectMonogram } from './ProjectMonogram';
 import { RuntimeGlyph } from './RuntimeGlyph';
 import { GateMark, MergeBlockedGlyph, StateGlyph } from './SessionStateIcon';
@@ -269,12 +270,7 @@ export function SessionsPopover({
           detail: (
             <>
               <span className="mono">
-                <span className="df-add" data-zero={!additions || undefined}>
-                  +{additions}
-                </span>{' '}
-                <span className="df-del" data-zero={!deletions || undefined}>
-                  −{deletions}
-                </span>
+                <DiffCounts additions={additions} deletions={deletions} />
               </span>
               <GateMark gate={session.gate} />
             </>

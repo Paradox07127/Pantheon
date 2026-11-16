@@ -25,6 +25,7 @@ import { Tip } from '../../components/Tip';
 import { currentLocale, t } from '../../i18n';
 import { lastEditProgress, type EditStep } from './edit-progress';
 import { changeList } from './PlanEdit';
+import { EmptyState } from '../../components/EmptyState';
 import './edits.css';
 
 const STEP: Record<EditStep, () => string> = {
@@ -246,9 +247,10 @@ export function UnsentEdits({ model, projectId }: { model: BoardModel; projectId
         <ul className="bd-ed-list">{edits.map((edit) => editRow(model, edit))}</ul>
       )}
       {count === 0 && (
-        <p className="bd-ed-none">
-          {t({ id: 'board.edits.none', defaultMessage: 'Nothing waiting' })}
-        </p>
+        <EmptyState
+          inline
+          title={t({ id: 'board.edits.none', defaultMessage: 'Nothing waiting' })}
+        />
       )}
       <LastSent model={model} />
     </section>

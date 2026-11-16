@@ -9,7 +9,8 @@ import { listText } from '../../lib/list-text';
 import { useShell } from '../../store';
 import { DataTable, Empty, Panel, runtimeColor, useFloatTip, ViewToggle } from './Charts';
 import { Metric } from './KpiTiles';
-import { durationText, runtimeName, whenText, type BoardMerge } from './panels-model';
+import { dayText } from '../../lib/time-text';
+import { durationText, runtimeName, type BoardMerge } from './panels-model';
 import {
   gateState,
   gateTracker,
@@ -175,7 +176,7 @@ export function MergeTrack({
               },
               {
                 label: t({ id: 'board.mergeTrack.merged', defaultMessage: 'Merged' }),
-                value: whenText(m.merged_at, now),
+                value: dayText(m.merged_at, now, { time: true }),
               },
               {
                 label: t({ id: 'board.mergeTrack.lines', defaultMessage: 'Lines changed' }),
@@ -227,7 +228,7 @@ type GateRuns = ProjectGatesHistory['runs'];
 const CELL_FILL: Record<TrackCell['state'], string> = {
   passed: 'ok',
   failed: 'bad',
-  timed_out: 'wait',
+  timed_out: 'bad',
   skipped: 'none',
   absent: 'none',
 };
@@ -294,7 +295,7 @@ export function GateTracker({
               {row.cells.map((cell, i) => {
                 const column = columns[i]!;
                 const tip = listText(
-                  whenText(Date.parse(column.finished_at), now),
+                  dayText(Date.parse(column.finished_at), now, { time: true }),
                   cellResult(cell),
                 );
                 return (
@@ -464,14 +465,6 @@ const median = (values: readonly number[]) => {
   return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 };
 
-const stepTime = (ms: number) =>
-  ms < 60_000
-    ? t(
-        { id: 'insights.gateFailures.seconds', defaultMessage: '{seconds}s' },
-        { seconds: Math.round(ms / 1000) },
-      )
-    : durationText(ms);
-
 /** The steps that failed most across the fetched gate runs; nothing when none failed. */
 export function GateFailures({
   runs,
@@ -552,7 +545,9 @@ export function GateFailures({
                 { count: step.failed },
               )}
             </span>
-            {step.times.length > 0 && <span className="ql-fd">{stepTime(median(step.times))}</span>}
+            {step.times.length > 0 && (
+              <span className="ql-fd">{durationText(median(step.times))}</span>
+            )}
           </div>
         ))}
       </div>

@@ -22,6 +22,7 @@ import {
 } from '../../data/workflow-policy';
 import { useQuery } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
+import { durationText } from '../../lib/time-text';
 import {
   addRow,
   checkGate,
@@ -39,20 +40,10 @@ import {
 } from './gate';
 import { failureText, Section, type Failure } from './ProjectSettingsScreen';
 import { improvementChip, pinButton } from './WorkflowPage';
+import { EmptyState } from '../../components/EmptyState';
 import './gates.css';
 
 type Project = BoardSnapshot['projects'][number];
-
-const tookText = (ms: number) =>
-  ms < 59_500
-    ? t(
-        { id: 'settings.gate.tookSeconds', defaultMessage: 'about {seconds}s' },
-        { seconds: Math.max(1, Math.round(ms / 1000)) },
-      )
-    : t(
-        { id: 'settings.gate.tookMinutes', defaultMessage: 'about {minutes} min' },
-        { minutes: Math.round(ms / 60_000) },
-      );
 
 type GateSave = { revision: number; rows: GateRow[] };
 
@@ -234,9 +225,13 @@ export function FolderGate({
           </div>
         )}
         {draft.length === 0 ? (
-          <div className="empty">
-            {t({ id: 'settings.gate.none', defaultMessage: 'No gate: merging runs no commands' })}
-          </div>
+          <EmptyState
+            inline
+            title={t({
+              id: 'settings.gate.none',
+              defaultMessage: 'No gate: merging runs no commands',
+            })}
+          />
         ) : (
           <div className="ps-rows" ref={list}>
             {draft.map((row, i) => {
@@ -337,7 +332,7 @@ export function FolderGate({
                     </span>
                   </span>
                   <span className="gt-end">
-                    {took != null && <span className="gt-took">{tookText(took)}</span>}
+                    {took != null && <span className="gt-took">{durationText(took)}</span>}
                     <label className="gt-timeout" data-setting-id="gates.timeout">
                       <input
                         className="inp mono"
@@ -582,7 +577,7 @@ export function GatePolicy({ project }: { project: Project }) {
             onPin: () => save({ pinned: togglePin(policy, 'handback_limit') }),
           })}
         </div>
-        <div className="ps-row wf-pr">
+        <div className="ps-row wf-pr" data-setting-id="gates.runner">
           <span className="wf-nm">{runner}</span>
           {policySegments<Required<GatePolicyPatch>['gate_runner']>({
             label: runner,

@@ -735,7 +735,8 @@ it('tells a lead to plan a small change as one direct task before it changes the
     'every request that changes the repository',
     'as one task whose scope names the one or two files it changes',
     'claim it with start_task',
-    'only answers a question and changes nothing needs no task',
+    'only answers a question and changes nothing needs no task; answer it in plain text',
+    'call the report tool with kind done',
   ])
     expect(instructions).toContain(phrase);
 });

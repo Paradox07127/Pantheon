@@ -216,7 +216,7 @@ describe('board panel failure', () => {
     expect(html).toContain('用量');
     expect(html).toContain('role="alert"');
     expect(html).toContain('bad usage row');
-    expect(html).toContain(zh('board.query.retry'));
+    expect(html).toContain(zh('components.retry'));
   });
 });
 

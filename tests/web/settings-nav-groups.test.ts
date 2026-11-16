@@ -104,7 +104,6 @@ describe('settings navigation groups', () => {
     expect(useSettingsView.getState()).toMatchObject({
       open: true,
       page: 'workflow',
-      detail: null,
     });
     expect(screen()).toBe(first);
     expect(first).toContain(
@@ -146,6 +145,12 @@ describe('settings navigation groups', () => {
     );
     expect(others.length).toBeGreaterThan(0);
     for (const r of others) expect(at(r.id)).toBeLessThan(at('project.remove'));
+  });
+
+  it('lists every project when the projects page is chosen, even after one was opened', () => {
+    useSettingsView.setState({ page: 'defaults', detail: 'alpha' });
+    useSettingsView.getState().setPage('projects');
+    expect(useSettingsView.getState()).toMatchObject({ page: 'projects', detail: null });
   });
 
   it('lands the gates page on projects', () => {

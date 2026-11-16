@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  mkdtempSync,
+  mkdirSync,
+  openSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -30,6 +38,19 @@ export const insideSandbox =
   process.platform === 'darwin' &&
   spawnSync('/usr/bin/sandbox-exec', ['-p', '(version 1)(allow default)', '/usr/bin/true'])
     .status !== 0;
+
+/** False inside a macOS sandbox, which refuses to run the setuid `ps` some tests read processes with. */
+export const psUsable = spawnSync('ps', ['-p', String(process.pid)]).status === 0;
+
+/** False where a pseudo-terminal cannot be opened, such as inside a macOS sandbox. */
+export const ptyUsable = (() => {
+  try {
+    closeSync(openSync('/dev/ptmx', constants.O_RDWR | constants.O_NOCTTY));
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 /**
  * A folder a project gate can read while it runs, and the argv of a gate that runs the source.

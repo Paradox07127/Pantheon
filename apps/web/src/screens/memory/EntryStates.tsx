@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { BookOpen, Plus, RefreshCw } from 'lucide-react';
+import { LoadError } from '../../components/LoadError';
+import { BookOpen, Plus } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { useNow } from '../../data/needs-you';
@@ -60,22 +61,13 @@ export function EntriesLoading() {
 /** The entry list could not be read: the error as it came, and a retry. */
 export function EntriesError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="mes-fail" role="alert">
-      <span className="mes-fail-t">
-        <span className="mst" data-st="bad" aria-hidden="true" />
-        <span>
-          {t({
-            id: 'memory.status.failed',
-            defaultMessage: 'Cannot read the memory directory',
-          })}
-        </span>
-      </span>
-      <span className="mes-err">{message}</span>
-      <button type="button" className="btn sm" onClick={onRetry}>
-        <RefreshCw aria-hidden="true" />
-        {t({ id: 'memory.status.retry', defaultMessage: 'Retry' })}
-      </button>
-    </div>
+    <LoadError
+      message={t(
+        { id: 'memory.status.failed', defaultMessage: 'Cannot read the memory directory: {error}' },
+        { error: message },
+      )}
+      onRetry={onRetry}
+    />
   );
 }
 

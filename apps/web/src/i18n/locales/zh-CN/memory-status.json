@@ -15,7 +15,7 @@
   "memory.status.move": "移动",
   "memory.status.loading.label": "正在读取记忆",
   "memory.status.loading.time": "读取中，{seconds} 秒",
-  "memory.status.failed": "读不到记忆目录",
+  "memory.status.failed": "读不到记忆目录：{error}",
   "memory.status.empty": "还没有记忆，agent 提出的会先进「待确认」。",
   "memory.status.empty.create": "记一条"
 }

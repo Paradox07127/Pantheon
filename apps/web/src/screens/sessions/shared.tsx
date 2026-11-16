@@ -6,6 +6,7 @@ import {
   type DragEvent,
   type ReactNode,
 } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu } from '@base-ui/react/menu';
@@ -112,16 +113,7 @@ export const noSplitRoom = () =>
 
 /** Why a read failed, with a button that reads it again; nothing while it has not failed. */
 export function readFailed(read: { error: string | null; reload: () => void }) {
-  return (
-    read.error && (
-      <div className="tr-fail" role="alert">
-        <span title={read.error}>{read.error}</span>
-        <button type="button" className="btn" onClick={read.reload}>
-          {t({ id: 'sessions.screen.retry', defaultMessage: 'Retry' })}
-        </button>
-      </div>
-    )
-  );
+  return read.error && <LoadError message={read.error} onRetry={read.reload} />;
 }
 
 /** The session menu stays within the room its positioner leaves, scrolling the rest. */

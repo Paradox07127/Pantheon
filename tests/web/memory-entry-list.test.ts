@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { MemorySummary } from '@pantheon/domain';
 import { EntryList, type EntryListProps } from '@/screens/memory/EntryList';
 import { find, nodes, text } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const NOW = new Date(2026, 10, 13, 15, 0).getTime();
 const at = (day: number, hour: number, minute: number) =>
@@ -104,9 +104,11 @@ describe('memory entry list', () => {
     );
     expect(out).toContain(`aria-label="${zh('memory.list.kind.report')}"`);
     expect(out).toContain(`<span class="ml-by">${zh('memory.list.byAgent')}</span>`);
-    expect(out).toContain(`<span class="ml-tm">${zh('memory.list.yesterday')}</span>`);
+    expect(out).toContain(
+      `<span class="ml-tm">${zhf('lib.time.yesterdayAt', { time: '09:00' })}</span>`,
+    );
     expect(out).toContain(`aria-label="${zh('memory.list.kind.note')}"`);
-    expect(out).toContain('<span class="ml-tm">11-10</span>');
+    expect(out).toContain('<span class="ml-tm">11月10日 09:00</span>');
     expect(options(p).map((n) => n.props['aria-selected'])).toEqual([false, true, false]);
   });
 
@@ -343,8 +345,8 @@ describe('memory entry list', () => {
     const rows = options(p).map((n) => renderToStaticMarkup(n));
     expect(rows[0]).toContain('<span class="ml-v">第 2 版</span>');
     expect(rows[0]).toContain('<span class="ml-tm">10:26</span>');
-    expect(rows[1]).toContain('<span class="ml-why">昨天 到期</span>');
-    expect(rows[1]).toContain('<span class="ml-tm">11-11</span>');
+    expect(rows[1]).toContain('<span class="ml-why">昨天 09:00 到期</span>');
+    expect(rows[1]).toContain('<span class="ml-tm">11月11日 08:00</span>');
     expect(rows[3]).not.toContain('ml-v');
     expect(rows[3]).toContain(`<span class="ml-why">${zh('memory.list.reason.superseded')}</span>`);
     expect(rows[3]).toContain('<span class="ml-tm"></span>');

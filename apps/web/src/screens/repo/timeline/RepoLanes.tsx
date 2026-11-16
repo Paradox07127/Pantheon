@@ -24,6 +24,7 @@ import {
   axisTicks,
   DAY,
   fittedRange,
+  openingSpan,
   laneBands,
   NAMED_SHARE,
   overviewDomain,
@@ -42,11 +43,13 @@ import './timeline.css';
 
 const zoomKey = (projectId: string) => `pantheon.repo.timeline-zoom.${projectId}`;
 
-function storedZoom(projectId: string): TimelineZoom {
+/** The stored zoom; null when none was ever picked. */
+function storedZoom(projectId: string): TimelineZoom | null {
   try {
-    return readTimelineZoom(localStorage.getItem(zoomKey(projectId)));
+    const raw = localStorage.getItem(zoomKey(projectId));
+    return raw === null ? null : readTimelineZoom(raw);
   } catch {
-    return 'fortnight';
+    return null;
   }
 }
 
@@ -68,7 +71,7 @@ export function pickTimelineZoom(projectId: string, zoom: TimelineZoom) {
   }
 }
 
-function useTimelineZoom(projectId: string): TimelineZoom {
+function useTimelineZoom(projectId: string): TimelineZoom | null {
   const read = () => pickedZoom[projectId];
   return useSyncExternalStore(subscribeZoom, read, read) ?? storedZoom(projectId);
 }
@@ -184,12 +187,15 @@ export function RepoLanes({
   projectId: string;
   onOpenSession: (sessionId: string) => void;
 }) {
-  const zoom = useTimelineZoom(projectId);
+  const chosen = useTimelineZoom(projectId);
+  const zoom = chosen ?? 'fortnight';
   const group = useTimelineGroup(projectId) ?? ZOOMS[zoom].group;
   const now = useNow(60_000);
   const [end, setEnd] = useState(() => Date.now());
   // The span set by fitting the whole history; null while the zoom sets it.
   const [fitted, setFitted] = useState<number | null>(null);
+  // Until a zoom is picked, the first read fits a young history's range to its commits.
+  const [opened, setOpened] = useState(false);
   const span = fitted ?? ZOOMS[zoom].span;
   const from = end - span;
   const timeline = useRepoTimeline(projectId, from, end, group);
@@ -204,6 +210,11 @@ export function RepoLanes({
     sending: boolean;
   } | null>(null);
   const read = timeline.read;
+  if (read && !opened) {
+    setOpened(true);
+    const opening = chosen === null ? openingSpan(read.extent, end) : null;
+    if (opening !== null) setFitted(opening);
+  }
   const domain = overviewDomain(read?.overview ?? [], from, end, Math.max(now, end));
   const brushEnd = drag
     ? shiftedEnd(end, span, (drag.by / drag.width) * (domain.hi - domain.lo), domain)
@@ -737,8 +748,9 @@ function totalsPanel(totals: RepoTimeline['totals'] | null) {
     {
       key: 'gate',
       cap: t({ id: 'repo.timeline.kpiGate', defaultMessage: 'Gate first-pass rate' }),
+      // Without a merge in the range there is nothing a first pass let through.
       value: totals
-        ? totals.gate_first_pass === null
+        ? totals.gate_first_pass === null || totals.merges === 0
           ? '—'
           : new Intl.NumberFormat(currentLocale(), { style: 'percent' }).format(
               totals.gate_first_pass,

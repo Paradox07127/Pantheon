@@ -300,13 +300,13 @@ describe('project table row', () => {
     const needs = cells(row(full, NOW - 18 * MINUTE))[4]!;
     expect(text(byLabel(needs, needsYou))).toBe('4');
     expect(named(byLabel(needs, needsYou), 'StateGlyph').props.name).toBe('approval');
-    expect(text(needs)).toBe('418 分');
+    expect(text(needs)).toBe('418 分钟');
     expect(text(cells(row(full))[4])).toBe('4');
   });
 
   it('leaves the wait out until the oldest item has waited a minute', () => {
     expect(text(cells(row(full, NOW - 20_000))[4])).toBe('4');
-    expect(text(cells(row(full, NOW - MINUTE))[4])).toBe('41 分');
+    expect(text(cells(row(full, NOW - MINUTE))[4])).toBe('41 分钟');
   });
 
   it('dims an idle project and puts its last activity in the goal column and dashes after it', () => {

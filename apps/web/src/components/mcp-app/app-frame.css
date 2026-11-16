@@ -32,21 +32,8 @@
 .apf-err {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   justify-content: center;
-  gap: var(--sp-2);
   padding: var(--sp-4);
-  color: var(--bad);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-sm);
-  user-select: text;
-}
-.apf-msg {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-.apf-err > .btn {
-  user-select: none;
 }
 /* The inline card's actions, shown while the pointer or focus is on the card. */
 .apf-hov {

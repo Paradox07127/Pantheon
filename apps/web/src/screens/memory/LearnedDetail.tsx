@@ -19,6 +19,7 @@ import {
   type ImprovementListItem,
 } from '../../data/workflow-policy';
 import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { durationText, tokenText } from '../board/panels-model';
 import { changeValueText, learnedEffect } from './learned-effect';
@@ -155,58 +156,20 @@ function metricValue(metric: Metric, value: number, tasks: number): string {
 }
 
 const DAY = 86_400_000;
-const pad = (n: number) => String(n).padStart(2, '0');
-const dayOf = (d: Date) => d.toDateString();
-
-function dateText(d: Date, today: Date) {
-  const month = d.getMonth() + 1;
-  const day = d.getDate();
-  return d.getFullYear() === today.getFullYear()
-    ? t({ id: 'memory.learnedDetail.date', defaultMessage: '{month}/{day}' }, { month, day })
-    : t(
-        { id: 'memory.learnedDetail.dateYear', defaultMessage: '{year}/{month}/{day}' },
-        { year: d.getFullYear(), month, day },
-      );
-}
-
-/** Today and yesterday with the time; other days by date, with the time when `time` is set. */
-function whenText(ms: number, time: boolean) {
-  const d = new Date(ms);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const clock = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (dayOf(d) === dayOf(today))
-    return t({ id: 'memory.learnedDetail.today', defaultMessage: 'today {time}' }, { time: clock });
-  if (dayOf(d) === dayOf(yesterday))
-    return time
-      ? t(
-          { id: 'memory.learnedDetail.yesterdayAt', defaultMessage: 'yesterday {time}' },
-          { time: clock },
-        )
-      : t({ id: 'memory.learnedDetail.yesterday', defaultMessage: 'yesterday' });
-  const date = dateText(d, today);
-  return time
-    ? t(
-        { id: 'memory.learnedDetail.dateAt', defaultMessage: '{date} {time}' },
-        { date, time: clock },
-      )
-    : date;
-}
 
 function headTime(item: Improvement): string | null {
   if (item.status === 'candidate')
     return t(
       { id: 'memory.learnedDetail.proposedAt', defaultMessage: 'Proposed {when}' },
-      { when: whenText(item.proposed_at, true) },
+      { when: dayText(item.proposed_at, Date.now(), { time: true }) },
     );
   if (item.status === 'trial')
     return t(
       { id: 'memory.learnedDetail.startedAt', defaultMessage: 'Started {when}' },
-      { when: whenText(item.trial_started_at ?? item.proposed_at, true) },
+      { when: dayText(item.trial_started_at ?? item.proposed_at, Date.now(), { time: true }) },
     );
   if (item.decided_at === undefined) return null;
-  const when = whenText(item.decided_at, true);
+  const when = dayText(item.decided_at, Date.now(), { time: true });
   if (item.status === 'active')
     return t(
       { id: 'memory.learnedDetail.activeAt', defaultMessage: 'In effect since {when}' },
@@ -702,7 +665,7 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
               >
                 <span className="mld-cut">{taskName(r)}</span>
                 <span className="mld-meta">{metricText(item.signal, r)}</span>
-                <span className="mld-meta">{whenText(r.recorded_at, false)}</span>
+                <span className="mld-meta">{dayText(r.recorded_at, Date.now())}</span>
               </button>
             ))}
           </div>

@@ -151,7 +151,7 @@ it('passes on the reason the desktop window could not answer', async () => {
   }));
   const read = await f.client.callTool({ name: 'browser_read', arguments: {} });
   expect(read.isError).toBe(true);
-  expect(text(read)).toBe('Refused browser.read: browser_not_open — No page is open');
+  expect(text(read)).toBe('Refused browser_read: browser_not_open — No page is open');
 });
 
 it('refuses every browser tool at once while no desktop window answers browser requests', async () => {
@@ -167,7 +167,7 @@ it('refuses every browser tool at once while no desktop window answers browser r
     const result = await f.client.callTool({ name, arguments: args });
     expect(result.isError, name).toBe(true);
     expect(text(result)).toMatch(
-      /^Refused browser\.\w+: browser_unavailable — browser unavailable: no desktop window is connected$/,
+      /^Refused browser_\w+: browser_unavailable — browser unavailable: no desktop window is connected$/,
     );
     expect(Date.now() - started, name).toBeLessThan(5000);
   }
@@ -183,6 +183,6 @@ it('refuses a page that is not http or https without asking the desktop window',
     arguments: { url: 'file:///etc/passwd' },
   });
   expect(opened.isError).toBe(true);
-  expect(text(opened)).toMatch(/^Refused browser\.open: invalid_request/);
+  expect(text(opened)).toMatch(/^Refused browser_open: invalid_request/);
   expect(requests).toEqual([]);
 });

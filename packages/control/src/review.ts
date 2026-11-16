@@ -100,7 +100,7 @@ export const reviewHandlers: Handlers = {
           other === session.runtime ||
           input.runtimes.every((name) => name !== session.runtime),
         'invalid_input',
-        'Cross-review runtime must differ from the writer runtime',
+        `Cross-review runtime must differ from the writer runtime ${session.runtime}; choose another runtime, such as ${other}`,
       );
       requester = {
         lead_session_id: plan.id,

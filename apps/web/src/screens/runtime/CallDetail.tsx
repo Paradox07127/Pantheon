@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { SessionTrace } from '@pantheon/protocol';
+import { LoadError } from '../../components/LoadError';
 import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
 import { toast } from '../../components/Toast';
 import { useEventHistory } from '../../data/logs';
@@ -320,14 +321,7 @@ export function CallDetail({
           </div>
         )}
       </div>
-      {history.error && (
-        <div className="tr-fail cd-fail" role="alert">
-          <span title={history.error}>{history.error}</span>
-          <button type="button" className="btn" onClick={history.reload}>
-            {t({ id: 'runtime.retry', defaultMessage: 'Retry' })}
-          </button>
-        </div>
-      )}
+      {history.error && <LoadError message={history.error} onRetry={history.reload} />}
       {input !== null && (
         <div className="cd-sec">
           <span className="cap">{t({ id: 'runtime.call.input', defaultMessage: 'Input' })}</span>

@@ -141,11 +141,20 @@ const AFTER_MOUNT = [
   'general.voiceInput',
   'general.voiceEngine',
   'general.autoArchiveMerged',
+  'general.sessionRecap',
   'general.autoGitInit',
   'general.baselineRounds',
   'general.baselineVisuals',
   'general.baselineRangeStory',
   'editor.browser',
+];
+// Shown only for a runtime or a saved theme that has them: Claude, verified kinds, a quota, a backdrop.
+const WHEN_THERE = [
+  'harness.artifacts',
+  'harness.kinds',
+  'harness.quota',
+  'appearance.backdrop',
+  'appearance.savedTheme',
 ];
 
 const anchors = (html: string) =>
@@ -172,7 +181,12 @@ describe('setting anchors', () => {
       useSettingsView.setState({ page: key, detail: 'alpha' });
       const found = anchors(renderToStaticMarkup(createElement(ProjectSettingsScreen)));
       const missing = SETTINGS_INDEX.filter(
-        (r) => r.page === key && !r.id.endsWith('.page') && !r.board && !AFTER_MOUNT.includes(r.id),
+        (r) =>
+          r.page === key &&
+          !r.id.endsWith('.page') &&
+          !r.board &&
+          !AFTER_MOUNT.includes(r.id) &&
+          !WHEN_THERE.includes(r.id),
       )
         .map((r) => r.id)
         .filter((id) => !found.has(id));

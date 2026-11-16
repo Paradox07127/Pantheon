@@ -8,7 +8,6 @@
   "memory.list.reason.stale": "依据的记忆已归档",
   "memory.list.version": "第 {number} 版",
   "memory.list.expiredOn": "{when} 到期",
-  "memory.list.yesterday": "昨天",
   "memory.list.match.title": "标题",
   "memory.list.match.tag": "标签 {tag}",
   "memory.list.match.summary": "摘要",

@@ -126,6 +126,7 @@ describe('confirmations of what cannot be undone', () => {
       '分支 pt/release-notes 上 7 个没合并的提交会被删除，不能恢复。',
     );
     const stat = find(h.value, (n) => n.props.className === 'pj-rm-stat mono');
-    expect(text(stat)).toBe('+402−379 个文件');
+    expect(named(stat, 'DiffCounts').props).toEqual({ additions: 402, deletions: 37 });
+    expect(text(stat)).toBe('+402 −37' + '9 个文件');
   });
 });

@@ -24,6 +24,7 @@ import { sessionTitle, type Session } from '../../data/transcript';
 import { pinVisual, unpinVisual, useVisual, type VisualSize } from '../../data/visuals';
 import { currentLocale, t } from '../../i18n';
 import { keyText } from '../../lib/shortcuts';
+import { dayText } from '../../lib/time-text';
 import { askFix } from '../../screens/sessions/panel';
 import { useShell } from '../../store';
 import { noticeResult, toast } from '../Toast';
@@ -140,22 +141,19 @@ function specText(content: VisualContent, invalid: boolean): string {
   }
 }
 
+/** The `title` of a mermaid diagram's front matter. */
+function diagramTitle(content: VisualContent): string | undefined {
+  if (content.kind !== 'mermaid') return undefined;
+  const front = /^\s*---\r?\n([\s\S]*?)\r?\n---/.exec(String(content.spec.source))?.[1];
+  const title = front && /^title:\s*(.+)$/m.exec(front)?.[1]?.trim();
+  return title ? title.replace(/^(['"])(.*)\1$/, '$2') : undefined;
+}
+
 type Issue = NonNullable<Visual['error']>[number];
 
 /** A field path as written in code, such as `series[0].data[41].high`. */
 const pathText = (path: Issue['path']): string =>
   path.map((key, i) => (typeof key === 'number' ? `[${key}]` : i === 0 ? key : `.${key}`)).join('');
-
-/** Today's time as hours and minutes, an earlier one as its date. */
-function updatedText(at: number): string {
-  const today = new Date(at).toDateString() === new Date().toDateString();
-  return new Intl.DateTimeFormat(
-    currentLocale(),
-    today
-      ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
-      : { month: 'short', day: 'numeric' },
-  ).format(at);
-}
 
 /** Shows what a renderer threw in place of its picture, so the other cards keep drawing. */
 export class VisualBoundary extends Component<
@@ -192,6 +190,8 @@ export class VisualBoundary extends Component<
 function picture(
   content: VisualContent,
   height: number,
+  /** A graph taller than the height grows the card, as a conversation visual does. */
+  grows: boolean,
   network: boolean,
   onBlocked: (url: string) => void,
   onViewSpec: () => void,
@@ -205,7 +205,7 @@ function picture(
     case 'mermaid':
       return <MermaidDiagram spec={content.spec} height={height} />;
     case 'graph':
-      return <GraphDiagram spec={content.spec} height={height} />;
+      return <GraphDiagram spec={content.spec} height={height} grows={grows} />;
     case 'html':
       return (
         <SandboxFrame
@@ -242,7 +242,7 @@ export function VisualFrame({
   issues,
   onFix,
 }: {
-  /** Absent for a block in a message, which is named by its kind. */
+  /** Absent for a block in a message, which is named by its diagram's own title, else its kind. */
   title?: string;
   content: VisualContent;
   size: VisualSize;
@@ -264,19 +264,20 @@ export function VisualFrame({
   onFix?: ((error: string) => Promise<string | null>) | undefined;
 }) {
   const kind = KIND_NAME[content.kind];
-  const name = title ?? kind;
+  const titled = title ?? diagramTitle(content);
+  const name = titled ?? kind;
   const first = issues?.[0];
   const invalid = first !== undefined;
   const counts = invalid ? [] : facts(content);
   const label =
-    title === undefined
+    titled === undefined
       ? kind
       : counts.length === 0
-        ? t({ id: 'visual.card.label', defaultMessage: '{title}, {kind}' }, { title, kind })
+        ? t({ id: 'visual.card.label', defaultMessage: '{title}, {kind}' }, { title: titled, kind })
         : t(
             { id: 'visual.card.labelCounts', defaultMessage: '{title}, {kind}, {counts}' },
             {
-              title,
+              title: titled,
               kind,
               counts: new Intl.ListFormat(currentLocale(), { type: 'conjunction' }).format(counts),
             },
@@ -297,7 +298,7 @@ export function VisualFrame({
   const spec = specText(content, invalid);
   // The fix sends every issue, though the card shows the first.
   const issueText = issues?.map((issue) => `${pathText(issue.path)}: ${issue.message}`).join('\n');
-  const drawn = (height: number) =>
+  const drawn = (height: number, grows: boolean) =>
     first ? (
       <VisualError
         message={t(
@@ -310,19 +311,19 @@ export function VisualFrame({
       />
     ) : (
       <VisualBoundary content={content} onViewSpec={viewSpecOpen} onFix={onFix}>
-        {picture(content, height, network, onBlocked, viewSpecOpen, onFix)}
+        {picture(content, height, grows, network, onBlocked, viewSpecOpen, onFix)}
       </VisualBoundary>
     );
-  const body = (height: number) =>
+  const body = (height: number, grows = false) =>
     replace ?? (
       <div
         className="vis-body"
         role={role}
         aria-label={label}
         data-stale={stale || undefined}
-        style={{ height }}
+        style={grows && content.kind === 'graph' ? { minHeight: height } : { height }}
       >
-        {drawn(height)}
+        {drawn(height, grows)}
       </div>
     );
   const zoom = t({ id: 'visual.card.zoom', defaultMessage: 'Enlarge' });
@@ -419,7 +420,7 @@ export function VisualFrame({
             </button>
           </div>
         )}
-        {body(HEIGHT[size])}
+        {body(HEIGHT[size], inline)}
         {footer && <div className="vis-f">{footer}</div>}
       </section>
       <Dialog.Portal>
@@ -563,9 +564,9 @@ export function VisualCard({
       {inline
         ? t(
             { id: 'visual.card.updated', defaultMessage: 'Updated {time}' },
-            { time: updatedText(visual.updated_at) },
+            { time: dayText(visual.updated_at, Date.now(), { time: true }) },
           )
-        : updatedText(visual.updated_at)}
+        : dayText(visual.updated_at, Date.now(), { time: true })}
     </time>
   );
   return (

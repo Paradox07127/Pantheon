@@ -2,7 +2,8 @@ import { useMemo, type CSSProperties } from 'react';
 import { PreviewCard } from '@base-ui/react/preview-card';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import { tokenText, usdText, whenText } from '../board/panels-model';
+import { clockText, dayText } from '../../lib/time-text';
+import { tokenText, usdText } from '../board/panels-model';
 import { eventText } from './ActivityList';
 import {
   ROW_HEIGHT,
@@ -20,14 +21,12 @@ const MARK_PX = 8;
 const NOW_LAG_MS = 60_000;
 
 const pct = (share: number) => `${share * 100}%`;
-const pad = (n: number) => String(n).padStart(2, '0');
 
-/** Local "HH:MM:SS" on the day of end; an earlier day as whenText writes it. */
-export function clockText(at: number, end: number): string {
-  const date = new Date(at);
-  return date.toDateString() === new Date(end).toDateString()
-    ? `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-    : whenText(at, end);
+/** To the second on the day of end; an earlier day with its date. */
+export function eventClock(at: number, end: number): string {
+  return new Date(at).toDateString() === new Date(end).toDateString()
+    ? clockText(at, { seconds: true })
+    : dayText(at, end, { time: true });
 }
 
 /** The lane of a Pantheon session, by its session id or lane key. */
@@ -61,7 +60,7 @@ export function EventCard({
     <>
       <b className="tlo-ch">{eventText(event)}</b>
       <span className="tlo-cm">{title}</span>
-      <span className="tlo-ct">{clockText(event.at, end)}</span>
+      <span className="tlo-ct">{eventClock(event.at, end)}</span>
       {(tokens != null || turn?.cost_usd != null) && (
         <dl className="tlo-ckv">
           {tokens != null && (
@@ -131,7 +130,7 @@ export function LaneOverlay({ rows, first, count, axis, view, events, now }: Lan
                     aria-label={listText(
                       eventText(event),
                       lane.title,
-                      clockText(event.at, view.to),
+                      eventClock(event.at, view.to),
                     )}
                     style={
                       {

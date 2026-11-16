@@ -10,9 +10,6 @@
 .bp-tblp .bp-tools {
   margin-left: var(--sp-3);
 }
-.bp-tblp > .bp-empty {
-  padding: 0 16px 16px;
-}
 .bp-tscroll {
   container: bp-tbl / inline-size;
   position: relative;

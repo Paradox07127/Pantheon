@@ -142,16 +142,6 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.sh-add {
-  color: var(--add);
-}
-.sh-del {
-  color: var(--del);
-}
-.sh-add[data-zero],
-.sh-del[data-zero] {
-  color: var(--mu);
-}
 .sh-gate {
   display: inline-flex;
   align-items: center;

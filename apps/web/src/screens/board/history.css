@@ -47,24 +47,6 @@
   border-radius: 3px;
   background: var(--e-pend);
 }
-.bd-hs-bar i[data-state='merged'] {
-  background: var(--ok);
-}
-.bd-hs-bar i:is([data-state='running'], [data-state='claimed']) {
-  background: var(--run);
-}
-.bd-hs-bar i:is([data-state='gating'], [data-state='awaiting_merge']) {
-  background: var(--ready);
-}
-.bd-hs-bar i:is([data-state='waiting_approval'], [data-state='awaiting_acceptance']) {
-  background: var(--wait);
-}
-.bd-hs-bar i:is([data-state='failed'], [data-state='blocked']) {
-  background: var(--bad);
-}
-.bd-hs-bar i:is([data-state='waiting_upstream'], [data-state='needs_attention']) {
-  background: var(--idle);
-}
 .bd-hs-chip {
   display: inline-flex;
   align-items: center;

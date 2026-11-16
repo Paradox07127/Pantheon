@@ -35,6 +35,12 @@
   font-weight: 500;
   color: var(--tx);
 }
+.us-quiet {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--tx2);
+  text-align: center;
+}
 
 /* Subscription quota: a row per runtime, used and left as two segments of one bar */
 

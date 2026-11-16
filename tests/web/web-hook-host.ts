@@ -104,6 +104,9 @@ export function nodes(tree: ReactNode): ReactElement<any>[] {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   if (!tree || typeof tree !== 'object' || !('props' in tree)) return [];
   const node = tree as ReactElement<any>;
+  // LoadError has no hooks, so its alert and retry button are walked as drawn.
+  if (typeof node.type === 'function' && node.type.name === 'LoadError')
+    return [node, ...nodes((node.type as (props: unknown) => ReactNode)(node.props))];
   return [
     node,
     ...nodes(node.props.children),
@@ -124,8 +127,18 @@ export const named = (tree: ReactNode, name: string) =>
   find(tree, (n) => typeof n.type === 'function' && n.type.name === name);
 export function text(tree: ReactNode): string {
   if (Array.isArray(tree)) return tree.map(text).join('');
-  if (tree && typeof tree === 'object' && 'props' in tree)
-    return text((tree as ReactElement<any>).props.children);
+  if (tree && typeof tree === 'object' && 'props' in tree) {
+    const node = tree as ReactElement<any>;
+    // DiffCounts, LoadError and an inline EmptyState have no hooks and keep their text out of props.children, so render them here.
+    if (
+      typeof node.type === 'function' &&
+      (node.type.name === 'DiffCounts' ||
+        node.type.name === 'LoadError' ||
+        (node.type.name === 'EmptyState' && node.props.inline))
+    )
+      return text((node.type as (props: unknown) => ReactNode)(node.props));
+    return text(node.props.children);
+  }
   return tree === null || tree === undefined || typeof tree === 'boolean' ? '' : String(tree);
 }
 export function deferred<T>() {

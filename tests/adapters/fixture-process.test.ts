@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { FixtureAdapter, readProcessIdentity, terminate } from '@pantheon/adapters';
 import { NATIVE_ENV_ALLOWLIST, type AgentEvent, type SessionSpec } from '@pantheon/domain';
-import { eventually } from '../helpers.js';
+import { eventually, psUsable } from '../helpers.js';
 
 vi.mock('../../packages/adapters/dist/process.js', async (original) => {
   const actual = await original<typeof import('../../packages/adapters/dist/process.js')>();
@@ -46,7 +46,7 @@ const running = (pid: number): boolean => {
   }
 };
 
-it('stops an MCP launcher group after its leader closes stdio', async () => {
+it.skipIf(!psUsable)('stops an MCP launcher group after its leader closes stdio', async () => {
   const cwd = mkdtempSync(path.join(root, 'launcher-')),
     adapter = new FixtureAdapter(),
     events: AgentEvent[] = [];
@@ -151,27 +151,30 @@ it.each(['completion', 'interrupt', 'cancel'] as const)(
   },
 );
 
-it('clears the dead process identity after a plain fixture turn completes', async () => {
-  const cwd = mkdtempSync(path.join(root, 'identity-')),
-    adapter = new FixtureAdapter(20),
-    events: AgentEvent[] = [];
-  const handle = await adapter.start(spec(cwd), (event) => events.push(event));
-  try {
-    await adapter.send(handle, { turn_id: 'identity', input: 'plain fixture turn' });
-    const pid = handle.process_identity!.pid;
-    await eventually(() => events.some((event) => event.kind === 'turn.completed'));
-    expect(running(pid)).toBe(false);
-    expect(await adapter.inspect(handle)).toMatchObject({
-      state: 'idle',
-      process_identity: undefined,
-    });
-    vi.mocked(terminate).mockClear();
-    expect(await adapter.close(handle, Date.now() + 1000)).toMatchObject({
-      stopped: true,
-      evidence: { method: 'none', members: [] },
-    });
-    expect(terminate).not.toHaveBeenCalled();
-  } finally {
-    await adapter.close(handle, Date.now() + 1000);
-  }
-});
+it.skipIf(!psUsable)(
+  'clears the dead process identity after a plain fixture turn completes',
+  async () => {
+    const cwd = mkdtempSync(path.join(root, 'identity-')),
+      adapter = new FixtureAdapter(20),
+      events: AgentEvent[] = [];
+    const handle = await adapter.start(spec(cwd), (event) => events.push(event));
+    try {
+      await adapter.send(handle, { turn_id: 'identity', input: 'plain fixture turn' });
+      const pid = handle.process_identity!.pid;
+      await eventually(() => events.some((event) => event.kind === 'turn.completed'));
+      expect(running(pid)).toBe(false);
+      expect(await adapter.inspect(handle)).toMatchObject({
+        state: 'idle',
+        process_identity: undefined,
+      });
+      vi.mocked(terminate).mockClear();
+      expect(await adapter.close(handle, Date.now() + 1000)).toMatchObject({
+        stopped: true,
+        evidence: { method: 'none', members: [] },
+      });
+      expect(terminate).not.toHaveBeenCalled();
+    } finally {
+      await adapter.close(handle, Date.now() + 1000);
+    }
+  },
+);

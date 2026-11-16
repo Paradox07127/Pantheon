@@ -103,13 +103,6 @@
   color: var(--bad);
   font-size: var(--fs-xs);
 }
-.rpg-none {
-  margin: var(--sp-8) 0;
-  color: var(--mu);
-  font-size: var(--fs-md);
-  text-align: center;
-  text-wrap: balance;
-}
 
 /* Just ended: one row per session on the call table's columns, with a way into history. */
 .rpg-ended {

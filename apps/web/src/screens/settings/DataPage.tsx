@@ -176,12 +176,18 @@ function PersonalSettings() {
       settingId="data.personal"
     >
       <div className="ps-rows">
-        <Row label={t({ id: 'settings.data.exportRow', defaultMessage: 'Export' })}>
+        <Row
+          label={t({ id: 'settings.data.exportRow', defaultMessage: 'Export' })}
+          settingId="data.export"
+        >
           <button type="button" className="btn" onClick={save}>
             {t({ id: 'settings.data.export', defaultMessage: 'Export…' })}
           </button>
         </Row>
-        <Row label={t({ id: 'settings.data.importRow', defaultMessage: 'Import' })}>
+        <Row
+          label={t({ id: 'settings.data.importRow', defaultMessage: 'Import' })}
+          settingId="data.import"
+        >
           <button type="button" className="btn" onClick={() => picker.current?.click()}>
             {t({ id: 'settings.data.import', defaultMessage: 'Import…' })}
           </button>

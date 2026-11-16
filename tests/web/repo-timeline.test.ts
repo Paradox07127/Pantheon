@@ -202,6 +202,36 @@ describe('repository timeline lanes', () => {
     expect(fit().props.disabled).toBe(true);
   });
 
+  it('opens on the history from its first commit to now while it is younger than two weeks', () => {
+    reads.state.timeline = reads.landed({
+      ...timeline(lanes),
+      extent: { first: NOW - 6 * HOUR, last: NOW - HOUR },
+    });
+    const host = lanesOf('lanes-young');
+    const [, from, to] = lastRange() as unknown as [string, number, number];
+    expect(to).toBe(NOW);
+    expect(from).toBeLessThanOrEqual(NOW - 6 * HOUR);
+    expect(from).toBeGreaterThan(NOW - 7 * HOUR);
+    expect(zoomGroup(host.value).props.value).toBe('');
+    const picked = lanesOf('lanes-young-picked');
+    zoomGroup(picked.value).props.onValueChange('fortnight');
+    picked.render();
+    expect(lastRange()).toEqual(['lanes-young-picked', NOW - 14 * DAY, NOW, 'workstream']);
+    expect(zoomGroup(lanesOf('lanes-young-picked').value).props.value).toBe('fortnight');
+  });
+
+  it('writes no gate first-pass rate for a range without merges', () => {
+    reads.state.timeline = reads.landed({
+      ...timeline(lanes),
+      totals: { commits: 20, merges: 0, gate_runs: 1, gate_first_pass: 0 },
+    });
+    const host = lanesOf('lanes-no-merges');
+    const cell = find(host.value, (n) =>
+      text(n.props.children).startsWith(zh('repo.timeline.kpiGate')),
+    );
+    expect(text(cell.props.children)).toBe(`${zh('repo.timeline.kpiGate')}—`);
+  });
+
   it('names a runtime lane by its runtime and heads lanes by author as authors', () => {
     reads.state.timeline = reads.landed(
       timeline([

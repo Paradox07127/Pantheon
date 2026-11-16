@@ -13,6 +13,7 @@ import { TrendPanel } from '../../apps/web/src/screens/board/ProgressCharts.js';
 import { ProgressTable } from '../../apps/web/src/screens/board/ProgressTable.js';
 import { UsageStackPanel } from '../../apps/web/src/screens/board/UsageCharts.js';
 import { usageStack } from '../../apps/web/src/screens/board/usage-model.js';
+import { dayText } from '@/lib/time-text';
 import {
   groupTasks,
   tickLabels,
@@ -20,7 +21,6 @@ import {
   usageSeries,
   visibleFindings,
   visibleMilestones,
-  whenText,
 } from '../../apps/web/src/screens/board/panels-model.js';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -425,11 +425,17 @@ describe('board usage cost', () => {
 
 describe('board time text', () => {
   it.each([
-    ['shows the date of a timestamp from the same day of another year', 2025, '11-01 09:30'],
+    [
+      'shows the date of a timestamp from the same day of another year',
+      2025,
+      '2025年11月1日 09:30',
+    ],
     ['shows only the clock for a timestamp from today', 2026, '09:30'],
   ])('%s', (_name, year, shown) => {
     expect(
-      whenText(new Date(year, 10, 1, 9, 30).getTime(), new Date(2026, 10, 1, 12).getTime()),
+      dayText(new Date(year, 10, 1, 9, 30).getTime(), new Date(2026, 10, 1, 12).getTime(), {
+        time: true,
+      }),
     ).toBe(shown);
   });
 });
@@ -494,7 +500,7 @@ describe('board gantt segments', () => {
     const tag = seg.slice(0, seg.indexOf('>'));
     expect(tag).toContain('tabindex="0"');
     expect(tag).toContain(
-      `aria-label="${zhf('board.progress.segmentLabel', { start: whenText(start, NOW), end: whenText(start + 3_600_000, NOW), tokens: '12k' })}"`,
+      `aria-label="${zhf('board.progress.segmentLabel', { start: dayText(start, NOW, { time: true }), end: dayText(start + 3_600_000, NOW, { time: true }), tokens: '12k' })}"`,
     );
   });
 });

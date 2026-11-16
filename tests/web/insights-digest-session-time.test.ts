@@ -116,11 +116,11 @@ describe('weekly digest waiting for you', () => {
     const html = render(model({ session_time: TIME }));
     expect(kpis(html).slice(0, 3)).toEqual([
       [zh('insights.digest.merged'), '2'],
-      [zh('insights.quality.cycle'), '47 分'],
-      [zh('insights.digest.waiting'), '19 分', '占 40%'],
+      [zh('insights.quality.cycle'), '47 分钟'],
+      [zh('insights.digest.waiting'), '19 分钟', '占 40%'],
     ]);
     // The number counts a status, so it keeps the text colour of the other figures.
-    expect(html).toContain('<span class="kpi">19 分</span>');
+    expect(html).toContain('<span class="kpi">19 分钟</span>');
   });
 
   it('writes a dash without a note when no session merged, and no share when the parts are zero', () => {
@@ -128,7 +128,7 @@ describe('weekly digest waiting for you', () => {
     const zero = { sessions: 1, working_ms: 0, waiting_ms: 0, gate_ms: 0, queue_ms: 0 };
     expect(kpis(render(model({ session_time: zero })))[2]).toEqual([
       zh('insights.digest.waiting'),
-      '0.0 秒',
+      '&lt;1 秒',
     ]);
   });
 
@@ -150,7 +150,7 @@ describe("weekly digest a session's time", () => {
     const bar = html.match(
       /<span class="wkd-seg wkd-seg-lg" role="img" aria-label="([^"]+)">(.*?)<\/span>/,
     )!;
-    expect(bar[1]).toBe('agent 在写 16 分，等你 19 分，门禁 8 分，排队 4 分');
+    expect(bar[1]).toBe('agent 在写 16 分钟，等你 19 分钟，门禁 8 分钟，排队 4 分钟');
     expect(
       [...bar[2]!.matchAll(/data-c="(\w+)" style="--n:(\d+)"/g)].map((m) => [m[1], m[2]]),
     ).toEqual([
@@ -171,10 +171,10 @@ describe("weekly digest a session's time", () => {
       ),
     ].map((m) => m.slice(1));
     expect(legend).toEqual([
-      ['run', zh('insights.digest.part.working'), '16 分'],
-      ['wait', zh('insights.digest.part.waiting'), '19 分'],
-      ['rev', zh('insights.digest.part.gates'), '0.0 秒'],
-      ['idle', zh('insights.digest.part.queued'), '4 分'],
+      ['run', zh('insights.digest.part.working'), '16 分钟'],
+      ['wait', zh('insights.digest.part.waiting'), '19 分钟'],
+      ['rev', zh('insights.digest.part.gates'), '&lt;1 秒'],
+      ['idle', zh('insights.digest.part.queued'), '4 分钟'],
     ]);
   });
 
@@ -223,17 +223,17 @@ describe('weekly digest waiting by reason', () => {
     expect(html).toContain('<hr class="wkd-sep"/>');
     expect(html).toContain(zh('insights.digest.waitByReason'));
     expect(rows(html)).toEqual([
-      [zh('insights.digest.reason.approval'), '100%', '3 时 10 分'],
-      [zh('insights.digest.reason.review'), '62%', '1 时 58 分'],
-      [zh('insights.digest.reason.question'), '21%', '40 分'],
+      [zh('insights.digest.reason.approval'), '100%', '3 小时 10 分'],
+      [zh('insights.digest.reason.review'), '62%', '1 小时 58 分'],
+      [zh('insights.digest.reason.question'), '21%', '40 分钟'],
     ]);
   });
 
   it('draws only the reasons with time', () => {
     const html = render(model({ wait_by_reason_ms: { question: 40 * MIN, approval: 10 * MIN } }));
     expect(rows(html)).toEqual([
-      [zh('insights.digest.reason.approval'), '25%', '10 分'],
-      [zh('insights.digest.reason.question'), '100%', '40 分'],
+      [zh('insights.digest.reason.approval'), '25%', '10 分钟'],
+      [zh('insights.digest.reason.question'), '100%', '40 分钟'],
     ]);
     expect(html).not.toContain('wkd-sep');
   });
@@ -281,7 +281,7 @@ describe('weekly digest rules from the last 7 days', () => {
       '<code class="wkd-cmd" title="pnpm db:migrate --env staging">pnpm db:migrate --env staging</code> 这周你批准了 11 次，没拒绝过。',
     );
     expect(approved).not.toContain('<button');
-    expect(late).toContain('typecheck 失败 4 次，每次都在前面的步骤跑完 5 分之后才发现。');
+    expect(late).toContain('typecheck 失败 4 次，每次都在前面的步骤跑完 5 分钟之后才发现。');
     expect(late).toContain(zh('insights.digest.openGateSettings'));
     expect(late).not.toContain(zh('insights.digest.openRetro'));
     expect(retro).toContain('同一个门禁检查在 1 次复盘里都失败了。');
@@ -312,7 +312,7 @@ describe('weekly digest rules from the last 7 days', () => {
   it('exports both as rule lines', () => {
     const lines = digestMarkdown(model({}), FINDINGS, 0).split('\n');
     expect(lines).toContain('- `pnpm db:migrate --env staging` 这周你批准了 11 次，没拒绝过。');
-    expect(lines).toContain('- typecheck 失败 4 次，每次都在前面的步骤跑完 5 分之后才发现。');
+    expect(lines).toContain('- typecheck 失败 4 次，每次都在前面的步骤跑完 5 分钟之后才发现。');
     expect(digestMarkdown(model({}), FINDINGS, 1)).not.toContain('typecheck');
   });
 

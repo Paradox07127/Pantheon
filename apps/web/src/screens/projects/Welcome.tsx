@@ -8,6 +8,7 @@ import type {
   RuntimeStatus,
 } from '@pantheon/protocol';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
+import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { useImportCandidates } from '../../data/import';
 import { failureText, useNow } from '../../data/needs-you';
@@ -142,7 +143,9 @@ export function Welcome({ onOpenFolder, onOpened, onHold }: WelcomeProps) {
             {candidates.error}
           </p>
         ) : !candidates.data ? (
-          <div className="sk wel-sk" aria-busy="true" />
+          <div aria-busy="true">
+            <Skeleton className="wel-sk" />
+          </div>
         ) : (
           offered.length > 0 && (
             <ul className="wel-list">
@@ -211,7 +214,12 @@ function RuntimeRows() {
         {read.text}
       </p>
     );
-  if (read.state === 'loading') return <div className="sk wel-sk" aria-busy="true" />;
+  if (read.state === 'loading')
+    return (
+      <div aria-busy="true">
+        <Skeleton className="wel-sk" />
+      </div>
+    );
   // A runtime with an install guide shows while it is missing, so the guide can be reached.
   const shown = offeredRuntimes(read, Object.keys(INSTALL_GUIDES));
   const statuses = read.statuses

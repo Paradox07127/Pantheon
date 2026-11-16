@@ -327,6 +327,11 @@ function knownReason(code: string): string | null {
         id: 'data.reason.continuationLimitReached',
         defaultMessage: 'Out of automatic continuations',
       });
+    case 'workspace_read_failed':
+      return t({
+        id: 'data.reason.workspaceReadFailed',
+        defaultMessage: "Couldn't read the worktree",
+      });
     case 'workspace_reconciling':
       return t({
         id: 'data.reason.workspaceReconciling',

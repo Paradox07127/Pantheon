@@ -10,8 +10,6 @@
   "memory.learned.group.closed": "已撤回和已拒绝",
   "memory.learned.pinned": "已钉住",
   "memory.learned.retrospectives": "{count, plural, other {# 次复盘}}",
-  "memory.learned.date": "{month} 月 {day} 日",
-  "memory.learned.yesterday": "昨天",
   "memory.learned.revert.notBetter": "没变好",
   "memory.learned.revert.insufficientSample": "任务不够",
   "memory.learned.reject.networkAccess": "要联网",

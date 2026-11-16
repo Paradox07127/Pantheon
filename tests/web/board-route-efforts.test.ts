@@ -72,7 +72,7 @@ describe('task route fields', () => {
     const select = field('board.plan.field.model')!;
     expect(select.props.options[0]).toEqual({
       value: '',
-      label: zh('board.plan.field.defaultModel'),
+      label: '默认（gpt-default）',
     });
     select.props.onChange('');
     expect(set).toHaveBeenCalledWith({ model: null, effort: null });

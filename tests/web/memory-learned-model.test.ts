@@ -106,8 +106,8 @@ describe('learned status column', () => {
         [{ proposed_at: NOW - 20_000 }, zh('data.age.justNow')],
         [{ proposed_at: at(13, 14, 33) }, '27 分钟'],
         [{ proposed_at: at(13, 9, 10) }, '5 小时'],
-        [{ proposed_at: at(12, 23, 50) }, zh('memory.learned.yesterday')],
-        [{ proposed_at: at(6, 10, 0) }, '11 月 6 日'],
+        [{ proposed_at: at(12, 23, 50) }, zh('lib.time.yesterday')],
+        [{ proposed_at: at(6, 10, 0) }, '11月6日'],
       ],
     ],
     [
@@ -128,15 +128,12 @@ describe('learned status column', () => {
         ],
       ],
     ],
-    ['says since when an improvement is in force', [[kept, '11 月 6 日起']]],
+    ['says since when an improvement is in force', [[kept, '11月6日起']]],
     [
       'gives the sample of a before/after comparison when the trial kept the improvement',
       [
-        [
-          { ...kept, status_reason: 'trial_passed', trial: sample },
-          '11 月 6 日起 · 前后对比，n = 10',
-        ],
-        [{ ...kept, trial: sample }, '11 月 6 日起'],
+        [{ ...kept, status_reason: 'trial_passed', trial: sample }, '11月6日起 · 前后对比，n = 10'],
+        [{ ...kept, trial: sample }, '11月6日起'],
       ],
     ],
     [

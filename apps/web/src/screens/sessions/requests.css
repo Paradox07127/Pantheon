@@ -11,6 +11,10 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-sm);
 }
+/* Above the composer: jumps to the thread's questions still unanswered. */
+.rq-jump {
+  align-self: flex-start;
+}
 .rq-line {
   display: flex;
   align-items: center;

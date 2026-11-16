@@ -14,18 +14,10 @@ import { Tip } from '../../components/Tip';
 import type { QueryState } from '../../data/workbench-sessions';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { durationText } from '../../lib/time-text';
 import { Failure } from '../board/BoardScreen';
-import { runtimeDuration } from './FindingDetail';
+import { EmptyState } from '../../components/EmptyState';
 import './trace-time.css';
-
-function timeText(ms: number): string {
-  if (ms < 60_000 || ms >= 3_600_000) return runtimeDuration(ms);
-  const seconds = Math.round(ms / 1000);
-  return t(
-    { id: 'trace.time.minutesSeconds', defaultMessage: '{minutes, number}m {seconds, number}s' },
-    { minutes: Math.floor(seconds / 60), seconds: seconds % 60 },
-  );
-}
 
 type Group = 'model' | 'approval' | 'tool' | 'subagent' | 'queue' | 'other';
 const members: Record<Group, TraceTimeKind[]> = {
@@ -101,7 +93,7 @@ export function TraceTimeChart({
         {row.concurrent?.map(({ kinds, ms }) => (
           <div key={kinds.join(',')} className="trc-time-overlap">
             <span>{listText(...kinds.map(kindName))}</span>
-            <span>{timeText(ms)}</span>
+            <span>{durationText(ms)}</span>
           </div>
         ))}
         {row.evidence.map((item) => (
@@ -134,7 +126,7 @@ export function TraceTimeChart({
       ),
       <span key="name">{swatch ? groupName[swatch]() : kindName(row.kind)}</span>,
       <span key="n" className="trc-time-n">
-        {runtimeDuration(ms)}
+        {durationText(ms)}
       </span>,
       <span key="p" className="trc-time-p">
         {percent(ms)}
@@ -205,11 +197,11 @@ export function TraceTimeChart({
                       { id: 'trace.timeChart.bar', defaultMessage: '{measure} {total}: {parts}' },
                       {
                         measure: mode === 'wall' ? wall : work,
-                        total: runtimeDuration(total),
+                        total: durationText(total),
                         parts: listText(
                           ...barOrder.map((group) => {
                             const part = groups.get(group);
-                            return part && `${groupName[group]()} ${runtimeDuration(part.ms)}`;
+                            return part && `${groupName[group]()} ${durationText(part.ms)}`;
                           }),
                         ),
                       },
@@ -229,7 +221,7 @@ export function TraceTimeChart({
                     })}
                   </div>
                   <span className="trc-time-total" aria-live="polite">
-                    {runtimeDuration(total)}
+                    {durationText(total)}
                   </span>
                 </div>
                 <div className="trc-time-keys">
@@ -255,7 +247,7 @@ export function TraceTimeChart({
                               defaultMessage: 'Other {duration}: {kinds}',
                             },
                             {
-                              duration: runtimeDuration(part.ms),
+                              duration: durationText(part.ms),
                               kinds: listText(...part.slices.map((row) => kindName(row.kind))),
                             },
                           )}
@@ -266,7 +258,7 @@ export function TraceTimeChart({
                             {groupName.other()}
                             <ChevronRight aria-hidden="true" />
                           </span>
-                          <span className="trc-time-n">{runtimeDuration(part.ms)}</span>
+                          <span className="trc-time-n">{durationText(part.ms)}</span>
                           <span className="trc-time-p">{percent(part.ms)}</span>
                         </button>
                         {more &&
@@ -282,17 +274,20 @@ export function TraceTimeChart({
                 </div>
               </>
             ) : (
-              <p className="trc-time-empty">
-                {mode === 'wall'
-                  ? t({
-                      id: 'trace.time.emptyWall',
-                      defaultMessage: 'No timed requests in this range.',
-                    })
-                  : t({
-                      id: 'trace.time.emptyWork',
-                      defaultMessage: 'No timed operations in this range.',
-                    })}
-              </p>
+              <EmptyState
+                inline
+                title={
+                  mode === 'wall'
+                    ? t({
+                        id: 'trace.time.emptyWall',
+                        defaultMessage: 'No timed requests in this range.',
+                      })
+                    : t({
+                        id: 'trace.time.emptyWork',
+                        defaultMessage: 'No timed operations in this range.',
+                      })
+                }
+              />
             )}
             {onEvidence && (data.partial || data.native === 'unavailable' || data.live) && (
               <footer className="trc-time-foot">
@@ -339,7 +334,7 @@ export function TraceTimeChart({
                 <span>
                   {t({ id: 'trace.timeChart.gates', defaultMessage: 'Gates counted separately' })}
                 </span>
-                <span className="trc-time-n">{timeText(data.gate_ms)}</span>
+                <span className="trc-time-n">{durationText(data.gate_ms)}</span>
               </div>
               <div className="trc-time-note">
                 <span />

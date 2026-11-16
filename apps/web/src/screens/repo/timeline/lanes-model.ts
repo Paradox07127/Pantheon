@@ -31,6 +31,12 @@ export function fittedRange(extent: { first: number; last: number }) {
   return { from: Math.max(extent.first, to - MAX_RANGE), to };
 }
 
+/** The span the lanes open on: the history's first commit to now while that is shorter than two weeks, else null. */
+export function openingSpan(extent: { first: number } | null | undefined, now: number) {
+  const age = extent ? now - extent.first : Infinity;
+  return age < ZOOMS.fortnight.span ? Math.max(HOUR, Math.ceil(age * 1.05)) : null;
+}
+
 /** Rows one lane stacks its spans on; spans that fit on none are counted, not drawn. */
 export const SPAN_ROWS = 3;
 /** Share of the track under which a span shows no name. */

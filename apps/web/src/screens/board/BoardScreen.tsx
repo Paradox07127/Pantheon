@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Menu } from '@base-ui/react/menu';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
@@ -287,14 +288,7 @@ interface BoardViewProps {
 }
 
 export function Failure({ error, onRetry }: { error: string; onRetry: () => void }) {
-  return (
-    <div className="tr-fail bd-fail" role="alert">
-      <span title={error}>{error}</span>
-      <button type="button" className="btn" onClick={onRetry}>
-        {t({ id: 'board.query.retry', defaultMessage: 'Retry' })}
-      </button>
-    </div>
-  );
+  return <LoadError message={error} onRetry={onRetry} />;
 }
 
 interface PanelBoundaryProps {
@@ -369,8 +363,8 @@ export class PanelBoundary extends Component<PanelBoundaryProps, PanelBoundarySt
 export function Skeleton() {
   return (
     <div className="bd-sk" aria-busy="true">
-      <span className="sk" style={{ height: 10, width: '60%' }} />
-      <span className="sk" style={{ height: 10, width: '40%' }} />
+      <LoadingBlock style={{ height: 10, width: '60%' }} />
+      <LoadingBlock style={{ height: 10, width: '40%' }} />
     </div>
   );
 }

@@ -699,7 +699,11 @@ describe('ACP adapter', () => {
 
   it.each([
     ['refusal', /refusal/],
-    ['rpc-error', /Internal error/],
+    ['rpc-error', /^ACP session\/prompt failed: Internal error$/],
+    [
+      'billing-error',
+      /^ACP session\/prompt failed: API error \(status 402 Payment Required\): usage balance exhausted$/,
+    ],
   ])('fails a turn that ends with %s', async (input, error) => {
     const acp = setup();
     const handle = await acp.start();
@@ -1164,6 +1168,31 @@ describe('ACP adapter', () => {
       ],
       [{ type: 'text', text: 'text' }],
     ]);
+  });
+
+  it.each([
+    [
+      'drops a title the agent takes from the control instructions',
+      'Commit only in the worktree.',
+      [],
+    ],
+    ['keeps a title the agent takes from the user prompt', undefined, ['titled']],
+  ])('%s', async (_name, instructions, titles) => {
+    const acp = setup();
+    if (instructions) acp.spec.control_instructions = instructions;
+    const handle = await acp.start();
+    await acp.adapter.send(handle, { turn_id: 'titled-turn', input: 'titled' });
+    await vi.waitFor(() =>
+      expect(acp.ofTurn('titled-turn')).toContainEqual(
+        expect.objectContaining({ kind: 'turn.completed' }),
+      ),
+    );
+    expect(
+      acp
+        .ofTurn('titled-turn')
+        .filter((event) => event.kind === 'title.generated')
+        .map((event) => event.title),
+    ).toEqual(titles);
   });
 
   it('holds queued input until the agent answers a prompt past its deadline and drops its late output', async () => {

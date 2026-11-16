@@ -19,6 +19,7 @@ vi.mock('@/data/runtime-status', async (actual) => ({
   }),
 }));
 
+import { compareRuntimes } from '@/components/RuntimeGlyph';
 import { getSetupDone } from '@/data/personal-settings';
 import { SetupScreen, useShowsSetup } from '@/screens/setup/SetupScreen';
 import { useProjectsView } from '@/screens/projects/view';
@@ -132,6 +133,52 @@ describe('first-time setup checks', () => {
     const copy = find(drawn(h.value), (n) => n.props['aria-label'] === copyLabel);
     expect(text(copy)).toBe(zh('setup.copy'));
     expect(button(h.value, openProject).props['aria-disabled']).toBeUndefined();
+  });
+
+  it('lists the installed runtimes first, then the missing ones setup can install', () => {
+    mock.read = {
+      state: 'ready',
+      statuses: [
+        missing('agy'),
+        missing('codex'),
+        status('grok', { auth: { state: 'unknown' } }),
+        status('claude'),
+      ],
+    };
+    const h = mount(() => SetupScreen());
+    const shown = nodes(h.value)
+      .filter((n) => typeof n.type === 'function' && n.type.name === 'RuntimeRow')
+      .map((n) => n.props.runtime);
+    expect(shown).toEqual([...['claude', 'grok'].sort(compareRuntimes), 'codex']);
+    const all = text(drawn(h.value));
+    expect(all).toContain(zh('setup.installed'));
+    expect(all).toContain(
+      t({ id: 'setup.notFound', defaultMessage: '{command} not found' }, { command: 'codex' }),
+    );
+  });
+
+  it('lets a project open when only an ACP runtime is installed', () => {
+    mock.read = {
+      state: 'ready',
+      statuses: [missing('claude'), missing('codex'), status('grok')],
+    };
+    const h = mount(() => SetupScreen());
+    expect(button(h.value, openProject).props['aria-disabled']).toBeUndefined();
+  });
+
+  it('shows each version as the runtimes page does, the number alone', () => {
+    mock.read = {
+      state: 'ready',
+      statuses: [
+        status('claude', { version: '2.1.325 (Claude Code)' }),
+        status('codex', { version: 'codex-cli 0.169.0' }),
+      ],
+    };
+    const all = text(drawn(mount(() => SetupScreen()).value));
+    expect(all).toContain('2.1.325');
+    expect(all).toContain('0.169.0');
+    expect(all).not.toContain('(Claude Code)');
+    expect(all).not.toContain('codex-cli');
   });
 
   it('names the page once, in the bar', () => {

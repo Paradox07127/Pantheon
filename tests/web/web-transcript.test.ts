@@ -286,6 +286,11 @@ describe('session events', () => {
       ['agent.fast_mode.changed', 'agent.title.generated'],
       ['agent.context.compacted'],
     ],
+    [
+      'hides the turn start an ACP agent reports, which the turn header already shows',
+      ['agent.turn.started'],
+      ['agent.turn.completed'],
+    ],
   ])('%s', (_, quiet, shown) => {
     const of = (type: string) =>
       type.startsWith('agent.')

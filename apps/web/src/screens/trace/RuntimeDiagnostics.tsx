@@ -6,19 +6,13 @@ import type { RuntimeDiagnostics, RuntimeFinding, RuntimeReviewHistory } from '@
 import { EmptyState } from '../../components/EmptyState';
 import { t } from '../../i18n';
 import { shortcutKeys } from '../../lib/shortcuts';
+import { clockText, durationText } from '../../lib/time-text';
 import { analysisLead } from './AnalyzeMenu';
-import {
-  FINDING_ICONS,
-  FindingDetail,
-  clockText,
-  findingReason,
-  runtimeDuration,
-  runtimeFindingTitle,
-} from './FindingDetail';
+import { FINDING_ICONS, FindingDetail, findingReason, runtimeFindingTitle } from './FindingDetail';
 import { ReviewRecords } from './ReviewRecords';
 import './diagnose.css';
 
-export { runtimeDuration, runtimeFindingTitle };
+export { runtimeFindingTitle };
 
 type View = 'findings' | 'records';
 
@@ -176,7 +170,7 @@ function FindingTable({
                 </div>
               )}
               <span className="dg-end dg-num">
-                {finding.duration_ms === undefined ? '—' : runtimeDuration(finding.duration_ms)}
+                {finding.duration_ms === undefined ? '—' : durationText(finding.duration_ms)}
               </span>
               {finding.ongoing ? (
                 <span className="dg-end dg-on">
@@ -185,7 +179,7 @@ function FindingTable({
                 </span>
               ) : (
                 <span className="dg-end dg-num dg-mu" data-code>
-                  {clockText(finding.at)}
+                  {clockText(finding.at, { seconds: true })}
                 </span>
               )}
             </button>

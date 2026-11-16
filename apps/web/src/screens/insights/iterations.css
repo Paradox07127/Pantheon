@@ -537,24 +537,6 @@ button.itr-est:hover {
   pointer-events: auto;
   transition: opacity var(--dur-1) var(--ease-std);
 }
-.itg-bar[data-state='merged'] {
-  --itg-c: var(--ok);
-}
-.itg-bar:is([data-state='claimed'], [data-state='running']) {
-  --itg-c: var(--run);
-}
-.itg-bar:is([data-state='gating'], [data-state='awaiting_merge']) {
-  --itg-c: var(--ready);
-}
-.itg-bar:is([data-state='waiting_approval'], [data-state='awaiting_acceptance']) {
-  --itg-c: var(--wait);
-}
-.itg-bar:is([data-state='blocked'], [data-state='failed']) {
-  --itg-c: var(--bad);
-}
-.itg-bar[data-state='needs_attention'] {
-  --itg-c: var(--idle);
-}
 .itg-bh {
   position: relative;
   display: flex;

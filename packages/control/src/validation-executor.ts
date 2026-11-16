@@ -303,7 +303,13 @@ export async function runValidationCommand(input: ValidationInput): Promise<Vali
     // Any other root is a folder a session already writes under its own sandbox, and package
     // managers such as pnpm hardlink installed files there.
     if (input.disposable) await rejectHardlinks(root);
-    temporary = await mkdtemp(path.join(os.tmpdir(), 'pantheon-validation-'));
+    // macOS caps a Unix socket path at 104 bytes, too few for sockets under the per-user tmpdir.
+    temporary = await mkdtemp(
+      path.join(
+        process.platform === 'darwin' ? '/private/tmp' : os.tmpdir(),
+        'pantheon-validation-',
+      ),
+    );
     const scratch = await realpath(temporary);
     await mkdir(path.join(scratch, 'home'));
     await mkdir(path.join(scratch, 'tmp'));

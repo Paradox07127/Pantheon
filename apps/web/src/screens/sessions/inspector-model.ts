@@ -352,13 +352,63 @@ export const gateOutcome = (result: GateResult): 'passed' | 'failed' | 'timed_ou
 export const gateFailing = (result: GateResult): boolean =>
   ['failed', 'timed_out'].includes(gateOutcome(result));
 
+/** The text without terminal colour codes. */
+export const plainLog = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, '');
+
+/**
+ * The test files and tests a vitest log reports failed, in the order it names them: from its
+ * `FAIL file > test` lines and the `×` lines under a `❯ file (… failed)` line.
+ */
+export function failedTests(log: string): { file: string; tests: string[] }[] {
+  const files = new Map<string, string[]>();
+  const add = (file: string, test?: string) => {
+    const tests = files.get(file) ?? [];
+    files.set(file, tests);
+    if (!test) return;
+    // A `×` line names the test alone, a `FAIL` line with its describe blocks: keep the full name once.
+    const same = tests.findIndex(
+      (t) => t === test || t.endsWith(` > ${test}`) || test.endsWith(` > ${t}`),
+    );
+    if (same < 0) tests.push(test);
+    else if (test.length > tests[same]!.length) tests[same] = test;
+  };
+  let current: string | null = null;
+  for (const line of plainLog(log).split('\n')) {
+    // A workspace project's name may stand before the file.
+    const failed = /^\s*FAIL\s+(?:[^\s/.]+\s+)?(\S+)(?:\s+>\s+(.+?))?(?:\s+\[.*\])?\s*$/.exec(line);
+    if (failed) {
+      add(failed[1]!, failed[2]);
+      continue;
+    }
+    const file = /^\s*\u276f\s+(?:[^\s/.]+\s+)?(\S+)\s+\(\d+ tests?\b.*\bfailed\)/.exec(line);
+    if (file) {
+      current = file[1]!;
+      continue;
+    }
+    const test = /^\s+\u00d7\s+(.+?)(?:\s+\d+(?:\.\d+)?m?s)?\s*$/.exec(line);
+    if (test && current) add(current, test[1]);
+  }
+  return [...files].map(([file, tests]) => ({ file, tests }));
+}
+
 /** The failed or timed out command at `index` of the gate run checked at `checkedAt`. */
-export const checkItem = (result: GateResult, checkedAt: number, index: number): FeedbackItem => ({
-  id: `check:${checkedAt}:${index}:${result.name}`,
-  kind: 'check',
-  label: result.name,
-  text: `The project gate "${result.name}" failed on this worktree:\n\n${result.output_tail}\n\nFix it and commit.`,
-});
+export const checkItem = (result: GateResult, checkedAt: number, index: number): FeedbackItem => {
+  const listed = failedTests(result.output_tail).flatMap(({ file, tests }) => [
+    `- ${file}`,
+    ...tests.map((test) => `  - ${test}`),
+  ]);
+  return {
+    id: `check:${checkedAt}:${index}:${result.name}`,
+    kind: 'check',
+    label: result.name,
+    text: [
+      `The project gate "${result.name}" failed on this worktree:`,
+      ...(listed.length ? [['Failed tests:', ...listed].join('\n')] : []),
+      plainLog(result.output_tail),
+      'Fix it and commit.',
+    ].join('\n\n'),
+  };
+};
 
 export const gatesFailed = (gates: SessionGates | null): boolean =>
   !!gates?.last?.results.some(gateFailing);

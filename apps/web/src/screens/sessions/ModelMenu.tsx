@@ -17,6 +17,7 @@ import {
 } from '@pantheon/protocol';
 import { ModelMark, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { KeyHint } from '../../components/Shortcuts';
+import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { type ModelsState } from '../../data/runtime-models';
 import { t } from '../../i18n';
@@ -476,7 +477,7 @@ export function ModelMenu({
                   aria-label={t({ id: 'sessions.composer.model', defaultMessage: 'Model' })}
                 >
                   {read.state === 'loading' && (
-                    <span className="sk" style={{ height: 10, width: '70%', margin: '6px 8px' }} />
+                    <Skeleton style={{ height: 10, width: '70%', margin: '6px 8px' }} />
                   )}
                   <Menu.RadioGroup className="cp-mdt" value={current?.id ?? value.model ?? ''}>
                     {/* Shown only while it is the choice: a session on a model cannot go back to the default. */}

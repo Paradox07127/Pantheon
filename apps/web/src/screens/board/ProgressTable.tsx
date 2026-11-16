@@ -2,6 +2,7 @@ import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 're
 import { Menu } from '@base-ui/react/menu';
 import { Ellipsis } from 'lucide-react';
 import type { BoardModel, BoardTaskState, BoardTaskStatus } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { Tip } from '../../components/Tip';
 import { useNow } from '../../data/needs-you';
 import { editPlan, moveTaskOp, planVersion } from '../../data/plan-edit';
@@ -17,6 +18,7 @@ import {
   useSize,
   type TipContent,
 } from './Charts';
+import { dayText } from '../../lib/time-text';
 import {
   doneMedian,
   durationText,
@@ -29,7 +31,6 @@ import {
   tickLabels,
   timeTicks,
   tokenText,
-  whenText,
   type BoardTask,
   type GanttBar,
   type TaskSort,
@@ -107,12 +108,7 @@ function Diff({ task }: { task: BoardTask }) {
   if (task.additions == null) return <span className="bp-mu">—</span>;
   return (
     <span className="bp-dfx">
-      <span className="bp-add" data-zero={task.additions === 0 || undefined}>
-        +{task.additions}
-      </span>{' '}
-      <span className="bp-del" data-zero={!task.deletions || undefined}>
-        −{task.deletions ?? 0}
-      </span>
+      <DiffCounts additions={task.additions} deletions={task.deletions} />
     </span>
   );
 }
@@ -136,13 +132,17 @@ function segmentLabel(bar: GanttBar, now: number): string {
   const end =
     s.ended_at == null
       ? t({ id: 'board.progress.inProgress', defaultMessage: 'In progress' })
-      : whenText(s.ended_at, now);
+      : dayText(s.ended_at, now, { time: true });
   return t(
     {
       id: 'board.progress.segmentLabel',
       defaultMessage: 'Start {start}, end {end}, tokens {tokens}',
     },
-    { start: whenText(s.started_at ?? bar.from, now), end, tokens: tokenText(s.tokens) },
+    {
+      start: dayText(s.started_at ?? bar.from, now, { time: true }),
+      end,
+      tokens: tokenText(s.tokens),
+    },
   );
 }
 
@@ -161,14 +161,14 @@ function segmentTip(bar: GanttBar, now: number): TipContent {
       },
       {
         label: t({ id: 'board.progress.tip.start', defaultMessage: 'Start' }),
-        value: whenText(started, now),
+        value: dayText(started, now, { time: true }),
       },
       {
         label: t({ id: 'board.progress.tip.end', defaultMessage: 'End' }),
         value:
           s.ended_at == null
             ? t({ id: 'board.progress.inProgress', defaultMessage: 'In progress' })
-            : whenText(s.ended_at, now),
+            : dayText(s.ended_at, now, { time: true }),
       },
       {
         label: t({ id: 'board.progress.tip.duration', defaultMessage: 'Duration' }),

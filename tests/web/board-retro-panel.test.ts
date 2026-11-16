@@ -227,7 +227,7 @@ describe('board retrospective panel', () => {
 
   it('shows the empty state without any retrospective', () => {
     const html = render([task('open', { status: 'running' })]);
-    expect(html).toContain('bp-empty');
+    expect(html).toContain(zh('board.task.retro.empty'));
     expect(html).not.toContain('ret-row');
     expect(html).not.toContain('首轮门禁通过');
   });
@@ -261,7 +261,7 @@ describe('retrospective gate failures', () => {
     const html = gates();
     expect(html).toContain('role="alert"');
     expect(html).toContain('读取失败（boom）');
-    expect(html).toContain(zh('board.query.retry'));
+    expect(html).toContain(zh('components.retry'));
     expect(html).not.toContain('<li');
   });
 });

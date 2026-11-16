@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { ChevronRight, Pin } from 'lucide-react';
 import { create } from 'zustand';
 import type { BoardSnapshot, BridgeResult } from '@pantheon/protocol';
@@ -281,14 +282,7 @@ export function UsagePage({ project, only }: { project: Project | null; only?: U
         {only === undefined && targets}
         <Section title={budgetTitle}>
           {source.error ? (
-            <>
-              <div className="ps-err" role="alert">
-                {source.error}
-              </div>
-              <button type="button" className="btn" onClick={source.reload}>
-                {t({ id: 'settings.common.retry', defaultMessage: 'Retry' })}
-              </button>
-            </>
+            <LoadError message={source.error} onRetry={source.reload} />
           ) : (
             <Loading />
           )}

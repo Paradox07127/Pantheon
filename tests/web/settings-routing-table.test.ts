@@ -113,6 +113,8 @@ describe('routing table', () => {
   it('dates the leaderboard by month and day only', () => {
     const board = cells(row(render([backend]), kindText('backend-logic', 't2')))[3]!;
     expect(board).toContain('swe-bench');
-    expect(board).toMatch(/<time[^>]*dateTime="2026-11-09T09:12:00.000Z"[^>]*>11\/09<\/time>/);
+    expect(board).toMatch(
+      /<time[^>]*dateTime="2026-11-09T09:12:00.000Z"[^>]*>(2026年)?11月9日<\/time>/,
+    );
   });
 });

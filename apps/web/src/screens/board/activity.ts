@@ -3,6 +3,7 @@ import type {
   BoardModel,
   BoardTaskState,
   BoardTaskStatus,
+  RuntimeStatus,
 } from '@pantheon/protocol';
 import { recapLine } from '../../components/SessionStateIcon';
 import { reasonText } from '../../data/needs-you';
@@ -180,6 +181,54 @@ export function activityLine(task: BoardTask, now: number, board?: Board): strin
     case 'idle':
       return blockerTexts(task)[0] ?? null;
   }
+}
+
+/**
+ * When the runtime quota a task waits on frees up: the reset of its runtime's most used window
+ * still ahead; null when the task waits on something else or the runtime gives no reset.
+ */
+export function quotaResetsAt(
+  task: BoardTask,
+  statuses: readonly RuntimeStatus[],
+  now: number,
+): number | null {
+  if (task.dispatch_wait !== 'runtime_limited') return null;
+  const runtime = (task.claim ?? task.planned)?.runtime;
+  const windows = (statuses.find((s) => s.runtime === runtime)?.quota?.windows ?? []).filter(
+    (w) => w.resets_at !== undefined && w.resets_at > now,
+  );
+  const top = windows.reduce<(typeof windows)[number] | null>(
+    (most, w) =>
+      !most ||
+      w.used_percent > most.used_percent ||
+      (w.used_percent === most.used_percent && w.resets_at! > most.resets_at!)
+        ? w
+        : most,
+    null,
+  );
+  return top?.resets_at ?? null;
+}
+
+/** The drawer's word on a quota wait, beside the wait itself. */
+export const resumesText = (at: number, now: number) =>
+  t(
+    { id: 'board.task.quota.resumes', defaultMessage: 'Resumes in about {duration}' },
+    { duration: durationText(at - now) },
+  );
+
+/** A flow card's line for a task waiting on runtime quota; null when the reset is not known. */
+export function quotaLine(
+  task: BoardTask,
+  statuses: readonly RuntimeStatus[],
+  now: number,
+): string | null {
+  const at = quotaResetsAt(task, statuses, now);
+  return at === null
+    ? null
+    : t(
+        { id: 'board.task.quota.line', defaultMessage: 'Quota back in about {duration}' },
+        { duration: durationText(at - now) },
+      );
 }
 
 /** A tool call by its verb and target; a tool without a verb keeps its name. */

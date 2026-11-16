@@ -370,6 +370,6 @@ describe('board view', () => {
   it('shows a retry button when the board read fails', () => {
     const html = view(null, { error: '读取失败' });
     expect(html).toContain('读取失败');
-    expect(html).toContain(zh('board.query.retry'));
+    expect(html).toContain(zh('components.retry'));
   });
 });

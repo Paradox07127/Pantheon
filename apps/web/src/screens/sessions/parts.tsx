@@ -2,6 +2,7 @@ import { useState } from 'react';
 // The discard confirmation is this file's one dialog, and an alert dialog.
 import { AlertDialog as Dialog } from '@base-ui/react/alert-dialog';
 import { type BridgeResult, type WorkbenchSession } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { Tip } from '../../components/Tip';
 import { runCommand } from '../../data/commands';
 import { failureText, reasonText, type NeedsYouItem } from '../../data/needs-you';
@@ -192,8 +193,7 @@ export function DiscardDialog(props: {
           </Dialog.Description>
           {changes && changes.files > 0 && (
             <div className="pj-rm-stat mono">
-              <span className="df-add">+{changes.additions}</span>
-              <span className="df-del">−{changes.deletions}</span>
+              <DiffCounts additions={changes.additions} deletions={changes.deletions} />
               <span className="pj-rm-files">
                 {t(
                   {

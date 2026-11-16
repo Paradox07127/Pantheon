@@ -217,7 +217,8 @@ export const useSettingsView = create<SettingsView>((set) => ({
   runtime: RUNTIMES[0]!,
   setRuntime: (runtime) => set({ runtime }),
   page: 'general',
-  setPage: (page) => set({ page }),
+  // Choosing the projects page lists them all; a part of one project is opened by setting detail after.
+  setPage: (page) => set(page === 'projects' ? { page, detail: null } : { page }),
   query: '',
   setQuery: (query) => set({ query }),
 }));

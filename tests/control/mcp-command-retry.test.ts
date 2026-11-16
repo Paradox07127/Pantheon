@@ -104,7 +104,7 @@ it('gives up after three resends when the daemon stays unreachable', async () =>
   daemon.lostReplies = 4;
   const client = await connect();
   const result = await client.callTool({ name: 'report', arguments: report });
-  expect(text(result)).toBe('Refused task.report: daemon_unavailable');
+  expect(text(result)).toBe('Refused report: daemon_unavailable');
   expect(daemon.sent).toHaveLength(4);
   expect(new Set(daemon.sent.map((sent) => sent.idempotency_key)).size).toBe(1);
   expect(daemon.executed).toHaveLength(1);
@@ -115,7 +115,7 @@ it('does not send a command again when the daemon refuses it', async () => {
   daemon.refusal = 'conflict';
   const client = await connect();
   const result = await client.callTool({ name: 'report', arguments: report });
-  expect(text(result)).toBe('Refused task.report: conflict — Refused here');
+  expect(text(result)).toBe('Refused report: conflict — Refused here');
   expect(daemon.sent).toHaveLength(1);
 });
 

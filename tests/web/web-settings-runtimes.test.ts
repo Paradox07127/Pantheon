@@ -21,6 +21,7 @@ import { HarnessPage } from '@/screens/settings/HarnessPage';
 import { GeneralPage } from '@/screens/settings/GeneralPage';
 import { Row } from '@/screens/settings/ProjectSettingsScreen';
 import { SessionDefaults } from '@/screens/settings/SessionDefaultsPage';
+import { searchSettings } from '@/screens/settings/settings-search';
 import { useSettingsView } from '@/screens/settings/view';
 
 type Command = { type: string; input: Record<string, unknown>; expected_revision: number | null };
@@ -359,6 +360,38 @@ describe('harness page', () => {
   it('shows a failed read of the runtimes', async () => {
     const h = await page();
     expect(alerts(tree(h))).toHaveLength(1);
+  });
+
+  it('anchors the artifacts, isolation and session kind rows, and says what the isolation switch lets run', async () => {
+    bridge.answers['runtime.status'] = [
+      status('claude', { capabilities: { text_execution: { status: 'supported' } } as never }),
+    ];
+    const h = await page();
+    const rows = nodes(labelled(tree(h), 'Claude')).filter((n) => n.type === Row);
+    expect(rows.map((r) => r.props.settingId)).toEqual(
+      expect.arrayContaining(['harness.artifacts', 'harness.unverifiedIsolation', 'harness.kinds']),
+    );
+    const isolation = rows.find((r) => r.props.settingId === 'harness.unverifiedIsolation')!;
+    expect(isolation.props.hint).toBe(zh('settings.runtimes.unverifiedIsolationHint'));
+    const found = (query: string) => searchSettings(query).map((hit) => hit.id);
+    expect(found(zh('settings.runtimes.unverifiedIsolation'))).toContain(
+      'harness.unverifiedIsolation',
+    );
+    expect(found(zh('settings.harness.artifacts'))).toContain('harness.artifacts');
+    expect(found(zh('settings.harness.kinds'))).toContain('harness.kinds');
+    expect(found(zh('settings.harness.quota'))).toContain('harness.quota');
+  });
+
+  it('shows the version number alone, whatever text the runtime prints around it', async () => {
+    bridge.answers['runtime.status'] = [
+      status('claude', { version: '2.1.325 (Claude Code)' }),
+      status('codex', { version: 'codex-cli 0.169.0' }),
+    ];
+    const h = await page();
+    expect(text(labelled(tree(h), 'Claude'))).toContain('2.1.325');
+    expect(text(labelled(tree(h), 'Claude'))).not.toContain('Claude Code');
+    expect(text(labelled(tree(h), 'Codex'))).toContain('0.169.0');
+    expect(text(labelled(tree(h), 'Codex'))).not.toContain('codex-cli');
   });
 
   describe('backends', () => {

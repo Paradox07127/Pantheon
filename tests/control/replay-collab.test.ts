@@ -318,7 +318,7 @@ it('reconstructs model changes from records before the requested range and omits
   ]);
 });
 
-it('reads full native edit inputs and subagent spans from the trace cache', async () => {
+it('reads full native edit inputs and subagent spans, named by their task, from the trace cache', async () => {
   const f = setup(),
     home = path.join(f.root, 'claude');
   const nativeId = 'aa24c772-a37b-478a-b12c-80cf63471cd1';
@@ -399,7 +399,7 @@ it('reads full native edit inputs and subagent spans from the trace cache', asyn
     {
       session_id: owner.id,
       span_id: 'agent',
-      name: 'Agent',
+      name: 'Review exports',
       start: 2000,
       duration_ms: 500,
       status: 'ok',

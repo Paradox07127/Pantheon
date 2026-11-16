@@ -1,12 +1,14 @@
 import type { CSSProperties } from 'react';
+import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { ArrowRight, Check, X } from 'lucide-react';
 import type { MemoryItem, MemoryRecord } from '@pantheon/domain';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import type { BudgetRefusal } from '../../data/memory-context';
 import { t } from '../../i18n';
 import { diffLines } from '../../lib/text-diff';
+import { dayText } from '../../lib/time-text';
 import { numberText } from './AgentContextDialog';
-import { shortStamp, versionNumbers } from './EntryActions';
+import { versionNumbers } from './EntryActions';
 import { kindIcon } from './GraphLegend';
 import './entry-actions.css';
 
@@ -61,6 +63,36 @@ export function PendingCard({
   onRecord,
 }: PendingCardProps) {
   const title = item.title ?? item.key;
+  // The discard button asks in an alert dialog before dropping the draft.
+  const discard = (className: string) => (
+    <AlertDialog.Root>
+      <AlertDialog.Trigger className={className} disabled={busy}>
+        {t({ id: 'memory.pending.discard', defaultMessage: 'Discard' })}
+      </AlertDialog.Trigger>
+      <AlertDialog.Portal>
+        <AlertDialog.Backdrop className="pj-scrim" />
+        <AlertDialog.Popup className="pj-dlg pj-rm pop">
+          <div className="pj-dh">
+            <AlertDialog.Title className="pj-dt">
+              {t(
+                { id: 'overlays.confirm.discardTitle', defaultMessage: 'Discard “{title}”?' },
+                { title },
+              )}
+            </AlertDialog.Title>
+          </div>
+          <div className="pj-df">
+            <span style={{ flex: 1 }} />
+            <AlertDialog.Close className="btn">
+              {t({ id: 'memory.actions.cancel', defaultMessage: 'Cancel' })}
+            </AlertDialog.Close>
+            <AlertDialog.Close className="btn dng" onClick={onDiscard}>
+              {t({ id: 'memory.pending.discard', defaultMessage: 'Discard' })}
+            </AlertDialog.Close>
+          </div>
+        </AlertDialog.Popup>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+  );
   if (rejected)
     return (
       <div className="mpc">
@@ -102,9 +134,7 @@ export function PendingCard({
           <button type="button" className="btn sm ghost" disabled={busy} onClick={onRewrite}>
             {t({ id: 'memory.pending.rewrite', defaultMessage: 'Rewrite it yourself' })}
           </button>
-          <button type="button" className="btn sm ghost ma-end" disabled={busy} onClick={onDiscard}>
-            {t({ id: 'memory.pending.discard', defaultMessage: 'Discard' })}
-          </button>
+          {discard('btn sm ghost ma-end')}
         </div>
       </div>
     );
@@ -180,9 +210,7 @@ export function PendingCard({
           <button type="button" className="btn sm ghost" disabled={busy} onClick={onCommit}>
             {t({ id: 'memory.pending.retry', defaultMessage: 'Try again' })}
           </button>
-          <button type="button" className="btn sm ghost ma-end" disabled={busy} onClick={onDiscard}>
-            {t({ id: 'memory.pending.discard', defaultMessage: 'Discard' })}
-          </button>
+          {discard('btn sm ghost ma-end')}
         </div>
       </div>
     );
@@ -212,7 +240,7 @@ export function PendingCard({
         <span className="mpc-g">
           {author && <RuntimeGlyph runtime={author.runtime} size={14} />}
           {author && <span className="mpc-cut">{author.title}</span>}
-          <span className="mpc-num">{shortStamp(item.created_at)}</span>
+          <span className="mpc-num">{dayText(item.created_at, Date.now(), { time: true })}</span>
         </span>
         {baseNumber !== undefined && (
           <span className="mpc-num">
@@ -251,9 +279,7 @@ export function PendingCard({
           <Check aria-hidden="true" />
           {t({ id: 'memory.pending.commit', defaultMessage: 'Confirm' })}
         </button>
-        <button type="button" className="btn ghost dng" disabled={busy} onClick={onDiscard}>
-          {t({ id: 'memory.pending.discard', defaultMessage: 'Discard' })}
-        </button>
+        {discard('btn ghost dng')}
         <button type="button" className="btn ghost ma-end" onClick={onOpen}>
           {t({ id: 'memory.pending.open', defaultMessage: 'Open details' })}
         </button>

@@ -1,14 +1,15 @@
 import { useState, type CSSProperties, type ReactElement } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { shortId } from '../../data/format';
 import { t } from '../../i18n';
 import { Empty, NumText, Panel, WarnIcon, runtimeColor } from './Charts';
 import { MergeTrack } from './QualityCharts';
+import { dayText } from '../../lib/time-text';
 import {
   recentMerges,
   runtimeName,
   visibleFindings,
-  whenText,
   type BoardFinding,
   type BoardRisk,
 } from './panels-model';
@@ -99,7 +100,7 @@ export function MergesPanel({
           <div className="bp-pb bp-mgl">
             {merges.map((m) => (
               <div className="bp-mg-row" key={`${m.session_id}-${m.sha}`}>
-                <span className="tm">{whenText(m.merged_at, model.now)}</span>
+                <span className="tm">{dayText(m.merged_at, model.now, { time: true })}</span>
                 {/* The board names a deleted session with an empty title. */}
                 {m.title ? (
                   <button className="nm" type="button" onClick={() => onOpenSession(m.session_id)}>
@@ -114,12 +115,7 @@ export function MergesPanel({
                   </span>
                 )}
                 <span className="bp-dfx">
-                  <span className="bp-add" data-zero={m.additions === 0 || undefined}>
-                    +{m.additions}
-                  </span>{' '}
-                  <span className="bp-del" data-zero={m.deletions === 0 || undefined}>
-                    −{m.deletions}
-                  </span>
+                  <DiffCounts additions={m.additions} deletions={m.deletions} />
                 </span>
                 <span className="sha">{m.sha.slice(0, 7)}</span>
                 {m.story_id && m.title ? (

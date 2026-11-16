@@ -168,10 +168,7 @@ describe('workflow settings page', () => {
       answer.resolve({ ok: false, error: { code: 'internal', message: 'read failed' } });
       await h.flush();
       expect(field().props.disabled).toBe(true);
-      const retry = find(
-        tree(h),
-        (n) => n.type === 'button' && text(n) === zh('settings.common.retry'),
-      );
+      const retry = find(tree(h), (n) => n.type === 'button' && text(n) === zh('components.retry'));
       bridge.query = query;
       retry.props.onClick();
       await h.flush();

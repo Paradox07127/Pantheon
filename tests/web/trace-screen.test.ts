@@ -83,8 +83,9 @@ vi.mock('@/data/trace', async (actual) => ({
 }));
 import { TraceScreen } from '@/screens/trace/TraceScreen';
 import { listText } from '@/lib/list-text';
-import { durationText, whenText } from '@/screens/board/panels-model';
-import { clockText } from '@/screens/trace/LaneOverlay';
+import { dayText } from '@/lib/time-text';
+import { durationText } from '@/screens/board/panels-model';
+import { eventClock } from '@/screens/trace/LaneOverlay';
 import { presetWindow } from '@/screens/trace/model';
 import { useShell } from '@/store';
 import { zh, zhf } from './i18n-setup.js';
@@ -293,11 +294,11 @@ describe('trace screen clock', () => {
     const el = () => named(h.value, 'Analysis');
     let props = el().props;
     const panel = mount(() => (el().type as (p: unknown) => ReactElement)(props));
-    expect(labelOf(panel.value, '时长')).toBe('时长 5 分');
+    expect(labelOf(panel.value, '时长')).toBe('时长 5 分钟');
     vi.advanceTimersByTime(10 * MIN);
     await h.flush();
     props = el().props;
-    expect(labelOf(panel.render(), '时长')).toBe('时长 15 分');
+    expect(labelOf(panel.render(), '时长')).toBe('时长 15 分钟');
   });
 });
 
@@ -531,7 +532,9 @@ describe('trace screen turn rows', () => {
     withTurn({ status: 'unknown' });
     const turn = row(lanes().value, `${LANE}/turn-a`);
     const head = find(turn, (n) => n.props.className === 'trc-head');
-    expect(head.props['aria-label']).toBe(`codex session 回合 ${whenText(START, NOW)}，未知`);
+    expect(head.props['aria-label']).toBe(
+      `codex session 回合 ${dayText(START, NOW, { time: true })}，未知`,
+    );
   });
 
   it('draws only a running step without an end', () => {
@@ -1002,9 +1005,9 @@ describe('trace screen as of the replay playhead', () => {
     expect(
       bar.props.ticks.map((tick: { label: string; tone?: string }) => [tick.label, tick.tone]),
     ).toEqual([
-      [listText(clockText(NOW - 50 * MIN, NOW), 'session-a', ask), 'wait'],
-      [listText(clockText(NOW - 20 * MIN, NOW), 'session-a', gate), 'bad'],
-      [listText(clockText(NOW - 10 * MIN, NOW), 'session-a', ask), 'wait'],
+      [listText(eventClock(NOW - 50 * MIN, NOW), 'session-a', ask), 'wait'],
+      [listText(eventClock(NOW - 20 * MIN, NOW), 'session-a', gate), 'bad'],
+      [listText(eventClock(NOW - 10 * MIN, NOW), 'session-a', ask), 'wait'],
     ]);
     expect(bar.props.replay.steps).toEqual(
       [50, 40, 20, 10, 5].map((minutes) => NOW - minutes * MIN),

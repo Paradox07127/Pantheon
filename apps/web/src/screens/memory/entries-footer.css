@@ -260,28 +260,6 @@
     opacity: 0.35;
   }
 }
-.mes-fail {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  min-height: 120px;
-  text-align: center;
-}
-.mes-fail-t {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.mes-err {
-  color: var(--mu);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  user-select: text;
-}
 
 .pt[data-motion='reduced'] .mef-working {
   animation: none;

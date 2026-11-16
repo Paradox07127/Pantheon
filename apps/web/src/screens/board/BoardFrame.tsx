@@ -3,6 +3,7 @@ import { Collapsible } from '@base-ui/react/collapsible';
 import { Mail } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { RequestCard, type RequestCardProps } from '../../components/RequestCard';
+import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
 import { useBoard } from '../../data/board';
 import { needsKey } from '../../data/notice-tiers';
@@ -72,7 +73,7 @@ export function LeadStates({
             }
             onClick={() => onOpenSession(lead.session_id)}
           >
-            <span className={`ss-dot ${state.dot}`} aria-hidden="true" />
+            <StateGlyph name={state.glyph} />
             <span>{state.label}</span>
             {lead.inbox > 0 && (
               <span className="bf-inbox">

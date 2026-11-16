@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { BookOpen, Funnel, RefreshCw, Search } from 'lucide-react';
+import { BookOpen, Funnel, Search } from 'lucide-react';
 import type { MemoryGraph } from '@pantheon/domain';
 import { EmptyState } from '../../components/EmptyState';
 import { Menu, MenuCheckboxItem } from '../../components/Menu';
@@ -245,16 +246,16 @@ export function MemoryGraphView({ projectId }: { projectId: string }) {
   let body;
   if (read.error)
     body = (
-      <div className="mgv-fail" role="alert">
-        <span className="mgv-fail-t">
-          {t({ id: 'memory.graphView.failed', defaultMessage: 'Cannot read the memory graph' })}
-        </span>
-        <span className="mgv-err">{read.error}</span>
-        <button type="button" className="btn sm" onClick={read.reload}>
-          <RefreshCw aria-hidden="true" />
-          {t({ id: 'memory.graphView.retry', defaultMessage: 'Retry' })}
-        </button>
-      </div>
+      <LoadError
+        message={t(
+          {
+            id: 'memory.graphView.failed',
+            defaultMessage: 'Cannot read the memory graph: {error}',
+          },
+          { error: read.error },
+        )}
+        onRetry={read.reload}
+      />
     );
   else if (!graph || !layout)
     body = late && (

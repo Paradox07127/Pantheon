@@ -1,6 +1,6 @@
 {
   "settings.defaults.leadModel": "lead 的模型",
-  "settings.defaults.routingTable": "按下面的路由表",
+  "settings.defaults.routingTable": "按项目设置里的路由表",
   "settings.defaults.otherRuntime": "写代码以外的运行时",
   "settings.defaults.noFallback": "不换",
   "settings.defaults.fallbackOf": "{role}不可用时换成",

@@ -8,6 +8,7 @@ import type {
   StaleWorkspaces,
   WorkbenchSession,
 } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { SessionStateIcon } from '../../components/SessionStateIcon';
 import { toast } from '../../components/Toast';
 import { useBoard } from '../../data/board';
@@ -589,14 +590,7 @@ export function BranchPanel({
                 )}
                 <span className="rp-diff">
                   {s.changes && (
-                    <>
-                      <span className="df-add" data-zero={!s.changes.additions || undefined}>
-                        +{s.changes.additions}
-                      </span>
-                      <span className="df-del" data-zero={!s.changes.deletions || undefined}>
-                        −{s.changes.deletions}
-                      </span>
-                    </>
+                    <DiffCounts additions={s.changes.additions} deletions={s.changes.deletions} />
                   )}
                 </span>
               </div>

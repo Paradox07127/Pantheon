@@ -280,15 +280,23 @@ export function roleBars(rows: readonly RoleUsage[]): RoleBar[] {
 
 export const RING_RUNTIMES = ['claude', 'codex'] as const;
 
-/** The always drawn rings plus every other runtime that used tokens or ran unreported, in table order. */
+/**
+ * A ring for each runtime that used tokens, in table order; the always listed runtimes that used
+ * none and those whose sessions reported none are named apart, without a ring.
+ */
 export function ringRuntimes(
   tokensByRuntime: Readonly<Record<string, number>>,
   unreportedByRuntime: Readonly<Record<string, number>>,
-): string[] {
-  const used = Object.keys(tokensByRuntime).filter((runtime) => tokensByRuntime[runtime]! > 0);
-  return [
-    ...new Set<string>([...RING_RUNTIMES, ...used, ...Object.keys(unreportedByRuntime)]),
-  ].sort(compareRuntimes);
+): { rings: string[]; unused: string[]; unreported: string[] } {
+  const used = (runtime: string) => (tokensByRuntime[runtime] ?? 0) > 0;
+  const unreported = Object.keys(unreportedByRuntime).filter(
+    (runtime) => !used(runtime) && unreportedByRuntime[runtime]! > 0,
+  );
+  return {
+    rings: Object.keys(tokensByRuntime).filter(used).sort(compareRuntimes),
+    unused: RING_RUNTIMES.filter((runtime) => !used(runtime) && !unreported.includes(runtime)),
+    unreported: unreported.sort(compareRuntimes),
+  };
 }
 /** Share of an open ring left out at the top. */
 export const RING_GAP = 0.1;

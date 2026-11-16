@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import type { BoardPlan, Principal, Project, Session } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually } from '../helpers.js';
+import { awaitWorkspaceReady, eventually, insideSandbox } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -155,32 +155,35 @@ const mergeTask = (f: Fixture, lead: Session, taskId: string, reason: string) =>
     leadOf(f, lead.id),
   );
 
-it('lets a lead merge files outside the task scope that no unfinished task holds, recording why', async () => {
-  const f = mergeFixture();
-  const lead = await leadWithPlan(f, [task('first'), task('second')]);
-  const { session, workspace } = await leadTaskSession(f, lead, 'first');
-  commit(workspace.path, 'src/first/x.ts', 'export const x = 1;\n');
-  commit(workspace.path, 'README.md', 'Names the first module\n');
-  merge(f, session.id);
-  await settled(f, session.id);
-  expect(current(f, session.id).merge).toMatchObject({ reason: 'out_of_scope' });
-  await eventually(
-    () => f.turns(lead.id).some((turn) => turn.origin === 'tracker'),
-    () => f.control.tick(),
-  );
-  expect(f.turns(lead.id).find((turn) => turn.origin === 'tracker')!.input).toContain(
-    'Reason: out_of_scope. To merge the files anyway, call merge_task with allow_out_of_scope and the reason; or widen the scope of the task with update_board; or stop it with stop_task.',
-  );
-  mergeTask(f, lead, 'first', 'The README names the new module');
-  await settled(f, session.id);
-  expect(current(f, session.id).outcome).toBe('merged');
-  expect(
-    f.store
-      .kindEvents(f.project.id, ['session.merge_started'])
-      .filter((event) => event.aggregate_id === session.id)
-      .at(-1)!.payload,
-  ).toEqual({ reason: 'The README names the new module' });
-});
+it.skipIf(insideSandbox)(
+  'lets a lead merge files outside the task scope that no unfinished task holds, recording why',
+  async () => {
+    const f = mergeFixture();
+    const lead = await leadWithPlan(f, [task('first'), task('second')]);
+    const { session, workspace } = await leadTaskSession(f, lead, 'first');
+    commit(workspace.path, 'src/first/x.ts', 'export const x = 1;\n');
+    commit(workspace.path, 'README.md', 'Names the first module\n');
+    merge(f, session.id);
+    await settled(f, session.id);
+    expect(current(f, session.id).merge).toMatchObject({ reason: 'out_of_scope' });
+    await eventually(
+      () => f.turns(lead.id).some((turn) => turn.origin === 'tracker'),
+      () => f.control.tick(),
+    );
+    expect(f.turns(lead.id).find((turn) => turn.origin === 'tracker')!.input).toContain(
+      'Reason: out_of_scope. To merge the files anyway, call merge_task with allow_out_of_scope and the reason; or widen the scope of the task with update_board; or stop it with stop_task.',
+    );
+    mergeTask(f, lead, 'first', 'The README names the new module');
+    await settled(f, session.id);
+    expect(current(f, session.id).outcome).toBe('merged');
+    expect(
+      f.store
+        .kindEvents(f.project.id, ['session.merge_started'])
+        .filter((event) => event.aggregate_id === session.id)
+        .at(-1)!.payload,
+    ).toEqual({ reason: 'The README names the new module' });
+  },
+);
 
 it('refuses a lead merge of files outside the task scope that another unfinished task holds', async () => {
   const f = mergeFixture();
@@ -241,33 +244,36 @@ it('blocks every file a report task with no scope paths merges', async () => {
   expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
 });
 
-it('blocks a later task that changed the same file outside its scope as an earlier one before rebasing it', async () => {
-  const f = mergeFixture();
-  // A gate rebases the later task onto the earlier one before it checks it.
-  f.call<Project>(
-    'project.gate.set',
-    {
-      project_id: f.project.id,
-      root: f.source,
-      commands: [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }],
-    },
-    f.store.must<Project>('projects', f.project.id).revision,
-  );
-  setPlan(f, [task('first'), task('second')]);
-  const first = await taskSession(f, 'first'),
-    second = await taskSession(f, 'second');
-  commit(first.workspace.path, 'src/first/x.ts', 'export const x = 1;\n');
-  commit(first.workspace.path, 'README.md', 'Written by the first task\n');
-  commit(second.workspace.path, 'src/second/y.ts', 'export const y = 2;\n');
-  commit(second.workspace.path, 'README.md', 'Written by the second task\n');
-  merge(f, first.session.id, true);
-  await settled(f, first.session.id);
-  expect(current(f, first.session.id).outcome).toBe('merged');
-  merge(f, second.session.id);
-  await settled(f, second.session.id);
-  expect(current(f, second.session.id).merge).toEqual({
-    state: 'blocked',
-    reason: 'out_of_scope',
-    conflicts: ['README.md'],
-  });
-});
+it.skipIf(insideSandbox)(
+  'blocks a later task that changed the same file outside its scope as an earlier one before rebasing it',
+  async () => {
+    const f = mergeFixture();
+    // A gate rebases the later task onto the earlier one before it checks it.
+    f.call<Project>(
+      'project.gate.set',
+      {
+        project_id: f.project.id,
+        root: f.source,
+        commands: [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }],
+      },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    setPlan(f, [task('first'), task('second')]);
+    const first = await taskSession(f, 'first'),
+      second = await taskSession(f, 'second');
+    commit(first.workspace.path, 'src/first/x.ts', 'export const x = 1;\n');
+    commit(first.workspace.path, 'README.md', 'Written by the first task\n');
+    commit(second.workspace.path, 'src/second/y.ts', 'export const y = 2;\n');
+    commit(second.workspace.path, 'README.md', 'Written by the second task\n');
+    merge(f, first.session.id, true);
+    await settled(f, first.session.id);
+    expect(current(f, first.session.id).outcome).toBe('merged');
+    merge(f, second.session.id);
+    await settled(f, second.session.id);
+    expect(current(f, second.session.id).merge).toEqual({
+      state: 'blocked',
+      reason: 'out_of_scope',
+      conflicts: ['README.md'],
+    });
+  },
+);

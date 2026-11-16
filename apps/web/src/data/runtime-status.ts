@@ -31,15 +31,20 @@ export function unavailableReason(status: RuntimeStatus): string | null {
   return null;
 }
 
+/** The first x.y.z of the text a runtime prints for its version, else the whole text. */
+export const versionNumber = (version: string): string =>
+  /\d+\.\d+\.\d+/.exec(version)?.[0] ?? version;
+
 /** What a session asks of its runtime, as the daemon's admission checks it. */
 export type SessionKind = 'writer' | 'reviewer' | 'text';
 
 export const supports = (status: RuntimeStatus, capability: string) =>
   status.capabilities?.[capability]?.status === 'supported';
 
-/** Why the runtime cannot hold a session of this kind; null when it can or the status lists no capabilities. */
+/** Why the runtime cannot hold a session of this kind; null when it can, the status lists no capabilities or isolation is waived. */
 export function kindReason(status: RuntimeStatus, kind: SessionKind): string | null {
-  if (!status.capabilities) return null;
+  // The daemon's admission skips the isolation checks for a runtime its settings allow without them.
+  if (!status.capabilities || status.unverified_isolation === true) return null;
   if (kind === 'writer')
     return supports(status, 'write_isolation')
       ? null

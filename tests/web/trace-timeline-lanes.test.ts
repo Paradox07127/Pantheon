@@ -19,7 +19,11 @@ const mock = vi.hoisted(() => ({
 vi.mock('@/data/commands', () => ({ runCommand: vi.fn() }));
 vi.mock('@/data/logs', async (actual) => ({
   ...(await actual<object>()),
-  useEventHistory: () => ({ events: mock.events, error: null, reload() {} }),
+  useEventHistory: (options: { keep: (event: unknown) => boolean }) => ({
+    events: mock.events && mock.events.filter((event) => options.keep(event)),
+    error: null,
+    reload() {},
+  }),
 }));
 vi.mock('@/data/workbench-sessions', async (actual) => ({
   ...(await actual<object>()),
@@ -67,7 +71,8 @@ vi.mock('@/data/trace', async (actual) => ({
   useTurnSteps: () => ({ data: null, loading: false, error: null, reload() {} }),
 }));
 import { TraceScreen } from '@/screens/trace/TraceScreen';
-import { durationText, whenText } from '@/screens/board/panels-model';
+import { dayText } from '@/lib/time-text';
+import { durationText } from '@/screens/board/panels-model';
 import { ROW_HEIGHT } from '@/screens/trace/model';
 import { useShell } from '@/store';
 
@@ -276,7 +281,7 @@ describe('trace timeline lanes by session state', () => {
     const lanes = child(screen().value, 'Lanes').value;
     const ticks = nodes(lanes).filter((n) => n.props.className === 'trc-tick');
     expect(ticks.map((n) => text(n))).toEqual(
-      [60, 48, 36, 24, 12, 0].map((ago) => whenText(NOW - ago * MIN, NOW)),
+      [60, 48, 36, 24, 12, 0].map((ago) => dayText(NOW - ago * MIN, NOW, { time: true })),
     );
   });
 
@@ -304,6 +309,59 @@ describe('trace timeline lanes by session state', () => {
     expect(() => named(h.value, 'Lanes')).toThrow();
     expect(() => named(h.value, 'Skeleton')).not.toThrow();
     expect(labelOf(h.value, '调用')).toBeUndefined();
+  });
+});
+
+describe('trace lanes of untitled sessions', () => {
+  const event = (kind: string, aggregate: string, payload: object) => ({
+    event_id: `event-${++sequence}`,
+    kind,
+    aggregate_id: aggregate,
+    aggregate_revision: 1,
+    project_id: 'project-a',
+    sequence,
+    created_at: NOW - 50 * MIN,
+    causation_id: '',
+    payload,
+  });
+  const untitled = (key: string, runtime: 'claude' | 'codex') => {
+    const row = lane(key, '', NOW - 30 * MIN, NOW - 25 * MIN);
+    return { ...row, lane: { ...row.lane, runtime } };
+  };
+  const nameOf = (key: string) =>
+    find(sessionRow(key), (n) => n.type === 'button' && n.props['aria-expanded'] !== undefined)
+      .props['aria-label'] as string;
+
+  it('names a review or story session by what it was opened for', () => {
+    mock.trace = {
+      ...projectTrace(),
+      lanes: [
+        untitled('plan-reviewer', 'codex'),
+        untitled('code-reviewer', 'claude'),
+        untitled('story', 'claude'),
+        untitled('unknown', 'claude'),
+      ],
+    };
+    mock.events = [
+      event('review.requested', 'plan-review', { id: 'plan-review', plan: { tasks: [] } }),
+      event('session.opened', 'plan-reviewer', {
+        id: 'plan-reviewer',
+        runtime: 'codex',
+        review_id: 'plan-review',
+      }),
+      event('review.requested', 'code-review', { id: 'code-review', session_id: 'session-a' }),
+      event('session.opened', 'code-reviewer', {
+        id: 'code-reviewer',
+        runtime: 'claude',
+        review_id: 'code-review',
+      }),
+      event('session.opened', 'story', { purpose: 'range_story' }),
+    ];
+    expect(nameOf('plan-reviewer')).toMatch(/^Codex 计划审查，Codex，/);
+    expect(nameOf('code-reviewer')).toMatch(/^Claude 代码审查，Claude，/);
+    expect(nameOf('story')).toMatch(/^区间解读，/);
+    expect(nameOf('unknown')).toMatch(/^未命名会话，/);
+    expect(text(sessionRow('plan-reviewer'))).toContain('Codex 计划审查');
   });
 });
 
@@ -364,6 +422,27 @@ describe('trace timeline lanes under replay', () => {
     named(h.value, 'Lanes').props.onReplayAt(NOW - 43 * MIN);
     h.render();
     expect(nowText(rowOf(h.value, 'session-a/subagent:agent-1'))).toBe('explore refunds');
+  });
+
+  it('names a subagent recorded only by its spawn call as a subagent', () => {
+    mock.collab = {
+      ...(mock.collab as object),
+      subagents: [
+        {
+          session_id: 'session-a',
+          span_id: 'agent-1',
+          name: 'collaboration.spawn_agent',
+          start: NOW - 45 * MIN,
+          duration_ms: 5 * MIN,
+          status: 'ok',
+        },
+      ],
+    };
+    const row = rowOf(screen().value, 'session-a/subagent:agent-1');
+    expect(text(row)).toContain('子 agent');
+    expect(text(row)).not.toContain('collaboration');
+    const bar = find(row, (n) => n.props['data-kind'] === 'subagent');
+    expect(bar.props['aria-label']).toMatch(/^子 agent /);
   });
 
   it.each([

@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import type { RepoLane, SessionGateRunResult } from '@pantheon/protocol';
 import { Check, Minus, X } from 'lucide-react';
+import { DiffCounts } from '../../../components/DiffCounts';
 import { RuntimeGlyph, runtimeColor, runtimeName } from '../../../components/RuntimeGlyph';
 import { SessionStateIcon } from '../../../components/SessionStateIcon';
 import { useBoard } from '../../../data/board';
@@ -46,11 +47,13 @@ const stepLabel = (state: StepState): string =>
 /** A step a run never reached, or that is absent from it, did not run; skipped is its own outcome. */
 const stepState = (result: SessionGateRunResult | undefined): StepState =>
   result?.state ??
-  (!result || result.skipped
+  (!result
     ? 'not_run'
-    : !result.timed_out && result.exit_code === 0
-      ? 'passed'
-      : 'failed');
+    : result.skipped
+      ? 'skipped'
+      : !result.timed_out && result.exit_code === 0
+        ? 'passed'
+        : 'failed');
 
 const DAY = 24 * 60 * 60_000;
 const TICKS = [0, 0.25, 0.5, 0.75];
@@ -297,12 +300,7 @@ export function SessionPassage({
         {listed.branch && <span className="chip mono">{listed.branch}</span>}
         {totals && (
           <span className="rps-n mono">
-            <span className="df-add" data-zero={!totals.additions || undefined}>
-              +{totals.additions}
-            </span>
-            <span className="df-del" data-zero={!totals.deletions || undefined}>
-              −{totals.deletions}
-            </span>
+            <DiffCounts additions={totals.additions} deletions={totals.deletions} />
           </span>
         )}
         <button type="button" className="btn sm rps-open" onClick={() => onOpenSession(sessionId)}>
@@ -449,12 +447,7 @@ export function SessionPassage({
                         </button>
                       </th>
                       <td className="rps-n mono">
-                        <span className="df-add" data-zero={!file.additions || undefined}>
-                          +{file.additions ?? 0}
-                        </span>
-                        <span className="df-del" data-zero={!file.deletions || undefined}>
-                          −{file.deletions ?? 0}
-                        </span>
+                        <DiffCounts additions={file.additions} deletions={file.deletions} />
                       </td>
                       <td className="rps-cut">{listText(...own.map((c) => c.title))}</td>
                       <td className="rps-cut mono">

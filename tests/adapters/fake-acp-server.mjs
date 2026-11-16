@@ -257,6 +257,11 @@ const scripts = {
     permission('edit', undefined, ['allow_always', 'reject_once']);
   },
   hold() {},
+  // Titles the session from the start of the first text block, as grok does.
+  titled() {
+    update({ sessionUpdate: 'session_info_update', title: prompt.params.prompt[0].text.slice(0, 20) });
+    stop('end_turn');
+  },
   // Each turn adds 1 USD to the cumulative session cost a usage_update carries.
   cost() {
     sessionCost += 1;
@@ -305,6 +310,18 @@ const scripts = {
   },
   'rpc-error'() {
     write({ id: prompt.id, error: { code: -32603, message: 'Internal error' } });
+    prompt = undefined;
+  },
+  // grok's shape for a provider error: the detail is in data.message.
+  'billing-error'() {
+    write({
+      id: prompt.id,
+      error: {
+        code: -32603,
+        message: 'Internal error',
+        data: { message: 'API error (status 402 Payment Required): usage balance exhausted', http_status: 402 },
+      },
+    });
     prompt = undefined;
   },
   exit() {

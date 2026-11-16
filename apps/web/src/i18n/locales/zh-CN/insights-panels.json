@@ -14,7 +14,6 @@
   "insights.gateFailures.rangeRuns": "{range}，共 {count, plural, other {# 次门禁}}",
   "insights.gateFailures.row": "{step} 失败 {count, plural, other {# 次}}",
   "insights.gateFailures.count": "{count, plural, other {# 次}}",
-  "insights.gateFailures.seconds": "{seconds} 秒",
   "insights.gateFailures.flaky": "时过时不过",
   "insights.quota.title": "订阅额度",
   "insights.quota.meter": "{runtime} 已用额度",

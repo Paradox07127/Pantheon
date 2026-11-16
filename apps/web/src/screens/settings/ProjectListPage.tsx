@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { BoardSnapshot, ProjectSettingValues } from '@pantheon/protocol';
 import { runtimeName } from '../../components/RuntimeGlyph';
@@ -87,12 +88,7 @@ export function ProjectListPage() {
   if (!read.data)
     return read.error !== null ? (
       <div className="ps-grp">
-        <div className="ps-err" role="alert">
-          {read.error}
-        </div>
-        <button type="button" className="btn sm" onClick={read.reload}>
-          {t({ id: 'settings.common.retry', defaultMessage: 'Retry' })}
-        </button>
+        <LoadError message={read.error} onRetry={read.reload} />
       </div>
     ) : (
       <Loading />

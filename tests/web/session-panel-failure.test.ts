@@ -167,5 +167,5 @@ it('keeps the thread, its composer and the other panels when one panel throws', 
   const plan = column(zh('sessions.panel.dock.plan'))!;
   const alert = find(plan, (n) => n instanceof FakeElement && n.getAttribute('role') === 'alert');
   expect(alert?.textContent).toContain('bad plan step');
-  expect(alert?.textContent).toContain(zh('board.query.retry'));
+  expect(alert?.textContent).toContain(zh('components.retry'));
 });

@@ -1153,6 +1153,43 @@ it('lists the valid findings of the project reviews, unresolved ones first', () 
   ]);
 });
 
+it('lists the findings of a plan review under the lead whose plan it reviewed', () => {
+  const f = workbenchFixture();
+  const lead = f.create('Plan the release');
+  f.store.insert<Review>('reviews', {
+    id: 'plan-review',
+    revision: 1,
+    project_id: f.project.id,
+    round: 1,
+    runtimes: ['reviewer-one'],
+    state: 'completed',
+    session_ids: [],
+    requester: { lead_session_id: lead.id },
+    plan: { tasks: [] },
+    findings: [
+      {
+        id: 'plan-finding',
+        review_id: 'plan-review',
+        runtime: 'reviewer-one',
+        round: 1,
+        location: 'plan.json',
+        quote: 'depends_on: []',
+        evidence: 'The deploy task runs before the build',
+        impact: 'Deploy may ship an unbuilt bundle',
+        status: 'open',
+        blocking: true,
+      },
+    ],
+  });
+
+  const listed = f.control.boardView(user, f.project.id, 1).findings;
+  const [matrix] = f.control.projectReviewMetrics(user, f.project.id);
+  expect(listed.filter((each) => each.state === 'open')).toHaveLength(matrix!.unresolved);
+  expect(listed).toEqual([
+    expect.objectContaining({ id: 'plan-finding', session_id: lead.id, state: 'open' }),
+  ]);
+});
+
 it.skipIf(insideSandbox)("shows an unmerged session's newest gate run in its checks", async () => {
   const f = workbenchFixture();
   // The gate fails in a worktree that holds fail.txt.

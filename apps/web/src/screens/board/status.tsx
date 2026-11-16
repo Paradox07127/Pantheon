@@ -13,13 +13,20 @@ import {
   Zap,
   type LucideProps,
 } from 'lucide-react';
-import type { BoardModel, BoardSegment, BoardTaskState, BoardTaskStatus } from '@pantheon/protocol';
+import type {
+  BoardModel,
+  BoardSegment,
+  BoardTaskState,
+  BoardTaskStatus,
+  RuntimeModel,
+} from '@pantheon/protocol';
 import { ModelMark, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { toast } from '../../components/Toast';
 import { Tip } from '../../components/Tip';
 import { failureText } from '../../data/needs-you';
 import { t } from '../../i18n';
+import { modelLabel } from '../sessions/thread-model';
 import type { TaskBadge } from './activity';
 import './status.css';
 
@@ -186,6 +193,40 @@ export const segmentText = (segment: BoardSegment): string =>
     },
   );
 
+/**
+ * Each status's colour token: its icon and every bar, dot or node that stands for a task in that
+ * status draw in it.
+ */
+export const TASK_STATUS_TONE: Record<BoardTaskStatus, string> = {
+  running: '--run',
+  waiting: '--wait',
+  idle: '--idle',
+  ready: '--ready',
+  done: '--ok',
+  failed: '--bad',
+  todo: '--e-pend',
+  discarded: '--mu',
+};
+
+/**
+ * Each plan task state's colour token: its icon, the iteration and history bars and the flow node
+ * draw in it. Gating is the colour of a session's running gates, blocked the colour of failed.
+ */
+export const TASK_STATE_TONE: Record<BoardTaskState, string> = {
+  todo: '--e-pend',
+  waiting_upstream: '--idle',
+  claimed: '--run',
+  running: '--run',
+  waiting_approval: '--wait',
+  blocked: '--bad',
+  needs_attention: '--idle',
+  gating: '--run',
+  awaiting_acceptance: '--wait',
+  awaiting_merge: '--ready',
+  merged: '--ok',
+  failed: '--bad',
+};
+
 // Drawn in currentColor on the 12 grid.
 const blockedOctagon = (
   <>
@@ -195,54 +236,40 @@ const blockedOctagon = (
   </>
 );
 
-function IconShape({ status }: { status: BoardTaskStatus }) {
+function IconShape({
+  status,
+  tone = TASK_STATUS_TONE[status],
+}: {
+  status: BoardTaskStatus;
+  tone?: string;
+}) {
+  const color = `var(${tone})`;
   switch (status) {
     case 'waiting':
-      return <circle cx="6" cy="6" r="4" style={{ fill: 'var(--wait)' }} />;
+      return <circle cx="6" cy="6" r="4" style={{ fill: color }} />;
     case 'idle':
       return (
-        <circle
-          cx="6"
-          cy="6"
-          r="3.6"
-          fill="none"
-          style={{ stroke: 'var(--idle)' }}
-          strokeWidth="1.5"
-        />
+        <circle cx="6" cy="6" r="3.6" fill="none" style={{ stroke: color }} strokeWidth="1.5" />
       );
     case 'ready':
       return (
         <path
           d="M6 1.3 10.7 6 6 10.7 1.3 6Z"
           fill="none"
-          style={{ stroke: 'var(--ready)' }}
+          style={{ stroke: color }}
           strokeWidth="1.5"
           strokeLinejoin="round"
         />
       );
     case 'todo':
       return (
-        <circle
-          cx="6"
-          cy="6"
-          r="3.6"
-          fill="none"
-          style={{ stroke: 'var(--e-pend)' }}
-          strokeWidth="1.5"
-        />
+        <circle cx="6" cy="6" r="3.6" fill="none" style={{ stroke: color }} strokeWidth="1.5" />
       );
     case 'discarded':
       return (
         <>
-          <circle
-            cx="6"
-            cy="6"
-            r="4"
-            fill="none"
-            style={{ stroke: 'var(--mu)' }}
-            strokeWidth="1.3"
-          />
-          <path d="M3.3 8.7 8.7 3.3" style={{ stroke: 'var(--mu)' }} strokeWidth="1.3" />
+          <circle cx="6" cy="6" r="4" fill="none" style={{ stroke: color }} strokeWidth="1.3" />
+          <path d="M3.3 8.7 8.7 3.3" style={{ stroke: color }} strokeWidth="1.3" />
         </>
       );
   }
@@ -250,9 +277,9 @@ function IconShape({ status }: { status: BoardTaskStatus }) {
 
 // Statuses and states that mean what a session state means take its glyph, on the 14 grid.
 const STATUS_GLYPH: Partial<Record<BoardTaskStatus, ReactNode>> = {
-  running: <StateGlyph name="running" />,
-  done: <StateGlyph name="done" />,
-  failed: <StateGlyph name="failed" />,
+  running: <StateGlyph name="running" tone={TASK_STATUS_TONE.running} />,
+  done: <StateGlyph name="done" tone={TASK_STATUS_TONE.done} />,
+  failed: <StateGlyph name="failed" tone={TASK_STATUS_TONE.failed} />,
 };
 
 /** The status's 12px icon; always shown next to its label. */
@@ -276,9 +303,11 @@ export function StatusBadge({ status }: { status: BoardTaskStatus }) {
 }
 
 function StateShape({ state }: { state: BoardTaskState }) {
+  const tone = TASK_STATE_TONE[state];
+  const color = `var(${tone})`;
   switch (state) {
     case 'todo':
-      return <IconShape status={state} />;
+      return <IconShape status={state} tone={tone} />;
     case 'waiting_upstream':
       return (
         <circle
@@ -286,7 +315,7 @@ function StateShape({ state }: { state: BoardTaskState }) {
           cy="6"
           r="4"
           fill="none"
-          style={{ stroke: 'var(--idle)' }}
+          style={{ stroke: color }}
           strokeWidth="1.5"
           strokeDasharray="2.1 1.6"
         />
@@ -294,34 +323,27 @@ function StateShape({ state }: { state: BoardTaskState }) {
     case 'claimed':
       return (
         <>
-          <circle
-            cx="6"
-            cy="6"
-            r="4"
-            fill="none"
-            style={{ stroke: 'var(--run)' }}
-            strokeWidth="1.5"
-          />
-          <circle cx="6" cy="6" r="1.6" style={{ fill: 'var(--run)' }} />
+          <circle cx="6" cy="6" r="4" fill="none" style={{ stroke: color }} strokeWidth="1.5" />
+          <circle cx="6" cy="6" r="1.6" style={{ fill: color }} />
         </>
       );
     case 'blocked':
-      return <g style={{ color: 'var(--bad)' }}>{blockedOctagon}</g>;
+      return <g style={{ color }}>{blockedOctagon}</g>;
     case 'awaiting_acceptance':
       return (
         <path
           d="M2.8 10.9V1.5M2.8 1.9h6.4L7.9 4.3l1.3 2.4H2.8"
           fill="none"
-          style={{ stroke: 'var(--wait)' }}
+          style={{ stroke: color }}
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
       );
     case 'awaiting_merge':
-      return <IconShape status="ready" />;
+      return <IconShape status="ready" tone={tone} />;
     case 'needs_attention':
-      return <IconShape status="idle" />;
+      return <IconShape status="idle" tone={tone} />;
   }
 }
 
@@ -331,7 +353,7 @@ function GatingGlyph() {
     <svg
       className="si"
       data-shape="shield-arc"
-      style={{ color: 'var(--ready)' }}
+      style={{ color: `var(${TASK_STATE_TONE.gating})` }}
       width="14"
       height="14"
       viewBox="0 0 14 14"
@@ -348,11 +370,11 @@ function GatingGlyph() {
 }
 
 const STATE_GLYPH: Partial<Record<BoardTaskState, ReactNode>> = {
-  running: <StateGlyph name="running" />,
-  waiting_approval: <StateGlyph name="approval" />,
+  running: <StateGlyph name="running" tone={TASK_STATE_TONE.running} />,
+  waiting_approval: <StateGlyph name="approval" tone={TASK_STATE_TONE.waiting_approval} />,
   gating: <GatingGlyph />,
-  merged: <StateGlyph name="merged" />,
-  failed: <StateGlyph name="failed" />,
+  merged: <StateGlyph name="merged" tone={TASK_STATE_TONE.merged} />,
+  failed: <StateGlyph name="failed" tone={TASK_STATE_TONE.failed} />,
 };
 
 /** The plan task state's 12px icon; always shown next to its label. */
@@ -390,13 +412,23 @@ export function TaskStateBadge({ task }: { task: BoardModel['tasks'][number] }) 
   );
 }
 
+/** A model id by its name in the runtime's list; an id the list does not hold stays as it is. */
+export function modelName(models: readonly RuntimeModel[], id: string): string {
+  const entry =
+    models.find((m) => m.id === id) ?? models.find((m) => m.id !== 'default' && m.resolved === id);
+  return entry ? modelLabel(entry) : id;
+}
+
 /** The runtime glyph and model of the task's claim, else of its plan routing; nothing without either. */
 export function TaskRoute({
   task,
   className,
+  models = [],
 }: {
   task: BoardModel['tasks'][number];
   className: string;
+  /** The route runtime's models, which name the model. */
+  models?: readonly RuntimeModel[];
 }) {
   const route = task.claim ?? task.planned;
   if (!route?.runtime && !route?.model) return null;
@@ -405,7 +437,7 @@ export function TaskRoute({
       {route.runtime && <RuntimeGlyph runtime={route.runtime} size={14} />}
       <ModelMark model={route.model} beside={route.runtime} size={14} />
       {route.model ? (
-        <span className="bd-rtm">{route.model}</span>
+        <span className="bd-rtm">{modelName(models, route.model)}</span>
       ) : (
         <span className="bd-rtn">{runtimeName(route.runtime ?? null)}</span>
       )}

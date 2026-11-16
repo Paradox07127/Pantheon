@@ -6,13 +6,19 @@ vi.mock('react', async (actual) =>
 );
 vi.mock('@/data/board', () => ({
   useBoard: Object.assign((selector: any) => selector({ board: null }), {
-    getState: () => ({ board: null }),
+    getState: () => ({ board: null, refresh() {} }),
     subscribe: () => () => {},
   }),
 }));
-vi.mock('@/store', () => ({
-  useShell: (selector: any) => selector({ theme: 'system', setTheme() {} }),
-}));
+vi.mock('@/store', () => {
+  const shell = {
+    theme: 'system',
+    setTheme(theme: string) {
+      shell.theme = theme;
+    },
+  };
+  return { useShell: Object.assign((selector: any) => selector(shell), { getState: () => shell }) };
+});
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
@@ -20,9 +26,14 @@ import { DEFAULT_DIFF_PREFS, DIFF_PREFS_KEY, getDiffPrefs, setDiffPrefs } from '
 import {
   APPEARANCE_KEY,
   DEFAULT_APPEARANCE,
+  DEFAULT_LAYOUT,
   DEFAULT_LOOK,
+  getAccent,
+  getLayout,
   LOOK_KEY,
+  setAccent,
   setAppearance,
+  setLayout,
   setLook,
 } from '@/data/layout';
 import {
@@ -36,10 +47,13 @@ import {
   importPersonalSettings,
   personalSettings,
 } from '@/data/personal-settings';
+import { setBackdropOn, setUserThemes, useBackdropOn } from '@/data/theme';
 import { resetShortcuts, setShortcut, SHORTCUTS_KEY, shortcutKeys } from '@/lib/shortcuts';
 import { ProjectSettingsScreen } from '@/screens/settings/ProjectSettingsScreen';
 import { hitGroups } from '@/screens/settings/settings-jump';
+import { searchSettings } from '@/screens/settings/settings-search';
 import { useSettingsView } from '@/screens/settings/view';
+import { useShell } from '@/store';
 import { zh } from './i18n-setup.js';
 
 let stored: Map<string, string>;
@@ -55,6 +69,11 @@ function resetStores() {
   setNotificationPrefs(DEFAULT_NOTIFICATIONS);
   setDiffPrefs(DEFAULT_DIFF_PREFS);
   resetShortcuts();
+  setAccent('default');
+  useShell.getState().setTheme('system');
+  setBackdropOn(true);
+  setLayout(DEFAULT_LAYOUT);
+  setUserThemes({ list: null, active: null });
 }
 
 beforeEach(() => {
@@ -65,6 +84,11 @@ beforeEach(() => {
     removeItem: (key: string) => void stored.delete(key),
   });
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+  vi.stubGlobal('document', {
+    getElementById: () => null,
+    createElement: () => ({}),
+    head: { append() {} },
+  });
   useSettingsView.setState({ page: 'data', query: '' });
 });
 afterEach(() => {
@@ -81,6 +105,15 @@ describe('settings search', () => {
     expect(hitGroups('落回门禁').map((g) => g.page)).toEqual(['gates']);
     expect(hitGroups('外观').map((g) => g.page)).toEqual(['appearance']);
     expect(hitGroups('按钮颜色').map((g) => g.page)).toEqual(['appearance']);
+  });
+
+  it('finds the rows that had no search entry', () => {
+    const found = (query: string) => searchSettings(query).map((hit) => hit.id);
+    expect(found(zh('settings.appearance.backdrop'))).toContain('appearance.backdrop');
+    expect(found(zh('settings.appearance.savedTheme'))).toContain('appearance.savedTheme');
+    expect(found(zh('settings.data.exportRow'))).toContain('data.export');
+    expect(found(zh('settings.data.importRow'))).toContain('data.import');
+    expect(found(zh('settings.gate.runner'))).toContain('gates.runner');
   });
 
   it('dims the pages without a match, shows an empty state without one and clears on Escape', () => {
@@ -141,6 +174,60 @@ describe('personal settings export and import', () => {
     expect(JSON.parse(stored.get(NOTIFICATIONS_KEY)!)).toEqual(before.notifications);
     expect(JSON.parse(stored.get(SHORTCUTS_KEY)!)).toEqual({ palette: 'Meta+P' });
     expect(JSON.parse(stored.get(DIFF_PREFS_KEY)!)).toEqual(before.diff);
+  });
+
+  it('carries the accent, light or dark, saved theme, backdrop, pane widths and language', async () => {
+    const bridge = {
+      command: vi.fn(async () => ({ ok: true, value: {} })),
+      query: vi.fn(async () => ({ ok: false, error: { code: 'unknown_route', message: '' } })),
+      setLocale: vi.fn(async () => ({ ok: true, value: undefined })),
+    };
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {}, pantheon: bridge });
+    setAccent('lapis');
+    useShell.getState().setTheme('dark');
+    setBackdropOn(false);
+    setLayout({
+      sidebar: { collapsed: false, width: 300 },
+      inspector: 500,
+      drawer: 600,
+      collapse_sidebar_at_start: true,
+    });
+    setUserThemes({ list: { active_theme_id: 'dusk', themes: [] }, active: null });
+    const layout = getLayout();
+    const file = JSON.parse(exportPersonalSettings());
+    expect(file).toMatchObject({
+      accent: 'lapis',
+      theme: 'dark',
+      user_theme: 'dusk',
+      backdrop: false,
+      layout: { inspector: 500, drawer: 600, collapse_sidebar_at_start: true },
+      locale: 'system',
+    });
+    resetStores();
+
+    expect(importPersonalSettings(JSON.stringify(file))).toBe(true);
+    await new Promise((done) => setTimeout(done));
+    expect(getAccent()).toBe('lapis');
+    expect(useShell.getState().theme).toBe('dark');
+    expect(mount(() => useBackdropOn()).value).toBe(false);
+    expect(getLayout()).toEqual(layout);
+    expect(bridge.command.mock.calls.map((c) => (c as unknown as [any])[0])).toEqual([
+      expect.objectContaining({ type: 'theme.apply', input: { theme_id: 'dusk' } }),
+    ]);
+    expect(bridge.setLocale).not.toHaveBeenCalled();
+
+    expect(importPersonalSettings(JSON.stringify({ ...file, locale: 'en' }))).toBe(true);
+    await new Promise((done) => setTimeout(done));
+    expect(bridge.setLocale).toHaveBeenCalledWith('en');
+  });
+
+  it('reads a file without the newer fields and rejects one with an unknown accent', () => {
+    change();
+    const file = JSON.parse(exportPersonalSettings());
+    for (const key of ['accent', 'theme', 'user_theme', 'backdrop', 'layout', 'locale'])
+      delete file[key];
+    expect(importPersonalSettings(JSON.stringify(file))).toBe(true);
+    expect(importPersonalSettings(JSON.stringify({ ...file, accent: 'teal' }))).toBe(false);
   });
 
   it('drops unknown fields', () => {

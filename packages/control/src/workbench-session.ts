@@ -157,13 +157,14 @@ import { writerTempDirectory } from './workspace-removal.js';
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
 const WORKBENCH_TURN_MS = 6 * 60 * 60 * 1000;
 
-const LEAD_INSTRUCTIONS = [
+export const LEAD_INSTRUCTIONS = [
   'You are a lead session: you plan the board for the requests the user brings you.',
   'Before you plan a request, call project_read and read the code, the tests and the recent commits that the request touches. Do not ask the user what the repository, project_read or project memory can tell you.',
-  'When reading cannot settle a point the request leaves open, and the answer would change which paths a task may change, change what result counts as done, or lead to a step that cannot be undone, ask the user: at most 3 questions for one request, the one that changes the plan most first. Write the plan on the answer you recommend, call ask_user with the ids of the tasks that depend on the answer in blocks, and start the other tasks. When the request is so open that you cannot write any task, ask before you plan.',
+  'When reading cannot settle a point the request leaves open, and the answer would change which paths a task may change, change what result counts as done, or lead to a step that cannot be undone, ask the user: at most 3 questions for one request, the one that changes the plan most first. Write the plan on the answer you recommend, call ask_user with the ids of the tasks that depend on the answer in blocks, and start the other tasks. ask_user needs a plan: when the request is so open that you cannot write any task yet, first write a plan with update_board that holds only what you know, then call ask_user. Ask the user only with ask_user.',
   "Decide every other open point yourself and write each decision as one line in the plan's assumptions. Do not ask about a small request whose result is easy to undo.",
-  'Add every request that changes the repository to your plan with update_board before you change anything. Write a small request that one session can finish right away as one task whose scope names the one or two files it changes; lead.workflow.path in project_read most likely makes its path direct, so claim it with start_task, change and commit it yourself, then call report with kind done. A request that only answers a question and changes nothing needs no task. While your plan has an unfinished task your turns are read-only unless you work on a direct task.',
+  'Add every request that changes the repository to your plan with update_board before you change anything. Write a small request that one session can finish right away as one task whose scope names the one or two files it changes; lead.workflow.path in project_read most likely makes its path direct, so claim it with start_task, change and commit it yourself, then call the report tool with kind done. A request that only answers a question and changes nothing needs no task; answer it in plain text. While your plan has an unfinished task your turns are read-only unless you work on a direct task.',
   'Split a request that needs several sessions in parallel or in stages into tasks with dependencies and milestones, and send the whole plan with update_board every time you change it.',
+  "When a plan change is the user's to decide, such as splitting or removing a requested task or changing its deliverable after repeated failures, call propose_board with the change instead of edit_board; it waits on the board until the user decides, and withdraw_board_proposal takes it back.",
   "Give every task its source (verbatim excerpts copied from the user's messages), its scope (the repository paths it may change) and its acceptance (the shell commands that must pass).",
   'Give a task that fixes a bug an acceptance command that runs a test that reproduces the bug: put the test file in its scope, and say in its goal that the session writes this test first and sees it fail before the fix. Give a task that adds behavior an acceptance command that runs a test of the new behavior.',
   'A task is done when its session merges. Give a task without commits, such as research or a document reply, done_when report; it may have no scope or acceptance, and it is done when you call accept_task with the evidence from its done report.',
@@ -172,7 +173,7 @@ const LEAD_INSTRUCTIONS = [
   'When project_read has lead.devices, a task may name the device its session runs on in device, with the reason in one sentence in device_reason. Put what the device must have in needs: os=<system> and arch=<architecture> as lead.devices gives them (such as os=macos or arch=arm64), and the device labels. Name what the task session holds for itself while it runs, such as a test database, a port, a simulator or a GPU, as a resource in uses; give tasks that would compete for the same thing the same resource name, or put them on different devices.',
   "lead.workflow.path in project_read gives the suggested path for each tier; when a task's path differs from it, give the reason in one sentence in flow_reason. A task whose path is review_loop is dispatched like one whose path is dispatch, and before it merges another runtime, or the task's own runtime when it is the only one, reviews its changes and sends blocking findings back to its session until the review passes or the review rounds run out.",
   "lead.workflow.steps in project_read lists the user's custom steps by slot: before_dispatch steps run before a task opens, before_merge steps after its gates pass and before it merges, and after_merge steps after it merges (for a done_when report task, after its done report and before you accept it). A task may wait there for the user's approval, a prompt turn or a review; a failed step comes back to you as a board update.",
-  'Calling start_task with a task whose path is direct means you do that task yourself, with no task session: change and commit it in your own worktree, then call report with kind done. Pantheon runs the gates and merges your commits, and your session stays open.',
+  'Calling start_task with a task whose path is direct means you do that task yourself, with no task session: change and commit it in your own worktree, then call the report tool with kind done. Pantheon runs the gates and merges your commits, and your session stays open.',
   'Work on one direct task at a time and start it on its own; stop_task with its id gives it up.',
   'lead.experiences in project_read lists the practices on trial or in force in this project; follow each one where it applies.',
   'When your plan has pending user edits, which board updates name by edit_id, first apply or reject each one with the resolve_edit op of edit_board and a reason, before you do anything else.',
@@ -196,6 +197,7 @@ const LEAD_INSTRUCTIONS = [
 export function workerInstructions(
   ctx: ControlContext,
   task: NonNullable<Session['task']>,
+  questionTool: string | undefined,
 ): string {
   const lead = ctx.store.get<Session>('sessions', task.lead_session_id),
     parent = ctx.store
@@ -214,7 +216,9 @@ export function workerInstructions(
         ]),
     "If the user's words conflict with the goal, the task needs changes outside its scope, or an acceptance command cannot pass as written, use report with kind requirement to name the conflict and end your turn; do not guess.",
     'Use report to tell the lead about risks, suggested tasks or dependencies, and when you think the task is done.',
-    "A question you ask the user goes to your lead's board, where the user answers it; the answer comes back to this session.",
+    questionTool
+      ? "A question you ask the user goes to your lead's board, where the user answers it; the answer comes back to this session."
+      : 'When you need the user to decide or answer something, use report with kind blocked, or kind requirement when the task as written cannot be done, and end your turn; your lead asks the user.',
     'Messages that start with [Lead] come from your lead.',
   ].join('\n');
 }
@@ -271,6 +275,8 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
       ?.origin === undefined;
   const saved = project.extension_overrides?.[session.runtime];
   const cdpPort = session.app_debug ? appCdpPort(ctx) : undefined;
+  // A purpose session follows its own guide, which has it change the worktree without a plan.
+  const planningLead = pantheonMcp && !session.task && !session.app_debug && !session.project_setup;
   return managedSessionSpec(ctx, {
     ...(autoTitle ? { auto_title: true } : {}),
     platform_session_id: session.id,
@@ -284,15 +290,18 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     ...(session.task ? { task_session: true } : {}),
     control_instructions: [
       `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
-      ...(questionTool
+      // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
+      ...(questionTool && !planningLead
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text.${session.task ? " The question goes to your lead's board, where the user answers it, and the answer comes back to this session." : ''} Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,
           ]
         : []),
       // The board tools exist only while the session holds a Pantheon credential.
-      ...(pantheonMcp
-        ? [session.task ? workerInstructions(ctx, session.task) : LEAD_INSTRUCTIONS]
-        : []),
+      ...(pantheonMcp && session.task
+        ? [workerInstructions(ctx, session.task, questionTool)]
+        : planningLead
+          ? [LEAD_INSTRUCTIONS]
+          : []),
     ].join('\n\n'),
     workspace: { id: workspace.id, path: workspace.path },
     ...(sandbox
@@ -3357,7 +3366,7 @@ function leadTaskMerge(
   requireThat(
     !holders.length,
     'invalid_state',
-    `Files outside the scope of task ${input.task_id} lie in the scope of unfinished task ${holders.join(', ')}`,
+    `Files outside the scope of task ${input.task_id} lie in the scope of unfinished task ${holders.join(', ')}; wait until that task is done, change the scopes in your plan, or ask the user`,
   );
   return admitMerge(ctx, session, cause, false, input.reason, files);
 }
@@ -3621,6 +3630,8 @@ export function openWorktreeSession(
     native_fork?: Session['native_fork'];
   },
   principal: Pick<Principal, 'role' | 'session_id'> = { role: 'user' },
+  /** The title the worktree folder is named after, in place of the first message. */
+  name?: string,
 ): Session {
   requireThat(
     input.workspace === 'in_place' || ctx.workspaceRoot !== undefined,
@@ -3702,7 +3713,10 @@ export function openWorktreeSession(
             kind: 'linked_worktree',
             source: fork ? fork.workspace.source! : project.roots[0]!,
             base_ref: input.from ? start!.base_sha : start!.base_ref,
-            name: board?.task.title ?? input.input.split('\n').find((line) => line.trim() !== ''),
+            name:
+              name ??
+              board?.task.title ??
+              input.input.split('\n').find((line) => line.trim() !== ''),
           },
           cause,
         );
@@ -3765,6 +3779,7 @@ export function openWorktreeSession(
       ...(input.fast ? { fast: true as const } : {}),
       ...(input.ultracode ? { ultracode: true as const } : {}),
       ...(input.purpose === 'app_debug' ? { app_debug: true as const } : {}),
+      ...(input.purpose === 'project_setup' ? { project_setup: true as const } : {}),
       title: derivedTitle(
         board?.task.title ??
           (input.input.split('\n').find((line) => line.trim() !== '') ?? '').trim(),

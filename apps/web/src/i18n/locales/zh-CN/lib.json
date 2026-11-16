@@ -48,5 +48,16 @@
   "lib.shortcuts.label.dialogNext": "下一步",
   "lib.reveal.finder": "在 Finder 中显示",
   "lib.reveal.explorer": "在文件资源管理器中显示",
-  "lib.reveal.fileManager": "在文件管理器中显示"
+  "lib.reveal.fileManager": "在文件管理器中显示",
+  "lib.time.underSecond": "<1 秒",
+  "lib.time.seconds": "{seconds} 秒",
+  "lib.time.minutesSeconds": "{minutes} 分 {seconds} 秒",
+  "lib.time.minutes": "{minutes} 分钟",
+  "lib.time.hoursMinutes": "{hours} 小时 {minutes} 分",
+  "lib.time.hours": "{hours} 小时",
+  "lib.time.daysHours": "{days} 天 {hours} 小时",
+  "lib.time.days": "{days} 天",
+  "lib.time.today": "今天",
+  "lib.time.yesterday": "昨天",
+  "lib.time.yesterdayAt": "昨天 {time}"
 }

@@ -46,15 +46,6 @@
 .bp-hn + .bp-tools {
   margin-left: 8px;
 }
-.bp-empty {
-  text-wrap: balance;
-  flex: 1;
-  display: grid;
-  place-items: center;
-  min-height: 48px;
-  color: var(--mu);
-  text-align: center;
-}
 .bp-mu {
   color: var(--mu);
 }
@@ -160,16 +151,6 @@
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
-.bp-add {
-  color: var(--ok);
-}
-.bp-del {
-  color: var(--bad);
-}
-.bp-add[data-zero],
-.bp-del[data-zero] {
-  color: var(--mu);
-}
 .bp-rtd {
   display: inline-block;
   width: 8px;
@@ -240,6 +221,9 @@
   flex: 1;
   min-height: 0;
   display: flex;
+}
+.bp-chart > .es-in {
+  flex: 1;
 }
 .bp-chart > svg {
   position: absolute;

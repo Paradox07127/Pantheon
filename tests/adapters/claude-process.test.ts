@@ -11,6 +11,7 @@ import type {
 import { ClaudeAdapter } from '../../packages/adapters/src/claude.js';
 import { descendants, readProcessIdentity } from '../../packages/adapters/src/process.js';
 import { NATIVE_ENV_ALLOWLIST, type AgentEvent, type SessionSpec } from '@pantheon/domain';
+import { psUsable } from '../helpers.js';
 
 vi.mock('../../packages/adapters/src/process.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../packages/adapters/src/process.js')>();
@@ -222,171 +223,180 @@ describe('Claude owned process', () => {
     });
   });
 
-  it('does not confirm a stop while a tool that left the process group still runs', async () => {
-    const marker = `claude-escape-${randomUUID()}`;
-    const escaping = path.join(root, 'escaping.cjs');
-    writeFileSync(
-      escaping,
-      `#!${process.execPath}\nconst escaped = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)', process.argv[2]], { detached: true, stdio: 'ignore' });\nescaped.unref();\nprocess.stdin.resume(); process.stdout.write('ready ' + escaped.pid + '\\n'); process.stdin.on('end', () => process.exit(0));`,
-    );
-    chmodSync(escaping, 0o755);
-    let escapedPid = 0;
-    const query = ({ options }: { options: Options }) => {
-      const child = options.spawnClaudeCodeProcess!({
-        command: escaping,
-        args: [marker],
-        cwd: options.cwd,
-        env: options.env!,
-        signal: new AbortController().signal,
-      });
-      const ready = new Promise<void>((resolve) =>
-        child.stdout.once('data', (data: Buffer) => {
-          escapedPid = Number(String(data).trim().split(' ')[1]);
-          resolve();
-        }),
+  it.skipIf(!psUsable)(
+    'does not confirm a stop while a tool that left the process group still runs',
+    async () => {
+      const marker = `claude-escape-${randomUUID()}`;
+      const escaping = path.join(root, 'escaping.cjs');
+      writeFileSync(
+        escaping,
+        `#!${process.execPath}\nconst escaped = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)', process.argv[2]], { detached: true, stdio: 'ignore' });\nescaped.unref();\nprocess.stdin.resume(); process.stdout.write('ready ' + escaped.pid + '\\n'); process.stdin.on('end', () => process.exit(0));`,
       );
-      return {
-        initializationResult: async () => {
-          await ready;
-          return { account: { apiProvider: 'firstParty', subscriptionType: 'max' } };
-        },
-        close: () => child.stdin.end(),
-        async *[Symbol.asyncIterator]() {},
+      chmodSync(escaping, 0o755);
+      let escapedPid = 0;
+      const query = ({ options }: { options: Options }) => {
+        const child = options.spawnClaudeCodeProcess!({
+          command: escaping,
+          args: [marker],
+          cwd: options.cwd,
+          env: options.env!,
+          signal: new AbortController().signal,
+        });
+        const ready = new Promise<void>((resolve) =>
+          child.stdout.once('data', (data: Buffer) => {
+            escapedPid = Number(String(data).trim().split(' ')[1]);
+            resolve();
+          }),
+        );
+        return {
+          initializationResult: async () => {
+            await ready;
+            return { account: { apiProvider: 'firstParty', subscriptionType: 'max' } };
+          },
+          close: () => child.stdin.end(),
+          async *[Symbol.asyncIterator]() {},
+        };
       };
-    };
-    const adapter = new ClaudeAdapter(escaping, 'test', query as never);
-    const handle = await adapter.start(spec, () => {});
-    const escaped = readProcessIdentity(escapedPid);
-    try {
-      expect(escaped?.start_time_us).toEqual(expect.any(Number));
-      expect(psField(escapedPid, 'ppid=')).toBe(String(handle.process_identity!.pid));
-      const receipt = await adapter.close(handle, Date.now() + 3000);
-      expect(receipt.stopped, 'a tool in its own session still runs').toBe(false);
-      expect(receipt.reason).toBe('Descendants that left the process group are still running');
-      expect((await adapter.close(handle, Date.now() + 1000)).stopped).toBe(false);
-    } finally {
-      const target = { pid: escapedPid, start_time_us: escaped?.start_time_us };
-      console.log('Signal targets:', JSON.stringify([target]));
-      if (
-        target.start_time_us === undefined ||
-        readProcessIdentity(target.pid)?.start_time_us !== target.start_time_us ||
-        !psField(target.pid, 'command=').includes(marker)
-      )
-        throw new Error(`Cleanup aborted; ${target.pid} is not the process this test started`);
-      process.kill(target.pid, 'SIGKILL');
-    }
-  });
+      const adapter = new ClaudeAdapter(escaping, 'test', query as never);
+      const handle = await adapter.start(spec, () => {});
+      const escaped = readProcessIdentity(escapedPid);
+      try {
+        expect(escaped?.start_time_us).toEqual(expect.any(Number));
+        expect(psField(escapedPid, 'ppid=')).toBe(String(handle.process_identity!.pid));
+        const receipt = await adapter.close(handle, Date.now() + 3000);
+        expect(receipt.stopped, 'a tool in its own session still runs').toBe(false);
+        expect(receipt.reason).toBe('Descendants that left the process group are still running');
+        expect((await adapter.close(handle, Date.now() + 1000)).stopped).toBe(false);
+      } finally {
+        const target = { pid: escapedPid, start_time_us: escaped?.start_time_us };
+        console.log('Signal targets:', JSON.stringify([target]));
+        if (
+          target.start_time_us === undefined ||
+          readProcessIdentity(target.pid)?.start_time_us !== target.start_time_us ||
+          !psField(target.pid, 'command=').includes(marker)
+        )
+          throw new Error(`Cleanup aborted; ${target.pid} is not the process this test started`);
+        process.kill(target.pid, 'SIGKILL');
+      }
+    },
+  );
 
-  it('confirms a stop once a tool that left the process group has exited unreaped', async () => {
-    const marker = `claude-unreaped-${randomUUID()}`;
-    // After exec, node never waits for the backgrounded sleep, so it stays unreaped once it exits.
-    const holder = spawn(
-      'sh',
-      [
-        '-c',
-        'sleep 1 & echo $!; exec "$0" -e "setTimeout(() => {}, 30000)" "$1"',
+  it.skipIf(!psUsable)(
+    'confirms a stop once a tool that left the process group has exited unreaped',
+    async () => {
+      const marker = `claude-unreaped-${randomUUID()}`;
+      // After exec, node never waits for the backgrounded sleep, so it stays unreaped once it exits.
+      const holder = spawn(
+        'sh',
+        [
+          '-c',
+          'sleep 1 & echo $!; exec "$0" -e "setTimeout(() => {}, 30000)" "$1"',
+          process.execPath,
+          marker,
+        ],
+        { stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      const holderIdentity = readProcessIdentity(holder.pid!);
+      try {
+        const exitedPid = await new Promise<number>((resolve) =>
+          holder.stdout.once('data', (data: Buffer) => resolve(Number(String(data).trim()))),
+        );
+        const exited = readProcessIdentity(exitedPid)!;
+        for (let tries = 0; !psField(exitedPid, 'stat=').startsWith('Z') && tries < 300; tries++)
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(psField(exitedPid, 'stat=')).toMatch(/^Z/);
+        const f = ownedQuery();
+        const handle = await f.adapter.start(spec, () => {});
+        vi.mocked(descendants).mockReturnValueOnce([
+          { pid: exitedPid, start_time_us: exited.start_time_us!, command: 'sleep 1' },
+        ]);
+        const receipt = await f.adapter.close(handle, Date.now() + 1000);
+        expect(readProcessIdentity(exitedPid)?.start_time_us).toBe(exited.start_time_us);
+        expect(receipt).toMatchObject({ stopped: true });
+      } finally {
+        const target = { pid: holder.pid!, start_time_us: holderIdentity?.start_time_us };
+        console.log('Signal targets:', JSON.stringify([target]));
+        if (
+          target.start_time_us === undefined ||
+          readProcessIdentity(target.pid)?.start_time_us !== target.start_time_us ||
+          !psField(target.pid, 'command=').includes(marker)
+        )
+          throw new Error(`Cleanup aborted; ${target.pid} is not the process this test started`);
+        process.kill(target.pid, 'SIGKILL');
+      }
+    },
+  );
+
+  it.skipIf(!psUsable)(
+    'does not signal a group number none of the members an earlier stop saw still holds',
+    async () => {
+      const lingering = path.join(root, 'lingering.cjs');
+      writeFileSync(
+        lingering,
+        `#!${process.execPath}\nconst tool = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], { stdio: 'ignore' });\nprocess.stdin.resume(); process.stdout.write('ready ' + tool.pid + '\\n'); process.stdin.on('end', () => process.exit(0));`,
+      );
+      chmodSync(lingering, 0o755);
+      let toolPid = 0;
+      let cliExited: Promise<unknown> = Promise.resolve();
+      const query = ({ options }: { options: Options }) => {
+        const child = options.spawnClaudeCodeProcess!({
+          command: lingering,
+          args: [],
+          cwd: options.cwd,
+          env: options.env!,
+          signal: new AbortController().signal,
+        });
+        cliExited = new Promise((resolve) => child.once('exit', resolve));
+        const ready = new Promise<void>((resolve) =>
+          child.stdout.once('data', (data: Buffer) => {
+            toolPid = Number(String(data).trim().split(' ')[1]);
+            resolve();
+          }),
+        );
+        return {
+          initializationResult: async () => {
+            await ready;
+            return { account: { apiProvider: 'firstParty', subscriptionType: 'max' } };
+          },
+          close: () => child.stdin.end(),
+          async *[Symbol.asyncIterator]() {},
+        };
+      };
+      const adapter = new ClaudeAdapter(lingering, 'test', query as never);
+      const handle = await adapter.start(spec, () => {});
+      const decoy = spawn(
         process.execPath,
-        marker,
-      ],
-      { stdio: ['ignore', 'pipe', 'ignore'] },
-    );
-    const holderIdentity = readProcessIdentity(holder.pid!);
-    try {
-      const exitedPid = await new Promise<number>((resolve) =>
-        holder.stdout.once('data', (data: Buffer) => resolve(Number(String(data).trim()))),
-      );
-      const exited = readProcessIdentity(exitedPid)!;
-      for (let tries = 0; !psField(exitedPid, 'stat=').startsWith('Z') && tries < 300; tries++)
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(psField(exitedPid, 'stat=')).toMatch(/^Z/);
-      const f = ownedQuery();
-      const handle = await f.adapter.start(spec, () => {});
-      vi.mocked(descendants).mockReturnValueOnce([
-        { pid: exitedPid, start_time_us: exited.start_time_us!, command: 'sleep 1' },
-      ]);
-      const receipt = await f.adapter.close(handle, Date.now() + 1000);
-      expect(readProcessIdentity(exitedPid)?.start_time_us).toBe(exited.start_time_us);
-      expect(receipt).toMatchObject({ stopped: true });
-    } finally {
-      const target = { pid: holder.pid!, start_time_us: holderIdentity?.start_time_us };
-      console.log('Signal targets:', JSON.stringify([target]));
-      if (
-        target.start_time_us === undefined ||
-        readProcessIdentity(target.pid)?.start_time_us !== target.start_time_us ||
-        !psField(target.pid, 'command=').includes(marker)
-      )
-        throw new Error(`Cleanup aborted; ${target.pid} is not the process this test started`);
-      process.kill(target.pid, 'SIGKILL');
-    }
-  });
-
-  it('does not signal a group number none of the members an earlier stop saw still holds', async () => {
-    const lingering = path.join(root, 'lingering.cjs');
-    writeFileSync(
-      lingering,
-      `#!${process.execPath}\nconst tool = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], { stdio: 'ignore' });\nprocess.stdin.resume(); process.stdout.write('ready ' + tool.pid + '\\n'); process.stdin.on('end', () => process.exit(0));`,
-    );
-    chmodSync(lingering, 0o755);
-    let toolPid = 0;
-    let cliExited: Promise<unknown> = Promise.resolve();
-    const query = ({ options }: { options: Options }) => {
-      const child = options.spawnClaudeCodeProcess!({
-        command: lingering,
-        args: [],
-        cwd: options.cwd,
-        env: options.env!,
-        signal: new AbortController().signal,
-      });
-      cliExited = new Promise((resolve) => child.once('exit', resolve));
-      const ready = new Promise<void>((resolve) =>
-        child.stdout.once('data', (data: Buffer) => {
-          toolPid = Number(String(data).trim().split(' ')[1]);
-          resolve();
-        }),
-      );
-      return {
-        initializationResult: async () => {
-          await ready;
-          return { account: { apiProvider: 'firstParty', subscriptionType: 'max' } };
+        ['-e', "console.log('ready'); setInterval(() => {}, 1000)"],
+        {
+          detached: true,
+          stdio: ['ignore', 'pipe', 'ignore'],
         },
-        close: () => child.stdin.end(),
-        async *[Symbol.asyncIterator]() {},
-      };
-    };
-    const adapter = new ClaudeAdapter(lingering, 'test', query as never);
-    const handle = await adapter.start(spec, () => {});
-    const decoy = spawn(
-      process.execPath,
-      ['-e', "console.log('ready'); setInterval(() => {}, 1000)"],
-      {
-        detached: true,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      },
-    );
-    const running = (pid: number) => /^[^Z]/.test(psField(pid, 'stat='));
-    try {
-      await new Promise((resolve) => decoy.stdout.once('data', resolve));
-      // A deadline already passed leaves the group running with the CLI and its tool in it.
-      expect((await adapter.close(handle, Date.now() - 1)).stopped).toBe(false);
-      await cliExited;
-      for (let tries = 0; running(toolPid) && tries < 300; tries++)
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(running(toolPid)).toBe(false);
-      // Stands in for the group number passing to another group between the stops.
-      Object.assign(handle.process_identity!, { pid: decoy.pid });
+      );
+      const running = (pid: number) => /^[^Z]/.test(psField(pid, 'stat='));
+      try {
+        await new Promise((resolve) => decoy.stdout.once('data', resolve));
+        // A deadline already passed leaves the group running with the CLI and its tool in it.
+        expect((await adapter.close(handle, Date.now() - 1)).stopped).toBe(false);
+        await cliExited;
+        for (let tries = 0; running(toolPid) && tries < 300; tries++)
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(running(toolPid)).toBe(false);
+        // Stands in for the group number passing to another group between the stops.
+        Object.assign(handle.process_identity!, { pid: decoy.pid });
 
-      const again = await adapter.close(handle, Date.now() + 1000);
+        const again = await adapter.close(handle, Date.now() + 1000);
 
-      expect(running(decoy.pid!), 'the group that took over the number still runs').toBe(true);
-      expect(again).toMatchObject({
-        stopped: false,
-        reason: 'Process group number may now belong to another process group',
-      });
-    } finally {
-      // Still unreaped while its exit code is unset, so its pid is still its own.
-      if (decoy.exitCode === null && decoy.signalCode === null) decoy.kill('SIGKILL');
-    }
-  });
+        expect(running(decoy.pid!), 'the group that took over the number still runs').toBe(true);
+        expect(again).toMatchObject({
+          stopped: false,
+          reason: 'Process group number may now belong to another process group',
+        });
+      } finally {
+        // Still unreaped while its exit code is unset, so its pid is still its own.
+        if (decoy.exitCode === null && decoy.signalCode === null) decoy.kill('SIGKILL');
+      }
+    },
+  );
 
   it('attaches observed exit evidence to a billing failure after spawning', async () => {
     const f = ownedQuery(true);

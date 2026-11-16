@@ -119,7 +119,7 @@ describe('memory graph detail', () => {
     expect(text).toContain('Dedupe by request key');
     expect(text).toMatch(/决定 当前 用户确认/);
     expect(text).toContain('One refund per request key.');
-    expect(text).toMatch(/键 refund\.dedupe 版本 2 确认 今天 \d\d:\d\d/);
+    expect(text).toMatch(/键 refund\.dedupe 版本 2 确认 \d\d:\d\d/);
   });
 
   it('shows the version the memory carries, not its revision', () => {
@@ -194,11 +194,11 @@ describe('memory graph detail', () => {
     const p = props({ item: null, error: 'daemon offline', onRetry });
     const out = html(p);
     expect(out).toContain('role="alert"');
-    expect(plain(out)).toMatch(/读不到这条记忆 daemon offline 重试/);
+    expect(plain(out)).toMatch(/读不到这条记忆：daemon offline 重试/);
     expect(out).not.toContain('aria-busy');
     find(
       GraphDetailView(p),
-      (n) => n.type === 'button' && text(n).includes(zh('memory.graphSide.retry')),
+      (n) => n.type === 'button' && text(n).includes(zh('components.retry')),
     ).props.onClick();
     expect(onRetry).toHaveBeenCalled();
   });

@@ -52,8 +52,8 @@ describe('the activity list', () => {
       event('a', at(5, 10), { kind: 'merge', what: 'merged', detail: 'abcdef1' }),
     ]);
     expect(sections(h).map((s) => s.props['aria-label'])).toEqual([
-      zh('trace.activity.today'),
-      zh('trace.activity.yesterday'),
+      zh('lib.time.today'),
+      zh('lib.time.yesterday'),
       '3月5日',
     ]);
     expect(sections(h).map((s) => rowsOf(s).length)).toEqual([1, 0, 0]);
@@ -117,7 +117,7 @@ describe('the activity list', () => {
     const notes = nodes(h.value)
       .filter((n) => typeof n.type === 'function' && n.type.name === 'Note')
       .map((n) => text((n.type as (p: unknown) => ReactElement)(n.props)));
-    expect(notes).toEqual(['等你 5 分', '等了 18 分', '+9−0', '第 3 次']);
+    expect(notes).toEqual(['等你 5 分钟', '等了 18 分钟', '+9 −0', '第 3 次']);
   });
 
   it('sets the command an approval asks to run and a merged commit apart, and counts checks passed and skipped', () => {

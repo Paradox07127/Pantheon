@@ -11,9 +11,10 @@ vi.mock('@/data/board', () => ({
     subscribe: () => () => {},
   }),
 }));
-vi.mock('@/store', () => ({
-  useShell: (selector: any) => selector({ theme: 'system', setTheme() {} }),
-}));
+vi.mock('@/store', () => {
+  const shell = { theme: 'system', setTheme() {} };
+  return { useShell: Object.assign((selector: any) => selector(shell), { getState: () => shell }) };
+});
 vi.mock('@/screens/settings/view', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useSettingsView: (select: any) =>

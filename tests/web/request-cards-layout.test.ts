@@ -12,7 +12,7 @@ import type { RequestItem } from '@/data/transcript';
 import type { PendingPermission } from '@/screens/sessions/model';
 import { AnsweredRequest } from '@/screens/sessions/parts';
 import { PermissionCard, RequestSlot } from '@/screens/sessions/SessionsScreen';
-import { turnClock } from '@/screens/sessions/thread-model';
+import { clockText } from '@/lib/time-text';
 
 const asked = Date.UTC(2026, 0, 2, 3, 39);
 const needsFor = (id: string) => ({
@@ -69,9 +69,7 @@ describe('approval card', () => {
     expect(text(nodes(run).find((n) => n.props.className === 'rq-objt'))).toBe(
       'pnpm db:migrate --env staging',
     );
-    expect(text(nodes(run).find((n) => n.props.className === 'rq-at'))).toBe(
-      turnClock.format(asked),
-    );
+    expect(text(nodes(run).find((n) => n.props.className === 'rq-at'))).toBe(clockText(asked));
     const read = rows(card('Read', { file_path: '/repo/src/a.ts' }))[0]!;
     expect(text(nodes(read).find((n) => n.props.className === 'rq-objt'))).toBe('src/a.ts');
   });

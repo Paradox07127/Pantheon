@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
 import {
@@ -43,6 +43,7 @@ import { useSessionDisplay } from '../../data/session-display';
 import type { Session, SessionTurn, TurnView } from '../../data/transcript';
 import { insertVoiceText, useVoice } from '../../data/voice';
 import { t } from '../../i18n';
+import { durationText } from '../../lib/time-text';
 import { keyText, onMac, shortcutKeys, shortcutMatches, useShortcut } from '../../lib/shortcuts';
 import { useShell } from '../../store';
 import { useSettingsView } from '../settings/view';
@@ -73,7 +74,7 @@ import { commentSent, refsInput, type ComposeNotice } from './compose';
 import { QueueDock } from './QueueDock';
 import { contextRing } from './run-model';
 import { fail, FIT_MENU, NO_FEEDBACK, ON, useFileInput, useSecondTick } from './shared';
-import { clockText, statusTicks, turnStatusLabel } from './thread-model';
+import { statusTicks, turnStatusLabel } from './thread-model';
 import { VoiceBar } from './VoiceBar';
 import './compose.css';
 
@@ -161,7 +162,7 @@ function ComposeStatus(props: {
         )
       : null,
     agents ? `${agents.done} / ${agents.total}` : null,
-    ticking && shown && shown.since !== null ? clockText(Date.now() - shown.since) : null,
+    ticking && shown && shown.since !== null ? durationText(Date.now() - shown.since) : null,
     shown?.steps
       ? t(
           {
@@ -315,8 +316,11 @@ export function SessionCompose({
   waiting = null,
   active = true,
   sessions = NO_SESSIONS,
+  asks = null,
 }: {
   session: Session;
+  /** Shown on top of the composer: the way to the thread's unanswered questions. */
+  asks?: ReactNode;
   listed: WorkbenchSession | null;
   title: string;
   /** The project's open sessions, offered for the message to refer to. */
@@ -821,6 +825,7 @@ export function SessionCompose({
             </button>
           </div>
         )}
+        {asks}
         <div className="cp-stack">
           <QueueDock session={session} />
           <div className="cp-box" {...files.box}>

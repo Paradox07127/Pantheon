@@ -12,6 +12,7 @@ import {
   readProcessIdentity,
   terminate,
 } from '../../packages/adapters/src/process.js';
+import { psUsable } from '../helpers.js';
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
@@ -52,25 +53,28 @@ it('keeps a process that took over the pid of an earlier one in the stop snapsho
   expect(mergeProcesses(earlier, [reused, { ...earlier[0]! }])).toEqual([...earlier, reused]);
 });
 
-it('does not signal a group number none of the members it saw still holds', async () => {
-  const first = start(
-    "process.on('SIGTERM', () => {}); console.log('ready'); setInterval(() => {}, 1000)",
-  );
-  await first.ready;
-  // A deadline already passed sends one SIGTERM, which the group ignores, and leaves it running.
-  expect((await terminate(first.child, first.done, Date.now())).stopped).toBe(false);
-  first.child.kill('SIGKILL');
-  await first.done;
-  const decoy = start("console.log('ready'); setInterval(() => {}, 1000)");
-  await decoy.ready;
-  // Stands in for the group number passing to another group between the stops.
-  Object.defineProperty(first.child, 'pid', { value: decoy.child.pid });
+it.skipIf(!psUsable)(
+  'does not signal a group number none of the members it saw still holds',
+  async () => {
+    const first = start(
+      "process.on('SIGTERM', () => {}); console.log('ready'); setInterval(() => {}, 1000)",
+    );
+    await first.ready;
+    // A deadline already passed sends one SIGTERM, which the group ignores, and leaves it running.
+    expect((await terminate(first.child, first.done, Date.now())).stopped).toBe(false);
+    first.child.kill('SIGKILL');
+    await first.done;
+    const decoy = start("console.log('ready'); setInterval(() => {}, 1000)");
+    await decoy.ready;
+    // Stands in for the group number passing to another group between the stops.
+    Object.defineProperty(first.child, 'pid', { value: decoy.child.pid });
 
-  const again = await terminate(first.child, first.done, Date.now() + 1000);
+    const again = await terminate(first.child, first.done, Date.now() + 1000);
 
-  expect(running(decoy.child.pid!), 'the group that took over the number still runs').toBe(true);
-  expect(again.stopped).toBe(false);
-});
+    expect(running(decoy.child.pid!), 'the group that took over the number still runs').toBe(true);
+    expect(again.stopped).toBe(false);
+  },
+);
 
 it('confirms a stop once a descendant that left the group has exited unreaped', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');

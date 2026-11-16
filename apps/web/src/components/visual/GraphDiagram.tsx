@@ -7,6 +7,10 @@ import './graph-diagram.css';
 export type GraphSpec = Extract<VisualContent, { kind: 'graph' }>['spec'];
 
 const NODE_HEIGHT = 24;
+// A tall graph grows its card to this, the height of the zoomed visual view, then pans.
+const MAX_HEIGHT = 640;
+// Room around the laid-out graph, as fitView's default 10% padding needs.
+const PAD = 32;
 // Estimated label widths at 12px: wide (CJK) characters take 12px, the others 7px.
 const nodeWidth = (label: string): number =>
   Math.min(
@@ -17,6 +21,8 @@ const nodeWidth = (label: string): number =>
 interface Laid {
   ReactFlow: typeof Flow;
   nodes: Node[];
+  /** The laid-out graph's height in px. */
+  extent: number;
   edges: Edge[];
 }
 
@@ -26,11 +32,14 @@ export function GraphDiagram({
   selected,
   onSelect,
   directed = false,
+  grows = false,
 }: {
   spec: GraphSpec;
   height: number;
   selected?: string;
   directed?: boolean;
+  /** Grows past the height to fit a taller graph, up to the zoomed view's height. */
+  grows?: boolean;
   onSelect?: (id: string) => void;
 }) {
   const [laid, setLaid] = useState<Laid | null>(null);
@@ -48,10 +57,20 @@ export function GraphDiagram({
       g.setDefaultEdgeLabel(() => ({}));
       for (const node of spec.nodes)
         g.setNode(node.id, { width: nodeWidth(node.label), height: NODE_HEIGHT });
-      for (const edge of spec.edges) g.setEdge(edge.from, edge.to);
+      for (const edge of spec.edges)
+        g.setEdge(
+          edge.from,
+          edge.to,
+          edge.label === undefined
+            ? {}
+            : { width: nodeWidth(edge.label), height: NODE_HEIGHT, labelpos: 'c' },
+        );
       dagre.layout(g);
       const across = direction === 'LR';
+      const bottoms = spec.nodes.map((node) => g.node(node.id).y! + NODE_HEIGHT / 2);
+      const tops = spec.nodes.map((node) => g.node(node.id).y! - NODE_HEIGHT / 2);
       setLaid({
+        extent: bottoms.length ? Math.max(...bottoms) - Math.min(...tops) : 0,
         ReactFlow: flow.ReactFlow,
         nodes: spec.nodes.map((node) => {
           const at = g.node(node.id);
@@ -81,7 +100,12 @@ export function GraphDiagram({
   return (
     <div
       className="vis-fill vis-graph"
-      style={{ height }}
+      style={{
+        height:
+          grows && laid
+            ? Math.min(Math.max(height, laid.extent + PAD * 2), Math.max(height, MAX_HEIGHT))
+            : height,
+      }}
       onKeyDown={(event) => {
         if (!onSelect || (event.key !== 'Enter' && event.key !== ' ')) return;
         const id = (event.target as HTMLElement).closest<HTMLElement>('.react-flow__node')?.dataset
@@ -97,6 +121,8 @@ export function GraphDiagram({
           nodes={laid.nodes.map((node) => ({ ...node, selected: node.id === selected }))}
           edges={laid.edges}
           fitView
+          // Fitting never shrinks below full size, so labels stay readable; larger graphs pan.
+          fitViewOptions={{ minZoom: 1 }}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={!!onSelect}

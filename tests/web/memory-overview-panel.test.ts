@@ -562,7 +562,7 @@ describe('overview memory panel', () => {
     const words = plain(html);
     expect(words).toContain('Verify callbacks on the raw body 2,140');
     expect(words).toContain('Keep keys for three days 1,986');
-    expect(words).toContain('去缩短 再试 丢弃');
+    expect(words).toContain('去缩短 重试 丢弃');
     expect(html).not.toContain('mpc-diff');
     const opened: string[] = [];
     const tree = PendingCard({ ...props, onRecord: (id: string) => opened.push(id) });

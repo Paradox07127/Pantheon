@@ -55,8 +55,10 @@ import {
 import { SessionListRow, shownSessionId } from '../screens/sessions/SessionsScreen';
 import { useSplitRoom } from '../screens/sessions/shared';
 import { useShell } from '../store';
+import { LoadError } from './LoadError';
 import { ProjectMonogram } from './ProjectMonogram';
 import { KeyHint } from './Shortcuts';
+import { Skeleton } from './Skeleton';
 import { Splitter } from './Splitter';
 import { Tip } from './Tip';
 import { toast } from './Toast';
@@ -427,7 +429,7 @@ function ProjectList({
         {summary.loading &&
           projects.map((p) => (
             <span key={p.id} className="sb-it" aria-hidden="true">
-              <span className="sk" style={{ height: 10, width: '60%' }} />
+              <Skeleton style={{ height: 10, width: '60%' }} />
             </span>
           ))}
         {sorted.map((p) => {
@@ -845,14 +847,7 @@ export function Sidebar({
   const attention = allNeeds.error ? null : (allNeeds.items?.length ?? 0);
   const menu = { projects, currentProjectId, onChooseProject, attention };
   // A failed read keeps the last list, so the error goes below it rather than in its place.
-  const listError = list.error && (
-    <div className="tr-fail" role="alert">
-      <span title={list.error}>{list.error}</span>
-      <button type="button" className="btn" onClick={list.reload}>
-        {t({ id: 'components.sidebar.retry', defaultMessage: 'Retry' })}
-      </button>
-    </div>
-  );
+  const listError = list.error && <LoadError message={list.error} onRetry={list.reload} />;
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const swatch = currentProject ? (
     <ProjectMonogram id={currentProject.id} name={currentProject.name} />
@@ -1062,8 +1057,8 @@ export function Sidebar({
               {!list.data && listError}
               {!list.data && !list.error && (
                 <div className="ss-grp" aria-busy="true">
-                  <span className="sk" style={{ height: 10, width: '70%', margin: '10px 14px' }} />
-                  <span className="sk" style={{ height: 10, width: '50%', margin: '0 14px' }} />
+                  <Skeleton style={{ height: 10, width: '70%', margin: '10px 14px' }} />
+                  <Skeleton style={{ height: 10, width: '50%', margin: '0 14px' }} />
                 </div>
               )}
               {groups.map((group) => {

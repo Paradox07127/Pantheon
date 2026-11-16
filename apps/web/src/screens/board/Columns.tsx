@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { Network } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { Tip } from '../../components/Tip';
 import { useNow } from '../../data/needs-you';
 import { t } from '../../i18n';
@@ -110,12 +111,7 @@ function TaskCard({
           )}
           {changed && (
             <span className="bd-col-fx">
-              <span className="bd-add" data-zero={!task.additions || undefined}>
-                +{task.additions}
-              </span>{' '}
-              <span className="bd-del" data-zero={!task.deletions || undefined}>
-                −{task.deletions ?? 0}
-              </span>
+              <DiffCounts additions={task.additions} deletions={task.deletions} />
             </span>
           )}
         </span>

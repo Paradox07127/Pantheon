@@ -253,7 +253,7 @@ describe('trace event table', () => {
     expect(durations(h.value)).toEqual([
       `等 ${durationText(6 * MIN)}`,
       '',
-      '21.4 秒',
+      '21 秒',
       '',
       durationText(6 * MIN),
     ]);

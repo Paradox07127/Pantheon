@@ -78,12 +78,12 @@ describe('cycle time histogram', () => {
         { upper_ms: null, count: 1 },
       ],
     });
-    expect(bars.map((b) => b.label)).toEqual(['15 分', '30 分', '> 30 分']);
+    expect(bars.map((b) => b.label)).toEqual(['15 分钟', '30 分钟', '> 30 分钟']);
     expect(bars.map((b) => b.height)).toEqual([0.5, 1, 0.25]);
     expect(Math.floor(median!.at)).toBe(1);
-    expect(median!.label).toBe('中位 20 分');
+    expect(median!.label).toBe('中位 20 分钟');
     expect(Math.floor(p90!.at)).toBe(2);
-    expect(p90!.label).toBe('p90 45 分');
+    expect(p90!.label).toBe('p90 45 分钟');
   });
 });
 
@@ -96,8 +96,8 @@ describe('chart labels', () => {
     expect(
       markerPlacement(
         [
-          { x: 16, label: '中位 0 分' },
-          { x: 20, label: 'p90 0 分' },
+          { x: 16, label: '中位 0 分钟' },
+          { x: 20, label: 'p90 0 分钟' },
         ],
         300,
       ),
@@ -108,8 +108,8 @@ describe('chart labels', () => {
     expect(
       markerPlacement(
         [
-          { x: 40, label: '中位 20 分' },
-          { x: 290, label: 'p90 45 分' },
+          { x: 40, label: '中位 20 分钟' },
+          { x: 290, label: 'p90 45 分钟' },
         ],
         300,
       ),

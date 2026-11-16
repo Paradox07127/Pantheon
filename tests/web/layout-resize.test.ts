@@ -36,7 +36,9 @@ import {
   readAppearance,
   readLayout,
   resetLayout,
+  saveLayout,
   setAppearance,
+  setLayout,
 } from '@/data/layout';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
 import { SessionsScreen } from '@/screens/sessions/SessionsScreen';
@@ -205,6 +207,19 @@ describe('stored layout', () => {
       drawer: 360,
       collapse_sidebar_at_start: false,
     });
+  });
+
+  it('keeps folding the sidebar at start through Reset layout, which puts the widths back', () => {
+    setLayout({ collapse_sidebar_at_start: true, inspector: 500, drawer: 600 });
+    saveLayout();
+    resetLayout();
+    expect(getLayout()).toMatchObject({
+      inspector: 400,
+      drawer: 440,
+      collapse_sidebar_at_start: true,
+    });
+    expect(readLayout(stored.get(LAYOUT_KEY) ?? null).collapse_sidebar_at_start).toBe(true);
+    setLayout({ collapse_sidebar_at_start: false });
   });
 });
 

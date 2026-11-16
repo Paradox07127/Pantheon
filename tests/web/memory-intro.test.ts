@@ -201,7 +201,7 @@ describe('project introduction head', () => {
     expect(text(shown.value)).toContain(zh('board.intro.writing'));
     expect(text(shown.value)).toContain('1 分 12 秒');
     const long = mount(() => WritingMark({ since: Date.now() - 3_725_000 }));
-    expect(text(long.value)).toContain('1 时 02 分');
+    expect(text(long.value)).toContain('1 小时 2 分');
   });
 });
 

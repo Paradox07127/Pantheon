@@ -22,8 +22,10 @@ import {
 } from 'lucide-react';
 import type { FlowPath, TaskKind } from '@pantheon/domain';
 import type { BoardModel } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { ModelMark, RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { Tip } from '../../components/Tip';
+import { useRuntimeStatus } from '../../data/runtime-status';
 import { DOMAIN_LABEL, PATH_LABEL } from '../../data/workflow-policy';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
@@ -32,6 +34,7 @@ import {
   displayStatus,
   nodeReason,
   phaseText,
+  quotaLine,
   repeatsState,
   taskBadges,
   type NodeReason,
@@ -39,7 +42,17 @@ import {
 import { COMPACT_ZOOM, DOT_ZOOM } from './flow-layout';
 import { NodeActions, type NodeActionContext } from './NodeActions';
 import { durationText } from './panels-model';
-import { STATE, STATUS, StateIcon, StatusIcon, TASK_TYPE, TaskBadges, runtimeName } from './status';
+import {
+  STATE,
+  STATUS,
+  StateIcon,
+  StatusIcon,
+  TASK_STATE_TONE,
+  TASK_STATUS_TONE,
+  TASK_TYPE,
+  TaskBadges,
+  runtimeName,
+} from './status';
 import './node.css';
 
 type Task = BoardModel['tasks'][number];
@@ -110,6 +123,16 @@ export function nodeLook(task: Task): NodeLook {
     case 'todo':
       return task.checks === 'running' ? 'run' : 'queue';
   }
+}
+
+/**
+ * The node's colour, from the table its state icon reads; a task waiting on the user or on its
+ * checks takes that colour.
+ */
+function nodeTone(task: Task, look: NodeLook): string {
+  if (look === 'approval' || look === 'answer') return TASK_STATE_TONE.waiting_approval;
+  if (look === 'run' && task.checks === 'running') return TASK_STATE_TONE.gating;
+  return task.state ? TASK_STATE_TONE[task.state] : TASK_STATUS_TONE[displayStatus(task)];
 }
 
 const STAGES = ['plan', 'build', 'gate', 'review', 'merge'] as const;
@@ -298,12 +321,7 @@ function Amounts({ task, line }: { task: Task; line: string | null }) {
       )}
       {diff && (
         <span className="bd-ndiff">
-          <span className="bd-add" data-zero={!task.additions || undefined}>
-            +{task.additions ?? 0}
-          </span>
-          <span className="bd-del" data-zero={!task.deletions || undefined}>
-            −{task.deletions ?? 0}
-          </span>
+          <DiffCounts additions={task.additions} deletions={task.deletions} />
         </span>
       )}
       {subagents && (
@@ -498,6 +516,12 @@ function Reason({ reason }: { reason: NodeReason }) {
   );
 }
 
+/** A runtime quota wait by when the quota comes back, else by its line. */
+function QuotaLine({ task, now, line }: { task: Task; now: number; line: string }) {
+  const read = useRuntimeStatus().read;
+  return quotaLine(task, read.state === 'ready' ? read.statuses : [], now) ?? line;
+}
+
 /** A plan task by its state; a session row without one by its status. */
 export function TaskCard({ data }: NodeProps<TaskNode>) {
   const {
@@ -516,6 +540,7 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
   const zoom = useStore((s) => (s.transform[2] < COMPACT_ZOOM ? s.transform[2] : 1));
   const shown = displayStatus(task);
   const look = nodeLook(task);
+  const tone = { '--nd-c': `var(${nodeTone(task, look)})` } as CSSProperties;
   const since = task.started_at ?? task.activity?.since ?? null;
   const type = task.task_type && TASK_TYPE[task.task_type];
   const kind = task.planned?.kind?.domain;
@@ -544,7 +569,13 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
         <Handle type="target" position={Position.Left} {...connectable} />
         <div className="bd-nmini" style={{ '--bd-z': zoom, height: tall } as CSSProperties}>
           {zoom < DOT_ZOOM ? (
-            <svg className="bd-ndot" data-look={look} viewBox="0 0 24 24" aria-hidden="true">
+            <svg
+              className="bd-ndot"
+              data-look={look}
+              style={tone}
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
               <circle cx="12" cy="12" r="5" />
             </svg>
           ) : (
@@ -562,6 +593,7 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
       <Handle type="target" position={Position.Left} {...connectable} />
       <div
         className={selected ? 'bd-nd sel' : 'bd-nd'}
+        style={tone}
         data-look={look}
         data-status={shown}
         data-state={task.state}
@@ -613,7 +645,11 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
           <Route task={task} />
           {task.path && task.path !== 'direct' && <PathMark path={task.path} />}
           <span className="bd-na" title={said ?? undefined}>
-            {said ?? (task.state ? STATE[task.state].label : phaseText(task, now))}
+            {said !== null && task.dispatch_wait === 'runtime_limited' ? (
+              <QuotaLine task={task} now={now} line={said} />
+            ) : (
+              (said ?? (task.state ? STATE[task.state].label : phaseText(task, now)))
+            )}
           </span>
           {since !== null && (
             <span className="bd-ntm">{durationText((task.ended_at ?? now) - since)}</span>

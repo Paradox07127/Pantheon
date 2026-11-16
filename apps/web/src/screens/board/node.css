@@ -126,6 +126,7 @@
   outline-offset: 1.5px;
 }
 .bd-ndot {
+  --nd-c: var(--e-pend);
   flex: none;
   transform: scale(calc(1 / var(--bd-z)));
   transform-origin: left center;
@@ -134,26 +135,8 @@
   border-radius: 50%;
 }
 .bd-ndot circle {
-  fill: var(--e-pend);
+  fill: var(--nd-c);
   transition: fill var(--dur-2) var(--ease-std);
-}
-.bd-ndot[data-look='run'] circle {
-  fill: var(--run);
-}
-.bd-ndot:is([data-look='approval'], [data-look='answer']) circle {
-  fill: var(--wait);
-}
-.bd-ndot[data-look='review'] circle {
-  fill: var(--ready);
-}
-.bd-ndot[data-look='failed'] circle {
-  fill: var(--bad);
-}
-.bd-ndot[data-look='stuck'] circle {
-  fill: var(--idle);
-}
-.bd-ndot[data-look='done'] circle {
-  fill: var(--ok);
 }
 
 /* What the unsent draft changes, hung over the card's bottom edge. */

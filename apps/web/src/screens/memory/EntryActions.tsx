@@ -1,7 +1,9 @@
+import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Check, CircleAlert, Clock, RefreshCw, Share2, Undo2 } from 'lucide-react';
 import type { MemoryRecord } from '@pantheon/domain';
 import { toast } from '../../components/Toast';
 import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import './entry-actions.css';
 
 export interface EntryActionsProps {
@@ -26,40 +28,6 @@ export function versionNumbers(versions: MemoryRecord[]): Map<string, number> {
       .sort((a, b) => a.committed_at! - b.committed_at!)
       .map((v, i) => [v.id, i + 1]),
   );
-}
-
-const pad = (n: number) => String(n).padStart(2, '0');
-const dayOf = (d: Date) => d.toDateString();
-function dateText(d: Date, today: Date) {
-  const date = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  return d.getFullYear() === today.getFullYear() ? date : `${d.getFullYear()}-${date}`;
-}
-function relativeDay(ms: number) {
-  const d = new Date(ms);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const day =
-    dayOf(d) === dayOf(today) ? 'today' : dayOf(d) === dayOf(yesterday) ? 'yesterday' : '';
-  return { d, today, time, day };
-}
-/** Today and yesterday with the time, older days by date. */
-function stamp(ms: number) {
-  const { d, today, time, day } = relativeDay(ms);
-  if (day === 'today')
-    return t({ id: 'memory.actions.today', defaultMessage: 'Today {time}' }, { time });
-  if (day === 'yesterday')
-    return t({ id: 'memory.actions.yesterday', defaultMessage: 'Yesterday {time}' }, { time });
-  return dateText(d, today);
-}
-/** The time alone today, then yesterday, then the date. */
-export function shortStamp(ms: number) {
-  const { d, today, time, day } = relativeDay(ms);
-  if (day === 'today') return time;
-  if (day === 'yesterday')
-    return t({ id: 'memory.actions.yesterdayShort', defaultMessage: 'Yesterday' });
-  return dateText(d, today);
 }
 
 /** The notice after the current version is retracted; `dependents` counts the entries archived with it. */
@@ -104,9 +72,33 @@ export function EntryActions({
             <Check aria-hidden="true" />
             {t({ id: 'memory.actions.commit', defaultMessage: 'Confirm' })}
           </button>
-          <button type="button" className="btn ghost dng" disabled={busy} onClick={onDiscard}>
-            {t({ id: 'memory.actions.discard', defaultMessage: 'Discard' })}
-          </button>
+          <AlertDialog.Root>
+            <AlertDialog.Trigger className="btn ghost dng" disabled={busy}>
+              {t({ id: 'memory.actions.discard', defaultMessage: 'Discard' })}
+            </AlertDialog.Trigger>
+            <AlertDialog.Portal>
+              <AlertDialog.Backdrop className="pj-scrim" />
+              <AlertDialog.Popup className="pj-dlg pj-rm pop">
+                <div className="pj-dh">
+                  <AlertDialog.Title className="pj-dt">
+                    {t(
+                      { id: 'overlays.confirm.discardTitle', defaultMessage: 'Discard “{title}”?' },
+                      { title: item.title ?? item.key },
+                    )}
+                  </AlertDialog.Title>
+                </div>
+                <div className="pj-df">
+                  <span style={{ flex: 1 }} />
+                  <AlertDialog.Close className="btn">
+                    {t({ id: 'memory.actions.cancel', defaultMessage: 'Cancel' })}
+                  </AlertDialog.Close>
+                  <AlertDialog.Close className="btn dng" onClick={onDiscard}>
+                    {t({ id: 'memory.actions.discard', defaultMessage: 'Discard' })}
+                  </AlertDialog.Close>
+                </div>
+              </AlertDialog.Popup>
+            </AlertDialog.Portal>
+          </AlertDialog.Root>
           {graph}
         </div>
       </div>
@@ -175,7 +167,7 @@ export function EntryActions({
             </>
           )}
           {item.archived_at !== undefined && (
-            <span className="ma-time">{stamp(item.archived_at)}</span>
+            <span className="ma-time">{dayText(item.archived_at, Date.now(), { time: true })}</span>
           )}
         </div>
       )}

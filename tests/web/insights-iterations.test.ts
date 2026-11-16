@@ -263,7 +263,7 @@ describe('iteration header', () => {
     const h = view(
       board({ iterations: [iteration('one', { forecast_done_at: forecast, capacity: 3 })] }),
     );
-    expect(text(header(h))).toContain('预计 11-13 16:00 做完');
+    expect(text(header(h))).toContain('预计 11月13日 16:00 做完');
     expect(text(header(h))).toContain('还能排 3 个任务');
     const full = view(board({ iterations: [iteration('one', { capacity: 0 })] }));
     expect(text(header(full))).toContain('还能排 0 个任务');
@@ -438,7 +438,7 @@ describe('tasks at risk', () => {
       }),
     );
     const rows = (risks(h.value).props.children as ReactElement<any>[]).map((row) => text(row));
-    expect(rows).toEqual(['task broken失败 2 次', 'task asking等你 40 分']);
+    expect(rows).toEqual(['task broken失败 2 次', 'task asking等你 40 分钟']);
   });
 
   it('counts only the sessions that failed, not every attempt', () => {

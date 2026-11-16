@@ -143,12 +143,13 @@ export function saveLayout() {
   }
 }
 
+/** Puts the sizes back; folding the sidebar at start is an Appearance setting and stays. */
 export function resetLayout() {
-  layout = DEFAULT_LAYOUT;
+  layout = { ...DEFAULT_LAYOUT, collapse_sidebar_at_start: layout.collapse_sidebar_at_start };
   sizeChanges++;
   changed();
+  saveLayout();
   try {
-    localStorage.removeItem(LAYOUT_KEY);
     localStorage.removeItem(PANEL_WIDTHS_KEY);
     localStorage.removeItem(TERMINAL_HEIGHT_KEY);
   } catch {

@@ -18,7 +18,7 @@ vi.mock('@/store', () => ({
     }),
 }));
 import { InsightsView } from '@/screens/insights/InsightsScreen';
-import { whenText } from '@/screens/board/panels-model';
+import { dayText } from '@/lib/time-text';
 import {
   GateFailures,
   GateTracker,
@@ -233,7 +233,7 @@ describe('gate history', () => {
       'ql-tc ql-tc-none',
       'ql-tc ql-tc-bad',
       'ql-tc ql-tc-none',
-      'ql-tc ql-tc-wait',
+      'ql-tc ql-tc-bad',
       'ql-tc ql-tc-none',
       'ql-tc ql-tc-none',
     ]);
@@ -246,7 +246,7 @@ describe('gate history', () => {
     const tips = nodes(tree)
       .filter((n) => typeof n.type === 'function' && n.type.name === 'Tip')
       .map((n) => n.props.content);
-    const at = whenText(Date.parse(mixed.finished_at), Date.now());
+    const at = dayText(Date.parse(mixed.finished_at), Date.now(), { time: true });
     expect(tips.slice(0, 2)).toEqual([`${at}，退出码 0`, `${at}，退出码 0`]);
     expect(tips.slice(2, 6)).toEqual([
       `${at}，未跑`,
@@ -347,7 +347,7 @@ describe('quality overview', () => {
     expect(cells).toEqual([
       [zh('insights.quality.firstPass'), '33% 共 3 个任务'],
       [zh('insights.quality.rework'), '1.0 轮 / 任务，共 3 个任务'],
-      [zh('insights.quality.cycle'), '47 分 中位数，共 5 个任务'],
+      [zh('insights.quality.cycle'), '47 分钟 中位数，共 5 个任务'],
     ]);
   });
 

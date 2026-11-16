@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Check, ChevronDown, ChevronRight, Coins, Lightbulb, Undo2, X } from 'lucide-react';
 import type { GateFailureClass } from '@pantheon/domain';
 import type { BoardModel, BoardTaskStatus } from '@pantheon/protocol';
@@ -14,8 +15,8 @@ import { listText } from '../../lib/list-text';
 import { reducedMotion } from '../../lib/motion';
 import { useShell } from '../../store';
 import { Empty, Panel } from './Charts';
-import { runtimeDuration, runtimeFindingTitle } from '../trace/RuntimeDiagnostics';
-import { tokenText, type BoardTask } from './panels-model';
+import { runtimeFindingTitle } from '../trace/RuntimeDiagnostics';
+import { durationText, tokenText, type BoardTask } from './panels-model';
 import { StatusIcon, TaskRoute } from './status';
 import { QueryBody } from './Tables';
 import './retro.css';
@@ -138,9 +139,12 @@ export function RetroGates({ projectId, task }: { projectId: string; task: Retro
         const retro = rows.find((r) => r.id === task.retrospective.id);
         if (!retro)
           return (
-            <div className="tr-fail bd-fail" role="alert">
-              {t({ id: 'board.task.retro.notFound', defaultMessage: 'Retrospective not found' })}
-            </div>
+            <LoadError
+              message={t({
+                id: 'board.task.retro.notFound',
+                defaultMessage: 'Retrospective not found',
+              })}
+            />
           );
         const failures = retro.gate_failures ?? [];
         const findings = retro.runtime_findings ?? [];
@@ -176,7 +180,7 @@ export function RetroGates({ projectId, task }: { projectId: string; task: Retro
                         <span>
                           {finding.duration_ms === undefined
                             ? '—'
-                            : runtimeDuration(finding.duration_ms)}
+                            : durationText(finding.duration_ms)}
                         </span>
                       </li>
                     </Tip>
@@ -383,14 +387,7 @@ export function RetroPanel({
         )
       }
     >
-      {list.error && (
-        <div className="tr-fail bd-fail" role="alert">
-          <span title={list.error}>{list.error}</span>
-          <button type="button" className="btn" onClick={list.reload}>
-            {t({ id: 'board.task.retro.retry', defaultMessage: 'Retry' })}
-          </button>
-        </div>
-      )}
+      {list.error && <LoadError message={list.error} onRetry={list.reload} />}
       {tasks.length === 0 ? (
         <Empty
           text={t({ id: 'board.task.retro.empty', defaultMessage: 'No retrospectives yet' })}

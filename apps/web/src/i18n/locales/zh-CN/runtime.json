@@ -2,7 +2,6 @@
   "runtime.call.status": "状态",
   "runtime.call.start": "开始",
   "runtime.call.end": "结束",
-  "runtime.retry": "重试",
   "runtime.call.input": "输入",
   "runtime.call.error": "错误",
   "runtime.call.output": "输出",

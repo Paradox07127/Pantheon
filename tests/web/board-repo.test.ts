@@ -140,7 +140,8 @@ describe('doc age', () => {
       ['today.md', 0, false],
     ]);
     expect(rows.map((r) => r.age_days)).toEqual([120, 30, 0]);
-    expect(rows[0]!.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(rows[0]!.date).toMatch(/^7月\d+日$/);
+    expect(rows[2]!.date).toBe('今天');
   });
 });
 
@@ -415,7 +416,7 @@ describe('worktrees and branches', () => {
     expect(rows).toHaveLength(3);
     expect(rows[0]).toContain('<span class="rp-path" title="feature/list">feature/list</span>');
     expect(rows[0]).toContain('<span class="rp-n">领先 3，落后 0</span>');
-    expect(rows[0]).toContain('<span class="df-add">+120</span><span class="df-del">−15</span>');
+    expect(rows[0]).toContain('<span class="df-add">+120</span> <span class="df-del">−15</span>');
     expect(rows[1]).toContain('<span class="rp-diff"></span>');
     expect(rows[2]).toContain('<span class="rp-name" title="Weekly report">');
     expect(rows[2]).toContain('<span class="df-add" data-zero="true">+0</span>');

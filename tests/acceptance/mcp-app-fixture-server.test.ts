@@ -14,7 +14,8 @@ describe('MCP App fixture server', () => {
       new StdioClientTransport({
         command: process.execPath,
         args: [path.resolve('tests/acceptance/fixtures/mcp-app-server/server.mjs')],
-        env: { PATH: process.env.PATH! },
+        // The parent's env carries settings a sandboxed node needs, such as OPENSSL_CONF in a gate.
+        env: { ...(process.env as Record<string, string>) },
         stderr: 'pipe',
       }),
     );

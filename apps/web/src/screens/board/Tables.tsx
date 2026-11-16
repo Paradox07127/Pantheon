@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
+import { Skeleton } from '../../components/Skeleton';
 import { useBoard } from '../../data/board';
 import { useRefetchTick } from '../../data/workbench-sessions';
-import { t } from '../../i18n';
 
 /** Counts up shortly after each new board event of a kind `reads` accepts, so a query reads again. */
 export function useKindTick(reads: (kind: string) => boolean): number {
@@ -21,19 +22,11 @@ export function QueryBody<T>({
   children: (data: T) => ReactNode;
 }) {
   if (query.data !== null) return children(query.data);
-  if (query.error)
-    return (
-      <div className="tr-fail bd-fail" role="alert">
-        <span title={query.error}>{query.error}</span>
-        <button type="button" className="btn" onClick={query.reload}>
-          {t({ id: 'board.query.retry', defaultMessage: 'Retry' })}
-        </button>
-      </div>
-    );
+  if (query.error) return <LoadError message={query.error} onRetry={query.reload} />;
   return (
     <div className="bd-sk" aria-busy="true">
-      <span className="sk" style={{ height: 10, width: '60%' }} />
-      <span className="sk" style={{ height: 10, width: '40%' }} />
+      <Skeleton style={{ height: 10, width: '60%' }} />
+      <Skeleton style={{ height: 10, width: '40%' }} />
     </div>
   );
 }

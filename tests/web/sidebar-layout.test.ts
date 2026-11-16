@@ -19,6 +19,7 @@ vi.mock('@/data/board', () => ({
 vi.mock('@/store', () => ({ useShell: store(() => mock.shell) }));
 import { Sidebar } from '@/components/Sidebar';
 import { WindowControls } from '@/components/WindowControls';
+import { sessionStateLabel } from '@/components/SessionStateIcon';
 import { SessionRowButton } from '@/screens/sessions/SessionRow';
 import { zh } from './i18n-setup.js';
 
@@ -247,10 +248,26 @@ describe('session row', () => {
     expect(order).toEqual(['Avatar', 'ss-ttl', 'LeadCrown', 'ss-time']);
   });
 
-  it('marks the avatar with a named status badge', () => {
-    const avatar = find(button(session('w', 'waiting', { waiting: 1 })), (n) => isFn(n, 'Avatar'));
-    const badge = find(expand(avatar), (n) => n.props['data-badge'] !== undefined);
-    expect(badge.props['aria-label']).toBe(zh('sessions.row.badge.waiting'));
-    expect(badge.props['data-badge']).toBe('waiting');
+  const badgeOf = (s: WorkbenchSession) =>
+    find(
+      expand(find(button(s), (n) => isFn(n, 'Avatar'))),
+      (n) => n.props['data-badge'] !== undefined,
+    );
+
+  it('marks the avatar with a badge named as the session header names the state', () => {
+    const badge = badgeOf(session('w', 'waiting', { waiting: 1 }));
+    expect(badge.props.role).toBe('img');
+    expect(badge.props['aria-label']).toBe(zh('components.sessionState.approval'));
+    expect(badgeOf(session('r', 'ready')).props['aria-label']).toBe(
+      zh('components.sessionState.ready'),
+    );
+  });
+
+  it('names a session that needs recovery as the header does, not as a broken environment', () => {
+    const recovering = session('c', 'idle', { reconciling: true });
+    const badge = badgeOf(recovering);
+    expect(badge.props['aria-label']).toBe(zh('components.sessionState.reconciling'));
+    expect(badge.props['aria-label']).toBe(sessionStateLabel(recovering));
+    expect(badge.props.style).toEqual(badgeOf(session('w', 'waiting', { waiting: 1 })).props.style);
   });
 });

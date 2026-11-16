@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useNow } from '../data/needs-you';
 import { t } from '../i18n';
 import { useShell } from '../store';
+import { DiffCounts } from './DiffCounts';
 import './toast.css';
 import './notice-card.css';
 
@@ -232,12 +233,7 @@ function noticeCard(item: ToastItem, card: NoticeCard, life: ReactNode) {
           )}
           {card.diff && (
             <span className="nc-diff">
-              <span className="nc-add" data-zero={card.diff.additions === 0 || undefined}>
-                +{card.diff.additions}
-              </span>{' '}
-              <span className="nc-del" data-zero={card.diff.deletions === 0 || undefined}>
-                −{card.diff.deletions}
-              </span>
+              <DiffCounts additions={card.diff.additions} deletions={card.diff.deletions} />
             </span>
           )}
         </>

@@ -661,7 +661,7 @@ describe('gate step', () => {
       h.value,
       (n) => n.props.className === 'wfl-row' && text(n).startsWith(wf('gate.timeout')),
     );
-    expect(text(timeout)).toContain('20 分，10 分');
+    expect(text(timeout)).toContain('20 分钟，10 分钟');
     expect(named(h.value, 'PolicyFields').props).toEqual({ projectId: 'alpha', step: 'gate' });
   });
 

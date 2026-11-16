@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, FileText, Flag } from 'lucide-react';
 import type { ImprovementSignal } from '@pantheon/domain';
@@ -791,14 +792,7 @@ export function DigestPanel({ model, projectId, bar, week, onWeek }: DigestPanel
               <div className="wkd-h">
                 <h3>{LABEL.rules}</h3>
               </div>
-              {signals.error && (
-                <div className="tr-fail bd-fail" role="alert">
-                  <span title={signals.error}>{signals.error}</span>
-                  <button type="button" className="btn" onClick={signals.reload}>
-                    {t({ id: 'insights.digest.retry', defaultMessage: 'Retry' })}
-                  </button>
-                </div>
-              )}
+              {signals.error && <LoadError message={signals.error} onRetry={signals.reload} />}
               {signals.read &&
                 (rules.length === 0 ? (
                   <Empty

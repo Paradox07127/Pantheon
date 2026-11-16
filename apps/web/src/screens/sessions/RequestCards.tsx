@@ -1,22 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { ChevronRight } from 'lucide-react';
 import { Markdown } from '../../components/Markdown';
 import { QuestionCard } from '../../components/QuestionCard';
+import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
 import { useBaselineRead } from '../../data/baseline-read';
 import { runCommand } from '../../data/commands';
+import { useDrafts } from '../../data/drafts';
 import { focusRequest, useWantedRequest } from '../../data/focus-request';
 import { failureText, reasonText, type NeedsYouState } from '../../data/needs-you';
 import { isTruncated, toolLabel } from '../../data/tool-calls';
 import type { RequestItem, Session } from '../../data/transcript';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
-import { ReviewBaseline } from '../projects/BaselineBlocks';
+import { baselineAnswers, baselineDraft } from '../projects/baseline';
+import { interviewDraft, ReviewBaseline } from '../projects/BaselineBlocks';
 import type { PendingPermission } from './model';
 import { AnsweredRequest, json } from './parts';
 import { fail, setCreatedHere } from './shared';
-import { turnClock } from './thread-model';
+import { clockText } from '../../lib/time-text';
 import './requests.css';
 
 /** The waiting status mark at the start of a request card. */
@@ -58,6 +61,70 @@ export function BaselineReview({ session }: { session: Session }) {
         openSession(lead);
       }}
     />
+  );
+}
+
+/** Brings the first question still unanswered in the thread into view and focuses its first control. */
+export function jumpToQuestion(scroller: HTMLElement | null) {
+  const question = scroller?.querySelector<HTMLElement>('[data-open]');
+  if (!question) return;
+  question.scrollIntoView({ block: 'start' });
+  question.querySelector<HTMLElement>('button, input, textarea')?.focus();
+}
+
+/** How many questions of the baseline review and the pending requests have no answer yet. */
+function useOpenQuestions(session: Session, pending: readonly PendingPermission[]): number {
+  const { read: baseline } = useBaselineRead(session.baseline ? session.project_id : null);
+  const reviewed =
+    baseline && baseline.id === session.baseline?.baseline_id && baseline.state === 'submitted'
+      ? baseline
+      : null;
+  const questions = reviewed?.result?.questions ?? [];
+  const drafts = useDrafts((s) => s.answers);
+  const asked = reviewed
+    ? questions.length -
+      baselineAnswers(
+        questions,
+        drafts[interviewDraft(reviewed)] ?? baselineDraft(reviewed).answers,
+      ).length
+    : 0;
+  return pending.reduce((sum, p) => {
+    if (p.tool !== 'AskUserQuestion' || !p.questions) return sum;
+    const answers = drafts[p.id];
+    return (
+      sum +
+      p.questions.filter(
+        (_, i) =>
+          !answers?.decided?.[i] && !answers?.typed[i]?.trim() && !answers?.picked[i]?.length,
+      ).length
+    );
+  }, asked);
+}
+
+/** Above the composer while the thread holds questions to answer: jumps to the first of them. */
+export function PendingQuestions({
+  session,
+  pending,
+  scroller,
+}: {
+  session: Session;
+  pending: readonly PendingPermission[];
+  scroller: RefObject<HTMLElement | null>;
+}) {
+  const count = useOpenQuestions(session, pending);
+  if (count === 0) return null;
+  return (
+    <button type="button" className="btn rq-jump" onClick={() => jumpToQuestion(scroller.current)}>
+      <StateGlyph name="question" />
+      {t(
+        {
+          id: 'sessions.card.pendingQuestions',
+          defaultMessage:
+            '{count, plural, one {# question to answer} other {# questions to answer}}',
+        },
+        { count },
+      )}
+    </button>
   );
 }
 
@@ -274,7 +341,7 @@ export function PermissionCard({
             {t({ id: 'sessions.parts.truncated', defaultMessage: 'Truncated' })}
           </span>
         )}
-        {item && <span className="rq-at">{turnClock.format(item.created_at)}</span>}
+        {item && <span className="rq-at">{clockText(item.created_at)}</span>}
       </div>
       {input !== undefined && (
         <Collapsible.Panel className="rq-in">

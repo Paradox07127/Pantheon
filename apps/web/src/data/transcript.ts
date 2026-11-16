@@ -1,5 +1,6 @@
 import type { BoardSnapshot, RuntimeModel } from '@pantheon/protocol';
 import { t } from '../i18n';
+import { durationText } from '../lib/time-text';
 import { shortId } from './format';
 import { mergeEvents } from './logs';
 import type { Availability } from './needs-you';
@@ -258,7 +259,7 @@ export function subagentRun(agent: ToolItem, later: readonly TranscriptItem[]): 
   return running;
 }
 
-/** A duration as `3.4s` under a minute, then `2m 05s`, then `1h 03m`. */
+/** Seconds to a tenth under a minute, for timings read closely; durationText from there on. */
 export function elapsedText(ms: number): string {
   const tenths = Math.round(Math.max(0, ms) / 100);
   if (tenths < 600)
@@ -266,18 +267,7 @@ export function elapsedText(ms: number): string {
       { id: 'data.elapsed.seconds', defaultMessage: '{seconds}s' },
       { seconds: (tenths / 10).toFixed(1) },
     );
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 3600)
-    return t(
-      { id: 'data.elapsed.minutes', defaultMessage: '{minutes}m {seconds}s' },
-      { minutes: Math.floor(seconds / 60), seconds: pad(seconds % 60) },
-    );
-  const minutes = Math.floor(seconds / 60);
-  return t(
-    { id: 'data.elapsed.hours', defaultMessage: '{hours}h {minutes}m' },
-    { hours: Math.floor(minutes / 60), minutes: pad(minutes % 60) },
-  );
+  return durationText(tenths * 100);
 }
 
 /** Two or more tool calls in a row, shown as one folded row. */
@@ -428,7 +418,9 @@ export function isQuietEvent(event: DaemonEvent): boolean {
     event.kind === 'agent.auth.checked' ||
     // The composer shows fast mode, and the session bar the title.
     event.kind === 'agent.fast_mode.changed' ||
-    event.kind === 'agent.title.generated'
+    event.kind === 'agent.title.generated' ||
+    // ACP agents report the turn start; the turn header shows it already.
+    event.kind === 'agent.turn.started'
   )
     return true;
   if (event.kind !== 'agent.native') return false;

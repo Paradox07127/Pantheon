@@ -192,7 +192,7 @@ describe('the plan list in the task drawer', () => {
     const rows = nodes(list).filter((n) => n.props.className === 'bd-plb');
     expect(rows.map(text)).toEqual([
       'task a已合并',
-      'task b等待审批',
+      'task b待批准',
       'task e失败',
       'task c运行中',
       'task d待办',
@@ -487,7 +487,7 @@ describe('the rest of the task drawer', () => {
     const part = (n: unknown, className: string) =>
       nodes(n as never).find((c) => c.props.className === className);
     expect(rows.map((n) => text(part(n, 'bd-dfx') ?? null))).toEqual(['+96 −8', '']);
-    expect(rows.map((n) => text(part(n, 'bd-dtook')))).toEqual(['52 分', '52 分']);
+    expect(rows.map((n) => text(part(n, 'bd-dtook')))).toEqual(['52 分钟', '52 分钟']);
     expect(text(rows[1])).toContain('已丢弃');
     expect(text(rows[1])).not.toContain('+0');
   });

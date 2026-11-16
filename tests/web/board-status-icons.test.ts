@@ -3,7 +3,11 @@ import { readFileSync } from 'node:fs';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BoardModel, BoardTaskState, BoardTaskStatus } from '@pantheon/protocol';
-import { StateGlyph, type GlyphName } from '../../apps/web/src/components/SessionStateIcon.js';
+import {
+  GateMark,
+  StateGlyph,
+  type GlyphName,
+} from '../../apps/web/src/components/SessionStateIcon.js';
 import { LeadStates } from '../../apps/web/src/screens/board/BoardFrame.js';
 import { ColumnsPanel } from '../../apps/web/src/screens/board/Columns.js';
 import { LeadPanel } from '../../apps/web/src/screens/board/LeadPanel.js';
@@ -25,6 +29,8 @@ const glyph = (name: GlyphName) => html(createElement(StateGlyph, { name }));
 const status = (s: BoardTaskStatus) => html(createElement(StatusIcon, { status: s }));
 const state = (s: BoardTaskState) => html(createElement(StateIcon, { state: s }));
 const octagon = inner(html(createElement(BlockedIcon)))!;
+/** The colour the first glyph in the markup is drawn in. */
+const tone = (markup: string) => /<svg[^>]*style="color:([^"]*)"/.exec(markup)?.[1];
 
 const task = (
   id: string,
@@ -116,8 +122,15 @@ describe('board status glyphs', () => {
     const gating = state('gating');
     expect(shapes(gating)).toEqual(['shield-arc']);
     expect(gating).toContain('si-spin');
-    expect(gating).toContain('var(--ready)');
     expect(gating).not.toContain('M6 1.3 10.7 6 6 10.7 1.3 6Z');
+  });
+
+  it('draws a gating task in the colour of a session whose gates are running', () => {
+    expect(tone(state('gating'))).toBe(tone(html(createElement(GateMark, { state: 'running' }))));
+  });
+
+  it('draws a blocked task in the colour of a failed one', () => {
+    expect(/<g style="color:([^"]*)"/.exec(state('blocked'))?.[1]).toBe(tone(state('failed')));
   });
 
   it('draws a task waiting for approval as the session shield with an exclamation', () => {
@@ -191,6 +204,12 @@ describe('board headline and cards', () => {
     );
     expect(shapes(panel)).toEqual([shapes(glyph('idle'))[0]]);
     expect(panel).not.toContain('ss-dot');
+  });
+
+  it("draws a lead's state in the board head with the session state glyph, not a dot", () => {
+    const states = html(createElement(LeadStates, { leads: [lead(0)], onOpenSession() {} }));
+    expect(shapes(states)).toEqual([shapes(glyph('idle'))[0]]);
+    expect(states).not.toContain('ss-dot');
   });
 
   it('counts unfinished upstream tasks under a network mark, not the git branch', () => {

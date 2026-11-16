@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MemoryItem } from '@pantheon/domain';
+import { AlertDialog } from '../../apps/web/node_modules/@base-ui/react/alert-dialog/index.mjs';
 import { toastManager } from '@/components/Toast';
 import {
   EntryActions,
@@ -9,7 +10,7 @@ import {
   type EntryActionsProps,
 } from '@/screens/memory/EntryActions';
 import { PendingCard, type PendingCardProps } from '@/screens/memory/PendingCard';
-import { find } from './web-hook-host.js';
+import { find, text } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
 
 const hour = 3_600_000;
@@ -85,11 +86,26 @@ describe('memory entry actions', () => {
     expect(out).toMatch(/class="btn ghost dng"[^>]*>丢弃/);
     const tree = EntryActions(p);
     button(tree, zh('memory.actions.commit')).props.onClick();
-    button(tree, zh('memory.actions.discard')).props.onClick();
     button(tree, zh('memory.actions.showInGraph')).props.onClick();
     expect(p.onCommit).toHaveBeenCalled();
-    expect(p.onDiscard).toHaveBeenCalled();
     expect(p.onShowInGraph).toHaveBeenCalled();
+  });
+
+  it('asks in an alert dialog before discarding a draft', () => {
+    const p = actionProps({ item: draft });
+    const tree = EntryActions(p);
+    const root = find(tree, (n) => n.type === AlertDialog.Root);
+    const opener = find(root, (n) => n.type === AlertDialog.Trigger);
+    expect(text(opener)).toBe(zh('memory.actions.discard'));
+    expect(text(find(root, (n) => n.type === AlertDialog.Title))).toBe(
+      zh('overlays.confirm.discardTitle').replace('{title}', draft.title!),
+    );
+    expect(p.onDiscard).not.toHaveBeenCalled();
+    find(
+      root,
+      (n) => n.type === AlertDialog.Close && n.props.className === 'btn dng',
+    ).props.onClick();
+    expect(p.onDiscard).toHaveBeenCalled();
   });
 
   it('offers to rewrite or retract the current version', () => {
@@ -110,7 +126,7 @@ describe('memory entry actions', () => {
   it('says which version replaced an archived one and offers to restore it as a draft', () => {
     const p = actionProps({ item: first });
     const out = actionsHtml(p);
-    expect(plain(out)).toMatch(/被第 2 版替代 今天 \d\d:\d\d/);
+    expect(plain(out)).toMatch(/被第 2 版替代 \d\d:\d\d/);
     expect(plain(out)).toMatch(/恢复为草稿 要再确认一次才生效 在图谱里看/);
     const tree = EntryActions(p);
     button(tree, '被第 2 版替代').props.onClick();
@@ -209,12 +225,33 @@ describe('pending memory card', () => {
     expect(plain(cardHtml(p))).toMatch(/确认生效 丢弃 打开详情 $/);
     const tree = PendingCard(p);
     cardButton(tree, zh('memory.pending.commit')).props.onClick();
-    cardButton(tree, zh('memory.pending.discard')).props.onClick();
     cardButton(tree, zh('memory.pending.open')).props.onClick();
     expect(p.onCommit).toHaveBeenCalled();
-    expect(p.onDiscard).toHaveBeenCalled();
     expect(p.onOpen).toHaveBeenCalled();
   });
+
+  it.each([
+    ['a draft', {}],
+    ['a draft whose sources changed', { rejected: true }],
+    ['a draft over the budget', { overBudget: { largest_records: [] } }],
+  ] as [string, Partial<PendingCardProps>][])(
+    'asks in an alert dialog before discarding %s',
+    (_name, extra) => {
+      const p = cardProps(extra);
+      const root = find(PendingCard(p), (n) => n.type === AlertDialog.Root);
+      const opener = find(root, (n) => n.type === AlertDialog.Trigger);
+      expect(text(opener)).toBe(zh('memory.pending.discard'));
+      expect(text(find(root, (n) => n.type === AlertDialog.Title))).toBe(
+        zh('overlays.confirm.discardTitle').replace('{title}', draft.title!),
+      );
+      expect(p.onDiscard).not.toHaveBeenCalled();
+      find(
+        root,
+        (n) => n.type === AlertDialog.Close && n.props.className === 'btn dng',
+      ).props.onClick();
+      expect(p.onDiscard).toHaveBeenCalled();
+    },
+  );
 
   it('explains a commit refused because the sources changed and offers to open the proposing session', () => {
     const p = cardProps({ rejected: true, signature: '8b07d4e1'.padEnd(64, '0') });
@@ -228,10 +265,8 @@ describe('pending memory card', () => {
     const tree = PendingCard(p);
     cardButton(tree, '打开Refund idempotency').props.onClick();
     cardButton(tree, zh('memory.pending.rewrite')).props.onClick();
-    cardButton(tree, zh('memory.pending.discard')).props.onClick();
     expect(p.onOpenSession).toHaveBeenCalled();
     expect(p.onRewrite).toHaveBeenCalled();
-    expect(p.onDiscard).toHaveBeenCalled();
   });
 
   it('leaves out the session button when no session proposed the draft', () => {

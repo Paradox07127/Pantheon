@@ -611,3 +611,58 @@ describe('archive after merge switch', () => {
     ]);
   });
 });
+
+describe('session recap switch', () => {
+  const LABEL = zh('settings.general.sessionRecap');
+  function app(recap: boolean | undefined) {
+    const bridge = {
+      ...desk(),
+      query: vi.fn(async (method: string) =>
+        method === 'app.settings'
+          ? {
+              ok: true as const,
+              value: { auto_git_init: true, auto_archive_merged: false, session_recap: recap },
+            }
+          : { ok: false as const, error: { code: 'unknown_route', message: method } },
+      ),
+      command: vi.fn(async () => ({ ok: true, value: {} })),
+    };
+    vi.stubGlobal('window', { pantheon: bridge });
+    return bridge;
+  }
+  async function recapRow() {
+    const page = mount(() => GeneralPage());
+    const shown = named(page.value, 'SessionRecapRow');
+    const h = mount(() => (shown.type as (props: unknown) => ReactNode)(shown.props));
+    await h.flush();
+    return h;
+  }
+  const recap = (tree: unknown) =>
+    find(tree as never, (n) => n.type === 'input' && n.props['aria-label'] === LABEL);
+
+  it('shows the stored value and writes only session_recap', async () => {
+    const bridge = app(true);
+    const h = await recapRow();
+    expect(rowLabels(h.value)).toEqual([LABEL]);
+    expect(row(h.value, 'general.sessionRecap')).toBeDefined();
+    expect(recap(h.value).props.checked).toBe(true);
+    recap(h.value).props.onChange({ target: { checked: false } });
+    await h.flush();
+    expect(bridge.command.mock.calls.map((c) => (c as unknown as [any])[0].input)).toEqual([
+      { session_recap: false },
+    ]);
+    expect(recap(h.value).props.checked).toBe(false);
+  });
+
+  it('reads an absent value as on', async () => {
+    app(undefined);
+    const h = await recapRow();
+    expect(recap(h.value).props.checked).toBe(true);
+  });
+
+  it('is found in the settings search', () => {
+    const found = (query: string) => searchSettings(query).map((hit) => hit.id);
+    expect(found('会话进度摘要')).toContain('general.sessionRecap');
+    expect(found('recap')).toContain('general.sessionRecap');
+  });
+});

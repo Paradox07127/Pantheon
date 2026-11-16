@@ -973,7 +973,7 @@ export async function projectCollab(
       result.subagents.push({
         session_id: lane.session_id,
         span_id: span.id,
-        name: span.name,
+        name: span.input_summary ?? span.name,
         start: span.start,
         ...(duration === undefined ? {} : { duration_ms: duration }),
         status: span.status,

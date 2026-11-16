@@ -190,14 +190,6 @@
 .acx-lbl {
   white-space: nowrap;
 }
-.acx-none {
-  display: flex;
-  align-items: center;
-  min-height: var(--row);
-  padding: 0 var(--sp-2);
-  color: var(--mu);
-  text-wrap: balance;
-}
 /* Delivery: one group per state, its mark and word heading the sessions in it. */
 .acx-rows > .acx-grp + .acx-grp {
   margin-top: var(--sp-2);

@@ -243,16 +243,7 @@ button.clb-node:hover {
   height: 6px;
   flex: none;
   border-radius: 50%;
-  background: var(--idle);
-}
-.clb-ls[data-state='running']::before {
-  background: var(--run);
-}
-.clb-ls[data-state='waiting']::before {
-  background: var(--wait);
-}
-.clb-ls[data-state='failed']::before {
-  background: var(--bad);
+  background: var(--c);
 }
 .clb-ring {
   flex: none;

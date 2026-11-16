@@ -960,7 +960,7 @@ function claimDirectTask(
   requireThat(
     !workflowPolicy(ctx, plan.project_id).dispatch_paused,
     'resource_busy',
-    'Task dispatch is paused',
+    'Task dispatch is paused; only the user can resume it in settings. Tell the user and wait',
   );
   requireThat(
     taskIds.length === 1,
@@ -971,7 +971,7 @@ function claimDirectTask(
   requireThat(
     !plan.questions?.some((question) => !question.answer && question.blocks.includes(task.id)),
     'invalid_state',
-    `Task ${task.id} waits for a question to be answered`,
+    `Task ${task.id} waits for a question to be answered; the answer reaches you as a lead note, so work on other tasks until then`,
   );
   const lead = ctx.store.must<Session>('sessions', plan.id);
   requireThat(
@@ -1109,7 +1109,7 @@ export const taskDispatchHandlers: Handlers = {
         'invalid_state',
         p.role === 'user'
           ? `Task ${taskId} has a session; stop the task before starting it again`
-          : `Task ${taskId} already has a session`,
+          : `Task ${taskId} already has a session; send it more work with message_task, or stop_task it and start it again`,
       );
       requireThat(
         taskPath(ctx, plan.project_id, task) !== 'parallel' || task.parallel,

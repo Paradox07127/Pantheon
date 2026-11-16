@@ -9,6 +9,7 @@ import {
   type ImprovementListItem,
 } from '../../data/workflow-policy';
 import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 
 /** A run of rule text; a code run was backticked in the procedure. */
 export interface RulePart {
@@ -53,19 +54,10 @@ const startOfDay = (ms: number) => new Date(ms).setHours(0, 0, 0, 0);
 const daysBetween = (from: number, to: number) =>
   Math.round((startOfDay(to) - startOfDay(from)) / (24 * HOUR));
 
-const dateText = (ms: number) => {
-  const day = new Date(ms);
-  return t(
-    { id: 'memory.learned.date', defaultMessage: '{month}/{day}' },
-    { month: day.getMonth() + 1, day: day.getDate() },
-  );
-};
-
 function proposedText(at: number, now: number): string {
   const days = daysBetween(at, now);
   if (now - at < HOUR || days === 0) return ageText(at, now);
-  if (days === 1) return t({ id: 'memory.learned.yesterday', defaultMessage: 'Yesterday' });
-  return dateText(at);
+  return dayText(at, now);
 }
 
 // The reasons the daemon gives when it ends a trial; a user's revert gives none.
@@ -139,7 +131,7 @@ export function statusText(item: ImprovementListItem, now: number): string {
         { count: daysBetween(item.trial_started_at ?? item.proposed_at, now) + 1 },
       );
     case 'active': {
-      const date = dateText(item.decided_at ?? item.trial_started_at ?? item.proposed_at);
+      const date = dayText(item.decided_at ?? item.trial_started_at ?? item.proposed_at, now);
       return item.status_reason === 'trial_passed' && item.trial
         ? t(
             {

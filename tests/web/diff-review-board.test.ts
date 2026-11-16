@@ -139,8 +139,8 @@ it('groups the file list by directory and names each file there by its own name'
     files: props(g.children, (p) => has(p, 'ss-file')).map((p) => text(p.children)),
   }));
   expect(groups).toEqual([
-    { dir: 'web/refunds', files: ['Mfilters.ts+1−1', 'MList.tsx+1−1'] },
-    { dir: 'web', files: ['Mapi.ts+1−1'] },
+    { dir: 'web/refunds', files: ['Mfilters.ts+1 −1', 'MList.tsx+1 −1'] },
+    { dir: 'web', files: ['Mapi.ts+1 −1'] },
   ]);
   // A file at the root stays unindented, in the order the diff lists it.
   const top = props(h.value, (p) => has(p, 'ss-files'))[0];
@@ -152,7 +152,7 @@ it('groups the file list by directory and names each file there by its own name'
           ? text(props(li.props.children, (p) => has(p, 'df-dirn'))[0].children)
           : text(props(li.props.children, (p) => has(p, 'ss-file'))[0].children),
       ),
-  ).toEqual(['web/refunds', 'MREADME.md+1−1', 'web']);
+  ).toEqual(['web/refunds', 'MREADME.md+1 −1', 'web']);
 });
 
 it('draws the five-cell bar of added and removed lines before the counts of each file row', () => {

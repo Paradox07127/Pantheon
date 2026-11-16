@@ -109,6 +109,19 @@
     background-color var(--dur-1) var(--ease-std),
     color var(--dur-1) var(--ease-std);
 }
+/* A single choice key is round like a radio; a multiple choice key stays a box. */
+.qc-k:not([data-multi]) {
+  border-radius: 50%;
+}
+.qc-k > svg {
+  width: 14px;
+  height: 14px;
+}
+@supports (corner-shape: round) {
+  .pt .qc-k:not([data-multi]) {
+    corner-shape: round;
+  }
+}
 .qc-opt[aria-checked='true'] .qc-k {
   border-color: transparent;
   background: var(--ink);
@@ -262,31 +275,34 @@
   min-width: 0;
   overflow-x: auto;
 }
-.qc-gp {
-  position: relative;
-  display: block;
-}
-.qc-gp > svg {
-  position: absolute;
-  inset: 0;
-  overflow: visible;
-}
-.qc-gp path {
-  fill: none;
-  stroke: var(--bd3);
-  stroke-width: 1;
-}
-.qc-gn {
-  position: absolute;
-  box-sizing: border-box;
-  padding: 0 var(--sp-1);
-  border: var(--hair) solid var(--bd3);
-  border-radius: max(calc(var(--r-sm) - 2px), 4px);
-  background: var(--sf);
+/* An option's tasks as numbered steps, each cut after two lines. */
+.qc-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: qc-step;
   color: var(--tx2);
   font-size: var(--fs-xs);
-  line-height: 22px;
-  white-space: nowrap;
+  line-height: var(--lh-xs);
+}
+.qc-steps > li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: var(--sp-1);
+  counter-increment: qc-step;
+}
+.qc-steps > li::before {
+  content: counter(qc-step);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.qc-steps > li > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }

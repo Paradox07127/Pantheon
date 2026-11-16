@@ -59,7 +59,7 @@ beforeEach(() => {
     history: [{ projectId: 'alpha', screen: 'board', sessionId: null, sessionTask: null }],
     historyIndex: 0,
   });
-  useSettingsView.setState({ open: false, page: 'general' });
+  useSettingsView.setState({ open: false, page: 'general', detail: null });
 });
 afterEach(() => {
   unmountAll();
@@ -71,9 +71,17 @@ it('opens the settings over the current screen without a step in history', () =>
   shell().openSettings('alpha');
   expect(shell().screen).toBe('board');
   expect(shell().history).toHaveLength(1);
-  expect(useSettingsView.getState()).toMatchObject({ open: true, page: 'general', detail: null });
+  expect(useSettingsView.getState()).toMatchObject({
+    open: true,
+    page: 'projects',
+    detail: 'alpha',
+  });
   shell().openSettings(null);
-  expect(useSettingsView.getState()).toMatchObject({ open: true, page: 'general', detail: null });
+  expect(useSettingsView.getState()).toMatchObject({
+    open: true,
+    page: 'projects',
+    detail: 'alpha',
+  });
   expect(shell().history).toHaveLength(1);
   useSettingsView.getState().close();
   expect(useSettingsView.getState().open).toBe(false);
@@ -83,7 +91,11 @@ it('opens the settings over the current screen without a step in history', () =>
 it('opens the settings on the settings keys and closes them on the next press', () => {
   mount(() => MenuActions());
   pressSettingsKeys();
-  expect(useSettingsView.getState()).toMatchObject({ open: true, detail: null });
+  expect(useSettingsView.getState()).toMatchObject({
+    open: true,
+    page: 'projects',
+    detail: 'alpha',
+  });
   pressSettingsKeys();
   expect(useSettingsView.getState().open).toBe(false);
   expect(shell().screen).toBe('board');

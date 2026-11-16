@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { ArrowUpRight, Ellipsis, Folder, GitBranch } from 'lucide-react';
 import type { BridgeResult, StaleWorkspaces, WorkbenchSession } from '@pantheon/protocol';
+import { DiffCounts } from '../../../components/DiffCounts';
 import { Menu, MenuItem } from '../../../components/Menu';
 import { RuntimeGlyph } from '../../../components/RuntimeGlyph';
 import { SessionStateIcon } from '../../../components/SessionStateIcon';
@@ -118,12 +119,7 @@ function Row({
               )}
               {session && (worktree.additions > 0 || worktree.deletions > 0) && (
                 <span className="mono">
-                  <span className="rpl-add" data-zero={worktree.additions === 0 || undefined}>
-                    +{worktree.additions}
-                  </span>{' '}
-                  <span className="rpl-del" data-zero={worktree.deletions === 0 || undefined}>
-                    −{worktree.deletions}
-                  </span>
+                  <DiffCounts additions={worktree.additions} deletions={worktree.deletions} />
                 </span>
               )}
             </>

@@ -120,7 +120,7 @@ describe('memory entry detail', () => {
       expect(text).toContain(chip);
     expect(text).toContain('webhook-signature');
     expect(text).toContain('第 3 版');
-    expect(text).toMatch(/今天 \d\d:\d\d/);
+    expect(text).toMatch(/\d\d:\d\d/);
   });
 
   it('renders the body as markdown', () => {

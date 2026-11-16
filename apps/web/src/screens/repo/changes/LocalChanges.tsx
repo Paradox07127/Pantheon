@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { GitBranch, Undo2 } from 'lucide-react';
+import { DiffCounts } from '../../../components/DiffCounts';
 import { numbered } from '../../../components/DiffReview';
 import { holdToastAction, toast } from '../../../components/Toast';
 import { shortId } from '../../../data/format';
@@ -431,12 +432,7 @@ export function LocalChanges({ projectId }: { projectId: string }) {
                 </button>
                 {file.additions !== null && file.deletions !== null && (
                   <span className="rpl-n mono">
-                    <span className="rpl-add" data-zero={file.additions === 0 || undefined}>
-                      +{file.additions}
-                    </span>{' '}
-                    <span className="rpl-del" data-zero={file.deletions === 0 || undefined}>
-                      −{file.deletions}
-                    </span>
+                    <DiffCounts additions={file.additions} deletions={file.deletions} />
                   </span>
                 )}
               </li>

@@ -12,10 +12,10 @@ import { rehypePlugins, remarkPlugins } from '../../components/markdownPlugins';
 import { KNOWN_RUNTIMES, runtimeTraits } from '../../components/RuntimeGlyph';
 import { reasonText } from '../../data/needs-you';
 import { listText } from '../../lib/list-text';
+import { durationText } from '../../lib/time-text';
 import type { DaemonEvent } from '../../data/sync';
 import { subagentCall, toolLabel } from '../../data/tool-calls';
 import {
-  elapsedText,
   isQuietEvent,
   type SessionTurn,
   type Transcript,
@@ -438,7 +438,7 @@ export function turnStatusText(status: TurnStatus, now: number): string {
   if (!label || status.since === null || !statusTicks(status.kind)) return label;
   return t(
     { id: 'sessions.model.status.withClock', defaultMessage: '{status}, {clock}' },
-    { status: label, clock: clockText(now - status.since) },
+    { status: label, clock: durationText(now - status.since) },
   );
 }
 
@@ -491,13 +491,6 @@ export function turnStatusLabel(status: TurnStatus): string {
                     )
                   : SPOKEN[status.kind];
 }
-
-/** Hours and minutes of a time in the thread. */
-export const turnClock = new Intl.DateTimeFormat('zh-CN', {
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
 
 /** The turn's input as the thread shows it: without the tag Pantheon or the lead writes before it. */
 export const shownInput = (turn: Pick<SessionTurn, 'input' | 'origin'>): string =>
@@ -714,17 +707,6 @@ const firstSentence = (text: string) =>
     .split(/[。！？\n]|[.!?](?=\s|$)/)
     .find((part) => part.trim())
     ?.trim() ?? text;
-
-/** A running clock: whole seconds under a minute, then minutes and seconds. */
-export function clockText(ms: number): string {
-  const at = Math.max(0, ms);
-  return at < 60_000
-    ? t(
-        { id: 'data.elapsed.seconds', defaultMessage: '{seconds}s' },
-        { seconds: Math.floor(at / 1000) },
-      )
-    : elapsedText(at);
-}
 
 /**
  * A transcript item's id. Text grows in place and never follows other text, so a text block is

@@ -6,7 +6,7 @@ import type {
   CommandType,
 } from '@pantheon/protocol';
 import { compareRuntimes, runtimeName } from '../../components/RuntimeGlyph';
-import { composeState, elapsedText } from '../../data/transcript';
+import { composeState } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
 import { messageCommand } from '../sessions/model';
 
@@ -29,43 +29,7 @@ export type RunBoardCommand = (
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** Local "MM-DD". */
-export function dayText(time: number): string {
-  const date = new Date(time);
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/** Local "HH:MM"; earlier days also get "MM-DD ". */
-export function whenText(time: number, now: number): string {
-  const date = new Date(time);
-  const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  return new Date(now).toDateString() === date.toDateString() ? clock : `${dayText(time)} ${clock}`;
-}
-
-/** Seconds to a tenth under a minute, as elapsedText; then whole minutes, hours and days. */
-export function durationText(ms: number): string {
-  if (Math.round(ms / 100) < 600) return elapsedText(ms);
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60)
-    return t({ id: 'board.duration.minutes', defaultMessage: '{minutes}m' }, { minutes });
-  const hours = Math.floor(minutes / 60);
-  const restMinutes = minutes % 60;
-  if (hours < 24)
-    return restMinutes
-      ? t(
-          { id: 'board.duration.hoursMinutes', defaultMessage: '{hours}h {minutes}m' },
-          { hours, minutes: restMinutes },
-        )
-      : t({ id: 'board.duration.hours', defaultMessage: '{hours}h' }, { hours });
-  const days = Math.floor(hours / 24);
-  const restHours = hours % 24;
-  return restHours
-    ? t(
-        { id: 'board.duration.daysHours', defaultMessage: '{days}d {hours}h' },
-        { days: String(days), hours: restHours },
-      )
-    : t({ id: 'board.duration.days', defaultMessage: '{days}d' }, { days: String(days) });
-}
+export { durationText } from '../../lib/time-text';
 
 export function tokenText(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
@@ -255,8 +219,11 @@ export function timeTicks(since: number, now: number): TimeTick[] {
   const day = (i: number) =>
     new Date(first.getFullYear(), first.getMonth(), first.getDate() + i).getTime();
   const ticks: TimeTick[] = [];
-  for (let i = 0; day(i) <= now; i++)
-    ticks.push({ at: day(i), end: day(i + 1), label: dayText(day(i)) });
+  for (let i = 0; day(i) <= now; i++) {
+    const date = new Date(day(i));
+    const label = `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    ticks.push({ at: day(i), end: day(i + 1), label });
+  }
   return ticks;
 }
 

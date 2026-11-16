@@ -248,6 +248,36 @@ describe('session card', () => {
     await h.flush();
     expect(reads().length).toBe(before + 1);
   });
+
+  it('waits for the worktree to be set up before reading the merge facts', async () => {
+    const query = vi.fn(async (_method: string) => ({ ok: true, value: [] }));
+    vi.stubGlobal('window', { ...window, pantheon: { query } });
+    mock.board.board.workspaces = [
+      { id: 'workspace-session-a', provisioning: { state: 'running', base_ref: 'main' } },
+    ];
+    const h = card();
+    await h.flush();
+    expect(query.mock.calls.filter(([method]) => method === 'session.preflight')).toEqual([]);
+    expect(nodes(h.value).some((n) => n.props.role === 'alert')).toBe(false);
+    expect(named(h.value, 'MergeBar').props.preflight).toBeNull();
+  });
+
+  it('names a worktree that could not be read in words, not by its code', async () => {
+    const query = vi.fn(async (method: string) =>
+      method === 'session.preflight'
+        ? {
+            ok: false,
+            error: { code: 'workspace_read_failed', message: 'Worktree status could not be read' },
+          }
+        : { ok: true, value: [] },
+    );
+    vi.stubGlobal('window', { ...window, pantheon: { query } });
+    const h = card();
+    await h.flush();
+    const failed = text(find(h.value, (n) => n.props.role === 'alert'));
+    expect(failed).not.toContain('workspace_read_failed');
+    expect(failed).toContain(zh('data.reason.workspaceReadFailed'));
+  });
 });
 
 describe('session card button', () => {

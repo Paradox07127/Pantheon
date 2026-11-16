@@ -32,6 +32,7 @@ import {
 } from './panels-model';
 import { StatusIcon } from './status';
 import { TellLead, useDialogContent } from './TellLead';
+import { EmptyState } from '../../components/EmptyState';
 import './charts.css';
 
 /* Shared panel parts */
@@ -63,7 +64,7 @@ export function Panel({
 }
 
 export function Empty({ text }: { text: string }) {
-  return <div className="bp-empty">{text}</div>;
+  return <EmptyState inline title={text} />;
 }
 
 /** Bolds the digits of a title-row number, e.g. "3 时 15 分". */

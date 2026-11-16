@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
 import { X } from 'lucide-react';
 import type { BackendSummary, BoardModel, BoardTaskStatus } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { Menu, MenuItem } from '../../components/Menu';
 import { PathText } from '../../components/PathText';
 import { ModelMark } from '../../components/RuntimeGlyph';
@@ -22,6 +24,7 @@ import {
 import { useNow } from '../../data/needs-you';
 import { needsKey } from '../../data/notice-tiers';
 import { useRuntimeModels, type ModelsState } from '../../data/runtime-models';
+import { useRuntimeStatus } from '../../data/runtime-status';
 import {
   connectRefusal,
   editPlan,
@@ -40,15 +43,17 @@ import { useShell } from '../../store';
 import { useQueued } from '../sessions/compose';
 import { messageCommand } from '../sessions/model';
 import { defaultModel } from '../sessions/thread-model';
-import { taskBadges, taskTokens } from './activity';
+import { openBoardTab } from '../settings/settings-jump';
+import { quotaResetsAt, resumesText, taskBadges, taskTokens } from './activity';
 import { DeviceDot, DeviceFacts, DeviceState, ResourceMeter } from './BoardDevices';
 import { requestNeed } from './frame-model';
 import { PlanEdit } from './PlanEdit';
 import { PlanList } from './PlanList';
+import { dayText } from '../../lib/time-text';
 import {
+  durationText,
   tellLeadDraft,
   tokenText,
-  whenText,
   type RunBoardCommand,
   type SnapshotSession,
 } from './panels-model';
@@ -241,11 +246,11 @@ function CancelDialog({
     else onSent();
   };
   return (
-    <Dialog.Portal>
-      <Dialog.Backdrop className="pj-scrim" />
-      <Dialog.Popup className="pj-dlg pj-rm pop">
+    <AlertDialog.Portal>
+      <AlertDialog.Backdrop className="pj-scrim" />
+      <AlertDialog.Popup className="pj-dlg pj-rm pop">
         <div className="pj-dh">
-          <Dialog.Title className="pj-dt">{cancelText()}</Dialog.Title>
+          <AlertDialog.Title className="pj-dt">{cancelText()}</AlertDialog.Title>
         </div>
         <div className="bp-dlb">
           <input
@@ -267,9 +272,9 @@ function CancelDialog({
         )}
         <div className="pj-df">
           <span style={{ flex: 1 }} />
-          <Dialog.Close className="btn ghost">
+          <AlertDialog.Close className="btn ghost">
             {t({ id: 'board.task.cancel.keep', defaultMessage: 'Keep task' })}
-          </Dialog.Close>
+          </AlertDialog.Close>
           <button
             type="button"
             className="btn dng"
@@ -280,8 +285,8 @@ function CancelDialog({
             {cancelText()}
           </button>
         </div>
-      </Dialog.Popup>
-    </Dialog.Portal>
+      </AlertDialog.Popup>
+    </AlertDialog.Portal>
   );
 }
 
@@ -294,11 +299,11 @@ function CancelTask({ target, run }: { target: EditTarget; run: RunBoardCommand 
       <button type="button" className="btn ghost" onClick={() => dialog.show(++openings.current)}>
         {cancelText()}
       </button>
-      <Dialog.Root {...dialog.root}>
+      <AlertDialog.Root {...dialog.root}>
         {dialog.content !== null && (
           <CancelDialog key={dialog.content} target={target} run={run} onSent={dialog.close} />
         )}
-      </Dialog.Root>
+      </AlertDialog.Root>
     </>
   );
 }
@@ -417,20 +422,6 @@ function Redo({
       )}
     </>
   );
-}
-
-function formatDuration(ms: number): string {
-  const m = Math.round(ms / 60000);
-  if (m < 60) return t({ id: 'board.task.duration.minutes', defaultMessage: '{m}m' }, { m });
-  const h = Math.floor(m / 60);
-  if (h < 24)
-    return m % 60
-      ? t({ id: 'board.task.duration.hoursMinutes', defaultMessage: '{h}h {m}m' }, { h, m: m % 60 })
-      : t({ id: 'board.task.duration.hours', defaultMessage: '{h}h' }, { h });
-  const d = Math.floor(h / 24);
-  return h % 24
-    ? t({ id: 'board.task.duration.daysHours', defaultMessage: '{d}d {h}h' }, { d, h: h % 24 })
-    : t({ id: 'board.task.duration.days', defaultMessage: '{d}d' }, { d });
 }
 
 export interface TaskDrawerProps {
@@ -565,6 +556,13 @@ export function TaskDrawer({
   const seenFolds = useRef(folds);
   const backends = useBackends();
   const { read: deviceRead, reload: reloadDevices } = useDevices();
+  const status = useRuntimeStatus().read;
+  const routeRuntime = (task?.claim ?? task?.planned)?.runtime ?? null;
+  const routeProject =
+    tell?.sessions.find((s) => s.id === (task?.owner_session_id ?? task?.id))?.project_id ?? null;
+  const routeModels = useRuntimeModels(routeProject, routeRuntime ? [routeRuntime] : [])[
+    routeRuntime ?? ''
+  ];
 
   // Each task opened reads the devices again, so their state and load are current.
   useEffect(() => {
@@ -669,6 +667,7 @@ export function TaskDrawer({
           connectRefusal(model, t.id, task.id) === null,
       )
     : [];
+  const resumes = quotaResetsAt(task, status.state === 'ready' ? status.statuses : [], now);
   const acceptance = task.acceptance_checks ?? [];
   const waiting = task.activity?.waiting;
   // A session row's activity is its own; a plan task's is its newest session's.
@@ -732,13 +731,17 @@ export function TaskDrawer({
           )}
           <div className="bd-dmeta">
             <TaskStateBadge task={task} />
-            <TaskRoute task={task} className="bd-stc mu" />
+            <TaskRoute
+              task={task}
+              className="bd-stc mu"
+              models={routeModels?.state === 'ready' ? routeModels.models : []}
+            />
             {lane && <span className="mu">{lane.title}</span>}
             {task.started_at !== null && (
               <span className="mu">
                 {t(
                   { id: 'board.task.drawer.elapsed', defaultMessage: 'Elapsed {duration}' },
-                  { duration: formatDuration((task.ended_at ?? now) - task.started_at) },
+                  { duration: durationText((task.ended_at ?? now) - task.started_at) },
                 )}
               </span>
             )}
@@ -777,6 +780,22 @@ export function TaskDrawer({
                     <TaskBadges badges={[badge]} />
                   </span>
                   <span>{badge.label}</span>
+                  {(badge.kind === 'upstream' || badge.kind === 'blocked') && resumes !== null && (
+                    <>
+                      <span className="mu">{resumesText(resumes, now)}</span>
+                      <button
+                        type="button"
+                        className="bd-lnk"
+                        aria-label={t({
+                          id: 'board.task.quota.usageLabel',
+                          defaultMessage: 'Open usage on the engineering board',
+                        })}
+                        onClick={() => openBoardTab('usage')}
+                      >
+                        {t({ id: 'board.sections.usage', defaultMessage: 'Usage' })}
+                      </button>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
@@ -867,7 +886,7 @@ export function TaskDrawer({
                                   id: 'board.task.drawer.inUse',
                                   defaultMessage: 'In use for {duration}',
                                 },
-                                { duration: formatDuration(now - Date.parse(s.started_at)) },
+                                { duration: durationText(now - Date.parse(s.started_at)) },
                               )}
                             </span>
                           </button>
@@ -932,17 +951,12 @@ export function TaskDrawer({
                     </span>
                     {s.additions !== undefined && (
                       <span className="bd-dfx">
-                        <span className="bd-add" data-zero={s.additions === 0 || undefined}>
-                          +{s.additions}
-                        </span>{' '}
-                        <span className="bd-del" data-zero={!s.deletions || undefined}>
-                          −{s.deletions ?? 0}
-                        </span>
+                        <DiffCounts additions={s.additions} deletions={s.deletions} />
                       </span>
                     )}
                     {s.started_at !== null && (
                       <span className="bd-dtook">
-                        {formatDuration((s.ended_at ?? now) - s.started_at)}
+                        {durationText((s.ended_at ?? now) - s.started_at)}
                       </span>
                     )}
                   </button>
@@ -973,12 +987,7 @@ export function TaskDrawer({
               </div>
             ) : (
               <span className="bd-dfx">
-                <span className="bd-add" data-zero={task.additions === 0 || undefined}>
-                  +{task.additions}
-                </span>{' '}
-                <span className="bd-del" data-zero={!task.deletions || undefined}>
-                  −{task.deletions ?? 0}
-                </span>
+                <DiffCounts additions={task.additions} deletions={task.deletions} />
               </span>
             )}
           </section>
@@ -1005,19 +1014,14 @@ export function TaskDrawer({
               ) : (
                 merges.map((m) => (
                   <div className="bd-dmg" key={`${m.session_id}-${m.sha}`}>
-                    <span>{whenText(m.merged_at, model.now)}</span>
+                    <span>{dayText(m.merged_at, model.now, { time: true })}</span>
                     <span className="sha">
                       {m.from_sha
                         ? `${m.from_sha.slice(0, 7)}..${m.sha.slice(0, 7)}`
                         : m.sha.slice(0, 7)}
                     </span>
                     <span className="bd-dfx">
-                      <span className="bd-add" data-zero={m.additions === 0 || undefined}>
-                        +{m.additions}
-                      </span>{' '}
-                      <span className="bd-del" data-zero={m.deletions === 0 || undefined}>
-                        −{m.deletions}
-                      </span>
+                      <DiffCounts additions={m.additions} deletions={m.deletions} />
                     </span>
                     {m.story_id && (
                       <button

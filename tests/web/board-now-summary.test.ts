@@ -256,7 +256,7 @@ describe('now summary strip', () => {
     const list = find(h.value, (n) => n.type === 'ul');
     expect(toggle().props['aria-controls']).toBe(list.props.id);
     const rows = nodes(list.props.children).filter((n) => n.type === 'button');
-    expect(rows.map((row) => text(row))).toEqual(['s-first2 时', 's-failed2 时']);
+    expect(rows.map((row) => text(row))).toEqual(['s-first2 小时', 's-failed2 小时']);
     rows[1]!.props.onClick();
     expect(onOpenSession).toHaveBeenCalledWith('s-failed');
   });

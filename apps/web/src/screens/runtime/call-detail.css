@@ -74,9 +74,6 @@
 .cd-st {
   display: inline-flex;
 }
-.cd > .cd-fail {
-  margin: 0;
-}
 .cd-sec {
   display: flex;
   flex-direction: column;

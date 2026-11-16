@@ -37,7 +37,8 @@ vi.mock('@/store', () => ({
 import { reasonText } from '@/data/needs-you';
 import { AnalyzeMenu } from '@/screens/trace/AnalyzeMenu';
 import { FindingDetail } from '@/screens/trace/FindingDetail';
-import { RuntimePanel, runtimeDuration } from '@/screens/trace/RuntimeDiagnostics';
+import { durationText } from '@/lib/time-text';
+import { RuntimePanel } from '@/screens/trace/RuntimeDiagnostics';
 import { zh } from './i18n-setup.js';
 
 const at = (hours: number, minutes: number, seconds = 0) =>
@@ -163,7 +164,7 @@ describe('diagnose findings', () => {
         'session of lane-f-approval',
         '',
         '',
-        '6 分',
+        '6 分钟',
         zh('trace.runtime.ongoing'),
       ],
       [
@@ -172,7 +173,7 @@ describe('diagnose findings', () => {
         'session of lane-f-queue',
         zh('trace.runtime.wait.upstream'),
         '',
-        '3 分',
+        '3 分钟',
         zh('trace.runtime.ongoing'),
       ],
       [
@@ -181,7 +182,7 @@ describe('diagnose findings', () => {
         'session of lane-f-slow',
         zh('trace.diagnose.category.shell'),
         '',
-        '48.2 秒',
+        '48 秒',
         '10:30:15',
       ],
     ]);
@@ -218,13 +219,13 @@ describe('diagnose findings', () => {
   });
 
   it.each([
-    [30, '30 毫秒'],
-    [187, '187 毫秒'],
-    [58_900, '58.9 秒'],
-    [59_960, '1 分'],
-    [61_000, '1 分'],
+    [30, '<1 秒'],
+    [187, '<1 秒'],
+    [58_900, '58 秒'],
+    [59_960, '59 秒'],
+    [61_000, '1 分 1 秒'],
   ])('prints a duration of %d ms in the column as %s', (ms, shown) => {
-    expect(runtimeDuration(ms)).toBe(shown);
+    expect(durationText(ms)).toBe(shown);
   });
 
   it('keeps no heading, coverage line or pickers of its own', () => {
@@ -343,10 +344,10 @@ describe('finding detail', () => {
   it('says how long it took and that its parent was inferred', () => {
     const { tree } = detail(FINDINGS[2]!);
     expect(text(find(tree, (n) => n.type === 'p'))).toBe(
-      '一次工具调用跑了 48.2 秒。它的父调用是按时间推断的，可能和别的调用重叠。',
+      '一次工具调用跑了 48 秒。它的父调用是按时间推断的，可能和别的调用重叠。',
     );
     expect(text(find(detail(FINDINGS[0]!).tree, (n) => n.type === 'p'))).toBe(
-      '等你批准等了 6 分。',
+      '等你批准等了 6 分钟。',
     );
   });
 
@@ -357,12 +358,12 @@ describe('finding detail', () => {
         .map((cell) => [cell.props.children].flat().map((n: ReactElement<any>) => text(n)));
     expect(facts(FINDINGS[2]!)).toEqual([
       [zh('trace.diagnose.detail.start'), '10:29:27'],
-      [zh('trace.diagnose.detail.duration'), '48.2 秒'],
+      [zh('trace.diagnose.detail.duration'), '48 秒'],
       [zh('trace.diagnose.detail.category'), zh('trace.diagnose.category.shell')],
     ]);
     expect(facts(FINDINGS[0]!)).toEqual([
       [zh('trace.diagnose.detail.start'), '—'],
-      [zh('trace.diagnose.detail.duration'), '6 分'],
+      [zh('trace.diagnose.detail.duration'), '6 分钟'],
       [zh('trace.diagnose.detail.category'), '—'],
     ]);
   });

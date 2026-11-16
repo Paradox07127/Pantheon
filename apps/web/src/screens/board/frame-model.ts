@@ -1,4 +1,5 @@
 import type { BoardModel, BoardSnapshot, BoardTaskStatus, CommandType } from '@pantheon/protocol';
+import type { GlyphName } from '../../components/SessionStateIcon';
 import { shortId } from '../../data/format';
 import { reasonText } from '../../data/needs-you';
 import { proposalTitle } from '../../data/plan-edit';
@@ -54,49 +55,50 @@ export function requirementSessionInput(
 
 /* Lead states */
 
-// Labels are getters, so each is read in the language loaded by then.
-export const LEAD_STATE: Record<BoardLead['state'], { label: string; dot: string }> = {
+// Labels are getters, so each is read in the language loaded by then. Each state is drawn with
+// the session state glyph of the same meaning.
+export const LEAD_STATE: Record<BoardLead['state'], { label: string; glyph: GlyphName }> = {
   running: {
     get label() {
       return t({ id: 'board.leadStates.running', defaultMessage: 'Running' });
     },
-    dot: 'running',
+    glyph: 'running',
   },
   waiting: {
     get label() {
       return t({ id: 'board.leadStates.waiting', defaultMessage: 'Awaiting an answer' });
     },
-    dot: 'waiting',
+    glyph: 'question',
   },
   idle: {
     get label() {
       return t({ id: 'board.leadStates.idle', defaultMessage: 'Idle' });
     },
-    dot: 'idle',
+    glyph: 'idle',
   },
   failed: {
     get label() {
       return t({ id: 'board.leadStates.failed', defaultMessage: 'Failed' });
     },
-    dot: 'failed',
+    glyph: 'failed',
   },
   closed: {
     get label() {
       return t({ id: 'board.leadStates.closed', defaultMessage: 'Closed' });
     },
-    dot: 'discarded',
+    glyph: 'discarded',
   },
 };
 
 /** A lead's state, a waiting lead by whether it waits for an answer or an approval. */
 export function leadState(lead: Pick<BoardLead, 'state' | 'waiting'>): {
   label: string;
-  dot: string;
+  glyph: GlyphName;
 } {
   if (lead.state === 'waiting' && lead.waiting?.kind === 'approval')
     return {
       label: t({ id: 'board.leadStates.waitingApproval', defaultMessage: 'Awaiting approval' }),
-      dot: 'waiting',
+      glyph: 'approval',
     };
   return LEAD_STATE[lead.state];
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import type { BoardSnapshot } from '@pantheon/protocol';
+import { Skeleton } from '../../components/Skeleton';
 import { ShortcutSettings } from '../../components/Shortcuts';
 import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
@@ -86,8 +87,8 @@ export function Section(props: {
 
 export const Loading = () => (
   <div aria-busy="true" className="ps-sk">
-    <span className="sk" style={{ height: 9, width: 180 }} />
-    <span className="sk" style={{ height: 9, width: 120 }} />
+    <Skeleton style={{ height: 9, width: 180 }} />
+    <Skeleton style={{ height: 9, width: 120 }} />
   </div>
 );
 

@@ -377,7 +377,7 @@ describe('board canvas layout styles', () => {
       Number(
         new RegExp(`\\.bd-main > [^{]*\\.${part}\\b[^{]*\\{[^}]*grid-row: (\\d+);`).exec(css)?.[1],
       );
-    expect(['bd-fc', 'bp-empty', 'bd-rp', 'bd-focus'].map(row)).toEqual([1, 1, 2, 3]);
+    expect(['bd-fc', 'es-in', 'bd-rp', 'bd-focus'].map(row)).toEqual([1, 1, 2, 3]);
     expect(/\.bd-cv > \.bd-main \{[^}]*grid-template-rows: ([^;]+);/.exec(css)![1]).toMatch(
       /^minmax\([1-9]\d*px, 1fr\) auto auto$/,
     );

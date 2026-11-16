@@ -15,6 +15,7 @@ import {
 import type { ReviewFinding, SessionComment } from '@pantheon/domain';
 import type { BoardSnapshot, BridgeResult, WorkbenchSession } from '@pantheon/protocol';
 import { AgentTypeIcon, agentTypeName } from '../../components/AgentTypeIcon';
+import { DiffCounts } from '../../components/DiffCounts';
 import { DiffFiles, lineOf, type DiffNote } from '../../components/DiffReview';
 import { toast } from '../../components/Toast';
 import { parsePatch } from '../../data/patch';
@@ -85,6 +86,7 @@ import {
   toolTally,
   type ToolKind,
 } from './overview-model';
+import { EmptyState } from '../../components/EmptyState';
 import './overview.css';
 
 /** The changes tab shows the whole branch under this value, else the turn whose id it is. */
@@ -166,11 +168,13 @@ export function useSessionCard(
   // A merged session's diff is read from its source.
   const diff = useSessionDiff(readsDiff(listed) ? sessionId : null);
   const gates = useSessionGates(mergeable ? sessionId : null);
-  const preflight = useSessionPreflight(mergeable && live ? sessionId : null);
-  const projectId = session?.project_id ?? null;
   const workspace = useBoard(
     (s) => s.board?.workspaces.find((w) => w.id === listed?.workspace_id) ?? null,
   );
+  // Git cannot read a worktree that is still being set up.
+  const settingUp = !!workspace?.provisioning && workspace.provisioning.state !== 'ready';
+  const preflight = useSessionPreflight(mergeable && live && !settingUp ? sessionId : null);
+  const projectId = session?.project_id ?? null;
   const facts = useFactsRead(projectId).read?.facts ?? null;
   const branch = sourceBranch(facts, workspace?.source ?? null);
   const files = diff.data?.files;
@@ -906,7 +910,7 @@ export function SessionInspector(props: {
         />
       );
     return ended && !mergedSession ? (
-      <div className="empty">{ended}</div>
+      <EmptyState inline title={ended} />
     ) : (
       <>
         {readFailed(comments)}
@@ -994,12 +998,7 @@ export function SessionInspector(props: {
           <div className="ss-chd">
             {shownTotals && shownTotals.files > 0 && (
               <span className="mono">
-                <span className="df-add" data-zero={shownTotals.additions === 0 || undefined}>
-                  +{shownTotals.additions}
-                </span>{' '}
-                <span className="df-del" data-zero={shownTotals.deletions === 0 || undefined}>
-                  −{shownTotals.deletions}
-                </span>
+                <DiffCounts additions={shownTotals.additions} deletions={shownTotals.deletions} />
               </span>
             )}
             {filesLabel && (

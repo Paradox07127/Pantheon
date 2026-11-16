@@ -17,7 +17,8 @@ import type { RuntimeFinding } from '@pantheon/domain';
 import { useBoard } from '../../data/board';
 import { currentProject, useCurrentProject } from '../../data/current-project';
 import { useSessionTrace } from '../../data/trace';
-import { currentLocale, t } from '../../i18n';
+import { t } from '../../i18n';
+import { clockText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { durationText } from '../board/panels-model';
 import './diagnose.css';
@@ -102,22 +103,6 @@ export function findingReason(finding: RuntimeFinding): string | null {
   return finding.tool_category ? CATEGORY[finding.tool_category]() : null;
 }
 
-export const runtimeDuration = (ms: number) =>
-  ms < 1000
-    ? t(
-        { id: 'trace.runtime.milliseconds', defaultMessage: '{value, number} ms' },
-        { value: Math.round(ms) },
-      )
-    : durationText(ms);
-
-export const clockText = (at: number) =>
-  new Intl.DateTimeFormat(currentLocale(), {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).format(at);
-
 const NONE = '—';
 
 // Labels are getters, so each is read in the language loaded by then.
@@ -143,7 +128,7 @@ function summary(finding: RuntimeFinding, slowToolMs: number | undefined): strin
             defaultMessage:
               '{kind, select, approval {Waited {duration} for your approval.} permission_delivery {The decision took {duration} to reach the runtime.} dispatch_queue {The task waited {duration} to be dispatched.} turn_queue {The turn waited {duration} in the queue.} turn_prepare {The turn took {duration} to start.} gate {Gates ran for {duration}.} slow_tool {A tool call ran for {duration}.} tool_failure {A tool call failed after {duration}.} turn_failure {The turn failed after {duration}.} background_task {A background task ran for {duration}.} workflow_step {A workflow step took {duration}.} context_compaction {Compacting the context took {duration}.} other {It took {duration}.}}',
           },
-          { kind: finding.kind, duration: runtimeDuration(finding.duration_ms) },
+          { kind: finding.kind, duration: durationText(finding.duration_ms) },
         );
   const took =
     timed && finding.kind === 'slow_tool' && slowToolMs !== undefined
@@ -152,7 +137,7 @@ function summary(finding: RuntimeFinding, slowToolMs: number | undefined): strin
             id: 'trace.diagnose.detail.slowFrom',
             defaultMessage: '{took} Anything over {threshold} counts as slow.',
           },
-          { took: timed, threshold: runtimeDuration(slowToolMs) },
+          { took: timed, threshold: durationText(slowToolMs) },
         )
       : timed;
   return t(
@@ -206,12 +191,12 @@ export function FindingDetail({
   const facts: [string, string, boolean][] = [
     [
       t({ id: 'trace.diagnose.detail.start', defaultMessage: 'Start' }),
-      finding.started_at === undefined ? NONE : clockText(finding.started_at),
+      finding.started_at === undefined ? NONE : clockText(finding.started_at, { seconds: true }),
       finding.started_at !== undefined,
     ],
     [
       t({ id: 'trace.diagnose.detail.duration', defaultMessage: 'Duration' }),
-      finding.duration_ms === undefined ? NONE : runtimeDuration(finding.duration_ms),
+      finding.duration_ms === undefined ? NONE : durationText(finding.duration_ms),
       false,
     ],
     [
@@ -266,12 +251,12 @@ export function FindingDetail({
                 onClick={onShowInTimeline}
               >
                 <span>{EVIDENCE_SOURCE[item.source]}</span>
-                <span data-code="">{clockText(item.at)}</span>
+                <span data-code="">{clockText(item.at, { seconds: true })}</span>
                 <span className="fd-evid" data-code="">
                   {item.id}
                 </span>
                 <span className="fd-evd" data-code="">
-                  {item.duration_ms === undefined ? '' : runtimeDuration(item.duration_ms)}
+                  {item.duration_ms === undefined ? '' : durationText(item.duration_ms)}
                 </span>
               </button>
             ))}

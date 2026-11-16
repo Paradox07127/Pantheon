@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
-import { RefreshCw, X } from 'lucide-react';
+import { LoadError } from '../../components/LoadError';
+import { X } from 'lucide-react';
 import type { MemoryGraph, MemoryRecord } from '@pantheon/domain';
 import { Skeleton } from '../../components/Skeleton';
 import { useMemoryQuery } from '../../data/memory';
 import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import type { EntryItem } from './EntryDetail';
 import { kindIcon, kindText, nodeKind } from './GraphLegend';
 import './memory-graph-side.css';
@@ -74,22 +76,6 @@ const sourceText: Record<string, () => string> = {
   unavailable: () => t({ id: 'memory.graphSide.source.unavailable', defaultMessage: 'Unreadable' }),
   unverified: () => t({ id: 'memory.graphSide.source.unverified', defaultMessage: 'Not checked' }),
 };
-
-const pad = (n: number) => String(n).padStart(2, '0');
-/** Today and yesterday with the time, older days by date. */
-function stamp(ms: number) {
-  const d = new Date(ms);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (d.toDateString() === today.toDateString())
-    return t({ id: 'memory.graphSide.today', defaultMessage: 'Today {time}' }, { time });
-  if (d.toDateString() === yesterday.toDateString())
-    return t({ id: 'memory.graphSide.yesterday', defaultMessage: 'Yesterday {time}' }, { time });
-  const date = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  return d.getFullYear() === today.getFullYear() ? date : `${d.getFullYear()}-${date}`;
-}
 
 /** What a source row shows: a file by its full path, a page without its scheme, a session by title. */
 function sourceName(node: GraphNode) {
@@ -199,23 +185,21 @@ export function GraphDetailView({
               {item.committed_at !== undefined && (
                 <>
                   <dt>{t({ id: 'memory.graphSide.committed', defaultMessage: 'Confirmed' })}</dt>
-                  <dd className="mgs-num">{stamp(item.committed_at)}</dd>
+                  <dd className="mgs-num">
+                    {dayText(item.committed_at, Date.now(), { time: true })}
+                  </dd>
                 </>
               )}
             </dl>
           </>
         ) : error !== null ? (
-          <div className="mgs-fail" role="alert">
-            <span className="mgs-fail-t">
-              <span className="mgs-dot" aria-hidden="true" />
-              {t({ id: 'memory.graphSide.failed', defaultMessage: 'Cannot read this memory' })}
-            </span>
-            <span className="mgs-err">{error}</span>
-            <button type="button" className="btn sm" onClick={onRetry}>
-              <RefreshCw aria-hidden="true" />
-              {t({ id: 'memory.graphSide.retry', defaultMessage: 'Retry' })}
-            </button>
-          </div>
+          <LoadError
+            message={t(
+              { id: 'memory.graphSide.failed', defaultMessage: 'Cannot read this memory: {error}' },
+              { error },
+            )}
+            onRetry={onRetry}
+          />
         ) : (
           <div
             className="mgs-load"

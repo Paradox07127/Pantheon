@@ -4,6 +4,7 @@ import { RadioGroup } from '@base-ui/react/radio-group';
 import type { ChangeStory } from '@pantheon/domain';
 import type { SessionGates, SessionPreflight, WorkbenchSession } from '@pantheon/protocol';
 import { Check, X } from 'lucide-react';
+import { DiffCounts } from '../../../components/DiffCounts';
 import { DiffFiles } from '../../../components/DiffReview';
 import { RuntimeGlyph, runtimeName } from '../../../components/RuntimeGlyph';
 import { Tip } from '../../../components/Tip';
@@ -35,6 +36,7 @@ import { useSessionCard } from '../../sessions/SessionCard';
 import { fail, readFailed } from '../../sessions/shared';
 import { HunkLines } from '../../sessions/story/parts';
 import { KIND, outOfScopeText, StoryView } from '../../sessions/story/StoryView';
+import { EmptyState } from '../../../components/EmptyState';
 
 type View = 'story' | 'files' | 'uninterpreted';
 
@@ -507,12 +509,7 @@ export function SessionChanges({
                   {file.path}
                 </span>
                 <span className="rpl-n mono">
-                  <span className="rpl-add" data-zero={!file.additions || undefined}>
-                    +{file.additions ?? 0}
-                  </span>{' '}
-                  <span className="rpl-del" data-zero={!file.deletions || undefined}>
-                    −{file.deletions ?? 0}
-                  </span>
+                  <DiffCounts additions={file.additions} deletions={file.deletions} />
                 </span>
               </li>
             ))}
@@ -600,7 +597,7 @@ export function SessionChanges({
           {shownView !== 'files' && readFailed(storyDiff)}
           {shownView === 'files' ? (
             ended && listed?.state !== 'merged' ? (
-              <div className="empty">{ended}</div>
+              <EmptyState inline title={ended} />
             ) : (
               <DiffFiles diff={diff} />
             )

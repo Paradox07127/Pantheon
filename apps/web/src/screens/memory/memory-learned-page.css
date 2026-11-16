@@ -13,29 +13,6 @@
   min-width: 0;
   min-height: 0;
 }
-.lp-err {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: 44px;
-  margin: 0 var(--sp-4);
-  padding: 0 var(--sp-2);
-}
-.lp-st {
-  display: grid;
-  place-items: center;
-}
-.lp-why {
-  flex: 1;
-  min-width: 0;
-  color: var(--bad);
-  overflow-wrap: anywhere;
-}
-.lp-err .btn svg {
-  width: 14px;
-  height: 14px;
-}
 
 .lp-empty {
   flex: 1;

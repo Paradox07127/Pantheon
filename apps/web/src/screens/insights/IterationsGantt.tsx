@@ -3,7 +3,7 @@ import type { BoardModel } from '@pantheon/protocol';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import { TaskStateIcon } from '../board/status';
+import { TASK_STATE_TONE, TaskStateIcon } from '../board/status';
 import { DAY_PX, ganttLayout } from './iterations-gantt-model';
 import type { DragProps, DropProps, IterationColumn } from './IterationsTab';
 
@@ -189,7 +189,15 @@ export function IterationsGantt({
                               data-task-bar={task.id}
                               data-state={task.state}
                               data-planned={planned || undefined}
-                              style={{ left: pct(x1), width: `calc(${pct(x2 - x1)} - 2px)` }}
+                              style={
+                                {
+                                  left: pct(x1),
+                                  width: `calc(${pct(x2 - x1)} - 2px)`,
+                                  ...(task.state && {
+                                    '--itg-c': `var(${TASK_STATE_TONE[task.state]})`,
+                                  }),
+                                } as CSSProperties
+                              }
                               {...dragProps(task)}
                             >
                               <span className="itg-bh">

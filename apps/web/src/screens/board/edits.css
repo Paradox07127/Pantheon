@@ -6,6 +6,13 @@
   cursor: text;
 }
 
+/* Every installed runtime stays in the drawer's width. */
+.bd-rts {
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* A plan task's type and token budget */
 .bd-type {
   justify-self: start;
@@ -373,11 +380,6 @@
 .bd-ed-row .ib svg {
   width: 12px;
   height: 12px;
-}
-.bd-ed-none {
-  margin: 0;
-  color: var(--mu);
-  text-wrap: balance;
 }
 .bd-ed-last {
   display: flex;

@@ -215,9 +215,6 @@
 .ql-tc-bad {
   background: var(--bad);
 }
-.ql-tc-wait {
-  background: var(--wait);
-}
 /* A command the run skipped or did not have leaves its cell empty. */
 .ql-tc-none {
   border-color: var(--bd);

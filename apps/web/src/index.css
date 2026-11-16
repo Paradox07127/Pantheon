@@ -446,7 +446,7 @@ body {
 .app.app-setup .tb{position:absolute;left:0;right:0;height:var(--bar);border-bottom:var(--hair) solid var(--bd2);background:var(--sf)}
 .mac-titlebar .app.app-setup .tb{padding-left:calc(82px + (var(--h-ctl) - 12px) / 2 + var(--h-ctl) - 48px)}
 .overlay-titlebar .app.app-setup .tb{padding:0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px) 0 calc(var(--sp-2) + 2 * var(--h-ctl) + 4px - 48px)}
-.app-main>.bd-fail{margin:var(--sp-4)}
+.app-main>.lerr{margin:var(--sp-4)}
 .app-main[data-switching] *,.app-main[data-switching] *::before,.app-main[data-switching] *::after{transition:none!important}
 .app-banner{position:absolute;top:var(--sp-2);left:50%;z-index:30;transform:translateX(-50%);max-width:calc(100% - 2 * var(--sp-3));margin:0;padding:var(--sp-1) var(--sp-3);border:var(--hair) solid var(--bd);border-radius:var(--r-sm);background:var(--bad-bg);color:var(--bad);font-size:var(--fs-sm)}
 /* The open sidebar: under the title bar, 8px in, its blocks 4px apart. */
@@ -550,16 +550,11 @@ svg.lucide.ic-sm{width:14px;height:14px}
 .g.ok{background:var(--ok)}.g.bad{background:var(--bad)}.g.wait{background:var(--wait)}
 /* Base UI positions the tip 8px above the trigger. */
 .tip{white-space:pre;padding:4px 8px;font-size:var(--fs-xs);font-weight:500;line-height:1.4;background:var(--ov);border:var(--hair) solid var(--bd-ov);border-radius:var(--r-lg);backdrop-filter:blur(var(--blur-md));color:var(--tx);pointer-events:none;transform-origin:var(--transform-origin);transition:opacity var(--dur-2) var(--ease-in),transform var(--dur-2) var(--ease-in)}
-/* A bar appears only once loading lasts the Skeleton component's wait; the sweep layer spans three widths so one gradient period moves past. */
-.sk{position:relative;overflow:hidden;border-radius:var(--r-sm);background:var(--unk-bg);transition:opacity 0s 300ms}
-@starting-style{.sk{opacity:0}}
-.sk::after{content:"";position:absolute;inset:0 auto 0 -200%;width:300%;background:linear-gradient(90deg,var(--unk-bg) 0%,var(--sf2) 50%,var(--unk-bg) 100%) 0 0/calc(200% / 3) 100%;animation:sk 1.4s linear infinite}
 .empty{text-wrap:balance;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--mu);font-size:var(--fs-xs);line-height:1.5;padding:8px 12px;text-align:center}
-@keyframes sk{to{transform:translateX(calc(200% / 3))}}
 /* Fades and colour changes stay; movement and loops stop. Centring transforms are left alone. */
 .pt[data-motion=reduced] *,.pt[data-motion=reduced] *::before,.pt[data-motion=reduced] *::after{animation:none!important;transition-property:opacity,color,background-color,border-color!important}
 /* Status animation chosen in Session display: the waiting glyphs keep their loop unless it is off. */
-.pt:is([data-state-motion=waiting],[data-state-motion=off]) :is(.si-breathe,.si-spin,.ss-dot.running,.ss-dot.starting,.ss-badge[data-badge=running],.sh-pip,.eq>i,.tr-shine,.ct-working){animation:none}
+.pt:is([data-state-motion=waiting],[data-state-motion=off]) :is(.si-breathe,.si-spin,.ss-badge[data-badge=running],.ss-badge[data-badge=starting],.ss-badge[data-badge=stopping],.ss-badge[data-badge=merging],.sh-pip,.eq>i,.tr-shine,.ct-working){animation:none}
 .pt[data-state-motion=off] :is(.rq-wait,.ss-gwait,.ct-st[data-state=wait])::after{animation:none}
 /* /kit */
 
@@ -800,8 +795,8 @@ button.chip{font:inherit;font-size:var(--fs-xs);}
 .gl-cmd{display:flex;align-items:center;gap:8px;font-size:var(--fs-xs)}
 .gl-cmd>code{flex:1 1 auto;min-width:0;overflow-x:auto;white-space:pre}
 .gl-cmd>button{flex:none}
-.df-add{color:var(--ok)}
-.df-del{color:var(--bad)}
+.df-add{color:var(--ok);font-variant-numeric:tabular-nums}
+.df-del{color:var(--bad);font-variant-numeric:tabular-nums}
 .df-add[data-zero],.df-del[data-zero]{color:var(--mu)}
 .df-files{list-style:none;margin:0;padding:0;border:var(--hair) solid var(--bd2);border-radius:var(--r-md)}
 .df-files>li+li{border-top:var(--hair) solid var(--bd2)}
@@ -815,7 +810,6 @@ button.chip{font:inherit;font-size:var(--fs-xs);}
 .df-ln.add{background:var(--ok-bg);color:var(--ok)}
 .df-ln.del{background:var(--bad-bg);color:var(--bad)}
 .df-note{padding:4px 8px;border-top:var(--hair) solid var(--bd2);font-size:var(--fs-xs)}
-.df-err{display:flex;align-items:center;gap:8px}
 /* Model-written Markdown; block spacing comes from the sibling rule so the first child stays flush. */
 .md{white-space:normal;overflow-wrap:anywhere;min-width:0}
 .md :where(p,ul,ol,pre,table,blockquote,h1,h2,h3,h4){margin:0}
@@ -981,11 +975,7 @@ button.ss-gh:hover{background:var(--st-hov)}
 .ss-row.on .ss-av{--cut-tint:var(--sel)}
 /* An 8px dot ringed in the row's own colour: --cut-tint over --cut, as the row draws its hover and selection. */
 .ss-badge{--c:var(--idle);position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border:1.5px solid transparent;border-radius:50%;background:linear-gradient(var(--c) 0 0) padding-box,linear-gradient(var(--cut-tint) 0 0) border-box var(--cut)}
-.ss-badge:is([data-badge=environment],[data-badge=failed]){--c:var(--bad)}
-.ss-badge[data-badge=waiting]{--c:var(--wait)}
-.ss-badge[data-badge=running]{--c:var(--run);animation:ss-breathe 1.6s ease-in-out infinite}
-.ss-badge[data-badge=review]{--c:var(--ready)}
-.ss-badge[data-badge=unread]{--c:var(--ink)}
+.ss-badge[data-badge=running],.ss-badge[data-badge=starting],.ss-badge[data-badge=stopping],.ss-badge[data-badge=merging]{animation:ss-breathe 1.6s ease-in-out infinite}
 .ss-badge[data-badge=queued]{--c:transparent;width:7px;height:7px;border-color:var(--idle)}
 .ss-hc .ss-av{--cut:var(--sf)}
 svg.lucide.lead-crown{width:12px;height:12px;margin-left:var(--sp-1);color:var(--mu)}
@@ -995,9 +985,6 @@ svg.lucide.lead-crown{width:12px;height:12px;margin-left:var(--sp-1);color:var(-
 .ss-tw:is([data-line=more],[data-line=pass])::after{content:'';position:absolute;left:10px;top:-4px;bottom:0;border-left:var(--hair) solid var(--bd3)}
 .ss-tw[data-fork]::before{border-style:dashed}
 .ss-chg{display:inline-flex;gap:4px;white-space:nowrap;font-variant-numeric:tabular-nums}
-.ss-plus{color:var(--ok)}
-.ss-minus{color:var(--bad)}
-.ss-plus[data-zero],.ss-minus[data-zero]{color:var(--mu)}
 .ss-time{margin-left:auto;font-size:var(--fs-xs);color:var(--mu);white-space:nowrap;font-variant-numeric:tabular-nums}
 /* The row's preview beside it: a heading, the facts in two columns, then its actions. */
 .ss-hc{width:288px;padding:var(--sp-3);display:flex;flex-direction:column;gap:var(--sp-3);font-size:var(--fs-xs);color:var(--tx2)}
@@ -1017,11 +1004,6 @@ svg.lucide.lead-crown{width:12px;height:12px;margin-left:var(--sp-1);color:var(-
 .ss-dstat [data-k=del]{background:var(--del)}
 .ss-dot{position:relative;width:8px;height:8px;border-radius:50%;display:inline-block;flex:none;pointer-events:none}
 .ss-dot.waiting{background:var(--wait)}
-.ss-dot.running,.ss-dot.starting{background:var(--run);animation:ss-breathe 1.6s ease-in-out infinite}
-.ss-dot.idle{border:1.5px solid var(--idle)}
-.ss-dot.ready{border:1.5px solid var(--ready)}
-.ss-dot.merged{background:var(--ok)}
-.ss-dot.discarded{background:var(--idle)}
 .ss-dot.failed{background:var(--bad)}
 @keyframes ss-breathe{50%{opacity:.35}}
 .ss-convo{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--sf);transition:opacity var(--dur-2) var(--ease-in)}
@@ -1062,7 +1044,6 @@ svg.lucide.lead-crown{width:12px;height:12px;margin-left:var(--sp-1);color:var(-
 .ss-qx{flex:none;width:18px;height:18px;padding:0;border:0;border-radius:max(calc(var(--r-sm) - 5px),4px);background:transparent;color:var(--mu);font:inherit;font-size:var(--fs-xs);}
 .ss-qx:hover{background:var(--sf);color:var(--tx)}
 .ss-qn{flex:none;display:inline-flex;align-items:center;gap:2px;color:var(--mu);font-size:var(--fs-xs)}
-.pt[data-motion=reduced] :is(.ss-dot.running,.ss-dot.starting){animation:none}
 
 @supports (corner-shape: superellipse(1.25)) {
   .pt,.pt *,.pt::before,.pt::after,.pt *::before,.pt *::after{corner-shape:superellipse(1.25)}

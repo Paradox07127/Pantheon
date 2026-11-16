@@ -86,3 +86,10 @@ it('leaves out the note and the button when none is given', () => {
   const tree = EmptyState({ graphic: createElement('svg'), title: 'No matches' });
   expect(tree.props.children.filter(Boolean)).toHaveLength(2);
 });
+
+it('draws an inline empty state as its one line of text, with no graphic or button', () => {
+  const tree = EmptyState({ inline: true, title: 'No plan yet' });
+  expect(text(tree)).toBe('No plan yet');
+  expect(nodes(tree).filter((n) => n.type === 'svg' || n.type === 'button')).toEqual([]);
+  expect(nodes(tree)).toHaveLength(1);
+});

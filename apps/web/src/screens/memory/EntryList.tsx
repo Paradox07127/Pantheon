@@ -5,6 +5,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { Tip } from '../../components/Tip';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { dayText } from '../../lib/time-text';
 import { kindIcon as kindGlyph } from './GraphLegend';
 import './entry-list.css';
 
@@ -91,19 +92,6 @@ const REASONS = {
     },
   },
 };
-
-const pad = (n: number) => String(n).padStart(2, '0');
-
-/** Today as HH:MM, yesterday by name, earlier as MM-DD. */
-export function entryTime(at: number, now: number): string {
-  const day = new Date(at);
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  if (at >= today.getTime()) return `${pad(day.getHours())}:${pad(day.getMinutes())}`;
-  if (at >= today.getTime() - 86_400_000)
-    return t({ id: 'memory.list.yesterday', defaultMessage: 'Yesterday' });
-  return `${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
-}
 
 /** Where the search words were found, read from the directory's match reasons. */
 function matchedIn(r: MemorySummary, query: string): string {
@@ -236,7 +224,7 @@ export function EntryList(p: EntryListProps) {
             <Search aria-hidden="true" />
             <span className="ml-why">{matchedIn(r, p.query)}</span>
           </span>
-          <span className="ml-tm">{entryTime(r.created_at, now)}</span>
+          <span className="ml-tm">{dayText(r.created_at, now, { time: true })}</span>
         </>,
       );
     if (r.state === 'archived') {
@@ -292,7 +280,7 @@ export function EntryList(p: EntryListProps) {
               <span className="ml-why">
                 {t(
                   { id: 'memory.list.expiredOn', defaultMessage: 'Expired {when}' },
-                  { when: entryTime(r.expires_at, now) },
+                  { when: dayText(r.expires_at, now, { time: true }) },
                 )}
               </span>
             ) : (
@@ -315,7 +303,7 @@ export function EntryList(p: EntryListProps) {
             </button>
           </span>
           <span className="ml-tm">
-            {r.archived_at !== undefined && entryTime(r.archived_at, now)}
+            {r.archived_at !== undefined && dayText(r.archived_at, now, { time: true })}
           </span>
         </>,
       );
@@ -358,7 +346,7 @@ export function EntryList(p: EntryListProps) {
               aria-label={t({ id: 'memory.list.pending', defaultMessage: 'Pending review' })}
             />
           )}
-          {entryTime(r.created_at, now)}
+          {dayText(r.created_at, now, { time: true })}
         </span>
       </>,
     );

@@ -2,6 +2,7 @@ import { Fragment, useMemo, useRef, useState } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import type { StoryAnchor, StoryResult } from '@pantheon/domain';
 import { Check, Folder, GitCommitHorizontal, GitMerge, Minus, X } from 'lucide-react';
+import { DiffCounts } from '../../../components/DiffCounts';
 import { DiffStat, numbered, sideBySide } from '../../../components/DiffReview';
 import { IdText } from '../../../components/IdText';
 import { RuntimeGlyph } from '../../../components/RuntimeGlyph';
@@ -165,12 +166,7 @@ export function CommitDetail({
 
   const counts = (additions: number, deletions: number) => (
     <span className="rh-n mono">
-      <span className="df-add" data-zero={additions === 0 || undefined}>
-        +{additions}
-      </span>
-      <span className="df-del" data-zero={deletions === 0 || undefined}>
-        −{deletions}
-      </span>
+      <DiffCounts additions={additions} deletions={deletions} />
     </span>
   );
   const fileItem = (f: (typeof files)[number]) => (

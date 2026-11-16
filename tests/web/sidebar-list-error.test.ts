@@ -67,7 +67,7 @@ function order(data: WorkbenchSession[] | null) {
     }),
   );
   return nodes(h.value).flatMap((n) =>
-    n.props.className === 'tr-fail'
+    n.props.role === 'alert'
       ? ['error']
       : typeof n.type === 'function' && n.type.name === 'SessionListRow'
         ? [n.props.session.id]

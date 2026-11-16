@@ -118,30 +118,26 @@ type GateRun = SessionGateRun &
   Partial<Pick<ProjectGatesHistory['runs'][number], 'session_id' | 'session_title'>>;
 type GateState = 'passed' | 'failed' | 'timed_out' | 'skipped';
 
-export const GATE_STATES: Record<GateState, { label: string; color: string }> = {
+export const GATE_STATES: Record<GateState, { label: string }> = {
   passed: {
     get label() {
       return t({ id: 'board.gateStates.passed', defaultMessage: 'Passed' });
     },
-    color: 'var(--ok)',
   },
   failed: {
     get label() {
       return t({ id: 'board.gateStates.failed', defaultMessage: 'Failed' });
     },
-    color: 'var(--bad)',
   },
   timed_out: {
     get label() {
       return t({ id: 'board.gateStates.timedOut', defaultMessage: 'Timed out' });
     },
-    color: 'var(--wait)',
   },
   skipped: {
     get label() {
       return t({ id: 'board.gateStates.skipped', defaultMessage: 'Skipped' });
     },
-    color: 'var(--idle)',
   },
 };
 

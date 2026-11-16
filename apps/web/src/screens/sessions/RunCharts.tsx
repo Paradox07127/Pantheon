@@ -9,7 +9,8 @@ import type { SessionActivity } from '@pantheon/protocol';
 import { elapsedText, type TurnView } from '../../data/transcript';
 import { useFloatTip, type TipContent } from '../board/Charts';
 import { t } from '../../i18n';
-import { tokenText, whenText } from '../board/panels-model';
+import { dayText } from '../../lib/time-text';
+import { tokenText } from '../board/panels-model';
 import {
   BREAK_SHARE,
   callResult,
@@ -128,7 +129,9 @@ export function ActivitySpark({ activity }: { activity: SessionActivity | null }
     hover,
     activity && i !== null
       ? {
-          head: whenText(Date.parse(activity.from) + i * activity.bucket_ms, Date.now()),
+          head: dayText(Date.parse(activity.from) + i * activity.bucket_ms, Date.now(), {
+            time: true,
+          }),
           rows: [
             {
               label: t({ id: 'sessions.run.spark.tools', defaultMessage: 'Tools completed' }),

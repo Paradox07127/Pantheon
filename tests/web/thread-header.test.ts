@@ -226,8 +226,7 @@ describe('thread header live data', () => {
     });
     expect(text(h.value)).toContain('+12');
     expect(text(h.value)).toContain('−0');
-    const zero = find(h.value, (n) => typeof n.type === 'string' && text(n) === '−0');
-    expect(zero.props['data-zero']).toBe(true);
+    expect(named(h.value, 'DiffCounts').props).toEqual({ additions: 12, deletions: 0 });
     const changes = find(h.value, (n) => n.props?.className === 'sh-diff');
     expect(changes.props.tabIndex).toBe(0);
     expect(text(header({ listed: listed('idle', { changes: null }) }).value)).not.toContain('+');

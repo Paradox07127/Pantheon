@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Dialog } from '@base-ui/react/dialog';
 import { Radio } from '@base-ui/react/radio';
 import { ArrowRight, Plus, RotateCcw, Square, Trash, X } from 'lucide-react';
@@ -38,7 +39,7 @@ import { t } from '../../i18n';
 import { EFFORT_LABEL, defaultModel } from '../sessions/model';
 import { taskTokens } from './activity';
 import { tellLeadDraft, type RunBoardCommand, type SnapshotSession } from './panels-model';
-import { runtimeName, TASK_TYPE, type TaskType } from './status';
+import { modelName, runtimeName, TASK_TYPE, type TaskType } from './status';
 import { TellLead, useDialogContent } from './TellLead';
 import './edits.css';
 
@@ -281,6 +282,10 @@ export function useRouteFields(
   };
   const models = modelsOf(runtime);
   const entry = models.find((m) => m.id === current || m.resolved === current);
+  const fallback = defaultModel(models);
+  // The runtime's own `default` entry is the empty choice, named by the model it resolves to.
+  const fallbackId = fallback?.id === 'default' ? fallback.resolved : fallback?.id;
+  const fallbackName = fallbackId === undefined ? null : modelName(models, fallbackId);
   // Without a model the session runs on the runtime's default one.
   const efforts = (current === null ? defaultModel(models) : entry)?.efforts ?? [];
   // A session does not start with an effort its model does not take.
@@ -306,7 +311,7 @@ export function useRouteFields(
   return (
     <>
       <RadioGroup
-        className="seg"
+        className="seg bd-rts"
         aria-label={t({ id: 'board.plan.field.runtime', defaultMessage: 'Runtime' })}
         value={runtime ?? ''}
         disabled={disabled}
@@ -322,16 +327,25 @@ export function useRouteFields(
       <ModelMark model={current} />
       <Select
         aria-label={t({ id: 'board.plan.field.model', defaultMessage: 'Model' })}
-        value={current ?? ''}
+        value={current === null || entry?.id === 'default' ? '' : current}
         disabled={disabled}
         onChange={(next) => (next ? setModel(next) : set({ model: null, effort: null }))}
         options={[
           {
             value: '',
-            label: t({ id: 'board.plan.field.defaultModel', defaultMessage: 'Default' }),
+            label:
+              fallbackName === null
+                ? t({ id: 'board.plan.field.defaultModel', defaultMessage: 'Default' })
+                : t(
+                    {
+                      id: 'board.plan.field.defaultModelNamed',
+                      defaultMessage: 'Default ({model})',
+                    },
+                    { model: fallbackName },
+                  ),
           },
           ...(current !== null && !entry ? [{ value: current, label: current }] : []),
-          ...models.map((m) => ({ value: m.id, label: m.label })),
+          ...models.filter((m) => m.id !== 'default').map((m) => ({ value: m.id, label: m.label })),
         ]}
       />
       {efforts.length > 0 && (
@@ -510,14 +524,7 @@ export function ContractFields({ model, target, busy: sending, send }: ContractF
       aria-label={t({ id: 'board.plan.contract.label', defaultMessage: 'Task contract' })}
       aria-busy={loading || undefined}
     >
-      {error && (
-        <div className="tr-fail bd-fail" role="alert">
-          <span title={error}>{error}</span>
-          <button type="button" className="btn" onClick={reload}>
-            {t({ id: 'board.query.retry', defaultMessage: 'Retry' })}
-          </button>
-        </div>
-      )}
+      {error && <LoadError message={error} onRetry={reload} />}
       {held && (
         <span className="bd-pchip" data-dot="wait">
           {t({

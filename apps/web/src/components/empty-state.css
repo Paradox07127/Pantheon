@@ -24,3 +24,11 @@
 .es-n {
   color: var(--mu);
 }
+.es-in {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-align: center;
+  text-wrap: balance;
+}

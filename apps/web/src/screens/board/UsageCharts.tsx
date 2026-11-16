@@ -17,6 +17,7 @@ import { useRuntimeStatus } from '../../data/runtime-status';
 import { sessionTitle } from '../../data/transcript';
 import { useQuery } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
+import { listText } from '../../lib/list-text';
 import {
   DataTable,
   Empty,
@@ -119,19 +120,39 @@ function UsageRing({
 export function UsageRings({ model, targets = {} }: { model: BoardModel; targets?: UsageTargets }) {
   const unreported = model.counts.sessions_without_usage_by_runtime ?? {};
   const runtimes = ringRuntimes(model.counts.tokens_by_runtime, unreported);
+  const names = (list: string[]) => listText(...list.map(runtimeName));
+  const quiet = listText(
+    runtimes.unused.length > 0 &&
+      t(
+        { id: 'board.usage.unusedRuntimes', defaultMessage: 'No usage: {runtimes}' },
+        { runtimes: names(runtimes.unused) },
+      ),
+    runtimes.unreported.length > 0 &&
+      t(
+        { id: 'board.usage.unreportedRuntimes', defaultMessage: 'Usage not reported: {runtimes}' },
+        { runtimes: names(runtimes.unreported) },
+      ),
+  );
   return (
     <Panel title={t({ id: 'board.usage.byRuntime', defaultMessage: 'By runtime, selected range' })}>
-      <div className="us-rings">
-        {runtimes.map((runtime) => (
-          <UsageRing
-            key={runtime}
-            runtime={runtime}
-            used={model.counts.tokens_by_runtime[runtime] ?? 0}
-            target={targets[runtime] ?? null}
-            unreported={unreported[runtime] ?? 0}
-          />
-        ))}
-      </div>
+      {runtimes.rings.length === 0 ? (
+        <Empty text={quiet} />
+      ) : (
+        <>
+          <div className="us-rings">
+            {runtimes.rings.map((runtime) => (
+              <UsageRing
+                key={runtime}
+                runtime={runtime}
+                used={model.counts.tokens_by_runtime[runtime] ?? 0}
+                target={targets[runtime] ?? null}
+                unreported={unreported[runtime] ?? 0}
+              />
+            ))}
+          </div>
+          {quiet && <p className="us-quiet">{quiet}</p>}
+        </>
+      )}
     </Panel>
   );
 }

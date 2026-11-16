@@ -274,9 +274,9 @@ describe('flow chart task node', () => {
       started_at: NOW - 12 * 60_000,
       segments: [segment('s1', 120_000), segment('s2', 64_000)],
     };
-    expect(text(byClass(flowNode(running), 'bd-ntm'))).toBe('12 分');
+    expect(text(byClass(flowNode(running), 'bd-ntm'))).toBe('12 分钟');
     const merged = { ...running, state: 'merged' as const, ended_at: NOW - 2 * 60_000 };
-    expect(text(byClass(flowNode(merged), 'bd-ntm'))).toBe('10 分');
+    expect(text(byClass(flowNode(merged), 'bd-ntm'))).toBe('10 分钟');
     expect(byClass(flowNode({ ...task('a', 'todo'), state: 'todo' }), 'bd-ntm')).toBeUndefined();
   });
 
@@ -316,7 +316,7 @@ describe('flow chart task node', () => {
     const shown = flowNode(full);
     expect(byClass(shown, 'bd-nstg')!.props['aria-label']).toBe('阶段：实现，5 步里的第 2 步');
     expect(byClass(shown, 'bd-ngate')!.props['aria-label']).toBe(zh('board.plan.flow.checks.pass'));
-    expect(text(byClass(shown, 'bd-ndiff'))).toBe('+42−6');
+    expect(text(byClass(shown, 'bd-ndiff'))).toBe('+42 −6');
     expect(byClass(shown, 'bd-nkind')!.props['aria-label']).toBe(
       zh('data.workflowPolicy.domain.backendLogic'),
     );

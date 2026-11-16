@@ -7,7 +7,7 @@ import { Failure, Skeleton } from '../board/BoardScreen';
 import { Empty, useSize } from '../board/Charts';
 import { durationText } from '../board/panels-model';
 import { EventGlyph, eventWords } from './ActivityList';
-import { clockText, EventCard, laneOf, turnAt } from './LaneOverlay';
+import { EventCard, eventClock, laneOf, turnAt } from './LaneOverlay';
 import type { TraceEvent } from './model';
 import './timeline-overlay.css';
 
@@ -139,7 +139,7 @@ export function EventTable({
                         />
                       }
                     >
-                      <span className="tlo-et-t">{clockText(row.at, to)}</span>
+                      <span className="tlo-et-t">{eventClock(row.at, to)}</span>
                       <EventGlyph event={row} />
                       <span className="tlo-et-s">{titleOf(row.sessionId)}</span>
                       {eventWords(row, 'tlo-et-w')}

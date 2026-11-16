@@ -75,7 +75,7 @@ import { showUrl } from './BrowserPanel';
 import { showFile } from './FilesPanel';
 import { hasBrowser } from './inspector-model';
 import { itemId } from './model';
-import { turnClock } from './thread-model';
+import { clockText } from '../../lib/time-text';
 import { OrchestrationRow } from './orchestration';
 import { SubagentFan } from './SubagentFan';
 import { ForkDialog, forkStepLabel } from './TurnMenu';
@@ -306,7 +306,7 @@ export function ThreadMark(props: {
         {props.glyph}
       </span>
       {props.children}
-      {props.at !== null && <span className="ss-markt">{turnClock.format(props.at)}</span>}
+      {props.at !== null && <span className="ss-markt">{clockText(props.at)}</span>}
     </div>
   );
 }

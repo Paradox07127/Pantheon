@@ -328,7 +328,7 @@ describe('session overview', () => {
       ]),
     ).toEqual([
       [zh('sessions.agentType.explore'), zh('sessions.parts.callOk'), '48.0 秒'],
-      [zh('sessions.agentType.test'), zh('sessions.parts.callFailed'), '3 分 02 秒'],
+      [zh('sessions.agentType.test'), zh('sessions.parts.callFailed'), '3 分 2 秒'],
       [zh('sessions.agentType.review'), zh('sessions.parts.callRunning'), ''],
     ]);
   });

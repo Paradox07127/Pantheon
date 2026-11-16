@@ -115,9 +115,9 @@ describe('time breakdown chart', () => {
     ]);
     expect(bar.props.role).toBe('img');
     expect(bar.props['aria-label']).toBe(
-      '墙钟 1 时 31 分：模型 38 分，工具 21 分，等你批准 14 分，子 agent 9 分，排队 5 分，其他 4 分',
+      '墙钟 1 小时 31 分：模型 38 分钟，工具 21 分钟，等你批准 14 分钟，子 agent 9 分钟，排队 5 分钟，其他 4 分钟',
     );
-    expect(text(one(tree, 'trc-time-total'))).toBe('1 时 31 分');
+    expect(text(one(tree, 'trc-time-total'))).toBe('1 小时 31 分');
   });
 
   it('lists the groups in two columns with minutes and whole percentages', () => {
@@ -128,12 +128,12 @@ describe('time breakdown chart', () => {
         .map((cell) => text(cell)),
     );
     expect(rows).toEqual([
-      [label('model'), '38 分', '42%'],
-      [label('approval'), '14 分', '15%'],
-      [label('tool'), '21 分', '23%'],
-      [label('subagent'), '9 分', '10%'],
-      [label('queue'), '5 分', '5%'],
-      [label('other'), '4 分', '4%'],
+      [label('model'), '38 分钟', '42%'],
+      [label('approval'), '14 分钟', '15%'],
+      [label('tool'), '21 分钟', '23%'],
+      [label('subagent'), '9 分钟', '10%'],
+      [label('queue'), '5 分钟', '5%'],
+      [label('other'), '4 分钟', '4%'],
     ]);
   });
 
@@ -143,7 +143,7 @@ describe('time breakdown chart', () => {
       cls(host.value, 'trc-time-key').find((row) => text(row).startsWith(label('other')))!;
     expect(other().type).toBe('button');
     expect(other().props['aria-expanded']).toBe(false);
-    expect(other().props['aria-label']).toBe('其他 4 分：并行，压缩，未知');
+    expect(other().props['aria-label']).toBe('其他 4 分钟：并行，压缩，未知');
     expect(cls(host.value, 'trc-time-sub')).toHaveLength(0);
     other().props.onClick();
     host.render();
@@ -155,9 +155,9 @@ describe('time breakdown chart', () => {
           .map((cell) => text(cell)),
       ),
     ).toEqual([
-      [label('parallel'), '2 分', '2%'],
-      [label('compact'), '1 分', '1%'],
-      [label('unknown'), '1 分', '1%'],
+      [label('parallel'), '2 分钟', '2%'],
+      [label('compact'), '1 分钟', '1%'],
+      [label('unknown'), '1 分钟', '1%'],
     ]);
   });
 

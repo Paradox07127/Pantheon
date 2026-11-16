@@ -228,7 +228,7 @@ describe("the contract of a plan task whose read is not this mount's own", () =>
     expect(text(failure(h.value))).toContain('The daemon is not reachable');
     find(
       failure(h.value),
-      (n) => n.type === 'button' && text(n) === zh('board.query.retry'),
+      (n) => n.type === 'button' && text(n) === zh('components.retry'),
     ).props.onClick();
     expect(reads.reloads).toBe(1);
   });

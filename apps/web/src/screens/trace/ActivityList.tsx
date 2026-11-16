@@ -15,13 +15,14 @@ import {
   ShieldX,
   type LucideIcon,
 } from 'lucide-react';
+import { DiffCounts } from '../../components/DiffCounts';
 import { reasonText } from '../../data/needs-you';
 import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import { Failure, Skeleton } from '../board/BoardScreen';
 import { Empty } from '../board/Charts';
-import { durationText, whenText } from '../board/panels-model';
+import { durationText } from '../board/panels-model';
 import {
-  dayName,
   dayOf,
   eventDays,
   TRACE_EVENT_KINDS,
@@ -208,12 +209,7 @@ function Note({ event, now }: { event: TraceEvent; now: number }) {
   if (event.added !== undefined && event.removed !== undefined)
     return (
       <span className="trc-evn">
-        <span className="df-add" data-zero={!event.added || undefined}>
-          +{event.added}
-        </span>
-        <span className="df-del" data-zero={!event.removed || undefined}>
-          −{event.removed}
-        </span>
+        <DiffCounts additions={event.added} deletions={event.removed} />
       </span>
     );
   if (event.run !== undefined && event.run > 1)
@@ -274,9 +270,6 @@ export function ActivityList({
     [rows, off, words, titleOf],
   );
   const today = dayOf(now);
-  const before = new Date(now);
-  before.setDate(before.getDate() - 1);
-  const yesterday = dayOf(before.getTime());
   return (
     <div className="trc-act">
       {kinds.length > 0 && (
@@ -326,12 +319,7 @@ export function ActivityList({
         <div className="trc-days">
           {days.map(({ day, rows }) => {
             const open = (day === today) !== flipped.has(day);
-            const title =
-              day === today
-                ? t({ id: 'trace.activity.today', defaultMessage: 'Today' })
-                : day === yesterday
-                  ? t({ id: 'trace.activity.yesterday', defaultMessage: 'Yesterday' })
-                  : dayName(day);
+            const title = dayText(rows[0]!.at, now);
             return (
               <section key={day} className="trc-day" aria-label={title}>
                 <div className="trc-dh">
@@ -367,7 +355,7 @@ export function ActivityList({
                           onClick={() => onOpen(row.sessionId)}
                         >
                           {/* The day is the group's, so only the clock. */}
-                          <span className="trc-evt">{whenText(row.at, row.at)}</span>
+                          <span className="trc-evt">{dayText(row.at, row.at, { time: true })}</span>
                           <EventGlyph event={row} />
                           <span className="trc-evs">{titleOf(row.sessionId)}</span>
                           {eventWords(row)}

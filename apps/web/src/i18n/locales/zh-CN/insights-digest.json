@@ -22,7 +22,6 @@
   "insights.digest.line": "{label}：{value}",
   "insights.digest.lineNote": "{label}：{value}（{note}）",
   "insights.digest.export": "导出",
-  "insights.digest.retry": "重试",
   "insights.digest.noRules": "这周没有要改的规则",
   "insights.digest.openRetro": "打开复盘",
   "insights.digest.noMerges": "这周没有合并",

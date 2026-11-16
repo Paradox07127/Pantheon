@@ -416,11 +416,11 @@ describe('finding threshold and evidence', () => {
   const said = (tree: unknown) => text(find(tree as any, (n) => n.type === 'p'));
 
   it('says from how long on a tool counts as slow', () => {
-    expect(said(shown(slow, 5_000).tree)).toBe('一次工具调用跑了 48.2 秒。超过 5.0 秒就算慢。');
+    expect(said(shown(slow, 5_000).tree)).toBe('一次工具调用跑了 48 秒。超过 5 秒就算慢。');
   });
 
   it('keeps the sentence without the threshold', () => {
-    expect(said(shown(slow).tree)).toBe('一次工具调用跑了 48.2 秒。');
+    expect(said(shown(slow).tree)).toBe('一次工具调用跑了 48 秒。');
   });
 
   it('lists the evidence with source, time and duration, each opening the timeline', () => {
@@ -429,8 +429,8 @@ describe('finding threshold and evidence', () => {
     expect(text(find(tree, (n) => n.props.className === 'fd-evh'))).toBe('证据3');
     const rows = nodes(list).filter((n) => n.type === 'button');
     expect(rows.map((row) => text(row))).toEqual([
-      '原生 span10:29:27call-148.2 秒',
-      '上报时长10:30:15call-147.9 秒',
+      '原生 span10:29:27call-148 秒',
+      '上报时长10:30:15call-147 秒',
       '事件差10:30:15event-1',
     ]);
     rows[1]!.props.onClick();

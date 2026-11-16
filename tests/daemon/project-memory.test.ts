@@ -74,8 +74,9 @@ it('runs HTTP decisions through real MCP child processes, two adapter sessions, 
       const transport = new StdioClientTransport({
         command: process.execPath,
         args: [path.resolve('apps/cli/dist/index.js'), 'mcp'],
+        // The parent's env carries settings a sandboxed node needs, such as OPENSSL_CONF in a gate.
         env: {
-          PATH: process.env.PATH!,
+          ...(process.env as Record<string, string>),
           PANTHEON_DAEMON_URL: f.daemon.url,
           PANTHEON_SESSION_TOKEN_FILE: tokenFile,
         },

@@ -174,12 +174,12 @@ describe('permissions settings page', () => {
       return kids.map((k) => (k.type === 'button' && k.props['aria-label']) || text(k));
     });
     expect(cells).toEqual([
-      ['Bash(pnpm test:*)', 'Sign callbacks', '今天 09:42', removeRule('Bash(pnpm test:*)')],
+      ['Bash(pnpm test:*)', 'Sign callbacks', '09:42', removeRule('Bash(pnpm test:*)')],
       ['Bash(git diff:*)', 'Idempotency store', '昨天 17:20', removeRule('Bash(git diff:*)')],
       [
         'WebFetch(domain:docs.example.com)',
         say('sessionGone'),
-        '11月11日',
+        '11月11日 08:00',
         removeRule('WebFetch(domain:docs.example.com)'),
       ],
     ]);
@@ -288,7 +288,7 @@ describe('permissions settings page', () => {
     ];
     const h = await mount();
     expect(text(find(h.value, (n) => n.props.role === 'alert'))).toContain('socket closed');
-    button(h, say('retry')).props.onClick();
+    button(h, zh('components.retry')).props.onClick();
     h.render();
     await h.flush();
     h.render();

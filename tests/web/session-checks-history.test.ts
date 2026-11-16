@@ -96,6 +96,24 @@ const list = (tab: HookHost<any>) =>
 const latest = (tab: HookHost<any>) => named(tab.value, 'GateResults').props;
 
 describe('session gate history', () => {
+  it('fills a timed-out step like a failed one, as the session checks list draws it', () => {
+    const timedOut = run('d4', 1, [
+      result('lint', { exit_code: 1, duration_ms: 1000 }),
+      result('test', { exit_code: null, timed_out: true, duration_ms: 3000 }),
+    ]);
+    const tests = cells(chart(checks([timedOut, middle])).value).filter((c) =>
+      c.props['aria-label'].startsWith('test'),
+    );
+    const late = tests.filter((c) =>
+      c.props['aria-label'].includes(zh('board.gateStates.timedOut')),
+    );
+    expect(late).toHaveLength(1);
+    expect(tests.map((c) => c.props.className)).toEqual([
+      late[0]!.props.className,
+      late[0]!.props.className,
+    ]);
+  });
+
   it('draws a row per command with a cell per run, filled by its result', () => {
     const tree = chart(checks([newest, middle, oldest])).value;
     expect(

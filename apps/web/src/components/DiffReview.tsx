@@ -5,6 +5,8 @@ import { ChevronDown, ChevronRight, ChevronsDownUp, Folder, Space, TextWrap } fr
 import { parsePatch, type DiffFile, type DiffHunk, type DiffLine } from '../data/patch';
 import { setDiffPrefs, useDiffPrefs, type DiffSwitch, type DiffView } from '../data/diff-prefs';
 import { t } from '../i18n';
+import { DiffCounts } from './DiffCounts';
+import { LoadError } from './LoadError';
 import { Tip } from './Tip';
 import './diff-review.css';
 
@@ -237,22 +239,7 @@ export function DiffFiles({
   }, [path, read]);
 
   if (!diff.data) {
-    if (diff.error)
-      return (
-        <div className="df-err">
-          <span className="run-err ln" role="alert" title={diff.error}>
-            {diff.error}
-          </span>
-          <button
-            type="button"
-            className="btn ghost"
-            aria-label={t({ id: 'components.diff.reload', defaultMessage: 'Reload changes' })}
-            onClick={diff.reload}
-          >
-            {t({ id: 'components.diff.retry', defaultMessage: 'Retry' })}
-          </button>
-        </div>
-      );
+    if (diff.error) return <LoadError message={diff.error} onRetry={diff.reload} />;
     return (
       <span className="mu">
         {t({ id: 'components.diff.loading', defaultMessage: 'Reading changes…' })}
@@ -354,12 +341,7 @@ export function DiffFiles({
       </span>
     ) : (
       <span className="df-n" style={{ fontVariantNumeric: 'tabular-nums' }}>
-        <span className="df-add" data-zero={f.additions === 0 || undefined}>
-          +{f.additions}
-        </span>
-        <span className="df-del" data-zero={f.deletions === 0 || undefined}>
-          −{f.deletions}
-        </span>
+        <DiffCounts additions={f.additions} deletions={f.deletions} />
       </span>
     );
   const viewedBox = (path: string) => (

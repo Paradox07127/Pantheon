@@ -1458,7 +1458,11 @@ export const taskTrackingHandlers: Handlers = {
     const open = taskSessions(ctx, plan.id, input.task_id)
       .filter((candidate) => candidate.state !== 'closed')
       .at(-1);
-    requireThat(open, 'invalid_state', `Task ${input.task_id} has no open session`);
+    requireThat(
+      open,
+      'invalid_state',
+      `Task ${input.task_id} has no open session; start it with start_task first`,
+    );
     const resetAt = usageResetAt(ctx, open.id);
     requireThat(
       resetAt === undefined,

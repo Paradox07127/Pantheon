@@ -1508,6 +1508,24 @@ it('opens a lead session with the baseline result only when confirmed with plan_
   }
 });
 
+it("names the planning lead's worktree folder after its title, not its first message", async () => {
+  const f = setup({ managedWorkspaces: true });
+  try {
+    const head = f.populate();
+    const baseline = f.handIn(f.startBaseline(), head);
+    const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+      'project.baseline.confirm',
+      { baseline_id: baseline.id, answers: [], plan_board: true },
+      baseline.revision,
+    );
+    const lead = f.store.must<Session>('sessions', planned.lead_session_id!);
+    const folder = path.basename(f.store.must<Workspace>('workspaces', lead.workspace_id!).path);
+    expect(folder).toBe(`baseline-plan-${lead.workspace_id!.slice(0, 8)}`);
+  } finally {
+    await f.close();
+  }
+});
+
 /** A workbench lead session and a baseline it started; confirming it with plan_board returns its receipt. */
 function leadBaseline(f: ReturnType<typeof setup>) {
   const head = f.populate();

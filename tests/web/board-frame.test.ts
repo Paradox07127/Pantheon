@@ -570,7 +570,7 @@ describe('needs-you items the backend keeps without an answer', () => {
   });
 
   it('shows a lead whose latest turn failed as failed', () => {
-    expect(LEAD_STATE.failed).toEqual({ label: leadLabel('failed'), dot: 'failed' });
+    expect(LEAD_STATE.failed).toEqual({ label: leadLabel('failed'), glyph: 'failed' });
   });
 
   it('says a waiting lead waits for an answer or an approval by what it asked', () => {
@@ -578,14 +578,14 @@ describe('needs-you items the backend keeps without an answer', () => {
       ...lead('lead-1', 'waiting', NOW),
       waiting: { kind, summary: 'Which database?', approval_id: 'approval-1', since: NOW },
     });
-    expect(leadState(waiting('input'))).toEqual({ label: leadLabel('waiting'), dot: 'waiting' });
+    expect(leadState(waiting('input'))).toEqual({ label: leadLabel('waiting'), glyph: 'question' });
     expect(leadState(waiting('approval'))).toEqual({
       label: leadLabel('waitingApproval'),
-      dot: 'waiting',
+      glyph: 'approval',
     });
     expect(leadState(lead('lead-1', 'idle', NOW))).toEqual({
       label: leadLabel('idle'),
-      dot: 'idle',
+      glyph: 'idle',
     });
   });
 });
@@ -707,7 +707,7 @@ describe('lead panel', () => {
     expect(text(source).includes('Export rows')).toBe(named_);
     expect(text(source)).toContain(
       say('components.requestCard.waited', {
-        duration: say('data.elapsed.minutes', { minutes: 1, seconds: '30' }),
+        duration: say('lib.time.minutesSeconds', { minutes: 1, seconds: 30 }),
       }),
     );
     find(source, (n) => n.type === 'button' && text(n) === act('viewThread')).props.onClick();

@@ -279,7 +279,7 @@ describe('project setup states', () => {
           zh('board.baseline.restart'),
           zh('board.setup.viewConversation'),
         ]);
-        expect(text(tree)).not.toContain(zh('board.query.retry'));
+        expect(text(tree)).not.toContain(zh('components.retry'));
       },
     ],
     [

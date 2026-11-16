@@ -214,7 +214,7 @@ const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => void listeners.delete(listener);
 };
-const getBackdropOn = () => backdropOn;
+export const getBackdropOn = () => backdropOn;
 
 /** Whether a theme's backdrop is drawn; on unless the user turned it off. */
 export function useBackdropOn(): boolean {

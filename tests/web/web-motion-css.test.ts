@@ -214,14 +214,12 @@ it('enters a maximized panel by a transition, so showing the screen again does n
   expect(max.some((rule) => rule.atRules.includes('@starting-style'))).toBe(true);
 });
 
-it('shows a skeleton bar only after the same wait as the Skeleton component', () => {
-  const wait = /ms = (\d+)/.exec(readFileSync(path.join(src, 'lib', 'use-delayed.ts'), 'utf8'))![1];
-  const sk = rules.find((rule) => rule.selector === '.sk' && rule.atRules.length === 0);
-  expect(sk?.decls).toContainEqual({ prop: 'transition', value: `opacity 0s ${wait}ms` });
-  const start = rules.find(
-    (rule) => rule.selector === '.sk' && rule.atRules.includes('@starting-style'),
-  );
-  expect(start?.decls).toEqual([{ prop: 'opacity', value: '0' }]);
+it('hides a skeleton bar until the Skeleton component marks it shown after its wait', () => {
+  const component = readFileSync(path.join(src, 'components', 'Skeleton.tsx'), 'utf8');
+  expect(component).toContain('useDelayed(true)');
+  const hidden = rules.find((rule) => rule.selector === '.skel:not([data-shown])');
+  expect(hidden?.decls).toEqual([{ prop: 'visibility', value: 'hidden' }]);
+  expect(rules.filter((rule) => /\.sk(?![\w-])/.test(rule.selector))).toEqual([]);
 });
 
 const keyframeAllowed = new Set([
@@ -295,9 +293,10 @@ const animates = (selector: string, keyframe: string) =>
 it.each([
   ['.si-breathe', 'si-breathe', 'waiting'],
   ['.si-spin', 'si-spin', 'waiting'],
-  ['.ss-dot.running', 'ss-breathe', 'waiting'],
-  ['.ss-dot.starting', 'ss-breathe', 'waiting'],
   ['.ss-badge[data-badge=running]', 'ss-breathe', 'waiting'],
+  ['.ss-badge[data-badge=starting]', 'ss-breathe', 'waiting'],
+  ['.ss-badge[data-badge=stopping]', 'ss-breathe', 'waiting'],
+  ['.ss-badge[data-badge=merging]', 'ss-breathe', 'waiting'],
   ['.sh-pip', 'ss-breathe', 'waiting'],
   ['.eq>i', 'eq-1', 'waiting'],
   ['.tr-shine', 'tr-shine', 'waiting'],

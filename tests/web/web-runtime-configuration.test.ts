@@ -64,6 +64,13 @@ it('marks a turned-off runtime unavailable for sessions even though it has no ca
   expect(sessionKinds(status('claude', false))).toEqual([]);
 });
 
+it('offers a runtime without verified isolation once its settings allow it, as the daemon admits it', async () => {
+  statuses = [{ ...status('grok', true, false), unverified_isolation: true } as never];
+  const h = await mount(() => useRuntimeStatus('writer'));
+  expect(h.value.unavailable.grok).toBeUndefined();
+  expect(sessionKinds(statuses[0]!)).toEqual(['writer', 'reviewer', 'text']);
+});
+
 it('shows a disabled configured binary and a distinct missing-install state without stand-in rows', async () => {
   statuses = [
     { ...status('grok', false), binary: '/configured/grok' },

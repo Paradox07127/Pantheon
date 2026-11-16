@@ -1,4 +1,5 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Pin } from 'lucide-react';
@@ -199,18 +200,7 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
   if (!policy)
     return (
       <Section title={title}>
-        {source.error ? (
-          <>
-            <div className="ps-err" role="alert">
-              {source.error}
-            </div>
-            <button type="button" className="btn" onClick={source.reload}>
-              {t({ id: 'settings.common.retry', defaultMessage: 'Retry' })}
-            </button>
-          </>
-        ) : (
-          <Loading />
-        )}
+        {source.error ? <LoadError message={source.error} onRetry={source.reload} /> : <Loading />}
       </Section>
     );
 
@@ -592,14 +582,7 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
   return (
     <>
       {source.error && (
-        <div className="ps-err" role="alert">
-          {source.error}
-        </div>
-      )}
-      {source.error && source.stale && (
-        <button type="button" className="btn" onClick={source.reload}>
-          {t({ id: 'settings.common.retry', defaultMessage: 'Retry' })}
-        </button>
+        <LoadError message={source.error} onRetry={source.stale ? source.reload : undefined} />
       )}
       <Section title={t({ id: 'settings.workflow.dispatch', defaultMessage: 'Dispatch' })}>
         <div className="ps-rows">

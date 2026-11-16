@@ -283,7 +283,7 @@ it('offers an inventory retry after a query failure', async () => {
   await h.flush();
   const retry = find(
     h.value,
-    (n) => n.type === 'button' && text(n).includes(zh('settings.common.retry')),
+    (n) => n.type === 'button' && text(n).includes(zh('components.retry')),
   );
   retry.props.onClick();
   h.render();

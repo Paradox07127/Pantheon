@@ -141,7 +141,22 @@ interface AcpSession {
   queued?: { readOnly: boolean; interrupted?: boolean };
   /** Sent ahead of the first prompt, then cleared. */
   instructions?: string;
+  /** The instructions once sent; an agent that titles the session from its first text block quotes them. */
+  sentInstructions?: string;
   turn?: AcpTurn;
+}
+
+/** A JSON-RPC error's own detail (data.message, else message); other failures as they are. */
+function rpcErrorText(text: string): string {
+  let error: { message?: unknown; data?: { message?: unknown } };
+  try {
+    error = JSON.parse(text);
+  } catch {
+    // Timeouts and a closed transport are plain text.
+    return text;
+  }
+  const detail = error?.data?.message ?? error?.message;
+  return typeof detail === 'string' && detail ? detail : text;
 }
 
 // Tool kinds a read-only turn refuses without asking the user.
@@ -597,6 +612,7 @@ export class AcpAdapter implements HarnessAdapter {
         return;
       }
       if (native_type === 'session_info_update' && typeof value.title === 'string' && value.title) {
+        if (session.sentInstructions?.startsWith(value.title.trim())) return;
         session.emit({ turn_id, native_type, kind: 'title.generated', title: value.title });
         return;
       }
@@ -940,6 +956,7 @@ export class AcpAdapter implements HarnessAdapter {
         name: skill.name,
       })),
     ];
+    if (session.instructions) session.sentInstructions = session.instructions;
     delete session.instructions;
     let timer: NodeJS.Timeout | undefined,
       left = session.wallTimeMs,
@@ -1029,7 +1046,8 @@ export class AcpAdapter implements HarnessAdapter {
           else if (stopReason === 'cancelled') current.finish('interrupted');
           else current.finish('failed', `ACP turn stopped: ${String(stopReason)}`);
         },
-        (error: Error) => current.finish('failed', `ACP session/prompt failed: ${error.message}`),
+        (error: Error) =>
+          current.finish('failed', `ACP session/prompt failed: ${rpcErrorText(error.message)}`),
       );
     return { turn_id: turn.turn_id, status: 'delivered' };
   }

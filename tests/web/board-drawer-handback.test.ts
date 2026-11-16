@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
+import { AlertDialog } from '../../apps/web/node_modules/@base-ui/react/alert-dialog/index.mjs';
 import { find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
 vi.mock('react', async (actual) =>
@@ -209,6 +210,16 @@ describe('reassigning or cancelling a task from the drawer', () => {
     expect(component(footer(task()), 'CancelTask')).toBeDefined();
     expect(component(drawer(queued({ dispatch_wait: undefined })).value, 'CancelTask')).toBe(
       undefined,
+    );
+  });
+
+  it('asks before cancelling a task in an alert dialog', () => {
+    const cancel = component(drawer(queued()).value, 'CancelTask')!;
+    const h = mount(() => (cancel.type as (p: object) => ReactNode)(cancel.props));
+    expect(nodes(h.value).some((n) => n.type === AlertDialog.Root)).toBe(true);
+    const d = dialogOf(cancel, zh('board.task.cancel.open'), 'CancelDialog');
+    expect(text(find(d.value, (n) => n.type === AlertDialog.Title))).toBe(
+      zh('board.task.cancel.open'),
     );
   });
 

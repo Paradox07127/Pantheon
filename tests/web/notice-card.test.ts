@@ -128,10 +128,9 @@ describe('notice cards', () => {
       open,
     });
     expect(byClass('nc-mark').map((n) => n.props['data-mark'])).toEqual(['review']);
-    expect(byClass('nc-add').map((n) => [text(n), n.props['data-zero']])).toEqual([
-      ['+184', undefined],
-    ]);
-    expect(byClass('nc-del').map((n) => [text(n), n.props['data-zero']])).toEqual([['−0', true]]);
+    const counts = named(mounted.tree(), 'DiffCounts');
+    expect(counts.props).toEqual({ additions: 184, deletions: 0 });
+    expect(text(counts)).toBe('+184 −0');
     const [hit] = byClass('nc-hit');
     expect(hit?.props['aria-label']).toBe('打开refund-list');
     hit!.props.onClick();

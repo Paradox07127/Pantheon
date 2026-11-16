@@ -178,7 +178,7 @@ describe('task drawer timeline', () => {
     });
     expect(text(find(tree, (n) => n.props.role === 'alert'))).toContain('trace store down');
     expect(nodes(tree).some((n) => n.type === 'ol')).toBe(false);
-    find(tree, (n) => n.type === 'button' && text(n) === trace('retry')).props.onClick();
+    find(tree, (n) => n.type === 'button' && text(n) === zh('components.retry')).props.onClick();
     await host.flush();
     expect(query).toHaveBeenCalledTimes(2);
   });

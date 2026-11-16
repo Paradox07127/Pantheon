@@ -253,7 +253,7 @@ export function SessionDefaults({ project }: { project: Project | null }) {
   const reviewer = t({ id: 'settings.defaults.reviewer', defaultMessage: 'Outside review' });
   const routingTable = t({
     id: 'settings.defaults.routingTable',
-    defaultMessage: 'The routing table below',
+    defaultMessage: 'The routing table in project settings',
   });
   const roleModel = (role: string) =>
     t({ id: 'settings.defaults.roleModel', defaultMessage: "{role}'s model" }, { role });

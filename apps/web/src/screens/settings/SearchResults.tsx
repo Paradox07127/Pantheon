@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { hitGroups, jumpTo, useSearchCursor } from './settings-jump';
 import { hitId } from './SettingsNav';
 import { SETTINGS_PAGES, useSettingsView } from './view';
+import { EmptyState } from '../../components/EmptyState';
 
 /** The text with each [start, end) range set in a <mark>. */
 export function HighlightText({ text, ranges }: { text: string; ranges: [number, number][] }) {
@@ -42,9 +43,10 @@ export function SearchResults() {
       </div>
       {query !== '' &&
         (hits.length === 0 ? (
-          <div className="empty">
-            {t({ id: 'settings.nav.noMatch', defaultMessage: 'No matching settings' })}
-          </div>
+          <EmptyState
+            inline
+            title={t({ id: 'settings.nav.noMatch', defaultMessage: 'No matching settings' })}
+          />
         ) : (
           <div className="ps-res">
             {/* The status above announces the count. */}

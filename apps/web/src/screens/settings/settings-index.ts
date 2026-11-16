@@ -127,6 +127,10 @@ const boardWorkflow = defineMessage({
   id: 'insights.sections.workflow',
   defaultMessage: 'Workflow',
 });
+const personal = defineMessage({
+  id: 'settings.data.personal',
+  defaultMessage: 'Personal settings',
+});
 const budgetAndQuota = defineMessage({
   id: 'settings.usage.budgetAndQuota',
   defaultMessage: 'Budget and quota',
@@ -245,6 +249,19 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     }),
   },
   {
+    id: 'general.sessionRecap',
+    page: 'general',
+    section: languageAndSleep,
+    label: defineMessage({
+      id: 'settings.general.sessionRecap',
+      defaultMessage: 'Session progress recap',
+    }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.sessionRecap',
+      defaultMessage: 'recap, summary, where it stands, headline',
+    }),
+  },
+  {
     id: 'general.baselineRounds',
     page: 'general',
     section: baseline,
@@ -311,6 +328,19 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     }),
   },
   {
+    id: 'appearance.backdrop',
+    page: 'appearance',
+    section: themeAndColour,
+    label: defineMessage({
+      id: 'settings.appearance.backdrop',
+      defaultMessage: 'Animated background',
+    }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.backdrop',
+      defaultMessage: 'backdrop, wallpaper, theme, motion',
+    }),
+  },
+  {
     id: 'appearance.colorblind',
     page: 'appearance',
     section: themeAndColour,
@@ -321,6 +351,19 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     keywords: defineMessage({
       id: 'settings.search.keywords.colorblind',
       defaultMessage: 'color blind, accessibility, contrast',
+    }),
+  },
+  {
+    id: 'appearance.savedTheme',
+    page: 'appearance',
+    section: themeAndColour,
+    label: defineMessage({
+      id: 'settings.appearance.savedTheme',
+      defaultMessage: 'Saved theme',
+    }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.savedTheme',
+      defaultMessage: 'custom theme, export, delete',
     }),
   },
   {
@@ -786,6 +829,49 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     label: defineMessage({ id: 'settings.harness.models', defaultMessage: 'Available models' }),
   },
   {
+    id: 'harness.artifacts',
+    page: 'harness',
+    section: PAGE_NAME.harness,
+    label: defineMessage({ id: 'settings.harness.artifacts', defaultMessage: 'Publish artifacts' }),
+    options: runtimes,
+  },
+  {
+    id: 'harness.unverifiedIsolation',
+    page: 'harness',
+    section: PAGE_NAME.harness,
+    label: defineMessage({
+      id: 'settings.runtimes.unverifiedIsolation',
+      defaultMessage: 'Allow without verified isolation',
+    }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.unverifiedIsolation',
+      defaultMessage: 'sandbox, isolation, worktree, unsafe, admission',
+    }),
+    options: runtimes,
+  },
+  {
+    id: 'harness.kinds',
+    page: 'harness',
+    section: PAGE_NAME.harness,
+    label: defineMessage({ id: 'settings.harness.kinds', defaultMessage: 'Session kinds' }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.harnessKinds',
+      defaultMessage: 'code, review, text, capabilities',
+    }),
+    options: runtimes,
+  },
+  {
+    id: 'harness.quota',
+    page: 'harness',
+    section: PAGE_NAME.harness,
+    label: defineMessage({ id: 'settings.harness.quota', defaultMessage: 'Quota' }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.harnessQuota',
+      defaultMessage: 'usage, limit, rate limit',
+    }),
+    options: runtimes,
+  },
+  {
     id: 'harness.backends',
     page: 'harness',
     label: defineMessage({ id: 'settings.harness.backends', defaultMessage: 'Backends' }),
@@ -1073,7 +1159,7 @@ export const SETTINGS_INDEX: SettingRecord[] = [
   {
     id: 'data.personal',
     page: 'data',
-    label: defineMessage({ id: 'settings.data.personal', defaultMessage: 'Personal settings' }),
+    label: personal,
     keywords: defineMessage({
       id: 'settings.search.keywords.personalSettings',
       defaultMessage: 'backup, restore, preferences',
@@ -1082,6 +1168,26 @@ export const SETTINGS_INDEX: SettingRecord[] = [
       t({ id: 'settings.data.export', defaultMessage: 'Export…' }),
       t({ id: 'settings.data.import', defaultMessage: 'Import…' }),
     ],
+  },
+  {
+    id: 'data.export',
+    page: 'data',
+    section: personal,
+    label: defineMessage({ id: 'settings.data.exportRow', defaultMessage: 'Export' }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.personalExport',
+      defaultMessage: 'backup, save settings',
+    }),
+  },
+  {
+    id: 'data.import',
+    page: 'data',
+    section: personal,
+    label: defineMessage({ id: 'settings.data.importRow', defaultMessage: 'Import' }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.personalImport',
+      defaultMessage: 'restore, load settings',
+    }),
   },
   {
     id: 'data.diagnostics',
@@ -1156,6 +1262,20 @@ export const SETTINGS_INDEX: SettingRecord[] = [
       defaultMessage: 'Handback limit',
     }),
     options: () => [t({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' })],
+  },
+  {
+    id: 'gates.runner',
+    page: 'gates',
+    section: gate,
+    label: defineMessage({ id: 'settings.gate.runner', defaultMessage: 'Where gates run' }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.gateRunner',
+      defaultMessage: 'gate runner, daemon, session worktree',
+    }),
+    options: () => [
+      t({ id: 'settings.gate.runner.daemon', defaultMessage: 'daemon' }),
+      t({ id: 'settings.gate.runner.session', defaultMessage: 'Session worktree' }),
+    ],
   },
   {
     id: 'gates.name',

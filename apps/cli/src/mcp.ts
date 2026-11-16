@@ -409,7 +409,6 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
     }
   });
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
-    const label = Object.hasOwn(tools, params.name) ? tools[params.name]! : params.name;
     try {
       const current = await authenticate();
       if (params.name === INVENTORY_TOOL && current.baseline_id !== undefined) {
@@ -497,7 +496,7 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
             {
               type: 'text',
               text: refused(
-                type,
+                params.name,
                 String(receipt.error),
                 receipt.message === undefined ? undefined : String(receipt.message),
               ),
@@ -518,7 +517,7 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
           {
             type: 'text',
             text: refused(
-              label,
+              params.name,
               error instanceof CommandError ? error.code : 'invalid_request',
               error instanceof CommandError ? error.daemonMessage : undefined,
             ),

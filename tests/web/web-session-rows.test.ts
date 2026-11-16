@@ -15,6 +15,7 @@ import {
 } from '@/screens/sessions/model';
 import { SessionListRow } from '@/screens/sessions/SessionsScreen';
 import { SessionPreview } from '@/screens/sessions/SessionRow';
+import { sessionStateLabel } from '@/components/SessionStateIcon';
 import { zh } from './i18n-setup.js';
 
 const group = (key: string) => zh(`sessions.model.group.${key}`);
@@ -426,23 +427,20 @@ describe('session row', () => {
   it('draws one line: the runtime glyph with its status mark, the title and the time', () => {
     const button = rowButton(render(busy, { on: true }));
     expect(button).toMatch(
-      /^<button[^>]*><span class="ss-av"><svg aria-hidden="true" class="rtg".*?<title>Codex<\/title>.*?<\/svg><span class="ss-badge" role="img" aria-label="等你" data-badge="waiting"><\/span><\/span><span class="ss-ttl">title of a<\/span><span class="ss-time">2 分钟<\/span><\/button>$/,
+      /^<button[^>]*><span class="ss-av"><svg aria-hidden="true" class="rtg".*?<title>Codex<\/title>.*?<\/svg><span class="ss-badge" role="img" aria-label="待批准" data-badge="approval"[^>]*><\/span><\/span><span class="ss-ttl">title of a<\/span><span class="ss-time">2 分钟<\/span><\/button>$/,
     );
     for (const gone of ['+48', 'dbar', 'ss-l2', '待处理 2<']) expect(button).not.toContain(gone);
   });
 
+  const stateBadge = (s: WorkbenchSession) => [s, sessionStateLabel(s)] as const;
   it.each([
-    ['running', session('r', 'running'), badge('running')],
-    ['starting', session('r', 'starting'), badge('running')],
-    ['stopping', session('r', 'idle', { stopping: true }), badge('running')],
-    ['waiting', session('w', 'waiting', { waiting: 1 }), badge('waiting')],
-    [
-      'reconciling',
-      session('w', 'idle', { reconciling: true }),
-      zh('sessions.sidebar.badge.environment'),
-    ],
-    ['ready', session('v', 'ready'), badge('review')],
-    ['failed', session('f', 'failed'), badge('failed')],
+    ['running', ...stateBadge(session('r', 'running'))],
+    ['starting', ...stateBadge(session('r', 'starting'))],
+    ['stopping', ...stateBadge(session('r', 'idle', { stopping: true }))],
+    ['waiting', ...stateBadge(session('w', 'waiting', { waiting: 1 }))],
+    ['reconciling', ...stateBadge(session('w', 'idle', { reconciling: true }))],
+    ['ready', ...stateBadge(session('v', 'ready'))],
+    ['failed', ...stateBadge(session('f', 'failed'))],
     ['merge blocked', session('f', 'ready', { merge: { state: 'blocked' } }), badge('failed')],
     [
       'last turn failed',
@@ -527,10 +525,10 @@ describe('session preview', () => {
     const line = `gpt-5-codex，高，${zh('components.runtime.codexWorkspaceWrite')}`;
     expect(html).toContain(`title="${line}">${line}</span>`);
     expect(facts(html)).toEqual([
-      [fact('changes'), '+61−193 个文件'],
+      [fact('changes'), '+61 −193 个文件'],
       [fact('checks'), zh('sessions.screen.gateFailed')],
       [fact('source'), expect.stringMatching(/^由 Lead 派出，/)],
-      [fact('elapsed'), '40 分 00 秒'],
+      [fact('elapsed'), '40 分钟'],
     ]);
     expect(html).toContain('aria-label="新增 61 行，删除 19 行"');
     expect(html).not.toContain('<button');
@@ -539,7 +537,7 @@ describe('session preview', () => {
   it('draws no row for a field the list does not carry', () => {
     const html = render(session('b', 'merged', { last_activity_at: at(10) }));
     expect(facts(html).map(([label]) => label)).toEqual([fact('elapsed')]);
-    expect(facts(html).at(-1)).toEqual([fact('elapsed'), '10 分 00 秒']);
+    expect(facts(html).at(-1)).toEqual([fact('elapsed'), '10 分钟']);
     for (const missing of [fact('branch'), fact('context'), '<button'])
       expect(html).not.toContain(missing);
   });

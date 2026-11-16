@@ -1,9 +1,10 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu } from '@base-ui/react/menu';
 import { Check, Crown, Minus, Pause, Play, Plus, Workflow } from 'lucide-react';
 import type { BoardModel, BoardTaskStatus, CommandType } from '@pantheon/protocol';
 import { ModelMark, RuntimeGlyph } from '../../components/RuntimeGlyph';
+import { stateGlyphTone } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
 import { useBoard } from '../../data/board';
 import {
@@ -23,7 +24,8 @@ import { activityLine } from '../board/activity';
 import { runBoardCommand } from '../board/BoardScreen';
 import { Empty } from '../board/Charts';
 import { leadState } from '../board/frame-model';
-import { durationText, tellLead, whenText } from '../board/panels-model';
+import { dayText } from '../../lib/time-text';
+import { durationText, tellLead } from '../board/panels-model';
 import { runtimeName, StateIcon, StatusIcon, taskStateLabel, TaskStateIcon } from '../board/status';
 import { hasOpenSession } from '../board/TaskDrawer';
 import { KINDS as TRACE_KINDS } from '../board/TaskTimeline';
@@ -820,7 +822,7 @@ export function CollabTab({
                 return (
                   <li key={`${entry.at}-${i}`} className="clb-evi">
                     <time className="clb-evt" dateTime={new Date(entry.at).toISOString()}>
-                      {whenText(entry.at, now)}
+                      {dayText(entry.at, now, { time: true })}
                     </time>
                     <span className="bd-tl-g" data-tone={kind.tone} aria-hidden="true">
                       {'icon' in kind ? (
@@ -926,7 +928,10 @@ export function CollabTab({
                       {context && ring(context.percent)}
                     </span>
                     <span className="clb-ns">
-                      <span className="clb-ls" data-state={state.dot}>
+                      <span
+                        className="clb-ls"
+                        style={{ '--c': `var(${stateGlyphTone(state.glyph)})` } as CSSProperties}
+                      >
                         {state.label}
                       </span>
                       {lead.waiting && <span className="clb-nst">{lead.waiting.summary}</span>}
@@ -1128,7 +1133,7 @@ export function CollabTab({
                 y="14"
               >
                 <title>
-                  {`${whenText(event.at, now)} ${
+                  {`${dayText(event.at, now, { time: true })} ${
                     event.kind === 'handback'
                       ? t({ id: 'insights.collab.handbackEvent', defaultMessage: 'Handback' })
                       : t({ id: 'insights.collab.modelEvent', defaultMessage: 'Model change' })

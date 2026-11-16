@@ -245,9 +245,9 @@ describe('the gates page steps', () => {
 
   it('shows how long a step took in the newest run that ran it, and nothing without one', async () => {
     const h = await folder();
-    expect(text(step(h, 1))).toContain(gate('tookSeconds', { seconds: 8 }));
-    expect(text(step(h, 2))).not.toContain('约');
-    expect(text(step(h, 3))).not.toContain('约');
+    expect(text(step(h, 1))).toContain('8 秒');
+    expect(text(step(h, 2))).not.toMatch(/\d 秒/);
+    expect(text(step(h, 3))).not.toMatch(/\d 秒/);
   });
 
   it('turns a step off and lets another be skipped when it fails, saving each at once', async () => {
@@ -309,7 +309,7 @@ describe('the gates page steps', () => {
 
   it('writes seconds in the same unit for how long a step took and for its timeout', async () => {
     const h = await folder();
-    expect(text(step(h, 1))).toContain('约 8 秒');
+    expect(text(step(h, 1))).toContain('8 秒');
     expect(text(step(h, 1))).toContain(zh('settings.gate.timeoutUnit'));
   });
 });

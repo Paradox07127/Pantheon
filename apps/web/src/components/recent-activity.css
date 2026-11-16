@@ -29,9 +29,6 @@ button.act-row:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: -3px;
 }
-.act-fail {
-  margin: 0 0 6px;
-}
 .act-t {
   flex: 0 1 auto;
   min-width: 0;

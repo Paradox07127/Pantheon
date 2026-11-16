@@ -5,7 +5,8 @@ import { useSessionActivity } from '../../data/session-activity';
 import { elapsedText, type ToolItem, type TurnView } from '../../data/transcript';
 import { t } from '../../i18n';
 import { ViewToggle } from '../board/Charts';
-import { tokenText, whenText } from '../board/panels-model';
+import { dayText } from '../../lib/time-text';
+import { tokenText } from '../board/panels-model';
 import { ActivitySpark, ContextMeter, TraceWaterfall } from './RunCharts';
 import { callResult } from './run-model';
 import './thread.css';
@@ -100,7 +101,7 @@ export function TraceTable({ turns, now }: { turns: readonly TurnView[]; now: nu
         {rows.map((row, i) => (
           <Fragment key={row.id}>
             <tr>
-              <td>{row.started === null ? NONE : whenText(row.started, now)}</td>
+              <td>{row.started === null ? NONE : dayText(row.started, now, { time: true })}</td>
               <td>{elapsed(row.duration)}</td>
               <td>{row.tools}</td>
               <td>{tokens(row.input)}</td>

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { afterEach, expect, it } from 'vitest';
 import { claudeOneShot, claudeSubscription } from '../../packages/adapters/src/one-shot.js';
+import { psUsable } from '../helpers.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -36,18 +37,22 @@ it('answers no once the login probe passes its deadline while ignoring SIGTERM',
   expect(await settled(claudeSubscription(binary), 12000)).toEqual({ resolved: false });
 }, 20000);
 
-it('stops what the login probe started once it passes its deadline', async () => {
-  const binary = hungClaude('sleep 30 &\necho $! > "$0.descendant"\nsleep 15');
+it.skipIf(!psUsable)(
+  'stops what the login probe started once it passes its deadline',
+  async () => {
+    const binary = hungClaude('sleep 30 &\necho $! > "$0.descendant"\nsleep 15');
 
-  expect(await settled(claudeSubscription(binary), 12000)).toEqual({ resolved: false });
-  const descendant = readFileSync(`${binary}.descendant`, 'utf8').trim();
-  const running = () =>
-    /^\s*[^Z\s]/.test(
-      spawnSync('ps', ['-o', 'stat=', '-p', descendant], { encoding: 'utf8' }).stdout,
-    );
-  for (let tries = 0; running() && tries < 100; tries++) await sleep(20);
-  expect(running(), 'the process the probe started still runs').toBe(false);
-}, 20000);
+    expect(await settled(claudeSubscription(binary), 12000)).toEqual({ resolved: false });
+    const descendant = readFileSync(`${binary}.descendant`, 'utf8').trim();
+    const running = () =>
+      /^\s*[^Z\s]/.test(
+        spawnSync('ps', ['-o', 'stat=', '-p', descendant], { encoding: 'utf8' }).stdout,
+      );
+    for (let tries = 0; running() && tries < 100; tries++) await sleep(20);
+    expect(running(), 'the process the probe started still runs').toBe(false);
+  },
+  20000,
+);
 
 it('stops waiting for the login probe when the caller gives up', async () => {
   const caller = new AbortController();

@@ -539,7 +539,7 @@ describe('away line', () => {
       ],
     });
     const h = mount(() => SinceStrip({ projectId: 'project-a', model }));
-    expect(text(h.value)).toContain('离开 3 时');
+    expect(text(h.value)).toContain('离开 3 小时');
     expect(
       nodes(h.value)
         .filter((n) => n.props.className === 'bf-sc')

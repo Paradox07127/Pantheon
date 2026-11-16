@@ -6,7 +6,7 @@ import type { FeedbackItem } from '../../data/feedback';
 import { elapsedText } from '../../data/transcript';
 import { t } from '../../i18n';
 import { GATE_STATES } from '../board/quality-model';
-import { checkItem, gateOutcome } from './model';
+import { checkItem, failedTests, gateOutcome, plainLog as plain } from './model';
 import './gate-results.css';
 
 type GateResult = NonNullable<SessionGates['last']>['results'][number];
@@ -95,9 +95,6 @@ function skipReason(result: GateResult): string {
       .findLast(Boolean) ?? ''
   );
 }
-
-/** The text without terminal colour codes. */
-const plain = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, '');
 
 /** Lines of test, compiler and stack output that report a failure. */
 const FAILURE =
@@ -323,6 +320,7 @@ function Log(props: {
   const result = step.result!;
   const copy = t({ id: 'sessions.gateResults.copy', defaultMessage: 'Copy log' });
   const item = step.state === 'passed' ? null : checkItem(result, props.checkedAt, step.index);
+  const failed = step.state === 'passed' ? [] : failedTests(result.output_tail);
   return (
     <div className="gres-log">
       <div className="gres-lh">
@@ -385,6 +383,25 @@ function Log(props: {
           </Tip>
         </span>
       </div>
+      {failed.length > 0 && (
+        <ul
+          className="gres-ft"
+          aria-label={t({ id: 'sessions.gateResults.failedTests', defaultMessage: 'Failed tests' })}
+        >
+          {failed.map(({ file, tests }) => (
+            <li key={file}>
+              <span className="mono">{file}</span>
+              {tests.length > 0 && (
+                <ul className="gres-ftt">
+                  {tests.map((test) => (
+                    <li key={test}>{test}</li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       <pre
         className="gres-out mono"
         aria-label={t(

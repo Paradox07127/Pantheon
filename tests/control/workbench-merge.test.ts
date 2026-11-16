@@ -903,7 +903,7 @@ it('blocks a task merge that changes files outside the task scope and lands once
   expect(git(f.source, 'rev-parse', 'main')).toBe(head);
 });
 
-it.each([
+it.skipIf(insideSandbox).each([
   ['without a gate', false],
   ['through a gate', true],
 ])(

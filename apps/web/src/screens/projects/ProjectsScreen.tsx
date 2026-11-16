@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Dialog } from '@base-ui/react/dialog';
+import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Menu } from '@base-ui/react/menu';
 import { Ellipsis, Folder, Import } from 'lucide-react';
 import type { BoardSnapshot, ProjectSummary, WorkbenchSession } from '@pantheon/protocol';
@@ -7,6 +7,7 @@ import { NeedsPopover, SessionsPopover } from '../../components/NeedsPopover';
 import { PathText } from '../../components/PathText';
 import { ProjectMonogram } from '../../components/ProjectMonogram';
 import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
+import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { TopBar } from '../../components/TopBar';
 import { useBoard } from '../../data/board';
@@ -169,7 +170,7 @@ export function ProjectsScreen({ onOpenSettings, onOpenProject }: ProjectsScreen
                       <div key={i} role="row" className="pr-row">
                         <span role="cell" />
                         <span role="cell" className="pr-name">
-                          <span className="sk pr-sk-c" />
+                          <Skeleton className="pr-sk-c" />
                         </span>
                       </div>
                     ))
@@ -290,7 +291,7 @@ export function SummaryPanel({
     <>
       <span className="pr-sum-k">{c.label}</span>
       <span className="pr-sum-v">
-        {summaries ? <b>{c.value}</b> : <span className="sk pr-sum-sk" />}
+        {summaries ? <b>{c.value}</b> : <Skeleton className="pr-sum-sk" />}
         {c.note && <span>{c.note}</span>}
       </span>
     </>
@@ -433,7 +434,7 @@ export function ProjectRow(props: {
       </span>
       <span role="cell" className="pr-goal">
         {!summary ? (
-          <span className="sk pr-sk-c" />
+          <Skeleton className="pr-sk-c" />
         ) : milestone ? (
           <>
             <span className="pr-mt" title={milestone.title}>
@@ -474,7 +475,7 @@ export function ProjectRow(props: {
       </span>
       <span role="cell" className="pr-ses">
         {!summary ? (
-          <span className="sk pr-sk-c" />
+          <Skeleton className="pr-sk-c" />
         ) : active.length > 0 ? (
           active.map(({ key, label, glyph, group }) => (
             <button
@@ -494,7 +495,7 @@ export function ProjectRow(props: {
       </span>
       <span role="cell" className="pr-need">
         {!summary ? (
-          <span className="sk pr-sk-c" />
+          <Skeleton className="pr-sk-c" />
         ) : summary.needs_you > 0 ? (
           <>
             <button
@@ -586,7 +587,7 @@ function RemoveProjectDialog({
   };
 
   return (
-    <Dialog.Root
+    <AlertDialog.Root
       open={project !== null}
       onOpenChange={(next) => {
         if (next) return;
@@ -594,24 +595,24 @@ function RemoveProjectDialog({
         onClose();
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
-        <Dialog.Popup className="pj-dlg pj-rm pop">
+      <AlertDialog.Portal>
+        <AlertDialog.Backdrop className="pj-scrim" />
+        <AlertDialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
-            <Dialog.Title className="pj-dt">
+            <AlertDialog.Title className="pj-dt">
               {t(
                 { id: 'projects.remove.title', defaultMessage: 'Remove “{name}”' },
                 { name: project?.name ?? '' },
               )}
-            </Dialog.Title>
+            </AlertDialog.Title>
           </div>
-          <Dialog.Description className="pj-rm-body">
+          <AlertDialog.Description className="pj-rm-body">
             {t({
               id: 'projects.remove.body',
               defaultMessage:
                 'The folders and history stay; open the same folders again to bring the project back.',
             })}
-          </Dialog.Description>
+          </AlertDialog.Description>
           {error && (
             <div className="pj-err" role="alert">
               <b>{error}</b>
@@ -619,9 +620,9 @@ function RemoveProjectDialog({
           )}
           <div className="pj-df">
             <span style={{ flex: 1 }} />
-            <Dialog.Close className="btn ghost">
+            <AlertDialog.Close className="btn ghost">
               {t({ id: 'projects.cancel', defaultMessage: 'Cancel' })}
-            </Dialog.Close>
+            </AlertDialog.Close>
             <button
               type="button"
               className="btn dng"
@@ -632,8 +633,8 @@ function RemoveProjectDialog({
               {t({ id: 'projects.remove.confirm', defaultMessage: 'Remove' })}
             </button>
           </div>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </AlertDialog.Popup>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   );
 }

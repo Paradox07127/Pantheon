@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
+import { AlertDialog } from '../../apps/web/node_modules/@base-ui/react/alert-dialog/index.mjs';
 import {
   HookHost,
   deferred,
@@ -299,6 +300,18 @@ const textButton = (tree: any, label: string) =>
 const button = (h: HookHost<any>, label: string) =>
   find(h.value, (n) => n.props.label === label).props;
 
+it('names the way past the scan step with the same word as the button that starts it', async () => {
+  vi.useRealTimers();
+  const onNext = vi.fn();
+  const h = mount(() =>
+    Setup({ project_id: 'opened', path: '~/work/app', step: 2, onNext, onBack() {}, onEnter() {} }),
+  );
+  await h.flush();
+  const skip = find(h.value, (n) => n.props.onPress === onNext);
+  expect(skip.props.label).toContain('基线');
+  expect(skip.props.label).not.toContain('扫描');
+});
+
 it('starts the goal step from the saved brief and sets it at its revision', async () => {
   mock.board.board.project_briefs = [savedBrief];
   const h = await goalStep();
@@ -403,6 +416,16 @@ it('hides a variable added in place of a deleted revealed one', () => {
     find(h.value, (n) => n.props['aria-label'] === zhf('projects.variables.value', { n: 2 })).props
       .type,
   ).toBe('password');
+});
+
+it('asks before removing a project in an alert dialog', () => {
+  mock.board.status = { state: 'live' };
+  const screen = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
+  const dialog: any = named(screen.value, 'RemoveProjectDialog');
+  const project = { id: 'alpha', name: 'Alpha', roots: ['/work/alpha'], revision: 1 };
+  const h = mount(() => dialog.type({ project, onClose() {} }));
+  expect(h.value.type).toBe(AlertDialog.Root);
+  expect(text(find(h.value, (n) => n.type === AlertDialog.Title))).toContain('Alpha');
 });
 
 it.each([

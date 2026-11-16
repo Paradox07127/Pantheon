@@ -235,7 +235,11 @@ export function StateGlyph({
   return <Svg glyph={tone ? { ...GLYPHS[name], tone } : GLYPHS[name]} place={place} />;
 }
 
-function glyphName(session: WorkbenchSession): GlyphName {
+/** The colour token of one state glyph. */
+export const stateGlyphTone = (name: GlyphName): string => GLYPHS[name].tone;
+
+/** The name of the glyph SessionStateIcon draws for the session. */
+export function sessionGlyphName(session: WorkbenchSession): GlyphName {
   if (session.stopping) return 'stopping';
   if (session.reconciling) return 'reconciling';
   if (session.state === 'waiting') return session.waiting_kind ?? 'approval';
@@ -255,7 +259,7 @@ export function SessionStateIcon({
   /** In the list, a finished state the user has seen is drawn in the idle tone. */
   seen?: boolean;
 }) {
-  const name = glyphName(session);
+  const name = sessionGlyphName(session);
   if (place === 'list' && seen && SETTLED.includes(name))
     return <Svg glyph={{ ...GLYPHS[name], tone: '--idle' }} place={place} />;
   return <StateGlyph name={name} place={place} />;
@@ -263,11 +267,11 @@ export function SessionStateIcon({
 
 /** The name of the state SessionStateIcon draws. */
 export const sessionStateLabel = (session: WorkbenchSession): string =>
-  GLYPHS[glyphName(session)].label;
+  GLYPHS[sessionGlyphName(session)].label;
 
 /** The colour token SessionStateIcon draws the state in. */
 export const sessionStateTone = (session: WorkbenchSession): string =>
-  GLYPHS[glyphName(session)].tone;
+  GLYPHS[sessionGlyphName(session)].tone;
 
 /** A recoverable turn result beside the lifecycle; it never changes whether input is accepted. */
 export function lastTurnLabel(session: WorkbenchSession): string | null {

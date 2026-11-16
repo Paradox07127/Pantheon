@@ -6,6 +6,7 @@ import { zh } from './i18n-setup.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 import { t } from '@/i18n';
 import { GateResults, type GateResultsProps } from '@/screens/sessions/GateResults';
+import { failedTests } from '@/screens/sessions/inspector-model';
 
 afterEach(() => {
   unmountAll();
@@ -302,6 +303,69 @@ describe('gate results', () => {
     const items = onFix.mock.calls[0]![0] as { id: string; label: string; text: string }[];
     expect(items.map((item) => item.label)).toEqual(['unit', 'e2e']);
     expect(items[0]!.text).toContain('AssertionError');
+  });
+
+  const vitestRun = {
+    ...last,
+    results: [
+      {
+        name: 'test',
+        exit_code: 1,
+        timed_out: false,
+        output_tail: [
+          '\x1b[31m \u276f\x1b[39m tests/web/a.test.ts \x1b[2m(\x1b[22m3 tests | 1 failed\x1b[2m)\x1b[22m 20ms',
+          '   \x1b[31m\u00d7\x1b[39m opens the page\x1b[33m 5ms\x1b[39m',
+          '\x1b[2m Test Files \x1b[22m \x1b[1m\x1b[31m2 failed\x1b[39m\x1b[22m',
+          '\x1b[41m\x1b[1m FAIL \x1b[22m\x1b[49m tests/web/a.test.ts\x1b[2m > \x1b[22mopens the page',
+          '\x1b[41m\x1b[1m FAIL \x1b[22m\x1b[49m tests/web/c.test.ts\x1b[2m > \x1b[22mdrafts\x1b[2m > \x1b[22mkeeps the draft',
+        ].join('\n'),
+      },
+    ],
+  };
+
+  it('lists the failed test files and tests of a vitest log above the log', () => {
+    const tab = results({ last: vitestRun, run: undefined });
+    row(tab.value, 'test').props.onClick();
+    tab.render();
+    const list = find(
+      openLog(tab).value,
+      (n) => n.props['aria-label'] === zh('sessions.gateResults.failedTests'),
+    );
+    expect(
+      nodes(list)
+        .filter((n) => n.type === 'li')
+        .map((n) => text(n)),
+    ).toEqual([
+      'tests/web/a.test.tsopens the page',
+      'opens the page',
+      'tests/web/c.test.tsdrafts > keeps the draft',
+      'drafts > keeps the draft',
+    ]);
+  });
+
+  it('lists a test inside a describe block once, by its full name', () => {
+    const log = [
+      ' ❯ tests/web/c.test.ts (2 tests | 1 failed) 12ms',
+      '   × keeps the draft 5ms',
+      ' FAIL  tests/web/c.test.ts > drafts > keeps the draft',
+    ].join('\n');
+    expect(failedTests(log)).toEqual([
+      { file: 'tests/web/c.test.ts', tests: ['drafts > keeps the draft'] },
+    ]);
+  });
+
+  it('sends the agent the log without colour codes, with the failed tests listed first', () => {
+    const onFix = vi.fn();
+    button(
+      results({ onFix, last: vitestRun, run: undefined }).value,
+      zh('sessions.gateResults.fix'),
+    ).props.onClick();
+    const [item] = onFix.mock.calls[0]![0] as { text: string }[];
+    expect(item!.text).not.toContain('\x1b');
+    expect(item!.text).toContain(
+      'Failed tests:\n- tests/web/a.test.ts\n  - opens the page\n- tests/web/c.test.ts\n  - drafts > keeps the draft',
+    );
+    expect(item!.text).toContain(' Test Files  2 failed');
   });
 
   it('offers no fix to an ended session, nor while all commands pass', () => {

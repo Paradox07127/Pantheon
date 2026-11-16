@@ -58,9 +58,9 @@ describe('activity line', () => {
   it('names the tool call under way with its target and how long it has run', () => {
     expect(
       activityLine(running({ phase: 'tool', tool: { name: 'Bash', target: 'pnpm test' } }), NOW),
-    ).toBe(`${zh('runs.table.verb.run')} pnpm test，3 分`);
+    ).toBe(`${zh('runs.table.verb.run')} pnpm test，3 分钟`);
     expect(activityLine(running({ phase: 'tool', tool: { name: 'Read' } }), NOW)).toBe(
-      `${zh('runs.table.verb.read')}，3 分`,
+      `${zh('runs.table.verb.read')}，3 分钟`,
     );
   });
 
@@ -106,7 +106,7 @@ describe('activity line', () => {
     [
       'names a sub-agent call by its verb, not the SDK tool name',
       running({ phase: 'tool', tool: { name: 'Task', target: 'Find the store' } }),
-      `${zh('runs.table.verb.subagent')} Find the store，3 分`,
+      `${zh('runs.table.verb.subagent')} Find the store，3 分钟`,
     ],
     [
       'shows the recap headline of an idle task',
@@ -129,12 +129,12 @@ describe('activity line', () => {
     [
       'keeps the tool call under way over the recap',
       running({ phase: 'tool', tool: { name: 'Read' } }, { recap }),
-      `${zh('runs.table.verb.read')}，3 分`,
+      `${zh('runs.table.verb.read')}，3 分钟`,
     ],
     [
       'keeps thinking under way over the recap',
       running({ phase: 'thinking' }, { recap }),
-      '思考中，3 分',
+      '思考中，3 分钟',
     ],
     [
       'keeps the failed turn error over the recap',
@@ -146,9 +146,9 @@ describe('activity line', () => {
   });
 
   it('counts gate, merge and thinking time', () => {
-    expect(activityLine(running({ phase: 'gate' }), NOW)).toBe('检查中，3 分');
-    expect(activityLine(running({ phase: 'merging' }), NOW)).toBe('合并中，3 分');
-    expect(activityLine(running({ phase: 'thinking' }), NOW)).toBe('思考中，3 分');
+    expect(activityLine(running({ phase: 'gate' }), NOW)).toBe('检查中，3 分钟');
+    expect(activityLine(running({ phase: 'merging' }), NOW)).toBe('合并中，3 分钟');
+    expect(activityLine(running({ phase: 'thinking' }), NOW)).toBe('思考中，3 分钟');
   });
 
   it('shows the first blocker of an idle task and nothing for an idle task without one', () => {
@@ -161,8 +161,8 @@ describe('activity line', () => {
 
 describe('phase text', () => {
   it('pairs the phase with how long it has lasted', () => {
-    expect(phaseText(running({ phase: 'thinking' }), NOW)).toBe('思考中，3 分');
-    expect(phaseText(running({ phase: 'waiting_approval' }), NOW)).toBe('等待审批，3 分');
+    expect(phaseText(running({ phase: 'thinking' }), NOW)).toBe('思考中，3 分钟');
+    expect(phaseText(running({ phase: 'waiting_approval' }), NOW)).toBe('待批准，3 分钟');
   });
 
   it('falls back to the status word without activity', () => {
@@ -284,7 +284,7 @@ describe('display status', () => {
     const failedTurn = activity({ phase: 'idle', turn_error: 'boom' });
     const discarded = task('discarded', { activity: failedTurn });
     expect(displayStatus(discarded)).toBe('discarded');
-    expect(phaseText(discarded, NOW)).toBe('已丢弃，3 分');
+    expect(phaseText(discarded, NOW)).toBe('已丢弃，3 分钟');
     expect(displayStatus(task('done', { activity: failedTurn }))).toBe('done');
   });
 });
@@ -292,7 +292,7 @@ describe('display status', () => {
 describe('cards read from the board', () => {
   it('words an idle task by the status its icon shows', () => {
     expect(phaseText(task('ready', { activity: activity({ phase: 'idle' }) }), NOW)).toBe(
-      '待合并，3 分',
+      '待合并，3 分钟',
     );
   });
 

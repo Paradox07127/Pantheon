@@ -16,6 +16,7 @@ import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
 import { ArrowLeft, Check, ChevronRight, ListFilter, Play, X } from 'lucide-react';
+import { DiffCounts } from '../../components/DiffCounts';
 import { ReadStatus } from '../../components/ReadStatus';
 import { SessionStateIcon, sessionStateLabel } from '../../components/SessionStateIcon';
 import { Skeleton as Placeholder } from '../../components/Skeleton';
@@ -54,7 +55,8 @@ import { SCREEN_NAMES } from '../../screens';
 import { BREAK_SHARE } from '../../lib/time-axis';
 import { Failure, Skeleton } from '../board/BoardScreen';
 import { Empty, useSize } from '../board/Charts';
-import { durationText, runtimeName, tokenText, whenText } from '../board/panels-model';
+import { dayText } from '../../lib/time-text';
+import { durationText, runtimeName, tokenText } from '../board/panels-model';
 import { ActivityList, eventText, eventTone, KIND_TEXT } from './ActivityList';
 import {
   dayLabel,
@@ -73,7 +75,10 @@ import {
   presetWindow,
   replayTotals,
   ROW_HEIGHT,
-  isTraceEvent,
+  keepTraceEvent,
+  namedLanes,
+  sessionPurposes,
+  subagentName,
   stripBars,
   traceAxis,
   traceEvents,
@@ -113,7 +118,7 @@ import { AnalyzeMenu } from './AnalyzeMenu';
 import { RuntimePanel } from './RuntimeDiagnostics';
 import { TraceTimeChart } from './TraceTimeChart';
 import { EventTable } from './EventTable';
-import { clockText, LaneLegend, LaneOverlay } from './LaneOverlay';
+import { eventClock, LaneLegend, LaneOverlay } from './LaneOverlay';
 import './trace.css';
 import './trace-bar.css';
 
@@ -222,9 +227,9 @@ const SHARES = Array.from({ length: TICKS }, (_, i) => i / (TICKS - 1));
 
 /** The head's moments to the minute, or to the second when two neighbours share a minute; a repeat stays blank. */
 function tickTexts(times: readonly number[], end: number): string[] {
-  const minutes = times.map((time) => whenText(time, end));
+  const minutes = times.map((time) => dayText(time, end, { time: true }));
   const texts = minutes.some((text, i) => text === minutes[i - 1])
-    ? times.map((time) => clockText(time, end))
+    ? times.map((time) => eventClock(time, end))
     : minutes;
   return texts.map((text, i) => (text === texts[i - 1] ? '' : text));
 }
@@ -572,7 +577,7 @@ function TraceView({
     key: projectId && `trace:${projectId}`,
     project_id: projectId,
     after: 0,
-    keep: isTraceEvent,
+    keep: keepTraceEvent,
   });
   const sessions = useSessionList(projectId);
   const events = useMemo(() => history.events && traceEvents(history.events), [history.events]);
@@ -586,7 +591,15 @@ function TraceView({
   } | null>(null);
   if (trace.data && (kept?.data !== trace.data || kept.scope !== scope))
     setKept({ scope, data: trace.data, readAt: trace.readAt });
-  const shownTrace = trace.data ?? (trace.loading && kept?.scope === scope ? kept.data : null);
+  const readTrace = trace.data ?? (trace.loading && kept?.scope === scope ? kept.data : null);
+  const purposes = useMemo(
+    () => (history.events ? sessionPurposes(history.events) : null),
+    [history.events],
+  );
+  const shownTrace = useMemo(
+    () => (readTrace && purposes ? namedLanes(readTrace, purposes, runtimeName) : readTrace),
+    [readTrace, purposes],
+  );
   const { reload: reloadTrace } = trace;
   const { reload: reloadHeat } = heat;
   const clock = useRef({ now, from: bounds.from });
@@ -837,7 +850,10 @@ function TraceView({
     windowEnd !== null && windowStart !== null && Number.isFinite(windowStart)
       ? t(
           { id: 'trace.bar.window', defaultMessage: '{from} to {to}' },
-          { from: whenText(windowStart, windowEnd), to: whenText(windowEnd, windowEnd) },
+          {
+            from: dayText(windowStart, windowEnd, { time: true }),
+            to: dayText(windowEnd, windowEnd, { time: true }),
+          },
         )
       : null;
 
@@ -1653,7 +1669,7 @@ function Replayer({
           id: e.id,
           at: e.at,
           tone: eventTone(e),
-          label: listText(clockText(e.at, full.to), titleOf(e.sessionId), eventText(e)),
+          label: listText(eventClock(e.at, full.to), titleOf(e.sessionId), eventText(e)),
         })),
     [events, view, full.to, titleOf],
   );
@@ -1851,7 +1867,7 @@ const Row = memo(function Row({
               { id: 'trace.step.bar', defaultMessage: '{name} {when}, {duration}, {status}' },
               {
                 name: text,
-                when: whenText(span.start, view.to),
+                when: dayText(span.start, view.to, { time: true }),
                 duration: durationText(end - span.start),
                 status: STATUS_TEXT[span.status],
               },
@@ -1950,7 +1966,7 @@ const Row = memo(function Row({
         <div className="trc-line">
           <span className="trc-sa" aria-hidden={bar ? true : undefined}>
             <i className="trc-st" data-status={agent.status} />
-            <span>{agent.name}</span>
+            <span>{subagentName(agent.name)}</span>
           </span>
           <span className="trc-track">
             {axis.breaks.map((gap) => (
@@ -1975,8 +1991,8 @@ const Row = memo(function Row({
                   aria-label={t(
                     { id: 'trace.step.bar', defaultMessage: '{name} {when}, {duration}, {status}' },
                     {
-                      name: agent.name,
-                      when: whenText(agent.start, view.to),
+                      name: subagentName(agent.name),
+                      when: dayText(agent.start, view.to, { time: true }),
                       duration: durationText(end - agent.start),
                       status: STATUS_TEXT[agent.status],
                     },
@@ -1988,7 +2004,7 @@ const Row = memo(function Row({
           </span>
         </div>
         <span className="trc-now" data-kind={busy ? 'subagent' : undefined}>
-          {busy && agent.name}
+          {busy && subagentName(agent.name)}
         </span>
       </div>
     );
@@ -1997,7 +2013,7 @@ const Row = memo(function Row({
   const start =
     turn.start === null
       ? t({ id: 'trace.turn.unknownStart', defaultMessage: 'Unknown' })
-      : whenText(turn.start, view.to);
+      : dayText(turn.start, view.to, { time: true });
   const end = turn.end ?? (turn.status === 'running' ? view.to : null);
   const length = turn.start === null || end === null ? null : durationText(end - turn.start);
   return (
@@ -2200,8 +2216,8 @@ function Strip({
                 window: label,
                 llm: trace.stats.llm,
                 tool: trace.stats.tool,
-                from: whenText(range.from, full.to),
-                to: whenText(range.to, full.to),
+                from: dayText(range.from, full.to, { time: true }),
+                to: dayText(range.to, full.to, { time: true }),
               },
             )
           : t(
@@ -2259,7 +2275,7 @@ function Strip({
         aria-valuemin={full.from}
         aria-valuemax={to - MIN_VIEW_MS}
         aria-valuenow={from}
-        aria-valuetext={whenText(from, full.to)}
+        aria-valuetext={dayText(from, full.to, { time: true })}
         style={{ left: pct((from - full.from) / span) }}
         onKeyDown={edgeKey('from', from)}
       />
@@ -2271,7 +2287,7 @@ function Strip({
         aria-valuemin={from + MIN_VIEW_MS}
         aria-valuemax={full.to}
         aria-valuenow={to}
-        aria-valuetext={whenText(to, full.to)}
+        aria-valuetext={dayText(to, full.to, { time: true })}
         style={{ right: pct((full.to - to) / span) }}
         onKeyDown={edgeKey('to', to)}
       />
@@ -2626,12 +2642,7 @@ function Analysis({
                     {c.subject}
                   </span>
                   <span className="trc-an-d">
-                    <span className="df-add" data-zero={!c.added || undefined}>
-                      +{c.added}
-                    </span>
-                    <span className="df-del" data-zero={!c.removed || undefined}>
-                      −{c.removed}
-                    </span>
+                    <DiffCounts additions={c.added} deletions={c.removed} />
                   </span>
                 </li>
               ))}

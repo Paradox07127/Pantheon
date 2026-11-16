@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import {
   Archive,
   Check,
@@ -40,7 +41,8 @@ import { cachedQuery, storeQuery } from '../../data/query-cache';
 import { useImprovements } from '../../data/workflow-policy';
 import { shortId } from '../../data/format';
 import { sessionTitle } from '../../data/transcript';
-import { currentLocale, t } from '../../i18n';
+import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import {
   AgentContextDialog,
@@ -52,6 +54,7 @@ import {
 import { keyVersions } from './memory-versions';
 import { NewMemoryDialog, saveMemory } from './NewMemoryDialog';
 import { kindText, PendingCard } from './PendingCard';
+import { EmptyState } from '../../components/EmptyState';
 import './agent-context.css';
 import './memory-overview.css';
 
@@ -117,28 +120,6 @@ function Status({ tone }: { tone: Tone }) {
       {tone === 'bad' && <X />}
     </span>
   );
-}
-
-function Failed({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="acx-alert" role="alert">
-      <Status tone="bad" />
-      <span className="acx-err">{message}</span>
-      <button type="button" className="btn sm" onClick={onRetry}>
-        <RefreshCw aria-hidden />
-        {t({ id: 'memory.agent.retry', defaultMessage: 'Retry' })}
-      </button>
-    </div>
-  );
-}
-
-function clockText(at: number, now: number): string {
-  const today = new Date(at).toDateString() === new Date(now).toDateString();
-  return new Intl.DateTimeFormat(currentLocale(), {
-    ...(today
-      ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
-      : { month: '2-digit', day: '2-digit' }),
-  }).format(at);
 }
 
 const CHANGE = {
@@ -247,7 +228,7 @@ function Usage({
         <span className="acx-err">{contextError.message}</span>
       </div>
     );
-  if (!directory && directoryError) return <Failed message={directoryError} onRetry={onRetry} />;
+  if (!directory && directoryError) return <LoadError message={directoryError} onRetry={onRetry} />;
   if (!context || !directory)
     return (
       <div className="acx-use" aria-busy="true">
@@ -353,7 +334,9 @@ function DocumentState({
           <span className="acx-dot" data-tone="ok" />
           {t({ id: 'memory.agent.documentReady', defaultMessage: 'Updated' })}
         </span>
-        {done?.completed_at && <span className="acx-num">{clockText(done.completed_at, now)}</span>}
+        {done?.completed_at && (
+          <span className="acx-num">{dayText(done.completed_at, now, { time: true })}</span>
+        )}
       </span>
     );
   }
@@ -410,11 +393,12 @@ function Recent({ data, actions }: { data: OverviewMemoryData; actions: Overview
         aria-busy={data.recent || data.recentError ? undefined : true}
       >
         {!data.recent && data.recentError ? (
-          <Failed message={data.recentError} onRetry={actions.onRetry} />
+          <LoadError message={data.recentError} onRetry={actions.onRetry} />
         ) : data.recent?.length === 0 ? (
-          <span className="acx-none">
-            {t({ id: 'memory.agent.noRecent', defaultMessage: 'No changes yet' })}
-          </span>
+          <EmptyState
+            inline
+            title={t({ id: 'memory.agent.noRecent', defaultMessage: 'No changes yet' })}
+          />
         ) : data.recent ? (
           data.recent.map((r) => (
             <button
@@ -423,7 +407,7 @@ function Recent({ data, actions }: { data: OverviewMemoryData; actions: Overview
               className="acx-ch"
               onClick={() => actions.onEntry(r.memory_id)}
             >
-              <span className="mu acx-num">{clockText(r.at, data.now)}</span>
+              <span className="mu acx-num">{dayText(r.at, data.now, { time: true })}</span>
               {changeOf(r).icon}
               <span className="acx-lbl">{changeOf(r).label}</span>
               <span className={r.kind === 'archived' ? 'acx-cut mu' : 'acx-cut'}>{r.title}</span>
@@ -488,7 +472,7 @@ function Pending({
         )}
         {row(experiencesText(), candidates, actions.onLearned)}
       </div>
-      {pendingError && <Failed message={pendingError} onRetry={actions.onRetry} />}
+      {pendingError && <LoadError message={pendingError} onRetry={actions.onRetry} />}
       {pending.length > 0 && (
         <div className="mo-pend">
           {pending.map(({ item, versions, author, rejected, overBudget, busy }) => (

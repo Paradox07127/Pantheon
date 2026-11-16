@@ -345,7 +345,9 @@ describe('attachment strip', () => {
     expect(uploading.props['aria-label']).toBe(
       t({ id: 'sessions.composer.attachmentUploading', defaultMessage: '' }, { name: 'a.txt' }),
     );
-    expect(nodes(uploading).some((n) => n.props.className?.split(' ').includes('sk'))).toBe(true);
+    expect(
+      nodes(uploading).some((n) => typeof n.type === 'function' && n.type.name === 'Skeleton'),
+    ).toBe(true);
     expect(text(uploading)).not.toContain('%');
     expect(failed.props['aria-label']).toBe(
       t({ id: 'sessions.composer.attachmentFailed', defaultMessage: '' }, { name: 'b.txt' }),

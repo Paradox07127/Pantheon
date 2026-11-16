@@ -184,7 +184,7 @@ export function AppearancePage() {
             </RadioGroup>
           </Row>
           {active?.backdrop !== undefined && (
-            <Row label={backdrop}>
+            <Row label={backdrop} settingId="appearance.backdrop">
               <input
                 type="checkbox"
                 className="ps-sw"
@@ -583,7 +583,7 @@ function SavedThemeRow({ id, label }: { id: string; label: string }) {
     else toast({ title: failureText(result.error), kind: 'failure' });
   };
   return (
-    <Row label={label}>
+    <Row label={label} settingId="appearance.savedTheme">
       <button type="button" className="btn sm" onClick={() => void exportTheme()}>
         {t({ id: 'settings.appearance.exportTheme', defaultMessage: 'Export' })}
       </button>

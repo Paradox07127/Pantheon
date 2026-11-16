@@ -10,15 +10,21 @@ interface EmptyAction {
   onClick: () => void;
 }
 
-interface EmptyStateProps {
-  /** A 20px status glyph or icon. */
-  graphic: ReactNode;
-  title: string;
-  note?: string;
-  action?: EmptyAction;
-}
+type EmptyStateProps =
+  | {
+      inline?: false;
+      /** A 20px status glyph or icon. */
+      graphic: ReactNode;
+      title: string;
+      note?: string;
+      action?: EmptyAction;
+    }
+  /** One line of text in a panel, table or list that has nothing to show. */
+  | { inline: true; title: string };
 
-export function EmptyState({ graphic, title, note, action }: EmptyStateProps) {
+export function EmptyState(props: EmptyStateProps) {
+  if (props.inline) return <div className="es-in">{props.title}</div>;
+  const { graphic, title, note, action } = props;
   return (
     <div className="es">
       <span className="es-g">{graphic}</span>

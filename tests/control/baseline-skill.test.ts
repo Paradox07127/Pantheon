@@ -13,11 +13,11 @@ it.each([
   expect(skill).toMatch(/project_intro_submit[\s\S]*before[\s\S]*project_baseline_submit/);
   expect(skill).toContain('Do not draw in the conversation');
   if (settings.visuals) {
-    expect(skill).toContain('Call visual_draw');
-    expect(skill).not.toContain('Do not call visual_draw');
+    expect(skill).toContain('Call draw');
+    expect(skill).not.toContain('Do not call draw');
   } else {
-    expect(skill).toContain('Do not call visual_draw');
-    expect(skill).not.toContain('Call visual_draw');
+    expect(skill).toContain('Do not call draw');
+    expect(skill).not.toContain('Call draw');
   }
   for (const local of ['.notes', '/Users/', '~/']) expect(skill).not.toContain(local);
 });

@@ -10,6 +10,7 @@ import { t } from '../../i18n';
 import { useShell } from '../../store';
 import { readFailed } from './shared';
 import { TaskRow } from './TaskRow';
+import { EmptyState } from '../../components/EmptyState';
 import './monitor.css';
 
 const NO_TASKS: readonly SessionTask[] = [];
@@ -95,12 +96,13 @@ export function MonitorPanel({ sessionId }: { sessionId: string }) {
     <div className="ss-mon">
       {readFailed(read)}
       {read.data && running.length === 0 && finished.length === 0 && (
-        <div className="empty">
-          {t({
+        <EmptyState
+          inline
+          title={t({
             id: 'sessions.panel.monitor.empty',
             defaultMessage: 'No agent or background command is running in this session.',
           })}
-        </div>
+        />
       )}
       {group(t({ id: 'sessions.panel.monitor.runningGroup', defaultMessage: 'Running' }), running)}
       {group(

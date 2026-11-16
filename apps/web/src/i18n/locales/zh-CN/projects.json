@@ -2,7 +2,7 @@
   "projects.brief.goalRequired": "目标必填",
   "projects.brief.unchanged": "没有改动",
   "projects.workstream.done": "已完成",
-  "projects.workstream.running": "进行中",
+  "projects.workstream.running": "运行中",
   "projects.workstream.next": "下一步",
   "projects.workstream.blocked": "已阻塞",
   "projects.workstream.missing": "{count, plural, other {# 项未找到}}",
@@ -96,6 +96,7 @@
   "projects.baseline.confirmBaseline": "确认摸底",
   "projects.baseline.roundLimit": "已到轮数上限，第 {round} 轮，共 {limit} 轮",
   "projects.baseline.answered": "已答 {answered}/{total}",
+  "projects.baseline.answerBar": "答题",
   "projects.baseline.roundRow": "第 {round} 轮",
   "projects.baseline.roundQuestions": "{count, plural, other {# 个问题}}",
   "projects.baseline.decidedForYou": "已替你决定",
@@ -148,7 +149,7 @@
   "projects.add.footComplete": "补全",
   "projects.add.footAdd": "添加",
   "projects.add.footClose": "关闭",
-  "projects.add.reading": "读取仓库 {count, plural, other {# 秒}}",
+  "projects.add.reading": "读取仓库 {duration}",
   "projects.add.another": "换一个文件夹",
-  "projects.add.skipScan": "跳过扫描"
+  "projects.add.skipBaseline": "跳过基线"
 }

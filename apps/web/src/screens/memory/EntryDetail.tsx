@@ -12,6 +12,7 @@ import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { t } from '../../i18n';
 import { kindIcon } from './GraphLegend';
 import { diffLines } from '../../lib/text-diff';
+import { dayText } from '../../lib/time-text';
 import './entry-detail.css';
 
 export type EntryItem = MemoryItem & {
@@ -87,37 +88,6 @@ const sourceStates: Record<string, { tone: Tone | 'bad'; text: () => string }> =
 
 const versionText = (n: number) =>
   t({ id: 'memory.detail.version', defaultMessage: 'Version {n}' }, { n });
-
-const pad = (n: number) => String(n).padStart(2, '0');
-const dayOf = (d: Date) => d.toDateString();
-function dateText(d: Date, today: Date) {
-  const date = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  return d.getFullYear() === today.getFullYear() ? date : `${d.getFullYear()}-${date}`;
-}
-/** Today and yesterday with the time, older days by date. */
-function stamp(ms: number) {
-  const d = new Date(ms);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (dayOf(d) === dayOf(today))
-    return t({ id: 'memory.detail.today', defaultMessage: 'Today {time}' }, { time });
-  if (dayOf(d) === dayOf(yesterday))
-    return t({ id: 'memory.detail.yesterday', defaultMessage: 'Yesterday {time}' }, { time });
-  return dateText(d, today);
-}
-/** The time alone today, then yesterday, then the date. */
-function shortStamp(ms: number) {
-  const d = new Date(ms);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (dayOf(d) === dayOf(today)) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (dayOf(d) === dayOf(yesterday))
-    return t({ id: 'memory.detail.yesterdayShort', defaultMessage: 'Yesterday' });
-  return dateText(d, today);
-}
 
 export function EntryDetail({
   item,
@@ -228,7 +198,7 @@ export function EntryDetail({
           {item.committed_at !== undefined && (
             <>
               <dt>{t({ id: 'memory.detail.committed', defaultMessage: 'In effect' })}</dt>
-              <dd className="ed-num">{stamp(item.committed_at)}</dd>
+              <dd className="ed-num">{dayText(item.committed_at, Date.now(), { time: true })}</dd>
             </>
           )}
           {draft && (
@@ -237,7 +207,9 @@ export function EntryDetail({
               <dd>
                 {author && <RuntimeGlyph runtime={author.runtime} size={14} />}
                 {author && <span className="ed-rt">{author.title}</span>}
-                <span className="ed-mu ed-num">{shortStamp(item.created_at)}</span>
+                <span className="ed-mu ed-num">
+                  {dayText(item.created_at, Date.now(), { time: true })}
+                </span>
               </dd>
               <dt>{t({ id: 'memory.detail.basedOn', defaultMessage: 'Based on' })}</dt>
               <dd>
@@ -365,7 +337,9 @@ export function EntryDetail({
               <span className="chip ed-st" data-st={stateTone(v)}>
                 {stateText(v)}
               </span>
-              <span className="ed-ct">{stamp(v.committed_at ?? v.created_at)}</span>
+              <span className="ed-ct">
+                {dayText(v.committed_at ?? v.created_at, Date.now(), { time: true })}
+              </span>
             </button>
           );
         })}

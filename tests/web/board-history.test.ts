@@ -530,7 +530,7 @@ describe('history view', () => {
     expect(text(progress)).toContain(say('milestones', { reached: 0, total: 1 }));
     const bar = find(progress, (n) => n.props.className === 'bd-hs-bar');
     expect(bar.props.role).toBe('img');
-    expect(bar.props['aria-label']).toBe('4 个任务：2 已合并，1 运行中，1 等待审批');
+    expect(bar.props['aria-label']).toBe('4 个任务：2 已合并，1 运行中，1 待批准');
     expect(nodes(bar).filter((n) => n.type === 'i')).toHaveLength(3);
   });
 

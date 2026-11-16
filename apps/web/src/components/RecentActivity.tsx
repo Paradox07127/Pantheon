@@ -8,6 +8,7 @@ import { isActivityEvent, recentActivity, type ActivityKind } from '../data/rece
 import type { SessionTurn } from '../data/transcript';
 import { t } from '../i18n';
 import { sessionRow } from '../screens/sessions/model';
+import { LoadError } from './LoadError';
 import { MergeBlockedGlyph, StateGlyph } from './SessionStateIcon';
 import './recent-activity.css';
 
@@ -76,14 +77,7 @@ export function RecentActivity({
   const byId = new Map(listed.map((s) => [s.id, s]));
   return (
     <>
-      {history.error && (
-        <div className="tr-fail act-fail" role="alert">
-          <span title={history.error}>{history.error}</span>
-          <button type="button" className="btn" onClick={history.reload}>
-            {t({ id: 'components.recentActivity.retry', defaultMessage: 'Retry' })}
-          </button>
-        </div>
-      )}
+      {history.error && <LoadError message={history.error} onRetry={history.reload} />}
       <ul className="act-list">
         {recent.map((row) => {
           const kind = KINDS[row.kind];

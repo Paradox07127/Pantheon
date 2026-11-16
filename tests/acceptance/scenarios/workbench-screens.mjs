@@ -284,7 +284,7 @@ function measureReadability() {
     counts[kind] += 1;
   };
   for (const el of document.body.querySelectorAll('*')) {
-    if (el.closest('[disabled], [aria-disabled="true"], .sk')) continue;
+    if (el.closest('[disabled], [aria-disabled="true"], .skel')) continue;
     const text = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
     if (!text) continue;
     const range = document.createRange();

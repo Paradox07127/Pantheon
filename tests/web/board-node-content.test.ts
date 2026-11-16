@@ -18,6 +18,7 @@ import { TaskCard } from '@/screens/board/FlowNode';
 import { COMPACT_ZOOM, MIN_USER_ZOOM } from '@/screens/board/flow-layout';
 import { NodeActions, type NodeActionContext } from '@/screens/board/NodeActions';
 import type { NeedItem } from '@/screens/board/frame-model';
+import { TASK_STATE_TONE } from '@/screens/board/status';
 import { useShell } from '@/store';
 
 type Task = BoardModel['tasks'][number];
@@ -256,7 +257,7 @@ describe('flow node external review', () => {
       ended_at: NOW - 10 * 60_000,
       findings: { blocking: 0, other: 0 },
     });
-    expect(text(finished)).toBe('50 分');
+    expect(text(finished)).toBe('50 分钟');
     // A second round started after the first ended keeps the first's end time.
     const running = time({
       rounds: 2,
@@ -264,7 +265,7 @@ describe('flow node external review', () => {
       started_at: NOW - 20 * 60_000,
       ended_at: NOW - 30 * 60_000,
     });
-    expect(text(running)).toBe('已过 20 分');
+    expect(text(running)).toBe('已过 20 分钟');
     expect(time({ rounds: 1, verdict: 'pending' })).toBeUndefined();
   });
 });
@@ -283,6 +284,17 @@ describe('flow node size by zoom', () => {
     const dot = tree(task({ state: 'merged' }));
     expect(byClass(dot, 'bd-npill')).toBeUndefined();
     expect(byClass(dot, 'bd-ndot')!.props['data-look']).toBe('done');
+  });
+
+  it('colours a node by the same table as its state icon, gating and blocked included', () => {
+    viewport.zoom = 0.1;
+    for (const state of ['gating', 'blocked', 'awaiting_acceptance', 'waiting_upstream'] as const) {
+      const colours = Object.values(byClass(tree(task({ state })), 'bd-ndot')!.props.style ?? {});
+      expect(colours).toEqual([`var(${TASK_STATE_TONE[state]})`]);
+    }
+    viewport.zoom = 1;
+    const card = byClass(tree(task({ state: 'blocked' })), 'bd-nd')!;
+    expect(Object.values(card.props.style ?? {})).toEqual([`var(${TASK_STATE_TONE.blocked})`]);
   });
 
   it('keeps the height of its card when zoomed out, so the measured layout stays', () => {

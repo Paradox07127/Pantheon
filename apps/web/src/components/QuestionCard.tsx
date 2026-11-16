@@ -1,4 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
+import { Check } from 'lucide-react';
 import type { ApprovalQuestion, BaselinePreview } from '@pantheon/domain';
 import { useDrafts, type Answers } from '../data/drafts';
 import { t } from '../i18n';
@@ -49,9 +50,7 @@ export type QuestionCardProps = CommonProps &
       }
   );
 
-const PREVIEW_NODE = { w: 96, h: 24 } as const;
-
-/** An option's picture: a small task graph, or a mermaid chart. */
+/** An option's picture: its tasks as numbered steps in graph order, or a mermaid chart. */
 function optionPreview(preview: BaselinePreview) {
   if (preview.kind === 'mermaid')
     return (
@@ -63,7 +62,7 @@ function optionPreview(preview: BaselinePreview) {
         <MermaidDiagram spec={preview.spec} height={96} />
       </span>
     );
-  const laid = archLayout(preview.spec, PREVIEW_NODE);
+  const steps = [...archLayout(preview.spec).nodes].sort((a, b) => a.x - b.x || a.y - b.y);
   return (
     <span
       className="qc-pv"
@@ -79,27 +78,13 @@ function optionPreview(preview: BaselinePreview) {
         },
       )}
     >
-      <span className="qc-gp" style={{ width: laid.width, height: laid.height }}>
-        <svg
-          width={laid.width}
-          height={laid.height}
-          viewBox={`0 0 ${laid.width} ${laid.height}`}
-          aria-hidden="true"
-        >
-          {laid.edges.map((edge) => (
-            <path key={`${edge.from}:${edge.to}`} d={edge.d} />
-          ))}
-        </svg>
-        {laid.nodes.map((node) => (
-          <span
-            key={node.id}
-            className="qc-gn"
-            style={{ left: node.x, top: node.y, width: PREVIEW_NODE.w, height: PREVIEW_NODE.h }}
-          >
-            {node.label}
-          </span>
+      <ol className="qc-steps">
+        {steps.map((node) => (
+          <li key={node.id} title={node.label}>
+            <span>{node.label}</span>
+          </li>
         ))}
-      </span>
+      </ol>
     </span>
   );
 }
@@ -163,15 +148,19 @@ export function QuestionCard(props: QuestionCardProps) {
 
   const ask = (q: CardQuestion, i: number) => {
     const multi = q.multiSelect;
+    // A multiple choice key is a box that shows a tick once picked; a single choice key is round.
+    const key = (k: number, on = false) => (
+      <span className="qc-k" data-multi={multi || undefined} aria-hidden="true">
+        {multi && on ? <Check /> : KEYS[k]}
+      </span>
+    );
     const own = {
       value: typed[i] ?? '',
       onChange: (e: { target: { value: string } }) => write(i, e.target.value),
     };
     const other = q.other !== false && (
       <label className="qc-other">
-        <span className="qc-k" aria-hidden="true">
-          {KEYS[q.options.length]}
-        </span>
+        {key(q.options.length)}
         <input
           className="qc-in"
           type={q.secret ? 'password' : 'text'}
@@ -191,7 +180,11 @@ export function QuestionCard(props: QuestionCardProps) {
     );
     const role = multi ? 'checkbox' : 'radio';
     return (
-      <div key={q.question} className="qc-ask">
+      <div
+        key={q.question}
+        className="qc-ask"
+        data-open={(!decided[i] && answer(i) === '') || undefined}
+      >
         <p className="qc-q">
           <StateGlyph name="question" />
           <span>{q.question}</span>
@@ -209,9 +202,7 @@ export function QuestionCard(props: QuestionCardProps) {
                   onClick={() => pick(i, o.label, multi)}
                 >
                   <span className="qc-dh">
-                    <span className="qc-k" aria-hidden="true">
-                      {KEYS[k]}
-                    </span>
+                    {key(k, picked[i]?.includes(o.label))}
                     <span className="qc-l">{o.label}</span>
                     {recommended(q, o.label, 'chip qc-drec')}
                   </span>
@@ -233,9 +224,7 @@ export function QuestionCard(props: QuestionCardProps) {
                 aria-checked={picked[i]?.includes(o.label) ?? false}
                 onClick={() => pick(i, o.label, multi)}
               >
-                <span className="qc-k" aria-hidden="true">
-                  {KEYS[k]}
-                </span>
+                {key(k, picked[i]?.includes(o.label))}
                 <span className="qc-l">{o.label}</span>
                 {recommended(q, o.label, 'chip qc-rec')}
                 {o.description && <span className="qc-d">{o.description}</span>}

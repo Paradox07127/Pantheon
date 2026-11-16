@@ -2,6 +2,7 @@ import { useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEven
 import type { ChangeStory } from '@pantheon/domain';
 import type { RepoCommit, WorkbenchSession } from '@pantheon/protocol';
 import { Copy } from 'lucide-react';
+import { DiffCounts } from '../../../components/DiffCounts';
 import { DiffStat } from '../../../components/DiffReview';
 import { SessionStateIcon, sessionStateTone } from '../../../components/SessionStateIcon';
 import { useChangeStories } from '../../../data/change-story';
@@ -456,12 +457,7 @@ function CommitSummary({
                 </span>
                 {f.additions !== null && (
                   <span className="mono rh-n">
-                    <span className="df-add" data-zero={f.additions === 0 || undefined}>
-                      +{f.additions}
-                    </span>
-                    <span className="df-del" data-zero={f.deletions === 0 || undefined}>
-                      −{f.deletions}
-                    </span>
+                    <DiffCounts additions={f.additions} deletions={f.deletions} />
                   </span>
                 )}
               </li>

@@ -195,7 +195,7 @@ describe('session bar', () => {
       at((n) => n.type === 'button' && text(n).includes('Lead plan')),
       at((n) => n.type === 'button' && n.props['aria-label'] === zh('sessions.screen.editTitle')),
       at((n) => typeof n.type === 'string' && text(n) === 'main'),
-      at((n) => typeof n.type === 'string' && text(n) === '+61'),
+      at((n) => typeof n.type === 'function' && text(n) === '+61 −19'),
       at((n) => n.props.role === 'img' && n.props['aria-label'] === '检查通过 2 / 3'),
       at((n) => typeof n.type === 'function' && n.type.name === 'RunClock'),
       at((n) => n.props.role === 'toolbar'),

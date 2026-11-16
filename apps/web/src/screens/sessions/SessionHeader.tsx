@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import type { SessionTurn } from '@pantheon/domain';
 import type { BridgeResult, WorkbenchSession } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { LeadCrown } from '../../components/LeadCrown';
 import {
   GateMark,
@@ -49,11 +50,11 @@ import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { revealText } from '../../lib/platform-text';
 import { shortcutKeys, useShortcut } from '../../lib/shortcuts';
+import { durationText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { tokenText } from '../board/panels-model';
 import { laneStats } from '../trace/model';
 import {
-  clockText,
   gateFailing,
   gateOutcome,
   inspectorTabs,
@@ -381,12 +382,7 @@ export function SessionHeader({
           )}
         >
           <span className="sh-diff" tabIndex={0}>
-            <span className="sh-add" data-zero={changes.additions === 0 || undefined}>
-              {`+${changes.additions}`}
-            </span>
-            <span className="sh-del" data-zero={changes.deletions === 0 || undefined}>
-              {`−${changes.deletions}`}
-            </span>
+            <DiffCounts additions={changes.additions} deletions={changes.deletions} />
           </span>
         </Tip>
       )}
@@ -628,7 +624,7 @@ const working = (s: WorkbenchSession): boolean =>
 /** The session's time so far; only it re-renders as the seconds pass. */
 function RunClock({ since }: { since: number }) {
   useSecondTick(true);
-  return <span className="sh-clock">{clockText(Date.now() - since)}</span>;
+  return <span className="sh-clock">{durationText(Date.now() - since)}</span>;
 }
 
 /** The session this one was opened or forked from, before the title; it opens that session. */

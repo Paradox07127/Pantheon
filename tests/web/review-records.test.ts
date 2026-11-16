@@ -157,8 +157,8 @@ describe('analysis records', () => {
     const { h, onFinding } = card(review());
     const rows = nodes(h.value).filter((n) => n.props.className === 'rvr-rf');
     expect(rows.map((row) => text(row.props.children))).toEqual([
-      '等批准久session of lane-f-approval6 分',
-      '门禁慢session of lane-f-gate2 分',
+      '等批准久session of lane-f-approval6 分钟',
+      '门禁慢session of lane-f-gate2 分 5 秒',
     ]);
     rows[1]!.props.onClick();
     expect(onFinding).toHaveBeenCalledWith(findings[1]);

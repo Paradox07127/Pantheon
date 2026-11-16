@@ -111,7 +111,7 @@ export function inPlaceSessionSpec(ctx: ControlContext, session: Session): Sessi
     role: 'writer',
     control_instructions: [
       `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
-      ...(session.task ? [workerInstructions(ctx, session.task)] : []),
+      ...(session.task ? [workerInstructions(ctx, session.task, questionTool)] : []),
       ...(questionTool
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,

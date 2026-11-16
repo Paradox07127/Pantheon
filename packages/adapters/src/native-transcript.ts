@@ -51,7 +51,8 @@ const CODEX_TYPES = new Set([
   'token_usage_record',
   'compacted',
 ]);
-const COMMIT_LINE = /^\[[^\]\s]+(?: \([^)]*\))? ([0-9a-f]{7,40})\]/m;
+// A session worktree is on a detached HEAD, where git prints "[detached HEAD <sha>]".
+const COMMIT_LINE = /^\[(?:detached HEAD|[^\]\s]+)(?: \([^)]*\))? ([0-9a-f]{7,40})\]/m;
 
 function parse(line: string, known: Set<string>, unknown: Record<string, number>): Row | null {
   let row: unknown;

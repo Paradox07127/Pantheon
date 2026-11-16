@@ -10,7 +10,7 @@ import {
 import { storeQuery } from './data/query-cache';
 import { readQuery } from './data/workbench-sessions';
 import type { PanelTab, SessionGroupKey } from './screens/sessions/model';
-import { useSettingsView } from './screens/settings/view';
+import { navPage, useSettingsView } from './screens/settings/view';
 import { shownWindow } from './shell/window-kind';
 
 export type Screen =
@@ -402,7 +402,16 @@ export const useShell = create<ShellState>((set) => ({
     arrive(true);
   },
   // The settings open as a dialog over the current screen, outside history, the same whichever project is current.
-  openSettings: () => useSettingsView.setState({ open: true }),
+  openSettings: (projectId) =>
+    useSettingsView.setState((v) => {
+      // Only the default page yields to the project's; openSettingsPage has set any other page before this call.
+      const page = projectId && v.page === 'general' ? 'projects' : v.page;
+      return {
+        open: true,
+        page,
+        ...(projectId && navPage(page) === 'projects' && { detail: projectId }),
+      };
+    }),
   openProject: (projectId) => navigate(restore({ projectId, ...readPlace(projectId) }), projectId),
   openProjectSession: (projectId, sessionId) =>
     navigate(

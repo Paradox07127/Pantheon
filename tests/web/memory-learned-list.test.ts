@@ -145,9 +145,7 @@ describe('learned list', () => {
       `<span class="lr-sc"><span>${zh('data.workflowPolicy.wholeProject')}</span></span>`,
     );
     expect(trial).toContain('<span class="lr-tm">第 3 天</span>');
-    expect(renderToStaticMarkup(rows(tree)[3]!)).toContain(
-      '<span class="lr-tm">11 月 6 日起</span>',
-    );
+    expect(renderToStaticMarkup(rows(tree)[3]!)).toContain('<span class="lr-tm">11月6日起</span>');
   });
 
   it('marks the selected row and selects the row that is clicked', () => {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { RefreshCw, SquarePen, SquareTerminal } from 'lucide-react';
 import type { RuntimeStatus } from '@pantheon/protocol';
 import { Equalizer } from '../../components/Equalizer';
-import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
+import { compareRuntimes, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { KeyHint } from '../../components/Shortcuts';
 import { TopBar } from '../../components/TopBar';
 import { useNow } from '../../data/needs-you';
@@ -11,6 +11,7 @@ import {
   unavailableReason,
   useConnectionsStatus,
   useRuntimeStatus,
+  versionNumber,
 } from '../../data/runtime-status';
 import { t } from '../../i18n';
 import { shortcutKeys, useShortcut } from '../../lib/shortcuts';
@@ -19,11 +20,11 @@ import { GithubRow, ServiceRow } from '../settings/ConnectionsPage';
 import { EditorPicker } from '../settings/EditorPicker';
 import './setup.css';
 
-/** The runtimes setup checks, in display order, and the command that installs each. */
-const INSTALL: readonly { runtime: string; command: string }[] = [
-  { runtime: 'claude', command: 'npm install -g @anthropic-ai/claude-code' },
-  { runtime: 'codex', command: 'npm install -g @openai/codex' },
-];
+/** The command that installs a runtime, for those that have one. */
+const INSTALL: Readonly<Record<string, string>> = {
+  claude: 'npm install -g @anthropic-ai/claude-code',
+  codex: 'npm install -g @openai/codex',
+};
 
 /** Whether the window shows first-time setup: the board is loaded, lists no project, and setup never finished. */
 export function useShowsSetup(loaded: boolean, projectCount: number): boolean {
@@ -47,9 +48,17 @@ export function SetupScreen() {
   }, [read]);
   const busy = since !== null;
   const statuses = read.state === 'ready' ? read.statuses : [];
-  const installed = INSTALL.some(
-    ({ runtime }) => statuses.find((s) => s.runtime === runtime)?.installed,
-  );
+  const installed = statuses.some((s) => s.installed);
+  // As the runtimes page lists them: installed first, each part in the runtimes' order.
+  const sorted = [...statuses].sort((a, b) => compareRuntimes(a.runtime, b.runtime));
+  // A runtime that is not installed shows only when setup can name its install command.
+  const listed =
+    statuses.length > 0
+      ? [
+          ...sorted.filter((s) => s.installed),
+          ...sorted.filter((s) => !s.installed && s.runtime in INSTALL),
+        ].map((s) => s.runtime)
+      : Object.keys(INSTALL);
   const blocked = busy || (read.state === 'ready' && !installed);
 
   const recheck = () => {
@@ -81,11 +90,11 @@ export function SetupScreen() {
                   {read.text}
                 </p>
               ) : (
-                INSTALL.map(({ runtime, command }) => (
+                listed.map((runtime) => (
                   <RuntimeRow
                     key={runtime}
                     runtime={runtime}
-                    command={command}
+                    command={INSTALL[runtime]}
                     status={statuses.find((s) => s.runtime === runtime)}
                     since={since}
                   />
@@ -167,7 +176,7 @@ function RuntimeRow({
   since,
 }: {
   runtime: string;
-  command: string;
+  command: string | undefined;
   status: RuntimeStatus | undefined;
   since: number | null;
 }) {
@@ -211,21 +220,23 @@ function RuntimeRow({
           </span>
           <span />
         </div>
-        <div className="su-row su-sub">
-          <span />
-          <code className="su-cmd">{command}</code>
-          <button
-            type="button"
-            className="btn ghost sm"
-            aria-label={t(
-              { id: 'setup.copyCommand', defaultMessage: 'Copy {command}' },
-              { command },
-            )}
-            onClick={() => void navigator.clipboard.writeText(command)}
-          >
-            {t({ id: 'setup.copy', defaultMessage: 'Copy' })}
-          </button>
-        </div>
+        {command !== undefined && (
+          <div className="su-row su-sub">
+            <span />
+            <code className="su-cmd">{command}</code>
+            <button
+              type="button"
+              className="btn ghost sm"
+              aria-label={t(
+                { id: 'setup.copyCommand', defaultMessage: 'Copy {command}' },
+                { command },
+              )}
+              onClick={() => void navigator.clipboard.writeText(command)}
+            >
+              {t({ id: 'setup.copy', defaultMessage: 'Copy' })}
+            </button>
+          </div>
+        )}
       </>
     );
   const why = unavailableReason(status);
@@ -244,7 +255,7 @@ function RuntimeRow({
         </span>
         {why === null && status.auth.plan && <span className="su-via">{status.auth.plan}</span>}
       </span>
-      <span className="mono su-val">{status.version}</span>
+      <span className="mono su-val">{status.version && versionNumber(status.version)}</span>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 {
   "settings.common.bridgeUnavailable": "桌面桥不可用",
-  "settings.common.retry": "重试",
   "settings.common.noLimit": "不限",
   "settings.common.failure": "{code}：{message}",
   "settings.common.saving": "保存中…",
@@ -94,8 +93,6 @@
   "settings.extensions.removeFromList": "从清单移除",
   "settings.extensions.undo": "撤销",
   "settings.autoMerge.toggle": "门禁通过后自动合并",
-  "settings.gate.tookSeconds": "约 {seconds} 秒",
-  "settings.gate.tookMinutes": "约 {minutes} 分钟",
   "settings.gate.title": "落回门禁",
   "settings.gate.order": "合并前按顺序跑",
   "settings.gate.none": "没设门禁：落回不跑命令",
@@ -172,5 +169,6 @@
   "settings.harness.backends": "后端",
   "settings.harness.backendKeychain": "钥匙串",
   "settings.pages.projects": "项目",
-  "settings.nav.projects": "所有项目"
+  "settings.nav.projects": "所有项目",
+  "settings.appearance.savedTheme": "已保存的主题"
 }

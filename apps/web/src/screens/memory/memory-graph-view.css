@@ -69,7 +69,6 @@
 }
 
 /* Empty, reading and failed states, in the middle of the drawing's place */
-.mgv-fail,
 .mgv-load {
   position: absolute;
   inset: 0;
@@ -81,17 +80,6 @@
   text-align: center;
   background-image: radial-gradient(var(--bd) 0.8px, transparent 0.8px);
   background-size: 16px 16px;
-}
-.mgv-fail-t {
-  font-weight: 500;
-  text-wrap: balance;
-}
-.mgv-err {
-  max-width: 480px;
-  color: var(--bad);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  user-select: text;
 }
 .mgv-sk {
   height: 32px;

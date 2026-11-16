@@ -66,10 +66,11 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', () => xy
 vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.js', () => xy);
 
 const dg = vi.hoisted(() => {
-  const graphs: { label: any; nodes: Map<string, any> }[] = [];
+  const graphs: { label: any; nodes: Map<string, any>; edges: any[] }[] = [];
   class Graph {
     label: any;
     nodes = new Map<string, any>();
+    edges: any[] = [];
     constructor() {
       graphs.push(this);
     }
@@ -80,7 +81,9 @@ const dg = vi.hoisted(() => {
     setNode(id: string, value: { width: number; height: number }) {
       this.nodes.set(id, { ...value, x: 100 + this.nodes.size * 200, y: 50 });
     }
-    setEdge() {}
+    setEdge(from: string, to: string, value?: unknown) {
+      this.edges.push({ from, to, value });
+    }
     node(id: string) {
       return this.nodes.get(id);
     }
@@ -414,6 +417,50 @@ describe('graph diagram', () => {
     expect(flow.props.nodes.map((n: any) => [n.className, n.height])).toEqual(
       groups.map(() => ['vis-node', 24]),
     );
+  });
+
+  it('gives dagre the size of each edge label and never fits the view below full size', async () => {
+    const h = mount(() => GraphDiagram({ spec, height: 280 }));
+    await settle(h);
+    const [edge] = dg.graphs[0]!.edges;
+    expect(edge).toMatchObject({ from: 'n-a', to: 'n-b' });
+    expect(edge.value.width).toBeGreaterThanOrEqual('calls'.length * 7);
+    expect(edge.value.height).toBeGreaterThan(0);
+    const flow = find(h.value, (n) => n.type === xy.ReactFlow);
+    expect(flow.props.fitViewOptions.minZoom).toBeGreaterThanOrEqual(1);
+  });
+
+  it('grows a card to a graph taller than it, up to the zoomed view, and keeps a short one at its size', async () => {
+    const box = (h: HookHost<any>) =>
+      find(h.value, (n) => String(n.props.className).includes('vis-graph')).props.style.height;
+    const short = mount(() => GraphDiagram({ spec, height: 280, grows: true }));
+    await settle(short);
+    expect(box(short)).toBe(280);
+    // Ranks 120 apart: 3 ranks need more than 280, 6 more than the zoomed view.
+    const ranked = (count: number) =>
+      vi.spyOn(dg.Graph.prototype, 'setNode').mockImplementation(function (
+        this: InstanceType<typeof dg.Graph>,
+        id: string,
+        value: { width: number; height: number },
+      ) {
+        if (this.nodes.size < count)
+          this.nodes.set(id, { ...value, x: 100, y: 12 + this.nodes.size * 120 });
+        else this.nodes.set(id, { ...value, x: 300, y: 12 });
+      });
+    ranked(3);
+    const mid = mount(() => GraphDiagram({ spec, height: 280, grows: true }));
+    await settle(mid);
+    expect(box(mid)).toBeGreaterThan(280);
+    expect(box(mid)).toBeLessThan(640);
+    ranked(6);
+    const tall = mount(() => GraphDiagram({ spec, height: 280, grows: true }));
+    await settle(tall);
+    expect(box(tall)).toBe(640);
+    // A pinned card keeps the size picked for it.
+    const pinned = mount(() => GraphDiagram({ spec, height: 280 }));
+    await settle(pinned);
+    expect(box(pinned)).toBe(280);
+    vi.restoreAllMocks();
   });
 });
 

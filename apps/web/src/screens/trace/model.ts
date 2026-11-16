@@ -7,7 +7,7 @@ import type {
 } from '@pantheon/protocol';
 import type { DaemonEvent } from '../../data/sync';
 import { toolLabel } from '../../data/tool-calls';
-import { currentLocale } from '../../i18n';
+import { currentLocale, t } from '../../i18n';
 import { timeAxis } from '../../lib/time-axis';
 
 export type TraceLaneView = ProjectTrace['lanes'][number];
@@ -239,6 +239,83 @@ const EVENT_KIND: Record<string, TraceEventKind> = {
 
 export const isTraceEvent = (event: Pick<DaemonEvent, 'kind'>): boolean =>
   Object.hasOwn(EVENT_KIND, event.kind);
+
+/** The events the trace keeps: those it lists, and the reviews that name untitled sessions. */
+export const keepTraceEvent = (event: Pick<DaemonEvent, 'kind'>): boolean =>
+  isTraceEvent(event) || event.kind === 'review.requested';
+
+export type SessionPurpose =
+  'plan_review' | 'code_review' | 'range_story' | 'change_story' | 'intro';
+
+/** What each session was opened for, by session id, from its session.opened and review.requested events. */
+export function sessionPurposes(events: readonly DaemonEvent[]): Map<string, SessionPurpose> {
+  const planReviews = new Set<string>();
+  for (const event of events)
+    if (event.kind === 'review.requested' && field(event.payload, 'plan') !== undefined)
+      planReviews.add(event.aggregate_id);
+  const purposes = new Map<string, SessionPurpose>();
+  for (const event of events) {
+    if (event.kind !== 'session.opened') continue;
+    const review = text(field(event.payload, 'review_id'));
+    const purpose = field(event.payload, 'purpose');
+    if (review)
+      purposes.set(event.aggregate_id, planReviews.has(review) ? 'plan_review' : 'code_review');
+    else if (purpose === 'range_story' || purpose === 'change_story' || purpose === 'intro')
+      purposes.set(event.aggregate_id, purpose);
+  }
+  return purposes;
+}
+
+/** The name of a session without a title, from what it was opened for and its runtime. */
+export function purposeTitle(purpose: SessionPurpose, runtime: string): string {
+  switch (purpose) {
+    case 'plan_review':
+      return t(
+        { id: 'trace.session.planReview', defaultMessage: '{runtime} plan review' },
+        { runtime },
+      );
+    case 'code_review':
+      return t(
+        { id: 'trace.session.codeReview', defaultMessage: '{runtime} code review' },
+        { runtime },
+      );
+    case 'range_story':
+      return t({ id: 'trace.session.rangeStory', defaultMessage: 'Range story' });
+    case 'change_story':
+      return t({ id: 'trace.session.changeStory', defaultMessage: 'Change story' });
+    case 'intro':
+      return t({ id: 'trace.session.intro', defaultMessage: 'Project intro' });
+  }
+}
+
+/** The trace with each untitled lane named by its purpose; the same trace when none is. */
+export function namedLanes(
+  trace: ProjectTrace,
+  purposes: ReadonlyMap<string, SessionPurpose>,
+  runtimeName: (runtime: string) => string,
+): ProjectTrace {
+  const name = (lane: TraceLaneView['lane']) => {
+    const purpose = lane.title ? undefined : purposes.get(lane.session_id ?? lane.key);
+    return purpose && purposeTitle(purpose, runtimeName(lane.runtime));
+  };
+  if (!trace.lanes.some((row) => name(row.lane))) return trace;
+  return {
+    ...trace,
+    lanes: trace.lanes.map((row) => {
+      const title = name(row.lane);
+      return title ? { ...row, lane: { ...row.lane, title } } : row;
+    }),
+  };
+}
+
+/** Spawn calls that leave a subagent without a task name of its own. */
+const SPAWN_CALLS = new Set(['collaboration.spawn_agent', 'spawn_agent', 'Task', 'Agent']);
+
+/** A subagent's name, or Subagent when only its spawn call names it. */
+export const subagentName = (name: string): string =>
+  SPAWN_CALLS.has(name) || !name
+    ? t({ id: 'trace.now.subagent', defaultMessage: 'Subagent' })
+    : name;
 
 const field = (payload: unknown, key: string): unknown =>
   payload && typeof payload === 'object' ? (payload as Record<string, unknown>)[key] : undefined;

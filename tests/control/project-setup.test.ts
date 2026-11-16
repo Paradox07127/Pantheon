@@ -85,6 +85,34 @@ it('opens an app debug session whose runtime reaches the app at the port the des
   expect(workbenchSessionSpec(ctx, stored()).mcp_servers).toEqual([]);
 });
 
+it.each([
+  ['project_setup', false],
+  ['app_debug', false],
+  [undefined, true],
+])(
+  'gives a session with purpose %s the lead planning instructions: %s',
+  async (purpose, planned) => {
+    const f = workbenchFixture();
+    const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+    Object.assign(ctx, {
+      issueSessionCredential: () => ({
+        token_file: path.join(os.tmpdir(), 'token'),
+        daemon_url: 'http://127.0.0.1:4321',
+      }),
+    });
+    const session = f.call<Session>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: 'A habit tracker for runners',
+      ...(purpose ? { purpose } : {}),
+    });
+    await awaitWorkspaceReady(f.control, session.workspace_id!);
+    const spec = workbenchSessionSpec(ctx, f.store.must<Session>('sessions', session.id));
+    expect(spec.pantheon_mcp).toBeDefined();
+    expect(spec.control_instructions!.includes('before you change anything')).toBe(planned);
+  },
+);
+
 it('rejects a purpose it does not know', () => {
   const f = workbenchFixture();
   expect(() =>

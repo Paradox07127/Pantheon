@@ -7,7 +7,7 @@ import { subagentCall, toolLabel, toolOutputText } from '../../data/tool-calls';
 import { elapsedText, toolDuration, toolState, type ToolItem } from '../../data/transcript';
 import { t } from '../../i18n';
 import { TaskRow } from './TaskRow';
-import { turnClock } from './thread-model';
+import { clockText } from '../../lib/time-text';
 
 const mainName = () => t({ id: 'sessions.thread.main', defaultMessage: 'Main' });
 
@@ -27,7 +27,7 @@ function AgentMessage(props: {
         <ChevronRight aria-hidden="true" />
         <RuntimeGlyph runtime={props.runtime} />
         <span>{props.to}</span>
-        {props.at !== undefined && <span className="ss-a2at">{turnClock.format(props.at)}</span>}
+        {props.at !== undefined && <span className="ss-a2at">{clockText(props.at)}</span>}
       </div>
       <div className="ss-a2ax">{props.text}</div>
     </>

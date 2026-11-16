@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { expect, it, vi } from 'vitest';
-import { eventually, fixture, user } from '../helpers.js';
+import { eventually, fixture, ptyUsable, user } from '../helpers.js';
 
 function alive(pid: number): boolean {
   try {
@@ -12,7 +12,7 @@ function alive(pid: number): boolean {
   }
 }
 
-it.skipIf(!existsSync('/bin/bash'))(
+it.skipIf(!existsSync('/bin/bash') || !ptyUsable)(
   'kills background jobs of the shell when the terminal closes',
   async () => {
     vi.stubEnv('SHELL', '/bin/bash');

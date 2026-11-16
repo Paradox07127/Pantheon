@@ -283,11 +283,6 @@
   min-width: 0;
   flex: 1;
 }
-.bd-fail {
-  margin: 0;
-  min-width: 0;
-  flex: 1;
-}
 
 /* Task progress strip: each part as wide as its count, its number under it. */
 .bd-tp {

@@ -9,7 +9,6 @@
   "memory.graphView.empty": "还没有项目记忆",
   "memory.graphView.noMatch": "没有符合筛选的节点",
   "memory.graphView.create": "新建条目",
-  "memory.graphView.failed": "读不到记忆图谱",
-  "memory.graphView.retry": "重试",
+  "memory.graphView.failed": "读不到记忆图谱：{error}",
   "memory.graphView.loading": "正在读取图谱"
 }

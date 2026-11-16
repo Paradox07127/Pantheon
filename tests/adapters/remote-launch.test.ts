@@ -22,6 +22,7 @@ import {
   type RemoteLaunch,
   type SessionSpec,
 } from '@pantheon/domain';
+import { psUsable } from '../helpers.js';
 
 const acpServer = fileURLToPath(new URL('./fake-acp-server.mjs', import.meta.url));
 const fakeSsh = fileURLToPath(new URL('./fake-ssh.mjs', import.meta.url));
@@ -151,7 +152,7 @@ describe('remote runtime launch', () => {
     expect(await output(child)).toBe(`${cwd}\nit's $HOME|device only`);
   });
 
-  it.each([
+  it.skipIf(!psUsable).each([
     { name: 'reported at once', options: {} },
     { name: 'reported after the stop starts', options: { stderrDelay: 500 } },
     { name: 'holding an exited member nobody reaps', options: { unreaped: true } },
@@ -321,51 +322,54 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     expect(await output(child)).toBe("hello it's $HOME\n");
   });
 
-  it('stops the Claude processes on the device before it confirms a stop', async () => {
-    const root = tempRoot();
-    let captured: Options | undefined;
-    const query = ({
-      options,
-      prompt,
-    }: {
-      options: Options;
-      prompt: AsyncIterable<SDKUserMessage>;
-    }) => {
-      captured = options;
-      return {
-        initializationResult: async () => ({
-          account: { apiProvider: 'firstParty', subscriptionType: 'max' },
-        }),
-        close: () => {},
-        async *[Symbol.asyncIterator]() {
-          for await (const _message of prompt) return;
-        },
+  it.skipIf(!psUsable)(
+    'stops the Claude processes on the device before it confirms a stop',
+    async () => {
+      const root = tempRoot();
+      let captured: Options | undefined;
+      const query = ({
+        options,
+        prompt,
+      }: {
+        options: Options;
+        prompt: AsyncIterable<SDKUserMessage>;
+      }) => {
+        captured = options;
+        return {
+          initializationResult: async () => ({
+            account: { apiProvider: 'firstParty', subscriptionType: 'max' },
+          }),
+          close: () => {},
+          async *[Symbol.asyncIterator]() {
+            for await (const _message of prompt) return;
+          },
+        };
       };
-    };
-    const adapter = new ClaudeAdapter('/missing/claude', 'test', query as never);
-    const spec = remoteSpec(
-      root,
-      {
-        transport: [process.execPath, fakeSsh, root],
-        plain_transport: ['/bin/sh', '-c'],
-        binary: '/device/bin/claude',
-      },
-      { runtime: 'claude', native_state_dir: path.join(root, 'native-state') },
-    );
-    const handle = await adapter.start(spec, () => {});
-    const toolPid = path.join(root, 'tool.pid');
-    captured!.spawnClaudeCodeProcess!({
-      command: '/bin/sh',
-      args: ['-c', `sleep 20 & echo $! > '${toolPid}'; exec cat`],
-      cwd: root,
-      env: {},
-      signal: captured!.abortController!.signal,
-    });
-    const tool = await written(toolPid);
-    const receipt = await adapter.close(handle, Date.now() + 5000);
-    expect(running(tool)).toBe(false);
-    expect(receipt.stopped).toBe(true);
-  });
+      const adapter = new ClaudeAdapter('/missing/claude', 'test', query as never);
+      const spec = remoteSpec(
+        root,
+        {
+          transport: [process.execPath, fakeSsh, root],
+          plain_transport: ['/bin/sh', '-c'],
+          binary: '/device/bin/claude',
+        },
+        { runtime: 'claude', native_state_dir: path.join(root, 'native-state') },
+      );
+      const handle = await adapter.start(spec, () => {});
+      const toolPid = path.join(root, 'tool.pid');
+      captured!.spawnClaudeCodeProcess!({
+        command: '/bin/sh',
+        args: ['-c', `sleep 20 & echo $! > '${toolPid}'; exec cat`],
+        cwd: root,
+        env: {},
+        signal: captured!.abortController!.signal,
+      });
+      const tool = await written(toolPid);
+      const receipt = await adapter.close(handle, Date.now() + 5000);
+      expect(running(tool)).toBe(false);
+      expect(receipt.stopped).toBe(true);
+    },
+  );
 
   it('lists the extensions of a Claude device session through the device transport', async () => {
     const root = tempRoot();

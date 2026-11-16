@@ -16,6 +16,7 @@ import { keyText, shortcutKeys } from '../lib/shortcuts';
 import { durationText } from '../screens/board/panels-model';
 import { resolveTheme, useShell } from '../store';
 import { readyAfterPaint } from './window-kind';
+import { EmptyState } from '../components/EmptyState';
 import './tray-popover.css';
 
 /** The needs-you reasons that want an answer now: a permission request, a question, a step or external request to approve. */
@@ -399,9 +400,11 @@ export function TrayPopover() {
     );
   else if (!blocks.length && needs.items)
     blocks.push(
-      <p key="none" className="tp-none">
-        {t({ id: 'trayPopover.empty', defaultMessage: 'Nothing needs you right now' })}
-      </p>,
+      <EmptyState
+        key="none"
+        inline
+        title={t({ id: 'trayPopover.empty', defaultMessage: 'Nothing needs you right now' })}
+      />,
     );
 
   return (

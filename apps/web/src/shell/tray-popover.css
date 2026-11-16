@@ -146,10 +146,3 @@
   border: 0;
   background: var(--bd2);
 }
-.tp-none {
-  margin: 0;
-  padding: var(--sp-4) var(--sp-2);
-  color: var(--mu);
-  text-align: center;
-  text-wrap: balance;
-}

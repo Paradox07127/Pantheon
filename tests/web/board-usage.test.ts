@@ -319,12 +319,11 @@ describe('usage rings', () => {
     });
   });
 
-  it('draws a runtime that used nothing as an empty track', () => {
+  it('draws no ring for a runtime that used nothing and names it in one line instead', () => {
     expect(usageRing(0, null, 0)).toMatchObject({ open: true, sweep: 0, text: '0' });
     const html = render(UsageRings, { model: model() });
-    expect(html).not.toContain('us-rarc');
-    expect(html.match(/class="us-rtrk"/g)).toHaveLength(2);
-    expect(html).toContain('aria-label="Claude 0"');
+    expect(html).not.toContain('role="img"');
+    expect(html).toContain('>没有用量：Claude, Codex<');
   });
 
   it("draws one ring per runtime from the project's targets", () => {
@@ -354,12 +353,12 @@ describe('usage rings', () => {
       }),
     });
     expect([...html.matchAll(/<figcaption[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual([
-      'Claude',
       'Codex',
       'agy',
       'fixture',
     ]);
     expect(html).toContain('aria-label="agy 2k" style="color:var(--rt-agy)"');
+    expect(html).toContain('>没有用量：Claude<');
   });
 
   it('writes a runtime whose sessions reported no tokens as unreported and a partial sum with a plus', () => {
@@ -388,10 +387,8 @@ describe('usage rings', () => {
     expect([...html.matchAll(/<figcaption[^>]*>([^<]*)</g)].map((m) => m[1])).toEqual([
       'Claude',
       'Codex',
-      'grok',
     ]);
-    expect(html).toContain('aria-label="grok 未上报"');
-    expect(html).toContain('>未上报<');
+    expect(html).toContain('>用量未上报：grok<');
     expect(html).toContain('aria-label="Claude 5M+ / 20M，25%+"');
     expect(html).toContain('aria-label="Codex 1.2M"');
   });
@@ -624,7 +621,11 @@ describe('usage tab', () => {
   it("rings the runtimes against the shown project's targets", () => {
     const html = render(InsightsView, {
       usageTargets: { claude: 20_000_000 },
-      model: model(usage),
+      // Only a runtime that used tokens gets a ring.
+      model: model({
+        ...usage,
+        counts: { ...model().counts, tokens_by_runtime: { claude: 5_000_000 } },
+      }),
       section: 'usage',
       projectId: 'alpha',
       loading: false,

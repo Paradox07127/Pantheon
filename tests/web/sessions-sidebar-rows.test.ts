@@ -18,6 +18,7 @@ vi.mock('@/store', () => ({
   }),
 }));
 import { Sidebar } from '@/components/Sidebar';
+import { sessionStateTone } from '@/components/SessionStateIcon';
 import { t } from '@/i18n';
 import { listText } from '@/lib/list-text';
 import { EFFORT_LABEL, permissionModeLabel } from '@/screens/sessions/model';
@@ -56,7 +57,11 @@ const overview = readFileSync(
   'utf8',
 );
 const rule = (sheet: string, selector: string) =>
-  new RegExp(`^${selector.replace(/[.[\]()>=]/g, '\\$&')} ?\\{([^}]*)\\}`, 'm').exec(sheet)?.[1];
+  // The selector alone or as one entry of a selector list.
+  new RegExp(
+    `^(?:[^{}()\\n]*,)?${selector.replace(/[.[\]()>=]/g, '\\$&')}(?:,[^{}()\\n]*)? ?\\{([^}]*)\\}`,
+    'm',
+  ).exec(sheet)?.[1];
 const approval = (detail: string) =>
   t({ id: 'sessions.row.preview.waitingApproval', defaultMessage: '' }, { detail });
 const SOURCE = zh('sessions.row.preview.source');
@@ -69,7 +74,7 @@ describe('session row styles', () => {
     ['.ss-badge', 'border', '1.5px solid transparent'],
     ['.ss-badge', 'border-radius', '50%'],
     ['.ss-badge[data-badge=running]', 'animation', 'ss-breathe'],
-    ['.ss-badge[data-badge=review]', '--c', 'var(--ready)'],
+    ['.ss-badge[data-badge=merging]', 'animation', 'ss-breathe'],
     ['.ss-badge[data-badge=queued]', 'width', '7px'],
     ['.ss-badge[data-badge=queued]', 'height', '7px'],
     ['.ss-badge[data-badge=queued]', 'border-color', 'var(--idle)'],
@@ -128,13 +133,13 @@ describe('sidebar row status mark', () => {
   const marks = (html: string) =>
     [
       ...html.matchAll(
-        /<span class="ss-badge" role="img" aria-label="([^"]*)" data-badge="([a-z]+)"><\/span>/g,
+        /<span class="ss-badge" role="img" aria-label="([^"]*)" data-badge="([a-z]+)"(?: style="--c:var\(([^)]*)\)")?><\/span>/g,
       ),
-    ].map(([, label, badge]) => [badge, label]);
+    ].map(([, label, badge, tone]) => [badge, label, tone]);
 
-  it('draws one mark by priority: environment, approval, failure, running, review, unread', () => {
+  it('draws one mark by priority: recovery, environment, approval, failure, running, review, unread', () => {
     const cases: [WorkbenchSession, boolean, string | null][] = [
-      [session('a', 'waiting', { waiting: 1, reconciling: true }), true, 'environment'],
+      [session('a', 'waiting', { waiting: 1, reconciling: true }), true, 'reconciling'],
       [
         session('b', 'ready', { merge: { state: 'blocked', failure_class: 'environment' } }),
         false,
@@ -146,7 +151,7 @@ describe('sidebar row status mark', () => {
           gate: { state: 'failed', passed: 0, failed: 1, running: 0 },
         }),
         true,
-        'waiting',
+        'approval',
       ],
       [
         session('d', 'running', { gate: { state: 'failed', passed: 0, failed: 1, running: 0 } }),
@@ -155,7 +160,7 @@ describe('sidebar row status mark', () => {
       ],
       [session('e', 'running'), true, 'running'],
       [session('f', 'idle', { last_turn: { id: 't', state: 'queued' } }), true, 'queued'],
-      [session('g', 'ready'), true, 'review'],
+      [session('g', 'ready'), true, 'ready'],
       [session('h', 'idle'), true, 'unread'],
       [session('i', 'merged'), true, 'unread'],
       [session('j', 'idle'), false, null],
@@ -169,9 +174,16 @@ describe('sidebar row status mark', () => {
       ).toEqual(badge ? [badge] : []);
       expect(html).not.toContain('ss-unread');
     }
-    expect(marks(row(session('a', 'waiting', { reconciling: true })))[0]![1]).toBe(
-      zh('sessions.sidebar.badge.environment'),
-    );
+    const recovering = session('a', 'waiting', { reconciling: true });
+    expect(marks(row(recovering))[0]!.slice(1)).toEqual([
+      zh('components.sessionState.reconciling'),
+      sessionStateTone(recovering),
+    ]);
+    expect(
+      marks(
+        row(session('b', 'ready', { merge: { state: 'blocked', failure_class: 'environment' } })),
+      )[0]![1],
+    ).toBe(zh('sessions.sidebar.badge.environment'));
     expect(marks(row(session('h', 'idle'), true))[0]![1]).toBe(zh('sessions.sidebar.badge.unread'));
   });
 });

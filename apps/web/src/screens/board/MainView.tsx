@@ -9,7 +9,7 @@ import { Empty } from './Charts';
 import type { FlowGroup } from './flow-layout';
 import { flowReplay, momentAt, statusesAt, type FlowReplay } from './flow-replay';
 import { FlowChart } from './FlowPanel';
-import { whenText } from './panels-model';
+import { dayText } from '../../lib/time-text';
 import type { TaskDrawerProps } from './TaskDrawer';
 import { isPlanTask } from './view-rules';
 import { TaskFocus, type EvidenceTab } from './TaskFocus';
@@ -169,7 +169,10 @@ function FlowReplayer({
         marks={flow.marks}
         live={t(
           { id: 'board.canvas.replay.range', defaultMessage: '{from} to {to}' },
-          { from: whenText(flow.from, flow.to), to: whenText(flow.to, flow.to) },
+          {
+            from: dayText(flow.from, flow.to, { time: true }),
+            to: dayText(flow.to, flow.to, { time: true }),
+          },
         )}
         end={<ReplaySpeedControl speed={speed} onSpeed={setSpeed} />}
       />

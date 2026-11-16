@@ -577,9 +577,13 @@ export function RunsView({
               </p>
             )}
             {history && forest.adhoc.length === 0 ? (
-              <p className="rpg-none">
-                {t({ id: 'runs.page.historyEmpty', defaultMessage: 'No calls in this range' })}
-              </p>
+              <EmptyState
+                inline
+                title={t({
+                  id: 'runs.page.historyEmpty',
+                  defaultMessage: 'No calls in this range',
+                })}
+              />
             ) : (
               forest.trees.length + forest.adhoc.length > 0 && (
                 // The table folds its rows itself; a session unfolded by its arrow has its calls read.

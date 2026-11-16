@@ -11,6 +11,14 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
     select({ transform: [0, 0, 1] }),
 }));
 vi.mock('@/data/backends', () => ({ useBackends: () => [] }));
+vi.mock('@/data/runtime-status', async (actual) => ({
+  ...(await actual<object>()),
+  useRuntimeStatus: () => ({ read: { state: 'loading' } }),
+}));
+vi.mock('@/data/runtime-models', async (actual) => ({
+  ...(await actual<object>()),
+  useRuntimeModels: () => ({}),
+}));
 import { TaskCard } from '@/screens/board/FlowNode';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
 import { zh, zhf } from './i18n-setup.js';

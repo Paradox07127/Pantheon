@@ -12,6 +12,7 @@ import { Menu } from '@base-ui/react/menu';
 import { PreviewCard } from '@base-ui/react/preview-card';
 import { Ellipsis, FolderOpen } from 'lucide-react';
 import type { WorkbenchSession } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { DiffStat } from '../../components/DiffReview';
 import { LeadCrown } from '../../components/LeadCrown';
 import { ModelMark, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
@@ -20,7 +21,9 @@ import {
   MergeBlockedMark,
   lastTurnLabel,
   recapLine,
+  sessionGlyphName,
   sessionStateLabel,
+  sessionStateTone,
 } from '../../components/SessionStateIcon';
 import { KeyHint } from '../../components/Shortcuts';
 import { ageText } from '../../data/needs-you';
@@ -44,28 +47,50 @@ import { GATE_NAME, GateSeg, UNCOUNTED_GATE } from './SessionHeader';
 import { FIT_MENU, useSessionMenu } from './shared';
 import './session-row.css';
 
-type Badge = 'environment' | 'waiting' | 'failed' | 'running' | 'queued' | 'review' | 'unread';
+/** A corner mark: its kind, its name and, for a session state, the colour the state glyph has. */
+interface Badge {
+  kind: string;
+  label: string;
+  tone?: string;
+}
 
-const BADGE_LABEL: Record<Badge, () => string> = {
-  environment: () =>
-    t({ id: 'sessions.sidebar.badge.environment', defaultMessage: 'Environment broken' }),
-  waiting: () => t({ id: 'sessions.row.badge.waiting', defaultMessage: 'Needs you' }),
-  failed: () => t({ id: 'sessions.row.badge.failed', defaultMessage: 'Failed' }),
-  running: () => t({ id: 'sessions.row.badge.running', defaultMessage: 'Running' }),
-  queued: () => t({ id: 'sessions.row.badge.queued', defaultMessage: 'Queued' }),
-  review: () => t({ id: 'sessions.row.badge.review', defaultMessage: 'To review' }),
-  unread: () => t({ id: 'sessions.sidebar.badge.unread', defaultMessage: 'New result' }),
-};
-
-/** The one corner mark of a listed session, first match in this order; an idle read session has none. */
+/**
+ * The one corner mark of a listed session, first match in this order; a state is named and coloured
+ * as SessionStateIcon draws it. An idle read session has none.
+ */
 function badgeOf(s: WorkbenchSession, unread: boolean): Badge | null {
-  if (s.reconciling || s.merge?.failure_class === 'environment') return 'environment';
-  if (s.state === 'waiting') return 'waiting';
-  if (needsAttention(s) || s.last_turn?.state === 'failed') return 'failed';
-  if (s.stopping || ['starting', 'running', 'merging'].includes(s.state)) return 'running';
-  if (s.last_turn?.state === 'queued') return 'queued';
-  if (s.state === 'ready') return 'review';
-  if (unread) return 'unread';
+  const state = {
+    kind: sessionGlyphName(s),
+    label: sessionStateLabel(s),
+    tone: sessionStateTone(s),
+  };
+  if (s.stopping || s.reconciling) return state;
+  if (s.merge?.failure_class === 'environment')
+    return {
+      kind: 'environment',
+      label: t({ id: 'sessions.sidebar.badge.environment', defaultMessage: 'Environment broken' }),
+      tone: '--bad',
+    };
+  if (s.state === 'waiting' || s.state === 'failed') return state;
+  if (needsAttention(s) || s.last_turn?.state === 'failed')
+    return {
+      kind: 'failed',
+      label: t({ id: 'sessions.row.badge.failed', defaultMessage: 'Failed' }),
+      tone: '--bad',
+    };
+  if (['starting', 'running', 'merging'].includes(s.state)) return state;
+  if (s.last_turn?.state === 'queued')
+    return {
+      kind: 'queued',
+      label: t({ id: 'sessions.row.badge.queued', defaultMessage: 'Queued' }),
+    };
+  if (s.state === 'ready') return state;
+  if (unread)
+    return {
+      kind: 'unread',
+      label: t({ id: 'sessions.sidebar.badge.unread', defaultMessage: 'New result' }),
+      tone: '--ink',
+    };
   return null;
 }
 
@@ -79,8 +104,9 @@ function Avatar({ session, unread = false }: { session: WorkbenchSession; unread
         <span
           className="ss-badge"
           role="img"
-          aria-label={BADGE_LABEL[badge]()}
-          data-badge={badge}
+          aria-label={badge.label}
+          data-badge={badge.kind}
+          style={badge.tone ? ({ '--c': `var(${badge.tone})` } as CSSProperties) : undefined}
         />
       )}
     </span>
@@ -263,12 +289,7 @@ export function SessionPreview(props: {
             t({ id: 'sessions.row.preview.changes', defaultMessage: 'Changes' }),
             <span className="ss-hc-v">
               <span className="ss-chg">
-                <span className="ss-plus" data-zero={changed.additions === 0 || undefined}>
-                  {`+${changed.additions}`}
-                </span>
-                <span className="ss-minus" data-zero={changed.deletions === 0 || undefined}>
-                  {`−${changed.deletions}`}
-                </span>
+                <DiffCounts additions={changed.additions} deletions={changed.deletions} />
               </span>
               <DiffStat additions={changed.additions} deletions={changed.deletions} />
               <span className="ss-hc-mu">

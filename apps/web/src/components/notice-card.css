@@ -157,15 +157,6 @@
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);
 }
-.nc-add {
-  color: var(--add);
-}
-.nc-del {
-  color: var(--del);
-}
-.nc-diff [data-zero] {
-  color: var(--mu);
-}
 .nc-open {
   margin-left: auto;
 }

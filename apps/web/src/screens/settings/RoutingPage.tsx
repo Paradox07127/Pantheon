@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { ChevronDown } from 'lucide-react';
 import type { BoardSnapshot } from '@pantheon/protocol';
 import { Menu, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../components/Menu';
@@ -10,8 +11,10 @@ import {
   useRoutingTable,
   type RoutingCell,
 } from '../../data/workflow-policy';
-import { currentLocale, t } from '../../i18n';
+import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import { Loading, Section } from './ProjectSettingsScreen';
+import { EmptyState } from '../../components/EmptyState';
 import './routing-table.css';
 
 type Project = BoardSnapshot['projects'][number];
@@ -123,9 +126,6 @@ function samples(cell: RoutingCell): ReactNode {
   );
 }
 
-const fetchedText = (iso: string) =>
-  new Date(iso).toLocaleDateString(currentLocale(), { month: '2-digit', day: '2-digit' });
-
 /** Which model each task kind goes to, from local gate history and public leaderboards. */
 export function RoutingPage({ project }: { project: Project }) {
   const table = useRoutingTable(project.id);
@@ -135,18 +135,7 @@ export function RoutingPage({ project }: { project: Project }) {
   if (!table.read)
     return (
       <Section title={title}>
-        {table.error ? (
-          <>
-            <div className="ps-err" role="alert">
-              {table.error}
-            </div>
-            <button type="button" className="btn" onClick={table.reload}>
-              {t({ id: 'settings.common.retry', defaultMessage: 'Retry' })}
-            </button>
-          </>
-        ) : (
-          <Loading />
-        )}
+        {table.error ? <LoadError message={table.error} onRetry={table.reload} /> : <Loading />}
       </Section>
     );
   const cells = sortedCells(table.read.cells);
@@ -187,12 +176,13 @@ export function RoutingPage({ project }: { project: Project }) {
         </div>
       )}
       {cells.length === 0 ? (
-        <div className="empty">
-          {t({
+        <EmptyState
+          inline
+          title={t({
             id: 'settings.routing.empty',
             defaultMessage: 'No task kind has candidate models yet',
           })}
-        </div>
+        />
       ) : (
         <div role="table" aria-label={title} className="rtt">
           <div role="row" className="rtt-r rtt-hd">
@@ -240,7 +230,7 @@ export function RoutingPage({ project }: { project: Project }) {
                   <span role="cell" className="rtt-b">
                     <span className="rtt-cut">{cell.prior.source}</span>
                     <time dateTime={cell.prior.fetched_at} className="mono mu">
-                      {fetchedText(cell.prior.fetched_at)}
+                      {dayText(Date.parse(cell.prior.fetched_at), Date.now())}
                     </time>
                   </span>
                 ) : (

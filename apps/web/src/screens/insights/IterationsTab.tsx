@@ -37,7 +37,8 @@ import { useShell } from '../../store';
 import { Empty } from '../board/Charts';
 import { setBoardEditing } from '../board/EditMode';
 import { NewTask } from '../board/NewTask';
-import { durationText, whenText, type RunBoardCommand } from '../board/panels-model';
+import { dayText } from '../../lib/time-text';
+import { durationText, type RunBoardCommand } from '../board/panels-model';
 import { TaskStateIcon } from '../board/status';
 import { TellLead, useDialogContent } from '../board/TellLead';
 import { isPlanTask } from '../board/view-rules';
@@ -376,7 +377,7 @@ function iterationHeader(
           <Flag className="ic-sm" aria-hidden="true" />
           {t(
             { id: 'insights.iterations.forecast', defaultMessage: 'Done by {time}' },
-            { time: whenText(iteration.forecast_done_at, model.now) },
+            { time: dayText(iteration.forecast_done_at, model.now, { time: true }) },
           )}
         </span>
       )}

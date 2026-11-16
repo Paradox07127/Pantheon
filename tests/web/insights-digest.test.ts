@@ -187,7 +187,7 @@ describe('weekly digest panel', () => {
   it('shows the merges, the median start to merge and the discarded tasks of all tasks', () => {
     expect(kpis(render())).toEqual([
       [dg('merged'), '4'],
-      [zh('insights.quality.cycle'), '47 分'],
+      [zh('insights.quality.cycle'), '47 分钟'],
       [dg('waiting'), '—'],
       [dg('discarded'), '3', '共 19 个'],
     ]);
@@ -257,7 +257,7 @@ describe('weekly digest panel', () => {
     const html = render();
     expect(html).toContain('role="alert"');
     expect(html).toContain('读取失败（boom）');
-    expect(html).toContain(dg('retry'));
+    expect(html).toContain(zh('components.retry'));
     expect(html).toContain('refund rollout');
   });
 
@@ -335,7 +335,7 @@ describe('weekly digest weeks', () => {
     } as BoardModel;
     expect(kpis(panel(0, model))).toEqual([
       [dg('merged'), '4', '上周 17'],
-      [zh('insights.quality.cycle'), '47 分', '上周 1 时 12 分'],
+      [zh('insights.quality.cycle'), '47 分钟', '上周 1 小时 12 分'],
       [dg('waiting'), '—'],
       [dg('discarded'), '3', '共 19 个'],
     ]);
@@ -452,8 +452,8 @@ describe('weekly digest populations', () => {
     } as BoardModel;
     expect(kpis(render(model))[1]).toEqual([
       zh('insights.quality.cycle'),
-      '30 分',
-      '上周 1 时 12 分',
+      '30 分钟',
+      '上周 1 小时 12 分',
     ]);
   });
 
@@ -497,17 +497,17 @@ describe('weekly digest populations', () => {
     const lines = digestMarkdown(model, [], 0).split('\n');
     for (const line of [
       '- 合并：4（上周 17）',
-      '- 从开工到合并：47 分（上周 1 时 12 分）',
-      '- 其中在等你：19 分（占 40%）',
+      '- 从开工到合并：47 分钟（上周 1 小时 12 分）',
+      '- 其中在等你：19 分钟（占 40%）',
       '## 一个会话的时间花在哪',
       '3 个会话的中位数',
-      '- agent 在写：16 分',
-      '- 等你：19 分',
-      '- 门禁：8 分',
-      '- 排队：4 分',
+      '- agent 在写：16 分钟',
+      '- 等你：19 分钟',
+      '- 门禁：8 分钟',
+      '- 排队：4 分钟',
       '## 等你的时间，按原因',
-      '- 审批命令：3 时 10 分',
-      '- 回答问题：40 分',
+      '- 审批命令：3 小时 10 分',
+      '- 回答问题：40 分钟',
     ])
       expect(lines).toContain(line);
     expect(lines.join('\n')).not.toContain(dg('reason.review'));

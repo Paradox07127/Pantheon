@@ -1,12 +1,15 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { LoadError } from '../../components/LoadError';
 import { CheckCheck, UserPen } from 'lucide-react';
 import type { BoardModel, TaskTraceEntry, TaskTraceKind } from '@pantheon/protocol';
+import { DiffCounts } from '../../components/DiffCounts';
 import { MergeBlockedMark, StateGlyph } from '../../components/SessionStateIcon';
+import { Skeleton } from '../../components/Skeleton';
 import { ModelMark } from '../../components/RuntimeGlyph';
 import { useBoard } from '../../data/board';
 import { planTaskIds, useTaskTrace } from '../../data/task-trace';
 import { t } from '../../i18n';
-import { whenText } from './panels-model';
+import { dayText } from '../../lib/time-text';
 import './timeline.css';
 
 type Task = BoardModel['tasks'][number];
@@ -195,7 +198,7 @@ export function TraceList({
         return (
           <li key={`${entry.at}-${i}`} className="bd-tl-i" data-kind={entry.kind}>
             <time className="bd-tl-t" dateTime={new Date(entry.at).toISOString()}>
-              {whenText(entry.at, now)}
+              {dayText(entry.at, now, { time: true })}
             </time>
             <span className="bd-tl-g" data-tone={kind.tone} aria-hidden="true">
               {'icon' in kind ? (
@@ -240,12 +243,7 @@ export function TraceList({
                         : merge.sha.slice(0, 7)}
                     </span>
                     <span className="bd-dfx">
-                      <span className="bd-add" data-zero={merge.additions === 0 || undefined}>
-                        +{merge.additions}
-                      </span>{' '}
-                      <span className="bd-del" data-zero={merge.deletions === 0 || undefined}>
-                        −{merge.deletions}
-                      </span>
+                      <DiffCounts additions={merge.additions} deletions={merge.deletions} />
                     </span>
                     {merge.story_id && (
                       <button
@@ -304,16 +302,11 @@ export function TaskTimeline({ model, task, onOpenSession, onOpenStory }: TaskTi
           onOpenStory={onOpenStory}
         />
       ) : trace.error ? (
-        <div className="tr-fail bd-fail" role="alert">
-          <span title={trace.error}>{trace.error}</span>
-          <button type="button" className="btn" onClick={trace.reload}>
-            {t({ id: 'board.task.trace.retry', defaultMessage: 'Retry' })}
-          </button>
-        </div>
+        <LoadError message={trace.error} onRetry={trace.reload} />
       ) : (
         <div className="bd-sk" aria-busy="true">
-          <span className="sk" style={{ height: 10, width: '60%' }} />
-          <span className="sk" style={{ height: 10, width: '40%' }} />
+          <Skeleton style={{ height: 10, width: '60%' }} />
+          <Skeleton style={{ height: 10, width: '40%' }} />
         </div>
       )}
     </section>

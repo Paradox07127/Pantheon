@@ -1,4 +1,5 @@
 import type { ProjectFactsRead } from '@pantheon/protocol';
+import { dayText } from '../../lib/time-text';
 
 export type RepoFacts = NonNullable<ProjectFactsRead['facts']>;
 
@@ -85,14 +86,6 @@ export function hotspotRows(facts: RepoFacts): HotspotRow[] {
   return rows.map((r) => ({ ...r, share: max ? r.commits / max : 0 }));
 }
 
-const pad = (n: number) => String(n).padStart(2, '0');
-
-/** Local "YYYY-MM-DD". */
-export function dateText(time: number): string {
-  const d = new Date(time);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
 export interface DocRow {
   key: string;
   path: string;
@@ -115,7 +108,7 @@ export function docRows(facts: RepoFacts, now: number): DocRow[] {
     key: `${d.root}\0${d.path}`,
     path: d.path,
     label: pathLabel(facts, d.root, d.path),
-    date: dateText(d.modified_at),
+    date: dayText(d.modified_at, now),
     age_days: Math.floor(ages[i]! / DAY),
     share: max ? ages[i]! / max : 0,
     stale: ages[i]! > STALE_DOC_DAYS * DAY,

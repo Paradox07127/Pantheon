@@ -19,8 +19,9 @@ import { useMemoryView } from '../../data/memory-view';
 import { reasonText } from '../../data/needs-you';
 import { currentLocale, t } from '../../i18n';
 import { useShell } from '../../store';
-import { whenText } from '../board/panels-model';
-import { FINDING_ICONS, runtimeDuration, runtimeFindingTitle } from './FindingDetail';
+import { dayText } from '../../lib/time-text';
+import { durationText } from '../board/panels-model';
+import { FINDING_ICONS, runtimeFindingTitle } from './FindingDetail';
 import './review-records.css';
 
 type Outcome = NonNullable<RuntimeReviewHistory['verification']>['outcome'];
@@ -49,7 +50,10 @@ function windowText(from: number, to: number, now: number): string {
   const sameDay = new Date(from).toDateString() === new Date(to).toDateString();
   return t(
     { id: 'trace.reviews.window', defaultMessage: '{from} to {to}' },
-    { from: whenText(from, now), to: whenText(to, sameDay ? to : now) },
+    {
+      from: dayText(from, now, { time: true }),
+      to: dayText(to, sameDay ? to : now, { time: true }),
+    },
   );
 }
 
@@ -163,7 +167,7 @@ function ReviewCard({
           {runtimeName(review.runtime)}
         </span>
         <span className="rvr-win">{windowText(review.from, review.to, now)}</span>
-        <span className="rvr-at">{whenText(review.created_at, now)}</span>
+        <span className="rvr-at">{dayText(review.created_at, now, { time: true })}</span>
       </div>
       {report && <p className="rvr-summary">{report.summary}</p>}
       {cited.length > 0 && (
@@ -182,7 +186,7 @@ function ReviewCard({
                 <b>{runtimeFindingTitle(finding)}</b>
                 <span>{finding.lane_key ? titleOf(finding.lane_key) : ''}</span>
                 <span>
-                  {finding.duration_ms === undefined ? '' : runtimeDuration(finding.duration_ms)}
+                  {finding.duration_ms === undefined ? '' : durationText(finding.duration_ms)}
                 </span>
               </button>
             );

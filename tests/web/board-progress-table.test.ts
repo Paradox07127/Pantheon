@@ -141,8 +141,8 @@ describe('progress table header', () => {
       ],
     } as unknown as BoardModel;
     const html = table(850, finished);
-    expect(html).toMatch(/class="bp-cell c-dur" role="cell">1 时 10 分</);
-    expect(html).toContain('中位用时 <b>1</b> 时 <b>10</b> 分');
+    expect(html).toMatch(/class="bp-cell c-dur" role="cell">1 小时 10 分</);
+    expect(html).toContain('中位用时 <b>1</b> 小时 <b>10</b> 分');
   });
 });
 
@@ -262,7 +262,7 @@ describe('progress table plan facts', () => {
       ),
     );
     const locked = row(html, 'task a');
-    expect(locked).toContain('预计 1 时 30 分');
+    expect(locked).toContain('预计 1 小时 30 分');
     expect(locked).toContain('href="https://github.com/acme/app/pull/12"');
     expect(locked).toContain('>#12<');
     expect(locked).toContain(`aria-label="${zh('board.task.orderLocked')}"`);
@@ -334,6 +334,6 @@ describe('progress table clock', () => {
       ],
     } as unknown as BoardModel;
     vi.setSystemTime(NOW + 50 * 60_000);
-    expect(table(850, running)).toMatch(/class="bp-cell c-dur" role="cell">1 时</);
+    expect(table(850, running)).toMatch(/class="bp-cell c-dur" role="cell">1 小时</);
   });
 });

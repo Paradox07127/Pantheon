@@ -62,6 +62,7 @@ export function GeneralPage() {
           {window.pantheon && <OpenAtLoginRow />}
           {window.pantheon && <ShellRows />}
           {window.pantheon && <AutoArchiveRow />}
+          {window.pantheon && <SessionRecapRow />}
           {window.pantheon && <AutoGitInitRow />}
         </div>
       </Section>
@@ -254,6 +255,36 @@ function AutoArchiveRow() {
             checked={settings.auto_archive_merged}
             disabled={saving}
             onChange={(e) => void save({ auto_archive_merged: e.target.checked })}
+          />
+        </Row>
+      )}
+      {error !== null && (
+        <div className="ps-err gp-err" role="alert">
+          {error}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Whether sessions keep a recap of where they stand, written by a model after each turn. */
+function SessionRecapRow() {
+  const { settings, error, saving, save } = useAppSettings();
+  const label = t({
+    id: 'settings.general.sessionRecap',
+    defaultMessage: 'Session progress recap',
+  });
+  return (
+    <>
+      {settings && (
+        <Row label={label} settingId="general.sessionRecap">
+          <input
+            type="checkbox"
+            className="ps-sw"
+            aria-label={label}
+            checked={settings.session_recap !== false}
+            disabled={saving}
+            onChange={(e) => void save({ session_recap: e.target.checked })}
           />
         </Row>
       )}

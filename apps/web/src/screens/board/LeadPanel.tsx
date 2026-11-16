@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import type { BoardActivity, BoardModel } from '@pantheon/protocol';
 import { RequestCard } from '../../components/RequestCard';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
-import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
+import { StateGlyph } from '../../components/SessionStateIcon';
 import { t } from '../../i18n';
 import { PHASE, toolText } from './activity';
 import { needContext } from './BoardFrame';
@@ -19,14 +19,6 @@ function doing(a: BoardActivity): string {
 /** The sentence a lead's line says: what it is doing, else its state. */
 export const leadLine = (lead: BoardLead): string =>
   lead.activity ? doing(lead.activity) : leadState(lead).label;
-
-const GLYPH: Record<BoardLead['state'], GlyphName> = {
-  running: 'running',
-  waiting: 'question',
-  idle: 'idle',
-  failed: 'failed',
-  closed: 'discarded',
-};
 
 /**
  * Each lead on one line: its runtime, its state, with several leads its plan title, what it is
@@ -79,13 +71,7 @@ export function LeadPanel({
             <Fragment key={lead.session_id}>
               <li className="bld-i">
                 {session && <RuntimeGlyph runtime={session.runtime} />}
-                <StateGlyph
-                  name={
-                    shown.state === 'waiting' && lead.waiting?.kind === 'approval'
-                      ? 'approval'
-                      : GLYPH[shown.state]
-                  }
-                />
+                <StateGlyph name={state.glyph} />
                 {titled && (
                   <span className="bld-t" title={name}>
                     {name}

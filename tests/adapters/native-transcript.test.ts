@@ -146,6 +146,45 @@ describe('Claude transcript reducer', () => {
     expect(read?.files).toEqual(['a.ts']);
   });
 
+  it('records a commit made on a detached HEAD, as in a session worktree', () => {
+    const reducer = createClaudeReducer({ native_id: 'session' });
+    const at = '2026-10-30T06:11:11.874Z';
+    reducer.push(
+      JSON.stringify({
+        type: 'user',
+        timestamp: at,
+        turnPosition: { turnIndex: 1 },
+        message: { content: 'commit it' },
+      }),
+    );
+    reducer.push(
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: at,
+        message: { content: [{ type: 'tool_use', id: 'bash-call', name: 'Bash', input: {} }] },
+      }),
+    );
+    reducer.push(
+      JSON.stringify({
+        type: 'user',
+        timestamp: at,
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'bash-call',
+              content: '[detached HEAD 54d7525] fix the settings link\n 1 file changed',
+            },
+          ],
+        },
+      }),
+    );
+    expect(reducer.spans().find((span) => span.id === 'bash-call')?.commit).toEqual({
+      sha: '54d7525',
+      via: 'bash_output',
+    });
+  });
+
   it('ends a turn at its own work, not at replayed history, queued prompts or compaction', () => {
     const reducer = createClaudeReducer({ native_id: 'session' });
     const row = (uuid: string, at: string, extra: Record<string, unknown>) =>

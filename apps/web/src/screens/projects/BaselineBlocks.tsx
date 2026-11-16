@@ -12,12 +12,13 @@ import { useDrafts } from '../../data/drafts';
 import { useFactsRead } from '../../data/facts-read';
 import { shortId } from '../../data/format';
 import { useIntroRead } from '../../data/intro-read';
-import { ageText, useNow } from '../../data/needs-you';
+import { useNow } from '../../data/needs-you';
 import { effectiveSessionDefaults, useLastProjectDefaults } from '../../data/project-defaults';
 import { useRuntimeModels } from '../../data/runtime-models';
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { durationText } from '../../lib/time-text';
 import { sourceText } from '../board/intro-model';
 import { defaultModelFor, defaultRuntime } from '../sessions/model';
 import { ModelMenu, type ModelChoice } from '../sessions/ModelMenu';
@@ -189,7 +190,7 @@ export function RunningBaseline({ baseline }: { baseline: ProjectBaseline }) {
           {runtimeName(baseline.runtime)}
         </span>
       )}
-      <span className="mu">{ageText(baseline.created_at, now)}</span>
+      <span className="mu">{durationText(now - baseline.created_at)}</span>
     </span>
   );
 }
@@ -247,6 +248,10 @@ function AnsweredRound({ n, round }: { n: number; round: AnsweredRoundData }) {
   );
 }
 
+/** The drafts key of the answers to the baseline's current round. */
+export const interviewDraft = (baseline: ProjectBaseline) =>
+  `baseline:${baseline.id}:${(baseline.rounds?.length ?? 0) + 1}`;
+
 export function ReviewBaseline({
   baseline,
   onConfirmed,
@@ -279,7 +284,7 @@ export function ReviewBaseline({
   // The daemon's default until the settings are read.
   const limit = settings?.baseline_rounds ?? 5;
   const questions = baseline.result?.questions ?? [];
-  const key = `baseline:${baseline.id}:${round}`;
+  const key = interviewDraft(baseline);
   const answers = useDrafts((s) => s.answers[key]) ?? draft.answers;
   const answered = baselineAnswers(questions, answers).length;
   const atLimit = round >= limit;
@@ -401,7 +406,11 @@ export function ReviewBaseline({
       {dialog ? (
         count && <div className="iv-f">{count}</div>
       ) : (
-        <div className="iv-f">
+        <div
+          className="iv-f"
+          role="group"
+          aria-label={t({ id: 'projects.baseline.answerBar', defaultMessage: 'Answers' })}
+        >
           {askMore}
           {confirm}
           {count}
