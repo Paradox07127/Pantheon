@@ -131,7 +131,10 @@ export function taskState(
   sessions: Session[],
   lead?: Session,
 ): 'todo' | 'active' | 'done' {
-  if (currentAcceptance(plan, taskId) || currentDirectMerge(plan, taskId)) return 'done';
+  if (currentAcceptance(plan, taskId)) return 'done';
+  // A session opened to follow up on the merge keeps the task under way until it ends.
+  if (currentDirectMerge(plan, taskId))
+    return sessions.some((session) => session.task && !session.outcome) ? 'active' : 'done';
   if (
     lead?.direct_task?.id === taskId &&
     lead.direct_task.generation === taskGeneration(plan, taskId)

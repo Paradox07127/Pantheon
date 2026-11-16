@@ -1,4 +1,4 @@
-import { open, readFile } from 'node:fs/promises';
+import { open, readFile, type FileHandle } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
 import { canonical, type TraceMeta, type TraceSpan } from '@pantheon/domain';
 import { toolOutputOutcome } from './codex.js';
@@ -436,7 +436,11 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
         Array.isArray(payload.content)
       )
         for (const part of payload.content) {
-          if (part?.type !== 'input_text' || String(part.text).startsWith('# AGENTS.md')) continue;
+          if (
+            part?.type !== 'input_text' ||
+            String(part.text).startsWith('# AGENTS.md instructions for ')
+          )
+            continue;
           const title = promptTitle(part.text);
           if (!title) continue;
           state.title = title;
@@ -579,12 +583,23 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
         item.type === 'CommandExecution' && typeof item.exit_code === 'number'
           ? item.exit_code
           : undefined;
-      // Paginated rollouts give a command item its call's id.
+      const tokens = reportedToolTokens(item.usage);
+      const duration_ms =
+        reported !== undefined && (recorded === null || recorded === end) ? reported : undefined;
+      const files =
+        item.type === 'FileChange' && item.changes && typeof item.changes === 'object'
+          ? Object.keys(item.changes)
+          : undefined;
+      // Paginated rollouts give a command item its call's id; the call keeps its name and input.
       const call = find(state, item.id);
       if (call) {
+        if (recorded !== null) call.start = recorded;
         call.end = end;
         call.status = status;
+        if (duration_ms !== undefined) call.duration_ms = duration_ms;
+        if (tokens) call.tokens = tokens;
         if (exit_code !== undefined) call.exit_code = exit_code;
+        if (files) call.files = files;
         return;
       }
       // A call started after the step began cannot have run it, even if it overlaps the step's end.
@@ -597,7 +612,6 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
           (call.end === null || began <= call.end)
         );
       });
-      const tokens = reportedToolTokens(item.usage);
       // A rollout records a shell command as [shell, '-lc', script].
       const command =
         Array.isArray(item.command) && item.command.length === 3 && /^-l?c$/.test(item.command[1])
@@ -616,63 +630,88 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
         end,
         status,
         timing: 'native',
-        ...(reported !== undefined && (recorded === null || recorded === end)
-          ? { duration_ms: reported }
-          : {}),
+        ...(duration_ms !== undefined ? { duration_ms } : {}),
         ...(tokens ? { tokens } : {}),
         ...(exit_code !== undefined ? { exit_code } : {}),
         ...(summary !== undefined ? { input_summary: summary } : {}),
-        ...(item.type === 'FileChange' && item.changes && typeof item.changes === 'object'
-          ? { files: Object.keys(item.changes) }
-          : {}),
+        ...(files ? { files } : {}),
       });
     },
   );
 }
 
 const PROBE_BYTES = 256 * 1024;
-// Metadata sits in the first rows; past this a file is left pending instead of read whole.
-const PROBE_LIMIT = 8 * 1024 * 1024;
+// A longer row is skipped unparsed, so a probe never holds more than this.
+const ROW_LIMIT = 64 * 1024 * 1024;
 
-function rowsOf(text: string): Row[] {
-  const rows: Row[] = [];
-  for (const line of text.split('\n')) {
+type MetaRecord = { codex: Row } | { claude: Row };
+
+/**
+ * Reads rows from the start until the one that names the session: a Codex session_meta payload or a
+ * Claude row with a session id. The first row tells which runtime wrote the file.
+ */
+async function metaRecord(handle: FileHandle): Promise<MetaRecord | undefined> {
+  let first: Row | undefined;
+  let record: MetaRecord | undefined;
+  // True once the scan can stop.
+  const take = (text: string): boolean => {
+    let row: unknown;
     try {
-      const row: unknown = JSON.parse(line);
-      if (row && typeof row === 'object' && !Array.isArray(row)) rows.push(row as Row);
+      row = JSON.parse(text);
     } catch {
-      // A line cut off at the end of the read is not a record yet.
+      // A line cut off at the end of the file is not a record yet.
+      return false;
     }
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+    const current = row as Row;
+    first ??= current;
+    if (first.payload && typeof first.payload === 'object') {
+      if (current.type !== 'session_meta') return false;
+      const meta = current.payload;
+      if (typeof meta?.id === 'string' && typeof meta.cwd === 'string') record = { codex: meta };
+      return true;
+    }
+    if (typeof current.sessionId !== 'string' || typeof current.cwd !== 'string') return false;
+    record = { claude: current };
+    return true;
+  };
+  const chunk = Buffer.alloc(PROBE_BYTES);
+  let parts: Buffer[] = [],
+    held = 0;
+  const hold = (piece: Buffer): void => {
+    held += piece.length;
+    if (held <= ROW_LIMIT) parts.push(Buffer.from(piece));
+    else parts = [];
+  };
+  const row = (): boolean => {
+    const text = held <= ROW_LIMIT ? Buffer.concat(parts).toString('utf8') : '';
+    parts = [];
+    held = 0;
+    return take(text);
+  };
+  for (let position = 0; ;) {
+    const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+    if (!bytesRead) {
+      row();
+      return record;
+    }
+    position += bytesRead;
+    const data = chunk.subarray(0, bytesRead);
+    let start = 0;
+    for (let end = data.indexOf(10); end !== -1; end = data.indexOf(10, start)) {
+      hold(data.subarray(start, end));
+      if (row()) return record;
+      start = end + 1;
+    }
+    hold(data.subarray(start));
   }
-  return rows;
-}
-
-/** The record that names the session: a Codex session_meta payload or a Claude row with a session id. */
-function metaRecord(rows: Row[]): { codex: Row } | { claude: Row } | undefined {
-  const first = rows[0];
-  if (!first) return;
-  if (first.payload && typeof first.payload === 'object') {
-    const meta = rows.find((row) => row.type === 'session_meta')?.payload;
-    return typeof meta?.id === 'string' && typeof meta.cwd === 'string'
-      ? { codex: meta }
-      : undefined;
-  }
-  const row = rows.find((row) => typeof row.sessionId === 'string' && typeof row.cwd === 'string');
-  return row ? { claude: row } : undefined;
 }
 
 export async function probeMeta(file: string): Promise<TraceMeta | 'pending'> {
   const handle = await open(file, 'r');
-  let record: ReturnType<typeof metaRecord>;
+  let record: MetaRecord | undefined;
   try {
-    const { size } = await handle.stat();
-    // Widen the window until it holds a metadata record, the whole file or PROBE_LIMIT bytes.
-    for (let window = PROBE_BYTES; ; window *= 2) {
-      const buffer = Buffer.alloc(Math.min(window, size, PROBE_LIMIT));
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-      record = metaRecord(rowsOf(buffer.subarray(0, bytesRead).toString('utf8')));
-      if (record || window >= size || window >= PROBE_LIMIT) break;
-    }
+    record = await metaRecord(handle);
   } finally {
     await handle.close();
   }

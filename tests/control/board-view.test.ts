@@ -474,6 +474,7 @@ it('computes the board from merged, ready and discarded workbench sessions', asy
   const merge = mergedAt(f, merged.session.id);
   expect(JSON.parse(merge.payload)).toEqual({
     branch: 'main',
+    source: f.source,
     from_sha: sourceHead,
     to_sha: mergedHead,
     files: 1,
@@ -1833,6 +1834,39 @@ it('ties each request for the user to its task and puts the ones that unblock th
   });
 });
 
+it('ties a dispatch failure and a lead request on its direct task to their tasks', () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, [
+    { id: 'a', title: 'Serve exports', depends_on: [] },
+    { id: 'd', title: 'Fix the parser', depends_on: [] },
+    { id: 'b', title: 'Add a download button', depends_on: ['a', 'd'] },
+  ]);
+  const now = f.store.now();
+  patchPlan(f, lead.id, {
+    dispatch: {
+      a: {
+        requested_at: now,
+        error: { code: 'workspace_failed', message: 'No worktree', at: now, attempts: 1 },
+      },
+    },
+  });
+  const stored = current(f, lead.id);
+  f.store.update<Session>(
+    'sessions',
+    { ...stored, direct_task: { id: 'd', generation: 1 } },
+    stored.revision,
+  );
+  const request = pendingApproval(f, lead.id, { tool: 'Bash' });
+
+  const needs = f.control.boardView(user, f.project.id, 1).needs!;
+  expect(needs.map((item) => [item.source.id, item.task_id, item.unblocks])).toEqual(
+    expect.arrayContaining([
+      [lead.id, `${lead.id}:a`, 1],
+      [request.id, `${lead.id}:d`, 1],
+    ]),
+  );
+});
+
 it('keeps the usage of turns that ran before a runtime change on the runtime they ran on', async () => {
   const f = workbenchFixture();
   const { session, turn } = await idleSession(
@@ -2784,6 +2818,29 @@ it('projects current context, acceptance items, successors and the latest gate r
   expect(unused.context).toBeUndefined();
   expect(unused.gate_steps).toBeUndefined();
   expect(unused.successors).toBe(0);
+});
+
+it('shows the gate steps a run checked so far, and keeps them once the run is cancelled', async () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
+  const session = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const steps = () =>
+    f.control
+      .boardView(user, f.project.id, 1)
+      .tasks.find((task) => task.id === `${lead.id}:export`)!.gate_steps;
+  const commands = ['Lint', 'Test'].map((name) => ({ name, argv: ['true'] }));
+  f.store.event('session.gate_started', current(f, session.id), f.project.id, { commands });
+  f.store.event('session.gate_step_checked', current(f, session.id), f.project.id, {
+    results: [{ name: 'Lint', exit_code: 0 }],
+    total: 2,
+  });
+  const checked = [
+    { name: 'Lint', state: 'passed' },
+    { name: 'Test', state: 'pending' },
+  ];
+  expect(steps()).toEqual(checked);
+  f.store.event('session.gate_run_cancelled', current(f, session.id), f.project.id, {});
+  expect(steps()).toEqual(checked);
 });
 
 it('projects external review rounds and verdict without treating a failed reviewer as a pass', async () => {

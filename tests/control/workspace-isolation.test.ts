@@ -3,6 +3,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -520,6 +521,17 @@ it('refuses a writable sandbox root that was swapped for a symlink', async () =>
   writeFileSync(path.join(f.root, 'plain-file'), 'not a directory\n');
   expect(() => worktreeSandbox({ ...input, tempDir: path.join(f.root, 'plain-file') })).toThrow(
     expect.objectContaining({ code: 'sandbox_path_replaced' }),
+  );
+});
+
+it('refuses a worktree session while a worktree file is a hard link to protected repository metadata', async () => {
+  const f = await worktreeFixture();
+  const input = await sandboxInput(f);
+  const { worktreeSandbox } = await import('../../packages/control/dist/protection.js');
+  mkdirSync(input.tempDir);
+  linkSync(path.join(f.source, '.git/config'), path.join(input.workspacePath, 'alias.txt'));
+  expect(() => worktreeSandbox(input)).toThrow(
+    expect.objectContaining({ code: 'scope_violation' }),
   );
 });
 

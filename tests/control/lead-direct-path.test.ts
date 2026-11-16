@@ -234,7 +234,13 @@ it('merges the reported direct task after the lead turn and keeps the lead sessi
   expect(boardTask(f, lead.id, 'a').status).toBe('done');
   expect(boardTask(f, lead.id, 'a').state).toBe('merged');
   expect(payloads(f, lead.id, 'session.merged')).toEqual([
-    expect.objectContaining({ task_id: 'a', generation: 1, direct: true, to_sha: head }),
+    expect.objectContaining({
+      task_id: 'a',
+      generation: 1,
+      direct: true,
+      to_sha: head,
+      source: worktreeOf(f, lead).source,
+    }),
   ]);
   expect(payloads(f, lead.id, 'session.gate_started')).toEqual([
     expect.objectContaining({ task_id: 'a' }),
@@ -523,6 +529,22 @@ it('refuses to start a direct task again once it merged', async () => {
     expect.objectContaining({ code: 'invalid_state', message: expect.stringContaining('done') }),
   );
   expect(current(f, lead.id).direct_task).toBeUndefined();
+});
+
+it('shows a merged direct task as under way again while the session the user started on it runs', async () => {
+  const f = mergeFixture();
+  const { lead, worktree } = await leadOnTask(f);
+  commit(worktree, 'src/a.ts', 'export const a = 1;\n');
+  report(f, lead.id);
+  await endTurn(f, lead.id);
+  expect(boardTask(f, lead.id, 'a').status).toBe('done');
+
+  f.call('task.start', { project_id: f.project.id, lead_session_id: lead.id, task_ids: ['a'] });
+  await eventually(
+    () => f.store.list<Session>('sessions').some((s) => s.task?.id === 'a' && !s.outcome),
+    () => f.control.tick(),
+  );
+  expect(boardTask(f, lead.id, 'a').status).not.toBe('done');
 });
 
 it('records the merged direct task with its path, the lead session, its gate run and the lead usage', async () => {

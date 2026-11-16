@@ -243,6 +243,15 @@ function writeLeadMilestones(
 }
 
 function refuseInvalid(ctx: ControlContext, input: PlanInput, quoted: string[] = []): void {
+  // An edited plan must stay one the lead can send whole again.
+  const { order_lock: _, ...whole } = input;
+  const parsed = inputSchemas['board.plan.update'].safeParse({ ...whole, base_version: 0 });
+  requireThat(
+    parsed.success,
+    'invalid_input',
+    parsed.error?.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ') ??
+      '',
+  );
   const problem = planProblem(input);
   requireThat(!problem, 'invalid_input', problem ?? '');
   const unquoted = sourceProblem(ctx, input, quoted);
@@ -571,6 +580,7 @@ function storePlan(
       : {}),
     inbox: current?.inbox ?? [],
     notified: current?.notified ?? {},
+    ...(current?.wake_failed ? { wake_failed: current.wake_failed } : {}),
     contract_changed: [...new Set([...(current?.contract_changed ?? []), ...told])],
     ...(current?.handed_back ? { handed_back: current.handed_back } : {}),
     ...(current?.alerted ? { alerted: current.alerted } : {}),
@@ -903,11 +913,24 @@ function userEdit(
   const quoted = patches.flatMap((op) => (op.type === 'add_task' ? op.task.source : []));
   const edited = applyOps(planContent(ctx, plan), patches);
   refuseInvalid(ctx, edited, quoted);
-  const unfinished = new Set(
-    placedTaskSessions(ctx, plan.project_id)
+  const claimed = ctx.store.get<Session>('sessions', plan.id)?.direct_task?.id;
+  const unfinished = new Set([
+    ...placedTaskSessions(ctx, plan.project_id)
       .filter((session) => session.task!.lead_session_id === plan.id)
       .map((session) => session.task!.id),
-  );
+    // A session waiting for workflow approval holds no place, yet its task is not done.
+    ...ctx.store
+      .list<Session>('sessions')
+      .filter(
+        (session) =>
+          session.task?.lead_session_id === plan.id &&
+          !session.outcome &&
+          session.state !== 'closed' &&
+          session.merge?.reason === 'workflow_approval',
+      )
+      .map((session) => session.task!.id),
+    ...(claimed ? [claimed] : []),
+  ]);
   const applied = !patches.some(
     (op) =>
       op.type !== 'add_task' &&
@@ -990,11 +1013,12 @@ function userEdit(
       { ...planContent(ctx, plan), order_lock: edited.order_lock },
       commandId,
     );
+  const heldOps = patches.filter((op) => op.type !== 'lock_order' && op.type !== 'unlock_order');
   const held: PendingPlanEdit = {
     edit_id: editId,
-    ops: patches.filter((op) => op.type !== 'lock_order' && op.type !== 'unlock_order'),
+    ops: heldOps,
     base_version: baseVersion,
-    task_ids: taskIds,
+    task_ids: [...new Set(heldOps.flatMap(opTaskIds))],
     created_at: ctx.store.now(),
     status: 'pending',
   };

@@ -42,6 +42,7 @@ const SPANS: Span[] = [
     start: 225_000,
     end: 230_000,
     input_summary: 'src/refund/service.ts',
+    files: ['src/refund/service.ts'],
     gate_state: 'passed',
   }),
   span('read-1', {
@@ -59,6 +60,7 @@ const SPANS: Span[] = [
     start: 32_000,
     end: 33_000,
     input_summary: 'src/refund/service.ts',
+    files: ['src/refund/service.ts'],
     gate_state: 'none',
   }),
   span('llm-2', {
@@ -150,6 +152,27 @@ describe('the steps of one session', () => {
     const { steps } = replaySteps(codex);
     expect(steps.map((s) => s.kind)).toEqual(['run', 'run', 'edit', 'edit']);
     expect(stepMoment(codex, steps, 3).files).toBe(3);
+  });
+
+  it('counts the files an edit step names, not the paths in its input summary', () => {
+    const spans = [
+      span('turn-1', { kind: 'turn', start: 1_000, status: 'running' }),
+      span('change-1', {
+        name: 'file_change',
+        start: 2_000,
+        end: 3_000,
+        input_summary: 'a.ts, b.ts',
+        files: ['a.ts', 'b.ts'],
+      }),
+      span('change-2', {
+        name: 'file_change',
+        start: 4_000,
+        end: 5_000,
+        input_summary: 'c.ts, d.ts',
+      }),
+    ];
+    const { steps } = replaySteps(spans);
+    expect(stepMoment(spans, steps, 1).files).toBe(2);
   });
 
   it('counts a model call of an open turn only once it has ended, not while it overlaps the step', () => {

@@ -165,6 +165,32 @@ it('forks a running source from the end of its last completed turn and leaves th
   expect(f.turns(source.id)).toEqual(turnsBefore);
 });
 
+it('refuses to fork a running source whose running turn took no checkpoint', async () => {
+  const f = workbenchFixture();
+  const source = f.create('Start the export');
+  await settle(f, source);
+  const work = workspace(f, source).path;
+  await send(f, source, 'Add a header');
+  git(work, 'switch', '--quiet', '-c', 'agent-branch');
+  f.call(
+    'session.send',
+    { session_id: source.id, input: 'fixture-script\n[{"hang":true}]' },
+    current(f, source).revision,
+  );
+  await eventually(
+    () => f.turns(source.id).at(-1)?.state === 'running',
+    () => f.control.tick(),
+  );
+  const running = f.turns(source.id).at(-1)!;
+  expect(
+    f.store
+      .kindEvents(f.project.id, ['session.checkpoint_failed'])
+      .some((event) => (event.payload as { turn_id: string }).turn_id === running.id),
+  ).toBe(true);
+  writeFileSync(path.join(work, 'answer.txt'), 'half done by the running turn\n');
+  expect(() => fork(f, source)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
+});
+
 it('refuses a current-state fork while the first source turn is running', async () => {
   const f = workbenchFixture({ delay: 1000 });
   const source = f.create();

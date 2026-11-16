@@ -124,6 +124,31 @@ describe('project facts and commitments', () => {
       await f.close();
     }
   });
+  it('lists a ready milestone the user created in needs-you without a session, only for its live project', async () => {
+    const f = fixture({ managedWorkspaces: true });
+    try {
+      const session = workbenchSession(f);
+      const milestone = f.call<Milestone>('milestone.create', milestoneInput(f, [session]));
+      end(f, session, 'merged');
+      const ready = (projectId?: string) =>
+        f.control
+          .needsYou(user, projectId)
+          .items.filter((item) => item.reason === 'milestone_ready_for_acceptance');
+      expect(ready()).toEqual([
+        expect.objectContaining({
+          source: expect.objectContaining({ table: 'milestones', id: milestone.id }),
+          project_id: f.project.id,
+        }),
+      ]);
+      expect(ready()[0]).not.toHaveProperty('session_id');
+      expect(ready(otherProject(f).id)).toEqual([]);
+      const project = f.store.must<Project>('projects', f.project.id);
+      f.store.update<Project>('projects', { ...project, removed_at: 1 }, project.revision);
+      expect(ready()).toEqual([]);
+    } finally {
+      await f.close();
+    }
+  });
   it('accepts only unique evidence references to merged required sessions', async () => {
     const f = fixture({ managedWorkspaces: true });
     try {

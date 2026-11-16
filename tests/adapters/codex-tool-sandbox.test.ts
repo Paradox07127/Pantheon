@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import { PassThrough } from 'node:stream';
@@ -371,7 +372,12 @@ describe('Codex writer sandbox', () => {
       delete spec.extensions;
       const f = await opened(spec, method);
       expect(f.frames[0]?.params).toEqual({
-        clientInfo: { name: 'pantheon', title: 'Pantheon', version: '0.1.0' },
+        clientInfo: {
+          name: 'pantheon',
+          title: 'Pantheon',
+          version: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
+            .version,
+        },
         capabilities: { experimentalApi: false },
       });
       expect(threadParams(f.frames)).toEqual({

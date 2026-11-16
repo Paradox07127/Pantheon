@@ -95,6 +95,7 @@ it('fast-forwards the source branch to the session commit and removes the worktr
   expect(payloads(f, session.id, 'session.merged')).toEqual([
     {
       branch: 'main',
+      source: workspace.source,
       from_sha: sourceHead,
       to_sha: head,
       files: 1,
@@ -146,6 +147,7 @@ it('rebases the session onto a newer source commit and keeps the history linear'
   expect(payloads(f, session.id, 'session.merged')).toEqual([
     {
       branch: 'main',
+      source: workspace.source,
       from_sha: theirs,
       to_sha: git(f.source, 'rev-parse', 'main'),
       files: 1,
@@ -769,6 +771,7 @@ it.skipIf(insideSandbox)(
     expect(payloads(f, session.id, 'session.merged')).toEqual([
       {
         branch: 'main',
+        source: workspace.source,
         from_sha: sourceHead,
         to_sha: head,
         files: 2,

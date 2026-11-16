@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Select } from '@base-ui/react/select';
+import { create } from 'zustand';
 import {
   Check,
   ChevronDown,
@@ -91,11 +92,26 @@ const BRANCH = '';
 
 const NO_TURNS: BoardSnapshot['session_turns'] = [];
 
+/** The file an output asked the changes tab to show, by session. */
+const useChangedFile = create<Record<string, string>>()(() => ({}));
+
+/** Asks the changes tab for the whole branch at the file, for an output with no file left to read. */
+export function showChangedFile(sessionId: string, path: string): void {
+  useChangedFile.setState({ [sessionId]: path });
+  useTurnScope.getState().set(sessionId, BRANCH);
+}
+
 /**
- * The whole branch, then each ended turn not rolled back, numbered among turns with a checkpoint.
+ * The whole branch, then each ended turn not rolled back, numbered among turns with a checkpoint;
+ * `ran` holds the turns seen running, which tells a steer run as its own turn from one injected.
  * A session in its own folder keeps no checkpoints, so it has only its uncommitted changes.
  */
-function scopeItems(turns: BoardSnapshot['session_turns'], sessionId: string, inPlace: boolean) {
+function scopeItems(
+  turns: BoardSnapshot['session_turns'],
+  sessionId: string,
+  inPlace: boolean,
+  ran: ReadonlySet<string>,
+) {
   if (inPlace)
     return [
       {
@@ -109,8 +125,11 @@ function scopeItems(turns: BoardSnapshot['session_turns'], sessionId: string, in
       label: t({ id: 'sessions.screen.scopeBranch', defaultMessage: 'Whole branch' }),
     },
     ...turns
-      // The board's turns do not say whether a steer ran, so steers stay out.
-      .filter((turn) => turn.session_id === sessionId && checkpointed({ turn, started_at: null }))
+      .filter(
+        (turn) =>
+          turn.session_id === sessionId &&
+          checkpointed({ turn, started_at: ran.has(turn.id) ? 0 : null }),
+      )
       .flatMap((turn, i) =>
         turn.rolled_back || turn.state === 'running' || turn.state === 'queued'
           ? []
@@ -441,11 +460,12 @@ export function SessionCard(props: {
                   className="ov-row ov-file"
                   aria-label={file.path}
                   title={file.path}
-                  onClick={() =>
-                    merged || diffOnly.has(file.path)
-                      ? props.onTab('changes')
-                      : showFile(props.sessionId, file.path)
-                  }
+                  onClick={() => {
+                    if (!merged && !diffOnly.has(file.path))
+                      return showFile(props.sessionId, file.path);
+                    showChangedFile(props.sessionId, file.path);
+                    props.onTab('changes');
+                  }}
                 >
                   <FileText className="ov-ic" aria-hidden="true" />
                   <span className="ov-cut">{file.path.split('/').pop()}</span>
@@ -604,6 +624,7 @@ export function SessionCard(props: {
             merging={merging}
             cancelling={props.listed?.merge?.cancel_requested}
             preflight={preflight.data}
+            preflightError={preflight.error}
             onPreflight={preflight.reload}
             gates={gates.data}
             branch={branch}
@@ -659,13 +680,29 @@ export function SessionInspector(props: {
   } = useSessionCard(props.sessionId, props.listed, props.session);
   const mergedSession = props.listed?.state === 'merged';
   const sessionTurns = useBoard((s) => s.board?.session_turns ?? NO_TURNS);
-  const scopes = useMemo(
-    () =>
-      worktree && !ended
-        ? scopeItems(sessionTurns, props.sessionId, props.listed?.workspace_kind === 'in_place')
-        : [],
-    [worktree, ended, sessionTurns, props.sessionId, props.listed?.workspace_kind],
-  );
+  const events = useBoard((s) => s.events);
+  const threadTurns = useThreadTurns(props.sessionId).turns;
+  const scopes = useMemo(() => {
+    if (!worktree || ended) return [];
+    const ran = new Set([
+      ...events.flatMap((e) => (e.kind === 'turn.running' ? [e.aggregate_id] : [])),
+      ...threadTurns.flatMap((view) => (view.started_at !== null ? [view.turn.id] : [])),
+    ]);
+    return scopeItems(
+      sessionTurns,
+      props.sessionId,
+      props.listed?.workspace_kind === 'in_place',
+      ran,
+    );
+  }, [
+    worktree,
+    ended,
+    sessionTurns,
+    events,
+    threadTurns,
+    props.sessionId,
+    props.listed?.workspace_kind,
+  ]);
   const readAsked = () => useTurnScope.getState().scopes[props.sessionId];
   // zustand's own hook gives a server render the initial state, not the turn asked for.
   const asked = useSyncExternalStore(useTurnScope.subscribe, readAsked, readAsked);
@@ -676,6 +713,8 @@ export function SessionInspector(props: {
     if (turnId !== undefined) setPicked({ sessionId: props.sessionId, turnId });
   }, [asked, props.sessionId]);
   const wanted = asked ?? (picked.sessionId === props.sessionId ? picked.turnId : BRANCH);
+  const readFile = () => useChangedFile.getState()[props.sessionId];
+  const askedFile = useSyncExternalStore(useChangedFile.subscribe, readFile, readFile);
   // Review and Explain read the whole branch, so they keep the pick for the diff.
   const scoped = (props.view ?? 'diff') === 'diff';
   const scope = scoped && scopes.some((item) => item.value === wanted) ? wanted : BRANCH;
@@ -874,6 +913,7 @@ export function SessionInspector(props: {
         <DiffFiles
           key={`${props.sessionId}\n${scope}`}
           diff={shown}
+          path={scope === BRANCH ? askedFile : undefined}
           onComment={
             readOnly
               ? undefined
@@ -1096,6 +1136,7 @@ export function SessionInspector(props: {
               merging={merging}
               cancelling={props.listed?.merge?.cancel_requested}
               preflight={preflight.data}
+              preflightError={preflight.error}
               onPreflight={preflight.reload}
               gates={gates.data}
               branch={branch}

@@ -217,6 +217,21 @@ it('lists untracked files when the repository hides them from status', async () 
   });
 });
 
+it('lists and counts each untracked file of a new folder', async () => {
+  const r = repoFixture();
+  mkdirSync(path.join(r.f.source, 'newdir'));
+  writeFileSync(path.join(r.f.source, 'newdir/a.ts'), 'a\n');
+  writeFileSync(path.join(r.f.source, 'newdir/b.ts'), 'b\n');
+  const status = await r.f.control.repoStatus(user, r.f.project.id, r.f.source);
+  expect(status.files.filter((file) => file.untracked).map((file) => file.path)).toEqual([
+    'draft.txt',
+    'newdir/a.ts',
+    'newdir/b.ts',
+  ]);
+  const worktrees = await r.f.control.repoWorktrees(user, r.f.project.id);
+  expect(worktrees.find((worktree) => worktree.kind === 'checkout')!.uncommitted).toBe(4);
+});
+
 it('pages the log, names the session whose merge landed a commit and refuses an option as ref', async () => {
   const r = repoFixture();
   const log = await r.f.control.repoLog(user, { project_id: r.f.project.id, limit: 200, skip: 0 });
@@ -608,49 +623,66 @@ describe('repository timeline', () => {
     expect((await mainPoint())!.session_id).toBe(other.id);
   });
 
-  it('puts a commit in the workstream of a non-ASCII file it touches', async () => {
+  it.each(['说明.md', './说明.md', '说明.md/', '.', './'])(
+    'puts a commit in the workstream whose module %s holds a non-ASCII file it touches',
+    async (module) => {
+      const f = workbenchFixture();
+      writeFileSync(path.join(f.source, '说明.md'), 'one\n');
+      writeFileSync(path.join(f.source, 'notes.md'), 'one\n');
+      git(f.source, 'add', '--all');
+      git(f.source, 'commit', '--quiet', '-m', 'Add the notes');
+      const sha = git(f.source, 'rev-parse', 'HEAD');
+      f.store.insert<ProjectBaseline>('project_baselines', {
+        id: id(),
+        revision: 1,
+        project_id: f.project.id,
+        state: 'submitted',
+        facts_id: 'facts',
+        dropped: 0,
+        created_at: f.store.now(),
+        result: {
+          folders: [],
+          workstreams: [
+            {
+              id: 'docs',
+              title: 'Docs',
+              status: 'running',
+              reason: '',
+              items: [],
+              commits: [],
+              next: [],
+              blockers: [],
+              modules: [module],
+            },
+          ],
+          contradictions: [],
+          findings: [],
+          questions: [],
+        },
+      });
+      const timeline = await f.control.repoTimeline(user, {
+        project_id: f.project.id,
+        from: Date.now() - DAY,
+        to: Date.now() + DAY,
+        group: 'workstream',
+      });
+      const shas = (key: string) =>
+        timeline.lanes.find((lane) => lane.key === key)?.points?.map((point) => point.sha) ?? [];
+      expect(shas('docs')).toContain(sha);
+      expect(shas('other')).not.toContain(sha);
+    },
+  );
+
+  it('lists a commit in the range below a later commit dated before the range', async () => {
     const f = workbenchFixture();
-    writeFileSync(path.join(f.source, '说明.md'), 'one\n');
-    writeFileSync(path.join(f.source, 'notes.md'), 'one\n');
-    git(f.source, 'add', '--all');
-    git(f.source, 'commit', '--quiet', '-m', 'Add the notes');
-    const sha = git(f.source, 'rev-parse', 'HEAD');
-    f.store.insert<ProjectBaseline>('project_baselines', {
-      id: id(),
-      revision: 1,
-      project_id: f.project.id,
-      state: 'submitted',
-      facts_id: 'facts',
-      dropped: 0,
-      created_at: f.store.now(),
-      result: {
-        folders: [],
-        workstreams: [
-          {
-            id: 'docs',
-            title: 'Docs',
-            status: 'running',
-            reason: '',
-            items: [],
-            commits: [],
-            next: [],
-            blockers: [],
-            modules: ['说明.md'],
-          },
-        ],
-        contradictions: [],
-        findings: [],
-        questions: [],
-      },
-    });
+    const start = Math.ceil(Date.now() / HOUR) * HOUR + HOUR;
+    const shas = commitsAt(f.source, [start, start - 3 * DAY]);
     const timeline = await f.control.repoTimeline(user, {
       project_id: f.project.id,
-      from: Date.now() - DAY,
-      to: Date.now() + DAY,
-      group: 'workstream',
+      from: start - HOUR / 2,
+      to: start + HOUR,
     });
-    const docs = timeline.lanes.find((lane) => lane.key === 'docs');
-    expect(docs?.points?.map((point) => point.sha)).toEqual([sha]);
+    expect(timeline.lanes[0]!.points?.map((point) => point.sha)).toEqual([shas.at(-2)]);
   });
 
   it('lanes commits by git author, and the commits and span of a session under its runtime', async () => {
@@ -813,7 +845,17 @@ describe('file blame and history', () => {
     expect(history.cochange).toEqual([{ path: '说明.md', together: 1 }]);
   });
 
-  it.each(['../x', '/etc/passwd', '-x'])('refuses the path %s', async (file) => {
+  it('counts a week’s change to a file below a later commit dated before the weeks', async () => {
+    const f = workbenchFixture();
+    commitsAt(f.source, [Date.now(), Date.now() - 300 * DAY]);
+    const history = await f.control.repoFileHistory(user, {
+      project_id: f.project.id,
+      path: 'count.txt',
+    });
+    expect(history.weekly.reduce((sum, week) => sum + week.count, 0)).toBe(1);
+  });
+
+  it.each(['../x', '/etc/passwd', 'docs/../../x'])('refuses the path %s', async (file) => {
     const r = repoFixture();
     await expect(
       r.f.control.repoBlame(user, { project_id: r.f.project.id, path: file }),

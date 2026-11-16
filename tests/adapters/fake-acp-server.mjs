@@ -3,7 +3,9 @@
 // FAKE_ACP_NO_MODEL_OPTION leaves the model out of the config options, FAKE_ACP_NO_THOUGHT_OPTION
 // the thought level, FAKE_ACP_REJECT_EFFORT refuses to set the thought level, FAKE_ACP_GROUPED_MODELS
 // offers grouped models and advertises session/close, FAKE_ACP_ARGV_LOG names a file that gets
-// the agent's own arguments, FAKE_ACP_RESUMED_COST is the session cost a resume replays. The last
+// the agent's own arguments, FAKE_ACP_RESUMED_COST is the session cost a resume replays,
+// FAKE_ACP_STARTUP_CONFIG_UPDATE announces the options ahead of the session/new response and
+// FAKE_ACP_REFUSE_MODEL names a model value the agent refuses to set. The last
 // text block of a prompt picks the script. A replies file (first
 // argument) instead scripts prompts by substring: one text chunk, then either a hold until cancel or
 // an edit permission request that, once allowed, writes the file `write` captures from the prompt.
@@ -284,6 +286,20 @@ const scripts = {
   'permission-on-cancel'() {
     onCancel = () => permission('edit');
   },
+  // An elicitation that crosses the cancel.
+  'elicit-on-cancel'() {
+    onCancel = () =>
+      ask(
+        'elicitation/create',
+        {
+          sessionId,
+          mode: 'form',
+          message: 'Pantheon needs a value',
+          requestedSchema: { type: 'object', properties: { field: { type: 'string' } } },
+        },
+        () => stop('cancelled'),
+      );
+  },
   refusal() {
     stop('refusal');
   },
@@ -335,6 +351,8 @@ const handle = (frame) => {
     case 'session/new':
       if (fail === 'session') return error('Session refused');
       if (!validMcpServers(frame.params.mcpServers)) return error('Invalid mcpServers');
+      if (process.env.FAKE_ACP_STARTUP_CONFIG_UPDATE)
+        update({ sessionUpdate: 'config_option_update', configOptions });
       return reply({ sessionId, configOptions });
     case 'session/load':
     case 'session/resume':
@@ -362,6 +380,8 @@ const handle = (frame) => {
       if (!option) return error('Unknown config option');
       if (process.env.FAKE_ACP_REJECT_EFFORT && option.category === 'thought_level')
         return error('Effort rejected');
+      if (option.category === 'model' && frame.params.value === process.env.FAKE_ACP_REFUSE_MODEL)
+        return error('Model refused');
       option.currentValue = frame.params.value;
       return reply({ configOptions });
     }

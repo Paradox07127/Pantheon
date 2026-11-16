@@ -275,7 +275,7 @@ it('refuses every repository write from a principal other than the user and path
   for (const [type, input] of [
     ['repo.discard', { paths: ['../x'] }],
     ['repo.commit', { paths: ['../x'], message: 'Outside' }],
-    ['repo.discard', { paths: ['-x'] }],
+    ['repo.discard', { paths: ['docs/../../x'] }],
   ] as const)
     await expect(send(type, input), type).rejects.toMatchObject({ code: 'invalid_input' });
 });
@@ -516,6 +516,35 @@ it('refuses an undo when a folder of the file was replaced by a symlink and leav
     code: 'invalid_state',
   });
   expect(readFileSync(path.join(outside, 'config'), 'utf8')).toBe('precious\n');
+});
+
+it.each([
+  ['a tracked file', 'answer.txt'],
+  ['an untracked file', 'fresh.txt'],
+])(
+  'refuses an undo that would overwrite work saved in %s after the discard',
+  async (_kind, file) => {
+    const { read, write, send } = checkout();
+    write(file, 'discarded\n');
+    const { undo_id } = await send<{ undo_id: string }>('repo.discard', { paths: [file] });
+    write(file, 'new work after discard\n');
+    await expect(send('repo.discard_undo', { undo_id })).rejects.toMatchObject({
+      code: 'invalid_state',
+    });
+    expect(read(file)).toBe('new work after discard\n');
+  },
+);
+
+it('commits and discards a file whose name starts with -', async () => {
+  const { root, read, write, send } = checkout();
+  git(root, 'config', 'user.name', 'Repository Owner');
+  git(root, 'config', 'user.email', 'owner@example.invalid');
+  write('-draft.txt', 'draft\n');
+  await send('repo.commit', { paths: ['-draft.txt'], message: 'Add the draft' });
+  expect(git(root, 'show', '--name-only', '--format=', 'HEAD')).toBe('-draft.txt');
+  write('-draft.txt', 'changed\n');
+  await send('repo.discard', { paths: ['-draft.txt'] });
+  expect(read('-draft.txt')).toBe('draft\n');
 });
 
 it('keeps an undo that failed so that it can be tried again', async () => {

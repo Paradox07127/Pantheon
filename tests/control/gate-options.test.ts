@@ -142,6 +142,15 @@ it('marks only the fresh gate clone as a disposable root', async () => {
   expect(execute.mock.calls[1]![0].disposable).toBeUndefined();
 });
 
+it('refuses session gates in the live worktree while input waits for a turn', async () => {
+  const { f, session } = await setup([{ name: 'check', argv: ['check'] }]);
+  f.call('workflow.policy.set', { project_id: f.project.id, gate_runner: 'session' });
+  const idle = f.store.must<Session>('sessions', session.id);
+  f.store.update('sessions', { ...idle, state: 'running' }, idle.revision);
+  expect(() => run(f, session)).toThrowError(expect.objectContaining({ code: 'invalid_state' }));
+  expect(f.store.must<Session>('sessions', session.id).gate_run).toBeUndefined();
+});
+
 it('refuses remote session gates with unsupported_capability before starting an operation', async () => {
   const { f, session } = await setup([{ name: 'check', argv: ['check'] }]);
   f.call('workflow.policy.set', { project_id: f.project.id, gate_runner: 'session' });

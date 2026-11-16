@@ -1,4 +1,4 @@
-import { toolCommand, toolInputSummary, reportedToolTokens } from '@pantheon/adapters';
+import { toolCommand, toolFiles, toolInputSummary, reportedToolTokens } from '@pantheon/adapters';
 import {
   requireThat,
   canonical,
@@ -383,6 +383,7 @@ function projectLanes(
         (payload.turn_id === undefined ? undefined : turnById.get(payload.turn_id)) ??
         placed(call.started?.at ?? call.completed?.at ?? null);
       const summary = toolInputSummary(call.started?.payload.input);
+      const files = toolFiles(call.started?.payload.input);
       const output = call.completed?.payload.output;
       const tokens = reportedToolTokens(output?.usage);
       const signature =
@@ -417,6 +418,7 @@ function projectLanes(
         timing: 'daemon',
         duration_ms: payload.duration_ms,
         ...(summary !== undefined ? { input_summary: summary } : {}),
+        ...(files ? { files } : {}),
         ...(tokens ? { tokens } : {}),
         ...(retry > 0 ? { retry_count: retry } : {}),
         ...(typeof output?.exitCode === 'number' ? { exit_code: output.exitCode } : {}),

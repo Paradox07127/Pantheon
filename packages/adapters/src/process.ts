@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
+import { PANTHEON_VERSION } from '@pantheon/domain/version';
 import { verifiedCapabilities } from './capabilities.js';
 import {
   NATIVE_ENV_ALLOWLIST,
@@ -140,64 +141,104 @@ export function deviceGroupOf(child: ChildProcessWithoutNullStreams): Promise<nu
     child.stderr.once('close', () => resolve(undefined));
   });
 }
+/** A process group a runtime leads on another device, and what stops of it have learned. */
+export interface DeviceProcess {
+  remote: RemoteLaunch;
+  group: Promise<number | undefined>;
+  allowlist: readonly string[];
+  stopped?: boolean;
+  /** A stop saw the group empty; its number may since name another group, so it is never signalled again. */
+  emptied?: boolean;
+  /** "pid start-time" of the processes stops saw in or under the group; once it emptied, those still running. */
+  seen?: string[];
+}
 /**
  * Stops a device process group over the device link: closing the transport does not, as sshd sends
  * a command without a terminal no hang-up. Returns why the stop is not confirmed.
  */
 export async function stopOnDevice(
-  remote: RemoteLaunch,
-  reported: Promise<number | undefined>,
-  allowlist: readonly string[],
+  device: DeviceProcess,
   deadline: number,
 ): Promise<string | undefined> {
   let wait: NodeJS.Timeout | undefined;
   const group = await Promise.race([
-    reported,
+    device.group,
     new Promise<undefined>((resolve) => {
       wait = setTimeout(() => resolve(undefined), deadline - Date.now());
     }),
   ]);
   clearTimeout(wait);
   if (group === undefined) return 'Device process group was not reported';
-  const [command, ...args] = remote.plain_transport ?? remote.transport;
+  const [command, ...args] = device.remote.plain_transport ?? device.remote.transport;
+  const seen = device.seen ?? [];
   // As on this machine: descendants that left the group are listed while it has members, then checked.
   // Linux signals a group whose members have all exited but are not reaped; that group has stopped.
+  // A group an earlier stop left running is signalled only while a process that stop saw is still in it.
+  // Each process seen is printed before any signal, so a link cut at the deadline still reports it.
   const script = `g=${group}
+known=${quote(seen.join('\n'))}
+start() { set -- $(ps -o lstart= -p "$1" 2>/dev/null); echo "$*"; }
+same() { printf '%s\\n' "$known" | while read -r p s; do [ -n "$p" ] && [ "$(start "$p")" = "$s" ] && ps -o stat= -p "$p" 2>/dev/null | grep -q '^ *[^Z ]' && echo "$p $s"; done; }
 live() { kill -0 -$g 2>/dev/null && ! ps -axo pgid=,stat= | awk -v g=$g '$1 == g { n++; if ($2 ~ /^Z/) z++ } END { exit !(n && n == z) }'; }
-live || exit 0
-set -- $(ps -axo pid=,ppid= | awk -v g=$g '{ up[$1] = $2 } END { for (p in up) { q = up[p]; while (q > 1 && q != g && (q in up)) q = up[q]; if (q == g) print p } }')
-kill -TERM -$g 2>/dev/null
-n=0
-while live; do
-  n=$((n + 1))
-  [ $n -eq 20 ] && kill -KILL -$g 2>/dev/null
-  [ $n -gt 100 ] && exit 2
-  sleep 0.1
-done
-for p; do ps -o stat= -p "$p" 2>/dev/null | grep -q '^ *[^Z ]' && exit 3; done
-exit 0`;
-  const code = await new Promise<number | null>((resolve) => {
+if ${device.emptied ? 'false' : 'live'}; then
+  if [ -n "$known" ]; then
+    owned=
+    for p in $(same | cut -d ' ' -f 1); do [ "$(ps -o pgid= -p "$p" 2>/dev/null | tr -d ' ')" = "$g" ] && owned=1; done
+    [ -n "$owned" ] || exit 4
+  fi
+  for p in $(ps -axo pid=,ppid=,pgid= | awk -v g=$g '{ up[$1] = $2; if ($3 == g) print $1 } END { for (p in up) { q = up[p]; while (q > 1 && q != g && (q in up)) q = up[q]; if (q == g) print p } }' | sort -u); do
+    s=$(start "$p")
+    [ -n "$s" ] && echo "k $p $s" && known="$known
+$p $s"
+  done
+  kill -TERM -$g 2>/dev/null
+  n=0
+  while live; do
+    n=$((n + 1))
+    [ $n -eq 20 ] && kill -KILL -$g 2>/dev/null
+    [ $n -gt 100 ] && exit 2
+    sleep 0.1
+  done
+fi
+left=$(same)
+echo e
+[ -z "$left" ] && exit 0
+printf '%s\\n' "$left" | sed 's/^/s /'
+exit 3`;
+  const { code, output } = await new Promise<{ code: number | null; output: string }>((resolve) => {
     const child = spawn(command!, [...args, script], {
-      env: transportEnvironment(allowlist),
-      stdio: 'ignore',
+      env: transportEnvironment(device.allowlist),
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
+    let output = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => (output += chunk));
     const timer = setTimeout(() => child.kill('SIGKILL'), Math.max(0, deadline - Date.now()));
     child.once('error', () => {
       clearTimeout(timer);
-      resolve(null);
+      resolve({ code: null, output });
     });
     child.once('close', (exit) => {
       clearTimeout(timer);
-      resolve(exit);
+      resolve({ code: exit, output });
     });
   });
+  const lines = output.split('\n');
+  const listed = (tag: string) =>
+    lines.filter((line) => line.startsWith(`${tag} `)).map((line) => line.slice(tag.length + 1));
+  if (code === 0 || code === 3) {
+    device.emptied = true;
+    device.seen = listed('s');
+  } else device.seen = [...new Set([...seen, ...listed('k')])];
   return code === 0
     ? undefined
     : code === 2
       ? 'Device process group still has members after the deadline'
       : code === 3
         ? 'Descendants that left the device process group are still running'
-        : 'Device process stop could not be checked over the device link';
+        : code === 4
+          ? 'Device process group number may now belong to another process group'
+          : 'Device process stop could not be checked over the device link';
 }
 /**
  * The real paths on the device of absolute paths, a missing tail kept as written, as toolPath does
@@ -392,9 +433,40 @@ export function descendants(root: number): LeftoverProcess[] {
     }
   return found;
 }
+/** The processes of earlier with those of found it does not already hold; a reused pid is another process. */
+export function mergeProcesses(
+  earlier: LeftoverProcess[],
+  found: LeftoverProcess[],
+): LeftoverProcess[] {
+  return [
+    ...earlier,
+    ...found.filter((entry) => !earlier.some((seen) => sameProcess(seen, entry))),
+  ];
+}
+function sameProcess(one: ProcessIdentity, other: ProcessIdentity): boolean {
+  return one.pid === other.pid && one.start_time_us === other.start_time_us;
+}
+/** The members of process group pgid; undefined when the process list cannot be read. */
+function groupMembers(pgid: number): ProcessIdentity[] | undefined {
+  let listing: string;
+  try {
+    listing = execFileSync('ps', ['-axo', 'pid=,pgid='], { encoding: 'utf8' });
+  } catch {
+    return undefined;
+  }
+  return listing.split('\n').flatMap((line) => {
+    const row = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+    const identity =
+      row && Number(row[2]) === pgid ? readProcessIdentity(Number(row[1])) : undefined;
+    return identity ? [identity] : [];
+  });
+}
 const stoppedChildren = new WeakSet<ChildProcessWithoutNullStreams>();
 // A later stop sees an empty group, so it re-checks the processes an earlier stop saw leave it.
 const childLeftovers = new WeakMap<ChildProcessWithoutNullStreams, LeftoverProcess[]>();
+// The members of a group a stop left running: once its leader exits, the group may empty and its
+// number pass to another group, so a later stop signals it only while one of them is still in it.
+const childMembers = new WeakMap<ChildProcessWithoutNullStreams, ProcessIdentity[]>();
 export async function terminate(
   child: ChildProcessWithoutNullStreams,
   done: Promise<unknown>,
@@ -417,9 +489,16 @@ export async function terminate(
       return false;
     }
   };
+  const members = childMembers.get(child);
+  // While the leader is unreaped, its pid and so its group number are still its own.
+  const foreign =
+    members !== undefined &&
+    (child.exitCode !== null || child.signalCode !== null) &&
+    alive() &&
+    !groupMembers(child.pid!)?.some((member) => members.some((seen) => sameProcess(seen, member)));
   const kill = (signal: NodeJS.Signals): void => {
     // An empty group must never be signalled again, even if transport close is pending.
-    if (!alive()) return;
+    if (foreign || !alive()) return;
     try {
       if (process.platform === 'win32') child.kill(signal);
       else if (child.pid) process.kill(-child.pid, signal);
@@ -430,17 +509,14 @@ export async function terminate(
     }
   };
   // Snapshot only a live group: an exited leader's pid may already belong to another process.
-  const earlier = childLeftovers.get(child) ?? [];
-  const snapshot = [
-    ...earlier,
-    ...(process.platform !== 'win32' && alive() ? descendants(child.pid!) : []).filter(
-      (entry) => !earlier.some((seen) => seen.pid === entry.pid),
-    ),
-  ];
+  const snapshot = mergeProcesses(
+    childLeftovers.get(child) ?? [],
+    process.platform !== 'win32' && !foreign && alive() ? descendants(child.pid!) : [],
+  );
   kill('SIGTERM');
   const forceAt = Date.now() + Math.min(2000, Math.max(0, (deadline - Date.now()) / 2));
   let forced = false;
-  while ((!closed || alive()) && Date.now() < deadline) {
+  while (!foreign && (!closed || alive()) && Date.now() < deadline) {
     if (!forced && Date.now() >= forceAt) {
       kill('SIGKILL');
       forced = true;
@@ -460,6 +536,10 @@ export async function terminate(
       )
     : [];
   childLeftovers.set(child, confirmed ? leftovers : snapshot);
+  if (observedGroup && !empty && !foreign) {
+    const left = groupMembers(child.pid!);
+    if (left?.length) childMembers.set(child, left);
+  }
   const stopped = !child.pid || (confirmed && leftovers.length === 0);
   return {
     stopped,
@@ -476,13 +556,17 @@ export async function terminate(
     },
     reason: stopped
       ? undefined
-      : leftovers.length
-        ? 'Descendants that left the process group are still running'
-        : observedGroup && empty
-          ? 'Process group is empty but its transport is still open'
-          : 'Process stop not confirmed by deadline',
+      : foreign
+        ? 'Process group number may now belong to another process group'
+        : leftovers.length
+          ? 'Descendants that left the process group are still running'
+          : observedGroup && empty
+            ? 'Process group is empty but its transport is still open'
+            : 'Process stop not confirmed by deadline',
   };
 }
+
+export const CLIENT_INFO = { name: 'pantheon', title: 'Pantheon', version: PANTHEON_VERSION };
 
 export class JsonRpcProcess extends EventEmitter {
   readonly child: ChildProcessWithoutNullStreams;
@@ -498,12 +582,7 @@ export class JsonRpcProcess extends EventEmitter {
   >();
   private closed = false;
   private readonly jsonrpc: boolean;
-  private readonly device?: {
-    remote: RemoteLaunch;
-    group: Promise<number | undefined>;
-    allowlist: readonly string[];
-    stopped?: boolean;
-  };
+  private readonly device?: DeviceProcess;
   constructor(
     binary: string,
     args: string[],
@@ -539,14 +618,17 @@ export class JsonRpcProcess extends EventEmitter {
         detached: process.platform !== 'win32',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-    this.child.stdin.on('error', (error) => {
+    // A request cannot be written or answered once either pipe fails, though the runtime may live on.
+    const fail = (error: Error): void => {
+      this.closed = true;
       for (const p of this.pending.values()) {
         clearTimeout(p.timer);
         p.reject(error);
       }
       this.pending.clear();
       this.emit('protocolError', error);
-    });
+    };
+    this.child.stdin.on('error', fail);
     this.child.stderr.resume();
     const lines = createInterface({ input: this.child.stdout });
     let partial = 0;
@@ -559,7 +641,7 @@ export class JsonRpcProcess extends EventEmitter {
       lines.close();
       this.child.stdout.destroy();
     });
-    lines.once('close', () => this.emit('protocolError', new Error('Protocol transport closed')));
+    lines.once('close', () => fail(new Error('Protocol transport closed')));
     lines.on('line', (line) => {
       if (line.length > maxLine) {
         this.emit('protocolError', new Error('Oversized protocol frame'));
@@ -658,7 +740,7 @@ export class JsonRpcProcess extends EventEmitter {
   /** Defaults to the Codex handshake; a null notification sends nothing after the response. */
   async initialize(
     params: unknown = {
-      clientInfo: { name: 'pantheon', title: 'Pantheon', version: '0.1.0' },
+      clientInfo: CLIENT_INFO,
       capabilities: { experimentalApi: false },
     },
     initialized: string | null = 'initialized',
@@ -672,9 +754,7 @@ export class JsonRpcProcess extends EventEmitter {
     const device = this.device;
     // An empty device group is never signalled again; its id may pass to another process.
     const unconfirmed =
-      device && !device.stopped
-        ? await stopOnDevice(device.remote, device.group, device.allowlist, deadline)
-        : undefined;
+      device && !device.stopped ? await stopOnDevice(device, deadline) : undefined;
     if (device && unconfirmed === undefined) device.stopped = true;
     const receipt = await terminate(this.child, this.exited, deadline);
     return receipt.stopped && unconfirmed !== undefined

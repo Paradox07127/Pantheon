@@ -457,14 +457,21 @@ const untrackedDiff = (file: string, ...extra: string[]) => [
 // A no-index diff exits 1 when the files differ.
 const noIndexDiffed = (code: number | null) => code === 0 || code === 1;
 
+/** Untracked files a diff reads with Git, and the time it spends on them; later files come without lines. */
+const UNTRACKED_DIFF_BOUND = 200,
+  UNTRACKED_DIFF_TIME = 3 * TIME_BOUND;
+
 /** Untracked files whose lines a listing reads; files past it count without lines. */
 const UNTRACKED_LINES_BOUND = 2000;
+
+/** Lines of a text as Git counts them: a last line without a newline still counts. */
+const textLines = (text: string) => text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
 
 /** Lines of an untracked file as Git counts them; a file with a NUL byte is binary and has none. */
 function untrackedLines(file: string): number {
   const stat = lstatSync(file);
   // Git diffs a symbolic link as the text of its target.
-  if (stat.isSymbolicLink()) return readlinkSync(file).split('\n').length;
+  if (stat.isSymbolicLink()) return textLines(readlinkSync(file));
   if (!stat.isFile()) return 0;
   // Non-blocking, so a path replaced by a named pipe since lstat opens at once; fstat then refuses it.
   const descriptor = openSync(
@@ -492,7 +499,7 @@ function untrackedLines(file: string): number {
 /** untrackedLines with asynchronous reads, so a large file does not hold the event loop. */
 async function readUntrackedLines(file: string): Promise<number> {
   const stat = await lstat(file);
-  if (stat.isSymbolicLink()) return (await readlink(file)).split('\n').length;
+  if (stat.isSymbolicLink()) return textLines(await readlink(file));
   if (!stat.isFile()) return 0;
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK),
     chunk = Buffer.alloc(64 * 1024);
@@ -794,6 +801,8 @@ interface SessionActivity {
     not_run?: number;
   };
   checked?: { at: number; failed: boolean; stale: boolean; spec: string; commit: string };
+  /** A gate started and has not been checked, cancelled or ended with its merge since. */
+  gating?: boolean;
 }
 
 /** Each session's newest activity and newest gate run, read from the project's events. */
@@ -858,6 +867,7 @@ function sessionActivity(
     if (event.kind === 'session.opened') entry.opened = event.created_at;
     if (event.kind === 'session.gate_started' || event.kind === 'session.gate_run_requested') {
       const payload = JSON.parse(event.payload!) as { commands?: unknown[] };
+      entry.gating = true;
       entry.gate_counts = {
         passed: 0,
         failed: 0,
@@ -866,8 +876,11 @@ function sessionActivity(
       };
     } else if (
       event.kind === 'session.gate_run_cancelled' ||
-      event.kind === 'session.gate_run_failed'
+      event.kind === 'session.gate_run_failed' ||
+      event.kind === 'session.merge_cancelled' ||
+      event.kind === 'session.merge_blocked'
     ) {
+      entry.gating = false;
       if (entry.gate_counts) entry.gate_counts.running = 0;
     } else if (
       event.kind === 'session.gate_step_checked' ||
@@ -898,6 +911,7 @@ function sessionActivity(
         : 0;
       if (event.kind === 'session.gate_checked' && notRun > 0) entry.gate_counts.not_run = notRun;
       if (event.kind === 'session.gate_step_checked') continue;
+      entry.gating = false;
       entry.checked = {
         at: event.created_at,
         failed: results.some(gateFailed),
@@ -985,13 +999,10 @@ interface ListedGit {
 function stateWorktree(
   workspace: Workspace,
   state: WorkbenchSession['state'],
-  changes: WorkbenchSession['changes'] | undefined,
   facts: SessionGitFacts | null | undefined,
 ): ListedGit['worktree'] {
-  // Ready means mergeable work: commits on the base and nothing uncommitted.
-  return workspace.kind !== 'in_place' && state === 'idle' && !!changes?.files
-    ? (facts ?? null)
-    : null;
+  // Ready means mergeable work: commits on the base and nothing uncommitted, whatever files they change.
+  return workspace.kind !== 'in_place' && state === 'idle' ? (facts ?? null) : null;
 }
 
 const listsReady = (workspace: Workspace, worktree: ListedGit['worktree']) =>
@@ -1010,12 +1021,12 @@ export function cachedReady(
   if (!workspaceReady(workspace) || workspace.kind === 'in_place') return false;
   const cached = worktreeReads.get(workspace.id);
   if (!cached) return undefined;
-  const { changes, facts } = knownReads(cached);
+  const { facts } = knownReads(cached);
   // A failed read (null) says no more than a missing one.
-  if (changes == null || facts == null) return undefined;
+  if (facts == null) return undefined;
   return listsReady(
     workspace,
-    stateWorktree(workspace, listedState(ctx, session, waiting ? 1 : 0, undefined), changes, facts),
+    stateWorktree(workspace, listedState(ctx, session, waiting ? 1 : 0, undefined), facts),
   );
 }
 
@@ -1031,15 +1042,19 @@ function listedGit(ctx: ControlContext, p: Principal, listed: ListedRead): Liste
   if (!inPlace && cached.facts === undefined) return { read: 'facts' };
   if (source && cached.changes === undefined) return { read: 'changes', ...source };
   const changes = source ? cached.changes! : null;
-  const worktree = stateWorktree(workspace, listed.state, changes, cached.facts);
+  const worktree = stateWorktree(workspace, listed.state, cached.facts);
   // A commit or rollback outside a turn also moves HEAD off the commit the run checked.
+  // Facts read before an empty commit would hide it, so a worktree without changed files reads HEAD too.
   const readsHead =
-    !!listed.activity?.checked && !!listed.commands?.length && !!changes && !worktree;
+    !!listed.activity?.checked &&
+    !!listed.commands?.length &&
+    !!changes &&
+    (!worktree || !changes.files);
   if (readsHead && cached.head === undefined) return { read: 'head' };
   return {
     changes,
     worktree,
-    head: worktree?.head ?? (readsHead ? (cached.head ?? undefined) : undefined),
+    head: readsHead ? (cached.head ?? undefined) : worktree?.head,
   };
 }
 
@@ -1332,7 +1347,7 @@ export function sessionList(
         : {}),
       workspace_kind: 'linked_worktree' as const,
       reconciling: session.state === 'reconciling',
-      stopping: !!session.stop_pending,
+      stopping: !!session.stop_pending || (!!session.stop_requested && !session.outcome),
       created_at: new Date(activity?.opened ?? 0).toISOString(),
       last_activity_at: new Date(activity?.at ?? 0).toISOString(),
     };
@@ -1397,7 +1412,9 @@ export function sessionList(
                   ? { finished_at: new Date(session.gate_run.finished_at).toISOString() }
                   : {}),
               }
-            : gateOperationActive(session) || runningGates(ctx).has(session.id)
+            : gateOperationActive(session) ||
+                runningGates(ctx).has(session.id) ||
+                (session.merge?.state === 'running' && activity?.gating)
               ? { state: 'running' }
               : checked
                 ? {
@@ -1548,7 +1565,14 @@ export async function readSessionDiff(
     return true;
   };
   if (!(await append(trackedDiff(base), (code) => code === 0))) failed();
-  for (const file of untracked.stdout.toString().split('\0').filter(Boolean)) {
+  const deadline = Date.now() + UNTRACKED_DIFF_TIME;
+  for (const [index, file] of untracked.stdout.toString().split('\0').filter(Boolean).entries()) {
+    // Each untracked file costs its own Git processes; past the bounds its lines stay unknown.
+    if (index >= UNTRACKED_DIFF_BOUND || Date.now() >= deadline) {
+      files.push({ path: file, additions: null, deletions: null, untracked: true });
+      truncated = true;
+      continue;
+    }
     const counted = await run(untrackedDiff(file, '--numstat', '-z'), bound);
     if (!noIndexDiffed(counted.exit_code)) failed();
     const [stat] = numstatFiles(counted.stdout);
@@ -1670,7 +1694,12 @@ export function stopWorktreeSession(
   }
   if (!nativeKeys(ctx, session.id).length) {
     // Nothing can confirm the end of a process a restart left without a stored identity; the user discards it.
-    if (session.state === 'reconciling' && !session.process_identity && stop.by === 'user') {
+    if (
+      session.state === 'reconciling' &&
+      !session.process_identity &&
+      !nativeTurnActive(ctx, session) &&
+      stop.by === 'user'
+    ) {
       failWorkbenchTurns(ctx, marked, 'Session discarded');
       return discardSession(ctx, session.id, cause);
     }
@@ -1681,6 +1710,7 @@ export function stopWorktreeSession(
       nativeTurnActive(ctx, session)
     )
       return marked;
+    failWorkbenchTurns(ctx, marked, 'Session discarded');
     return discardSession(ctx, session.id, cause);
   }
   closeStopped(ctx, session.id, cause);
@@ -1755,6 +1785,7 @@ export function discardStopped(ctx: ControlContext, sessionId: string, cause: st
   const current = ctx.store.must<Session>('sessions', sessionId);
   // A lead's task.stop can carry any reason; only the user deletes.
   if (current.stop_requested?.reason !== DELETE_REASON || current.stop_requested.by !== 'user') {
+    failWorkbenchTurns(ctx, current, 'Session discarded');
     discardSession(ctx, sessionId, cause);
     return;
   }
@@ -2059,6 +2090,15 @@ function deleteSessionRows(
 const merges = new WeakMap<ControlContext, Set<string>>();
 // Sessions whose session.gates.run is checking; its gate processes share the merge's key.
 const gateRuns = new WeakMap<ControlContext, Set<string>>();
+
+// Turns whose automatic merge waits for the session.gates.run that was checking when they ended.
+const waitingMerges = new WeakMap<ControlContext, Map<string, string>>();
+
+function mergesAfterGates(ctx: ControlContext): Map<string, string> {
+  let waiting = waitingMerges.get(ctx);
+  if (!waiting) waitingMerges.set(ctx, (waiting = new Map()));
+  return waiting;
+}
 
 function runningGates(ctx: ControlContext): Set<string> {
   let running = gateRuns.get(ctx);
@@ -2706,6 +2746,7 @@ function landDirectTask(
     worktreeReads.delete(workspace.id);
     ctx.store.event('session.merged', next, next.project_id, {
       branch: item.branch,
+      source: item.source,
       from_sha: item.from_sha,
       to_sha: item.to_sha,
       ...measured,
@@ -2987,6 +3028,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       );
       ctx.store.event('session.merged', next, next.project_id, {
         branch: item.branch,
+        source: item.source,
         from_sha: item.from_sha,
         to_sha: item.to_sha,
         files: files.length,
@@ -3305,11 +3347,15 @@ export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string, turnI
     session.state !== 'open' ||
     session.stop_pending ||
     session.merge?.state === 'running' ||
-    runningGates(ctx).has(session.id) ||
     // A lead's worktree holds the plan; its task sessions merge the planned work.
     (plan && !reported)
   )
     return;
+  // The user's gate run merges the turn once it ends.
+  if (runningGates(ctx).has(session.id)) {
+    mergesAfterGates(ctx).set(session.id, turnId);
+    return;
+  }
   const project = ctx.store.must<Project>('projects', session.project_id),
     workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
   if (!autoMerge(ctx, project) || !gateCommands(ctx, project, workspace, session)?.length) return;
@@ -3693,6 +3739,7 @@ export function openWorktreeSession(
               generation: taskGeneration(board.plan, board.task.id),
               definition_version: workflow!.definition_version,
               ...(workflow!.id !== project.id ? { workflow_id: workflow!.id } : {}),
+              ...(board.task.uses ? { uses: board.task.uses } : {}),
             },
           }
         : {}),
@@ -3886,6 +3933,12 @@ export const workbenchSessionHandlers: Handlers = {
       const later = turns.slice(at + 1);
       beforeTurnId = later[0]?.id;
       // Without a later checkpoint no turn has run since, so the current files are that end.
+      const uncaptured = new Set(
+        ctx.store
+          .kindEvents(source.project_id, ['session.checkpoint_failed'])
+          .filter((event) => event.aggregate_id === source.id)
+          .map((event) => (event.payload as { turn_id: string }).turn_id),
+      );
       for (const turn of later) {
         const found = runGit(workspace.path, [
           'rev-parse',
@@ -3893,6 +3946,12 @@ export const workbenchSessionHandlers: Handlers = {
           '--quiet',
           `${checkpointRef(workspace, source.id, turn.id)}^{commit}`,
         ]);
+        // A turn that ran without its checkpoint has changed the current files already.
+        requireThat(
+          found.exit_code === 0 || !uncaptured.has(turn.id),
+          'invalid_state',
+          'A later turn of the source session has no checkpoint; fork from an earlier turn',
+        );
         if (found.exit_code !== 0) continue;
         checkpoint = found.stdout.toString().trim();
         break;
@@ -4225,10 +4284,17 @@ export const workbenchSessionHandlers: Handlers = {
       'invalid_state',
       'No gate or acceptance commands are configured',
     );
+    const inWorktree = workflowPolicy(ctx, session.project_id).gate_runner === 'session';
     requireThat(
-      workflowPolicy(ctx, session.project_id).gate_runner !== 'session' || !onDevice(session),
+      !inWorktree || !onDevice(session),
       'unsupported_capability',
       'Remote session gates cannot return bounded command exit codes',
+    );
+    // A turn's edits in the live worktree would fail the gate command that ran beside them.
+    requireThat(
+      !inWorktree || (session.state !== 'running' && !nativeTurnActive(ctx, session)),
+      'invalid_state',
+      'Run the session gates between turns',
     );
     let commands = configured;
     const running = runningGates(ctx);
@@ -4310,6 +4376,9 @@ export const workbenchSessionHandlers: Handlers = {
       })
       .finally(() => {
         running.delete(session.id);
+        const turnId = mergesAfterGates(ctx).get(session.id);
+        mergesAfterGates(ctx).delete(session.id);
+        if (turnId && committed() && !ctx.closing) autoMergeAfterTurn(ctx, session.id, turnId);
         ctx.completions.delete(completion);
         if (!ctx.closing) ctx.changed();
       });
@@ -4592,7 +4661,14 @@ export const workbenchSessionHandlers: Handlers = {
     refuseInPlace(ctx, session, 'A session in the user folder cannot change its backend');
     revision(ctx, c, session);
     requireThat(!nativeTurnBusy(ctx, session), 'invalid_state', 'Change the backend between turns');
-    if (input.backend !== null) backendProfile(ctx, session.runtime, input.backend);
+    if (input.backend !== null) {
+      requireThat(
+        !onDevice(session),
+        'invalid_input',
+        `A session on device ${session.device_id} cannot use a backend, whose key would reach the device command line`,
+      );
+      backendProfile(ctx, session.runtime, input.backend);
+    }
     const { backend_id: _previous, ...rest } = session;
     const next = ctx.store.update(
       'sessions',

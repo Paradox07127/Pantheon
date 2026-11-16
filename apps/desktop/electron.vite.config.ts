@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 const webRoot = fileURLToPath(new URL('../web', import.meta.url));
+const webVersion = JSON.parse(readFileSync(path.join(webRoot, 'package.json'), 'utf8')).version;
 
 export default defineConfig({
   main: {
@@ -80,6 +81,7 @@ export * as ReactFlow from '@xyflow/react';
   renderer: {
     root: webRoot,
     resolve: { alias: { '@': path.join(webRoot, 'src') } },
+    define: { __WEB_VERSION__: JSON.stringify(webVersion) },
     // electron-vite turns minify off for the renderer unless it is set here.
     build: { minify: true, rolldownOptions: { input: path.join(webRoot, 'index.html') } },
     plugins: [react(), tailwindcss()],

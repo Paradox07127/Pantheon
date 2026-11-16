@@ -644,6 +644,8 @@ export interface Session extends Entity {
     definition_version?: number;
     workflow_id?: string;
     parallel_index?: number;
+    /** The device resources the task used when the session opened, which it holds until it ends. */
+    uses?: Record<string, number>;
   };
   /** The outside subject, such as github:owner/repo#12, whose events opened this lead. */
   external_subject?: string;
@@ -681,7 +683,10 @@ export interface SessionRecap {
   at: number;
   model?: string;
 }
-/** The Pantheon MCP role a session's credential carries; a session in the user's own folder is never a lead. */
+/**
+ * The Pantheon MCP role a session's credential carries; a session in the user's own folder is never
+ * a lead, and one opened from a report task there is a worker so it can report.
+ */
 export function credentialRole(
   session: Pick<
     Session,
@@ -696,7 +701,7 @@ export function credentialRole(
     session.range_story ||
     session.intro ||
     !session.workspace_id ||
-    workspaceKind === 'in_place'
+    (workspaceKind === 'in_place' && !session.task)
   )
     return 'planner';
   return session.task ? 'worker' : 'lead';

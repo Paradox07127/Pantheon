@@ -1,10 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
 
 // Files that measure git against a fixed time bound: they run after the parallel pool, one at a time.
 const SERIAL = ['tests/control/repo-query-caches.test.ts'];
 
+const webVersion = JSON.parse(
+  readFileSync(new URL('./apps/web/package.json', import.meta.url), 'utf8'),
+).version;
+
 export default defineConfig({
+  define: { __WEB_VERSION__: JSON.stringify(webVersion) },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./apps/web/src', import.meta.url)),

@@ -29,14 +29,20 @@ it('rejects a request sent after the runtime exited at once', async () => {
   });
 });
 
-it('rejects a pending request when its frame cannot be written to the runtime', async () => {
-  // The runtime closes its standard input, then exits on its own a while later.
-  const rpc = new JsonRpcProcess('/bin/sh', ['-c', 'exec 0<&-; echo ready; sleep 3']);
+it.each([
+  ['input', 'exec 0<&-; echo ready; sleep 3'],
+  ['output', 'echo ready; exec 1>&-; sleep 3'],
+])('rejects every request once the runtime closes its standard %s', async (_, script) => {
+  // The runtime closes one of its pipes, then exits on its own a while later.
+  const rpc = new JsonRpcProcess('/bin/sh', ['-c', script]);
   const ready = once(rpc, 'protocolError');
   await ready;
 
   expect(await settled(rpc.request('unwritable', {}, null), 1500)).toEqual({
     rejected: expect.any(String),
+  });
+  expect(await settled(rpc.request('later', {}, null), 500)).toEqual({
+    rejected: 'Protocol transport closed',
   });
   await rpc.exited;
 });

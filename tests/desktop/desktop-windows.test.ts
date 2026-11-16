@@ -591,10 +591,30 @@ describe('app diagnostics', () => {
           throw new Error('no WSL in this test');
         },
       }));
+      vi.doMock('../../apps/desktop/src/main/daemon.js', async (original) => {
+        const actual = await original<typeof import('../../apps/desktop/src/main/daemon.js')>();
+        return {
+          ...actual,
+          DaemonBridge: class extends actual.DaemonBridge {
+            async query(method: string) {
+              return method === 'board'
+                ? {
+                    ok: true as const,
+                    value: {
+                      projects: [{ id: 'notes', roots: ['/home/ada/notes'] }],
+                      workspaces: [],
+                    },
+                  }
+                : super.query(method);
+            }
+          },
+        };
+      });
       cleanups.push(() => {
         if (resources) Object.defineProperty(process, 'resourcesPath', resources);
         else Reflect.deleteProperty(process, 'resourcesPath');
         vi.doUnmock('../../apps/desktop/src/main/wsl.js');
+        vi.doUnmock('../../apps/desktop/src/main/daemon.js');
       });
       const { main, call, module } = await startMain('win32', root);
       const before = (await call(main, 'pantheon:daemon')) as { error: { message: string } };
@@ -607,12 +627,81 @@ describe('app diagnostics', () => {
       expect(wsl.checks).toBeGreaterThan(checks);
       expect(after.error.message).toContain('Installing the runtime in WSL failed');
       // Paths from the daemon open through the distro found.
-      await call(main, 'pantheon:revealPath', '/home/ada/notes.md');
+      await call(main, 'pantheon:revealPath', '/home/ada/notes');
       expect(module.shell.showItemInFolder).toHaveBeenLastCalledWith(
-        '\\\\wsl.localhost\\Ubuntu\\home\\ada\\notes.md',
+        '\\\\wsl.localhost\\Ubuntu\\home\\ada\\notes',
       );
     },
   );
+
+  it('reveals only the folders the daemon reports and refuses any other path', async () => {
+    vi.doMock('../../apps/desktop/src/main/daemon.js', async (original) => {
+      const actual = await original<typeof import('../../apps/desktop/src/main/daemon.js')>();
+      const answers: Record<string, unknown> = {
+        board: {
+          projects: [{ id: 'alpha', roots: ['/work/alpha', '/work/alpha-docs'] }],
+          workspaces: [
+            { id: 'login', path: '/worktrees/alpha-login', source: '/work/alpha' },
+            { id: 'inline', path: '/work/alpha-inline', source: '/work/alpha-source' },
+          ],
+        },
+        'workspace.stale': { count: 0, worktree_root: '/worktrees' },
+        'repo.worktrees': [
+          { path: '/private/work/alpha', kind: 'checkout' },
+          { path: '/elsewhere/alpha-feature', kind: 'external' },
+        ],
+      };
+      return {
+        ...actual,
+        DaemonBridge: class extends actual.DaemonBridge {
+          watchBuilds() {
+            return () => {};
+          }
+          async daemon() {
+            return {
+              ok: true as const,
+              value: {
+                url: 'http://127.0.0.1:1',
+                version: '1.2.3',
+                protocol_version: 1,
+                started_here: false,
+                data_dir: '/data/pantheon',
+              },
+            };
+          }
+          async query(method: string, params: Record<string, string | string[]> = {}) {
+            if (method !== 'board' && params.project_id !== 'alpha')
+              return { ok: false as const, error: { code: 'not_found', message: method } };
+            return method in answers
+              ? { ok: true as const, value: answers[method] }
+              : { ok: false as const, error: { code: 'unknown_route', message: method } };
+          }
+        },
+      };
+    });
+    cleanups.push(() => vi.doUnmock('../../apps/desktop/src/main/daemon.js'));
+    const { main, call, module } = await startMain('darwin');
+    const { value: logs } = (await call(main, 'pantheon:logsDir')) as { value: string };
+    const shown = [
+      logs,
+      '/data/pantheon',
+      '/work/alpha',
+      '/work/alpha-docs',
+      '/worktrees/alpha-login',
+      '/work/alpha-source',
+      '/worktrees',
+      '/private/work/alpha',
+      '/elsewhere/alpha-feature',
+    ];
+    for (const target of shown)
+      expect(await call(main, 'pantheon:revealPath', target)).toEqual({ ok: true, value: null });
+    for (const target of ['/etc', '/work/alpha/src', '/data', '/Applications/Calculator.app'])
+      expect(await call(main, 'pantheon:revealPath', target)).toMatchObject({
+        ok: false,
+        error: { code: 'path_refused' },
+      });
+    expect(module.shell.showItemInFolder.mock.calls).toEqual(shown.map((target) => [target]));
+  });
 
   it('refuses diagnostics from strangers and subframes without consuming a crash', async () => {
     const { main, handlers, call } = await startMain('darwin');
@@ -1728,7 +1817,9 @@ describe('recent projects', () => {
   ] as const)(
     'adds the root a page reports to the recent items on %s',
     async (platform, recent) => {
-      const { main, call, module } = await startMain(platform);
+      const { main, call, module } = await startMain(platform, tempRoot(), () =>
+        fakeDaemon([{ id: 'alpha', roots: ['/work/alpha'] }]),
+      );
       expect(await call(main, 'pantheon:addRecentProject', '/work/alpha')).toEqual({
         ok: true,
         value: null,
@@ -1737,6 +1828,11 @@ describe('recent projects', () => {
         expect(await call(main, 'pantheon:addRecentProject', root)).toMatchObject({
           ok: false,
           error: { code: 'invalid_input' },
+        });
+      for (const root of ['/work/beta', '/work/alpha/src', '/Applications/Calculator.app'])
+        expect(await call(main, 'pantheon:addRecentProject', root)).toMatchObject({
+          ok: false,
+          error: { code: 'path_refused' },
         });
       expect(module.app.recentDocuments).toEqual(recent);
     },

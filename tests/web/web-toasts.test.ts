@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { toast } from '../../apps/web/src/components/Toast.js';
+import { holdToastAction, noticeResult, toast } from '../../apps/web/src/components/Toast.js';
 import { mountToastStore } from './web-toast-store.js';
 
 const CSS = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/index.css'), 'utf8');
@@ -65,6 +65,41 @@ describe('toast layer', () => {
     shown!.actionProps?.onClick?.({} as never);
     expect(run).toHaveBeenCalledOnce();
     expect(mounted.shown()).toEqual([]);
+  });
+
+  it('runs its action once when pressed again as it closes', () => {
+    const run = vi.fn();
+    toast({ title: 'Session archived', action: { label: 'Undo', run } });
+    const [shown] = mounted.store.state.toasts;
+    shown!.actionProps?.onClick?.({} as never);
+    shown!.actionProps?.onClick?.({} as never);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('runs a notice card action once when pressed again as it closes', () => {
+    const run = vi.fn();
+    noticeResult({
+      tone: 'done',
+      heading: 'Pinned to the canvas',
+      actions: [{ label: 'Undo', run }],
+    });
+    const press = () =>
+      mounted
+        .items()
+        .find((n) => n.type === 'button' && n.props.children === 'Undo')!
+        .props.onClick();
+    press();
+    press();
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('holds its action off while the caller says a write runs', () => {
+    const id = toast({ title: 'Discarded a.ts', action: { label: 'Undo', run: vi.fn() } });
+    const action = () => mounted.store.state.toasts[0]!.actionProps as { disabled?: boolean };
+    holdToastAction(id, true);
+    expect(action().disabled).toBe(true);
+    holdToastAction(id, false);
+    expect(action().disabled).toBe(false);
   });
 
   it('draws toasts on the popover surface without a shadow', () => {

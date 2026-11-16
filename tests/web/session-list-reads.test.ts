@@ -226,3 +226,31 @@ it("reads a worker's gates and preflight again after its lead's plan changes", a
     'session.preflight',
   ]);
 });
+
+it("reads a session's gates and preflight again after another session merges into its source", async () => {
+  mock.board = {
+    ...mock.board,
+    board: {
+      sessions: [{ id: 'session-idle', workspace_id: 'workspace-idle' }],
+      workspaces: [{ id: 'workspace-idle', source: '/repo/main' }],
+      session_turns: [],
+    },
+  };
+  const gates = mount(() => useSessionGates('session-idle'));
+  const preflight = mount(() => useSessionPreflight('session-idle'));
+  await settle(gates, preflight);
+  const merged = (sequence: number, source: string): DaemonEvent => ({
+    ...event(sequence, 'session.merged', 'session-other', 'project-merge'),
+    payload: { source },
+  });
+
+  await deliver(merged(1, '/repo/other'), gates, preflight);
+  expect(reads.map((r) => r.method).sort()).toEqual(['session.gates', 'session.preflight']);
+  await deliver(merged(2, '/repo/main'), gates, preflight);
+  expect(reads.map((r) => r.method).sort()).toEqual([
+    'session.gates',
+    'session.gates',
+    'session.preflight',
+    'session.preflight',
+  ]);
+});

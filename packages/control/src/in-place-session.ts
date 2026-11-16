@@ -27,7 +27,7 @@ import { assertNativeSessionFree } from './native-liveness.js';
 import { managedSessionSpec } from './native-session.js';
 import { inPlaceSandbox } from './protection.js';
 import { registerInPlaceWorkspace } from './workspace.js';
-import { checkPermissionMode } from './workbench-session.js';
+import { checkPermissionMode, workerInstructions } from './workbench-session.js';
 import { writerTempDirectory } from './workspace-removal.js';
 
 const IN_PLACE_TURN_MS = 6 * 60 * 60 * 1000;
@@ -111,6 +111,7 @@ export function inPlaceSessionSpec(ctx: ControlContext, session: Session): Sessi
     role: 'writer',
     control_instructions: [
       `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
+      ...(session.task ? [workerInstructions(ctx, session.task)] : []),
       ...(questionTool
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,

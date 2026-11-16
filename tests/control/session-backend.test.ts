@@ -341,6 +341,20 @@ it('takes the effort chosen with the backend and keeps the stored one when none 
   ]);
 });
 
+it('refuses a backend for a session on a remote device and still clears one', async () => {
+  vi.stubEnv(keyVariable, backendKey);
+  const { f, create, settled, revision } = setup();
+  const session = create({ runtime: 'fixture' });
+  await settled(session);
+  const idle = f.store.must<Session>('sessions', session.id);
+  f.store.update<Session>('sessions', { ...idle, device_id: 'build-box' }, idle.revision);
+  expect(() =>
+    f.call('session.setBackend', { session_id: session.id, backend: 'relay' }, revision(session)),
+  ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
+  expect(f.store.must<Session>('sessions', session.id).backend_id).toBeUndefined();
+  f.call('session.setBackend', { session_id: session.id, backend: null }, revision(session));
+});
+
 it('refuses to switch the backend during a turn', async () => {
   vi.stubEnv(keyVariable, backendKey);
   const { f, create, settled, revision } = setup(1000);

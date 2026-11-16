@@ -79,7 +79,7 @@ import {
 import { handlers } from './commands.js';
 import type { VisualDrawReceipt } from './visual.js';
 import { tick } from './scheduler.js';
-import { stopTurn } from './session.js';
+import { acceptInput, stopTurn } from './session.js';
 import { recover, reconcile } from './recovery.js';
 import { snapshot, snapshotAccess } from './snapshot.js';
 import { projectRead } from './project-facts.js';
@@ -335,7 +335,16 @@ export class Control extends EventEmitter {
           kind: 'usage_reset',
           text: USAGE_LIMIT_RESUME_TEXT,
         });
-      else continueSession(ctx, session, USAGE_LIMIT_RESUME_TEXT, '');
+      else {
+        // A session that takes no input now, such as one still stopping, is asked again later.
+        try {
+          acceptInput(ctx, session, 'send');
+        } catch (error) {
+          if (error instanceof DomainError) return ctx.store.now() + 60_000;
+          throw error;
+        }
+        continueSession(ctx, session, USAGE_LIMIT_RESUME_TEXT, '');
+      }
     });
     files.failpoint = failpoint;
     this.adapters = new Map(adapters.map((a) => [a.name, a]));

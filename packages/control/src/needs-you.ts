@@ -220,9 +220,16 @@ export function needsYou(
     );
   }
   const items: NeedsYouItem[] = [];
+  const removed = new Set(
+    ctx.store
+      .list<Project>('projects')
+      .filter((project) => project.removed_at !== undefined)
+      .map((project) => project.id),
+  );
+  const listedProject = (id: string) => !removed.has(id) && (!projectId || id === projectId);
   for (const approval of ctx.store
     .list<Approval>('approvals')
-    .filter((a) => a.state === 'pending' && (!projectId || a.project_id === projectId))) {
+    .filter((a) => a.state === 'pending' && listedProject(a.project_id))) {
     // The lead's board question for it is the one item.
     if (relayingQuestion(ctx, approval)) continue;
     let disabledReason: string | undefined;
@@ -269,7 +276,7 @@ export function needsYou(
   if (principal.role === 'user')
     for (const approval of ctx.store
       .list<Approval>('approvals')
-      .filter((a) => a.state !== 'pending' && (!projectId || a.project_id === projectId))) {
+      .filter((a) => a.state !== 'pending' && listedProject(a.project_id))) {
       const undelivered =
         approval.delivery_error !== undefined && approval.resolved_at === undefined;
       if (!undelivered && !(approval.reason === 'session_lost' && lostRequestOpen(ctx, approval)))
@@ -299,12 +306,6 @@ export function needsYou(
       });
     }
   if (principal.role === 'user') {
-    const removed = new Set(
-      ctx.store
-        .list<Project>('projects')
-        .filter((project) => project.removed_at !== undefined)
-        .map((project) => project.id),
-    );
     const sessions = ctx.store
       .list<Session>('sessions')
       .filter(
@@ -749,16 +750,21 @@ export function needsYou(
         });
     }
     for (const milestone of ctx.store.list<Milestone>('milestones')) {
+      // A milestone the user created has no lead.
       const leadId = milestone.owner_session_id;
-      if (!leadId || milestone.removed_at || !planOf.has(leadId)) continue;
+      if (
+        milestone.removed_at ||
+        (leadId ? !planOf.has(leadId) : !listedProject(milestone.project_id))
+      )
+        continue;
       const view = milestoneView(ctx, milestone);
       if (view.status !== 'ready_for_acceptance') continue;
-      const plan = planOf.get(leadId);
+      const plan = leadId ? planOf.get(leadId) : undefined;
       items.push({
         source: { table: 'milestones', id: milestone.id, revision: milestone.revision },
         kind: 'milestone.ready_for_acceptance',
         project_id: milestone.project_id,
-        session_id: leadId,
+        ...(leadId ? { session_id: leadId } : {}),
         status: view.status,
         // Ready since its last task was done, or since it last changed.
         created_at: Math.max(

@@ -1,7 +1,8 @@
 import type { Timer } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 
-export type TimerHandler = (ctx: ControlContext, timer: Timer) => void;
+/** A returned time keeps the timer pending until then. */
+export type TimerHandler = (ctx: ControlContext, timer: Timer) => number | void;
 export const timerHandlers = new Map<string, TimerHandler>();
 
 export function scheduleTimer(
@@ -31,7 +32,11 @@ export function fireDueTimers(ctx: ControlContext): void {
         if (current.state !== 'pending' || current.due_at > ctx.store.now()) return;
         const handler = timerHandlers.get(current.kind);
         if (!handler) return;
-        handler(ctx, current);
+        const retryAt = handler(ctx, current);
+        if (retryAt !== undefined) {
+          ctx.store.update<Timer>('timers', { ...current, due_at: retryAt }, current.revision);
+          return;
+        }
         const next = ctx.store.update<Timer>(
           'timers',
           { ...current, state: 'fired', fired_at: ctx.store.now() },

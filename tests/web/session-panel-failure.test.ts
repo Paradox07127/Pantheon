@@ -136,6 +136,7 @@ beforeAll(async () => {
       session_turns: [],
       workspaces: [],
     },
+    events: [],
   };
   useShell.setState({ sessionId: 'a' });
   const { createRoot } = await import('react-dom/client');

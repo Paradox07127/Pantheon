@@ -1,4 +1,12 @@
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  statSync,
+  type Stats,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { requireThat } from '@pantheon/domain';
@@ -51,11 +59,15 @@ export function protectionList(input: ProtectionPaths): ProtectionEntry[] {
     const { pointer, gitDir, commonDir } = gitMetadata(input.workspacePath);
     add(pointer, 'write', 'Workspace git metadata pointer');
     add(path.join(commonDir, 'hooks'), 'write', 'Workspace git hooks');
-    for (const file of configFiles(input.workspacePath, input.home, [
-      path.join(commonDir, 'config'),
-      path.join(gitDir, 'config.worktree'),
-    ]))
-      add(file, 'write', 'Workspace git configuration');
+    const repository = [path.join(commonDir, 'config'), path.join(gitDir, 'config.worktree')];
+    for (const file of repository) add(file, 'write', 'Workspace git configuration');
+    for (const target of configFiles(
+      [input.workspacePath, gitDir, commonDir].map(resolvedPath),
+      input.home,
+      [...repository, ...userConfigFiles(input.home)],
+    ))
+      if (!entries.some((entry) => entry.path === target))
+        entries.push({ path: target, deny: 'write', reason: 'Workspace git configuration' });
   }
   if (input.workspacePath)
     for (const [name, reason] of [
@@ -72,7 +84,7 @@ function gitMetadata(root: string): { pointer?: string; gitDir: string; commonDi
   const pointer = path.join(root, '.git');
   if (!lstatSync(pointer, { throwIfNoEntry: false })?.isFile())
     return { gitDir: pointer, commonDir: pointer };
-  const gitDir = path.resolve(
+  const gitDir = located(
       root,
       readFileSync(pointer, 'utf8')
         .replace(/^gitdir: /, '')
@@ -82,41 +94,128 @@ function gitMetadata(root: string): { pointer?: string; gitDir: string; commonDi
   return {
     pointer,
     gitDir,
-    commonDir: existsSync(common)
-      ? path.resolve(gitDir, readFileSync(common, 'utf8').trim())
-      : gitDir,
+    commonDir: existsSync(common) ? located(gitDir, readFileSync(common, 'utf8').trim()) : gitDir,
   };
 }
 
-/** The configuration files, plus every file inside root they include whether or not its condition holds now. */
-function configFiles(root: string, home: string, files: string[]): string[] {
-  const found = [...files],
-    pending = [...files],
-    seen = new Set(files);
-  for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
-    if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) continue;
+/** Git appends a relative path to its folder and leaves the kernel to resolve the result. */
+function located(folder: string, value: string): string {
+  return traversal(path.isAbsolute(value) ? value : `${folder}/${value}`).real;
+}
+
+/**
+ * Resolves an absolute path as the kernel does, so '..' after a symlink leaves the symlink's
+ * target. Lists every symlink passed, and the first component that is missing or not a folder.
+ */
+function traversal(target: string): { links: string[]; real: string; stop?: string } {
+  const links: string[] = [],
+    pending = target.split('/');
+  let real = '/',
+    stop: string | undefined;
+  while (pending.length) {
+    const name = pending.shift()!;
+    if (name === '' || name === '.') continue;
+    real = name === '..' ? path.dirname(real) : path.join(real, name);
+    if (stop !== undefined || name === '..') continue;
+    let stat: Stats | undefined;
+    try {
+      stat = lstatSync(real, { throwIfNoEntry: false });
+    } catch {
+      // Git cannot read past a component the user cannot read either.
+    }
+    if (stat?.isSymbolicLink() && links.length < 40) {
+      links.push(real);
+      const link = readlinkSync(real);
+      pending.unshift(...link.split('/'));
+      real = path.isAbsolute(link) ? '/' : path.dirname(real);
+    } else if (!stat || stat.isSymbolicLink() || (!stat.isDirectory() && pending.some(Boolean)))
+      stop = real;
+  }
+  return { links, real, stop };
+}
+
+/** The global and system configuration files git reads for a session that runs with this home. */
+function userConfigFiles(home: string): string[] {
+  const listed = runGit('/', ['config', '--null', '--show-origin', '--list'], undefined, false, {
+    env: {
+      HOME: home,
+      GIT_CONFIG_GLOBAL: undefined,
+      GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM,
+      XDG_CONFIG_HOME: undefined,
+    },
+  });
+  const origins =
+    listed.exit_code === 0
+      ? listed.stdout
+          .toString()
+          .split('\0')
+          .filter((field, index) => index % 2 === 0 && field.startsWith('file:'))
+          .map((field) => field.slice('file:'.length))
+      : [];
+  return [...new Set([`${home}/.gitconfig`, `${home}/.config/git/config`, ...origins])];
+}
+
+/**
+ * The paths inside roots that decide what git reads from these configuration files and every
+ * file they include, whether or not an include's condition holds now: each symlink on the way,
+ * and the file itself or its first component still missing.
+ */
+function configFiles(roots: string[], home: string, files: string[]): string[] {
+  const found = new Set<string>(),
+    seen = new Set<string>(),
+    pending = [...files];
+  for (let named = pending.pop(); named !== undefined; named = pending.pop()) {
+    const { links, real, stop } = traversal(named);
+    for (const target of [...links, stop ?? real])
+      if (roots.some((root) => target !== root && inside(root, target))) found.add(target);
+    if (stop !== undefined) continue;
+    // A relative include is relative to the folder of the name git opened, not of a symlink's target.
+    const folder = traversal(path.dirname(named)).real,
+      key = `${folder}\0${real}`;
+    if (seen.has(key) || !statSync(real, { throwIfNoEntry: false })?.isFile()) continue;
+    seen.add(key);
     // Outside any checkout, so a commondir planted in one cannot make git refuse to read.
     const listed = runGit('/', [
       'config',
       '--file',
-      file,
+      real,
       '--null',
       '--get-regexp',
       '^include(if\\..*)?\\.path$',
     ]);
     if (listed.exit_code !== 0) continue;
     for (const entry of listed.stdout.toString().split('\0').filter(Boolean)) {
-      const value = entry.slice(entry.indexOf('\n') + 1),
-        target = value.startsWith('~/')
-          ? path.join(home, value.slice(2))
-          : path.resolve(path.dirname(file), value);
-      if (seen.has(target)) continue;
-      seen.add(target);
-      pending.push(target);
-      if (inside(root, target) || inside(root, resolvedPath(target))) found.push(target);
+      const value = entry.slice(entry.indexOf('\n') + 1);
+      pending.push(
+        value.startsWith('~/')
+          ? `${home}/${value.slice(2)}`
+          : path.isAbsolute(value)
+            ? value
+            : `${folder}/${value}`,
+      );
     }
   }
-  return found;
+  return [...found];
+}
+
+/** A protected file with another hard link can be changed through that link, which no rule names. */
+function assertNoHardLinks(entries: ProtectionEntry[], writableRoots: string[]): void {
+  const devices = new Set(
+    writableRoots.flatMap((root) => statSync(root, { throwIfNoEntry: false })?.dev ?? []),
+  );
+  for (const { path: target } of entries) {
+    const files = lstatSync(target, { throwIfNoEntry: false })?.isDirectory()
+      ? readdirSync(target).map((name) => path.join(target, name))
+      : [target];
+    for (const file of files) {
+      const stat = lstatSync(file, { throwIfNoEntry: false });
+      requireThat(
+        !stat?.isFile() || stat.nlink === 1 || !devices.has(stat.dev),
+        'scope_violation',
+        `A protected file has another hard link a session could write through: ${file}`,
+      );
+    }
+  }
 }
 
 /**
@@ -215,6 +314,7 @@ export function worktreeSandbox(
     'scope_violation',
     'A protected entry contains a writable worktree root',
   );
+  assertNoHardLinks(entries, writable_roots);
   return { writable_roots, protected_entries: entries };
 }
 
@@ -229,15 +329,39 @@ export function inPlaceSandbox(
   },
 ): { writable_roots: string[]; protected_entries: ProtectionEntry[] } {
   const entries = protectionList({ ...input, workspacePath: input.projectRoot });
-  const { commonDir } = gitMetadata(input.projectRoot);
-  for (const entry of entryPaths(path.join(commonDir, 'worktrees')))
-    entries.push({ path: entry, deny: 'write', reason: 'Other worktree metadata' });
-  // Linux leaves it writable: bwrap would mount /dev/null there, and git refuses an empty commondir.
-  if (process.platform === 'darwin')
-    for (const entry of entryPaths(path.join(commonDir, 'commondir')))
-      entries.push({ path: entry, deny: 'write', reason: 'Workspace git metadata pointer' });
-  const roots = [input.projectRoot, input.tempDir];
-  // Both roots arrive resolved, so a symlink at or above one was planted later; resolving it would grant the target.
+  const { gitDir, commonDir } = gitMetadata(input.projectRoot),
+    worktrees = path.join(commonDir, 'worktrees'),
+    // A linked worktree commits through its own metadata folder and the shared objects and refs.
+    linked = path.dirname(gitDir) === worktrees;
+  const deny = (targets: string[], reason: string) => {
+    for (const target of targets)
+      for (const entry of entryPaths(target)) entries.push({ path: entry, deny: 'write', reason });
+  };
+  if (linked) {
+    deny(
+      readdirSync(worktrees)
+        .filter((name) => name !== path.basename(gitDir))
+        .map((name) => path.join(worktrees, name)),
+      'Other worktree metadata',
+    );
+    deny(
+      ['commondir', 'gitdir'].map((name) => path.join(gitDir, name)),
+      'Workspace git metadata pointer',
+    );
+  } else {
+    deny([worktrees], 'Other worktree metadata');
+    // Linux leaves it writable: bwrap would mount /dev/null there, and git refuses an empty commondir.
+    if (process.platform === 'darwin')
+      deny([path.join(commonDir, 'commondir')], 'Workspace git metadata pointer');
+  }
+  const roots = [
+    input.projectRoot,
+    input.tempDir,
+    ...(linked
+      ? [gitDir, ...['objects', 'refs', 'logs'].map((name) => path.join(commonDir, name))]
+      : []),
+  ];
+  // Every root arrives resolved, so a symlink at or above one was planted later; resolving it would grant the target.
   for (const root of roots)
     requireThat(
       lstatSync(root, { throwIfNoEntry: false })?.isDirectory() &&
@@ -245,10 +369,9 @@ export function inPlaceSandbox(
       'sandbox_path_replaced',
       `A writable sandbox root is no longer a real directory: ${root}`,
     );
-  return {
-    writable_roots: roots.map(resolvedPath),
-    protected_entries: entries,
-  };
+  const writable_roots = roots.map(resolvedPath);
+  assertNoHardLinks(entries, writable_roots);
+  return { writable_roots, protected_entries: entries };
 }
 
 function nativeRecords(input: Pick<ProtectionPaths, 'home' | 'codexHome'>): string[] {

@@ -163,6 +163,29 @@ it('continues the session once the usage limit has reset', async () => {
   expect(turnFailedNotes(f, lead.id, worker.id)).toEqual([]);
 });
 
+it('keeps the resume pending while the session refuses input and continues once it takes input', async () => {
+  const f = workbenchFixture();
+  const advance = skewedClock(f);
+  const lead = await leadWithPlan(f);
+  const resetsAt = f.store.now() + 2 * 60 * MINUTE;
+  failNextTurn(f, usageLimit(resetsAt));
+  const worker = startTask(f, lead.id);
+  await settle(f, worker);
+  await f.control.tick();
+  const stopping = current(f, worker.id);
+  f.store.update('sessions', { ...stopping, stop_pending: true }, stopping.revision);
+  advance(2 * 60 * MINUTE + MINUTE + 1);
+  await f.control.tick();
+  expect(continuations(f, worker.id)).toEqual([]);
+  expect(pendingResumes(f, worker.id)).toHaveLength(1);
+  const stopped = current(f, worker.id);
+  f.store.update('sessions', { ...stopped, stop_pending: false }, stopped.revision);
+  advance(MINUTE + 1);
+  await f.control.tick();
+  expect(continuations(f, worker.id)).toMatchObject([{ input: RESUME_TEXT }]);
+  expect(pendingResumes(f, worker.id)).toEqual([]);
+});
+
 it('drops the pending resume once a later turn of the session runs', async () => {
   const f = workbenchFixture();
   const advance = skewedClock(f);

@@ -1,4 +1,13 @@
-import { Activity, useState, useSyncExternalStore } from 'react';
+import {
+  Activity,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import { Ellipsis } from 'lucide-react';
+import { Menu } from '@base-ui/react/menu';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
@@ -202,6 +211,71 @@ function WeeklyDigest({
         onWeek={(next) => onWeek(Math.max(0, week + next - shown))}
       />
     </>
+  );
+}
+
+/** The page tabs that fit in the bar, the picked one always among them; the rest in a menu after them. */
+function SectionTabs({
+  section,
+  onSection,
+}: {
+  section: InsightsSection;
+  onSection: (section: InsightsSection) => void;
+}) {
+  const [fit, setFit] = useState({ count: SECTIONS.length });
+  const room = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  // The bar's room changed: lay out every tab again, then drop tabs until the rest fit. A new
+  // object each time, so the check runs again even when every tab already shows.
+  useEffect(() => {
+    const observer = new ResizeObserver(() => setFit({ count: SECTIONS.length }));
+    observer.observe(room.current!);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const el = list.current!;
+    if (fit.count > 1 && el.scrollWidth > el.clientWidth) setFit({ count: fit.count - 1 });
+  });
+  const { count } = fit;
+  const picked = SECTIONS.findIndex((s) => s.key === section);
+  const shown =
+    picked < count
+      ? SECTIONS.slice(0, count)
+      : [...SECTIONS.slice(0, count - 1), SECTIONS[picked]!];
+  const rest = SECTIONS.filter((s) => !shown.includes(s));
+  const more = t({ id: 'insights.tabs.more', defaultMessage: 'More tabs' });
+  return (
+    <div className="ins-tabs" ref={room}>
+      <Tabs.List
+        ref={list}
+        className="tb-tabs"
+        aria-label={t({ id: 'insights.tabs.label', defaultMessage: 'Engineering board' })}
+      >
+        {shown.map((s) => (
+          <Tabs.Tab key={s.key} className="tb-tab" value={s.key}>
+            {s.label}
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+      {rest.length > 0 && (
+        <Menu.Root>
+          <Menu.Trigger className="tb-tab" aria-label={more} title={more}>
+            <Ellipsis className="ic-sm" aria-hidden="true" />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner side="bottom" align="start" sideOffset={4} style={{ zIndex: 40 }}>
+              <Menu.Popup className="wmenu pop">
+                {rest.map((s) => (
+                  <Menu.Item key={s.key} onClick={() => onSection(s.key)}>
+                    {s.label}
+                  </Menu.Item>
+                ))}
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
+      )}
+    </div>
   );
 }
 
@@ -429,16 +503,7 @@ export function InsightsView(props: InsightsViewProps) {
       onValueChange={(value) => onSection(value as InsightsSection)}
     >
       <TopBar title={SCREEN_NAMES.insights}>
-        <Tabs.List
-          className="tb-tabs"
-          aria-label={t({ id: 'insights.tabs.label', defaultMessage: 'Engineering board' })}
-        >
-          {SECTIONS.map((s) => (
-            <Tabs.Tab key={s.key} className="tb-tab" value={s.key}>
-              {s.label}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+        <SectionTabs section={section} onSection={onSection} />
         <div className="tb-end">
           {projectId && model && (hidden.length > 0 || changed) && (
             <HiddenMenu hidden={hidden} tabs={TABS} onLayout={onLayout} />

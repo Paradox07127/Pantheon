@@ -1191,7 +1191,7 @@ it('records a request the adapter withdrew at the turn deadline as lost, not rej
 });
 
 it.each(['approve', 'reject'] as const)(
-  'records a request withdrawn before the answer %s arrived as lost and lists it in needs-you',
+  'records a request withdrawn before the answer %s arrived as lost and lists it in needs-you until its project is removed',
   async (decision) => {
     const f = await approvalFixture();
     try {
@@ -1215,6 +1215,9 @@ it.each(['approve', 'reject'] as const)(
       ]);
       await f.control.tick();
       expect(f.answer).not.toHaveBeenCalled();
+      const project = f.store.must<Project>('projects', approval.project_id);
+      f.store.update<Project>('projects', { ...project, removed_at: 1 }, project.revision);
+      expect(f.control.needsYou(user).items).toEqual([]);
     } finally {
       await f.close();
     }

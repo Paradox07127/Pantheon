@@ -38,6 +38,7 @@ import {
   ZOOM_FACTORS,
   type AppInfo,
   type AttachmentMeta,
+  type BoardSnapshot,
   type BridgeResult,
   type BrowserBounds,
   type Command,
@@ -47,6 +48,8 @@ import {
   type NotificationTarget,
   type PopupMenuItem,
   type RendererCrash,
+  type RepoWorktree,
+  type StaleWorkspaces,
   type WaitingSession,
 } from '@pantheon/protocol';
 import {
@@ -250,6 +253,7 @@ const bridge = new DaemonBridge({
         )
       : undefined,
   ...wsl,
+  ...(app.isPackaged && { version: app.getVersion() }),
   // A distro installed or repaired after the start is found on the next connection.
   recheck: windowsResources
     ? async () => {
@@ -1011,9 +1015,39 @@ handleFrom('pantheon:fileMenu', async (from, ref: FileRef) => {
   ]).popup({ window: from });
   return { ok: true, value: null };
 });
+/**
+ * Whether the page may reveal `target`: the daemon's data folder, a project root, a workspace or the
+ * root it came from, the managed worktree folder, or a git worktree of a project.
+ */
+const revealable = async (target: string): Promise<boolean> => {
+  const daemon = await bridge.daemon();
+  if (daemon.ok && daemon.value.data_dir === target) return true;
+  const board = await bridge.query('board');
+  if (!board.ok) return false;
+  const { projects, workspaces } = board.value as BoardSnapshot;
+  if (
+    projects.some((p) => p.roots.includes(target)) ||
+    workspaces.some((w) => w.path === target || w.source === target)
+  )
+    return true;
+  for (const [index, { id }] of projects.entries()) {
+    // Every project reports the same managed worktree folder.
+    const stale = index === 0 ? await bridge.query('workspace.stale', { project_id: id }) : null;
+    if (stale?.ok && (stale.value as StaleWorkspaces).worktree_root === target) return true;
+    const worktrees = await bridge.query('repo.worktrees', { project_id: id });
+    if (worktrees.ok && (worktrees.value as RepoWorktree[]).some((w) => w.path === target))
+      return true;
+  }
+  return false;
+};
 handle('pantheon:revealPath', async (target: unknown) => {
   if (typeof target !== 'string')
     return { ok: false, error: { code: 'invalid_input', message: 'path must be a string' } };
+  if (target !== path.dirname(logFile) && !(await revealable(target)))
+    return {
+      ok: false,
+      error: { code: 'path_refused', message: `${target} is not a folder Pantheon shows` },
+    };
   shell.showItemInFolder(target === path.dirname(logFile) ? target : local(target));
   return { ok: true, value: null };
 });
@@ -1929,6 +1963,12 @@ handle('pantheon:addRecentProject', async (root: unknown) => {
     return {
       ok: false,
       error: { code: 'invalid_input', message: 'root must be an absolute path' },
+    };
+  const board = await bridge.query('board');
+  if (!board.ok || !(board.value as BoardSnapshot).projects.some((p) => p.roots.includes(root)))
+    return {
+      ok: false,
+      error: { code: 'path_refused', message: `${root} is not a project root` },
     };
   // Only macOS and Windows keep recent items.
   if (process.platform !== 'linux') app.addRecentDocument(local(root));

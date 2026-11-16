@@ -54,12 +54,21 @@ const leadPlanUpdated = (e: DaemonEvent, sessionId: string, board: BoardSnapshot
   e.aggregate_id ===
     board?.sessions.find((session) => session.id === sessionId)?.task?.lead_session_id;
 
-/** Counts up after the session's events, its lead's plan changes and gate changes. */
+// Another session's merge moves the source this session's gates and preflight are read against.
+const sourceMerged = (e: DaemonEvent, sessionId: string, board: BoardSnapshot | null) => {
+  if (e.kind !== 'session.merged') return false;
+  const workspaceId = board?.sessions.find((session) => session.id === sessionId)?.workspace_id;
+  const source = board?.workspaces.find((workspace) => workspace.id === workspaceId)?.source;
+  return source !== undefined && (e.payload as { source?: unknown } | null)?.source === source;
+};
+
+/** Counts up after the session's events, its lead's plan changes, merges into its source and gate changes. */
 function useGateTick(sessionId: string | null): number {
   const keep = (board: BoardSnapshot | null) => (e: DaemonEvent) =>
     sessionId !== null &&
     (touchesSession(e, sessionId, board) ||
       leadPlanUpdated(e, sessionId, board) ||
+      sourceMerged(e, sessionId, board) ||
       e.kind === 'project.gate_set');
   const sequence = useBoard((s) => newest(s.events, keep(s.board))?.sequence ?? 0);
   const stream = useBoard((s) => STREAM_KINDS.has(newest(s.events, keep(s.board))?.kind ?? ''));
@@ -79,8 +88,8 @@ export function useSessionGatesHistory(sessionId: string | null): SessionRead<Se
 }
 
 /**
- * The session's merge preflight; read again after its own, turn, worktree, lead plan and gate
- * setting events, and on window focus, as edits made outside the app send no event.
+ * The session's merge preflight; read again after its own, turn, worktree, lead plan, source merge
+ * and gate setting events, and on window focus, as edits made outside the app send no event.
  */
 export function useSessionPreflight(sessionId: string | null): SessionRead<SessionPreflight> {
   const workspaceId = useBoard(
@@ -92,6 +101,7 @@ export function useSessionPreflight(sessionId: string | null): SessionRead<Sessi
       board?.session_turns.find((turn) => turn.id === e.aggregate_id)?.session_id === sessionId ||
       (workspaceId !== null && e.aggregate_id === workspaceId) ||
       leadPlanUpdated(e, sessionId, board) ||
+      sourceMerged(e, sessionId, board) ||
       e.kind === 'project.gate_set');
   const sequence = useBoard((s) => newest(s.events, keep(s.board))?.sequence ?? 0);
   const stream = useBoard((s) => STREAM_KINDS.has(newest(s.events, keep(s.board))?.kind ?? ''));

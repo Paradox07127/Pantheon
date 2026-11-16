@@ -1159,7 +1159,20 @@ export function boardView(
     if (generation <= (ownEntry(plan?.retired, taskId) ?? 0)) continue;
     firstDone.set(key, Math.min(firstDone.get(key) ?? merge.created_at, merge.created_at));
   }
-  // An accepted report task is done when the lead accepted it.
+  // An accepted report task is done when the lead accepted it, even once the plan dropped it.
+  for (const event of ctx.store.kindEvents(projectId, ['task.accepted'])) {
+    const { task_id: taskId, generation = 1 } = event.payload as {
+      task_id: string;
+      generation?: number;
+    };
+    let lead = event.aggregate_id;
+    while (transfers.has(lead)) lead = transfers.get(lead)!;
+    const key = boardTaskId(lead, taskId);
+    markDone(key, generation, event.created_at);
+    const plan = plans.find((each) => each.id === lead);
+    if (generation <= (ownEntry(plan?.retired, taskId) ?? 0)) continue;
+    firstDone.set(key, Math.min(firstDone.get(key) ?? event.created_at, event.created_at));
+  }
   for (const plan of plans)
     for (const task of plan.tasks) {
       const key = boardTaskId(plan.id, task.id),
@@ -1253,14 +1266,24 @@ export function boardView(
       }
       for (const row of bound) planned.add(row.id);
       const live = bound.filter((row) => row.status !== 'discarded');
+      const unfinished = (['waiting', 'failed', 'running', 'idle', 'ready'] as const).find(
+        (candidate) => live.some((row) => row.status === candidate),
+      );
       const status: BoardTaskStatus =
-        currentAcceptance(plan, task.id) || currentDirectMerge(plan, task.id)
+        currentAcceptance(plan, task.id) || (currentDirectMerge(plan, task.id) && !unfinished)
           ? 'done'
           : !live.length
             ? 'todo'
-            : ((['waiting', 'failed', 'running', 'idle', 'ready'] as const).find((candidate) =>
-                live.some((row) => row.status === candidate),
-              ) ?? 'done');
+            : (unfinished ??
+              // A report task is done only once accepted, however its sessions ended.
+              (taskState(
+                plan,
+                task.id,
+                live.filter((row) => row.id !== plan.id).map((row) => stored.get(row.id)!),
+                lead,
+              ) === 'done'
+                ? 'done'
+                : 'idle'));
       taskRows.set(boardTaskId(plan.id, task.id), { bound, live, status });
     }
   }
@@ -1447,7 +1470,16 @@ export function boardView(
       const { bound, live, status } = taskRows.get(boardTaskId(plan.id, task.id))!;
       const ends = live.flatMap((row) => (row.ended_at === null ? [] : [row.ended_at])),
         starts = bound.flatMap((row) => (row.started_at === null ? [] : [row.started_at]));
-      const ended = status === 'done' && ends.length ? Math.max(...ends) : null;
+      // An accepted task ended when accepted, though its session may stay open.
+      const accepted = currentAcceptance(plan, task.id),
+        ended =
+          status !== 'done'
+            ? null
+            : accepted
+              ? accepted.at
+              : ends.length
+                ? Math.max(...ends)
+                : null;
       // An unfinished task is counted by its newest session that has not merged.
       const newestRow = bound
         .filter((row) => row.status !== 'done')
@@ -1521,7 +1553,15 @@ export function boardView(
         id: boardTaskId(plan.id, task.id),
         owner_session_id: plan.id,
         order,
-        workflow_id: taskWorkflow(ctx, plan, task.id).id,
+        workflow_id: taskWorkflow(
+          ctx,
+          plan,
+          task.id,
+          bound
+            .filter((row) => row.id !== plan.id)
+            .map((row) => stored.get(row.id)!)
+            .filter((session) => session.outcome !== 'discarded'),
+        ).id,
         ...(plan.order_lock?.includes(task.id) ? { order_locked: true as const } : {}),
         ...(task.parallel
           ? {
@@ -1723,11 +1763,16 @@ export function boardView(
   const gateEvents = ctx.store.kindEvents(projectId, [
     'session.gate_started',
     'session.gate_checked',
+    'session.gate_step_checked',
+    'session.gate_run_cancelled',
+    'session.gate_run_failed',
   ]);
   const subagents = ctx.trace?.subagentCounts(projectId);
   const failures = new Map<string, string>(),
     latestGate = new Map<string, Event>();
-  for (const event of gateEvents) latestGate.set(event.aggregate_id, event);
+  for (const event of gateEvents)
+    if (event.kind === 'session.gate_started' || event.kind === 'session.gate_checked')
+      latestGate.set(event.aggregate_id, event);
   for (const session of listed) {
     const gate = latestGate.get(session.id);
     if (
@@ -1770,24 +1815,29 @@ export function boardView(
           used_tokens: usage.context_tokens!,
           window_tokens: usage.context_window,
         };
-      const gates = gateEvents.filter((event) => event.aggregate_id === sessionId),
-        latest = gates.at(-1);
-      if (latest) {
-        const checked =
-          latest.kind === 'session.gate_checked'
-            ? (latest.payload as {
-                results: NonNullable<LandingItem['gate_results']>;
-              })
-            : undefined;
-        const previous = gates.findLast(
-          (event) => event.kind === 'session.gate_checked' && event.sequence < latest.sequence,
-        );
-        const started = gates.findLast(
-          (event) =>
-            event.kind === 'session.gate_started' && event.sequence > (previous?.sequence ?? 0),
-        )?.payload as { commands: { name: string }[] } | undefined;
-        task.gate_steps = (started?.commands ?? checked?.results ?? []).map(({ name }, index) => {
-          const result = checked?.results[index];
+      const gates = gateEvents.filter((event) => event.aggregate_id === sessionId);
+      if (gates.length) {
+        // The newest run's commands and the results its steps checked so far.
+        let commands: { name: string }[] | undefined,
+          results: NonNullable<LandingItem['gate_results']> | undefined,
+          ended = false;
+        for (const event of gates)
+          if (event.kind === 'session.gate_started') {
+            commands = (event.payload as { commands: { name: string }[] }).commands;
+            results = undefined;
+            ended = false;
+          } else if (
+            event.kind === 'session.gate_step_checked' ||
+            event.kind === 'session.gate_checked'
+          ) {
+            // A check with no start of its own names its steps by its results.
+            if (ended) commands = undefined;
+            results = (event.payload as { results: NonNullable<LandingItem['gate_results']> })
+              .results;
+            ended = event.kind === 'session.gate_checked';
+          } else ended = true;
+        task.gate_steps = (commands ?? results ?? []).map(({ name }, index) => {
+          const result = results?.[index];
           return {
             name,
             ...(result?.tests ? { tests: result.tests } : {}),
@@ -1920,10 +1970,11 @@ export function boardView(
     turnStarts = new Map<string, Event>();
   for (const event of ctx.store.kindEvents(projectId, ['turn.running']))
     if (!turnStarts.has(event.aggregate_id)) turnStarts.set(event.aggregate_id, event);
-  const handbackEvents = ctx.store.kindEvents(projectId, ['task.handed_back']),
+  // Only today's hand-backs and sends are read.
+  const handbackEvents = ctx.store.kindEventsSince(projectId, ['task.handed_back'], midnight(now)),
     queuedToday = ctx.store
-      .kindEvents(projectId, ['turn.queued'])
-      .filter((event) => event.created_at >= midnight(now) && event.created_at <= now);
+      .kindEventsSince(projectId, ['turn.queued'], midnight(now))
+      .filter((event) => event.created_at <= now);
   const completions = new Map<string, number>();
   for (const event of ctx.store.kindEvents(projectId, ['task.accepted', 'session.merged'])) {
     const payload = event.payload as { task_id?: string; generation?: number; direct?: boolean };
@@ -2305,8 +2356,23 @@ export function boardView(
       : []
   )
     .map((item) => {
+      // The item's own task, else its session's task binding, else its lead's direct task.
       const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id,
-        binding = sessionId ? ctx.store.get<Session>('sessions', sessionId)?.task : undefined,
+        session = sessionId ? ctx.store.get<Session>('sessions', sessionId) : undefined,
+        named = item.task_id
+          ? plans.flatMap((plan) =>
+              plan.tasks
+                .filter((task) => boardTaskId(plan.id, task.id) === item.task_id)
+                .map((task) => ({ lead_session_id: plan.id, id: task.id })),
+            )[0]
+          : undefined,
+        direct =
+          session?.direct_task &&
+          session.direct_task.generation ===
+            taskGeneration(planOf.get(session.id), session.direct_task.id)
+            ? { lead_session_id: session.id, id: session.direct_task.id }
+            : undefined,
+        binding = item.task_id ? named : (session?.task ?? direct),
         plan = binding ? planOf.get(binding.lead_session_id) : undefined;
       if (!binding || !plan || !taskRows.has(boardTaskId(plan.id, binding.id)))
         return { ...item, unblocks: 0 };

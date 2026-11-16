@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import type { BoardPlan, LeadNote, Principal, Session } from '@pantheon/domain';
+import type { Approval, BoardPlan, LeadNote, Principal, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -116,6 +116,47 @@ it('tells the lead when one tool call stays open far past the stall window', asy
   expect(f.store.must<BoardPlan>('board_plans', lead.id).alerted?.[turn.id]).toEqual(['stalled']);
 });
 
+it('does not call a turn stalled while its permission request waits for the user, and counts the answer as progress', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [task('a')]);
+  const advance = skewedClock(f);
+  const { worker, event } = await runningWorker(f, lead.id);
+  event('agent.tool.started', {
+    tool_call_id: 'push',
+    name: 'Bash',
+    input: { command: 'git push' },
+  });
+  f.store.insert<Approval>('approvals', {
+    id: 'push-request',
+    revision: 1,
+    project_id: f.project.id,
+    kind: 'permission',
+    session_id: worker.id,
+    request_id: 'push-request',
+    tool: 'Bash',
+    input_hash: 'a'.repeat(64),
+    decider: 'user',
+    state: 'pending',
+    created_at: f.store.now(),
+  });
+
+  advance(31 * MINUTE);
+  await f.control.tick();
+  expect(notes(f, lead.id, 'stalled')).toEqual([]);
+  const request = f.store.must<Approval>('approvals', 'push-request');
+  f.store.update<Approval>(
+    'approvals',
+    { ...request, state: 'approved', resolved_at: f.store.now() },
+    request.revision,
+  );
+  advance(29 * MINUTE);
+  await f.control.tick();
+  expect(notes(f, lead.id, 'stalled')).toEqual([]);
+  advance(2 * MINUTE);
+  await f.control.tick();
+  expect(notes(f, lead.id, 'stalled')).toHaveLength(1);
+});
+
 it('lists a task session in needs-you when its stall alert gets no lead action within the window', async () => {
   const f = workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
@@ -168,6 +209,54 @@ it('tells the user when a lead turn makes no progress for the stall window', asy
       next_step: expect.any(String),
     }),
   ]);
+});
+
+it('clears the stall of a lead turn from needs-you once the turn makes progress again', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [task('a')]);
+  const advance = skewedClock(f);
+  f.call(
+    'session.send',
+    { session_id: lead.id, input: 'fixture-script\n[{"hang":true}]' },
+    current(f, lead.id).revision,
+  );
+  await eventually(
+    () => f.turns(lead.id).at(-1)?.state === 'running',
+    () => f.control.tick(),
+  );
+  const turn = f.turns(lead.id).at(-1)!;
+  advance(11 * MINUTE);
+  await f.control.tick();
+  expect(itemsOf(f, lead.id)).toEqual([expect.objectContaining({ reason: 'lead_turn_stalled' })]);
+
+  f.store.event('agent.message.delta', current(f, lead.id), f.project.id, {
+    turn_id: turn.id,
+    kind: 'message.delta',
+    text: 'Back at work',
+  });
+  await f.control.tick();
+  expect(itemsOf(f, lead.id)).toEqual([]);
+});
+
+it('drops the stall of a task turn that made progress again, and tells the lead of its stalls once', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [task('a')]);
+  const advance = skewedClock(f);
+  const { turn, event } = await runningWorker(f, lead.id);
+  const alerted = () => f.store.must<BoardPlan>('board_plans', lead.id).alerted?.[turn.id];
+
+  advance(11 * MINUTE);
+  await f.control.tick();
+  expect(alerted()).toEqual(['stalled']);
+  event('agent.message.delta', { kind: 'message.delta', text: 'Back at work' });
+  await f.control.tick();
+  expect(alerted()).toBeUndefined();
+
+  // The lead was told of the first stall long ago and did nothing, so the second goes to needs-you.
+  advance(11 * MINUTE);
+  await f.control.tick();
+  expect(alerted()).toEqual(['stalled', 'stall_unanswered']);
+  expect(notes(f, lead.id, 'stalled')).toHaveLength(1);
 });
 
 it('does not call a turn stalled while it streams text', async () => {

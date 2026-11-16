@@ -1,6 +1,7 @@
 {
   "app.screenName.insights": "工程看板",
   "insights.tabs.label": "工程看板",
+  "insights.tabs.more": "更多标签页",
   "insights.sections.iterations": "迭代",
   "insights.sections.collab": "协作",
   "insights.sections.workflow": "流程"

@@ -867,14 +867,34 @@ describe('ACP adapter', () => {
     ]);
     expect(JSON.parse(readFileSync(argv, 'utf8'))).toEqual(['--keep-no-record']);
     expect(acp.frames().map((frame) => [frame.method, frame.params])).toEqual([
-      ['initialize', expect.objectContaining({ protocolVersion: 1 })],
+      [
+        'initialize',
+        expect.objectContaining({
+          protocolVersion: 1,
+          clientInfo: {
+            name: 'pantheon',
+            title: 'Pantheon',
+            version: JSON.parse(
+              readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+            ).version,
+          },
+        }),
+      ],
       ['session/new', { cwd: acp.spec.cwd, mcpServers: [] }],
       ['session/close', { sessionId: 'fake-session-1' }],
     ]);
   });
 
-  it('applies the requested model and effort when it opens a session', async () => {
-    const acp = setup();
+  it.each([
+    ['', {}],
+    [
+      ', over the options the agent announced ahead of the session',
+      {
+        FAKE_ACP_STARTUP_CONFIG_UPDATE: '1',
+      },
+    ],
+  ])('applies the requested model and effort when it opens a session%s', async (_, env) => {
+    const acp = setup(env);
     acp.spec.model = 'other-model';
     acp.spec.effort = 'high';
     const handle = await acp.start();
@@ -887,7 +907,9 @@ describe('ACP adapter', () => {
       }),
     ]);
     expect(handle.reported_model).toBe('Other model');
-    expect(acp.events[0]).toMatchObject({ kind: 'session.started', reported_model: 'Other model' });
+    expect(acp.events.filter((event) => event.kind === 'session.started')).toEqual([
+      expect.objectContaining({ reported_model: 'Other model' }),
+    ]);
   });
 
   it('applies the requested model and effort when it resumes a session', async () => {
@@ -1162,6 +1184,14 @@ describe('ACP adapter', () => {
         }),
       ),
     );
+    expect(acp.events).toContainEqual(
+      expect.objectContaining({
+        turn_id: 'late-turn',
+        kind: 'usage.updated',
+        context_tokens: 900,
+        cost_usd: 7,
+      }),
+    );
   });
 
   it('ends input interrupted while it waits behind a prompt past its deadline without sending it', async () => {
@@ -1195,21 +1225,52 @@ describe('ACP adapter', () => {
     expect(acp.events.filter((event) => event.kind.startsWith('permission.'))).toEqual([]);
   });
 
-  it('answers a permission request that crosses an interrupt with cancelled', async () => {
+  it.each([
+    ['a permission request', 'permission-on-cancel', { outcome: { outcome: 'cancelled' } }],
+    ['an elicitation', 'elicit-on-cancel', { action: 'cancel' }],
+  ])('answers %s that crosses an interrupt with cancelled', async (_, input, result) => {
     const acp = setup();
     const handle = await acp.start();
-    await acp.adapter.send(handle, { turn_id: 'crossed-turn', input: 'permission-on-cancel' });
+    await acp.adapter.send(handle, { turn_id: 'crossed-turn', input });
     expect(await acp.adapter.interrupt!(handle)).toEqual({ ok: true });
+    await vi.waitFor(() =>
+      expect(
+        acp.frames().find((frame) => frame.id === 'agent-1' && 'result' in frame)?.result,
+      ).toEqual(result),
+    );
     await vi.waitFor(() => expect(acp.completions()).toHaveLength(1));
     expect(acp.completions()[0]).toMatchObject({ turn_id: 'crossed-turn', status: 'interrupted' });
     expect(acp.events.filter((event) => event.kind === 'permission.requested')).toEqual([]);
-    expect(acp.frames().find((frame) => frame.result?.outcome)?.result).toEqual({
-      outcome: { outcome: 'cancelled' },
-    });
   });
 
-  it('sets the model back when the agent takes the model but refuses the effort', async () => {
+  it('applies overlapping model changes in order so a refused one cannot undo a later one', async () => {
     const acp = setup({ FAKE_ACP_REJECT_EFFORT: '1' });
+    const handle = await acp.start();
+    const [refused, taken] = await Promise.all([
+      acp.adapter.setModel!(handle, 'other-model', 'high'),
+      acp.adapter.setModel!(handle, 'other-model', undefined),
+    ]);
+    expect(refused).toMatchObject({ ok: false });
+    expect(taken).toEqual({ ok: true });
+    const models = acp
+      .frames()
+      .filter(
+        (frame) =>
+          frame.method === 'session/set_config_option' && frame.params?.configId === 'model',
+      );
+    expect(models.at(-1)?.params?.value).toBe('other-model');
+    expect(handle).toMatchObject({ requested_model: 'other-model', reported_model: 'Other model' });
+  });
+
+  it.each([
+    ['sets the model back', {}, 'Fake model'],
+    [
+      'reports the model it keeps when it refuses to set it back',
+      { FAKE_ACP_REFUSE_MODEL: 'fake-model' },
+      'Other model',
+    ],
+  ])('when the agent takes the model but refuses the effort, %s', async (_, env, reported) => {
+    const acp = setup({ FAKE_ACP_REJECT_EFFORT: '1', ...env });
     const handle = await acp.start();
     expect(await acp.adapter.setModel!(handle, 'other-model', 'high')).toMatchObject({
       ok: false,
@@ -1225,7 +1286,10 @@ describe('ACP adapter', () => {
       { sessionId: 'fake-session-1', configId: 'reasoning_effort', value: 'high' },
       { sessionId: 'fake-session-1', configId: 'model', value: 'fake-model' },
     ]);
-    expect(handle).toMatchObject({ reported_model: 'Fake model' });
+    expect(handle).toMatchObject({ reported_model: reported });
+    expect(acp.events.filter((event) => event.kind === 'session.started').at(-1)).toMatchObject({
+      reported_model: reported,
+    });
     expect(handle.requested_model).toBeUndefined();
   });
 

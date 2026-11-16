@@ -208,13 +208,28 @@ function listing(
   const listed = children.filter(
     (entry) => !excluded.has(path.relative(root, path.join(directory, entry.name))),
   );
+  // A link to a folder inside the workspace opens as that folder.
+  const folders = new Set(
+    listed
+      .filter((entry) => {
+        if (entry.isDirectory()) return true;
+        if (!entry.isSymbolicLink()) return false;
+        const target = path.join(directory, entry.name);
+        try {
+          return statSync(target).isDirectory() && inside(root, realpathSync(target));
+        } catch {
+          return false;
+        }
+      })
+      .map((entry) => entry.name),
+  );
   listed.sort(
     (a, b) =>
-      Number(b.isDirectory()) - Number(a.isDirectory()) ||
+      Number(folders.has(b.name)) - Number(folders.has(a.name)) ||
       (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
   );
   const entries = listed.slice(0, 1000).flatMap((entry): FilesListResult['entries'] => {
-    if (entry.isDirectory()) return [{ name: entry.name, kind: 'dir' }];
+    if (folders.has(entry.name)) return [{ name: entry.name, kind: 'dir' }];
     try {
       const size = lstatSync(path.join(directory, entry.name)).size;
       return [{ name: entry.name, kind: 'file', size }];
@@ -320,6 +335,8 @@ function declarationPattern(extension: string): RegExp | undefined {
 
 // Source files read at once; they are still searched, and their errors thrown, in listing order.
 const READ_BATCH = 64;
+// Larger source files, usually generated, are not searched, which bounds the memory a batch holds.
+const SOURCE_LIMIT = 1024 * 1024;
 
 /** Access errors throw synchronously; a file error rejects only when the search reaches that file. */
 export function symbolsSearch(
@@ -356,7 +373,11 @@ async function workspaceSymbols(scope: WorkspaceScope, q: string): Promise<Symbo
     const handle = await open(file, constants.O_RDONLY | constants.O_NONBLOCK);
     try {
       checkOpened(root, file, handle.fd, scope.unreadable);
-      return await handle.readFile();
+      const size = (await handle.stat()).size;
+      if (size > SOURCE_LIMIT) return undefined;
+      // Reads no more than the measured size, even from a file growing meanwhile.
+      const { buffer, bytesRead } = await handle.read(Buffer.alloc(size), 0, size, 0);
+      return buffer.subarray(0, bytesRead);
     } finally {
       await handle.close();
     }

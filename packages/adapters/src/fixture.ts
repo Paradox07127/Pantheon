@@ -353,7 +353,8 @@ export class FixtureAdapter implements HarnessAdapter {
       )
         throw new Error('Fixture write target is a symbolic link: fixture-output.txt');
       // Fixed program, never evaluates a prompt or receives arbitrary shell text.
-      const source = `const fs=require('node:fs');const t=setInterval(()=>{if(process.argv[1]==='write')fs.appendFileSync('fixture-output.txt','tick\\n')},10);setTimeout(()=>{clearInterval(t);process.stdout.write('fixture completed\\n')},Number(process.argv[2]));`;
+      // A write sentinel opens its file once, never following a link put in its place later.
+      const source = `const fs=require('node:fs');const c=fs.constants;const f=process.argv[1]==='write'?fs.openSync('fixture-output.txt',c.O_WRONLY|c.O_APPEND|c.O_CREAT|c.O_NOFOLLOW):undefined;const t=setInterval(()=>{if(f!==undefined)fs.writeSync(f,'tick\\n')},10);setTimeout(()=>{clearInterval(t);process.stdout.write('fixture completed\\n')},Number(process.argv[2]));`;
       // A read turn only waits, and a shell starts far faster than Node.
       const shell = !this.writeSentinel && process.platform !== 'win32';
       const child = spawn(
@@ -520,8 +521,18 @@ export class FixtureAdapter implements HarnessAdapter {
         constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK,
       );
       try {
-        if (!(await file.stat()).isFile())
-          throw new Error(`Fixture write target is protected: ${destination}`);
+        const opened = await file.stat();
+        if (!opened.isFile()) throw new Error(`Fixture write target is protected: ${destination}`);
+        // The checks resolved the path before the open, which follows a directory swapped for a link
+        // since; the file opened must still be the one at the checked path.
+        const parent = await realpath(path.dirname(destination));
+        const there = await lstatIfExists(destination);
+        if (
+          parent !== path.dirname(destination) ||
+          there?.dev !== opened.dev ||
+          there?.ino !== opened.ino
+        )
+          throw new Error(`Fixture write target moved while it was opened: ${destination}`);
         if (!live()) throw new Error('Fixture script stopped');
         await file.truncate(0);
         await file.writeFile(text);

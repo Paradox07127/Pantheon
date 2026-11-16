@@ -490,6 +490,7 @@ export function SessionPassage({
               merging={merging}
               cancelling={listed.merge?.cancel_requested}
               preflight={preflight.data}
+              preflightError={preflight.error}
               onPreflight={preflight.reload}
               gates={gates.data}
               branch={branch}

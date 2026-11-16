@@ -207,6 +207,29 @@ describe('project trace from the event log', () => {
     }
   });
 
+  it('names every file a recorded tool call gives', async () => {
+    const f = traceFixture();
+    const owner = f.session('files');
+    f.turn(owner, 'files-turn', at(0), at(30));
+    const calls = [
+      { name: 'fileChange', input: { changes: [{ path: 'a.ts' }, { path: 'b.ts' }] } },
+      { name: 'file_change', input: { changes: { 'c.ts': {}, 'd.ts': {} } } },
+      { name: 'Edit', input: { file_path: 'e.ts' } },
+      { name: 'Bash', input: { command: 'true' } },
+    ];
+    for (const [index, call] of calls.entries())
+      f.record(at(index + 1), 'agent.tool.started', owner, {
+        tool_call_id: `files-${index}`,
+        turn_id: 'files-turn',
+        name: call.name,
+        input: call.input,
+      });
+    const { spans } = await f.control.sessionTrace(user, f.project.id, owner.id);
+    expect(
+      calls.map((_, index) => spans.find((span) => span.id === `files-${index}`)?.files),
+    ).toEqual([['a.ts', 'b.ts'], ['c.ts', 'd.ts'], ['e.ts'], undefined]);
+  });
+
   it('counts only consecutive identical calls started after a failed result in the same turn', async () => {
     const f = traceFixture();
     const owner = f.session('retries');

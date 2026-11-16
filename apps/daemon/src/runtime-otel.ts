@@ -161,9 +161,10 @@ export function startRuntimeOtel(store: Store, base: string, onError: (error: Er
   let inFlight: Promise<void> | undefined;
   const pump = async () => {
     while (!closed) {
+      // A short read has seen every row up to head, so the next read starts past a tail of other kinds.
+      const head = store.cursor();
       const events = store.events(cursor, undefined, BATCH, kinds);
-      if (!events.length) return;
-      const batch = runtimeLogBatch(events);
+      const batch = events.length ? runtimeLogBatch(events) : null;
       if (batch) {
         const request = (controller = new AbortController());
         const timeout = setTimeout(() => request.abort(), 3000);
@@ -189,9 +190,12 @@ export function startRuntimeOtel(store: Store, base: string, onError: (error: Er
           controller = undefined;
         }
       }
-      cursor = events.at(-1)!.sequence;
       retry = INTERVAL_MS;
-      if (events.length < BATCH) return;
+      if (events.length < BATCH) {
+        cursor = head;
+        return;
+      }
+      cursor = events.at(-1)!.sequence;
     }
   };
   const timer = setInterval(() => {

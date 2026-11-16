@@ -62,6 +62,7 @@ vi.mock('@/data/facts-read', async (actual) => ({
 import { gateSummary, lineComment, messageCommand } from '@/screens/sessions/model';
 import { panelOf, type PanelTab } from '@/screens/sessions/inspector-model';
 import { SessionInspector, useTurnScope } from '@/screens/sessions/SessionsScreen';
+import { showChangedFile } from '@/screens/sessions/SessionCard';
 import { t } from '@/i18n';
 import { zh } from './i18n-setup.js';
 
@@ -239,6 +240,38 @@ describe('changes scope', () => {
     expect(html).not.toContain('src/new.ts');
     const head = html.slice(html.indexOf('class="ss-chd"'), html.indexOf('class="ss-diff"'));
     expect(head).toContain('文件 1');
+  });
+
+  it('lists a steer that ran as a turn of its own, not one delivered into a running turn', () => {
+    const turn = (n: number) => t({ id: 'sessions.screen.scopeTurn', defaultMessage: '' }, { n });
+    mock.board.board.session_turns = [
+      { ...ended, id: 'turn-1' },
+      { ...ended, id: 'turn-2', kind: 'steer' },
+      { ...ended, id: 'turn-3', kind: 'steer' },
+    ];
+    mock.board.events = [{ kind: 'turn.running', aggregate_id: 'turn-2', sequence: 2 }];
+    mock.turnDiff = {
+      session_id: 'a',
+      turn_id: 'turn-2',
+      files: [{ path: 'src/answer.ts', additions: 1, deletions: 1, untracked: false }],
+      patch: patch.slice(0, patch.indexOf('src/new.ts') - 'diff --git a/'.length),
+      truncated: false,
+    };
+    try {
+      useTurnScope.getState().set('a', 'turn-2');
+      expect(panel('ready', 'changes')).toContain(turn(2));
+      useTurnScope.getState().set('a', 'turn-3');
+      expect(panel('ready', 'changes')).not.toContain(turn(3));
+    } finally {
+      mock.board.events = [];
+    }
+  });
+
+  it('marks the file an output asked for in the whole branch', () => {
+    showChangedFile('a', 'src/new.ts');
+    const html = panel('ready', 'changes');
+    const current = [...html.matchAll(/<button[^>]*aria-current="true"[^>]*>(.*?)<\/button>/g)];
+    expect(current.map(([, inner]) => inner!.includes('new.ts'))).toEqual([true]);
   });
 });
 

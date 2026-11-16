@@ -517,6 +517,17 @@ export class Store {
       .all(project_id, ...kinds) as unknown as (Omit<Event, 'payload'> & { payload: string })[];
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
   }
+  /** kindEvents from `since` on, read through the project, kind and time index. */
+  kindEventsSince(project_id: string, kinds: string[], since: number): Event[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM events INDEXED BY events_diagnostic_window WHERE project_id=? AND kind IN (${kinds.map(() => '?').join(',')}) AND created_at>=? ORDER BY sequence`,
+      )
+      .all(project_id, ...kinds, since) as unknown as (Omit<Event, 'payload'> & {
+      payload: string;
+    })[];
+    return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
+  }
   /** Bounded diagnostic reads, indexed by project, event kind and time. */
   windowEvents(
     projectId: string,

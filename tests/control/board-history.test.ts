@@ -40,9 +40,9 @@ function leadWithPlan(f: Fixture, taskIds: string[]) {
   return lead;
 }
 
-function taskWorker(f: Fixture, leadId: string, taskId: string) {
+function taskWorker(f: Fixture, leadId: string, taskId: string, id = `${taskId}-worker`) {
   const worker = f.store.insert<Session>('sessions', {
-    id: `${taskId}-worker`,
+    id,
     revision: 1,
     project_id: f.project.id,
     runtime: f.adapter.name,
@@ -200,4 +200,101 @@ it('reads only the project rows of turns, step runs, approvals and milestones', 
   const tables = new Set(list.mock.calls.map(([table]) => table));
   for (const table of ['session_turns', 'workflow_step_runs', 'approvals', 'milestones'])
     expect(tables).not.toContain(table);
+});
+
+it('counts the parts of one parallel dispatch as one attempt', () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, ['exports']);
+  const one = taskWorker(f, lead.id, 'exports', 'exports-part-one');
+  const two = taskWorker(f, lead.id, 'exports', 'exports-part-two');
+  f.store.event('task.dispatched', lead, f.project.id, {
+    task_id: 'exports',
+    session_id: one.id,
+    session_ids: [one.id, two.id],
+  });
+  expect(historyTask(f, `${lead.id}:exports`)).toMatchObject({ attempts: 1 });
+});
+
+it('keeps the reason of a rejected approval inside a parallel step that then fails', () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, ['exports']);
+  const approval = { id: 'sign-off', title: 'Sign off', kind: { type: 'approval' as const } };
+  const run = (id: string, step: StepRun['step'], state: StepRun['state']) => {
+    const row = f.store.insert<StepRun>('workflow_step_runs', {
+      id,
+      revision: 1,
+      project_id: f.project.id,
+      lead_session_id: lead.id,
+      task_id: 'exports',
+      generation: 1,
+      definition_version: 1,
+      slot: 'before_merge',
+      step,
+      state,
+      created_at: f.store.now(),
+    });
+    f.store.event('workflow.step_changed', row, f.project.id, {
+      state,
+      task_id: 'exports',
+      slot: row.slot,
+      step_id: step.id,
+    });
+  };
+  run('sign-off-run', approval, 'rejected');
+  run(
+    'checks-run',
+    { id: 'checks', title: 'Checks', kind: { type: 'parallel', steps: [approval] } },
+    'failed',
+  );
+  f.store.event('task.handed_back', lead, f.project.id, { task_id: 'exports' });
+  expect(historyTask(f, `${lead.id}:exports`).handback_reasons).toEqual({
+    gate: 0,
+    review: 1,
+    other: 0,
+  });
+});
+
+it('completes a task when its last unmerged part is discarded', () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, ['exports']);
+  const one = taskWorker(f, lead.id, 'exports', 'exports-part-one');
+  const two = taskWorker(f, lead.id, 'exports', 'exports-part-two');
+  const end = (session: Session, outcome: 'merged' | 'discarded', at: Date) => {
+    vi.spyOn(f.store, 'now').mockReturnValue(at.getTime());
+    const row = f.store.must<Session>('sessions', session.id);
+    f.store.update<Session>('sessions', { ...row, state: 'closed', outcome }, row.revision);
+    f.store.event(`session.${outcome}`, row, f.project.id, {});
+  };
+  end(one, 'merged', new Date(2027, 9, 1, 12));
+  const discarded = new Date(2027, 9, 4, 12);
+  end(two, 'discarded', discarded);
+  expect(historyTask(f, `${lead.id}:exports`)).toMatchObject({
+    state: 'merged',
+    merged_at: discarded.getTime(),
+  });
+  const days = f.control.boardHistory(user, f.project.id).days;
+  expect(days.find((day) => day.date === '2027-10-04')).toMatchObject({ merged: 1 });
+});
+
+it('reads a direct task claimed by its lead under the lead session', () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, ['exports']);
+  f.store.event('task.claimed', lead, f.project.id, { task_id: 'exports', generation: 1 });
+  expect(historyTask(f, `${lead.id}:exports`)).toMatchObject({
+    session_id: lead.id,
+    runtime: f.adapter.name,
+    attempts: 1,
+  });
+});
+
+it('records a lead claiming its direct task as a start decision', () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, ['exports']);
+  f.store.event('task.claimed', lead, f.project.id, { task_id: 'exports', generation: 1 });
+  const history = f.control.boardHistory(user, f.project.id);
+  expect(history.decisions.map(({ kind, title }) => ({ kind, title }))).toEqual([
+    { kind: 'plan', title: 'Export ships this week' },
+    { kind: 'start', title: 'exports' },
+  ]);
+  expect(history.days.reduce((sum, day) => sum + day.decisions, 0)).toBe(2);
 });

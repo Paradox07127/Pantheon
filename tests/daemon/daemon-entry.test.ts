@@ -155,6 +155,31 @@ it('summarizes turns with the configured Claude binary', async () => {
   );
 });
 
+it('summarizes turns with the Claude binary configured when the summary starts', async () => {
+  const config = path.join(mock.home, '.pantheon/config.json');
+  mkdirSync(path.join(mock.home, '.pantheon'));
+  writeFileSync(
+    config,
+    JSON.stringify({ version: 1, runtimes: { claude: { binary: '/opt/claude/bin/claude' } } }),
+  );
+  mock.exec.mockImplementation((_binary, _args, _options, callback) => callback(null, 'installed'));
+  mock.oneShot.mockClear().mockResolvedValue({ text: 'summary' });
+  await import('../../apps/daemon/src/main.js');
+  const summarize = mock.start.mock.calls[0]![0].turnSummarizer;
+  const signal = new AbortController().signal;
+  writeFileSync(
+    config,
+    JSON.stringify({ version: 1, runtimes: { claude: { binary: '/usr/local/bin/claude' } } }),
+  );
+  await summarize('first', signal);
+  writeFileSync(config, JSON.stringify({ version: 1, runtimes: {} }));
+  await summarize('second', signal);
+  expect(mock.oneShot.mock.calls.map((call) => call[3])).toEqual([
+    '/usr/local/bin/claude',
+    undefined,
+  ]);
+});
+
 it('keeps new worktrees in the home configuration folder and still recognizes the earlier root', async () => {
   vi.stubEnv('PANTHEON_DATA_DIR', undefined);
   mock.exec.mockImplementation((_binary, _args, _options, callback) => callback(null, 'installed'));

@@ -89,6 +89,22 @@ export function toolInputSummary(value: unknown): string | undefined {
     : undefined;
 }
 
+/** The files a recorded tool input names, read as the native transcripts read them. */
+export function toolFiles(value: unknown): string[] | undefined {
+  if (!value || typeof value !== 'object') return;
+  const input = value as Record<string, unknown>;
+  const file = input.file_path ?? input.path;
+  const files =
+    typeof file === 'string'
+      ? [file]
+      : Array.isArray(input.changes)
+        ? input.changes.flatMap((change) => (typeof change?.path === 'string' ? [change.path] : []))
+        : input.changes && typeof input.changes === 'object'
+          ? Object.keys(input.changes)
+          : [];
+  return files.length ? files : undefined;
+}
+
 export function toolCommand(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return;
   const input = value as Record<string, unknown>;

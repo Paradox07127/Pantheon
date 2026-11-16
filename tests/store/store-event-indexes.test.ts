@@ -15,3 +15,25 @@ it.each([
     store.close();
   }
 });
+
+it('reads the project events of the kinds from a time on, in order', () => {
+  const store = new Store(':memory:');
+  try {
+    const entity = { id: 'session', revision: 1 };
+    const old = store.event('turn.queued', entity, 'project', {}),
+      recent = store.event('turn.queued', entity, 'project', {}),
+      other = store.event('task.handed_back', entity, 'project', {});
+    store.event('turn.queued', entity, 'elsewhere', {});
+    const at = store.db.prepare('UPDATE events SET created_at=? WHERE sequence=?');
+    at.run(1000, old.sequence);
+    at.run(5000, recent.sequence);
+    at.run(5000, other.sequence);
+    expect(
+      store
+        .kindEventsSince('project', ['turn.queued', 'task.handed_back'], 2000)
+        .map((event) => event.sequence),
+    ).toEqual([recent.sequence, other.sequence]);
+  } finally {
+    store.close();
+  }
+});

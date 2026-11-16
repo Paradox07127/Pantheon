@@ -84,6 +84,12 @@ describe('learned scope', () => {
       { kind: 'text', text: zh('data.workflowPolicy.allTasks') },
     ]);
   });
+
+  it('gives the tier of a per-tier policy change the tier part', () => {
+    expect(scopeParts({ ...policy, param: 'path', tier: 't3' })).toEqual([
+      { kind: 'tier', text: 'T3' },
+    ]);
+  });
 });
 
 describe('learned status column', () => {

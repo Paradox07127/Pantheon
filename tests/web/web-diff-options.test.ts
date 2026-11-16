@@ -113,6 +113,16 @@ it('opens every file folded to its header when collapsing by default, and unfold
   expect(lists(h.value)).toHaveLength(1);
 });
 
+it('marks the file it was opened at as the current row of the list', () => {
+  const h = mount(() =>
+    DiffFiles({ diff: read({ 'a.ts': [renamed], 'b.ts': [renamed] }), path: 'b.ts' }),
+  );
+  const row = (path: string) =>
+    nodes(h.value).find((n) => n.props.content === path)!.props.children.props;
+  expect(row('b.ts')['aria-current']).toBe(true);
+  expect(row('a.ts')['aria-current']).toBeUndefined();
+});
+
 it('keeps the chosen options after the preferences are read again', async () => {
   const h = show(read({ 'a.ts': [renamed] }));
   option(h.value, zh('components.diff.wrap')).onClick();

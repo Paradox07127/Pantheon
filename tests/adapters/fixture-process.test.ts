@@ -1,11 +1,12 @@
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { FixtureAdapter, terminate } from '@pantheon/adapters';
+import { FixtureAdapter, readProcessIdentity, terminate } from '@pantheon/adapters';
 import { NATIVE_ENV_ALLOWLIST, type AgentEvent, type SessionSpec } from '@pantheon/domain';
 import { eventually } from '../helpers.js';
 
@@ -33,6 +34,7 @@ const spec = (cwd: string, overrides: Partial<SessionSpec> = {}): SessionSpec =>
   ...overrides,
 });
 const script = (...steps: unknown[]) => `fixture-script\n${JSON.stringify(steps)}`;
+const marker = `fixture-process-${randomUUID()}`;
 const running = (pid: number): boolean => {
   try {
     return !/^\s*Z/.test(
@@ -54,14 +56,14 @@ it('stops an MCP launcher group after its leader closes stdio', async () => {
         command: '/bin/sh',
         args: [
           '-c',
-          'sleep 30 </dev/null >/dev/null 2>&1 & printf "%s %s" "$$" "$!" > processes; exit 0',
+          `/bin/sh -c 'sleep 30; exit' ${marker} </dev/null >/dev/null 2>&1 & printf "%s %s" "$$" "$!" > processes; exit 0`,
         ],
         env: {},
       },
     }),
     (event) => events.push(event),
   );
-  let descendant: number | undefined;
+  let descendant: { pid: number; start_time_us?: number } | undefined;
   try {
     await adapter.send(handle, {
       turn_id: 'launcher',
@@ -69,12 +71,23 @@ it('stops an MCP launcher group after its leader closes stdio', async () => {
     });
     await eventually(() => existsSync(path.join(cwd, 'processes')));
     const [, child] = readFileSync(path.join(cwd, 'processes'), 'utf8').split(' ').map(Number);
-    descendant = child!;
+    descendant = { pid: child!, start_time_us: readProcessIdentity(child!)?.start_time_us };
     await eventually(() => events.some((event) => event.kind === 'tool.completed'));
     await adapter.close(handle, Date.now() + 500);
-    expect(running(descendant)).toBe(false);
+    expect(running(descendant.pid)).toBe(false);
   } finally {
-    if (descendant !== undefined && running(descendant)) process.kill(descendant, 'SIGKILL');
+    // Signal only the process this test started, never another that took over its pid.
+    const target =
+      descendant?.start_time_us !== undefined &&
+      running(descendant.pid) &&
+      readProcessIdentity(descendant.pid)?.start_time_us === descendant.start_time_us &&
+      execFileSync('ps', ['-o', 'command=', '-p', String(descendant.pid)], {
+        encoding: 'utf8',
+      }).includes(marker)
+        ? descendant.pid
+        : undefined;
+    console.info('launcher cleanup target', target);
+    if (target !== undefined) process.kill(target, 'SIGKILL');
     await adapter.close(handle, Date.now() + 500);
   }
 });

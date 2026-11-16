@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { App } from '../../apps/web/node_modules/@modelcontextprotocol/ext-apps/dist/src/app.js';
 import { InMemoryTransport } from '../../apps/web/node_modules/@modelcontextprotocol/client/dist/index.mjs';
 import { createAppHost, loadAppHost, type AppHostDeps } from '@/components/mcp-app/host';
@@ -92,6 +93,13 @@ describe('MCP App host bridge', () => {
     expect(capabilities?.serverResources).toBeUndefined();
     expect(capabilities?.openLinks).toEqual({});
     expect(capabilities?.sandbox?.csp).toEqual({ connectDomains: ['https://api.example.com'] });
+  });
+
+  it('names the host with the web package version in the handshake', async () => {
+    const { version } = JSON.parse(readFileSync('apps/web/package.json', 'utf8'));
+    const { app, start } = setup();
+    await start();
+    expect(app.getHostVersion()).toEqual({ name: 'Pantheon', version });
   });
 
   it('keeps a context change made before the view starts for its handshake', async () => {

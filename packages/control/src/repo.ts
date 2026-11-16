@@ -9,7 +9,7 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import { existsSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, posix } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type {
   LandingDiff,
@@ -27,7 +27,7 @@ import type {
   RepoWorktree,
 } from '@pantheon/protocol';
 import { CHECKPOINTS } from './checkpoint.js';
-import { projectAccess, resolvedPath, type ControlContext } from './context.js';
+import { projectAccess, resolvedPath, userOnly, type ControlContext } from './context.js';
 import { runGit, type GitResult } from './git.js';
 import { gateFailed } from './landing.js';
 import { rangeDiff } from './landing-diff.js';
@@ -35,8 +35,8 @@ import { mergeBase, mergePreview } from './merge-preview.js';
 import { PATCH_BOUND, TIME_BOUND } from './source-git.js';
 
 export const BOUND = { max_buffer: 4 * PATCH_BOUND, timeout_ms: TIME_BOUND };
-// The repository's status.showUntrackedFiles would otherwise hide untracked files.
-const STATUS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=normal'];
+// Each untracked file, not its folder, whatever the repository's status.showUntrackedFiles says.
+const STATUS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'];
 // Paths name files, never pathspec patterns.
 const LITERAL = '--literal-pathspecs';
 // The repository's log.showSignature would mix the signature check's output into parsed logs.
@@ -97,6 +97,8 @@ function settledGit(root: string, args: string[]): Promise<string> {
 }
 
 export function projectRoot(ctx: ControlContext, p: Principal, projectId: string): string {
+  // Repository views read the project's checkout and every worktree, not one session's.
+  userOnly(p);
   projectAccess(ctx, p, projectId, 'project.read');
   return ctx.store.must<Project>('projects', projectId).roots[0]!;
 }
@@ -870,7 +872,8 @@ async function rangeCommits(
     UNSIGNED,
     '--format=%x00%H%x00%P%x00%ct%x00%an%x00%s',
     ...(files ? ['--name-only', '--diff-merges=first-parent'] : []),
-    `--since=@${Math.floor(from / 1000)} +0000`,
+    // --since stops the walk at an older commit, hiding the commits in range below it.
+    `--since-as-filter=@${Math.floor(from / 1000)} +0000`,
     `--until=@${Math.ceil(to / 1000)} +0000`,
     ...revisions,
     '--',
@@ -1182,7 +1185,8 @@ export async function repoTimeline(
         gates: [],
         turns: [],
       } as Draft,
-      modules: (stream.modules ?? []).map((module) => module.replace(/\/+$/, '')),
+      // `./src`, `src/` and `src` name one folder; `.` names every file.
+      modules: (stream.modules ?? []).map((module) => posix.normalize(module).replace(/\/+$/, '')),
     }));
     const laneOf = new Map<string, Draft>();
     for (const commit of commits.values()) {
@@ -1190,7 +1194,9 @@ export async function repoTimeline(
         most = 0;
       for (const { draft, modules } of streams) {
         const touched = commit.files.filter((file) =>
-          modules.some((module) => file === module || file.startsWith(`${module}/`)),
+          modules.some(
+            (module) => module === '.' || file === module || file.startsWith(`${module}/`),
+          ),
         ).length;
         if (touched > most) [best, most] = [draft, touched];
       }
@@ -1250,10 +1256,10 @@ export async function repoTimeline(
   };
 }
 
-/** A path relative to the project's first folder that git cannot read as an option. */
+/** A path relative to the project's first folder; callers pass it after `--` or `./`, where git cannot read it as an option. */
 export function relativeFile(file: string): string {
   requireThat(
-    !file.startsWith('-') && !isAbsolute(file) && !file.split('/').includes('..'),
+    !isAbsolute(file) && !file.split('/').includes('..'),
     'invalid_input',
     'Path must be relative to the project folder and must not contain ..',
   );
@@ -1421,7 +1427,7 @@ export async function repoFileHistory(
       'log',
       UNSIGNED,
       '--format=%ct',
-      `--since=@${Math.floor(firstWeek / 1000)} +0000`,
+      `--since-as-filter=@${Math.floor(firstWeek / 1000)} +0000`,
       history.head,
       '--',
       file,

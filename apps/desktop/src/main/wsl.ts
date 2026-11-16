@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 export interface Distro {
   name: string;
@@ -167,8 +168,41 @@ export const wslUnavailable = (
   return [userns, install].filter(Boolean).join(' ') || undefined;
 };
 
+/** The `root` of a wsl.conf's `[automount]` section with one trailing slash; WSL's default, /mnt/, without one. */
+export const parseAutomountRoot = (conf: string): string => {
+  let section = '';
+  let root = '/mnt/';
+  for (const line of conf.split(/\r?\n/)) {
+    const header = /^\s*\[([^\]]*)\]\s*$/.exec(line);
+    if (header) section = header[1]!.trim().toLowerCase();
+    const entry = /^\s*root\s*=\s*"?([^"]*?)"?\s*$/i.exec(line);
+    if (section === 'automount' && entry?.[1]?.startsWith('/'))
+      root = entry[1].replace(/\/*$/, '/');
+  }
+  return root;
+};
+
+const automountRoots = new Map<string, string>();
+/** Where `distro` mounts the Windows drives, read once from its /etc/wsl.conf through its share. */
+export const automountRoot = (distro: string): string => {
+  let root = automountRoots.get(distro.toLowerCase());
+  if (root === undefined) {
+    let conf = '';
+    try {
+      conf = readFileSync(`\\\\wsl.localhost\\${distro}\\etc\\wsl.conf`, 'utf8');
+    } catch {}
+    root = parseAutomountRoot(conf);
+    automountRoots.set(distro.toLowerCase(), root);
+  }
+  return root;
+};
+
 /** The Linux path of a folder in `distro`'s share or on a Windows drive; undefined for any other path. */
-export const wslPathFromWindows = (winPath: string, distro: string): string | undefined => {
+export const wslPathFromWindows = (
+  winPath: string,
+  distro: string,
+  root = automountRoot(distro),
+): string | undefined => {
   const share = /^\\\\wsl(?:\.localhost|\$)\\([^\\]+)(\\.*)?$/i.exec(winPath);
   if (share)
     return share[1]!.toLowerCase() === distro.toLowerCase()
@@ -176,13 +210,19 @@ export const wslPathFromWindows = (winPath: string, distro: string): string | un
       : undefined;
   const drive = /^([a-z]):(\\.*)?$/i.exec(winPath);
   return drive
-    ? `/mnt/${drive[1]!.toLowerCase()}${(drive[2] ?? '').replaceAll('\\', '/')}`
+    ? `${root}${drive[1]!.toLowerCase()}${(drive[2] ?? '').replaceAll('\\', '/')}`
     : undefined;
 };
 
-/** The Windows path of a Linux path in `distro`: a drive path for /mnt/<drive>, else its share path. */
-export const windowsPathFromWsl = (linuxPath: string, distro: string): string => {
-  const drive = /^\/mnt\/([a-z])(\/.*)?$/i.exec(linuxPath);
+/** The Windows path of a Linux path in `distro`: a drive path under its automount root, else its share path. */
+export const windowsPathFromWsl = (
+  linuxPath: string,
+  distro: string,
+  root = automountRoot(distro),
+): string => {
+  const drive = linuxPath.startsWith(root)
+    ? /^([a-z])(\/.*)?$/i.exec(linuxPath.slice(root.length))
+    : null;
   return drive
     ? `${drive[1]!.toUpperCase()}:${(drive[2] ?? '/').replaceAll('/', '\\')}`
     : `\\\\wsl.localhost\\${distro}${linuxPath.replaceAll('/', '\\')}`;

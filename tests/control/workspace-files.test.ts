@@ -43,6 +43,21 @@ it('lists directories before files by name, excluding ignored entries and git me
   });
 });
 
+it('lists a link to a folder inside the workspace as a folder that opens', () => {
+  const f = workbenchFixture();
+  mkdirSync(path.join(f.source, 'docs'));
+  writeFileSync(path.join(f.source, 'docs', 'a.md'), 'a');
+  symlinkSync('docs', path.join(f.source, 'current'));
+  expect(f.control.filesList(user, f.project.id, undefined, undefined).entries).toEqual([
+    { name: 'current', kind: 'dir' },
+    { name: 'docs', kind: 'dir' },
+    { name: 'answer.txt', kind: 'file', size: 5 },
+  ]);
+  expect(f.control.filesList(user, f.project.id, undefined, 'current').entries).toEqual([
+    { name: 'a.md', kind: 'file', size: 1 },
+  ]);
+});
+
 it('returns at most one thousand sorted directory entries and reports truncation', () => {
   const f = workbenchFixture();
   mkdirSync(path.join(f.source, 'many'));
@@ -268,6 +283,18 @@ it('searches declarations across supported languages, including untracked files,
   expect(
     (await f.control.symbolsSearch(user, f.project.id, undefined, 'found')).symbols,
   ).toHaveLength(50);
+});
+
+it('skips a source file too large to search', async () => {
+  const f = workbenchFixture();
+  writeFileSync(path.join(f.source, 'small.ts'), 'function findSmall() {}');
+  writeFileSync(
+    path.join(f.source, 'generated.ts'),
+    'function findGenerated() {}\n' + '//'.repeat(1024 * 1024),
+  );
+  expect(await f.control.symbolsSearch(user, f.project.id, undefined, 'find')).toEqual({
+    symbols: [{ name: 'findSmall', kind: 'function', path: 'small.ts', line: 1 }],
+  });
 });
 
 it('records a returned image by the hash of its stored bytes and reads it back only for its own session', async () => {

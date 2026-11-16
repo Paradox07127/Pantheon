@@ -11,7 +11,13 @@ import { FixtureAdapter } from '@pantheon/adapters';
 import { command, type DesktopBridge, type EventFrame } from '@pantheon/protocol';
 import type { Project } from '@pantheon/domain';
 import type { MenuItemConstructorOptions } from 'electron';
-import { DaemonBridge, ownsDaemon, userDataDirectory } from '../../apps/desktop/src/main/daemon.js';
+import {
+  DaemonBridge,
+  ownsDaemon,
+  userDataDirectory,
+  wslOwns,
+} from '../../apps/desktop/src/main/daemon.js';
+import { PANTHEON_VERSION } from '@pantheon/domain/version';
 import { titleBarOverlay } from '../../apps/desktop/src/main/window.js';
 import { awaitWorkspaceReady, eventually, registerWorkspace, user } from '../helpers.js';
 
@@ -76,7 +82,7 @@ it('finds a live daemon from daemon.json and relays commands and queries', async
     ok: true,
     value: {
       url: daemon.url,
-      version: '0.1.0',
+      version: PANTHEON_VERSION,
       protocol_version: 1,
       started_here: false,
       data_dir: directory,
@@ -485,7 +491,10 @@ it('starts a daemon in development when none is live', async () => {
     vi.unstubAllEnvs();
   });
   const { directory, bridge, info, started } = await startDevelopmentDaemon();
-  expect(info).toMatchObject({ ok: true, value: { started_here: true, version: '0.1.0' } });
+  expect(info).toMatchObject({
+    ok: true,
+    value: { started_here: true, version: PANTHEON_VERSION },
+  });
   expect(bridge.startedPid).toBeTypeOf('number');
   expect(started().spawnargs).not.toContain('--allow-fixture');
   expect(existsSync(path.join(directory, 'daemon.json'))).toBe(true);
@@ -654,6 +663,59 @@ it('reloads a daemon on start of watching only when the build is newer than the 
   );
   expect(bridge.startedPid).not.toBe(first);
 }, 30000);
+
+it('replaces a daemon another app version started, then keeps the one it started', async () => {
+  const root = tempRoot();
+  const directory = path.join(root, 'state');
+  const logFile = path.join(root, 'logs/daemon.log');
+  const options = {
+    directory,
+    packaged: true,
+    repo: root,
+    logFile,
+    launch: {
+      node: process.execPath,
+      entry: path.resolve(import.meta.dirname, '../../apps/daemon/dist/main.js'),
+      env: {},
+    },
+  };
+  cleanups.push(async () => {
+    for (const child of vi.mocked(spawn).mock.results.map((result) => result.value))
+      if (child?.spawnargs.includes(directory) && child.exitCode === null) child.kill('SIGTERM');
+    await eventually(() => !existsSync(path.join(directory, 'daemon.json')), undefined, 10000);
+  });
+  const older = new DaemonBridge(options);
+  expect(await older.daemon()).toMatchObject({ ok: true });
+  const first = older.startedPid!;
+  const upgraded = new DaemonBridge({ ...options, version: '0.0.0-upgraded' });
+  expect(await upgraded.daemon()).toMatchObject({ ok: true, value: { started_here: false } });
+  await eventually(
+    () => readFileSync(logFile, 'utf8').includes(`daemon reloaded: pid ${first} stopped`),
+    undefined,
+    15000,
+  );
+  expect(() => process.kill(first, 0)).toThrow();
+  expect(await upgraded.daemon()).toMatchObject({ ok: true, value: { started_here: true } });
+  await sleep(500);
+  expect(readFileSync(logFile, 'utf8').match(/is not app 0\.0\.0-upgraded/g)).toHaveLength(1);
+}, 30000);
+
+it('owns a WSL daemon started from any runtime version beside its own', () => {
+  const runtime = { root: '/home/u/.local/share/pantheon/runtime/0.2.0+2', data: '/home/u/data' };
+  const line = (version: string, data = runtime.data) =>
+    `/home/u/.local/share/pantheon/runtime/${version}/node/bin/node /home/u/.local/share/pantheon/runtime/${version}/daemon/dist/main.js --data-dir ${data}`;
+  expect(wslOwns(line('0.2.0+2'), runtime)).toBe(true);
+  expect(wslOwns(line('0.1.0+1'), runtime)).toBe(true);
+  expect(wslOwns(`${line('0.1.0+1')} --allow-fixture`, runtime)).toBe(true);
+  expect(wslOwns(line('0.1.0+1', '/home/u/other'), runtime)).toBe(false);
+  expect(
+    wslOwns(
+      '/home/u/.local/share/pantheon/runtime/0.1.0+1/node/bin/node /home/u/.local/share/pantheon/runtime/0.2.0+2/daemon/dist/main.js --data-dir /home/u/data',
+      runtime,
+    ),
+  ).toBe(false);
+  expect(wslOwns(line('..'), runtime)).toBe(false);
+});
 
 const ELECTRON = '../../apps/desktop/node_modules/electron/index.js';
 type Handler = (...args: any[]) => unknown;

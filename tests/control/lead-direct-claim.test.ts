@@ -369,6 +369,18 @@ it('records the worktree head when the lead reports its direct task done', async
   expect(current(f, lead.id).direct_task?.id).toBe('a');
 });
 
+it('refuses the done report of a direct task when the worktree head cannot be read', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [task('a')]);
+  start(f, lead.id, ['a']);
+  const worktree = f.store.must<Workspace>('workspaces', lead.workspace_id!).path;
+  git(worktree, 'symbolic-ref', 'HEAD', 'refs/heads/unborn');
+
+  expect(() => report(f, lead.id, 'lead')).toThrow(expect.objectContaining({ code: 'git_failed' }));
+  expect(current(f, lead.id).direct_task?.reported_head).toBeUndefined();
+  expect(eventsOf(f, lead.id, 'task.reported')).toEqual([]);
+});
+
 it('releases the direct task the lead stops, and makes its turns read-only again', async () => {
   const f = workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');

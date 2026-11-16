@@ -4,12 +4,13 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { readProcessIdentity } from '@pantheon/adapters';
 import type { Control } from '@pantheon/control';
-import type {
-  AgentEventSink,
-  Project,
-  Session,
-  SessionHandle,
-  SessionTurn,
+import {
+  SessionStartError,
+  type AgentEventSink,
+  type Project,
+  type Session,
+  type SessionHandle,
+  type SessionTurn,
 } from '@pantheon/domain';
 import { agentEvent, saveSessionHandle } from '../../packages/control/dist/agent.js';
 import { createTurnQueue } from '../../packages/control/dist/session.js';
@@ -264,4 +265,71 @@ it('enriches a pid-only writer identity while the handle is live', () => {
   saveSessionHandle(ctx, handle);
   expect(f.store.must<Session>('sessions', session.id).process_identity).toEqual(identity);
   expect(read).toHaveBeenCalledOnce();
+});
+
+it('delivers no input to a worktree session discarded while its process starts', async () => {
+  const f = setup(),
+    { session, turn } = conversation(f),
+    original = f.adapter.start.bind(f.adapter);
+  let release: (() => void) | undefined;
+  vi.spyOn(f.adapter, 'start').mockImplementation(async (spec, emit) => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return original(spec, emit);
+  });
+  const send = vi
+    .spyOn(f.adapter, 'send')
+    .mockImplementation(async (_h, input) => ({ turn_id: input.turn_id, status: 'delivered' }));
+  const ticks: Promise<void>[] = [];
+  await eventually(
+    () => release !== undefined,
+    async () => {
+      ticks.push(f.control.tick());
+    },
+  );
+  f.call(
+    'session.discard',
+    { session_id: session.id },
+    f.store.must<Session>('sessions', session.id).revision,
+  );
+  release!();
+  await Promise.all(ticks);
+  await eventually(
+    () => f.store.must<Session>('sessions', session.id).outcome === 'discarded',
+    () => f.control.tick(),
+  );
+  expect(send).not.toHaveBeenCalled();
+  expect(f.store.must<SessionTurn>('session_turns', turn.id).delivery).not.toBe('delivered');
+});
+
+it('reconciles a session whose start failed without a confirmed stop, then reopens it once the process is gone', async () => {
+  const f = setup(),
+    { session, turn } = conversation(f),
+    ctx = context(f.control);
+  const pid = 2 ** 22 + 11;
+  vi.spyOn(ctx, 'readProcess').mockReturnValue(undefined);
+  vi.spyOn(f.adapter, 'start').mockRejectedValue(
+    new SessionStartError('Handshake failed', {
+      stopped: false,
+      deadline: 0,
+      finished_at: new Date(0).toISOString(),
+      evidence: { method: 'process_group', members: [{ pid }] },
+    }),
+  );
+  await awaitWorkspaceReady(f.control, session.workspace_id!);
+  await eventually(
+    () => f.store.must<SessionTurn>('session_turns', turn.id).state === 'failed',
+    () => f.control.tick(),
+  );
+  expect(f.store.must<Session>('sessions', session.id)).toMatchObject({
+    state: 'reconciling',
+    stop_pending: true,
+    process_identity: { pid },
+  });
+  await f.control.reconcile();
+  expect(f.store.must<Session>('sessions', session.id)).toMatchObject({
+    state: 'open',
+    stop_pending: false,
+  });
 });

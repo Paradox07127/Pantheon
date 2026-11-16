@@ -105,6 +105,20 @@ it('interrupts the writable lead turn whose direct task leaves the plan when the
   expect(interrupt).toHaveBeenCalledOnce();
 });
 
+it('continues the lead read-only after interrupting its writable turn for a stopped direct task', async () => {
+  const f = workbenchFixture();
+  turnWriteUnlock(f, 'unsupported');
+  const lead = await writingLead(f);
+  const before = f.turns(lead.id).length;
+
+  stopTask(f, lead.id);
+  await settle(f, lead);
+
+  expect(f.turns(lead.id).slice(before)).toEqual([
+    expect.objectContaining({ origin: 'tracker', state: 'completed', read_only: true }),
+  ]);
+});
+
 it('only makes the lead turn read-only when the runtime can take write access back', async () => {
   const f = workbenchFixture();
   turnWriteUnlock(f, 'supported');

@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import {
   existsSync,
   readFileSync,
@@ -65,6 +65,7 @@ import {
   processIdentity,
   readProcessIdentity,
   descendants,
+  mergeProcesses,
   realPathsOnDevice,
   remoteSpawn,
   sandboxFactsOnDevice,
@@ -72,6 +73,7 @@ import {
   stopOnDevice,
   transportEnvironment,
   validateSessionSpec,
+  type DeviceProcess,
   type LeftoverProcess,
 } from './process.js';
 import { MIN_VERSIONS } from './capabilities.js';
@@ -1094,17 +1096,24 @@ interface ClaudeProcess {
   /** The group was seen empty; its id may now belong to another process, so it is never signalled. */
   groupEmpty?: boolean;
   /** Set when the CLI runs on another device; stopped as groupEmpty is. */
-  device?: {
-    remote: RemoteLaunch;
-    group: Promise<number | undefined>;
-    allowlist: readonly string[];
-    stopped?: boolean;
-  };
+  device?: DeviceProcess;
   /** Its descendants a stop saw while it ran and has not yet seen gone; some may have left its group. */
   descendants?: LeftoverProcess[];
 }
 
 const groupsObserved = process.platform !== 'win32';
+
+/** An exited descendant its parent has not reaped keeps its identity but runs nothing. */
+function descendantRuns(entry: LeftoverProcess): boolean {
+  if (readProcessIdentity(entry.pid)?.start_time_us !== entry.start_time_us) return false;
+  try {
+    return !execFileSync('ps', ['-o', 'stat=', '-p', String(entry.pid)], { encoding: 'utf8' })
+      .trim()
+      .startsWith('Z');
+  } catch {
+    return true;
+  }
+}
 
 /** Whether the process group the CLI leads still has members. */
 function groupAlive(owned: ClaudeProcess): boolean {
@@ -1128,15 +1137,11 @@ async function stoppedProcesses(
   // Read before any wait: once the CLI exits, a tool that left its group has no parent chain to it.
   if (groupsObserved)
     for (const owned of pending)
-      if (!owned.device) {
-        const seen = owned.descendants ?? [];
-        owned.descendants = [
-          ...seen,
-          ...descendants(owned.identity!.pid).filter(
-            (entry) => !seen.some((earlier) => earlier.pid === entry.pid),
-          ),
-        ];
-      }
+      if (!owned.device)
+        owned.descendants = mergeProcesses(
+          owned.descendants ?? [],
+          descendants(owned.identity!.pid),
+        );
   if (pending.length && Date.now() < deadline) {
     try {
       await Promise.race([
@@ -1181,15 +1186,12 @@ async function stoppedProcesses(
   let unconfirmed: string | undefined;
   for (const { device } of processes)
     if (device && !device.stopped) {
-      const reason = await stopOnDevice(device.remote, device.group, device.allowlist, deadline);
+      const reason = await stopOnDevice(device, deadline);
       device.stopped = reason === undefined;
       unconfirmed ??= reason;
     }
   // Once its group is empty, a descendant still running left the group; it is reported, never signalled.
-  for (const owned of processes)
-    owned.descendants = owned.descendants?.filter(
-      (entry) => readProcessIdentity(entry.pid)?.start_time_us === entry.start_time_us,
-    );
+  for (const owned of processes) owned.descendants = owned.descendants?.filter(descendantRuns);
   const escaped = processes.some((owned) => owned.descendants?.length);
   const stopped = exited && !left().length && unconfirmed === undefined && !escaped;
   return {
@@ -1413,8 +1415,8 @@ async function readTitle(
 const ACCOUNT_CHECK_MS = 30_000;
 const DEVICE_PATH_MS = 10_000;
 
-// Each of these replaces the permissions, settings, tools, MCP servers, folders, session or stream
-// format Pantheon gives the CLI.
+// Each of these replaces the permissions, settings, tools, MCP servers, folders, session, model,
+// turn limit or stream format Pantheon gives the CLI.
 const REFUSED_ARGS = new Set([
   'dangerously-skip-permissions',
   'allow-dangerously-skip-permissions',
@@ -1430,7 +1432,11 @@ const REFUSED_ARGS = new Set([
   'allowed-tools',
   'allowedTools',
   'disallowedTools',
+  'disallowed-tools',
   'tools',
+  'model',
+  'effort',
+  'max-turns',
   'add-dir',
   'resume',
   'continue',
@@ -1470,13 +1476,17 @@ function deviceLaunch(
 
 /**
  * `--flag value` becomes { flag: value } and a bare `--flag` becomes { flag: null }. The SDK takes
- * one value per key, so a repeated flag's later values become `--flag=value` keys.
+ * one value per key, so a repeated flag's later values become `--flag=value` keys; a value given
+ * again moves its key last, since the CLI keeps a single-value flag's last value.
  */
 function extraArgs(args: readonly string[]): Record<string, string | null> {
   const result: Record<string, string | null> = {};
   const set = (flag: string, value: string | null) => {
     if (!Object.hasOwn(result, flag)) result[flag] = value;
-    else if (value !== null) result[`${flag}=${value}`] = null;
+    else if (value !== null) {
+      delete result[`${flag}=${value}`];
+      result[`${flag}=${value}`] = null;
+    }
   };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;

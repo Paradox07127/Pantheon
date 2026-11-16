@@ -106,7 +106,7 @@ import { AnalyzeMenu } from './AnalyzeMenu';
 import { RuntimePanel } from './RuntimeDiagnostics';
 import { TraceTimeChart } from './TraceTimeChart';
 import { EventTable } from './EventTable';
-import { LaneLegend, LaneOverlay } from './LaneOverlay';
+import { clockText, LaneLegend, LaneOverlay } from './LaneOverlay';
 import './trace.css';
 import './trace-bar.css';
 
@@ -192,6 +192,16 @@ const LANE_STATE_TEXT: Record<LaneState, string> = {
 const ENDED: readonly WorkbenchSession['state'][] = ['done', 'merged', 'discarded'];
 /** Moments the lanes' head names, from the view's start to its end. */
 const TICKS = 6;
+const SHARES = Array.from({ length: TICKS }, (_, i) => i / (TICKS - 1));
+
+/** The head's moments to the minute, or to the second when two neighbours share a minute; a repeat stays blank. */
+function tickTexts(times: readonly number[], end: number): string[] {
+  const minutes = times.map((time) => whenText(time, end));
+  const texts = minutes.some((text, i) => text === minutes[i - 1])
+    ? times.map((time) => clockText(time, end))
+    : minutes;
+  return texts.map((text, i) => (text === texts[i - 1] ? '' : text));
+}
 /** Wheel deltaY beyond this zooms no faster. */
 const WHEEL_MAX = 100;
 const ZOOM_RATE = 0.01;
@@ -1403,9 +1413,12 @@ function Lanes({
           <div className="trc-axis" aria-hidden="true">
             <span>{t({ id: 'trace.lanes.label', defaultMessage: 'Sessions' })}</span>
             <span className="trc-ticks">
-              {Array.from({ length: TICKS }, (_, i) => i / (TICKS - 1)).map((share) => (
-                <span key={share} className="trc-tick" style={{ left: pct(share) }}>
-                  {whenText(axis.time(share), view.to)}
+              {tickTexts(
+                SHARES.map((share) => axis.time(share)),
+                view.to,
+              ).map((tick, i) => (
+                <span key={SHARES[i]} className="trc-tick" style={{ left: pct(SHARES[i]!) }}>
+                  {tick}
                 </span>
               ))}
             </span>

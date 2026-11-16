@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { ChevronDown, ChevronRight, ChevronsDownUp, Folder, Space, TextWrap } from 'lucide-react';
@@ -202,6 +202,7 @@ export function DiffFiles({
   notes,
   mark,
   action,
+  path,
 }: {
   diff: DiffRead;
   onComment?: (at: CommentedLine, comment: string) => Promise<boolean>;
@@ -210,8 +211,10 @@ export function DiffFiles({
   mark?: (path: string) => ReactNode;
   /** A control at the end of a file's row in the list and of its header, outside their buttons. */
   action?: (path: string) => ReactNode;
+  /** The file to show first: picked in the list and scrolled to once its diff is read. */
+  path?: string;
 }) {
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(path ?? null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const ids = useRef(0);
   const [sending, setSending] = useState(false);
@@ -226,6 +229,12 @@ export function DiffFiles({
     () => new Map<string, DiffFile>(patch ? parsePatch(patch).map((f) => [f.path, f]) : []),
     [patch],
   );
+  const read = !!diff.data;
+  useEffect(() => {
+    if (!path || !read) return;
+    setPicked(path);
+    sections.current.get(path)?.scrollIntoView({ block: 'start' });
+  }, [path, read]);
 
   if (!diff.data) {
     if (diff.error)
@@ -383,6 +392,7 @@ export function DiffFiles({
           <button
             type="button"
             className={f.path === picked ? 'ss-file on' : 'ss-file'}
+            aria-current={f.path === picked || undefined}
             onClick={() => jump(f.path)}
           >
             <span className={`ss-fs ${status}`}>{status}</span>

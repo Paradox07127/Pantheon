@@ -208,6 +208,28 @@ it('keeps a device removed during its probe out of the probed devices', async ()
   expect(ctx.devices!.has('build-box')).toBe(false);
 });
 
+it('refuses to remove a device or change its SSH target while a session keeps a worktree on it', async () => {
+  const ctx = context();
+  await saveDevice(ctx, user, { id: 'build-box', ssh: 'build-box' }, unreachable);
+  ctx.store.insert('workspaces', { id: 'w1', revision: 1, path: '/w1' });
+  ctx.store.insert('sessions', {
+    id: 's1',
+    revision: 1,
+    device_id: 'build-box',
+    workspace_id: 'w1',
+  });
+  const busy = expect.objectContaining({ code: 'resource_busy' });
+  expect(() => removeDevice(ctx, user, 'build-box')).toThrow(busy);
+  expect(() =>
+    saveDevice(ctx, user, { id: 'build-box', ssh: 'builder@other-box' }, unreachable),
+  ).toThrow(busy);
+  await saveDevice(ctx, user, { id: 'build-box', ssh: 'build-box', labels: ['cuda'] }, unreachable);
+
+  ctx.store.update('workspaces', { id: 'w1', revision: 1, path: '/w1', removed_at: 1 }, 1);
+  removeDevice(ctx, user, 'build-box');
+  expect(listDevices(ctx).map((device) => device.id)).toEqual(['local']);
+});
+
 it('lists each device with its configuration entry and what holds it now', async () => {
   const configDir = context().userConfigDir!;
   const entry = {
@@ -370,6 +392,24 @@ it('lists the named hosts of an SSH config with their host name and user', () =>
     { host: 'pi5', hostname: 'pi5.lan' },
   ]);
   expect(sshConfigHosts(path.join(path.dirname(file), 'missing'))).toEqual([]);
+});
+
+it('reads SSH config arguments as OpenSSH does: quoted words, up to a comment', () => {
+  const file = sshConfig({
+    config: [
+      'Host build # staging box',
+      '  HostName build.lan # the rack',
+      'Host "quoted"',
+      '  HostName "quoted.example.com"',
+      'Include "with space/hosts"',
+    ].join('\n'),
+    'with space/hosts': 'Host spaced\n',
+  });
+  expect(sshConfigHosts(file)).toEqual([
+    { host: 'build', hostname: 'build.lan' },
+    { host: 'quoted', hostname: 'quoted.example.com' },
+    { host: 'spaced' },
+  ]);
 });
 
 it('marks the SSH hosts that a configured device already reaches', () => {

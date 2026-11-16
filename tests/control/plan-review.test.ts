@@ -431,3 +431,18 @@ it('refuses a lead claiming a direct high-risk task while its plan review runs',
     ),
   ).toThrow(new RegExp(`plan review ${review!.id}`));
 });
+
+it('refuses the session the user opens for a high-risk task while its plan review runs', async () => {
+  const { f, lead } = await planFixture();
+  writePlan(f, lead.id, [task('risky', 't3')]);
+  const [review] = planReviews(f);
+  expect(() =>
+    f.call('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      task_id: `${lead.id}:risky`,
+      input: 'Work on the risky task',
+    }),
+  ).toThrow(new RegExp(`plan review ${review!.id}`));
+  expect(sessionsOf(f, lead.id, 'risky')).toEqual([]);
+});

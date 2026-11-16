@@ -9,6 +9,7 @@ import {
   type RuntimeChoice,
   type Session,
   type SessionTurn,
+  type Workspace,
 } from '@pantheon/domain';
 import { inputSchemas, type DeviceListItem, type DeviceStatus } from '@pantheon/protocol';
 import {
@@ -30,6 +31,7 @@ import {
   ownEntry,
   planUnfinished,
   retiredBinding,
+  sessionPlanTask,
   taskGeneration,
   taskSessions,
   taskState,
@@ -41,7 +43,7 @@ import {
 } from './workbench-session.js';
 import { appendNote, recordNote } from './lead-inbox.js';
 import { interruptSession, stopBackground } from './session.js';
-import { queueTurn } from './task-tracking.js';
+import { continueInterruptedLead, queueTurn } from './task-tracking.js';
 import { backgroundTasks, nextDepth } from './progress.js';
 import { runningPlanReview } from './review.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
@@ -207,7 +209,10 @@ export function placedTaskSessions(
   );
 }
 
-/** The task sessions holding a place on each device, of every project, and the resources unfinished tasks use there. */
+/**
+ * The task sessions holding a place on each device, of every project, and the resources unfinished
+ * tasks use there, a lead's direct task among them.
+ */
 export function deviceLoads(
   ctx: ControlContext,
   rows = placementRows(ctx),
@@ -216,49 +221,50 @@ export function deviceLoads(
       string,
       Pick<DeviceListItem['load'], 'sessions' | 'uses' | 'resource_sessions'>
     >(),
-    placed = new Map<string, Set<string>>(),
-    byTask = new Map<string, Session[]>();
+    plans = new Map(rows.plans.map((plan) => [plan.id, plan])),
+    placed = new Map<string, Set<string>>();
+  const add = (session: Session, running: boolean, uses: PlanTask['uses']) => {
+    const deviceId = session.device_id ?? 'local',
+      load: Pick<DeviceListItem['load'], 'sessions' | 'uses' | 'resource_sessions'> = loads.get(
+        deviceId,
+      ) ?? { sessions: 0, uses: Object.create(null) as Record<string, number> };
+    if (running) load.sessions++;
+    // Resource names such as `constructor` or `__proto__` are plain keys of these records.
+    for (const [name, amount] of Object.entries(uses ?? {})) {
+      load.uses[name] = (load.uses[name] ?? 0) + amount;
+      ((load.resource_sessions ??= Object.create(null) as Record<string, string[]>)[name] ??=
+        []).push(session.id);
+    }
+    loads.set(deviceId, load);
+  };
   for (const session of rows.sessions) {
-    if (!session.task) continue;
-    const key = boardTaskId(session.task.lead_session_id, session.task.id),
-      own = byTask.get(key);
-    if (own) own.push(session);
-    else byTask.set(key, [session]);
-  }
-  for (const plan of rows.plans) {
+    if (session.outcome || session.state === 'closed') continue;
+    const direct = session.direct_task && plans.get(session.id);
+    // A lead's direct task holds the resources it uses, but no place.
+    if (direct) {
+      add(session, false, direct.tasks.find((task) => task.id === session.direct_task!.id)?.uses);
+      continue;
+    }
+    const binding = session.task,
+      plan = binding && plans.get(binding.lead_session_id);
+    if (!plan || !session.workspace_id) continue;
     if (!placed.has(plan.project_id))
       placed.set(
         plan.project_id,
-        new Set(placedTaskSessions(ctx, plan.project_id, rows).map((session) => session.id)),
+        new Set(placedTaskSessions(ctx, plan.project_id, rows).map((each) => each.id)),
       );
-    for (const task of plan.tasks)
-      for (const session of taskSessions(
-        ctx,
-        plan.id,
-        task.id,
-        byTask.get(boardTaskId(plan.id, task.id)) ?? [],
-        plan,
-      )) {
-        const running = placed.get(plan.project_id)!.has(session.id);
-        // A session that waits for an approval before its merge runs nothing, yet its task is not over.
-        const approval =
-          !session.outcome &&
-          session.state !== 'closed' &&
-          session.merge?.reason === 'workflow_approval';
-        if (!running && !approval) continue;
-        const deviceId = session.device_id ?? 'local',
-          load: Pick<DeviceListItem['load'], 'sessions' | 'uses' | 'resource_sessions'> = loads.get(
-            deviceId,
-          ) ?? { sessions: 0, uses: Object.create(null) as Record<string, number> };
-        if (running) load.sessions++;
-        // Resource names such as `constructor` or `__proto__` are plain keys of these records.
-        for (const [name, amount] of Object.entries(task.uses ?? {})) {
-          load.uses[name] = (load.uses[name] ?? 0) + amount;
-          ((load.resource_sessions ??= Object.create(null) as Record<string, string[]>)[name] ??=
-            []).push(session.id);
-        }
-        loads.set(deviceId, load);
-      }
+    const running = placed.get(plan.project_id)!.has(session.id);
+    // A session that waits for an approval before its merge runs nothing, yet its task is not over.
+    if (!running && session.merge?.reason !== 'workflow_approval') continue;
+    // A session keeps what it opened with, whatever its task uses now or whether it is still planned.
+    add(
+      session,
+      running,
+      binding!.uses ??
+        (retiredBinding(plan, session)
+          ? undefined
+          : plan.tasks.find((task) => task.id === binding!.id)?.uses),
+    );
   }
   return loads;
 }
@@ -274,6 +280,12 @@ export function taskPath(ctx: ControlContext, projectId: string, task: PlanTask)
     ? 'dispatch'
     : path;
 }
+
+/** The paths the task's sessions may change: its own scope and those of its parallel parts. */
+const taskScope = (task: PlanTask): string[] => [
+  ...task.scope,
+  ...(task.parallel ?? []).flatMap((part) => part.scope),
+];
 
 /** The scopes the project's placed task sessions and the direct tasks of its leads hold, by task id. */
 function heldScopes(
@@ -305,7 +317,7 @@ function heldScopes(
       ? []
       : awaitingChange(leadPlan(session), session)
         ? ['.']
-        : (leadPlan(session)?.tasks.find((task) => task.id === session.task!.id)?.scope ?? []),
+        : ((leadPlan(session) && sessionPlanTask(leadPlan(session)!, session)?.scope) ?? []),
   }));
   const claimed = rows.sessions
     .filter(
@@ -339,7 +351,7 @@ function taskWaits(
   );
   if (upstream.length) return { wait: 'upstream', task_ids: upstream };
   const holders = held
-    .filter((each) => each.scope.some((a) => task.scope.some((b) => overlaps(a, b))))
+    .filter((each) => each.scope.some((a) => taskScope(task).some((b) => overlaps(a, b))))
     .map((each) => each.task_id);
   if (holders.length) return { wait: 'scope', task_ids: holders };
 }
@@ -430,7 +442,7 @@ export function dispatchQueue(
             ? 'capacity'
             : undefined);
     if (!wait) {
-      held.push({ task_id: task.id, scope: task.scope });
+      held.push({ task_id: task.id, scope: taskScope(task) });
       running += count;
       byRuntime.set(runtimeId, (byRuntime.get(runtimeId) ?? 0) + count);
       load.sessions += count;
@@ -525,7 +537,18 @@ export function stuckUpstream(
       stuck: 'merge_blocked',
       text: `whose session ${blocked.id} is blocked${blocked.merge?.reason ? `: ${blocked.merge.reason}` : ''}`,
     };
-  if (sessions.some((session) => !session.stop_requested)) return;
+  // A closed session, or one whose worktree never got ready, moves no further.
+  if (
+    sessions.some(
+      (session) =>
+        !session.stop_requested &&
+        session.state !== 'closed' &&
+        !['failed', 'cancelled'].includes(
+          ctx.store.get<Workspace>('workspaces', session.workspace_id!)?.provisioning?.state ?? '',
+        ),
+    )
+  )
+    return;
   const last = earlierSessions(ctx, plan, upstreamId).at(-1);
   return last
     ? {
@@ -547,14 +570,16 @@ function tellStuckUpstream(ctx: ControlContext, planId: string, task: PlanTask):
       : [];
   });
   if (!texts.length) return;
+  // Told once for each start request of the task.
+  const requestedAt = ownEntry(plan.dispatch, task.id)?.requested_at ?? 0;
   const told = new Set(
     (
       ctx.store.db
         .prepare("SELECT payload FROM events WHERE aggregate_id=? AND kind='lead.note_added'")
         .all(plan.id) as { payload: string }[]
     )
-      .map((row) => JSON.parse(row.payload) as { task_id: string; text: string })
-      .filter((note) => note.task_id === task.id)
+      .map((row) => JSON.parse(row.payload) as { task_id: string; text: string; at: number })
+      .filter((note) => note.task_id === task.id && note.at >= requestedAt)
       .map((note) => note.text),
   );
   for (const text of texts) {
@@ -787,6 +812,16 @@ export function openUserTaskSession(
     'invalid_state',
     `The scope of task ${task.id} overlaps tasks ${waits?.task_ids.join(', ')}, which are under way; open it after they end`,
   );
+  const review =
+    task.kind &&
+    taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(task.kind.tier)
+      ? runningPlanReview(ctx, plan, task.id)
+      : undefined;
+  requireThat(
+    !review,
+    'invalid_state',
+    `Task ${task.id} waits for the plan review ${review?.id}; open it once the review ends`,
+  );
   const step = slotWait(ctx, plan, task, 'before_dispatch');
   requireThat(
     !step,
@@ -794,13 +829,19 @@ export function openUserTaskSession(
     `Task ${task.id} waits for workflow step ${step?.title}; start it through task.start first`,
   );
   const choice = userTaskChoice(ctx, input);
-  const deviceId = input.device_id ?? task.device ?? 'local';
-  const short = shortResources(
-    task,
-    deviceLoads(ctx).get(deviceId) ?? { uses: {} },
-    listDevices(ctx).find((entry) => entry.id === deviceId),
-    1,
+  const deviceId = input.device_id ?? task.device ?? 'local',
+    load = deviceLoads(ctx).get(deviceId) ?? { sessions: 0, uses: {} },
+    device = listDevices(ctx).find((entry) => entry.id === deviceId),
+    sessionLimit =
+      deviceId === 'local'
+        ? readUserConfig(ctx.userConfigDir).local_device?.max_sessions
+        : device?.max_sessions;
+  requireThat(
+    sessionLimit === undefined || load.sessions < sessionLimit,
+    'invalid_state',
+    `Device ${deviceId} runs as many task sessions as it may (${sessionLimit}); open task ${task.id} after one ends`,
   );
+  const short = shortResources(task, load, device, 1);
   requireThat(
     !short.length,
     'invalid_state',
@@ -895,9 +936,10 @@ export function revokeLeadTurnWrites(ctx: ControlContext, leadId: string, cause:
   queueMicrotask(() => {
     if (rolledBack) return;
     try {
-      ctx.store.transaction(() =>
-        interruptSession(ctx, ctx.store.must<Session>('sessions', leadId), 'lead', cause),
-      );
+      ctx.store.transaction(() => {
+        interruptSession(ctx, ctx.store.must<Session>('sessions', leadId), 'lead', cause);
+        continueInterruptedLead(ctx, leadId, cause);
+      });
     } catch {
       // The turn ended first, or the runtime cannot interrupt one.
       return;
@@ -977,12 +1019,24 @@ function claimDirectTask(
     `Task ${task.id} depends on task ${upstream}, which is not done; start it after that task is done`,
   );
   const held = heldScopes(ctx, plan.project_id).find((each) =>
-    each.scope.some((a) => task.scope.some((b) => overlaps(a, b))),
+    each.scope.some((a) => taskScope(task).some((b) => overlaps(a, b))),
   );
   requireThat(
     !held,
     'resource_busy',
     `The scope of task ${task.id} overlaps task ${held?.task_id}, which is under way; start it after that task ends`,
+  );
+  const deviceId = lead.device_id ?? 'local',
+    short = shortResources(
+      task,
+      deviceLoads(ctx).get(deviceId) ?? { uses: {} },
+      listDevices(ctx).find((entry) => entry.id === deviceId),
+      1,
+    );
+  requireThat(
+    !short.length,
+    'resource_busy',
+    `Device ${deviceId} has too little ${short.join(', ')} free for task ${task.id}; start it after the tasks using it end`,
   );
   const generation = taskGeneration(plan, task.id),
     workflow = taskWorkflow(ctx, plan, task.id);

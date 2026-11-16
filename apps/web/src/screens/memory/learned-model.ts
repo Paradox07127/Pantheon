@@ -33,6 +33,8 @@ export function ruleParts(change: Improvement['change']): RulePart[] {
 
 /** Which tasks an improvement applies to, one part per narrowing. */
 export function scopeParts(change: Improvement['change']): ScopePart[] {
+  if (change.type === 'policy_change' && change.tier)
+    return [{ kind: 'tier', text: tierText(change.tier) }];
   if (change.type !== 'experience' || (!change.domain && !change.tier && !change.runtime))
     return [{ kind: 'text', text: scopeText(change) }];
   const parts: ScopePart[] = [];

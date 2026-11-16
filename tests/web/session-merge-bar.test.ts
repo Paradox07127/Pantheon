@@ -15,6 +15,7 @@ import { zh } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({
   board: {} as any,
   preflight: null as SessionPreflight | null,
+  preflightError: null as string | null,
   gates: null as SessionGates | null,
   history: null as SessionGatesHistory | null,
   feedback: {} as Record<string, FeedbackItem[]>,
@@ -62,7 +63,7 @@ vi.mock('@/data/session-panel', async (actual) => ({
   useSessionReviews: () => ({ data: [], error: null, reload: () => {} }),
   useSessionPreflight: () => ({
     data: mock.preflight,
-    error: null,
+    error: mock.preflightError,
     reload: () => void mock.reloads++,
   }),
   useSessionGatesHistory: () => ({ data: mock.history, error: null, reload: () => {} }),
@@ -165,6 +166,7 @@ beforeEach(() => {
   commands = [];
   tabs = [];
   mock.preflight = preflight();
+  mock.preflightError = null;
   mock.gates = passed;
   mock.history = null;
   mock.feedback = {};
@@ -486,6 +488,19 @@ describe('merge dialog', () => {
     expect(named(h.value, 'MergeDialog').props.open).toBe(true);
     expect(nodes(d.value).some((n) => n.props.role === 'alert')).toBe(false);
     expect(confirmButton(d).props.disabled).toBe(false);
+  });
+
+  it('says why the preflight read failed in the open confirmation', async () => {
+    const h = bar();
+    merge(h).props.onClick();
+    await h.flush();
+    const d = dialog(h);
+    mock.preflight = null;
+    mock.preflightError = 'The daemon did not answer';
+    inspectorHost.render();
+    h.render();
+    d.render();
+    expect(text(find(d.value, (n) => n.props.role === 'alert'))).toBe('The daemon did not answer');
   });
 
   it('shows the counts as loading until the preflight read on opening arrives', async () => {

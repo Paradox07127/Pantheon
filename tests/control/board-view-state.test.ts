@@ -99,17 +99,22 @@ function commit(f: Fixture, session: Session, name: string) {
   git(worktree, 'commit', '--quiet', '-m', `Add ${name}`);
 }
 
+const quoted = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
+
 /** The git runs `run` makes, through a script on PATH that logs each run's arguments. */
 function gitRuns(run: () => void): string[] {
   const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
-  const bin = mkdtempSync(path.join(process.cwd(), 'node_modules/.cache/counting-git-')),
+  const bin = mkdtempSync(path.join(process.cwd(), "node_modules/.cache/counting-git-'")),
     log = path.join(bin, 'runs.log');
   writeFileSync(log, '');
   writeFileSync(
     path.join(bin, 'git'),
-    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${real}' "$@"\n`,
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quoted(log)}\nexec ${quoted(real)} "$@"\n`,
   );
   chmodSync(path.join(bin, 'git'), 0o755);
+  execFileSync(path.join(bin, 'git'), ['--version']);
+  expect(readFileSync(log, 'utf8')).toBe('--version\n');
+  writeFileSync(log, '');
   const PATH = process.env.PATH;
   process.env.PATH = `${bin}:${PATH}`;
   try {
@@ -459,6 +464,84 @@ it('shows a report task whose session reported done as awaiting acceptance until
   reportDone(merging.id, 'Task b is done');
   await settle(f, current(f, lead.id));
   expect(rowOf(f, lead.id, 'b').state).toBe('needs_attention');
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+
+const dayKey = (at: number) => {
+  const d = new Date(at);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** Starts the report task, has its worker report done and the lead accept it. */
+async function acceptedReportTask(f: Fixture, leadId: string, taskId: string) {
+  const worker = await settledTask(f, leadId, taskId);
+  f.call(
+    'task.report',
+    { project_id: f.project.id, kind: 'done', text: `Task ${taskId} is answered` },
+    null,
+    sessionOf(f, worker.id, 'worker'),
+  );
+  await settle(f, current(f, leadId));
+  f.call(
+    'task.accept',
+    { project_id: f.project.id, task_id: taskId, evidence: 'The report answers the goal' },
+    null,
+    sessionOf(f, leadId, 'lead'),
+  );
+  return worker;
+}
+
+it('counts a report task done on the day it was accepted after the plan removes it', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [reportTask('a'), task('b')]);
+  await acceptedReportTask(f, lead.id, 'a');
+  const earlier = f.store.now() - 2 * DAY;
+  f.store.db.prepare('UPDATE events SET created_at=?').run(earlier);
+  const plan = planOf(f, lead.id);
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: plan.plan_version,
+      headline: plan.headline,
+      lanes: plan.lanes,
+      tasks: plan.tasks.filter((each) => each.id !== 'a'),
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    sessionOf(f, lead.id, 'lead'),
+  );
+  const daily = f.control.boardView(user, f.project.id, 3).task_progress.daily;
+  expect(daily.find((day) => day.day === dayKey(earlier))).toMatchObject({ scope: 2, done: 1 });
+});
+
+it('leaves out an accepted report task whose worker stays open once it was accepted before the range', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [reportTask('a')]);
+  const worker = await acceptedReportTask(f, lead.id, 'a');
+  expect(current(f, worker.id).state).not.toBe('closed');
+  const plan = planOf(f, lead.id);
+  f.store.update<BoardPlan>(
+    'board_plans',
+    { ...plan, accepted: { a: { ...plan.accepted!.a!, at: f.store.now() - 3 * DAY } } },
+    plan.revision,
+  );
+  const board = f.control.boardView(user, f.project.id, 1);
+  expect(board.tasks.some((row) => row.id === `${lead.id}:a`)).toBe(false);
+});
+
+it('keeps a report task whose worker merged before acceptance unfinished, with its dependents unmet', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [reportTask('a'), task('b', { depends_on: ['a'] })]);
+  const worker = await settledTask(f, lead.id, 'a');
+  patch(f, worker.id, { state: 'closed', outcome: 'merged' });
+  f.store.event('session.merged', current(f, worker.id), f.project.id, { to_sha: '0'.repeat(40) });
+  const board = f.control.boardView(user, f.project.id, 1);
+  expect(board.tasks.find((row) => row.id === `${lead.id}:a`)!.status).not.toBe('done');
+  expect(board.edges.find((edge) => edge.from === `${lead.id}:a`)!.state).not.toBe('met');
 });
 
 it('names the scope and capacity waits of queued tasks', async () => {

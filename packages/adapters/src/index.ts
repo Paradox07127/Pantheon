@@ -22,4 +22,4 @@ export {
   type TraceReducer,
 } from './native-transcript.js';
 
-export { toolInputSummary, toolCommand, reportedToolTokens } from './trace.js';
+export { toolInputSummary, toolFiles, toolCommand, reportedToolTokens } from './trace.js';

@@ -12,7 +12,8 @@ const mock = vi.hoisted(() => ({
   reload: null as unknown as Mock<() => void>,
   worktrees: [] as unknown[],
   run: null as unknown as Mock<(...args: any[]) => Promise<unknown>>,
-  toast: null as unknown as Mock<(...args: any[]) => void>,
+  toast: null as unknown as Mock<(...args: any[]) => unknown>,
+  hold: null as unknown as Mock<(...args: any[]) => void>,
 }));
 const store = vi.hoisted(
   () => (state: () => any) =>
@@ -69,6 +70,7 @@ vi.mock('@/data/commands', async (actual) => ({
 vi.mock('@/components/Toast', async (actual) => ({
   ...(await actual<object>()),
   toast: (...args: unknown[]) => mock.toast(...args),
+  holdToastAction: (...args: unknown[]) => mock.hold(...args),
 }));
 vi.mock('@/data/patch', async (actual) => {
   const real = await actual<typeof import('@/data/patch')>();
@@ -159,7 +161,8 @@ beforeEach(() => {
     ok: true,
     value: type === 'repo.commit' ? { sha: 'abcdef0123456789' } : { undo_id: 'undo-7' },
   }));
-  mock.toast = vi.fn();
+  mock.toast = vi.fn(() => 'toast-1');
+  mock.hold = vi.fn();
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal('localStorage', { getItem: () => null, setItem() {} });
 });
@@ -473,6 +476,26 @@ describe('local checkout changes', () => {
     undo.resolve({ ok: true, value: {} });
     await h.flush();
     expect(button(h.value, commitText(3)).props.disabled).toBe(false);
+  });
+
+  it('holds the undo in the discard toast off while a commit runs', async () => {
+    const h = local();
+    labelled(
+      h.value,
+      zhf('repo.changes.local.discard', { path: 'docs/reconcile.md' }),
+    ).props.onClick();
+    confirm(h);
+    await h.flush();
+    expect(mock.toast).toHaveBeenCalledOnce();
+    const commit = deferred<unknown>();
+    mock.run = vi.fn(() => commit.promise);
+    write(h, 'Raise the partial refund cap');
+    button(h.value, commitText(3)).props.onClick();
+    h.render();
+    expect(mock.hold).toHaveBeenLastCalledWith('toast-1', true);
+    commit.resolve({ ok: true, value: { sha: 'abcdef0123456789' } });
+    await h.flush();
+    expect(mock.hold).toHaveBeenLastCalledWith('toast-1', false);
   });
 
   it('shows a failed read again above the changes it still lists', () => {

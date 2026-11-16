@@ -10,7 +10,9 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
-import type { Project, Session, SessionComment, Workspace } from '@pantheon/domain';
+import type { Project, Session, SessionComment, SessionTurn, Workspace } from '@pantheon/domain';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import { releaseIdleConversation } from '../../packages/control/dist/session.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -82,6 +84,31 @@ it('refuses a setting the runtime cannot apply live while an input waits for its
     ).toThrow(expect.objectContaining({ code }));
   expect(current(f, session.id)).toMatchObject({ permission_mode: 'ask' });
   expect(current(f, session.id).requested_effort).toBe(session.requested_effort);
+});
+
+it('fails the queued input of a session discarded before its released process starts again', async () => {
+  const f = workbenchFixture();
+  const session = await idleSession(f);
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  releaseIdleConversation(ctx, session);
+  await eventually(
+    () =>
+      ![...f.control.handles.values()].some((handle) => handle.platform_session_id === session.id),
+    () => f.control.tick(),
+  );
+  f.call(
+    'session.send',
+    { session_id: session.id, input: 'Continue the work' },
+    current(f, session.id).revision,
+  );
+  const queued = f.turns(session.id).at(-1)!;
+  expect(queued.state).toBe('queued');
+  f.call('session.discard', { session_id: session.id }, current(f, session.id).revision);
+  expect(current(f, session.id).outcome).toBe('discarded');
+  expect(f.store.must<SessionTurn>('session_turns', queued.id)).toMatchObject({
+    state: 'failed',
+    delivery: 'failed',
+  });
 });
 
 it('shows a session in the user folder ready after its turn instead of starting', async () => {

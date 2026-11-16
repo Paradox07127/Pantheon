@@ -121,6 +121,28 @@ it('leaves an interrupted session a person drives failed and waiting for the nex
   ]);
 });
 
+it('delivers a message queued behind an exited process after a restart instead of reconciling', async () => {
+  const f = workbenchFixture();
+  const session = f.create();
+  await settle(f, session);
+  // The adapter dropped the identity of its process once the process group was empty.
+  const exited = current(f, session.id);
+  f.store.update('sessions', { ...exited, process_identity: undefined }, exited.revision);
+  expect(current(f, session.id).native_id).toBeDefined();
+  const turn = f.call<SessionTurn>(
+    'session.send',
+    { session_id: session.id, input: 'Go on' },
+    current(f, session.id).revision,
+  );
+  await f.restart(() => undefined);
+  expect(current(f, session.id).state).toBe('running');
+  await settle(f, session);
+  expect(f.store.must<SessionTurn>('session_turns', turn.id)).toMatchObject({
+    state: 'completed',
+    delivery: 'delivered',
+  });
+});
+
 it('hands an interrupted lead the board updates its never-started turn carried', async () => {
   const f = workbenchFixture();
   holdNextTurn(f);

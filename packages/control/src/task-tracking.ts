@@ -116,6 +116,8 @@ const BACKGROUND_TEXT: Record<BackgroundTask['kind'], string> = {
   agent: 'agent',
   other: 'task',
 };
+const INTERRUPTED_TEXT =
+  '[Pantheon] Your direct task was released, and your runtime cannot take write access from a running turn, so Pantheon interrupted that turn. Go on with the rest of it: your turns are read-only until you start a task again.';
 const LOOP_TEXT: Record<TurnLoop['form'], string> = {
   failing: 'repeats a failing tool call',
   repeating: 'repeats a tool call with no other progress',
@@ -234,8 +236,9 @@ function trackedState(
     return ['cancelled', 'workflow_approval'].includes(session.merge.reason ?? '')
       ? undefined
       : 'blocked';
-  const provisioning = ctx.store.get<Workspace>('workspaces', session.workspace_id!)?.provisioning
-    ?.state;
+  const workspace = ctx.store.get<Workspace>('workspaces', session.workspace_id!),
+    // A folder session is never provisioned.
+    provisioning = workspace?.kind === 'in_place' ? 'ready' : workspace?.provisioning?.state;
   if (provisioning === 'failed' || provisioning === 'cancelled' || session.state === 'closed')
     return 'failed';
   if (provisioning !== 'ready') return;
@@ -515,7 +518,10 @@ function queueTaskTurn(
   );
 }
 
-/** Queues a workflow step's input on a task session or a lead; undefined while it takes no input. */
+/**
+ * Queues a workflow step's input on a task session or a lead; undefined while it takes no input or
+ * the project is over its budget.
+ */
 export function queueStepTurn(
   ctx: ControlContext,
   session: Session,
@@ -523,6 +529,7 @@ export function queueStepTurn(
   input: string,
   skills?: TurnSkill[],
 ): SessionTurn | undefined {
+  if (projectOverBudget(ctx, session.project_id)) return;
   try {
     acceptInput(ctx, session, session.state === 'running' ? 'steer' : 'send');
   } catch (error) {
@@ -575,6 +582,27 @@ function firstNote(
     )
     .get(plan.id, started.sequence, sessionId, kind) as
     { sequence: number; created_at: number } | undefined;
+}
+
+/** True when a note of the running turn already told the lead of the alert; a still_looping one is its second looping note. */
+function toldInTurn(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  sessionId: string,
+  alert: { kind: Alert },
+  turn: SessionTurn,
+): boolean {
+  if (alert.kind === 'stalled' || alert.kind === 'looping')
+    return !!firstNote(ctx, plan, sessionId, alert.kind, turn);
+  if (alert.kind !== 'still_looping') return false;
+  const started = latestEvent(ctx, turn.id, 'turn.running');
+  if (!started) return false;
+  const { count } = ctx.store.db
+    .prepare(
+      "SELECT count(*) AS count FROM events WHERE aggregate_id=? AND kind='lead.note_added' AND sequence>? AND json_extract(payload,'$.session_id')=? AND json_extract(payload,'$.kind')='looping'",
+    )
+    .get(plan.id, started.sequence, sessionId) as { count: number };
+  return count >= 2;
 }
 
 const inputText = (call: Record<string, unknown>) =>
@@ -698,7 +726,14 @@ function reportDirectTask(
     `Report your direct task ${claimed.id} with kind done; tell the user anything else`,
   );
   const worktree = ctx.store.must<Workspace>('workspaces', lead.workspace_id!).path,
-    head = runGit(worktree, ['rev-parse', 'HEAD']).stdout.toString().trim();
+    parsed = runGit(worktree, ['rev-parse', '--verify', 'HEAD^{commit}']),
+    head = parsed.stdout.toString().trim();
+  // Without a head the merge after the turn would have nothing to check and skip silently.
+  requireThat(
+    parsed.exit_code === 0 && /^([0-9a-f]{40}|[0-9a-f]{64})$/.test(head),
+    'git_failed',
+    `Pantheon could not read the commit your worktree is at, so task ${claimed.id} is not reported: ${parsed.stderr.toString().trim() || parsed.error || 'no commit'}`,
+  );
   const next = ctx.store.update(
     'sessions',
     { ...lead, direct_task: { ...claimed, reported_head: head, reported_at: ctx.store.now() } },
@@ -779,18 +814,19 @@ export function tickTaskTracking(ctx: ControlContext): void {
       alerted: NonNullable<BoardPlan['alerted']> = {},
       notes: LeadNote[] = [];
     let changed = false;
-    /** Keeps the alerts of the running turn and returns those not told before. */
+    /**
+     * Keeps the alerts the running turn has now, which needs-you reads, and returns those that are
+     * new since the last tick and that no note of this turn told the lead before.
+     */
     const newAlerts = (sessionId: string, turn: SessionTurn) => {
-      const told = ownEntry(plan.alerted, turn.id);
-      if (told) alerted[turn.id] = told;
-      const fresh = turnAlerts(ctx, plan, sessionId, turn).filter(
-        (alert) => !told?.includes(alert.kind),
-      );
-      for (const alert of fresh) {
-        alerted[turn.id] = [...(ownEntry(alerted, turn.id) ?? []), alert.kind];
+      const before = ownEntry(plan.alerted, turn.id) ?? [],
+        active = turnAlerts(ctx, plan, sessionId, turn);
+      if (active.length) alerted[turn.id] = active.map((alert) => alert.kind);
+      if (active.length !== before.length || active.some((alert) => !before.includes(alert.kind)))
         changed = true;
-      }
-      return fresh;
+      return active.filter(
+        (alert) => !before.includes(alert.kind) && !toldInTurn(ctx, plan, sessionId, alert, turn),
+      );
     };
     for (const session of sessions) {
       // The lead hears nothing of a removed task's sessions, whose id a new task may reuse.
@@ -865,8 +901,9 @@ export function tickTaskTracking(ctx: ControlContext): void {
         // The same text again means the last hand-back made no progress.
         handBackText(ctx, session, problem) !== lastHandBack.get(session.id)
       ) {
-        // A turn before the usage limit resets would fail the same way, so the hand-back waits.
-        if (usageLimitWaiting(ctx, session.id)) continue;
+        // A turn before the usage limit resets would fail the same way, and one over the project
+        // budget would spend more, so the hand-back waits.
+        if (usageLimitWaiting(ctx, session.id) || projectOverBudget(ctx, plan.project_id)) continue;
         if (handBack(ctx, session, problem)) {
           handedBack[session.id] = [...(ownEntry(handedBack, session.id) ?? []), problem];
           changed = true;
@@ -940,7 +977,8 @@ export function tickTaskTracking(ctx: ControlContext): void {
         workflowPolicy(ctx, plan.project_id).gate_on_fail === 'stop'
       ) &&
       !(direct.reason === 'gate_failed' && lead!.merge?.failure_class === 'environment') &&
-      !usageLimitWaiting(ctx, lead!.id)
+      !usageLimitWaiting(ctx, lead!.id) &&
+      !projectOverBudget(ctx, plan.project_id)
     ) {
       // Counted by lead and task, apart from the hand-backs to task sessions.
       const key = `${lead!.id}:${claimed.id}`,
@@ -1006,6 +1044,8 @@ function tellChangedContracts(ctx: ControlContext): void {
         session.state !== 'open' ||
         session.stop_pending ||
         session.merge?.reason === 'cancelled' ||
+        // The change waits for the user to raise the budget.
+        projectOverBudget(ctx, session.project_id) ||
         (turns ??= ctx.store.list<SessionTurn>('session_turns')).some(
           (turn) =>
             turn.session_id === session.id && (turn.state === 'queued' || turn.state === 'running'),
@@ -1142,6 +1182,23 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
   queueTurn(ctx, lead, digest.text, 'tracker', cause, {
     causal_depth: depth,
     lead_note_ids: digest.note_ids,
+  });
+}
+
+/**
+ * Queues the turn that goes on after the lead's writable turn was interrupted because its direct
+ * task was released; it starts read-only once the interrupted turn ends.
+ */
+export function continueInterruptedLead(ctx: ControlContext, leadId: string, cause: string): void {
+  const lead = ctx.store.must<Session>('sessions', leadId);
+  try {
+    acceptInput(ctx, lead, lead.state === 'running' ? 'steer' : 'send');
+  } catch (error) {
+    if (error instanceof DomainError) return;
+    throw error;
+  }
+  queueTurn(ctx, lead, INTERRUPTED_TEXT, 'tracker', cause, {
+    causal_depth: nextDepth(ctx, lead.id, undefined),
   });
 }
 

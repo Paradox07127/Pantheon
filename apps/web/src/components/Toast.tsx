@@ -73,6 +73,8 @@ let last: { key: string; id: string; count: number } | null = null;
 export function toast({ title, action, kind = 'result', onClose }: ToastOptions): string {
   const key = `${kind}:${title}`;
   const count = !action && last?.key === key ? last.count + 1 : 1;
+  // The button stays pressable while the toast fades out.
+  let ran = false;
   const id: string = toastManager.add({
     ...(count > 1 ? { id: last!.id } : {}),
     title,
@@ -90,6 +92,8 @@ export function toast({ title, action, kind = 'result', onClose }: ToastOptions)
             children: action.label,
             onClick: () => {
               toastManager.close(id);
+              if (ran) return;
+              ran = true;
               action.run();
             },
           },
@@ -98,6 +102,11 @@ export function toast({ title, action, kind = 'result', onClose }: ToastOptions)
   });
   last = action ? null : { key, id, count };
   return id;
+}
+
+/** Turns a toast's action off while `held`, such as an undo while another write runs. */
+export function holdToastAction(id: string, held: boolean): void {
+  toastManager.update(id, (shown) => ({ actionProps: { ...shown.actionProps, disabled: held } }));
 }
 
 function addCard(card: NoticeCard, kind: ToastKind): string {
@@ -152,6 +161,8 @@ const closeButton = () => (
 // A plain function rather than a component, so the card's parts render with the list.
 function noticeCard(item: ToastItem, card: NoticeCard, life: ReactNode) {
   const closing = (go: () => void) => () => {
+    // The card stays pressable while it fades out.
+    if (item.transitionStatus === 'ending') return;
     toastManager.close(item.id);
     go();
   };

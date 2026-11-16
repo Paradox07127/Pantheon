@@ -88,7 +88,7 @@ export function stepMoment(
     steps
       .slice(0, index + 1)
       .filter((s) => s.kind === 'edit')
-      .flatMap((s) => s.span.files ?? (s.span.input_summary ? [s.span.input_summary] : [])),
+      .flatMap((s) => s.span.files ?? []),
   );
   const { context_tokens, context_window } = step.span;
   return {

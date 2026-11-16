@@ -1,5 +1,5 @@
-import { afterAll, describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -9,8 +9,13 @@ import type {
   SpawnedProcess,
 } from '../../packages/adapters/node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts';
 import { ClaudeAdapter } from '../../packages/adapters/src/claude.js';
-import { readProcessIdentity } from '../../packages/adapters/src/process.js';
+import { descendants, readProcessIdentity } from '../../packages/adapters/src/process.js';
 import { NATIVE_ENV_ALLOWLIST, type AgentEvent, type SessionSpec } from '@pantheon/domain';
+
+vi.mock('../../packages/adapters/src/process.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../packages/adapters/src/process.js')>();
+  return { ...actual, descendants: vi.fn(actual.descendants) };
+});
 
 const cache = path.join(process.cwd(), 'node_modules/.cache');
 mkdirSync(cache, { recursive: true });
@@ -23,7 +28,7 @@ writeFileSync(
 chmodSync(binary, 0o755);
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-function psField(pid: number, field: 'ppid=' | 'command='): string {
+function psField(pid: number, field: 'ppid=' | 'command=' | 'stat='): string {
   try {
     return execFileSync('ps', ['-o', field, '-p', String(pid)], { encoding: 'utf8' }).trim();
   } catch {
@@ -261,6 +266,49 @@ describe('Claude owned process', () => {
       expect((await adapter.close(handle, Date.now() + 1000)).stopped).toBe(false);
     } finally {
       const target = { pid: escapedPid, start_time_us: escaped?.start_time_us };
+      console.log('Signal targets:', JSON.stringify([target]));
+      if (
+        target.start_time_us === undefined ||
+        readProcessIdentity(target.pid)?.start_time_us !== target.start_time_us ||
+        !psField(target.pid, 'command=').includes(marker)
+      )
+        throw new Error(`Cleanup aborted; ${target.pid} is not the process this test started`);
+      process.kill(target.pid, 'SIGKILL');
+    }
+  });
+
+  it('confirms a stop once a tool that left the process group has exited unreaped', async () => {
+    const marker = `claude-unreaped-${randomUUID()}`;
+    // After exec, node never waits for the backgrounded sleep, so it stays unreaped once it exits.
+    const holder = spawn(
+      'sh',
+      [
+        '-c',
+        'sleep 1 & echo $!; exec "$0" -e "setTimeout(() => {}, 30000)" "$1"',
+        process.execPath,
+        marker,
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const holderIdentity = readProcessIdentity(holder.pid!);
+    try {
+      const exitedPid = await new Promise<number>((resolve) =>
+        holder.stdout.once('data', (data: Buffer) => resolve(Number(String(data).trim()))),
+      );
+      const exited = readProcessIdentity(exitedPid)!;
+      for (let tries = 0; !psField(exitedPid, 'stat=').startsWith('Z') && tries < 300; tries++)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(psField(exitedPid, 'stat=')).toMatch(/^Z/);
+      const f = ownedQuery();
+      const handle = await f.adapter.start(spec, () => {});
+      vi.mocked(descendants).mockReturnValueOnce([
+        { pid: exitedPid, start_time_us: exited.start_time_us!, command: 'sleep 1' },
+      ]);
+      const receipt = await f.adapter.close(handle, Date.now() + 1000);
+      expect(readProcessIdentity(exitedPid)?.start_time_us).toBe(exited.start_time_us);
+      expect(receipt).toMatchObject({ stopped: true });
+    } finally {
+      const target = { pid: holder.pid!, start_time_us: holderIdentity?.start_time_us };
       console.log('Signal targets:', JSON.stringify([target]));
       if (
         target.start_time_us === undefined ||

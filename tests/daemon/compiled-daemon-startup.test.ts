@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 
-it('initializes compiled control and starts the daemon in native Node without an async import cycle', () => {
+it('initializes compiled control and starts the daemon in native Node without an async import cycle, reporting the release version', () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'pantheon-compiled-startup-'));
   const moduleUrl = (relative: string) => JSON.stringify(new URL(relative, import.meta.url).href);
   try {
@@ -27,9 +27,9 @@ it('initializes compiled control and starts the daemon in native Node without an
         const board = await fetch(daemon.url + '/v1/board', {
           headers: { Authorization: 'Bearer ' + daemon.token }
         });
-        await health.text();
+        const { version } = await health.json();
         await board.text();
-        console.log(JSON.stringify({ health: health.status, board: board.status, imports: 'ready' }));
+        console.log(JSON.stringify({ health: health.status, version, board: board.status, imports: 'ready' }));
       } finally { await daemon.close(); }
     `,
       ],
@@ -38,7 +38,13 @@ it('initializes compiled control and starts the daemon in native Node without an
     expect(child.error, child.stderr).toBeUndefined();
     expect(child.status, child.stderr).toBe(0);
     expect(child.stderr).not.toContain('unsettled top-level await');
-    expect(JSON.parse(child.stdout)).toEqual({ health: 200, board: 200, imports: 'ready' });
+    expect(JSON.parse(child.stdout)).toEqual({
+      health: 200,
+      version: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
+        .version,
+      board: 200,
+      imports: 'ready',
+    });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

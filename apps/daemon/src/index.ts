@@ -18,12 +18,14 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
+import { PANTHEON_VERSION } from '@pantheon/domain/version';
 import {
   credentialRole,
   DomainError,
   requireThat,
   type HarnessAdapter,
   type Principal,
+  type ProcessIdentity,
   type Session,
   type Role,
   type Workspace,
@@ -34,6 +36,7 @@ import {
   USER_PRINCIPAL_ID,
   type QueryMethod,
 } from '@pantheon/protocol';
+import { readProcessIdentity } from '@pantheon/adapters';
 import { Store, ArtifactFiles } from '@pantheon/store';
 import { Control, TraceIndex, type ControlOptions } from '@pantheon/control';
 import { startRuntimeOtel } from './runtime-otel.js';
@@ -147,6 +150,19 @@ function processAlive(pid: number): boolean {
     return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
+/** The starter a reclaim file names still runs: its pid is alive and started when recorded. */
+function reclaimHolderAlive(text: string): boolean {
+  let holder: Partial<ProcessIdentity> | null;
+  try {
+    holder = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (typeof holder?.pid !== 'number' || holder.pid <= 0) return false;
+  return holder.start_time_us === undefined
+    ? processAlive(holder.pid)
+    : readProcessIdentity(holder.pid)?.start_time_us === holder.start_time_us;
+}
 async function acquireLock(socket: string): Promise<net.Server> {
   const open = (): Promise<net.Server> =>
     new Promise((resolve, reject) => {
@@ -180,12 +196,16 @@ async function acquireLock(socket: string): Promise<net.Server> {
       'This data directory already has an active daemon',
     );
     if (await live()) throw running;
-    // Only one starter replaces a stale socket; the file names its pid, so a crashed one's is cleared.
+    // Only one starter replaces a stale socket; the file names its pid and start time, so a crashed one's is cleared.
     const reclaim = `${socket}.reclaim`;
     // Linked into place whole, so another starter never reads it without its pid.
     const take = (): void => {
       const staged = `${reclaim}.${process.pid}`;
-      writeFileSync(staged, String(process.pid), { mode: 0o600 });
+      writeFileSync(
+        staged,
+        JSON.stringify(readProcessIdentity(process.pid) ?? { pid: process.pid }),
+        { mode: 0o600 },
+      );
       try {
         linkSync(staged, reclaim);
       } finally {
@@ -196,8 +216,7 @@ async function acquireLock(socket: string): Promise<net.Server> {
       take();
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const holder = Number(readFileSync(reclaim, 'utf8'));
-      if (holder > 0 && processAlive(holder)) throw running;
+      if (reclaimHolderAlive(readFileSync(reclaim, 'utf8'))) throw running;
       unlinkSync(reclaim);
       try {
         take();
@@ -364,7 +383,11 @@ export async function startDaemon(options: DaemonOptions) {
       c.json({ error: 'unknown_route', message: `${c.req.method} ${c.req.path}` }, 404),
     );
     app.get('/health', (c) =>
-      c.json({ service: 'pantheon', protocol_version: PROTOCOL_VERSION, version: '0.1.0' }),
+      c.json({
+        service: 'pantheon',
+        protocol_version: PROTOCOL_VERSION,
+        version: PANTHEON_VERSION,
+      }),
     );
     app.get('/v1/capabilities', (c) => c.json([...control.adapters.values()].map((a) => a.report)));
     app.get('/v1/session-principal', (c) => c.json(control.sessionPrincipal(c.get('principal'))));

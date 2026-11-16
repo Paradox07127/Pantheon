@@ -362,6 +362,46 @@ describe('session input delivery', () => {
     }
   });
 
+  it('keeps a steer cancelled by an interrupt cancelled when its queued receipt arrives later', async () => {
+    const s = steeringFixture(true);
+    let release!: () => void;
+    try {
+      s.adapter.interrupt = async () => {
+        s.complete('interrupted');
+        return { ok: true };
+      };
+      const { session } = await s.open();
+      await s.f.control.tick();
+      s.steer.mockImplementationOnce(async (_handle, turn) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { turn_id: turn.turn_id, status: 'queued' };
+      });
+      const turn = s.input(session, 'steer'),
+        ticking = s.f.control.tick();
+      await eventually(() => release !== undefined);
+      s.f.call(
+        'session.interrupt',
+        { session_id: session.id },
+        s.f.store.must<Session>('sessions', session.id).revision,
+      );
+      await eventually(() => s.row(turn).state === 'cancelled');
+      release();
+      await ticking;
+      await eventually(
+        () =>
+          s.send.mock.calls.length > 1 ||
+          s.f.store.must<Session>('sessions', session.id).state === 'open',
+      );
+      expect(s.row(turn).state).toBe('cancelled');
+      expect(s.send).toHaveBeenCalledTimes(1);
+    } finally {
+      release?.();
+      await s.f.close();
+    }
+  });
+
   it('holds a steer during a compaction and sends it afterwards as a read-only turn of a held session', async () => {
     const s = steeringFixture(true);
     try {

@@ -371,3 +371,93 @@ it('refuses the session the user starts for a task while another task holds its 
   );
   expect(f.sessionsOf('second')).toEqual([]);
 });
+
+it('refuses the session the user starts for a task while its device has no free session', async () => {
+  const f = await deviceBoard(devices);
+  f.probed({ max_sessions: 1 });
+  f.plan([reportTask('first', onBuildBox), reportTask('second', onBuildBox)]);
+  f.start(['first']);
+  await f.control.tick();
+  const [first] = f.sessionsOf('first');
+  await f.settle(first!);
+  expect(() => userOpens(f, 'second')).toThrow(
+    expect.objectContaining({
+      code: 'invalid_state',
+      message: expect.stringContaining('build-box'),
+    }),
+  );
+  expect(f.sessionsOf('second')).toEqual([]);
+});
+
+it('keeps the device place of a running session whose task left the plan', async () => {
+  const f = await deviceBoard(devices);
+  f.probed({ max_sessions: 1 });
+  f.plan([reportTask('first', onBuildBox)]);
+  f.start(['first']);
+  await f.control.tick();
+  const [first] = f.sessionsOf('first');
+  await f.settle(first!);
+  f.plan([reportTask('second', onBuildBox)]);
+  f.start(['second']);
+  expect(f.row('second').dispatch_wait).toBe('device_capacity');
+});
+
+it('holds the resources a running session opened with after its task stops using them', async () => {
+  const f = await deviceBoard(devices);
+  f.plan([
+    reportTask('first', { ...onBuildBox, uses: { gpu: 1 } }),
+    reportTask('second', { ...onBuildBox, uses: { gpu: 1 } }),
+  ]);
+  f.start(['first']);
+  await f.control.tick();
+  const [first] = f.sessionsOf('first');
+  await f.settle(first!);
+  f.plan([
+    reportTask('first', onBuildBox),
+    reportTask('second', { ...onBuildBox, uses: { gpu: 1 } }),
+  ]);
+  f.start(['second']);
+  expect(f.row('second').dispatch_wait).toBe('device_resource');
+});
+
+const directTask = (id: string, fields: Partial<PlanTask> = {}) =>
+  reportTask(id, {
+    done_when: 'merged',
+    scope: [`${id}.txt`],
+    acceptance: [`test -s ${id}.txt`],
+    path: 'direct',
+    flow_reason: 'The lead does it itself',
+    ...fields,
+  });
+
+const leadClaims = (f: Awaited<ReturnType<typeof deviceBoard>>, taskId: string) =>
+  f.call('task.start', { project_id: f.project.id, task_ids: [taskId] }, null, {
+    id: `session:${f.leadId}`,
+    role: 'lead',
+    project_id: f.project.id,
+    session_id: f.leadId,
+    expires_at: f.store.now() + 600000,
+  });
+
+it('holds a resource of this machine for the direct task its lead works on', async () => {
+  const f = await deviceBoard({ local_device: { resources: { display: 1 } } });
+  const display = { uses: { display: 1 } };
+  f.plan([directTask('mine', display), reportTask('other', display)]);
+  expect(leadClaims(f, 'mine')).toMatchObject({ claimed: 'mine' });
+  f.start(['other']);
+  expect(f.row('other').dispatch_wait).toBe('device_resource');
+});
+
+it('refuses a lead claiming a direct task while a task session holds its resource', async () => {
+  const f = await deviceBoard({ local_device: { resources: { display: 1 } } });
+  const display = { uses: { display: 1 } };
+  f.plan([directTask('mine', display), reportTask('other', display)]);
+  f.start(['other']);
+  await f.control.tick();
+  const [other] = f.sessionsOf('other');
+  await f.settle(other!);
+  expect(() => leadClaims(f, 'mine')).toThrow(
+    expect.objectContaining({ message: expect.stringContaining('display') }),
+  );
+  expect(f.current(f.leadId).direct_task).toBeUndefined();
+});

@@ -9,6 +9,8 @@ import type {
   SessionTurn,
   Workspace,
 } from '@pantheon/domain';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import { autoMergeAfterTurn } from '../../packages/control/dist/workbench-session.js';
 import { insideSandbox, awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -324,6 +326,31 @@ it.skipIf(insideSandbox)(
     expect(payloads(f, session.id, 'session.merge_started')).toEqual([{ auto: true }]);
     expect(current(f, session.id).merge?.state).toBe('blocked');
     expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'merges once the gate run the user started during the turn end has finished',
+  async () => {
+    const f = mergeFixture();
+    const { session, workspace } = await idleSession(f);
+    setGate(f, passing);
+    setAutoMerge(f, true);
+    const head = commit(workspace.path, 'answer.txt', 'merged after the gate run\n');
+    f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
+    autoMergeAfterTurn(
+      (f.control as unknown as { ctx: ControlContext }).ctx,
+      session.id,
+      f.turns(session.id).at(-1)!.id,
+    );
+    expect(payloads(f, session.id, 'session.merge_started')).toEqual([]);
+    await eventually(
+      () => removed(f, workspace.id),
+      () => f.control.tick(),
+      10000,
+    );
+    expect(payloads(f, session.id, 'session.merge_started')).toEqual([{ auto: true }]);
+    expect(git(f.source, 'rev-parse', 'main')).toBe(head);
   },
 );
 

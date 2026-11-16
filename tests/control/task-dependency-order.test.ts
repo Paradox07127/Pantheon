@@ -87,6 +87,46 @@ it('tells the lead when a downstream task waits on an upstream task that was nev
   ]);
 });
 
+it('tells the lead again when a task started anew waits on an upstream task that was never started', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
+  startTasks(f, lead.id, ['b']);
+  await f.control.tick();
+  const [first] = notesOn(f, lead.id, 'b');
+  expect(first?.text).toContain('never started');
+  f.call(
+    'task.stop',
+    { project_id: f.project.id, task_id: 'b', reason: 'Not yet' },
+    null,
+    leadOf(f, lead.id),
+  );
+  await eventually(() => f.store.now() > first!.at);
+  startTasks(f, lead.id, ['b']);
+  await f.control.tick();
+  expect(
+    notesOn(f, lead.id, 'b').filter((note) => note.text.includes('never started')),
+  ).toHaveLength(2);
+});
+
+it('tells the lead and lists needs-you when the upstream session closed without an outcome', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
+  startTasks(f, lead.id, ['a', 'b']);
+  await f.control.tick();
+  const [upstream] = sessionsOf(f, lead.id, 'a');
+  await settle(f, upstream!);
+  const session = current(f, upstream!.id);
+  f.store.update<Session>('sessions', { ...session, state: 'closed' }, session.revision);
+  await f.control.tick();
+  await f.control.tick();
+  expect(waitingOnUpstream(f)).toMatchObject([
+    { task_id: `${lead.id}:b`, upstream: { task_id: `${lead.id}:a`, stuck: 'stopped' } },
+  ]);
+  expect(
+    notesOn(f, lead.id, 'b').some((note) => note.text.includes(`${upstream!.id} is closed`)),
+  ).toBe(true);
+});
+
 it('tells the lead once when the upstream session of a queued task was discarded', async () => {
   const f = workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);

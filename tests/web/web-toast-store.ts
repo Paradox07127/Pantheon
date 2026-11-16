@@ -10,13 +10,14 @@ export interface ToastStoreView {
       title?: unknown;
       limited?: boolean;
       transitionStatus?: string;
-      actionProps?: { children?: unknown; onClick?: (event: never) => void };
+      actionProps?: { children?: unknown; disabled?: boolean; onClick?: (event: never) => void };
     }[];
   };
   set(key: 'hovering' | 'focused', value: boolean): void;
   pauseTimers(): void;
   resumeTimers(): void;
   addToast(options: object): string;
+  updateToast(id: string, updates: object): void;
   closeToast(id?: string): void;
 }
 
@@ -39,7 +40,11 @@ export function mountToastStore() {
     prevFocusElement: null,
   }) as unknown as ToastStoreView;
   const stop = manager[' subscribe'](({ action, options }) =>
-    action === 'close' ? store.closeToast(options.id) : store.addToast(options),
+    action === 'close'
+      ? store.closeToast(options.id)
+      : action === 'update'
+        ? store.updateToast(options.id, options.updates)
+        : store.addToast(options),
   );
   const shown = () =>
     store.state.toasts

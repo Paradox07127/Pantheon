@@ -8,7 +8,9 @@ import {
   INTERACTIVE_PATH_SCRIPT,
   PREREQUISITE_SCRIPT,
   checkDistro,
+  automountRoot,
   listDistros,
+  parseAutomountRoot,
   parseDistroList,
   parsePrerequisites,
   runWsl,
@@ -222,5 +224,28 @@ describe('path conversion', () => {
     expect(windowsPathFromWsl('/home/u/proj', 'Ubuntu')).toBe(
       '\\\\wsl.localhost\\Ubuntu\\home\\u\\proj',
     );
+  });
+
+  it('converts drive paths under the automount root the distro sets', () => {
+    expect(wslPathFromWindows('C:\\project', 'Ubuntu', '/windows/')).toBe('/windows/c/project');
+    expect(wslPathFromWindows('D:', 'Ubuntu', '/')).toBe('/d');
+    expect(windowsPathFromWsl('/windows/c/project', 'Ubuntu', '/windows/')).toBe('C:\\project');
+    expect(windowsPathFromWsl('/d/x', 'Ubuntu', '/')).toBe('D:\\x');
+    expect(windowsPathFromWsl('/mnt/c/project', 'Ubuntu', '/windows/')).toBe(
+      '\\\\wsl.localhost\\Ubuntu\\mnt\\c\\project',
+    );
+  });
+
+  it('reads the automount root of a wsl.conf, /mnt/ when it sets none', () => {
+    expect(parseAutomountRoot('[automount]\nenabled = true\nroot = /windows/\n')).toBe('/windows/');
+    expect(parseAutomountRoot('[Automount]\r\n  Root = "/drives"  \r\n')).toBe('/drives/');
+    expect(parseAutomountRoot('[network]\nroot = /elsewhere/\n[automount]\nenabled = true\n')).toBe(
+      '/mnt/',
+    );
+    expect(parseAutomountRoot('# [automount]\n# root = /windows/\n')).toBe('/mnt/');
+    expect(parseAutomountRoot('[automount]\nroot = relative/\n')).toBe('/mnt/');
+    expect(parseAutomountRoot('')).toBe('/mnt/');
+    // No distro share outside Windows, so the default stands.
+    expect(automountRoot('NoSuchDistro')).toBe('/mnt/');
   });
 });

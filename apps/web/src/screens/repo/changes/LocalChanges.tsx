@@ -1,8 +1,8 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { GitBranch, Undo2 } from 'lucide-react';
 import { numbered } from '../../../components/DiffReview';
-import { toast } from '../../../components/Toast';
+import { holdToastAction, toast } from '../../../components/Toast';
 import { shortId } from '../../../data/format';
 import { parsePatch } from '../../../data/patch';
 import {
@@ -53,6 +53,11 @@ export function LocalChanges({ projectId }: { projectId: string }) {
   const [details, setDetails] = useState('');
   // One write to the checkout at a time; the others stay off while it runs.
   const [writing, setWriting] = useState<'commit' | 'discard' | 'undo' | null>(null);
+  // The toast offering to undo the last discard, whose Undo is a write too.
+  const undoToast = useRef<string | null>(null);
+  useEffect(() => {
+    if (undoToast.current) holdToastAction(undoToast.current, writing !== null);
+  }, [writing]);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
   // The file, or the selected lines, waiting for the user to confirm the discard.
@@ -249,7 +254,7 @@ export function LocalChanges({ projectId }: { projectId: string }) {
     setMarked(null);
     diff.reload();
     const undoId = result.value.undo_id;
-    toast({
+    undoToast.current = toast({
       title,
       action: {
         label: t({ id: 'repo.changes.local.undo', defaultMessage: 'Undo' }),

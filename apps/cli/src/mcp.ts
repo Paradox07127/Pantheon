@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { PANTHEON_VERSION } from '@pantheon/domain/version';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -376,7 +377,7 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
     }),
   );
   const server = new Server(
-    { name: 'pantheon', version: '0.1.0' },
+    { name: 'pantheon', version: PANTHEON_VERSION },
     { capabilities: { tools: {} } },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => {

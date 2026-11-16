@@ -1077,6 +1077,8 @@ export function MergeBar(props: {
   merging: boolean;
   cancelling?: boolean;
   preflight: SessionPreflight | null;
+  /** Why the last preflight read failed. */
+  preflightError?: string | null;
   /** Reads the preflight again. */
   onPreflight: () => void;
   gates: SessionGates | null;
@@ -1388,6 +1390,7 @@ export function MergeBar(props: {
                 sessionId={props.sessionId}
                 revision={props.revision}
                 preflight={preflight}
+                error={props.preflightError}
                 source={props.source}
                 onClose={() => setConfirm(false)}
               />

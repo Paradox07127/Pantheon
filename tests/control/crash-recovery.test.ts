@@ -124,6 +124,7 @@ it.skipIf(insideSandbox)(
       expect(payloads(after, created.id, 'session.merged')).toEqual([
         {
           branch: 'main',
+          source: workspace.source,
           from_sha: sourceHead,
           to_sha: head,
           files: 2,

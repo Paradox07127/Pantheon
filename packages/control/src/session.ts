@@ -20,6 +20,7 @@ import {
   type SessionSpec,
   type AgentEvent,
   type HarnessAdapter,
+  type ProcessIdentity,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import { checkRuntimeConnection, isRuntimeHeld, updateRuntimeQuota } from './runtime-status.js';
@@ -815,7 +816,8 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
       ctx.cancelling.has(initial.id) ||
       session.state === 'reconciling' ||
       session.state === 'closed' ||
-      session.stop_pending === true
+      session.stop_pending === true ||
+      !!session.stop_requested
     );
   };
   const record = (
@@ -840,6 +842,8 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
     });
     ctx.changed();
   };
+  const stillQueued = (turn: SessionTurn): boolean =>
+    ctx.store.must<SessionTurn>('session_turns', turn.id).state === 'queued';
   const sink = (event: AgentEvent): void => {
     if (event.kind === 'runtime.disconnected') {
       const session = ctx.store.must<Session>('sessions', initial.session_id);
@@ -1316,18 +1320,20 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
               memory,
               receipt.status === 'delivered',
             );
-          record(
-            turn,
-            receipt.status === 'unsupported' ? 'failed' : receipt.status,
-            receipt.reason,
-            receipt.status === 'delivered'
-              ? 'completed'
-              : receipt.status === 'queued'
-                ? 'queued'
-                : 'failed',
-          );
+          // An interrupt may have cancelled the turn while the steer awaited.
+          if (stillQueued(turn))
+            record(
+              turn,
+              receipt.status === 'unsupported' ? 'failed' : receipt.status,
+              receipt.reason,
+              receipt.status === 'delivered'
+                ? 'completed'
+                : receipt.status === 'queued'
+                  ? 'queued'
+                  : 'failed',
+            );
         } catch (error) {
-          record(turn, 'failed', String(error), 'failed');
+          if (stillQueued(turn)) record(turn, 'failed', String(error), 'failed');
         }
       });
       injections.add(injection);
@@ -1713,19 +1719,25 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
       );
     }
     const remote = onDevice(session);
-    if (remote) await prepareRemoteWorkspace(ctx, session);
-    startWriteAudit(
-      ctx,
-      spec,
-      turn.id,
-      spec.role !== 'writer' ||
-        session.permission_mode === 'plan' ||
-        (!session.direct_task && planUnfinished(ctx, session.id)),
-    );
-    bindSessionAdapter(ctx, session, adapter);
+    // Set before the device is prepared, so a discard meanwhile waits for this start.
     launching.add(session.id);
     let chosen: Session;
     try {
+      if (remote) await prepareRemoteWorkspace(ctx, session);
+      requireThat(
+        !ctx.store.must<Session>('sessions', session.id).stop_requested,
+        'invalid_state',
+        'Session is being discarded',
+      );
+      startWriteAudit(
+        ctx,
+        spec,
+        turn.id,
+        spec.role !== 'writer' ||
+          session.permission_mode === 'plan' ||
+          (!session.direct_task && planUnfinished(ctx, session.id)),
+      );
+      bindSessionAdapter(ctx, session, adapter);
       closeToolRelay(ctx, session.id);
       // Session tools run here; the device runtime reaches them through a socket SSH forwards.
       const toolsSocket =
@@ -1881,6 +1893,20 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
   }
 }
 
+/** The process a stop could not confirm ended, with its start time read while it may still run. */
+function unconfirmedProcess(
+  ctx: ControlContext,
+  receipt: CancelReceipt | undefined,
+): ProcessIdentity | undefined {
+  const leader = receipt?.stopped === false ? receipt.evidence.members[0] : undefined;
+  if (!leader || leader.start_time_us !== undefined) return leader;
+  try {
+    return ctx.readProcess(leader.pid) ?? leader;
+  } catch {
+    return leader;
+  }
+}
+
 export function finishTurn(
   ctx: ControlContext,
   key: string,
@@ -1940,13 +1966,18 @@ export function finishTurn(
         ...s,
         state: s.review_id
           ? ('closed' as const)
-          : held?.blocked || (held && stopPending && !ctx.handles.has(key))
+          : held?.blocked || (stopPending && !ctx.handles.has(key))
             ? ('reconciling' as const)
             : held
               ? ('running' as const)
               : ('open' as const),
         stop_pending: stopPending,
-        process_identity: stop?.receipt?.stopped === true && !held ? undefined : s.process_identity,
+        // A start that failed without a handle leaves only the stop's evidence to reconcile with.
+        process_identity:
+          stop?.receipt?.stopped === true && !held
+            ? undefined
+            : (s.process_identity ??
+              (ctx.handles.has(key) ? undefined : unconfirmedProcess(ctx, stop?.receipt))),
       },
       s.revision,
     );

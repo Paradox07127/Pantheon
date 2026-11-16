@@ -26,6 +26,7 @@ import {
   type UserTurn,
 } from '@pantheon/domain';
 import {
+  CLIENT_INFO,
   JsonRpcProcess,
   nativeEnvironment,
   processIdentity,
@@ -134,6 +135,8 @@ interface AcpSession {
   stopping: boolean;
   /** The latest cumulative session cost in USD the agent reported. */
   costUsd: number;
+  /** The last model change; the next waits for it so a rollback cannot undo a later change. */
+  configuring: Promise<string | undefined>;
   /** Input waiting for an ended turn's prompt to settle; interrupt and setTurnReadOnly apply to it. */
   queued?: { readOnly: boolean; interrupted?: boolean };
   /** Sent ahead of the first prompt, then cleared. */
@@ -431,7 +434,7 @@ export class AcpAdapter implements HarnessAdapter {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
           },
-          clientInfo: { name: 'pantheon', title: 'Pantheon', version: '0.1.0' },
+          clientInfo: CLIENT_INFO,
         },
         null,
         this.requestTimeoutMs,
@@ -458,7 +461,7 @@ export class AcpAdapter implements HarnessAdapter {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
           },
-          clientInfo: { name: 'pantheon', title: 'Pantheon', version: '0.1.0' },
+          clientInfo: CLIENT_INFO,
         },
         null,
         this.requestTimeoutMs,
@@ -524,6 +527,7 @@ export class AcpAdapter implements HarnessAdapter {
       images: false,
       stopping: false,
       costUsd: 0,
+      configuring: Promise.resolve(undefined),
       ...((spec.role === 'writer' || spec.runtime_analysis) && spec.control_instructions
         ? { instructions: spec.control_instructions }
         : {}),
@@ -573,14 +577,16 @@ export class AcpAdapter implements HarnessAdapter {
         if (native_type === 'tool_call' || ended(merged)) return;
       }
       if (native_type === 'usage_update') {
+        // A turn past its deadline still owns what its open prompt spends.
+        const owner = session.turn;
         const cost = value.cost as { amount?: number; currency?: string } | null | undefined;
         const usd = cost?.currency === 'USD' && typeof cost.amount === 'number';
-        if (current) current.costSource = usd ? 'provider_reported' : 'unknown';
+        if (owner) owner.costSource = usd ? 'provider_reported' : 'unknown';
         // The agent reports the session's cumulative cost; a turn shows what it added.
-        const base = current?.costBase ?? session.costUsd;
+        const base = owner?.costBase ?? session.costUsd;
         if (usd) session.costUsd = cost.amount!;
         session.emit({
-          turn_id,
+          turn_id: owner?.id,
           native_type,
           kind: 'usage.updated',
           context_tokens: value.used as number,
@@ -594,7 +600,8 @@ export class AcpAdapter implements HarnessAdapter {
         session.emit({ turn_id, native_type, kind: 'title.generated', title: value.title });
         return;
       }
-      if (native_type === 'config_option_update' && Array.isArray(value.configOptions)) {
+      // Before ready the options were taken as the frame came, ahead of the responses after it.
+      if (ready && native_type === 'config_option_update' && Array.isArray(value.configOptions)) {
         session.configOptions = value.configOptions as ConfigOption[];
         const reported = reportedModel(session.configOptions);
         if (reported !== handle.reported_model) {
@@ -616,8 +623,15 @@ export class AcpAdapter implements HarnessAdapter {
     rpc.on('notification', (frame: Frame) => {
       // Vendor notifications (methods starting with _) carry nothing the contract maps.
       if (frame.method !== 'session/update') return;
-      if (ready) update(frame);
-      else early.push(frame);
+      if (ready) {
+        update(frame);
+        return;
+      }
+      early.push(frame);
+      const value = frame.params?.update as
+        { sessionUpdate?: string; configOptions?: unknown } | undefined;
+      if (value?.sessionUpdate === 'config_option_update' && Array.isArray(value.configOptions))
+        session.configOptions = value.configOptions as ConfigOption[];
     });
     const hold = (
       current: AcpTurn,
@@ -670,7 +684,12 @@ export class AcpAdapter implements HarnessAdapter {
       const current = session.turn?.ended ? undefined : session.turn;
       const respond = (action: 'accept' | 'decline' | 'cancel', content?: object): void =>
         reply({ result: { action, ...(content ? { content } : {}) } });
-      if (!current || params.sessionId !== handle.native_session_id) {
+      if (
+        !current ||
+        current.interrupted ||
+        session.stopping ||
+        params.sessionId !== handle.native_session_id
+      ) {
         respond('cancel');
         return;
       }
@@ -825,7 +844,7 @@ export class AcpAdapter implements HarnessAdapter {
             terminal: false,
             elicitation: { form: {} },
           },
-          clientInfo: { name: 'pantheon', title: 'Pantheon', version: '0.1.0' },
+          clientInfo: CLIENT_INFO,
         },
         null,
         this.requestTimeoutMs,
@@ -848,7 +867,7 @@ export class AcpAdapter implements HarnessAdapter {
       const id = native_session_id ?? result?.sessionId;
       if (typeof id !== 'string' || !id) throw new Error('ACP agent returned no session id');
       handle.native_session_id = id;
-      session.configOptions = result?.configOptions ?? [];
+      session.configOptions = result?.configOptions ?? session.configOptions;
       if (spec.model !== undefined || spec.effort !== undefined) {
         const reason = await this.applyModel(session, handle, spec.model, spec.effort);
         if (reason) throw new Error(reason);
@@ -860,8 +879,8 @@ export class AcpAdapter implements HarnessAdapter {
         native_session_id: id,
         reported_model: handle.reported_model,
       });
-      ready = true;
       for (const frame of early.splice(0)) update(frame);
+      ready = true;
       return handle;
     } catch (error) {
       session.stopping = true;
@@ -1030,7 +1049,20 @@ export class AcpAdapter implements HarnessAdapter {
   ): Promise<Receipt> {
     const session = this.sessions.get(handle);
     if (!session) return { ok: false, reason: 'Unknown ACP session' };
-    const reason = await this.applyModel(session, handle, model, effort);
+    const applied = session.configuring.then(async () => {
+      const reported = handle.reported_model;
+      const reason = await this.applyModel(session, handle, model, effort);
+      // A refused change the agent could not undo leaves it on a model control does not record.
+      if (reason && handle.reported_model !== reported)
+        session.emit({
+          kind: 'session.started',
+          native_session_id: handle.native_session_id,
+          reported_model: handle.reported_model,
+        });
+      return reason;
+    });
+    session.configuring = applied;
+    const reason = await applied;
     return reason ? { ok: false, reason } : { ok: true };
   }
   /** Returns why the agent did not take the model or effort, or undefined once both are set. */
@@ -1069,9 +1101,16 @@ export class AcpAdapter implements HarnessAdapter {
       }
       if (thought !== undefined) await set(effortOption!, thought);
     } catch (error) {
+      const failed = `ACP session/set_config_option failed: ${(error as Error).message}`;
       // A refused effort leaves the session on the model it had, as control records it.
-      if (modelSet) await set(modelOption!, previous).catch(() => undefined);
-      return `ACP session/set_config_option failed: ${(error as Error).message}`;
+      if (modelSet)
+        try {
+          await set(modelOption!, previous);
+        } catch (refused) {
+          handle.reported_model = reportedModel(session.configOptions);
+          return `${failed}; setting the model back failed too: ${(refused as Error).message}`;
+        }
+      return failed;
     }
     handle.requested_model = model;
     handle.requested_effort = effort;

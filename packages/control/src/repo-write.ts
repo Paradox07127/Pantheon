@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   constants,
@@ -9,7 +10,7 @@ import {
   rmSync,
   symlinkSync,
 } from 'node:fs';
-import { copyFile } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { nativeEnvironment } from '@pantheon/adapters';
@@ -53,6 +54,8 @@ interface SavedFile {
   copy?: string;
   mode?: number;
   link?: string;
+  /** stateOf the file when it was saved. */
+  state: string;
 }
 /** Saved files and the folder that holds their copies. */
 interface SavedFiles {
@@ -69,6 +72,8 @@ interface Undo {
   project_id: string;
   root: string;
   files: SavedFile[];
+  /** stateOf each file once the discard was done, in the order of files. */
+  discarded: string[];
   backup: string;
   index?: SavedIndex;
   expires_at: number;
@@ -85,6 +90,18 @@ const ASSUME_UNCHANGED = 0x8000,
 const listed = (output: string) => output.split('\0').filter(Boolean);
 const entryPath = (entry: string) => entry.slice(entry.indexOf('\t') + 1);
 
+/** What a path holds: nothing, a link's target, a file's content hash, or something else. */
+async function stateOf(root: string, file: string): Promise<string> {
+  const target = path.join(root, file);
+  const stat = lstatSync(target, { throwIfNoEntry: false });
+  if (!stat) return 'absent';
+  if (stat.isSymbolicLink()) return `link ${readlinkSync(target)}`;
+  if (!stat.isFile()) return 'other';
+  return `file ${createHash('sha256')
+    .update(await readFile(target))
+    .digest('hex')}`;
+}
+
 async function saved(
   root: string,
   backup: string,
@@ -92,13 +109,14 @@ async function saved(
   index: number,
 ): Promise<SavedFile> {
   const target = path.join(root, file);
+  const state = await stateOf(root, file);
   const stat = lstatSync(target, { throwIfNoEntry: false });
-  if (!stat) return { path: file };
-  if (stat.isSymbolicLink()) return { path: file, link: readlinkSync(target) };
+  if (!stat) return { path: file, state };
+  if (stat.isSymbolicLink()) return { path: file, link: readlinkSync(target), state };
   const copy = path.join(backup, String(index));
   // Off the event loop and never whole in memory; a clone where the filesystem makes one.
   await copyFile(target, copy, constants.COPYFILE_FICLONE);
-  return { path: file, copy, mode: stat.mode & 0o7777 };
+  return { path: file, copy, mode: stat.mode & 0o7777, state };
 }
 
 /** Discard backups sit beside the artifacts directory, in the daemon's data directory. */
@@ -239,19 +257,21 @@ const changed =
   };
 
 /** Keeps the saved files, and the index entries a discard reset, for an undo once it succeeded. */
-function remembered(
+async function remembered(
   ctx: ControlContext,
   projectId: string,
   root: string,
   { backup, files }: SavedFiles,
   index?: SavedIndex,
 ) {
+  const discarded = await Promise.all(files.map((file) => stateOf(root, file.path)));
   const undo_id = id();
   const timer = setTimeout(() => forget(undo_id), UNDO_MS).unref();
   undos.set(undo_id, {
     project_id: projectId,
     root,
     files,
+    discarded,
     backup,
     index,
     expires_at: ctx.store.now() + UNDO_MS,
@@ -302,7 +322,7 @@ async function discard(ctx: ControlContext, p: Principal, c: Command): Promise<H
     rmSync(files.backup, { recursive: true, force: true });
     throw error;
   }
-  return changed(input.project_id, remembered(ctx, input.project_id, root, files, index));
+  return changed(input.project_id, await remembered(ctx, input.project_id, root, files, index));
 }
 
 /** Old and new paths of `git apply --numstat -z` output. */
@@ -355,7 +375,7 @@ async function discardPatch(ctx: ControlContext, p: Principal, c: Command): Prom
     rmSync(files.backup, { recursive: true, force: true });
     throw failed(applied);
   }
-  return changed(input.project_id, remembered(ctx, input.project_id, root, files));
+  return changed(input.project_id, await remembered(ctx, input.project_id, root, files));
 }
 
 async function discardUndo(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
@@ -373,6 +393,15 @@ async function discardUndo(ctx: ControlContext, p: Principal, c: Command): Promi
   // Expiring during the restore would remove the backup it copies from.
   clearTimeout(undo.timer);
   try {
+    // A file as the discard left it, or as an undo that failed partway already put it back.
+    for (const [index, file] of undo.files.entries()) {
+      const state = await stateOf(root, file.path);
+      requireThat(
+        state === undo.discarded[index] || state === file.state,
+        'invalid_state',
+        `${file.path} changed after the discard`,
+      );
+    }
     await restore(root, undo.files, undo.index);
   } catch (error) {
     // Kept, so that an undo that failed can be tried again.

@@ -264,6 +264,24 @@ describe('trace timeline lanes by session state', () => {
     );
   });
 
+  it('heads a view shorter than the ticks have minutes with distinct seconds', () => {
+    const SEC = 1000;
+    const start = NOW - 23 * SEC;
+    mock.trace = {
+      ...projectTrace(),
+      from: new Date(start).toISOString(),
+      lanes: [lane('session-a', 'refund api', start, NOW)],
+    };
+    const lanes = child(screen().value, 'Lanes').value;
+    const ticks = nodes(lanes)
+      .filter((n) => n.props.className === 'trc-tick')
+      .map((n) => text(n));
+    expect(ticks).toHaveLength(6);
+    expect(ticks[0]).toBe('14:19:37');
+    expect(ticks.at(-1)).toBe('14:20:00');
+    ticks.slice(1).forEach((tick, i) => expect(tick).not.toBe(ticks[i]));
+  });
+
   it('draws only the skeleton until the session states are read', () => {
     mock.timeline = null;
     const h = screen();

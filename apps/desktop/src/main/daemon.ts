@@ -68,6 +68,8 @@ export interface BridgeOptions {
   unavailable?: string;
   /** Runs while a reason is set, before each connection; its reason and WSL options replace the ones set. */
   recheck?: () => Promise<Pick<BridgeOptions, 'unavailable' | 'wsl'>>;
+  /** The packaged app's version; set, a daemon of another version this bridge can stop is replaced. */
+  version?: string;
 }
 interface Connection extends DaemonInfo {
   token: string;
@@ -180,6 +182,18 @@ const startedAs = (command: string, line: string): boolean =>
 const wslLine = ({ root, data }: WslRuntime): string =>
   `${path.posix.join(root, 'node/bin/node')} ${path.posix.join(root, 'daemon/dist/main.js')} --data-dir ${data}`;
 
+/** Whether a `ps` command line in the distro is the daemon of `runtime`'s data folder run from any runtime beside it. */
+export const wslOwns = (command: string, runtime: WslRuntime): boolean => {
+  const base = path.posix.dirname(runtime.root);
+  const version = command.startsWith(`${base}/`)
+    ? command.slice(base.length + 1).split('/', 1)[0]!
+    : '';
+  return (
+    !['', '.', '..'].includes(version) &&
+    startedAs(command, wslLine({ root: `${base}/${version}`, data: runtime.data }))
+  );
+};
+
 const alive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
@@ -197,6 +211,8 @@ export class DaemonBridge {
   private connection: Connection | undefined;
   private connecting: Promise<BridgeResult<Connection>> | undefined;
   private runtime: Promise<WslRuntime> | undefined;
+  /** A daemon of another version was found and its replacement began. */
+  private replacing = false;
   constructor(private options: BridgeOptions) {}
 
   async daemon(): Promise<BridgeResult<DaemonInfo>> {
@@ -427,7 +443,7 @@ export class DaemonBridge {
     };
   }
 
-  /** Restarts this directory's development daemon once no session is active. */
+  /** Restarts this directory's daemon, if this bridge's own build or launch runs it, once no session is active. */
   async reloadDaemon(stopped: () => boolean = () => false): Promise<void> {
     let deferred = false;
     while (!stopped()) {
@@ -465,14 +481,21 @@ export class DaemonBridge {
         (stdout) => stdout.toString('utf8').trim(),
         () => '',
       );
-      return startedAs(command, wslLine(await this.installed())) ? pid : undefined;
+      return wslOwns(command, await this.installed()) ? pid : undefined;
     }
     const command = await new Promise<string>((resolve) =>
       execFile('ps', ['-ww', '-o', 'command=', '-p', String(pid)], (error, stdout) =>
         resolve(error ? '' : stdout.trim()),
       ),
     );
-    return ownsDaemon(command, this.options.repo, this.options.directory) ? pid : undefined;
+    const { launch, repo, directory } = this.options;
+    return (
+      launch
+        ? startedAs(command, `${launch.node} ${launch.entry} --data-dir ${directory}`)
+        : ownsDaemon(command, repo, directory)
+    )
+      ? pid
+      : undefined;
   }
 
   private async restart(pid: number): Promise<void> {
@@ -633,6 +656,18 @@ export class DaemonBridge {
         started_here: live.pid === this.startedPid,
         data_dir: this.options.wsl ? (await this.installed()).data : this.options.directory,
       };
+      const { version } = this.options;
+      // Serves meanwhile; the replacement waits for running sessions as a development reload does.
+      if (
+        version !== undefined &&
+        health.version !== version &&
+        !this.connection.started_here &&
+        !this.replacing
+      ) {
+        this.replacing = true;
+        this.log(`daemon ${health.version} is not app ${version}`);
+        void this.reloadDaemon();
+      }
       return { ok: true, value: this.connection };
     } catch (error) {
       return failure(

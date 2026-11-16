@@ -151,6 +151,23 @@ export function recover(ctx: ControlContext): void {
         }
         continue;
       }
+      // Input never handed to a start left the session as it was when open without an identity,
+      // which recovery keeps: its last process had exited.
+      if (!s.process_identity && s.native_id) {
+        const active = ctx.store
+          .list<SessionTurn>('session_turns')
+          .filter((turn) => turn.session_id === s.id && ['queued', 'running'].includes(turn.state));
+        if (
+          active.length > 0 &&
+          active.every(
+            (turn) =>
+              turn.state === 'queued' && turn.delivery === 'pending' && pendingTurns.has(turn.id),
+          )
+        ) {
+          for (const turn of active) unstartedTurns.add(turn.id);
+          continue;
+        }
+      }
       // Review, baseline and change-story sessions open running with only a queued first turn.
       if (sessionRole(s) !== 'main' && !s.process_identity && !s.native_id) {
         const turns = ctx.store

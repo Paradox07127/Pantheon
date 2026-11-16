@@ -75,8 +75,14 @@ const daemon = await startDaemon({
   ...(values['allow-fixture']
     ? {}
     : {
+        // Read per summary: runtime.config.set can change the binary while the daemon runs.
         turnSummarizer: async (prompt: string, signal: AbortSignal) => ({
-          ...(await claudeOneShot(prompt, 'claude-haiku-5-5', signal, claudeConfig.binary)),
+          ...(await claudeOneShot(
+            prompt,
+            'claude-haiku-5-5',
+            signal,
+            runtimeConfig(userConfigDir, 'claude').binary,
+          )),
           model: 'claude-haiku-5-5',
         }),
       }),

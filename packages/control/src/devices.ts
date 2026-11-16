@@ -2,7 +2,13 @@ import { spawn } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { requireThat, type Entity, type Principal } from '@pantheon/domain';
+import {
+  requireThat,
+  type Entity,
+  type Principal,
+  type Session,
+  type Workspace,
+} from '@pantheon/domain';
 import { inputSchemas, type DeviceStatus, type SshHost, type UserConfig } from '@pantheon/protocol';
 import { userOnly, type ControlContext, type Handlers } from './context.js';
 import { readUserConfig, writeUserConfig } from './user-config.js';
@@ -284,6 +290,16 @@ export async function reprobeDevice(
 
 type SshConfigHost = Omit<SshHost, 'device_id'>;
 
+/** Splits arguments as OpenSSH does: quotes join words, and a word starting with `#` ends the line. */
+function sshArguments(text: string): string[] {
+  const args: string[] = [];
+  for (const [, word] of text.matchAll(/((?:"[^"]*"|'[^']*'|[^\s"'])+)/g)) {
+    if (word!.startsWith('#')) break;
+    args.push(word!.replace(/"([^"]*)"|'([^']*)'/g, '$1$2'));
+  }
+  return args;
+}
+
 /**
  * The hosts an OpenSSH config names without wildcards or negation, in file order, each with the
  * HostName and User of the first block naming it; Include is followed one level deep.
@@ -320,7 +336,7 @@ export function sshConfigHosts(file: string): SshConfigHost[] {
       const match = /^([^\s=]+)\s*[\s=]\s*(.+)$/.exec(line.trim());
       if (!match || match[1]!.startsWith('#')) continue;
       const keyword = match[1]!.toLowerCase(),
-        args = match[2]!.split(/\s+/);
+        args = sshArguments(match[2]!);
       if (keyword === 'host')
         block = args
           .filter((pattern) => !/[*?]|^!/.test(pattern))
@@ -385,6 +401,18 @@ function configDirectory(ctx: ControlContext): string {
   return ctx.userConfigDir;
 }
 
+/** Refuses while a session keeps a worktree on the device: its sync reaches it through the configured SSH target. */
+function deviceUnused(ctx: ControlContext, id: string): void {
+  const user = ctx.store.list<Session>('sessions').find((session) => {
+    const workspace =
+      session.device_id === id && session.workspace_id !== undefined
+        ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
+        : undefined;
+    return workspace !== undefined && workspace.removed_at === undefined;
+  });
+  requireThat(!user, 'resource_busy', `Session ${user?.id} still has a worktree on device ${id}`);
+}
+
 /** Writes the device into the user configuration, then probes it once. */
 export function saveDevice(
   ctx: ControlContext,
@@ -395,7 +423,9 @@ export function saveDevice(
   userOnly(principal);
   const directory = configDirectory(ctx);
   const { id, ...config } = input;
-  writeUserConfig(directory, { devices: { ...readUserConfig(directory).devices, [id]: config } });
+  const devices = readUserConfig(directory).devices;
+  if (devices?.[id] && devices[id].ssh !== config.ssh) deviceUnused(ctx, id);
+  writeUserConfig(directory, { devices: { ...devices, [id]: config } });
   return probeAndKeep(ctx, id, config, transport);
 }
 
@@ -404,6 +434,7 @@ export function removeDevice(ctx: ControlContext, principal: Principal, id: stri
   const directory = configDirectory(ctx);
   const devices = readUserConfig(directory).devices ?? {};
   requireThat(Object.hasOwn(devices, id), 'invalid_input', `Unknown device ${id}`);
+  deviceUnused(ctx, id);
   writeUserConfig(directory, {
     devices: Object.fromEntries(Object.entries(devices).filter(([other]) => other !== id)),
   });

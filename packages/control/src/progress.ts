@@ -1,5 +1,6 @@
 import {
   hash,
+  type Approval,
   type BackgroundTask,
   type BoardPlan,
   type Event,
@@ -60,6 +61,10 @@ export interface TurnActivity {
   streamed_at?: number;
   /** The session has background tasks running, which keep a Claude turn open with no events. */
   background?: true;
+  /** The session waits for the user to answer a permission request. */
+  asking?: true;
+  /** When the user last answered a permission request of the session. */
+  answered_at?: number;
   /** The completed calls in order, each with the call's start payload when it is recorded. */
   completed: { ok: unknown; call?: Call; sequence?: number }[];
 }
@@ -114,6 +119,11 @@ export function turnActivity(
       activity.tool_ended_at = row.created_at;
     }
   }
+  for (const approval of ctx.store.list<Approval>('approvals'))
+    if (approval.kind === 'permission' && approval.session_id === sessionId)
+      if (approval.state === 'pending') activity.asking = true;
+      else if (approval.resolved_at)
+        activity.answered_at = Math.max(activity.answered_at ?? 0, approval.resolved_at);
   const open = [...calls.values()].filter((call) => !call.done).at(-1);
   if (open)
     activity.open_call = {
@@ -133,10 +143,13 @@ export const quiet = (activity: TurnActivity, now: number): boolean =>
  * or background task under way, it made no progress and streamed no text for STALL_MS.
  */
 export const stalled = (activity: TurnActivity, now: number): boolean =>
-  activity.open_call
-    ? now - activity.open_call.at > HUNG_CALL_MS
+  // A permission request waits for the user, and its answer restarts the window.
+  !activity.asking &&
+  (activity.open_call
+    ? now - Math.max(activity.open_call.at, activity.answered_at ?? 0) > HUNG_CALL_MS
     : !activity.background &&
-      now - Math.max(activity.acted_at, activity.streamed_at ?? 0) > STALL_MS;
+      now - Math.max(activity.acted_at, activity.streamed_at ?? 0, activity.answered_at ?? 0) >
+        STALL_MS);
 
 /** The session's running background tasks; none once its process started anew or exited. */
 export const backgroundTasks = (ctx: ControlContext, sessionId: string): BackgroundTask[] =>

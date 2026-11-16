@@ -30,6 +30,7 @@ import {
   type BackgroundTask,
 } from '@pantheon/domain';
 import {
+  CLIENT_INFO,
   nativeEnvironment,
   report,
   JsonRpcProcess,
@@ -1672,7 +1673,7 @@ export class CodexAdapter implements HarnessAdapter {
     try {
       // app/list is an experimental method.
       await rpc.initialize({
-        clientInfo: { name: 'pantheon', title: 'Pantheon', version: '0.1.0' },
+        clientInfo: CLIENT_INFO,
         capabilities: { experimentalApi: true },
       });
       const extensions = await readExtensions(rpc, cwd);
@@ -2280,7 +2281,7 @@ export class CodexAdapter implements HarnessAdapter {
     try {
       if (spec.sandbox) {
         await rpc.request('initialize', {
-          clientInfo: { name: 'pantheon', title: 'Pantheon', version: '0.1.0' },
+          clientInfo: CLIENT_INFO,
           capabilities: { experimentalApi: true },
         });
         rpc.notify('initialized');

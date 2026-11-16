@@ -405,3 +405,31 @@ it('tells no merged or discarded task session to wrap up', async () => {
   expect(wrapUps(f, merged!.id)).toEqual([]);
   expect(wrapUps(f, discarded!.id)).toEqual([]);
 });
+
+it('holds the hand-back of a blocked merge while the project is over budget, and sends it once the budget rises', async () => {
+  const f = workbenchFixture();
+  const { worker } = await overspent(f);
+  await settle(f, current(f, worker.id));
+  const repairs = () => f.turns(worker.id).filter((turn) => turn.origin === 'tracker');
+  const session = current(f, worker.id);
+  f.store.event('session.merge_started', session, session.project_id, { auto: true }, '');
+  f.store.update<Session>(
+    'sessions',
+    {
+      ...session,
+      merge: {
+        state: 'blocked',
+        reason: 'gate_failed',
+        gate: { name: 'Unit tests', output: 'fail' },
+      },
+    },
+    session.revision,
+  );
+
+  await f.control.tick();
+  expect(repairs()).toEqual([]);
+
+  setBudget(f, 1000);
+  await f.control.tick();
+  expect(repairs()).toHaveLength(1);
+});

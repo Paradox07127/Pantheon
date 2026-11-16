@@ -184,6 +184,10 @@ export function boardHistory(
     claims = new Map<string, string>(),
     claimGenerations = new Map<string, number>(),
     claimTimes = new Map<string, number[]>(),
+    claimants = new Map<string, string>(),
+    // By session, the dispatch that opened it; the parts of one dispatch are one attempt.
+    dispatches = new Map<string, number>(),
+    discardedAt = new Map<string, number>(),
     handbacks = new Map<string, NonNullable<BoardHistory['tasks'][number]['handback_reasons']>>(),
     repairReason = new Map<string, 'gate' | 'other'>(),
     stepHandbacks = new Map<string, 'review' | 'other'>(),
@@ -207,7 +211,8 @@ export function boardHistory(
       versions.push({ sequence: event.sequence, plan: event.payload as BoardPlan });
       planVersions.set(owner(event.aggregate_id), versions);
     }
-    if (DECISIONS.includes(event.kind)) {
+    // A lead's claim of its direct task starts it without a start request.
+    if (DECISIONS.includes(event.kind) || event.kind === 'task.claimed') {
       day.decisions++;
       const leadId = owner(event.aggregate_id),
         taskId =
@@ -229,7 +234,7 @@ export function boardHistory(
           kind:
             event.kind === 'board.plan_updated'
               ? 'plan'
-              : event.kind === 'task.start_requested'
+              : event.kind === 'task.start_requested' || event.kind === 'task.claimed'
                 ? 'start'
                 : event.kind === 'task.stop_requested'
                   ? 'stop'
@@ -241,7 +246,12 @@ export function boardHistory(
     if (event.kind === 'workflow.step_changed') {
       const run = stepRuns.get(event.aggregate_id)!;
       if (p.state === 'waiting' && run.step.kind.type === 'approval') day.waited++;
-      if (p.state === 'failed' || p.state === 'rejected')
+      // A parallel or loop step fails after its child, whose reason it keeps.
+      if (
+        (p.state === 'failed' || p.state === 'rejected') &&
+        run.step.kind.type !== 'parallel' &&
+        run.step.kind.type !== 'loop'
+      )
         stepHandbacks.set(
           boardTaskId(owner(run.lead_session_id), run.task_id),
           run.step.kind.type === 'review' || run.step.kind.type === 'approval' ? 'review' : 'other',
@@ -271,8 +281,10 @@ export function boardHistory(
       const task = (p as Partial<Session>).task;
       if (task) sessionGenerations.set(event.aggregate_id, task.generation ?? 1);
     } else if (event.kind === 'task.dispatched') {
-      for (const id of (p.session_ids as string[] | undefined) ?? [p.session_id as string])
+      for (const id of (p.session_ids as string[] | undefined) ?? [p.session_id as string]) {
         dispatched.add(id);
+        dispatches.set(id, event.sequence);
+      }
       const plan = planVersions.get(owner(event.aggregate_id))?.at(-1)?.plan;
       if (plan)
         for (const id of (p.session_ids as string[] | undefined) ?? [p.session_id as string])
@@ -293,12 +305,15 @@ export function boardHistory(
     } else if (event.kind === 'task.claimed') {
       const key = boardTaskId(owner(event.aggregate_id), p.task_id as string);
       claims.set(event.aggregate_id, key);
+      claimants.set(key, event.aggregate_id);
       claimGenerations.set(event.aggregate_id, (p.generation as number | undefined) ?? 1);
       claimTimes.set(key, [...(claimTimes.get(key) ?? []), event.created_at]);
       for (const turnId of allRunning.keys())
         if (turnOf.get(turnId)!.session_id === event.aggregate_id)
           running.set(turnId, event.created_at);
     } else if (event.kind === 'task.released') claims.delete(event.aggregate_id);
+    else if (event.kind === 'session.discarded')
+      discardedAt.set(event.aggregate_id, event.created_at);
     else if (event.kind === 'milestone.accepted') reached.set(event.aggregate_id, event.created_at);
     else if (event.kind === 'task.accepted')
       completed.set(
@@ -377,7 +392,16 @@ export function boardHistory(
       !live.every((session) => mergedSessions.has(session.id))
     )
       continue;
-    completed.set(generation, Math.max(...live.map((session) => mergedSessions.get(session.id)!)));
+    // The task is done once its last live part merged or its last other part was discarded.
+    completed.set(
+      generation,
+      Math.max(
+        ...live.map((session) => mergedSessions.get(session.id)!),
+        ...bound.flatMap((session) =>
+          discardedAt.has(session.id) ? [discardedAt.get(session.id)!] : [],
+        ),
+      ),
+    );
   }
   for (const at of completed.values()) dayOf(at).merged++;
   const milestones = projectRows<Milestone>('milestones'),
@@ -432,7 +456,10 @@ export function boardHistory(
       current && plan
         ? planTaskState(ctx, plan, task, active, waiting, turns, dispatched, queue.get(key), ready)
         : 'removed';
-    const newest = bound.findLast((session) => session.outcome !== 'discarded'),
+    // A direct task has no worker; its lead's claim names the session that did it.
+    const newest =
+        bound.findLast((session) => session.outcome !== 'discarded') ??
+        (claimants.has(key) ? sessionOf.get(claimants.get(key)!) : undefined),
       model = newest?.reported_model ?? newest?.requested_model,
       reasons = handbacks.get(key),
       generation = `${key}:${taskGeneration(current ? plan : entry.plan, task.id)}`,
@@ -471,7 +498,9 @@ export function boardHistory(
       deletions: landed.length
         ? landed.reduce((sum, merge) => sum + (merge.payload.deletions ?? 0), 0)
         : null,
-      attempts: bound.length + claims.length,
+      attempts:
+        new Set(bound.map((session) => dispatches.get(session.id) ?? session.id)).size +
+        claims.length,
       handbacks: reasons ? reasons.gate + reasons.review + reasons.other : 0,
       ...(reasons ? { handback_reasons: reasons } : {}),
       ...(gatePassedOn.has(generation)

@@ -92,6 +92,30 @@ it('reads lifecycle events past text deltas in the same interval and starts at t
   }
 });
 
+it('reads past a tail of text deltas only once', async () => {
+  const store = new Store(':memory:');
+  const entity = { id: 'project', revision: 1 };
+  const send = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'));
+  const read = vi.spyOn(store, 'events');
+  vi.useFakeTimers();
+  const stop = startRuntimeOtel(store, 'http://127.0.0.1:4318', (error) => {
+    throw error;
+  });
+  try {
+    for (let i = 0; i < 300; i++)
+      store.event('agent.message.delta', entity, entity.id, { text: 'private-message' });
+    const head = store.cursor();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(read.mock.calls.map(([after]) => after)).toEqual([0, head]);
+    expect(send).not.toHaveBeenCalled();
+  } finally {
+    await stop();
+    vi.useRealTimers();
+    send.mockRestore();
+    store.close();
+  }
+});
+
 it('exports every full lifecycle batch without waiting for another interval', async () => {
   const store = new Store(':memory:');
   const entity = { id: 'project', revision: 1 };

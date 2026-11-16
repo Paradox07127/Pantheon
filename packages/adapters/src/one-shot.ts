@@ -14,12 +14,14 @@ const subscriptions = new Map<string, Promise<boolean>>();
 export function claudeSubscription(binary = 'claude'): Promise<boolean> {
   const known = subscriptions.get(binary);
   if (known) return known;
-  const subscription = new Promise<boolean>((resolve) =>
-    execFile(
+  const subscription = new Promise<boolean>((resolve) => {
+    let deadline: NodeJS.Timeout | undefined;
+    const probe = execFile(
       binary,
       ['auth', 'status', '--json'],
-      { encoding: 'utf8', timeout: 10000, env: nativeEnvironment() },
+      { encoding: 'utf8', env: nativeEnvironment() },
       (error, stdout) => {
+        clearTimeout(deadline);
         try {
           const status = JSON.parse(stdout) as { loggedIn?: unknown; authMethod?: unknown };
           resolve(
@@ -31,8 +33,15 @@ export function claudeSubscription(binary = 'claude'): Promise<boolean> {
           resolve(false);
         }
       },
-    ),
-  );
+    );
+    // The callback waits for the pipes, which a descendant of the probe can hold open.
+    deadline = setTimeout(() => {
+      probe.kill('SIGKILL');
+      probe.stdout?.destroy();
+      probe.stderr?.destroy();
+      resolve(false);
+    }, 10000);
+  });
   subscriptions.set(binary, subscription);
   void subscription.then(
     (loggedIn) => {
@@ -53,8 +62,15 @@ export async function claudeOneShot(
   signal: AbortSignal,
   binary = 'claude',
 ): Promise<{ text: string; usage?: { input_tokens: number; output_tokens: number } }> {
-  if (!(await claudeSubscription(binary)))
-    throw new Error('Claude is not logged in with a claude.ai subscription');
+  const subscribed = await new Promise<boolean>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) return abort();
+    signal.addEventListener('abort', abort, { once: true });
+    claudeSubscription(binary)
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', abort));
+  });
+  if (!subscribed) throw new Error('Claude is not logged in with a claude.ai subscription');
   signal.throwIfAborted();
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'pantheon-one-shot-'));
   const abortController = new AbortController();

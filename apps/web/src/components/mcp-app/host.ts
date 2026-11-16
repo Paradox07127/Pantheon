@@ -72,7 +72,9 @@ export interface AppToolUpdate {
   cancelled?: string;
 }
 
-const HOST_VERSION = '0.1.0';
+/** The version in apps/web/package.json, put in by the bundler's define. */
+declare const __WEB_VERSION__: string;
+const HOST_VERSION = __WEB_VERSION__;
 const TEARDOWN_WAIT_MS = 500;
 /** JSON-RPC server error the spec names for a refused link. */
 const REFUSED = -32000;

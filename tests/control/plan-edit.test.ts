@@ -296,6 +296,88 @@ it('holds a whole user edit when one of its ops waits for the lead', () => {
   });
 });
 
+it.each([
+  [
+    'the lead works on directly',
+    (f: Fixture, lead: Principal) => {
+      const session = f.store.must<Session>('sessions', lead.session_id!);
+      f.store.update(
+        'sessions',
+        { ...session, direct_task: { id: 'api', generation: 1 } },
+        session.revision,
+      );
+    },
+  ],
+  [
+    'whose idle session waits for workflow approval',
+    (f: Fixture, lead: Principal) =>
+      insertSession(f, {
+        state: 'open',
+        task: { lead_session_id: lead.session_id!, id: 'api', generation: 1 },
+        merge: { state: 'blocked', reason: 'workflow_approval' },
+      }),
+  ],
+])('holds a user goal edit of a task %s for the lead', (_name, unfinished) => {
+  const f = setup();
+  const lead = leadOf(f);
+  writePlan(f, lead);
+  unfinished(f, lead);
+  const result = edit(f, user, lead, [
+    { type: 'set_task', task_id: 'api', patch: { goal: 'Serve compressed exports' } },
+  ]);
+  expect(result.applied).toBe(false);
+  expect(taskOf(f, lead, 'api')?.goal).toBe(TASKS[0]!.goal);
+});
+
+it('holds only the tasks of the held ops when an order lock goes with them', () => {
+  const f = setup();
+  const lead = leadOf(f);
+  writePlan(f, lead);
+  running(f, lead, 'ui');
+  edit(f, user, lead, [{ type: 'lock_order', task_ids: ['api', 'ui'] }, setModel('ui')]);
+  expect(planOf(f, lead).pending_edits[0]).toMatchObject({
+    ops: [setModel('ui')],
+    task_ids: ['ui'],
+  });
+});
+
+it('keeps the refused lead wake on the plan across a user edit', () => {
+  const f = setup();
+  const lead = leadOf(f);
+  writePlan(f, lead);
+  const plan = planOf(f, lead);
+  const wakeFailed = { reason: 'wake_limit' as const, at: f.store.now() };
+  f.store.update('board_plans', { ...plan, wake_failed: wakeFailed }, plan.revision);
+  edit(f, user, lead, [{ type: 'set_task', task_id: 'api', patch: { title: 'Export API' } }]);
+  expect(planOf(f, lead).wake_failed).toEqual(wakeFailed);
+});
+
+it('refuses a user edit that leaves the plan more tasks than a whole plan may hold', () => {
+  const f = setup();
+  const lead = leadOf(f);
+  const tasks = Array.from({ length: 64 }, (_, index) => ({ ...TASKS[0]!, id: `task-${index}` }));
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks,
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    lead,
+  );
+  const error = failure(() =>
+    edit(f, user, lead, [{ type: 'add_task', task: { ...TASKS[0]!, id: 'one-more' } }]),
+  );
+  expect(error.code).toBe('invalid_input');
+  expect(planOf(f, lead).tasks).toHaveLength(64);
+});
+
 it('refuses a user edit that waits for a lead whose session has closed', () => {
   const f = setup();
   const lead = leadOf(f);

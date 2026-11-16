@@ -156,6 +156,19 @@ it('blames a file whose name holds two dots', async () => {
   ).rejects.toMatchObject({ code: 'invalid_input' });
 });
 
+it('blames a file whose name starts with -', async () => {
+  const f = workbenchFixture();
+  writeFileSync(path.join(f.source, '-draft.txt'), 'draft\n');
+  git(f.source, 'add', '--', '-draft.txt');
+  git(f.source, 'commit', '--quiet', '-m', 'Add the draft');
+  const sha = git(f.source, 'rev-parse', 'HEAD');
+  const input = { project_id: f.project.id, path: '-draft.txt' };
+  expect((await f.control.repoBlame(user, input)).chunks).toEqual([
+    expect.objectContaining({ start: 1, count: 1, sha }),
+  ]);
+  expect((await f.control.repoFileHistory(user, input)).changes).toHaveLength(1);
+});
+
 it('lists the worktrees when a locked outside worktree’s folder is gone', async () => {
   const f = workbenchFixture();
   const outside = path.join(f.root, 'outside');

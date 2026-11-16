@@ -306,6 +306,8 @@ describe('plan column', () => {
       sessionId: 'a',
       turns: [
         {
+          turn: { id: 'turn-1' },
+          started_at: null,
           items: [
             {
               kind: 'tool',

@@ -245,6 +245,31 @@ it('flags a reconciling session and a session whose stop is pending', async () =
   expect(listed(f, session.id)).toMatchObject({ reconciling: false, stopping: true });
 });
 
+it('flags a session whose discard waits for its native process to close', async () => {
+  const f = workbenchFixture();
+  const session = await idleSession(f);
+  f.call('session.discard', { session_id: session.id }, current(f, session.id).revision);
+  expect(current(f, session.id)).toMatchObject({ stop_requested: { by: 'user' } });
+  expect(current(f, session.id).outcome).toBeUndefined();
+  expect(listed(f, session.id).stopping).toBe(true);
+  await eventually(
+    () => current(f, session.id).outcome === 'discarded',
+    () => f.control.tick(),
+  );
+  expect(listed(f, session.id).stopping).toBe(false);
+});
+
+it('lists a clean worktree whose commits change no file as ready', async () => {
+  const f = workbenchFixture();
+  const session = await idleSession(f);
+  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
+  git(workspace.path, 'commit', '--quiet', '--allow-empty', '-m', 'Empty commit');
+  expect(listed(f, session.id)).toMatchObject({
+    state: 'ready',
+    changes: { files: 0, additions: 0, deletions: 0 },
+  });
+});
+
 it('leaves the gate out without gate commands or without a run', async () => {
   const f = workbenchFixture();
   const session = await idleSession(f);
@@ -431,4 +456,30 @@ it('does not replace the main turn result with a steer or a rolled-back turn', a
   });
   f.store.event('turn.cancelled', cancelled, session.project_id, {});
   expect(listed(f, session.id).last_turn).toMatchObject({ id: cancelled.id, state: 'cancelled' });
+});
+
+it('shows the gate of a merge as running until it is checked, and stops counting once the merge is cancelled', async () => {
+  const f = workbenchFixture();
+  const session = await idleSession(f);
+  setGate(f);
+  const passed = gateChecked(f, session.id, 0);
+  const merging = patch(f, session.id, { merge: { state: 'running' } });
+  f.store.event('session.gate_started', merging, f.project.id, {
+    workspace_id: session.workspace_id,
+    commands: [{ name: 'Prints ok', argv: ['node'] }],
+  });
+  expect(listed(f, session.id).gate).toEqual({
+    state: 'running',
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    running: 1,
+  });
+  const cancelled = patch(f, session.id, { merge: undefined });
+  f.store.event('session.merge_cancelled', cancelled, f.project.id, { reason: 'cancelled' });
+  expect(listed(f, session.id).gate).toMatchObject({
+    state: 'passed',
+    running: 0,
+    finished_at: new Date(passed.created_at).toISOString(),
+  });
 });

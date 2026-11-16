@@ -488,6 +488,34 @@ it('keeps a failed resume reconciling and allows a safe retry', async () => {
   expect(f.send).toHaveBeenCalledOnce();
 });
 
+it('discards a session the user discarded during its resume handshake only after closing the resumed process', async () => {
+  const f = await restartedFixture();
+  const resumed = f.resume.getMockImplementation()!;
+  let release: (() => void) | undefined;
+  f.resume.mockImplementationOnce(async (spec, nativeId, sink) => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return resumed(spec, nativeId, sink);
+  });
+  f.resolve('resume_session');
+  const ticking = f.control.tick();
+  await eventually(() => release !== undefined);
+  f.control.execute(
+    user,
+    command(user.id, 'session.discard', { session_id: f.session().id }, f.session().revision),
+  );
+  release!();
+  await ticking;
+  expect(f.session().outcome).toBeUndefined();
+  await eventually(
+    () => f.session().state === 'closed' && f.control.handles.size === 0,
+    () => f.control.tick(),
+  );
+  expect(f.session().outcome).toBe('discarded');
+  expect(f.adapter.close).toHaveBeenCalled();
+});
+
 it('never uses an old process identity after an unconfirmed resume spawn', async () => {
   const f = await restartedFixture();
   f.resume.mockRejectedValueOnce(

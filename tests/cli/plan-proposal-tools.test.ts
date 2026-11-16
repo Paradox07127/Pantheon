@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Client } from '../../apps/cli/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import { InMemoryTransport } from '../../apps/cli/node_modules/@modelcontextprotocol/sdk/dist/esm/inMemory.js';
@@ -35,6 +36,11 @@ it('offers plain proposal tools to the lead with bound project and revision and 
   cleanup.push(async () => {
     await client.close();
     await server.close();
+  });
+  expect(client.getServerVersion()).toEqual({
+    name: 'pantheon',
+    version: JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
+      .version,
   });
   const tools = (await client.listTools()).tools;
   const propose = tools.find((tool) => tool.name === 'propose_board')!;

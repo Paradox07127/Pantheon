@@ -60,14 +60,17 @@ it('lists committed, uncommitted and untracked changes against the session base 
   expect(diff.patch).toContain('+three');
 });
 
-it('counts the lines of an untracked symbolic link in the list as the diff does', async () => {
-  const f = workbenchFixture();
-  const { session, workspace } = await idleSession(f);
-  symlinkSync('answer.txt', path.join(workspace.path, 'link.txt'));
-  const diff = await f.control.sessionDiff(user, session.id);
-  expect(diff.files).toEqual([{ path: 'link.txt', additions: 1, deletions: 0, untracked: true }]);
-  expect(f.list()[0]!.changes).toEqual({ files: 1, additions: 1, deletions: 0 });
-});
+it.each(['answer.txt', 'answer.txt\n'])(
+  'counts the lines of an untracked symbolic link to %j in the list as the diff does',
+  async (target) => {
+    const f = workbenchFixture();
+    const { session, workspace } = await idleSession(f);
+    symlinkSync(target, path.join(workspace.path, 'link.txt'));
+    const diff = await f.control.sessionDiff(user, session.id);
+    expect(diff.files).toEqual([{ path: 'link.txt', additions: 1, deletions: 0, untracked: true }]);
+    expect(f.list()[0]!.changes).toEqual({ files: 1, additions: 1, deletions: 0 });
+  },
+);
 
 it('lists a session as ready only once it has commits and nothing uncommitted', async () => {
   const f = workbenchFixture();
@@ -119,6 +122,32 @@ it('counts untracked lines without Git, binary files as none and only the first 
     );
   // Lines come from a-last-line.txt, binary.bin and the first 1998 files under many/.
   expect(f.list()[0]!.changes).toEqual({ files: 2003, additions: 2 + 1998 * 2, deletions: 0 });
+}, 120000);
+
+it('stops reading untracked files one by one past the diff bound and leaves their counts unknown', async () => {
+  const f = workbenchFixture();
+  const { session, workspace } = await idleSession(f);
+  mkdirSync(path.join(workspace.path, 'many'));
+  for (let index = 0; index <= 200; index++)
+    writeFileSync(
+      path.join(workspace.path, 'many', `file-${String(index).padStart(3, '0')}.txt`),
+      'first\n',
+    );
+  const diff = await f.control.sessionDiff(user, session.id);
+  expect(diff.files).toHaveLength(201);
+  expect(diff.files[199]).toEqual({
+    path: 'many/file-199.txt',
+    additions: 1,
+    deletions: 0,
+    untracked: true,
+  });
+  expect(diff.files[200]).toEqual({
+    path: 'many/file-200.txt',
+    additions: null,
+    deletions: null,
+    untracked: true,
+  });
+  expect(diff).toMatchObject({ patch: null, truncated: true });
 }, 120000);
 
 it('discards an idle session and removes its worktree', async () => {

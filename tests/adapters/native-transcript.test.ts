@@ -299,6 +299,56 @@ describe('Codex rollout reducer', () => {
     });
   });
 
+  it('keeps the usage, native timing and files of a step merged into its call', () => {
+    const reducer = createCodexReducer({ native_id: 'rollout' });
+    const call = (call_id: string, name: string) =>
+      codexLine(
+        codexAt(1),
+        { type: 'function_call', call_id, name, arguments: '{}' },
+        'response_item',
+      );
+    for (const line of [
+      codexLine(codexAt(0), { type: 'task_started', turn_id: 'paginated' }),
+      call('command-call', 'shell'),
+      call('patch-call', 'apply_patch'),
+      codexLine(codexAt(4), {
+        type: 'item_completed',
+        started_at_ms: Date.parse(codexAt(2)),
+        completed_at_ms: Date.parse(codexAt(3)),
+        item: {
+          type: 'CommandExecution',
+          id: 'command-call',
+          status: 'completed',
+          usage: { input_tokens: 5, output_tokens: 7 },
+        },
+      }),
+      codexLine(codexAt(5), {
+        type: 'item_completed',
+        item: {
+          type: 'FileChange',
+          id: 'patch-call',
+          status: 'completed',
+          duration: { secs: 0, nanos: 500_000_000 },
+          changes: { '/repo/a.ts': {} },
+        },
+      }),
+    ])
+      reducer.push(line);
+    const spans = reducer.spans();
+    expect(spans.find((span) => span.id === 'command-call')).toMatchObject({
+      name: 'shell',
+      start: Date.parse(codexAt(2)),
+      end: Date.parse(codexAt(3)),
+      tokens: { input: 5, output: 7 },
+    });
+    expect(spans.find((span) => span.id === 'patch-call')).toMatchObject({
+      name: 'apply_patch',
+      end: Date.parse(codexAt(5)),
+      duration_ms: 500,
+      files: ['/repo/a.ts'],
+    });
+  });
+
   it('reads a local shell call with its action as input', () => {
     const reducer = createCodexReducer({ native_id: 'rollout' });
     for (const line of [
@@ -481,6 +531,14 @@ describe('Codex rollout reducer', () => {
     expect(reducer.title()).toBe('<div class="header">Fix this</div>');
   });
 
+  it('titles a session with a typed first prompt that starts with an AGENTS.md heading', () => {
+    const reducer = createCodexReducer({ native_id: 'rollout' });
+    reducer.push(codexPrompt(codexAt(0), agentsText, environmentText));
+    reducer.push(codexPrompt(codexAt(1), '# AGENTS.md\nAdd a testing section'));
+    reducer.push(codexPrompt(codexAt(2), 'Later prompt'));
+    expect(reducer.title()).toBe('# AGENTS.md');
+  });
+
   it('reads a spawned agent from its own turns, under the spawn call, without the inherited history', () => {
     const reducer = createCodexReducer({ native_id: 'child' });
     for (const line of codexSubagent) reducer.push(line);
@@ -616,13 +674,13 @@ describe('probeMeta', () => {
     await rm(dir, { recursive: true });
   });
 
-  it('stops looking for a metadata record past the probe limit', async () => {
+  it('finds a metadata record past rows larger than 8 MiB', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'native-transcript-'));
-    const file = join(dir, 'no-meta.jsonl');
+    const file = join(dir, 'late-meta.jsonl');
     const filler = codexLine(codexAt(0), { type: 'agent_message', message: 'x'.repeat(9 << 20) });
     const meta = codexLine(codexAt(1), { id: 'late-session', cwd: '/repo' }, 'session_meta');
     await writeFile(file, `${filler}\n${meta}\n`);
-    expect(await probeMeta(file)).toBe('pending');
+    expect(await probeMeta(file)).toMatchObject({ native_id: 'late-session', cwd: '/repo' });
     await rm(dir, { recursive: true });
   });
 });
