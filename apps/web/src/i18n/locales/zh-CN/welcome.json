@@ -1,0 +1,6 @@
+{
+  "welcome.intro": "选一个 git 仓库。每个会话在自己的工作树里改，门禁通过后才合并。",
+  "welcome.drop": "把文件夹拖到这里",
+  "welcome.orPress": "或按",
+  "welcome.installGuide": "安装说明"
+}

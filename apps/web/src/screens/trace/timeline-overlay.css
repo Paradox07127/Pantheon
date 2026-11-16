@@ -1,0 +1,205 @@
+/* Over the lanes' rows, in their columns; only the marks take the pointer. */
+.tlo-layer {
+  position: relative;
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr);
+  column-gap: var(--sp-3);
+  padding: 0 var(--sp-3);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.tlo-col {
+  position: relative;
+  grid-column: 2;
+}
+.tlo-mark {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 2px solid var(--bad);
+  border-radius: 50%;
+  background: var(--sf);
+  transform: translateX(-50%);
+  transition: transform var(--dur-2) var(--ease-std);
+  pointer-events: auto;
+}
+.tlo-mark:hover {
+  transform: translateX(-50%) scale(1.5);
+}
+.tlo-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--tx);
+}
+.tlo-now::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background-color: var(--tx);
+}
+.tlo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.tlo-ch {
+  font-weight: 500;
+}
+.tlo-cm {
+  color: var(--mu);
+}
+.tlo-ct {
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.tlo-ckv {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  column-gap: var(--sp-3);
+  margin: var(--sp-1) 0 0;
+}
+.tlo-ckv dt {
+  color: var(--mu);
+}
+.tlo-ckv dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tlo-legend {
+  flex: none;
+  padding: var(--sp-2) var(--sp-3) var(--sp-1) calc(172px + 2 * var(--sp-3));
+}
+.tlo-li {
+  white-space: nowrap;
+}
+.tlo-sw {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--idle);
+}
+.tlo-sw[data-swatch='run'] {
+  background-color: var(--run);
+}
+.tlo-sw[data-swatch='wait'] {
+  background-color: var(--wait);
+}
+.tlo-sw[data-swatch='review'] {
+  background-color: var(--ready);
+}
+.tlo-sw[data-swatch='merge'] {
+  background-color: var(--ok);
+}
+.tlo-sw[data-swatch='gate'] {
+  background-color: var(--bad);
+}
+.tlo-sw[data-swatch='idle'] {
+  opacity: 0.4;
+}
+.tlo-sw[data-swatch='queue'] {
+  border-radius: 2px;
+  background-color: transparent;
+  background-image: repeating-linear-gradient(135deg, var(--idle) 0 3px, transparent 3px 6px);
+  opacity: 0.7;
+}
+
+/* Event table under the lanes; its rows scroll under the head. */
+.tlo-et {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 35%;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  background: var(--sf);
+}
+.tlo-er {
+  display: grid;
+  grid-template-columns: 64px 16px 150px minmax(0, 1fr) 72px;
+  gap: var(--sp-2);
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 0;
+  border-top: var(--hair) solid var(--bd2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+/* Rows of an earlier day name the day too. */
+.tlo-et[data-dated] .tlo-er {
+  grid-template-columns: 96px 16px 150px minmax(0, 1fr) 72px;
+}
+.tlo-er.tlo-eh {
+  flex: none;
+  height: 28px;
+  border-top: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+button.tlo-er:hover {
+  background: var(--sf2);
+}
+button.tlo-er[data-sel] {
+  background: var(--sel);
+}
+button.tlo-er:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.tlo-es {
+  min-height: 0;
+  overflow-y: auto;
+}
+.tlo-el {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tlo-el > li {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.tlo-et-t,
+.tlo-et-d {
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tlo-er > .tlo-et-d {
+  text-align: right;
+}
+.tlo-eh .tlo-et-d {
+  font-family: inherit;
+}
+.tlo-et-s,
+.tlo-et-w {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,670 @@
+/* Repository changes: the worktrees at the left, the picked one's changes beside them. */
+.rpc {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  min-height: 480px;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+}
+.rpc-wts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-2);
+  border-right: var(--hair) solid var(--bd2);
+}
+.rpc-grp {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rpc-gh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--h-ctl);
+  margin: 0;
+  padding: 0 8px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+}
+.rpc-ct {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.rpc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rpc-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+  border-radius: var(--r-sm);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.rpc-row:hover,
+.rpc-row:has(> [aria-pressed='true']) {
+  background: var(--sel);
+}
+.rpc-pick {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.rpc-row:hover > .rpc-pick,
+.rpc-pick[aria-pressed='true'] {
+  color: var(--tx);
+}
+/* A session's runtime mark with its state at the corner. */
+.rpc-av {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+.rpc-av > :last-child {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--sf);
+}
+.rpc-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpc-meta {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rpc-br {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+.rpc-prune {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 8px;
+  border-top: var(--hair) solid var(--bd2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.rpc-stale {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+.rpc-size {
+  font-variant-numeric: tabular-nums;
+}
+.rpc-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* A session worktree: its story or files in the middle, the picked card or the diff at the right. */
+.rcs {
+  display: grid;
+  grid-template-columns: 296px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.rcs-mid {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: var(--hair) solid var(--bd2);
+}
+.rcs-det {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.rcs-tc {
+  margin-left: 6px;
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.rcs-sum {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.rcs-ba {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+}
+.rcs-ba > dt {
+  color: var(--mu);
+}
+.rcs-ba > dd {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  color: var(--tx2);
+  user-select: text;
+}
+.rcs-by {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mu);
+}
+.rcs-age {
+  flex: 1;
+  min-width: 0;
+}
+.rcs-cards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rcs-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px 0 16px;
+  border: 0;
+  border-bottom: var(--hair) solid var(--bd2);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.rcs-card:hover {
+  background: var(--sf2);
+}
+.rcs-card[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.rcs-ct {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rcs-n {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rcs-ev {
+  display: inline-flex;
+  flex: none;
+  color: var(--ok);
+}
+.rcs-ev[data-tone='bad'] {
+  color: var(--bad);
+}
+.rcs-ev > svg {
+  width: 14px;
+  height: 14px;
+}
+.rcs-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rcs-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px 0 16px;
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.rcs-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: var(--bar);
+  padding: 0 12px 0 16px;
+  border-bottom: var(--hair) solid var(--bd2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rcs-br {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.rcs-vs {
+  flex: none;
+  width: var(--hair);
+  height: 16px;
+  background: var(--bd2);
+}
+.rcs-seg {
+  display: flex;
+  flex: none;
+  width: 56px;
+}
+.rcs-gate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rcs-acts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.rcs-err {
+  margin: 8px 16px 0;
+}
+.rcs-hunks {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.rcs-hf {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 4px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.rpc-merge {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+}
+.rpc-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: var(--bar);
+  padding: 0 12px 0 16px;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.rpc-body {
+  min-width: 0;
+  padding: var(--sp-4);
+}
+.rpc-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rpc-file {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  height: var(--row);
+  padding: 0 16px;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.rpc-st {
+  color: var(--mu);
+}
+.rpc-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+.rpc-cf::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+/* The local checkout: its files and the commit box, the picked file's diff beside them. */
+.rpl {
+  display: grid;
+  grid-template-columns: 296px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.rpl-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: var(--hair) solid var(--bd2);
+}
+.rpl-title {
+  min-width: 0;
+  font-weight: 600;
+}
+.rpl-ck {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--bd3);
+  border-radius: 4px;
+  background: var(--sf);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    border-color var(--dur-1) var(--ease-std);
+}
+.rpl-ck:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.rpl-ck[aria-checked='true'],
+.rpl-ck[aria-checked='mixed'] {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.rpl-ck[aria-checked='true']::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: var(--on-ink);
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'><path d='M5.5 12.5l4.2 4.2L18.5 7.5'/></svg>")
+    center / 10px no-repeat;
+}
+.rpl-ck[aria-checked='mixed']::after {
+  content: '';
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--on-ink);
+}
+.rpl-files {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.rpl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 8px 0 16px;
+  border-top: var(--hair) solid var(--bd2);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.rpl-row:first-child {
+  border-top: 0;
+}
+.rpl-row:hover {
+  background: var(--sf2);
+}
+.rpl-row:has(> [aria-pressed='true']) {
+  background: var(--sel);
+}
+.rpl-pick {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.rpl-pick[aria-pressed='true'] {
+  color: var(--tx);
+}
+.rpl-drop {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.rpl-row:hover > .rpl-drop,
+.rpl-row:focus-within > .rpl-drop {
+  opacity: 1;
+}
+.rpl-n {
+  flex: none;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rpl-add {
+  color: var(--ok);
+}
+.rpl-del {
+  color: var(--bad);
+}
+.rpl-add[data-zero],
+.rpl-del[data-zero] {
+  color: var(--mu);
+}
+.rpl-commit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.rpl-details {
+  min-height: 72px;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  border: var(--hair) solid var(--bd);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  resize: none;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.rpl-details:is(:hover, :focus) {
+  border-color: var(--bd3);
+}
+.rpl-commit > :is(.inp, .rpl-details, .rpl-err) {
+  flex: 1 0 100%;
+}
+.rpl-go {
+  flex: 1;
+  justify-content: center;
+}
+/* Beside the commit button, or at the end of the bar when nothing is left to commit. */
+.rpl-push {
+  flex: none;
+}
+.rpc-bar > .rpl-push {
+  margin-left: auto;
+}
+/* The checked-out branch and how far it is from its upstream. */
+.rpl-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rpc-bar > .rpl-where:not(:first-child) {
+  margin-left: auto;
+}
+.rpl-up {
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+  color: var(--mu);
+  white-space: nowrap;
+}
+.rpl-err {
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.rpl-diff {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.rpl-diff > .rpl-err {
+  padding: 8px 16px;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.rpl-hunks {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: var(--sp-6);
+  overflow: auto;
+  font-size: var(--fs-xs);
+  line-height: 18px;
+}
+.rpl-hunk {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.rpl-hh {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--sf2);
+  border-bottom: var(--hair) solid var(--bd2);
+  color: var(--mu);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rpl-ln {
+  display: grid;
+  grid-template-columns: 28px 40px 40px 16px minmax(0, 1fr);
+  align-items: center;
+}
+.rpl-ln[data-kind='add'] {
+  background: var(--ok-bg);
+}
+.rpl-ln[data-kind='del'] {
+  background: var(--bad-bg);
+}
+.rpl-pk {
+  display: grid;
+  place-items: center;
+}
+.rpl-num {
+  padding-right: 8px;
+  color: var(--mu);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rpl-sg {
+  color: var(--mu);
+}
+.rpl-code {
+  padding-right: 12px;
+  color: var(--tx2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.rpl-ln[data-kind='add'] > :is(.rpl-sg, .rpl-code) {
+  color: var(--ok);
+}
+.rpl-ln[data-kind='del'] > :is(.rpl-sg, .rpl-code) {
+  color: var(--bad);
+}
+/* A worktree's actions show under the pointer or focus, and while their menu is open. */
+.rpc-more {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.rpc-row:hover > .rpc-more,
+.rpc-row:focus-within > .rpc-more,
+.rpc-more[data-popup-open] {
+  opacity: 1;
+}
+.rpc-row:has(> .rpc-err) {
+  flex-wrap: wrap;
+}
+.rpc-err {
+  flex-basis: 100%;
+  padding: 0 8px 8px;
+}

@@ -1,0 +1,6 @@
+.si{display:inline-block;flex:none;vertical-align:-2px}
+.si-breathe{animation:si-breathe 2s ease-in-out infinite}
+/* fill-box keeps each arc turning around its own centre */
+.si-spin{transform-box:fill-box;transform-origin:center;animation:si-spin 1.2s linear infinite}
+@keyframes si-breathe{0%,100%{opacity:1}50%{opacity:.45}}
+@keyframes si-spin{to{transform:rotate(360deg)}}

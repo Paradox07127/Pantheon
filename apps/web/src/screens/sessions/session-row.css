@@ -1,0 +1,34 @@
+/* A row picked with the list's select key: an edge, apart from the shown row's fill and the focus ring. */
+.sb .ss-row[data-selected] {
+  border-color: var(--bd3);
+}
+.ss-dev {
+  flex: none;
+}
+.ss-hc-v > .meter {
+  flex: 1;
+}
+/* A row with a recap: the title over one line of it. */
+.ss-row:has(> .ss-two) {
+  height: auto;
+  min-height: var(--row);
+  padding-block: var(--sp-1);
+}
+.ss-two {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.ss-two > .ss-ttl {
+  flex: none;
+}
+.ss-sub {
+  overflow: hidden;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

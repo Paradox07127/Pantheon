@@ -1,0 +1,91 @@
+/* A sortable table: the body scrolls in the card under a header that stays put. */
+.vis-tb {
+  height: 100%;
+  overflow: auto;
+  padding-bottom: var(--sp-1);
+  font-size: var(--fs-sm);
+}
+.vis-tr {
+  display: grid;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 30px;
+  padding: 0 var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+/* Rows out of view skip layout and paint, so a long table scrolls as fast as a short one. */
+.vis-tr:not(.vis-th) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 30px;
+}
+.vis-tr:not(.vis-th):hover {
+  background: var(--sf2);
+}
+.vis-th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 28px;
+  border-top: 0;
+  background: var(--sf);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.vis-th [data-type='number'],
+.vis-th [data-type='date'] {
+  justify-self: end;
+}
+.vis-th button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 20px;
+  padding: 0 var(--sp-1);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.vis-th button:hover {
+  background: var(--st-hov);
+  color: var(--tx);
+}
+.vis-th :is([aria-sort='ascending'], [aria-sort='descending']) button {
+  color: var(--tx);
+}
+.vis-th svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition:
+    transform var(--dur-2) var(--ease-std),
+    opacity var(--dur-1) var(--ease-std);
+}
+.vis-th :is([aria-sort='ascending'], [aria-sort='descending']) svg {
+  opacity: 1;
+}
+.vis-th [aria-sort='ascending'] svg {
+  transform: rotate(180deg);
+}
+.vis-td {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vis-num {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.vis-date {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

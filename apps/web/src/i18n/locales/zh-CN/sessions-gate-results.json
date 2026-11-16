@@ -1,0 +1,19 @@
+{
+  "sessions.gateResults.group.failed": "失败",
+  "sessions.gateResults.group.passed": "通过",
+  "sessions.gateResults.group.skipped": "跳过",
+  "sessions.gateResults.group.notRun": "没跑",
+  "sessions.gateResults.skip.timeout": "超时",
+  "sessions.gateResults.skip.cannotStart": "起不来",
+  "sessions.gateResults.running": "门禁运行中",
+  "sessions.gateResults.fix": "让 agent 修",
+  "sessions.gateResults.copy": "复制日志",
+  "sessions.gateResults.exitCode": "退出码 {code}",
+  "sessions.gateResults.previous": "上一个失败",
+  "sessions.gateResults.next": "下一个失败",
+  "sessions.gateResults.log": "{name} 的日志",
+  "sessions.gateResults.carried": "沿用上次",
+  "sessions.gateResults.testsPassed": "{count} 通过",
+  "sessions.gateResults.testsFailed": "{count} 失败",
+  "sessions.gateResults.testsSkipped": "{count} 跳过"
+}

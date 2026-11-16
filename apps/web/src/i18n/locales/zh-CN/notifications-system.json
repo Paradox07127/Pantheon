@@ -1,0 +1,10 @@
+{
+  "data.notifications.allPassed": "门禁都过了",
+  "data.notifications.asks": "{session} 在问你",
+  "data.notifications.groupReview": "{count, plural, other {# 个会话可以审阅}}",
+  "data.notifications.review": "{session} 可以审阅",
+  "data.notifications.waitsApproval": "{session} 等你审批",
+  "settings.notifications.mergeBlocked": "合并被拦",
+  "settings.notifications.turnCompleted": "回合完成",
+  "settings.notifications.turnFailed": "回合失败"
+}

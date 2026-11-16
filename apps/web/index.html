@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Pantheon</title>
+    <script>
+      // The first frame is already in the stored theme; App keeps it in step afterwards.
+      (function () {
+        var theme = 'system';
+        var user = null;
+        var accent = null;
+        try {
+          theme = localStorage.getItem('pantheon.theme');
+          user = JSON.parse(localStorage.getItem('pantheon.userTheme.v1') || 'null');
+          accent = JSON.parse(localStorage.getItem('pantheon.accent.v1') || 'null');
+        } catch (e) {}
+        if (user && user.id && user.css) {
+          var style = document.createElement('style');
+          style.id = 'pt-user-theme';
+          style.textContent = user.css;
+          document.head.append(style);
+          document.documentElement.dataset.userTheme = user.id;
+        }
+        if (accent && accent.css) {
+          var ink = document.createElement('style');
+          ink.id = 'pt-accent';
+          ink.textContent = accent.css;
+          document.head.append(ink);
+        }
+        if (
+          (user && user.forced === 'dark') ||
+          (!(user && user.forced === 'light') &&
+            (theme === 'dark' ||
+              (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)))
+        )
+          document.documentElement.classList.add('dark');
+      })();
+    </script>
+    <style>
+      html {
+        background: #f3f3f1;
+      }
+      html.dark {
+        background: #0e0e0d;
+      }
+    </style>
+  </head>
+  <body class="pt" spellcheck="false">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,116 @@
+/* The lists behind the counts of the projects summary, by project */
+.np {
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+  max-height: 420px;
+  padding: 4px;
+  box-sizing: border-box;
+  overflow: auto;
+  outline: 0;
+}
+.np-grp + .np-grp {
+  margin-top: 4px;
+}
+.np-g {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--h-ctl);
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+}
+.np-g b {
+  min-width: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-n {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.np-r {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: max(calc(var(--r-lg) - 4px), 4px);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.np-r:hover,
+.np-r:focus-within {
+  background: var(--sel);
+}
+.np-ic {
+  display: flex;
+}
+.np-open {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+}
+.np-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.np-open:focus-visible {
+  outline: 0;
+}
+.np-open:focus-visible::after {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.np-t {
+  min-width: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-r[data-dim] .np-t {
+  color: var(--mu);
+}
+.np-d {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.np-a {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.np-r:hover .np-a,
+.np-r:focus-within .np-a {
+  opacity: 1;
+}
+.np-e {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

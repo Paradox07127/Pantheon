@@ -1,0 +1,14 @@
+{
+  "name": "change-story-hashes-before-merge-steps",
+  "source_commit": "ebe90cbf50ef445e5929f4208fc986bcfbc69d93",
+  "base_commit": "99c119036736fbf8de565708361a49ba922d9a75",
+  "goal": "A change story's `checks.state` is `recorded` only when the last gate run used the same commit and command list (`spec_hash`). Today the story's list has task acceptance and project gate commands but not the workflow's before-merge command steps the gate also ran, so a gate that just passed reads `stale`. Add those steps, exactly as the gate runs them, to the story's commands and hash.",
+  "scope": ["packages/control/src/change-story-evidence.ts", "packages/control/src/landing.ts"],
+  "acceptance": ["pnpm build", "pnpm exec vitest run tests/control/change-story-session.test.ts"],
+  "hidden_files": ["tests/control/change-story-session.test.ts"],
+  "hidden_check": [
+    "pnpm install --frozen-lockfile",
+    "pnpm build",
+    "pnpm exec vitest run tests/control/change-story-session.test.ts"
+  ]
+}

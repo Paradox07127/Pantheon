@@ -1,0 +1,7 @@
+/* One-colour vendor marks chosen in Session display; mask shapes keep their own fill. */
+.rtg [data-mono] :is(path, rect, circle):not(mask > *) {
+  fill: currentColor;
+}
+.rtg [data-mono] .rtg-bg {
+  display: none;
+}

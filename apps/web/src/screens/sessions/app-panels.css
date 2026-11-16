@@ -1,0 +1,123 @@
+/* A tool call with an interface: its glyph in the row and the interface under it. */
+.ss-trow[data-app] {
+  grid-template-columns: 16px 16px auto minmax(0, 1fr) auto 14px 44px;
+}
+.ss-trow[data-app] .ss-tn {
+  color: var(--tx);
+}
+.apd-ic {
+  color: var(--mu);
+}
+.apd-in {
+  padding: 0 var(--sp-3) var(--sp-3) 32px;
+}
+/* The server whose interface sent a message, over its bubble. */
+.apd-from {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.apd-from > svg.lucide {
+  width: 12px;
+  height: 12px;
+}
+/* The docked interface, a column of the panel dock. */
+.apd {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  border-left: var(--hair) solid var(--bd2);
+  background: var(--sf);
+  transition:
+    opacity var(--dur-4) var(--ease-in),
+    transform var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .apd {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.apd-h {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-1) 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-sm);
+}
+.apd-n {
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apd-s {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.apd-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+}
+.apd-h .ib {
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}
+/* Full screen covers the session's content surface, not the sidebar. */
+.apd-full {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--sf);
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .apd-full {
+    opacity: 0;
+  }
+}
+.apd-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--bar);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-sm);
+}
+.overlay-titlebar .apd-bar {
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px);
+}
+.apd-t {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apd-st {
+  min-width: 0;
+  color: var(--mu);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

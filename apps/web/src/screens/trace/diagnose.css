@@ -1,0 +1,256 @@
+/* The diagnose tab: time breakdown and findings on the left, the picked finding's panel on the right. */
+.dg {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.dg-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: 0;
+}
+.dg-main > * {
+  flex: none;
+}
+.dg-views {
+  align-self: start;
+}
+
+.dg-table,
+.dg-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.dg-row {
+  --dg-k: 0;
+  display: grid;
+  grid-template-columns: 16px 88px minmax(0, 1fr) 96px 96px 80px 64px;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: default;
+  transition:
+    opacity var(--dur-2) var(--ease-in) calc(var(--dg-k) * 40ms),
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+@starting-style {
+  .dg-row {
+    opacity: 0;
+  }
+}
+.dg-list > .dg-row:hover,
+.dg-row[aria-selected='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.dg-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.dg-row > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--mu);
+}
+.dg-row[aria-selected='true'] > svg {
+  color: var(--tx);
+}
+.dg-head {
+  height: 24px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+  color: var(--mu);
+}
+.dg-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--tx);
+}
+.dg-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dg-mu {
+  color: var(--mu);
+}
+.dg-end {
+  text-align: right;
+  white-space: nowrap;
+}
+.dg-num {
+  font-variant-numeric: tabular-nums;
+}
+.dg-row [data-code] {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.dg-on {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.dg-st {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--run);
+}
+.dg-st[data-layer='human'] {
+  background: var(--wait);
+}
+
+.fd {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  width: 400px;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-4);
+  border-left: var(--hair) solid var(--bd2);
+  transition:
+    opacity var(--dur-4) var(--ease-in),
+    transform var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .fd {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.fd > * {
+  flex: none;
+}
+.fd-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.fd-h > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.fd-kind {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fd-ses {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mu);
+}
+.fd-turn {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fd-h > .fd-close {
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}
+.fd-say {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  text-wrap: pretty;
+  user-select: text;
+}
+.fd-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.fd-facts > .cell {
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+}
+.fd-v {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.fd-v[data-code] {
+  font-family: var(--font-mono);
+}
+.fd-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: auto;
+}
+
+/* The analysis menu under the bar's button. */
+.am {
+  width: 256px;
+}
+.am-go {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+}
+.am-start {
+  justify-content: center;
+  width: 100%;
+  outline: none;
+}
+.am-start[data-highlighted] {
+  background: var(--sf2);
+  border-color: var(--bd3);
+}
+.am-start[data-disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.am-win {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+
+.pt[data-motion='reduced'] .fd {
+  transition: opacity var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .pt[data-motion='reduced'] .fd {
+    transform: none;
+  }
+}

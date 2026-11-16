@@ -1,0 +1,1173 @@
+/* The timeline column beside the thread; it keeps its room before its first mark arrives. */
+.ss-flow {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+/* Placed by column, so without the timeline its track is empty and the thread keeps the width. */
+.ss-flow > .ss-scroll {
+  grid-column: 2;
+}
+.ss-tl {
+  grid-column: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 148px;
+  padding: var(--sp-6) 0 var(--sp-6) var(--sp-3);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+/* The part of the thread on screen. */
+.ss-tlv {
+  position: absolute;
+  top: 0;
+  left: var(--sp-1);
+  right: var(--sp-2);
+  border-radius: var(--r-md);
+  background: var(--sel);
+  pointer-events: none;
+  transition: transform var(--dur-3) var(--ease-std);
+}
+.ss-tlm {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  flex: none;
+  height: 20px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-align: left;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.ss-tlm:hover,
+.ss-tlm[aria-current='true'] {
+  color: var(--tx);
+}
+.ss-tlm[aria-current='true'] {
+  font-weight: 500;
+}
+.ss-tlm:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.ss-tlg,
+.ss-markg {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--tx);
+}
+.ss-tlg > svg.lucide,
+.ss-markg > svg.lucide {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+.ss-gok {
+  color: var(--ok);
+}
+.ss-ggoal {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+/* A turn's key point: lighter than the goal, task and milestone marks. */
+.ss-tlg > svg.ss-gturn {
+  width: 10px;
+  stroke-width: 1.5;
+  color: var(--mu);
+}
+.ss-gmile {
+  width: 8px;
+  height: 8px;
+  border-radius: 1.5px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+/* Waiting for you: a dot in a breathing ring. */
+.ss-gwait {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--wait);
+}
+.ss-gwait::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ss-gwait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  animation: ss-breathe 2.4s ease-in-out infinite;
+}
+.ss-tll {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ss-tla {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 1px;
+  margin-left: 7.5px;
+  background: var(--bd3);
+}
+/* Narrow, the timeline keeps only its marks; the tooltips name them. */
+.ss-tl[data-slim] {
+  width: 40px;
+}
+.ss-tl[data-slim] .ss-tll {
+  display: none;
+}
+@media (width < 1280px) {
+  .ss-tl {
+    width: 32px;
+  }
+  .ss-tll {
+    display: none;
+  }
+}
+/* The thread and the composer leave the timeline's width on both sides, so they centre in the conversation; beside the dock only on the left. */
+.ss-flow:has(> .ss-tl) + .cp-dock {
+  padding-left: 148px;
+}
+.ss-flow:has(> .ss-tl[data-slim]) + .cp-dock {
+  padding-left: 40px;
+}
+.ss-convo:not([data-docked]) .ss-flow:has(> .ss-tl) > .ss-scroll {
+  padding-right: 148px;
+}
+.ss-convo:not([data-docked]) .ss-flow:has(> .ss-tl[data-slim]) > .ss-scroll {
+  padding-right: 40px;
+}
+.ss-convo:not([data-docked]) .ss-flow:has(> .ss-tl) + .cp-dock {
+  padding-right: 148px;
+}
+.ss-convo:not([data-docked]) .ss-flow:has(> .ss-tl[data-slim]) + .cp-dock {
+  padding-right: 40px;
+}
+@media (width < 1280px) {
+  .ss-flow:has(> .ss-tl) + .cp-dock {
+    padding-left: 32px;
+  }
+  .ss-convo:not([data-docked]) .ss-flow:has(> .ss-tl) > .ss-scroll {
+    padding-right: 32px;
+  }
+  .ss-convo:not([data-docked]) .ss-flow:has(> .ss-tl) + .cp-dock {
+    padding-right: 32px;
+  }
+}
+.ss-flow .ss-thread {
+  gap: var(--sp-4);
+  padding: var(--sp-6) var(--sp-6) var(--sp-2);
+}
+.ss-thread > .ss-turn {
+  gap: var(--sp-4);
+}
+.ss-thread .ss-uc > .ss-user {
+  max-width: 560px;
+  border-radius: var(--r-xl);
+}
+.ss-thread .md :not(pre) > code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--sf2);
+}
+/* An event of the thread on a ruled line. */
+.ss-mark {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.ss-mark::before,
+.ss-mark::after {
+  content: '';
+  flex: 1;
+  min-width: var(--sp-6);
+  height: var(--hair);
+  background: var(--bd);
+}
+.ss-mark > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-mark > span:has(+ .ss-marki) {
+  flex: none;
+}
+.ss-markt {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.tip.ss-rip {
+  max-width: 320px;
+}
+/* Clamped inside the padding, which would otherwise show part of the sixth line. */
+.ss-rip > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ss-hbtn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  stroke-width: 1.75;
+}
+.ss-tool {
+  min-width: 0;
+}
+.ss-tool:has(> .ss-orow) {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+}
+.ss-tool.d1 > .ss-trow {
+  padding-left: 24px;
+}
+.ss-tool.d2 > .ss-trow {
+  padding-left: 40px;
+}
+.ss-tool.d3 > .ss-trow {
+  padding-left: 56px;
+}
+.ss-trow {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr) auto 14px 44px;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.ss-trow:hover {
+  background: var(--sf2);
+}
+.ss-trow:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ss-tchev {
+  display: inline-flex;
+  color: var(--mu);
+  transition: transform var(--dur-1) var(--ease-std);
+}
+.ss-trow[data-panel-open] .ss-tchev {
+  transform: rotate(90deg);
+}
+/* Base UI sets the panel height while it opens or folds; margins, not padding, let it fold to 0. */
+.ss-tio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  transition: height var(--dur-2) var(--ease-std);
+}
+.ss-tio > * {
+  margin: 0 var(--sp-3) 0 32px;
+}
+.ss-tio > :last-child {
+  margin-bottom: var(--sp-3);
+}
+.ss-tio:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+}
+.ss-tio[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.ss-tn {
+  max-width: 240px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-ta {
+  min-width: 0;
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-ts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A call's state, 14px: bars while it runs, a check, a cross or a dash. */
+.ss-tok {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  justify-self: center;
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.ss-tok > svg.lucide {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.5;
+}
+.ss-tok[data-state='ok'] {
+  color: var(--ok);
+}
+.ss-tok[data-state='failed'] {
+  color: var(--bad);
+}
+.ss-tok[data-state='running'] {
+  color: var(--run);
+}
+.ss-tok > .eq {
+  width: 10px;
+  height: 10px;
+}
+.ss-td {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ss-tio pre {
+  align-self: stretch;
+  max-height: 360px;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  white-space: pre;
+  overflow: auto;
+}
+.ss-tio pre.ss-tin {
+  color: var(--tx);
+}
+.ss-tio .ss-tmore {
+  height: 22px;
+  padding: 0 6px;
+  color: var(--tx2);
+}
+.ss-tfiles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+}
+.ss-tfiles > li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ss-tfile {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  text-align: left;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.ss-tfile:hover {
+  color: var(--tx);
+}
+.ss-timgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: var(--sp-1) var(--sp-3) var(--sp-2) 32px;
+}
+.ss-timg {
+  display: inline-flex;
+  padding: 0;
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-md);
+  background: var(--sf2);
+  overflow: hidden;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.ss-timg:hover {
+  border-color: var(--bd3);
+}
+.ss-timg:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.ss-timg > img {
+  display: block;
+  max-width: 160px;
+  max-height: 120px;
+  object-fit: contain;
+  -webkit-user-drag: none;
+}
+.ss-timgdlg {
+  align-items: center;
+  padding: var(--sp-3);
+}
+.ss-timgdlg > img {
+  max-width: 100%;
+  max-height: calc(100vh - 144px);
+  object-fit: contain;
+  -webkit-user-drag: none;
+}
+.ss-art {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-1) var(--sp-3) var(--sp-2) 32px;
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+}
+.ss-art-tx {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.ss-art-tt {
+  overflow: hidden;
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-art-mt {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.ss-orow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto 14px 44px;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+}
+.ss-otg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.ss-otg .ss-tchev {
+  width: 16px;
+}
+.ss-otg[data-panel-open] .ss-tchev {
+  transform: rotate(90deg);
+}
+.ss-oa {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.ss-olist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.ss-olist > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 22px;
+}
+.ss-on {
+  flex: none;
+  color: var(--tx);
+  white-space: nowrap;
+}
+.ss-ox {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A turn Pantheon or the lead wrote spans the thread instead of sitting at the right like the user's. */
+.ss-uh[data-from] {
+  align-self: stretch;
+  max-width: none;
+}
+.ss-uh[data-from] > .ss-uc {
+  flex: 1;
+  align-items: stretch;
+}
+.ss-sys {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--band);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ss-pg {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  fill: none;
+  stroke: var(--mu);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ss-from {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ss-from b {
+  color: var(--tx2);
+  font-weight: 600;
+}
+.ss-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 12px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  background: var(--sf);
+}
+.ss-lead .ss-from b {
+  color: var(--tx);
+}
+.ss-lead .ss-from span {
+  margin-left: auto;
+}
+.ss-lead p {
+  margin: 0;
+  color: var(--tx);
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.tchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 22px;
+  padding: 0 6px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+button.tchip {
+  font-family: inherit;
+}
+button.tchip:hover {
+  border-color: var(--bd2);
+}
+/* A run of calls in one box, a row each. */
+.ss-tgroup {
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  overflow: clip;
+}
+.ss-tgroup .ss-tool + .ss-tool,
+.ss-tgroup > .ss-trow + .ss-tlist > .ss-tool:first-child {
+  border-top: var(--hair) solid var(--bd2);
+}
+.ss-tgroup .ss-trow {
+  border-radius: 0;
+}
+.ss-tgroup > .ss-trow {
+  grid-template-columns: 16px minmax(0, 1fr) auto 14px 44px;
+}
+.ss-tgl {
+  color: var(--tx2);
+}
+.ss-tlist {
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  transition: height var(--dur-2) var(--ease-std);
+}
+.ss-tlist:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+}
+.ss-twork {
+  min-width: 0;
+}
+.ss-twork > .ss-trow {
+  grid-template-columns: 16px minmax(0, 1fr) auto 14px 44px;
+}
+.ss-twl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ss-tws {
+  flex: none;
+  color: var(--tx);
+}
+.ss-twl > .ss-tgl {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-twp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 4px 0 0 13px;
+  padding-left: 8px;
+  border-left: var(--hair) solid var(--bd);
+}
+.ss-tlist[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.ss-rsn {
+  min-width: 0;
+}
+.ss-rsn > .ss-trow {
+  grid-template-columns: 16px 14px minmax(0, 1fr);
+}
+.ss-rsn svg {
+  color: var(--mu);
+}
+.ss-rsl {
+  min-width: 0;
+  color: var(--tx2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-rsp {
+  margin: 2px 0 2px 13px;
+  padding-left: 8px;
+  border-left: var(--hair) solid var(--bd);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  transition: height var(--dur-2) var(--ease-std);
+}
+.ss-rsp:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+}
+.ss-rsp[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.ss-plan {
+  max-height: 360px;
+  overflow-y: auto;
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.ss-resolved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.ss-resolved .ok {
+  color: var(--ok);
+}
+.ss-resolved .bad {
+  color: var(--bad);
+}
+.ss-resolved .ss-ta {
+  flex: 0 1 auto;
+}
+.ss-ra {
+  flex: none;
+  max-width: 50%;
+  color: var(--mu);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-trace {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.ss-trt {
+  width: 100%;
+  border-collapse: collapse;
+  border-top: var(--hair) solid var(--bd);
+  font-variant-numeric: tabular-nums;
+}
+.ss-trt th,
+.ss-trt td {
+  height: 26px;
+  padding: 0 10px;
+  text-align: right;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.ss-trt th:first-child,
+.ss-trt td:first-child {
+  text-align: left;
+}
+.ss-trt thead th {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.ss-trt tbody tr {
+  border-top: var(--hair) solid var(--bd2);
+}
+.ss-trt tfoot tr {
+  border-top: var(--hair) solid var(--bd);
+}
+.ss-trt tfoot th,
+.ss-trt tfoot td {
+  font-weight: 600;
+  color: var(--tx);
+}
+/* Shown while the pointer is over the message or focus is inside the row. */
+.ss-macts {
+  display: flex;
+  align-items: center;
+  align-self: flex-end;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.ss-uh:hover .ss-macts,
+.ss-macts:focus-within,
+.ss-macts:has([data-popup-open]),
+.ss-turn:hover:not(:has(.ss-uh:hover)) > .ss-racts {
+  opacity: 1;
+  transition-duration: var(--dur-2);
+  transition-timing-function: var(--ease-in);
+}
+.ss-racts {
+  align-self: flex-start;
+  margin-top: -8px;
+}
+.ss-ab {
+  width: 24px;
+  height: 24px;
+}
+.ss-ab svg {
+  width: 14px;
+  height: 14px;
+}
+.ss-ab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ss-fkta {
+  margin: 8px 20px 0;
+  padding: 8px 10px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  resize: vertical;
+}
+.ss-fkta:focus {
+  border-color: var(--ink);
+  outline: 2px solid var(--focus-ring);
+}
+.ss-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: calc(var(--sp-2) - var(--sp-4));
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.ss-who b {
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.ss-who > svg.lucide.lead-crown {
+  margin-left: 0;
+}
+.ss-whot {
+  font-variant-numeric: tabular-nums;
+}
+.ss-fan {
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  overflow: clip;
+}
+.ss-fanh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+}
+.ss-fant {
+  font-weight: 500;
+}
+.ss-fanm {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.ss-fanc {
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ss-fanr {
+  min-width: 0;
+  border-top: var(--hair) solid var(--bd2);
+}
+.ss-fanrow {
+  display: grid;
+  grid-template-columns: 16px 16px 72px minmax(0, 1fr) 14px 40px;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.ss-fanrow:hover {
+  background: var(--sf2);
+}
+.ss-fanrow:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ss-fanrow > svg.lucide.agt {
+  width: 16px;
+  height: 16px;
+}
+.ss-fann {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-fand {
+  min-width: 0;
+  color: var(--mu);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* What passed between the agents; margins, not padding, let the panel fold to 0. */
+.ss-fanp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border-top: var(--hair) solid var(--bd2);
+  background: var(--sf2);
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  transition: height var(--dur-2) var(--ease-std);
+}
+.ss-fanp > :first-child {
+  margin-top: var(--sp-2);
+}
+.ss-fanp > :last-child {
+  margin-bottom: var(--sp-3);
+}
+.ss-fanp:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+}
+.ss-fanp[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.ss-a2a {
+  display: flex;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+/* The tree line from the agent's row to each message under it. */
+.ss-a2l {
+  position: relative;
+  flex: none;
+  align-self: stretch;
+  width: 14px;
+}
+.ss-a2l::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: -4px;
+  width: 8px;
+  height: 14px;
+  border: solid var(--bd3);
+  border-width: 0 0 1px 1px;
+  border-bottom-left-radius: 6px;
+}
+.ss-a2l[data-more]::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: calc(-1 * var(--sp-2));
+  border-left: var(--hair) solid var(--bd3);
+}
+.ss-a2ac {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex: 1;
+  min-width: 0;
+}
+.ss-a2aw {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.ss-a2aw > svg.lucide {
+  width: 12px;
+  height: 12px;
+}
+.ss-a2at {
+  font-variant-numeric: tabular-nums;
+}
+.ss-a2ax {
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agt {
+  color: var(--tx2);
+}
+.agt-ltr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: var(--hair) solid var(--bd);
+  border-radius: 4px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1;
+}
+.ss-stl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+}
+.ss-stl > svg {
+  color: var(--run);
+}
+.ss-stg {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--run);
+}
+.ss-stg[data-kind='waiting'] {
+  background: var(--wait);
+}
+.ss-stg[data-kind='queued'] {
+  border: 1.5px solid var(--mu);
+  background: transparent;
+}
+.ss-nb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px var(--sp-1) 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.ss-nbd {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.ss-nbd[data-tone='bad'] {
+  background: var(--bad);
+}
+/* Stopped by the user: a hollow ring in the box of a state glyph. */
+.ss-nbd[data-tone='idle'] {
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border: 1.5px solid var(--idle);
+  background: none;
+}
+.ss-nbt {
+  margin-left: auto;
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.ss-nbx {
+  min-width: 0;
+  color: var(--mu);
+  overflow-wrap: anywhere;
+}
+.ss-nbb {
+  margin-left: auto;
+}
+.ss-find {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 40px;
+  padding: 0 10px 0 16px;
+  border-bottom: var(--hair) solid var(--bd);
+  color: var(--mu);
+}
+.ss-findi {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+.ss-findn {
+  flex: none;
+  padding: 0 6px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ss-find .ib:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+::highlight(ss-find) {
+  background-color: var(--sel);
+}
+::highlight(ss-find-now) {
+  background-color: var(--sel);
+  color: var(--tx);
+  text-decoration: underline 2px var(--ink);
+  text-underline-offset: 3px;
+}

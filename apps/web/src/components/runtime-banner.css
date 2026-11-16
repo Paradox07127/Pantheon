@@ -1,0 +1,73 @@
+/* Over the top of the main area, so a banner covers content instead of moving it */
+.rb {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-3);
+  left: var(--sp-3);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+.rb-in {
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  transition:
+    height var(--dur-2) var(--ease-in),
+    opacity var(--dur-2) var(--ease-in);
+}
+.rb-in[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.rb-in:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+  opacity: 0;
+}
+@starting-style {
+  .rb-in {
+    height: 0;
+    opacity: 0;
+  }
+}
+.rb-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+}
+.rb-text {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  user-select: text;
+}
+.rb-name {
+  font-weight: 500;
+}
+.rb-held {
+  overflow: hidden;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rb-err {
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+}
+.rb-row > .btn {
+  flex: none;
+}
+
+/* The banner shows at once with a fade; its height does not grow. */
+.pt[data-motion='reduced'] .rb-in {
+  transition: opacity var(--dur-2) var(--ease-in);
+}

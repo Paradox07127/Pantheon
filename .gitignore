@@ -1,0 +1,17 @@
+node_modules/
+**/dist/
+*.tsbuildinfo
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store
+
+apps/desktop/.dev/
+apps/desktop/out/
+apps/desktop/release/
+apps/desktop/stage/
+
+# Default outputs of scripts/eval.mjs, scripts/acceptance.mjs and the probes
+.eval-work/
+.notes/

@@ -1,0 +1,16 @@
+{
+  "memory.graph.kind.decision": "决定",
+  "memory.graph.kind.report": "报告",
+  "memory.graph.kind.note": "笔记",
+  "memory.graph.kind.file": "文件来源",
+  "memory.graph.kind.url": "网址来源",
+  "memory.graph.kind.session": "会话来源",
+  "memory.graph.kind.tag": "标签",
+  "memory.graph.state.active": "当前",
+  "memory.graph.state.draft": "待确认",
+  "memory.graph.state.archived": "已归档",
+  "memory.graph.attachment": "{kind}：{title}",
+  "memory.graph.node": "{kind}：{title}，{state}",
+  "memory.graph.label": "知识图谱",
+  "memory.graph.noTask": "不属于任务"
+}

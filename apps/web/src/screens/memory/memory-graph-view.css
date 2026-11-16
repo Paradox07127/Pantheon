@@ -1,0 +1,98 @@
+/* Memory graph tab: the drawing fills the page, the details column sits beside it while a memory is selected */
+.mgv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--sf);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.mgv[data-detail] {
+  grid-template-columns: minmax(0, 1fr) 400px;
+}
+.mgv-main {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Top bar */
+.mgv-find {
+  width: 200px;
+  box-sizing: border-box;
+}
+.mgv-find svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.mgv-find input::-webkit-search-cancel-button {
+  display: none;
+}
+.mgv-hits {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+.mgv-kinds svg {
+  width: 14px;
+  height: 14px;
+}
+.mgv-kinds[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.mgv-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+:is(.mgv-find, .mgv-tags)[data-off],
+.mgv-depth[data-disabled] {
+  opacity: 0.45;
+}
+.mgv-depth[data-disabled] [role='radio'] {
+  cursor: not-allowed;
+}
+.mgv-depth[data-disabled] [role='radio']:hover {
+  color: var(--mu);
+}
+
+/* Empty, reading and failed states, in the middle of the drawing's place */
+.mgv-fail,
+.mgv-load {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  text-align: center;
+  background-image: radial-gradient(var(--bd) 0.8px, transparent 0.8px);
+  background-size: 16px 16px;
+}
+.mgv-fail-t {
+  font-weight: 500;
+  text-wrap: balance;
+}
+.mgv-err {
+  max-width: 480px;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  user-select: text;
+}
+.mgv-sk {
+  height: 32px;
+}

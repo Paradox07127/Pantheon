@@ -1,0 +1,817 @@
+import { expect, it, vi } from 'vitest';
+import { workbenchFixture } from './workbench-fixture.js';
+import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
+
+it('replaces decisions atomically, hides archived ids and dependent reports, and restores only as a proposal', () => {
+  const f = workbenchFixture();
+  const propose = (key: string, text: string, dependencies: string[] = []) =>
+    f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key,
+      text,
+      kind: dependencies.length ? 'report' : 'decision',
+      dependencies,
+    });
+  const commit = (r: any) => f.call<any>('memory.commit', { memory_id: r.id }, r.revision);
+  const a = commit(propose('database', 'Use old-engine-unique'));
+  const report = commit(propose('analysis', 'Analysis depends on the old engine', [a.id]));
+  const b = commit(propose('database', 'Use SQLite'));
+  expect(
+    f.call<any>('memory.search', { project_id: f.project.id, q: 'old-engine-unique' }).items,
+  ).toEqual([]);
+  expect(() => f.call('memory.get', { memory_id: a.id })).toThrow();
+  expect(() => f.call('memory.get', { memory_id: report.id })).toThrow();
+  expect(f.call<any>('memory.get', { memory_id: b.id }).text).toBe('Use SQLite');
+  const restored = f.call<any>(
+    'memory.restore',
+    { memory_id: a.id },
+    f.store.must<any>('memory_records', a.id).revision,
+  );
+  expect(restored.state).toBe('draft');
+  expect(
+    f.call<any>('memory.context', { project_id: f.project.id }).items.map((x: any) => x.text),
+  ).toEqual(['Use SQLite']);
+});
+
+it('delivers current scoped memory to the actual adapter on every send', async () => {
+  const f = workbenchFixture({ delay: 10 });
+  const send = vi.spyOn(f.adapter, 'send');
+  const draft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'language',
+    kind: 'decision',
+    text: 'Use precise terminology',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  const session = f.create();
+  await f.control.tick();
+  await eventually(
+    () => send.mock.calls.length > 0,
+    () => f.control.tick(),
+  );
+  expect(JSON.stringify(send.mock.calls)).toContain('Use precise terminology');
+  expect(JSON.stringify(send.mock.calls)).toContain('memory_context');
+  await eventually(
+    () => !!f.store.must<any>('sessions', session.id).memory_delivery?.delivered_signature,
+  );
+});
+
+it('never replays a cached current-read receipt after a decision is replaced', async () => {
+  const { command } = await import('@pantheon/protocol');
+  const f = workbenchFixture();
+  const draft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'db',
+    kind: 'decision',
+    text: 'old cached text',
+  });
+  const active = f.call<any>('memory.commit', { memory_id: draft.id }, draft.revision);
+  const read = command(user.id, 'memory.get', { memory_id: active.id });
+  expect((f.control.execute(user, read) as any).text).toContain('old cached');
+  f.call('memory.archive', { memory_id: active.id }, active.revision);
+  expect(() => f.control.execute(user, read)).toThrow();
+});
+
+it('rejects stale proposals and concurrent commits without overwriting the current choice', () => {
+  const f = workbenchFixture();
+  const propose = (text: string) =>
+    f.call<any>('memory.propose', { project_id: f.project.id, key: 'db', kind: 'decision', text });
+  const a = propose('first'),
+    b = propose('second');
+  f.call('memory.commit', { memory_id: a.id }, a.revision);
+  expect(() => f.call('memory.commit', { memory_id: b.id }, b.revision)).toThrowError(
+    expect.objectContaining({ code: 'revision_conflict' }),
+  );
+  expect(
+    f.call<any>('memory.context', { project_id: f.project.id }).items.map((r: any) => r.text),
+  ).toEqual(['first']);
+});
+
+it('expires memory at read time without relying on a scheduler and retains immutable history', async () => {
+  const { fixture } = await import('../helpers.js');
+  let now = 1000;
+  const f = fixture({ now: () => now });
+  try {
+    const r = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key: 'temporary',
+      kind: 'note',
+      text: 'temporary-unique',
+      expires_at: 2000,
+    });
+    f.call('memory.commit', { memory_id: r.id }, r.revision);
+    now = 2001;
+    expect(
+      f.call<any>('memory.search', { project_id: f.project.id, q: 'temporary-unique' }).items,
+    ).toEqual([]);
+    expect(() => f.call('memory.get', { memory_id: r.id })).toThrow();
+    expect(f.control.memoryRead(user, f.project.id).records).toEqual([]);
+    expect(() =>
+      f.control.memoryGraph(user, { project_id: f.project.id, memory_id: r.id }),
+    ).toThrow();
+    expect(() => f.call('memory.related', { project_id: f.project.id, memory_id: r.id })).toThrow();
+    expect(f.control.memoryRead(user, f.project.id, { state: 'archived' }).records[0]?.reason).toBe(
+      'expired',
+    );
+    await f.control.tick();
+    expect(f.store.must<any>('memory_records', r.id).reason).toBe('expired');
+    expect(f.call<any>('memory.history', { project_id: f.project.id }).items[0].text).toBe(
+      'temporary-unique',
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+it('keeps proposals untrusted, excludes them from context, and prevents cross-project or task reads', () => {
+  const f = workbenchFixture();
+  const s = f.create();
+  const p = {
+    id: 'agent',
+    role: 'lead' as const,
+    session_id: s.id,
+    project_id: f.project.id,
+    expires_at: Date.now() + 60000,
+  };
+  const context = f.call<any>('memory.context', { project_id: f.project.id }, null, p);
+  const r = f.call<any>(
+    'memory.propose',
+    {
+      project_id: f.project.id,
+      key: 'tests',
+      kind: 'report',
+      text: 'All tests passed (an unverified claim)',
+      based_on: context.signature,
+    },
+    null,
+    p,
+  );
+  expect(r.authority).toBe('agent_reported');
+  expect(f.call<any>('memory.context', { project_id: f.project.id }).items).toEqual([]);
+  expect(() => f.call('memory.commit', { memory_id: r.id }, r.revision, p)).toThrow();
+  expect(() => f.call('memory.history', { project_id: f.project.id }, null, p)).toThrow();
+  expect(() => f.call('memory.context', { project_id: 'other-project' }, null, p)).toThrow();
+  const active = f.call<any>('memory.commit', { memory_id: r.id }, r.revision);
+  expect(active.authority).toBe('agent_reported');
+});
+
+it('maintains current documents, rejects late jobs, and does not advance the source epoch when publishing', async () => {
+  const f = workbenchFixture();
+  const save = (text: string) => {
+    const r = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key: 'db',
+      kind: 'decision',
+      text,
+    });
+    return f.call<any>('memory.commit', { memory_id: r.id }, r.revision);
+  };
+  save('old choice');
+  let replaced = false;
+  const failpoint = vi
+    .spyOn((f.control as any).ctx, 'failpoint')
+    .mockImplementation((name: unknown) => {
+      if (name === 'memory_before_publish' && !replaced) {
+        replaced = true;
+        save('new choice');
+      }
+    });
+  await f.control.tick();
+  expect(f.store.list<any>('memory_jobs').some((j) => j.state === 'obsolete')).toBe(true);
+  failpoint.mockRestore();
+  await f.control.tick();
+  const read = f.control.memoryRead(user, f.project.id);
+  expect(f.control.memoryDocument(user, f.project.id).text).toContain('new choice');
+  expect(f.control.memoryDocument(user, f.project.id).text).not.toContain('old choice');
+  const epoch = read.epoch,
+    jobs = f.store.list('memory_jobs').length;
+  await f.control.tick();
+  expect(f.control.memoryRead(user, f.project.id).epoch).toBe(epoch);
+  expect(f.store.list('memory_jobs')).toHaveLength(jobs);
+});
+
+it('does not mistake a delayed delivery receipt for acknowledgement of a newer decision', async () => {
+  const f = workbenchFixture({ delay: 10 });
+  const save = (text: string) => {
+    const r = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key: 'db',
+      kind: 'decision',
+      text,
+    });
+    return f.call<any>('memory.commit', { memory_id: r.id }, r.revision);
+  };
+  save('first');
+  const actual = f.adapter.send.bind(f.adapter);
+  vi.spyOn(f.adapter, 'send').mockImplementation(async (handle, input) => {
+    save('changed during send');
+    return actual(handle, input);
+  });
+  const s = f.create();
+  await eventually(
+    () => !!f.store.must<any>('sessions', s.id).memory_delivery?.delivered_signature,
+    () => f.control.tick(),
+  );
+  const read = f.control.memoryRead(user, f.project.id);
+  expect(read.sessions.find((x) => x.id === s.id)?.delivered).toBe(false);
+});
+
+it('keeps task exceptions separate and expires them when the contract generation changes', () => {
+  const f = workbenchFixture();
+  const lead = f.create();
+  f.store.insert('board_plans', {
+    id: lead.id,
+    revision: 1,
+    project_id: f.project.id,
+    tasks: [
+      {
+        id: 'worker',
+        title: 'Task',
+        goal: 'Build',
+        lane: 'main',
+        depends_on: [],
+        source: [],
+        scope: [],
+        acceptance: [],
+      },
+    ],
+    generations: { worker: { generation: 1, contract: 'first' } },
+    lanes: [],
+    plan_version: 1,
+    headline: '',
+    pending_edits: [],
+    risks: [],
+    assumptions: [],
+    inbox: [],
+    notified: {},
+    updated_at: Date.now(),
+  } as any);
+  const save = (text: string, task?: unknown) => {
+    const r = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key: 'style',
+      kind: 'decision',
+      text,
+      task,
+    });
+    return f.call<any>('memory.commit', { memory_id: r.id }, r.revision);
+  };
+  const global = save('project rule');
+  const local = save('task exception', { lead_session_id: lead.id, id: 'worker', generation: 1 });
+  expect(f.call<any>('memory.get', { memory_id: global.id }).text).toBe('project rule');
+  const p = {
+    id: 'lead',
+    role: 'lead' as const,
+    session_id: lead.id,
+    project_id: f.project.id,
+    expires_at: Date.now() + 60000,
+  };
+  expect(() => f.call('memory.get', { memory_id: local.id }, null, p)).toThrow();
+  const plan = f.store.must<any>('board_plans', lead.id);
+  f.store.update(
+    'board_plans',
+    { ...plan, generations: { worker: { generation: 2, contract: 'second' } } },
+    plan.revision,
+  );
+  expect(() => f.call('memory.get', { memory_id: local.id })).toThrow();
+  expect(
+    f.control.memoryRead(user, f.project.id, { task_id: 'worker', lead_session_id: lead.id })
+      .records,
+  ).toEqual([]);
+  expect(() =>
+    f.call('memory.related', { project_id: f.project.id, memory_id: local.id }),
+  ).toThrow();
+  expect(f.call<any>('memory.get', { memory_id: global.id }).text).toBe('project rule');
+});
+
+it('scopes task memory by lead, task and generation, not by the worker session details', async () => {
+  const f = workbenchFixture();
+  const lead = f.create('Plan the export');
+  await awaitWorkspaceReady(f.control, lead.workspace_id!);
+  const as = (session: string, role: 'lead' | 'worker') => ({
+    id: `session:${session}`,
+    role,
+    project_id: f.project.id,
+    session_id: session,
+    expires_at: f.store.now() + 60000,
+  });
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export works',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [
+        {
+          id: 'export',
+          title: 'Export',
+          goal: 'Export rows',
+          lane: 'core',
+          depends_on: [],
+          source: ['Plan the export'],
+          scope: ['src/export'],
+          acceptance: ['true'],
+        },
+      ],
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    as(lead.id, 'lead'),
+  );
+  const worker = f.call<any>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    task_id: `${lead.id}:export`,
+    input: 'Build export',
+  });
+  expect(worker.task).toHaveProperty('definition_version');
+  const w = as(worker.id, 'worker');
+  const propose = (key: string, text: string, task?: unknown, p?: typeof w) =>
+    f.call<any>(
+      'memory.propose',
+      {
+        project_id: f.project.id,
+        key,
+        kind: 'note',
+        text,
+        task,
+        based_on:
+          p && f.call<any>('memory.context', { project_id: f.project.id }, null, p).signature,
+      },
+      null,
+      p,
+    );
+  const scope = { lead_session_id: lead.id, id: 'export', generation: 1 };
+  const first = propose('k', 'worker note', undefined, w);
+  expect(first.task).toEqual(scope);
+  f.call('memory.commit', { memory_id: first.id }, first.revision);
+  expect(propose('own', 'named own scope', scope, w).task).toEqual(scope);
+  const second = propose('k', 'user note', scope);
+  f.call('memory.commit', { memory_id: second.id }, second.revision);
+  expect(f.store.must<any>('memory_records', first.id)).toMatchObject({
+    state: 'archived',
+    reason: 'superseded',
+    superseded_by: second.id,
+  });
+});
+
+it('reads improvement status directly and excludes reverted experience immediately', () => {
+  const f = workbenchFixture();
+  const r = f.store.insert('improvements', {
+    id: 'experience',
+    revision: 1,
+    project_id: f.project.id,
+    retrospective_ids: [],
+    status: 'trial',
+    change: { type: 'experience', procedure: 'Check observable outcomes' },
+    proposed_at: Date.now(),
+  } as any);
+  expect(f.call<any>('memory.context', { project_id: f.project.id }).experiences[0].status).toBe(
+    'trial',
+  );
+  f.store.update('improvements', { ...r, status: 'reverted' }, r.revision);
+  expect(f.call<any>('memory.context', { project_id: f.project.id }).experiences).toEqual([]);
+});
+
+it('rolls back an interrupted commit and reclaims an abandoned maintenance lease after restart', async () => {
+  const f = workbenchFixture();
+  const r = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'db',
+    kind: 'decision',
+    text: 'durable choice',
+  });
+  const failpoint = vi.spyOn(f.control, 'failpoint').mockImplementation((name) => {
+    if (name === 'before_transaction_commit') throw new Error('simulated crash');
+  });
+  expect(() => f.call('memory.commit', { memory_id: r.id }, r.revision)).toThrow('simulated crash');
+  expect(f.store.must<any>('memory_records', r.id).state).toBe('draft');
+  expect(f.store.list('memory_jobs')).toEqual([]);
+  failpoint.mockRestore();
+  f.call('memory.commit', { memory_id: r.id }, r.revision);
+  const job = f.store.list<any>('memory_jobs')[0];
+  f.store.update(
+    'memory_jobs',
+    { ...job, state: 'running', lease_until: Date.now() - 1 },
+    job.revision,
+  );
+  await f.restart();
+  await f.control.tick();
+  expect(f.control.memoryDocument(user, f.project.id).text).toContain('durable choice');
+});
+
+it('blocks stale control-plane acceptance until the agent reads the current context', () => {
+  const f = workbenchFixture();
+  const s = f.create();
+  const p = {
+    id: 'lead',
+    role: 'lead' as const,
+    session_id: s.id,
+    project_id: f.project.id,
+    expires_at: Date.now() + 60000,
+  };
+  const r = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'approval',
+    kind: 'decision',
+    text: 'Check the latest evidence',
+  });
+  f.call('memory.commit', { memory_id: r.id }, r.revision);
+  expect(() =>
+    f.call(
+      'task.accept',
+      { project_id: f.project.id, task_id: 'not-started', evidence: 'claim' },
+      null,
+      p,
+    ),
+  ).toThrowError(expect.objectContaining({ code: 'memory_refresh_required' }));
+  f.call('memory.context', { project_id: f.project.id }, null, p);
+  try {
+    f.call(
+      'task.accept',
+      { project_id: f.project.id, task_id: 'not-started', evidence: 'claim' },
+      null,
+      p,
+    );
+  } catch (e) {
+    expect((e as any).code).not.toBe('memory_refresh_required');
+  }
+});
+
+it('rejects a decision commit over budget with the largest records and rolls back replacements', () => {
+  const f = workbenchFixture();
+  const save = (key: string, text: string, kind = 'decision') => {
+    const draft = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key,
+      title: key,
+      kind,
+      text,
+    });
+    return f.call<any>('memory.commit', { memory_id: draft.id }, draft.revision);
+  };
+  save('optional-evidence', 'Large optional evidence '.repeat(700), 'note');
+  const decisions = Array.from({ length: 6 }, (_, index) =>
+    save('rule-' + index, 'Confirmed rule '.repeat(30 + index)),
+  );
+  const draft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: decisions[0].key,
+    title: 'Large replacement',
+    kind: 'decision',
+    text: '多字节 "rule"\n'.repeat(600),
+  });
+  const candidate = {
+    ...draft,
+    revision: draft.revision + 1,
+    state: 'active',
+    committed_at: f.store.now(),
+  };
+  vi.spyOn(f.store, 'now').mockReturnValue(candidate.committed_at);
+  const counted = [...decisions.slice(1), candidate].map((record) => ({
+    id: record.id,
+    title: record.title,
+    bytes: Buffer.byteLength(JSON.stringify(record)),
+  }));
+  const before = f.control.memoryRead(user, f.project.id);
+  const events = f.store.events(0, f.project.id);
+  expect(() => f.call('memory.commit', { memory_id: draft.id }, draft.revision)).toThrowError(
+    expect.objectContaining({
+      code: 'memory_budget_exceeded',
+      details: {
+        used_bytes: counted.reduce((sum, record) => sum + record.bytes, 0),
+        limit_bytes: 12000,
+        largest_records: counted.sort((a, b) => b.bytes - a.bytes).slice(0, 5),
+      },
+    }),
+  );
+  expect(f.store.must<any>('memory_records', draft.id).state).toBe('draft');
+  expect(f.store.must<any>('memory_records', decisions[0].id).state).toBe('active');
+  expect(f.control.memoryRead(user, f.project.id).signature).toBe(before.signature);
+  expect(f.store.events(0, f.project.id)).toEqual(events);
+});
+
+it('commits decisions within budget and measures replacements without their superseded versions', () => {
+  const f = workbenchFixture();
+  for (const text of ['Original '.repeat(700), 'Replacement '.repeat(700)]) {
+    const draft = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key: 'rule',
+      kind: 'decision',
+      text,
+    });
+    const committed = f.call<any>('memory.commit', { memory_id: draft.id }, draft.revision);
+    const context = f.call<any>('memory.context', { project_id: f.project.id });
+    expect(context.items).toEqual([committed]);
+    expect(context.bytes).toBe(Buffer.byteLength(JSON.stringify(committed)));
+    expect(context.bytes).toBeLessThanOrEqual(12000);
+  }
+});
+
+it('bounds maintenance retries and supports an explicit local retry without model calls', async () => {
+  const { fixture } = await import('../helpers.js');
+  let now = 1000,
+    fail = true;
+  const f = fixture({
+    now: () => now,
+    failpoint: (name) => {
+      if (fail && name === 'memory_before_projection') throw new Error('storage unavailable');
+    },
+  });
+  try {
+    const r = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key: 'rule',
+      kind: 'decision',
+      text: 'Keep evidence',
+    });
+    f.call('memory.commit', { memory_id: r.id }, r.revision);
+    for (let i = 0; i < 4; i++) {
+      await f.control.tick();
+      now += 20000;
+    }
+    expect(f.store.list<any>('memory_jobs')).toMatchObject([{ state: 'failed', attempts: 3 }]);
+    fail = false;
+    f.call('memory.maintain', { project_id: f.project.id });
+    await f.control.tick();
+    expect(f.control.memoryDocument(user, f.project.id).text).toContain('Keep evidence');
+  } finally {
+    await f.close();
+  }
+});
+
+it('rejects a replacement that would archive its own dependency', () => {
+  const f = workbenchFixture();
+  const a = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'report',
+    kind: 'report',
+    text: 'Original analysis',
+  });
+  f.call('memory.commit', { memory_id: a.id }, a.revision);
+  const b = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'report',
+    kind: 'report',
+    text: 'Updated analysis',
+    dependencies: [a.id],
+  });
+  expect(() => f.call('memory.commit', { memory_id: b.id }, b.revision)).toThrowError(
+    expect.objectContaining({ code: 'invalid_input' }),
+  );
+  expect(f.call<any>('memory.get', { memory_id: a.id }).text).toBe('Original analysis');
+});
+
+it('bounds multilingual search excerpts and preserves the complete current body for targeted get', () => {
+  const f = workbenchFixture();
+  const text = '需要复查的研究报告'.repeat(500);
+  const r = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'research',
+    kind: 'report',
+    text,
+  });
+  f.call('memory.commit', { memory_id: r.id }, r.revision);
+  const result = f.call<any>('memory.search', { project_id: f.project.id, q: '研究报告' });
+  expect(result.items[0]).not.toHaveProperty('text');
+  expect(Buffer.byteLength(result.items[0].summary)).toBeLessThanOrEqual(1200);
+  expect(result.items[0].summary).not.toContain('�');
+  expect(f.call<any>('memory.get', { memory_id: r.id }).text).toBe(text);
+});
+
+it('never replaces a decision by confirming a report with the same key and does not invalidate context when rejecting a draft', () => {
+  const f = workbenchFixture();
+  const a = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'database',
+    kind: 'decision',
+    text: 'Use SQLite',
+  });
+  f.call('memory.commit', { memory_id: a.id }, a.revision);
+  const b = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'database',
+    kind: 'report',
+    text: 'A report claiming a different choice',
+  });
+  const before = f.call<any>('memory.context', { project_id: f.project.id });
+  expect(() => f.call('memory.commit', { memory_id: b.id }, b.revision)).toThrowError(
+    expect.objectContaining({ code: 'invalid_input' }),
+  );
+  f.call('memory.archive', { memory_id: b.id }, b.revision);
+  expect(f.call<any>('memory.context', { project_id: f.project.id }).signature).toBe(
+    before.signature,
+  );
+  expect(f.call<any>('memory.get', { memory_id: a.id }).text).toBe('Use SQLite');
+});
+
+it('delivers an empty replacement packet when the last improvement experience is revoked', async () => {
+  const f = workbenchFixture({ delay: 10 });
+  const send = vi.spyOn(f.adapter, 'send');
+  f.store.insert('improvements', {
+    id: 'learned-procedure',
+    revision: 1,
+    project_id: f.project.id,
+    retrospective_ids: [],
+    status: 'active',
+    change: { type: 'experience', procedure: 'Distinct revoked procedure' },
+    proposed_at: Date.now(),
+  } as any);
+  const session = f.create();
+  await eventually(
+    () =>
+      f.store.must<any>('sessions', session.id).state === 'open' && send.mock.calls.length === 1,
+    () => f.control.tick(),
+  );
+  expect(send.mock.calls[0]![1].input).toContain('Distinct revoked procedure');
+  const experience = f.store.must<any>('improvements', 'learned-procedure');
+  f.store.update('improvements', { ...experience, status: 'reverted' }, experience.revision);
+  f.call(
+    'session.send',
+    { session_id: session.id, input: 'Continue after the change' },
+    f.store.must<any>('sessions', session.id).revision,
+  );
+  await eventually(
+    () => send.mock.calls.length === 2,
+    () => f.control.tick(),
+  );
+  const next = send.mock.calls[1]![1].input;
+  expect(next).toContain('[Pantheon current project memory]');
+  expect(next).toContain('"experiences":[]');
+  expect(next).not.toContain('Distinct revoked procedure');
+});
+
+it('exposes delivery capability, stale packages and the records delivered for a turn', async () => {
+  const f = workbenchFixture({ delay: 10 });
+  const draft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'delivery-note',
+    kind: 'note',
+    title: 'Delivered note',
+    text: 'Delivered evidence',
+  });
+  const active = f.call<any>('memory.commit', { memory_id: draft.id }, draft.revision);
+  const s = f.create();
+  expect(
+    f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === s.id),
+  ).toMatchObject({
+    memory_tool: true,
+    stale: false,
+    delivered: false,
+  });
+  await eventually(
+    () => !!f.store.must<any>('sessions', s.id).memory_delivery?.delivered_signature,
+    () => f.control.tick(),
+  );
+  const delivery = f.store.must<any>('sessions', s.id).memory_delivery;
+  expect(
+    f.store.events(0, f.project.id).find((e) => e.kind === 'memory.delivered')?.payload,
+  ).toMatchObject({
+    memory_ids: [active.id],
+  });
+  expect((f.control as any).memoryTurn(user, s.id, delivery.turn_id).items).toEqual([
+    {
+      id: active.id,
+      key: 'delivery-note',
+      title: 'Delivered note',
+      kind: 'note',
+      state: 'active',
+      version: 1,
+    },
+  ]);
+  expect(
+    f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === s.id),
+  ).toMatchObject({
+    memory_tool: true,
+    stale: false,
+    delivered: true,
+  });
+  f.call('memory.archive', { memory_id: active.id }, active.revision);
+  expect(
+    f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === s.id),
+  ).toMatchObject({
+    memory_tool: true,
+    stale: true,
+    delivered: false,
+  });
+  expect((f.control as any).memoryTurn(user, s.id, delivery.turn_id).items[0].state).toBe(
+    'archived',
+  );
+  f.store.event('memory.delivered', s, f.project.id, {
+    turn_id: 'legacy-turn',
+    signature: 'legacy',
+  });
+  expect((f.control as any).memoryTurn(user, s.id, 'legacy-turn').items).toEqual([]);
+  expect((f.control as any).memoryTurn(user, s.id, 'undelivered-turn').items).toEqual([]);
+  const fresh = f.store.must<any>('sessions', s.id);
+  f.store.update('sessions', { ...fresh, runtime_review: {} }, fresh.revision);
+  expect(
+    f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === s.id)?.memory_tool,
+  ).toBe(false);
+});
+
+it('reads memory counts for a session in turn order using the latest delivery of each turn', () => {
+  const f = workbenchFixture();
+  const draft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'delivered-note',
+    kind: 'note',
+    text: 'Delivered evidence',
+  });
+  const active = f.call<any>('memory.commit', { memory_id: draft.id }, draft.revision);
+  const otherDraft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'other-note',
+    kind: 'note',
+    text: 'Other evidence',
+  });
+  const other = f.call<any>('memory.commit', { memory_id: otherDraft.id }, otherDraft.revision);
+  const session = f.create();
+  const otherSession = f.create();
+  expect(f.control.memorySessionTurns(user, session.id)).toEqual({ turns: [] });
+  f.store.event('memory.delivered', session, f.project.id, {
+    turn_id: 'first-turn',
+    memory_ids: [active.id],
+  });
+  f.store.event('memory.delivered', session, f.project.id, {
+    turn_id: 'empty-turn',
+    memory_ids: [],
+  });
+  f.store.event('memory.delivered', session, f.project.id, {
+    turn_id: 'last-turn',
+    memory_ids: [other.id],
+  });
+  f.store.event('memory.delivered', session, f.project.id, {
+    turn_id: 'first-turn',
+    memory_ids: [active.id, other.id],
+  });
+  f.store.event('memory.delivered', session, f.project.id, { turn_id: 'legacy-turn' });
+  f.store.event('memory.delivered', otherSession, f.project.id, {
+    turn_id: 'other-session-turn',
+    memory_ids: [active.id],
+  });
+  const result = f.control.memorySessionTurns(user, session.id);
+  expect(result).toEqual({
+    turns: [
+      { turn_id: 'first-turn', count: 2 },
+      { turn_id: 'last-turn', count: 1 },
+    ],
+  });
+  for (const turn of result.turns)
+    expect(turn.count).toBe(f.control.memoryTurn(user, session.id, turn.turn_id).items.length);
+  expect(f.control.memoryTurn(user, session.id, 'empty-turn').items).toEqual([]);
+});
+
+it('refuses session memory counts for the principals refused by the single-turn read', () => {
+  const f = workbenchFixture();
+  const session = f.create();
+  const principal = {
+    id: 'agent',
+    role: 'lead' as const,
+    session_id: session.id,
+    project_id: f.project.id,
+    expires_at: Date.now() + 60000,
+  };
+  expect(() => f.control.memoryTurn(principal, session.id, 'first-turn')).toThrowError(
+    expect.objectContaining({ code: 'permission_denied' }),
+  );
+  expect(() => f.control.memorySessionTurns(principal, session.id)).toThrowError(
+    expect.objectContaining({ code: 'permission_denied' }),
+  );
+});
+
+it('reports serialized record bytes and the full context budget even when decisions overflow', () => {
+  const f = workbenchFixture();
+  const items: any[] = [];
+  for (let i = 0; i < 3; i++) {
+    const draft = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key: 'budget-rule-' + i,
+      kind: 'decision',
+      text: '多字节 "rule"\n'.repeat(200),
+    });
+    const stored = f.store.must<any>('memory_records', draft.id);
+    const committed = f.store.update(
+      'memory_records',
+      { ...stored, state: 'active', committed_at: f.store.now() },
+      stored.revision,
+    );
+    items.push({ ...committed, text: draft.text });
+    const used = items.reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(item)), 0);
+    const read = f.control.memoryRead(user, f.project.id);
+    expect(read.budget).toEqual({ used_bytes: used, limit_bytes: 12000 });
+    for (const record of read.records)
+      expect(record.bytes).toBe(
+        Buffer.byteLength(JSON.stringify(items.find((item) => item.id === record.id))),
+      );
+    if (used <= 12000)
+      expect(f.call<any>('memory.context', { project_id: f.project.id }).bytes).toBe(used);
+    else
+      expect(() => f.call('memory.context', { project_id: f.project.id })).toThrowError(
+        expect.objectContaining({ code: 'memory_budget_exceeded', details: read.budget }),
+      );
+  }
+});

@@ -1,0 +1,53 @@
+/* The evidence list under the finding's facts. */
+.fd-ev {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.fd-evh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.fd-evs {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--sp-1);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+}
+.fd-evr {
+  display: grid;
+  grid-template-columns: 72px 72px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 30px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-top: var(--hair) solid var(--bd2);
+  background: none;
+  color: var(--tx2);
+  text-align: left;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.fd-evr:first-child {
+  border-top: 0;
+}
+.fd-evr:not(:disabled):hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.fd-evr > [data-code] {
+  font-family: var(--font-mono);
+}
+.fd-evid {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mu);
+}
+.fd-evd {
+  text-align: right;
+}

@@ -1,0 +1,11 @@
+{
+  "sessions.startBranch.loading": "正在读分支…",
+  "sessions.startBranch.retry": "重试",
+  "sessions.startBranch.filter": "筛选分支",
+  "sessions.startBranch.current": "当前",
+  "insights.workflow.editInSettings": "在设置里改",
+  "insights.workflow.workflowSettings": "流程设置",
+  "insights.workflow.usageSettings": "用量设置",
+  "insights.workflow.on": "开",
+  "insights.workflow.off": "关"
+}

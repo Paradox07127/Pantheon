@@ -1,0 +1,21 @@
+{
+  "components.commandPalette.placeholder": "搜索项目、会话、文件、命令",
+  "components.commandPalette.groupSessions": "会话",
+  "components.commandPalette.groupCommands": "命令",
+  "components.commandPalette.groupFiles": "文件",
+  "components.commandPalette.groupMessages": "对话内容",
+  "components.commandPalette.byUser": "用户",
+  "components.commandPalette.byAgent": "Agent",
+  "components.commandPalette.branch": "分支",
+  "components.commandPalette.archived": "已归档",
+  "components.commandPalette.stillIndexing": "索引还在建立，结果可能不全",
+  "components.commandPalette.noResults": "没有匹配的结果",
+  "components.commandPalette.startWithText": "用这句话开一个新会话",
+  "components.commandPalette.footSelect": "选择",
+  "components.commandPalette.footOpen": "打开",
+  "components.commandPalette.footSplit": "在分栏打开",
+  "components.commandPalette.groupProjects": "项目",
+  "components.commandPalette.searchIn": "在{project}里搜索",
+  "components.commandPalette.newSessionWith": "新会话:{text}",
+  "components.commandPalette.footEnter": "进入项目"
+}

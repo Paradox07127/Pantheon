@@ -1,0 +1,140 @@
+/* Memory entries: the list column, and the details column while an entry is selected */
+.mep {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--sf);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.mep[data-detail] {
+  grid-template-columns: minmax(0, 1fr) 400px;
+}
+.mep-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Filter row */
+.mep-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--bar);
+  padding: var(--sp-2) var(--sp-4);
+  white-space: nowrap;
+}
+.mep-bar .tb-seg [role='radio'] {
+  gap: 6px;
+}
+.mep-ct {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.mep-vsep {
+  flex: none;
+  align-self: stretch;
+  width: var(--hair);
+  margin: 0 var(--sp-1);
+  background: var(--bd2);
+}
+.mep-kinds {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.mep-bar .btn svg {
+  width: 14px;
+  height: 14px;
+}
+.mep-bar .btn[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.mep-total {
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Top bar search */
+.mep-find {
+  width: 240px;
+  box-sizing: border-box;
+}
+.mep-find svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.mep-find input::-webkit-search-cancel-button {
+  display: none;
+}
+.mep-clear {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  color: var(--mu);
+}
+.mep-clear svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Tag menu: a filter field over rows of tag and count */
+.mep-tagf {
+  margin-bottom: var(--sp-1);
+}
+.mep-tagf svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.mep-tg {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mep-tgn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The first ticked tag on the menu button */
+.mep-tgsel {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Details column */
+.mep-side {
+  min-height: 0;
+  padding: var(--sp-4);
+  border-left: var(--hair) solid var(--bd2);
+}
+.mep-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+}
+.mep-err {
+  margin: 0;
+  padding: 0 var(--sp-2);
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  user-select: text;
+}

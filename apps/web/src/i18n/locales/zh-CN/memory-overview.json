@@ -1,0 +1,9 @@
+{
+  "memory.overview.project": "项目",
+  "memory.overview.branch": "当前分支",
+  "memory.overview.committed": "最近提交",
+  "memory.overview.languages": "语言",
+  "memory.overview.languages.label": "语言按代码行：{list}",
+  "memory.overview.languages.other": "其他",
+  "memory.overview.lines": "{count, plural, other {# 行}}"
+}

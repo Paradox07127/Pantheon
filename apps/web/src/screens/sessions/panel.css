@@ -1,0 +1,745 @@
+/* The sheet that shows a panel over the thread when a column would leave the thread too narrow. */
+.ss-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sf);
+  border-left: var(--hair) solid var(--bd);
+}
+.ss-sheet {
+  position: fixed;
+  top: var(--titlebar);
+  right: 0;
+  bottom: 0;
+  z-index: 36;
+  width: 400px;
+  max-width: 100%;
+  outline: none;
+  transition:
+    transform calc(var(--dur-3) * 0.9) var(--ease-std),
+    opacity calc(var(--dur-3) * 0.9) var(--ease-std);
+}
+.ss-sheet:is([data-starting-style], [data-ending-style]) {
+  transform: translateX(100%);
+}
+.pt[data-motion='reduced'] .ss-sheet:is([data-starting-style], [data-ending-style]) {
+  transform: none;
+  opacity: 0;
+}
+.ss-ph {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 8px 0 16px;
+  flex: none;
+  border-bottom: var(--hair) solid var(--bd);
+}
+.ss-pt {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: 20px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-pbody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px calc(12px + var(--toast-reserve));
+}
+/* A panel with a footer leaves the toasts' room below the footer instead. */
+.ss-pbody:has(+ .ss-pf) {
+  padding-bottom: 12px;
+}
+.ss-col > .ss-pf {
+  padding-bottom: calc(8px + var(--toast-reserve));
+}
+/* Sits on the panel body's top edge; the diff below pulls up by the same 12px. */
+.ss-chd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  margin: -12px -14px 12px;
+  padding: 0 14px;
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ss-chd > .mono {
+  flex: none;
+  white-space: nowrap;
+}
+.ss-cn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.ss-run {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+  margin: 0 0 16px;
+  font-size: var(--fs-xs);
+}
+.ss-run dt {
+  color: var(--mu);
+}
+.ss-run dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--tx);
+}
+.ss-cerr {
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+.ss-pf {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  padding: 8px 12px;
+  border-top: var(--hair) solid var(--bd);
+  font-size: var(--fs-xs);
+}
+.ss-cacts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.ss-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-ctl);
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.ss-gate:hover {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.ss-gate:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ss-gate svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.ss-gate .ss-gch {
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.ss-mgr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 0 12px;
+  font-size: var(--fs-xs);
+  color: var(--tx);
+}
+.ss-mgr span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-mgf {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0 0 12px;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ss-mgf dt {
+  color: var(--mu);
+}
+.ss-mgf dd {
+  margin: 0;
+  color: var(--tx);
+}
+.ss-mgd {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+/* Panel dock: one column per open panel, side by side, each sized by its own width. */
+.ss-dock {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sf);
+}
+.ss:not(.ss-np) > .ss-convo {
+  min-width: 360px;
+}
+.ss-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  border-left: var(--hair) solid var(--bd2);
+  transition:
+    opacity var(--dur-4) var(--ease-in),
+    transform var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .ss-col {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.ss-sheet > .ss-col {
+  flex: 1;
+  border-left: 0;
+}
+.ss-colh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  height: 36px;
+  padding: 0 var(--sp-1) 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.ss-colh > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--mu);
+}
+.ss-colt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.ss-coln {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  border: var(--hair) solid var(--bd2);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ss-cola {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+}
+.ss-cola .ib:hover {
+  background: var(--sel);
+}
+/* The changes panel's explain and review switches. */
+.ss-colh .btn[aria-pressed='true'],
+.ss-chd .btn[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.ss-colh .btn svg {
+  width: 12px;
+  height: 12px;
+}
+.ss-chd > .btn:last-child {
+  margin-left: auto;
+}
+.ss-col .ss-file {
+  height: 36px;
+}
+.ss-col .ss-file .df-n {
+  min-width: 64px;
+  justify-content: flex-end;
+}
+/* The head row of the checks and plan panels: a bar of the share done, then the count. */
+.ss-ptop {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 0 var(--sp-2);
+}
+.ss-ptn {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ss-pseg {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  height: 6px;
+}
+.ss-pseg > i {
+  flex: 1 1 0;
+  border-radius: 2px;
+  background: var(--ok);
+}
+.ss-pseg > i[data-tone='bad'] {
+  background: var(--bad);
+}
+.ss-pseg > i[data-tone='run'] {
+  background: var(--run);
+}
+/* Darker than --idle so it stays apart from the not-run track. */
+.ss-pseg > i[data-tone='idle'] {
+  background: var(--tx2);
+}
+.ss-pseg > i[data-tone='none'] {
+  background: var(--track);
+}
+.ss-meter {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.ss-meter > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ok);
+  transform-origin: left;
+  transition: transform var(--dur-4) var(--ease-std);
+}
+.ss-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ss-step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 36px;
+  border-top: var(--hair) solid var(--bd2);
+  font-size: var(--fs-sm);
+}
+.ss-step:first-child {
+  border-top: 0;
+}
+.ss-step[data-step='completed'] {
+  color: var(--mu);
+}
+.ss-step[data-step='in_progress'] {
+  font-weight: 600;
+}
+.ss-stt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A step's state: a tick when done, a ringed dot for the current one, a dashed ring before it starts. */
+.ss-st {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--idle);
+}
+.ss-st::before {
+  content: '';
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  border: 1.5px dashed currentColor;
+}
+.ss-st[data-step='completed'] {
+  color: var(--ok);
+}
+.ss-st[data-step='completed']::before {
+  width: 30%;
+  height: 60%;
+  margin-top: -2px;
+  border: 0;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 0;
+  transform: rotate(45deg);
+}
+.ss-st[data-step='in_progress'] {
+  color: var(--run);
+}
+.ss-st[data-step='in_progress'][data-wait] {
+  color: var(--wait);
+}
+.ss-st[data-step='in_progress']::before {
+  border: 0;
+  background: currentColor;
+}
+.ss-st[data-step='in_progress']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+/* The overview's plan section, which opens the plan panel; the overview's header always sits above it. */
+.ov-fs {
+  border: 0;
+  border-top: var(--hair) solid var(--bd2);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.ov-fs:hover {
+  background: var(--sel);
+}
+.ss-pacts {
+  display: flex;
+  gap: 6px;
+  padding-top: 8px;
+}
+.ss-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ss-ckr {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: var(--row);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+.ss-ck.passed {
+  color: var(--ok);
+}
+.ss-ck.failed,
+.ss-ck.timed_out {
+  color: var(--bad);
+}
+.ss-ck.skipped {
+  color: var(--mu);
+}
+/* The external review row after the gate steps opens the review. */
+button.ss-ckr {
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+button.ss-ckr:hover {
+  background: var(--sel);
+}
+.ss-ckh {
+  margin-bottom: var(--sp-3);
+}
+.ss-ckn {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-ckm {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.ss-reviews {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ss-rv {
+  padding: 10px 0;
+}
+.ss-rv + .ss-rv {
+  border-top: var(--hair) solid var(--bd2);
+}
+.ss-rvh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+}
+.ss-sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--tx2);
+}
+.ss-sev.blocker .ss-sevi {
+  background: var(--bad);
+}
+.ss-sev.minor .ss-sevi {
+  background: var(--mu);
+}
+.ss-sevi {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.ss-rvl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-rvm {
+  flex: none;
+  color: var(--mu);
+}
+.ss-rv p {
+  margin: 4px 0 8px 16px;
+  line-height: 1.6;
+}
+.ss-rv p.ss-rve {
+  color: var(--tx2);
+}
+.ss-rvq {
+  margin: 0 0 8px 16px;
+  padding: 8px 12px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--code);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.ss-rva {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 16px;
+}
+.ss-diff {
+  margin: -12px -14px;
+}
+.ss-files {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  border-bottom: var(--hair) solid var(--bd);
+}
+.ss-file {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+.ss-file:hover {
+  background: var(--sf2);
+}
+.ss-file.on {
+  background: var(--sel);
+  color: var(--tx);
+}
+.ss-file:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ss-fs {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: center;
+}
+.ss-fs.M {
+  color: var(--chg);
+}
+.ss-fs.A {
+  color: var(--ok);
+}
+.ss-fs.D {
+  color: var(--bad);
+}
+.ss-fd + .ss-fd {
+  border-top: var(--hair) solid var(--bd);
+}
+/* The panel body pads 12px; the header sticks to its top edge. */
+.ss-fdh {
+  position: sticky;
+  top: -12px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 14px;
+  background: var(--sf);
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.ss-fdh .df-path {
+  flex: 1;
+}
+.ss-dl {
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  padding-bottom: 4px;
+}
+.ss-ln {
+  display: grid;
+  grid-template-columns: 64px 12px minmax(0, 1fr);
+}
+.ss-nums {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 0 6px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+button.ss-nums:hover {
+  background: var(--st-hov);
+  color: var(--tx);
+}
+button.ss-nums:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ss-sg {
+  color: var(--mu);
+  user-select: none;
+}
+.ss-code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-right: 10px;
+  color: var(--tx2);
+}
+.ss-ln.add {
+  background: var(--ok-bg);
+}
+.ss-ln.add .ss-sg,
+.ss-ln.add .ss-code {
+  color: var(--ok);
+}
+.ss-ln.del {
+  background: var(--bad-bg);
+}
+.ss-ln.del .ss-sg,
+.ss-ln.del .ss-code {
+  color: var(--bad);
+}
+.dark .ss-ln.add .ss-code,
+.dark .ss-ln.del .ss-code {
+  color: var(--tx);
+}
+.ss-ln.hh {
+  display: block;
+  padding: 2px 14px;
+  margin: 4px 0 2px;
+  background: var(--sf2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-cmt {
+  margin: 4px 10px 6px 64px;
+  padding: 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  font-family: var(--font-sans);
+}
+.ss-cmt textarea {
+  display: block;
+  width: 100%;
+  height: 52px;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-xs);
+  outline: none;
+}
+/* The borderless textarea shows its focus on the comment card. */
+.ss-cmt:has(textarea:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+.ss-cmta {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.df-finding {
+  margin: 4px 10px 6px 64px;
+  padding: 6px 10px;
+  border-left: var(--hair) solid var(--wait);
+  background: var(--sf);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  white-space: normal;
+}
+.df-finding p {
+  margin: 2px 0 6px;
+}
+.df-findinga {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}

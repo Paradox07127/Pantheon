@@ -1,0 +1,7 @@
+{
+  "lib.shortcuts.label.sessionSplit": "并排打开会话 / 关掉第二栏",
+  "sessions.split.close": "关闭这一栏",
+  "sessions.split.noRoom": "窗口太窄，放不下两个并排的会话",
+  "sessions.split.openBeside": "并排打开",
+  "sessions.split.openSession": "并排打开会话"
+}

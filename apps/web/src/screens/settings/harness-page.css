@@ -1,0 +1,155 @@
+/* A runtime's head row: its mark, then its name over the version and the check time. */
+.hp-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.hp-hd-tx {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hp-hd-tx b {
+  font-weight: 500;
+}
+.hp-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+}
+.hp-st {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.hp-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.hp-dot[data-s='ok'] {
+  background: var(--ok);
+}
+.hp-dot[data-s='wait'] {
+  background: var(--wait);
+}
+.hp-dot[data-s='idle'] {
+  background: none;
+  border: 1.5px solid var(--idle);
+}
+/* An account email, blurred until the user shows it. */
+.hp-mail {
+  padding: 0;
+  border: 0;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.hp-mail[data-hidden] {
+  filter: blur(4px);
+}
+.hp-mail:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.hp-path {
+  width: 280px;
+}
+.hp-sel {
+  user-select: text;
+}
+.hp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hp-err {
+  padding: var(--sp-2) var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+}
+
+/* A backend row: its id and address on the left, the runtimes and the key on the right. */
+.hp-be {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hp-be-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.hp-be-hd b {
+  font-weight: 500;
+}
+.hp-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+}
+.hp-be-end {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+}
+
+/* The runtimes that are not installed, folded under one header after the others. */
+.hp-other {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.hp-tg {
+  display: flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-ctl);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+.hp-tg:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.hp-chev {
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+  transition: transform var(--dur-2) var(--ease-std);
+}
+.hp-tg[data-panel-open] .hp-chev {
+  transform: rotate(90deg);
+}
+.hp-cnt {
+  font-variant-numeric: tabular-nums;
+}
+.hp-fold {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.hp-fold[hidden] {
+  display: none;
+}

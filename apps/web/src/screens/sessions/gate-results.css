@@ -1,0 +1,176 @@
+.gres {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.gres-run {
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.gres-acts {
+  display: flex;
+  justify-content: flex-end;
+}
+.gres-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.gres-n {
+  font-variant-numeric: tabular-nums;
+}
+.gres-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gres-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto 64px minmax(44px, auto);
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+button.gres-row:hover,
+.gres-row[aria-expanded='true'] {
+  background: var(--sel);
+}
+.gres-st {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+.gres-st > svg {
+  width: 14px;
+  height: 14px;
+}
+.gres-st[data-state='passed'] {
+  color: var(--ok);
+}
+.gres-st[data-state='failed'],
+.gres-st[data-state='timed_out'] {
+  color: var(--bad);
+}
+.gres-st[data-state='skipped'],
+.gres-st[data-state='not_run'] {
+  color: var(--idle);
+}
+.gres-nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gres-tc,
+.gres-cr {
+  grid-column: 3;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.gres-rs {
+  grid-column: 3;
+  max-width: 200px;
+  overflow: hidden;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gres-tc {
+  display: flex;
+  gap: var(--sp-1);
+  font-variant-numeric: tabular-nums;
+}
+.gres-tf {
+  color: var(--bad);
+}
+/* A row without a count cell keeps the meter and the time in their columns. */
+.gres-row > .meter {
+  grid-column: 4;
+}
+.gres-t {
+  grid-column: 5;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.gres-log {
+  display: flex;
+  flex-direction: column;
+  margin: var(--sp-1) 0 var(--sp-2);
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.gres-lh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 36px;
+  padding: 0 var(--sp-1) 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+}
+.gres-cmd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+.gres-code {
+  flex: none;
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.gres-lacts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+}
+.gres-out {
+  max-height: 240px;
+  margin: 0;
+  padding: var(--sp-3);
+  overflow: auto;
+  background: var(--code);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.gres-out > span {
+  display: block;
+}
+.gres-ok {
+  color: var(--mu);
+}
+.gres-bad {
+  margin: 0 calc(-1 * var(--sp-3));
+  padding: 0 var(--sp-3);
+  background: color-mix(in srgb, var(--bad) 9%, transparent);
+  color: var(--tx);
+}

@@ -1,0 +1,16 @@
+{
+  "settings.defaults.leadModel": "lead 的模型",
+  "settings.defaults.routingTable": "按下面的路由表",
+  "settings.defaults.otherRuntime": "写代码以外的运行时",
+  "settings.defaults.noFallback": "不换",
+  "settings.defaults.fallbackOf": "{role}不可用时换成",
+  "settings.defaults.writer": "写代码",
+  "settings.defaults.reviewer": "外审",
+  "settings.defaults.leadModelForAll": "任务和审查也用 lead 的模型",
+  "settings.defaults.roles": "各角色的模型",
+  "settings.defaults.who": "谁来做",
+  "settings.defaults.model": "用哪个模型",
+  "settings.defaults.fallback": "不可用时换成",
+  "settings.defaults.lead": "lead",
+  "settings.defaults.roleModel": "{role}的模型"
+}

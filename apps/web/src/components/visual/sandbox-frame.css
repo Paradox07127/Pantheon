@@ -1,0 +1,35 @@
+.vis-fill:has(> .vis-page-err) > .vis-page {
+  visibility: hidden;
+}
+.vis-page-err {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-6);
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  color: var(--tx);
+  user-select: text;
+}
+.vis-page-err svg {
+  width: 14px;
+  height: 14px;
+  color: var(--bad);
+}
+.vis-page-err code {
+  grid-column: 2;
+  justify-self: start;
+  max-width: 100%;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-sm);
+  background: var(--code);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+  color: var(--tx2);
+}

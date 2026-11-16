@@ -1,0 +1,7 @@
+{
+  "settings.data.diagnostics": "诊断",
+  "settings.data.diagnosticsLog": "导出诊断日志",
+  "settings.data.diagnosticsFailed": "导出诊断日志失败：{message}",
+  "settings.data.exportRow": "导出",
+  "settings.data.importRow": "导入"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "device-resource-held-during-merge-approval",
+  "source_commit": "12b2b8402faa1f7102e234d5d169d77a08e68a2c",
+  "base_commit": "ec6cf573eea330ca28eadc0488069712b14b15e9",
+  "goal": "A task's `uses` (e.g. `{ gpu: 1 }`) hold that device resource while its task session runs; another task needing it waits with `dispatch_wait` `device_resource`. Today a task session blocked before its merge with `merge.reason` `workflow_approval` and no running turn frees the resource, and the next task starts. Keep counting its resources (not its place) until the session has an outcome or closes.",
+  "scope": ["packages/control/src/task-dispatch.ts"],
+  "acceptance": ["pnpm build", "pnpm exec vitest run tests/control/task-dispatch-devices.test.ts"],
+  "hidden_files": ["tests/control/task-dispatch-devices.test.ts"],
+  "hidden_check": [
+    "pnpm install --frozen-lockfile",
+    "pnpm build",
+    "pnpm exec vitest run tests/control/task-dispatch-devices.test.ts"
+  ]
+}

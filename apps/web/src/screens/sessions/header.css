@@ -1,0 +1,320 @@
+/* The session bar in the window's title bar, as a page's top bar; the plan's progress runs along the content's top edge */
+
+.sh-bar {
+  position: fixed;
+  top: 0;
+  right: calc(var(--end-x) + var(--end-w, 0px));
+  left: var(--main-x);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--titlebar);
+  min-width: 0;
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.sh-bar :is(button, input, [tabindex], .sh-err) {
+  -webkit-app-region: no-drag;
+}
+/* While the sidebar is folded, the bar clears the window's button as the top bar does. */
+.mac-titlebar .app.sb-off .sh-bar {
+  padding-left: calc(82px + (var(--h-ctl) - 12px) / 2 + var(--h-ctl) + var(--sp-4) - var(--main-x));
+}
+.overlay-titlebar .app.sb-off .sh-bar {
+  padding-left: calc(var(--sp-2) + 2 * var(--h-ctl) + 4px + var(--sp-4) - var(--main-x));
+}
+.sh-mark {
+  display: inline-flex;
+  flex: none;
+}
+.sh-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mu);
+  font: inherit;
+}
+.sh-lead .lead-crown {
+  flex: none;
+  margin-left: 0;
+}
+.sh-fork {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.sh-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sh-faint {
+  flex: none;
+  color: var(--faint);
+}
+.sh-title {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 20px;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A renamable title is a button inside the h1; the h1 lets it shrink and cut. */
+.sh-h1 {
+  display: flex;
+  overflow: visible;
+}
+.sh-recap {
+  color: var(--mu);
+}
+.sh-input {
+  min-width: 0;
+  width: 320px;
+  height: var(--ctl);
+  padding: 0 var(--sp-2);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.sh-input:focus {
+  border-color: var(--bd3);
+  outline: 2px solid var(--focus-ring);
+}
+.sh-input:disabled {
+  opacity: 0.6;
+}
+.sh-err {
+  min-width: 0;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+  border: var(--hair) solid var(--bd2);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.sh-chip svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.sh-diff {
+  display: inline-flex;
+  gap: var(--sp-1);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sh-add {
+  color: var(--add);
+}
+.sh-del {
+  color: var(--del);
+}
+.sh-add[data-zero],
+.sh-del[data-zero] {
+  color: var(--mu);
+}
+.sh-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sh-seg {
+  display: flex;
+  gap: 2px;
+  width: 40px;
+  height: 6px;
+}
+.sh-seg > i {
+  flex: var(--n) 1 0;
+  border-radius: 2px;
+  background: var(--ok);
+}
+.sh-seg > i[data-tone='bad'] {
+  background: var(--bad);
+}
+.sh-seg > i[data-tone='run'] {
+  background: var(--run);
+}
+/* Darker than --idle so skipped stays apart from the not-run track. */
+.sh-seg > i[data-tone='skip'] {
+  background: var(--tx2);
+}
+.sh-seg > i[data-tone='none'] {
+  background: var(--track);
+}
+.sh-seg[data-grow] {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 40px;
+}
+.sh-ahead {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.sh-fill {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.sh-clock {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+.sh-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+/* The terminal toggle carries a dot while a command in the terminal runs. */
+.sh-term {
+  position: relative;
+}
+.sh-pip {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--run);
+  animation: ss-breathe 1.6s ease-in-out infinite;
+}
+.sh-bar .ib {
+  flex: none;
+}
+.sh-bar .ib:hover,
+.sh-bar .ib[aria-pressed='true'],
+.sh-bar .ib[data-popup-open] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.sh-bar .ib[aria-disabled='true'] {
+  background: transparent;
+  color: var(--tx2);
+  opacity: 0.45;
+}
+.sh-vr {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  background: var(--faint);
+}
+.sh-plan {
+  position: fixed;
+  top: calc(var(--titlebar) + var(--hair));
+  right: calc(var(--sp-2) + var(--r-xl));
+  left: calc(var(--main-x) + var(--r-xl));
+  display: flex;
+  gap: 2px;
+  height: 2px;
+  pointer-events: none;
+}
+.sh-plan > i {
+  flex: 1;
+  background: var(--bd);
+  transition: background-color var(--dur-2) var(--ease-std);
+}
+.sh-plan > i[data-step='completed'] {
+  background: var(--ok);
+}
+.sh-plan > i[data-step='in_progress'] {
+  background: var(--run);
+}
+.sh-plan[data-wait] > i[data-step='in_progress'] {
+  background: var(--wait);
+}
+.sh-tok {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  background: none;
+  color: var(--mu);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+/* The device a remote session runs on, drawn as the list row's device chip */
+.sh-dev {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.sh-dev svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+/* Whether the last turn's changes are back from the device */
+.sh-pull {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.sh-pull > span[aria-hidden] {
+  display: inline-flex;
+  flex: none;
+}
+.sh-pull-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sh-pull .btn {
+  flex: none;
+}
+.sh-pull .btn svg {
+  width: 12px;
+  height: 12px;
+}

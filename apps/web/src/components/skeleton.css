@@ -1,0 +1,28 @@
+.skel {
+  display: block;
+  height: 12px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sel);
+  position: relative;
+  overflow: hidden;
+}
+.skel:not([data-shown]) {
+  visibility: hidden;
+}
+.skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--sf2);
+  opacity: 0.9;
+  transform: translateX(-100%);
+  animation: skel-sweep 1.5s linear infinite;
+}
+@keyframes skel-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+.pt[data-motion='reduced'] .skel::after {
+  animation: none;
+}

@@ -1,0 +1,22 @@
+{
+  "memory.entries.state": "状态",
+  "memory.entries.state.active": "当前",
+  "memory.entries.state.draft": "待确认",
+  "memory.entries.state.archived": "已归档",
+  "memory.entries.kind": "种类",
+  "memory.entries.kind.decision": "决定",
+  "memory.entries.kind.report": "报告",
+  "memory.entries.kind.note": "笔记",
+  "memory.entries.tag": "标签",
+  "memory.entries.allTags": "全部标签",
+  "memory.entries.findTag": "筛选标签",
+  "memory.entries.moreTags": "+{count}",
+  "memory.entries.task": "任务",
+  "memory.entries.allTasks": "全部任务",
+  "memory.entries.projectOnly": "只看项目级",
+  "memory.entries.total": "{count, plural, other {# 条}}",
+  "memory.entries.search": "搜索记忆",
+  "memory.entries.searchPlaceholder": "搜索标题、正文、key",
+  "memory.entries.clearSearch": "清空搜索",
+  "memory.entries.new": "记一条"
+}

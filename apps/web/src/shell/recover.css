@@ -1,0 +1,88 @@
+/* The interface keeps its own layout while the daemon page is not over it. */
+.rc-host:not([hidden]) {
+  display: contents;
+}
+.rc-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  padding: var(--sp-2);
+  background: var(--bg);
+}
+.rc-pane {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+.rc {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: 520px;
+  text-align: center;
+  text-wrap: balance;
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .rc {
+    opacity: 0;
+  }
+}
+.rc-mark,
+.rc-run {
+  display: inline-flex;
+}
+.rc-mark .si {
+  width: 20px;
+  height: 20px;
+}
+.rc-run .si {
+  width: 12px;
+  height: 12px;
+}
+.rc-t {
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 500;
+}
+.rc-e {
+  max-width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  user-select: text;
+}
+.rc-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+.rc-acts .btn.pri:disabled {
+  opacity: 0.7;
+}
+.rc-n {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  user-select: text;
+}
+.rc-wait {
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}

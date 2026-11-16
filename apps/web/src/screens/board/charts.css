@@ -1,0 +1,441 @@
+/* Panel frame shared by every board panel */
+.bp-pn {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-top-color: var(--bd-top);
+  border-radius: var(--r-lg);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.bp-ph {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  margin-bottom: 12px;
+  flex: none;
+}
+.bp-ph h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.bp-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.bp-hn {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  color: var(--mu);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.bp-hn b {
+  font-weight: 600;
+  color: var(--tx);
+}
+.bp-hn + .bp-tools {
+  margin-left: 8px;
+}
+.bp-empty {
+  text-wrap: balance;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  color: var(--mu);
+  text-align: center;
+}
+.bp-mu {
+  color: var(--mu);
+}
+.bp-ib {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: var(--hair) solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--mu);
+}
+.bp-ib:hover,
+.bp-ib[aria-pressed='true'] {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.bp-ib svg {
+  width: 14px;
+  height: 14px;
+}
+.bp-ic {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  display: inline-block;
+}
+.bp-lnk {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.bp-lnk:hover {
+  text-decoration-color: currentColor;
+}
+.bp-lnk:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration-color: transparent;
+}
+.bp-err {
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+
+/* Action dialogs */
+.bp-dlb {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 20px 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.bp-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+}
+.bp-picks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+.bp-picks span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bp-picks input {
+  margin: 0;
+  accent-color: var(--ink);
+}
+.bp-ta {
+  padding: 6px 10px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  resize: vertical;
+}
+.bp-ta:focus {
+  outline: 3px solid var(--focus-ring);
+}
+.bp-dfx {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.bp-add {
+  color: var(--ok);
+}
+.bp-del {
+  color: var(--bad);
+}
+.bp-add[data-zero],
+.bp-del[data-zero] {
+  color: var(--mu);
+}
+.bp-rtd {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* Floating tooltip */
+.bp-tip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  min-width: 140px;
+  max-width: 300px;
+  padding: 8px 10px;
+  background: var(--ov);
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(var(--blur-md));
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.bp-tip .h {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.bp-tip .r {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bp-tip .r .k {
+  color: var(--mu);
+}
+.bp-tip .r .v {
+  margin-left: auto;
+  padding-left: 16px;
+  white-space: nowrap;
+}
+
+/* Charts */
+.bp-lgd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: -4px 0 8px;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  flex: none;
+}
+.bp-lgd span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bp-swb {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+.bp-chart {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.bp-chart > svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+/* The burnup panel sets the row height. */
+.bp-burnp .bp-chart {
+  flex: none;
+  height: 200px;
+}
+.bp-ax {
+  font-size: var(--fs-xs);
+  fill: var(--mu);
+}
+.bp-gln {
+  stroke: var(--bd);
+  stroke-width: 1;
+  stroke-opacity: 0.6;
+  shape-rendering: crispEdges;
+}
+.bp-axl {
+  stroke: var(--bd);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.bp-xh {
+  stroke: var(--mu);
+  stroke-width: 1;
+  stroke-opacity: 0.5;
+  shape-rendering: crispEdges;
+}
+.bp-band {
+  fill: transparent;
+}
+.bp-band.on {
+  fill: var(--sf2);
+}
+.bp-dtw {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+/* A table panel holds its rows in the flow; the chart table view overlays the plot. */
+.bp-tbl .bp-dtw {
+  position: static;
+}
+.bp-dt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+}
+.bp-dt th {
+  position: sticky;
+  top: 0;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--sf);
+  color: var(--mu);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: var(--hair) solid var(--bd);
+  white-space: nowrap;
+}
+.bp-dt td {
+  height: 28px;
+  padding: 0 8px;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.bp-dt .n {
+  text-align: right;
+}
+
+/* Milestones */
+.bp-msr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(56px, 120px) 36px 64px;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+}
+.bp-msr .nm {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bp-trk {
+  height: 8px;
+  border-radius: var(--r-sm);
+  background: var(--bd);
+  overflow: hidden;
+}
+.bp-trk-bar {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-sm);
+  background: var(--ok);
+  transition:
+    width var(--dur-4) var(--ease-std),
+    background-color var(--dur-4) var(--ease-std);
+}
+.bp-msr .cnt {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  text-align: right;
+}
+.bp-msr .due {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  white-space: nowrap;
+}
+/* Only on a milestone seen being accepted in this mount: its check grows in once. */
+.bp-acc-in {
+  display: inline-flex;
+  transition: transform var(--dur-3) var(--ease-in);
+}
+@starting-style {
+  .bp-acc-in {
+    transform: scale(0.6);
+  }
+}
+.bp-msr .due.late {
+  color: var(--tx2);
+  font-weight: 500;
+}
+.bp-msr .due.late svg {
+  color: var(--bad);
+}
+/* Room for the lead's acceptance status word. */
+.bp-msl {
+  grid-template-columns: minmax(0, 1fr) minmax(56px, 120px) 36px 96px;
+}
+.bp-msr.with-acts {
+  grid-template-columns: minmax(0, 1fr) minmax(56px, 120px) 36px 64px 120px;
+}
+.bp-msr.bp-msl.with-acts {
+  grid-template-columns: minmax(0, 1fr) minmax(56px, 120px) 36px 96px 120px;
+}
+.bp-msr .acts {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: var(--fs-xs);
+}
+.bp-msr.fin,
+.bp-msr.fin .cnt {
+  color: var(--mu);
+}
+.bp-msr.fin .bp-trk-bar {
+  background: var(--mu);
+}
+/* One row per acceptance criterion, under its milestone's row. */
+.bp-crit {
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.bp-crit li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+.bp-crit span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bp-crit .mk {
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.bp-crit .mk.pend {
+  border: 1.5px solid var(--ready);
+}
+.bp-crit .mk.acc {
+  background: var(--ok);
+}
+.bp-more {
+  padding: 4px 0 0;
+  border: 0;
+  background: none;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.bp-more:hover {
+  color: var(--tx);
+}

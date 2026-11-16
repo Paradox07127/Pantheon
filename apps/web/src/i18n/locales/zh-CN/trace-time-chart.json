@@ -1,0 +1,22 @@
+{
+  "trace.timeChart.title": "时间花在哪",
+  "trace.timeChart.wall": "墙钟",
+  "trace.timeChart.work": "累计",
+  "trace.timeChart.model": "模型",
+  "trace.timeChart.approval": "等你批准",
+  "trace.timeChart.tool": "工具",
+  "trace.timeChart.subagent": "子 agent",
+  "trace.timeChart.queue": "排队",
+  "trace.timeChart.other": "其他",
+  "trace.timeChart.parallel": "并行",
+  "trace.timeChart.compact": "压缩",
+  "trace.timeChart.delivery": "送达",
+  "trace.timeChart.unknown": "未知",
+  "trace.timeChart.percent": "{share, number, ::percent}",
+  "trace.timeChart.bar": "{measure} {total}：{parts}",
+  "trace.timeChart.otherLabel": "其他 {duration}：{kinds}",
+  "trace.timeChart.gates": "门禁另计",
+  "trace.timeChart.gateRuns": "{count, plural, other {# 次，不算进左边的条}}",
+  "trace.timeChart.untimed": "{untimed, plural, other {{total, number} 个调用里 # 个没有计时}}",
+  "trace.timeChart.unplaced": "{count, plural, other {# 个调用放不进墙钟}}"
+}

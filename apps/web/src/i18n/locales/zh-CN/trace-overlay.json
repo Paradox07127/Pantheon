@@ -1,0 +1,6 @@
+{
+  "trace.overlay.tokens": "回合 tokens",
+  "trace.overlay.cost": "回合成本",
+  "trace.overlay.waiting": "等 {duration}",
+  "trace.overlay.duration": "时长"
+}

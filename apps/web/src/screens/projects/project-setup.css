@@ -1,0 +1,74 @@
+.ev {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.ev > .pj-lb {
+  margin-top: 6px;
+}
+.ev-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ev-dir {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+}
+.ev-var {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto auto;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+}
+.ev-dir > .ps-err,
+.ev-var > .ps-err {
+  grid-column: 1 / -1;
+}
+.ev-path {
+  align-items: center;
+  height: var(--h-ctl);
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: var(--hair) solid var(--bd);
+  background: var(--sf);
+  font-size: var(--fs-xs);
+}
+.ev-var .pj-inp.bad {
+  border-color: var(--bad);
+}
+.ev-add {
+  align-self: flex-start;
+}
+.ev-pick {
+  justify-content: center;
+  padding: 20px 11px;
+  border-style: dashed;
+  font-size: var(--fs-sm);
+}
+.ev-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ev-goal textarea {
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  border: var(--hair) solid var(--bd);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  resize: vertical;
+  min-height: 72px;
+  outline: 0;
+}
+.ev-goal textarea:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}

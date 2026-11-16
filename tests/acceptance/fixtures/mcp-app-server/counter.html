@@ -1,0 +1,222 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Counter</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        font:
+          13px system-ui,
+          sans-serif;
+        background: var(--color-background-primary, Canvas);
+        color: var(--color-text-primary, CanvasText);
+      }
+      #count {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      #context,
+      #log {
+        font-size: 12px;
+      }
+      #buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 8px 0;
+      }
+      button {
+        font-size: 13px;
+      }
+      #log {
+        margin: 0;
+        padding-left: 16px;
+        font-family: ui-monospace, monospace;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="context">theme: - / displayMode: -</div>
+    <div id="count">waiting for tool result</div>
+    <div id="buttons">
+      <button id="plus">+1</button>
+      <button id="send">Send</button>
+      <button id="model-context">Context</button>
+      <button id="fullscreen">Fullscreen</button>
+      <button id="pip">Pip</button>
+      <button id="inline">Inline</button>
+      <button id="link">Link</button>
+      <button id="bump">Bump</button>
+      <button id="secret">Secret</button>
+      <button id="fetch">Fetch</button>
+    </div>
+    <ol id="log"></ol>
+    <script>
+      const host = window.parent;
+      const pending = new Map();
+      const hostContext = {};
+      let nextId = 1;
+      let count = null;
+
+      function log(text) {
+        const item = document.createElement('li');
+        item.textContent = text;
+        document.getElementById('log').append(item);
+      }
+
+      function request(method, params) {
+        const id = nextId++;
+        host.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+        return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+      }
+
+      function notify(method, params) {
+        host.postMessage({ jsonrpc: '2.0', method, params }, '*');
+      }
+
+      function respond(id, result) {
+        host.postMessage({ jsonrpc: '2.0', id, result }, '*');
+      }
+
+      function call(label, method, params) {
+        request(method, params).then(
+          (result) => log(`${label} ok ${JSON.stringify(result)}`),
+          (error) => log(`${label} error ${JSON.stringify(error)}`),
+        );
+      }
+
+      function applyContext(update) {
+        Object.assign(hostContext, update);
+        const variables = hostContext.styles?.variables ?? {};
+        for (const name of ['--color-background-primary', '--color-text-primary']) {
+          if (variables[name]) document.documentElement.style.setProperty(name, variables[name]);
+        }
+        if (hostContext.theme) document.documentElement.style.colorScheme = hostContext.theme;
+        document.getElementById('context').textContent =
+          `theme: ${hostContext.theme ?? '-'} / displayMode: ${hostContext.displayMode ?? '-'}`;
+      }
+
+      function showCount() {
+        document.getElementById('count').textContent = `Counter: ${count}`;
+      }
+
+      window.addEventListener('message', (event) => {
+        if (event.source !== host) return;
+        const message = event.data;
+        if (!message || message.jsonrpc !== '2.0') return;
+        if (message.method === undefined) {
+          const waiter = pending.get(message.id);
+          if (!waiter) return;
+          pending.delete(message.id);
+          if (message.error) waiter.reject(message.error);
+          else waiter.resolve(message.result);
+          return;
+        }
+        if (message.id !== undefined) {
+          log(`request ${message.method}`);
+          if (message.method === 'ui/resource-teardown' || message.method === 'ping') {
+            respond(message.id, {});
+          } else {
+            host.postMessage(
+              {
+                jsonrpc: '2.0',
+                id: message.id,
+                error: { code: -32601, message: `Method not found: ${message.method}` },
+              },
+              '*',
+            );
+          }
+          return;
+        }
+        log(`notification ${message.method}`);
+        switch (message.method) {
+          case 'ui/notifications/tool-input':
+            document.getElementById('count').textContent =
+              `input ${JSON.stringify(message.params?.arguments ?? {})}`;
+            break;
+          case 'ui/notifications/tool-result':
+            count = message.params?.structuredContent?.start ?? 0;
+            showCount();
+            break;
+          case 'ui/notifications/tool-cancelled':
+            document.getElementById('count').textContent = 'cancelled';
+            break;
+          case 'ui/notifications/host-context-changed':
+            applyContext(message.params ?? {});
+            break;
+        }
+      });
+
+      document.getElementById('plus').onclick = () => {
+        count = (count ?? 0) + 1;
+        showCount();
+      };
+      document.getElementById('send').onclick = () =>
+        call('message', 'ui/message', {
+          role: 'user',
+          content: [{ type: 'text', text: `Counter is ${count ?? 0}` }],
+        });
+      document.getElementById('model-context').onclick = () =>
+        call('context', 'ui/update-model-context', {
+          content: [{ type: 'text', text: `Counter is ${count ?? 0}` }],
+          structuredContent: { count: count ?? 0 },
+        });
+      for (const mode of ['fullscreen', 'pip', 'inline']) {
+        document.getElementById(mode).onclick = () =>
+          request('ui/request-display-mode', { mode }).then(
+            (result) => {
+              log(`display-mode ok ${JSON.stringify(result)}`);
+              if (result?.mode) applyContext({ displayMode: result.mode });
+            },
+            (error) => log(`display-mode error ${JSON.stringify(error)}`),
+          );
+      }
+      document.getElementById('link').onclick = () =>
+        call('open-link', 'ui/open-link', { url: 'https://example.com' });
+      document.getElementById('bump').onclick = () =>
+        request('tools/call', { name: 'bump', arguments: { by: 1 } }).then(
+          (result) => {
+            log(`bump ok ${JSON.stringify(result)}`);
+            const bumped = result?.structuredContent?.bumped;
+            if (typeof bumped === 'number') {
+              count = (count ?? 0) + bumped;
+              showCount();
+            }
+          },
+          (error) => log(`bump error ${JSON.stringify(error)}`),
+        );
+      document.getElementById('secret').onclick = () =>
+        call('secret', 'tools/call', { name: 'secret', arguments: {} });
+      document.getElementById('fetch').onclick = () =>
+        fetch('https://example.com').then(
+          (response) => log(`fetch ok ${response.status}`),
+          (error) => log(`fetch error ${String(error)}`),
+        );
+
+      let lastHeight = -1;
+      new ResizeObserver(() => {
+        const { width, height } = document.documentElement.getBoundingClientRect();
+        if (Math.ceil(height) === lastHeight) return;
+        lastHeight = Math.ceil(height);
+        notify('ui/notifications/size-changed', { width: Math.ceil(width), height: lastHeight });
+      }).observe(document.documentElement);
+
+      request('ui/initialize', {
+        protocolVersion: '2026-01-26',
+        appInfo: { name: 'pantheon-fixture-counter', version: '0.1.0' },
+        appCapabilities: { availableDisplayModes: ['inline', 'fullscreen', 'pip'] },
+      }).then(
+        (result) => {
+          log(`initialize ok ${result?.hostInfo?.name ?? ''} ${result?.protocolVersion ?? ''}`);
+          applyContext(result?.hostContext ?? {});
+          notify('ui/notifications/initialized', {});
+        },
+        (error) => log(`initialize error ${JSON.stringify(error)}`),
+      );
+    </script>
+  </body>
+</html>

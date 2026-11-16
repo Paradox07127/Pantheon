@@ -1,0 +1,14 @@
+{
+  "name": "keychain-key-off-macos-points-to-env",
+  "source_commit": "30c79688ce8d96370131d47f417a4fa931533fa8",
+  "base_commit": "d807082c1812de9c5a1310e45c8bec93b38762bc",
+  "goal": "`backendKey` reads a backend key given as `{ keychain: <service> }` from the macOS keychain. Off macOS (`process.platform` not `darwin`) there is no keychain, yet it still runs `/usr/bin/security` and reports `no keychain password`. Off macOS, skip the keychain lookup and throw `backend_key_missing` with a message telling the user to set `key.env` for that service; on macOS keep today's message.",
+  "scope": ["packages/control/src/user-config.ts"],
+  "acceptance": ["pnpm build", "pnpm exec vitest run tests/control/user-config.test.ts"],
+  "hidden_files": ["tests/control/user-config.test.ts"],
+  "hidden_check": [
+    "pnpm install --frozen-lockfile",
+    "pnpm build",
+    "pnpm exec vitest run tests/control/user-config.test.ts"
+  ]
+}

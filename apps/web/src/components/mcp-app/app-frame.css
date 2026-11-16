@@ -1,0 +1,75 @@
+/* An MCP App interface: its page in a card inline, filling its panel docked or full screen. */
+.apf {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  overflow: hidden;
+}
+.apf[data-bare] {
+  border-color: transparent;
+  background: transparent;
+}
+.apf:not([data-mode='inline']) {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+.apf-page {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
+.apf:not([data-mode='inline']) > :is(.apf-page, .apf-err, .apf-wait) {
+  flex: 1;
+  min-height: 0;
+}
+.apf-err {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  color: var(--bad);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  user-select: text;
+}
+.apf-msg {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.apf-err > .btn {
+  user-select: none;
+}
+/* The inline card's actions, shown while the pointer or focus is on the card. */
+.apf-hov {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--ov);
+  backdrop-filter: blur(var(--blur-md));
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.apf:is(:hover, :focus-within) > .apf-hov {
+  opacity: 1;
+  transition-timing-function: var(--ease-in);
+}
+.apf-hov > .ib {
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}

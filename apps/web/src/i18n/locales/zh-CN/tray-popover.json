@@ -1,0 +1,15 @@
+{
+  "trayPopover.waiting.title": "等你",
+  "trayPopover.waiting.step": "「{step}」等你审批",
+  "trayPopover.waiting.asked": "{name} 问了一个问题",
+  "trayPopover.waiting.allow": "允许",
+  "trayPopover.waiting.deny": "拒绝",
+  "trayPopover.waiting.more": "{count, plural, other {还有 # 条}}",
+  "trayPopover.open": "打开",
+  "trayPopover.review.title": "可审阅",
+  "trayPopover.running.title": "在跑",
+  "trayPopover.quota.label": "{runtime} 订阅额度",
+  "trayPopover.empty": "现在没有要你处理的",
+  "trayPopover.newSession": "新会话",
+  "trayPopover.openPantheon": "打开 Pantheon"
+}

@@ -1,0 +1,21 @@
+/* A saved theme's backdrop lies under the whole window; the canvas and the sidebar let it through, the content surface stays opaque. */
+.ut-bd {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+/* The theme's frosted layer over its backdrop, the one blur outside popovers. */
+.ut-glass {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.pt[data-backdrop],
+.pt[data-backdrop] :is(.app, .sb) {
+  background: transparent;
+}

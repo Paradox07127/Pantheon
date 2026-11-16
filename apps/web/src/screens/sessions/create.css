@@ -1,0 +1,518 @@
+/* The new-session composer: the message box, then the sessions in progress under it */
+
+.cr-box {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(640px, calc(100vw - 2 * var(--sp-6)));
+  margin: 0 auto;
+}
+.cr-dlg {
+  display: flex;
+  flex-direction: column;
+  border: var(--hair) solid var(--bd3);
+  border-radius: var(--r-xl);
+  background: var(--sf);
+  color: var(--tx);
+  outline: none;
+}
+/* A new session: the composer in the page, under the empty state of a project without sessions. */
+.ss-home {
+  /* Its own stack, so the glyph temple at z-index -1 sits above its background and under its content. */
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sp-6);
+  min-height: 0;
+  padding: var(--sp-6);
+  overflow-y: auto;
+}
+/* Less room above than below puts the composer at about 40% of the height. */
+.ss-home::before,
+.ss-home::after {
+  content: '';
+  flex: 2 1 0;
+}
+.ss-home::after {
+  flex-grow: 3;
+}
+/* The question above the composer */
+.cr-hero {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  transition:
+    opacity var(--dur-3) var(--ease-in),
+    transform var(--dur-3) var(--ease-in);
+}
+@starting-style {
+  .cr-hero {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.cr-ttl {
+  margin: 0;
+  color: var(--tx);
+  font-size: var(--fs-xl);
+  font-weight: 500;
+  line-height: var(--lh-xl);
+  text-align: center;
+  text-wrap: balance;
+}
+/* A short window keeps its height for the composer. */
+@media (max-height: 599px) {
+  .ss-home {
+    gap: var(--sp-4);
+  }
+}
+.ss-home > .es {
+  margin: 0 auto;
+}
+.ss-home > .cr-scratch {
+  align-self: center;
+}
+.cr-dlg .btn[aria-disabled='true'] {
+  opacity: 0.4;
+}
+/* The add and model buttons carry their key hints on their corners, as icon buttons do. */
+.cp-add:has(> .hk),
+.cp-mdl:has(> .hk) {
+  position: relative;
+}
+.cp-add > .hk,
+.cp-mdl > .hk {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 1;
+  line-height: 16px;
+}
+
+/* The message: task card, attachments, text, then the row of add, where it starts, model and start */
+
+.cr-in {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-4) var(--sp-2);
+  border-radius: var(--r-xl);
+  transition: background-color var(--dur-2) var(--ease-std);
+}
+.cr-in[data-drop] {
+  background: var(--sf2);
+}
+.cr-in .ss-q {
+  padding: 0;
+}
+.cr-in textarea {
+  max-height: 160px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+}
+.cr-in textarea::placeholder {
+  color: var(--faint);
+}
+.cr-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+}
+.cr-card svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--mu);
+}
+.cr-cdt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A referenced session: runtime with its state, title, state, diff size and remove */
+
+.cr-av {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+.cr-avs {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--sf);
+}
+.cr-card .cr-avs svg {
+  width: 8px;
+  height: 8px;
+}
+.cr-rst {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.cr-dif {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cr-rx {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+/* Sessions in progress, offered under the box while the message is empty */
+
+.cr-sug {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+}
+.cr-sgg {
+  display: flex;
+  flex-direction: column;
+}
+/* GitHub not connected, and the way to connect it */
+.cr-sgx {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+}
+.cr-gh {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: var(--lh-xs);
+}
+.cr-sg {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  padding-right: var(--sp-1);
+  border-radius: var(--r-sm);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.cr-sg:hover,
+.cr-sg:focus-within {
+  background: var(--sel);
+}
+.cr-sgm {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 100%;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  text-align: left;
+  transition: color var(--dur-1) var(--ease-std);
+}
+/* The row's key hint takes the place of its time while ⌘ is held. */
+.cr-sgm > .hk {
+  position: absolute;
+  top: 6px;
+  right: var(--sp-2);
+  line-height: 16px;
+}
+.pt[data-cmd] .cr-sg .cr-meta {
+  visibility: hidden;
+}
+.cr-more {
+  height: var(--row);
+  padding: 0 var(--sp-2) 0 32px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.cr-more:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.cr-sg:hover .cr-sgm,
+.cr-sg:focus-within .cr-sgm {
+  color: var(--tx);
+}
+.cr-sgm:focus-visible {
+  outline-offset: -1.5px;
+}
+.cr-acts {
+  display: none;
+  gap: 2px;
+}
+.cr-sg:hover .cr-acts,
+.cr-sg:focus-within .cr-acts {
+  display: flex;
+}
+.cr-sg:hover .cr-meta,
+.cr-sg:focus-within .cr-meta {
+  display: none;
+}
+.cr-gl {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+.cr-sgt {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cr-sgs {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mu);
+}
+.cr-meta {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Where the session starts: a chip in the message row, opening the project, folder and start point */
+
+.cr-wp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: var(--ctl);
+  padding: 0 10px;
+  border: var(--hair) solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.cr-wp:hover,
+.cr-wp[data-popup-open] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.cr-wp .cr-dn {
+  color: var(--mu);
+}
+/* A narrow row cuts the start point's name before the project's. */
+.cr-wpn {
+  flex-shrink: 0;
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-wpb {
+  flex-shrink: 1000;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-wpw {
+  flex: none;
+}
+.cr-ws {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(560px, calc(100vw - 2 * var(--sp-6)));
+  padding: var(--sp-3);
+}
+.cr-wsr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.cr-pk {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.cr-pk:hover,
+.cr-pk[data-popup-open] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.cr-pk svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.cr-pkn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-pk .cr-dn {
+  color: var(--mu);
+}
+.cr-seg {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+.cr-seg > .hk {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 1;
+  line-height: 16px;
+}
+/* The start menu: the checkout, the branches, then the referenced sessions */
+
+.cr-stm {
+  max-width: 400px;
+}
+.cr-bst {
+  padding: 5px 10px 5px 26px;
+  color: var(--mu);
+}
+.cr-bst[data-bad] {
+  color: var(--bad);
+}
+.cr-brn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+.cr-btag {
+  flex: none;
+  padding: 0 var(--sp-1);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+}
+.cr-list {
+  display: flex;
+  flex-direction: column;
+}
+.cr-list > * + * {
+  border-top: var(--hair) solid var(--bd2);
+}
+.cr-head,
+.cr-dirty {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 36px;
+  padding: 0 var(--sp-2);
+  color: var(--tx);
+}
+.cr-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 5px;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.cr-then,
+.cr-num {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cr-head svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--mu);
+}
+.cr-br {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.cr-sha {
+  flex: none;
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.cr-sub {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mu);
+}

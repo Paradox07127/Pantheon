@@ -1,0 +1,355 @@
+/* The runs table: a header, then session, call, subagent and approval rows on one grid. */
+.ct {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  outline: none;
+}
+.ct:focus-visible .ct-row[aria-selected='true'] {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ct-row {
+  --ct-k: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 20px 56px 180px;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  transition:
+    opacity var(--dur-2) var(--ease-in) calc(var(--ct-k) * 40ms),
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+@starting-style {
+  .ct-row {
+    opacity: 0;
+  }
+}
+.ct-row:not(.ct-head) {
+  cursor: default;
+}
+.ct-row:not(.ct-head):hover,
+.ct-row[aria-selected='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.ct-row[data-type='session'] ~ .ct-row[data-type='session'] {
+  margin-top: var(--sp-2);
+}
+.ct-head {
+  height: 24px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+  color: var(--mu);
+}
+.ct-head > .ct-name {
+  padding-left: var(--sp-6);
+}
+.ct-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+.ct-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.ct-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ct [data-mono] {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.ct-row > .ct-num:nth-child(2) {
+  color: var(--mu);
+}
+.ct-fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mu);
+}
+.ct-fold svg,
+.ct-ic {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--mu);
+}
+.ct-row[aria-selected='true'] .ct-ic {
+  color: inherit;
+}
+.ct-fork {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+}
+.ct-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ct-title:not([data-ended]) {
+  font-weight: 500;
+  color: var(--tx);
+}
+.ct-title[data-ended][data-state='ok'] {
+  color: var(--mu);
+}
+.ct-row[aria-selected='true'] .ct-verb {
+  font-weight: 500;
+}
+.ct-tg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mu);
+}
+.ct-row[aria-selected='true'] .ct-tg {
+  color: inherit;
+}
+.ct-inl {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px var(--sp-1);
+  border-radius: 4px;
+  background: var(--sf2);
+}
+.ct-working {
+  flex: none;
+  background: linear-gradient(
+      90deg,
+      var(--mu) 0%,
+      var(--mu) 35%,
+      var(--tx) 50%,
+      var(--mu) 65%,
+      var(--mu) 100%
+    )
+    0 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ct-sweep 2.2s linear infinite;
+}
+.ct-ctx {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.ct-ring {
+  --ct-v: 0;
+  flex: none;
+  transform: rotate(-90deg);
+}
+.ct-ring circle {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.ct-ring-tr {
+  stroke: var(--track);
+}
+.ct-ring-fg {
+  stroke: var(--run);
+  stroke-dasharray: 100;
+  stroke-dashoffset: calc(100 - var(--ct-v));
+  transition: stroke-dashoffset var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .ct-ring-fg {
+    stroke-dashoffset: 100;
+  }
+}
+.ct-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+/* Status: a dot, bars that bounce while running, a ring that breathes while waiting, marks once done. */
+.ct-st {
+  --ct-c: var(--idle);
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--ct-c);
+}
+.ct-st::before {
+  content: '';
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ct-st[data-state='idle']::before {
+  background: none;
+  border: 1.5px solid currentColor;
+}
+.ct-st[data-state='run'] {
+  --ct-c: var(--run);
+}
+.ct-st[data-state='run']::before {
+  content: none;
+}
+.ct-st[data-state='wait'] {
+  --ct-c: var(--wait);
+}
+.ct-st[data-state='wait']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: ct-breathe 2.4s ease-in-out infinite;
+}
+.ct-st[data-state='ready'] {
+  --ct-c: var(--ready);
+}
+.ct-st[data-state='ready']::before {
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+  border: 1.5px solid currentColor;
+}
+.ct-st[data-state='ok'] {
+  --ct-c: var(--ok);
+}
+.ct-st[data-state='bad'] {
+  --ct-c: var(--bad);
+}
+.ct-st:is([data-state='ok'], [data-state='bad'])::before {
+  width: 86%;
+  height: 86%;
+  border-radius: 0;
+  -webkit-mask: var(--ct-m) center / contain no-repeat;
+  mask: var(--ct-m) center / contain no-repeat;
+}
+.ct-st[data-state='ok']::before {
+  --ct-m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12.5l4.5 4.5L19 7.5'/></svg>");
+}
+.ct-st[data-state='bad']::before {
+  --ct-m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'><path d='M6.5 6.5l11 11M17.5 6.5l-11 11'/></svg>");
+}
+
+/* Waterfall: each bar grows in from its left end; a live bar's end blinks. */
+.ct-wf {
+  position: relative;
+  display: block;
+  height: 10px;
+}
+.ct-wf > i {
+  --ct-c: var(--idle);
+  position: absolute;
+  top: 0;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--ct-c);
+  transform-origin: left;
+  transition: transform var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .ct-wf > i {
+    transform: scaleX(0);
+  }
+}
+.ct-wf > i[data-tone='run'] {
+  --ct-c: var(--run);
+}
+.ct-wf > i[data-tone='wait'] {
+  --ct-c: var(--wait);
+}
+.ct-wf > i[data-tone='bad'] {
+  --ct-c: var(--bad);
+}
+.ct-wf > i[data-tone='series-1'] {
+  --ct-c: var(--series-1);
+}
+.ct-wf > i[data-tone='series-2'] {
+  --ct-c: var(--series-2);
+}
+.ct-wf > i[data-tone='series-3'] {
+  --ct-c: var(--series-3);
+}
+.ct-wf > i[data-tone='series-4'] {
+  --ct-c: var(--series-4);
+}
+.ct-wf > i[data-tone='series-5'] {
+  --ct-c: var(--series-5);
+}
+.ct-wf > i[data-faded] {
+  opacity: 0.35;
+}
+.ct-wf > i[data-stripe] {
+  background: repeating-linear-gradient(135deg, var(--ct-c) 0 3px, transparent 3px 6px);
+  opacity: 0.7;
+}
+.ct-wf > i[data-live]::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--ct-c);
+  animation: ct-blink 1s steps(2, jump-none) infinite;
+}
+
+.pt[data-motion='reduced'] .ct-wf > i {
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+.pt[data-motion='reduced'] .ct-working,
+.pt[data-motion='reduced'] .ct-st[data-state='wait']::after {
+  animation: none;
+}
+
+@keyframes ct-sweep {
+  to {
+    background-position: -300% 0;
+  }
+}
+@keyframes ct-breathe {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.72);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+}
+@keyframes ct-blink {
+  50% {
+    opacity: 0;
+  }
+}

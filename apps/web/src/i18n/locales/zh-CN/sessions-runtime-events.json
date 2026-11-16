@@ -1,0 +1,16 @@
+{
+  "sessions.model.status.retrying": "第 {attempt} 次重试，{reason, select, rate_limit {限流} overloaded {过载} other {网络}}",
+  "sessions.model.status.compacting": "{trigger, select, auto {正在自动压缩上下文} other {正在压缩上下文}}",
+  "sessions.compose.retryIn": "{seconds, plural, other {# 秒后重试}}",
+  "sessions.compose.context.autoCompactAt": "{tokens} 时自动压缩",
+  "sessions.composer.connectors": "连接器",
+  "sessions.thread.forkStep": "从这一步之前分叉",
+  "sessions.thread.forkStepBody": "在新的 worktree 里开一个会话，带上现在的文件和这一步之前的对话。这个会话保持原样。",
+  "sessions.screen.rollbackScope": "回滚范围",
+  "sessions.screen.rollbackBoth": "文件和对话",
+  "sessions.screen.rollbackFiles": "只回文件",
+  "sessions.screen.rollbackConversation": "只回对话",
+  "sessions.screen.rollbackBothBody": "worktree 的文件和提交回到这一回合开始前，对话也回到这一回合之前；之后的改动和回合都丢弃。",
+  "sessions.screen.rollbackFilesBody": "worktree 的文件和提交回到这一回合开始前，之后的改动丢弃；对话保持不变。",
+  "sessions.screen.rollbackConversationBody": "对话回到这一回合之前，之后的回合丢弃；worktree 的文件保持不变。"
+}

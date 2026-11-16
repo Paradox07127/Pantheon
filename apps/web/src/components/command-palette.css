@@ -1,0 +1,163 @@
+/* The palette opens many times a day, so it and its scrim appear and go without motion. */
+.cmdk-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 37;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  -webkit-app-region: no-drag;
+}
+.cmdk {
+  position: fixed;
+  left: 50%;
+  top: 12vh;
+  transform: translateX(-50%);
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 48px));
+  max-height: 76vh;
+  overflow: hidden;
+  background: var(--ov);
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(var(--blur-md));
+  color: var(--tx);
+  outline: none;
+}
+.cmdk-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--bar);
+  padding: 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  color: var(--mu);
+}
+.cmdk-ic {
+  flex: none;
+}
+.cmdk-scope {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 40%;
+  height: 24px;
+  padding: 0 var(--sp-1);
+  border-radius: calc(var(--r-sm) - 2px);
+  background: var(--sf2);
+  color: var(--tx);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmdk-in {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.cmdk-in:focus-visible {
+  outline: none;
+}
+.cmdk-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 520px;
+  overflow-y: auto;
+  padding: var(--sp-1);
+}
+.cmdk-list:empty {
+  display: none;
+}
+.cmdk-gh {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  margin-top: var(--sp-1);
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.cmdk-op {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 32px;
+  padding: 0 var(--sp-2);
+  border-radius: max(calc(var(--r-lg) - 4px), 4px);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.cmdk-op[aria-selected='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.cmdk-ld {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--mu);
+}
+.cmdk-lb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmdk-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.cmdk-op > .kbd,
+.cmdk-op > .cmdk-ht {
+  margin-left: auto;
+}
+.cmdk-ht {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.cmdk-none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6);
+  color: var(--mu);
+}
+.cmdk-ft {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 32px;
+  padding: 0 var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.cmdk-fk {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.cmdk-fe {
+  margin-left: auto;
+}

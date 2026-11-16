@@ -1,0 +1,6 @@
+/* A modifier click at the end of a menu row: its key cap, then the word in the hint colour. */
+.sm-click {
+  align-items: center;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}

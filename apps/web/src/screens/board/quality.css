@@ -1,0 +1,289 @@
+/* Quality tab: review matrix, merge track, gate history */
+
+.ql-sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* Review matrix */
+
+.ql-mx {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.ql-mxr {
+  display: grid;
+  grid-template-columns: 76px repeat(4, minmax(56px, 1fr));
+  column-gap: var(--sp-3);
+  align-items: center;
+  min-height: 40px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.ql-mxr.ql-mxh {
+  min-height: 24px;
+  border-top: 0;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.ql-mxh span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.ql-rt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tx);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ql-mxc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  column-gap: 6px;
+  align-items: center;
+}
+.ql-mxt {
+  display: flex;
+  height: 12px;
+  min-width: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--sf2);
+}
+.ql-mxb {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+.ql-n {
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Merge track */
+
+.ql-mgp {
+  height: 380px;
+}
+.ql-tk {
+  flex: none;
+  margin-bottom: var(--sp-3);
+}
+.ql-tka {
+  position: relative;
+  height: 72px;
+  margin: 0 8px;
+}
+.ql-tkl {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--bd);
+}
+.ql-mk {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+}
+.ql-mk:hover {
+  background: var(--sf2);
+}
+.ql-mk[aria-disabled='true'] {
+  cursor: default;
+}
+.ql-mk:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.ql-add {
+  position: absolute;
+  left: 4px;
+  width: 4px;
+  bottom: calc(50% + 4px);
+  border-radius: 2px 2px 0 0;
+  background: var(--ok);
+}
+.ql-del {
+  position: absolute;
+  left: 4px;
+  width: 4px;
+  top: calc(50% + 4px);
+  border-radius: 0 0 2px 2px;
+  background: var(--bad);
+}
+.ql-dot {
+  position: absolute;
+  top: calc(50% - 3px);
+  left: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.ql-mk:hover .ql-dot {
+  background: var(--tx);
+}
+.ql-tkx {
+  position: relative;
+  height: 16px;
+  margin: 2px 8px 0;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.ql-tkx span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Gate tracker: command names, the cells of each run, then each command's pass rate */
+
+.ql-gt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: var(--sp-2);
+  font-size: var(--fs-xs);
+}
+.ql-gtn span,
+.ql-gtp span {
+  display: block;
+  height: 20px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.ql-gtn span {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--tx);
+}
+.ql-gtp span {
+  min-width: 4ch;
+  text-align: right;
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.ql-gts {
+  min-width: 0;
+  overflow-x: auto;
+}
+/* As wide as its cells and pushed right, so a few runs end at the newest and many scroll. */
+.ql-gtg {
+  width: max-content;
+  margin-left: auto;
+}
+.ql-gtr {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+}
+.ql-tc {
+  flex: none;
+  width: 8px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  transition:
+    background-color var(--dur-2) var(--ease-std),
+    border-color var(--dur-2) var(--ease-std);
+}
+.ql-tc-ok {
+  background: var(--ok);
+}
+.ql-tc-bad {
+  background: var(--bad);
+}
+.ql-tc-wait {
+  background: var(--wait);
+}
+/* A command the run skipped or did not have leaves its cell empty. */
+.ql-tc-none {
+  border-color: var(--bd);
+}
+.ql-tc:hover {
+  border-color: var(--tx);
+}
+.ql-tc[aria-current='true'] {
+  outline: 1px solid var(--ink);
+  outline-offset: 1px;
+}
+.ql-tc:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Most failed gate steps: name, a bar against the most failed step, count, median time */
+
+.ql-fl {
+  display: flex;
+  flex-direction: column;
+}
+.ql-fr {
+  display: grid;
+  grid-template-columns: minmax(0, 140px) minmax(0, 1fr) 6ch 6ch;
+  column-gap: var(--sp-3);
+  align-items: center;
+  min-height: 30px;
+}
+.ql-fk {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ql-fn {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.ql-ft {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--sf2);
+  overflow: hidden;
+}
+.ql-ft > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--bad);
+}
+.ql-fc {
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.ql-fd {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}

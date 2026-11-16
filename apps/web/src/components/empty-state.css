@@ -1,0 +1,26 @@
+.es {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: auto;
+  text-align: center;
+  text-wrap: balance;
+}
+.es-g {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+.es .es-g > svg {
+  width: 20px;
+  height: 20px;
+}
+.es-t {
+  font-weight: 500;
+  color: var(--tx);
+}
+.es-n {
+  color: var(--mu);
+}

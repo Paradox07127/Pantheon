@@ -1,0 +1,33 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "tsBuildInfoFile": "../node_modules/.cache/tests.tsbuildinfo",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@/*": ["../apps/web/src/*"],
+      "react": ["../apps/web/node_modules/@types/react"],
+      "react-dom/*": ["../apps/web/node_modules/@types/react-dom/*"],
+      "@anthropic-ai/claude-agent-sdk": [
+        "../packages/adapters/node_modules/@anthropic-ai/claude-agent-sdk"
+      ]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mjs", "../scripts/relaunch.mjs", "../scripts/package-desktop.mjs"],
+  "references": [
+    { "path": "../packages/domain" },
+    { "path": "../packages/protocol" },
+    { "path": "../packages/store" },
+    { "path": "../packages/adapters" },
+    { "path": "../packages/control" },
+    { "path": "../apps/daemon" },
+    { "path": "../apps/cli" },
+    { "path": "../apps/web" },
+    { "path": "../apps/desktop" }
+  ]
+}

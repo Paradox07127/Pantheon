@@ -1,0 +1,14 @@
+{
+  "name": "high-risk-task-waits-for-running-plan-review",
+  "source_commit": "5a23e7936fe67347f7ca50f10be7f91a74244eb6",
+  "base_commit": "08e9f394af474ba49b428897e4cca95e65aebf77",
+  "goal": "A `t3` task waits (`plan_review`) while a plan review covering its generation runs. Today a t3 task added after that review started, which no review covers yet, dispatches at once; make it wait for the running review too, so it starts only after its own review ends. A lead claiming a `direct` t3 task while such a review runs must get `invalid_state` with a message naming `plan review <review id>`.",
+  "scope": ["packages/control/src/review.ts", "packages/control/src/task-dispatch.ts"],
+  "acceptance": ["pnpm build", "pnpm exec vitest run tests/control/plan-review.test.ts"],
+  "hidden_files": ["tests/control/plan-review.test.ts"],
+  "hidden_check": [
+    "pnpm install --frozen-lockfile",
+    "pnpm build",
+    "pnpm exec vitest run tests/control/plan-review.test.ts"
+  ]
+}

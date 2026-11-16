@@ -1,0 +1,369 @@
+.vis {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  overflow: hidden;
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .vis {
+    opacity: 0;
+  }
+}
+.vis-h {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  min-width: 0;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.vis-h .chip svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.5;
+}
+.vis-ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--tx2);
+}
+.vis-ic svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.5;
+}
+.vis-t {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vis-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.vis-meta svg {
+  width: 12px;
+  height: 12px;
+}
+.vis-end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+.vis-from {
+  min-width: 0;
+  max-width: 160px;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.vis-from:hover {
+  background: var(--st-hov);
+}
+.vis-from > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vis-acts {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.vis-h .ib[aria-disabled='true'],
+.vis-h .ib[aria-disabled='true']:hover {
+  color: var(--faint);
+  background: none;
+}
+/* Pin, zoom and spec show while the pointer or the keyboard focus is in the card; a pressed pin stays. */
+.vis-hov {
+  opacity: 0;
+  transition:
+    opacity var(--dur-1) var(--ease-std),
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.vis:hover .vis-hov,
+.vis:focus-within .vis-hov {
+  opacity: 1;
+}
+.vis-hov[aria-pressed='true'] {
+  opacity: 1;
+  color: var(--tx);
+}
+.vis-body {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+}
+/* The last picture stays after a failed redraw, greyed. */
+.vis-body[data-stale] {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+.vis-fail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--tx2);
+}
+.vis-fill {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.vis-skel {
+  position: absolute;
+  inset: var(--sp-3);
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+}
+.vis-drawing {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .vis-drawing {
+    opacity: 0;
+  }
+}
+.vis-ask {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 36px;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  background: var(--sf2);
+  font-size: var(--fs-xs);
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+.vis-ask code {
+  min-width: 0;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--sf);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+@starting-style {
+  .vis-ask {
+    opacity: 0;
+  }
+}
+.vis-ask-t {
+  flex: none;
+  font-weight: 500;
+}
+.vis-ask code:last-of-type {
+  margin-right: auto;
+}
+.vis-f {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.vis-msg {
+  color: var(--bad);
+  user-select: text;
+}
+/* A long error scrolls in the card from its first line. */
+.vis-body .vis-page-err {
+  overflow: auto;
+  align-content: safe center;
+  padding-block: var(--sp-3);
+}
+.vis-page-err code {
+  white-space: pre-wrap;
+}
+.vis-err-acts {
+  grid-column: 2;
+  justify-self: start;
+  display: flex;
+  gap: var(--sp-2);
+}
+.vis-page-err .vis-msg {
+  grid-column: 2;
+  justify-self: start;
+}
+.vis-gone {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.vis-dlg {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  width: min(1120px, calc(100vw - 96px));
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
+  border-radius: var(--r-xl);
+  color: var(--tx);
+  outline: none;
+}
+.vis-dlg:is([data-starting-style], [data-ending-style]) {
+  transform: translate(-50%, -50%) scale(0.98);
+}
+.vis-dlg .vis-acts {
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* The enlarged picture with its spec and data source beside it. */
+.vis-zoom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  min-height: 0;
+}
+.vis-insp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 0;
+  padding: var(--sp-4);
+  overflow: auto;
+  border-left: var(--hair) solid var(--bd2);
+}
+.vis-insp section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.vis-insp h2 {
+  margin: 0;
+}
+.vis-insp pre {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--code);
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.vis-insp .vis-spec {
+  max-height: 260px;
+  overflow: auto;
+}
+.vis-kl {
+  display: flex;
+  flex-direction: column;
+}
+.vis-kl-read {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 28px;
+  min-width: 0;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  white-space: nowrap;
+}
+.vis-kl-read :is(b, .vis-kl-n) {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--tx);
+}
+.vis-kl-read b {
+  margin-left: 4px;
+}
+.vis-kl-read .vis-kl-n[data-up] {
+  color: var(--add);
+}
+.vis-kl-read .vis-kl-n[data-down] {
+  color: var(--del);
+}
+.vis-kl-read .tb-seg {
+  margin-left: auto;
+}
+.vis-kl-plot {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+/* vega-embed's own sheet makes its element inline-block, which would not follow the card's width. */
+.vis-fill > .vis-vega {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.vis-mermaid {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+.vis-mermaid svg {
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+}
+.vis-page {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.vis-graph {
+  --xy-edge-stroke: var(--mu);
+}
+.vis-graph .react-flow__handle {
+  opacity: 0;
+}
+.vis-graph .react-flow__edge-text {
+  fill: var(--mu);
+  font-size: var(--fs-xs);
+}
+.vis-graph .react-flow__edge-textbg {
+  fill: var(--sf);
+}
+.vis-src {
+  padding: var(--sp-2);
+}
+.vis-reason {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}

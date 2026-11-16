@@ -1,0 +1,11 @@
+{
+  "sessions.completion.reviewAsked": "已请 {runtime} 审查",
+  "sessions.completion.compactHint": "压缩上下文",
+  "sessions.completion.reviewHint": "审这次改动",
+  "sessions.completion.compactNoInstructions": "{runtime} 压缩时不收指示",
+  "sessions.completion.commands": "命令",
+  "sessions.completion.skills": "技能",
+  "sessions.completion.sendOther": "{action}，{keys} {then, select, steer {插话} other {排队}}",
+  "sessions.completion.references": "引用",
+  "sessions.completion.removeReference": "移除引用 {path}"
+}

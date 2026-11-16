@@ -1,0 +1,18 @@
+{
+  "runs.detail.label": "调用详情",
+  "runs.detail.close": "关闭详情",
+  "runs.detail.turn": "第 {turn} 轮",
+  "runs.detail.duration": "时长",
+  "runs.detail.tokens": "tokens",
+  "runs.detail.kind.think": "思考",
+  "runs.detail.kind.compact": "压缩",
+  "runs.detail.kind.run": "运行",
+  "runs.detail.kind.edit": "编辑",
+  "runs.detail.kind.read": "读取",
+  "runs.detail.kind.search": "搜索",
+  "runs.detail.kind.subagent": "子 agent",
+  "runs.detail.copy": "复制命令",
+  "runs.detail.copyFailed": "没能复制命令",
+  "runs.detail.showInTimeline": "在时间轴上看",
+  "runs.detail.showInThread": "在对话里看"
+}

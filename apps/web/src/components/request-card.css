@@ -1,0 +1,144 @@
+/* Request card, compact: one item of a list, with the buttons that settle it. */
+.rq {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+}
+.rq[data-on] {
+  background: var(--sel);
+}
+.rq-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rq-who {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.rq-pick {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+.rq-pick:hover {
+  text-decoration: underline;
+}
+.rq-pick:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.rq-age {
+  flex: none;
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rq-what {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+  color: var(--tx2);
+}
+.rq .rq-what > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rq-cmd {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--tx);
+}
+.rqf .rq-cmd {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--code);
+  border-radius: var(--r-sm);
+  overflow-wrap: anywhere;
+}
+.rq-arr {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--mu);
+}
+.rq-next {
+  margin: 0;
+  color: var(--tx2);
+  text-wrap: pretty;
+}
+.rq-src {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.rq-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.rqf .rq-files {
+  flex-direction: column;
+}
+.rq-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.rq-err {
+  display: block;
+}
+.rq-ms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.rq-ms .bms-cell {
+  cursor: default;
+}
+
+/* Request card, full: the item picked in a list, with what it asks in full. */
+.rqf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+}
+.rqf .rq-who {
+  font-size: var(--fs-md);
+}
+.rqf-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-left: calc(8px + var(--sp-2));
+}

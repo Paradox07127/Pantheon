@@ -1,0 +1,12 @@
+{
+  "board.summary.label": "摘要",
+  "board.summary.ended": "已结束的会话",
+  "board.summary.ended.bars": "每个会话的用时",
+  "board.summary.gate": "今天的门禁",
+  "board.summary.gate.ring": "首次通过率 {percent}%",
+  "board.summary.gate.count": "首次通过 {first} / {total}",
+  "board.summary.usage": "今天的用量",
+  "board.summary.usage.share": "{runtime} 占今天 token 的 {percent}%",
+  "board.summary.merged": "今天已合并",
+  "board.summary.merged.bars": "{count, plural, one {今天的合并数} other {近 # 天每天的合并数}}"
+}

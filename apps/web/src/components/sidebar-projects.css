@@ -1,0 +1,47 @@
+.sb-all[aria-current],
+.sb-all[aria-current]:hover {
+  background: var(--sel);
+}
+.sb-all > svg:first-child {
+  color: inherit;
+}
+.sb-pl {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.sb-pr > .pmono {
+  margin: 0 2px;
+}
+.sb-pr[data-idle] .sb-pn {
+  color: var(--mu);
+}
+.sb-pn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-pc {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.sb-pd {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.sb-pd[data-tone='run'] {
+  background: var(--run);
+}

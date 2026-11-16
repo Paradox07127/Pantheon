@@ -1,0 +1,7 @@
+{
+  "sessions.newWorkspace.connectGithub": "去连接",
+  "sessions.newWorkspace.githubOff": "GitHub 未连接",
+  "sessions.newWorkspace.openIssues": "未处理的 issue",
+  "sessions.newWorkspace.openOnGithub": "在 GitHub 打开",
+  "sessions.newWorkspace.openPulls": "未处理的 PR"
+}

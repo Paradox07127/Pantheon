@@ -1,0 +1,23 @@
+.trb-ct {
+  margin-left: var(--sp-1);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+
+.trb-win {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-seg[data-disabled] {
+  opacity: 0.4;
+}
+
+.tb-seg[data-disabled] [role='radio'] {
+  cursor: default;
+}
+
+.tb-seg[data-disabled] [role='radio']:hover {
+  color: var(--mu);
+}

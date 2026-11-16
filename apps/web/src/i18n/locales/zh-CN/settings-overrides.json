@@ -1,0 +1,13 @@
+{
+  "settings.overrides.open": "{count, plural, =0 {自行设置{setting}的项目} other {# 个项目自行设置了{setting}}}",
+  "settings.overrides.close": "关闭",
+  "settings.overrides.list": "自行设置的项目",
+  "settings.overrides.clearNamed": "清除 {project} 自行设置的值",
+  "settings.overrides.clear": "清除",
+  "settings.overrides.setFor": "{project} 自行设置的值",
+  "settings.overrides.project": "项目",
+  "settings.overrides.restoreDefault": "恢复默认值",
+  "settings.projectList.ownCount": "{count, plural, other {# 项自行设置}}",
+  "settings.projectList.own": "自行设置的值",
+  "settings.projectList.clearNamed": "清除自行设置的值：{setting}"
+}

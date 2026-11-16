@@ -1,0 +1,207 @@
+/* Model menu: providers on the left; the provider's models above its settings on the right */
+
+.cp-mm {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  /* The row takes the height the window leaves, so the columns scroll instead of running past it. */
+  grid-template-rows: minmax(0, 1fr);
+  width: min(640px, var(--available-width));
+  overflow: hidden;
+  color: var(--tx);
+  font-size: var(--fs-sm);
+}
+.cp-mml {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  padding: var(--sp-1);
+  border-right: var(--hair) solid var(--bd2);
+  overflow-y: auto;
+}
+.cp-mml .cp-mi[data-checked] {
+  background: var(--sel);
+}
+/* A provider's name stays whole; why it cannot start gives way first. */
+.cp-mml .cp-mil {
+  flex: none;
+}
+.cp-mml .cp-mmn {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-mml .cp-mi > .rtg {
+  margin-right: var(--sp-1);
+}
+/* The model's name stays whole on the button; the backend, effort and mode after it give way first. */
+.cp-mdl > .rtg {
+  margin-right: var(--sp-1);
+}
+.cp-mdl > .cp-mdn {
+  flex: none;
+}
+.cp-mdl > span.cp-mdx {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-mmn {
+  flex: none;
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.cp-mmr {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+.cp-mmt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  padding: var(--sp-1);
+  overflow-y: auto;
+}
+.cp-mmb {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+}
+.cp-mmg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.cp-mmf {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: auto;
+  padding: var(--sp-2) var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.cp-mmf + .cp-mmf {
+  margin-top: 0;
+}
+.cp-mmf svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+/* Model rows share the columns of mark, name, description and check, so descriptions start in line. */
+.cp-mdt {
+  display: grid;
+  grid-template-columns: calc(16px + var(--sp-1)) minmax(0, max-content) minmax(0, 1fr) auto;
+  gap: 1px var(--sp-2);
+}
+.cp-mdt > * {
+  grid-column: 1 / -1;
+}
+.cp-mdt > .cp-mdr {
+  display: grid;
+  grid-template-columns: subgrid;
+}
+.cp-mdr > * {
+  grid-row: 1;
+}
+.cp-mdr .cp-mil {
+  grid-column: 2;
+}
+.cp-mdr .cp-mmd {
+  grid-column: 3;
+}
+.cp-mdr .cp-ck {
+  grid-column: 4;
+}
+.cp-mmd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.cp-fast {
+  padding: 0;
+}
+.cp-fast .cp-mmn {
+  margin-left: 0;
+}
+.cp-fast .ps-sw {
+  margin-left: auto;
+}
+.cp-fast[data-checked] .ps-sw {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.cp-fast[data-checked] .ps-sw::after {
+  transform: translateX(12px);
+  background: var(--on-ink);
+  border-color: var(--ink);
+}
+.cp-mms {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.cp-mmo {
+  overflow-y: auto;
+}
+.cp-mdg {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cp-mdw {
+  padding: 2px 8px 4px;
+  overflow-wrap: anywhere;
+}
+.cp-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-md);
+  background: var(--sf2);
+}
+.cp-sgi {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: max(calc(var(--r-md) - 2px), 4px);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  outline: none;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.cp-sgi[data-highlighted] {
+  color: var(--tx);
+}
+.cp-sgi[data-checked] {
+  background: var(--sf);
+  outline: var(--hair) solid var(--bd);
+  color: var(--tx);
+}

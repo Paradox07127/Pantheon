@@ -1,0 +1,260 @@
+/* First run: opening a folder, the folders the runtimes' history names, then the runtimes */
+.wel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 520px;
+  margin: calc(var(--sp-8) * 3) auto 0;
+  gap: var(--sp-6);
+}
+.wel-intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.wel-hd {
+  margin: 0;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
+  font-weight: 600;
+  text-wrap: balance;
+}
+.wel-sub {
+  margin: 0;
+  color: var(--mu);
+}
+.wel-drop {
+  display: grid;
+  place-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8);
+  border: 1px dashed var(--bd3);
+  border-radius: var(--r-xl);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  transition:
+    background-color var(--dur-2) var(--ease-std),
+    border-color var(--dur-2) var(--ease-std);
+}
+.wel-drop:hover,
+.wel-drop[data-over] {
+  background: var(--sf2);
+  border-color: var(--mu);
+}
+.wel-drop:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.wel-drop b {
+  font-weight: 500;
+}
+.wel-drop-ic {
+  width: 20px;
+  height: 20px;
+  color: var(--mu);
+}
+.wel-keys {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--mu);
+}
+.wel-cap {
+  margin: 0;
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.wel-rt-sec,
+.wel-cands {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.wel-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  overflow: hidden;
+}
+.wel-list > li + li {
+  border-top: var(--hair) solid var(--bd2);
+}
+.wel-rtg {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  background: var(--bd2);
+  overflow: hidden;
+}
+.wel-rt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-3);
+  background: var(--sf);
+}
+.wel-rt:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+.wel-rt-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.wel-rt b {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+.wel-st {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--h-ctl);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.wel-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.wel-dot[data-ok] {
+  background: var(--ok);
+}
+.wel-c {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 160px) minmax(0, 1fr) auto 72px 56px;
+  align-items: center;
+  column-gap: var(--sp-3);
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.wel-c:hover {
+  background: var(--sf2);
+}
+.wel-c[data-off] {
+  color: var(--mu);
+  cursor: default;
+}
+.wel-c:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.wel-c input {
+  margin: 0;
+}
+.wel-nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.wel-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.wel-rts {
+  display: flex;
+  gap: 4px;
+}
+.wel-n,
+.wel-age {
+  justify-self: end;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.wel-why {
+  grid-column: span 2;
+  justify-self: end;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+}
+.wel-idx {
+  height: 2px;
+  overflow: hidden;
+  border-radius: var(--radius-hair);
+  background: var(--sf2);
+}
+.wel-idx i {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transform-origin: left;
+}
+.wel-tg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-ctl);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+.wel-tg:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.wel-chev {
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+  transition: transform var(--dur-2) var(--ease-std);
+}
+.wel-tg[data-panel-open] .wel-chev {
+  transform: rotate(90deg);
+}
+.wel-cnt {
+  font-variant-numeric: tabular-nums;
+}
+.wel-fold {
+  overflow: clip;
+}
+.wel-err {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+}
+.wel-err li {
+  display: flex;
+  gap: var(--sp-2);
+}
+.wel-sk {
+  height: 88px;
+}
+.wel-act {
+  display: flex;
+  gap: var(--sp-2);
+}

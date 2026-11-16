@@ -1,0 +1,17 @@
+{
+  "name": "merge-step-returns-to-pending",
+  "source_commit": "0cb5d5238e90a890c700fc086183d4e7869ec4c6",
+  "base_commit": "ebe90cbf50ef445e5929f4208fc986bcfbc69d93",
+  "goal": "A project workflow can put command steps in the before-merge slot; the merge gate runs them in order and stops at the first failing command. Today a command step the gate never reached stays `running` after the gate ends. Make such a step return to `pending` when the gate finishes without running it, so a later gate run can pass it.",
+  "scope": ["packages/control/src/workflow-engine.ts"],
+  "acceptance": [
+    "pnpm build",
+    "pnpm exec vitest run tests/control/workflow-steps.test.ts tests/control/workflow-engine.test.ts"
+  ],
+  "hidden_files": ["tests/control/workflow-steps.test.ts"],
+  "hidden_check": [
+    "pnpm install --frozen-lockfile",
+    "pnpm build",
+    "pnpm exec vitest run tests/control/workflow-steps.test.ts"
+  ]
+}

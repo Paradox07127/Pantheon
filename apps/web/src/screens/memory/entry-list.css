@@ -1,0 +1,216 @@
+.ml-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--sp-2) var(--sp-2);
+}
+.ml-grp {
+  display: flex;
+  flex-direction: column;
+}
+.ml-gh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.ml-grp:first-child .ml-gh {
+  margin-top: 0;
+}
+.ml-ct {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ml-list [role='option'] {
+  display: grid;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  cursor: default;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.ml-list .ml-row {
+  grid-template-columns: 16px 200px minmax(0, 1fr) 128px 88px 56px;
+  padding-right: var(--sp-3);
+}
+.ml-arow {
+  grid-template-columns: 16px 200px minmax(0, 1fr) 92px 44px;
+}
+.ml-qrow {
+  grid-template-columns: 16px 184px minmax(0, 1fr) 156px 40px;
+}
+.ml-row:hover,
+.ml-qrow:hover,
+.ml-arow:hover,
+.ml-arow:focus-within,
+.ml-list [aria-selected='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.ml-ic {
+  display: grid;
+  place-items: center;
+}
+.ml-arow .ml-ic {
+  color: var(--mu);
+}
+.ml-t,
+.ml-s,
+.ml-by,
+.ml-why {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ml-t {
+  color: var(--tx);
+  font-weight: 500;
+}
+.ml-arow .ml-t {
+  color: var(--mu);
+  font-weight: 400;
+}
+.ml-s {
+  color: var(--mu);
+}
+.ml-tw {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ml-ix {
+  display: grid;
+  flex: none;
+  color: var(--mu);
+}
+.ml-ix svg.lucide,
+.ml-r svg.lucide,
+.ml-nb svg.lucide {
+  width: 12px;
+  height: 12px;
+}
+.ml-tg {
+  display: flex;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow: hidden;
+}
+.ml-by {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.ml-tm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ml-wait {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--wait);
+}
+.ml-wait::before {
+  content: '';
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ml-wait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+.ml-r {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.ml-v {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ml-lnk {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--bd3);
+  text-underline-offset: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ml-act {
+  display: flex;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.ml-arow:hover .ml-act,
+.ml-arow:focus-within .ml-act {
+  opacity: 1;
+}
+.ml-nb {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--sp-2);
+  height: var(--h-ctl);
+  margin: var(--sp-1) 0;
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.ml-nb .ml-why {
+  flex: 1;
+}
+.ml-more {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: var(--row);
+  padding: 0 var(--sp-2);
+}
+.ml-more .btn {
+  margin-left: auto;
+}

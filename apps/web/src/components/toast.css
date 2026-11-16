@@ -1,0 +1,126 @@
+/* The stack's height while it shows (set in Toast.tsx); the surfaces under it leave that much free at their end. */
+:root {
+  --toast-reserve: 0px;
+}
+.toast-vp {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 45;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  width: min(320px, calc(100vw - 2 * var(--sp-4)));
+  outline: none;
+}
+/* Within the 280px overview column, so the stack never covers the composer's send button. */
+:root:has(.ov-card) .toast-vp {
+  width: min(264px, calc(100vw - 2 * var(--sp-4)));
+}
+.toast {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--ov);
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(var(--blur-md));
+  color: var(--tx);
+  transition:
+    opacity var(--dur-3) var(--ease-in),
+    transform var(--dur-3) var(--ease-in);
+}
+.toast:is([data-starting-style], [data-ending-style]) {
+  opacity: 0;
+  transform: translateX(12px);
+}
+.toast[data-ending-style] {
+  transition-duration: var(--dur-2);
+  transition-timing-function: var(--ease-out);
+}
+.toast[data-limited] {
+  display: none;
+}
+/* Out of the way while a modal dialog's scrim is open, and back unchanged once it closes. */
+body:has([class$='-scrim'][data-open]) .toast[data-type='needs'] {
+  display: none;
+}
+.toast-body {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
+}
+.toast-mark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.toast-mark[data-kind='result'] {
+  color: var(--ok);
+}
+.toast-mark[data-kind='failure'] {
+  color: var(--bad);
+}
+.toast-mark[data-kind='needs'] {
+  color: var(--wait);
+}
+.toast-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.toast-n {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.toast .toast-x {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.toast:is(:hover, :focus-within) .toast-x {
+  opacity: 1;
+}
+.toast-life {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  background: var(--bd3);
+  transform-origin: left;
+  animation: toast-life 5s linear both;
+}
+.toast[data-expanded] .toast-life {
+  animation-play-state: paused;
+}
+@keyframes toast-life {
+  to {
+    transform: scaleX(0);
+  }
+}
+.toast-more {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  border: var(--hair) solid var(--bd);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,218 @@
+.rvr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.rvr-card {
+  --rvr-k: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  transition: opacity var(--dur-2) var(--ease-in) calc(var(--rvr-k) * 40ms);
+}
+@starting-style {
+  .rvr-card {
+    opacity: 0;
+  }
+}
+.rvr-head,
+.rvr-result,
+.rvr-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rvr-phase::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.rvr-phase[data-phase='running']::before {
+  background: var(--run);
+}
+.rvr-phase[data-phase='waiting']::before {
+  background: var(--wait);
+}
+.rvr-phase[data-phase='ready']::before {
+  background: var(--ready);
+}
+.rvr-phase:is([data-phase='failed'], [data-phase='regressed'])::before {
+  background: var(--bad);
+}
+.rvr-phase[data-phase='improved']::before {
+  background: var(--ok);
+}
+.rvr-rt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+}
+.rvr-win {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.rvr-at {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.rvr-summary {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  color: var(--tx);
+  text-wrap: pretty;
+  user-select: text;
+}
+.rvr-cited {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.rvr-rf {
+  display: grid;
+  grid-template-columns: 16px 88px minmax(0, 1fr) 80px;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--tx2);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.rvr-rf:hover:not(:disabled) {
+  background: var(--sel);
+  color: var(--tx);
+}
+.rvr-rf:disabled {
+  cursor: default;
+}
+.rvr-rf > svg {
+  color: var(--mu);
+}
+.rvr-rf > b {
+  font-weight: 500;
+  color: var(--tx);
+}
+.rvr-rf > :is(b, span) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.rvr-rf > span:last-child {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.rvr-xp {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+}
+.rvr-xp > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rvr-xp dd {
+  margin: 0;
+  user-select: text;
+}
+.rvr-result > svg[data-outcome='improved'] {
+  color: var(--ok);
+}
+.rvr-result > svg[data-outcome='unchanged'] {
+  color: var(--idle);
+}
+.rvr-result > svg[data-outcome='regressed'] {
+  color: var(--bad);
+}
+.rvr-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.rvr-ev {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  user-select: text;
+}
+.rvr-nb {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--tx2);
+}
+.rvr-nb > span {
+  flex: 1;
+  min-width: 0;
+}
+.rvr-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+}
+.rvr-form > div {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rvr-form > div > .cap:first-child {
+  width: 40px;
+  flex: none;
+}
+.rvr-form .tb-seg + .cap {
+  margin-left: var(--sp-2);
+}
+.rvr-val {
+  width: 72px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.rvr-evin {
+  flex: 1;
+}

@@ -1,0 +1,6 @@
+{
+  "overlays.confirm.deleteTitle": "删除「{title}」？",
+  "overlays.confirm.discardTitle": "丢弃「{title}」？",
+  "overlays.toast.count": "{count, plural, other {# 次}}",
+  "overlays.toast.more": "还有 {count} 条"
+}

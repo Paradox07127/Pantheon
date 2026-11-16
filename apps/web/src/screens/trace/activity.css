@@ -1,0 +1,37 @@
+/* Activity: the kind toggles and the filter field over the day cards. */
+.act-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 920px;
+}
+.act-find {
+  width: 200px;
+  margin-left: auto;
+}
+
+/* Clock, icon, session, words and note, as the activity rows line up. */
+.trc-evl .trc-ev {
+  grid-template-columns: 44px 16px 150px minmax(0, 1fr) auto;
+}
+.trc-evl .trc-eg {
+  justify-self: center;
+}
+.act-inl {
+  padding: 1px 4px;
+  border-radius: calc(var(--r-sm) - 2px);
+  background: var(--sf2);
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+/* Over .trc-evn's flex row, which would clip the headline's start with no ellipsis. */
+.trc-evn.act-note {
+  display: block;
+  max-width: 200px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -1,0 +1,72 @@
+.ss-tgroup.ss-mem > .ss-trow {
+  grid-template-columns: 16px 14px minmax(0, 1fr);
+}
+.ss-mem svg {
+  color: var(--mu);
+}
+.ss-meml {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-memp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-1) var(--sp-1);
+}
+.ss-memr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.ss-memr:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.ss-memr:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ss-memr svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.ss-memt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-memv {
+  flex: none;
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ss-memd {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.ss-memd[data-state='wait'] {
+  background: var(--wait);
+}

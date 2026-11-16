@@ -1,0 +1,165 @@
+.lr {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-4);
+}
+.lr-head {
+  display: grid;
+  /* The scope and status give way before the rule drops under 200px. */
+  grid-template-columns: 14px minmax(200px, 1fr) minmax(0, 184px) minmax(0, 104px) 64px;
+  align-items: center;
+  column-gap: var(--sp-2);
+  height: 24px;
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: var(--lh-xs);
+}
+.lr-grp,
+.lr-old {
+  display: flex;
+  flex-direction: column;
+}
+.lr-row {
+  --lr-k: 0;
+  display: grid;
+  grid-template-columns: 14px minmax(200px, 1fr) minmax(0, 184px) minmax(0, 104px) 64px;
+  align-items: center;
+  column-gap: var(--sp-2);
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std),
+    opacity var(--dur-2) var(--ease-in) calc(var(--lr-k) * 40ms);
+}
+@starting-style {
+  .lr-row {
+    opacity: 0;
+  }
+}
+.lr-row:hover,
+.lr-row[aria-selected='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.lr-sk:hover {
+  background: transparent;
+}
+.lr-sk .skel {
+  height: 8px;
+}
+.lr-st {
+  display: grid;
+  place-items: center;
+}
+.lr-rw {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.lr-rule {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lr-old .lr-rule {
+  color: var(--mu);
+}
+.lr-inl {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--sf2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.lr-pin {
+  flex: none;
+}
+.lr-pin svg.lucide {
+  width: 12px;
+  height: 12px;
+}
+.lr-sc {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.lr-mono {
+  font-family: var(--font-mono);
+}
+.lr-rt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.lr-tm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.lr-n {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.lr-gh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  margin-top: var(--sp-3);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--tx);
+}
+.lr-gn {
+  font-weight: 500;
+}
+.lr-ct {
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.lr-fold {
+  width: 100%;
+  margin-top: var(--sp-4);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.lr-fold:hover {
+  background: var(--sel);
+}
+.lr-fold svg.lucide {
+  color: var(--mu);
+  transition: transform var(--dur-2) var(--ease-std);
+}
+.lr-fold[aria-expanded='true'] svg.lucide {
+  transform: rotate(90deg);
+}

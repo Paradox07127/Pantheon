@@ -1,0 +1,283 @@
+/* Repository pull requests: the open ones at the left, the picked one's checks and reviews beside them. */
+.rpr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  align-items: start;
+  min-height: 480px;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.rpr-list {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-right: var(--hair) solid var(--bd2);
+}
+.rpr-list > li + li {
+  border-top: var(--hair) solid var(--bd2);
+}
+.rpr-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-2);
+  row-gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border: 0;
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+/* The panel does not clip, so the selected fill follows its corners itself. */
+.rpr-list > li:first-child > .rpr-row {
+  border-top-left-radius: var(--r-lg);
+}
+.rpr-list > li:last-child > .rpr-row {
+  border-bottom-left-radius: var(--r-lg);
+}
+.rpr-row:hover {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.rpr-row[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.rpr-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rpr-checks {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.rpr-meta {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.rpr-ses {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.rpr-end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+.rpr-mu {
+  color: var(--mu);
+}
+.rpr-b {
+  font-weight: 600;
+}
+.rpr-n {
+  font-variant-numeric: tabular-nums;
+}
+.rpr-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpr-chip::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.rpr-chip[data-tone='ok']::before {
+  background: var(--ok);
+}
+.rpr-chip[data-tone='wait']::before {
+  background: var(--wait);
+}
+
+/* The picked pull request, held in view while the list scrolls. */
+.rpr-side {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rpr-sh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--bar);
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.rpr-sb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+.rpr-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  text-wrap: balance;
+  user-select: text;
+}
+.rpr-kv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+}
+.rpr-kv dt {
+  color: var(--mu);
+}
+.rpr-kv dd {
+  min-width: 0;
+  margin: 0;
+  user-select: text;
+}
+.rpr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+}
+.rpr-link:hover {
+  text-decoration: underline;
+}
+.rpr-grp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.rpr-gh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.rpr-gh h3 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+}
+.rpr-checklist {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: 0;
+  list-style: none;
+}
+.rpr-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+}
+.rpr-check > .rpr-cut {
+  flex: 1;
+}
+.rpr-st {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--idle);
+}
+.rpr-st > svg {
+  width: 14px;
+  height: 14px;
+}
+.rpr-st[data-state='passed'] {
+  color: var(--ok);
+}
+.rpr-st[data-state='failed'] {
+  color: var(--bad);
+}
+.rpr-st[data-state='running'] {
+  color: var(--run);
+}
+.rpr-took {
+  min-width: 48px;
+  text-align: right;
+}
+.rpr-threads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rpr-rv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+}
+.rpr-rvh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rpr-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.rpr-done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.rpr-done > summary {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.rpr-done > .rpr-threads {
+  margin-top: var(--sp-2);
+}
+.rpr-hand {
+  align-self: flex-start;
+}

@@ -1,0 +1,19 @@
+{
+  "runtime.call.status": "状态",
+  "runtime.call.start": "开始",
+  "runtime.call.end": "结束",
+  "runtime.retry": "重试",
+  "runtime.call.input": "输入",
+  "runtime.call.error": "错误",
+  "runtime.call.output": "输出",
+  "runtime.callStatus.running": "运行",
+  "runtime.callStatus.ok": "完成",
+  "runtime.callStatus.error": "失败",
+  "runtime.callStatus.unknown": "未知",
+  "runtime.stats.unreported": "{count, plural, other {# 个回合没上报用量}}",
+  "runtime.readStatus": "运行状态",
+  "runtime.trace.failed": "{failed} / {total, plural, other {# 个会话}}读取失败{partial, select, yes {，合计不完整} other {}}",
+  "runtime.trace.errorSeparator": "；",
+  "runtime.trace.failedWith": "{summary}：{errors}",
+  "runtime.stats.incomplete": "数据不完整"
+}

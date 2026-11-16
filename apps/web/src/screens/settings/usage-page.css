@@ -1,0 +1,73 @@
+/* A usage setting: name, control with its unit, pin; an error spans the row. */
+.ps-rows > .ps-row.us-pr {
+  grid-template-columns: minmax(0, 1fr) auto minmax(var(--ctl), auto);
+  column-gap: 16px;
+}
+/* The projects with their own value, then the pin. */
+.us-end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.us-rt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.us-nm {
+  font-weight: 500;
+}
+.us-ct {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.us-num {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.us-tok {
+  width: 120px;
+}
+.us-pct {
+  width: 64px;
+}
+/* Every unit takes one width, so the inputs above it end on one edge. */
+.us-unit {
+  flex: none;
+  width: 48px;
+  white-space: nowrap;
+}
+.us-pin[aria-pressed='false'] {
+  color: var(--mu);
+}
+.ps-rows .us-pin:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.us-err {
+  grid-column: 1 / -1;
+}
+.ps-sec-bd > .us-err {
+  padding: 0 16px 8px;
+}
+
+/* The way to the board: the whole row is the button. */
+.ps-rows > .ps-row.us-go {
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.us-go:hover {
+  background: var(--st-hov);
+}
+.us-go > svg {
+  color: var(--mu);
+}

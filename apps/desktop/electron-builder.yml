@@ -1,0 +1,95 @@
+appId: dev.pantheon.desktop
+productName: Pantheon
+# macOS Info.plist URL types and the Linux desktop entry's scheme handler; Windows registers at run time.
+protocols:
+  - name: Pantheon
+    schemes: [pantheon]
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+mac:
+  # A from folder's own node_modules is always skipped, so each is listed by itself.
+  extraResources:
+    - &node
+      from: stage/node
+      to: node
+    - &daemon
+      from: stage/daemon
+      to: daemon
+    - &daemonModules
+      from: stage/daemon/node_modules
+      to: daemon/node_modules
+    - &cli
+      from: stage/cli
+      to: cli
+    - &cliModules
+      from: stage/cli/node_modules
+      to: cli/node_modules
+    - from: stage/voice
+      to: voice
+  extendInfo:
+    NSMicrophoneUsageDescription: Pantheon listens to the microphone while you dictate a message.
+    NSSpeechRecognitionUsageDescription: Pantheon turns what you dictate into text on this Mac.
+    NSDocumentsFolderUsageDescription: Pantheon reads and edits the projects you keep in Documents.
+    NSDesktopFolderUsageDescription: Pantheon reads and edits the projects you keep on the Desktop.
+    NSDownloadsFolderUsageDescription: Pantheon reads and edits the projects you keep in Downloads.
+    NSLocalNetworkUsageDescription: Pantheon connects to your other machines over SSH.
+  # One file for the app and every binary in it: Electron helpers, node, pantheon-voice and node-pty.
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # The mac package is built only on a machine with a Developer ID; without one the build fails.
+  forceCodeSigning: true
+  target:
+    - target: dir
+      arch:
+        - arm64
+    - target: dmg
+      arch:
+        - arm64
+dmg:
+  # Signed so that the dmg itself can be notarized and stapled.
+  sign: true
+linux:
+  extraResources: [*node, *daemon, *daemonModules, *cli, *cliModules]
+  target:
+    - AppImage
+    - deb
+  category: Development
+  # The default comes from the package name, whose @ and / AppImage refuses.
+  executableName: pantheon
+  # The .desktop file is named after desktopName, which Electron also takes as the window's app_id.
+  syncDesktopName: true
+  maintainer: Pantheon <pantheon@example.invalid>
+appImage:
+  artifactName: Pantheon-${version}-${arch}.${ext}
+# The defaults come from the package name, whose @ and / dpkg refuses.
+deb:
+  packageName: pantheon
+  artifactName: pantheon_${version}_${arch}.${ext}
+  # electron-builder's defaults, plus libatomic1, which the bundled Node links on x64 and arm64, and
+  # libasound2, which Electron links (Ubuntu 24.04 provides it through libasound2t64).
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libatomic1
+    - libasound2
+win:
+  # Unpacked into WSL, where the daemon runs.
+  extraResources:
+    - from: stage/linux-runtime.tar.gz
+      to: linux-runtime.tar.gz
+  target: nsis
+nsis:
+  artifactName: Pantheon-Setup-${version}-${arch}.${ext}
+  oneClick: false
+  perMachine: false
+  include: build/installer.nsh

@@ -1,0 +1,17 @@
+{
+  "name": "session-list-last-turn-error-code",
+  "source_commit": "0882de0b92605faedcf42608fce6710004d68343",
+  "base_commit": "24ec924cde5d24ccf16e0ca007bc3a651387e9c1",
+  "goal": "The session list's `last_turn` has `id`, `state` and `error` but no code. Add `error_code` when the last send turn is `failed` or `cancelled` and a code is known: from the `error_code` of its `turn.failed` event (a launch failure, e.g. `billing_channel_mismatch`) or of the runtime's `agent.turn.completed` event for that `turn_id` (e.g. `turn_deadline`). Omit the field when no code is known.",
+  "scope": ["packages/control/src/workbench-session.ts"],
+  "acceptance": [
+    "pnpm build",
+    "pnpm exec vitest run tests/control/in-place-guards.test.ts tests/control/turn-deadline.test.ts"
+  ],
+  "hidden_files": ["tests/control/in-place-guards.test.ts", "tests/control/turn-deadline.test.ts"],
+  "hidden_check": [
+    "pnpm install --frozen-lockfile",
+    "pnpm build",
+    "pnpm exec vitest run tests/control/in-place-guards.test.ts tests/control/turn-deadline.test.ts"
+  ]
+}

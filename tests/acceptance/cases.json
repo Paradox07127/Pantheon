@@ -1,0 +1,1930 @@
+{
+  "schema_version": 1,
+  "spec_version": "2026-11-09-v1",
+  "gates": {
+    "G0": {
+      "milestone": "M0"
+    },
+    "G1": {
+      "milestone": "M1"
+    },
+    "G2": {
+      "milestone": "M2"
+    },
+    "G3": {
+      "milestone": "M3"
+    },
+    "G4": {
+      "milestone": "M4"
+    }
+  },
+  "cases": [
+    {
+      "id": "A001",
+      "title": "仓库与 fixture 可复现",
+      "gate": "G0",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "全新临时状态目录和未安装产品的工作区",
+        "fixture: repo-basic、fake-agent"
+      ],
+      "steps": [
+        "按锁文件安装并构建指定开发版本",
+        "启动 fake adapter 与测试 driver，读取环境信息，运行两次相同确定性 fixture"
+      ],
+      "assertions": [
+        {
+          "path": "environment.locked",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "fixtures.reproducible",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "fixtures.touched_user_workspace",
+          "op": "eq",
+          "expected": false
+        }
+      ],
+      "evidence": [
+        "build.log",
+        "environment.json",
+        "fixture-manifest.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A002",
+      "title": "两家原生接入与认证自检",
+      "gate": "G0",
+      "mode": "live",
+      "timeout_ms": 900000,
+      "setup": [
+        "已获得本轮实测账号和费用上限",
+        "系统 Claude 与 Codex 已登录；使用独立临时 workspace"
+      ],
+      "steps": [
+        "记录 CLI/SDK/schema 版本，分别启动真实会话",
+        "发送唯一标记的只读请求，收集 native session id、事件与有效认证摘要",
+        "故意配置与预期不符的计费通道，确认在模型请求前拒绝"
+      ],
+      "assertions": [
+        {
+          "path": "adapters.claude.actual_session",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "adapters.codex.actual_session",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "auth.mismatch_refused",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "auth.secret_in_receipts",
+          "op": "eq",
+          "expected": false
+        }
+      ],
+      "evidence": [
+        "compatibility.json",
+        "redacted-native-events.jsonl",
+        "auth-probes.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A003",
+      "title": "续聊、取消与通道故障",
+      "gate": "G0",
+      "mode": "live",
+      "timeout_ms": 900000,
+      "setup": [
+        "A002 的每个真实运行时；各开一个临时 git 项目",
+        "带可观测心跳的测试子进程"
+      ],
+      "steps": [
+        "用 session.create 开会话，在 turn.running 之前和之后各发一次 session.interrupt",
+        "从 session.list 记下 native_session_id 后停掉 daemon，用同一数据目录重启；会话进入 reconciling 后用 session.resolve 选 resume_session 续聊",
+        "用 session.send 发唯一的后续标记，核对 session_turns、agent.session.started 事件、子进程和原生会话身份"
+      ],
+      "assertions": [
+        {
+          "path": "cancel.child_writers_remaining",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "cancel.confirmed_or_explicitly_unconfirmed",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "recovery.native_identity_consistent",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "recovery.duplicate_turn_submission",
+          "op": "eq",
+          "expected": 0
+        }
+      ],
+      "evidence": [
+        "process-probes.json",
+        "redacted-native-events.jsonl",
+        "recovery-receipt.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A004",
+      "title": "有效 skill、MCP 与只读隔离",
+      "gate": "G0",
+      "mode": "live",
+      "timeout_ms": 900000,
+      "setup": [
+        "配置带哨兵内容的用户级 skill、其他会话的原生会话记录和其他 reviewer 目录",
+        "Pantheon 数据目录和跨目录哨兵均在临时测试空间",
+        "Claude、Codex 的任务会话和审查会话是首批必需角色；另设能力报告里 read_isolation 未验证的运行时作对照"
+      ],
+      "steps": [
+        "用 extensions.inventory 读扩展清单，用 project.extensions.set 关掉指定扩展；两家各开一个任务会话完成一次允许的写入并提交，读 agent.extensions.applied 事件",
+        "对每个任务会话用 review.request 起另一家运行时的审查会话；从审查会话的文件工具、shell、MCP 路径尝试读隔离哨兵和写工作区",
+        "从任务会话尝试写 Pantheon 数据目录和源仓库保护清单里的路径并核对拒绝；对照运行时发 review.request,核对返回 unsupported_capability"
+      ],
+      "assertions": [
+        {
+          "path": "isolation.forbidden_reads",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "isolation.forbidden_writes",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "isolation.required_roles_verified",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "config.effective_receipt_present",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "admission.unverified_reviewer_refused",
+          "op": "eq",
+          "expected": "unsupported_capability"
+        }
+      ],
+      "evidence": [
+        "effective-config.json",
+        "sandbox-probes.json",
+        "sentinel-hashes.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A005",
+      "title": "持久化原子性与升级恢复",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "空数据目录；fixture 运行时；预定义 failpoint",
+        "内容寻址文件目录；一版可迁移的旧 schema；故意失败的测试 migration"
+      ],
+      "steps": [
+        "分别在 before_transaction_commit、after_commit_before_send、during_turn_start、before_native_running_receipt 处崩溃",
+        "每次用同一数据目录重启 daemon,读取 DB、事件和 outbox",
+        "向 POST /v1/commands 重发同一 command_id 和 idempotency_key 的 session.create",
+        "分别在 before_artifact_rename、after_artifact_rename_before_db 处崩溃，重启后核对文件目录与 DB",
+        "会话跑过门禁后再提交一次，读 session.preflight 的门禁状态和改动解读的门禁证据",
+        "启动迁移先做 integrity_check 和在线备份；注入 migration 失败后回滚或用备份恢复；再执行成功迁移，并让旧版本打开新库"
+      ],
+      "assertions": [
+        {
+          "path": "transactions.partial_commit_count",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "commands.logical_session_count",
+          "op": "eq",
+          "expected": 1
+        },
+        {
+          "path": "events.monotonic_sequence",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "outbox.unaccounted_actions",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "evidence.gate_record_stale_after_commit",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "migrations.rollback_and_version_guard_verified",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "db-snapshot.json",
+        "events.jsonl",
+        "failpoint-receipts.json",
+        "storage-migration-probes.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A006",
+      "title": "去重、并发和过期版本",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "一个项目；双客户端；fixture 运行时",
+        "一个用户建的里程碑"
+      ],
+      "steps": [
+        "并发发送 100 次同一 idempotency_key 的 session.create",
+        "用同一 key 改输入再发一次",
+        "两个客户端基于同一 revision 各发一次 milestone.revise"
+      ],
+      "assertions": [
+        {
+          "path": "sessions.created",
+          "op": "eq",
+          "expected": 1
+        },
+        {
+          "path": "commands.different_input_conflict",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "milestones.stale_revision_rejected",
+          "op": "eq",
+          "expected": "revision_conflict"
+        }
+      ],
+      "evidence": [
+        "command-receipts.json",
+        "db-snapshot.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A011",
+      "title": "事件续传、去重与回压",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "两个客户端；限制队列容量；虚拟事件流"
+      ],
+      "steps": [
+        "断开一个客户端后产生控制事件与大量 token",
+        "重连使用旧游标，重复投递部分事件",
+        "模拟游标已过保留期并请求快照"
+      ],
+      "assertions": [
+        {
+          "path": "events.missing_control_events",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "ui.duplicate_logical_items",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "events.snapshot_fallback",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "buffers.bounded",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "event-probes.json",
+        "client-snapshot.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A012",
+      "title": "daemon 崩溃与未知结果",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "fake-agent 任务会话，原生会话可 resume",
+        "可观察的写进程与原生会话"
+      ],
+      "steps": [
+        "分别在回合 queued、running、完成回执前杀掉 daemon",
+        "用同一数据目录重启，会话进入 reconciling;确认旧进程已停后续跑，或由 session.resolve 选 resume_session",
+        "保持一个旧写进程无法确认停止的故障分支，读 needs_you.list",
+        "统计每个会话的 agent.session.started 和 native_session_id,并做进程探针"
+      ],
+      "assertions": [
+        {
+          "path": "recovery.false_successes",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "recovery.concurrent_writers",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "recovery.unconfirmed_stop_in_needs_you",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "recovery.duplicate_native_start",
+          "op": "eq",
+          "expected": 0
+        }
+      ],
+      "evidence": [
+        "process-probes.json",
+        "events.jsonl",
+        "recovery-receipt.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A013",
+      "title": "取消与迟到事件",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "fake-agent 任务会话，回合内有持续写哨兵的子进程",
+        "fake-agent 可延迟停止确认，可用旧回合 id 或旧发送 UUID 发事件"
+      ],
+      "steps": [
+        "对运行中的回合发 session.interrupt,fake-agent 暂不确认停止",
+        "停止确认前对同一会话发 session.send 和 session.merge",
+        "确认停止后，fake-agent 用旧回合 id 或旧发送 UUID 发完成和 usage 事件",
+        "读 session_turns、turn.cancelled 事件、会话用量和进程探针"
+      ],
+      "assertions": [
+        {
+          "path": "cancel.new_turn_before_stop_confirmed",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "cancel.merge_before_stop_confirmed",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "ownership.concurrent_writers",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "events.stale_result_promoted",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "usage.late_cost_preserved",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "cancel.turn_state",
+          "op": "eq",
+          "expected": "cancelled"
+        }
+      ],
+      "evidence": [
+        "session-turns.json",
+        "events.jsonl",
+        "process-probes.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A014",
+      "title": "持久等待与审批恢复",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "等待审批的会话；因 usage_limit 失败、带重置时刻的 daemon 驱动会话",
+        "虚拟时钟，不实际长时间等待"
+      ],
+      "steps": [
+        "重启 daemon,读 needs_you.list",
+        "对同一个仍有效的审批重复投递 approval.respond;对已作废的审批再发 approval.respond",
+        "推进虚拟时钟跨过用量重置时刻，期间再重启一次，再跑若干 tick"
+      ],
+      "assertions": [
+        {
+          "path": "approvals.voided_kept_in_needs_you",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "approvals.duplicate_response_idempotent",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "approvals.invalid_request_reused",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "timers.fired_once_logically",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "timer-ledger.json",
+        "approval-ledger.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A015",
+      "title": "关闭 app 后继续与恢复展示",
+      "gate": "G1",
+      "mode": "ui",
+      "timeout_ms": 120000,
+      "setup": [
+        "fixture 运行时的长回合正在运行；Electron 已连接"
+      ],
+      "steps": [
+        "关闭全部 UI 窗口并重新打开",
+        "运行期间刷新 renderer 和断开事件连接",
+        "核对 daemon 进程、session.list、board.view 与界面显示"
+      ],
+      "assertions": [
+        {
+          "path": "process.daemon_survived",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "turns.new_turns_on_reconnect",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "ui.matches_authoritative_state",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "process-probes.json",
+        "ui-screenshots.png",
+        "events.jsonl"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A016",
+      "title": "主工位可理解与操作",
+      "gate": "G1",
+      "mode": "ui",
+      "timeout_ms": 120000,
+      "setup": [
+        "lead 会话；代码任务、文档任务、阻塞任务各一个任务会话；一个会话的用量未知",
+        "浅色与深色主题"
+      ],
+      "steps": [
+        "打开项目，依次查看会话、项目看板、运行、流程图、轨迹、动态、全部项目、设置八屏和需要你",
+        "打开任一任务会话，再回到项目看板；检查能力缺失或运行时不可用时按钮旁的原因",
+        "查看用量未知的会话在运行页和项目看板上的用量合计",
+        "由人工确认能定位当前目标、进行中的工作和验收证据"
+      ],
+      "assertions": [
+        {
+          "path": "ui.required_views_present",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "ui.capability_reason_visible",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "usage.unknown_rendered_as_zero",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "ui.light_dark_readable",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "human.review_recorded",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "ui-screenshots.png",
+        "human-review.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A017",
+      "title": "插话与交付语义",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "支持 steer 和不支持 steer 的 fake adapter"
+      ],
+      "steps": [
+        "给运行中的主会话和指定 worker 发送唯一标记",
+        "让不支持 steer 的后端排队，并模拟一次交付失败",
+        "读取 UI 投影和真正的原生输入记录"
+      ],
+      "assertions": [
+        {
+          "path": "delivery.false_delivered",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "delivery.queued_visible",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "delivery.failed_visible",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "delivery.correct_target",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "delivery-receipts.json",
+        "native-inputs.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A018",
+      "title": "改目标只影响相关任务",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "fixture 运行时；lead 用 update_board 写计划：任务 A、B、C,B 依赖 A,C 独立，A 的 done_when 为 report",
+        "C 已合并；A 的会话在运行，已有一条门禁记录"
+      ],
+      "steps": [
+        "lead 再调 update_board,改 A 的 goal 和 acceptance",
+        "A 的会话在收到契约变更前用 report 交 done;lead 用 accept_task 验收 A",
+        "读 board.view、session.list、A 会话的 session.preflight 和 session.gates.history"
+      ],
+      "assertions": [
+        {
+          "path": "plans.changed_task_generation",
+          "op": "eq",
+          "expected": 2
+        },
+        {
+          "path": "plans.stale_result_accepted",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "plans.unaffected_C_reused",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "gates.changed_spec_stale",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "board.json",
+        "gate-history.json",
+        "events.jsonl"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A020",
+      "title": "换模型或 harness 的交接",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "lead 计划里一个任务的会话已有提交和门禁记录",
+        "两个不同运行时的 fake adapter"
+      ],
+      "steps": [
+        "lead 调 update_board,把这个任务的 runtime 换成另一个运行时",
+        "等旧原生进程关闭，检查 session.runtime_changed 事件、会话 id、native_session_id 和新原生会话首条消息里的交接",
+        "让 adapter 报出另一个会话的 native_session_id,检查 agent.native_id_rejected 事件"
+      ],
+      "assertions": [
+        {
+          "path": "handoff.same_task_id",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "handoff.same_session_id",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "handoff.new_native_session",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "handoff.first_message_has_handoff",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "handoff.verified_evidence_preserved",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "handoff.foreign_native_id_rejected",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "handoff.json",
+        "session-ledger.json",
+        "events.jsonl"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A021",
+      "title": "代码验收与版本绑定",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "repo-basic;项目门禁跑仓库测试，任务 acceptance 在门禁里先于项目门禁执行",
+        "lead 计划里一个任务，scope 是被测模块和它的测试；任务会话先提交故意错误的 patch"
+      ],
+      "steps": [
+        "用户发 session.merge,门禁在新 clone 的候选目录里跑，读被挡原因",
+        "修复后用 session.gates.run 重跑；再新增一个未跑门禁的提交，读 session.preflight 和 session.gates.history",
+        "任务会话用自己的凭证发 project.gate.set,并改 scope 以外的验收脚本后提交；另一个任务会话合法修改 scope 内的测试",
+        "按 session.gate_checked 和 session.merged 事件核对"
+      ],
+      "assertions": [
+        {
+          "path": "gates.bad_patch_passed",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "gates.good_patch_passed",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "gates.new_commit_invalidates",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "gates.verifier_tamper_blocked",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "gates.legitimate_test_edit_allowed",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "gate-commands.json",
+        "gate-logs.txt",
+        "merge-receipts.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A022",
+      "title": "审查隔离与发现裁决",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "一个有可复现缺陷的任务会话；两个与它不同的审查运行时",
+        "另一 reviewer 的目录和两家原生会话记录里放哨兵"
+      ],
+      "steps": [
+        "用 review.request 起审查，在每个 reviewer 里执行隔离读探针",
+        "reviewer 用 review_finding 提交引用正确和引用不在审查材料里的发现；会话再提交一次",
+        "只有一个 reviewer 给出可复现发现；用户用 review.finding.resolve 采纳，再让会话修复",
+        "读 session.reviews 和 review.finding_recorded 事件"
+      ],
+      "assertions": [
+        {
+          "path": "review.isolation_forbidden_reads",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "review.invalid_quote_rejected",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "review.old_findings_stale",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "review.vendor_or_vote_veto",
+          "op": "eq",
+          "expected": false
+        }
+      ],
+      "evidence": [
+        "review-inputs.json",
+        "isolation-probes.json",
+        "finding-ledger.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A023",
+      "title": "非代码任务与人工验收",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "research-doc 的来源片段、问题和文档模板放进临时 git 仓库",
+        "任务 acceptance 检查文档引用；用户建的里程碑含必需人工判断项"
+      ],
+      "steps": [
+        "lead 计划一个只改文档的任务；任务会话先提交缺引用的文档并合并，随后补全再合并",
+        "任务会话用 report 自报人工判断项已满足；lead 尝试验收用户建的里程碑",
+        "人用 acceptance-review 确认文档，用户再用 milestone.accept 带证据验收"
+      ],
+      "assertions": [
+        {
+          "path": "acceptance.doc_task_merged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "acceptance.missing_reference_passed",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "acceptance.self_report_satisfies_human",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "acceptance.human_receipt_bound_to_hash",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "artifact-checks.json",
+        "gate-history.json",
+        "human-review.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A024",
+      "title": "真实 app 日常闭环",
+      "gate": "G1",
+      "mode": "live",
+      "timeout_ms": 900000,
+      "setup": [
+        "已获准实测账号/费用上限；临时代码和文档项目",
+        "M0/G1 其余案例通过"
+      ],
+      "steps": [
+        "在 app 交给 Claude 一个小型代码目标，让 Codex 执行一个有独立验收的子任务",
+        "途中发补充要求并查看执行成果，完成真实检查",
+        "再完成研究/文档任务，人工检查需求、引用和可用性；记录介入与实际用量"
+      ],
+      "assertions": [
+        {
+          "path": "live.both_harnesses_used",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "live.code_acceptance_passed",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "live.document_acceptance_recorded",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "live.manual_interventions_logged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "live.cost_provenance_recorded",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "redacted-native-events.jsonl",
+        "check-logs.txt",
+        "human-review.json",
+        "outcomes.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A025",
+      "title": "外部调度 CLI 命令与后端对等",
+      "gate": "G2",
+      "mode": "live",
+      "timeout_ms": 900000,
+      "setup": [
+        "冻结当前外部调度 CLI 的 --help/版本/hash 与支持矩阵",
+        "覆盖 codex/grok/agy/deepseek 的原有能力；不要求原本不存在的能力"
+      ],
+      "steps": [
+        "对每个原有命令×后端×角色回放 fixture，并用可用真实后端验证",
+        "比较盲答、续跑互斥、完整 patch、base_sha、check、失败与回送行为",
+        "记录所有不兼容项及用户范围例外；完整替换门只在无未结项时通过"
+      ],
+      "assertions": [
+        {
+          "path": "parity.unresolved_existing_capabilities",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "parity.missing_legacy_backends",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "parity.evidence_per_cell",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "legacy-baseline.json",
+        "parity-matrix.json",
+        "redacted-native-events.jsonl"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A026",
+      "title": "历史导入、切换和回退",
+      "gate": "G2",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "旧系统有完成历史与一个正在执行的任务",
+        "project dispatcher_owner=legacy"
+      ],
+      "steps": [
+        "只读导入历史，保留 provenance",
+        "申请切换时保留旧任务直到排空，再移交 owner",
+        "重复投递完成通知；执行回退，确保新成果保留"
+      ],
+      "assertions": [
+        {
+          "path": "migration.history_relabelled_managed",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "migration.dual_dispatchers",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "migration.duplicate_notifications",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "migration.artifacts_lost",
+          "op": "eq",
+          "expected": 0
+        }
+      ],
+      "evidence": [
+        "migration-receipts.json",
+        "owner-ledger.json",
+        "artifact-manifest.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A028",
+      "title": "后端不可用与能力退化",
+      "gate": "G2",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "后端缺失、额度耗尽、协议不兼容、无法隔离四种故障"
+      ],
+      "steps": [
+        "请求依赖这些能力的任务",
+        "读取准入拒绝、暂停、UI 和支持矩阵",
+        "检查是否擅自换计费、伪造成功或省略后端"
+      ],
+      "assertions": [
+        {
+          "path": "capabilities.false_supported",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "runtime.silent_billing_switch",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "runtime.false_successes",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "parity.failures_visible",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "capability-reports.json",
+        "admission-receipts.json",
+        "ui-snapshot.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A029",
+      "title": "双设备断线与租约代次",
+      "gate": "G3",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "主控和两个 worker 测试进程；认证连接；虚拟时钟"
+      ],
+      "steps": [
+        "派发到设备 B，断网并推进租约到期",
+        "旧 writer 未确认停止时尝试重派，随后停止并以新 epoch 派到 C",
+        "恢复 B 的迟到完成消息，并撤销 B 身份"
+      ],
+      "assertions": [
+        {
+          "path": "remote.concurrent_current_owners",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "remote.stale_result_promoted",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "remote.revoked_device_admitted",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "remote.credentials_transferred",
+          "op": "eq",
+          "expected": false
+        }
+      ],
+      "evidence": [
+        "device-ledger.json",
+        "lease-ledger.json",
+        "transport-events.jsonl"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A031",
+      "title": "自动化风暴、重放与长期授权",
+      "gate": "G4",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "已激活和未激活模板；虚拟 GitHub/定时/文件事件"
+      ],
+      "steps": [
+        "重复投递100个同一事件，并在 timer 等待中重启",
+        "模型提出模板扩权，但不由用户激活",
+        "变更某个输入版本重放计划，检查缓存、修复上限与拒绝记录"
+      ],
+      "assertions": [
+        {
+          "path": "workflow.duplicate_logical_runs",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "workflow.unapproved_activation",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "workflow.stale_cache_reused",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "workflow.retry_limit_enforced",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "template-revisions.json",
+        "inbox-outbox.json",
+        "timer-ledger.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A032",
+      "title": "改进闭环候选、证据与发布",
+      "gate": "G4",
+      "mode": "integration",
+      "timeout_ms": 120000,
+      "setup": [
+        "改进闭环测试服务或记录回放；不同 runtime/scope 的候选"
+      ],
+      "steps": [
+        "读取候选并显示来源/适用范围/验证状态",
+        "提交只有摘要和自报的条目，再提供有效但未批准候选",
+        "批准一个版本并回退，检查作用域和历史"
+      ],
+      "assertions": [
+        {
+          "path": "learning.candidate_auto_promoted",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "learning.wrong_scope_injected",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "learning.summary_marked_verified",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "learning.versioned_rollback",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "improvement-responses.json",
+        "release-ledger.json",
+        "ui-snapshot.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A033",
+      "title": "工作台闭环(fixture)",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 300000,
+      "setup": [
+        "fixture 运行时(脚本回合),daemon tick 间隔 50ms,托管工作区放在系统临时目录之外",
+        "临时 git 仓库，一个初始提交，作为项目唯一文件夹"
+      ],
+      "steps": [
+        "开项目，配一条通过的门禁",
+        "开 lead 会话，脚本调 update_board:任务 A、任务 B(依赖 A)、里程碑 M 含 A、B",
+        "从任务 A 开会话，脚本写文件、提交、report(kind done)",
+        "用户合并 A 的会话，等 lead 的 tracker 回合结束",
+        "在 B 合并前验收 M 一次；从任务 B 开会话 B1 后丢弃；打开 auto_merge,开 B2 写文件并提交，等它自动合并和 lead 的 tracker 回合",
+        "用旧 revision、空证据各验收一次；再用当前 revision 和 A、B2 的会话 id 验收 M,然后再验收一次",
+        "等 lead open,session.send 一个脚本调 update_board 重发计划：A、B 不变，加不属于 M 的任务 C",
+        "从任务 C 开会话，脚本只有 fail",
+        "关掉 auto_merge,门禁换成失败命令;C 会话写文件并提交，用户合并",
+        "关 daemon,用同一数据目录和参数再起，再跑若干 tick"
+      ],
+      "assertions": [
+        {
+          "path": "plan.tasks",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "plan.edges",
+          "op": "eq",
+          "expected": [
+            "A->B"
+          ]
+        },
+        {
+          "path": "plan.milestone_status",
+          "op": "eq",
+          "expected": "active"
+        },
+        {
+          "path": "plan.lead_committed",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "report.task_done",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "report.edge_met",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "report.reported_event",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "report.lead_tracker_turns",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "manual_merge.merged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "manual_merge.head_at_session_commit",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "manual_merge.task_done",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "manual_merge.edge_met",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "manual_merge.lead_tracker_turns",
+          "op": "eq",
+          "expected": 1
+        },
+        {
+          "path": "manual_merge.lead_woken_with_notes",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "auto_merge.merge_started",
+          "op": "eq",
+          "expected": [
+            {
+              "auto": true
+            }
+          ]
+        },
+        {
+          "path": "auto_merge.merged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "auto_merge.task_done",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "auto_merge.lead_woken",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "milestone.ready",
+          "op": "eq",
+          "expected": "ready_for_acceptance"
+        },
+        {
+          "path": "milestone.early_accept_rejected",
+          "op": "eq",
+          "expected": "acceptance_pending"
+        },
+        {
+          "path": "milestone.stale_revision_rejected",
+          "op": "eq",
+          "expected": "revision_conflict"
+        },
+        {
+          "path": "milestone.empty_evidence_rejected",
+          "op": "eq",
+          "expected": "invalid_input"
+        },
+        {
+          "path": "milestone.after_accept",
+          "op": "eq",
+          "expected": "completed"
+        },
+        {
+          "path": "milestone.evidence_recorded",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "milestone.second_accept_rejected",
+          "op": "eq",
+          "expected": "acceptance_pending"
+        },
+        {
+          "path": "retell.task_added",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "retell.milestone_status",
+          "op": "eq",
+          "expected": "completed"
+        },
+        {
+          "path": "retell.acceptance_kept",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "turn_failure.session_open",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "turn_failure.merged",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "turn_failure.lead_notified",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "gate_failure.merge_state",
+          "op": "eq",
+          "expected": "blocked"
+        },
+        {
+          "path": "gate_failure.reason",
+          "op": "eq",
+          "expected": "gate_failed"
+        },
+        {
+          "path": "gate_failure.head_unchanged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "gate_failure.lead_notified",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "restart.board_unchanged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "restart.milestones_unchanged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "restart.blocked_kept",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "restart.head_stable",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "restart.counts_stable",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "receipts.json",
+        "events.json",
+        "board.json",
+        "board-views.json",
+        "project-heads.json",
+        "session-gates.json",
+        "mcp-results.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A034",
+      "title": "Codex 工作台冒烟",
+      "gate": "G1",
+      "mode": "live",
+      "timeout_ms": 5400000,
+      "setup": [
+        "已获准使用 Codex 订阅登录(不回退 API);daemon 跑本仓库代码,tick 间隔 200ms,运行时 codex",
+        "预检:git clone --no-local 本仓库到 workspace/pantheon 并检出当前 HEAD;pnpm install --frozen-lockfile --offline,失败去掉 --offline 重试一次；未改动的克隆上 pnpm build、pnpm test 通过并记下通过数和跳过数;codex --version 与订阅登录检查通过。任一失败即停，不起会话",
+        "开克隆为项目；按 extensions.inventory 关掉全部用户 MCP server、全部 plugins、apps 和 hooks,skills 继承；门禁 pnpm build、pnpm test,各 15 分钟",
+        "每个 HTTP 请求 30 秒上限，每个等待有上限，场景总上限 80 分钟；到点收尾并判失败"
+      ],
+      "steps": [
+        "开 lead 之前起审批监视器：项目里的 pending 权限请求一律拒绝，理由 stay inside the sandbox;同一会话拒绝超过 3 次判失败",
+        "开 lead(auto_edit),输入为两个真实待办的固定文本；等回合结束，核对计划、每个任务的 source、scope、acceptance 非空、里程碑 smoke、无依赖边、lead worktree 的 HEAD 等于 base 且干净",
+        "打开 auto_merge;每个任务开一个会话(auto_edit,输入为任务标题和目标),只开一次",
+        "每个任务会话回合结束后分类：已合并完成；合并被挡判失败；已提交且干净等自动合并,60 秒没开始判失败；有提交但工作区脏、或没提交，各发一次提醒并记介入，再犯判失败；回合失败或取消、会话关闭或 reconciling、停止未确认、工作区准备失败判失败",
+        "两个任务都合并后等 lead 的 tracker 回合全部结束；核对合并集合、汇报、lead 每个回合后 worktree 仍干净、合并摘要各出现一次、lead 没调 milestone_accept;每个会话的 extensions.applied 没有用户 MCP server、not_applied 为空",
+        "等里程碑 ready_for_acceptance,用户以 session:<id> × 2 验收",
+        "关 daemon,确认记录过的原生进程已停"
+      ],
+      "assertions": [
+        {
+          "path": "preflight.baseline_gate_passed",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "extensions.user_servers_loaded",
+          "op": "eq",
+          "expected": []
+        },
+        {
+          "path": "plan.matches",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "plan.lead_clean",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "work.merged_sessions",
+          "op": "eq",
+          "expected": [
+            "project-read-description",
+            "source-skips-digest"
+          ]
+        },
+        {
+          "path": "work.reported",
+          "op": "eq",
+          "expected": [
+            "project-read-description",
+            "source-skips-digest"
+          ]
+        },
+        {
+          "path": "lead.merge_attempted",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "lead.accept_attempted",
+          "op": "eq",
+          "expected": false
+        },
+        {
+          "path": "lead.notes_each_once",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "milestone.completed",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "shutdown.processes_stopped",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "preflight.json",
+        "receipts.json",
+        "events.json",
+        "sessions.json",
+        "board-views.json",
+        "gates.json",
+        "usage.json",
+        "work.json",
+        "timings.json",
+        "clone-git.txt"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A035",
+      "title": "工作台闭环(界面)",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 600000,
+      "setup": [
+        "pnpm build 与 pnpm --filter @pantheon/desktop bundle 已跑;apps/desktop/out 比 web、desktop、daemon、packages 的源文件都新；场景开始和收尾时 out/ 与各 dist/ 的摘要一致",
+        "临时 git 仓库，一个初始提交，仓库本地配置写提交身份、关签名、hooksPath 指向空目录;workspace 在仓库 .notes/evidence 下",
+        "场景自己起 fixture daemon(tick 200ms,用户配置目录在 workspace 下),真实 Electron app 以 PANTHEON_DATA_DIR 指向同一数据目录、开调试端口启动；每次轮询核对 daemon.json 仍是场景自己的 daemon",
+        "场景总上限 8 分钟；所有等待、HTTP 请求、CDP 请求共用剩余时间，到点收尾"
+      ],
+      "steps": [
+        "HTTP 开项目，不设门禁、自动合并、会话默认值；起 app,等侧栏出现项目名",
+        "设置 › 会话默认值：运行时已选 fixture,权限模式切到自动编辑，保存;HTTP 核对全局默认运行时",
+        "设置 › 项目 › 本项目：门禁加一条 Passes,命令行 git rev-parse HEAD,超时 60 秒，保存；打开门禁通过后自动合并;HTTP 核对 argv 与 auto_merge",
+        "侧栏新会话：模型按钮以 fixture 开头，输入 lead 脚本调 update_board(任务 A、B 无依赖，里程碑 M 含 A、B),Enter;HTTP 核对恰好新增一个不带任务的会话且回合 completed",
+        "概览 › 任务 › 看板：恰好两张卡片 Task A、Task B",
+        "对 A、B 依次：看板点卡片，抽屉里点开会话做它，把预填的标题和目标换成任务脚本(写文件、提交、report done),Enter;HTTP 核对恰好新增一个绑定该任务的会话",
+        "等完成：界面出现 role=alert、回合失败、合并被挡、工作区准备失败即判失败;HTTP 核对回合 completed、task.reported、门禁 Passes 在落回的提交上 exit 0、自动合并；看板完成列有 A、B;lead 会话里出现 A、B 的合并摘要",
+        "概览 › 承诺：点验收 M,对话框里两个证据都已勾选、名字是 A、B 的会话，点确定；等对话框消失、出现已验收;HTTP 核对里程碑 completed、evidence_refs 为两个 session:<id>",
+        "收尾:SIGTERM 自己的进程组,8 s 不退再 SIGKILL;关 daemon,确认 daemon.json 已删、锁能重新 listen;再算 build 摘要"
+      ],
+      "assertions": [
+        {
+          "path": "ui.project_listed",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "settings.session_runtime",
+          "op": "eq",
+          "expected": "fixture"
+        },
+        {
+          "path": "settings.gate_argv",
+          "op": "eq",
+          "expected": [
+            "git",
+            "rev-parse",
+            "HEAD"
+          ]
+        },
+        {
+          "path": "settings.auto_merge",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "plan.cards",
+          "op": "eq",
+          "expected": [
+            "Task A",
+            "Task B"
+          ]
+        },
+        {
+          "path": "work.sessions_match_tasks",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "work.gates_passed",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "work.auto_merged",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "work.reported",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "board.done_cards",
+          "op": "eq",
+          "expected": [
+            "Task A",
+            "Task B"
+          ]
+        },
+        {
+          "path": "lead.notes_shown",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "milestone.accept_dialog_evidence",
+          "op": "eq",
+          "expected": [
+            "Task A",
+            "Task B"
+          ]
+        },
+        {
+          "path": "milestone.accepted_in_ui",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "milestone.evidence_refs",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "daemon.stayed_own",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "build.unchanged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "shutdown.app_stopped",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "shutdown.daemon_closed",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "screens.json",
+        "snapshots.json",
+        "cdp-log.json",
+        "receipts.json",
+        "events.json",
+        "timings.json",
+        "build-manifest.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A036",
+      "title": "零点击闭环(fixture)",
+      "gate": "G1",
+      "mode": "integration",
+      "timeout_ms": 300000,
+      "setup": [
+        "fixture 运行时(脚本回合),daemon tick 间隔 50ms,托管工作区放在系统临时目录之外",
+        "临时 git 仓库，一个初始提交，作为项目唯一文件夹"
+      ],
+      "steps": [
+        "开项目，配一条通过的门禁，打开 auto_merge,会话默认值设为 runtime fixture、权限模式 auto_edit",
+        "用户只发一条 session.create 开 lead,脚本调 update_board:任务 A、任务 B(依赖 A),scope 各为 a.txt、b.txt,acceptance 各为 test -f a.txt、test -f b.txt,里程碑 M 含 A、B;每个任务的 goal 是一句说明，下一行 fixture-script,再下一行写文件、提交、report(kind done)的脚本",
+        "同一脚本接着调 start_task,传 A、B",
+        "此后不发任何用户命令：等 daemon 开出 A 的会话并自动合并，再开出 B 的会话并自动合并",
+        "等 lead 的 tracker 回合结束、里程碑 M 待验收；按 task.dispatched、session.gate_checked、session.merged 事件和 daemon 记下的用户命令回执核对"
+      ],
+      "assertions": [
+        {
+          "path": "plan.tasks",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "dispatch.order",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "dispatch.b_after_a_merged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "work.auto_merged",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "work.acceptance_ran",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "board.done_tasks",
+          "op": "eq",
+          "expected": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "path": "milestone.status",
+          "op": "eq",
+          "expected": "ready_for_acceptance"
+        },
+        {
+          "path": "user.commands_after_lead",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "lead.tracker_turns_at_least_one",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "receipts.json",
+        "events.json",
+        "observations.json",
+        "board.json",
+        "board-views.json",
+        "user-commands.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A037",
+      "title": "Codex 零点击冒烟",
+      "gate": "G1",
+      "mode": "live",
+      "timeout_ms": 5400000,
+      "setup": [
+        "已获准使用 Codex 订阅登录(不回退 API);daemon 跑本仓库代码,tick 间隔 200ms,运行时 codex",
+        "预检同 A034:克隆本仓库当前 HEAD、安装依赖、未改动的克隆上 pnpm build 与 pnpm test 在门禁沙箱里通过、codex --version 与订阅登录检查通过。任一失败即停，不起会话",
+        "开克隆为项目；按 extensions.inventory 关掉全部用户 MCP server、全部 plugins、apps 和 hooks,skills 继承；门禁 pnpm build、pnpm test,各 15 分钟；会话默认值 runtime codex、权限模式 auto_edit;打开 auto_merge",
+        "每个 HTTP 请求 30 秒上限，每个等待有上限，场景总上限 80 分钟；项目里 5 分钟没有回合、合并或工作区准备在跑判失败；到点收尾并判失败"
+      ],
+      "steps": [
+        "开 lead 之前起审批监视器：项目里的 pending 权限请求一律拒绝，理由 stay inside the sandbox;同一会话拒绝超过 3 次判失败",
+        "用户只发一条 session.create 开 lead(auto_edit,不带 task_id),输入为固定文本：用 update_board 原样规划两个真实待办 usage-previous-period、kpi-previous-compare(id、标题、目标逐字复制，给出 source、scope、acceptance;kpi-previous-compare 依赖 usage-previous-period;一个里程碑 zero-click;一条泳道 main),然后调 start_task 传这两个 id 并结束回合；不自己实现、不提交",
+        "此后不发任何用户命令，只有审批监视器拒绝权限请求：等 daemon 派发 usage-previous-period 并自动合并，再派发 kpi-previous-compare 并自动合并;daemon 交回任务会话修复的回合允许并记数",
+        "两个任务都合并后等 lead 的 tracker 回合全部结束、合并摘要都已送达；等 lead 的里程碑待验收或已验收(lead 可自己验收)",
+        "按 task.dispatched、session.merge_started、session.gate_checked、session.merged 事件、计划里的 acceptance 和 daemon 记下的用户命令回执核对；记下每个会话的 token 用量、交回次数、lead 回合数和总墙钟",
+        "关 daemon,确认记录过的原生进程已停"
+      ],
+      "assertions": [
+        {
+          "path": "preflight.baseline_gate_passed",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "extensions.user_servers_loaded",
+          "op": "eq",
+          "expected": []
+        },
+        {
+          "path": "plan.tasks",
+          "op": "eq",
+          "expected": [
+            "kpi-previous-compare",
+            "usage-previous-period"
+          ]
+        },
+        {
+          "path": "plan.edges",
+          "op": "eq",
+          "expected": [
+            "usage-previous-period->kpi-previous-compare"
+          ]
+        },
+        {
+          "path": "dispatch.order",
+          "op": "eq",
+          "expected": [
+            "usage-previous-period",
+            "kpi-previous-compare"
+          ]
+        },
+        {
+          "path": "dispatch.b_after_a_merged",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "work.auto_merged",
+          "op": "eq",
+          "expected": [
+            "kpi-previous-compare",
+            "usage-previous-period"
+          ]
+        },
+        {
+          "path": "work.acceptance_ran",
+          "op": "eq",
+          "expected": [
+            "kpi-previous-compare",
+            "usage-previous-period"
+          ]
+        },
+        {
+          "path": "milestone.ready",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "user.commands_after_lead_excluding_approvals",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "approvals.denied_at_most_3",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "processes.stopped",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "preflight.json",
+        "receipts.json",
+        "events.json",
+        "sessions.json",
+        "board-views.json",
+        "gates.json",
+        "usage.json",
+        "work.json",
+        "timings.json",
+        "clone-git.txt",
+        "user-commands.json"
+      ],
+      "status": "not_run"
+    },
+    {
+      "id": "A038",
+      "title": "首启导入与原地续接(fixture)",
+      "gate": "G2",
+      "mode": "integration",
+      "timeout_ms": 180000,
+      "setup": [
+        "临时 HOME 下写假的 Claude/Codex 原生记录：alpha(git 仓库，有 origin，4 条 Claude 会话，1 天内活跃)、beta(git 仓库，1 条 Codex 会话)、嵌套在 alpha 里的 git 仓库(3 条会话)、一个已删除目录(1 条会话)",
+        "daemon 跑本仓库代码；claude、codex 两个名字登记为记录 spec 的 fixture 适配器，resume 时记下原生 id 和 cwd;没有真实模型"
+      ],
+      "steps": [
+        "查询 import.candidates,记下每个候选的 preselected 和 excluded",
+        "对预选的候选执行 project.open,再查询 session.importable 列出 alpha 的可续接会话",
+        "对 alpha 的一条会话执行 session.adopt,再 session.send 一条消息并等回合结束",
+        "核对：回合走 resume、原生 id 和 cwd 与原记录一致、没有新建托管工作树、alpha 里没有 Pantheon 的隐藏 ref;对这个会话调 session.merge 和 session.discard 都被拒",
+        "删除这个会话：alpha 目录和原生记录都还在，轨迹里这条记录回到外部会话"
+      ],
+      "assertions": [
+        {
+          "path": "import.preselected",
+          "op": "eq",
+          "expected": [
+            "alpha"
+          ]
+        },
+        {
+          "path": "import.excluded",
+          "op": "eq",
+          "expected": [
+            "gone:missing",
+            "nested:nested_repo"
+          ]
+        },
+        {
+          "path": "import.importable_count",
+          "op": "eq",
+          "expected": 4
+        },
+        {
+          "path": "adopt.resumed_same_native_id",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "adopt.cwd_is_original",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "adopt.worktrees_created",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "adopt.hidden_refs",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "adopt.merge_refused",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "adopt.discard_refused",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "delete.directory_intact",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "delete.lane_returned_external",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "import-candidates.json",
+        "adopt-receipts.json",
+        "session-specs.json"
+      ],
+      "status": "not_run"
+    }
+  ]
+}

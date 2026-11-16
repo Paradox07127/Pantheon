@@ -1,0 +1,78 @@
+/* The versions side by side, one cell each. */
+.ab-vers {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+.ab-vers > .cell {
+  gap: var(--sp-1);
+  padding: 12px 16px;
+}
+.ab-ver {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.ab-st {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* A folder's path sits under its name on one line, as on the data page, and can be copied. */
+.ab-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  user-select: text;
+}
+/* A failure sits under its row, at the row's inset. */
+.ab-err {
+  padding: 0 16px 8px;
+}
+
+/* A connection row: service, account, action. */
+.ps-rows > .ps-row.cn-row {
+  grid-template-columns: 160px minmax(0, 1fr) auto;
+  column-gap: 16px;
+}
+.cn-rt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.cn-rt b {
+  font-weight: 500;
+}
+.cn-acct {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.cn-mail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--tx2);
+  user-select: text;
+}
+.cn-err {
+  grid-column: 1 / -1;
+}
+/* A service without a vendor mark: its initial in an outlined square. */
+.cn-ltr {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid currentColor;
+  border-radius: max(calc(var(--r-sm) - 3px), 4px);
+  font: 600 var(--fs-xs) / 1 var(--font-mono);
+}

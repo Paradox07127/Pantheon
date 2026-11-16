@@ -1,0 +1,64 @@
+.eq {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  width: 72%;
+  height: 72%;
+}
+.eq > i {
+  width: 20%;
+  height: 100%;
+  background: currentColor;
+  transform-origin: bottom;
+  animation: 1.1s ease-in-out infinite;
+}
+.eq > i:nth-child(1) {
+  transform: scaleY(0.4);
+  animation-name: eq-1;
+}
+.eq > i:nth-child(2) {
+  animation-name: eq-2;
+}
+.eq > i:nth-child(3) {
+  transform: scaleY(0.6);
+  animation-name: eq-3;
+}
+@keyframes eq-1 {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+  }
+  33% {
+    transform: scaleY(1);
+  }
+  66% {
+    transform: scaleY(0.55);
+  }
+}
+@keyframes eq-2 {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  33% {
+    transform: scaleY(0.45);
+  }
+  66% {
+    transform: scaleY(0.3);
+  }
+}
+@keyframes eq-3 {
+  0%,
+  100% {
+    transform: scaleY(0.6);
+  }
+  33% {
+    transform: scaleY(0.3);
+  }
+  66% {
+    transform: scaleY(1);
+  }
+}
+.pt[data-motion='reduced'] .eq > i {
+  animation: none;
+}

@@ -1,0 +1,7 @@
+packages:
+  - packages/*
+  - apps/*
+minimumReleaseAge: 1440
+allowBuilds:
+  electron-winstaller: false
+  node-pty: false

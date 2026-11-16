@@ -1,0 +1,174 @@
+.nc {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  transition:
+    opacity var(--dur-3) var(--ease-in),
+    transform var(--dur-3) var(--ease-in),
+    background-color var(--dur-1) var(--ease-std);
+}
+.nc:has(.nc-hit:hover) {
+  background: var(--sf2);
+}
+/* Covers the card; the buttons sit above it. */
+.nc-hit {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+}
+/* The card clips anything outside it. */
+.nc-hit:focus-visible {
+  outline-offset: -1.5px;
+}
+.nc :is(.nc-acts, .toast-x) {
+  position: relative;
+}
+.nc-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+}
+.nc-mark::before {
+  content: '';
+  box-sizing: border-box;
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  background: currentColor;
+}
+.nc-mark[data-mark='wait'] {
+  color: var(--wait);
+}
+.nc-mark[data-mark='wait']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.4;
+}
+.nc-mark[data-mark='review'] {
+  color: var(--ready);
+}
+.nc-mark[data-mark='review']::before {
+  border: 1.5px solid currentColor;
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+.nc-mark[data-mark='done'] {
+  color: var(--ok);
+}
+.nc-mark[data-mark='failed'] {
+  color: var(--bad);
+}
+.nc-mark:is([data-mark='done'], [data-mark='failed'])::before {
+  width: 86%;
+  height: 86%;
+  border-radius: 0;
+  mask: var(--nc-glyph) center / contain no-repeat;
+}
+.nc-mark[data-mark='done']::before {
+  --nc-glyph: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12.5l4.5 4.5L19 7.5'/></svg>");
+}
+.nc-mark[data-mark='failed']::before {
+  --nc-glyph: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'><path d='M6.5 6.5l11 11M17.5 6.5l-11 11'/></svg>");
+}
+.nc > :is(.nc-row, .nc-cmd, .nc-text, .nc-line, .nc-diff, .nc-acts) {
+  grid-column: 2;
+  min-width: 0;
+}
+.nc :is(.nc-row, .nc-line, .nc-acts) {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.nc-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 400;
+}
+.nc-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nc-event {
+  flex: none;
+  color: var(--tx2);
+}
+.nc-wait {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.nc-cmd {
+  justify-self: start;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 1px 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--sf2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nc-text {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nc-line {
+  margin: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.nc-code {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nc-note {
+  flex: none;
+}
+.nc-diff {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.nc-add {
+  color: var(--add);
+}
+.nc-del {
+  color: var(--del);
+}
+.nc-diff [data-zero] {
+  color: var(--mu);
+}
+.nc-open {
+  margin-left: auto;
+}
+.nc :is(.nc-title, .nc-cmd, .nc-text, .nc-line) {
+  user-select: text;
+}

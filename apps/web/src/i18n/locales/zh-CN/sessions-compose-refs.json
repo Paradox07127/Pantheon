@@ -1,0 +1,11 @@
+{
+  "sessions.completion.symbols": "符号",
+  "sessions.composeRefs.card": "{kind, select, pr {PR} other {Issue}} #{number} {title}",
+  "sessions.composeRefs.checksFailing": "检查失败",
+  "sessions.composeRefs.checksPassing": "检查通过",
+  "sessions.composeRefs.checksPending": "检查进行中",
+  "sessions.composeRefs.connect": "去连接",
+  "sessions.composeRefs.issue": "Issue",
+  "sessions.composeRefs.none": "{kind, select, pr {没有打开的 PR} other {没有打开的 issue}}",
+  "sessions.composeRefs.pullRequest": "PR"
+}

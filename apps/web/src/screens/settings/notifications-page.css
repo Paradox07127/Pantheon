@@ -1,0 +1,13 @@
+/* Four switch columns at the board's width. */
+.ps-ntf.ntf-cols :is(th, td) + :is(th, td) {
+  width: 72px;
+  text-align: end;
+}
+/* The last column also holds the row's end inset, so its switch ends where the rows' switches do. */
+.ps-ntf.ntf-cols :is(th, td):last-child {
+  width: 88px;
+}
+.ntf-time {
+  width: 64px;
+  text-align: center;
+}

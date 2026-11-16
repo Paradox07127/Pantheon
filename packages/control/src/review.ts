@@ -1,0 +1,789 @@
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import {
+  DomainError,
+  id,
+  requireThat,
+  type BoardPlan,
+  type LeadNote,
+  type Principal,
+  type Project,
+  type Review,
+  type ReviewFinding,
+  type ReviewMetrics,
+  type Session,
+  type SessionTurn,
+} from '@pantheon/domain';
+import { inputSchemas } from '@pantheon/protocol';
+import { readBoundedSync, textLimit } from './files.js';
+import { runtime } from './admission.js';
+import {
+  insert,
+  inside,
+  checkedPath,
+  projectAccess,
+  projectFolder,
+  projectFolders,
+  resolvedPath,
+  revision,
+  sessionPrincipal,
+  type ControlContext,
+  type Handlers,
+} from './context.js';
+import { sessionDefaults } from './user-config.js';
+import { runGit } from './git.js';
+import { sessionGoal, sessionRange, type DiffRange } from './landing-diff.js';
+import { confirmTermination } from './process.js';
+import { closeReconciledSession } from './session.js';
+import { assertManagedLocation } from './protection.js';
+import {
+  currentBinding,
+  retiredBinding,
+  taskGeneration,
+  taskSessions,
+  taskState,
+} from './board-plan.js';
+import { appendNote, contractLines } from './lead-inbox.js';
+import { wakeLead } from './task-tracking.js';
+import { sessionWorkflow, taskWorkflow } from './workflow-engine.js';
+
+export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
+export const reviewInstruction =
+  'Review the changes independently against the task goal. Report each finding using the Pantheon review_finding tool with { location, quote, evidence, impact, blocking, reproduction? }. Set blocking to true for a must-fix-before-merge finding, false for report-only. Blocking findings require reproduction steps or failing test evidence in reproduction. Deleted code also counts as a finding. Quote the diff verbatim and include concrete evidence and impact.';
+const planInstruction =
+  'Review the board plan independently before its high-risk tasks start. Check four things: task granularity (whether one session can finish each task), dependencies (complete and in order), scope overlap between tasks that can run at once, and whether each acceptance command can run. Report each finding using the Pantheon review_finding tool with { location, quote, evidence, impact, blocking, reproduction? }. Set blocking to true for a must-fix-before-merge finding, false for report-only. Blocking findings require reproduction steps or failing test evidence in reproduction. Use the task id as the location, quote plan.json verbatim and include concrete evidence and impact.';
+
+export const reviewHandlers: Handlers = {
+  'review.finding': (ctx, principal, command) => {
+    requireThat(principal.role === 'reviewer', 'permission_denied', 'Reviewer session required');
+    const session = sessionPrincipal(ctx, principal);
+    projectAccess(ctx, principal, session.project_id, command.type);
+    revision(ctx, command);
+    const finding = recordFinding(
+      ctx,
+      session,
+      inputSchemas['review.finding'].parse(command.input),
+    );
+    requireThat(finding, 'invalid_state', 'Review is not accepting findings');
+    return finding.status === 'rejected'
+      ? { error: finding.reason ?? finding.artifact_error, finding }
+      : finding;
+  },
+  'review.request': (ctx, principal, command) => {
+    const input = inputSchemas['review.request'].parse(command.input);
+    const session = ctx.store.must<Session>('sessions', input.session_id);
+    projectAccess(ctx, principal, session.project_id, command.type);
+    revision(ctx, command);
+    let requester: Review['requester'];
+    let goal = sessionGoal(ctx, session);
+    if (principal.role !== 'user') {
+      requireThat(principal.role === 'lead', 'permission_denied', 'Owning lead required');
+      const plan = ctx.store.get<BoardPlan>('board_plans', principal.session_id!);
+      const task = session.task && plan?.tasks.find((task) => task.id === session.task!.id);
+      requireThat(
+        plan &&
+          plan.project_id === session.project_id &&
+          task &&
+          session.workspace_id &&
+          session.task &&
+          session.task.lead_session_id === principal.session_id &&
+          currentBinding(plan, session.task) &&
+          !retiredBinding(plan, session),
+        'permission_denied',
+        'Review target must be a worker of your current board plan',
+      );
+      const other = reviewerRuntime(ctx, session.project_id, session.runtime);
+      requireThat(
+        other === undefined ||
+          other === session.runtime ||
+          input.runtimes.every((name) => name !== session.runtime),
+        'invalid_input',
+        'Cross-review runtime must differ from the writer runtime',
+      );
+      requester = {
+        lead_session_id: plan.id,
+        task_id: task.id,
+        generation: session.task!.generation ?? 1,
+      };
+      goal = contractLines(task).join('\n');
+    }
+    const range = sessionRange(ctx, session);
+    requireThat(range.from_sha !== range.to_sha, 'invalid_state', 'No committed changes to review');
+    // This command already checked project scope and the lead's worker ownership. Reading
+    // this one artifact does not grant the lead the general workspace.read capability.
+    const source = checkedPath(
+        ctx,
+        ctx.store.must<Project>('projects', session.project_id),
+        range.source,
+      ),
+      diff = runGit(source, ['diff', '--no-color', '--no-ext-diff', range.from_sha, range.to_sha]);
+    requireThat(
+      diff.exit_code === 0,
+      'git_failed',
+      diff.stderr.toString().trim() || diff.error || 'Git diff failed',
+    );
+    if (requester) {
+      const duplicate = ctx.store
+        .list<Review>('reviews')
+        .find(
+          (review) =>
+            review.session_id === session.id &&
+            review.state === 'running' &&
+            review.runtimes.some((name) => input.runtimes.includes(name)),
+        );
+      requireThat(
+        !duplicate,
+        'resource_busy',
+        'A requested reviewer is already reviewing this worker',
+      );
+    }
+    const round =
+      ctx.store.list<Review>('reviews').filter((review) => review.session_id === session.id)
+        .length + 1;
+    const maxRounds = sessionWorkflow(ctx, session).definition.review.max_rounds;
+    requireThat(
+      round <= maxRounds,
+      'invalid_state',
+      `Code review limit reached: at most ${maxRounds} rounds per reviewed session (${session.id}).`,
+    );
+    const review = startReview(ctx, session.project_id, input.runtimes, {
+      round,
+      cause: command.command_id,
+      prompt: `${reviewInstruction}\n\nTask goal:\n${goal}\n\nChanges:\n${diff.stdout.toString('utf8')}`,
+      artifact: { name: 'changes.diff', content: diff.stdout },
+      session_id: session.id,
+      requester,
+      range,
+    });
+    return { ...review, review_id: review.id };
+  },
+  'review.finding.resolve': (ctx, principal, command) => {
+    requireThat(
+      principal.role === 'user',
+      'permission_denied',
+      'Resolving review findings requires user authority',
+    );
+    const input = inputSchemas['review.finding.resolve'].parse(command.input),
+      review = ctx.store.must<Review>('reviews', input.review_id);
+    projectAccess(ctx, principal, review.project_id, command.type);
+    revision(ctx, command, review);
+    const finding = review.findings.find((item) => item.id === input.finding_id);
+    requireThat(finding, 'not_found', 'Review finding not found');
+    requireThat(
+      finding.status === 'open' && !finding.resolution,
+      'invalid_state',
+      'Review finding cannot be resolved',
+    );
+    const resolution: NonNullable<ReviewFinding['resolution']> = {
+      outcome: input.outcome,
+      ...(input.note === undefined ? {} : { note: input.note }),
+      resolved_at: ctx.store.now(),
+      resolved_by: principal.id,
+    };
+    const next = ctx.store.update<Review>(
+      'reviews',
+      {
+        ...review,
+        findings: review.findings.map((item) =>
+          item.id === finding.id ? { ...item, resolution } : item,
+        ),
+      },
+      review.revision,
+    );
+    ctx.store.event(
+      'review.finding_resolved',
+      next,
+      review.project_id,
+      { finding_id: finding.id, outcome: input.outcome },
+      command.command_id,
+    );
+    return next;
+  },
+};
+
+/** Review timing comes from its own events, independently of the worker's lifetime. */
+export function reviewTimeReader(ctx: ControlContext, projectId: string) {
+  const times = new Map<string, Pick<Review, 'started_at' | 'ended_at'>>();
+  for (const event of ctx.store.kindEvents(projectId, [
+    'review.requested',
+    'review.completed',
+    'review.failed',
+  ])) {
+    const time = times.get(event.aggregate_id) ?? {};
+    if (event.kind === 'review.requested') time.started_at = event.created_at;
+    else time.ended_at = event.created_at;
+    times.set(event.aggregate_id, time);
+  }
+  return (review: Review) => times.get(review.id) ?? {};
+}
+
+/** Read live execution coverage independently of the aggregate review state. */
+export function reviewExecutionReader(ctx: ControlContext, projectId: string) {
+  const sessions = new Map(
+    ctx.store
+      .list<Session>('sessions')
+      .filter((session) => session.project_id === projectId)
+      .map((session) => [session.id, session]),
+  );
+  const turns = new Map<string, SessionTurn>();
+  for (const turn of ctx.store.list<SessionTurn>('session_turns'))
+    if (turn.project_id === projectId && turn.kind === 'send' && !turn.rolled_back)
+      turns.set(turn.session_id, turn);
+  const errors = new Map<string, string>();
+  for (const event of ctx.store.kindEvents(projectId, ['turn.failed', 'turn.cancelled'])) {
+    const error = (event.payload as { error?: unknown } | undefined)?.error;
+    if (typeof error === 'string') errors.set(event.aggregate_id, error.slice(0, 500));
+  }
+  return (review: Review): NonNullable<Review['executions']> =>
+    review.runtimes.map((name, index) => {
+      const session = review.session_ids
+        .map((id) => sessions.get(id))
+        .find((session) => session?.runtime === name);
+      const turn = session && turns.get(session.id);
+      const error = turn && (errors.get(turn.id) ?? turn.delivery_reason);
+      return {
+        runtime: name,
+        session_id: session?.id ?? review.session_ids[index],
+        state: turn?.state ?? 'unknown',
+        ...(error ? { error: error.slice(0, 500) } : {}),
+      };
+    });
+}
+
+export function projectReviewMetrics(
+  ctx: ControlContext,
+  principal: Principal,
+  projectId: string,
+): ReviewMetrics[] {
+  projectAccess(ctx, principal, projectId, 'project.review.metrics');
+  ctx.store.must<Project>('projects', projectId);
+  const reviews = ctx.store
+    .list<Review>('reviews')
+    .filter((review) => review.project_id === projectId);
+  const rows = new Map<string, ReviewMetrics>();
+  for (const review of reviews) {
+    for (const name of review.runtimes) {
+      let row = rows.get(name);
+      if (!row)
+        rows.set(
+          name,
+          (row = {
+            runtime: name,
+            reviews: 0,
+            reviews_without_findings: 0,
+            findings: 0,
+            adopted: 0,
+            dismissed: 0,
+            unresolved: 0,
+            invalid: 0,
+          }),
+        );
+      row.reviews++;
+      let valid = 0;
+      for (const finding of review.findings) {
+        if (finding.runtime !== name) continue;
+        row.findings++;
+        if (finding.status === 'rejected') {
+          row.invalid++;
+          continue;
+        }
+        valid++;
+        if (finding.resolution?.outcome === 'adopted') row.adopted++;
+        else if (finding.resolution?.outcome === 'dismissed') row.dismissed++;
+        else if (finding.status === 'open') row.unresolved++;
+      }
+      if (valid === 0) row.reviews_without_findings++;
+    }
+  }
+  return [...rows.values()].sort((a, b) => a.runtime.localeCompare(b.runtime));
+}
+
+function boundedInput(input: string): string {
+  const bytes = Buffer.from(input);
+  if (bytes.length <= textLimit) return input;
+  let end = textLimit;
+  for (;;) {
+    const suffix = `\n[${bytes.length - end} bytes omitted]\n`;
+    let next = Math.min(end, textLimit - Buffer.byteLength(suffix));
+    while (next > 0 && (bytes[next]! & 0xc0) === 0x80) next--;
+    if (next === end) return bytes.subarray(0, end).toString('utf8') + suffix;
+    end = next;
+  }
+}
+
+/** The directory a reviewer session reads the reviewed changes from, in the project folder holding its review. */
+export function reviewerDirectory(
+  ctx: ControlContext,
+  projectId: string,
+  reviewId: string,
+  sessionId: string,
+): string {
+  if (!ctx.workspaceRoot)
+    return path.resolve(path.dirname(ctx.files.directory), 'reviews', reviewId, sessionId);
+  const folder =
+    projectFolders(ctx, projectId).find((candidate) =>
+      existsSync(path.join(candidate, 'reviews', reviewId)),
+    ) ?? projectFolder(ctx, projectId);
+  return resolvedPath(path.join(folder, 'reviews', reviewId, sessionId));
+}
+
+/**
+ * The role's choice, else the project's single model, with its fallback on admission failure;
+ * otherwise the first admitted reviewer runtime other than the writer's, then the writer's own.
+ * A review on the writer's runtime still runs in its own read-only session.
+ */
+export function reviewerRuntime(
+  ctx: ControlContext,
+  projectId: string,
+  writerRuntime: string,
+): string | undefined {
+  const admitted = (name: string) => {
+    try {
+      runtime(ctx, name, 'reviewer');
+      return true;
+    } catch (error) {
+      if (error instanceof DomainError) return false;
+      throw error;
+    }
+  };
+  const defaults = sessionDefaults(ctx, ctx.store.must<Project>('projects', projectId));
+  const preferred = defaults?.reviewer ?? (defaults?.single_model ? defaults : undefined);
+  if (preferred && admitted(preferred.runtime)) return preferred.runtime;
+  const fallback = defaults?.fallbacks?.reviewer;
+  if (preferred && fallback && admitted(fallback.runtime)) return fallback.runtime;
+  return (
+    [...ctx.adapters.keys()].find((name) => name !== writerRuntime && admitted(name)) ??
+    (admitted(writerRuntime) ? writerRuntime : undefined)
+  );
+}
+
+/** Reviews the artifact in read-only reviewer sessions; the caller commits the database work. */
+export function startReview(
+  ctx: ControlContext,
+  projectId: string,
+  names: string[],
+  options: {
+    round: number;
+    cause: string;
+    prompt: string;
+    /** The file each reviewer reads from its directory. */
+    artifact: { name: string; content: Buffer };
+    session_id?: string;
+    requester?: Review['requester'];
+    range?: NonNullable<Review['range']>;
+    plan?: Review['plan'];
+  },
+): Review {
+  const project = ctx.store.must<Project>('projects', projectId),
+    runtimes = [...new Set(names)],
+    cause = options.cause,
+    review: Review = {
+      id: id(),
+      revision: 1,
+      project_id: project.id,
+      ...(options.session_id ? { session_id: options.session_id } : {}),
+      ...(options.range ? { range: options.range } : {}),
+      ...(options.requester ? { requester: options.requester } : {}),
+      ...(options.plan ? { plan: options.plan } : {}),
+      round: options.round,
+      runtimes,
+      state: 'running',
+      findings: [],
+      session_ids: [],
+    };
+  for (const name of runtimes) runtime(ctx, name, 'reviewer');
+  // Findings are checked against the stored input.
+  const prompt = boundedInput(options.prompt);
+  review.input_hash = ctx.files.put(Buffer.from(prompt)).hash;
+  // The normal outbox starts the turns.
+  const directories: string[] = [];
+  for (const name of runtimes) {
+    const settings = sessionDefaults(ctx, project);
+    const defaults = [settings?.reviewer, settings?.fallbacks?.reviewer, settings].find(
+      (choice) => choice?.runtime === name,
+    );
+    const reviewer: Session = {
+      id: id(),
+      revision: 1,
+      project_id: project.id,
+      runtime: name,
+      ...(defaults?.model !== undefined ? { requested_model: defaults.model } : {}),
+      ...(defaults?.effort !== undefined ? { requested_effort: defaults.effort } : {}),
+      review_id: review.id,
+      state: 'running',
+      turn_count: 1,
+    };
+    const directory = reviewerDirectory(ctx, project.id, review.id, reviewer.id);
+    if (ctx.workspaceRoot) {
+      assertManagedLocation(directory);
+      requireThat(
+        inside(ctx.workspaceRoot, directory),
+        'scope_violation',
+        'Reviewer path outside managed workspace root',
+      );
+    }
+    directories.push(directory);
+    insert(ctx, 'sessions', reviewer, 'session.opened', project.id, cause);
+    const turn: SessionTurn = {
+      id: id(),
+      revision: 1,
+      project_id: project.id,
+      session_id: reviewer.id,
+      model: reviewer.reported_model ?? reviewer.requested_model ?? null,
+      input: prompt,
+      kind: 'send',
+      delivery: 'pending',
+      state: 'queued',
+    };
+    insert(ctx, 'session_turns', turn, 'turn.queued', project.id, cause);
+    ctx.store.enqueue('session.turn', { turn_id: turn.id });
+    review.session_ids.push(reviewer.id);
+  }
+  for (const directory of directories) {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    writeFileSync(path.join(directory, options.artifact.name), options.artifact.content, {
+      flag: 'wx',
+      mode: 0o600,
+    });
+  }
+  insert(ctx, 'reviews', review, 'review.requested', project.id, cause);
+  return review;
+}
+
+const planReviewsOf = (ctx: ControlContext, leadId: string) =>
+  ctx.store
+    .list<Review>('reviews')
+    .filter((review) => review.plan && review.requester?.lead_session_id === leadId);
+
+const covers = (review: Review, taskId: string, generation: number) =>
+  review.plan!.tasks.some((task) => task.task_id === taskId && task.generation === generation);
+
+/**
+ * The running plan review the task's current generation waits for: the one that covers it, or,
+ * when no review covered it yet, the one whose end starts its review.
+ */
+export function runningPlanReview(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  taskId: string,
+): Review | undefined {
+  const generation = taskGeneration(plan, taskId),
+    reviews = planReviewsOf(ctx, plan.id),
+    running = reviews.find((review) => review.state === 'running');
+  if (
+    running &&
+    (covers(running, taskId, generation) ||
+      !reviews.some((review) => covers(review, taskId, generation)))
+  )
+    return running;
+}
+
+/**
+ * Starts a review of the plan for its high-risk tasks whose generation no plan review covers yet,
+ * on the runtime `reviewerRuntime` picks for the lead's; without one the lead hears that none ran.
+ * The caller commits the database work.
+ */
+export function reviewPlan(ctx: ControlContext, plan: BoardPlan, cause: string): void {
+  const reviews = planReviewsOf(ctx, plan.id),
+    lead = ctx.store.must<Session>('sessions', plan.id);
+  const tasks = plan.tasks
+    .filter(
+      (task) =>
+        task.kind &&
+        taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(task.kind.tier) &&
+        taskState(plan, task.id, taskSessions(ctx, plan.id, task.id), lead) !== 'done',
+    )
+    .map((task) => ({ task_id: task.id, generation: taskGeneration(plan, task.id) }))
+    .filter((task) => !reviews.some((review) => covers(review, task.task_id, task.generation)));
+  // One plan review runs at a time; the tasks it leaves out wait for the next plan write.
+  if (!tasks.length || reviews.some((review) => review.state === 'running')) return;
+  const reviewer = reviewerRuntime(ctx, plan.project_id, lead.runtime);
+  const listed = tasks.map((task) => `${task.task_id} (generation ${task.generation})`).join(', ');
+  if (!reviewer) {
+    const text = `Pantheon did not review the plan for its high-risk tasks ${listed}: no runtime can run a read-only review of it. These tasks open without a plan review.`;
+    const told = ctx.store
+      .kindEvents(plan.project_id, ['lead.note_added'])
+      .some((event) => event.aggregate_id === plan.id && (event.payload as LeadNote).text === text);
+    if (!told)
+      appendNote(
+        ctx,
+        plan,
+        {
+          at: ctx.store.now(),
+          session_id: '',
+          task_id: tasks[0]!.task_id,
+          kind: 'runtime_unavailable',
+          text,
+        },
+        cause,
+      );
+    return;
+  }
+  const content = Buffer.from(
+    JSON.stringify(
+      {
+        headline: plan.headline,
+        tasks: plan.tasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+          goal: task.goal,
+          depends_on: task.depends_on,
+          scope: task.scope,
+          acceptance: task.acceptance,
+          kind: task.kind,
+        })),
+      },
+      null,
+      2,
+    ),
+  );
+  startReview(ctx, plan.project_id, [reviewer], {
+    round: reviews.length + 1,
+    cause,
+    prompt: `${planInstruction}\n\nHigh-risk tasks to review: ${listed}.\n\nplan.json:\n${content.toString('utf8')}`,
+    artifact: { name: 'plan.json', content },
+    requester: { lead_session_id: plan.id },
+    plan: { tasks },
+  });
+}
+
+/** The caller owns the transaction and command or native event deduplication. */
+export function recordFinding(
+  ctx: ControlContext,
+  session: Session,
+  input: ReturnType<(typeof inputSchemas)['review.finding']['parse']> | undefined,
+): ReviewFinding | undefined {
+  if (!session.review_id) return;
+  const review = ctx.store.must<Review>('reviews', session.review_id);
+  if (review.state !== 'running' || !review.session_ids.includes(session.id)) return;
+  const finding: ReviewFinding = {
+    id: id(),
+    review_id: review.id,
+    runtime: session.runtime,
+    round: review.round,
+    ...(input ?? { location: '', quote: '', evidence: '', impact: '', blocking: false }),
+    status: 'open',
+  };
+  if (!input) {
+    finding.status = 'rejected';
+    finding.reason = 'incomplete_finding';
+  } else {
+    try {
+      let inputBytes: Buffer | undefined;
+      if (review.input_hash !== undefined) {
+        requireThat(
+          /^[a-f0-9]{64}$/.test(review.input_hash),
+          'hash_mismatch',
+          'Invalid review input hash',
+        );
+        inputBytes = readBoundedSync(path.join(ctx.files.directory, review.input_hash), textLimit);
+        requireThat(
+          createHash('sha256').update(inputBytes).digest('hex') === review.input_hash,
+          'hash_mismatch',
+          'Stored review input bytes changed',
+        );
+      }
+      if (!inputBytes?.includes(Buffer.from(finding.quote))) {
+        finding.status = 'rejected';
+        finding.reason = 'quote_not_in_artifact';
+      }
+    } catch {
+      finding.status = 'rejected';
+      finding.artifact_error = 'artifact_unavailable';
+    }
+  }
+  const next = ctx.store.update(
+    'reviews',
+    { ...review, findings: [...review.findings, finding] },
+    review.revision,
+  );
+  ctx.store.event('review.finding_recorded', next, review.project_id, finding);
+  // The reviewed session may have committed past the reviewed range before this finding arrived.
+  const reviewed =
+    finding.status === 'open' && review.session_id
+      ? ctx.store.get<Session>('sessions', review.session_id)
+      : undefined;
+  if (reviewed) markStaleFindings(ctx, reviewed);
+  return ctx.store
+    .must<Review>('reviews', review.id)
+    .findings.find((item) => item.id === finding.id);
+}
+
+/**
+ * Marks stale the open, unresolved findings on the session's reviews whose quote is no longer in
+ * the diff of its current range, once its head moved past the reviewed range. The caller owns the
+ * transaction.
+ */
+export function markStaleFindings(ctx: ControlContext, session: Session): void {
+  if (session.review_id) return;
+  const reviews = ctx.store
+    .list<Review>('reviews')
+    .filter(
+      (review) =>
+        review.session_id === session.id &&
+        review.range &&
+        review.findings.some((finding) => finding.status === 'open' && !finding.resolution),
+    );
+  if (!reviews.length) return;
+  let range: DiffRange, source: string;
+  try {
+    range = sessionRange(ctx, session);
+    source = checkedPath(
+      ctx,
+      ctx.store.must<Project>('projects', session.project_id),
+      range.source,
+    );
+  } catch (error) {
+    // This runs while the turn's end is recorded: with no range to read, the findings stay as they are.
+    if (error instanceof DomainError) return;
+    throw error;
+  }
+  let changes: Buffer | undefined;
+  for (const review of reviews) {
+    if (review.range!.to_sha === range.to_sha) continue;
+    if (!changes) {
+      const diff = runGit(source, [
+        'diff',
+        '--no-color',
+        '--no-ext-diff',
+        range.from_sha,
+        range.to_sha,
+      ]);
+      if (diff.exit_code !== 0) return;
+      changes = diff.stdout;
+    }
+    const stale = review.findings.filter(
+      (finding) =>
+        finding.status === 'open' &&
+        !finding.resolution &&
+        !changes!.includes(Buffer.from(finding.quote)),
+    );
+    if (!stale.length) continue;
+    const next = ctx.store.update<Review>(
+      'reviews',
+      {
+        ...review,
+        findings: review.findings.map((finding) =>
+          stale.includes(finding) ? { ...finding, status: 'stale' as const } : finding,
+        ),
+      },
+      review.revision,
+    );
+    for (const finding of stale)
+      ctx.store.event('review.finding_marked_stale', next, review.project_id, {
+        finding_id: finding.id,
+        to_sha: range.to_sha,
+      });
+  }
+}
+
+export function settleReview(ctx: ControlContext, reviewId: string, recovering = false): void {
+  const review = ctx.store.must<Review>('reviews', reviewId);
+  if (recovering) {
+    for (const sessionId of review.session_ids) {
+      const session = ctx.store.get<Session>('sessions', sessionId);
+      if (!session || session.state !== 'reconciling') continue;
+      try {
+        confirmTermination(ctx, session);
+      } catch (error) {
+        if (error instanceof DomainError && error.code === 'termination_unconfirmed') continue;
+        throw error;
+      }
+      closeReconciledSession(ctx, session);
+    }
+  }
+  if (review.state !== 'running') return;
+  const turns = ctx.store.list<SessionTurn>('session_turns');
+  const states = review.session_ids.map((sessionId) => {
+    const session = ctx.store.get<Session>('sessions', sessionId);
+    const turn = turns.find((t) => t.session_id === sessionId);
+    return session && turn ? turn.state : 'failed';
+  });
+  // A failed reviewer fails only itself; the review settles once every reviewer has ended.
+  const state = recovering
+    ? states.every((s) => s === 'completed')
+      ? 'completed'
+      : 'failed'
+    : states.some((s) => s === 'queued' || s === 'running')
+      ? 'running'
+      : states.some((s) => s === 'completed')
+        ? 'completed'
+        : 'failed';
+  if (state === 'running') return;
+  const next = ctx.store.update<Review>('reviews', { ...review, state }, review.revision);
+  ctx.store.event(
+    `review.${state}`,
+    next,
+    review.project_id,
+    recovering ? { reason: 'daemon_restart' } : {},
+  );
+  ctx.store.enqueue('review.remove', { review_id: review.id });
+  notifyRequestingLead(ctx, next, turns);
+}
+
+/** Durable review results return to the owning plan; a transfer routes them to its new lead. */
+function notifyRequestingLead(ctx: ControlContext, review: Review, turns: SessionTurn[]): void {
+  const requester = review.requester;
+  // The workflow engine settles its own review step.
+  if (!requester || requester.step_run_id) return;
+  let lead = requester.lead_session_id;
+  const visited = new Set<string>();
+  const transfers = ctx.store.kindEvents(review.project_id, ['board.plan_transferred']);
+  while (!visited.has(lead)) {
+    visited.add(lead);
+    const moved = transfers.findLast((event) => (event.payload as { from?: string }).from === lead);
+    if (!moved) break;
+    lead = moved.aggregate_id;
+  }
+  const plan = ctx.store.get<BoardPlan>('board_plans', lead);
+  if (!plan || plan.project_id !== review.project_id) return;
+  const results = [
+    ...review.session_ids.map((sessionId) => {
+      const session = ctx.store.get<Session>('sessions', sessionId);
+      const turn = turns.find((turn) => turn.session_id === sessionId);
+      return `Reviewer ${session?.runtime ?? sessionId}: ${turn?.state ?? 'failed'}.`;
+    }),
+    'Only findings whose quotes match the supplied artifact follow. Failed or cancelled reviewers are not a clean review.',
+    ...review.findings
+      .filter((finding) => finding.status === 'open')
+      .map(
+        (finding) =>
+          `${finding.runtime} ${finding.location} (${finding.blocking ? 'must fix before merge' : 'report-only'})\nQuote: ${finding.quote}\nEvidence: ${finding.evidence}\nImpact: ${finding.impact}${finding.reproduction === undefined ? '' : `\nReproduction: ${JSON.stringify(finding.reproduction)}`}`,
+      ),
+  ];
+  if (review.plan) {
+    const next = appendNote(ctx, plan, {
+      at: ctx.store.now(),
+      session_id: '',
+      task_id: review.plan.tasks[0]!.task_id,
+      kind: review.state === 'completed' ? 'plan_review_completed' : 'plan_review_failed',
+      text: [
+        `Plan review ${review.id}: ${review.state}. High-risk tasks reviewed: ${review.plan.tasks.map((task) => `${task.task_id} (generation ${task.generation})`).join(', ')}.`,
+        ...results,
+        'Pantheon does not change the plan. Decide which findings to act on and change the plan with update_board or edit_board; the reviewed tasks may open now.',
+      ].join('\n'),
+    });
+    wakeLead(ctx, next, '');
+    // High-risk tasks written while this review ran get their own review now.
+    reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', lead), '');
+    return;
+  }
+  const lines = [
+    `Review ${review.id}: ${review.state}. Worker ${review.session_id}; task generation ${requester.generation}.`,
+    ...(review.range
+      ? [`Reviewed commits: ${review.range.from_sha}..${review.range.to_sha}.`]
+      : []),
+    ...results,
+    'This review covers the recorded commits only. Re-read current task and session state before deciding; request fixes with message_task. Review completion does not accept the task or merge it.',
+  ];
+  const next = appendNote(ctx, plan, {
+    at: ctx.store.now(),
+    session_id: review.session_id ?? '',
+    task_id: requester.task_id!,
+    generation: requester.generation,
+    kind: review.state === 'completed' ? 'review_completed' : 'review_failed',
+    text: lines.join('\n'),
+  });
+  wakeLead(ctx, next, '');
+}

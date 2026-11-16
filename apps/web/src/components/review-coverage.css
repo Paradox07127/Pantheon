@@ -1,0 +1,26 @@
+.review-coverage {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+.review-coverage p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 8px;
+}
+.review-coverage ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0 0 12px;
+  list-style: none;
+}
+.review-coverage li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.review-execution-error {
+  flex-basis: 100%;
+}

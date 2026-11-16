@@ -1,0 +1,16 @@
+.read-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.read-status-error {
+  flex: 1 1 180px;
+  overflow-wrap: anywhere;
+}

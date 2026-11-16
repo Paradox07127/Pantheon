@@ -1,0 +1,235 @@
+/* Run tab: context ring, activity sparkline, trace waterfall */
+
+.rn-unk {
+  background-color: color-mix(in srgb, var(--mu) 30%, transparent);
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--sf) 55%, transparent) 0 2px,
+    transparent 2px 4.2px
+  );
+}
+
+/* Context ring */
+
+.rn-ctx {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.rn-ring {
+  flex: none;
+}
+.rn-ring-trk {
+  fill: none;
+  stroke: var(--bd);
+}
+.rn-ring-arc {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+.rn-ring-v {
+  fill: var(--tx);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rn-ring-none .rn-ring-v {
+  fill: var(--mu);
+}
+.rn-ring-ac2 {
+  color: var(--tx);
+}
+.rn-ring-wait {
+  color: var(--wait);
+}
+.rn-ring-bad {
+  color: var(--bad);
+}
+.rn-ctx-n {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Activity sparkline */
+
+.rn-spk {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  max-width: 240px;
+}
+.rn-spk-svg {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+.rn-spk-bar {
+  fill: var(--ink);
+  transition: fill var(--dur-1) var(--ease-std);
+}
+.rn-spk-bar.rn-on {
+  fill: var(--ink);
+}
+.rn-spk-base {
+  stroke: var(--bd);
+  stroke-width: 1;
+}
+.rn-spk-max {
+  color: var(--mu);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Trace waterfall */
+
+.rn-hd {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  color: var(--tx2);
+}
+.rn-wf {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-top: var(--hair) solid var(--bd);
+}
+.rn-lgd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--mu);
+}
+.rn-lgd span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.rn-sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-hair);
+  background-color: var(--rn-c);
+}
+.rn-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rn-lrow {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+}
+.rn-ln {
+  color: var(--mu);
+  text-align: right;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.rn-lane {
+  position: relative;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.rn-turn {
+  position: absolute;
+  display: block;
+  min-width: 3px;
+  border-radius: var(--radius-hair);
+  top: 0;
+  bottom: 0;
+  border: 1px solid var(--rn-c);
+  background-color: color-mix(in srgb, var(--rn-c) 14%, transparent);
+}
+.rn-turn.rn-k-run {
+  overflow: hidden;
+}
+/* One stripe period wider on the left, so moving it one period keeps the bar covered. */
+.rn-turn.rn-k-run::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 -12px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--rn-c) 26%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  animation: rn-stripe 1s linear infinite;
+}
+.pt:is([data-state-motion='waiting'], [data-state-motion='off']) .rn-turn.rn-k-run::before {
+  animation: none;
+}
+.rn-turn.rn-unk,
+.rn-sw.rn-unk {
+  border-color: var(--mu);
+  background-color: color-mix(in srgb, var(--mu) 30%, transparent);
+}
+.rn-span {
+  position: absolute;
+  display: block;
+  min-width: 3px;
+  border-radius: var(--radius-hair);
+  height: 6px;
+  background-color: var(--ink);
+}
+.rn-span.rn-fail {
+  background-color: var(--bad);
+}
+.rn-span.rn-unk {
+  background-color: color-mix(in srgb, var(--mu) 45%, transparent);
+}
+.rn-span.rn-fail.rn-unk {
+  background-color: color-mix(in srgb, var(--bad) 60%, transparent);
+}
+/* An idle stretch cut from the axis. */
+.rn-brk {
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  border-left: 1px dashed var(--bd);
+  border-right: 1px dashed var(--bd);
+  background-color: var(--sf2);
+}
+.rn-k-ok {
+  --rn-c: var(--ok);
+}
+.rn-k-bad {
+  --rn-c: var(--bad);
+}
+.rn-k-idle {
+  --rn-c: var(--idle);
+}
+.rn-k-run {
+  --rn-c: var(--ink);
+}
+.rn-k-wait {
+  --rn-c: var(--wait);
+}
+/* A tool call row of the trace table, under its turn. */
+.rn-call td {
+  height: 22px;
+  color: var(--mu);
+}
+.rn-call td:first-child {
+  max-width: 140px;
+  padding-left: 22px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rn-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 26px;
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes rn-stripe {
+  to {
+    transform: translateX(12px);
+  }
+}

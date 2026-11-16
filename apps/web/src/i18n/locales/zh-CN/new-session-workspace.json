@@ -1,0 +1,18 @@
+{
+  "sessions.newWorkspace.currentBranch": "当前分支",
+  "sessions.newWorkspace.start": "起点",
+  "sessions.newWorkspace.from": "从 {name}",
+  "sessions.newWorkspace.removeRef": "移除 {title}",
+  "sessions.newWorkspace.referSession": "带着记录新开",
+  "sessions.newWorkspace.where": "在哪里改",
+  "sessions.newWorkspace.worktree": "新工作树",
+  "sessions.newWorkspace.inPlace": "当前目录",
+  "sessions.newWorkspace.ahead": "领先上游 {count}",
+  "sessions.newWorkspace.uncommitted": "{count, plural, other {# 个没提交的改动}}",
+  "sessions.newWorkspace.uncommittedLeft": "新工作树里看不到它们",
+  "sessions.newWorkspace.uncommittedKept": "会话直接在它们上面改",
+  "sessions.newWorkspace.begin": "开始",
+  "sessions.newWorkspace.waitReason": "{state}：{reason}",
+  "sessions.newWorkspace.more": "还有 {count} 项",
+  "sessions.newWorkspace.referAnother": "另一个会话"
+}

@@ -1,0 +1,274 @@
+/* Task drawer parts: the plan column beside the details, the acceptance checks, the message to the lead */
+/* The drawer's own width, wherever it is placed, decides the columns. */
+aside.bd-drw {
+  container: bd-drw / inline-size;
+}
+.bd-ddet {
+  min-width: 0;
+}
+.bd-dplan {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding-top: 16px;
+  border-top: var(--hair) solid var(--bd2);
+}
+/* Wide enough for two columns, the plan goes left of the details. */
+@container bd-drw (min-width: 640px) {
+  .bd-dbody:has(> .bd-dplan) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    column-gap: 24px;
+  }
+  .bd-dplan {
+    grid-column: 1;
+    grid-row: 1;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .bd-ddet {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+.bd-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.bd-plh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.bd-plh h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-plc {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--mu);
+}
+.bd-pls {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  width: 96px;
+  height: 6px;
+}
+.bd-pls > i {
+  flex: var(--n) 1 0;
+  border-radius: 2px;
+  background: var(--c);
+}
+.bd-pl {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bd-plr {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 36px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.bd-plr:first-child {
+  border-top: 0;
+}
+.bd-plr[data-drag] {
+  opacity: 0.5;
+}
+.bd-plr[data-drop] {
+  background: var(--sel);
+}
+.bd-plgrip {
+  flex: none;
+  color: var(--mu);
+}
+.bd-plgrip svg {
+  width: 14px;
+  height: 14px;
+}
+.bd-plb {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bd-plb:hover {
+  background: var(--sf2);
+}
+.bd-plb[aria-current='true'] {
+  background: var(--sel);
+}
+.bd-plb .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-plst {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+
+.bd-dck {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--mu);
+  user-select: text;
+}
+.bd-dck[data-met] {
+  color: var(--tx);
+}
+.bd-dck input {
+  flex: none;
+  margin: 3px 0 0;
+  accent-color: var(--ink);
+}
+
+.bd-tell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-xl);
+  background: var(--sf);
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.bd-tell:focus-within {
+  border-color: var(--bd3);
+}
+.bd-tell textarea {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+}
+.bd-tellf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bd-tellw {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.bd-tellf .kbd {
+  margin-left: 4px;
+  border-color: color-mix(in srgb, currentColor 30%, transparent);
+  background: none;
+  color: inherit;
+}
+.bd-tellerr,
+.bd-derr {
+  font-size: var(--fs-xs);
+  color: var(--bad);
+  user-select: text;
+}
+
+.bd-dgo {
+  flex: 1;
+}
+
+.bd-ddev {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.bd-duse .meter {
+  align-self: center;
+}
+.bd-dbtn.bd-docc {
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  font-size: var(--fs-xs);
+}
+
+/* An attempt's changed lines and time take columns after its name only when it has them. */
+.bd-dbtn.bd-dseg {
+  grid-auto-flow: column;
+  grid-auto-columns: auto;
+}
+/* A part not dispatched yet: the row of a dependency link, with nothing to open. */
+.bd-dpart {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  height: var(--h-ctl);
+}
+.bd-dpart span {
+  display: flex;
+}
+.bd-dpart .nm {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-dtook {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--mu);
+}
+
+.bd-dscope {
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+
+.bd-dbud {
+  display: flex;
+  flex: 1 1 160px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.bd-dbud .meter {
+  flex: 1;
+}
+.bd-dbud .meter[data-over] {
+  --c: var(--wait);
+}
+.bd-dbud .mono {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

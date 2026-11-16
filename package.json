@@ -1,0 +1,58 @@
+{
+  "name": "pantheon",
+  "version": "0.1.0-dev.20261116",
+  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Paradox07127/Pantheon.git"
+  },
+  "homepage": "https://github.com/Paradox07127/Pantheon",
+  "bugs": "https://github.com/Paradox07127/Pantheon/issues",
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=26 <27"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.13.0"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "node scripts/dev.mjs",
+    "relaunch": "node scripts/relaunch.mjs",
+    "typecheck": "tsc -b",
+    "test": "pnpm build && vitest run --exclude tests/acceptance/acceptance-reproducibility.test.ts",
+    "check:design": "node scripts/check-design.mjs",
+    "package": "node scripts/package-desktop.mjs",
+    "start": "node apps/daemon/dist/main.js",
+    "cli": "node apps/cli/dist/index.js",
+    "demo": "node scripts/backend-demo.mjs",
+    "probe": "node scripts/probe-backends.mjs",
+    "format:check": "prettier --check \"apps/*/src/**/*.{ts,tsx}\" \"packages/*/src/**/*.ts\" \"tests/**/*.ts\" \"tests/acceptance/**/*.mjs\""
+  },
+  "devDependencies": {
+    "@formatjs/cli-lib": "10.2.2",
+    "@formatjs/icu-messageformat-parser": "3.5.23",
+    "@pantheon/adapters": "workspace:*",
+    "@pantheon/cli": "workspace:*",
+    "@pantheon/control": "workspace:*",
+    "@pantheon/daemon": "workspace:*",
+    "@pantheon/domain": "workspace:*",
+    "@pantheon/protocol": "workspace:*",
+    "@pantheon/store": "workspace:*",
+    "@types/node": "26.6.5",
+    "@types/ws": "8.18.2",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "printWidth": 100,
+    "trailingComma": "all"
+  }
+}

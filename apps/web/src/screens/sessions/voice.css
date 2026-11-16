@@ -1,0 +1,177 @@
+/* The voice input row in place of the composer's tools */
+
+.vc-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--ctl);
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .vc-bar {
+    opacity: 0;
+  }
+}
+.vc-st {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 0 4px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.vc-bar svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.vc-tx {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tx);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vc-tx[data-quiet],
+.vc-clk[data-quiet],
+.vc-ic {
+  color: var(--mu);
+}
+.vc-err {
+  color: var(--bad);
+}
+.vc-clk {
+  flex: none;
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.vc-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+
+/* Level bars, newest on the right; a level line instead under reduced motion */
+
+.vc-vu {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  color: var(--run);
+  transition: color var(--dur-2) var(--ease-std);
+}
+.vc-vu[data-flat='true'] {
+  color: var(--faint);
+}
+.vc-vu > i {
+  flex: none;
+  width: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.vc-vl {
+  display: none;
+  flex: none;
+  width: 96px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.vc-vl > i {
+  display: block;
+  height: 100%;
+  background: var(--run);
+  transform-origin: left;
+}
+.pt[data-motion='reduced'] .vc-vu {
+  display: none;
+}
+.pt[data-motion='reduced'] .vc-vl {
+  display: block;
+}
+
+/* Dots of a step that is under way */
+
+.vc-ell {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.vc-ell > i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: vc-pulse 1.2s ease-in-out infinite;
+}
+.vc-ell > i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.vc-ell > i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes vc-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+.pt[data-motion='reduced'] .vc-ell > i {
+  animation: none;
+}
+
+/* The microphone in the tools and the finish key */
+
+.vc-mic {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl);
+  height: var(--ctl);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--tx2);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.vc-mic:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.vc-done {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl);
+  height: var(--ctl);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--ink);
+  color: var(--on-ink);
+  transition:
+    opacity var(--dur-1) var(--ease-std),
+    transform var(--dur-1) var(--ease-std);
+}
+.vc-done:hover {
+  opacity: 0.86;
+}
+.vc-done:active {
+  transform: scale(0.97);
+}

@@ -1,0 +1,13 @@
+{
+  "sessions.export.project": "项目：{name}",
+  "sessions.export.branch": "分支：{branch}",
+  "sessions.export.runtimeModel": "运行时：{runtime} · {model}",
+  "sessions.export.runtime": "运行时：{runtime}",
+  "sessions.export.created": "创建于：{time}",
+  "sessions.export.exported": "导出于：{time}",
+  "sessions.export.you": "你",
+  "sessions.export.attachments": "附件：{names}",
+  "sessions.export.copyMarkdown": "复制为 Markdown",
+  "sessions.export.exportMarkdown": "导出为 Markdown…",
+  "sessions.export.copied": "已复制为 Markdown"
+}

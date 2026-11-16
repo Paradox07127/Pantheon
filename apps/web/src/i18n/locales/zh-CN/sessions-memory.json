@@ -1,0 +1,6 @@
+{
+  "sessions.memory.used": "用了 {count, plural, other {# 条记忆}}",
+  "sessions.memory.version": "第 {n} 版",
+  "sessions.memory.delivered": "记忆已送达",
+  "sessions.memory.stale": "记忆待同步"
+}

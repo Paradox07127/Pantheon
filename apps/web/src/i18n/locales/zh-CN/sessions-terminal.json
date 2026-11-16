@@ -1,0 +1,9 @@
+{
+  "sessions.terminal.title": "终端",
+  "sessions.terminal.running": "终端，命令在运行",
+  "sessions.terminal.close": "关闭终端",
+  "sessions.terminal.exited": "已退出，退出码 {code}",
+  "sessions.terminal.reopen": "重开",
+  "sessions.terminal.lost": "连接已断开",
+  "sessions.terminal.resize": "调整终端高度"
+}

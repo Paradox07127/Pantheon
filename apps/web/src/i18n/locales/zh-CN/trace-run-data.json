@@ -1,0 +1,11 @@
+{
+  "runs.detail.retries": "重试",
+  "runs.detail.retryCount": "{count, plural, other {# 次}}",
+  "runs.detail.exitCode": "退出码",
+  "runs.detail.turnCost": "本轮成本",
+  "trace.diagnose.detail.slowFrom": "{took}超过 {threshold}就算慢。",
+  "trace.diagnose.evidence.label": "证据",
+  "trace.diagnose.evidence.native": "原生 span",
+  "trace.diagnose.evidence.reported": "上报时长",
+  "trace.diagnose.evidence.daemon": "事件差"
+}

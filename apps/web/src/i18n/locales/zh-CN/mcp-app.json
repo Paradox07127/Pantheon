@@ -1,0 +1,11 @@
+{
+  "components.mcpApp.title": "{server} 的 {tool}",
+  "components.mcpApp.retry": "重试",
+  "sessions.app.dock": "停靠到侧栏",
+  "sessions.app.fullscreen": "全屏",
+  "sessions.app.reload": "重新加载",
+  "sessions.app.backToThread": "放回对话",
+  "sessions.app.close": "关闭",
+  "sessions.app.docked": "停靠的应用",
+  "sessions.app.exitFullscreen": "退出全屏"
+}

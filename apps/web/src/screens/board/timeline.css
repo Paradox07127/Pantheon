@@ -1,0 +1,141 @@
+/* Task trace in the drawer, oldest first: time, glyph on a rail, then the step and its text. */
+.bd-tl {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bd-tl-i {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px 16px minmax(0, 1fr);
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-3);
+  transition:
+    opacity var(--dur-3) var(--ease-in),
+    transform var(--dur-3) var(--ease-in);
+}
+@starting-style {
+  .bd-tl-i {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.bd-tl-i::before {
+  content: '';
+  position: absolute;
+  left: calc(40px + var(--sp-2) + 7px);
+  top: 20px;
+  bottom: 0;
+  width: 1px;
+  background: var(--bd);
+}
+.bd-tl-i:last-child::before {
+  display: none;
+}
+.bd-tl-t {
+  padding-top: 2px;
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bd-tl-g {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+}
+.bd-tl-g svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--mu);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* lucide draws on a 24 grid: 2.5 there is the 1.5px of the 14-grid glyphs at 14px. */
+.bd-tl-g svg.lucide {
+  stroke-width: 2.5;
+}
+.bd-tl-g[data-tone='ok'] svg {
+  stroke: var(--ok);
+}
+.bd-tl-g[data-tone='bad'] svg {
+  stroke: var(--bad);
+}
+.bd-tl-b {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  font-size: var(--fs-xs);
+}
+.bd-tl-l {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  min-height: 20px;
+  color: var(--tx2);
+}
+.bd-tl-n {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-weight: 600;
+}
+button.bd-tl-n {
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+button.bd-tl-n:hover {
+  text-decoration-color: currentColor;
+}
+.bd-tl-q {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--tx2);
+}
+.bd-tl-q[data-bubble] {
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-md);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.bd-tl-q[data-bubble='in'] {
+  background: var(--sf2);
+}
+/* What the task sends back sits indented from what it was told. */
+.bd-tl-q[data-bubble='out'] {
+  margin-left: var(--sp-4);
+  background: transparent;
+}
+.bd-tl-x {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  text-wrap: pretty;
+}
+.bd-tl-x:not([data-open]) {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+.pt[data-motion='reduced'] .bd-tl-i {
+  transition-property: opacity;
+}

@@ -1,0 +1,6 @@
+.sb-pj.sb-fixed {
+  cursor: default;
+}
+.sb-pj.sb-fixed:hover {
+  background: transparent;
+}

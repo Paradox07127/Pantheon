@@ -1,0 +1,395 @@
+/* The devices settings page: one row per device, or the details of one device. */
+.dv-pg {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dv-grp {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  overflow: hidden;
+}
+/* A device row: the open button spans name, system, architecture, cores and memory; the test button ends it. */
+.dv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 200px) 72px 64px 64px var(--ctl);
+  column-gap: 12px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 8px 0 16px;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.dv + .dv,
+.dv-hr + .dv-hr {
+  border-top: var(--hair) solid var(--bd2);
+}
+.dv:hover,
+.dv:focus-within {
+  background: var(--sf2);
+}
+.dv-open {
+  grid-column: 1 / 6;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.dv-open:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+.dv-nm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dv-nm[data-off] {
+  color: var(--mu);
+}
+.dv-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dv-ssh {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.dv-os {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.dv-c {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.dv-off {
+  grid-column: 2 / 6;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.dv-sys {
+  display: flex;
+  /* A fact that does not fit wraps to a second line, which the fixed height hides whole. */
+  flex-wrap: wrap;
+  gap: 0 8px;
+  height: 16px;
+  line-height: 16px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.dv-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.dv-dot[data-s='ok'] {
+  background: var(--ok);
+}
+.dv-dot[data-s='wait'] {
+  background: var(--wait);
+}
+.dv-dot[data-s='bad'] {
+  background: var(--bad);
+}
+.dv-dot[data-s='chk'] {
+  background: var(--chk);
+  animation: dv-breathe 1.2s var(--ease-std) infinite;
+}
+@keyframes dv-breathe {
+  50% {
+    opacity: 0.3;
+  }
+}
+.pt[data-motion='reduced'] .dv-dot[data-s='chk'] {
+  animation: none;
+}
+.dv-load {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.dv-meter {
+  width: 112px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bd);
+  overflow: hidden;
+}
+.dv-meter-b {
+  --dv-share: 0;
+  display: block;
+  height: 100%;
+  width: calc(var(--dv-share) * 100%);
+  background: var(--tx2);
+}
+.dv-num {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A device's details, in place of the list. */
+.dv-bar {
+  display: flex;
+}
+.dv-card {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+}
+.dv-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 8px 0 16px;
+}
+.dv-top > .dv-sys,
+.dv-top > .dv-off {
+  flex: 1;
+  margin-left: 8px;
+}
+.dv-x {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px 16px;
+  align-items: center;
+  padding: 4px 16px 16px;
+}
+.dv-k {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.dv-rtk {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dv-v {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.dv-tx2 {
+  color: var(--tx2);
+}
+.dv-cmd {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.dv-err {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+.dv-tools {
+  gap: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.dv-lbl {
+  gap: 4px;
+}
+.dv-lbl:has(.dv-rm) {
+  padding-right: 4px;
+}
+.dv-res {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+}
+.dv-res .mono {
+  font-size: var(--fs-xs);
+}
+.dv-by {
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.dv-runs {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+.dv-run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.dv-run:hover {
+  color: var(--tx);
+  text-decoration: underline;
+}
+.dv-run:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+.dv-run-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dv-run-at {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.dv-rm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mu);
+  transition: color var(--dur-1) var(--ease-std);
+}
+.dv-rm svg {
+  width: 12px;
+  height: 12px;
+}
+.dv-rm:hover {
+  color: var(--tx);
+}
+.dv-rm:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+.dv-x .dv-plus {
+  width: 24px;
+  height: 24px;
+}
+.dv-x .dv-plus:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.dv-in,
+.dv-max {
+  height: var(--h-ctl);
+  padding: 0 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-size: inherit;
+}
+.dv-in {
+  width: 120px;
+}
+.dv-in-n {
+  width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+.dv-x .dv-max {
+  width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.dv-in:focus-visible,
+.dv-max:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+.dv-v > .dv-end {
+  margin-left: auto;
+}
+
+/* The hosts of ~/.ssh/config, each with its switch. */
+.dv-hr {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+}
+.dv-hn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.dv-add {
+  display: flex;
+  gap: 8px;
+}
+.dv-host {
+  flex: 1;
+}
+/* Over the field's font: inherit. */
+.dv-host .mono {
+  font-family: var(--font-mono);
+}
+.dv-host input::placeholder {
+  color: var(--mu);
+}

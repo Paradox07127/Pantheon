@@ -1,0 +1,77 @@
+/* Replay bar: a 4px track with a mark per step and a 16px knob; the knob and fill move by transform only. */
+.rpb-scrub {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  overflow: clip;
+  overflow-clip-margin: 12px;
+  border-radius: var(--r-sm);
+  touch-action: none;
+}
+.rpb-scrub::before {
+  position: absolute;
+  top: 12px;
+  right: 0;
+  left: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  content: '';
+}
+.rpb-fill {
+  position: absolute;
+  top: 12px;
+  right: 0;
+  left: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink);
+  transform-origin: left;
+}
+.rpb-mk {
+  position: absolute;
+  top: 8px;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--bd3);
+}
+.rpb-mk[data-state='running'] {
+  background: var(--run);
+}
+.rpb-mk[data-state='error'] {
+  background: var(--bad);
+}
+/* Spans the track, so its translate in percent is a share of the track. */
+.rpb-th {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.rpb-th > i {
+  position: absolute;
+  top: 6px;
+  left: -8px;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--sf);
+}
+.rpb-keys {
+  display: inline-flex;
+  flex: none;
+  gap: var(--sp-1);
+}
+/* A session's step replay in place of the timeline, edge to edge. */
+.rpb-session {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--bg);
+}

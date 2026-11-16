@@ -1,0 +1,10 @@
+{
+  "settings.extensions.load": "加载 {name}",
+  "settings.extensions.mcpConnected": "已连接",
+  "settings.extensions.mcpFailed": "失败",
+  "settings.extensions.mcpPending": "连接中",
+  "settings.extensions.mcpDisabled": "已关闭",
+  "settings.extensions.mcpUnknown": "状态未知",
+  "settings.extensions.reconnect": "重连",
+  "settings.extensions.reconnectServer": "重连 {name}"
+}

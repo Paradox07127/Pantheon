@@ -1,0 +1,58 @@
+/* Completion options above the composer's box; opening and moving the selection stay still */
+
+.cp-cmg {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cp-cmg > .cp-cap {
+  padding: 4px 8px 0;
+}
+.cp-cmo {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border-radius: max(calc(var(--r-lg) - 4px), 4px);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.cp-cmo[aria-selected='true'] {
+  background: var(--sel);
+  color: var(--tx);
+  font-weight: 500;
+}
+.cp-cmi {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--mu);
+}
+.cp-cml {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-cmh {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+/* The send key's cap while a turn runs: the key that does the other of queue and steer */
+
+.cp-send:has(> .hk) {
+  position: relative;
+}
+.cp-send > .hk {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 1;
+  line-height: 16px;
+  background: var(--sf);
+}

@@ -1,0 +1,471 @@
+/* Lead plan sentence in the headline bar. */
+.bgl {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.bgl-t {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bgl-at {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The now view's strip: the current milestone, the time away and the leads, on one line while they fit. */
+.bov {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.bov:empty {
+  display: none;
+}
+.bov > .bms {
+  flex: 1 1 0;
+  /* Room for its fixed parts: the fraction, the bar, the due chip and the button. */
+  min-width: min(100%, 280px);
+}
+.bov > .bld {
+  flex: 0 1 320px;
+  min-width: 0;
+  align-self: stretch;
+  padding-left: var(--sp-4);
+  border-left: var(--hair) solid var(--bd2);
+}
+
+/* Current milestone: title, merged over planned, a bar part per task state and the days left; the rest opens from the line's end. */
+.bms {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.bms-ic {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--tx2);
+}
+.bms-h {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+/* Merged tasks over planned tasks. */
+.bms-frac {
+  flex: none;
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The plan's tasks by state, each part as wide as its count. */
+.bms-bar {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  min-width: 48px;
+  height: 10px;
+}
+.bms-bar i {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: var(--radius-bar);
+  background: var(--e-pend);
+  transition: background-color var(--dur-2) var(--ease-std);
+}
+.bms-bar [data-part='merged'] {
+  background: var(--ok);
+}
+.bms-bar [data-part='running'] {
+  background: var(--run);
+}
+.bms-bar [data-part='waiting'] {
+  background: var(--wait);
+}
+.bms-bar [data-part='review'] {
+  background: var(--ready);
+}
+.bms-bar [data-part='failed'] {
+  background: var(--bad);
+}
+.bms-bar [data-part='discarded'] {
+  background: var(--idle);
+}
+/* Days to the due day; past it, in the danger colour. */
+.bms-due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bms-due svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+.bms-due[data-late] {
+  color: var(--bad);
+}
+.bms-more {
+  flex: none;
+}
+.bms-more[data-popup-open] svg {
+  transform: rotate(180deg);
+}
+.bms-pop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(360px, calc(100vw - 32px));
+  padding: var(--sp-3);
+}
+.bms-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.bms-pt {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+/* One cell per task, painted by its state. */
+.bms-cells {
+  /* The task count, set on the element. */
+  --n: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  gap: var(--sp-1);
+  height: 12px;
+}
+.bms-cell {
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-bar);
+  background: var(--bd);
+  transition: background-color var(--dur-4) var(--ease-std);
+}
+.bms-cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.bms-cell:is([data-state='merged'], [data-state='done']) {
+  background: var(--ok);
+}
+.bms-cell:is([data-state='running'], [data-state='claimed']) {
+  background: var(--run);
+}
+.bms-cell:is([data-state='gating'], [data-state='awaiting_merge'], [data-state='ready']) {
+  background: var(--ready);
+}
+.bms-cell:is(
+  [data-state='waiting_approval'],
+  [data-state='awaiting_acceptance'],
+  [data-state='waiting']
+) {
+  background: var(--wait);
+}
+.bms-cell:is([data-state='blocked'], [data-state='failed']) {
+  background: var(--bad);
+}
+.bms-cell:is(
+  [data-state='todo'],
+  [data-state='waiting_upstream'],
+  [data-state='needs_attention'],
+  [data-state='idle']
+) {
+  background: var(--e-pend);
+}
+.bms-date {
+  align-self: flex-start;
+}
+.bms-crit {
+  margin: 0;
+  padding: 0 0 0 var(--sp-4);
+  color: var(--tx2);
+}
+.bms-crit li {
+  min-height: 28px;
+  line-height: 28px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Leads: one line each, one under another. */
+.bld-l,
+.btl-l {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bld {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-3);
+}
+.bld-l {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 100%;
+  min-width: 0;
+}
+.bld-i {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.bld-r {
+  flex: none;
+  margin-left: auto;
+}
+.btl-m {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.bld-t {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bld-do {
+  /* The title gives way first, so a short state word stays whole. */
+  flex: 0 0 auto;
+  max-width: 45%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx2);
+}
+
+/* Tasks the lead sent to another device: one row each, the device, the task and the reason. */
+.bld-dn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+}
+.bld-dh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin-bottom: var(--sp-1);
+}
+.bld-dr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 var(--sp-1);
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bld-dr:hover {
+  background: var(--sf2);
+}
+.bld-dr:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.bld-dr > .chip {
+  flex: none;
+}
+.bld-dt {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bld-dw {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+
+/* Task list grouped by state. */
+.btl-gh {
+  display: grid;
+  grid-template-columns: 12px auto auto minmax(0, 1fr);
+  column-gap: var(--sp-2);
+  align-items: center;
+  width: 100%;
+  min-height: var(--row);
+  padding: 0 var(--sp-2);
+  box-sizing: border-box;
+  border-top: var(--hair) solid var(--bd2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.btl-gh b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.btl-tg {
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+}
+.btl-tg:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.btl-chev {
+  justify-self: start;
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+}
+.btl-tg[data-panel-open] .btl-chev {
+  transform: rotate(180deg);
+}
+.btl-r {
+  display: grid;
+  grid-template-columns: 12px minmax(min(160px, 40%), 1fr) fit-content(280px) minmax(0, 190px);
+  column-gap: var(--sp-2);
+  align-items: center;
+  width: 100%;
+  min-height: var(--row);
+  padding: 0 var(--sp-2);
+  box-sizing: border-box;
+  border: 0;
+  border-top: var(--hair) solid var(--bd2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.btl-r:hover {
+  background: var(--sf2);
+}
+.btl-r:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.btl-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.btl-rx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.btl-rx s {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.btl-why {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+}
+.btl-rx svg:not(.rtg) {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.btl-who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.btl-fold {
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  transition:
+    height var(--dur-2) var(--ease-in),
+    opacity var(--dur-2) var(--ease-in);
+}
+.btl-fold:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+  opacity: 0;
+}
+.btl-fold[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.pt[data-motion='reduced'] .btl-fold {
+  transition-property: opacity;
+}

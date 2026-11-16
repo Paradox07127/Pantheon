@@ -1,0 +1,185 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { Store, ArtifactFiles } from '@pantheon/store';
+import { Control, type ControlOptions } from '@pantheon/control';
+import { FixtureAdapter } from '@pantheon/adapters';
+import { command, type CommandType } from '@pantheon/protocol';
+import {
+  id,
+  type Principal,
+  type Project,
+  type Session,
+  type SessionTurn,
+  type Workspace,
+  type HarnessAdapter,
+} from '@pantheon/domain';
+import type { ControlContext } from '../packages/control/dist/context.js';
+import {
+  registerWorkspace as registerInControl,
+  type WorkspaceRegistration,
+} from '../packages/control/dist/workspace.js';
+
+/**
+ * True inside a macOS sandbox, such as a project gate, where Seatbelt cannot apply another
+ * profile and the pnpm store is not writable; tests that need either are skipped there.
+ */
+export const insideSandbox =
+  process.platform === 'darwin' &&
+  spawnSync('/usr/bin/sandbox-exec', ['-p', '(version 1)(allow default)', '/usr/bin/true'])
+    .status !== 0;
+
+/**
+ * A folder a project gate can read while it runs, and the argv of a gate that runs the source.
+ * Seatbelt lets a gate read any file; bubblewrap mounts only the installed package holding the
+ * gate's command, so on Linux the folder is such a package and each gate runs a script in it.
+ */
+export function gateFolder(root: string): { dir: string; argv: (source: string) => string[] } {
+  if (process.platform !== 'linux')
+    return { dir: root, argv: (source) => [process.execPath, '-e', source] };
+  const dir = path.join(
+    mkdtempSync(path.join(os.tmpdir(), 'pantheon-gate-')),
+    'node_modules',
+    'gate',
+  );
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'package.json'), '{}');
+  let scripts = 0;
+  return {
+    dir,
+    argv(source) {
+      const file = path.join(dir, `gate-${++scripts}.cjs`);
+      writeFileSync(file, `#!${process.execPath}\n${source}\n`, { mode: 0o755 });
+      return [file];
+    },
+  };
+}
+
+export const user: Principal = { id: 'local-user', role: 'user' };
+export function fixture(
+  options: {
+    adapter?: HarnessAdapter;
+    failpoint?: (name: string) => void;
+    now?: () => number;
+    controlOptions?: ControlOptions;
+    /** Give Control a managed workspace root, for linked worktrees. */
+    managedWorkspaces?: boolean;
+  } = {},
+) {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-test-')),
+    projectRoot = path.join(root, 'project'),
+    cache = path.join(process.cwd(), 'node_modules/.cache');
+  mkdirSync(projectRoot);
+  // Managed workspaces may not live in temporary directories.
+  if (options.managedWorkspaces) mkdirSync(cache, { recursive: true });
+  const workspaceRoot = options.managedWorkspaces
+    ? mkdtempSync(path.join(cache, 'pantheon-managed-'))
+    : undefined;
+  const store = new Store(path.join(root, 'state/control.sqlite'), options.now),
+    files = new ArtifactFiles(path.join(root, 'state/artifacts')),
+    adapter = options.adapter ?? new FixtureAdapter(),
+    controlOptions = workspaceRoot
+      ? { ...options.controlOptions, workspaceRoot }
+      : options.controlOptions;
+  // A commit survives a process crash in WAL mode without the disk sync the daemon asks for.
+  store.db.exec('PRAGMA synchronous=NORMAL');
+  const control = new Control(store, files, [adapter], options.failpoint, controlOptions);
+  const call = <T = unknown>(
+    type: CommandType,
+    input: Record<string, unknown>,
+    revision: number | null = null,
+    principal = user,
+  ): T => control.execute(principal, command(principal.id, type, input, revision)) as T;
+  const project = call<Project>('project.open', { name: 'fixture', roots: [projectRoot] });
+  return {
+    root,
+    projectRoot,
+    controlOptions,
+    store,
+    files,
+    control,
+    adapter,
+    call,
+    project,
+    async close() {
+      await control.shutdown();
+      store.close();
+      rmSync(root, { recursive: true, force: true });
+      if (workspaceRoot) rmSync(workspaceRoot, { recursive: true, force: true });
+    },
+  };
+}
+/** Registers a workspace in its own transaction, through the function session.create uses. */
+export function registerWorkspace(control: Control, input: WorkspaceRegistration): Workspace {
+  const ctx = (control as unknown as { ctx: ControlContext }).ctx;
+  return ctx.store.transaction(() => registerInControl(ctx, input, crypto.randomUUID()));
+}
+export async function eventually(
+  fn: () => boolean,
+  step: () => Promise<unknown> = async () => {},
+  timeout = 5000,
+): Promise<void> {
+  const end = Date.now() + timeout;
+  while (!fn()) {
+    if (Date.now() > end) throw new Error('Timed out waiting for observable state');
+    await step();
+    await sleep(10);
+  }
+}
+
+/** Worktree registration returns a reservation; wait before using its files or Git metadata. */
+export async function awaitWorkspaceReady(
+  control: Control,
+  workspace: Workspace | string,
+  timeout = 10000,
+): Promise<Workspace> {
+  const workspaceId = typeof workspace === 'string' ? workspace : workspace.id;
+  await eventually(
+    () => {
+      const current = control.store.must<Workspace>('workspaces', workspaceId);
+      const state = current.provisioning?.state;
+      if (state && !['queued', 'running', 'ready'].includes(state))
+        throw new Error(current.provisioning?.error ?? `Workspace provisioning ${state}`);
+      return state === undefined || state === 'ready';
+    },
+    () => control.tick(),
+    timeout,
+  );
+  return control.store.must<Workspace>('workspaces', workspaceId);
+}
+
+/** Waits for the session's workspace, then for the session to be open with no turn left to run. */
+export async function settle(
+  f: { control: Control; store: Store; turns: (sessionId: string) => SessionTurn[] },
+  session: Session,
+) {
+  await awaitWorkspaceReady(f.control, session.workspace_id!);
+  await eventually(
+    () =>
+      f.store.must<Session>('sessions', session.id).state === 'open' &&
+      f.turns(session.id).every((turn) => !['queued', 'running'].includes(turn.state)),
+    () => f.control.tick(),
+  );
+}
+
+/** Inserts an open session row on a newly registered linked worktree of the fixture's project. */
+export function insertSession(f: ReturnType<typeof fixture>, extra: Partial<Session> = {}) {
+  const workspace = registerWorkspace(f.control, {
+    project_id: f.project.id,
+    kind: 'linked_worktree',
+    source: f.store.must<Project>('projects', f.project.id).roots[0]!,
+    base_ref: 'HEAD',
+  });
+  return f.store.insert<Session>('sessions', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    workspace_id: workspace.id,
+    state: 'open',
+    turn_count: 0,
+    ...extra,
+  });
+}

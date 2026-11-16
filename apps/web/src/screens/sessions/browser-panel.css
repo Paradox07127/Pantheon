@@ -1,0 +1,60 @@
+/* Fills the panel body edge to edge; the app lays the page over the view below the bar. */
+.brw {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% + 24px);
+  margin: -12px -14px;
+}
+.brw-bar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--sp-1);
+  height: 40px;
+  padding: 0 var(--sp-2);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.brw-bar .ib {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+.brw-bar .ib svg {
+  width: 16px;
+  height: 16px;
+}
+.brw-bar .ib:disabled {
+  color: var(--faint);
+}
+.brw-bar .ib[aria-busy='true'] svg {
+  animation: brw-spin 1s linear infinite;
+}
+@keyframes brw-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+.pt[data-motion='reduced'] .brw-bar .ib[aria-busy='true'] svg {
+  animation: none;
+}
+.brw-addr {
+  flex: 1;
+  height: 24px;
+}
+.brw-addr input {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.brw-err {
+  flex: none;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+.brw-view {
+  flex: 1;
+  min-height: 0;
+  background: var(--sf2);
+}

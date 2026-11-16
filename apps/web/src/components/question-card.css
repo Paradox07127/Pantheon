@@ -1,0 +1,191 @@
+/* A question card: where it comes from, each question with its options, then Send. */
+.qc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.qc-src {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.qc-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx2);
+  font-weight: 500;
+}
+.qc-task {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qc-age {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.qc-ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.qc-q {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  column-gap: var(--sp-2);
+  align-items: start;
+  margin: 0;
+  color: var(--tx);
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 500;
+  text-wrap: pretty;
+  user-select: text;
+}
+.qc-q > svg {
+  margin-top: 4px;
+}
+.qc-opts {
+  display: flex;
+  flex-direction: column;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.qc-opts > * + * {
+  border-top: var(--hair) solid var(--bd2);
+}
+.qc-opt {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  column-gap: var(--sp-2);
+  row-gap: 2px;
+  align-items: center;
+  width: 100%;
+  padding: var(--sp-2);
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.qc-opt:hover {
+  background: var(--sf2);
+}
+.qc-opt[aria-checked='true'] {
+  background: var(--sel);
+}
+.qc-opt:focus-visible {
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: -1.5px;
+}
+.qc-k {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: var(--hair) solid var(--bd3);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf);
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.qc-opt[aria-checked='true'] .qc-k {
+  border-color: transparent;
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.qc-l {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.qc-rec {
+  grid-column: 3;
+  grid-row: 1;
+}
+.qc-d {
+  grid-column: 2 / 4;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  user-select: text;
+}
+.qc-other {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-1) var(--sp-2);
+}
+.qc-other:focus-within {
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: -1.5px;
+}
+.qc-in {
+  min-width: 0;
+  height: var(--ctl);
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+}
+.qc-in::placeholder {
+  color: var(--faint);
+}
+/* A free answer without options: text, or a password for a secret. */
+.qc-ta {
+  min-width: 0;
+  min-height: 68px;
+  padding: var(--sp-2);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  resize: none;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.qc-sec {
+  min-width: 0;
+  height: var(--ctl);
+  padding: 0 var(--sp-2);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.qc-ta:focus,
+.qc-sec:focus {
+  outline: 0;
+  border-color: var(--bd3);
+}
+.qc-f {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}

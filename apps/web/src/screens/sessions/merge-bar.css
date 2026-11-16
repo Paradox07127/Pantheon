@@ -1,0 +1,80 @@
+.ss-mb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.ss-mb-far {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.ss-mb-gate {
+  width: 100%;
+}
+.ss-mb-cf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.ss-mb-cf > span:first-child {
+  color: var(--mu);
+}
+.ss-mb-cf .ss-gch {
+  transition: transform var(--dur-1) var(--ease-std);
+}
+.ss-mb-cf[aria-expanded='true'] .ss-gch {
+  transform: rotate(90deg);
+}
+.ss-mb-cfl {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 6px;
+  list-style: none;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.ss-mb-cfl > li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-mb-gate .ss-pseg > i[data-tone='idle'] {
+  background: var(--idle);
+}
+.ss-mb-at {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--mu);
+}
+.ss-mb-at > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.ss-mb-at > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.ss-mb-then {
+  color: var(--mu);
+}
+.ss-mb-why {
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+.ss-mb-acts {
+  display: flex;
+  gap: 6px;
+}
+.ss-mb-acts > .btn:first-child:not(:last-child) {
+  flex: 1;
+}
+.ss-mb-acts > .btn:only-child {
+  margin-left: auto;
+}

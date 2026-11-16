@@ -1,0 +1,298 @@
+/* Two classes, to override the index.css rules that load after this file. */
+.tb-pg .pj-home {
+  padding: var(--sp-6);
+}
+.pj-home .pj-col {
+  max-width: none;
+}
+.pr-sum {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  background: var(--bd2);
+  overflow: hidden;
+}
+.pr-sum-c {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 16px;
+  background: var(--sf);
+}
+.pr-sum-b {
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.pr-sum-b:hover {
+  background: var(--sf2);
+}
+.pr-sum-b[aria-expanded='true'] {
+  background: var(--sel);
+}
+.pr-sum-b:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.pr-sum-k {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.pr-sum-v {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.pr-sum-c b {
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pr-sum-v > span {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pr-tbl {
+  display: flex;
+  flex-direction: column;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  overflow: hidden;
+}
+/* The height of the number it stands for. */
+.pr-sum-sk {
+  width: 32px;
+  height: var(--lh-xl);
+}
+.pr-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1.3fr) minmax(0, 1fr) 168px 104px var(--ctl);
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 16px 0 8px;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.pr-row + .pr-row {
+  border-top: var(--hair) solid var(--bd2);
+}
+.pr-row.pr-head {
+  min-height: 32px;
+  background: var(--sf2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.pr-row:not(.pr-head):hover {
+  background: var(--sf2);
+}
+.pr-mark {
+  display: flex;
+}
+.pr-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pr-open {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pr-idle .pr-open {
+  color: var(--mu);
+}
+.pr-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.pr-open:focus-visible {
+  outline: 0;
+}
+.pr-open:focus-visible::after {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+.pr-path {
+  position: relative;
+  z-index: 1;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.pr-goal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+}
+.pr-mt {
+  position: relative;
+  z-index: 1;
+  color: var(--tx2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pr-mn {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.pr-bar {
+  grid-column: 1 / 3;
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  min-width: 0;
+}
+.pr-bar i {
+  display: block;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--tx) 10%, transparent);
+}
+.pr-bar .pr-done {
+  background: var(--ok);
+}
+.pr-bar .pr-run {
+  background: var(--run);
+}
+.pr-bar .pr-bad {
+  background: var(--bad);
+}
+.pr-none {
+  grid-column: 1 / 3;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Beside the trend, which spans both lines of the goal cell. */
+.pr-goal > .pr-none {
+  grid-row: 1 / 3;
+  align-self: center;
+}
+.pr-spark {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  display: block;
+  width: 48px;
+  height: 20px;
+  overflow: visible;
+}
+.pr-spark polyline {
+  fill: none;
+  stroke: var(--ok);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.pr-ses,
+.pr-need {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.pr-n {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.pr-n:hover {
+  background: color-mix(in srgb, var(--tx) 6%, transparent);
+}
+.pr-n:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+.pr-age {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pr-sk-c {
+  width: 64px;
+  height: 12px;
+}
+.pr-act {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.pr-menu {
+  position: relative;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.pr-row:hover .pr-menu,
+.pr-row:focus-within .pr-menu,
+.pr-menu:has([data-popup-open]) {
+  opacity: 1;
+}
+.pr-imp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px 0 16px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  color: var(--tx2);
+}
+.pr-imp > svg {
+  color: var(--mu);
+}
+.pr-imp > span {
+  flex: 1;
+  min-width: 0;
+}
+.pj-imp-l {
+  min-height: 0;
+  margin: 0 var(--sp-4) var(--sp-4);
+  overflow: auto;
+}
+.pj-imp-l + .wel-err {
+  padding: 0 var(--sp-4) var(--sp-3);
+}

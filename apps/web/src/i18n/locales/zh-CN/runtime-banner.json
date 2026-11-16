@@ -1,0 +1,5 @@
+{
+  "components.runtimeBanner.disconnected": "{name} 断开了",
+  "components.runtimeBanner.held": "{count, plural, other {#}} 个会话已暂停，改动都还在工作树里",
+  "components.runtimeBanner.reconnect": "重连"
+}

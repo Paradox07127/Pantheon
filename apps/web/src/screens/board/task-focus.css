@@ -1,0 +1,56 @@
+.bd-focus {
+  padding: 16px;
+  border-top: var(--hair) solid var(--bd);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  container-type: inline-size;
+}
+.bd-focus-h {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.bd-focus-h > button {
+  color: var(--tx);
+  font-size: var(--fs-md);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.bd-focus dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.3fr;
+  gap: 16px;
+  margin: 0;
+}
+.bd-focus dl > div {
+  min-width: 0;
+}
+.bd-focus dt {
+  font-size: var(--fs-xs);
+  margin-bottom: 8px;
+}
+.bd-focus dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.bd-focus p {
+  margin: 0 0 8px;
+}
+.bd-focus time {
+  display: block;
+  font-size: var(--fs-xs);
+  margin-bottom: 8px;
+}
+.bd-focus-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding-top: 8px;
+}
+@container (max-width: 640px) {
+  .bd-focus dl {
+    grid-template-columns: 1fr;
+  }
+}

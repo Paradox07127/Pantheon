@@ -1,0 +1,112 @@
+/* The selected call's side panel, right of the call table. */
+.cd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  width: 400px;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-4);
+  border-left: var(--hair) solid var(--bd2);
+  transition:
+    opacity var(--dur-4) var(--ease-in),
+    transform var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .cd {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.cd > * {
+  flex: none;
+}
+.cd-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.cd-kind {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cd-ses {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mu);
+}
+.cd-turn {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cd-h > .cd-close {
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}
+.cd-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.cd-facts > .cell {
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+}
+.cd-v {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: text;
+}
+.cd-at {
+  font-family: var(--font-mono);
+}
+.cd-st {
+  display: inline-flex;
+}
+.cd > .cd-fail {
+  margin: 0;
+}
+.cd-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.cd-code {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  white-space: pre;
+}
+.cd-term {
+  background: var(--term);
+  color: var(--term-tx);
+}
+.cd-bad {
+  color: var(--bad);
+}
+.cd-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: auto;
+}
+.cd-copy {
+  margin-left: auto;
+}

@@ -1,0 +1,1007 @@
+/* Flow chart panel */
+.bd-flow {
+  padding: 16px 0 0;
+  overflow: hidden;
+}
+.bd-flow .bd-ph {
+  padding: 0 16px;
+  margin-bottom: 8px;
+}
+.bd-fc {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0 0 max(calc(var(--r-lg) - 1px), 4px) max(calc(var(--r-lg) - 1px), 4px);
+  cursor: grab;
+}
+/* The area that draws the graph; the legend and zoom row sits under it, never over a node. */
+.bd-fc-pane {
+  --bd-fc-h: 0px;
+  position: relative;
+  flex: 1 0 auto;
+  height: var(--bd-fc-h);
+  overflow: hidden;
+}
+.bd-fc .react-flow {
+  --xy-background-color: transparent;
+  position: relative;
+  z-index: 1;
+}
+.bd-fc .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+.bd-fc .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+/* Handles of an editable chart show on hover and while a dependency is dragged. */
+.bd-fc .react-flow__handle.connectable {
+  width: 10px;
+  height: 10px;
+  min-width: 0;
+  min-height: 0;
+  border: var(--hair) solid var(--e-str);
+  border-radius: 50%;
+  background: var(--sf);
+  pointer-events: auto;
+  cursor: crosshair;
+  transition:
+    opacity var(--dur-2) var(--ease-std),
+    background-color var(--dur-2) var(--ease-std),
+    border-color var(--dur-2) var(--ease-std),
+    transform var(--dur-2) var(--ease-std);
+}
+.bd-fc .react-flow__node:hover .react-flow__handle.connectable,
+.bd-fc .react-flow__handle.connectingfrom,
+.bd-fc .react-flow__handle.connectingto {
+  opacity: 1;
+}
+/* React Flow centres a side handle with translate; the scale keeps it. */
+.bd-fc .react-flow__node:hover .react-flow__handle-left.connectable {
+  transform: translate(-50%, -50%) scale(1.6);
+}
+.bd-fc .react-flow__node:hover .react-flow__handle-right.connectable {
+  transform: translate(50%, -50%) scale(1.6);
+}
+.bd-fc .react-flow__handle.connectingfrom,
+.bd-fc .react-flow__handle.connectingto.valid {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+.bd-fc .react-flow__handle.connectingto:not(.valid) {
+  border-color: var(--bad);
+}
+.bd-fc .react-flow__connection-path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+.bd-ver {
+  display: inline-flex;
+  align-items: center;
+  height: var(--h-ctl);
+  padding: 0 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* React Flow gives a selectable node the hand cursor. */
+.bd-fc .react-flow__node {
+  cursor: default;
+}
+.bd-fc .react-flow__node:focus {
+  outline: none;
+}
+.bd-fc .react-flow__node:focus-visible .bd-nd {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.bd-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Above the React Flow layer, which would take the names' hover; the names sit left of every node. */
+.bd-lanes {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.bd-lane {
+  position: absolute;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 64px;
+  padding: 12px 0 0 12px;
+  border: var(--hair) dashed var(--bd3);
+  border-radius: calc(var(--r-md) + 2px);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+}
+.bd-lane-t {
+  display: -webkit-box;
+  max-width: 64px;
+  overflow: hidden;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* The layer under it lets pan and zoom through; the name takes the pointer for its title. */
+  pointer-events: auto;
+}
+.bd-lane-n {
+  font-variant-numeric: tabular-nums;
+}
+.bd-lane-bar {
+  display: flex;
+  gap: 2px;
+  width: 64px;
+  height: 6px;
+}
+.bd-lane-bar i {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--bd);
+  transition: background-color var(--dur-2) var(--ease-std);
+}
+.bd-lane-bar i[data-count='merged'] {
+  background: var(--ok);
+}
+.bd-lane-bar i[data-count='running'] {
+  background: var(--run);
+}
+.bd-lane-bar i[data-count='waiting'] {
+  background: var(--wait);
+}
+.bd-lane-bar i[data-count='stuck'] {
+  background: var(--bad);
+}
+.bd-lane-bar i[data-count='discarded'] {
+  background: var(--idle);
+}
+
+/* Zoom out, the zoom level, zoom in and fit, at the right end of the chart's bottom row. */
+.bd-zm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: var(--hair) solid var(--bd3);
+  border-radius: var(--r-lg);
+  background: var(--ov);
+  backdrop-filter: blur(var(--blur-md));
+  cursor: default;
+}
+.bd-zm .ib {
+  border-radius: max(calc(var(--r-lg) - 4px), 4px);
+}
+.bd-zm-sep {
+  flex: none;
+  align-self: stretch;
+  width: var(--hair);
+  margin: 4px 0;
+  background: var(--bd2);
+}
+.bd-zm-v {
+  min-width: 40px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.bd-nd {
+  position: relative;
+  box-sizing: border-box;
+  width: 232px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  color: var(--tx);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  transition:
+    background-color var(--dur-2) var(--ease-std),
+    border-color var(--dur-2) var(--ease-std);
+}
+.bd-nd[data-look='queue'] {
+  border-style: dashed;
+}
+.bd-nd:hover {
+  background: var(--sf2);
+  border-color: var(--e-str);
+}
+.bd-nd.sel {
+  border-color: var(--tx);
+  outline: 1px solid var(--tx);
+}
+.bd-nrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+  min-width: 0;
+}
+.bd-nd .bd-sti,
+.bd-nd .bd-bdg svg,
+.bd-nkind svg,
+.bd-npath svg {
+  width: 16px;
+  height: 16px;
+}
+.bd-nt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-nh .bd-bdgs {
+  margin-left: 0;
+}
+.bd-nh .bd-pchip {
+  line-height: 16px;
+}
+.bd-nkind,
+.bd-npath {
+  display: inline-flex;
+  flex: none;
+  color: var(--mu);
+}
+.bd-nkind svg,
+.bd-npath svg {
+  stroke-width: 1.5;
+}
+.bd-nw {
+  color: var(--mu);
+}
+.bd-nrt {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.bd-na {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-ntm {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.bd-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.bd-nstg {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 8px;
+}
+.bd-nstg i {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bd);
+  transition:
+    background-color var(--dur-2) var(--ease-std),
+    transform var(--dur-2) var(--ease-std);
+}
+.bd-nstg i[data-at='done'] {
+  background: var(--ok);
+}
+.bd-nstg i[data-at='now'] {
+  transform: scaleY(2);
+  background: var(--e-pend);
+}
+.bd-nd[data-look='run'] .bd-nstg i[data-at='now'] {
+  background: var(--run);
+  animation: bd-breathe 2.4s ease-in-out infinite alternate;
+}
+.bd-nd:is([data-look='approval'], [data-look='answer']) .bd-nstg i[data-at='now'] {
+  background: var(--wait);
+}
+.bd-nd[data-look='review'] .bd-nstg i[data-at='now'] {
+  background: var(--ready);
+}
+.bd-nd[data-look='failed'] .bd-nstg i[data-at='now'] {
+  background: var(--bad);
+}
+.bd-nd[data-look='stuck'] .bd-nstg i[data-at='now'] {
+  background: var(--idle);
+}
+@keyframes bd-breathe {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.4;
+  }
+}
+.bd-nstn {
+  flex: none;
+  color: var(--mu);
+}
+.bd-nq {
+  color: var(--mu);
+}
+.bd-ngate {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  width: 40px;
+  height: 6px;
+}
+.bd-ngate i {
+  flex: 1;
+  border-radius: 2px;
+  transition: background-color var(--dur-2) var(--ease-std);
+}
+.bd-ngate[data-checks='pass'] i {
+  background: var(--ok);
+}
+.bd-ngate[data-checks='fail'] i {
+  background: var(--bad);
+}
+.bd-ngate[data-checks='running'] i {
+  background: var(--run);
+}
+.bd-ngate i[data-state='pending'] {
+  background: var(--bd);
+}
+.bd-ngate i[data-state='passed'] {
+  background: var(--ok);
+}
+.bd-ngate i[data-state='failed'] {
+  background: var(--bad);
+}
+.bd-ngate i[data-state='skipped'] {
+  background: var(--idle);
+}
+.bd-ngate i[data-state='running'] {
+  background: var(--run);
+  animation: bd-breathe 2.4s ease-in-out infinite alternate;
+}
+.bd-ngn {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.bd-nend {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.bd-nctx {
+  flex: none;
+  fill: none;
+  stroke-width: 5;
+}
+.bd-nctx circle:first-child {
+  stroke: var(--bd);
+}
+.bd-nctx circle + circle {
+  stroke: var(--run);
+  transition: stroke var(--dur-2) var(--ease-std);
+}
+.bd-nctx[data-high] circle + circle {
+  stroke: var(--wait);
+}
+.bd-nacc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.bd-nacc i {
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--bd3);
+  border-radius: 2px;
+  transition:
+    background-color var(--dur-2) var(--ease-std),
+    border-color var(--dur-2) var(--ease-std);
+}
+.bd-nacc i[data-state='passed'] {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+.bd-nacc i[data-state='failed'] {
+  border-color: var(--bad);
+  background: var(--bad);
+}
+.bd-nrv {
+  color: var(--mu);
+}
+.bd-nvd {
+  display: inline-flex;
+  flex: none;
+}
+.bd-nvd svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+.bd-nvd[data-verdict='passed'] {
+  color: var(--ok);
+}
+.bd-nvd[data-verdict='failed'] {
+  color: var(--bad);
+}
+.bd-ndiff {
+  display: inline-flex;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.bd-pbar {
+  display: flex;
+  gap: 2px;
+  height: 4px;
+  margin-top: auto;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+.bd-pbar i {
+  flex: 1;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.bd-pbar .b-done {
+  background: var(--ok);
+}
+.bd-pbar .b-ready {
+  background: var(--ok-bg);
+  border: 1px solid var(--ok);
+}
+.bd-pbar .b-running {
+  background: var(--run);
+}
+.bd-pbar .b-waiting {
+  background: var(--wait);
+}
+.bd-pbar .b-idle {
+  border: 1px solid var(--idle);
+}
+.bd-pbar .b-failed {
+  background: var(--bad);
+}
+.bd-pbar .b-todo {
+  background: var(--bd);
+}
+.bd-pbar .b-discarded {
+  background: var(--e-pend);
+}
+
+.bd-e .react-flow__edge-path {
+  fill: none;
+  stroke-width: 1.2;
+  transition: stroke var(--dur-4) var(--ease-std);
+}
+.bd-e.met .react-flow__edge-path {
+  stroke: var(--e-done);
+}
+.bd-e.pending .react-flow__edge-path {
+  stroke: var(--e-str);
+}
+.bd-e.blocked .react-flow__edge-path {
+  stroke: var(--bad);
+  stroke-dasharray: 4 4;
+}
+.bd-e.proposed .react-flow__edge-path {
+  stroke: var(--e-str);
+  stroke-dasharray: 2 6;
+  stroke-linecap: round;
+}
+.bd-e.cross {
+  opacity: 0.6;
+}
+/* The moving dashes are drawn by the pulse above it. */
+.bd-e.active .react-flow__edge-path {
+  stroke: transparent;
+}
+.bd-e .bd-pulse {
+  fill: none;
+  stroke: var(--e-act);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-2) var(--ease-std);
+}
+.bd-e.active .bd-pulse {
+  opacity: 1;
+  animation: bd-flow 0.8s linear infinite;
+}
+.bd-fc.hov .bd-e.hl .react-flow__edge-path {
+  stroke-width: 2;
+}
+.bd-fc .react-flow__edge:focus-visible .react-flow__edge-path,
+.bd-e.pick .react-flow__edge-path {
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+.bd-edel {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  padding: 2px;
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-sm);
+  background: var(--ov);
+  backdrop-filter: blur(var(--blur-md));
+  pointer-events: all;
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .bd-edel {
+    opacity: 0;
+  }
+}
+.bd-edel .ib {
+  width: 24px;
+  height: 24px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}
+.bd-edel .ib svg {
+  width: 14px;
+  height: 14px;
+}
+.bd-edel .ib:hover {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+@keyframes bd-flow {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+
+/* Task drawer */
+.bd-drw {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sf);
+  border-left: var(--hair) solid var(--bd);
+  transition: transform var(--dur-3) var(--ease-in);
+}
+.bd-drw[data-ending-style] {
+  transform: translateX(100%);
+  pointer-events: none;
+  transition-duration: var(--dur-2);
+  transition-timing-function: var(--ease-out);
+}
+@starting-style {
+  .bd-drw {
+    transform: translateX(100%);
+  }
+}
+/* Only the board's split docks the drawer (board.css); anywhere else it lies over the page. */
+:not(.bd-split) > .bd-drw {
+  position: fixed;
+  top: var(--titlebar);
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  max-width: 100vw;
+}
+/* The now view: the canvas in the height the view leaves, the focus under it; past that the view scrolls. */
+.bd-cv > .bd-main {
+  flex: 1 0 auto;
+  min-height: 360px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(240px, 1fr) auto auto;
+  padding: 0;
+}
+.bd-main > .bd-fc,
+.bd-main > .bp-empty {
+  grid-row: 1;
+}
+.bd-main > .bd-focus {
+  grid-row: 3;
+}
+/* The height the view leaves, but never less than the drawn graph's; past that the view scrolls. */
+.bd-main > .bd-fc {
+  height: auto;
+  border-radius: 0;
+  background-image: radial-gradient(var(--bd) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.bd-main > .bd-fc > .bd-fc-pane {
+  flex: 1 1 0;
+  height: auto;
+  min-height: var(--bd-fc-h);
+}
+/* The replay bar under the chart; the trace's bar inside it fills the width, its marks drawn as dots. */
+.bd-main > .bd-rp {
+  grid-row: 2;
+}
+.bd-rp {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.bd-rp i[data-state] {
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+}
+.bd-rp i[data-state='done'] {
+  background: var(--ok);
+}
+.bd-rp i[data-state='failed'] {
+  background: var(--bad);
+}
+.bd-rp i[data-state='waiting'] {
+  background: var(--wait);
+}
+.bd-dh {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 12px 0 16px;
+  flex: none;
+}
+.bd-dh h2 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: var(--lh-lg);
+}
+.bd-dh .ib svg {
+  stroke-width: 1.5;
+}
+.bd-dbody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 16px 24px;
+  font-size: var(--fs-sm);
+}
+.bd-goal {
+  margin: 0 0 12px;
+  color: var(--tx2);
+}
+.bd-dmeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  font-size: var(--fs-xs);
+}
+.bd-dbdl {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 16px;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.bd-dbdl li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.bd-dstart {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.bd-dsec {
+  padding: 16px 0;
+  border-top: var(--hair) solid var(--bd2);
+}
+.bd-dsec h3 {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--mu);
+}
+.bd-dl {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bd-dbtn {
+  display: grid;
+  grid-template-columns: 12px 56px 8px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: calc(100% + 16px);
+  height: var(--h-ctl);
+  margin: 0 -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+}
+.bd-dbtn.dep {
+  grid-template-columns: 12px minmax(0, 1fr);
+}
+.bd-dbtn:hover:not(:disabled) {
+  background: var(--sf2);
+}
+.bd-dbtn:disabled {
+  cursor: default;
+}
+.bd-dbtn .nm {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-dbtn .nm .rtg {
+  margin-right: 4px;
+  vertical-align: -3px;
+}
+.bd-dfx {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.bd-add {
+  color: var(--ok);
+}
+.bd-del {
+  color: var(--bad);
+}
+.bd-add[data-zero],
+.bd-del[data-zero] {
+  color: var(--mu);
+}
+.bd-dchk {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tx2);
+}
+.bd-dmg {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 28px;
+  font-size: var(--fs-xs);
+}
+.bd-dmg .sha {
+  font-family: var(--font-mono);
+  color: var(--mu);
+}
+.bd-dwhy {
+  margin: 8px 0 0;
+  color: var(--tx2);
+  user-select: text;
+}
+.bd-dtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bd-duse {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--fs-xs);
+}
+.bd-dnum {
+  font-variant-numeric: tabular-nums;
+  color: var(--tx2);
+}
+.bd-dlr {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bd-dlr .bd-dbtn {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  margin-right: 0;
+}
+.bd-dlr .ib svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Editing a plan task */
+.bd-fsel {
+  max-width: 100%;
+  height: var(--h-ctl);
+  padding: 0 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+}
+.bd-dsec .bd-fsel {
+  margin-top: 8px;
+  font-family: inherit;
+}
+.bd-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 16px;
+}
+.bd-fields .bd-fsel {
+  min-width: 148px;
+}
+.bd-fields .bd-ftitle {
+  font-family: inherit;
+  font-size: var(--fs-sm);
+}
+.bd-pchip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  white-space: nowrap;
+}
+.bd-pchip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.bd-pchip[data-dot='ok']::before {
+  background: var(--ok);
+}
+.bd-pchip[data-dot='bad']::before {
+  background: var(--bad);
+}
+.bd-pchip[data-dot='chg']::before {
+  background: var(--chg);
+}
+.bd-bn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf2);
+  font-size: var(--fs-xs);
+  transition: opacity var(--dur-3) var(--ease-in);
+}
+@starting-style {
+  .bd-bn {
+    opacity: 0;
+  }
+}
+.bd-bn .bd-pchip {
+  background: var(--sf);
+}
+.bd-bn-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.bd-bn-h .btn {
+  margin-left: auto;
+}
+.bd-bn-at {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.bd-bn-ch {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bd-bn-why {
+  margin: 0;
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  text-wrap: pretty;
+}
+.bd-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.bd-diff s {
+  color: var(--mu);
+}
+.bd-diff svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--mu);
+  stroke-width: 1.6;
+}
+.bd-dacts {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 16px;
+}
+.bd-bn .bd-dacts {
+  padding-bottom: 0;
+}
+.bd-dacts .btn.dng {
+  margin-left: auto;
+}
+.bd-perr {
+  margin: 0 0 16px;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+}
+.pt[data-motion='reduced'] .bd-e.active .bd-pulse,
+.pt[data-motion='reduced'] .bd-nd[data-look='run'] .bd-nstg i[data-at='now'],
+.pt[data-motion='reduced'] .bd-ngate i[data-state='running'] {
+  animation: none;
+}
+.pt[data-motion='reduced'] .bd-nstg i {
+  transition: background-color var(--dur-2) var(--ease-std);
+}

@@ -1,0 +1,7 @@
+{
+  "sessions.branch.detached": "游离 HEAD",
+  "sessions.row.preview.branch": "分支",
+  "sessions.thread.timeline.goal": "目标：{text}",
+  "sessions.compose.handoff": "换到 {runtime} 会新开会话，只带一份文字交接",
+  "sessions.compose.handoffCancel": "取消"
+}

@@ -1,0 +1,12 @@
+.ss-mon {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-height: 100%;
+}
+.ss-monf {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: auto;
+}

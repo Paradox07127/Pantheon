@@ -1,0 +1,102 @@
+.pm-pg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.pm-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 4px;
+}
+.pm-n {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A rule row: pattern, source session, when it was added, delete. */
+.pm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px 96px 22px;
+  column-gap: 16px;
+  align-items: center;
+  height: var(--row);
+  padding: 0 8px 0 16px;
+  border-top: var(--hair) solid var(--bd2);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.pm-row:hover,
+.pm-row:focus-within {
+  background: var(--sf2);
+}
+.pm-row.pm-hd {
+  border-top: 0;
+  background: var(--sf2);
+}
+.pm-rule,
+.pm-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-rule {
+  user-select: text;
+}
+.pm-src {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+button.pm-src:hover .pm-cut {
+  text-decoration: underline;
+}
+.pm-at {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+.pm-row .ib {
+  width: 22px;
+  height: 22px;
+}
+.pm-row .ib svg {
+  width: 14px;
+  height: 14px;
+}
+
+.pm-fail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* A rule for every project: pattern, when it was added, delete. */
+.pm-row.pm-gl {
+  grid-template-columns: minmax(0, 1fr) 96px auto;
+}
+.pm-new {
+  height: auto;
+  padding-block: var(--sp-1);
+}
+.pm-new:first-child {
+  border-top: 0;
+}
+.pm-more {
+  display: flex;
+  justify-content: flex-end;
+}
+.pm-dlg-bd {
+  min-height: 0;
+  padding: 0 var(--sp-4) var(--sp-4);
+  overflow: auto;
+}

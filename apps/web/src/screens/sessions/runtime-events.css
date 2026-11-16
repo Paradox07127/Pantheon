@@ -1,0 +1,42 @@
+/* Where the runtime compacts the context by itself, over the context bar */
+
+.cp-cxb:has(> .cp-cxm) {
+  position: relative;
+}
+.cp-cxm {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--wait);
+}
+.cp-cxa {
+  color: var(--mu);
+}
+
+/* What a rollback puts back, under the dialog's words */
+
+.ss-rbs {
+  width: fit-content;
+  margin: 8px 20px 0;
+}
+
+/* Fork from before a tool call: over the call's duration while the row is pointed at */
+
+.ss-tool:has(> .ss-tfk) {
+  position: relative;
+}
+.ss-tfk {
+  position: absolute;
+  top: calc((var(--row) - 24px) / 2);
+  right: var(--sp-2);
+  background: var(--sf2);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.ss-tool:hover > .ss-tfk,
+.ss-tfk:focus-visible {
+  opacity: 1;
+}

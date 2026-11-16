@@ -1,0 +1,264 @@
+/* Memory overview: the project profile, the memory panel and the introduction, one under another */
+.mo-pg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  max-width: 1760px;
+  margin: 0 auto;
+  padding: var(--sp-6);
+  box-sizing: border-box;
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+/* Its own display would otherwise beat [hidden]. */
+.mo-pg[hidden] {
+  display: none;
+}
+
+/* Profile: the project cell and the language cell on one row of twelve columns */
+.mo-pf {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+.mo-pf-main {
+  grid-column: span 8;
+}
+.mo-pf-main:only-child {
+  grid-column: span 12;
+}
+.mo-pf-langs {
+  grid-column: span 4;
+}
+.mo-pf-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.mo-pf-title > h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mo-pf-sum {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 22px;
+}
+.mo-pf-sum > p {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* The summary gives way first, so its source chip stays whole. */
+.mo-pf-sum > :not(p) {
+  flex: none;
+}
+.mo-pf-ref {
+  flex: none;
+  cursor: default;
+  user-select: text;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.mo-pf-ref:hover {
+  background: var(--st-hov);
+}
+/* `button.chip` resets the font, which drops `.mono`. */
+.chip.mo-pf-ref {
+  font-family: var(--font-mono);
+}
+.mo-pf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.mo-pf-chips svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.mo-pf-sep {
+  flex: none;
+  align-self: stretch;
+  width: var(--hair);
+  margin: 0 4px;
+  background: var(--bd2);
+}
+
+/* Languages: a heading with the line count, one bar of parts and a two-column legend of shares */
+.mo-pf-ch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--slot);
+  font-weight: 500;
+}
+.mo-pf-ch > .mo-pf-n {
+  margin-left: auto;
+}
+.mo-pf-n {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mo-pf-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mo-pf-seg {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+}
+.mo-pf-seg > i {
+  flex-basis: 0;
+  min-width: 2px;
+  border-radius: 3px;
+  background: var(--track);
+}
+.mo-pf-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--sp-4);
+  row-gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mo-pf-legend > li {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-2);
+  height: 20px;
+}
+.mo-pf-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--track);
+}
+.mo-pf-seg > [data-k='1'],
+.mo-pf-dot[data-k='1'] {
+  background: var(--series-1);
+}
+.mo-pf-seg > [data-k='2'],
+.mo-pf-dot[data-k='2'] {
+  background: var(--series-2);
+}
+.mo-pf-seg > [data-k='3'],
+.mo-pf-dot[data-k='3'] {
+  background: var(--series-3);
+}
+.mo-pf-seg > [data-k='4'],
+.mo-pf-dot[data-k='4'] {
+  background: var(--series-4);
+}
+.mo-pf-seg > [data-k='5'],
+.mo-pf-dot[data-k='5'] {
+  background: var(--series-5);
+}
+.mo-pf-seg > [data-k='other'],
+.mo-pf-dot[data-k='other'] {
+  background: var(--mu);
+}
+
+/* The memory drafts waiting, one card each, under the waiting counts */
+.mo-pend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* A draft refused for space: the bytes against the budget and the largest decisions grow into the card */
+.mo-over-grow {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .mo-over-grow {
+    grid-template-rows: 0fr;
+  }
+}
+.mo-over {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-height: 0;
+  overflow: hidden;
+}
+.mo-over-why {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--tx);
+}
+.mo-over-use {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mo-over-use > .meter {
+  flex: 1;
+}
+.mo-over-use > .meter > i {
+  background: var(--bad);
+}
+.mo-over-num {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--mu);
+}
+.mo-over-rows {
+  display: flex;
+  flex-direction: column;
+}
+.mo-over-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.mo-over-row:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.mo-over-row > svg {
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--mu);
+}

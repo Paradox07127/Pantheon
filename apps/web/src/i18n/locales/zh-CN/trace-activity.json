@@ -1,0 +1,13 @@
+{
+  "trace.eventKind.plan": "计划和派发",
+  "trace.eventKind.model": "换模型",
+  "trace.event.gatePassedCount": "{skipped, plural, =0 {门禁 {passed} 通过} other {门禁 {passed} 通过 # 跳过}}",
+  "trace.event.gateFailedCount": "门禁失败：{check} {failed} 项不过",
+  "trace.event.planned": "{count, plural, other {把目标拆成 # 个任务}}",
+  "trace.event.dispatched": "从计划派发",
+  "trace.event.question": "问：{question}",
+  "trace.event.modelChanged": "模型换成 {model}",
+  "trace.event.modelDefault": "模型换回默认",
+  "trace.activity.filter": "筛选活动",
+  "trace.activity.noMatch": "没有匹配的活动"
+}

@@ -1,0 +1,6 @@
+{
+  "sessions.header.createPull": "建 PR",
+  "sessions.header.openPull": "打开",
+  "sessions.header.openPullNumber": "打开 PR #{number}",
+  "sessions.header.pullCreated": "PR #{number} 已建好"
+}

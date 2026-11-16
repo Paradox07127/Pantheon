@@ -1,0 +1,87 @@
+/* The row-end button that counts the projects with their own value. */
+.po-btn {
+  height: var(--h-ctl);
+  min-width: var(--h-ctl);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-xs);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.po-btn:hover {
+  background: var(--st-hov);
+  color: var(--tx);
+}
+.po-btn:active {
+  background: var(--st-on);
+}
+.po-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.po-n {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+
+.po-dlg {
+  overflow: hidden;
+}
+.po-bd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 0;
+  padding: 0 var(--sp-4) var(--sp-4);
+  overflow: auto;
+}
+.po-list {
+  display: flex;
+  flex-direction: column;
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-md);
+}
+.po-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--row);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.po-row + .po-row {
+  border-top: var(--hair) solid var(--bd2);
+}
+.po-nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.po-val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  user-select: text;
+}
+.po-set {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+.po-ed {
+  align-self: stretch;
+  min-width: 0;
+}

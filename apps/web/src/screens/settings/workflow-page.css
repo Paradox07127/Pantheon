@@ -1,0 +1,125 @@
+/* A workflow parameter: name, control, pin; anything after them spans the row. */
+.ps-rows > .ps-row.wf-pr {
+  grid-template-columns: minmax(0, 1fr) auto minmax(22px, auto);
+  column-gap: 16px;
+}
+/* The projects with their own value, then the pin. */
+.wf-end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.wf-nm {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.wf-nm > :first-child {
+  font-weight: 500;
+}
+.wf-imp {
+  font: inherit;
+  font-size: var(--fs-xs);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.wf-imp:hover {
+  background: var(--st-hov);
+}
+.wf-imp::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.wf-imp[data-s='trial']::before {
+  background: var(--run);
+}
+.wf-imp[data-s='active']::before {
+  background: var(--ok);
+}
+.ps-rows .wf-pin,
+.wf-stp .ib {
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}
+.wf-pin[aria-pressed='false'] {
+  color: var(--mu);
+}
+.wf-stp .ib:disabled,
+.ps-rows .wf-pin:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.wf-err {
+  grid-column: 1 / -1;
+}
+
+.wf-stp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.wf-n,
+.wf-num,
+.wf-bud .inp {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.wf-n {
+  width: 48px;
+  text-align: center;
+}
+.wf-num {
+  width: 64px;
+  text-align: right;
+}
+
+.wf-rtp {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: var(--sp-1) var(--sp-4);
+}
+.wf-rt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.wf-rt-n {
+  width: 40px;
+}
+
+.wf-tiers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-1);
+}
+.wf-tier {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.wf-sub {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+
+.wf-bud {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 32px repeat(6, minmax(0, 1fr));
+  gap: var(--sp-1) var(--sp-2);
+  align-items: center;
+  padding: 8px 0 4px;
+}
+.wf-bud-p {
+  grid-column: span 2;
+}
+.wf-bud .inp {
+  width: 100%;
+  text-align: right;
+}

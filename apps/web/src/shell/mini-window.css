@@ -1,0 +1,92 @@
+/* The mini window is this one bar; all of it but its buttons drags the window. */
+.mw {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 0 var(--sp-3);
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-lg);
+  background: var(--sf);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.mw button {
+  -webkit-app-region: no-drag;
+}
+.mw-ic {
+  display: inline-flex;
+  flex: none;
+}
+.mw-nm {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mw-state {
+  flex: none;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.mw-sep {
+  flex: none;
+  align-self: stretch;
+  width: var(--hair);
+  margin: var(--sp-3) 0;
+  background: var(--bd2);
+}
+.mw-wait {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+.mw-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.mw-cmd {
+  flex: 1 1 0;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mw-err {
+  flex: 1 1 0;
+  min-width: 0;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+.mw-acts {
+  display: inline-flex;
+  flex: none;
+  gap: var(--sp-2);
+}
+.mw-ex {
+  flex: none;
+  margin-left: auto;
+}

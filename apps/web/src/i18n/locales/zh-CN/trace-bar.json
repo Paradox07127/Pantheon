@@ -1,0 +1,19 @@
+{
+  "trace.bar.today": "今天",
+  "trace.bar.all": "全部",
+  "trace.bar.view": "看法",
+  "trace.bar.now": "现在",
+  "trace.bar.nowCount": "现在，{count, plural, =0 {没有会话在跑} other {# 个会话在跑}}",
+  "trace.bar.history": "历史",
+  "trace.bar.range": "时间范围",
+  "trace.bar.window": "{from} – {to}",
+  "lib.shortcuts.scope.trace": "轨迹页",
+  "lib.shortcuts.label.traceView": "切换看法",
+  "lib.shortcuts.label.traceAll": "全部时间",
+  "lib.shortcuts.label.traceNext": "下一行",
+  "lib.shortcuts.label.tracePrevious": "上一行",
+  "lib.shortcuts.label.replayBack": "回放：上一步",
+  "lib.shortcuts.label.replayForward": "回放：下一步",
+  "lib.shortcuts.label.replayPlay": "播放 / 暂停回放",
+  "lib.shortcuts.key.space": "空格"
+}

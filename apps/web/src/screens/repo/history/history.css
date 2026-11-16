@@ -1,0 +1,537 @@
+/* Repository timeline: the commit graph with the picked commit beside it. */
+.rh-graph {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  align-items: start;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.rh-list {
+  /* Width of the graph column; the list sets it inline from the lanes in use. */
+  --rh-gw: 0px;
+  min-width: 0;
+  padding: var(--sp-1) 0;
+  border-right: var(--hair) solid var(--bd2);
+}
+.rh-rows {
+  position: relative;
+}
+.rh-rows [role='listbox'] {
+  outline-offset: -2px;
+}
+.rh-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.rh-lines path {
+  fill: none;
+  stroke-width: 1.5;
+}
+.rh-lines circle {
+  stroke-width: 1.5;
+}
+.rh-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 64px 64px;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-4) 0 var(--rh-gw);
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.rh-row:hover {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.rh-row[aria-selected='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.rh-subj {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rh-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rh-more {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--sp-4) 0 var(--rh-gw);
+}
+
+/* The picked commit's summary, held in view while the graph scrolls. */
+.rh-side {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+  padding: var(--sp-4);
+}
+.rh-sh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.rh-b {
+  font-weight: 600;
+}
+.rh-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  text-wrap: balance;
+  user-select: text;
+}
+.rh-kv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+}
+.rh-kv dt {
+  color: var(--mu);
+}
+.rh-kv dd {
+  min-width: 0;
+  margin: 0;
+  user-select: text;
+}
+.rh-kv p {
+  margin: 0;
+}
+.rh-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.rh-tx2 {
+  color: var(--tx2);
+}
+.rh-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+}
+.rh-link:hover {
+  text-decoration: underline;
+}
+.rh-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+}
+.rh-card > .rh-kv {
+  align-self: stretch;
+  grid-template-columns: 40px minmax(0, 1fr);
+}
+:is(.rh-card, .rh-files, .rh-story, .rh-after) h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.rh-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--tx2);
+}
+.rh-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.rh-files ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rh-file {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 28px;
+}
+.rh-n {
+  display: inline-flex;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One commit opened from the graph: its files beside what it changed and what followed. */
+.rh-detail {
+  display: flex;
+  flex-direction: column;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.rh-dh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--bar);
+  padding: 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  font-variant-numeric: tabular-nums;
+}
+.rh-nav {
+  display: flex;
+  flex: none;
+  gap: var(--sp-1);
+  margin-left: auto;
+}
+/* The commit's message body, author and parents under its header. */
+.rh-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.rh-msg > .rh-kv {
+  align-self: stretch;
+}
+.rh-body {
+  margin: 0;
+  color: var(--tx2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.rh-body[data-clamp] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+/* Git's output when a push or revert fails, in its dialog. */
+.rh-err {
+  margin: 0;
+  padding: 0 20px 6px;
+  color: var(--bad);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.rh-cols {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+.rh-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-2);
+  border-right: var(--hair) solid var(--bd2);
+}
+.rh-th {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rh-tl {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rh-dir {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.rh-dir svg {
+  flex: none;
+  color: var(--mu);
+}
+.rh-tf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.rh-dir + .rh-tl .rh-tf {
+  padding-left: var(--sp-6);
+}
+.rh-tf:hover {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.rh-tf[aria-current='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.rh-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  min-width: 0;
+  max-width: 1040px;
+  padding: var(--sp-6);
+}
+.rh-ba {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+.rh-kpi {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-variant-numeric: tabular-nums;
+}
+.rh-story {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.rh-sth {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.rh-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rh-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+}
+.rh-step + .rh-step::before {
+  content: '';
+  position: absolute;
+  left: var(--sp-6);
+  bottom: 100%;
+  width: var(--hair);
+  height: var(--sp-3);
+  background: var(--bd3);
+}
+.rh-step[data-change='del'] {
+  border-color: var(--del);
+  color: var(--tx2);
+}
+.rh-step[data-change='add'] {
+  border-color: var(--add);
+}
+.rh-step del {
+  text-decoration-color: var(--del);
+}
+.rh-step ins {
+  text-decoration: none;
+}
+.rh-at {
+  flex: none;
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.rh-dbox {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  scroll-margin-top: var(--sp-6);
+}
+.rh-fh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  background: var(--sf2);
+}
+.rh-grow {
+  flex: 1;
+}
+.rh-note {
+  padding: var(--sp-3);
+}
+.rh-sides {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border-bottom: var(--hair) solid var(--bd2);
+  color: var(--mu);
+}
+.rh-sides > span {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-3);
+}
+.rh-sides > span + span {
+  border-left: var(--hair) solid var(--bd2);
+}
+.rh-after {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.rh-arows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rh-ar {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  user-select: text;
+}
+.rh-gl {
+  flex: none;
+  margin-top: 3px;
+  color: var(--mu);
+}
+.rh-gl[data-tone='ok'] {
+  color: var(--ok);
+}
+.rh-gl[data-tone='bad'] {
+  color: var(--bad);
+}
+.rh-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 7px 4px 0;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.rh-two {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-4);
+}
+.rh-two > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  user-select: text;
+}
+:is(.rh-diagram, .rh-flow) h4 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+/* The commit graph's copy button, just after the short sha in the row's end padding. */
+.rh-sha {
+  position: relative;
+  justify-self: start;
+}
+.rh-copy {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: none;
+  color: var(--mu);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition:
+    opacity var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std),
+    background-color var(--dur-1) var(--ease-std);
+}
+.rh-copy:hover {
+  background: var(--st-hov);
+  color: var(--tx);
+}
+.rh-copy svg {
+  width: 14px;
+  height: 14px;
+}
+.rh-row:hover .rh-copy,
+.rh-row:focus-within .rh-copy,
+.rh-row[aria-selected='true'] .rh-copy {
+  opacity: 1;
+}

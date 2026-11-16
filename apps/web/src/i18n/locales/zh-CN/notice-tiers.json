@@ -1,0 +1,19 @@
+{
+  "data.noticeTiers.allPassed": "门禁都过了",
+  "data.noticeTiers.allowOnce": "允许一次",
+  "data.noticeTiers.answerFailed": "没回复成功",
+  "data.noticeTiers.asks": "在问你",
+  "data.noticeTiers.checksFailed": "门禁失败",
+  "data.noticeTiers.failing": "{count} 项不过",
+  "data.noticeTiers.groupDone": "{count, plural, other {# 个会话回合完成}}",
+  "data.noticeTiers.groupMerged": "{count, plural, other {# 个会话已合并}}",
+  "data.noticeTiers.groupReview": "{count, plural, other {# 个会话可以审阅}}",
+  "data.noticeTiers.merged": "已合并",
+  "data.noticeTiers.mergeBlocked": "合并被拦",
+  "data.noticeTiers.reject": "拒绝",
+  "data.noticeTiers.review": "可以审阅",
+  "data.noticeTiers.seeFailure": "看失败",
+  "data.noticeTiers.turnDone": "回合完成",
+  "data.noticeTiers.turnFailed": "回合失败",
+  "data.noticeTiers.waitsApproval": "等你审批"
+}

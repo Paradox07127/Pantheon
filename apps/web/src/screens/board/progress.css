@@ -1,0 +1,437 @@
+.bp-tblp {
+  padding: 16px 0 0;
+  overflow: hidden;
+}
+.bp-tblp .bp-ph {
+  padding: 0 16px;
+  margin-bottom: 4px;
+}
+/* The view switch follows the median right-aligned instead of splitting the free space. */
+.bp-tblp .bp-tools {
+  margin-left: var(--sp-3);
+}
+.bp-tblp > .bp-empty {
+  padding: 0 16px 16px;
+}
+.bp-tscroll {
+  container: bp-tbl / inline-size;
+  position: relative;
+  overflow-x: auto;
+  border-radius: 0 0 max(calc(var(--r-lg) - 1px), 4px) max(calc(var(--r-lg) - 1px), 4px);
+}
+.bp-tr {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.2fr) 88px 112px 96px 48px 72px minmax(180px, 2.6fr);
+  column-gap: 12px;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-top: var(--hair) solid var(--bd2);
+}
+/* A task with an activity line grows to hold it. */
+.bp-trw .c-task {
+  padding: 4px 0;
+}
+/* Two lines per row where the one-line columns no longer fit: names, status and time above,
+   progress and the timeline below. A container query, so the rows restack in the frame the box narrows. */
+@container bp-tbl (width < 840px) {
+  .bp-tin {
+    min-width: 508px;
+  }
+  .bp-tin .bp-tr {
+    grid-template-columns: 112px 96px 48px minmax(0, 1fr) 88px 72px;
+    grid-template-rows: minmax(24px, auto) 24px;
+    grid-template-areas:
+      'task task task task status dur'
+      'prog diff chk tl tl tl';
+    row-gap: 4px;
+    height: auto;
+    padding: 8px 16px;
+  }
+  .bp-tin .c-task {
+    grid-area: task;
+  }
+  .bp-tin .c-status {
+    grid-area: status;
+  }
+  .bp-tin .c-dur {
+    grid-area: dur;
+  }
+  .bp-tin .c-prog {
+    grid-area: prog;
+  }
+  .bp-tin .c-diff {
+    grid-area: diff;
+  }
+  .bp-tin .c-chk {
+    grid-area: chk;
+  }
+  .bp-tin .c-tl {
+    grid-area: tl;
+  }
+}
+.bp-tr.th {
+  min-height: 32px;
+  border-top: 0;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.bp-tg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 16px;
+  border-top: var(--hair) solid var(--bd);
+  background: var(--band);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.bp-tg .bp-mu {
+  font-weight: 500;
+}
+.bp-trw:hover {
+  background: var(--sf2);
+}
+.bp-trw[data-drag] {
+  opacity: 0.5;
+}
+.bp-trw[data-drop] {
+  background: var(--sel);
+}
+.bp-tmv {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+}
+.bp-tmv .ib svg {
+  width: 14px;
+  height: 14px;
+}
+.bp-cell {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bp-sortb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--mu);
+}
+.bp-sortb:hover,
+.bp-sortb.on {
+  color: var(--tx);
+  background: var(--sf2);
+}
+.bp-sortb svg {
+  width: 10px;
+  height: 10px;
+}
+.bp-tt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  line-height: 18px;
+}
+.bp-tn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bp-test {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.bp-tact {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  color: var(--tx2);
+}
+.bp-stc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  min-width: 0;
+}
+.bp-stw {
+  color: var(--tx2);
+  font-weight: 500;
+}
+.bp-pg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bp-pg .n {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  flex: none;
+}
+.bp-pbar {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  height: 4px;
+  min-width: 0;
+}
+.bp-pbar i {
+  flex: 1;
+  border-radius: 2px;
+}
+.bp-b-done {
+  background: var(--ok);
+}
+.bp-b-ready {
+  border: 1px solid var(--ready);
+}
+.bp-b-running {
+  background: var(--run);
+}
+.bp-b-waiting {
+  background: var(--wait);
+}
+.bp-b-idle {
+  border: 1px solid var(--idle);
+}
+.bp-b-failed {
+  background: var(--bad);
+}
+.bp-b-todo {
+  background: var(--bd);
+}
+.bp-b-discarded {
+  background: var(--e-pend);
+}
+.bp-chk {
+  display: flex;
+  align-items: center;
+}
+.bp-tr .c-dur {
+  font-size: var(--fs-xs);
+}
+.bp-tr .c-tl {
+  position: relative;
+  align-self: stretch;
+  overflow: visible;
+}
+.bp-gl {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--bd2);
+}
+.bp-gnow {
+  position: absolute;
+  top: -1px;
+  bottom: 0;
+  width: 1px;
+  background: var(--ink);
+}
+.bp-gseg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 6px;
+}
+.bp-gseg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+.bp-gb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 3px;
+}
+.bp-gb.dim {
+  opacity: 0.45;
+}
+.bp-gb.live {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--sf) 45%, transparent) 0 2px,
+    transparent 2px 4.2px
+  );
+}
+.bp-gseg:hover .bp-gb {
+  outline: 1px solid var(--tx);
+  outline-offset: 1px;
+}
+.bp-gtk .bp-tk {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  white-space: nowrap;
+}
+
+.bpc-sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* Task burn-up */
+.bpc-swl {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  flex: none;
+  border-top: 1px solid var(--ok);
+}
+.bpc-swl.scope {
+  border-top: 1px dashed var(--e-pend);
+}
+.bpc-area {
+  fill: var(--ok);
+  fill-opacity: 0.08;
+}
+.bpc-ln {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.bpc-ln.scope {
+  stroke: var(--e-pend);
+  stroke-dasharray: 6 4;
+}
+.bpc-ln.done {
+  stroke: var(--ok);
+}
+.bpc-pt {
+  fill: var(--e-pend);
+}
+.bpc-hd {
+  fill: var(--sf);
+  stroke-width: 2;
+}
+.bpc-hd.scope {
+  stroke: var(--e-pend);
+}
+.bpc-hd.done {
+  stroke: var(--ok);
+}
+.bpc-elab {
+  font-size: var(--fs-xs);
+}
+.bpc-elab.done {
+  fill: var(--tx);
+  font-weight: 500;
+}
+.bpc-elab.scope {
+  fill: var(--mu);
+}
+.bpc-tick {
+  fill: var(--idle);
+}
+
+/* Cycle time histogram */
+.bpc-hb {
+  fill: var(--series-2);
+}
+.bpc-hv {
+  font-size: var(--fs-xs);
+  fill: var(--tx2);
+}
+.bpc-mk line {
+  stroke-width: 1.5;
+}
+.bpc-mk text {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.bpc-mk.med line {
+  stroke: var(--series-1);
+}
+.bpc-mk.med text {
+  fill: var(--series-1);
+}
+.bpc-mk.p90 line {
+  stroke: var(--series-5);
+  stroke-dasharray: 4 3;
+}
+.bpc-mk.p90 text {
+  fill: var(--series-5);
+}
+
+/* Blocked and stalled tasks */
+.bpc-stl {
+  display: flex;
+  flex-direction: column;
+}
+.bpc-str {
+  display: grid;
+  grid-template-columns: minmax(120px, 240px) minmax(0, 1fr) 88px;
+  column-gap: 12px;
+  align-items: center;
+  height: 32px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.bpc-stn {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bpc-stn:hover {
+  color: var(--tx);
+}
+.bpc-stn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.bpc-stt {
+  display: flex;
+  height: 10px;
+  min-width: 0;
+}
+.bpc-stb {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 3px;
+}
+.bpc-st-blocked {
+  background: var(--wait);
+}
+.bpc-st-stalled {
+  background-color: color-mix(in srgb, var(--idle) 16%, transparent);
+  background-image: repeating-linear-gradient(45deg, var(--idle) 0 2px, transparent 2px 5px);
+}
+.bpc-std {
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+  text-align: right;
+  white-space: nowrap;
+}

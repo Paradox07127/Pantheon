@@ -1,0 +1,187 @@
+/* The runs tab: the figures, filters and call table, the call detail beside them. */
+.rpg {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  background: var(--bg);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+}
+.rpg[data-detail] {
+  grid-template-columns: minmax(0, 1fr) 400px;
+}
+.rpg-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 24px 16px;
+}
+.rpg-main > * {
+  flex: none;
+}
+.rpg-main > .rpg-skel {
+  height: 160px;
+}
+
+/* Figures strip: five cells, each a caption over a figure with what qualifies it. */
+.panel.rpg-figs {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.panel.rpg-figs > .rpg-fig {
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
+}
+.rpg-fig-v {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--lh-lg);
+}
+/* The figure stays one line in a narrow cell; what qualifies it gives way first. */
+.rpg-fig-v > .kpi {
+  white-space: nowrap;
+}
+.rpg-fig-v > .rpg-delta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpg-fig-v > .rpg-fig-sk {
+  width: 48px;
+  height: 20px;
+}
+.rpg-delta {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rpg-spark {
+  flex: none;
+  margin-left: auto;
+  overflow: visible;
+}
+.rpg-spark path {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .rpg-spark path {
+    stroke-dashoffset: 1;
+  }
+}
+
+/* Filter row: scope, text filter and, in the now view, following the newest call. */
+.rpg-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.rpg-search {
+  width: 220px;
+}
+.rpg-follow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  color: var(--tx2);
+}
+.rpg-fail {
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+}
+.rpg-none {
+  margin: var(--sp-8) 0;
+  color: var(--mu);
+  font-size: var(--fs-md);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* Just ended: one row per session on the call table's columns, with a way into history. */
+.rpg-ended {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.rpg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 20px 56px 180px;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.rpg-row:not(.rpg-ended-h):hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.rpg-ended-h {
+  height: 24px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+}
+.rpg-ended-h > span {
+  padding-left: var(--sp-6);
+}
+.rpg-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rpg-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpg-title[data-state='ok'] {
+  color: var(--mu);
+}
+.rpg-num {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.rpg-row > .rpg-num:nth-child(2) {
+  color: var(--mu);
+}
+.rpg-end {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rpg-at {
+  margin-left: auto;
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The spark appears drawn already. */
+.pt[data-motion='reduced'] .rpg-spark path {
+  transition-duration: 0s;
+}

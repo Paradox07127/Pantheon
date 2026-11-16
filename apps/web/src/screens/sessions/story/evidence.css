@@ -1,0 +1,33 @@
+.gs-ev.gs-checks > li {
+  flex-direction: column;
+  align-items: stretch;
+}
+.gs-check-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.gs-check-row > code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.gs-check-row > span {
+  flex-shrink: 0;
+}
+.gs-checks details {
+  min-width: 0;
+}
+.gs-checks summary {
+  color: var(--tx2);
+}
+.gs-checks pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-family: var(--font-mono);
+}

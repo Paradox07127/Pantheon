@@ -1,0 +1,95 @@
+/* Next tasks: node buttons over one drawing of the dependency edges, then the picked task. */
+.tg-dag {
+  overflow-x: auto;
+  padding: 0 var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.tg-map {
+  position: relative;
+}
+.tg-map > svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.tg-eg {
+  fill: none;
+  stroke: var(--bd3);
+  stroke-width: 1.2;
+}
+.tg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+}
+.tg-grid > .tg-nd {
+  min-width: 0;
+  height: 56px;
+}
+.tg-nd {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 4px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  font: inherit;
+  text-align: left;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.tg-nd:hover {
+  border-color: var(--bd3);
+}
+.tg-nd[aria-pressed='true'] {
+  border-color: var(--tx);
+}
+.tg-ttl {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--tx);
+}
+.tg-ws {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tg-ws::before {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.tg-det {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-3);
+  align-items: baseline;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.tg-det > :nth-child(odd) {
+  color: var(--mu);
+}
+.tg-det > :nth-child(even) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.tg-why {
+  color: var(--tx2);
+}
+.tg-cmds {
+  display: flex;
+  flex-direction: column;
+}

@@ -1,0 +1,17 @@
+{
+  "board.node.reason.retried": "{count, plural, other {已重试 # 次}}",
+  "board.node.reason.retriedSamePlace": "{count, plural, other {已重试 # 次，失败在同一处}}",
+  "board.node.reason.unattended": "没有会话在处理",
+  "board.node.reason.accepted": "依据：lead 已验收",
+  "board.node.reason.mergedChecked": "依据：门禁通过，已合并",
+  "board.node.reason.merged": "依据：已合并",
+  "board.node.action.open": "打开",
+  "board.node.action.review": "审阅",
+  "board.node.action.failure": "看失败",
+  "board.node.action.session": "开会话",
+  "board.node.action.label": "{action}：{title}",
+  "board.node.action.merge": "合并",
+  "board.node.action.ask": "问 lead",
+  "board.node.action.redispatch": "让 lead 重派",
+  "board.node.action.answer": "回答"
+}

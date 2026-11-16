@@ -1,0 +1,124 @@
+/* A folder's steps, then the button that adds one under them. */
+.gt-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.gt-dir {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.gt-dir .path {
+  min-width: 0;
+  user-select: text;
+}
+
+/* One step: handle, its switch, then name over command; the time it took, its timeout, whether it may be skipped and the removal at the end. */
+.gt-step {
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.gt-step[data-dragged] {
+  opacity: 0.5;
+}
+.gt-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.gt-grip {
+  flex: none;
+  color: var(--mu);
+}
+.gt-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.gt-text input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+}
+.gt-text .gt-name {
+  font-weight: 500;
+}
+.gt-text .gt-line {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  color: var(--mu);
+}
+.gt-text input::placeholder {
+  color: var(--faint);
+}
+.gt-end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.gt-took {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gt-timeout {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  white-space: nowrap;
+}
+.gt-timeout input {
+  width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.gt-skip {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  white-space: nowrap;
+}
+.gt-step:has(.gt-on:not(:checked)) .gt-text input {
+  color: var(--mu);
+}
+.gt-del {
+  opacity: 0;
+  transition:
+    opacity var(--dur-1) var(--ease-std),
+    background-color var(--dur-1) var(--ease-std);
+}
+.gt-step:is(:hover, :focus-within) .gt-del {
+  opacity: 1;
+}
+.gt-err {
+  grid-column: 1 / -1;
+}
+
+/* What a failed gate does, with the handback count beside handing back. */
+.gt-fail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.gt-add {
+  align-self: flex-start;
+}
+.gt-add svg {
+  width: 14px;
+  height: 14px;
+}

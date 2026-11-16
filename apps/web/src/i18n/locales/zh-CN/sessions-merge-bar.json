@@ -1,0 +1,19 @@
+{
+  "sessions.mergeBar.earlierCommit": "门禁跑在较早的提交上",
+  "sessions.mergeBar.currentCommit": "门禁跑在当前提交上",
+  "sessions.mergeBar.passed": "{count} 通过",
+  "sessions.mergeBar.failed": "{count} 失败",
+  "sessions.mergeBar.skipped": "{count} 跳过",
+  "sessions.mergeBar.running": "{count} 在跑",
+  "sessions.mergeBar.distance": "相对 {target} 领先 {ahead}，落后 {behind}",
+  "sessions.mergeBar.rerun": "重跑门禁",
+  "sessions.mergeBar.conflicts": "冲突",
+  "sessions.mergeBar.conflictsNone": "无",
+  "sessions.mergeBar.conflictFiles": "{count, plural, other {# 个文件}}",
+  "sessions.mergeBar.comments": "评论",
+  "sessions.mergeBar.openComments": "{count, plural, other {# 条未处理}}",
+  "sessions.mergeBar.consequence": "合并后会话结束，工作树被清理。",
+  "sessions.mergeBar.directConsequence": "合并后会话继续，工作树保留。",
+  "sessions.mergeBar.fix": "让 agent 修 {count, plural, other {# 项}}",
+  "sessions.mergeBar.discard": "丢弃…"
+}

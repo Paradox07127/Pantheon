@@ -1,0 +1,15 @@
+{
+  "memory.graphView.kinds": "种类",
+  "memory.graphView.search": "搜索节点",
+  "memory.graphView.hits": "{count, plural, other {命中 # 个节点}}",
+  "memory.graphView.tags": "显示标签",
+  "memory.graphView.depth": "深度",
+  "memory.graphView.depth.one": "1 层",
+  "memory.graphView.depth.two": "2 层",
+  "memory.graphView.empty": "还没有项目记忆",
+  "memory.graphView.noMatch": "没有符合筛选的节点",
+  "memory.graphView.create": "新建条目",
+  "memory.graphView.failed": "读不到记忆图谱",
+  "memory.graphView.retry": "重试",
+  "memory.graphView.loading": "正在读取图谱"
+}

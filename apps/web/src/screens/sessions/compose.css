@@ -1,0 +1,781 @@
+/* The composer dock under the thread: same reading column as the thread, no rule above it */
+
+.cp-dock {
+  flex: none;
+  padding: 8px 0 16px;
+}
+.cp-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 100%;
+  max-width: var(--read-w, 760px);
+  margin: 0 auto;
+  padding: 0 var(--sp-6);
+}
+
+/* Status line above the composer while a turn runs or waits */
+
+/* Always there, so the line coming and going does not move the thread. */
+.cp-sts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 18px;
+}
+.cp-st {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cp-st .kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: var(--hair) solid var(--bd);
+  border-radius: 4px;
+  background: var(--sf2);
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1;
+}
+.cp-stt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-sti {
+  color: var(--tx2);
+  font-family: var(--font-mono);
+}
+.cp-crt {
+  flex: none;
+  width: 7px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--tx2);
+  animation: cp-blink 1s steps(1) infinite;
+}
+@keyframes cp-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.cp-sgb {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  width: 48px;
+  height: 6px;
+}
+.cp-sgb > i {
+  flex: 1 1 0;
+  border-radius: 2px;
+  background: var(--run);
+}
+.cp-sgb > i[data-done] {
+  background: var(--ok);
+}
+.cp-stn {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+.cp-stk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+.cp-stk > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The line above the composer while the next message opens a session on another runtime */
+
+.cp-fork {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.cp-fork-i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.cp-fork-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-fork-err {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--bad);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-fork > .btn {
+  flex: none;
+  margin-left: auto;
+}
+
+/* Status glyph: 14px, one shape per state */
+
+.cp-stg {
+  flex: none;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--run);
+}
+.cp-stg::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cp-stg[data-kind='running']::before {
+  content: none;
+}
+.cp-stg > .eq {
+  width: 10px;
+  height: 10px;
+}
+.cp-stg[data-kind='waiting'] {
+  color: var(--wait);
+}
+.cp-stg[data-kind='waiting']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.4;
+  animation: cp-breathe 2.4s ease-in-out infinite;
+}
+@keyframes cp-breathe {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.72);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+}
+.pt:is([data-state-motion='waiting'], [data-state-motion='off']) .cp-stg .eq > i,
+.pt[data-state-motion='off'] .cp-stg::after {
+  animation: none;
+}
+.cp-stg[data-kind='idle'] {
+  color: var(--idle);
+}
+.cp-stg:is([data-kind='idle'], [data-kind='queued'])::before {
+  border: 1.5px solid currentColor;
+  background: none;
+}
+.cp-stg[data-kind='queued'] {
+  color: var(--idle);
+}
+.cp-stg[data-kind='queued']::before {
+  border-style: dashed;
+}
+
+/* Queued messages glued to the composer's top edge, newest last */
+
+.cp-stack {
+  display: flex;
+  flex-direction: column;
+}
+.cp-qd {
+  display: flex;
+  flex-direction: column;
+  border: var(--hair) dashed var(--bd3);
+  border-bottom: 0;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: var(--sf);
+}
+.cp-qd + .cp-box {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.cp-q + .cp-q,
+.cp-qmore + .cp-q {
+  border-top: var(--hair) dashed var(--bd2);
+}
+.cp-ql {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--ctl);
+  padding: 0 4px 0 12px;
+  color: var(--tx2);
+}
+.cp-qt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+.cp-ql .ib {
+  width: 22px;
+  height: 22px;
+}
+.cp-qh {
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.cp-q:hover .cp-qh,
+.cp-q:focus-within .cp-qh {
+  opacity: 1;
+}
+.cp-q > .tr-err {
+  display: block;
+  padding: 0 12px 6px;
+}
+.cp-qmore {
+  display: flex;
+  flex-direction: column;
+}
+.cp-qmore > .tr-err {
+  display: block;
+  padding: 0 12px 6px;
+}
+.cp-qmb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--ctl);
+  padding: 0 4px 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  text-align: left;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.cp-qmb:hover {
+  color: var(--tx);
+}
+.cp-qmb .cp-qt {
+  font-size: var(--fs-xs);
+}
+.cp-qmi {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+/* The box: text, then the row of add, model, context and send */
+
+.cp-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 12px 12px 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-xl);
+  background: var(--sf);
+  transition: border-color var(--dur-2) var(--ease-std);
+}
+.cp-box:focus-within,
+.cp-box[data-drop] {
+  border-color: var(--bd3);
+}
+.cp-box[data-drop] {
+  background: var(--sf2);
+}
+.cp-box .ss-q {
+  padding: 0;
+}
+.cp-box textarea {
+  min-height: 44px;
+  max-height: 160px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+}
+.cp-box textarea::placeholder {
+  color: var(--faint);
+}
+.cp-box textarea:disabled {
+  cursor: not-allowed;
+}
+.cp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.cp-add,
+.cp-mdl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: var(--ctl);
+  padding: 0 10px;
+  border: var(--hair) solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.cp-add {
+  flex: none;
+  width: var(--ctl);
+  padding: 0;
+}
+.cp-add:hover,
+.cp-mdl:hover,
+.cp-add[data-popup-open],
+.cp-mdl[data-popup-open] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.cp-mdl[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cp-mdl[data-disabled]:hover {
+  background: transparent;
+  color: var(--tx2);
+}
+.cp-row svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.cp-mdn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-mdx {
+  flex: none;
+  color: var(--mu);
+}
+
+/* Context ring as the opener of the context breakdown */
+
+.cp-ring {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--ctl);
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.cp-ring:hover,
+.cp-ring[data-popup-open] {
+  background: var(--sel);
+}
+.cp-rgt {
+  fill: none;
+  stroke: var(--bd);
+  stroke-width: 2.5;
+}
+.cp-rgf {
+  fill: none;
+  stroke: var(--run);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.cp-ring[data-tone='wait'] .cp-rgf {
+  stroke: var(--wait);
+}
+.cp-ring[data-tone='bad'] .cp-rgf {
+  stroke: var(--bad);
+}
+
+/* Send key: ink, an arrow up, or the square that stops the turn */
+
+.cp-send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl);
+  height: var(--ctl);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--ink);
+  color: var(--on-ink);
+  transition:
+    opacity var(--dur-1) var(--ease-std),
+    transform var(--dur-1) var(--ease-std);
+}
+.cp-send:hover {
+  opacity: 0.86;
+}
+.cp-send:active {
+  transform: scale(0.97);
+}
+.cp-send[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+.cp-send .cp-sq {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+/* Menus of the row: add, and the model with its effort and permission mode */
+
+.cp-am {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 248px;
+  padding: var(--sp-1);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+}
+.cp-amg {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cp-amg > .cp-cap {
+  padding: 4px 8px 0;
+}
+.cp-sep {
+  flex: none;
+  height: var(--hair);
+  margin: var(--sp-1) 0;
+  background: var(--bd2);
+}
+.cp-cap {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: var(--lh-xs);
+}
+.cp-mi {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--ctl);
+  padding: 0 var(--sp-2);
+  border-radius: max(calc(var(--r-lg) - 4px), 4px);
+  color: var(--tx2);
+  white-space: nowrap;
+  outline: none;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.cp-mi[data-highlighted] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.cp-mi[data-checked] {
+  color: var(--tx);
+  font-weight: 500;
+}
+.cp-mi[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cp-mi svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.cp-mil {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-mic {
+  color: var(--mu);
+}
+.cp-ct {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cp-chip {
+  flex: none;
+}
+.cp-ck {
+  display: flex;
+  margin-left: auto;
+}
+
+/* Attachment tiles */
+
+.cp-att {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 72px;
+  height: 72px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf2);
+  overflow: hidden;
+}
+.cp-att[data-bad] {
+  border-color: var(--bad);
+}
+.cp-th {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cp-tag {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 0 4px;
+  border: var(--hair) solid var(--bd);
+  border-radius: 4px;
+  background: var(--sf);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+.cp-ft {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px 0;
+  color: var(--mu);
+}
+.cp-ft .mono {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: 16px;
+}
+.cp-sk {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.cp-fn {
+  display: -webkit-box;
+  margin-top: auto;
+  padding: 0 6px 6px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.cp-att .cp-x,
+.cp-att .cp-retry {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: var(--sf);
+}
+.cp-att .cp-x svg,
+.cp-att .cp-retry svg {
+  width: 12px;
+  height: 12px;
+}
+.cp-att .cp-x {
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.cp-att:hover .cp-x,
+.cp-att:focus-within .cp-x {
+  opacity: 1;
+}
+.cp-att .cp-retry {
+  right: 4px;
+  bottom: 4px;
+}
+
+/* Context bar as the opener of the context breakdown */
+
+.cp-cxp {
+  width: 320px;
+  padding: 12px;
+}
+.cp-cx {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cp-cxh {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--tx);
+}
+.cp-cxb {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+}
+.cp-cxb > i {
+  flex: 0 1 0;
+  min-width: 2px;
+  border-radius: 2px;
+}
+.cp-cxs {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+:is(.cp-cxb > i, .cp-cxs)[data-step='1'] {
+  background: var(--tx);
+}
+:is(.cp-cxb > i, .cp-cxs)[data-step='2'] {
+  background: var(--tx2);
+}
+:is(.cp-cxb > i, .cp-cxs)[data-step='3'] {
+  background: var(--mu);
+}
+:is(.cp-cxb > i, .cp-cxs)[data-step='4'] {
+  background: var(--bd-hover);
+}
+:is(.cp-cxb > i, .cp-cxs)[data-step='other'] {
+  background: var(--bd);
+}
+:is(.cp-cxb > i, .cp-cxs)[data-step='free'] {
+  background: var(--sf2);
+  outline: 1px solid var(--bd2);
+  outline-offset: -1px;
+}
+.cp-cxt {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cp-cxt td {
+  height: 24px;
+  padding: 0 4px;
+}
+.cp-cxt td:first-child {
+  width: 16px;
+}
+.cp-cxt td:nth-child(3),
+.cp-cxt td:nth-child(4) {
+  width: 48px;
+  color: var(--mu);
+  text-align: right;
+}
+.cp-cxt tr[data-deferred] td {
+  color: var(--mu);
+}
+.cp-cxt tr[data-part] td:nth-child(2) {
+  padding-left: 16px;
+  color: var(--mu);
+}
+.cp-cxx {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.cp-cxx[aria-expanded='true'] svg:last-child {
+  transform: rotate(90deg);
+}
+.cp-cxi {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-right: auto;
+}
+.cp-cxi > span {
+  display: inline-flex;
+}
+.cp-cxi > .cp-cxl {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-cxt svg.lucide.ic-sm {
+  flex: none;
+  color: var(--mu);
+}
+.cp-cxq {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.cp-cxw {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+}
+.cp-cxw > .meter {
+  grid-column: 1 / -1;
+}

@@ -1,0 +1,23 @@
+{
+  "repo.file.label": "{path} 的文件历史",
+  "repo.file.editing": "{count, plural, other {# 个会话在改}}",
+  "repo.file.blame": "逐行来源",
+  "repo.file.overview": "文件概况",
+  "repo.file.noText": "没有可显示的文字",
+  "repo.file.you": "你",
+  "repo.file.other": "其他",
+  "repo.file.changesLine": "{name}会改这一行",
+  "repo.file.changesLineConflict": "{name}会改这一行，会冲突",
+  "repo.file.frequency": "改动频率",
+  "repo.file.frequencyTotal": "{weeks, plural, other {# 周}} {count, plural, other {# 次}}",
+  "repo.file.frequencyLabel": "过去 {weeks} 周每周改动次数：{counts}",
+  "repo.file.owners": "现在的行由谁写",
+  "repo.file.lines": "{count, plural, other {# 行}}",
+  "repo.file.share": "{name} {percent}%",
+  "repo.file.running": "在跑的分支",
+  "repo.file.conflict": "会冲突",
+  "repo.file.cochange": "常一起改的文件",
+  "repo.file.together": "{count, plural, other {# 次}}",
+  "repo.file.recent": "最近的改动",
+  "repo.file.lineRange": "{from}–{to}"
+}

@@ -1,0 +1,12 @@
+{
+  "sessions.composeDock.askRun": "要运行命令 {command}",
+  "sessions.composeDock.askEdit": "要编辑文件 {file}",
+  "sessions.composeDock.askRead": "要读取文件 {file}",
+  "sessions.composeDock.askTool": "要用 {tool}:{target}",
+  "sessions.composeDock.steps": "{count, plural, other {# 步}}",
+  "sessions.composeDock.agents": "等子 agent",
+  "sessions.composeDock.approvalPlaceholder": "补充要求，或直接回复审批",
+  "sessions.composeDock.queuePlaceholder": "排队，等这一轮结束",
+  "sessions.composeDock.skills": "技能",
+  "sessions.composeDock.planMode": "计划模式"
+}

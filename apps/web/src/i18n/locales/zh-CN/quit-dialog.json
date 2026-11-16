@@ -1,0 +1,8 @@
+{
+  "quitDialog.title": "退出 Pantheon？{count, plural, other {# 个会话会留在后台继续跑}}",
+  "quitDialog.running": "{count, plural, other {# 个会话在跑，退出后继续跑完}}",
+  "quitDialog.notifications": "通知会停，下次打开 Pantheon 再收",
+  "quitDialog.queued": "{count, plural, other {# 条排队消息留到下次打开再发}}",
+  "quitDialog.cancel": "取消",
+  "quitDialog.quit": "退出"
+}

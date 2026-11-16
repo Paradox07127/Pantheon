@@ -1,0 +1,192 @@
+/* The share of files marked viewed leads the diff toolbar; the view switch and options follow. */
+.df-seen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-right: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.df-rgt {
+  fill: none;
+  stroke: var(--track);
+  stroke-width: 5;
+}
+.df-rgf {
+  fill: none;
+  stroke: var(--ready);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.df-opts .tb-seg {
+  margin-right: var(--sp-2);
+}
+
+.df-ck {
+  appearance: none;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid var(--bd3);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    border-color var(--dur-1) var(--ease-std);
+}
+.df-ck::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: var(--on-ink);
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'><path d='M5.5 12.5l4.2 4.2L18.5 7.5'/></svg>")
+    center / 10px no-repeat;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.df-ck:checked {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.df-ck:checked::after {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    transform var(--dur-2) var(--ease-in);
+}
+.df-hck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--mu);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+}
+
+/* A file row: its viewed box, then the button that scrolls to its diff. */
+.df-tf {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-left: 14px;
+}
+.df-tf:hover {
+  background: var(--sf2);
+}
+.df-tf:has(.ss-file.on) {
+  background: var(--sel);
+}
+.df-tf .ss-file {
+  padding-left: 0;
+}
+.df-tf .ss-file:hover,
+.df-tf .ss-file.on {
+  background: transparent;
+}
+.df-tf[data-viewed] .df-path {
+  color: var(--mu);
+}
+.df-dir > ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.df-dir .df-tf {
+  padding-left: 30px;
+}
+.df-dirn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 14px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.df-dirn svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+
+/* Split view: the old side left of the new one, each with its own line number. */
+.df-sr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.df-sr > .df-half {
+  grid-template-columns: 40px 12px minmax(0, 1fr);
+}
+.df-sr > .df-half + .df-half {
+  border-left: var(--hair) solid var(--bd2);
+}
+.df-sr > .df-half[data-empty] {
+  background: var(--sf2);
+}
+.df-sr .ss-nums {
+  grid-template-columns: 1fr;
+}
+.ss-dl[data-nowrap] .df-sr .ss-code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A stored comment under its line starts at the code column, past the numbers and the sign. */
+.df-cmt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: 560px;
+  margin: var(--sp-2) var(--sp-4) var(--sp-2) 76px;
+  padding: var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  color: var(--tx);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  white-space: normal;
+}
+.df-cmt p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.df-cmth,
+.df-cmta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.df-cmth svg {
+  flex: none;
+  color: var(--mu);
+}
+.df-cmth .mono {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.df-cmtw {
+  font-weight: 600;
+}
+.df-cmta > .ghost {
+  margin-left: auto;
+}
+/* Comments the diff cannot place, above the file list. */
+.df-loose {
+  display: flex;
+  flex-direction: column;
+}
+.df-cmt[data-loose] {
+  margin-left: var(--sp-4);
+}

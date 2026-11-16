@@ -1,0 +1,641 @@
+.itr {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.itr-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.itr-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+  padding-top: var(--sp-4);
+}
+.itr-cols {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 1fr);
+  gap: var(--sp-3);
+  overflow-x: auto;
+  min-width: 0;
+}
+.itr-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2);
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-md);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.itr-col[data-drop] {
+  background: var(--sel);
+}
+.itr-ch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.itr-cht {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 24px;
+}
+.itr-cht h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.itr-cht .ib {
+  width: 24px;
+  height: 24px;
+}
+.itr-pts {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.itr-dates {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.itr-burn {
+  display: block;
+  max-height: 48px;
+  overflow: visible;
+}
+.itr-ideal {
+  stroke: var(--bd);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.itr-left {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.itr-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-height: 36px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.itr-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  transition:
+    opacity var(--dur-1) var(--ease-std),
+    background-color var(--dur-1) var(--ease-std);
+}
+.itr-card[draggable='true'] {
+  cursor: grab;
+}
+.itr-card[data-drag] {
+  opacity: 0.5;
+}
+.itr-card .ib {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+.itr-ct {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.itr-ct:focus-visible,
+.itr-riskt:focus-visible,
+.itr-est:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-radius: var(--r-sm);
+}
+.itr-est {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 20px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+button.itr-est:hover {
+  background: var(--st-hov);
+}
+/* One square per point of the estimate. */
+.itr-acc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.itr-acc i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--mu);
+}
+.itr-acc span {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.itr-kind,
+.itr-pri {
+  display: inline-flex;
+  flex: none;
+}
+.itr-kind {
+  color: var(--mu);
+}
+.itr-kind svg {
+  width: 14px;
+  height: 14px;
+}
+.itr-pri svg {
+  width: 12px;
+  height: 12px;
+}
+.itr-pick > :is(button, .itr-pickt) {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: none;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.itr-pick > button:hover:not(:disabled) {
+  color: var(--tx);
+}
+.itr-pick > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.itr-pick > .itr-pickt {
+  display: block;
+  max-width: 200px;
+  overflow: hidden;
+  line-height: 22px;
+  background: var(--sf);
+  outline: var(--hair) solid var(--bd);
+  color: var(--tx);
+  text-overflow: ellipsis;
+}
+.itr-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.itr-head h3 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-wrap: balance;
+}
+.itr-ratio {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.itr-prog {
+  display: flex;
+  flex: 1 1 160px;
+  gap: 2px;
+  height: 8px;
+}
+.itr-prog i {
+  flex: 1 1 0;
+  border-radius: 2px;
+  background: var(--e-pend);
+}
+.itr-prog [data-group='merged'] {
+  background: var(--ok);
+}
+.itr-prog [data-group='running'] {
+  background: var(--run);
+}
+.itr-prog :is([data-group='gating'], [data-group='merging']) {
+  background: var(--ready);
+}
+.itr-prog :is([data-group='waiting'], [data-group='accepting']) {
+  background: var(--wait);
+}
+.itr-prog :is([data-group='blocked'], [data-group='failed']) {
+  background: var(--bad);
+}
+.itr-prog [data-group='attention'] {
+  background: var(--idle);
+}
+.itr-head .chip svg {
+  width: 12px;
+  height: 12px;
+}
+/* The burnup takes the widest cell; the cells a shown iteration has no data for leave no gap. */
+.itr-foot {
+  grid-template-columns: minmax(0, 1.4fr);
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+}
+.panel.itr-foot > .cell {
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+}
+:is(.itr-cell, .itg-un, .itg-ph) h3 {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.itr-risk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.itr-risk li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+}
+.itr-riskt {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.itr-up {
+  display: block;
+  overflow: visible;
+}
+.itr-plan {
+  stroke: var(--bd);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.itr-area {
+  fill: color-mix(in srgb, var(--ok) 15%, transparent);
+}
+.itr-done {
+  fill: none;
+  stroke: var(--ok);
+  stroke-width: 2;
+}
+.itr-now {
+  stroke: var(--run);
+  stroke-width: 1;
+}
+.itr-rts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.itr-rtr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.itr-rtg {
+  display: inline-flex;
+  flex: none;
+}
+.itr-mtr {
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--sf2);
+}
+.itr-mtr i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+.itr-n {
+  flex: none;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.itg {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  min-width: 0;
+}
+.itg-un {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-4) var(--sp-2);
+  border-right: var(--hair) solid var(--bd2);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.itg-un[data-drop] {
+  background: var(--sel);
+}
+.itg-un .itr-cht {
+  padding: 0 var(--sp-2);
+}
+.itg-un .itr-cht h3 {
+  flex: none;
+}
+.itg-un .itr-pts {
+  color: var(--tx);
+  font-weight: 600;
+}
+.itg-un .itr-card {
+  min-height: var(--row);
+  border-color: transparent;
+  background: none;
+}
+.itg-un .itr-card:hover {
+  background: var(--st-hov);
+}
+.itg-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+  padding: var(--sp-4);
+}
+.itg-plan {
+  min-width: 0;
+  border-radius: var(--r-sm);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.itg-plan[data-drop] {
+  background: var(--sel);
+}
+.itg-scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+.itg-chart {
+  /* The element sets the day count it shows and the narrowest a day is drawn. */
+  --itg-days: 7;
+  --itg-day: 96px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px minmax(calc(var(--itg-days) * var(--itg-day)), 1fr);
+  grid-template-rows: 20px auto;
+}
+.itg-plot {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1 / -1;
+}
+.itg-day {
+  position: absolute;
+  top: 20px;
+  bottom: 0;
+  width: 1px;
+  background: var(--bd2);
+  pointer-events: none;
+}
+.itg-today {
+  position: absolute;
+  top: 20px;
+  bottom: 0;
+  z-index: 2;
+  width: 1px;
+  background: var(--run);
+  pointer-events: none;
+}
+.itg-axis {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1;
+  pointer-events: none;
+}
+.itg-axis span {
+  position: absolute;
+  top: 2px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+.itg-axis span[data-today] {
+  color: var(--tx);
+  font-weight: 600;
+}
+/* Over the rows' track column: the first grid column is 56px wide, the axis 20px high. */
+.itg-links {
+  position: absolute;
+  top: 20px;
+  left: 56px;
+  width: calc(100% - 56px);
+  height: calc(100% - 20px);
+  overflow: visible;
+  pointer-events: none;
+}
+.itg-links path {
+  fill: none;
+  stroke: var(--e-str);
+  stroke-width: 1.5;
+}
+.itg-links path[data-met] {
+  stroke: var(--e-done);
+}
+.itg-rows {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+.itg-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  height: 64px;
+}
+.itg-slot {
+  align-self: center;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.itg-track {
+  position: relative;
+  min-width: 0;
+}
+/* The box spans the time the task took; a title longer than the box runs past its end. */
+.itg-bar {
+  --itg-c: var(--bd3);
+  position: absolute;
+  top: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 44px;
+  min-width: 4px;
+  padding: 0;
+  background: color-mix(in srgb, var(--itg-c) 12%, var(--sf));
+  border: var(--hair) solid color-mix(in srgb, var(--itg-c) 40%, var(--bd));
+  border-radius: 8px;
+  pointer-events: auto;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.itg-bar[data-state='merged'] {
+  --itg-c: var(--ok);
+}
+.itg-bar:is([data-state='claimed'], [data-state='running']) {
+  --itg-c: var(--run);
+}
+.itg-bar:is([data-state='gating'], [data-state='awaiting_merge']) {
+  --itg-c: var(--ready);
+}
+.itg-bar:is([data-state='waiting_approval'], [data-state='awaiting_acceptance']) {
+  --itg-c: var(--wait);
+}
+.itg-bar:is([data-state='blocked'], [data-state='failed']) {
+  --itg-c: var(--bad);
+}
+.itg-bar[data-state='needs_attention'] {
+  --itg-c: var(--idle);
+}
+.itg-bh {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  padding: 0 var(--sp-2);
+}
+.itg-rt {
+  display: inline-flex;
+  flex: none;
+}
+.itg-stg {
+  display: flex;
+  gap: 2px;
+  height: 4px;
+  margin: 0 var(--sp-2);
+}
+.itg-stg i {
+  flex: 1 1 0;
+  border-radius: 2px;
+  background: var(--e-pend);
+}
+.itg-stg [data-state='passed'] {
+  background: var(--ok);
+}
+.itg-stg [data-state='running'] {
+  background: var(--run);
+}
+.itg-stg [data-state='waiting'] {
+  background: var(--wait);
+}
+.itg-stg :is([data-state='failed'], [data-state='rejected']) {
+  background: var(--bad);
+}
+.itg-stg [data-state='skipped'] {
+  background: var(--idle);
+}
+.itg-bar[data-planned] {
+  border-style: dashed;
+  background: var(--sf);
+}
+.itg-bar[draggable='true'] {
+  cursor: grab;
+}
+.itg-bar[data-drag] {
+  opacity: 0.5;
+}
+.itg[data-dragging] .itg-bar {
+  pointer-events: none;
+}
+.itg-bar .itr-ct {
+  flex: 1 0 auto;
+  overflow: visible;
+  font-size: var(--fs-xs);
+}
+.itg-bar .itr-est {
+  height: 18px;
+}
+/* Covers the points while the bar is hovered or focused, so a short bar keeps its title. */
+.itg-bar .ib {
+  position: absolute;
+  right: var(--sp-2);
+  width: 20px;
+  height: 20px;
+  background: var(--sf2);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.itg-bar:is(:hover, :focus-within) .ib,
+.itg-bar .ib[data-popup-open] {
+  opacity: 1;
+}
+.itr-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.itr-dts {
+  display: flex;
+  gap: var(--sp-2);
+}

@@ -1,0 +1,76 @@
+/* The routing table under the default models: one 30px row per task kind. */
+.ps-sec-bd:has(> .rtt) {
+  padding: 0;
+}
+.rtt-r {
+  display: grid;
+  grid-template-columns: 92px 184px 184px 64px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: center;
+  height: var(--row);
+  padding: 0 12px;
+  border-top: var(--hair) solid var(--bd2);
+  font-size: var(--fs-sm);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.rtt-r:hover {
+  background: var(--sf2);
+}
+.rtt-r.rtt-hd {
+  height: var(--h-ctl);
+  border-top: 0;
+  background: var(--sf2);
+}
+.rtt-hd > span {
+  min-width: 0;
+}
+.rtt-cut {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rtt-m {
+  display: flex;
+  min-width: 0;
+}
+.rtt-mc {
+  height: 24px;
+  max-width: 100%;
+  border: 0;
+}
+.rtt-mc:disabled {
+  cursor: default;
+}
+.rtt-mc .mono {
+  font-size: var(--fs-xs);
+}
+svg.lucide.rtt-dn {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.rtt-n,
+.rtt-b {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rtt-b time {
+  flex: none;
+}
+
+/* A candidate in a slot's menu: its model, then its runs and success rate at the end. */
+.rtt-ci {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rtt-ci > .rtt-n {
+  flex: none;
+  margin-left: auto;
+}

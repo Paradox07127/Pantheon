@@ -1,0 +1,600 @@
+/* The settings dialog: its frame, navigation, page header, setting rows, search results and the flash of a found setting. */
+.ps-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 37;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  transition: opacity var(--dur-2) var(--ease-in);
+  -webkit-app-region: no-drag;
+}
+.ps-scrim:is([data-starting-style], [data-ending-style]) {
+  opacity: 0;
+}
+.ps-scrim[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+
+/* 24px of window stays clear on every side when the window is smaller than the frame. */
+.ps-frame {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 38;
+  width: min(1120px, calc(100vw - 48px));
+  height: min(840px, calc(100vh - 48px));
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  border: var(--hair) solid var(--bd3);
+  border-radius: var(--r-xl);
+  background: var(--sf);
+  color: var(--tx);
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  overflow: hidden;
+  outline: none;
+  transform: translate(-50%, -50%);
+  transition:
+    opacity var(--dur-3) var(--ease-in),
+    transform var(--dur-3) var(--ease-in);
+}
+.ps-frame:is([data-starting-style], [data-ending-style]) {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.98);
+}
+.ps-frame[data-ending-style] {
+  transition-duration: var(--dur-2);
+  transition-timing-function: var(--ease-out);
+}
+.ps-frame[hidden] {
+  display: none;
+}
+
+.ps-side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  overflow-y: auto;
+  background: var(--sf2);
+  border-right: var(--hair) solid var(--bd2);
+}
+.ps-find {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--ctl);
+  margin-bottom: 4px;
+  padding: 0 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--mu);
+  font-size: var(--fs-md);
+}
+.ps-find:focus-within {
+  border-color: var(--bd3);
+  outline: 3px solid var(--focus-ring);
+}
+.ps-find input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--tx);
+}
+.ps-find input::placeholder {
+  color: var(--mu);
+}
+.ps-side .ps-group {
+  gap: 0;
+}
+.ps-side h4 {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  margin: 0;
+  padding: 0 8px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--mu);
+  overflow-wrap: anywhere;
+}
+.ps-group + .ps-group h4 {
+  margin-top: 12px;
+}
+.ps-side .ps-page {
+  flex: none;
+  gap: 8px;
+  height: var(--ctl);
+  border-radius: var(--r-sm);
+}
+.ps-side .ps-page[aria-current='page'] {
+  background: var(--sel);
+}
+.ps-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--slot);
+  height: var(--slot);
+}
+.ps-cnt {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ps-page[data-dim] {
+  color: var(--mu);
+}
+
+.ps-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ps-hd {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--bar);
+  padding: 0 12px 0 24px;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.ps-hd h1 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.ps-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border: var(--hair) solid var(--bd2);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+  white-space: nowrap;
+}
+.ps-hd-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ps-main .ps-cg {
+  flex: 1;
+  padding: 16px 24px 24px;
+  background: none;
+}
+
+.ps-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.ps-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ps-pane[hidden] {
+  display: none;
+}
+
+/* A section is a caption over one frame; the frame's rows are split by hairlines. */
+.ps-cg .ps-sec {
+  gap: 4px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.ps-cg .ps-sec-hd {
+  align-items: center;
+  padding: 0 4px;
+}
+.ps-cg .ps-sec-hd h3 {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--mu);
+}
+.ps-grp {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.ps-cg .ps-sec-bd {
+  padding: 12px 16px;
+}
+.ps-cg .ps-sec-bd:has(> .ps-rows) {
+  padding: 0;
+}
+.ps-cg .ps-sec-ft {
+  padding: 8px 16px;
+}
+
+/* Name and hint on the left, the controls of every row in one column on the right. */
+.ps-rows > .ps-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 24px;
+  min-height: 52px;
+  padding: 8px 16px;
+}
+.ps-row-nm {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-weight: 500;
+}
+.ps-row-hint {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--mu);
+}
+
+/* Segmented choices, switches, menus and numbers take the board's control shapes. */
+.ps-cg .seg {
+  display: inline-flex;
+  border: var(--hair) solid var(--bd2);
+  border-radius: calc(var(--r-sm) + 2px);
+}
+.ps-cg .seg [role='radio'] {
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--mu);
+  font-weight: 500;
+}
+.ps-cg .seg [role='radio']:hover,
+.ps-cg .seg [data-checked] {
+  color: var(--tx);
+}
+.ps-cg .seg [data-checked] {
+  outline: var(--hair) solid var(--bd);
+}
+.ps-cg .ps-sw:checked {
+  background: var(--ink);
+  border-color: transparent;
+}
+.ps-cg .ps-sw::after {
+  top: 1.5px;
+  left: 1.5px;
+}
+.ps-cg .ps-sw:checked::after {
+  background: var(--on-ink);
+  border-color: transparent;
+}
+/* The editor page's pickers and its shared select take one width and weight. */
+.ps-cg .tk-select {
+  height: var(--ctl);
+  min-width: 160px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-md);
+  font-weight: 400;
+}
+.ps-cg .tk-editor .mn-sel {
+  min-width: 160px;
+}
+.ps-cg input[type='number'] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-res {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ps-res-n {
+  padding-inline: 4px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.ps-opt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 24px;
+  min-height: 52px;
+  padding: 8px 16px;
+  font-size: var(--fs-md);
+  color: var(--tx);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.ps-opt + .ps-opt {
+  border-top: var(--hair) solid var(--bd2);
+}
+.ps-opt > svg {
+  color: var(--mu);
+}
+.ps-opt:hover {
+  background: var(--st-hov);
+}
+.ps-opt[aria-selected='true'] {
+  background: var(--sel);
+}
+.ps-opt-nm {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ps-opt-nm > :first-child {
+  font-weight: 500;
+}
+.ps-path {
+  font-size: var(--fs-sm);
+  color: var(--mu);
+}
+
+.ps-end {
+  display: flex;
+  margin-top: 12px;
+}
+
+/* 'on' paints at once; 'off' fades back before the attribute goes. */
+[data-flash] {
+  border-radius: var(--r-sm);
+  transition: background-color var(--dur-4) var(--ease-out);
+}
+[data-flash='on'] {
+  background-color: color-mix(in srgb, var(--wait) 10%, transparent);
+  transition: none;
+}
+.ps-rows > .ps-row[data-flash] {
+  border-radius: 0;
+}
+
+/* The code font Appearance picks; the bundled one is the default --font-mono, a named one comes in on the body. */
+.pt[data-code-family='system'] {
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* A width or text size typed in px. */
+.ps-px {
+  width: 64px;
+  height: var(--ctl);
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: var(--hair) solid var(--bd);
+  background: var(--sf);
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-size: inherit;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ps-px[aria-invalid='true'] {
+  border-color: var(--bad);
+}
+.ps-px:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+/* A text size's slider before its px field. */
+.ps-range {
+  width: 160px;
+  accent-color: var(--ink);
+}
+/* A custom font's name after its choices. */
+.ps-font {
+  width: 160px;
+  height: var(--ctl);
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: var(--hair) solid var(--bd);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+}
+.ps-font:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+
+/* The notifications page: one row per event, one column of switches per way it arrives. */
+.ps-ntf {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-md);
+}
+.ps-ntf th,
+.ps-ntf td {
+  padding: 4px 0;
+  font-weight: 400;
+  text-align: center;
+}
+.ps-ntf :is(th, td) + :is(th, td) {
+  width: 96px;
+}
+.ps-ntf th[scope='row'] {
+  text-align: start;
+  color: var(--tx);
+}
+.ps-cg .ps-sec-bd:has(> .ps-ntf) {
+  padding: 0;
+}
+.ps-ntf :is(th, td):first-child {
+  padding-left: 16px;
+}
+.ps-ntf :is(th, td):last-child {
+  padding-right: 16px;
+}
+.ps-ntf thead th {
+  height: 32px;
+  background: var(--sf2);
+  font-size: var(--fs-sm);
+  color: var(--mu);
+}
+.ps-ntf thead th[scope='col']:first-child {
+  text-align: start;
+}
+.ps-ntf tbody tr {
+  height: 44px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.ps-ntf td > .ps-sw {
+  vertical-align: middle;
+}
+
+/* The sample diff under the Diff page's choices. */
+.ps-dpv {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  overflow: hidden;
+}
+
+/* The accent swatches; the default one shows the text colour, the theme's own ink. */
+.ps-acc {
+  display: inline-flex;
+  gap: 8px;
+}
+.ps-acc-sw {
+  width: 24px;
+  height: 24px;
+  border: var(--hair) solid var(--bd);
+  border-radius: 50%;
+}
+.ps-acc-sw[data-checked] {
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The theme cards: a small window in each theme's colours over its name; the pressed one is applied. */
+.ps-thm-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.ps-thc {
+  --th-0: var(--bg);
+  --th-1: var(--sf);
+  --th-a: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.ps-thc:hover {
+  border-color: var(--bd3);
+}
+.ps-thc[aria-pressed='true'] {
+  border-color: var(--tx);
+}
+.ps-thc[aria-pressed='true']:not(:focus-visible) {
+  outline: 1px solid var(--tx);
+}
+.ps-thc-mini {
+  display: grid;
+  grid-template-columns: 28% minmax(0, 1fr);
+  gap: 4px;
+  height: 96px;
+  padding: 4px;
+  border-radius: max(calc(var(--r-md) - 8px), 4px);
+  background: var(--th-0);
+  overflow: hidden;
+}
+.ps-thc-sd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+}
+.ps-thc-sd i,
+.ps-thc-ct i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+}
+.ps-thc-sd i {
+  background: color-mix(in srgb, var(--th-a) 30%, var(--th-0));
+}
+.ps-thc-ct {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--th-1);
+}
+.ps-thc-ct i {
+  background: color-mix(in srgb, var(--th-a) 60%, var(--th-1));
+}
+.ps-thc-ct i + i {
+  width: 70%;
+  background: color-mix(in srgb, var(--th-a) 35%, var(--th-1));
+}
+.ps-thc-ct b {
+  width: 32px;
+  height: 12px;
+  margin-top: auto;
+  border-radius: 3px;
+  background: var(--th-a);
+}
+.ps-thc-nm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.ps-thc-nm > :is(b, .mu) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ps-thc-nm > b {
+  font-weight: 500;
+}
+.ps-thc-sw {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.ps-thc-sw i {
+  width: 12px;
+  height: 12px;
+  border: var(--hair) solid var(--bd);
+  border-radius: 3px;
+  background: var(--th-0);
+}
+.ps-thc-sw i + i {
+  background: var(--th-1);
+}
+.ps-thc-sw i + i + i {
+  background: var(--th-a);
+}

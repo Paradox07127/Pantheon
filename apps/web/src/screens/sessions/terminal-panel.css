@@ -1,0 +1,62 @@
+/* The terminal: a row under the conversation and the panels, across both. */
+.ss.ss-tm {
+  --ss-th: 240px;
+  grid-template-rows: minmax(0, 1fr) var(--ss-th);
+}
+.ss-term {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sf);
+  border-top: var(--hair) solid var(--bd);
+}
+.ss-term-err {
+  flex: none;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+.ss-term-exit {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ss-term-exit > .btn {
+  margin-left: auto;
+}
+.ss-term-view {
+  flex: 1;
+  min-height: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--term);
+  user-select: text;
+}
+/* The splitter on the terminal's top edge drags its height. */
+.split[data-edge='top'] {
+  top: -3px;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 6px;
+  cursor: row-resize;
+}
+.split[data-edge='top']::before {
+  top: 3px;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 1px;
+}

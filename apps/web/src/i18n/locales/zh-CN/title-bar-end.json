@@ -1,0 +1,3 @@
+{
+  "components.titleBarEnd.needs": "{count, plural, other {# 件事等你}}"
+}

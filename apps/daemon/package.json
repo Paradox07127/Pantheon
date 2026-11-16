@@ -1,0 +1,25 @@
+{
+  "name": "@pantheon/daemon",
+  "version": "0.1.0-dev.20261116",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@pantheon/control": "workspace:*",
+    "@pantheon/protocol": "workspace:*",
+    "@pantheon/store": "workspace:*",
+    "@pantheon/adapters": "workspace:*",
+    "@pantheon/domain": "workspace:*",
+    "hono": "4.13.13",
+    "@hono/node-server": "2.1.5",
+    "ws": "8.22.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "importable-sessions-skip-nested-repository",
+  "source_commit": "1599aa82fe8778cc098a651c18faddc6b109eaa9",
+  "base_commit": "0882de0b92605faedcf42608fce6710004d68343",
+  "goal": "`importableSessions` lists a project's native runtime sessions not yet in Pantheon. Today it also lists sessions whose working directory is inside a separate git repository nested under a project root (e.g. `<root>/inner` with its own `.git`). Leave those out: keep a session only when the git top-level of its `cwd` is one of the project roots, or when its `cwd` is in no git repository.",
+  "scope": ["packages/control/src/import-candidates.ts"],
+  "acceptance": ["pnpm build", "pnpm exec vitest run tests/control/import-candidates.test.ts"],
+  "hidden_files": ["tests/control/import-candidates.test.ts"],
+  "hidden_check": [
+    "pnpm install --frozen-lockfile",
+    "pnpm build",
+    "pnpm exec vitest run tests/control/import-candidates.test.ts"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "trace.stepReplay.kind.read": "读取",
+  "trace.stepReplay.kind.search": "搜索",
+  "trace.stepReplay.kind.edit": "编辑",
+  "trace.stepReplay.kind.run": "运行",
+  "trace.stepReplay.tests.passed": "通过",
+  "trace.stepReplay.tests.failed": "未通过",
+  "trace.stepReplay.tests.none": "还没跑",
+  "trace.stepReplay.steps": "步骤",
+  "trace.stepReplay.retry": "重试",
+  "trace.stepReplay.empty": "没有记录到工具调用",
+  "trace.stepReplay.diff": "这一步改了什么",
+  "trace.stepReplay.position": "第 {n} 步，共 {total} 步",
+  "trace.stepReplay.noChanges": "这一步没有改文件",
+  "trace.stepReplay.moment": "当时的状态",
+  "trace.stepReplay.momentTitle": "这一刻",
+  "trace.stepReplay.context": "上下文",
+  "trace.stepReplay.tokens": "已用 tokens",
+  "trace.stepReplay.files": "改过的文件",
+  "trace.stepReplay.tests": "测试",
+  "trace.stepReplay.previous": "上一步",
+  "trace.stepReplay.slider": "回放位置"
+}

@@ -1,0 +1,12 @@
+{
+  "setup.title": "首次设置",
+  "setup.runtimes": "运行时",
+  "setup.openWith": "打开方式",
+  "setup.recheck": "重新检测",
+  "setup.checking": "检测中",
+  "setup.notFound": "没找到 {command}",
+  "setup.copyCommand": "复制 {command}",
+  "setup.copy": "复制",
+  "setup.installed": "已安装",
+  "setup.seconds": "{count, plural, other {# 秒}}"
+}

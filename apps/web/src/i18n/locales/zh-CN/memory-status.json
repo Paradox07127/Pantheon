@@ -1,0 +1,21 @@
+{
+  "memory.status.delivery.delivered": "已送达",
+  "memory.status.delivery.waiting": "等下一轮",
+  "memory.status.delivery.none": "这个会话没有记忆工具",
+  "memory.status.delivery.label": "送达情况：{delivered, plural, other {# 个会话已送达}}，{waiting} 个等下一轮，{none} 个没有记忆工具",
+  "memory.status.delivery.bar": "送达 {delivered}，等下一轮 {waiting}，没有记忆工具 {none}",
+  "memory.status.delivery.summary": "{delivered, plural, other {# 个会话已送达}}，{waiting} 个等下一轮",
+  "memory.status.delivery.title": "送达情况",
+  "memory.status.document.ready": "进度文档已更新",
+  "memory.status.document.working": "进度文档生成中",
+  "memory.status.document.attempt": "第 {attempt} 次，已用 {seconds, plural, other {# 秒}}",
+  "memory.status.document.failed": "进度文档生成失败，试了 {attempts, plural, other {# 次}}",
+  "memory.status.retry": "重试",
+  "memory.status.indexPending": "{count, plural, other {# 条还没进索引}}",
+  "memory.status.move": "移动",
+  "memory.status.loading.label": "正在读取记忆",
+  "memory.status.loading.time": "读取中，{seconds} 秒",
+  "memory.status.failed": "读不到记忆目录",
+  "memory.status.empty": "还没有记忆，agent 提出的会先进「待确认」。",
+  "memory.status.empty.create": "记一条"
+}

@@ -1,0 +1,155 @@
+/* The popover window is as tall as .tp, up to the most the desktop app allows; past that it scrolls. */
+.tp-win {
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--sf);
+}
+.tp {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-1);
+}
+.tp-g {
+  display: flex;
+  flex-direction: column;
+}
+.tp-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  margin: 0;
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+}
+.tp-n {
+  font-variant-numeric: tabular-nums;
+}
+.tp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--ctl);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.tp-row:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.tp-ic {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 16px;
+  color: var(--mu);
+}
+.tp-ic svg {
+  width: 14px;
+  height: 14px;
+}
+.tp-nm {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-ct {
+  flex: none;
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+.tp-ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-2);
+}
+.tp-ah {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.tp-ah .tp-nm {
+  color: var(--tx);
+  font-weight: 500;
+}
+.tp-cmd {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 1px var(--sp-1);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+.tp-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.tp-open {
+  margin-left: auto;
+}
+.tp-err {
+  margin: 0;
+  padding: 0 var(--sp-2);
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  user-select: text;
+}
+.tp-ask .tp-err {
+  padding: 0;
+}
+.tp-quota {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.tp-qh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.tp-sep {
+  flex: none;
+  height: var(--hair);
+  margin: var(--sp-1) 0;
+  border: 0;
+  background: var(--bd2);
+}
+.tp-none {
+  margin: 0;
+  padding: var(--sp-4) var(--sp-2);
+  color: var(--mu);
+  text-align: center;
+  text-wrap: balance;
+}

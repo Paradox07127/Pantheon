@@ -1,0 +1,119 @@
+/* Menus and select lists share one row: icon slot, label, then key caps, tick or arrow at the end. */
+.mn {
+  padding: var(--sp-1);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--tx2);
+  outline: none;
+}
+.mn-menu {
+  width: 220px;
+}
+.mn-list {
+  min-width: var(--anchor-width);
+}
+.mn-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--ctl);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  cursor: default;
+  outline: none;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.mn-row:is([data-highlighted], [data-popup-open]) {
+  background: var(--sel);
+  color: var(--tx);
+}
+.mn-row[data-disabled] {
+  opacity: 0.45;
+}
+.mn-row.mn-bad {
+  color: var(--bad);
+}
+.mn-ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--icon);
+  height: var(--icon);
+}
+.mn-ic svg,
+.mn-ck svg {
+  width: var(--icon);
+  height: var(--icon);
+}
+.mn-tx {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mn-ct {
+  flex: none;
+  display: flex;
+  gap: var(--sp-1);
+}
+.mn-ck {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.mn-sub {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--mu);
+}
+.mn-sep {
+  height: var(--hair);
+  margin: var(--sp-1) 0;
+  border: 0;
+  background: var(--bd2);
+}
+.mn-gh {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+
+/* The select control: a 28px field showing the chosen label and a chevron. */
+.mn-sel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 120px;
+  height: var(--ctl);
+  padding: 0 var(--sp-2);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: default;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.mn-sel:is(:hover, [data-popup-open]) {
+  border-color: var(--bd3);
+}
+.mn-sel-ic {
+  display: grid;
+  place-items: center;
+  color: var(--mu);
+}
+.mn-sel-ic svg {
+  width: var(--icon);
+  height: var(--icon);
+}

@@ -1,0 +1,17 @@
+{
+  "settings.runtimes.signedIn": "已登录",
+  "settings.runtimes.signedOut": "未登录",
+  "settings.runtimes.notSubscription": "不是订阅账号登录",
+  "settings.runtimes.noBinary": "没有找到可执行文件",
+  "settings.runtimes.checked": "上次检查 {age}",
+  "settings.runtimes.account": "账号",
+  "settings.runtimes.binary": "可执行文件",
+  "settings.runtimes.argsNone": "无",
+  "settings.runtimes.seeUsage": "看用量",
+  "settings.runtimes.keyMissing": "未设置",
+  "settings.runtimes.connected": "已连接",
+  "settings.runtimes.disconnected": "未连接",
+  "settings.runtimes.disconnectedBecause": "未连接：{reason}",
+  "settings.runtimes.showEmail": "显示邮箱",
+  "settings.runtimes.hideEmail": "隐藏 {email}"
+}

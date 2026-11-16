@@ -1,0 +1,134 @@
+/* References the next message carries, as chips above the composer's text */
+
+.cp-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.cp-ref {
+  min-width: 0;
+  max-width: 100%;
+}
+.cp-ref > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.cp-rft {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cp-rx {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mu);
+}
+.cp-rx:hover {
+  color: var(--tx);
+}
+.cp-rx svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* The line count on a tile of pasted text */
+
+.cp-fln {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The pull request and issue submenus: loading, none open, and why they could not be read */
+
+.cp-ghs {
+  flex: 1;
+}
+.cp-ghn {
+  padding: 4px 8px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.cp-ghe {
+  padding: 4px 8px;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+}
+
+/* The windows of other apps a snapshot can capture */
+
+.cp-wsp {
+  width: 456px;
+  max-height: 360px;
+  padding: 8px;
+  overflow-y: auto;
+}
+.cp-wsg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.cp-wsk {
+  aspect-ratio: 8 / 5;
+  border-radius: var(--r-sm);
+}
+.cp-wsw {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.cp-wsw:hover {
+  background: var(--st-hov);
+}
+.cp-wsw:active {
+  background: var(--st-on);
+}
+.cp-wsi {
+  width: 100%;
+  aspect-ratio: 8 / 5;
+  object-fit: contain;
+  border: var(--hair) solid var(--bd2);
+  border-radius: 5px;
+  background: var(--sf2);
+  -webkit-user-drag: none;
+}
+.cp-wsl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-wsa {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px;
+}
+.cp-wsn {
+  margin: 0;
+  padding: 4px;
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  text-wrap: balance;
+}

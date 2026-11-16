@@ -1,0 +1,83 @@
+/* A window of one session: one surface, its bar under the window buttons, the thread at 720px. */
+
+.sw {
+  --read-w: 720px;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sf);
+}
+.sw-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--bar);
+  min-width: 0;
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.sw-bar button {
+  -webkit-app-region: no-drag;
+}
+/* Clears the window buttons, as the main window's top bar does. */
+.mac-titlebar .sw-bar {
+  padding-left: 82px;
+}
+.overlay-titlebar .sw-bar {
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px);
+}
+.sw-chip {
+  flex: none;
+}
+.sw-title {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sw-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.sw-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.sw-end .ib {
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}
+.sw-end .ib[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.sw-err {
+  min-width: 0;
+  margin-right: var(--sp-2);
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sw-body {
+  flex: 1;
+  min-height: 0;
+}

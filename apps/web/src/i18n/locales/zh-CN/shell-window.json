@@ -1,0 +1,11 @@
+{
+  "shell.sessionWindow.keepOnTop": "窗口置顶",
+  "shell.sessionWindow.showInMain": "在主窗口显示",
+  "shell.miniWindow.show": "显示迷你窗",
+  "shell.miniWindow.hide": "隐藏迷你窗",
+  "shell.miniWindow.expand": "在主窗口打开",
+  "shell.miniWindow.waiting": "{count, plural, other {# 个等你}}",
+  "shell.miniWindow.allow": "允许",
+  "shell.miniWindow.deny": "拒绝",
+  "shell.miniWindow.retry": "重试"
+}

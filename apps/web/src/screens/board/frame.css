@@ -1,0 +1,391 @@
+/* Publish bar above the headline bar, and the receipt of the requirement it sent last. */
+.pb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pb-f {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto 0fr 38px;
+  grid-template-areas:
+    'strip strip strip strip'
+    'text text text text'
+    'att line to send';
+  align-items: center;
+  column-gap: var(--sp-2);
+  min-width: 0;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+}
+/* The input row opens above the controls; the input clips while it grows. */
+.pb-grow {
+  transition:
+    grid-template-rows var(--dur-2) var(--ease-in),
+    border-color var(--dur-2) var(--ease-std);
+}
+.pb-f:is(:focus-within, [data-open]) {
+  grid-template-rows: auto 1fr 38px;
+}
+.pb-f:focus-within {
+  border-color: var(--ink);
+}
+.pb-f > .ss-q {
+  grid-area: strip;
+}
+.pb-in {
+  grid-area: line;
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+}
+.pb-f:is(:focus-within, [data-open]) > .pb-in {
+  grid-area: text;
+}
+.pb-f textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--lh-md);
+  min-height: var(--lh-md);
+  padding: 0 var(--sp-1);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  resize: none;
+}
+.pb-f:is(:focus-within, [data-open]) textarea {
+  height: auto;
+  min-height: calc(2 * var(--lh-md) + var(--sp-3));
+  max-height: calc(8 * var(--lh-md) + var(--sp-3));
+  field-sizing: content;
+  padding: var(--sp-3) var(--sp-2) 0 var(--sp-1);
+}
+.pb-f textarea:disabled {
+  color: var(--mu);
+}
+.pb-bar {
+  display: contents;
+}
+.pb-bar > .ib {
+  grid-area: att;
+}
+.pb-bar > :last-child {
+  grid-area: send;
+}
+.pb-to {
+  grid-area: to;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+}
+.pb-to > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-rc-in {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  transition:
+    opacity var(--dur-4) var(--ease-in),
+    transform var(--dur-4) var(--ease-in),
+    filter var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .pb-rc-in {
+    opacity: 0;
+    transform: translateY(-6px);
+    filter: blur(4px);
+  }
+}
+.pb-rc-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pb-rc-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.pb-rc-at {
+  flex: none;
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.pb-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: center;
+  max-width: 360px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pb-steps li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  transition: color var(--dur-3) var(--ease-std);
+}
+.pb-steps li:is([data-st='done'], [data-st='bad']) {
+  color: var(--tx2);
+}
+.pb-steps li[data-st='cur'] {
+  color: var(--tx);
+  font-weight: 600;
+}
+.pb-sd {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--e-pend);
+  transition: background-color var(--dur-3) var(--ease-std);
+}
+[data-st='done'] > .pb-sd {
+  background: var(--ok);
+}
+[data-st='cur'] > .pb-sd {
+  background: var(--run);
+}
+[data-st='bad'] > .pb-sd {
+  background: var(--bad);
+}
+.pb-sl {
+  position: relative;
+  flex: 1;
+  height: 2px;
+  margin-right: var(--sp-2);
+  overflow: hidden;
+  background: var(--bd);
+  border-radius: 1px;
+}
+.pb-sl::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--ok);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-4) var(--ease-in);
+}
+[data-st='done'] > .pb-sl::after {
+  transform: scaleX(1);
+}
+.pb-tasks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pb-tasks li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  background: var(--sf2);
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+@supports (corner-shape: superellipse(1.25)) {
+  .pt :is(.pb-sd, .pb-sl),
+  .pt .pb-sl::after {
+    corner-shape: round;
+  }
+}
+.pt[data-motion='reduced'] .pb-rc-in {
+  transition: opacity var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .pt[data-motion='reduced'] .pb-rc-in {
+    transform: none;
+    filter: none;
+  }
+}
+.pt[data-motion='reduced'] .pb-sl::after {
+  transition: background-color var(--dur-3) var(--ease-std);
+}
+
+/* Lead states in the headline bar. */
+.bf-leads {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.bf-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-ctl);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.bf-lead:hover {
+  background: var(--sf2);
+  color: var(--tx);
+}
+.bf-inbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.bf-inbox svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+.bf-inbox b {
+  font-weight: 600;
+  color: var(--tx);
+}
+
+/* A strip under the headline bar folds open and shut; the frame's gap folds with it. */
+.bf-fold {
+  display: contents;
+}
+.bf-foldp {
+  height: var(--collapsible-panel-height);
+  margin-top: -12px;
+  overflow: clip;
+  transition:
+    height var(--dur-2) var(--ease-in),
+    opacity var(--dur-2) var(--ease-in);
+}
+.bf-foldp:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+  opacity: 0;
+}
+.bf-foldp[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.bf-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 4px 8px 4px 16px;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-top-color: var(--bd-top);
+  border-radius: var(--r-lg);
+}
+
+/* Needs-you strip */
+.bf-needs {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bf-need {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 40px;
+  min-width: 0;
+}
+.bf-need + .bf-need {
+  border-top: var(--hair) solid var(--bd2);
+}
+.bf-more {
+  align-self: flex-start;
+  margin: 2px 0 6px;
+}
+
+/* Since the last visit, on the milestone and lead strip: how long away, then a chip per kind of change. */
+.bf-since {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  min-width: 0;
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .bf-since {
+    opacity: 0;
+  }
+}
+.bf-away {
+  margin-right: var(--sp-1);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bf-sc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bf-sc::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.bf-sc[data-kind='failed']::before {
+  background: var(--bad);
+}
+.bf-sc[data-kind='questions']::before {
+  background: var(--wait);
+}
+.bf-read {
+  margin-left: var(--sp-1);
+}

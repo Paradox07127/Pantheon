@@ -1,0 +1,11 @@
+{
+  "recover.crash.title": "界面出错了，重新加载就能接着用",
+  "recover.crash.reload": "重新加载",
+  "recover.crash.copy": "复制错误信息",
+  "recover.crash.drafts": "没发出的草稿已经保留，重新加载后还在原来的输入框里",
+  "recover.daemon.title": "连不上 daemon，会话和改动都还在这台电脑上",
+  "recover.daemon.retry": "重试",
+  "recover.daemon.waiting": "正在连接 daemon，已等 {seconds, plural, other {# 秒}}",
+  "recover.daemon.starting": "正在启动 daemon，已等 {seconds, plural, other {# 秒}}",
+  "recover.crash.renderer": "界面进程 10 秒内崩溃了两次：{reason}（退出码 {code}）"
+}

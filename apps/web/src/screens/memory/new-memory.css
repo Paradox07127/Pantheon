@@ -1,0 +1,160 @@
+/* The dialog that records a memory or rewrites one. */
+.mnw-dlg {
+  width: min(560px, calc(100vw - 96px));
+  overflow: hidden;
+}
+.mnw {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.mnw-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2) var(--sp-4);
+}
+.mnw-hd .tb-seg [role='radio'] {
+  gap: 6px;
+}
+.mnw-hd .tb-seg svg.lucide {
+  width: 12px;
+  height: 12px;
+}
+.mnw-hd > .mnw-x {
+  margin-left: auto;
+}
+.ib.mnw-x {
+  width: 22px;
+  height: 22px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+}
+.mnw-x svg.lucide,
+.mnw .btn.sm svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+.mnw-bd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-3);
+  min-height: 0;
+  overflow-y: auto;
+}
+.mnw-din {
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--tx);
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+}
+.mnw-din::placeholder {
+  color: var(--faint);
+}
+.mnw-din[aria-invalid='true']::placeholder {
+  color: var(--bad);
+}
+.mnw-title {
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 500;
+}
+.mnw-sum {
+  color: var(--tx2);
+}
+.mnw-text {
+  resize: none;
+  line-height: var(--lh-sm);
+}
+.mnw-bd .field:has([aria-invalid='true']) {
+  border-color: var(--bad);
+}
+.mnw-rows {
+  display: flex;
+  flex-direction: column;
+}
+.mnw-srow {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.mnw-srow:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.mnw-srow > svg.lucide:first-child {
+  color: var(--mu);
+}
+.mnw-cut {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.mnw-entry {
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--tx);
+  padding: 0;
+  min-width: 0;
+  font: inherit;
+  user-select: text;
+}
+.mnw-tags .mnw-entry {
+  width: 120px;
+  height: 22px;
+}
+.mnw-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.mnw-chip {
+  font: inherit;
+  font-size: var(--fs-xs);
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.mnw-chip:hover {
+  border-color: var(--bd3);
+}
+.mnw-exp {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1);
+}
+.mnw-ft {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+}
+.mnw-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.mnw-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}

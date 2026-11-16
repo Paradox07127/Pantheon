@@ -1,0 +1,6 @@
+{
+  "settings.connections.cloudflare": "Cloudflare",
+  "settings.connections.cloudflareMissing": "未安装 wrangler",
+  "settings.connections.huggingface": "Hugging Face",
+  "settings.connections.huggingfaceMissing": "未安装 hf"
+}

@@ -1,0 +1,243 @@
+import { createElement } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WorkbenchSession } from '@pantheon/protocol';
+import type { NeedsYouItem } from '@/data/needs-you';
+import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
+
+const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
+vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+vi.mock('@/data/board', () => ({
+  useBoard: Object.assign((selector: any) => selector(mock.board), {
+    getState: () => mock.board,
+  }),
+}));
+vi.mock('@/store', () => ({
+  useShell: Object.assign((selector: any) => selector(mock.shell), {
+    getState: () => mock.shell,
+  }),
+  resolveTheme: () => 'light',
+}));
+vi.mock('@/data/commands', () => ({
+  runCommand: vi.fn(async () => ({ ok: true, value: null })),
+}));
+import { NeedsPopover, SessionsPopover } from '@/components/NeedsPopover';
+import { GateMark, StateGlyph } from '@/components/SessionStateIcon';
+import { runCommand } from '@/data/commands';
+import { reasonText } from '@/data/needs-you';
+import { zh } from './i18n-setup.js';
+
+const NOW = Date.now();
+const MINUTE = 60_000;
+
+const item = (over: Partial<NeedsYouItem>): NeedsYouItem => ({
+  source: { table: 'approvals', id: 'approval-1', revision: 3 },
+  kind: 'permission',
+  project_id: 'alpha',
+  status: 'pending',
+  created_at: NOW - 5 * MINUTE,
+  reason: 'permission_requested',
+  actions: [{ command: 'approval.respond', allowed: true }],
+  ...over,
+});
+
+const request = item({ session_id: 'session-login' });
+const failed = item({
+  source: { table: 'sessions', id: 'session-gone', revision: 1 },
+  kind: 'session.failed',
+  project_id: 'beta',
+  created_at: NOW - 30 * MINUTE,
+  reason: 'session_failed',
+  actions: [],
+});
+const milestone = item({
+  source: { table: 'milestones', id: 'first-release', revision: 1 },
+  kind: 'milestone.ready_for_acceptance',
+  created_at: NOW - 40 * MINUTE,
+  reason: 'milestone_ready_for_acceptance',
+  actions: [],
+});
+
+const trigger = createElement('button', { type: 'button' }, 'count');
+const root = (tree: unknown) => find(tree as never, (n) => !!n.props.onOpenChange);
+const groups = (tree: unknown) => nodes(tree as never).filter((n) => n.props.role === 'group');
+const button = (tree: unknown, label: string) =>
+  find(tree as never, (n) => n.type === 'button' && text(n).startsWith(label));
+
+beforeEach(() => {
+  mock.board = {
+    board: {
+      projects: [
+        { id: 'alpha', name: 'Alpha' },
+        { id: 'beta', name: 'Beta' },
+      ],
+      sessions: [{ id: 'session-login', project_id: 'alpha', title: 'Fix login' }],
+      session_turns: [],
+    },
+    events: [],
+    resync: 0,
+  };
+  mock.shell = { openProjectSession: vi.fn(), openProject: vi.fn() };
+  vi.mocked(runCommand).mockClear();
+});
+afterEach(() => {
+  unmountAll();
+  vi.unstubAllGlobals();
+});
+
+describe('needs-you list', () => {
+  const open = () => {
+    const h = mount(() => NeedsPopover({ items: [request, failed, milestone], trigger }));
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    return h;
+  };
+
+  it('opens from the trigger it is given', () => {
+    const h = mount(() => NeedsPopover({ items: [request], trigger }));
+    expect(find(h.value, (n) => n.props.render === trigger)).toBeTruthy();
+    expect(root(h.value).props.open).toBe(false);
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    expect(root(h.value).props.open).toBe(true);
+  });
+
+  it('groups the items by project, the project and the item that waited longest first', () => {
+    const h = open();
+    expect(groups(h.value).map((g) => g.props['aria-label'])).toEqual(['Alpha', 'Beta']);
+    const alpha = text(groups(h.value)[0]);
+    expect(alpha.startsWith('Alpha2')).toBe(true);
+    expect(alpha.indexOf(reasonText('milestone_ready_for_acceptance'))).toBeLessThan(
+      alpha.indexOf('Fix login'),
+    );
+    expect(text(groups(h.value)[1])).toContain(reasonText('session_failed'));
+  });
+
+  it.each([
+    ['the session of a request', 'Fix login', ['openProjectSession', 'alpha', 'session-login']],
+    [
+      'the session of a session item',
+      reasonText('session_failed'),
+      ['openProjectSession', 'beta', 'session-gone'],
+    ],
+    [
+      'the project of an item without a session',
+      reasonText('milestone_ready_for_acceptance'),
+      ['openProject', 'alpha'],
+    ],
+  ])('opens %s from its row and closes', (_name, title, [method, ...args]) => {
+    const h = open();
+    button(h.value, title).props.onClick();
+    expect(mock.shell[method!]).toHaveBeenCalledWith(...args);
+    h.render();
+    expect(root(h.value).props.open).toBe(false);
+  });
+
+  it('answers a permission request from its row and offers no answer elsewhere', async () => {
+    const h = open();
+    const allows = nodes(h.value).filter(
+      (n) => n.type === 'button' && text(n) === zh('projects.needs.allow'),
+    );
+    expect(allows).toHaveLength(1);
+    expect(button(h.value, zh('projects.needs.deny'))).toBeTruthy();
+    await allows[0]!.props.onClick();
+    expect(runCommand).toHaveBeenCalledWith(
+      'approval.respond',
+      { approval_id: 'approval-1', decision: 'approve' },
+      3,
+    );
+  });
+
+  it.each([
+    ['ArrowDown', 1, 2],
+    ['j', 1, 2],
+    ['ArrowUp', 1, 0],
+    ['k', 1, 0],
+  ])('moves the focus to the next row on %s', (key, from, to) => {
+    const h = open();
+    const opens = [0, 1, 2].map(() => ({ focus: vi.fn(), parentElement: { contains: vi.fn() } }));
+    opens[from]!.parentElement.contains.mockReturnValue(true);
+    const e = {
+      key,
+      target: {},
+      currentTarget: { querySelectorAll: () => opens },
+      preventDefault: vi.fn(),
+    };
+    find(h.value, (n) => !!n.props.onKeyDown).props.onKeyDown(e);
+    expect(e.preventDefault).toHaveBeenCalled();
+    expect(opens[to]!.focus).toHaveBeenCalled();
+  });
+});
+
+describe('running and ready lists', () => {
+  const session = (over: Partial<WorkbenchSession>) =>
+    ({
+      id: 'session',
+      title: 'Session',
+      runtime: 'claude',
+      state: 'idle',
+      reconciling: false,
+      changes: null,
+      last_activity_at: new Date(NOW - 10 * MINUTE).toISOString(),
+      ...over,
+    }) as WorkbenchSession;
+
+  let query: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    query = vi.fn(async () => ({
+      ok: true,
+      value: [
+        session({ id: 'run', title: 'Run tests', state: 'running' }),
+        session({ id: 'queued', title: 'Wait in line', last_turn: { id: 't', state: 'queued' } }),
+        session({ id: 'rest', title: 'Resting' }),
+        session({
+          id: 'ready',
+          title: 'Ship it',
+          state: 'ready',
+          changes: { files: 2, additions: 12, deletions: 3 },
+          gate: { state: 'passed', passed: 4, failed: 0, running: 0 },
+        }),
+      ],
+    }));
+    vi.stubGlobal('window', {
+      addEventListener() {},
+      removeEventListener() {},
+      pantheon: { query },
+    });
+  });
+
+  const open = async (show: 'running' | 'ready') => {
+    const h = mount(() => SessionsPopover({ show, projectIds: ['alpha'], trigger }));
+    await h.flush();
+    expect(query).not.toHaveBeenCalled();
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    await h.flush();
+    expect(query).toHaveBeenCalledWith('session.list', { project_id: 'alpha' });
+    return h;
+  };
+
+  it('lists the running and the queued sessions, the queued one with a hollow state', async () => {
+    const h = await open('running');
+    const listed = text(groups(h.value)[0]);
+    expect(listed).toContain('Run tests');
+    expect(listed).toContain('Wait in line');
+    expect(listed).not.toContain('Resting');
+    expect(listed).not.toContain('Ship it');
+    expect(
+      nodes(h.value)
+        .filter((n) => n.type === StateGlyph)
+        .map((n) => n.props.name),
+    ).toEqual(['idle']);
+  });
+
+  it('lists the ready sessions with their diff and gate, and reviews one', async () => {
+    const h = await open('ready');
+    const listed = text(groups(h.value)[0]);
+    expect(listed).toContain('Ship it');
+    expect(listed).toContain('+12 −3');
+    expect(listed).not.toContain('Run tests');
+    expect(find(h.value, (n) => n.type === GateMark).props.gate.state).toBe('passed');
+    button(h.value, zh('projects.ready.review')).props.onClick();
+    expect(mock.shell.openProjectSession).toHaveBeenCalledWith('alpha', 'ready');
+  });
+});

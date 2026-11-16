@@ -1,0 +1,20 @@
+{
+  "sessions.voice.start": "语音输入",
+  "sessions.voice.level": "麦克风音量，最新的在右",
+  "sessions.voice.silent": "没有听到声音",
+  "sessions.voice.cancelRecording": "取消录音",
+  "sessions.voice.finish": "完成录音",
+  "sessions.voice.transcribing": "转写中",
+  "sessions.voice.cancelTranscribing": "取消转写",
+  "sessions.voice.microphoneDenied": "没有麦克风权限，要在系统设置里打开",
+  "sessions.voice.speechDenied": "没有语音识别权限，要在系统设置里打开",
+  "sessions.voice.close": "关闭语音输入",
+  "sessions.voice.openSettings": "打开系统设置",
+  "sessions.voice.failed": "转写失败，录音还在",
+  "sessions.voice.startFailed": "语音输入没能开始",
+  "sessions.voice.discard": "丢掉这段录音",
+  "sessions.voice.retry": "重试",
+  "sessions.voice.preparing": "正在准备识别模型",
+  "sessions.voice.cancelPreparing": "取消语音输入",
+  "sessions.voice.unavailable": "这台电脑上用不了语音识别"
+}

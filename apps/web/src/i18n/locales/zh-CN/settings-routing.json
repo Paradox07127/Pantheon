@@ -1,0 +1,6 @@
+{
+  "settings.routing.title": "路由表",
+  "settings.routing.firstOf": "{kind} 的首选",
+  "settings.routing.alternateOf": "{kind} 的备选",
+  "settings.routing.auto": "按记录自动选"
+}

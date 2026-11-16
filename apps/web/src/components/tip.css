@@ -1,0 +1,32 @@
+.tooltip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  box-sizing: border-box;
+  min-height: 24px;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre;
+  pointer-events: none;
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    transform var(--dur-2) var(--ease-in);
+}
+.tooltip:is([data-starting-style], [data-ending-style]) {
+  opacity: 0;
+  transform: scale(0.97);
+}
+.tooltip[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.tooltip .kbd {
+  border-color: color-mix(in srgb, var(--on-ink) 30%, transparent);
+  color: var(--on-ink);
+  background: none;
+}

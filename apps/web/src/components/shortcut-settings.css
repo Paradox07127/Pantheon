@@ -1,0 +1,89 @@
+.kset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.kset-srch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.kset-srch .field {
+  flex: 1 1 0;
+}
+.kset-srch .ib[aria-pressed='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.kset-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.kset-sec .cap {
+  padding: 0 4px;
+}
+.kset-grp {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+/* One row per entry: name, keycap. */
+.kset-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--sp-2);
+  align-items: center;
+  min-height: var(--row);
+  padding: 0 8px 0 16px;
+  border-top: var(--hair) solid var(--bd2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.kset-row:first-child {
+  border-top: 0;
+}
+.kset-row:hover {
+  background: var(--sf2);
+}
+.kset-row[data-recording] {
+  background: var(--sel);
+}
+.kset-kc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: none;
+  font: inherit;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.kset-kc:hover {
+  background: var(--sel);
+}
+.kset-kc:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+.kset-kc[aria-pressed='true'] .kbd {
+  color: var(--tx);
+  border-color: var(--bd3);
+}
+/* A keycap that cannot be recorded keeps the recordable caps' inset, so the column ends on one edge. */
+.kset-fix {
+  padding: 0 4px;
+}
+.kset-none {
+  border-style: dashed;
+  background: none;
+}
+.kset-err {
+  grid-column: 1 / -1;
+  padding: 0 0 8px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--bad);
+}

@@ -1,0 +1,13 @@
+{
+  "board.drawer.plan.phase": "阶段 {n} {title}",
+  "board.drawer.plan.none": "不在里程碑里",
+  "board.drawer.plan.count": "{done} / {total}",
+  "board.drawer.plan.move": "移动 {title}",
+  "board.drawer.acceptance": "验收",
+  "board.drawer.approve": "去审批",
+  "board.drawer.redo.open": "换人重做",
+  "board.drawer.redo.menu": "换到哪个后端重做",
+  "board.drawer.tell.send": "主会话会把这条当作下一条消息",
+  "board.drawer.tell.steer": "主会话会在正在跑的这一轮里读到",
+  "board.drawer.answer": "回答问题"
+}

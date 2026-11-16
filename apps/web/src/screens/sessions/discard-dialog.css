@@ -1,0 +1,14 @@
+.pj-rm-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) var(--sp-5) var(--sp-3);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  font-size: var(--fs-xs);
+}
+.pj-rm-files {
+  margin-left: auto;
+  color: var(--mu);
+}

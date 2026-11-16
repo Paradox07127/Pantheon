@@ -1,0 +1,16 @@
+/* The data folder's path sits under its name on one line, and can be copied. */
+.dp-path {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+.dp-path-sk {
+  width: 240px;
+  margin-top: var(--sp-1);
+}
+/* A failure sits under its row, at the row's inset. */
+.dp-err {
+  padding: 0 16px 8px;
+}

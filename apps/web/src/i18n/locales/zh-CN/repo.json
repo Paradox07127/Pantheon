@@ -1,0 +1,14 @@
+{
+  "app.screenName.repo": "仓库",
+  "repo.tabs.label": "仓库视图",
+  "repo.tabs.timeline": "时间线",
+  "repo.tabs.changes": "改动",
+  "repo.tabs.compare": "比较",
+  "repo.tabs.overview": "概况",
+  "repo.tabs.pulls": "拉取请求",
+  "repo.timeline.empty": "时间线上还没有内容",
+  "repo.changes.empty": "还没有可看的改动",
+  "repo.compare.empty": "还没有可比较的内容",
+  "repo.pulls.empty": "还没有拉取请求",
+  "repo.view.back": "返回{tab}"
+}

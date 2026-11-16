@@ -1,0 +1,350 @@
+/* The overview's memory panel: two columns of hairline-divided cells. */
+.acx-panel {
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+}
+.acx-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.acx-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-4);
+  background: var(--sf);
+}
+.acx-col > .acx-cell:last-child {
+  flex: 1;
+}
+.acx-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--slot);
+}
+.acx-ht {
+  font-weight: 500;
+  color: var(--tx);
+}
+.acx-end {
+  margin-left: auto;
+}
+.acx-tail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  min-width: 0;
+}
+.acx-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+}
+.acx-num {
+  font-variant-numeric: tabular-nums;
+}
+.acx-sm {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.acx-cut {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.acx-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.acx-use {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.acx-use > .meter {
+  height: 8px;
+  border-radius: var(--radius-bar);
+}
+.acx-use > .meter > i {
+  border-radius: var(--radius-bar);
+}
+.acx-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.acx-stats > * {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--sp-1) / 2);
+  min-width: 0;
+}
+.acx-stats > * + * {
+  padding-left: var(--sp-4);
+  border-left: var(--hair) solid var(--bd2);
+}
+.acx-stat {
+  font-weight: 500;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.acx-delta {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.acx-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-ctl);
+}
+.acx-err {
+  flex: 1;
+  min-width: 0;
+  color: var(--bad);
+}
+.acx-tail .acx-err {
+  flex: none;
+}
+
+/* A status mark: a tick when it holds, a cross when it failed, a ringed dot while it waits. */
+.acx-st {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--idle);
+}
+.acx-st > svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.5;
+}
+.acx-st[data-tone='ok'] {
+  color: var(--ok);
+}
+.acx-st[data-tone='bad'] {
+  color: var(--bad);
+}
+.acx-st[data-tone='wait'] {
+  color: var(--wait);
+}
+.acx-st:is([data-tone='wait'], [data-tone='idle'])::before {
+  content: '';
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+.acx-st[data-tone='wait']::before {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  outline: 1.5px solid currentColor;
+  outline-offset: 1.5px;
+}
+.acx-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.acx-dot[data-tone='ok'] {
+  background: var(--ok);
+}
+.acx-dot[data-tone='trial'] {
+  background: var(--chk);
+}
+
+.acx-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(var(--sp-2) * -1);
+}
+/* Recent changes share one set of columns, so the action column fits its longest word.
+   The rows' padding lands in the edge columns, so the clock column carries it on top of its 40px. */
+.acx-chs {
+  display: grid;
+  grid-template-columns: calc(40px + var(--sp-2)) 16px max-content minmax(0, 1fr) auto;
+  column-gap: var(--sp-2);
+}
+.acx-chs > * {
+  grid-column: 1 / -1;
+}
+.acx-chs > .acx-ch {
+  grid-template-columns: subgrid;
+}
+.acx-lbl {
+  white-space: nowrap;
+}
+.acx-none {
+  display: flex;
+  align-items: center;
+  min-height: var(--row);
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  text-wrap: balance;
+}
+/* Delivery: one group per state, its mark and word heading the sessions in it. */
+.acx-rows > .acx-grp + .acx-grp {
+  margin-top: var(--sp-2);
+}
+.acx-sh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+}
+:is(.acx-ch, .acx-row) {
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.acx-ch {
+  display: grid;
+  align-items: center;
+  column-gap: var(--sp-2);
+}
+.acx-ch > svg {
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--mu);
+}
+.acx-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-width: 0;
+}
+:is(.acx-ch, .acx-row):hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+span.acx-ch {
+  cursor: default;
+}
+.acx-ct {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+/* What agents get now, in full. */
+.acx-dlg {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 96px));
+  max-height: min(640px, calc(100vh - 144px));
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd3);
+  border-radius: var(--r-xl);
+  color: var(--tx);
+  outline: none;
+  transition:
+    opacity var(--dur-2) var(--ease-in),
+    transform var(--dur-2) var(--ease-in);
+}
+.acx-dlg:is([data-starting-style], [data-ending-style]) {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.97);
+}
+.acx-dlg[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.acx-dh {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: var(--bar);
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.acx-dt {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.acx-db {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  user-select: text;
+}
+.acx-grp {
+  display: flex;
+  flex-direction: column;
+}
+.acx-gh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--slot);
+}
+.acx-it {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--sp-1) / 2);
+  padding: var(--sp-2) 0;
+  border-top: var(--hair) solid var(--bd2);
+}
+.acx-b {
+  font-weight: 500;
+  color: var(--tx);
+}
+.acx-tx {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  color: var(--tx2);
+  white-space: pre-wrap;
+}
+.acx-xh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.acx-grow {
+  flex: 1;
+  min-width: 0;
+}
+.pt[data-motion='reduced'] .acx-dlg:is([data-starting-style], [data-ending-style]) {
+  transform: translateX(-50%);
+}

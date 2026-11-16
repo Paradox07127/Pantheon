@@ -1,0 +1,12 @@
+{
+  "sessions.rowMenu.open": "打开",
+  "sessions.rowMenu.openWindow": "在新窗口打开",
+  "sessions.rowMenu.click": "点击",
+  "sessions.rowMenu.openIn": "打开于",
+  "sessions.rowMenu.editor": "编辑器",
+  "sessions.rowMenu.terminal": "终端",
+  "sessions.rowMenu.finder": "Finder",
+  "sessions.rowMenu.explorer": "文件资源管理器",
+  "sessions.rowMenu.fileManager": "文件管理器",
+  "lib.shortcuts.label.sessionArchive": "归档会话"
+}

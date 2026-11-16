@@ -1,0 +1,290 @@
+/* Status glyphs */
+.mst {
+  flex: none;
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--idle);
+}
+.mst::before {
+  content: '';
+  box-sizing: border-box;
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+}
+.mst[data-st='ok'] {
+  color: var(--ok);
+}
+.mst[data-st='bad'] {
+  color: var(--bad);
+}
+.mst[data-st='run'] {
+  color: var(--run);
+}
+.mst[data-st='queue'] {
+  color: var(--wait);
+}
+.mst:is([data-st='ok'], [data-st='bad'])::before {
+  width: 86%;
+  height: 86%;
+  border-radius: 0;
+  background: currentColor;
+  mask: var(--m) center / contain no-repeat;
+}
+.mst[data-st='ok']::before {
+  --m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12.5l4.5 4.5L19 7.5'/></svg>");
+}
+.mst[data-st='bad']::before {
+  --m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'><path d='M6.5 6.5l11 11M17.5 6.5l-11 11'/></svg>");
+}
+.mst[data-st='run']::before {
+  content: none;
+}
+.mst[data-st='queue']::before {
+  border: 1.5px dashed currentColor;
+}
+.mst[data-st='idle']::before {
+  border: 1.5px solid currentColor;
+}
+
+/* Bottom bar */
+.mef {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: var(--bar);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border-top: var(--hair) solid var(--bd2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.mef-vsep {
+  flex: none;
+  align-self: stretch;
+  width: var(--hair);
+  margin: var(--sp-3) 0;
+  background: var(--bd2);
+}
+.mef-num,
+.mef-ct {
+  font-variant-numeric: tabular-nums;
+}
+.mef-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.mef-seg {
+  display: flex;
+  gap: 2px;
+  width: 48px;
+  min-width: 48px;
+  height: 6px;
+}
+.mef-seg > i {
+  flex: var(--n, 1) 1 0;
+  border-radius: 2px;
+  background: var(--track);
+}
+.mef-seg > i[data-tone='ok'] {
+  background: var(--ok);
+}
+.mef-seg > i[data-tone='wait'] {
+  background: var(--wait);
+}
+.mef-doc,
+.mef-doc-run,
+.mef-doc-bad,
+.mef-idx {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.mef-doc {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.mef-doc:hover {
+  color: var(--tx);
+}
+.mef-doc-bad {
+  gap: var(--sp-3);
+}
+.mef-err {
+  font-family: var(--font-mono);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+.mef-working {
+  background: linear-gradient(
+      90deg,
+      var(--mu) 0%,
+      var(--mu) 35%,
+      var(--tx) 50%,
+      var(--mu) 65%,
+      var(--mu) 100%
+    )
+    0 0 / 300% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: mef-sweep 2.2s linear infinite;
+}
+@keyframes mef-sweep {
+  to {
+    background-position: -300% 0;
+  }
+}
+.mef-keys {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+}
+
+/* Delivery popover */
+.mef-pop {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  padding: var(--sp-1);
+}
+.mef-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  margin-top: var(--sp-1);
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.mef-h:first-child {
+  margin-top: 0;
+}
+.mef-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.mef-row:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.mef-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reading, failed and empty states */
+.mes-load {
+  display: flex;
+  flex-direction: column;
+}
+.mes-head {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  padding: 0 var(--sp-2);
+}
+.mes-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+}
+.mes-load .skel {
+  height: 8px;
+}
+.mes-grow {
+  flex: 1;
+}
+.mes-note {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.mes-num {
+  font-variant-numeric: tabular-nums;
+}
+.mes-ell {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.mes-ell > i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: mes-pulse 1.2s ease-in-out infinite;
+}
+.mes-ell > i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.mes-ell > i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes mes-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.mes-fail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 120px;
+  text-align: center;
+}
+.mes-fail-t {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mes-err {
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  user-select: text;
+}
+
+.pt[data-motion='reduced'] .mef-working {
+  animation: none;
+  background: none;
+  color: var(--mu);
+}

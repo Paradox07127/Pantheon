@@ -1,0 +1,27 @@
+{
+  "name": "@pantheon/protocol",
+  "version": "0.1.0-dev.20261116",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./paths": {
+      "types": "./dist/paths.d.ts",
+      "import": "./dist/paths.js"
+    },
+    "./theme": {
+      "types": "./dist/theme.d.ts",
+      "import": "./dist/theme.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@pantheon/domain": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

@@ -1,0 +1,252 @@
+/* Opened like the command palette, so it and its scrim appear and go without motion. */
+.ap-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 37;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  -webkit-app-region: no-drag;
+}
+.ap {
+  position: fixed;
+  left: 50%;
+  top: 120px;
+  transform: translateX(-50%);
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100vh - 168px);
+  overflow: hidden;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd3);
+  border-radius: var(--r-xl);
+  color: var(--tx);
+  outline: none;
+}
+/* Focus falls back to the dialog when its field goes; the dialog draws no ring. */
+.pt .ap:focus-visible {
+  outline: none;
+}
+.ap-in {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 48px;
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  color: var(--mu);
+}
+.ap-fld {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.ap-fld input {
+  font: 400 var(--fs-md) / var(--lh-md) var(--font-mono);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--tx);
+  user-select: text;
+}
+.ap-fld input::placeholder {
+  color: var(--mu);
+}
+.ap-ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: pre;
+  font: 400 var(--fs-md) / var(--lh-md) var(--font-mono);
+  color: var(--mu);
+  pointer-events: none;
+}
+.ap-ghost > span {
+  visibility: hidden;
+}
+.ap-err {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-4);
+  color: var(--bad);
+  font-size: var(--fs-xs);
+}
+.ap-err > svg {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+}
+.ap-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-2);
+  border-top: var(--hair) solid var(--bd2);
+}
+.ap-list:empty {
+  display: none;
+}
+.ap-grp {
+  display: flex;
+  flex-direction: column;
+}
+.ap-grp + .ap-grp {
+  margin-top: var(--sp-1);
+}
+.ap-gh {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--sp-2);
+}
+.ap-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  min-width: 0;
+}
+.ap-row:hover {
+  background: var(--sf2);
+}
+.ap-row[data-hl='true'] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.ap-gl {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--icon);
+  height: var(--icon);
+}
+.ap-gl > svg {
+  width: var(--icon);
+  height: var(--icon);
+}
+.ap-nm {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ap-row[data-hidden] .ap-nm,
+.ap-up {
+  color: var(--mu);
+}
+.ap-m {
+  color: var(--tx);
+  font-weight: 500;
+}
+.ap-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--mu);
+}
+.ap-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.ap-rts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ap-meta {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ap-age {
+  width: 40px;
+  text-align: right;
+}
+.ap-k {
+  display: none;
+}
+.ap-row[data-hl='true'] .ap-k {
+  display: flex;
+  gap: 2px;
+}
+.ap-row[data-hl='true'] .ap-meta {
+  display: none;
+}
+.ap-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  height: 36px;
+  padding: 0 var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.ap-foot > span {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ap-close {
+  margin-left: auto;
+}
+.ap-steps {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+}
+.ap-at {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ap-at > svg {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--mu);
+}
+.ap-at > .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+.ap-took {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,963 @@
+import { Fragment, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Activity, ChevronLeft, Copy, Minus, Plus, RefreshCw, Terminal, X } from 'lucide-react';
+import { create } from 'zustand';
+import type { DeviceListItem, SshHost } from '@pantheon/protocol';
+import { compareRuntimes, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
+import { toast } from '../../components/Toast';
+import { useBoard } from '../../data/board';
+import { runCommand } from '../../data/commands';
+import { useDevices } from '../../data/devices';
+import { ageText, failureText, useNow } from '../../data/needs-you';
+import { useRuntimeStatus } from '../../data/runtime-status';
+import { sessionTitle } from '../../data/transcript';
+import { readQuery } from '../../data/workbench-sessions';
+import { t } from '../../i18n';
+import { listText } from '../../lib/list-text';
+import { useShell } from '../../store';
+import { Loading } from './ProjectSettingsScreen';
+import { registerPageHeader } from './settings-header';
+import { useSettingsView } from './view';
+import '../../components/state-icon.css';
+import './devices.css';
+
+type DeviceConfig = NonNullable<DeviceListItem['config']>;
+
+const isLocal = (d: DeviceListItem) => d.id === 'local';
+
+const displayName = (d: DeviceListItem) =>
+  !isLocal(d)
+    ? d.name
+    : d.os === 'macos'
+      ? t({ id: 'settings.devices.thisMac', defaultMessage: 'This Mac' })
+      : t({ id: 'settings.devices.thisComputer', defaultMessage: 'This computer' });
+
+const offlineText = () => t({ id: 'settings.devices.offline', defaultMessage: "Can't connect" });
+
+/** The runtimes a device probe looks for, with the command that signs each in. */
+const LOGIN_COMMAND: Record<string, string> = {
+  claude: 'claude auth login',
+  codex: 'codex login',
+};
+
+/** The tool's version out of its --version line, else the whole line. */
+const toolVersion = (line: string) => /\d+(\.\d+)+/.exec(line)?.[0] ?? line;
+
+/** A device id from an SSH host name, as device.save accepts it. */
+const deviceId = (host: string) =>
+  host
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/^-+/, '');
+
+const Spinner = () => (
+  <svg
+    className="si"
+    width="14"
+    height="14"
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.5}
+    aria-hidden="true"
+  >
+    <circle className="si-spin" cx="7" cy="7" r="5" pathLength={4} strokeDasharray="3 1" />
+  </svg>
+);
+
+/** The mounted page's probe of every device, and whether one it ran has not answered yet. */
+const useReprobeAll = create<{ run: (() => void) | null; busy: boolean }>(() => ({
+  run: null,
+  busy: false,
+}));
+
+function ReprobeAll() {
+  const busy = useReprobeAll((s) => s.busy);
+  return (
+    <button
+      type="button"
+      className="btn ghost sm"
+      disabled={busy}
+      onClick={() => useReprobeAll.getState().run?.()}
+    >
+      {busy ? <Spinner /> : <RefreshCw className="ic-sm" aria-hidden="true" />}
+      {t({ id: 'settings.devices.reprobeAll', defaultMessage: 'Re-probe all' })}
+    </button>
+  );
+}
+
+registerPageHeader('devices', { tools: ReprobeAll });
+
+/** This machine and the SSH execution devices; a device opens to what its last probe found. */
+export function DevicesPage() {
+  const { read, reload } = useDevices();
+  useEffect(() => {
+    useReprobeAll.setState({
+      run: () => {
+        useReprobeAll.setState({ busy: true });
+        void reload(true).then(() => useReprobeAll.setState({ busy: false }));
+      },
+    });
+    return () => useReprobeAll.setState({ run: null, busy: false });
+  }, [reload]);
+  const reprobingAll = useReprobeAll((s) => s.busy);
+  const runtimeStatus = useRuntimeStatus();
+  const board = useBoard((s) => s.board);
+  const now = useNow(30_000);
+  /** The device whose details show instead of the list. */
+  const [open, setOpen] = useState<string | null>(null);
+  /** The devices whose connection test has not answered yet. */
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  /** The hosts of ~/.ssh/config; null until they are read. */
+  const [hosts, setHosts] = useState<SshHost[] | null>(null);
+  /** Failures by the control they belong to. */
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [host, setHost] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
+  const [labelDraft, setLabelDraft] = useState<{ id: string; text: string } | null>(null);
+  const [resourceDraft, setResourceDraft] = useState<{
+    id: string;
+    name: string;
+    count: string;
+  } | null>(null);
+  /** Session limits as typed, by device. */
+  const [maxDrafts, setMaxDrafts] = useState<Record<string, string>>({});
+  const [copyFailed, setCopyFailed] = useState<string | null>(null);
+  const devices = read.state === 'ready' ? read.devices : [];
+
+  useEffect(() => {
+    let live = true;
+    void readQuery('device.ssh_hosts', {}).then((result) => {
+      if (live && result.ok && Array.isArray(result.value)) setHosts(result.value as SshHost[]);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const fail = (at: string, text: string | null) =>
+    setErrors(({ [at]: _, ...rest }) => (text === null ? rest : { ...rest, [at]: text }));
+
+  /** Probes only this device, then reads the list again. */
+  const test = async (id: string) => {
+    setTesting((b) => ({ ...b, [id]: true }));
+    const result = await readQuery('device.probe', { id });
+    if (!result.ok) toast({ title: failureText(result.error), kind: 'failure' });
+    await reload(false);
+    setTesting(({ [id]: _, ...rest }) => rest);
+  };
+
+  const save = async (d: DeviceListItem, change: Partial<DeviceConfig>, at: string) => {
+    const result = await runCommand('device.save', { id: d.id, ...d.config, ...change }, null);
+    if (!result.ok) {
+      fail(at, failureText(result.error));
+      return false;
+    }
+    fail(at, null);
+    void test(d.id);
+    return true;
+  };
+
+  /** Adds the SSH host as a device and tests it; the failure text, else null. */
+  const addHost = async (ssh: string): Promise<string | null> => {
+    const id = deviceId(ssh);
+    if (devices.some((d) => d.id === id))
+      return t(
+        { id: 'settings.devices.duplicate', defaultMessage: '{id} is already a device' },
+        { id },
+      );
+    const result = await runCommand('device.save', { id, ssh }, null);
+    if (!result.ok) return failureText(result.error);
+    await reload(false);
+    void test(id);
+    return null;
+  };
+
+  const add = async () => {
+    const ssh = host.trim();
+    if (!ssh || read.state !== 'ready') return;
+    const error = await addHost(ssh);
+    setAddError(error);
+    if (error === null) setHost('');
+  };
+
+  const remove = async (d: DeviceListItem) => {
+    const result = await runCommand('device.remove', { id: d.id }, null);
+    if (!result.ok) {
+      fail(`${d.id}:remove`, failureText(result.error));
+      return;
+    }
+    fail(`${d.id}:remove`, null);
+    setOpen(null);
+    await reload(false);
+    const config = d.config;
+    toast({
+      title: t(
+        { id: 'settings.devices.removed', defaultMessage: 'Removed {name}' },
+        { name: d.name },
+      ),
+      action: {
+        label: t({ id: 'settings.devices.undo', defaultMessage: 'Undo' }),
+        run: () =>
+          void runCommand('device.save', { id: d.id, ...config }, null).then((result) => {
+            if (result.ok) void test(d.id);
+            else toast({ title: failureText(result.error), kind: 'failure' });
+          }),
+      },
+    });
+  };
+
+  const copy = async (command: string) => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopyFailed(null);
+    } catch {
+      setCopyFailed(command);
+    }
+  };
+
+  const errorText = (at: string) =>
+    errors[at] !== undefined && (
+      <span className="ps-err" role="alert">
+        {errors[at]}
+      </span>
+    );
+
+  /** Whether the device answers, or that a probe of it has not answered yet. */
+  const dot = (d: DeviceListItem) => {
+    const probing = testing[d.id] || reprobingAll;
+    return (
+      <span
+        className="dv-dot"
+        data-s={probing ? 'chk' : d.online ? 'ok' : 'bad'}
+        role="img"
+        aria-label={
+          probing
+            ? t({ id: 'settings.devices.testing', defaultMessage: 'Testing connection' })
+            : d.online
+              ? t({ id: 'settings.devices.online', defaultMessage: 'Online' })
+              : offlineText()
+        }
+      />
+    );
+  };
+
+  const testButton = (d: DeviceListItem, name: string) => {
+    const label = t(
+      { id: 'settings.devices.testOf', defaultMessage: 'Test connection to {name}' },
+      { name },
+    );
+    return (
+      <button
+        type="button"
+        className="ib"
+        aria-label={label}
+        title={label}
+        disabled={testing[d.id] || reprobingAll}
+        onClick={() => void test(d.id)}
+      >
+        <Activity aria-hidden="true" />
+      </button>
+    );
+  };
+
+  const systemName = (d: DeviceListItem) =>
+    d.os === 'macos'
+      ? ['macOS', d.os_version].filter(Boolean).join(' ')
+      : (d.os_version ?? (d.os === 'linux' ? 'Linux' : undefined));
+  const coresText = (d: DeviceListItem) =>
+    d.cpus !== undefined &&
+    t(
+      {
+        id: 'settings.devices.cores',
+        defaultMessage: '{count, plural, one {# core} other {# cores}}',
+      },
+      { count: d.cpus },
+    );
+  const memoryText = (d: DeviceListItem) =>
+    d.memory_bytes !== undefined &&
+    t(
+      { id: 'settings.devices.memory', defaultMessage: '{count} GB' },
+      { count: Math.round(d.memory_bytes / 2 ** 30) },
+    );
+
+  const offline = (d: DeviceListItem) => (
+    <span className="dv-off">
+      <span>{offlineText()}</span>
+      {d.last_online_at !== undefined && (
+        <time dateTime={d.last_online_at}>
+          {t(
+            { id: 'settings.devices.lastOnline', defaultMessage: 'Last online {age}' },
+            { age: ageText(Date.parse(d.last_online_at), now) },
+          )}
+        </time>
+      )}
+    </span>
+  );
+
+  /** The runtimes of the device in display order; version is absent for one not installed. */
+  const runtimesOf = (
+    d: DeviceListItem,
+  ): { runtime: string; version?: string; signedIn: boolean }[] =>
+    (isLocal(d)
+      ? runtimeStatus.read.state === 'ready'
+        ? runtimeStatus.read.statuses.map((s) => ({
+            runtime: s.runtime,
+            ...(s.installed && { version: s.version ?? '' }),
+            signedIn: s.auth.state === 'ok',
+          }))
+        : []
+      : [...new Set([...Object.keys(LOGIN_COMMAND), ...Object.keys(d.runtimes)])].map(
+          (runtime) => ({
+            runtime,
+            ...(d.runtimes[runtime] && { version: d.runtimes[runtime].version }),
+            signedIn: d.runtimes[runtime]?.logged_in ?? false,
+          }),
+        )
+    ).sort((a, b) => compareRuntimes(a.runtime, b.runtime));
+
+  const runtimeRows = (d: DeviceListItem) =>
+    runtimesOf(d).map(({ runtime, version, signedIn }) => {
+      const name = runtimeName(runtime);
+      const login = LOGIN_COMMAND[runtime];
+      const command = login && (isLocal(d) ? login : `ssh -t ${d.ssh} ${login}`);
+      return (
+        <Fragment key={runtime}>
+          <span className="dv-k dv-rtk">
+            <RuntimeGlyph runtime={runtime} size={14} />
+            {name}
+          </span>
+          <div className="dv-v">
+            {version === undefined ? (
+              <span className="dv-tx2">
+                {t({ id: 'settings.devices.notInstalled', defaultMessage: 'Not installed' })}
+              </span>
+            ) : (
+              <>
+                <span className="dv-num">{toolVersion(version)}</span>
+                <span
+                  className="dv-dot"
+                  data-s={signedIn ? 'ok' : 'wait'}
+                  role="img"
+                  aria-label={
+                    signedIn
+                      ? t(
+                          {
+                            id: 'settings.devices.signedIn',
+                            defaultMessage: '{runtime} signed in',
+                          },
+                          { runtime: name },
+                        )
+                      : t(
+                          {
+                            id: 'settings.devices.needsSignInOf',
+                            defaultMessage: '{runtime} needs sign-in',
+                          },
+                          { runtime: name },
+                        )
+                  }
+                />
+                {!signedIn && command && (
+                  <>
+                    <span className="dv-tx2" aria-hidden="true">
+                      {t({ id: 'settings.devices.needsSignIn', defaultMessage: 'Needs sign-in' })}
+                    </span>
+                    <code className="dv-cmd">{command}</code>
+                    <button type="button" className="btn" onClick={() => void copy(command)}>
+                      <Copy className="ic-sm" aria-hidden="true" />
+                      {t({ id: 'settings.devices.copy', defaultMessage: 'Copy' })}
+                    </button>
+                    {copyFailed === command && (
+                      <span className="ps-err" role="alert">
+                        {t({ id: 'settings.devices.copyFailed', defaultMessage: "Couldn't copy" })}
+                      </span>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </Fragment>
+      );
+    });
+
+  const loadRow = (d: DeviceListItem) => {
+    if (!d.online || d.load_1m === undefined || !d.cpus) return null;
+    const share = Math.min(d.load_1m / d.cpus, 1);
+    return (
+      <>
+        <span className="dv-k">{t({ id: 'settings.devices.load', defaultMessage: 'Load' })}</span>
+        <div className="dv-v dv-load">
+          <span
+            className="dv-meter"
+            role="img"
+            aria-label={t(
+              {
+                id: 'settings.devices.loadOf',
+                defaultMessage: 'Load {percent}%, 1-minute average {load}',
+              },
+              { percent: Math.round(share * 100), load: d.load_1m.toFixed(2) },
+            )}
+          >
+            <span className="dv-meter-b" style={{ '--dv-share': share } as CSSProperties} />
+          </span>
+          <span className="dv-num" aria-hidden="true">
+            {d.load_1m.toFixed(2)}
+          </span>
+        </div>
+      </>
+    );
+  };
+
+  const sessionsRow = (d: DeviceListItem) => (
+    <>
+      <span className="dv-k">
+        {t({ id: 'settings.devices.sessionsKey', defaultMessage: 'Sessions' })}
+      </span>
+      <div className="dv-v dv-tx2">
+        {isLocal(d)
+          ? t(
+              {
+                id: 'settings.devices.sessions',
+                defaultMessage: '{count, plural, one {# session} other {# sessions}}',
+              },
+              { count: d.load.sessions },
+            )
+          : t(
+              {
+                id: 'settings.devices.sessionsOf',
+                defaultMessage: '{count} of {max, plural, one {# session} other {# sessions}}',
+              },
+              { count: d.load.sessions, max: d.max_sessions },
+            )}
+      </div>
+    </>
+  );
+
+  const labelsRow = (d: DeviceListItem, name: string, editable: boolean) => {
+    const own = d.config?.labels ?? [];
+    const drafting = labelDraft?.id === d.id ? labelDraft : null;
+    const saveLabel = async () => {
+      const label = drafting?.text.trim();
+      if (!label) return setLabelDraft(null);
+      if (await save(d, { labels: [...new Set([...own, label])] }, `${d.id}:labels`))
+        setLabelDraft(null);
+    };
+    return (
+      <>
+        <span className="dv-k">
+          {t({ id: 'settings.devices.labels', defaultMessage: 'Labels' })}
+        </span>
+        <div className="dv-v">
+          {d.labels.map((label) => (
+            <span key={label} className="chip dv-lbl">
+              {label}
+              {editable && own.includes(label) && (
+                <button
+                  type="button"
+                  className="dv-rm"
+                  aria-label={t(
+                    {
+                      id: 'settings.devices.removeLabel',
+                      defaultMessage: 'Remove label {label} from {name}',
+                    },
+                    { label, name },
+                  )}
+                  onClick={() =>
+                    void save(d, { labels: own.filter((l) => l !== label) }, `${d.id}:labels`)
+                  }
+                >
+                  <X aria-hidden="true" />
+                </button>
+              )}
+            </span>
+          ))}
+          {editable &&
+            (drafting ? (
+              <input
+                className="dv-in mono"
+                autoFocus
+                spellCheck={false}
+                aria-label={t(
+                  { id: 'settings.devices.newLabel', defaultMessage: 'New label of {name}' },
+                  { name },
+                )}
+                value={drafting.text}
+                onChange={(e) => setLabelDraft({ id: d.id, text: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void saveLabel();
+                  if (e.key === 'Escape') setLabelDraft(null);
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className="ib dv-plus"
+                aria-label={t(
+                  { id: 'settings.devices.addLabel', defaultMessage: 'Add a label to {name}' },
+                  { name },
+                )}
+                onClick={() => setLabelDraft({ id: d.id, text: '' })}
+              >
+                <Plus aria-hidden="true" />
+              </button>
+            ))}
+          {errorText(`${d.id}:labels`)}
+        </div>
+      </>
+    );
+  };
+
+  const resourcesRow = (d: DeviceListItem, name: string, editable: boolean) => {
+    const own = d.config?.resources ?? {};
+    const drafting = resourceDraft?.id === d.id ? resourceDraft : null;
+    const saveResource = async () => {
+      const resource = drafting?.name.trim();
+      const count = Number(drafting?.count);
+      if (!resource || !Number.isInteger(count) || count < 1) return;
+      if (await save(d, { resources: { ...own, [resource]: count } }, `${d.id}:resources`))
+        setResourceDraft(null);
+    };
+    const keys = (e: { key: string }) => {
+      if (e.key === 'Enter') void saveResource();
+      if (e.key === 'Escape') setResourceDraft(null);
+    };
+    return (
+      <>
+        <span className="dv-k">
+          {t({ id: 'settings.devices.resources', defaultMessage: 'Resources' })}
+        </span>
+        <div className="dv-v">
+          {Object.entries(d.resources).map(([resource, total]) => (
+            <span key={resource} className="dv-res">
+              <span className="mono">{resource}</span>
+              <span className="dv-num">{`${d.load.uses[resource] ?? 0} / ${total}`}</span>
+              {editable && resource in own && (
+                <button
+                  type="button"
+                  className="dv-rm"
+                  aria-label={t(
+                    {
+                      id: 'settings.devices.removeResource',
+                      defaultMessage: 'Remove resource {resource} from {name}',
+                    },
+                    { resource, name },
+                  )}
+                  onClick={() =>
+                    void save(
+                      d,
+                      {
+                        resources: Object.fromEntries(
+                          Object.entries(own).filter(([other]) => other !== resource),
+                        ),
+                      },
+                      `${d.id}:resources`,
+                    )
+                  }
+                >
+                  <X aria-hidden="true" />
+                </button>
+              )}
+              {occupants(d, resource)}
+            </span>
+          ))}
+          {editable &&
+            (drafting ? (
+              <>
+                <input
+                  className="dv-in mono"
+                  autoFocus
+                  spellCheck={false}
+                  aria-label={t({
+                    id: 'settings.devices.resourceName',
+                    defaultMessage: 'Resource name',
+                  })}
+                  value={drafting.name}
+                  onChange={(e) => setResourceDraft({ ...drafting, name: e.target.value })}
+                  onKeyDown={keys}
+                />
+                <input
+                  className="dv-in dv-in-n mono"
+                  inputMode="numeric"
+                  aria-label={t({
+                    id: 'settings.devices.resourceCount',
+                    defaultMessage: 'How many',
+                  })}
+                  value={drafting.count}
+                  onChange={(e) => setResourceDraft({ ...drafting, count: e.target.value })}
+                  onKeyDown={keys}
+                />
+              </>
+            ) : (
+              <button
+                type="button"
+                className="ib dv-plus"
+                aria-label={t(
+                  {
+                    id: 'settings.devices.addResource',
+                    defaultMessage: 'Add a resource to {name}',
+                  },
+                  { name },
+                )}
+                onClick={() => setResourceDraft({ id: d.id, name: '', count: '1' })}
+              >
+                <Plus aria-hidden="true" />
+              </button>
+            ))}
+          {errorText(`${d.id}:resources`)}
+        </div>
+      </>
+    );
+  };
+
+  const limitRow = (d: DeviceListItem, name: string) => {
+    const max = d.max_sessions;
+    const saveMax = (next: number) => {
+      setMaxDrafts(({ [d.id]: _, ...rest }) => rest);
+      if (next !== max) void save(d, { max_sessions: next }, `${d.id}:max`);
+    };
+    const commit = () => {
+      const typed = maxDrafts[d.id];
+      if (typed === undefined) return;
+      const next = Number(typed);
+      if (Number.isInteger(next) && next >= 1) saveMax(next);
+      else setMaxDrafts(({ [d.id]: _, ...rest }) => rest);
+    };
+    return (
+      <>
+        <span className="dv-k">
+          {t({ id: 'settings.devices.maxSessions', defaultMessage: 'Session limit' })}
+        </span>
+        <div className="dv-v">
+          <button
+            type="button"
+            className="ib dv-plus"
+            disabled={max <= 1}
+            aria-label={t(
+              {
+                id: 'settings.devices.lowerMax',
+                defaultMessage: 'Lower the session limit of {name}',
+              },
+              { name },
+            )}
+            onClick={() => saveMax(max - 1)}
+          >
+            <Minus aria-hidden="true" />
+          </button>
+          <input
+            className="dv-max mono"
+            inputMode="numeric"
+            aria-label={t(
+              { id: 'settings.devices.maxOf', defaultMessage: 'Session limit of {name}' },
+              { name },
+            )}
+            value={maxDrafts[d.id] ?? String(max)}
+            onChange={(e) => setMaxDrafts((typed) => ({ ...typed, [d.id]: e.target.value }))}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+            }}
+          />
+          <button
+            type="button"
+            className="ib dv-plus"
+            aria-label={t(
+              {
+                id: 'settings.devices.raiseMax',
+                defaultMessage: 'Raise the session limit of {name}',
+              },
+              { name },
+            )}
+            onClick={() => saveMax(max + 1)}
+          >
+            <Plus aria-hidden="true" />
+          </button>
+          {errorText(`${d.id}:max`)}
+        </div>
+      </>
+    );
+  };
+
+  /** The sessions holding the resource by title; nothing where they are unknown. */
+  const occupants = (d: DeviceListItem, resource: string) => {
+    const titles = (d.load.resource_sessions?.[resource] ?? []).flatMap((id) => {
+      const session = board?.sessions.find((s) => s.id === id);
+      const title =
+        d.load.active_sessions.find((s) => s.id === id)?.title ||
+        (session ? sessionTitle(session, board!) : '');
+      return title
+        ? [t({ id: 'settings.devices.quoted', defaultMessage: '“{title}”' }, { title })]
+        : [];
+    });
+    return (
+      titles.length > 0 && (
+        <span className="dv-by">
+          {t(
+            { id: 'settings.devices.usedBy', defaultMessage: 'In use by {sessions}' },
+            { sessions: listText(...titles) },
+          )}
+        </span>
+      )
+    );
+  };
+
+  /** The open sessions on the device; one opens where the board knows its project. */
+  const runningRow = (d: DeviceListItem) =>
+    d.load.active_sessions.length > 0 && (
+      <>
+        <span className="dv-k">
+          {t({ id: 'settings.devices.running', defaultMessage: 'Running' })}
+        </span>
+        <div className="dv-v dv-runs">
+          {d.load.active_sessions.map((s) => {
+            const projectId = board?.sessions.find((b) => b.id === s.id)?.project_id;
+            const inner = (
+              <>
+                <RuntimeGlyph runtime={s.runtime} size={14} />
+                <span className="dv-run-t">{s.title}</span>
+                <time className="dv-run-at" dateTime={s.started_at}>
+                  {ageText(Date.parse(s.started_at), now)}
+                </time>
+              </>
+            );
+            return projectId ? (
+              <button
+                key={s.id}
+                type="button"
+                className="dv-run"
+                onClick={() => {
+                  useSettingsView.getState().close();
+                  useShell.getState().openProjectSession(projectId, s.id);
+                }}
+              >
+                {inner}
+              </button>
+            ) : (
+              <span key={s.id} className="dv-run">
+                {inner}
+              </span>
+            );
+          })}
+        </div>
+      </>
+    );
+
+  const toolsRow = (d: DeviceListItem) =>
+    Object.keys(d.tools).length > 0 && (
+      <>
+        <span className="dv-k">{t({ id: 'settings.devices.tools', defaultMessage: 'Tools' })}</span>
+        <div className="dv-v dv-tools">
+          {Object.entries(d.tools).map(([tool, line]) => (
+            <span key={tool}>{`${tool} ${toolVersion(line)}`}</span>
+          ))}
+        </div>
+      </>
+    );
+
+  const details = (d: DeviceListItem, name: string) => {
+    if (isLocal(d))
+      return (
+        <>
+          {runtimeRows(d)}
+          {loadRow(d)}
+          {sessionsRow(d)}
+          {d.labels.length > 0 && labelsRow(d, name, false)}
+          {Object.keys(d.resources).length > 0 && resourcesRow(d, name, false)}
+          {toolsRow(d)}
+          {runningRow(d)}
+        </>
+      );
+    return (
+      <>
+        {d.online ? (
+          <>
+            {runtimeRows(d)}
+            {loadRow(d)}
+            {sessionsRow(d)}
+            {labelsRow(d, name, true)}
+            {resourcesRow(d, name, true)}
+            {limitRow(d, name)}
+            {toolsRow(d)}
+          </>
+        ) : (
+          <>
+            <span className="dv-k">
+              {t({ id: 'settings.devices.reason', defaultMessage: 'Reason' })}
+            </span>
+            <code className="dv-err">{d.error}</code>
+          </>
+        )}
+        {runningRow(d)}
+        <span />
+        <div className="dv-v">
+          <button type="button" className="btn ghost dv-end" onClick={() => void remove(d)}>
+            {t({ id: 'settings.devices.remove', defaultMessage: 'Remove device' })}
+          </button>
+          {errorText(`${d.id}:remove`)}
+        </div>
+      </>
+    );
+  };
+
+  const detail = (d: DeviceListItem) => {
+    const name = displayName(d);
+    return (
+      <div className="dv-pg">
+        <div className="dv-bar">
+          <button type="button" className="btn ghost sm" onClick={() => setOpen(null)}>
+            <ChevronLeft className="ic-sm" aria-hidden="true" />
+            {t({ id: 'settings.devices.back', defaultMessage: 'All devices' })}
+          </button>
+        </div>
+        <section className="dv-card" aria-label={name}>
+          <div className="dv-top">
+            {dot(d)}
+            <b className="dv-name">{name}</b>
+            {d.ssh !== undefined && <span className="dv-ssh">{d.ssh}</span>}
+            {d.online ? (
+              <span className="dv-sys">
+                {[systemName(d), d.arch, coresText(d), memoryText(d)].map((fact, i) =>
+                  fact ? <span key={i}>{fact}</span> : null,
+                )}
+              </span>
+            ) : (
+              offline(d)
+            )}
+            {testButton(d, name)}
+          </div>
+          <div className="dv-x">{details(d, name)}</div>
+        </section>
+      </div>
+    );
+  };
+
+  const row = (d: DeviceListItem) => {
+    const name = displayName(d);
+    return (
+      <li key={d.id} className="dv">
+        <button type="button" className="dv-open" onClick={() => setOpen(d.id)}>
+          <span className="dv-nm" data-off={!d.online || undefined}>
+            {dot(d)}
+            <b className="dv-name">{name}</b>
+          </span>
+          {d.online ? (
+            <>
+              <span className="dv-os">{systemName(d)}</span>
+              <span className="dv-c">{d.arch}</span>
+              <span className="dv-c">{coresText(d)}</span>
+              <span className="dv-c">{memoryText(d)}</span>
+            </>
+          ) : (
+            offline(d)
+          )}
+        </button>
+        {testButton(d, name)}
+      </li>
+    );
+  };
+
+  /** A host of ~/.ssh/config with a switch that adds it as a device or removes the device. */
+  const hostRow = (h: SshHost) => {
+    const device = devices.find((d) => d.ssh === h.host);
+    const target =
+      h.user || h.hostname ? `${h.user ? `${h.user}@` : ''}${h.hostname ?? h.host}` : undefined;
+    return (
+      <li key={h.host} className="dv-hr">
+        <span className="dv-hn">{h.host}</span>
+        <span className="dv-ssh">{target}</span>
+        <input
+          type="checkbox"
+          className="ps-sw"
+          aria-label={t(
+            { id: 'settings.devices.useHost', defaultMessage: 'Use {host} as a device' },
+            { host: h.host },
+          )}
+          checked={device !== undefined}
+          disabled={read.state !== 'ready'}
+          onChange={(e) => {
+            if (!e.target.checked) {
+              if (device) void remove(device);
+            } else void addHost(h.host).then(setAddError);
+          }}
+        />
+      </li>
+    );
+  };
+
+  const current = devices.find((d) => d.id === open);
+  if (current) return detail(current);
+
+  let body: ReactNode;
+  if (read.state === 'loading') body = <Loading />;
+  else if (read.state === 'failed')
+    body = (
+      <div className="ps-err" role="alert">
+        {read.text}
+      </div>
+    );
+  else
+    body = (
+      <ul
+        className="dv-grp"
+        aria-label={t({ id: 'settings.devices.title', defaultMessage: 'Devices' })}
+      >
+        {devices.map(row)}
+      </ul>
+    );
+
+  return (
+    <div className="dv-pg">
+      {body}
+      {hosts !== null && hosts.length > 0 && (
+        <ul
+          className="dv-grp"
+          aria-label={t({
+            id: 'settings.devices.sshHosts',
+            defaultMessage: 'Hosts in ~/.ssh/config',
+          })}
+        >
+          {hosts.map(hostRow)}
+        </ul>
+      )}
+      <div className="dv-add">
+        <label className="field dv-host">
+          <Terminal className="ic-sm" aria-hidden="true" />
+          <input
+            className="mono"
+            spellCheck={false}
+            placeholder={t({
+              id: 'settings.devices.hostPlaceholder',
+              defaultMessage: 'Host name in ~/.ssh/config',
+            })}
+            aria-label={t({
+              id: 'settings.devices.host',
+              defaultMessage: 'SSH host name of the device to add',
+            })}
+            value={host}
+            disabled={read.state !== 'ready'}
+            onChange={(e) => {
+              setHost(e.target.value);
+              setAddError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void add();
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="btn"
+          disabled={read.state !== 'ready'}
+          onClick={() => void add()}
+        >
+          <Plus className="ic-sm" aria-hidden="true" />
+          {t({ id: 'settings.devices.add', defaultMessage: 'Add device' })}
+        </button>
+      </div>
+      {addError !== null && (
+        <div className="ps-err" role="alert">
+          {addError}
+        </div>
+      )}
+    </div>
+  );
+}

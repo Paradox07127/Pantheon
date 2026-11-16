@@ -1,0 +1,64 @@
+/* A refused save sits under its row, at the row's inset. */
+.wt-err {
+  padding: 0 16px 8px;
+}
+
+.wt-path {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--mu);
+  user-select: text;
+}
+
+.wt-chip {
+  gap: 4px;
+  padding-right: 4px;
+}
+.wt-rm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mu);
+  transition: color var(--dur-1) var(--ease-std);
+}
+.wt-rm svg {
+  width: 12px;
+  height: 12px;
+}
+.wt-rm:hover {
+  color: var(--tx);
+}
+.wt-rm:focus-visible {
+  outline: 3px solid var(--focus-ring);
+}
+.wt-rm:disabled {
+  cursor: not-allowed;
+}
+
+/* The reason a path is refused sits under the input that holds it. */
+.wt-add {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.wt-add-in {
+  width: 160px;
+}
+.wt-cmd {
+  width: 240px;
+}
+
+.wt-meta {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.wt-num {
+  font-variant-numeric: tabular-nums;
+}

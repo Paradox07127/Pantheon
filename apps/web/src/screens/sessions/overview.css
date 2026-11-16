@@ -1,0 +1,257 @@
+/* A column of the panel dock, or the whole sheet in a narrow window. */
+.ov-card {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 280px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--toast-reserve);
+  border-left: var(--hair) solid var(--bd2);
+  background: var(--sf);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  transition:
+    opacity var(--dur-4) var(--ease-in),
+    transform var(--dur-4) var(--ease-in);
+}
+@starting-style {
+  .ov-card {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.ss-sheet > .ov-card {
+  flex: 1;
+  width: auto;
+  border-left: 0;
+}
+.ov-card > * + * {
+  border-top: var(--hair) solid var(--bd2);
+}
+.ov-hd {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+}
+.ov-t {
+  font-weight: 500;
+}
+.ov-tog {
+  margin-left: auto;
+}
+.ov-tog svg {
+  transition: transform var(--dur-2) var(--ease-std);
+}
+.ov-tog[aria-expanded='false'] svg {
+  transform: rotate(90deg);
+}
+.ov-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--sp-3);
+}
+.ov-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.ov-cap {
+  flex: none;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 500;
+  color: var(--mu);
+}
+.ov-n {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.ov-end {
+  margin-left: auto;
+}
+.ov-meter {
+  flex: 1 1 0;
+  min-width: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--sf2);
+  overflow: hidden;
+}
+.ov-meter > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ok);
+  transform-origin: left;
+  transition: transform var(--dur-4) var(--ease-std);
+}
+.ov-glyph {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.ov-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-name {
+  flex: 1 1 0;
+}
+.ov-time {
+  flex: none;
+  min-width: 36px;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ov-seg {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  min-width: 40px;
+}
+.ov-seg > i {
+  flex: 0 1 0;
+  min-width: 2px;
+  border-radius: 2px;
+}
+.ov-lg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.ov-lg > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ov-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.ov-num {
+  font-variant-numeric: tabular-nums;
+}
+:is(.ov-seg > i, .ov-dot)[data-kind='read'] {
+  background: var(--series-1);
+}
+:is(.ov-seg > i, .ov-dot)[data-kind='edit'] {
+  background: var(--series-2);
+}
+:is(.ov-seg > i, .ov-dot)[data-kind='run'] {
+  background: var(--series-4);
+}
+:is(.ov-seg > i, .ov-dot)[data-kind='other'] {
+  background: var(--mu);
+}
+.ov-h {
+  margin: 0 0 2px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 500;
+  color: var(--tx);
+}
+.ov-ic {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--mu);
+}
+.ov-path {
+  /* The parent folder gives way before the folder's own name is cut. */
+  flex-shrink: 100;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.ov-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ov-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: var(--hair) solid var(--bd);
+  border-radius: calc(var(--r-sm) - 2px);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  color: var(--tx2);
+}
+.ov-file {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.ov-file:hover .ov-cut {
+  text-decoration: underline;
+}
+/* The overview names no runtime or model over its context. */
+.ov-cx .cp-cxh {
+  display: none;
+}
+.ov-cx .cp-cxu {
+  font-size: var(--fs-sm);
+}
+.ov-cx :is(.cp-cxb > i, .cp-cxs)[data-step='1'] {
+  background: var(--series-1);
+}
+.ov-cx :is(.cp-cxb > i, .cp-cxs)[data-step='2'] {
+  background: var(--series-3);
+}
+.ov-cx :is(.cp-cxb > i, .cp-cxs)[data-step='3'] {
+  background: var(--series-6);
+}
+.ov-cx :is(.cp-cxb > i, .cp-cxs)[data-step='4'] {
+  background: var(--series-4);
+}
+
+/* The context breakdown's share line, blocks of rows and itemised lists, here and in the composer. */
+.cp-cxu {
+  display: flex;
+  gap: 8px;
+  color: var(--tx);
+}
+.cp-cxu > .mono {
+  margin-left: auto;
+  color: var(--tx2);
+}
+:is(.cp-cxb > i, .cp-cxs)[data-step='buffer'],
+.cp-cxs[data-step='deferred'] {
+  background: var(--bd-hover);
+}
+.cp-cxt tbody + tbody > tr:first-child > td {
+  padding-top: 8px;
+}
+.cp-cxt tr[data-group] > td:last-child {
+  color: var(--mu);
+  text-align: right;
+}
+.ov-card > .ss-pf {
+  padding: var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+}

@@ -1,0 +1,14 @@
+{
+  "name": "small-task-on-named-device-dispatches",
+  "source_commit": "6b76a391cf5096f98bb36e5f0f095fb95d7f85f8",
+  "base_commit": "98d9bf6e653405d856c2c764ada736116541422c",
+  "goal": "Small tasks (tier `t1`, e.g. one or two scoped files) take the `direct` path by default: the lead does them in its own local worktree and no task session opens. Today that also happens when the task names a device (`device: 'build-box'`), ignoring the device. When a task's path would be `direct` and it names a device other than `local`, dispatch it instead so its task session opens on that device.",
+  "scope": ["packages/control/src/task-dispatch.ts"],
+  "acceptance": ["pnpm build", "pnpm exec vitest run tests/control/task-dispatch-devices.test.ts"],
+  "hidden_files": ["tests/control/task-dispatch-devices.test.ts"],
+  "hidden_check": [
+    "pnpm install --frozen-lockfile",
+    "pnpm build",
+    "pnpm exec vitest run tests/control/task-dispatch-devices.test.ts"
+  ]
+}

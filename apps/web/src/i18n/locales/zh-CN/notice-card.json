@@ -1,0 +1,5 @@
+{
+  "components.noticeCard.open": "打开",
+  "components.noticeCard.openTitle": "打开{title}",
+  "components.noticeCard.waited": "等了 {minutes} 分"
+}

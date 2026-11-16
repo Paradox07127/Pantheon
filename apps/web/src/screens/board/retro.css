@@ -1,0 +1,194 @@
+/* Retrospectives */
+.ret-sum {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-2);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.ret-sum > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ret-sum > span > svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.ret-l {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ret-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(0, 160px) 64px 40px 56px minmax(72px, auto);
+  align-items: center;
+  column-gap: var(--sp-2);
+  min-height: var(--row);
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* No row of the list can open, so it has no expand column. */
+.ret-l[data-flat] > .ret-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 160px) 64px 40px 56px minmax(72px, auto);
+}
+.ret-row:hover {
+  background: var(--sf2);
+}
+.ret-row + .ret-row {
+  border-top: var(--hair) solid var(--bd2);
+}
+.ret-t {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+.ret-out {
+  display: inline-flex;
+  flex: none;
+}
+.ret-tt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ret-rt {
+  min-width: 0;
+}
+.ret-rtm {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ret-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ret-pip {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+}
+.ret-pip[data-s='ok'] {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.ret-pip[data-s='bad'] {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.ret-pip svg.lucide {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+.ret-n {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ret-n svg.lucide {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+  color: var(--mu);
+}
+.ret-n[data-zero] {
+  color: var(--mu);
+}
+.ret-xp,
+.ret-pend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  justify-self: end;
+  margin-left: auto;
+  height: 22px;
+  padding: 0 var(--sp-1);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ret-xp:hover,
+.ret-pend:hover {
+  background: var(--sf2);
+}
+.ret-xp svg.lucide,
+.ret-pend svg.lucide {
+  width: 12px;
+  height: 12px;
+  color: var(--tx);
+}
+.ret-xs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.ret-xs::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mu);
+}
+.ret-xs[data-s='candidate']::before {
+  background: var(--wait);
+}
+.ret-xs[data-s='trial']::before {
+  background: var(--run);
+}
+.ret-xs[data-s='active']::before {
+  background: var(--ok);
+}
+.ret-dt {
+  grid-column: 2 / -1;
+  padding: var(--sp-1) 0 var(--sp-2);
+}
+.ret-gf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ret-gf li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.ret-gf code {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx);
+}
