@@ -637,19 +637,14 @@ describe('app diagnostics', () => {
 
   it.each([
     ['a packaged build', true, null, null, false],
-    ['a dev build without a port file', false, null, { cdp_port: null }, false],
-    [
-      'a dev build with a port file',
-      false,
-      '41235\n/devtools/browser/abc\n',
-      { cdp_port: 41235 },
-      false,
-    ],
+    ['a dev build without a port file', false, null, {}, false],
+    // The daemon reads the port file for each turn, so the target carries no port.
+    ['a dev build with a port file', false, '41235\n/devtools/browser/abc\n', {}, false],
     [
       'a dev build started with a debugging port',
       false,
       '41236\n/devtools/browser/abc\n',
-      { cdp_port: 41236 },
+      {},
       true,
     ],
   ] as const)('gives the debug target of %s', async (_name, packaged, portFile, target, given) => {
@@ -2718,7 +2713,7 @@ describe('preload', () => {
     for (const [method, value] of [
       ['appInfo', info],
       ['logsDir', '/desktop/logs'],
-      ['debugTarget', { repo_root: '/work/pantheon', cdp_port: 41235 }],
+      ['debugTarget', { repo_root: '/work/pantheon' }],
       ['debugTarget', null],
       ['lastCrash', crash],
       ['lastCrash', null],

@@ -1667,13 +1667,8 @@ export const inputSchemas = {
        * app_debug: the first message starts with the guide for debugging an error the running app reported.
        */
       purpose: z.enum(['project_setup', 'app_debug']).optional(),
-      /** The app renderer's CDP port on 127.0.0.1, which the app debug session reaches through chrome-devtools-mcp. */
-      cdp_port: z.number().int().min(1024).max(65535).optional(),
     })
-    .refine(validSessionWorkspace, { message: 'An in-place session cannot have a start point' })
-    .refine((input) => input.cdp_port === undefined || input.purpose === 'app_debug', {
-      message: 'cdp_port needs purpose app_debug',
-    }),
+    .refine(validSessionWorkspace, { message: 'An in-place session cannot have a start point' }),
   /** Opens a new worktree session with the source's files and a text handoff. */
   'session.fork': z
     .strictObject({
@@ -2344,7 +2339,7 @@ export interface WorkbenchSession {
   remote_pull?: NonNullable<Session['remote_pull']>;
   runtime_review?: true;
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
-  app_debug?: { cdp_port?: number };
+  app_debug?: true;
   /** ISO time of the session.opened event. */
   created_at: string;
   /** Empty for a baseline session without a title, which baseline_started_at names. */

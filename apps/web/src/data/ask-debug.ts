@@ -57,13 +57,13 @@ const copied = async (prompt: string): Promise<void> => {
   await navigator.clipboard?.writeText(prompt).catch(() => {});
 };
 
-/** The newest debug session of the project for this app's port that is live and takes messages. */
-async function debugSession(projectId: string, port: number | null): Promise<Session | null> {
+/** The newest debug session of the project that is live and takes messages. */
+async function debugSession(projectId: string): Promise<Session | null> {
   const listed = await readQuery('session.list', { project_id: projectId });
   if (!listed.ok || !Array.isArray(listed.value)) return null;
   const board = useBoard.getState().board?.sessions ?? [];
   const found = (listed.value as WorkbenchSession[])
-    .filter((s) => s.app_debug && s.app_debug.cdp_port === (port ?? undefined) && !s.archived_at)
+    .filter((s) => s.app_debug && !s.archived_at)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map((s) => board.find((session) => session.id === s.id))
     .find((session) => session !== undefined && canMessage(session));
@@ -104,7 +104,7 @@ export async function askDebugAgent({
     });
     return;
   }
-  const session = await debugSession(project.id, target.cdp_port);
+  const session = await debugSession(project.id);
   // The daemon picks no runtime of its own, so a new session takes the defaults the new-session box does.
   const read = session ? null : await readQuery('project.defaults', {});
   const defaults = effectiveSessionDefaults(
@@ -122,7 +122,6 @@ export async function askDebugAgent({
           project_id: project.id,
           input: prompt,
           purpose: 'app_debug',
-          ...(target.cdp_port !== null ? { cdp_port: target.cdp_port } : {}),
           runtime,
           ...(defaults?.runtime === runtime
             ? {

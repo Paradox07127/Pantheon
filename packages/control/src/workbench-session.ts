@@ -77,6 +77,7 @@ import {
   type SessionGatesHistory,
   type WorkbenchSession,
 } from '@pantheon/protocol';
+import { defaultDesktopUserDataDirectory } from '@pantheon/protocol/paths';
 import {
   inside,
   insert,
@@ -218,6 +219,22 @@ export function workerInstructions(
   ].join('\n');
 }
 
+/** The renderer's CDP port the desktop app wrote on its last start, read anew for each turn. */
+function appCdpPort(ctx: ControlContext): number | undefined {
+  const file = path.join(
+    ctx.protectionPaths?.desktopUserDataDir ?? defaultDesktopUserDataDirectory(),
+    'DevToolsActivePort',
+  );
+  let line = '';
+  try {
+    line = readFileSync(file, 'utf8').split('\n')[0]!.trim();
+  } catch {
+    // No file means the app runs without a debugging port.
+  }
+  const port = /^\d+$/.test(line) ? Number(line) : 0;
+  return port >= 1024 && port <= 65535 ? port : undefined;
+}
+
 export function workbenchSessionSpec(ctx: ControlContext, session: Session): SessionSpec {
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!),
     project = ctx.store.must<Project>('projects', session.project_id);
@@ -253,6 +270,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     ctx.store.list<SessionTurn>('session_turns').find((turn) => turn.session_id === session.id)
       ?.origin === undefined;
   const saved = project.extension_overrides?.[session.runtime];
+  const cdpPort = session.app_debug ? appCdpPort(ctx) : undefined;
   return managedSessionSpec(ctx, {
     ...(autoTitle ? { auto_title: true } : {}),
     platform_session_id: session.id,
@@ -289,7 +307,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     cwd: workspace.path,
     env_allowlist: NATIVE_ENV_ALLOWLIST,
     skills: [],
-    mcp_servers: session.app_debug?.cdp_port
+    mcp_servers: cdpPort
       ? [
           {
             name: 'chrome_devtools',
@@ -300,7 +318,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
               os.homedir(),
               '-y',
               'chrome-devtools-mcp@1.13.0',
-              `--browser-url=http://127.0.0.1:${session.app_debug.cdp_port}`,
+              `--browser-url=http://127.0.0.1:${cdpPort}`,
             ],
             env: {},
           },
@@ -3746,11 +3764,7 @@ export function openWorktreeSession(
       permission_mode: input.permission_mode,
       ...(input.fast ? { fast: true as const } : {}),
       ...(input.ultracode ? { ultracode: true as const } : {}),
-      ...(input.purpose === 'app_debug'
-        ? {
-            app_debug: { ...(input.cdp_port !== undefined ? { cdp_port: input.cdp_port } : {}) },
-          }
-        : {}),
+      ...(input.purpose === 'app_debug' ? { app_debug: true as const } : {}),
       title: derivedTitle(
         board?.task.title ??
           (input.input.split('\n').find((line) => line.trim() !== '') ?? '').trim(),

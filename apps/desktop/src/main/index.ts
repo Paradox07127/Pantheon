@@ -462,14 +462,7 @@ handle('pantheon:appInfo', async () => ({
 handle('pantheon:logsDir', async () => ({ ok: true, value: path.dirname(logFile) }));
 handle('pantheon:debugTarget', async () => ({
   ok: true,
-  value: app.isPackaged
-    ? null
-    : {
-        repo_root: repoRoot,
-        cdp_port: await readFile(path.join(app.getPath('userData'), 'DevToolsActivePort'), 'utf8')
-          .then((text) => Number.parseInt(text.split('\n')[0]!, 10))
-          .catch(() => null),
-      },
+  value: app.isPackaged ? null : { repo_root: repoRoot },
 }));
 handleFrom('pantheon:lastCrash', async (from) => {
   const crash = crashes.get(from) ?? null;

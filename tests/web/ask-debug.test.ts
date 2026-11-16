@@ -3,7 +3,7 @@ import type { Command, WorkbenchSession } from '@pantheon/protocol';
 import { zh } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({
   board: {} as any,
-  target: null as { repo_root: string; cdp_port: number | null } | null,
+  target: null as { repo_root: string } | null,
 }));
 vi.mock('@/data/board', () => ({
   useBoard: Object.assign((selector: any) => selector(mock.board), {
@@ -24,7 +24,7 @@ import { toast } from '@/components/Toast';
 const REPO = '/work/pantheon';
 
 const debugListed = (id: string, extra: Partial<WorkbenchSession>) =>
-  ({ id, created_at: '2026-11-16T08:00:00.000Z', app_debug: {}, ...extra }) as WorkbenchSession;
+  ({ id, created_at: '2026-11-16T08:00:00.000Z', app_debug: true, ...extra }) as WorkbenchSession;
 
 let listed: WorkbenchSession[];
 let globalDefaults: unknown;
@@ -51,7 +51,7 @@ beforeEach(() => {
   };
   vi.stubGlobal('window', { pantheon: bridge });
   vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } });
-  mock.target = { repo_root: REPO, cdp_port: 41235 };
+  mock.target = { repo_root: REPO };
   mock.board = {
     board: {
       projects: [
@@ -68,7 +68,6 @@ beforeEach(() => {
       ],
       sessions: [
         { id: 'debug-live', state: 'open', revision: 4 },
-        { id: 'debug-other-port', state: 'open', revision: 2 },
         { id: 'debug-archived', state: 'open', revision: 2 },
       ],
     },
@@ -88,17 +87,14 @@ describe('asking the debug agent', () => {
     },
     {
       name: 'copies the report when no project holds the repository',
-      target: { repo_root: '/elsewhere', cdp_port: 41235 },
+      target: { repo_root: '/elsewhere' },
       sessions: [],
       expected: { copied: true, command: null, kind: 'failure' },
     },
     {
-      name: 'sends to the live debug session on the same port',
-      target: { repo_root: REPO, cdp_port: 41235 },
-      sessions: [
-        debugListed('debug-other-port', { app_debug: { cdp_port: 9333 } }),
-        debugListed('debug-live', { app_debug: { cdp_port: 41235 } }),
-      ],
+      name: 'sends to the live debug session whatever port the app had when it opened',
+      target: { repo_root: REPO },
+      sessions: [debugListed('debug-live', {})],
       expected: {
         copied: false,
         command: { type: 'session.send', input: { session_id: 'debug-live' } },
@@ -106,15 +102,9 @@ describe('asking the debug agent', () => {
       },
     },
     {
-      name: 'opens a debug session when the others have another port or are archived',
-      target: { repo_root: REPO, cdp_port: 41235 },
-      sessions: [
-        debugListed('debug-other-port', { app_debug: { cdp_port: 9333 } }),
-        debugListed('debug-archived', {
-          app_debug: { cdp_port: 41235 },
-          archived_at: '2026-11-16T09:00:00.000Z',
-        }),
-      ],
+      name: 'opens a debug session when the only one is archived',
+      target: { repo_root: REPO },
+      sessions: [debugListed('debug-archived', { archived_at: '2026-11-16T09:00:00.000Z' })],
       expected: {
         copied: false,
         command: {
@@ -122,7 +112,6 @@ describe('asking the debug agent', () => {
           input: {
             project_id: 'pantheon',
             purpose: 'app_debug',
-            cdp_port: 41235,
             runtime: 'codex',
             model: 'gpt-5.5',
             effort: 'high',
@@ -160,6 +149,8 @@ describe('asking the debug agent', () => {
       model: 'opus',
       permission_mode: 'auto_edit',
     });
+    // The daemon reads the app's current port for each turn.
+    expect(sent()[0]!.input).not.toHaveProperty('cdp_port');
   });
 
   it('shows a failed send without offering to ask again', async () => {
@@ -172,7 +163,7 @@ describe('asking the debug agent', () => {
   });
 
   it('opens the session it sent to from the toast', async () => {
-    listed = [debugListed('debug-live', { app_debug: { cdp_port: 41235 } })];
+    listed = [debugListed('debug-live', {})];
     await askDebugAgent({ title: 'Push failed' });
     const shown = vi.mocked(toast).mock.calls.at(-1)![0];
     expect(shown.title).toBe(zh('data.askDebug.sent'));

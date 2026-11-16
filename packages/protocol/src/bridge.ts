@@ -201,8 +201,8 @@ export interface DesktopBridge {
   appInfo(): Promise<AppInfo>;
   /** The absolute path of the folder holding the daemon log. */
   logsDir(): Promise<string>;
-  /** A dev build gives the repository root and the renderer's CDP port; a packaged build gives null. */
-  debugTarget(): Promise<{ repo_root: string; cdp_port: number | null } | null>;
+  /** A dev build gives the repository root; a packaged build gives null. */
+  debugTarget(): Promise<{ repo_root: string } | null>;
   /** This window's last renderer crash, consumed by the first call after it. */
   lastCrash(): Promise<RendererCrash | null>;
   /** The crash after which the app loaded this page to draw only the crash page, read before the page renders. */
