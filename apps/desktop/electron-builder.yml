@@ -64,6 +64,9 @@ linux:
   maintainer: Pantheon <pantheon@example.invalid>
 appImage:
   artifactName: Pantheon-${version}-${arch}.${ext}
+toolsets:
+  # The default (0.0.0) arm64 AppImage runtime links libz.so, which only zlib1g-dev provides.
+  appimage: '1.0.3'
 # The defaults come from the package name, whose @ and / dpkg refuses.
 deb:
   packageName: pantheon
