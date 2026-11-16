@@ -33,10 +33,18 @@ import { history } from './project-facts.js';
 import { INBOX_HEADER, appendNote } from './lead-inbox.js';
 import { reviewPlan } from './review.js';
 import { projectRoutingTable } from './routing-table.js';
-import { placedTaskSessions, revokeLeadTurnWrites, taskRuntime } from './task-dispatch.js';
+import {
+  placedTaskSessions,
+  revokeLeadTurnWrites,
+  taskPath,
+  taskRuntime,
+} from './task-dispatch.js';
 import { wakeLead } from './task-tracking.js';
 import { kindOfPaths, risky } from './task-kind.js';
 import { workflowPolicy } from './workflow-policy.js';
+
+/** The longest iteration in days, so a mistyped year cannot make the board count each day of centuries. */
+export const ITERATION_DAYS = 366;
 
 type PlanInput = Omit<
   ReturnType<(typeof inputSchemas)['board.plan.update']['parse']>,
@@ -256,7 +264,19 @@ function refuseInvalid(ctx: ControlContext, input: PlanInput, quoted: string[] =
   requireThat(!problem, 'invalid_input', problem ?? '');
   const unquoted = sourceProblem(ctx, input, quoted);
   requireThat(!unquoted, 'invalid_input', unquoted ?? '');
+  for (const iteration of input.iterations ?? [])
+    requireThat(
+      Date.parse(iteration.ends_on) - Date.parse(iteration.starts_on) <
+        ITERATION_DAYS * 24 * 60 * 60 * 1000,
+      'invalid_input',
+      `iterations: iteration ${iteration.id} spans more than ${ITERATION_DAYS} days`,
+    );
   for (const task of input.tasks) {
+    requireThat(
+      taskPath(ctx, input.project_id, task) !== 'parallel' || task.parallel,
+      'invalid_input',
+      `tasks: task ${task.id} takes the parallel path, which needs two to four lead-defined parts`,
+    );
     if (task.workflow_id) {
       const workflow = ctx.store.get<import('@pantheon/domain').StoredWorkflowDefinition>(
         'workflow_definitions',

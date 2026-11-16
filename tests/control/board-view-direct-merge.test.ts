@@ -197,6 +197,38 @@ it('fills a landed task card with only what the lead used from its claim to its 
   expect(card.last_progress_at).toBeLessThanOrEqual(card.ended_at!);
 }, 30000);
 
+it('fills a held claim card with only what the lead used since the claim', async () => {
+  const f = workbenchFixture();
+  const { lead, worktree } = await planTwoTasks(f);
+  const [before] = f.turns(lead.id);
+  f.store.update<SessionTurn>(
+    'session_turns',
+    { ...before!, usage: { input_tokens: 1_000_000, output_tokens: 0 } },
+    before!.revision,
+  );
+  f.store.db
+    .prepare('UPDATE events SET created_at=created_at-3600000 WHERE aggregate_id=?')
+    .run(before!.id);
+  writeFileSync(path.join(worktree, 'unrelated.txt'), 'Work from before the claim\n');
+  f.call('task.start', { project_id: f.project.id, task_ids: ['a'] }, null, leadOf(f, lead.id));
+  expect(current(f, lead.id).direct_task?.id).toBe('a');
+  const claimedAt = (
+    f.store.db
+      .prepare("SELECT created_at FROM events WHERE aggregate_id=? AND kind='task.claimed'")
+      .get(lead.id) as { created_at: number }
+  ).created_at;
+
+  const card = f.control
+    .boardView(user, f.project.id, 1)
+    .tasks.find((row) => row.id === `${lead.id}:a`)!;
+  expect(card.started_at).toBe(claimedAt);
+  expect(card.segments).toHaveLength(1);
+  expect(card.segments[0]!.started_at).toBe(claimedAt);
+  expect(card.segments[0]!.tokens).toBeLessThan(1_000_000);
+  expect(card.segments[0]).not.toHaveProperty('additions');
+  expect(card.additions).toBeNull();
+}, 30000);
+
 it('links each direct merge to the change story of its own commits', async () => {
   const f = workbenchFixture();
   const { lead, worktree } = await planTwoTasks(f);

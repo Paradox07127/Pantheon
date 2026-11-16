@@ -166,7 +166,9 @@ import {
 } from './wsl.js';
 
 // Port 0 lets Chromium pick a free port and write it to DevToolsActivePort in userData; it must be set before ready.
-if (!app.isPackaged) app.commandLine.appendSwitch('remote-debugging-port', '0');
+// A port given on the command line (the acceptance runs) is kept.
+if (!app.isPackaged && !app.commandLine.hasSwitch('remote-debugging-port'))
+  app.commandLine.appendSwitch('remote-debugging-port', '0');
 
 protocol.registerSchemesAsPrivileged([
   {

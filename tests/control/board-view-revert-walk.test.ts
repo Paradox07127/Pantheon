@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import * as gitCommands from '../../packages/control/dist/git.js';
@@ -36,4 +36,22 @@ it('walks a repository for reverts again only after its merged branch moves', as
   git(f.source, 'revert', '--no-edit', first);
   expect(f.control.boardView(user, f.project.id, 1).counts.reverted).toBe(1);
   expect(walks()).toBe(2);
+});
+
+it('shows the board with no reverts counted once the repository of a merge in the range moved', async () => {
+  const f = workbenchFixture();
+  const lead = f.create('Build exports');
+  await awaitWorkspaceReady(f.control, lead.workspace_id!);
+  await eventually(
+    () => f.turns(lead.id)[0]?.state === 'completed',
+    () => f.control.tick(),
+  );
+  const head = git(f.source, 'rev-parse', 'HEAD');
+  f.store.event('session.merged', lead, f.project.id, { branch: 'main', to_sha: head });
+  renameSync(f.source, `${f.source}-moved`);
+  expect(f.control.boardView(user, f.project.id, 1).counts).toMatchObject({
+    merged: 1,
+    reverted: 0,
+  });
+  renameSync(`${f.source}-moved`, f.source);
 });

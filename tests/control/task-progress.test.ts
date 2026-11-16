@@ -144,7 +144,8 @@ it('counts a task once however many sessions it has and leaves out tasks removed
   );
   expect(progress.daily.slice(5)).toEqual([
     { day: dayKey(yesterday), scope: 3, done: 0, added: 3, removed: 0 },
-    { day: dayKey(now), scope: 2, done: 1, added: 0, removed: 1 },
+    // The open retry keeps the first task from counting as done, as on its row.
+    { day: dayKey(now), scope: 2, done: 0, added: 0, removed: 1 },
   ]);
   // The retry of the first task does not restart its cycle; the removed task is not a sample.
   expect(progress.cycle).toMatchObject({

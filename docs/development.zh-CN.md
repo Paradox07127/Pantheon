@@ -13,7 +13,7 @@
 | ---------------- | ------------------------------------------------------------------------------- |
 | Node             | 26(准确版本见根 `package.json` 的 `devEngines.runtime`;`engines` 是 `>=26 <27`) |
 | pnpm             | 12.11.2(根 `package.json` 的 `packageManager`)                                  |
-| git              | 较新的版本即可                                                                  |
+| git              | 2.38 或更高(合并预览用 `git merge-tree --write-tree`)                           |
 | Xcode 命令行工具 | 只限 macOS。`pnpm dev` 和 `pnpm package` 用 `xcrun swiftc` 编译语音引擎。       |
 | Docker           | 只有 `scripts/linux-test.mjs` 需要                                              |
 

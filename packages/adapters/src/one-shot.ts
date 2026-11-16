@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,30 +15,41 @@ export function claudeSubscription(binary = 'claude'): Promise<boolean> {
   const known = subscriptions.get(binary);
   if (known) return known;
   const subscription = new Promise<boolean>((resolve) => {
-    let deadline: NodeJS.Timeout | undefined;
-    const probe = execFile(
-      binary,
-      ['auth', 'status', '--json'],
-      { encoding: 'utf8', env: nativeEnvironment() },
-      (error, stdout) => {
-        clearTimeout(deadline);
-        try {
-          const status = JSON.parse(stdout) as { loggedIn?: unknown; authMethod?: unknown };
-          resolve(
-            !error &&
-              status.loggedIn === true &&
-              (status.authMethod === 'claude.ai' || status.authMethod === 'oauth'),
-          );
-        } catch {
-          resolve(false);
-        }
-      },
-    );
-    // The callback waits for the pipes, which a descendant of the probe can hold open.
-    deadline = setTimeout(() => {
-      probe.kill('SIGKILL');
-      probe.stdout?.destroy();
-      probe.stderr?.destroy();
+    const probe = spawn(binary, ['auth', 'status', '--json'], {
+      env: nativeEnvironment(),
+      // Its own process group holds what it starts, so a hung probe is stopped whole.
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    let stdout = '';
+    probe.stdout.setEncoding('utf8');
+    probe.stdout.on('data', (chunk: string) => (stdout += chunk));
+    probe.once('error', () => {
+      clearTimeout(deadline);
+      resolve(false);
+    });
+    // Close waits for the pipe, which a descendant of the probe can hold open.
+    probe.once('close', (code) => {
+      clearTimeout(deadline);
+      try {
+        const status = JSON.parse(stdout) as { loggedIn?: unknown; authMethod?: unknown };
+        resolve(
+          code === 0 &&
+            status.loggedIn === true &&
+            (status.authMethod === 'claude.ai' || status.authMethod === 'oauth'),
+        );
+      } catch {
+        resolve(false);
+      }
+    });
+    const deadline = setTimeout(() => {
+      try {
+        if (process.platform === 'win32') probe.kill('SIGKILL');
+        else if (probe.pid !== undefined) process.kill(-probe.pid, 'SIGKILL');
+      } catch {
+        // The group is already empty.
+      }
+      probe.stdout.destroy();
       resolve(false);
     }, 10000);
   });

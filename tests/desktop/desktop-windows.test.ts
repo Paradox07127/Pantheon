@@ -244,7 +244,7 @@ function fakeElectron(root: string) {
     getPath: (name: string) => path.join(root, name),
     getAppPath: () => path.join(root, 'app'),
     getVersion: () => '1.2.3',
-    commandLine: { appendSwitch: vi.fn() },
+    commandLine: { appendSwitch: vi.fn(), hasSwitch: vi.fn(() => false) },
     aboutPanels: [] as Record<string, unknown>[],
     setAboutPanelOptions(options: Record<string, unknown>) {
       app.aboutPanels.push(options);
@@ -636,13 +636,27 @@ describe('app diagnostics', () => {
   );
 
   it.each([
-    ['a packaged build', true, null, null],
-    ['a dev build without a port file', false, null, { cdp_port: null }],
-    ['a dev build with a port file', false, '41235\n/devtools/browser/abc\n', { cdp_port: 41235 }],
-  ] as const)('gives the debug target of %s', async (_name, packaged, portFile, target) => {
+    ['a packaged build', true, null, null, false],
+    ['a dev build without a port file', false, null, { cdp_port: null }, false],
+    [
+      'a dev build with a port file',
+      false,
+      '41235\n/devtools/browser/abc\n',
+      { cdp_port: 41235 },
+      false,
+    ],
+    [
+      'a dev build started with a debugging port',
+      false,
+      '41236\n/devtools/browser/abc\n',
+      { cdp_port: 41236 },
+      true,
+    ],
+  ] as const)('gives the debug target of %s', async (_name, packaged, portFile, target, given) => {
     const root = tempRoot();
     const { main, call, module } = await startMain('darwin', root, ({ module }) => {
       module.app.isPackaged = packaged;
+      module.app.commandLine.hasSwitch.mockReturnValue(given);
       if (!packaged) fakeDaemon();
       if (portFile !== null) {
         mkdirSync(module.app.getPath('userData'), { recursive: true });
@@ -654,7 +668,7 @@ describe('app diagnostics', () => {
       value: target && { ...target, repo_root: path.resolve(root, 'app', '../..') },
     });
     expect(module.app.commandLine.appendSwitch.mock.calls).toEqual(
-      packaged ? [] : [['remote-debugging-port', '0']],
+      packaged || given ? [] : [['remote-debugging-port', '0']],
     );
   });
 

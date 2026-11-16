@@ -426,6 +426,26 @@ export async function deliverPermissionAnswer(
     : decision !== 'deny' && approval.answers
       ? adapter.answerPermission(handle, requestId, decision, approval.answers)
       : adapter.answerPermission(handle, requestId, decision));
+  if (receipt.refused && decision !== 'deny') {
+    // The runtime still holds the request, so it stays open for another answer.
+    const current = ctx.store.must<Approval>('approvals', approval.id);
+    if (current.state === 'approved' && current.resolved_at === undefined)
+      ctx.store.transaction(() => {
+        const { decided_by, session_wide, project_wide, answers, delivery_error, ...rest } =
+          current;
+        const next = ctx.store.update<Approval>(
+          'approvals',
+          {
+            ...rest,
+            state: 'pending',
+            refused: { decision, reason: receipt.reason ?? 'The runtime refused this answer' },
+          },
+          current.revision,
+        );
+        ctx.store.event('approval.refused', next, next.project_id, approvalEventPayload(next));
+      });
+    return receipt;
+  }
   // approval.respond already stored ask; the live native session follows once the plan is accepted.
   if (
     receipt.ok &&
@@ -569,15 +589,22 @@ export function answerApproval(
     'This request cannot be allowed for the project',
   );
   requireThat(approval.state === 'pending', 'approval_not_pending', 'Approval is not pending');
+  requireThat(
+    approval.refused?.decision !==
+      (decision === 'reject' ? 'deny' : decision === 'approve_session' ? 'allow_session' : 'allow'),
+    'invalid_input',
+    approval.refused?.reason ?? '',
+  );
   if (!approvalBindingCurrent(ctx, approval)) {
     voidApproval(ctx, approval, undefined, cause);
     return { error: 'revision_conflict', message: 'Approval binding has changed' };
   }
   if (expected) revision(ctx, expected, approval);
+  const { refused, ...answered } = approval;
   const next = ctx.store.update<Approval>(
     'approvals',
     {
-      ...approval,
+      ...answered,
       state: decision === 'reject' ? 'rejected' : 'approved',
       decided_by: p.id,
       ...(decision === 'approve_session' ? { session_wide: true } : {}),

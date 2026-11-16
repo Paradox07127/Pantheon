@@ -1159,6 +1159,27 @@ it.each(['negative receipt', 'exception'])(
   },
 );
 
+it('keeps an approval pending when the runtime refuses its decision and refuses that decision again with the reason', async () => {
+  const f = await approvalFixture();
+  try {
+    const reason = 'The agent offers no allow-once option for this request';
+    const approval = f.request();
+    f.respond(approval);
+    f.answer.mockResolvedValueOnce({ ok: false, reason, refused: true });
+    await f.control.tick();
+    const reopened = f.store.must<Approval>('approvals', approval.id);
+    expect(reopened.state).toBe('pending');
+    expect(f.store.pending().filter((out) => out.kind === 'permission.answer')).toHaveLength(0);
+    expect(() => f.respond(reopened)).toThrow(reason);
+    f.respond(f.store.must<Approval>('approvals', approval.id), 'reject');
+    await f.control.tick();
+    expect(f.answer).toHaveBeenLastCalledWith(f.handle, approval.request_id, 'deny');
+    expect(f.store.must<Approval>('approvals', approval.id)).not.toHaveProperty('refused');
+  } finally {
+    await f.close();
+  }
+});
+
 it('records a request the adapter withdrew at the turn deadline as lost, not rejected', async () => {
   const f = await approvalFixture();
   try {

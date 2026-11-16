@@ -1834,6 +1834,29 @@ it('ties each request for the user to its task and puts the ones that unblock th
   });
 });
 
+it('leaves a request of a removed task worker off the new task that reuses its id', async () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, [
+    { id: 'a', title: 'Serve exports', depends_on: [] },
+    { id: 'b', title: 'Add a download button', depends_on: ['a'] },
+  ]);
+  const old = await idleTaskSession(f, lead.id, 'a');
+  const request = pendingApproval(f, old.id, { tool: 'Bash' });
+  patchPlan(f, lead.id, {
+    retired: { a: 1 },
+    generations: {
+      ...f.store.must<BoardPlan>('board_plans', lead.id).generations,
+      a: { generation: 2, contract: 'reused' },
+    },
+  });
+
+  const item = f.control
+    .boardView(user, f.project.id, 1)
+    .needs!.find((each) => each.source.id === request.id)!;
+  expect(item.task_id).not.toBe(`${lead.id}:a`);
+  expect(item.unblocks).toBe(0);
+});
+
 it('ties a dispatch failure and a lead request on its direct task to their tasks', () => {
   const f = workbenchFixture();
   const lead = leadWithPlan(f, [
@@ -2009,6 +2032,40 @@ it('leaves the merges of a removed task out of the trend and cycles of a new tas
   expect(board.tasks.find((each) => each.id === `${lead.id}:a`)!.status).toBe('todo');
   expect(board.task_progress.daily.at(-1)).toMatchObject({ scope: 2, done: 0 });
   expect(board.task_progress.cycle.sample_count).toBe(0);
+});
+
+it('leaves a task merged in an earlier generation out of the daily trend once a goal change starts the next', async () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const session = await idleTaskSession(f, lead.id, 'a');
+  const stored = current(f, session.id);
+  const merged = f.store.update<Session>(
+    'sessions',
+    { ...stored, state: 'closed', outcome: 'merged' },
+    stored.revision,
+  );
+  f.store.event('session.merged', merged, f.project.id, { to_sha: 'merged-sha' });
+  const plan = f.store.must<BoardPlan>('board_plans', lead.id);
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: plan.plan_version,
+      headline: plan.headline,
+      lanes: plan.lanes,
+      tasks: plan.tasks.map((task) => ({ ...task, goal: 'Export as CSV' })),
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    leadPrincipal(f, lead.id),
+  );
+  expect(f.store.must<BoardPlan>('board_plans', lead.id).generations?.a?.generation).toBe(2);
+
+  const board = f.control.boardView(user, f.project.id, 1);
+  expect(board.tasks.find((each) => each.id === `${lead.id}:a`)!.status).toBe('todo');
+  expect(board.task_progress.daily.at(-1)).toMatchObject({ scope: 1, done: 0 });
 });
 
 /** A plan of tasks a and b set two days ago, with a merged yesterday, replanned today to the tasks given. */
@@ -3068,6 +3125,18 @@ it('weighs iteration scope by its daily plan and completed estimates across loca
     iteration_id: `${lead.id}:spring`,
     estimate: 1,
   });
+});
+
+it('shows only the last year of days of an iteration stored with a mistyped start year', () => {
+  const f = workbenchFixture();
+  const lead = leadWithPlan(f, [{ id: 'api', title: 'API', depends_on: [] }]);
+  const today = dayKey(f.store.now());
+  patchPlan(f, lead.id, {
+    iterations: [{ id: 'typo', title: 'Typo', starts_on: '1900-01-01', ends_on: today }],
+  });
+  const days = f.control.boardView(user, f.project.id, 1).iterations![0]!.days;
+  expect(days).toHaveLength(366);
+  expect(days.at(-1)!.date).toBe(today);
 });
 
 it('reports collaboration messages for today and the used and queued dispatch slots', async () => {

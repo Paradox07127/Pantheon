@@ -24,11 +24,11 @@
 从源码构建 app 的步骤见[开发说明](development.zh-CN.md)。
 可以在检出目录里用 `pnpm dev` 运行，也可以用 `pnpm package` 打包。
 
-| 平台    | 安装包                 | 机器上需要的东西                                                |
-| ------- | ---------------------- | --------------------------------------------------------------- |
-| macOS   | `Pantheon.app`、`.dmg` | git,以及你要用的运行时 CLI                                      |
-| Linux   | AppImage、`.deb`       | git、`bubblewrap`、`socat`、`libatomic1`,以及运行时 CLI         |
-| Windows | NSIS 安装包            | WSL 2,默认 distro 里有 git、`bubblewrap`、`socat`、`libatomic1` |
+| 平台    | 安装包                 | 机器上需要的东西                                                      |
+| ------- | ---------------------- | --------------------------------------------------------------------- |
+| macOS   | `Pantheon.app`、`.dmg` | git 2.38+,以及你要用的运行时 CLI                                      |
+| Linux   | AppImage、`.deb`       | git 2.38+、`bubblewrap`、`socat`、`libatomic1`,以及运行时 CLI         |
+| Windows | NSIS 安装包            | WSL 2,默认 distro 里有 git 2.38+、`bubblewrap`、`socat`、`libatomic1` |
 
 - 每个安装包自带 Node 26、daemon 和 CLI,不依赖本仓库。
 - macOS:app 从登录 shell 的 `PATH` 里找 `claude` 和 `codex`。

@@ -514,6 +514,7 @@ describe('ACP adapter', () => {
     expect(await acp.adapter.answerPermission(handle, requested.request_id, 'allow')).toEqual({
       ok: false,
       reason: 'The agent offers no allow-once option for this request',
+      refused: true,
     });
     expect(acp.events).not.toContainEqual(expect.objectContaining({ kind: 'permission.resolved' }));
     expect(acp.frames().find((frame) => frame.result?.outcome)).toBeUndefined();

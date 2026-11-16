@@ -13,7 +13,7 @@ English | [简体中文](development.zh-CN.md)
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
 | Node                     | 26 (`devEngines.runtime` in the root `package.json` gives the exact version; `engines` is `>=26 <27`) |
 | pnpm                     | 12.11.2 (`packageManager` in the root `package.json`)                                                 |
-| git                      | Any recent version                                                                                    |
+| git                      | 2.38 or later (merge previews use `git merge-tree --write-tree`)                                      |
 | Xcode command line tools | macOS only. `pnpm dev` and `pnpm package` compile the voice engine with `xcrun swiftc`.               |
 | Docker                   | Only for `scripts/linux-test.mjs`                                                                     |
 

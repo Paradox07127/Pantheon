@@ -73,11 +73,11 @@ Pantheon 是一个本机运行的原生编码 agent 会话工作台。
 从 [Releases 页](https://github.com/Paradox07127/Pantheon/releases)下载安装包。
 每个 release 都是预发布的测试版。
 
-| 平台                   | 安装包              | 说明                                              |
-| ---------------------- | ------------------- | ------------------------------------------------- |
-| macOS(Apple 芯片)      | `.dmg`              | 已签名并公证。                                    |
-| Linux(x64、arm64)      | `.deb`、`.AppImage` | 需要 git、`bubblewrap`、`socat` 和 `libatomic1`。 |
-| Windows 11(x64、arm64) | `.exe` 安装程序     | 需要 WSL 2,daemon 跑在 WSL 里。安装程序没有签名。 |
+| 平台                   | 安装包              | 说明                                                    |
+| ---------------------- | ------------------- | ------------------------------------------------------- |
+| macOS(Apple 芯片)      | `.dmg`              | 已签名并公证。                                          |
+| Linux(x64、arm64)      | `.deb`、`.AppImage` | 需要 git 2.38+、`bubblewrap`、`socat` 和 `libatomic1`。 |
+| Windows 11(x64、arm64) | `.exe` 安装程序     | 需要 WSL 2,daemon 跑在 WSL 里。安装程序没有签名。       |
 
 Pantheon 不自带运行时。安装你要用的 CLI(`claude`、`codex` 或 ACP agent),并登录。
 各平台的细节见[使用说明](docs/usage.zh-CN.md#安装)。
@@ -92,7 +92,7 @@ Pantheon 不自带运行时。安装你要用的 CLI(`claude`、`codex` 或 ACP 
 | CLI      | `apps/cli`     | 命令行，以及原生会话使用的 MCP 工具服务。             |
 | 包       | `packages/*`   | 协议、领域类型、控制逻辑、SQLite 存储和运行时适配器。 |
 
-要求:Node 26(准确版本见 `package.json` 的 `devEngines.runtime`)、pnpm 12.11.2 和 git。
+要求:Node 26(准确版本见 `package.json` 的 `devEngines.runtime`)、pnpm 12.11.2 和 git 2.38 或更高版本。
 
 ```sh
 sh scripts/install.sh

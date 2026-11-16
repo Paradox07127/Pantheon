@@ -1162,7 +1162,7 @@ export class AcpAdapter implements HarnessAdapter {
         ...(session ? { unknown_request: true } : {}),
       };
     const refused = answer(decision, answers);
-    return refused ? { ok: false, reason: refused } : { ok: true };
+    return refused ? { ok: false, reason: refused, refused: true } : { ok: true };
   }
   async cancel(handle: SessionHandle, deadline: number): Promise<CancelReceipt> {
     const session = this.sessions.get(handle);

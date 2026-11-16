@@ -75,11 +75,17 @@ export async function tick(ctx: ControlContext): Promise<void> {
       try {
         const receipt = await deliverPermissionAnswer(ctx, payload);
         // Adapters register a request before raising it, so a running process without it lost it.
-        ctx.store.mark(out.id, receipt.ok || receipt.unknown_request ? 'done' : 'pending');
+        // A refused answer reopened its approval, which carries the reason.
+        ctx.store.mark(
+          out.id,
+          receipt.ok || receipt.unknown_request || receipt.refused ? 'done' : 'pending',
+        );
         recordAnswerDelivery(
           ctx,
           payload,
-          receipt.ok ? undefined : (receipt.reason ?? 'The runtime did not accept the answer'),
+          receipt.ok || receipt.refused
+            ? undefined
+            : (receipt.reason ?? 'The runtime did not accept the answer'),
         );
       } catch (error) {
         ctx.store.mark(out.id, 'pending');

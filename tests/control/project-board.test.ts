@@ -171,6 +171,13 @@ it('refuses a plan whose tasks, lanes or milestones do not line up', () => {
     [{ tasks: [api, api] }, 'api'],
     [{ lanes: [base.lanes[0], base.lanes[0]] }, 'core'],
     [{ tasks: [api, { ...ui, scope: ['apps/web/../../secrets'] }] }, 'apps/web/../../secrets'],
+    [{ tasks: [api, { ...ui, path: 'parallel', flow_reason: 'Two parts' }] }, 'ui'],
+    [
+      {
+        iterations: [{ id: 'typo', title: 'Typo', starts_on: '1900-01-01', ends_on: '2026-01-01' }],
+      },
+      'typo',
+    ],
   ];
   for (const [value, named] of cases) {
     const error = refusal(value);

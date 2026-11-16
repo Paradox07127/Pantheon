@@ -264,6 +264,8 @@ export interface Approval extends Entity {
   answers?: Record<string, string>;
   /** Why the latest attempt to deliver the answer to the runtime failed; cleared once it arrives. */
   delivery_error?: string;
+  /** A decision the runtime refused for this still pending request, and its reason. */
+  refused?: { decision: PermissionDecision; reason: string };
 }
 export interface ApprovalQuestion {
   question: string;
@@ -1084,6 +1086,8 @@ export interface Receipt {
   reason?: string;
   /** The session process is running but holds no pending permission request with this id. */
   unknown_request?: boolean;
+  /** The runtime still holds the request but cannot take this decision. */
+  refused?: boolean;
 }
 export interface NativeStatus {
   state: 'idle' | 'running' | 'exited' | 'unknown';

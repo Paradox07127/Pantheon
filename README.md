@@ -76,7 +76,7 @@ Each release is a pre-release test build.
 | Platform                | Package             | Notes                                                             |
 | ----------------------- | ------------------- | ----------------------------------------------------------------- |
 | macOS (Apple chip)      | `.dmg`              | Signed and notarized.                                             |
-| Linux (x64, arm64)      | `.deb`, `.AppImage` | Needs git, `bubblewrap`, `socat` and `libatomic1`.                |
+| Linux (x64, arm64)      | `.deb`, `.AppImage` | Needs git 2.38+, `bubblewrap`, `socat` and `libatomic1`.          |
 | Windows 11 (x64, arm64) | `.exe` installer    | Needs WSL 2. The daemon runs in WSL. The installer is not signed. |
 
 Pantheon does not include the runtimes. Install the CLIs that you use (`claude`, `codex`, or an ACP agent) and sign in to them.
@@ -92,7 +92,7 @@ The [usage guide](docs/usage.md#install) gives the details for each platform.
 | CLI           | `apps/cli`     | Command line and the MCP tool server that native sessions use.              |
 | Packages      | `packages/*`   | Protocol, domain types, control logic, SQLite store and runtime adapters.   |
 
-Requirements: Node 26 (the exact version is `devEngines.runtime` in `package.json`), pnpm 12.11.2 and git.
+Requirements: Node 26 (the exact version is `devEngines.runtime` in `package.json`), pnpm 12.11.2 and git 2.38 or later.
 
 ```sh
 sh scripts/install.sh

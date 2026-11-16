@@ -446,8 +446,23 @@ export function mergeProcesses(
 function sameProcess(one: ProcessIdentity, other: ProcessIdentity): boolean {
   return one.pid === other.pid && one.start_time_us === other.start_time_us;
 }
+/** An exited descendant its parent has not reaped keeps its identity but runs nothing. */
+export function descendantRuns(entry: LeftoverProcess): boolean {
+  if (readProcessIdentity(entry.pid)?.start_time_us !== entry.start_time_us) return false;
+  try {
+    return !execFileSync('ps', ['-o', 'stat=', '-p', String(entry.pid)], { encoding: 'utf8' })
+      .trim()
+      .startsWith('Z');
+  } catch {
+    return true;
+  }
+}
+/** Whether one of members is still in process group pgid; false when the process list cannot be read. */
+export function groupHolds(pgid: number, members: ProcessIdentity[]): boolean {
+  return !!groupMembers(pgid)?.some((member) => members.some((seen) => sameProcess(seen, member)));
+}
 /** The members of process group pgid; undefined when the process list cannot be read. */
-function groupMembers(pgid: number): ProcessIdentity[] | undefined {
+export function groupMembers(pgid: number): ProcessIdentity[] | undefined {
   let listing: string;
   try {
     listing = execFileSync('ps', ['-axo', 'pid=,pgid='], { encoding: 'utf8' });
@@ -495,7 +510,7 @@ export async function terminate(
     members !== undefined &&
     (child.exitCode !== null || child.signalCode !== null) &&
     alive() &&
-    !groupMembers(child.pid!)?.some((member) => members.some((seen) => sameProcess(seen, member)));
+    !groupHolds(child.pid!, members);
   const kill = (signal: NodeJS.Signals): void => {
     // An empty group must never be signalled again, even if transport close is pending.
     if (foreign || !alive()) return;
@@ -530,11 +545,7 @@ export async function terminate(
   // A transport still open after the group is empty is held by a process that left the group.
   const confirmed = observedGroup && empty && closed;
   // Once the group is empty, a surviving snapshot member must have left it; it is reported, never signalled.
-  const leftovers = confirmed
-    ? snapshot.filter(
-        (entry) => readProcessIdentity(entry.pid)?.start_time_us === entry.start_time_us,
-      )
-    : [];
+  const leftovers = confirmed ? snapshot.filter(descendantRuns) : [];
   childLeftovers.set(child, confirmed ? leftovers : snapshot);
   if (observedGroup && !empty && !foreign) {
     const left = groupMembers(child.pid!);

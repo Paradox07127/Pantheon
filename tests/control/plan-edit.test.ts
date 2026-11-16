@@ -415,6 +415,19 @@ it('refuses a user edit that resolves a held edit or names no lead', () => {
   ).toBe('invalid_input');
 });
 
+it('refuses a user edit that puts a task without parts on the parallel path', () => {
+  const f = setup();
+  const lead = leadOf(f);
+  writePlan(f, lead);
+  const before = planOf(f, lead);
+  const error = failure(() =>
+    edit(f, user, lead, [{ type: 'set_task', task_id: 'api', patch: { path: 'parallel' } }]),
+  );
+  expect(error.code).toBe('invalid_input');
+  expect(error.message).toContain('api');
+  expect(planOf(f, lead)).toEqual(before);
+});
+
 it('takes the source of a task the user adds as the user own words', () => {
   const f = setup();
   const lead = leadOf(f);

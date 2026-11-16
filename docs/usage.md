@@ -24,11 +24,11 @@ Check the download against `SHA256SUMS` from the same release: `shasum -a 256 -c
 To build the app from source, follow the [development guide](development.md).
 You can run the app from the checkout with `pnpm dev`, or package it with `pnpm package`.
 
-| Platform | Package                | What you need on the machine                                                  |
-| -------- | ---------------------- | ----------------------------------------------------------------------------- |
-| macOS    | `Pantheon.app`, `.dmg` | git, and the runtime CLIs that you use                                        |
-| Linux    | AppImage, `.deb`       | git, `bubblewrap`, `socat`, `libatomic1`, and the runtime CLIs                |
-| Windows  | NSIS installer         | WSL 2 with a default distro that has git, `bubblewrap`, `socat`, `libatomic1` |
+| Platform | Package                | What you need on the machine                                                        |
+| -------- | ---------------------- | ----------------------------------------------------------------------------------- |
+| macOS    | `Pantheon.app`, `.dmg` | git 2.38+, and the runtime CLIs that you use                                        |
+| Linux    | AppImage, `.deb`       | git 2.38+, `bubblewrap`, `socat`, `libatomic1`, and the runtime CLIs                |
+| Windows  | NSIS installer         | WSL 2 with a default distro that has git 2.38+, `bubblewrap`, `socat`, `libatomic1` |
 
 - Each package contains Node 26, the daemon and the CLI. It does not need this repository.
 - macOS: the app finds `claude` and `codex` in the `PATH` of your login shell.

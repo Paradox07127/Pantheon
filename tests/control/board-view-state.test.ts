@@ -3,7 +3,15 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
-import type { Approval, BoardPlan, Principal, Project, Session, Workspace } from '@pantheon/domain';
+import type {
+  Approval,
+  BoardPlan,
+  Principal,
+  Project,
+  Session,
+  SessionTurn,
+  Workspace,
+} from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, gateFolder, settle, user } from '../helpers.js';
 import { dispatchEveryTier, git, workbenchFixture } from './workbench-fixture.js';
 
@@ -662,4 +670,78 @@ it('lists a user edit of a running task as pending on its lead and its task unti
   );
   expect(leadOf(f, lead.id).pending_edits).toEqual([]);
   expect(rowOf(f, lead.id, 'a').pending_edit).toBe(false);
+});
+
+/** A parallel task of two parts whose workers both ended their first turn, oldest first. */
+async function parallelWorkers(f: Fixture) {
+  const part = (name: string) => ({
+    title: `Part ${name}`,
+    goal: `Write part ${name}`,
+    scope: [`src/p/${name}`],
+    acceptance: ['true'],
+  });
+  const lead = await leadWithPlan(f, [
+    task('p', {
+      path: 'parallel',
+      flow_reason: 'Two independent parts',
+      parallel: [part('one'), part('two')],
+    }),
+  ]);
+  startTasks(f, lead.id, ['p']);
+  await f.control.tick();
+  const workers = sessionsOf(f, lead.id, 'p');
+  expect(workers).toHaveLength(2);
+  for (const worker of workers) await settle(f, worker);
+  return { lead, workers };
+}
+
+/** Records a merge of the session without running one. */
+function markMerged(f: Fixture, sessionId: string) {
+  patch(f, sessionId, { state: 'closed', outcome: 'merged' });
+  f.store.event('session.merged', current(f, sessionId), f.project.id, { to_sha: 'merged-sha' });
+}
+
+it('shows a parallel task as failed once one part merged and the other closed unmerged with no retry queued', async () => {
+  const f = workbenchFixture();
+  const { lead, workers } = await parallelWorkers(f);
+  markMerged(f, workers[0]!.id);
+  patch(f, workers[1]!.id, { state: 'closed' });
+  expect(rowOf(f, lead.id, 'p').state).toBe('failed');
+});
+
+it('counts a parallel task done in the daily trend only once every part merged', async () => {
+  const f = workbenchFixture();
+  const { lead, workers } = await parallelWorkers(f);
+  markMerged(f, workers[0]!.id);
+  const board = () => f.control.boardView(user, f.project.id, 1);
+  expect(rowOf(f, lead.id, 'p').state).not.toBe('merged');
+  expect(board().task_progress.daily.at(-1)).toMatchObject({ scope: 1, done: 0 });
+  markMerged(f, workers[1]!.id);
+  expect(rowOf(f, lead.id, 'p').state).toBe('merged');
+  expect(board().task_progress.daily.at(-1)).toMatchObject({ scope: 1, done: 1 });
+});
+
+it('counts a parallel task by all its parts and keeps the blockers of a part that is not the newest', async () => {
+  const f = workbenchFixture();
+  const { lead, workers } = await parallelWorkers(f);
+  const turnState = (sessionId: string, state: SessionTurn['state']) => {
+    const turn = f.turns(sessionId).at(-1)!;
+    f.store.update<SessionTurn>('session_turns', { ...turn, state }, turn.revision);
+  };
+  for (const troubled of workers) {
+    patch(f, troubled.id, {
+      merge: { state: 'blocked', reason: 'conflict', conflicts: ['src/p/x.ts'] },
+    });
+    turnState(troubled.id, 'failed');
+    const board = f.control.boardView(user, f.project.id, 1),
+      row = board.tasks.find((each) => each.id === `${lead.id}:p`)!;
+    expect(row.status, troubled.id).toBe('failed');
+    expect(board.task_progress.totals, troubled.id).toMatchObject({ failed: 1, idle: 0 });
+    expect(
+      row.blocker_codes!.map((code) => code.code),
+      troubled.id,
+    ).toEqual(['merge_blocked', 'turn_failed']);
+    patch(f, troubled.id, { merge: undefined });
+    turnState(troubled.id, 'completed');
+  }
 });

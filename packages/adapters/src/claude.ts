@@ -1,4 +1,4 @@
-import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import {
   existsSync,
   readFileSync,
@@ -65,6 +65,9 @@ import {
   processIdentity,
   readProcessIdentity,
   descendants,
+  descendantRuns,
+  groupHolds,
+  groupMembers,
   mergeProcesses,
   realPathsOnDevice,
   remoteSpawn,
@@ -1112,21 +1115,14 @@ interface ClaudeProcess {
   device?: DeviceProcess;
   /** Its descendants a stop saw while it ran and has not yet seen gone; some may have left its group. */
   descendants?: LeftoverProcess[];
+  /**
+   * The members of the group a stop left running: once the CLI exits, the group may empty and its
+   * number pass to another group, so a later stop signals it only while one of them is still in it.
+   */
+  members?: ProcessIdentity[];
 }
 
 const groupsObserved = process.platform !== 'win32';
-
-/** An exited descendant its parent has not reaped keeps its identity but runs nothing. */
-function descendantRuns(entry: LeftoverProcess): boolean {
-  if (readProcessIdentity(entry.pid)?.start_time_us !== entry.start_time_us) return false;
-  try {
-    return !execFileSync('ps', ['-o', 'stat=', '-p', String(entry.pid)], { encoding: 'utf8' })
-      .trim()
-      .startsWith('Z');
-  } catch {
-    return true;
-  }
-}
 
 /** Whether the process group the CLI leads still has members. */
 function groupAlive(owned: ClaudeProcess): boolean {
@@ -1167,8 +1163,18 @@ async function stoppedProcesses(
       clearTimeout(timer);
     }
   }
+  const foreign = new Set(
+    processes.filter(
+      (owned) =>
+        owned.exit &&
+        owned.members &&
+        groupAlive(owned) &&
+        !groupHolds(owned.identity!.pid, owned.members),
+    ),
+  );
   // Tools the CLI started can outlive it in its group.
-  const left = () => processes.filter((owned) => owned.exit && groupAlive(owned));
+  const left = () =>
+    processes.filter((owned) => owned.exit && !foreign.has(owned) && groupAlive(owned));
   const signals: NonNullable<CancelReceipt['evidence']['signals']> = [];
   const signal = (name: NodeJS.Signals) => {
     for (const { identity } of left())
@@ -1193,6 +1199,11 @@ async function stoppedProcesses(
       );
     }
   }
+  for (const owned of processes)
+    if (!foreign.has(owned) && groupAlive(owned)) {
+      const members = groupMembers(owned.identity!.pid);
+      if (members?.length) owned.members = members;
+    }
   const members = processes.flatMap((owned) => (owned.identity ? [owned.identity] : []));
   const exits = processes.flatMap((owned) => (owned.exit ? [owned.exit] : []));
   const exited = processes.length > 0 && exits.length === members.length;
@@ -1206,7 +1217,8 @@ async function stoppedProcesses(
   // Once its group is empty, a descendant still running left the group; it is reported, never signalled.
   for (const owned of processes) owned.descendants = owned.descendants?.filter(descendantRuns);
   const escaped = processes.some((owned) => owned.descendants?.length);
-  const stopped = exited && !left().length && unconfirmed === undefined && !escaped;
+  const stopped =
+    exited && !left().length && !foreign.size && unconfirmed === undefined && !escaped;
   return {
     stopped,
     deadline,
@@ -1222,9 +1234,11 @@ async function stoppedProcesses(
       : {
           reason: exited
             ? (unconfirmed ??
-              (left().length
-                ? 'Process group still has members after the deadline'
-                : 'Descendants that left the process group are still running'))
+              (foreign.size
+                ? 'Process group number may now belong to another process group'
+                : left().length
+                  ? 'Process group still has members after the deadline'
+                  : 'Descendants that left the process group are still running'))
             : processes.length
               ? 'Child exit not observed by deadline'
               : 'No owned child process was observed',

@@ -53,6 +53,7 @@ import {
   type DispatchWait,
 } from './task-dispatch.js';
 import { cachedReady, sessionList } from './workbench-session.js';
+import { ITERATION_DAYS } from './project-board.js';
 import { reviewExecutionReader, reviewTimeReader } from './review.js';
 import { runGit } from './git.js';
 import { gateFailed } from './landing.js';
@@ -131,19 +132,6 @@ const PLANNED_FIELDS = [
   'needs',
   'uses',
 ] as const;
-
-const TASK_CLASS: Record<WorkbenchSession['state'], keyof TaskTotals> = {
-  starting: 'running',
-  running: 'running',
-  idle: 'idle',
-  waiting: 'waiting',
-  ready: 'ready',
-  merging: 'ready',
-  merged: 'done',
-  failed: 'failed',
-  discarded: 'discarded',
-  done: 'done',
-};
 
 // Cycle buckets: up to 15m, 30m, 1h, 2h, 4h, 8h, 1d, then over 1d.
 const CYCLE_BOUNDS = [15, 30, 60, 120, 240, 480, 1440].map((minutes) => minutes * 60 * 1000);
@@ -384,11 +372,8 @@ export function planTaskState(
   )
     return 'running';
   if (open.length) return 'claimed';
-  if (
-    sessions.length &&
-    sessions.every((session) => session.outcome !== 'merged') &&
-    !ownEntry(plan.dispatch, task.id)
-  )
+  // Not done with every session closed: a part that did not merge failed the task.
+  if (sessions.some((session) => session.outcome !== 'merged') && !ownEntry(plan.dispatch, task.id))
     return 'failed';
   return wait === 'upstream' ? 'waiting_upstream' : 'todo';
 }
@@ -698,8 +683,7 @@ export function boardView(
     stored = new Map<string, Session>(),
     usage = new Map<string, BoardModel['usage'][number]>(),
     models = new Map<string, BoardModel['models'][number]>(),
-    started = new Map<string, number>(),
-    failedTurns = new Set<string>();
+    started = new Map<string, number>();
   for (const listedSession of listed) {
     const session = ctx.store.must<Session>('sessions', listedSession.id),
       model = listedSession.model,
@@ -712,7 +696,6 @@ export function boardView(
       status = turnFailed ? 'failed' : listedStatus,
       span = spans.get(session.id),
       merge = merged.get(session.id);
-    if (turnFailed) failedTurns.add(session.id);
     const blockers: string[] = [],
       blockerCodes: BoardBlocker[] = [];
     if (
@@ -967,7 +950,8 @@ export function boardView(
         `^${base}`,
         '--',
       ]);
-      requireThat(log.exit_code === 0, 'git_failed', log.stderr.toString());
+      // A repository moved or deleted since leaves its merges uncounted rather than failing the board.
+      if (log.exit_code !== 0) continue;
       const fields = log.stdout.toString().split('\0'),
         walked: WalkedCommit[] = [];
       for (let index = 0; index + 5 < fields.length; index += 6)
@@ -1071,7 +1055,6 @@ export function boardView(
         at: number;
         created: boolean;
         tasks: BoardPlan['tasks'];
-        retired?: BoardPlan['retired'];
         generations?: BoardPlan['generations'];
       }[]
     >();
@@ -1087,14 +1070,13 @@ export function boardView(
       at: event.created_at,
       created: event.aggregate_revision === 1,
       tasks: (event.payload as BoardPlan).tasks,
-      retired: (event.payload as BoardPlan).retired,
       generations: (event.payload as BoardPlan).generations,
     });
     versions.set(lead, history);
   }
   /**
-   * The plan task ids just before `at`, each with the last generation of its id removed by then;
-   * null when a plan's history before then is not stored.
+   * The plan task ids just before `at`, each with its generation then; null when a plan's history
+   * before then is not stored.
    */
   const plannedBefore = (at: number): Map<string, number> | null => {
     const keys = new Map<string, number>();
@@ -1106,7 +1088,10 @@ export function boardView(
       if (!known.length) return null;
       const version = known.at(-1)!;
       for (const task of version.tasks)
-        keys.set(boardTaskId(plan.id, task.id), ownEntry(version.retired, task.id) ?? 0);
+        keys.set(
+          boardTaskId(plan.id, task.id),
+          ownEntry(version.generations, task.id)?.generation ?? 1,
+        );
     }
     return keys;
   };
@@ -1125,8 +1110,7 @@ export function boardView(
       if (payload?.direct) directMerges.set(key, event);
     } else if (!claims.has(key)) claims.set(key, event.created_at);
   }
-  const stateOf = new Map(listed.map((session) => [session.id, session.state])),
-    firstOpened = new Map<string, number>(),
+  const firstOpened = new Map<string, number>(),
     firstDone = new Map<string, number>(),
     doneByGeneration = new Map<string, Map<number, number>>();
   const markDone = (key: string, generation: number, at: number) => {
@@ -1134,19 +1118,28 @@ export function boardView(
     generations.set(generation, Math.min(generations.get(generation) ?? at, at));
     doneByGeneration.set(key, generations);
   };
+  const generationSessions = new Map<string, Session[]>();
   for (const [sessionId, session] of stored) {
     if (!session.task) continue;
     const plan = plans.find((each) => each.id === session.task!.lead_session_id);
     const key = boardTaskId(session.task.lead_session_id, session.task.id),
       generation = session.task.generation ?? 1,
       opened = started.get(sessionId),
-      merge = merged.get(sessionId);
-    if (merge) markDone(key, generation, merge.at);
+      merge = merged.get(sessionId),
+      id = JSON.stringify([key, generation]);
+    generationSessions.set(id, [...(generationSessions.get(id) ?? []), session]);
     // A session of a removed task does not count for a new task that reuses its id.
     if (generation <= (ownEntry(plan?.retired, session.task.id) ?? 0)) continue;
     if (opened !== undefined)
       firstOpened.set(key, Math.min(firstOpened.get(key) ?? opened, opened));
     if (merge) firstDone.set(key, Math.min(firstDone.get(key) ?? merge.at, merge.at));
+  }
+  // The trend counts a generation done once every session of it not discarded merged.
+  for (const [id, sessions] of generationSessions) {
+    const live = sessions.filter((session) => session.outcome !== 'discarded');
+    if (!live.length || !live.every((session) => merged.has(session.id))) continue;
+    const [key, generation] = JSON.parse(id) as [string, number];
+    markDone(key, generation, Math.max(...live.map((session) => merged.get(session.id)!.at)));
   }
   for (const merge of directMerges.values()) {
     const { task_id: taskId, generation } = merge.payload as {
@@ -1201,23 +1194,22 @@ export function boardView(
       const lead = stored.get(plan.id),
         leadRow = rows.get(plan.id),
         directKey = JSON.stringify([plan.id, task.id, taskGeneration(plan, task.id)]),
-        directMerge = currentDirectMerge(plan, task.id) && directMerges.get(directKey);
-      if (
-        lead?.direct_task?.id === task.id &&
-        lead.direct_task.generation === taskGeneration(plan, task.id)
-      )
-        bound.push(rows.get(plan.id)!);
-      // A landed claim stands as a merged session from the claim to the merge.
-      else if (directMerge && leadRow) {
-        const payload = directMerge.payload as MergedPayload,
+        directMerge = currentDirectMerge(plan, task.id) && directMerges.get(directKey),
+        claimed =
+          lead?.direct_task?.id === task.id &&
+          lead.direct_task.generation === taskGeneration(plan, task.id);
+      // A claim stands as a session from the claim to its merge, or to now while it is held.
+      if ((claimed || directMerge) && leadRow) {
+        const payload = !claimed && directMerge ? (directMerge.payload as MergedPayload) : null,
           claimedAt = claims.get(directKey) ?? null,
-          diff = { additions: payload.additions ?? 0, deletions: payload.deletions ?? 0 },
-          // The lead's other work is not this task's: only what happened from the claim to the merge.
+          until = payload ? directMerge!.created_at : now,
+          // The worktree's changes may hold work from before the claim, so a held claim shows none.
+          diff = payload
+            ? { additions: payload.additions ?? 0, deletions: payload.deletions ?? 0 }
+            : {},
+          // The lead's other work is not this task's: only what happened from the claim on.
           within = (at: number | undefined) =>
-            claimedAt !== null &&
-            at !== undefined &&
-            at >= claimedAt &&
-            at <= directMerge.created_at,
+            claimedAt !== null && at !== undefined && at >= claimedAt && at <= until,
           turns = turnsOf.get(plan.id)!.filter((turn) => within(spans.get(turn.id)?.last)),
           newest = turns.at(-1),
           progress = events
@@ -1227,20 +1219,26 @@ export function boardView(
                 (sessionOfTurn.get(event.aggregate_id) ?? event.aggregate_id) === plan.id &&
                 within(event.created_at),
             )
-            .map((event) => event.created_at);
+            .map((event) => event.created_at),
+          gateEvent = (kinds: string[]) =>
+            events.some(
+              (event) =>
+                kinds.includes(event.kind) &&
+                event.aggregate_id === plan.id &&
+                within(event.created_at),
+            );
+        const { additions: _additions, deletions: _deletions, ...segment } = leadRow.segments[0]!;
         bound.push({
           ...leadRow,
-          status: 'done',
-          blockers: [],
-          blocker_codes: [],
+          ...(payload ? { status: 'done' as const, blockers: [], blocker_codes: [] } : {}),
           segments: [
             {
-              ...leadRow.segments[0]!,
+              ...segment,
               runtime: newest ? runtimeAt(lead!, spans.get(newest.id)!.last) : null,
               model: newest?.model ?? null,
-              status: 'done',
+              ...(payload ? { status: 'done' as const } : {}),
               started_at: claimedAt,
-              ended_at: directMerge.created_at,
+              ended_at: payload ? until : null,
               tokens: turns.reduce(
                 (sum, turn) =>
                   sum + (turn.usage ? turn.usage.input_tokens + turn.usage.output_tokens : 0),
@@ -1249,19 +1247,19 @@ export function boardView(
               ...diff,
             },
           ],
-          ...diff,
-          checks: events.some(
-            (event) =>
-              event.kind === 'session.gate_checked' &&
-              event.aggregate_id === plan.id &&
-              within(event.created_at),
-          )
-            ? 'pass'
-            : 'none',
+          additions: diff.additions ?? null,
+          deletions: diff.deletions ?? null,
+          checks: payload
+            ? gateEvent(['session.gate_checked'])
+              ? 'pass'
+              : 'none'
+            : gateEvent(['session.gate_started', 'session.gate_checked'])
+              ? leadRow.checks
+              : 'none',
           started_at: claimedAt,
-          ended_at: directMerge.created_at,
+          ended_at: payload ? until : null,
           last_progress_at: progress.length ? Math.max(...progress) : null,
-          turn_running: false,
+          turn_running: payload ? false : leadRow.turn_running,
         });
       }
       for (const row of bound) planned.add(row.id);
@@ -1480,32 +1478,37 @@ export function boardView(
               : ends.length
                 ? Math.max(...ends)
                 : null;
-      // An unfinished task is counted by its newest session that has not merged.
-      const newestRow = bound
-        .filter((row) => row.status !== 'done')
-        .reduce<Task | undefined>(
-          (latest, row) =>
-            !latest || (row.started_at ?? 0) >= (latest.started_at ?? 0) ? row : latest,
-          undefined,
-        );
+      // A task is counted by the status of all its parts; one whose sessions were all discarded as discarded.
       totals[
-        status === 'done'
-          ? 'done'
-          : !newestRow
-            ? 'not_started'
-            : failedTurns.has(newestRow.id)
-              ? 'failed'
-              : TASK_CLASS[stateOf.get(newestRow.id)!]
+        status === 'todo'
+          ? bound.some((row) => row.status === 'discarded')
+            ? 'discarded'
+            : 'not_started'
+          : status
       ]++;
       if (ended !== null && ended < presentSince && !inRange(ended)) continue;
       const progress = bound.flatMap((row) =>
         row.last_progress_at === null ? [] : [row.last_progress_at],
       );
-      const newestLive = live.reduce<Task | undefined>(
-        (latest, row) =>
-          !latest || (row.started_at ?? 0) >= (latest.started_at ?? 0) ? row : latest,
-        undefined,
-      );
+      // Each parallel part is its newest session; a task without parts has one.
+      const parts = new Map<number | undefined, Task>();
+      for (const row of live) {
+        const part = stored.get(row.id)!.task?.parallel_index,
+          seen = parts.get(part);
+        if (!seen || (row.started_at ?? 0) >= (seen.started_at ?? 0)) parts.set(part, row);
+      }
+      const partRows = [...parts.values()],
+        newestOf = (rows: Task[]) =>
+          rows.reduce<Task | undefined>(
+            (latest, row) =>
+              !latest || (row.started_at ?? 0) >= (latest.started_at ?? 0) ? row : latest,
+            undefined,
+          );
+      // The card follows the part most in need, so one ahead of the rest does not hide it.
+      const newestLive =
+        (['waiting', 'failed', 'running', 'idle', 'ready'] as const)
+          .map((candidate) => newestOf(partRows.filter((row) => row.status === candidate)))
+          .find((row) => row !== undefined) ?? newestOf(partRows);
       if (newestLive) currentSessions.set(boardTaskId(plan.id, task.id), newestLive.id);
       const waiting = queued.get(boardTaskId(plan.id, task.id));
       const step = waitingStep(ctx, plan, task);
@@ -1542,12 +1545,12 @@ export function boardView(
       const blockers = [
         ...(waiting ? [waiting.text] : []),
         ...unmetTitles.map((title) => `Dependency “${title}” is not finished`),
-        ...(newestLive?.blockers ?? []),
+        ...partRows.flatMap((row) => row.blockers),
       ].slice(0, 3);
       const blockerCodes = [
         ...(waiting ? [waiting.code] : []),
         ...unmetTitles.map((title): BoardBlocker => ({ code: 'upstream', title })),
-        ...(newestLive?.blocker_codes ?? []),
+        ...partRows.flatMap((row) => row.blocker_codes ?? []),
       ].slice(0, 3);
       tasks.push({
         id: boardTaskId(plan.id, task.id),
@@ -1609,7 +1612,12 @@ export function boardView(
         segments: bound.flatMap((row) => row.segments),
         additions: total(bound.map((row) => row.additions)),
         deletions: total(bound.map((row) => row.deletions)),
-        checks: bound.at(-1)?.checks ?? 'none',
+        // A failing or running part outweighs a passed one.
+        checks: partRows.length
+          ? ((['fail', 'running', 'pass'] as const).find((check) =>
+              partRows.some((row) => row.checks === check),
+            ) ?? 'none')
+          : (bound.at(-1)?.checks ?? 'none'),
         started_at: starts.length ? Math.min(...starts) : null,
         ended_at: ended,
         last_progress_at: progress.length ? Math.max(...progress) : null,
@@ -1711,12 +1719,10 @@ export function boardView(
     daily.push({
       day: dayKey(day),
       scope: after ? after.size : null,
-      // A day counts only the generations its plan version had not removed.
+      // A day counts only the generation its plan version held.
       done: after
-        ? [...after].filter(([key, retired]) =>
-            [...(doneByGeneration.get(key) ?? [])].some(
-              ([generation, at]) => generation > retired && at < end,
-            ),
+        ? [...after].filter(
+            ([key, generation]) => (doneByGeneration.get(key)?.get(generation) ?? end) < end,
           ).length
         : [...firstDone.values()].filter((at) => at < end).length,
       added: after && before ? [...after.keys()].filter((key) => !before!.has(key)).length : null,
@@ -2018,8 +2024,12 @@ export function boardView(
       const tasks = plan.tasks.filter((task) => task.iteration === iteration.id),
         days: NonNullable<BoardModel['iterations']>[number]['days'] = [],
         last = iteration.ends_on < dayKey(now) ? iteration.ends_on : dayKey(now);
+      // A stored iteration longer than a plan may now hold shows only its last days.
       for (
-        let day = new Date(`${iteration.starts_on}T00:00:00`).getTime();
+        let day = Math.max(
+          new Date(`${iteration.starts_on}T00:00:00`).getTime(),
+          midnight(new Date(`${last}T00:00:00`).getTime(), 1 - ITERATION_DAYS),
+        );
         dayKey(day) <= last;
         day = midnight(day, 1)
       ) {
@@ -2374,7 +2384,15 @@ export function boardView(
             : undefined,
         binding = item.task_id ? named : (session?.task ?? direct),
         plan = binding ? planOf.get(binding.lead_session_id) : undefined;
-      if (!binding || !plan || !taskRows.has(boardTaskId(plan.id, binding.id)))
+      if (
+        !binding ||
+        !plan ||
+        !taskRows.has(boardTaskId(plan.id, binding.id)) ||
+        // A worker of a removed task is not the task that reuses its id.
+        (binding === session?.task &&
+          !currentBinding(plan, session.task) &&
+          !(!session.outcome && awaitingChange(plan, session)))
+      )
         return { ...item, unblocks: 0 };
       return {
         ...item,
