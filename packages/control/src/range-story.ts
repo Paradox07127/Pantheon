@@ -11,6 +11,7 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import {
+  gitFolder,
   projectAccess,
   revision,
   userOnly,
@@ -19,8 +20,10 @@ import {
 } from './context.js';
 import { runtime } from './admission.js';
 import { sessionEnded, STORY_WALL_TIME_MS } from './change-story.js';
+import { runGit } from './git.js';
 
 const BRIEF_BOUND = 400000;
+const COMMIT_BOUND = 300;
 
 /** One session.merged event in the range, with what the brief says about it. */
 interface RangeMerge {
@@ -63,31 +66,100 @@ function rangeMerges(ctx: ControlContext, projectId: string, from: number, to: n
     });
 }
 
-/** The whole input of a read-only session that explains what was merged in one range. */
-export function renderRangeBrief(from: number, to: number, merges: RangeMerge[]): string {
-  const lines = [
-    '# Range story',
-    `Range: ${new Date(from).toISOString()} to ${new Date(to).toISOString()}, ${merges.length} merges.`,
-    '',
-    '## Merges',
-  ];
-  for (const merge of merges) {
-    lines.push(
-      '',
-      `### ${merge.title || 'Untitled session'}`,
-      `Merged: ${new Date(merge.at).toISOString()}; branch: ${merge.branch ?? 'unknown'}; files changed: ${merge.files ?? 'unknown'}.`,
+/** One main-line commit in the range, with what the brief says about it. */
+interface RangeCommit {
+  sha: string;
+  /** Committer time; the range is matched on it. */
+  at: number;
+  authored_at: number;
+  subject: string;
+  files: number;
+}
+
+/** Main-line (first-parent) commits of HEAD in each git root committed in [from, to), newest first. */
+function rangeCommits(project: Project, from: number, to: number): RangeCommit[] {
+  const commits: RangeCommit[] = [];
+  for (const root of project.roots.filter(gitFolder)) {
+    if (runGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD']).exit_code !== 0) continue;
+    const log = runGit(root, [
+      'log',
+      '--first-parent',
+      `--since=@${Math.floor(from / 1000)}`,
+      `--until=@${Math.ceil(to / 1000)}`,
+      '--name-only',
+      '--diff-merges=first-parent',
+      '--format=%x1e%h%x1f%ct%x1f%at%x1f%s',
+      'HEAD',
+      '--',
+    ]);
+    requireThat(
+      log.exit_code === 0,
+      'git_failed',
+      `Cannot read commits in ${root}: ${log.error ?? log.stderr.toString()}`,
     );
-    if (merge.overall) {
-      for (const item of merge.overall.before) lines.push(`Before: ${item}`);
-      for (const item of merge.overall.after) lines.push(`After: ${item}`);
+    for (const entry of log.stdout.toString().split('\x1e').slice(1)) {
+      const [header, ...files] = entry.split('\n');
+      const [sha, at, authored, subject] = header!.split('\x1f');
+      const time = Number(at) * 1000;
+      if (time < from || time >= to) continue;
+      commits.push({
+        sha: sha!,
+        at: time,
+        authored_at: Number(authored) * 1000,
+        subject: subject ?? '',
+        files: files.filter(Boolean).length,
+      });
     }
   }
+  return commits.sort((a, b) => b.at - a.at);
+}
+
+/** The whole input of a read-only session that explains what was merged or committed in one range. */
+export function renderRangeBrief(
+  from: number,
+  to: number,
+  merges: RangeMerge[],
+  commits: RangeCommit[] = [],
+): string {
+  const source = merges.length > 0 ? 'merges' : 'commits';
+  const range = `Range: ${new Date(from).toISOString()} to ${new Date(to).toISOString()}`;
+  const lines = ['# Range story'];
+  if (source === 'merges') {
+    lines.push(`${range}, ${merges.length} merges.`, '', '## Merges');
+    for (const merge of merges) {
+      lines.push(
+        '',
+        `### ${merge.title || 'Untitled session'}`,
+        `Merged: ${new Date(merge.at).toISOString()}; branch: ${merge.branch ?? 'unknown'}; files changed: ${merge.files ?? 'unknown'}.`,
+      );
+      if (merge.overall) {
+        for (const item of merge.overall.before) lines.push(`Before: ${item}`);
+        for (const item of merge.overall.after) lines.push(`After: ${item}`);
+      }
+    }
+  } else {
+    const omitted = commits.length - COMMIT_BOUND;
+    lines.push(
+      omitted > 0
+        ? `${range}, ${commits.length} commits; the oldest ${omitted} are left out and the newest ${COMMIT_BOUND} listed.`
+        : `${range}, ${commits.length} commits.`,
+      '',
+      '## Commits',
+      '',
+    );
+    for (const commit of commits.slice(0, COMMIT_BOUND))
+      lines.push(
+        `- ${commit.sha} ${new Date(commit.authored_at).toISOString()}: ${commit.subject} (files changed: ${commit.files})`,
+      );
+  }
+  const verb = source === 'merges' ? 'merged' : 'committed';
+  const unit = source === 'merges' ? 'merge' : 'commit';
   lines.push(
     '',
     '## How to answer',
     '- Answer by calling the `range_story_submit` tool with `lines`: 1 to 6 lines, each at most 280 characters.',
-    '- Together the lines are one paragraph on what the range merged, for its owner.',
-    '- Group related merges by what they changed for the user; do not list every merge.',
+    `- Together the lines are one paragraph on what the range ${verb}, for its owner.`,
+    `- Group related ${unit}s by what they changed for the user; do not list every ${unit}.`,
     '- Give no scores and no risk ratings.',
     '- When the tool returns errors, fix what they name and submit again.',
   );
@@ -139,6 +211,51 @@ export function rangeStoryList(ctx: ControlContext, p: Principal, projectId: str
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+/** Starts a story of the range's merges, or of its main-line commits when nothing was merged. */
+export function startRangeStory(
+  ctx: ControlContext,
+  project: Project,
+  from: number,
+  to: number,
+  cause: string,
+): RangeStory {
+  const merges = rangeMerges(ctx, project.id, from, to);
+  const commits = merges.length > 0 ? [] : rangeCommits(project, from, to);
+  requireThat(
+    merges.length > 0 || commits.length > 0,
+    'invalid_input',
+    'No merges or commits in the range',
+  );
+  const brief = renderRangeBrief(from, to, merges, commits);
+  const base = {
+    id: id(),
+    revision: 1,
+    project_id: project.id,
+    from,
+    to,
+    lines: [],
+    created_at: new Date(ctx.store.now()).toISOString(),
+    source: merges.length > 0 ? ('merges' as const) : ('commits' as const),
+  };
+  if (brief.length > BRIEF_BOUND) {
+    const story: RangeStory = {
+      ...base,
+      state: 'failed',
+      session_id: null,
+      error: 'brief_too_large',
+    };
+    ctx.store.insert('range_stories', story);
+    return story;
+  }
+  const runtimes = [...ctx.adapters.keys()];
+  const runtimeName = runtimes.includes('claude') ? 'claude' : runtimes[0]!;
+  const session = createRangeSession(ctx, project, base.id, runtimeName, brief);
+  const story: RangeStory = { ...base, state: 'running', session_id: session.id };
+  ctx.store.insert('range_stories', story);
+  ctx.store.event('range_story.started', story, project.id, { session_id: session.id }, cause);
+  return story;
+}
+
 export const rangeStoryHandlers: Handlers = {
   'range_story.start': (ctx, p, c) => {
     userOnly(p);
@@ -146,41 +263,7 @@ export const rangeStoryHandlers: Handlers = {
     revision(ctx, c);
     projectAccess(ctx, p, input.project_id, c.type);
     const project = ctx.store.must<Project>('projects', input.project_id);
-    const merges = rangeMerges(ctx, project.id, input.from, input.to);
-    requireThat(merges.length > 0, 'invalid_input', 'No merges in the range');
-    const brief = renderRangeBrief(input.from, input.to, merges);
-    const base = {
-      id: id(),
-      revision: 1,
-      project_id: project.id,
-      from: input.from,
-      to: input.to,
-      lines: [],
-      created_at: new Date(ctx.store.now()).toISOString(),
-    };
-    if (brief.length > BRIEF_BOUND) {
-      const story: RangeStory = {
-        ...base,
-        state: 'failed',
-        session_id: null,
-        error: 'brief_too_large',
-      };
-      ctx.store.insert('range_stories', story);
-      return story;
-    }
-    const runtimes = [...ctx.adapters.keys()];
-    const runtimeName = runtimes.includes('claude') ? 'claude' : runtimes[0]!;
-    const session = createRangeSession(ctx, project, base.id, runtimeName, brief);
-    const story: RangeStory = { ...base, state: 'running', session_id: session.id };
-    ctx.store.insert('range_stories', story);
-    ctx.store.event(
-      'range_story.started',
-      story,
-      project.id,
-      { session_id: session.id },
-      c.command_id,
-    );
-    return story;
+    return startRangeStory(ctx, project, input.from, input.to, c.command_id);
   },
   'range_story.submit': (ctx, p, c) => {
     const input = inputSchemas['range_story.submit'].parse(c.input);

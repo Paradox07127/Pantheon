@@ -17,6 +17,8 @@ export interface RangeStory extends Entity {
   created_at: string;
   /** The submitted lines; empty until ready. */
   lines: string[];
+  /** Whether the story explains the range's merges or its commits. */
+  source: 'merges' | 'commits';
   /** Why the story failed. */
   error?: string;
 }

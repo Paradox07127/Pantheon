@@ -92,5 +92,8 @@
   "settings.search.keywords.runningSend": "排队, 插话, 打断, 发送键",
   "settings.search.keywords.reasoning": "思考, 推理",
   "settings.search.keywords.vendorMarks": "运行时图标, 品牌, 单色, 颜色",
-  "settings.search.keywords.contextUsage": "token, 上下文窗口, 用量"
+  "settings.search.keywords.contextUsage": "token, 上下文窗口, 用量",
+  "settings.search.keywords.baselineRounds": "摸底, 问题, 提问, 追问",
+  "settings.search.keywords.baselineVisuals": "摸底, 图表, 可视化, 置顶",
+  "settings.search.keywords.baselineRangeStory": "摸底, 提交, 区间解读, 30 天"
 }

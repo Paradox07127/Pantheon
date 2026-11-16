@@ -284,7 +284,6 @@ describe('now summary strip', () => {
             onPage: noop,
             projectId: 'project-a',
             onOpenSession: noop,
-            onOpenSessions: noop,
             onOpenStory: noop,
             onOpenTrace: noop,
           }),

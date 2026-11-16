@@ -312,8 +312,7 @@ describe('general settings of the desktop shell', () => {
   it('holds its rows in one group with no caption', () => {
     vi.stubGlobal('window', {});
     const page = mount(() => GeneralPage());
-    const group = page.value as ReactElement<any>;
-    expect(group.type).toBe(Section);
+    const group = find(page.value, (n) => n.type === Section) as ReactElement<any>;
     expect(group.props.title).toBeUndefined();
   });
 
@@ -381,6 +380,115 @@ describe('general settings of the desktop shell', () => {
     await h.flush();
     await voice.flush();
     expect(bridge.voiceAvailable).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('baseline group', () => {
+  const ROUNDS = zh('settings.general.baselineRounds');
+  const FEWER = zh('settings.general.baselineFewerRounds');
+  const MORE = zh('settings.general.baselineMoreRounds');
+  function app(rounds: number, answer: unknown = { ok: true, value: {} }) {
+    const bridge = {
+      ...desk(),
+      query: vi.fn(async (method: string) =>
+        method === 'app.settings'
+          ? {
+              ok: true as const,
+              value: {
+                auto_git_init: true,
+                auto_archive_merged: false,
+                baseline_rounds: rounds,
+                baseline_visuals: true,
+                baseline_range_story: true,
+              },
+            }
+          : { ok: false as const, error: { code: 'unknown_route', message: method } },
+      ),
+      command: vi.fn(async () => answer),
+    };
+    vi.stubGlobal('window', { pantheon: bridge });
+    return bridge;
+  }
+  async function baseline() {
+    const page = mount(() => GeneralPage());
+    const shown = named(page.value, 'BaselineSection');
+    const h = mount(() => (shown.type as (props: unknown) => ReactNode)(shown.props));
+    await h.flush();
+    return h;
+  }
+  const named$ = (tree: unknown, label: string) =>
+    find(tree as never, (n) => n.props['aria-label'] === label) as ReactElement<any>;
+  const sent = (bridge: ReturnType<typeof app>) =>
+    bridge.command.mock.calls.map((c) => (c as unknown as [any])[0].input);
+
+  it('shows the group under its name with its three rows', async () => {
+    app(3);
+    const h = await baseline();
+    const group = h.value as ReactElement<any>;
+    expect(group.type).toBe(Section);
+    expect(group.props.title).toBe(zh('settings.general.baseline'));
+    expect(rowLabels(h.value)).toEqual([
+      ROUNDS,
+      zh('settings.general.baselineVisuals'),
+      zh('settings.general.baselineRangeStory'),
+    ]);
+    expect(named$(h.value, ROUNDS).props.role).toBe('group');
+    expect(text(named$(h.value, ROUNDS))).toContain('3');
+  });
+
+  it.each([
+    [5, MORE, FEWER, 4],
+    [1, FEWER, MORE, 2],
+  ])('at %i rounds holds %s off and steps with %s', async (rounds, off, on, next) => {
+    const bridge = app(rounds);
+    const h = await baseline();
+    expect(named$(h.value, off).props['aria-disabled']).toBe(true);
+    expect(named$(h.value, on).props['aria-disabled']).toBe(false);
+    named$(h.value, off).props.onClick();
+    await h.flush();
+    expect(bridge.command).not.toHaveBeenCalled();
+    named$(h.value, on).props.onClick();
+    await h.flush();
+    expect(sent(bridge)).toEqual([{ baseline_rounds: next }]);
+    expect(text(named$(h.value, ROUNDS))).toContain(String(next));
+  });
+
+  it.each([
+    ['settings.general.baselineVisuals', 'baseline_visuals'],
+    ['settings.general.baselineRangeStory', 'baseline_range_story'],
+  ])('writes only its field from the %s switch', async (id, field) => {
+    const bridge = app(5);
+    const h = await baseline();
+    const toggle = () =>
+      find(h.value, (n) => n.type === 'input' && n.props['aria-label'] === zh(id));
+    expect(toggle().props.checked).toBe(true);
+    toggle().props.onChange({ target: { checked: false } });
+    await h.flush();
+    expect(sent(bridge)).toEqual([{ [field]: false }]);
+    expect(toggle().props.checked).toBe(false);
+  });
+
+  it('shows a failed save under the row it came from', async () => {
+    app(3, { ok: false, error: { code: 'not_implemented', message: 'not there' } });
+    const h = await baseline();
+    named$(h.value, FEWER).props.onClick();
+    await h.flush();
+    const all = nodes(h.value as never);
+    const alerts = all.filter((n) => n.props.role === 'alert');
+    expect(alerts.map((n) => text(n))).toEqual([
+      failureText({ code: 'not_implemented', message: 'not there' }),
+    ]);
+    const at = all.indexOf(alerts[0]!);
+    expect(all.indexOf(row(h.value, 'general.baselineRounds'))).toBeLessThan(at);
+    expect(all.indexOf(row(h.value, 'general.baselineVisuals'))).toBeGreaterThan(at);
+  });
+
+  it('is found in the settings search', () => {
+    const found = (query: string) => searchSettings(query).map((hit) => hit.id);
+    expect(found('Follow-up rounds')).toContain('general.baselineRounds');
+    expect(found('追问轮数')).toContain('general.baselineRounds');
+    expect(found('绘制解释图')).toContain('general.baselineVisuals');
+    expect(found('确认时解读近期历史')).toContain('general.baselineRangeStory');
   });
 });
 

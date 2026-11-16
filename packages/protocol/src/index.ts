@@ -649,6 +649,58 @@ const baselineFolderSchema = z.strictObject({
   gate: z.array(gateCommand.omit({ timeout_ms: true }).extend({ sources })),
   commands: commandSet(z.strictObject({ argv, sources })).optional(),
 });
+const baselinePreview = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('graph'),
+    // visualSpecs is defined further down.
+    spec: z.lazy(() =>
+      visualSpecs.graph.refine((spec) => spec.nodes.length <= 40, {
+        message: 'A preview graph has at most 40 nodes',
+        path: ['nodes'],
+      }),
+    ),
+  }),
+  z.strictObject({
+    kind: z.literal('mermaid'),
+    spec: z.strictObject({ source: z.string().min(1).max(4000) }),
+  }),
+]);
+const baselineQuestion = z
+  .strictObject({
+    id: str,
+    header: z.string().min(1).max(12),
+    question: str,
+    options: z
+      .array(
+        z.strictObject({
+          label: z.string().min(1).max(80),
+          description: boardText,
+          preview: baselinePreview.optional(),
+        }),
+      )
+      .min(2)
+      .max(4),
+    multiSelect: z.boolean(),
+    recommended: z.string().min(1).max(80).optional(),
+    kind: z.literal('direction').optional(),
+  })
+  .refine(
+    (question) =>
+      question.recommended === undefined ||
+      question.options.some((option) => option.label === question.recommended),
+    { message: 'recommended must be the label of an option', path: ['recommended'] },
+  );
+/** Multi-select answers join the chosen labels with "; "; `by: 'model'` leaves the choice to the model. */
+const baselineAnswers = z
+  .array(
+    z.strictObject({
+      question_id: str,
+      question: str,
+      answer: z.string().max(65536),
+      by: z.enum(['user', 'model']),
+    }),
+  )
+  .max(5);
 /** Project-level `file:` sources are accepted when they resolve inside any project root. */
 const baselineSubmission = {
   workstreams: z
@@ -678,7 +730,7 @@ const baselineSubmission = {
     .array(z.strictObject({ text: boardText, refs: sources, severity: z.enum(['info', 'risk']) }))
     .max(16),
   brief: projectBrief.extend({ sources }).optional(),
-  questions: z.array(z.strictObject({ question: str, options: z.array(str).min(2).max(4) })).max(5),
+  questions: z.array(baselineQuestion).max(5),
   extensions: baselineExtensions.optional(),
   /** `workstream` is the id of a workstream above; `scope` holds repo-relative paths, `acceptance` shell commands. */
   tasks: z
@@ -853,6 +905,12 @@ export const userConfigSchema = z
     auto_archive_merged: z.boolean().optional(),
     /** Sessions keep a recap of where they stand; absent is on. */
     session_recap: z.boolean().optional(),
+    /** The most question rounds of a baseline; absent is 5. */
+    baseline_rounds: z.number().int().min(1).max(5).optional(),
+    /** The baseline session draws explanation charts, pinned to the board on confirm; absent is on. */
+    baseline_visuals: z.boolean().optional(),
+    /** Confirming a baseline explains the last 30 days of commits as a range story; absent is on. */
+    baseline_range_story: z.boolean().optional(),
     /** The binary and extra arguments each runtime starts with; absent uses the one on PATH. */
     runtimes: z
       .record(
@@ -1553,10 +1611,12 @@ export const inputSchemas = {
       .array(z.strictObject({ root: str, commands: z.array(gateCommand) }))
       .max(256)
       .optional(),
-    answers: z.array(z.strictObject({ question: str, answer: str })).max(5),
+    answers: baselineAnswers,
     extensions: baselineExtensions.optional(),
     plan_board: z.boolean().optional(),
   }),
+  /** The user only; stores this round's answers and asks the baseline session for the next round. */
+  'project.baseline.continue': z.strictObject({ baseline_id: str, answers: baselineAnswers }),
   'project.brief.set': z.strictObject({
     project_id: str,
     goal: str,
@@ -1884,6 +1944,9 @@ export const inputSchemas = {
     auto_git_init: z.boolean().optional(),
     auto_archive_merged: z.boolean().optional(),
     session_recap: z.boolean().optional(),
+    baseline_rounds: z.number().int().min(1).max(5).optional(),
+    baseline_visuals: z.boolean().optional(),
+    baseline_range_story: z.boolean().optional(),
   }),
   /** The user only; replaces the device of this id in `~/.pantheon/config.json`. */
   'device.save': z.strictObject({ id: deviceId, ...deviceConfigSchema.shape }),
@@ -2154,6 +2217,9 @@ export interface AppSettings {
   auto_archive_merged: boolean;
   /** Absent is on. */
   session_recap?: boolean;
+  baseline_rounds: number;
+  baseline_visuals: boolean;
+  baseline_range_story: boolean;
 }
 export interface ThemeSetReceipt {
   theme_id: string;
@@ -3357,12 +3423,13 @@ export interface ProjectFactsRead {
   workstreams: (Pick<
     BaselineWorkstream,
     'id' | 'title' | 'status' | 'modules' | 'depends_on' | 'risks'
-  > & {
-    done: number;
-    open: number;
-    /** Items whose text is no longer found in the folder's checklists. */
-    missing: number;
-  })[];
+  > &
+    Partial<Pick<BaselineWorkstream, 'next' | 'blockers'>> & {
+      done: number;
+      open: number;
+      /** Items whose text is no longer found in the folder's checklists. */
+      missing: number;
+    })[];
 }
 export interface FilesListResult {
   entries: { name: string; kind: 'file' | 'dir'; size?: number }[];

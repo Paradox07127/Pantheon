@@ -732,7 +732,7 @@ export function Setup({
             <>
               {failure !== undefined && (
                 <Button
-                  label={t({ id: 'projects.open.retry', defaultMessage: 'Retry' })}
+                  label={t({ id: 'board.baseline.restart', defaultMessage: 'Rebuild baseline' })}
                   busy={retry.busy}
                   onPress={() => void retry.send(baselineStartRequest(project_id))}
                 />

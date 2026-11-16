@@ -3,8 +3,12 @@ import { find, mount, nodes, unmountAll } from './web-hook-host.js';
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true, useId: 'ap' }),
 );
+vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
+  (await import('./web-live-stores.js')).liveStores(actual as never),
+);
 vi.mock('@/data/facts-read', () => ({ useFactsRead: () => ({ read: null }) }));
 vi.mock('@/data/intro-read', () => ({ useIntroRead: () => ({ read: null }) }));
+vi.mock('@/data/app-settings', () => ({ useAppSettings: () => ({ settings: null }) }));
 import { ReviewBaseline } from '@/screens/projects/BaselineBlocks';
 import { zhf } from './i18n-setup.js';
 

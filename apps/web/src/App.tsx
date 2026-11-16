@@ -52,6 +52,7 @@ import { listText } from './lib/list-text';
 import { runShortcut, shortcutKeys, SHORTCUTS, useShortcut } from './lib/shortcuts';
 import { SCREEN_NAMES } from './screens';
 import { BoardScreen, PanelBoundary } from './screens/board/BoardScreen';
+import { startBaseline } from './screens/board/project-setup';
 import { InsightsScreen } from './screens/insights/InsightsScreen';
 import { MemoryScreen } from './screens/memory/MemoryScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
@@ -325,7 +326,6 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
     screen,
     setScreen,
     setTraceTab,
-    openSessions,
     openSession,
     openSettings,
     openProject,
@@ -427,6 +427,15 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
                     'screen-retro',
                     t({ id: 'board.panels.retro', defaultMessage: 'Retrospectives' }),
                     () => openBoardTab('retro'),
+                  ),
+                ]
+              : []),
+            ...(current
+              ? [
+                  action(
+                    'build-baseline',
+                    t({ id: 'board.baseline.start', defaultMessage: 'Build baseline' }),
+                    () => void startBaseline(current),
                   ),
                 ]
               : []),
@@ -573,17 +582,9 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
               {s === 'sessions' ? (
                 <SessionsScreen projectId={current} needs={needs} list={list} />
               ) : s === 'board' ? (
-                <BoardScreen
-                  projectId={current}
-                  onOpenSessions={openSessions}
-                  onOpenSession={openSession}
-                />
+                <BoardScreen projectId={current} onOpenSession={openSession} />
               ) : s === 'insights' ? (
-                <InsightsScreen
-                  projectId={current}
-                  onOpenSessions={openSessions}
-                  onOpenSession={openSession}
-                />
+                <InsightsScreen projectId={current} onOpenSession={openSession} />
               ) : s === 'repo' ? (
                 <RepoScreen projectId={current} onOpenSession={openSession} />
               ) : s === 'trace' ? (

@@ -55,7 +55,12 @@ function storyPrincipal(w: ReturnType<typeof workbenchFixture>, story: RangeStor
 it('starts a read-only session whose brief lists the sessions merged in the range', async () => {
   const { w, session, startStory } = await mergedSession();
   const story = startStory();
-  expect(story).toMatchObject({ project_id: w.project.id, state: 'running', lines: [] });
+  expect(story).toMatchObject({
+    project_id: w.project.id,
+    state: 'running',
+    lines: [],
+    source: 'merges',
+  });
   expect(story.session_id).not.toBeNull();
   expect(w.store.must<Session>('sessions', story.session_id!).range_story).toEqual({
     story_id: story.id,
@@ -93,13 +98,47 @@ it('leaves out the change story of another range of the merged session', async (
   expect(brief).not.toContain('Earlier range');
 });
 
-it('refuses a range without merges', () => {
+it('refuses a range without merges or commits', () => {
   const w = workbenchFixture();
   const now = w.store.now();
   expect(() =>
-    w.call('range_story.start', { project_id: w.project.id, from: now - HOUR, to: now + HOUR }),
-  ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
+    w.call('range_story.start', {
+      project_id: w.project.id,
+      from: now - 48 * HOUR,
+      to: now - 24 * HOUR,
+    }),
+  ).toThrow(
+    expect.objectContaining({
+      code: 'invalid_input',
+      message: expect.stringContaining('No merges or commits in the range'),
+    }),
+  );
 });
+
+it.each([
+  { extra: 0, listed: 'Describe the answer file', omitted: undefined },
+  { extra: 300, listed: 'Empty commit 300', omitted: 'the oldest 2 are left out' },
+])(
+  'explains the main-line commits of a range without merges ($extra extra commits)',
+  ({ extra, listed, omitted }) => {
+    const w = workbenchFixture();
+    writeFileSync(path.join(w.source, 'answer.txt'), 'described\n');
+    git(w.source, 'commit', '--quiet', '-am', 'Describe the answer file');
+    for (let index = 1; index <= extra; index++)
+      git(w.source, 'commit', '--quiet', '--allow-empty', '-m', `Empty commit ${index}`);
+    const now = w.store.now();
+    const story = w.call<RangeStory>('range_story.start', {
+      project_id: w.project.id,
+      from: now - HOUR,
+      to: now + HOUR,
+    });
+    expect(story).toMatchObject({ state: 'running', source: 'commits' });
+    const brief = w.turns(story.session_id!)[0]!.input;
+    expect(brief).toContain(listed);
+    if (omitted) expect(brief).toContain(omitted);
+    else expect(brief).toMatch(/Describe the answer file \(files changed: 1\)/);
+  },
+);
 
 it('refuses a submission from a session the story did not start', async () => {
   const { w, startStory } = await mergedSession();

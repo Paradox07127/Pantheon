@@ -67,7 +67,18 @@ const result = (extra: Partial<BaselineResult> = {}): BaselineResult => ({
     non_goals: ['Exports'],
     sources: ['file:README.md'],
   },
-  questions: [{ question: 'Keep Node 20?', options: ['Yes', 'No'] }],
+  questions: [
+    {
+      id: 'node',
+      header: 'Node',
+      question: 'Keep Node 20?',
+      options: [
+        { label: 'Yes', description: 'Stay on Node 20' },
+        { label: 'No', description: 'Move to Node 22' },
+      ],
+      multiSelect: false,
+    },
+  ],
   ...extra,
 });
 
@@ -89,19 +100,29 @@ describe('baselineEntry', () => {
   const expired = baseline({ state: 'failed', reason: 'baseline_window_expired' });
   // The label and the failure are projects.baseline.* catalog ids.
   it.each([
-    ['offers a first read when there is no baseline and no brief', null, false, 'read'],
-    ['offers a second read when the project already has a brief', null, true, 'readAgain'],
+    [
+      'offers a first read when there is no baseline and no brief',
+      null,
+      false,
+      'board.baseline.start',
+    ],
+    [
+      'offers a second read when the project already has a brief',
+      null,
+      true,
+      'board.baseline.restart',
+    ],
     [
       'offers a start again after a failed baseline, with its reason',
       expired,
       false,
-      'read',
+      'board.baseline.start',
       'failure.expired',
     ],
   ])('%s', (_, current, brief, label, failure?: string) => {
     expect(baselineEntry(current, brief)).toEqual({
       kind: 'start',
-      label: zh(`projects.baseline.${label}`),
+      label: zh(label),
       ...(failure && { failure: zh(`projects.baseline.${failure}`) }),
     });
   });
@@ -291,7 +312,7 @@ describe('baselineConfirmRequest', () => {
     const s = baseline();
     const draft = baselineDraft(s);
     draft.gate[0]!.checked = false;
-    draft.answers[0]!.answer = 'Yes';
+    draft.answers = { picked: [['Yes']], typed: [''] };
     const req = baselineConfirmRequest(s, draft);
     if (!req.ok) throw new Error(req.errors.join());
     expect(req.input.gates).toEqual([
@@ -300,7 +321,9 @@ describe('baselineConfirmRequest', () => {
         commands: [{ name: 'test', argv: ['pnpm', 'test'], timeout_ms: 60_000 }],
       },
     ]);
-    expect(req.input.answers).toEqual([{ question: 'Keep Node 20?', answer: 'Yes' }]);
+    expect(req.input.answers).toEqual([
+      { question_id: 'node', question: 'Keep Node 20?', answer: 'Yes', by: 'user' },
+    ]);
     expect(req.expected_revision).toBe(4);
     expect(inputSchemas['project.baseline.confirm'].safeParse(req.input).success).toBe(true);
   });
@@ -397,7 +420,7 @@ describe('baselineDraft', () => {
     const draft = baselineDraft(baseline());
     expect(draft.goal).toBe('Import every ledger format');
     expect(draft.gate.map((g) => g.checked)).toEqual([true, true]);
-    expect(draft.answers.map((a) => a.answer)).toEqual([null]);
+    expect(draft.answers).toEqual({ picked: [[]], typed: [''], decided: [false] });
   });
 
   it('groups the gate checklist under each folder with its stage and stack', () => {

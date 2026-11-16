@@ -578,11 +578,3 @@ button.bd-col-h:focus-visible {
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
-
-/* No sessions yet */
-.bd-empty {
-  grid-column: span 12;
-  display: flex;
-  justify-content: center;
-  padding: 96px 0;
-}

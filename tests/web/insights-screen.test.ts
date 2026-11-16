@@ -73,7 +73,6 @@ const insights = (section: InsightsSection, projectId?: string) =>
       onDays() {},
       onSection() {},
       onOpenSession() {},
-      onOpenSessions() {},
       onOpenStory() {},
     }),
   );
@@ -91,7 +90,6 @@ const progress = (projectId: string) =>
       onRange() {},
       onPage() {},
       onOpenSession() {},
-      onOpenSessions() {},
       onOpenStory() {},
       onOpenTrace() {},
     }),

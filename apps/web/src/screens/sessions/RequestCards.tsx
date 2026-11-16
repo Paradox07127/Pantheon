@@ -40,11 +40,16 @@ export function BaselineReview({ session }: { session: Session }) {
       shown.current = false;
     };
   }, []);
-  if (baseline?.id !== session.baseline?.baseline_id || baseline?.state !== 'submitted')
+  // After Ask me more the baseline runs again and the review waits for the next round.
+  const asking = baseline?.state === 'running' && !!baseline.rounds?.length;
+  if (
+    baseline?.id !== session.baseline?.baseline_id ||
+    (baseline?.state !== 'submitted' && !asking)
+  )
     return null;
   return (
     <ReviewBaseline
-      key={baseline.id}
+      key={`${baseline.id}:${baseline.rounds?.length ?? 0}`}
       baseline={baseline}
       onConfirmed={(confirmed) => {
         const lead = (confirmed as { lead_session_id?: string }).lead_session_id;

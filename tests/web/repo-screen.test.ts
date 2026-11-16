@@ -75,9 +75,9 @@ vi.mock('@/data/board-view', async (actual) => ({
     return reads.landed(reads.model);
   },
 }));
-vi.mock('@/screens/board/BoardScreen', async (actual) => ({
+vi.mock('@/screens/board/project-setup', async (actual) => ({
   ...(await actual<object>()),
-  useBaselineStart: () => undefined,
+  useProjectSetup: () => undefined,
 }));
 import { Sidebar } from '@/components/Sidebar';
 import { TopBar } from '@/components/TopBar';

@@ -12,12 +12,9 @@ import './memory-overview.css';
 /** The memory overview: the project profile, then the memory panel, then the introduction. */
 export function MemoryOverview({
   projectId,
-  baseline,
   memory,
 }: {
   projectId: string;
-  /** The board's baseline start, passed on to the introduction. */
-  baseline?: { busy: boolean; onStart: () => void };
   /** The memory panel; it calls `onHold(true)` while its first reads are out. */
   memory: (onHold: (held: boolean) => void) => ReactNode;
 }) {
@@ -62,7 +59,7 @@ export function MemoryOverview({
           />
         )}
         {memory(setHeld)}
-        {ready && <IntroView key={projectId} projectId={projectId} baseline={baseline} />}
+        {ready && <IntroView key={projectId} projectId={projectId} />}
       </div>
     </>
   );

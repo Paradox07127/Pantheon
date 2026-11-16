@@ -125,7 +125,6 @@ const view = (page: 'now' | 'canvas' = 'now', onPage = noop) =>
     onPage,
     projectId: 'project-a',
     onOpenSession: noop,
-    onOpenSessions: noop,
     onOpenStory: noop,
     onOpenTrace: noop,
     actions: { milestones: [], sessions: [], run: vi.fn() },

@@ -117,7 +117,7 @@ const descriptions: Record<ToolCommand, string> = {
   'project.baseline.submit_folder':
     'Submit the assessment of one project folder. Call once for each folder in the brief.',
   'project.baseline.submit':
-    'Submit the project-wide assessment: workstreams (each with its modules, depends_on, risks and the items, sections and commits that show its progress), contradictions and questions, and tasks (next tasks with scope, acceptance and dependencies). Call once after every folder is submitted, then end the turn.',
+    'Submit the project-wide assessment: workstreams (each with its modules, depends_on, risks and the items, sections and commits that show its progress), contradictions, questions, and tasks (next tasks with scope, acceptance and dependencies). Each question has id, header (at most 12 characters), question, 2–4 options { label, description, preview? }, multiSelect, and optional recommended and kind; preview is { kind: "graph", spec } with at most 40 nodes or { kind: "mermaid", spec: { source } }. The first round has exactly one question with kind "direction": 2–3 options, each with a preview. The last round has empty questions. Call it once after every folder and project_intro_submit are submitted, and again in each later round with the complete revised assessment; after each call end the turn.',
   'change_story.submit':
     'Submit your interpretation of the landed diff as change cards. Call once; if it returns errors, fix them and submit again, then end the turn.',
   'range_story.submit':

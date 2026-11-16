@@ -1,10 +1,14 @@
 import { useState, type RefObject } from 'react';
 import { Popover } from '@base-ui/react/popover';
+import { ChevronRight } from 'lucide-react';
 import { Markdown } from '../../components/Markdown';
 import { PathText } from '../../components/PathText';
+import { QuestionCard } from '../../components/QuestionCard';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { StateGlyph } from '../../components/SessionStateIcon';
+import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
+import { useDrafts } from '../../data/drafts';
 import { useFactsRead } from '../../data/facts-read';
 import { shortId } from '../../data/format';
 import { useIntroRead } from '../../data/intro-read';
@@ -13,7 +17,8 @@ import { effectiveSessionDefaults, useLastProjectDefaults } from '../../data/pro
 import { useRuntimeModels } from '../../data/runtime-models';
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import { t } from '../../i18n';
-import { mermaidBlocks } from '../board/intro-model';
+import { listText } from '../../lib/list-text';
+import { sourceText } from '../board/intro-model';
 import { defaultModelFor, defaultRuntime } from '../sessions/model';
 import { ModelMenu, type ModelChoice } from '../sessions/ModelMenu';
 import { workstreamRows } from './facts';
@@ -22,7 +27,9 @@ import { WorkstreamBars } from './WorkstreamBars';
 import { WorkstreamDetails } from './WorkstreamDetails';
 import { at, Button, Field, useSend, type Send } from './parts';
 import {
+  baselineAnswers,
   baselineConfirmRequest,
+  baselineContinueRequest,
   baselineDraft,
   baselineExtensions,
   baselineFolders,
@@ -33,6 +40,7 @@ import {
   type BaselineDraft,
   type BaselineEntry,
 } from './baseline';
+import './baseline-interview.css';
 
 export function StartBaseline({
   project_id,
@@ -186,6 +194,59 @@ export function RunningBaseline({ baseline }: { baseline: ProjectBaseline }) {
   );
 }
 
+type AnsweredRoundData = NonNullable<ProjectBaseline['rounds']>[number];
+
+/** An answered round as one row that opens to each question and its answer. */
+function AnsweredRound({ n, round }: { n: number; round: AnsweredRoundData }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="iv-rd"
+        aria-expanded={open}
+        onClick={() => setOpen((now) => !now)}
+      >
+        <ChevronRight className="iv-chev" size={14} aria-hidden="true" />
+        <span className="iv-rn">
+          {t({ id: 'projects.baseline.roundRow', defaultMessage: 'Round {round}' }, { round: n })}
+        </span>
+        <span className="mu">
+          {t(
+            {
+              id: 'projects.baseline.roundQuestions',
+              defaultMessage: '{count, plural, one {# question} other {# questions}}',
+            },
+            { count: round.questions.length },
+          )}
+        </span>
+        <span className="hm-line">{listText(...round.answers.map((a) => a.answer))}</span>
+        <StateGlyph name="done" />
+      </button>
+      {open && (
+        <div className="iv-rda">
+          {round.answers.map((a) => (
+            <div key={a.question_id} className="iv-qa">
+              <span className="mu">{a.question}</span>
+              <span className="iv-a">
+                {a.answer}
+                {a.by === 'model' && (
+                  <span className="chip">
+                    {t({
+                      id: 'projects.baseline.decidedForYou',
+                      defaultMessage: 'Decided for you',
+                    })}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function ReviewBaseline({
   baseline,
   onConfirmed,
@@ -211,17 +272,268 @@ export function ReviewBaseline({
   );
   const contradictions = baseline.result?.contradictions ?? [];
   const intro = useIntroRead(baseline.project_id);
-  const flow = mermaidBlocks(intro.read?.intro?.body ?? '');
+  const body = intro.read?.intro?.body?.trim() ?? '';
+  const { settings } = useAppSettings();
+  const rounds = baseline.rounds ?? [];
+  const round = rounds.length + 1;
+  // The daemon's default until the settings are read.
+  const limit = settings?.baseline_rounds ?? 5;
+  const questions = baseline.result?.questions ?? [];
+  const key = `baseline:${baseline.id}:${round}`;
+  const answers = useDrafts((s) => s.answers[key]) ?? draft.answers;
+  const answered = baselineAnswers(questions, answers).length;
+  const atLimit = round >= limit;
+  const limitId = `baseline-limit-${baseline.id}`;
+
+  const head = (
+    <div className="iv-h">
+      <StateGlyph name={baseline.state === 'running' ? 'running' : 'question'} />
+      <h2 className="iv-t">
+        {t({ id: 'projects.baseline.interview', defaultMessage: 'Baseline interview' })}
+      </h2>
+      <span className="iv-n">
+        {t(
+          { id: 'projects.baseline.round', defaultMessage: 'Round {round} of {limit}' },
+          { round, limit },
+        )}
+      </span>
+      <span
+        className="iv-seg"
+        role="img"
+        aria-label={t(
+          {
+            id: 'projects.baseline.roundsBar',
+            defaultMessage: 'Round {round} of {limit}, {answered} answered',
+          },
+          { round, limit, answered: rounds.length },
+        )}
+      >
+        {Array.from({ length: Math.max(limit, round) }, (_, i) => (
+          <i key={i} data-s={i < rounds.length ? 'ok' : i === rounds.length ? 'wait' : undefined} />
+        ))}
+      </span>
+      {baseline.runtime && (
+        <span className="hm-rt iv-rt">
+          <RuntimeGlyph runtime={baseline.runtime} size={14} />
+          {runtimeName(baseline.runtime)}
+        </span>
+      )}
+    </div>
+  );
+  const answeredRounds = rounds.length > 0 && (
+    <div className="iv-rds">
+      {rounds.map((r, i) => (
+        <AnsweredRound key={i} n={i + 1} round={r} />
+      ))}
+    </div>
+  );
+  if (baseline.state === 'running')
+    return (
+      <section
+        className="iv"
+        aria-label={t({ id: 'projects.baseline.interview', defaultMessage: 'Baseline interview' })}
+      >
+        {head}
+        {answeredRounds}
+        <RunningBaseline baseline={baseline} />
+      </section>
+    );
+
+  const askMore = questions.length > 0 && (
+    <>
+      <button
+        type="button"
+        className="btn"
+        aria-disabled={atLimit || send.busy || undefined}
+        aria-describedby={atLimit ? limitId : undefined}
+        onClick={() => {
+          if (!atLimit && !send.busy) void send.send(baselineContinueRequest(baseline, answers));
+        }}
+      >
+        {t({ id: 'projects.baseline.askMore', defaultMessage: 'Ask me more' })}
+      </button>
+      {atLimit && (
+        <span id={limitId} className="mu">
+          {t(
+            {
+              id: 'projects.baseline.roundLimit',
+              defaultMessage: 'Round limit reached, {round} of {limit}',
+            },
+            { round, limit },
+          )}
+        </span>
+      )}
+    </>
+  );
   const confirm = (
     <Button
-      label={t({ id: 'projects.baseline.confirm', defaultMessage: 'Confirm' })}
+      label={t({ id: 'projects.baseline.confirmBaseline', defaultMessage: 'Confirm baseline' })}
       tone="pri"
       busy={send.busy}
-      onPress={() => void send.send(baselineConfirmRequest(baseline, draft), onConfirmed)}
+      onPress={() =>
+        void send.send(baselineConfirmRequest(baseline, { ...draft, answers }), onConfirmed)
+      }
     />
+  );
+  const count = questions.length > 0 && (
+    <span className="mu iv-cnt">
+      {t(
+        { id: 'projects.baseline.answered', defaultMessage: '{answered} of {total} answered' },
+        { answered, total: questions.length },
+      )}
+    </span>
+  );
+  const interview = (
+    <section
+      className="iv"
+      aria-label={t({ id: 'projects.baseline.interview', defaultMessage: 'Baseline interview' })}
+    >
+      {head}
+      {answeredRounds}
+      {questions.length > 0 && (
+        <QuestionCard
+          group
+          draft={key}
+          questions={questions}
+          label={t({ id: 'projects.baseline.questions', defaultMessage: 'Open questions' })}
+        />
+      )}
+      {dialog ? (
+        count && <div className="iv-f">{count}</div>
+      ) : (
+        <div className="iv-f">
+          {askMore}
+          {confirm}
+          {count}
+        </div>
+      )}
+      {!dialog && <Result send={send} />}
+    </section>
+  );
+  const cellHead = (title: string, n: number) => (
+    <div className="iv-ch">
+      <span className="iv-ct">{title}</span>
+      <span className="mu">{n}</span>
+    </div>
+  );
+  const refs = (items: readonly string[]) =>
+    items.length > 0 && (
+      <span className="iv-ref">
+        {items.map((ref) => (
+          <span key={ref}>{sourceText(ref)}</span>
+        ))}
+      </span>
+    );
+  const results = (
+    <section
+      className="iv"
+      aria-label={t({ id: 'projects.baseline.results', defaultMessage: 'Baseline results' })}
+    >
+      <div className="iv-h">
+        <h2 className="iv-t">
+          {t({ id: 'projects.baseline.results', defaultMessage: 'Baseline results' })}
+        </h2>
+      </div>
+      {(workstreams.length > 0 || tasks.length > 0) && (
+        <div className="iv-pnl">
+          {workstreams.length > 0 && (
+            <div
+              className="iv-cell"
+              role="group"
+              aria-label={t({ id: 'projects.baseline.workstreams', defaultMessage: 'Workstreams' })}
+            >
+              {cellHead(
+                t({ id: 'projects.baseline.workstreams', defaultMessage: 'Workstreams' }),
+                workstreams.length,
+              )}
+              <WorkstreamBars rows={workstreams} />
+              <WorkstreamDetails rows={baseline.result?.workstreams ?? []} />
+            </div>
+          )}
+          {tasks.length > 0 && (
+            <div
+              className="iv-cell"
+              role="group"
+              aria-label={t({ id: 'projects.baseline.tasks.label', defaultMessage: 'Next tasks' })}
+            >
+              {cellHead(
+                t({ id: 'projects.baseline.tasks.label', defaultMessage: 'Next tasks' }),
+                tasks.length,
+              )}
+              <TaskGraph tasks={tasks} workstreams={baseline.result?.workstreams ?? []} />
+            </div>
+          )}
+        </div>
+      )}
+      {(findings.length > 0 || contradictions.length > 0) && (
+        <div className="iv-pnl">
+          {findings.length > 0 && (
+            <div
+              className="iv-cell"
+              role="group"
+              aria-label={t({ id: 'projects.baseline.findings', defaultMessage: 'Findings' })}
+            >
+              {cellHead(
+                t({ id: 'projects.baseline.findings', defaultMessage: 'Findings' }),
+                findings.length,
+              )}
+              <ul className="iv-fd">
+                {findings.map((finding, i) => (
+                  <li key={i}>
+                    <span className={finding.severity === 'risk' ? 'tr-st bad' : 'tr-st'}>
+                      {finding.severity === 'risk'
+                        ? t({ id: 'projects.baseline.finding.risk', defaultMessage: 'Risk' })
+                        : t({ id: 'projects.baseline.finding.info', defaultMessage: 'Note' })}
+                    </span>
+                    <span>{finding.text}</span>
+                    {refs(finding.refs)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {contradictions.length > 0 && (
+            <div
+              className="iv-cell"
+              role="group"
+              aria-label={t({
+                id: 'projects.baseline.contradictions',
+                defaultMessage: 'Docs the code contradicts',
+              })}
+            >
+              {cellHead(
+                t({
+                  id: 'projects.baseline.contradictions',
+                  defaultMessage: 'Docs the code contradicts',
+                }),
+                contradictions.length,
+              )}
+              <ul className="iv-fd" data-plain="">
+                {contradictions.map((entry, i) => (
+                  <li key={i}>
+                    <span>{entry.text}</span>
+                    {refs(entry.refs)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      {body && (
+        <div
+          className="hm-card"
+          role="group"
+          aria-label={t({ id: 'projects.baseline.flow.label', defaultMessage: 'Main flow' })}
+        >
+          <Markdown text={body} />
+        </div>
+      )}
+    </section>
   );
   const fields = (
     <>
+      {interview}
       <div
         className="hm-card hm-form"
         role="group"
@@ -341,119 +653,7 @@ export function ReviewBaseline({
           ))}
         </div>
       )}
-      {workstreams.length > 0 && (
-        <div
-          className="hm-card"
-          role="group"
-          aria-label={t({ id: 'projects.baseline.workstreams', defaultMessage: 'Workstreams' })}
-        >
-          <WorkstreamBars rows={workstreams} />
-          <WorkstreamDetails rows={baseline.result?.workstreams ?? []} />
-        </div>
-      )}
-      {tasks.length > 0 && (
-        <div
-          className="hm-card"
-          role="group"
-          aria-label={t({ id: 'projects.baseline.tasks.label', defaultMessage: 'Next tasks' })}
-        >
-          <TaskGraph tasks={tasks} workstreams={baseline.result?.workstreams ?? []} />
-        </div>
-      )}
-      {flow && (
-        <div
-          className="hm-card"
-          role="group"
-          aria-label={t({ id: 'projects.baseline.flow.label', defaultMessage: 'Main flow' })}
-        >
-          <Markdown text={flow} />
-        </div>
-      )}
-      {findings.length > 0 && (
-        <div
-          className="hm-card"
-          role="group"
-          aria-label={t({ id: 'projects.baseline.findings', defaultMessage: 'Findings' })}
-        >
-          {findings.map((finding, i) => (
-            <span key={i} className="hm-row">
-              <span className={finding.severity === 'risk' ? 'tr-st bad' : 'tr-st'}>
-                {finding.severity === 'risk'
-                  ? t({ id: 'projects.baseline.finding.risk', defaultMessage: 'Risk' })
-                  : t({ id: 'projects.baseline.finding.info', defaultMessage: 'Note' })}
-              </span>
-              <span>{finding.text}</span>
-            </span>
-          ))}
-        </div>
-      )}
-      {contradictions.length > 0 && (
-        <div
-          className="hm-card"
-          role="group"
-          aria-label={t({
-            id: 'projects.baseline.contradictions',
-            defaultMessage: 'Docs the code contradicts',
-          })}
-        >
-          {contradictions.map((entry, i) => (
-            <span key={i}>{entry.text}</span>
-          ))}
-        </div>
-      )}
-      {draft.answers.length > 0 && (
-        <div
-          className="hm-card"
-          role="group"
-          aria-label={t({ id: 'projects.baseline.questions', defaultMessage: 'Open questions' })}
-        >
-          {draft.answers.map((item, i) => (
-            <div key={i} className="hm-why">
-              <span>{item.question}</span>
-              <div className="hm-opts" role="group" aria-label={item.question}>
-                {item.options.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={item.answer === option ? 'btn sm hm-on' : 'btn sm'}
-                    aria-pressed={item.answer === option}
-                    onClick={() =>
-                      edit({
-                        answers: draft.answers.map((a, j) =>
-                          j === i ? { ...a, answer: option } : a,
-                        ),
-                      })
-                    }
-                  >
-                    {option}
-                  </button>
-                ))}
-                <input
-                  className="hm-other"
-                  aria-label={t(
-                    {
-                      id: 'projects.baseline.otherAnswer',
-                      defaultMessage: 'Other answer to {question}',
-                    },
-                    { question: item.question },
-                  )}
-                  placeholder={t({ id: 'projects.baseline.other', defaultMessage: 'Other' })}
-                  value={
-                    item.answer !== null && !item.options.includes(item.answer) ? item.answer : ''
-                  }
-                  onChange={(e) =>
-                    edit({
-                      answers: draft.answers.map((a, j) =>
-                        j === i ? { ...a, answer: e.target.value || null } : a,
-                      ),
-                    })
-                  }
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {results}
       {baseline.dropped > 0 && (
         <span className="mu">
           {t(
@@ -474,15 +674,12 @@ export function ReviewBaseline({
       <div className="pj-df">
         <Result send={send} />
         <span style={{ flex: 1 }} />
+        {askMore}
         {confirm}
       </div>
     </>
   ) : (
-    <>
-      {fields}
-      <span className="hm-row">{confirm}</span>
-      <Result send={send} />
-    </>
+    fields
   );
 }
 

@@ -98,6 +98,7 @@ const languageAndSleep = defineMessage({
   id: 'settings.general.languageAndSleep',
   defaultMessage: 'Language and sleep',
 });
+const baseline = defineMessage({ id: 'settings.general.baseline', defaultMessage: 'Baseline' });
 const environment = defineMessage({
   id: 'settings.environment.title',
   defaultMessage: 'Environment',
@@ -241,6 +242,45 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     keywords: defineMessage({
       id: 'settings.search.keywords.autoArchiveMerged',
       defaultMessage: 'archive, merged, clean up, auto archive',
+    }),
+  },
+  {
+    id: 'general.baselineRounds',
+    page: 'general',
+    section: baseline,
+    label: defineMessage({
+      id: 'settings.general.baselineRounds',
+      defaultMessage: 'Follow-up rounds',
+    }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.baselineRounds',
+      defaultMessage: 'baseline, questions, question rounds',
+    }),
+  },
+  {
+    id: 'general.baselineVisuals',
+    page: 'general',
+    section: baseline,
+    label: defineMessage({
+      id: 'settings.general.baselineVisuals',
+      defaultMessage: 'Draw explanation charts',
+    }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.baselineVisuals',
+      defaultMessage: 'baseline, charts, visuals, pin',
+    }),
+  },
+  {
+    id: 'general.baselineRangeStory',
+    page: 'general',
+    section: baseline,
+    label: defineMessage({
+      id: 'settings.general.baselineRangeStory',
+      defaultMessage: 'Explain recent history on confirm',
+    }),
+    keywords: defineMessage({
+      id: 'settings.search.keywords.baselineRangeStory',
+      defaultMessage: 'baseline, commits, range story, 30 days',
     }),
   },
 

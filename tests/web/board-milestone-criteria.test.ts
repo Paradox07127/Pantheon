@@ -406,7 +406,6 @@ describe('current milestone card', () => {
         page: 'now',
         onPage: noop,
         onOpenSession: noop,
-        onOpenSessions: noop,
         onOpenStory: noop,
         onOpenTrace: noop,
       }),

@@ -8,6 +8,7 @@ import { MergesPanel } from '../../apps/web/src/screens/board/Lists.js';
 import { TaskDrawer } from '../../apps/web/src/screens/board/TaskDrawer.js';
 import { t } from '../../apps/web/src/i18n/index.js';
 import { zh } from './i18n-setup.js';
+import { setupRead } from './setup-fixture.js';
 
 const NOW = new Date(2026, 10, 1, 15, 0).getTime();
 const noop = () => {};
@@ -251,14 +252,14 @@ describe('board view with no tasks in the range', () => {
         page: 'canvas',
         onPage: noop,
         onOpenSession: noop,
-        onOpenSessions: noop,
         onOpenStory: noop,
         onOpenTrace: noop,
+        setup: setupRead('none'),
       }),
     );
     expect(html).toContain('imports may drop rows');
     expect(html).toContain('ship the importer');
-    expect(html).not.toContain(zh('board.empty.openSession'));
+    expect(html).not.toContain(zh('board.baseline.start'));
   });
 });
 

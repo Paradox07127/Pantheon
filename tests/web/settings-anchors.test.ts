@@ -142,6 +142,9 @@ const AFTER_MOUNT = [
   'general.voiceEngine',
   'general.autoArchiveMerged',
   'general.autoGitInit',
+  'general.baselineRounds',
+  'general.baselineVisuals',
+  'general.baselineRangeStory',
   'editor.browser',
 ];
 

@@ -206,14 +206,14 @@ describe('project introduction head', () => {
 });
 
 describe('project introduction body', () => {
-  it('leaves the summary, languages, stack, weeks and body to other places', async () => {
+  it('leaves the summary, languages, stack and weeks to other places and draws the body', async () => {
     const h = await mountIntro();
     const all = text(h.value);
     expect(all).not.toContain('Refund service with a back office for operators');
     expect(all).not.toContain('Fastify');
     expect(has(h.value, (n) => n.props.className === 'in-seg')).toBe(false);
     expect(has(h.value, (n) => n.props.className === 'in-bars')).toBe(false);
-    expect(has(h.value, (n) => n.props.text === '## Layout')).toBe(false);
+    expect(has(h.value, (n) => n.props.text === '## Layout')).toBe(true);
     expect(has(h.value, (n) => n.props.className === 'in-mr')).toBe(false);
   });
 

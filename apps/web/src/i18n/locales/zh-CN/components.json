@@ -164,6 +164,10 @@
   "components.questionCard.other": "其他",
   "components.questionCard.otherAnswer": "其他回答",
   "components.questionCard.answer": "你的回答",
+  "components.questionCard.decide": "替我决定",
+  "components.questionCard.nth": "第 {n} 题，共 {count} 题",
+  "components.questionCard.graphPreview": "任务图，{count, plural, other {# 个任务}}：{tasks}",
+  "components.questionCard.flowPreview": "流程图",
   "components.requestCard.questionFrom": "来自 {who} 的提问",
   "components.toast.askAgent": "问 agent"
 }

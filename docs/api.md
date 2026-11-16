@@ -255,7 +255,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean |  |
+| `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean<br>`baseline_range_story?`: boolean |  |
 
 ### approval
 
@@ -377,6 +377,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `project.baseline.confirm` | `baseline_id`: string<br>`brief?`: object<br>`gates?`: object[]<br>`answers`: object[]<br>`extensions?`: object[]<br>`plan_board?`: boolean |  |
+| `project.baseline.continue` | `baseline_id`: string<br>`answers`: object[] |  |
 | `project.baseline.start` | `project_id`: string<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra" | rerun_baseline (lead) |
 | `project.baseline.submit` | `baseline_id`: string<br>`workstreams`: object[]<br>`contradictions`: object[]<br>`findings`: object[]<br>`brief?`: object<br>`questions`: object[]<br>`extensions?`: object[]<br>`tasks?`: object[] | project_baseline_submit (project session) |
 | `project.baseline.submit_folder` | `root`: string<br>`stage`: "empty" \| "early" \| "active" \| "maintenance"<br>`stack?`: string[]<br>`context?`: object<br>`gate`: object[]<br>`commands?`: object<br>`baseline_id`: string | project_baseline_submit_folder (project session) |

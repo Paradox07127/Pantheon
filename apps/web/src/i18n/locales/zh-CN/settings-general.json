@@ -22,5 +22,11 @@
   "settings.general.voiceEngineReset": "用回系统自带",
   "settings.general.shellReadFailed": "读取桌面端设置失败：{message}",
   "settings.general.shellSaveFailed": "设置没有保存：{message}",
-  "settings.general.autoArchiveMerged": "合并后自动归档会话"
+  "settings.general.autoArchiveMerged": "合并后自动归档会话",
+  "settings.general.baseline": "摸底",
+  "settings.general.baselineRounds": "追问轮数",
+  "settings.general.baselineFewerRounds": "减少轮数",
+  "settings.general.baselineMoreRounds": "增加轮数",
+  "settings.general.baselineVisuals": "绘制解释图",
+  "settings.general.baselineRangeStory": "确认时解读近期历史"
 }

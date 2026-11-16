@@ -11,9 +11,7 @@ import { Menu } from '@base-ui/react/menu';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { ChartGantt, Check, Ellipsis, SquarePen, Workflow } from 'lucide-react';
-import type { SessionTurn } from '@pantheon/domain';
-import type { BoardModel, BoardSnapshot } from '@pantheon/protocol';
-import { useBaselineRead } from '../../data/baseline-read';
+import type { BoardModel } from '@pantheon/protocol';
 import { useBoard } from '../../data/board';
 import { useBoardHistory } from '../../data/board-history';
 import { pickBoardPage, useBoardPage, type BoardPage } from '../../data/board-page';
@@ -30,11 +28,7 @@ import { effectiveSessionDefaults, useLastProjectDefaults } from '../../data/pro
 import { t } from '../../i18n';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
-import {
-  baselineStartInput,
-  type BaselineChoice,
-  type ProjectBaseline,
-} from '../projects/baseline';
+import type { BaselineChoice, ProjectBaseline } from '../projects/baseline';
 import { BaselinePopover } from '../projects/BaselineBlocks';
 import { BoardDevices } from './BoardDevices';
 import { SinceStrip } from './BoardFrame';
@@ -79,6 +73,15 @@ import {
 } from './panel-layout';
 import { type RunBoardCommand, type SnapshotMilestone, type SnapshotSession } from './panels-model';
 import { PlanProposals } from './PlanProposals';
+import {
+  endedTurns,
+  setupShown,
+  useProjectSetup,
+  waitAfter,
+  type ProjectSetupRead,
+  type TurnWait,
+} from './project-setup';
+import { ProjectSetup } from './ProjectSetup';
 import { CyclePanel, StallPanel, TaskProgressStrip, TrendPanel } from './ProgressCharts';
 import { ProgressTable } from './ProgressTable';
 import { PublishBar } from './PublishBar';
@@ -212,12 +215,12 @@ export function boardBaseline(baseline: ProjectBaseline | null): BoardBaseline {
       ? { label: label(baseline), session_id: baseline.session_id }
       : null;
   if (!baseline)
-    return { link, start: t({ id: 'board.baseline.start', defaultMessage: 'Run baseline' }) };
+    return { link, start: t({ id: 'board.baseline.start', defaultMessage: 'Build baseline' }) };
   const open =
     baseline.state === 'running' || (baseline.state === 'submitted' && !!baseline.session_id);
   return {
     link,
-    start: open ? null : t({ id: 'board.baseline.restart', defaultMessage: 'Rerun baseline' }),
+    start: open ? null : t({ id: 'board.baseline.restart', defaultMessage: 'Rebuild baseline' }),
   };
 }
 
@@ -255,13 +258,14 @@ interface BoardViewProps {
   /** Reads the review metrics and role usage tables; absent without a project. */
   projectId?: string;
   onOpenSession: (sessionId: string) => void;
-  onOpenSessions: () => void;
   onOpenStory: (sessionId: string) => void;
   onOpenEvidence?: (sessionId: string, tab: EvidenceTab) => void;
   onOpenTrace: () => void;
   onStartTask?: (task: BoardModel['tasks'][number]) => void;
   /** The bar's update action; absent without a project. */
   sync?: { busy: boolean; error: string | null; onSync: () => void };
+  /** The project's setup, shown in place of an empty board; absent without a project. */
+  setup?: ProjectSetupRead;
   /** The bar's baseline link and start action; absent without a project. */
   baseline?: BoardBaseline & {
     busy: boolean;
@@ -616,7 +620,7 @@ export function laidPanels({
 }
 
 export function BoardView(props: BoardViewProps) {
-  const { loading, error, onRetry, range, onRange, onOpenSession, onOpenSessions } = props;
+  const { loading, error, onRetry, range, onRange, onOpenSession, setup } = props;
   const { onOpenStory, onOpenTrace, onStartTask, sync, baseline } = props;
   const { page, onPage, projectId, actions } = props;
   const model = props.model;
@@ -818,13 +822,11 @@ export function BoardView(props: BoardViewProps) {
       {pending}
     </section>
   );
-  const emptyState = (
-    <div className="bd-empty">
-      <button type="button" className="btn pri big" onClick={onOpenSessions}>
-        {t({ id: 'board.empty.openSession', defaultMessage: 'Start a session' })}
-      </button>
-    </div>
+  const setupPanel = setup && setupShown(setup, shown, empty) && (
+    <ProjectSetup setup={setup} onOpenSession={onOpenSession} />
   );
+  // The setup says a failed start in its own panel.
+  const startError = !setupPanel && baseline?.error;
   return (
     <>
       <TopBar title={SCREEN_NAMES.board}>
@@ -981,12 +983,10 @@ export function BoardView(props: BoardViewProps) {
                   />
                 </div>
               )}
-              {(sync?.error || baseline?.error || baseline?.readFailure) && (
+              {(sync?.error || startError || baseline?.readFailure) && (
                 <div className="bd-errs">
                   {sync?.error && <Failure error={sync.error} onRetry={sync.onSync} />}
-                  {baseline?.error && (
-                    <Failure error={baseline.error} onRetry={() => baseline.onStart()} />
-                  )}
+                  {startError && <Failure error={startError} onRetry={() => baseline?.onStart()} />}
                   {baseline?.readFailure && <Failure {...baseline.readFailure} />}
                 </div>
               )}
@@ -1055,29 +1055,28 @@ export function BoardView(props: BoardViewProps) {
                   }
                 >
                   <div className="bd-cv">
-                    {empty ? (
-                      emptyState
-                    ) : !shown ? (
-                      loadingPanel
-                    ) : (
-                      <PanelBoundary
-                        title={t({ id: 'board.panels.main', defaultMessage: 'Main view' })}
-                        model={model}
-                        onRetry={onRetry}
-                      >
-                        <MainView
-                          model={shown}
-                          projectId={projectId}
-                          selected={selectedIn('flow')}
-                          onSelect={selectFlow}
-                          onOpenSession={onOpenSession}
-                          onOpenEvidence={props.onOpenEvidence}
-                          onStartTask={onStartTask}
-                          tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
-                          editing={editing}
-                        />
-                      </PanelBoundary>
-                    )}
+                    {setupPanel ||
+                      (empty ? null : !shown ? (
+                        loadingPanel
+                      ) : (
+                        <PanelBoundary
+                          title={t({ id: 'board.panels.main', defaultMessage: 'Main view' })}
+                          model={model}
+                          onRetry={onRetry}
+                        >
+                          <MainView
+                            model={shown}
+                            projectId={projectId}
+                            selected={selectedIn('flow')}
+                            onSelect={selectFlow}
+                            onOpenSession={onOpenSession}
+                            onOpenEvidence={props.onOpenEvidence}
+                            onStartTask={onStartTask}
+                            tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
+                            editing={editing}
+                          />
+                        </PanelBoundary>
+                      ))}
                   </div>
                 </EditMode>
               ) : shown && (page === 'canvas' || !projectId) ? (
@@ -1112,7 +1111,7 @@ export function BoardView(props: BoardViewProps) {
                   ) : projectId ? (
                     <HistoryTab
                       projectId={projectId}
-                      empty={empty && emptyState}
+                      empty={setupPanel}
                       lanes={model.lanes}
                       now={model.now}
                       milestones={model.milestones}
@@ -1123,9 +1122,7 @@ export function BoardView(props: BoardViewProps) {
                       }}
                       bar={historyBar}
                     />
-                  ) : (
-                    empty && emptyState
-                  )}
+                  ) : null}
                 </div>
               )}
               {page === 'now' && model && (
@@ -1144,108 +1141,28 @@ export function BoardView(props: BoardViewProps) {
   );
 }
 
-/** The turns a board sync or a baseline start queued on these sessions, of these origins (null: any). */
-interface TurnWait {
-  sessions: readonly string[];
-  /** Turns that had ended when the command was sent. */
-  ended: ReadonlySet<string>;
-  origins: readonly SessionTurn['origin'][] | null;
-  /** The board showed one of the turns. */
-  seen?: true;
-}
-
-const endedTurns = (turns: readonly SessionTurn[] | undefined): ReadonlySet<string> =>
-  new Set(turns?.filter((t) => t.state !== 'queued' && t.state !== 'running').map((t) => t.id));
-
-/**
- * The wait left after this board: null once its turns ended, or once they left the board after it
- * showed them or it lists their sessions discarded.
- */
-function waitAfter(
-  wait: TurnWait | null,
-  board: BoardSnapshot | null | undefined,
-): TurnWait | null {
-  if (!wait?.sessions.length) return null;
-  const queued = (board?.session_turns ?? []).filter(
-    (t) =>
-      wait.sessions.includes(t.session_id) &&
-      (!wait.origins || wait.origins.includes(t.origin)) &&
-      !wait.ended.has(t.id),
-  );
-  const discarded = wait.sessions.every(
-    (id) => board?.sessions?.find((s) => s.id === id)?.outcome === 'discarded',
-  );
-  if (!queued.length) return wait.seen || discarded ? null : wait;
-  if (!queued.some((t) => t.state === 'queued' || t.state === 'running')) return null;
-  return wait.seen ? wait : { ...wait, seen: true };
-}
-
 export const runBoardCommand: RunBoardCommand = async (type, input, expectedRevision) => {
   const result = await runCommand(type, input, expectedRevision);
   return result.ok ? null : failureText(result.error);
 };
 
-/** The project's baseline link, start button and start action; absent without a project. */
-export function useBaselineStart(projectId: string | null): BoardViewProps['baseline'] {
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const [startWait, setStartWait] = useState<TurnWait | null>(null);
-  const [startProject, setStartProject] = useState(projectId);
-  if (startProject !== projectId) {
-    setStartProject(projectId);
-    setStarting(false);
-    setStartError(null);
-    setStartWait(null);
-  }
-  const shownProject = useRef(projectId);
-  shownProject.current = projectId;
-  const board = useBoard((s) => s.board);
-  const baselineRead = useBaselineRead(projectId);
-  // A null read means no baseline only once a read of this project went through.
-  const [baselineKnown, setBaselineKnown] = useState<string | null>(null);
-  if (!baselineRead.loading && !baselineRead.error && baselineKnown !== projectId)
-    setBaselineKnown(projectId);
-  const known = baselineRead.read !== null || (baselineKnown === projectId && !baselineRead.error);
-  // Until the reset above lands, startWait is still the last project's.
-  const startLeft = startProject !== projectId ? null : waitAfter(startWait, board);
-  if (startLeft !== startWait) setStartWait(startLeft);
-  const onStart = async (project_id: string, choice?: BaselineChoice) => {
-    setStarting(true);
-    setStartError(null);
-    setStartWait(null);
-    const ended = endedTurns(useBoard.getState().board?.session_turns);
-    const result = await runCommand(
-      'project.baseline.start',
-      baselineStartInput(project_id, choice),
-      null,
-    );
-    if (shownProject.current !== project_id) return;
-    setStarting(false);
-    if (!result.ok) return setStartError(failureText(result.error));
-    const { session_id } = result.value as ProjectBaseline;
-    if (session_id) setStartWait({ sessions: [session_id], ended, origins: null });
-  };
-  if (!projectId) return undefined;
+/** The bar's baseline link, start button and start action, over the project's shared setup. */
+export function baselineBar(setup: ProjectSetupRead): NonNullable<BoardViewProps['baseline']> {
   return {
-    ...(known ? boardBaseline(baselineRead.read) : { link: null, start: null }),
-    busy: starting || startLeft !== null,
-    error: startError,
-    onStart: (choice) => void onStart(projectId, choice),
-    ...(!known &&
-      baselineRead.error !== null && {
-        readFailure: { error: baselineRead.error, onRetry: baselineRead.reload },
-      }),
+    ...(setup.state !== null ? boardBaseline(setup.baseline) : { link: null, start: null }),
+    busy: setup.busy,
+    error: setup.error,
+    onStart: setup.start,
+    ...(setup.readFailure && { readFailure: setup.readFailure }),
   };
 }
 
 export function BoardScreen({
   projectId,
   onOpenSession,
-  onOpenSessions,
 }: {
   projectId: string | null;
   onOpenSession: (sessionId: string) => void;
-  onOpenSessions: () => void;
 }) {
   const [range, setRange] = useState<BoardRange>('active');
   // The in-progress range reads today's board and leaves the ended tasks out.
@@ -1287,7 +1204,7 @@ export function BoardScreen({
   if (syncLeft !== syncWait) setSyncWait(syncLeft);
   const offline = useBoard((s) => s.status.state === 'offline');
   const globalDefaults = useLastProjectDefaults();
-  const baseline = useBaselineStart(projectId);
+  const setup = useProjectSetup(projectId);
   return (
     <div className="tb-pg">
       <BoardView
@@ -1302,7 +1219,6 @@ export function BoardScreen({
         page={page}
         onPage={onPage}
         onOpenSession={onOpenSession}
-        onOpenSessions={onOpenSessions}
         onOpenStory={(sessionId) => openSession(sessionId, 'story')}
         onOpenEvidence={(sessionId, tab) => openSession(sessionId, tab)}
         onOpenTrace={() => useShell.getState().setScreen('trace')}
@@ -1314,7 +1230,8 @@ export function BoardScreen({
             error: syncError,
             onSync: () => void onSync(projectId),
           },
-          baseline,
+          setup,
+          baseline: setup && baselineBar(setup),
           actions: snapshot
             ? {
                 milestones: snapshot.milestones ?? [],

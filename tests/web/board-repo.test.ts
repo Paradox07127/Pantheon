@@ -220,25 +220,18 @@ describe('repository panels', () => {
     ]);
   });
 
-  it('shows only the baseline entry when nothing was measured', () => {
-    let started = 0;
+  it('says only that nothing was measured yet, leaving the baseline start to the setup', () => {
     const html = renderToStaticMarkup(
       createElement(RepoPanels, {
         read: read(null, [
           { id: 'w1', title: 'Login', status: 'running', done: 1, open: 2, missing: 0 },
         ]),
         now: NOW,
-        baseline: {
-          link: null,
-          start: '摸底',
-          busy: false,
-          onStart: () => void started++,
-        },
-        onOpenSession() {},
       }),
     );
     expect(titles(html)).toEqual([zh('board.repo.title')]);
-    expect(html).toContain('>摸底</button>');
+    expect(html).toContain(zh('board.repo.noBaseline'));
+    expect(html).not.toContain('</button>');
   });
 });
 

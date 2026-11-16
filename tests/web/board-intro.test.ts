@@ -151,8 +151,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountIntro(baseline?: { busy: boolean; onStart: () => void }) {
-  const h = mount(() => IntroView({ projectId: 'refunds', baseline }));
+async function mountIntro() {
+  const h = mount(() => IntroView({ projectId: 'refunds' }));
   await h.flush();
   return h;
 }
@@ -180,7 +180,6 @@ describe('board views', () => {
         onPage: noop,
         projectId: 'refunds',
         onOpenSession: noop,
-        onOpenSessions: noop,
         onOpenStory: noop,
         onOpenTrace: noop,
       }),
@@ -268,24 +267,58 @@ describe('project introduction', () => {
 
   it('offers to generate an introduction for an assessed project without one', async () => {
     answers['project.intro.read'] = { intro: null, behind: 0, writing_session_id: null };
-    const h = await mountIntro({ busy: false, onStart: noop });
+    const h = await mountIntro();
     button(h.value, zh('board.intro.generate')).props.onClick();
     await h.flush();
     expect(command).toHaveBeenCalledOnce();
     expect(command.mock.calls[0]![0]).toMatchObject({ type: 'project.intro.start' });
   });
 
-  it('offers the baseline start for a project never assessed', async () => {
+  it.each([
+    ['builds the baseline of a project never assessed', null, 'board.baseline.start'],
+    [
+      'rebuilds the baseline after it failed',
+      { ...confirmed, state: 'failed', result: undefined },
+      'board.baseline.restart',
+    ],
+  ])('%s through the model choice the board uses', async (_name, assessed, label) => {
+    answers['project.intro.read'] = { intro: null, behind: 0, writing_session_id: null };
+    answers['project.baseline.read'] = assessed;
+    const h = await mountIntro();
+    expect(text(h.value)).not.toContain(zh('board.intro.generate'));
+    button(h.value, zh(label)).props.onClick();
+    h.render();
+    const popover = find(h.value, (n) => typeName(n) === 'BaselinePopover');
+    expect(popover.props.label).toBe(zh(label));
+    expect(command).not.toHaveBeenCalled();
+    popover.props.onStart({ runtime: 'codex' });
+    expect(command.mock.calls[0]![0]).toMatchObject({
+      type: 'project.baseline.start',
+      input: { project_id: 'refunds', runtime: 'codex' },
+    });
+  });
+
+  it('offers no start while the baseline runs, and says why a start was refused', async () => {
     answers['project.intro.read'] = { intro: null, behind: 0, writing_session_id: null };
     answers['project.baseline.read'] = null;
-    const onStart = vi.fn();
-    const h = await mountIntro({ busy: false, onStart });
-    expect(text(h.value)).not.toContain(zh('board.intro.generate'));
-    button(h.value, zh('board.intro.startBaseline')).props.onClick();
+    command.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'resource_busy', message: 'A baseline is already running' },
+    });
+    const h = await mountIntro();
+    button(h.value, zh('board.baseline.start')).props.onClick();
     h.render();
-    expect(has(h.value, (n) => typeName(n) === 'BaselinePopover')).toBe(true);
-    expect(onStart).not.toHaveBeenCalled();
-    expect(command).not.toHaveBeenCalled();
+    find(h.value, (n) => typeName(n) === 'BaselinePopover').props.onStart({});
+    await h.flush();
+    h.render();
+    expect(text(find(h.value, (n) => n.props.role === 'alert'))).toContain(
+      'A baseline is already running',
+    );
+    answers['project.baseline.read'] = { ...confirmed, state: 'running', result: undefined };
+    const running = await mountIntro();
+    const start = button(running.value, zh('board.setup.running'));
+    expect(start.props.disabled).toBe(true);
+    expect(start.props['aria-busy']).toBe(true);
   });
 
   it('draws the commands and the architecture only when there is data for them', async () => {
@@ -306,18 +339,24 @@ describe('project introduction', () => {
     expect(has(bare.value, (n) => typeName(n) === 'Treemap')).toBe(true);
   });
 
-  it('draws the main flows of the introduction body on the board, and nothing for a body without one', async () => {
+  it('draws the whole introduction body with its charts in the main flows, and nothing for an empty body', async () => {
     const flow = '```mermaid\nflowchart LR\n  web --> api\n```';
+    const chart = '```vega-lite\n{"mark":"bar"}\n```';
+    const body = `## Flows\n\n${flow}\n\nThe API answers.\n\n${chart}`;
     answers['project.intro.read'] = {
-      intro: intro({ body: `## Flows\n\n${flow}\n\nThe API answers.` }),
+      intro: intro({ body }),
       behind: 0,
       writing_session_id: null,
     };
     const drawn = await mountIntro();
     const flows = labelled(drawn.value, zh('board.intro.flows'));
-    expect(has(flows, (n) => n.props.text === flow)).toBe(true);
+    expect(has(flows, (n) => n.props.text === body)).toBe(true);
 
-    answers['project.intro.read'] = { intro: intro(), behind: 0, writing_session_id: null };
+    answers['project.intro.read'] = {
+      intro: intro({ body: '' }),
+      behind: 0,
+      writing_session_id: null,
+    };
     const bare = await mountIntro();
     expect(has(bare.value, (n) => n.props['aria-label'] === zh('board.intro.flows'))).toBe(false);
   });

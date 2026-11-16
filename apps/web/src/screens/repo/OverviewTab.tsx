@@ -10,8 +10,10 @@ import { useSessionList } from '../../data/workbench-sessions';
 import { useStaleWorkspaces } from '../../data/worktree-setup';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
-import { Failure, Skeleton, useBaselineStart } from '../board/BoardScreen';
+import { Failure, Skeleton } from '../board/BoardScreen';
 import { Panel } from '../board/Charts';
+import { useProjectSetup } from '../board/project-setup';
+import { ProjectSetup } from '../board/ProjectSetup';
 import { MergesPanel } from '../board/Lists';
 import {
   BranchPanel,
@@ -130,7 +132,7 @@ export function OverviewTab({
   const head = useProjectHead(projectId);
   const sessions = useSessionList(projectId);
   const board = useBoardView(projectId, range.board);
-  const baseline = useBaselineStart(projectId);
+  const setup = useProjectSetup(projectId);
   const openSession = useShell((s) => s.openSession);
   const now = useNow(60_000);
   const [drawn, setDrawn] = useState(false);
@@ -149,9 +151,9 @@ export function OverviewTab({
   const workstreams = facts.read?.workstreams ?? [];
   return (
     <>
-      {baseline?.error && (
+      {setup?.state && setup.state !== 'ready' && (
         <div className="bd-s12">
-          <Failure error={baseline.error} onRetry={() => baseline.onStart()} />
+          <ProjectSetup setup={setup} onOpenSession={onOpenSession} />
         </div>
       )}
       {facts.read && facts.error && (
@@ -210,7 +212,7 @@ export function OverviewTab({
           </div>
         </>
       ) : facts.read ? (
-        <RepoPanels read={facts.read} now={now} baseline={baseline} onOpenSession={onOpenSession} />
+        <RepoPanels read={facts.read} now={now} />
       ) : (
         <section className="bd-pn bd-s12" aria-labelledby="bd-repo-h">
           <div className="bd-ph">

@@ -343,6 +343,86 @@ describe('repository timeline lanes', () => {
     expect(reads.sendProjectCommand).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['commits and no merges', 3, 0, false],
+    ['merges', 0, 2, false],
+    ['no commits or merges', 0, 0, true],
+  ])('holds Interpret this range off only in a range with %s', (_name, commits, merges, off) => {
+    reads.state.timeline = reads.landed({
+      ...timeline([
+        lane({
+          key: 'main',
+          label: 'main',
+          kind: 'main',
+          bins: [{ start: NOW - DAY, commits, merges: 0 }],
+        }),
+      ]),
+      totals: { commits, merges, gate_runs: 0, gate_first_pass: null },
+    });
+    const host = lanesOf('lanes-story-empty');
+    expect(button(host.value, zh('repo.timeline.storyStart'))!.props.disabled).toBe(off);
+  });
+
+  it.each([
+    ['commits', 'commits', zh('repo.timeline.storyFromCommits')],
+    ['merges', 'merges', zh('repo.timeline.storyFromMerges')],
+    ['merges for a story without a source', undefined, zh('repo.timeline.storyFromMerges')],
+  ])('names a story told from %s', (_name, source, chip) => {
+    reads.state.stories = reads.landed([
+      {
+        id: 'story-1',
+        project_id: 'lanes-story-source',
+        from: NOW - 14 * DAY,
+        to: NOW,
+        state: 'ready',
+        session_id: 'story-session',
+        created_at: new Date(NOW - 12 * 60_000).toISOString(),
+        lines: ['Refunds v2 split into six branches.'],
+        ...(source ? { source } : {}),
+      },
+    ]);
+    const tree = lanesOf('lanes-story-source').value;
+    const story = nodes(tree).filter((n) => text(n.props.children) === chip);
+    expect(story.length).toBeGreaterThan(0);
+    const other =
+      chip === zh('repo.timeline.storyFromCommits')
+        ? zh('repo.timeline.storyFromMerges')
+        : zh('repo.timeline.storyFromCommits');
+    expect(text(tree)).not.toContain(other);
+  });
+
+  it.each([
+    ['a new interpretation', [], 'repo.timeline.storyStart'],
+    [
+      'an interpretation again',
+      [
+        {
+          id: 'story-1',
+          project_id: 'lanes-story-fail',
+          from: NOW - 14 * DAY,
+          to: NOW,
+          state: 'ready',
+          session_id: 'story-session',
+          created_at: new Date(NOW - 12 * 60_000).toISOString(),
+          lines: ['Refunds v2 split into six branches.'],
+          source: 'merges',
+        },
+      ],
+      'repo.timeline.storyAgain',
+    ],
+  ])('shows why %s was refused at the story', async (_name, stories, id) => {
+    reads.state.stories = reads.landed(stories);
+    reads.sendProjectCommand.mockResolvedValue({
+      ok: false,
+      error: 'No merges or commits in the range',
+    });
+    const host = lanesOf('lanes-story-fail');
+    button(host.value, zh(id))!.props.onClick();
+    await host.flush();
+    const alert = find(host.value, (n) => n.props.role === 'alert');
+    expect(text(alert)).toBe('No merges or commits in the range');
+  });
+
   it('opens the branch passage of a clicked span', () => {
     const onOpenSession = vi.fn();
     const host = lanesOf('lanes-pick', onOpenSession);

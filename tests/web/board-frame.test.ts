@@ -1201,7 +1201,6 @@ describe('board new session while the board refreshes', () => {
         page: 'now',
         onPage: noop,
         onOpenSession: noop,
-        onOpenSessions: noop,
         onOpenStory: noop,
         onOpenTrace: noop,
         onStartTask: start,

@@ -1,0 +1,159 @@
+/* A project's setup in place of an empty page */
+.pst {
+  grid-column: 1 / -1;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pst-es {
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: 96px var(--sp-6);
+  text-align: center;
+}
+.pst-t {
+  max-width: 360px;
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  color: var(--tx2);
+  text-wrap: balance;
+}
+.pst-a {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.pst-split {
+  display: inline-flex;
+  gap: 1px;
+}
+.pst-split > .btn:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.pst-split > .btn:last-child {
+  width: 24px;
+  padding: 0;
+  justify-content: center;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.pst-err {
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  user-select: text;
+}
+.pst-pop {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+}
+
+/* The baseline's steps while it runs or after it failed */
+.pst-run {
+  width: 100%;
+  max-width: 480px;
+  text-align: left;
+}
+.pst-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pst-ttl {
+  font-weight: 600;
+}
+.pst-rt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.pst-n {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.pst-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pst-st {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-2);
+  min-height: var(--row);
+}
+.pst-st[data-sub] {
+  min-height: 24px;
+  padding-left: 22px;
+  color: var(--tx2);
+}
+.pst-st[data-idle] {
+  color: var(--mu);
+}
+.pst-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pst-f {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* The lead planning from the confirmed baseline, over the draft task graph */
+.pst-pl {
+  gap: var(--sp-4);
+}
+.pst-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--bar);
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.pst-lt {
+  color: var(--tx2);
+}
+.pst-end {
+  margin-left: auto;
+}
+.pst-draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+.pst-dh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.pst-chip::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.pst-rv {
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}

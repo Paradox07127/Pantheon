@@ -68,7 +68,6 @@ describe('page top bar', () => {
         section: 'iterations',
         onSection() {},
         onOpenSession() {},
-        onOpenSessions() {},
         onOpenStory() {},
       }),
     );

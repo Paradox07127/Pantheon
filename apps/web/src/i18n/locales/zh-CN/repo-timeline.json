@@ -52,5 +52,7 @@
   "repo.timeline.openCommit": "打开提交",
   "repo.timeline.branch": "分支",
   "repo.timeline.openPassage": "打开分支经过",
-  "repo.timeline.openSession": "打开会话"
+  "repo.timeline.openSession": "打开会话",
+  "repo.timeline.storyFromCommits": "来自提交",
+  "repo.timeline.storyFromMerges": "来自合并"
 }

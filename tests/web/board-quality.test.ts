@@ -514,7 +514,6 @@ describe('quality tab layout', () => {
         onSection: noop,
         projectId: 'project-a',
         onOpenSession: noop,
-        onOpenSessions: noop,
         onOpenStory: noop,
       }),
     ).value;

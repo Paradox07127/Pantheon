@@ -89,7 +89,6 @@ const board = (page: 'now' | 'canvas' = 'canvas') =>
       page,
       onPage: noop,
       onOpenSession: noop,
-      onOpenSessions: noop,
       onOpenStory: noop,
       onOpenTrace: noop,
     }),

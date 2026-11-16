@@ -24,5 +24,8 @@ export function readAppSettings(ctx: ControlContext): AppSettings {
     auto_git_init: config.auto_git_init ?? true,
     auto_archive_merged: config.auto_archive_merged ?? false,
     session_recap: config.session_recap ?? true,
+    baseline_rounds: config.baseline_rounds ?? 5,
+    baseline_visuals: config.baseline_visuals ?? true,
+    baseline_range_story: config.baseline_range_story ?? true,
   };
 }

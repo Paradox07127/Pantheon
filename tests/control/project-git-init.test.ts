@@ -107,11 +107,17 @@ it('refuses a plain folder and a repository without commits once git init is tur
     auto_git_init: false,
     auto_archive_merged: false,
     session_recap: true,
+    baseline_rounds: 5,
+    baseline_visuals: true,
+    baseline_range_story: true,
   });
   expect(f.control.appSettings(user)).toEqual({
     auto_git_init: false,
     auto_archive_merged: false,
     session_recap: true,
+    baseline_rounds: 5,
+    baseline_visuals: true,
+    baseline_range_story: true,
   });
   for (const root of [plain, uncommitted])
     expect(() => f.call('project.open', { name: 'Refused', roots: [root] })).toThrowError(
@@ -146,6 +152,9 @@ it('runs git init again on the next project.open after the setting is turned bac
     auto_git_init: true,
     auto_archive_merged: false,
     session_recap: true,
+    baseline_rounds: 5,
+    baseline_visuals: true,
+    baseline_range_story: true,
   });
   f.call('app.settings.set', { auto_git_init: false });
   expect(() => f.call('project.open', { name: 'Plain', roots: [plain] })).toThrowError(

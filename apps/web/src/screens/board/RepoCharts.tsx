@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { File } from 'lucide-react';
 import type {
@@ -17,13 +17,10 @@ import { useProjectHead } from '../../data/runtime-models';
 import { useSessionList } from '../../data/workbench-sessions';
 import { pruneStale, sizeText, useStaleWorkspaces } from '../../data/worktree-setup';
 import { listedTitle } from '../../lib/daemon-text';
-import type { BaselineChoice } from '../projects/baseline';
-import { BaselinePopover } from '../projects/BaselineBlocks';
 import { workstreamRows } from '../projects/facts';
 import { WorkstreamBars } from '../projects/WorkstreamBars';
 import { WorkstreamDetails } from '../projects/WorkstreamDetails';
 import { currentLocale, t } from '../../i18n';
-import type { BoardBaseline } from './BoardScreen';
 import { Metric } from './KpiTiles';
 import {
   DataTable,
@@ -731,22 +728,15 @@ function RepoWork({ projectId, now, stale }: { projectId: string; now: number; s
 export function RepoPanels({
   read,
   now,
-  baseline,
-  onOpenSession,
   stale,
 }: {
   read: ProjectFactsRead | null;
   now: number;
-  /** The headline bar's baseline start button and link; absent without a project. */
-  baseline?: BoardBaseline & { busy: boolean; onStart: (choice?: BaselineChoice) => void };
-  onOpenSession?: (sessionId: string) => void;
   /** The project's worktree read, shared with the merge heat; absent without a project. */
   stale?: StaleRead;
 }) {
   const stored = useCurrentProject((s) => s.projectId);
   const projectId = useBoard((s) => currentProject(s.board, stored)?.id ?? null);
-  const [choosing, setChoosing] = useState(false);
-  const startButton = useRef<HTMLButtonElement>(null);
   const work = projectId && stale && <RepoWork projectId={projectId} now={now} stale={stale} />;
   const facts = read?.facts;
   if (!facts)
@@ -755,44 +745,7 @@ export function RepoPanels({
         {work}
         <div className="bd-s12">
           <Panel title={t({ id: 'board.repo.title', defaultMessage: 'Repository' })}>
-            <div className="rp-start">
-              {baseline?.start ? (
-                <>
-                  <button
-                    ref={startButton}
-                    type="button"
-                    className="btn pri"
-                    aria-busy={baseline.busy || undefined}
-                    disabled={baseline.busy}
-                    onClick={() => setChoosing(true)}
-                  >
-                    {baseline.start}
-                  </button>
-                  {choosing && projectId && (
-                    <BaselinePopover
-                      project_id={projectId}
-                      anchor={startButton}
-                      label={baseline.start}
-                      busy={baseline.busy}
-                      onClose={() => setChoosing(false)}
-                      onStart={baseline.onStart}
-                    />
-                  )}
-                </>
-              ) : baseline?.link ? (
-                <button
-                  type="button"
-                  className="bd-lnk"
-                  onClick={() => onOpenSession?.(baseline.link!.session_id)}
-                >
-                  {baseline.link.label}
-                </button>
-              ) : (
-                <Empty
-                  text={t({ id: 'board.repo.noBaseline', defaultMessage: 'No baseline yet' })}
-                />
-              )}
-            </div>
+            <Empty text={t({ id: 'board.repo.noBaseline', defaultMessage: 'No baseline yet' })} />
           </Panel>
         </div>
       </>

@@ -114,9 +114,7 @@ describe('engineering board range', () => {
       [30, '30 天'],
       ['all', zh('board.ranges.all')],
     ]);
-    const h = mount(() =>
-      InsightsScreen({ projectId: 'range-project', onOpenSession() {}, onOpenSessions() {} }),
-    );
+    const h = mount(() => InsightsScreen({ projectId: 'range-project', onOpenSession() {} }));
     expect(boardReads().at(-1)).toEqual({ project_id: 'range-project', days: '7' });
     h.value.props.onDays('all');
     h.render();
@@ -144,7 +142,6 @@ describe('weekly digest weeks', () => {
         onSection() {},
         projectId,
         onOpenSession() {},
-        onOpenSessions() {},
         onOpenStory() {},
       }),
     );
@@ -311,7 +308,6 @@ describe('collaboration on a retained board', () => {
         onSection() {},
         projectId: 'collab-project',
         onOpenSession() {},
-        onOpenSessions() {},
         onOpenStory() {},
       }),
     );

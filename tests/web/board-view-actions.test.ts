@@ -112,7 +112,6 @@ const viewProps = (over: Partial<Parameters<typeof BoardView>[0]>) => ({
   page: 'now' as const,
   onPage: noop,
   onOpenSession: noop,
-  onOpenSessions: noop,
   onOpenStory: noop,
   onOpenTrace: noop,
   ...over,
@@ -163,17 +162,13 @@ describe('board actions wait for the reads they depend on', () => {
 
   it('offers no board actions before the snapshot arrives', async () => {
     mock.board = { ...mock.board, board: null };
-    const h = mount(() =>
-      boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-    );
+    const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
     await h.flush();
     expect(h.value.props.actions).toBeUndefined();
   });
 
   it('offers no baseline start while the baseline read is pending or failed', async () => {
-    const h = mount(() =>
-      boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-    );
+    const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
     await h.flush();
     expect(h.value.props.baseline).toMatchObject({ link: null, start: null });
 
@@ -183,9 +178,7 @@ describe('board actions wait for the reads they depend on', () => {
   });
 
   it('offers the first baseline once the read confirms there is none', async () => {
-    const h = mount(() =>
-      boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-    );
+    const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
     await h.flush();
     baselineReply.resolve({ ok: true, value: null });
     await h.flush();

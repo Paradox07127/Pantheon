@@ -193,7 +193,6 @@ describe('main view grouping', () => {
         onRange() {},
         onPage() {},
         onOpenSession() {},
-        onOpenSessions() {},
         onOpenStory() {},
         onOpenTrace() {},
       }),

@@ -250,7 +250,6 @@ describe('board panel layout storage', () => {
         onRange() {},
         onPage() {},
         onOpenSession() {},
-        onOpenSessions() {},
         onOpenStory() {},
         onOpenTrace() {},
       }),
@@ -293,7 +292,6 @@ describe('board panel layout storage', () => {
         onDays() {},
         onSection() {},
         onOpenSession() {},
-        onOpenSessions() {},
         onOpenStory() {},
       }),
     );

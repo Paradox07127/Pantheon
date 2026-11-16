@@ -3,7 +3,6 @@ import { TopBar } from '../../components/TopBar';
 import { t } from '../../i18n';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell, type MemoryTab } from '../../store';
-import { useBaselineStart } from '../board/BoardScreen';
 import { openBoardTab } from '../settings/settings-jump';
 import { EntriesTopControls } from './EntriesBar';
 import { EntriesPage } from './EntriesPage';
@@ -44,7 +43,6 @@ const TABS: { key: MemoryTab; label: string }[] = [
 export function MemoryScreen({ projectId }: { projectId: string | null }) {
   const tab = useShell((s) => s.memoryTab);
   const setTab = useShell((s) => s.setMemoryTab);
-  const baseline = useBaselineStart(projectId);
   return (
     <Tabs.Root className="tb-pg" value={tab} onValueChange={(value) => setTab(value as MemoryTab)}>
       <TopBar title={SCREEN_NAMES.memory}>
@@ -64,7 +62,6 @@ export function MemoryScreen({ projectId }: { projectId: string | null }) {
             <MemoryOverview
               key={projectId}
               projectId={projectId}
-              baseline={baseline}
               memory={(onHold) => <OverviewMemory projectId={projectId} onHold={onHold} />}
             />
           )}

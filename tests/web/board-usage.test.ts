@@ -612,7 +612,6 @@ describe('usage tab', () => {
       onDays() {},
       onSection() {},
       onOpenSession() {},
-      onOpenSessions() {},
       onOpenStory() {},
     });
     expect(titles(html)).toEqual([
@@ -635,7 +634,6 @@ describe('usage tab', () => {
       onDays() {},
       onSection() {},
       onOpenSession() {},
-      onOpenSessions() {},
       onOpenStory() {},
     });
     expect(html).toMatch(/aria-label="Claude [^"]* \/ 20M，/);

@@ -220,7 +220,6 @@ describe('progress section', () => {
         onRange() {},
         onPage() {},
         onOpenSession() {},
-        onOpenSessions() {},
         onOpenStory() {},
         onOpenTrace() {},
       }),

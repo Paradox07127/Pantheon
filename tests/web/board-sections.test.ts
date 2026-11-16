@@ -251,7 +251,6 @@ describe('main progress on the first screen', () => {
         onRange() {},
         onPage() {},
         onOpenSession() {},
-        onOpenSessions() {},
         onOpenStory() {},
         onOpenTrace() {},
       }),

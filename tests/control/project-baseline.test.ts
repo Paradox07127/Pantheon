@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -10,6 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
@@ -21,8 +23,10 @@ import type {
   Project,
   ProjectBrief,
   ProjectBaseline,
+  RangeStory,
   Session,
   SessionTurn,
+  Visual,
   Workspace,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/src/context.js';
@@ -61,9 +65,34 @@ const gitIn = (root: string, ...args: string[]) =>
     .toString()
     .trim();
 
-function setup(options: { managedWorkspaces?: boolean } = {}) {
+const preview = { kind: 'mermaid' as const, spec: { source: 'flowchart LR\n  a --> b' } };
+/** The direction question a first round must ask, each option with a preview. */
+const direction = (question: string) => ({
+  id: 'publish',
+  header: 'Publish',
+  question,
+  options: [
+    { label: 'Yes', description: 'Publish it', preview },
+    { label: 'No', description: 'Keep it private', preview },
+  ],
+  multiSelect: false,
+  recommended: 'No',
+  kind: 'direction' as const,
+});
+
+function setup({
+  userConfig,
+  ...options
+}: { managedWorkspaces?: boolean; userConfig?: boolean } = {}) {
   let now = 1800000000000;
-  const f = fixture({ now: () => now, ...options });
+  const userConfigDir = userConfig
+    ? mkdtempSync(path.join(os.tmpdir(), 'pantheon-baseline-config-'))
+    : undefined;
+  const f = fixture({
+    now: () => now,
+    ...options,
+    ...(userConfigDir && { controlOptions: { userConfigDir } }),
+  });
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   f.control.adapters.clear();
   const adapters = ['claude', 'codex'].map((runtime) => {
@@ -128,7 +157,7 @@ function setup(options: { managedWorkspaces?: boolean } = {}) {
       non_goals: [],
       sources: ['file:README.md:3'],
     },
-    questions: [{ question: 'Is publishing in scope?', options: ['Yes', 'No'] }],
+    questions: [direction('Is publishing in scope?')],
   });
   const as = (baseline: ProjectBaseline) =>
     principal(f.store.must<Session>('sessions', baseline.session_id!));
@@ -139,13 +168,25 @@ function setup(options: { managedWorkspaces?: boolean } = {}) {
       null,
       as(baseline),
     );
-  const submit = (baseline: ProjectBaseline, value: unknown) =>
+  const introduce = (baseline: ProjectBaseline) =>
+    f.call(
+      'project.intro.submit',
+      { summary: 'A fixture library.', sources: ['file:README.md'], features: [], modules: [] },
+      null,
+      as(baseline),
+    );
+  const submitOnly = (baseline: ProjectBaseline, value: unknown) =>
     f.call<ProjectBaseline>(
       'project.baseline.submit',
       { baseline_id: baseline.id, ...(value as object) },
       null,
       as(baseline),
     );
+  /** Hands in the introduction first unless this baseline session already did. */
+  const submit = (baseline: ProjectBaseline, value: unknown) => {
+    if (f.store.projectIntro(f.project.id)?.session_id !== baseline.session_id) introduce(baseline);
+    return submitOnly(baseline, value);
+  };
   const handIn = (baseline: ProjectBaseline, head: string) => {
     submitFolder(baseline, folder());
     return submit(baseline, result(head));
@@ -161,10 +202,16 @@ function setup(options: { managedWorkspaces?: boolean } = {}) {
     folder,
     result,
     submitFolder,
+    introduce,
+    submitOnly,
     submit,
     handIn,
     tick: () => f.store.transaction(() => tickProjectBaselines(ctx)),
     advanceTime: (milliseconds: number) => (now += milliseconds),
+    close: async () => {
+      await f.close();
+      if (userConfigDir) rmSync(userConfigDir, { recursive: true, force: true });
+    },
   };
 }
 
@@ -207,6 +254,7 @@ it('opens one read-only baseline session with only the read and submit tools', a
       'memory.get',
       'memory.propose',
       'project.read',
+      'visual.draw',
       'project.baseline.submit_folder',
       'project.baseline.submit',
       'project.intro.submit',
@@ -220,21 +268,21 @@ it('opens one read-only baseline session with only the read and submit tools', a
   }
 });
 
-it('keeps charts out of the baseline conversation and sends them to the board through the submit tools', async () => {
+it('lets the baseline session draw explanatory charts but keeps them out of its messages', async () => {
   const f = setup();
   try {
     f.populate();
     const baseline = f.startBaseline();
     const session = f.store.must<Session>('sessions', baseline.session_id!);
-    expect(() =>
-      f.call(
+    expect(
+      f.call<{ visual_id: string }>(
         'visual.draw',
         { title: 'Modules', kind: 'mermaid', spec: { source: 'flowchart LR\n  a --> b' } },
         null,
         f.principal(session),
-      ),
-    ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
-    const instructions = purposeSessionInstructions(session)!;
+      ).visual_id,
+    ).toEqual(expect.any(String));
+    const instructions = purposeSessionInstructions(session, { rounds: 5, visuals: true })!;
     expect(instructions).toContain('Do not draw in the conversation');
     expect(instructions).not.toMatch(/about 12 nodes/);
     for (const field of ['modules', 'depends_on', 'risks']) expect(instructions).toContain(field);
@@ -292,6 +340,8 @@ it('keeps each workstream its modules inside a project folder, its known depende
     expect(submitted.result!.workstreams[0]).not.toHaveProperty('modules');
     expect(f.control.projectFactsRead(user, f.project.id).workstreams[1]).toMatchObject({
       id: 'exporter',
+      next: ['Parse JSON'],
+      blockers: [],
       modules: ['src', 'src/index.ts'],
       depends_on: ['importer'],
       risks: ['The JSON format is not settled'],
@@ -744,7 +794,7 @@ it('stores a facts snapshot and hands the session a short seed without checklist
     expect(input).not.toContain('{');
     expect(input.replaceAll(f.projectRoot, '<project>')).not.toMatch(uuid);
 
-    const prompt = purposeSessionInstructions(session)!;
+    const prompt = purposeSessionInstructions(session, { rounds: 5, visuals: true })!;
     for (const hidden of [
       baseline.id,
       session.id,
@@ -770,6 +820,7 @@ it('gives the baseline session a skill that names no local layout and lists igno
     f.populate();
     const prompt = purposeSessionInstructions(
       f.store.must<Session>('sessions', f.startBaseline().session_id!),
+      { rounds: 5, visuals: true },
     )!;
     for (const local of ['.notes', '/Users/', '~/']) expect(prompt).not.toContain(local);
     expect(prompt).not.toMatch(/^memory\./);
@@ -1035,7 +1086,16 @@ it('counts each workstream against the newest facts after the checklist changes'
       f.store.must<BaselineFacts>('baseline_facts', baseline.facts_id).facts,
     );
     expect(before.workstreams).toEqual([
-      { id: 'importer', title: 'Importer', status: 'running', done: 1, open: 2, missing: 0 },
+      {
+        id: 'importer',
+        title: 'Importer',
+        status: 'running',
+        next: ['Parse JSON'],
+        blockers: [],
+        done: 1,
+        open: 2,
+        missing: 0,
+      },
     ]);
 
     writeFileSync(
@@ -1056,7 +1116,16 @@ it('counts each workstream against the newest facts after the checklist changes'
     const after = f.control.projectFactsRead(user, f.project.id);
     expect(after.collected_at).toBe(f.store.now());
     expect(after.workstreams).toEqual([
-      { id: 'importer', title: 'Importer', status: 'running', done: 2, open: 0, missing: 1 },
+      {
+        id: 'importer',
+        title: 'Importer',
+        status: 'running',
+        next: ['Parse JSON'],
+        blockers: [],
+        done: 2,
+        open: 0,
+        missing: 1,
+      },
     ]);
   } finally {
     await f.close();
@@ -1089,7 +1158,16 @@ it('stores every item of a cited checklist section and drops unknown sections', 
     ]);
     expect(submitted.result!.workstreams[0]).not.toHaveProperty('sections');
     expect(f.control.projectFactsRead(user, f.project.id).workstreams).toEqual([
-      { id: 'importer', title: 'Importer', status: 'running', done: 1, open: 2, missing: 0 },
+      {
+        id: 'importer',
+        title: 'Importer',
+        status: 'running',
+        next: ['Parse JSON'],
+        blockers: [],
+        done: 1,
+        open: 2,
+        missing: 0,
+      },
     ]);
   } finally {
     await f.close();
@@ -1180,7 +1258,9 @@ it('writes the confirmed goal, gate and project configuration and lets the user 
     const baseline = f.handIn(f.startBaseline(), head);
     const brief = { goal: 'Ship the library', goals: ['Build it'], non_goals: ['Publish it'] };
     const gate = [{ name: 'build', argv: ['pnpm', 'build'] }];
-    const answers = [{ question: 'Is publishing in scope?', answer: 'No' }];
+    const answers = [
+      { question_id: 'publish', question: 'Is publishing in scope?', answer: 'No', by: 'user' },
+    ];
     const confirmed = f.call<ProjectBaseline>(
       'project.baseline.confirm',
       {
@@ -1206,7 +1286,7 @@ it('writes the confirmed goal, gate and project configuration and lets the user 
       brief,
       gate,
       commands: { build: ['pnpm', 'build'] },
-      decisions: answers,
+      decisions: [{ question: 'Is publishing in scope?', answer: 'No' }],
       extensions: { claude: overrides },
     });
     expect(readFileSync(path.join(configDir, '.gitignore'), 'utf8')).toBe('config.local.json\n');
@@ -1410,6 +1490,10 @@ it('opens a lead session with the baseline result only when confirmed with plan_
     const [lead] = leads();
     expect(leads()).toHaveLength(1);
     expect(planned.lead_session_id).toBe(lead!.id);
+    // The stored baseline names the planning lead, so the board can follow it after a reload.
+    expect(f.store.get<ProjectBaseline>('project_baselines', planned.id)!.plan_session_id).toBe(
+      lead!.id,
+    );
     expect(lead!.title).toBe('Baseline plan');
     expect(lead).toMatchObject({ runtime: 'claude', permission_mode: 'ask' });
     const [first] = f.store
@@ -1566,7 +1650,14 @@ it('opens the lead with the brief and answers the user confirmed, not the propos
       {
         baseline_id: baseline.id,
         brief: { goal: 'Publish the library to npm', goals: ['Build it'], non_goals: [] },
-        answers: [{ question: 'Is publishing in scope?', answer: 'Yes, to npm' }],
+        answers: [
+          {
+            question_id: 'publish',
+            question: 'Is publishing in scope?',
+            answer: 'Yes, to npm',
+            by: 'user',
+          },
+        ],
         plan_board: true,
       },
       baseline.revision,
@@ -1638,7 +1729,14 @@ it('keeps the user answers in the first plan message and cuts long workstreams i
       'project.baseline.confirm',
       {
         baseline_id: submitted.id,
-        answers: [{ question: 'Is publishing in scope?', answer: 'Only to the internal registry' }],
+        answers: [
+          {
+            question_id: 'publish',
+            question: 'Is publishing in scope?',
+            answer: 'Only to the internal registry',
+            by: 'user',
+          },
+        ],
         plan_board: true,
       },
       submitted.revision,
@@ -1910,7 +2008,7 @@ it('baselines every folder and writes each git folder its own configuration', as
         { text: 'Unsourced', refs: ['file:nowhere.md'], severity: 'info' },
       ],
       brief: { goal: 'Ship both', goals: [], non_goals: [], sources: ['file:README.md'] },
-      questions: [{ question, options: ['Yes', 'No'] }],
+      questions: [direction(question)],
     });
     expect(submitted).toMatchObject({ state: 'submitted', dropped: 4 });
     expect(submitted.result!.workstreams[0]!.items).toEqual([]);
@@ -1922,7 +2020,7 @@ it('baselines every folder and writes each git folder its own configuration', as
     const testGate = [{ name: 'test', argv: ['pnpm', 'test'] }];
     const lintGate = [{ name: 'lint', argv: ['pnpm', 'lint'] }];
     const brief = { goal: 'Ship both', goals: [], non_goals: [] };
-    const answers = [{ question, answer: 'Yes' }];
+    const answers = [{ question_id: 'publish', question, answer: 'Yes', by: 'user' }];
     expect(() =>
       f.call(
         'project.baseline.confirm',
@@ -1968,7 +2066,7 @@ it('baselines every folder and writes each git folder its own configuration', as
       gate: testGate,
       commands: { test: ['pnpm', 'test'] },
       brief,
-      decisions: answers,
+      decisions: [{ question, answer: 'Yes' }],
     });
     expect(config(web)).toEqual({
       version: 1,
@@ -2131,3 +2229,285 @@ it('opens the baseline session without local extensions', async () => {
     vi.restoreAllMocks();
   }
 });
+
+const publishAnswer = (answer: string, by: 'user' | 'model') => ({
+  question_id: 'publish',
+  question: 'Is publishing in scope?',
+  answer,
+  by,
+});
+const license = {
+  id: 'license',
+  header: 'License',
+  question: 'Which license?',
+  options: [
+    { label: 'MIT', description: 'Permissive' },
+    { label: 'Apache-2.0', description: 'Permissive with a patent grant' },
+  ],
+  multiSelect: false,
+};
+const continueBaseline = (
+  f: ReturnType<typeof setup>,
+  baseline: ProjectBaseline,
+  answers: unknown[],
+) =>
+  f.call<ProjectBaseline>(
+    'project.baseline.continue',
+    { baseline_id: baseline.id, answers },
+    baseline.revision,
+  );
+
+it('continues the baseline conversation for the next round and takes the revised assessment', async () => {
+  const f = setup();
+  try {
+    const head = f.populate();
+    const submitted = f.handIn(f.startBaseline(), head);
+    const before = f.store.events(0).length;
+    const answers = [publishAnswer('Yes', 'user')];
+    const continued = continueBaseline(f, submitted, answers);
+    expect(continued).toMatchObject({
+      state: 'running',
+      result: submitted.result,
+      folders: submitted.result!.folders,
+      deadline: f.store.now() + 30 * 60 * 1000,
+      rounds: [{ questions: submitted.result!.questions, answers, at: f.store.now() }],
+    });
+    expect(
+      f.store
+        .events(before)
+        .filter((event) => event.kind === 'project.baseline_continued')
+        .map((event) => event.payload),
+    ).toEqual([{ round: 2 }]);
+    const turn = f.store
+      .list<SessionTurn>('session_turns')
+      .filter((entry) => entry.session_id === submitted.session_id)
+      .at(-1)!;
+    expect(turn).toMatchObject({ state: 'queued', origin: 'baseline' });
+    expect(turn.input).toContain('Is publishing in scope? Answer: Yes');
+    expect(turn.input).toContain('round 2 of at most 5');
+    expect(turn.input).toContain('project_baseline_submit');
+    const revised = f.submit(continued, { ...f.result(head), questions: [license] });
+    expect(revised).toMatchObject({ state: 'submitted', result: { questions: [license] } });
+    expect(revised.rounds).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+});
+
+it('asks no question in the last round and continues no further', async () => {
+  const f = setup({ userConfig: true });
+  try {
+    f.call('app.settings.set', { baseline_rounds: 2 });
+    const head = f.populate();
+    const continued = continueBaseline(f, f.handIn(f.startBaseline(), head), [
+      publishAnswer('', 'model'),
+    ]);
+    const turn = f.store
+      .list<SessionTurn>('session_turns')
+      .filter((entry) => entry.session_id === continued.session_id)
+      .at(-1)!;
+    expect(turn.input).toContain(
+      'Is publishing in scope? Answer: left to you; the recommended option is',
+    );
+    expect(() => f.submit(continued, { ...f.result(head), questions: [license] })).toThrow(
+      expect.objectContaining({ code: 'invalid_input' }),
+    );
+    const last = f.submit(continued, { ...f.result(head), questions: [] });
+    expect(() => continueBaseline(f, last, [])).toThrow(
+      expect.objectContaining({
+        code: 'invalid_state',
+        message: 'This baseline has reached its last round',
+      }),
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+it('refuses answers to questions the round did not ask', async () => {
+  const f = setup();
+  try {
+    const head = f.populate();
+    const submitted = f.handIn(f.startBaseline(), head);
+    expect(() =>
+      continueBaseline(f, submitted, [{ ...publishAnswer('Yes', 'user'), question_id: 'gone' }]),
+    ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
+    expect(f.current(submitted).state).toBe('submitted');
+  } finally {
+    await f.close();
+  }
+});
+
+it.each<[string, (question: ReturnType<typeof direction>) => unknown[]]>([
+  ['no direction question', ({ kind: _, ...plain }) => [plain]],
+  ['two direction questions', (question) => [question, { ...question, id: 'other' }]],
+  [
+    'a direction option without a preview',
+    (question) => [
+      { ...question, options: [question.options[0]!, { label: 'No', description: 'Private' }] },
+    ],
+  ],
+  [
+    'four direction options',
+    (question) => [
+      {
+        ...question,
+        options: ['A', 'B', 'C', 'No'].map((label) => ({ ...question.options[0]!, label })),
+      },
+    ],
+  ],
+])('refuses a first round with %s', async (_, questions) => {
+  const f = setup();
+  try {
+    const head = f.populate();
+    const baseline = f.startBaseline();
+    f.submitFolder(baseline, f.folder());
+    expect(() =>
+      f.submit(baseline, {
+        ...f.result(head),
+        questions: questions(direction('Is publishing in scope?')),
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'invalid_input',
+        message: expect.stringContaining('direction'),
+      }),
+    );
+    expect(f.current(baseline).state).toBe('running');
+  } finally {
+    await f.close();
+  }
+});
+
+it('takes the assessment only after the baseline session hands in the introduction', async () => {
+  const f = setup();
+  try {
+    const head = f.populate();
+    const baseline = f.startBaseline();
+    f.submitFolder(baseline, f.folder());
+    expect(() => f.submitOnly(baseline, f.result(head))).toThrow(
+      expect.objectContaining({
+        code: 'invalid_state',
+        message: 'Submit the introduction with project_intro_submit first',
+      }),
+    );
+    f.introduce(baseline);
+    expect(f.submitOnly(baseline, f.result(head)).state).toBe('submitted');
+  } finally {
+    await f.close();
+  }
+});
+
+it.each([true, false])(
+  'hands every round, the findings and the contradictions to the planning lead (visuals pinned: %s)',
+  async (visuals) => {
+    const f = setup({ managedWorkspaces: true, userConfig: true });
+    try {
+      f.call('app.settings.set', { baseline_visuals: visuals });
+      const head = f.populate();
+      const valid = f.result(head);
+      const baseline = f.startBaseline();
+      const now = f.store.now();
+      const chart = (id: string, session_id: string | null) => ({
+        id,
+        revision: 1,
+        project_id: f.project.id,
+        session_id,
+        title: 'Modules',
+        kind: 'mermaid',
+        spec: { source: 'flowchart LR\n  a --> b' },
+        created_at: now,
+        updated_at: now,
+      });
+      f.store.insert('visuals', chart('baseline-chart', baseline.session_id!));
+      f.store.insert('visuals', chart('other-chart', null));
+      const continued = continueBaseline(f, f.handIn(baseline, head), [publishAnswer('', 'model')]);
+      const risk = {
+        text: 'No test guards the parser',
+        refs: [`commit:${head}`],
+        severity: 'risk',
+      };
+      const revised = f.submit(continued, {
+        ...valid,
+        findings: [...valid.findings, risk],
+        questions: [license],
+      });
+      const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+        'project.baseline.confirm',
+        {
+          baseline_id: revised.id,
+          answers: [
+            { question_id: 'license', question: 'Which license?', answer: 'MIT', by: 'user' },
+          ],
+          plan_board: true,
+        },
+        revised.revision,
+      );
+      const [first] = f.store
+        .list<SessionTurn>('session_turns')
+        .filter((turn) => turn.session_id === planned.lead_session_id);
+      for (const text of [
+        'risk findings become risks and contradictions become assumptions',
+        'Is publishing in scope? Answer: left to you; the recommended option is',
+        'Which license? Answer: MIT',
+        'Findings:\n- (info) Initial source is committed\n- (risk) No test guards the parser',
+        'Docs the code contradicts:\n- The README says nothing is shipped',
+      ])
+        expect(first!.input).toContain(text);
+      expect(first!.input.indexOf('Findings:')).toBeLessThan(first!.input.indexOf('Workstreams:'));
+      const config = pantheonConfigSchema.parse(
+        JSON.parse(readFileSync(path.join(f.projectRoot, '.pantheon', 'config.json'), 'utf8')),
+      );
+      expect(config.decisions).toEqual([
+        { question: 'Is publishing in scope?', answer: 'Left to the model' },
+        { question: 'Which license?', answer: 'MIT' },
+      ]);
+      const pinned = f.store.list<Visual>('visuals').filter((visual) => visual.pin);
+      expect(pinned.map((visual) => [visual.id, visual.pin!.size])).toEqual(
+        visuals ? [['baseline-chart', 'M']] : [],
+      );
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.each([true, false])(
+  'explains the last thirty days of commits as a range story on confirm (setting on: %s)',
+  async (on) => {
+    const f = setup({ userConfig: true });
+    try {
+      f.call('app.settings.set', { baseline_range_story: on });
+      f.populate();
+      const day = Math.floor(f.store.now() / 1000) - 86400;
+      execFileSync(
+        'git',
+        [
+          '-C',
+          f.projectRoot,
+          '-c',
+          'commit.gpgsign=false',
+          'commit',
+          '--quiet',
+          '--allow-empty',
+          '-m',
+          'Add the CSV exporter',
+        ],
+        { env: { ...gitEnv, GIT_COMMITTER_DATE: `@${day}`, GIT_AUTHOR_DATE: `@${day}` } },
+      );
+      const head = gitIn(f.projectRoot, 'rev-parse', 'HEAD');
+      const submitted = f.handIn(f.startBaseline(), head);
+      f.call(
+        'project.baseline.confirm',
+        { baseline_id: submitted.id, answers: [] },
+        submitted.revision,
+      );
+      const stories = f.store.list<RangeStory>('range_stories');
+      expect(stories).toEqual(
+        on ? [expect.objectContaining({ source: 'commits', state: 'running' })] : [],
+      );
+    } finally {
+      await f.close();
+    }
+  },
+);

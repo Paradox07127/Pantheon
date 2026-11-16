@@ -4,6 +4,9 @@ import type { ProjectBaseline } from '@pantheon/domain';
 import { find, mount as host, named, nodes, text, unmountAll } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({ board: {} as any, openSession: (_id: string) => {} }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
+  (await import('./web-live-stores.js')).liveStores(actual as never),
+);
 vi.mock('@/data/board', () => ({
   useBoard: Object.assign((selector: any) => selector(mock.board), {
     getState: () => mock.board,
@@ -112,6 +115,13 @@ it.each([
   expect(h.value).toBeNull();
 });
 
+it('waits for the next round after the user asked for more', async () => {
+  read = { ...baseline('baseline-a', 'running'), rounds: [{ questions: [], answers: [], at: 1 }] };
+  const h = await mount();
+  expect(named(h.value!.review, 'ReviewBaseline').props.baseline).toEqual(read);
+  expect(named(h.value!.form, 'RunningBaseline')).toBeTruthy();
+});
+
 it('opens the lead session once the baseline is confirmed', async () => {
   read = baseline('baseline-a', 'submitted');
   const h = await mount();
@@ -202,15 +212,20 @@ it.each([
 });
 
 const mermaid = '```mermaid\ngraph LR\n  fetch --> reconcile\n```';
+const withMermaid = `Intro\n\n${mermaid}\n\nMore text`;
+const withCode = 'Intro\n\n```ts\nconst a = 1;\n```';
 it.each([
-  ['an introduction with a mermaid block', `Intro\n\n${mermaid}\n\nMore text`, mermaid],
-  ['an introduction without one', 'Intro\n\n```ts\nconst a = 1;\n```', null],
+  ['an introduction with a mermaid block', withMermaid, withMermaid],
+  ['an introduction without one', withCode, withCode],
   ['no introduction body', undefined, null],
-] as const)('shows the main flow for %s', async (_, introBody, drawn) => {
-  read = baseline('baseline-a', 'submitted');
-  body = introBody;
-  const h = await mount();
-  const flow = block(h.value!.form, 'projects.baseline.flow.label');
-  if (drawn === null) expect(flow).toBeUndefined();
-  else expect(nodes(flow).map((n) => n.props.text)).toContain(drawn);
-});
+] as const)(
+  'draws the whole introduction body as the main flow for %s',
+  async (_, introBody, drawn) => {
+    read = baseline('baseline-a', 'submitted');
+    body = introBody;
+    const h = await mount();
+    const flow = block(h.value!.form, 'projects.baseline.flow.label');
+    if (drawn === null) expect(flow).toBeUndefined();
+    else expect(nodes(flow).map((n) => n.props.text)).toContain(drawn);
+  },
+);

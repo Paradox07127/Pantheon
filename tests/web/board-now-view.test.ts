@@ -26,6 +26,7 @@ import { MilestoneCard } from '@/screens/board/MilestoneCard';
 import { readCanvasOrder, saveCanvasOrder } from '@/screens/board/panel-layout';
 import type { BoardMilestone, SnapshotMilestone } from '@/screens/board/panels-model';
 import { zh, zhf } from './i18n-setup.js';
+import { setupRead } from './setup-fixture.js';
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 const HOUR = 3_600_000;
@@ -128,7 +129,6 @@ const viewProps = (over: Partial<Parameters<typeof BoardView>[0]>) => ({
   page: 'now' as const,
   onPage: noop,
   onOpenSession: noop,
-  onOpenSessions: noop,
   onOpenStory: noop,
   onOpenTrace: noop,
   ...over,
@@ -217,7 +217,10 @@ describe('project board views', () => {
   it('decides from the history read whether a board with nothing in its range has a history', async () => {
     const counts = { ...board().counts, running: 0 };
     const model = board({ tasks: [], counts });
-    const h = mount(() => BoardView(viewProps({ model, projectId: 'project-a', page: 'history' })));
+    const setup = setupRead('none');
+    const h = mount(() =>
+      BoardView(viewProps({ model, projectId: 'project-a', page: 'history', setup })),
+    );
     const tab = named(h.value, 'HistoryTab');
     const history = (tasks: unknown[]) => ({
       started_at: NOW,
@@ -239,7 +242,7 @@ describe('project board views', () => {
     expect(names(await shownWith(history([{ id: 'removed-task', state: 'removed' }])))).toContain(
       'HistoryView',
     );
-    expect(text(await shownWith(history([])))).toContain(zh('board.empty.openSession'));
+    expect(names(await shownWith(history([])))).toContain('ProjectSetup');
   });
 });
 

@@ -8,6 +8,7 @@ import { BoardView } from '@/screens/board/BoardScreen';
 import { DEFAULT_LAYOUT, saveLayout, setSpan } from '@/screens/board/panel-layout';
 import { InsightsView, type InsightsSection } from '@/screens/insights/InsightsScreen';
 import { zh } from './i18n-setup.js';
+import { setupRead } from './setup-fixture.js';
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 
@@ -68,9 +69,9 @@ const view = (model: BoardModel, page: BoardPage, projectId?: string) =>
       onRange() {},
       onPage() {},
       onOpenSession() {},
-      onOpenSessions() {},
       onOpenStory() {},
       onOpenTrace() {},
+      setup: setupRead('none'),
     }),
   );
 
@@ -87,8 +88,8 @@ const insights = (model: BoardModel, section: InsightsSection, projectId?: strin
       onDays() {},
       onSection() {},
       onOpenSession() {},
-      onOpenSessions() {},
       onOpenStory() {},
+      setup: setupRead('none'),
     }),
   );
 
@@ -121,16 +122,16 @@ describe('board empty state per tab', () => {
   it('shows the findings of a board that has nothing else in the range', () => {
     const html = insights(board({ findings: [finding] }), 'quality');
     expect(html).toContain('finding from a discarded session');
-    expect(html).not.toContain(zh('board.empty.openSession'));
+    expect(html).not.toContain(zh('board.baseline.start'));
   });
 
   it('shows the panels that read their own data on an empty board', () => {
     const quality = insights(board(), 'quality', 'empty-board');
     expect(quality).toContain(zh('board.reviewMatrix.title'));
     expect(quality).toContain(zh('board.gateHistory.title'));
-    expect(quality).not.toContain(zh('board.empty.openSession'));
+    expect(quality).not.toContain(zh('board.baseline.start'));
     expect(insights(board(), 'usage', 'empty-board')).toContain(zh('board.panels.byRole'));
-    expect(view(board(), 'now', 'empty-board')).toContain(zh('board.empty.openSession'));
+    expect(view(board(), 'now', 'empty-board')).toContain(zh('board.baseline.start'));
   });
 });
 

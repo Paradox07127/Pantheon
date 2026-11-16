@@ -9,6 +9,7 @@ import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import { edgeState } from '../../apps/web/src/screens/board/FlowPanel.js';
 import { t } from '../../apps/web/src/i18n/index.js';
 import { zh } from './i18n-setup.js';
+import { setupRead } from './setup-fixture.js';
 import {
   LANE_GAP,
   LANE_LABEL_WIDTH,
@@ -108,7 +109,13 @@ const flowBoard = board({
 
 const view = (
   model: BoardModel | null,
-  extra: { loading?: boolean; error?: string; page?: BoardPage; projectId?: string } = {},
+  extra: {
+    loading?: boolean;
+    error?: string;
+    page?: BoardPage;
+    projectId?: string;
+    setup?: ReturnType<typeof setupRead>;
+  } = {},
 ) =>
   renderToStaticMarkup(
     createElement(BoardView, {
@@ -122,9 +129,9 @@ const view = (
       onRange() {},
       onPage() {},
       onOpenSession() {},
-      onOpenSessions() {},
       onOpenStory() {},
       onOpenTrace() {},
+      setup: extra.setup,
     }),
   );
 
@@ -354,9 +361,9 @@ describe('board view', () => {
     expect(html).not.toContain('bd-col-row');
   });
 
-  it('offers to open a session when the project has no tasks and no counts', () => {
-    const html = view(board());
-    expect(html).toContain(zh('board.empty.openSession'));
+  it('offers the project setup when the project has no tasks and no counts', () => {
+    const html = view(board(), { setup: setupRead('none') });
+    expect(html).toContain(`>${zh('board.baseline.start')}</button>`);
     expect(html).not.toContain(zh('app.screenName.flow'));
   });
 

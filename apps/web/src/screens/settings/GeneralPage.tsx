@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Minus, Plus } from 'lucide-react';
 import type { BridgeResult, DesktopBridge } from '@pantheon/protocol';
 import { Select } from '../../components/Select';
 import { toast } from '../../components/Toast';
@@ -43,24 +44,129 @@ export function GeneralPage() {
         if (!saved.ok) toast({ title: failureText(saved.error), kind: 'failure' });
       });
   return (
-    <Section>
-      <div className="ps-rows">
-        <Row label={language} settingId="general.language">
-          <Select value={chosen} onChange={choose} options={languages} aria-label={language} />
-        </Row>
-        <Row label={keepAwake} settingId="general.keepAwake">
+    <>
+      <Section>
+        <div className="ps-rows">
+          <Row label={language} settingId="general.language">
+            <Select value={chosen} onChange={choose} options={languages} aria-label={language} />
+          </Row>
+          <Row label={keepAwake} settingId="general.keepAwake">
+            <input
+              type="checkbox"
+              className="ps-sw"
+              aria-label={keepAwake}
+              checked={prefs.keep_awake}
+              onChange={(e) => setNotificationPrefs({ keep_awake: e.target.checked })}
+            />
+          </Row>
+          {window.pantheon && <OpenAtLoginRow />}
+          {window.pantheon && <ShellRows />}
+          {window.pantheon && <AutoArchiveRow />}
+          {window.pantheon && <AutoGitInitRow />}
+        </div>
+      </Section>
+      {window.pantheon && <BaselineSection />}
+    </>
+  );
+}
+
+const ROUNDS_LOW = 1;
+const ROUNDS_HIGH = 5;
+type BaselineKey = 'baseline_rounds' | 'baseline_visuals' | 'baseline_range_story';
+
+/** How a project baseline asks and explains: its question rounds, its charts and its story of recent commits. */
+function BaselineSection() {
+  const { settings, error, saving, save } = useAppSettings();
+  // The setting last saved, whose row a failure shows under; null for a failed read.
+  const [last, setLast] = useState<BaselineKey | null>(null);
+  const write = (key: BaselineKey, value: number | boolean) => {
+    setLast(key);
+    void save({ [key]: value });
+  };
+  const alert = (key: BaselineKey | null) =>
+    error !== null &&
+    last === key && (
+      <div className="ps-err gp-err" role="alert">
+        {error}
+      </div>
+    );
+  const title = t({ id: 'settings.general.baseline', defaultMessage: 'Baseline' });
+  const rounds = t({ id: 'settings.general.baselineRounds', defaultMessage: 'Follow-up rounds' });
+  const switchRow = (key: BaselineKey, label: string, settingId: string) =>
+    settings && (
+      <>
+        <Row label={label} settingId={settingId}>
           <input
             type="checkbox"
             className="ps-sw"
-            aria-label={keepAwake}
-            checked={prefs.keep_awake}
-            onChange={(e) => setNotificationPrefs({ keep_awake: e.target.checked })}
+            aria-label={label}
+            checked={settings[key] as boolean}
+            disabled={saving}
+            onChange={(e) => write(key, e.target.checked)}
           />
         </Row>
-        {window.pantheon && <OpenAtLoginRow />}
-        {window.pantheon && <ShellRows />}
-        {window.pantheon && <AutoArchiveRow />}
-        {window.pantheon && <AutoGitInitRow />}
+        {alert(key)}
+      </>
+    );
+  const value = settings?.baseline_rounds ?? ROUNDS_HIGH;
+  const step = (by: number) => {
+    const to = value + by;
+    return {
+      'aria-disabled': to < ROUNDS_LOW || to > ROUNDS_HIGH,
+      onClick: () => {
+        if (to >= ROUNDS_LOW && to <= ROUNDS_HIGH) write('baseline_rounds', to);
+      },
+    };
+  };
+  return (
+    <Section title={title}>
+      <div className="ps-rows">
+        {settings && (
+          <>
+            <Row label={rounds} settingId="general.baselineRounds">
+              <span className="gp-stp" role="group" aria-label={rounds}>
+                <button
+                  type="button"
+                  className="ib"
+                  aria-label={t({
+                    id: 'settings.general.baselineFewerRounds',
+                    defaultMessage: 'Fewer rounds',
+                  })}
+                  {...step(-1)}
+                >
+                  <Minus aria-hidden="true" />
+                </button>
+                <output aria-live="polite">{value}</output>
+                <button
+                  type="button"
+                  className="ib"
+                  aria-label={t({
+                    id: 'settings.general.baselineMoreRounds',
+                    defaultMessage: 'More rounds',
+                  })}
+                  {...step(1)}
+                >
+                  <Plus aria-hidden="true" />
+                </button>
+              </span>
+            </Row>
+            {alert('baseline_rounds')}
+          </>
+        )}
+        {switchRow(
+          'baseline_visuals',
+          t({ id: 'settings.general.baselineVisuals', defaultMessage: 'Draw explanation charts' }),
+          'general.baselineVisuals',
+        )}
+        {switchRow(
+          'baseline_range_story',
+          t({
+            id: 'settings.general.baselineRangeStory',
+            defaultMessage: 'Explain recent history on confirm',
+          }),
+          'general.baselineRangeStory',
+        )}
+        {alert(null)}
       </div>
     </Section>
   );

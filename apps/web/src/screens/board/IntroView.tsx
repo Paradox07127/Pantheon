@@ -5,14 +5,12 @@ import type { FileRef } from '@pantheon/protocol';
 import { Markdown, openFailureText } from '../../components/Markdown';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
-import { useBaselineRead } from '../../data/baseline-read';
 import { useBoard } from '../../data/board';
 import { startIntro, useIntroRead, type ProjectIntro } from '../../data/intro-read';
 import { useNow } from '../../data/needs-you';
 import { elapsedText } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import type { BaselineChoice } from '../projects/baseline';
 import { BaselinePopover } from '../projects/BaselineBlocks';
 import { useSize } from './Charts';
 import {
@@ -22,12 +20,12 @@ import {
   archLayout,
   cellLabel,
   commitShade,
-  mermaidBlocks,
   shellLine,
   sourceText,
   squarify,
   stepRange,
 } from './intro-model';
+import { useProjectSetup } from './project-setup';
 import './intro.css';
 
 /** Treemap height in px, and the width it is laid out in before its box is measured. */
@@ -321,16 +319,9 @@ export function Treemap({
 }
 
 /** The project introduction: what the project does and aims at, how to run it and how it is built. */
-export function IntroView({
-  projectId,
-  baseline,
-}: {
-  projectId: string;
-  /** The board's baseline start, offered while the project has never been assessed. */
-  baseline?: { busy: boolean; onStart: (choice?: BaselineChoice) => void };
-}) {
+export function IntroView({ projectId }: { projectId: string }) {
   const { read, error } = useIntroRead(projectId);
-  const baselineRead = useBaselineRead(projectId);
+  const setup = useProjectSetup(projectId);
   const brief = useBoard((s) => s.board?.project_briefs?.find((b) => b.project_id === projectId));
   const root = useBoard((s) => s.board?.projects.find((p) => p.id === projectId)?.roots[0]);
   const writingId = read?.writing_session_id ?? null;
@@ -377,8 +368,15 @@ export function IntroView({
     setStarting(false);
     if (!result.ok) setStartError(result.error);
   };
-  const assessed =
-    baselineRead.read?.state === 'confirmed' ? (baselineRead.read.result ?? null) : null;
+  const assessed = setup?.baseline?.state === 'confirmed' ? (setup.baseline.result ?? null) : null;
+  // The baseline start shared with the board; a running or handed-back baseline takes no other.
+  const held = setup?.state === 'running' || setup?.state === 'submitted';
+  const baselineLabel =
+    setup?.state === 'failed'
+      ? t({ id: 'board.baseline.restart', defaultMessage: 'Rebuild baseline' })
+      : setup?.state === 'running'
+        ? t({ id: 'board.setup.running', defaultMessage: 'Building baseline' })
+        : t({ id: 'board.baseline.start', defaultMessage: 'Build baseline' });
   const action =
     intro || assessed ? (
       <button type="button" className="btn sm" disabled={writing} onClick={() => void start()}>
@@ -388,30 +386,33 @@ export function IntroView({
           : t({ id: 'board.intro.generate', defaultMessage: 'Generate introduction' })}
       </button>
     ) : (
-      baseline && (
+      setup?.state &&
+      setup.state !== 'empty_folder' && (
         <>
           <button
             ref={startButton}
             type="button"
             className="btn sm"
-            disabled={writing || baseline.busy}
+            disabled={writing || held || setup.busy}
+            aria-busy={setup.state === 'running' || setup.busy || undefined}
             onClick={() => setChoosing(true)}
           >
-            {t({ id: 'board.intro.startBaseline', defaultMessage: 'Run baseline' })}
+            {baselineLabel}
           </button>
           {choosing && (
             <BaselinePopover
               project_id={projectId}
               anchor={startButton}
-              label={t({ id: 'board.intro.startBaseline', defaultMessage: 'Run baseline' })}
-              busy={baseline.busy}
+              label={baselineLabel}
+              busy={setup.busy}
               onClose={() => setChoosing(false)}
-              onStart={baseline.onStart}
+              onStart={setup.start}
             />
           )}
         </>
       )
     );
+  const failure = startError ?? (!intro && !assessed ? setup?.error : null);
   const head = (
     <div className="in-hd">
       <h2 className="in-h2">
@@ -448,9 +449,9 @@ export function IntroView({
       )}
       {writing && <WritingMark since={since} />}
       <span className="in-acts">
-        {startError && (
+        {failure && (
           <span className="in-err" role="alert">
-            {startError}
+            {failure}
           </span>
         )}
         {action}
@@ -488,7 +489,7 @@ export function IntroView({
   const modules = [...intro.modules].sort((a, b) => b.lines - a.lines);
   const chosen = modules.find((m) => m.path === picked) ?? null;
   const architecture = intro.architecture;
-  const flows = mermaidBlocks(intro.body ?? '');
+  const flows = intro.body?.trim();
   const span = (other: boolean, own: number) => (other ? `in-s${own}` : 'in-s12');
   const list = (items: readonly string[]) => (
     <ul className="in-gls">

@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
+import { GitCommitHorizontal, GitMerge } from 'lucide-react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import type { RepoLane, RepoTimeline } from '@pantheon/protocol';
@@ -252,6 +253,12 @@ export function RepoLanes({
     if (result.ok) stories.reload();
   };
 
+  const current = read && read.from === from && read.to === end ? read : null;
+  const mainLane = current?.lanes.find((lane) => lane.kind === 'main');
+  // The story explains the range's merges, or else its commits on the main line.
+  const untold =
+    !!current && (mainLane ? laneCommits(mainLane) : 0) === 0 && current.totals.merges === 0;
+
   const brushFrom = brushEnd - span;
   return (
     <div className="rl-wrap">
@@ -368,11 +375,12 @@ export function RepoLanes({
               </span>
             </span>
           </div>
-          {totalsPanel(read && read.from === from && read.to === end ? read.totals : null)}
+          {totalsPanel(current?.totals ?? null)}
           {storyPart({
             story,
             now,
             busy: !!askedHere && (askedHere.sending || (!askedHere.error && !story)),
+            untold,
             error: askedHere?.error ?? null,
             onGenerate: () => void generate(),
           })}
@@ -754,22 +762,41 @@ function storyPart({
   story,
   now,
   busy,
+  untold,
   error,
   onGenerate,
 }: {
   story: RangeStory | null;
   now: number;
   busy: boolean;
+  /** The range has no merges and no main-line commits to explain. */
+  untold: boolean;
   error: string | null;
   onGenerate: () => void;
 }) {
   const title = t({ id: 'repo.timeline.story', defaultMessage: 'Range story' });
   const failure = error ?? (story?.state === 'failed' ? (story.error ?? null) : null);
-  if (story?.state === 'ready')
+  const alert = failure && (
+    <p className="rl-err" role="alert">
+      {failure}
+    </p>
+  );
+  if (story?.state === 'ready') {
+    // A story without a source told merges.
+    const commits = story.source === 'commits';
+    const Mark = commits ? GitCommitHorizontal : GitMerge;
     return (
       <div className="rl-story">
         <div className="rl-sh">
-          <span className="rl-b">{title}</span>
+          <span className="rl-sth">
+            <span className="rl-b">{title}</span>
+            <span className="chip">
+              <Mark size={12} aria-hidden="true" />
+              {commits
+                ? t({ id: 'repo.timeline.storyFromCommits', defaultMessage: 'From commits' })
+                : t({ id: 'repo.timeline.storyFromMerges', defaultMessage: 'From merges' })}
+            </span>
+          </span>
           <time className="mu" dateTime={story.created_at}>
             {ageText(Date.parse(story.created_at), now)}
           </time>
@@ -782,8 +809,10 @@ function storyPart({
             {t({ id: 'repo.timeline.storyAgain', defaultMessage: 'Interpret again' })}
           </button>
         </div>
+        {alert}
       </div>
     );
+  }
   if (story?.state === 'running')
     return (
       <div className="rl-story" aria-busy="true">
@@ -799,18 +828,14 @@ function storyPart({
         <button
           type="button"
           className="btn sm"
-          disabled={busy}
+          disabled={busy || untold}
           aria-busy={busy || undefined}
           onClick={onGenerate}
         >
           {t({ id: 'repo.timeline.storyStart', defaultMessage: 'Interpret this range' })}
         </button>
       </div>
-      {failure && (
-        <p className="rl-err" role="alert">
-          {failure}
-        </p>
-      )}
+      {alert}
     </div>
   );
 }

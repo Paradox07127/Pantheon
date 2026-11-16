@@ -46,7 +46,6 @@ const view = (sync: Parameters<typeof BoardView>[0]['sync']) =>
       page: 'now',
       onPage: noop,
       onOpenSession: noop,
-      onOpenSessions: noop,
       onOpenStory: noop,
       onOpenTrace: noop,
       sync,
@@ -130,9 +129,7 @@ it('sends board.sync and stays on the board, busy until the sync turns of its le
   });
   // An earlier sync turn of lead-a ended before this one.
   mock.board.board = { cursor: 1, session_turns: [turn('old', 'lead-a', 'completed', 'sync')] };
-  const h = mount(() =>
-    boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
   h.value.props.sync.onSync();
   h.render();
@@ -173,7 +170,7 @@ it('drops a sync failure and an unfinished sync when the board moves to another 
     error: { code: 'permission_denied', message: 'Authenticated user required' },
   };
   let projectId = 'project-a';
-  const h = mount(() => boardView({ projectId, onOpenSession: noop, onOpenSessions: noop }));
+  const h = mount(() => boardView({ projectId, onOpenSession: noop }));
   await h.flush();
   h.value.props.sync.onSync();
   await h.flush();
@@ -198,7 +195,7 @@ it('drops a sync failure and an unfinished sync when the board moves to another 
 
 it('is not busy on the next project when the board shows the sync turn in the same render as the switch', async () => {
   let projectId = 'project-a';
-  const h = mount(() => boardView({ projectId, onOpenSession: noop, onOpenSessions: noop }));
+  const h = mount(() => boardView({ projectId, onOpenSession: noop }));
   await h.flush();
   h.value.props.sync.onSync();
   await h.flush();
@@ -213,9 +210,7 @@ it('is not busy on the next project when the board shows the sync turn in the sa
 });
 
 it('stops being busy when the board lists the sync leads discarded before it showed their turns', async () => {
-  const h = mount(() =>
-    boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
   h.value.props.sync.onSync();
   await h.flush();
@@ -237,9 +232,7 @@ it('keeps the failure of a refused sync for the headline bar', async () => {
     ok: false,
     error: { code: 'permission_denied', message: 'Authenticated user required' },
   };
-  const h = mount(() =>
-    boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
   h.value.props.sync.onSync();
   await h.flush();

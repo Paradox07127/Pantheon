@@ -149,7 +149,6 @@ const view = (page: 'now' | 'history' | 'canvas' = 'now') =>
     onPage: noop,
     projectId: 'project-a',
     onOpenSession: noop,
-    onOpenSessions: noop,
     onOpenStory: noop,
     onOpenTrace: noop,
     actions: { milestones: [], sessions: [], run: vi.fn() },
@@ -201,7 +200,7 @@ describe('the board top bar', () => {
   it('opens the now page on the in-progress range', () => {
     const h = mount(() =>
       find(
-        BoardScreen({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
+        BoardScreen({ projectId: 'project-a', onOpenSession: noop }),
         (n) => n.type === BoardView,
       ),
     );
@@ -212,7 +211,7 @@ describe('the board top bar', () => {
     const h = mount(() =>
       find(
         // A project no other test reads, so no earlier read of the same range is shared.
-        BoardScreen({ projectId: 'project-range', onOpenSession: noop, onOpenSessions: noop }),
+        BoardScreen({ projectId: 'project-range', onOpenSession: noop }),
         (n) => n.type === BoardView,
       ),
     );

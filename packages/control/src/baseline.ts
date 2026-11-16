@@ -15,8 +15,10 @@ import {
   DomainError,
   id,
   requireThat,
+  type BaselineAnswer,
   type BaselineFacts,
   type BaselineFolder,
+  type BaselineQuestion,
   type ExtensionOverrides,
   type Principal,
   type Project,
@@ -25,6 +27,7 @@ import {
   type Session,
   type SessionTurn,
   type BaselineResult,
+  type Visual,
 } from '@pantheon/domain';
 import { inputSchemas, pantheonConfigSchema, type ProjectFactsRead } from '@pantheon/protocol';
 import {
@@ -48,9 +51,14 @@ import { renderScanSeed } from './baseline-brief.js';
 import { startLead } from './lead-session.js';
 import { acceptInput } from './session.js';
 import { queueTurn } from './task-tracking.js';
+import { readAppSettings } from './app-settings.js';
+import { visualHandlers } from './visual.js';
+import { startRangeStory } from './range-story.js';
 
 export const BASELINE_WALL_TIME_MS = 30 * 60 * 1000;
 const FACTS_KEPT = 30;
+/** The range a confirmed baseline explains as a range story. */
+const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
 const NO_OVERRIDES: ExtensionOverrides = {
   disabled_mcp_servers: [],
   disabled_plugins: [],
@@ -319,6 +327,8 @@ export function projectFactsRead(
         id: stream.id,
         title: stream.title,
         status: stream.status,
+        next: stream.next,
+        blockers: stream.blockers,
         ...(stream.modules && { modules: stream.modules }),
         ...(stream.depends_on && { depends_on: stream.depends_on }),
         ...(stream.risks && { risks: stream.risks }),
@@ -472,6 +482,28 @@ export const baselineHandlers: Handlers = {
       !missing.length,
       'invalid_state',
       `Submit each folder with project_baseline_submit_folder first; missing: ${missing.join(', ')}`,
+    );
+    const intro = ctx.store.projectIntro(project.id);
+    requireThat(
+      intro && (intro.session_id === session.id || intro.written_at >= baseline.created_at),
+      'invalid_state',
+      'Submit the introduction with project_intro_submit first',
+    );
+    const round = (baseline.rounds?.length ?? 0) + 1;
+    const directions = submitted.questions.filter((question) => question.kind === 'direction');
+    requireThat(
+      round > 1 ||
+        !submitted.questions.length ||
+        (directions.length === 1 &&
+          directions[0]!.options.length <= 3 &&
+          directions[0]!.options.every((option) => option.preview)),
+      'invalid_input',
+      'The first round asks exactly one question of kind direction, with 2 to 3 options that each have a preview',
+    );
+    requireThat(
+      round < readAppSettings(ctx).baseline_rounds || !submitted.questions.length,
+      'invalid_input',
+      `Round ${round} is the last round; submit questions as an empty array`,
     );
     const runtimes = inventoryRuntimes(ctx);
     requireThat(
@@ -693,6 +725,10 @@ export const baselineHandlers: Handlers = {
     );
     ctx.store.event('project.baseline_confirmed', next, projectId, {}, c.command_id);
     const { result } = baseline;
+    const rounds = [
+      ...(baseline.rounds ?? []),
+      { questions: result.questions, answers: input.answers },
+    ];
     const gates = new Map(input.gates?.map((gate) => [resolvedPath(gate.root), gate.commands]));
     // Non-git folders are read-only; brief and decisions live with the first git folder.
     const writable = ctx.store.must<Project>('projects', projectId).roots.filter(gitFolder);
@@ -710,8 +746,45 @@ export const baselineHandlers: Handlers = {
             Object.entries(folder.commands).map(([key, entry]) => [key, entry!.argv]),
           ),
         }),
-        ...(first && { ...(input.brief && { brief: input.brief }), decisions: input.answers }),
+        ...(first && {
+          ...(input.brief && { brief: input.brief }),
+          decisions: rounds
+            .flatMap((round) => round.answers)
+            .map(({ question, answer, by }) => ({
+              question,
+              answer:
+                by === 'user'
+                  ? answer
+                  : answer
+                    ? `${answer} (left to the model)`
+                    : 'Left to the model',
+            })),
+        }),
       });
+    }
+    if (readAppSettings(ctx).baseline_visuals)
+      for (const visual of ctx.store
+        .list<Visual>('visuals')
+        .filter((entry) => entry.session_id === baseline.session_id && !entry.pin))
+        visualHandlers['visual.pin']!(ctx, p, {
+          ...c,
+          type: 'visual.pin',
+          input: { visual_id: visual.id, size: 'M' },
+        });
+    if (readAppSettings(ctx).baseline_range_story) {
+      const now = ctx.store.now();
+      try {
+        startRangeStory(
+          ctx,
+          ctx.store.must<Project>('projects', projectId),
+          now - RECENT_MS,
+          now,
+          c.command_id,
+        );
+      } catch (error) {
+        // A project with no commits in the window gets no story; the confirm still stands.
+        if (!(error instanceof DomainError) || error.code !== 'invalid_input') throw error;
+      }
     }
     if (!input.plan_board) return next;
     const brief = input.brief ?? result.brief;
@@ -730,7 +803,7 @@ export const baselineHandlers: Handlers = {
       queueTurn(
         ctx,
         starter,
-        firstPlanMessage(result, brief, input.answers, true),
+        firstPlanMessage(result, brief, rounds, true),
         'baseline',
         c.command_id,
       );
@@ -741,20 +814,101 @@ export const baselineHandlers: Handlers = {
       p,
       projectId,
       'Baseline plan',
-      firstPlanMessage(result, brief, input.answers),
+      firstPlanMessage(result, brief, rounds),
       c.command_id,
       'baseline',
     );
-    return lead ? { ...next, lead_session_id: lead.id } : next;
+    if (!lead) return next;
+    const planned = ctx.store.update<ProjectBaseline>(
+      'project_baselines',
+      { ...next, plan_session_id: lead.id },
+      next.revision,
+    );
+    return { ...planned, lead_session_id: lead.id };
+  },
+  'project.baseline.continue': (ctx, p, c) => {
+    userOnly(p);
+    const input = inputSchemas['project.baseline.continue'].parse(c.input);
+    const baseline = ctx.store.must<ProjectBaseline>('project_baselines', input.baseline_id);
+    projectAccess(ctx, p, baseline.project_id, c.type);
+    revision(ctx, c, baseline);
+    requireThat(
+      baseline.state === 'submitted' && baseline.result,
+      'invalid_state',
+      'Baseline must be submitted before it continues',
+    );
+    const { result } = baseline;
+    const round = (baseline.rounds?.length ?? 0) + 1;
+    const limit = readAppSettings(ctx).baseline_rounds;
+    requireThat(round < limit, 'invalid_state', 'This baseline has reached its last round');
+    const unknown = input.answers.filter(
+      (answer) => !result.questions.some((question) => question.id === answer.question_id),
+    );
+    requireThat(
+      !unknown.length,
+      'invalid_input',
+      `answers name questions this round did not ask: ${unknown.map((answer) => answer.question_id).join(', ')}`,
+    );
+    const session = ctx.store.must<Session>('sessions', baseline.session_id!);
+    acceptInput(ctx, session, session.state === 'running' ? 'steer' : 'send');
+    const now = ctx.store.now();
+    const next = ctx.store.update<ProjectBaseline>(
+      'project_baselines',
+      {
+        ...baseline,
+        state: 'running',
+        folders: result.folders,
+        deadline: now + BASELINE_WALL_TIME_MS,
+        rounds: [
+          ...(baseline.rounds ?? []),
+          { questions: result.questions, answers: input.answers, at: now },
+        ],
+      },
+      baseline.revision,
+    );
+    queueTurn(
+      ctx,
+      session,
+      [
+        `The user answered the questions of round ${round}:`,
+        ...input.answers.map((answer) => `- ${answered(result.questions, answer)}`),
+        `This is round ${round + 1} of at most ${limit}. Read files again where you need to, then submit the complete revised assessment with project_baseline_submit. In questions ask only about what is still undecided; submit an empty array when nothing is left to ask.`,
+        ...(round + 1 === limit
+          ? ['This is the last round: submit questions as an empty array.']
+          : []),
+      ].join('\n'),
+      'baseline',
+      c.command_id,
+    );
+    ctx.store.event(
+      'project.baseline_continued',
+      next,
+      next.project_id,
+      { round: round + 1 },
+      c.command_id,
+    );
+    return next;
   },
 };
+
+/** One answered question; a choice left to the model names the recommended option. */
+function answered(questions: BaselineQuestion[], answer: BaselineAnswer): string {
+  const recommended =
+    questions.find((question) => question.id === answer.question_id)?.recommended ??
+    (answer.answer || undefined);
+  const text =
+    answer.by === 'user'
+      ? answer.answer
+      : `left to you${recommended ? `; the recommended option is ${recommended}` : ''}`;
+  return `${answer.question} Answer: ${text}`;
+}
 
 const RESULT_LIMIT = 8000;
 
 function firstPlanMessage(
   result: BaselineResult,
   brief: { goal: string; goals: string[]; non_goals: string[] } | undefined,
-  answers: { question: string; answer: string }[],
+  rounds: { questions: BaselineQuestion[]; answers: BaselineAnswer[] }[],
   /** True when the message goes back to the lead that started the baseline. */
   rerun = false,
 ): string {
@@ -768,15 +922,20 @@ function firstPlanMessage(
     ...(brief?.non_goals.length
       ? ['Non-goals:', ...brief.non_goals.map((goal) => `- ${goal}`)]
       : []),
-    ...(result.questions.length
-      ? ['Questions:', ...result.questions.map((entry) => `- ${entry.question}`)]
-      : []),
-    ...(answers.length
-      ? [
-          "The user's answers:",
-          ...answers.map((entry) => `- ${entry.question} Answer: ${entry.answer}`),
-        ]
-      : []),
+    ...rounds.flatMap((round, index) => [
+      ...(round.questions.length
+        ? [
+            `Questions of round ${index + 1}:`,
+            ...round.questions.map((entry) => `- ${entry.question}`),
+          ]
+        : []),
+      ...(round.answers.length
+        ? [
+            `The user's answers in round ${index + 1}:`,
+            ...round.answers.map((entry) => `- ${answered(round.questions, entry)}`),
+          ]
+        : []),
+    ]),
     ...(tasks.length
       ? [
           'Next tasks:',
@@ -785,6 +944,12 @@ function firstPlanMessage(
               `- ${task.title} (workstream: ${title(result.workstreams, task.workstream)}): ${task.why} Scope: ${task.scope.join(', ')}${task.acceptance.length ? ` Acceptance: ${task.acceptance.join('; ')}` : ''}${task.depends_on.length ? ` Depends on: ${task.depends_on.map((key) => title(tasks, key)).join('; ')}` : ''}`,
           ),
         ]
+      : []),
+    ...(result.findings.length
+      ? ['Findings:', ...result.findings.map((entry) => `- (${entry.severity}) ${entry.text}`)]
+      : []),
+    ...(result.contradictions.length
+      ? ['Docs the code contradicts:', ...result.contradictions.map((entry) => `- ${entry.text}`)]
       : []),
     'Workstreams:',
     ...result.workstreams.map(
@@ -796,12 +961,12 @@ function firstPlanMessage(
     ...(rerun
       ? [
           'This is the confirmed new baseline of the project that you started with rerun_baseline.',
-          'Rewrite your plan from it with update_board: keep the ids of tasks that still apply, add tasks for the work still to do, and remove tasks that are no longer needed. Stages that can be accepted become milestones, and the open questions become risks or assumptions.',
+          'Rewrite your plan from it with update_board: keep the ids of tasks that still apply, add tasks for the work still to do, and remove tasks that are no longer needed. Stages that can be accepted become milestones, the open questions become risks or assumptions, risk findings become risks and contradictions become assumptions.',
           'Each next task becomes a board task: quote its title as its source and copy its scope, acceptance and dependencies.',
         ]
       : [
           'This is the confirmed baseline of the project.',
-          'Write the first plan of the board with update_board: workstreams become lanes, the work still to do becomes tasks with their dependencies, stages that can be accepted become milestones, and the open questions become risks or assumptions.',
+          'Write the first plan of the board with update_board: workstreams become lanes, the work still to do becomes tasks with their dependencies, stages that can be accepted become milestones, the open questions become risks or assumptions, risk findings become risks and contradictions become assumptions.',
           'Each next task becomes a board task: quote its title as its source and copy its scope, acceptance and dependencies.',
         ]),
     'When the plan is written, end your turn; do not implement anything.',

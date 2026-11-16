@@ -82,7 +82,6 @@ const view = (props: Partial<Parameters<typeof BoardView>[0]>) =>
     onPage: noop,
     projectId: 'project-a',
     onOpenSession: noop,
-    onOpenSessions: noop,
     onOpenStory: noop,
     onOpenTrace: noop,
     model: null,

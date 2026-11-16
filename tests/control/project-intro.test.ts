@@ -266,7 +266,7 @@ it('limits submission to assessment and introduction sessions and shares their a
   ])
     expect(purposeSessionTools(session) ?? []).not.toContain('project.intro.submit');
   for (const session of [baseline, intro]) {
-    const instructions = purposeSessionInstructions(session)!;
+    const instructions = purposeSessionInstructions(session, { rounds: 5, visuals: true })!;
     for (const text of [
       'first time',
       'summary',

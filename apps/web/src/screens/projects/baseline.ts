@@ -1,10 +1,13 @@
 import type {
   ProjectBaseline,
+  BaselineAnswer,
   BaselineExtension,
+  BaselineQuestion,
   BaselineResult,
   EffortLevel,
 } from '@pantheon/domain';
 import { compareRuntimes } from '../../components/RuntimeGlyph';
+import type { Answers } from '../../data/drafts';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import type { WorkstreamCount } from './facts';
@@ -19,7 +22,8 @@ export interface BaselineDraft {
   goals: string[];
   non_goals: string[];
   gate: { root: string; command: GateCommand; checked: boolean }[];
-  answers: { question: string; options: string[]; answer: string | null }[];
+  /** This round's picks, own words and questions left to the model, by question. */
+  answers: Answers;
   extensions: (BaselineExtension & { checked: boolean })[];
 }
 
@@ -54,8 +58,8 @@ const ENTRY: Record<
 export function baselineEntry(baseline: ProjectBaseline | null, hasBrief: boolean): BaselineEntry {
   if (!baseline || baseline.state === 'failed') {
     const label = hasBrief
-      ? t({ id: 'projects.baseline.readAgain', defaultMessage: 'Read it again' })
-      : t({ id: 'projects.baseline.read', defaultMessage: 'Read this project' });
+      ? t({ id: 'board.baseline.restart', defaultMessage: 'Rebuild baseline' })
+      : t({ id: 'board.baseline.start', defaultMessage: 'Build baseline' });
     if (!baseline?.reason) return { kind: 'start', label };
     return { kind: 'start', label, failure: FAILURE[baseline.reason] ?? baseline.reason };
   }
@@ -97,7 +101,11 @@ export function baselineDraft(baseline: ProjectBaseline): BaselineDraft {
     gate: (result?.folders ?? []).flatMap((folder) =>
       folder.gate.map((command) => ({ root: folder.root, command, checked: true })),
     ),
-    answers: (result?.questions ?? []).map((q) => ({ ...q, answer: null })),
+    answers: {
+      picked: (result?.questions ?? []).map(() => []),
+      typed: (result?.questions ?? []).map(() => ''),
+      decided: (result?.questions ?? []).map(() => false),
+    },
     extensions: (result?.extensions ?? []).map((item) => ({ ...item, checked: true })),
   };
 }
@@ -160,17 +168,51 @@ export function baselineExtensions(draft: BaselineDraft): { runtime: string; ite
 const lines = (items: readonly string[]) =>
   items.map((item) => item.trim()).filter((item) => item !== '');
 
+/** The answered questions: own words, else the picked labels in option order; one left to the model takes its recommendation. */
+export function baselineAnswers(
+  questions: readonly BaselineQuestion[],
+  answers: Answers,
+): BaselineAnswer[] {
+  return questions.flatMap((q, i): BaselineAnswer[] => {
+    const asked = { question_id: q.id, question: q.question };
+    if (answers.decided?.[i]) return [{ ...asked, answer: q.recommended ?? '', by: 'model' }];
+    const chosen = answers.picked[i] ?? [];
+    const answer =
+      answers.typed[i]?.trim() ||
+      q.options
+        .map((o) => o.label)
+        .filter((label) => chosen.includes(label))
+        .join('; ');
+    return answer ? [{ ...asked, answer, by: 'user' }] : [];
+  });
+}
+
+const notSubmitted = (): Request => ({
+  ok: false,
+  errors: [
+    t({
+      id: 'projects.baseline.notSubmitted',
+      defaultMessage: 'This baseline is not waiting for confirmation',
+    }),
+  ],
+});
+
+/** Sends this round's answers and asks the baseline session for another round. */
+export function baselineContinueRequest(baseline: ProjectBaseline, answers: Answers): Request {
+  if (baseline.state !== 'submitted') return notSubmitted();
+  return {
+    ok: true,
+    type: 'project.baseline.continue',
+    input: {
+      baseline_id: baseline.id,
+      answers: baselineAnswers(baseline.result?.questions ?? [], answers),
+    },
+    expected_revision: baseline.revision,
+  };
+}
+
 export function baselineConfirmRequest(baseline: ProjectBaseline, draft: BaselineDraft): Request {
-  if (baseline.state !== 'submitted')
-    return {
-      ok: false,
-      errors: [
-        t({
-          id: 'projects.baseline.notSubmitted',
-          defaultMessage: 'This baseline is not waiting for confirmation',
-        }),
-      ],
-    };
+  if (baseline.state !== 'submitted') return notSubmitted();
   const goal = draft.goal.trim();
   // Without a brief the daemon plans with the suggested one.
   if (!goal && baseline.result?.brief)
@@ -197,9 +239,7 @@ export function baselineConfirmRequest(baseline: ProjectBaseline, draft: Baselin
         brief: { goal, goals: lines(draft.goals), non_goals: lines(draft.non_goals) },
       }),
       ...(gates.length > 0 && { gates }),
-      answers: draft.answers.flatMap((a) =>
-        a.answer === null ? [] : [{ question: a.question, answer: a.answer }],
-      ),
+      answers: baselineAnswers(baseline.result?.questions ?? [], draft.answers),
       ...(extensions.length > 0 && { extensions }),
       plan_board: true,
     },

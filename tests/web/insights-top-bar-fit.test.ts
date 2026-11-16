@@ -99,7 +99,6 @@ beforeAll(async () => {
           onDays() {},
           onSection() {},
           onOpenSession() {},
-          onOpenSessions() {},
           onOpenStory() {},
         }),
       ),

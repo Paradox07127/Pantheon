@@ -38,6 +38,8 @@ import {
 import { KpiTiles } from '../board/KpiTiles';
 import { FindingsPanel, MergesPanel } from '../board/Lists';
 import { saveLayout, useBoardLayout } from '../board/panel-layout';
+import { setupShown, useProjectSetup, type ProjectSetupRead } from '../board/project-setup';
+import { ProjectSetup } from '../board/ProjectSetup';
 import type { RunBoardCommand, SnapshotSession } from '../board/panels-model';
 import {
   GateFailuresPanel,
@@ -293,18 +295,19 @@ interface InsightsViewProps {
   /** Reads the review metrics, role usage and repository facts; absent without a project. */
   projectId?: string;
   onOpenSession: (sessionId: string) => void;
-  onOpenSessions: () => void;
   onOpenStory: (sessionId: string) => void;
   onStartTask?: (task: BoardModel['tasks'][number]) => void;
   /** Snapshot sessions and the command runner behind the review actions; absent without a project. */
   actions?: { sessions: readonly SnapshotSession[]; run: RunBoardCommand };
   /** The project's token targets by runtime, for the usage rings. */
   usageTargets?: Record<string, number>;
+  /** The project's setup, shown in place of an empty page; absent without a project. */
+  setup?: ProjectSetupRead;
 }
 
 export function InsightsView(props: InsightsViewProps) {
   const { model, loading, error, onRetry, days, onDays, section, onSection, projectId } = props;
-  const { onOpenSession, onOpenSessions, onOpenStory, onStartTask, actions } = props;
+  const { onOpenSession, onOpenStory, onStartTask, actions, setup } = props;
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState(projectId);
   const [seen, setSeen] = useState<readonly InsightsSection[]>([section]);
@@ -490,6 +493,9 @@ export function InsightsView(props: InsightsViewProps) {
     : {};
   const shown = (tab: InsightsSection) => layout[tab].filter((p) => !p.hidden && panels[p.key]);
   const empty = !!model && isEmpty(model) && !shown(section).some((p) => OWN_READS.has(p.key));
+  const setupPanel = setup && setupShown(setup, model, empty) && (
+    <ProjectSetup setup={setup} onOpenSession={onOpenSession} />
+  );
   const laid = (tab: InsightsSection) =>
     model && laidPanels({ places: shown(tab), panels, model, projectId, onRetry, onLayout });
   const hidden = layout[section]
@@ -539,43 +545,38 @@ export function InsightsView(props: InsightsViewProps) {
           />
         )}
         <div className="bd-grid">
-          {empty ? (
-            <div className="bd-empty">
-              <button type="button" className="btn pri big" onClick={onOpenSessions}>
-                {t({ id: 'board.empty.openSession', defaultMessage: 'Start a session' })}
-              </button>
-            </div>
-          ) : !model ? (
-            <section className="bd-pn bd-s12" aria-labelledby="bd-load-h">
-              <div className="bd-ph">
-                <h2 id="bd-load-h">{insightsSectionLabel(section)}</h2>
-              </div>
-              {pending}
-            </section>
-          ) : (
-            <>
-              {/* A seen tab stays mounted and is hidden in the switch's own commit; Tabs.Panel alone
+          {setupPanel ||
+            (empty ? null : !model ? (
+              <section className="bd-pn bd-s12" aria-labelledby="bd-load-h">
+                <div className="bd-ph">
+                  <h2 id="bd-load-h">{insightsSectionLabel(section)}</h2>
+                </div>
+                {pending}
+              </section>
+            ) : (
+              <>
+                {/* A seen tab stays mounted and is hidden in the switch's own commit; Tabs.Panel alone
                   keeps a closed panel on screen until the next animation frame. */}
-              {SECTIONS.filter((s) => seen.includes(s.key)).map(({ key }) => (
-                <Activity key={key} mode={key === section ? 'visible' : 'hidden'}>
-                  <Tabs.Panel className="bd-s12 bd-sub" value={key} keepMounted>
-                    {key === 'usage' && (
-                      <div className="bd-s12">
-                        <PanelBoundary
-                          title={t({ id: 'board.kpi.label', defaultMessage: 'Usage overview' })}
-                          model={model}
-                          onRetry={onRetry}
-                        >
-                          <KpiTiles model={model} />
-                        </PanelBoundary>
-                      </div>
-                    )}
-                    {laid(key)}
-                  </Tabs.Panel>
-                </Activity>
-              ))}
-            </>
-          )}
+                {SECTIONS.filter((s) => seen.includes(s.key)).map(({ key }) => (
+                  <Activity key={key} mode={key === section ? 'visible' : 'hidden'}>
+                    <Tabs.Panel className="bd-s12 bd-sub" value={key} keepMounted>
+                      {key === 'usage' && (
+                        <div className="bd-s12">
+                          <PanelBoundary
+                            title={t({ id: 'board.kpi.label', defaultMessage: 'Usage overview' })}
+                            model={model}
+                            onRetry={onRetry}
+                          >
+                            <KpiTiles model={model} />
+                          </PanelBoundary>
+                        </div>
+                      )}
+                      {laid(key)}
+                    </Tabs.Panel>
+                  </Activity>
+                ))}
+              </>
+            ))}
         </div>
       </main>
     </Tabs.Root>
@@ -585,11 +586,9 @@ export function InsightsView(props: InsightsViewProps) {
 export function InsightsScreen({
   projectId,
   onOpenSession,
-  onOpenSessions,
 }: {
   projectId: string | null;
   onOpenSession: (sessionId: string) => void;
-  onOpenSessions: () => void;
 }) {
   const [days, setDays] = useState<BoardDays>(7);
   const view = useBoardView(projectId, days);
@@ -601,6 +600,7 @@ export function InsightsScreen({
     (s) => s.board?.projects.find((p) => p.id === projectId)?.usage_targets,
   );
   const defaults = useProjectDefaults();
+  const setup = useProjectSetup(projectId);
   const usageTargets =
     ownTargets || settingOf(defaults.data, 'usage_targets')?.global
       ? effectiveUsageTargets({ usage_targets: ownTargets }, defaults.data)
@@ -620,13 +620,13 @@ export function InsightsScreen({
         if (projectId) pickInsightsSection(projectId, next);
       }}
       onOpenSession={onOpenSession}
-      onOpenSessions={onOpenSessions}
       onOpenStory={(sessionId) => openSession(sessionId, 'story')}
       onStartTask={({ id, title, goal }) => openTaskSession({ id, title, goal })}
       {...(projectId && {
         projectId,
         actions: sessions ? { sessions, run: runBoardCommand } : undefined,
         usageTargets,
+        setup,
       })}
     />
   );

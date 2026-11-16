@@ -305,6 +305,12 @@
   gap: var(--sp-2);
   min-width: 0;
 }
+.rl-sth {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
 .rl-kpis {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

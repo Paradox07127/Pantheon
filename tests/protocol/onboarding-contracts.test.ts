@@ -90,3 +90,64 @@ it('accepts a baseline start with a runtime, model and effort and a submission w
   expect(submit.safeParse({ ...submission, tasks: [task] }).success).toBe(true);
   expect(submit.safeParse({ ...submission, tasks: [{ ...task, scope: [] }] }).success).toBe(false);
 });
+
+const emptySubmission = {
+  baseline_id: 'baseline',
+  workstreams: [],
+  contradictions: [],
+  findings: [],
+};
+const scopeQuestion = {
+  id: 'scope',
+  header: 'Scope',
+  question: 'Is publishing in scope?',
+  options: [
+    { label: 'Yes', description: 'Publish to npm' },
+    {
+      label: 'No',
+      description: 'Keep it internal',
+      preview: { kind: 'mermaid', spec: { source: 'graph LR; a-->b' } },
+    },
+  ],
+  multiSelect: false,
+  recommended: 'No',
+};
+it.each([
+  [
+    'a question card',
+    'project.baseline.submit',
+    { ...emptySubmission, questions: [scopeQuestion] },
+    true,
+  ],
+  [
+    'a recommended label that names no option',
+    'project.baseline.submit',
+    { ...emptySubmission, questions: [{ ...scopeQuestion, recommended: 'Maybe' }] },
+    false,
+  ],
+  [
+    'six questions',
+    'project.baseline.submit',
+    {
+      ...emptySubmission,
+      questions: Array.from({ length: 6 }, (_, i) => ({ ...scopeQuestion, id: `q${i}` })),
+    },
+    false,
+  ],
+  [
+    'a continued round with the answers so far',
+    'project.baseline.continue',
+    {
+      baseline_id: 'baseline',
+      answers: [
+        { question_id: 'scope', question: 'Is publishing in scope?', answer: 'No', by: 'user' },
+        { question_id: 'stack', question: 'Which stack?', answer: '', by: 'model' },
+      ],
+    },
+    true,
+  ],
+  ['six baseline rounds', 'app.settings.set', { baseline_rounds: 6 }, false],
+  ['three baseline rounds', 'app.settings.set', { baseline_rounds: 3 }, true],
+])('%s in %s parses: %s', (_name, type, input, ok) => {
+  expect(schemas[type]?.safeParse(input).success).toBe(ok);
+});

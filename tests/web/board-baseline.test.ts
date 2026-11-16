@@ -64,7 +64,6 @@ const view = (
       page: 'now',
       onPage: noop,
       onOpenSession: props.onOpenSession ?? noop,
-      onOpenSessions: noop,
       onOpenStory: noop,
       onOpenTrace: noop,
       baseline: props.baseline,
@@ -233,9 +232,7 @@ it('shows a failed start as one line under the bar', () => {
 });
 
 it('starts a baseline and stays on the board, busy until its session turn ends', async () => {
-  const h = mount(() =>
-    boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
   h.value.props.baseline.onStart();
   h.render();
@@ -265,9 +262,7 @@ it.each([
   ['after its turn ended', 'completed'],
   ['while its turn ran', 'running'],
 ])('stops being busy when the baseline session is discarded %s', async (_name, state) => {
-  const h = mount(() =>
-    boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
   h.value.props.baseline.onStart();
   await h.flush();
@@ -283,10 +278,11 @@ it.each([
 
 it('is not busy on the next project when the board shows the baseline turn in the same render as the switch', async () => {
   let projectId = 'project-a';
-  const h = mount(() => boardView({ projectId, onOpenSession: noop, onOpenSessions: noop }));
+  const h = mount(() => boardView({ projectId, onOpenSession: noop }));
   await h.flush();
   h.value.props.baseline.onStart();
   await h.flush();
+  h.render();
   expect(h.value.props.baseline.busy).toBe(true);
   mock.board.board = {
     cursor: 2,
@@ -298,9 +294,7 @@ it('is not busy on the next project when the board shows the baseline turn in th
 });
 
 it('stops being busy when the board lists the baseline session discarded before it showed its turn', async () => {
-  const h = mount(() =>
-    boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
   h.value.props.baseline.onStart();
   await h.flush();
@@ -316,20 +310,17 @@ it('stops being busy when the board lists the baseline session discarded before 
 
 it('keeps the failure of a refused baseline for the headline bar', async () => {
   reply = { ok: false, error: { code: 'resource_busy', message: 'A baseline is already running' } };
-  const h = mount(() =>
-    boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
   h.value.props.baseline.onStart();
   await h.flush();
+  h.render();
   expect(h.value.props.baseline.error).toContain('A baseline is already running');
   expect(mock.openSession).not.toHaveBeenCalled();
 });
 
 it('sends the picked runtime, model and effort with the start', async () => {
-  const h = mount(() =>
-    boardView({ projectId: 'project-a', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
   h.value.props.baseline.onStart({ runtime: 'codex', model: 'gpt-5.5', effort: 'low' });
   await h.flush();
@@ -342,9 +333,7 @@ it('sends the picked runtime, model and effort with the start', async () => {
 });
 
 it('retries a start on the runtime, model and effort it was first given', async () => {
-  const h = mount(() =>
-    boardView({ projectId: 'project-retry', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-retry', onOpenSession: noop }));
   await h.flush();
   h.value.props.baseline.onStart({ runtime: 'codex', model: 'gpt-5.5', effort: 'low' });
   await h.flush();
@@ -364,9 +353,7 @@ it('says under the bar when the first baseline read failed, and reads it again o
         ? { ok: false, error }
         : { ok: true, value: null },
   );
-  const h = mount(() =>
-    boardView({ projectId: 'project-unread', onOpenSession: noop, onOpenSessions: noop }),
-  );
+  const h = mount(() => boardView({ projectId: 'project-unread', onOpenSession: noop }));
   await h.flush();
   expect(h.value.props.baseline).toMatchObject({ link: null, start: null });
   const line = named(view({ baseline: h.value.props.baseline }).value, 'Failure');

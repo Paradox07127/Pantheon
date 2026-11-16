@@ -131,11 +131,6 @@
   font-size: var(--fs-xs);
   color: var(--mu);
 }
-.rp-start {
-  display: flex;
-  justify-content: center;
-  padding: var(--sp-3) 0;
-}
 /* The checked out commit in the key figures */
 .bd-kpi-v .rp-sha {
   font-family: var(--font-mono);

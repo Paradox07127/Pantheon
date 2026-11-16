@@ -37,11 +37,41 @@ export interface BaselineResult {
   contradictions: { text: string; refs: string[] }[];
   findings: { text: string; refs: string[]; severity: 'info' | 'risk' }[];
   brief?: { goal: string; goals: string[]; non_goals: string[]; sources: string[] };
-  questions: { question: string; options: string[] }[];
+  /** The questions of the current round. */
+  questions: BaselineQuestion[];
   /** Extensions the assessment suggests turning off for coding sessions. */
   extensions?: BaselineExtension[];
   /** Next tasks; a result stored before tasks were assessed has none. */
   tasks?: BaselineTask[];
+}
+/** A small picture shown with a baseline question option. */
+export type BaselinePreview =
+  | {
+      kind: 'graph';
+      spec: {
+        nodes: { id: string; label: string; group?: string }[];
+        edges: { from: string; to: string; label?: string }[];
+        direction?: 'LR' | 'TB';
+      };
+    }
+  | { kind: 'mermaid'; spec: { source: string } };
+export interface BaselineQuestion {
+  id: string;
+  header: string;
+  question: string;
+  options: { label: string; description: string; preview?: BaselinePreview }[];
+  multiSelect: boolean;
+  /** The label of the recommended option. */
+  recommended?: string;
+  kind?: 'direction';
+}
+export interface BaselineAnswer {
+  question_id: string;
+  question: string;
+  /** The chosen labels joined by "; " for a multiSelect question. */
+  answer: string;
+  /** model: the user let the model decide; answer is empty or the recommended label. */
+  by: 'user' | 'model';
 }
 /** `workstream` and `depends_on` name ids in the same result; `scope` holds repo-relative paths. */
 export interface BaselineTask {
@@ -117,4 +147,8 @@ export interface ProjectBaseline extends Entity {
   deadline?: number;
   /** The lead that started this baseline; the confirmed result goes to it. */
   lead_session_id?: string;
+  /** The lead the confirmation opened to plan the board from this baseline. */
+  plan_session_id?: string;
+  /** Rounds already answered that opened the next round, oldest first. */
+  rounds?: { questions: BaselineQuestion[]; answers: BaselineAnswer[]; at: number }[];
 }
