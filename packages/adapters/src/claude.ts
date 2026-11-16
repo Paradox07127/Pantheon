@@ -340,6 +340,7 @@ export function buildClaudeOptions(
         | 'remote'
         | 'env_allowlist'
         | 'project_roots'
+        | 'mcp_servers'
       >
     > &
     (
@@ -377,6 +378,7 @@ export function buildClaudeOptions(
 ): Options {
   const overrides = spec.extensions?.mode === 'inherit' ? spec.extensions.overrides : undefined;
   const deniedSkills = (overrides?.disabled_skills ?? []).map((name) => `Skill(${name})`);
+  const mcpServers = spec.mcp_servers ?? [];
   const settings = {
     ...(spec.fast || spec.permission_mode ? { fastMode: spec.fast === true } : {}),
     ...(spec.task_session ? { disableWorkflows: true } : {}),
@@ -388,6 +390,7 @@ export function buildClaudeOptions(
             ? {
                 deniedMcpServers: overrides.disabled_mcp_servers
                   .filter((name) => !spec.pantheon_mcp || name !== 'pantheon')
+                  .filter((name) => !mcpServers.some((server) => server.name === name))
                   .map((serverName) => ({ serverName })),
               }
             : {}),
@@ -474,15 +477,25 @@ export function buildClaudeOptions(
         }
       : { settingSources: [], mcpServers: {}, strictMcpConfig: true }),
     ...(Object.keys(settings).length ? { settings } : {}),
-    ...(spec.pantheon_mcp
+    ...(spec.pantheon_mcp || mcpServers.length
       ? {
           mcpServers: {
-            pantheon: {
-              type: 'stdio' as const,
-              command: spec.pantheon_mcp.command,
-              args: spec.pantheon_mcp.args,
-              env: spec.pantheon_mcp.env,
-            },
+            ...(spec.pantheon_mcp
+              ? {
+                  pantheon: {
+                    type: 'stdio' as const,
+                    command: spec.pantheon_mcp.command,
+                    args: spec.pantheon_mcp.args,
+                    env: spec.pantheon_mcp.env,
+                  },
+                }
+              : {}),
+            ...Object.fromEntries(
+              mcpServers.map(({ name, command, args, env }) => [
+                name,
+                { type: 'stdio' as const, command, args, env },
+              ]),
+            ),
           },
         }
       : {}),

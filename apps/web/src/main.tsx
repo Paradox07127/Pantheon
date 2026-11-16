@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import { App } from './App';
+import { captureAppErrors } from './data/app-errors';
 import { watchSystemAccent } from './data/layout';
 import { startLocale } from './i18n';
 import { MenuActions } from './lib/menu-actions';
@@ -15,6 +16,7 @@ import { readyAfterPaint, refuseStrayFiles } from './shell/window-kind';
 import { useShell } from './store';
 import './index.css';
 
+captureAppErrors();
 window.pantheon?.setThemeSource(useShell.getState().theme);
 useShell.subscribe((state, before) => {
   if (state.theme !== before.theme) window.pantheon?.setThemeSource(state.theme);

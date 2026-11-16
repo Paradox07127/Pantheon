@@ -244,6 +244,7 @@ function fakeElectron(root: string) {
     getPath: (name: string) => path.join(root, name),
     getAppPath: () => path.join(root, 'app'),
     getVersion: () => '1.2.3',
+    commandLine: { appendSwitch: vi.fn() },
     aboutPanels: [] as Record<string, unknown>[],
     setAboutPanelOptions(options: Record<string, unknown>) {
       app.aboutPanels.push(options);
@@ -633,6 +634,29 @@ describe('app diagnostics', () => {
       );
     },
   );
+
+  it.each([
+    ['a packaged build', true, null, null],
+    ['a dev build without a port file', false, null, { cdp_port: null }],
+    ['a dev build with a port file', false, '41235\n/devtools/browser/abc\n', { cdp_port: 41235 }],
+  ] as const)('gives the debug target of %s', async (_name, packaged, portFile, target) => {
+    const root = tempRoot();
+    const { main, call, module } = await startMain('darwin', root, ({ module }) => {
+      module.app.isPackaged = packaged;
+      if (!packaged) fakeDaemon();
+      if (portFile !== null) {
+        mkdirSync(module.app.getPath('userData'), { recursive: true });
+        writeFileSync(path.join(module.app.getPath('userData'), 'DevToolsActivePort'), portFile);
+      }
+    });
+    expect(await call(main, 'pantheon:debugTarget')).toEqual({
+      ok: true,
+      value: target && { ...target, repo_root: path.resolve(root, 'app', '../..') },
+    });
+    expect(module.app.commandLine.appendSwitch.mock.calls).toEqual(
+      packaged ? [] : [['remote-debugging-port', '0']],
+    );
+  });
 
   it('reveals only the folders the daemon reports and refuses any other path', async () => {
     vi.doMock('../../apps/desktop/src/main/daemon.js', async (original) => {
@@ -2680,6 +2704,8 @@ describe('preload', () => {
     for (const [method, value] of [
       ['appInfo', info],
       ['logsDir', '/desktop/logs'],
+      ['debugTarget', { repo_root: '/work/pantheon', cdp_port: 41235 }],
+      ['debugTarget', null],
       ['lastCrash', crash],
       ['lastCrash', null],
     ] as const) {

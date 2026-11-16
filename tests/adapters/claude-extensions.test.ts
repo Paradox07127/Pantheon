@@ -1117,3 +1117,20 @@ it.each(['writer', 'reviewer', 'planner'] as const)(
     await f.adapter.close(handle, Date.now() + 1000);
   },
 );
+
+it('mounts the MCP servers a session names next to the Pantheon channel and does not deny them', () => {
+  const input = spec({
+    mode: 'inherit',
+    overrides: { ...empty, disabled_mcp_servers: ['chrome_devtools', 'blocked'] },
+  });
+  input.pantheon_mcp = { command: 'pantheon-mcp', args: ['mcp'], env: {} };
+  input.mcp_servers = [
+    { name: 'chrome_devtools', command: 'npx', args: ['-y', 'devtools'], env: { A: '1' } },
+  ];
+  const options = buildClaudeOptions(input, base);
+  expect(options.mcpServers).toEqual({
+    pantheon: { type: 'stdio', command: 'pantheon-mcp', args: ['mcp'], env: {} },
+    chrome_devtools: { type: 'stdio', command: 'npx', args: ['-y', 'devtools'], env: { A: '1' } },
+  });
+  expect(options.settings).toMatchObject({ deniedMcpServers: [{ serverName: 'blocked' }] });
+});

@@ -3,6 +3,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { holdToastAction, noticeResult, toast } from '../../apps/web/src/components/Toast.js';
 import { mountToastStore } from './web-toast-store.js';
+import { zh } from './i18n-setup.js';
+vi.mock('../../apps/web/src/data/ask-debug.js', () => ({ askDebugAgent: vi.fn(async () => {}) }));
+import { askDebugAgent } from '../../apps/web/src/data/ask-debug.js';
 
 const CSS = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/index.css'), 'utf8');
 
@@ -64,6 +67,28 @@ describe('toast layer', () => {
     expect(shown!.actionProps?.children).toBe('Undo');
     shown!.actionProps?.onClick?.({} as never);
     expect(run).toHaveBeenCalledOnce();
+    expect(mounted.shown()).toEqual([]);
+  });
+
+  it.each([
+    ['a failure without an action', { kind: 'failure' }, zh('components.toast.askAgent')],
+    [
+      'a failure with an action',
+      { kind: 'failure', action: { label: 'Retry', run: () => {} } },
+      'Retry',
+    ],
+    ['a failure from the debug report', { kind: 'failure', askAgent: false }, undefined],
+    ['a result', { kind: 'result' }, undefined],
+  ] as const)('gives %s its button', (_name, options, label) => {
+    toast({ title: 'Push failed', ...options });
+    const [shown] = mounted.store.state.toasts;
+    expect(shown!.actionProps?.children).toBe(label);
+  });
+
+  it('asks the debug agent about a failure from its button', async () => {
+    toast({ title: 'Push failed', kind: 'failure' });
+    mounted.store.state.toasts[0]!.actionProps?.onClick?.({} as never);
+    await vi.waitFor(() => expect(askDebugAgent).toHaveBeenCalledWith({ title: 'Push failed' }));
     expect(mounted.shown()).toEqual([]);
   });
 

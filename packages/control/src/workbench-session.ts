@@ -122,6 +122,7 @@ import { managedSessionSpec } from './native-session.js';
 import { projectFacts } from './project-facts.js';
 import { runTimes, sessionRun } from './run-state.js';
 import { sessionTasks } from './session-tasks.js';
+import { appDebugSkill } from './app-debug-skill.js';
 import { projectSetupSkill } from './project-setup-skill.js';
 import { worktreeSandbox } from './protection.js';
 import { ownWorkspaceOnly } from './workspace-files.js';
@@ -287,7 +288,20 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     cwd: workspace.path,
     env_allowlist: NATIVE_ENV_ALLOWLIST,
     skills: [],
-    mcp_servers: [],
+    mcp_servers: session.app_debug?.cdp_port
+      ? [
+          {
+            name: 'chrome_devtools',
+            command: 'npx',
+            args: [
+              '-y',
+              'chrome-devtools-mcp@1.13.0',
+              `--browser-url=http://127.0.0.1:${session.app_debug.cdp_port}`,
+            ],
+            env: {},
+          },
+        ]
+      : [],
     pantheon_mcp: pantheonMcp,
     extensions: {
       mode: 'inherit',
@@ -1296,6 +1310,7 @@ export function sessionList(
       ...(session.snoozed_at ? { snoozed_at: session.snoozed_at } : {}),
       ...(session.backend_id ? { backend_id: session.backend_id } : {}),
       ...(session.forked_from ? { forked_from: session.forked_from } : {}),
+      ...(session.app_debug ? { app_debug: session.app_debug } : {}),
     };
     const plan = session.task ? planOf(session.task.lead_session_id) : undefined;
     const task = plan && sessionPlanTask(plan, session);
@@ -3727,6 +3742,11 @@ export function openWorktreeSession(
       permission_mode: input.permission_mode,
       ...(input.fast ? { fast: true as const } : {}),
       ...(input.ultracode ? { ultracode: true as const } : {}),
+      ...(input.purpose === 'app_debug'
+        ? {
+            app_debug: { ...(input.cdp_port !== undefined ? { cdp_port: input.cdp_port } : {}) },
+          }
+        : {}),
       title: derivedTitle(
         board?.task.title ??
           (input.input.split('\n').find((line) => line.trim() !== '') ?? '').trim(),
@@ -3752,9 +3772,12 @@ export function openWorktreeSession(
   const turn = queuedTurn(session, input.input, 'send', {
     ...extras,
     // The guide goes ahead of the user's words but stays out of the thread.
-    ...(input.purpose === 'project_setup'
+    ...(input.purpose
       ? {
-          reference_context: [projectSetupSkill, extras.reference_context]
+          reference_context: [
+            input.purpose === 'app_debug' ? appDebugSkill : projectSetupSkill,
+            extras.reference_context,
+          ]
             .filter((part) => part !== undefined)
             .join('\n\n'),
         }

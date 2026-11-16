@@ -23,6 +23,8 @@ export interface ToastOptions {
   kind?: ToastKind;
   /** Runs once the toast is gone, however it went. */
   onClose?: () => void;
+  /** False keeps a failure without action from offering to ask the debug agent about it. */
+  askAgent?: boolean;
 }
 
 /** A button on a notice card; pressing it also closes the card. */
@@ -70,9 +72,24 @@ type ToastItem = Toast.Root.ToastObject<{ count: number; card?: NoticeCard }>;
 let last: { key: string; id: string; count: number } | null = null;
 
 /** Shows a short notice, held while the pointer or focus is on it. */
-export function toast({ title, action, kind = 'result', onClose }: ToastOptions): string {
+export function toast({
+  title,
+  action,
+  kind = 'result',
+  onClose,
+  askAgent = true,
+}: ToastOptions): string {
   const key = `${kind}:${title}`;
   const count = !action && last?.key === key ? last.count + 1 : 1;
+  const button =
+    action ??
+    (kind === 'failure' && askAgent
+      ? {
+          label: t({ id: 'components.toast.askAgent', defaultMessage: 'Ask agent' }),
+          // Loaded on demand: the debug report reaches modules that themselves show toasts.
+          run: () => void import('../data/ask-debug').then((m) => m.askDebugAgent({ title })),
+        }
+      : undefined);
   // The button stays pressable while the toast fades out.
   let ran = false;
   const id: string = toastManager.add({
@@ -86,15 +103,15 @@ export function toast({ title, action, kind = 'result', onClose }: ToastOptions)
       if (last?.id === id) last = null;
       onClose?.();
     },
-    ...(action
+    ...(button
       ? {
           actionProps: {
-            children: action.label,
+            children: button.label,
             onClick: () => {
               toastManager.close(id);
               if (ran) return;
               ran = true;
-              action.run();
+              button.run();
             },
           },
         }

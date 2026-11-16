@@ -10,6 +10,8 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
+vi.mock('@/data/ask-debug', () => ({ askDebugAgent: vi.fn(async () => {}) }));
+import { askDebugAgent } from '@/data/ask-debug';
 import { startSync, type SyncStatus } from '@/data/sync';
 import { ConnectionGate, CrashScreen, DaemonDown, RecoverBoundary } from '@/shell/RecoverScreen';
 
@@ -120,6 +122,16 @@ describe('crash page', () => {
     expect(copied).toContain("TypeError: Cannot read properties of undefined (reading 'x')");
     expect(copied).toContain('at Thread (thread.tsx:4)');
     expect(copied).toContain('at App');
+  });
+
+  it('asks the debug agent about the first error line with the stack and component stack', () => {
+    const page = caught(error, '\n    at Thread\n    at App');
+    const tree = new HookHost(() => CrashScreen(page.props)).render();
+    button(tree, zh('recover.crash.ask')).props.onClick();
+    const [asked] = vi.mocked(askDebugAgent).mock.calls.at(-1)!;
+    expect(asked.title).toBe("TypeError: Cannot read properties of undefined (reading 'x')");
+    expect(asked.detail).toContain('at Thread (thread.tsx:4)');
+    expect(asked.detail).toContain('at App');
   });
 });
 

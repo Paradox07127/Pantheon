@@ -1,7 +1,8 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
-import { Copy, Folder, RefreshCw } from 'lucide-react';
+import { Bot, Copy, Folder, RefreshCw } from 'lucide-react';
 import { StateGlyph, type GlyphName } from '../components/SessionStateIcon';
 import { toast } from '../components/Toast';
+import { askDebugAgent } from '../data/ask-debug';
 import { useBoard } from '../data/board';
 import { failureText } from '../data/needs-you';
 import type { SyncStatus } from '../data/sync';
@@ -102,6 +103,19 @@ export function CrashScreen({
         >
           <Copy aria-hidden="true" />
           {t({ id: 'recover.crash.copy', defaultMessage: 'Copy error details' })}
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() =>
+            void askDebugAgent({
+              title: String(error).split('\n')[0]!,
+              detail: crashText(error, componentStack),
+            })
+          }
+        >
+          <Bot aria-hidden="true" />
+          {t({ id: 'recover.crash.ask', defaultMessage: 'Ask agent' })}
         </button>
         {logsButton()}
       </div>

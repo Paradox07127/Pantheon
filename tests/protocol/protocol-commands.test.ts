@@ -171,6 +171,17 @@ it('accepts the device a new session runs on', () => {
   ).toMatchObject({ device_id: 'build-box' });
 });
 
+it('accepts a CDP port only for an app debug session', () => {
+  const create = { project_id: 'project', runtime: 'claude', input: 'Fix the error' };
+  const parse = (extra: Record<string, unknown>) =>
+    inputSchemas['session.create'].safeParse({ ...create, ...extra }).success;
+  expect(parse({ purpose: 'app_debug', cdp_port: 9333 })).toBe(true);
+  expect(parse({ purpose: 'app_debug' })).toBe(true);
+  expect(parse({ cdp_port: 9333 })).toBe(false);
+  expect(parse({ purpose: 'project_setup', cdp_port: 9333 })).toBe(false);
+  expect(parse({ purpose: 'app_debug', cdp_port: 80 })).toBe(false);
+});
+
 it('defines strict session pin, archive, unarchive and delete commands', () => {
   expect(inputSchemas['session.pin'].safeParse({ session_id: 's', pinned: true }).success).toBe(
     true,

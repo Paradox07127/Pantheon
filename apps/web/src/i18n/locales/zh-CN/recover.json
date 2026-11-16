@@ -7,5 +7,6 @@
   "recover.daemon.retry": "重试",
   "recover.daemon.waiting": "正在连接 daemon，已等 {seconds, plural, other {# 秒}}",
   "recover.daemon.starting": "正在启动 daemon，已等 {seconds, plural, other {# 秒}}",
-  "recover.crash.renderer": "界面进程 10 秒内崩溃了两次：{reason}（退出码 {code}）"
+  "recover.crash.renderer": "界面进程 10 秒内崩溃了两次：{reason}（退出码 {code}）",
+  "recover.crash.ask": "问 agent"
 }

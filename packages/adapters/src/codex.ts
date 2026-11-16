@@ -2299,7 +2299,7 @@ export class CodexAdapter implements HarnessAdapter {
       }
       const mode = spec.extensions?.mode;
       const extensions =
-        mode || spec.sandbox || spec.pantheon_mcp
+        mode || spec.sandbox || spec.pantheon_mcp || spec.mcp_servers.length
           ? await readExtensions(rpc, spec.cwd, !!spec.sandbox && mode !== 'none')
           : undefined;
       const inherited = spec.extensions?.mode === 'inherit' ? spec.extensions.overrides : undefined;
@@ -2368,6 +2368,10 @@ export class CodexAdapter implements HarnessAdapter {
         ];
       if (spec.pantheon_mcp && disabled)
         disabled.mcp_servers = disabled.mcp_servers.filter((name) => name !== 'pantheon');
+      if (disabled)
+        disabled.mcp_servers = disabled.mcp_servers.filter(
+          (name) => !spec.mcp_servers.some((server) => server.name === name),
+        );
       // skills.config replaces an array. Keep existing disables so an override cannot
       // turn a skill back on that the user disabled in the harness.
       const disabledSkills = [
@@ -2514,6 +2518,13 @@ export class CodexAdapter implements HarnessAdapter {
           },
         };
       }
+      if (spec.mcp_servers.length)
+        config.mcp_servers = {
+          ...(config.mcp_servers as Record<string, unknown> | undefined),
+          ...Object.fromEntries(
+            spec.mcp_servers.map(({ name, ...server }) => [name, { ...server, enabled: true }]),
+          ),
+        };
       if (planning) {
         config.web_search = 'disabled';
         config.features = {
@@ -2644,6 +2655,7 @@ export class CodexAdapter implements HarnessAdapter {
             mcp_servers: [
               ...new Set([
                 ...(spec.pantheon_mcp ? ['pantheon'] : []),
+                ...spec.mcp_servers.map((server) => server.name),
                 ...extensions.mcp_servers
                   .filter(
                     (server) =>

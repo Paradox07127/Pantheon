@@ -16,14 +16,14 @@ import {
   X,
 } from 'lucide-react';
 import type { Visual, VisualContent } from '@pantheon/domain';
+import { canMessage } from '../../data/ask-debug';
 import { useBoard } from '../../data/board';
 import { pickBoardPage } from '../../data/board-page';
 import { failureText } from '../../data/needs-you';
-import { composeState, sessionTitle, type Session } from '../../data/transcript';
+import { sessionTitle, type Session } from '../../data/transcript';
 import { pinVisual, unpinVisual, useVisual, type VisualSize } from '../../data/visuals';
 import { currentLocale, t } from '../../i18n';
 import { keyText } from '../../lib/shortcuts';
-import { messageCommand } from '../../screens/sessions/model';
 import { askFix } from '../../screens/sessions/panel';
 import { useShell } from '../../store';
 import { noticeResult, toast } from '../Toast';
@@ -499,10 +499,6 @@ function noticePinned(visual: Visual) {
     ],
   });
 }
-
-const canMessage = (session: Session): boolean =>
-  composeState(session)[messageCommand(session.state) === 'session.steer' ? 'steer' : 'send']
-    .enabled;
 
 /** Sends the session that drew the visual its title, kind and error; resolves to why that failed. */
 async function askToFix(session: Session, visual: Visual, error: string): Promise<string | null> {

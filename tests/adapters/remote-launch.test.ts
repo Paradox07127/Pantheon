@@ -188,6 +188,20 @@ describe('remote runtime launch', () => {
     );
   });
 
+  it('accepts MCP servers only on this machine', () => {
+    const root = os.tmpdir();
+    const mcp_servers = [{ name: 'chrome_devtools', command: 'npx', args: [], env: {} }];
+    expect(() =>
+      validateSessionSpec(
+        remoteSpec(root, shell, { device_id: 'local', remote: undefined, mcp_servers }),
+        'v',
+      ),
+    ).not.toThrow();
+    expect(() => validateSessionSpec(remoteSpec(root, shell, { mcp_servers }), 'v')).toThrow(
+      /MCP servers on a remote device/,
+    );
+  });
+
   it('runs an ACP turn through the device transport', async () => {
     const root = tempRoot();
     const log = path.join(root, 'frames.jsonl');

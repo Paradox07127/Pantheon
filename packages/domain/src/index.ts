@@ -533,6 +533,8 @@ export interface Session extends Entity {
     delivered_experience_ids?: string[];
   };
   forked_from?: { session_id: string; before_turn_id?: string; before_span_id?: string };
+  /** Marks a session debugging the app; cdp_port is the app renderer's CDP port on 127.0.0.1, absent means no chrome-devtools-mcp. */
+  app_debug?: { cdp_port?: number };
   /** Native history fork applied before the next input; after is a runtime message or turn id. */
   native_fork?: { session_id: string; after: string };
   baseline?: import('./planning.js').BaselineTag;

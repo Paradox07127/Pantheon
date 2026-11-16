@@ -825,16 +825,15 @@ export class AcpAdapter implements HarnessAdapter {
         session.emit({ kind: 'session.exited', code: exit?.code, signal: exit?.signal });
     });
     // ACP stdio MCP servers take env as name/value pairs.
-    const mcpServers = spec.pantheon_mcp
-      ? [
-          {
-            name: 'pantheon',
-            command: spec.pantheon_mcp.command,
-            args: spec.pantheon_mcp.args,
-            env: Object.entries(spec.pantheon_mcp.env).map(([name, value]) => ({ name, value })),
-          },
-        ]
-      : [];
+    const mcpServers = [
+      ...(spec.pantheon_mcp ? [{ name: 'pantheon', ...spec.pantheon_mcp }] : []),
+      ...spec.mcp_servers,
+    ].map(({ name, command, args, env }) => ({
+      name,
+      command,
+      args,
+      env: Object.entries(env).map(([name, value]) => ({ name, value })),
+    }));
     try {
       const initialized = (await rpc.initialize(
         {

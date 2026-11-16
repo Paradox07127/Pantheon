@@ -227,6 +227,23 @@ it.each([
   },
 );
 
+it('enables the MCP servers a session names next to the Pantheon server', async () => {
+  const spec = writerSpec();
+  spec.pantheon_mcp = { command: 'fake-mcp', args: [], env: {} };
+  spec.mcp_servers = [
+    { name: 'chrome_devtools', command: 'npx', args: ['-y', 'devtools'], env: { A: '1' } },
+  ];
+  const f = await opened(spec);
+  const config = threadParams(f.frames).config as { mcp_servers: Record<string, unknown> };
+  expect(config.mcp_servers.pantheon).toMatchObject({ enabled: true });
+  expect(config.mcp_servers.chrome_devtools).toEqual({
+    command: 'npx',
+    args: ['-y', 'devtools'],
+    env: { A: '1' },
+    enabled: true,
+  });
+});
+
 it.each(['start', 'resume'] as const)(
   'gives a reviewer a read-only permission profile with hidden paths on %s',
   async (method) => {

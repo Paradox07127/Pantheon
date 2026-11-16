@@ -1030,6 +1030,29 @@ describe('ACP adapter', () => {
     });
   });
 
+  it('passes the MCP servers a session names next to the Pantheon server', async () => {
+    const acp = setup();
+    acp.spec.pantheon_mcp = { command: '/usr/bin/pantheon-mcp', args: [], env: {} };
+    acp.spec.mcp_servers = [
+      { name: 'chrome_devtools', command: 'npx', args: ['-y', 'devtools'], env: { A: '1' } },
+    ];
+    await acp.start();
+    expect(acp.frames()[1]).toMatchObject({
+      method: 'session/new',
+      params: {
+        mcpServers: [
+          expect.objectContaining({ name: 'pantheon' }),
+          {
+            name: 'chrome_devtools',
+            command: 'npx',
+            args: ['-y', 'devtools'],
+            env: [{ name: 'A', value: '1' }],
+          },
+        ],
+      },
+    });
+  });
+
   it('stops the agent process on close', async () => {
     const acp = setup();
     const handle = await acp.start();

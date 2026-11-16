@@ -71,6 +71,7 @@ async function invokeValue<T>(channel: string): Promise<T> {
 const bridge: DesktopBridge = {
   appInfo: () => invokeValue('pantheon:appInfo'),
   logsDir: () => invokeValue('pantheon:logsDir'),
+  debugTarget: () => invokeValue('pantheon:debugTarget'),
   lastCrash: () => invokeValue('pantheon:lastCrash'),
   // The page chooses the crash page before it first renders.
   crashPage: ipcRenderer.sendSync('pantheon:crashPage'),

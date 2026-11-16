@@ -165,6 +165,9 @@ import {
   wslUnavailable,
 } from './wsl.js';
 
+// Port 0 lets Chromium pick a free port and write it to DevToolsActivePort in userData; it must be set before ready.
+if (!app.isPackaged) app.commandLine.appendSwitch('remote-debugging-port', '0');
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'pantheon-visual',
@@ -240,10 +243,11 @@ const wslSetup = async (
 });
 const wsl = windowsResources ? await wslSetup(windowsResources, distro) : undefined;
 const logFile = path.join(app.getPath('userData'), 'logs/daemon.log');
+const repoRoot = path.resolve(app.getAppPath(), '../..');
 const bridge = new DaemonBridge({
   directory: dataDirectory(),
   packaged: app.isPackaged,
-  repo: path.resolve(app.getAppPath(), '../..'),
+  repo: repoRoot,
   logFile,
   launch:
     resources && process.platform !== 'win32'
@@ -454,6 +458,17 @@ handle('pantheon:appInfo', async () => ({
   } satisfies AppInfo,
 }));
 handle('pantheon:logsDir', async () => ({ ok: true, value: path.dirname(logFile) }));
+handle('pantheon:debugTarget', async () => ({
+  ok: true,
+  value: app.isPackaged
+    ? null
+    : {
+        repo_root: repoRoot,
+        cdp_port: await readFile(path.join(app.getPath('userData'), 'DevToolsActivePort'), 'utf8')
+          .then((text) => Number.parseInt(text.split('\n')[0]!, 10))
+          .catch(() => null),
+      },
+}));
 handleFrom('pantheon:lastCrash', async (from) => {
   const crash = crashes.get(from) ?? null;
   crashes.delete(from);

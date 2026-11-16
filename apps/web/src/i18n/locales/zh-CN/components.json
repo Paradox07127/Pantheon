@@ -164,5 +164,6 @@
   "components.questionCard.other": "其他",
   "components.questionCard.otherAnswer": "其他回答",
   "components.questionCard.answer": "你的回答",
-  "components.requestCard.questionFrom": "来自 {who} 的提问"
+  "components.requestCard.questionFrom": "来自 {who} 的提问",
+  "components.toast.askAgent": "问 agent"
 }

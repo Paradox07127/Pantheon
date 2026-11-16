@@ -352,5 +352,9 @@
   "data.workflowPolicy.param.budget": "任务预算",
   "data.workflowPolicy.param.runtimeParallel": "运行时并发上限",
   "data.workflowPolicy.param.dispatchPaused": "暂停派发",
-  "data.workflowPolicy.path.parallel": "拆成几个并行的任务会话"
+  "data.workflowPolicy.path.parallel": "拆成几个并行的任务会话",
+  "data.askDebug.copied": "已复制错误报告",
+  "data.askDebug.noProject": "先把 Pantheon 仓库加成项目，才能问 agent；报告已复制",
+  "data.askDebug.sent": "已发给调试会话",
+  "data.askDebug.open": "打开"
 }

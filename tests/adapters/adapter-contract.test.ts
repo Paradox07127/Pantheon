@@ -160,7 +160,6 @@ describe('fixture adapter contract', () => {
 
   it.each<[string, Partial<SessionSpec>]>([
     ['skills', { skills: ['review'] }],
-    ['MCP servers', { mcp_servers: [{ name: 'tools', command: 'node', args: [], env: {} }] }],
     ['an account reference', { account_ref: 'other-account' }],
     ['a remote device', { device_id: 'remote-1' }],
     ['a locked version it does not run', { locked_version: '0' }],

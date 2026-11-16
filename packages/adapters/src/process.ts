@@ -92,7 +92,7 @@ export function processIdentity(pid: number): ProcessIdentity {
 export function validateSessionSpec(spec: SessionSpec, version: string): void {
   for (const [supported, name] of [
     [spec.skills.length === 0, 'skills'],
-    [spec.mcp_servers.length === 0, 'MCP servers'],
+    [spec.remote === undefined || spec.mcp_servers.length === 0, 'MCP servers on a remote device'],
     [spec.account_ref === undefined, 'account reference'],
     [(spec.device_id === 'local') === (spec.remote === undefined), 'remote device'],
     // A backend key would have to appear on the device command line.
