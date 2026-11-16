@@ -364,6 +364,12 @@ interface CodexState extends Spans {
   base: Tokens;
   /** Latest cumulative usage. */
   total: Tokens | null;
+  /** True while a spawned agent's rollout repeats its parent's history; null before session_meta. */
+  inherited: boolean | null;
+  /** The parent's spawn_agent call that started this agent; null in a rollout nobody spawned. */
+  spawn: string | null;
+  /** The parent's running turn, which Codex aborts at the end of the repeated history. */
+  aborted: string | null;
 }
 
 const ZERO: Tokens = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0 };
@@ -390,12 +396,35 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
       calls: [],
       base: { ...ZERO },
       total: null,
+      inherited: null,
+      spawn: null,
+      aborted: null,
     }),
     (state, line) => {
       const row = parse(line, CODEX_TYPES, state.unknown);
       if (!row) return;
       const at = timeOf(row);
       const payload: Row = row.payload ?? {};
+      if (row.type === 'session_meta') {
+        // The first record is this rollout's own; a spawned agent's repeats its parent's next.
+        state.inherited ??= payload.source?.subagent?.thread_spawn !== undefined;
+        return;
+      }
+      if (state.inherited) {
+        if (row.type === 'response_item' && payload.name === 'spawn_agent')
+          state.spawn = payload.call_id;
+        else if (row.type === 'event_msg' && payload.type === 'turn_aborted')
+          state.aborted = payload.turn_id;
+        // The agent's own first turn names the parent turn the repeated history ended in.
+        if (!(
+          row.type === 'event_msg' &&
+          payload.type === 'task_started' &&
+          state.aborted !== null &&
+          payload.turn_attribution?.parent_turn_id === state.aborted
+        ))
+          return;
+        state.inherited = false;
+      }
       // An open turn lasts at least until the last line read.
       const current = state.open ? find(state, state.turn) : undefined;
       if (current && at !== null) current.end = at;
@@ -418,7 +447,7 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
         const id = `${lane.native_id}:turn:${state.turns}`;
         add(state, {
           id,
-          parent: null,
+          parent: state.spawn,
           turn: id,
           kind: 'turn',
           name: `turn ${state.turns}`,
@@ -482,13 +511,15 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
             // Custom tools can carry plain text.
           }
         }
+        const text = typeof input === 'string' ? titleOf(input) : undefined;
         addTool(
           state,
           {
             id: payload.call_id,
             parent: turn,
             turn,
-            kind: 'tool',
+            kind: payload.name === 'spawn_agent' ? 'subagent' : 'tool',
+            ...(text !== undefined ? { input_summary: text } : {}),
             name: local
               ? 'local_shell_call'
               : typeof payload.namespace === 'string'
@@ -567,6 +598,12 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
         );
       });
       const tokens = reportedToolTokens(item.usage);
+      // A rollout records a shell command as [shell, '-lc', script].
+      const command =
+        Array.isArray(item.command) && item.command.length === 3 && /^-l?c$/.test(item.command[1])
+          ? item.command[2]
+          : item.command;
+      const summary = item.type === 'CommandExecution' ? toolInputSummary({ command }) : undefined;
       if (item.type === 'FileChange')
         state.tool_inputs[item.id] = canonical([turn, name, { changes: item.changes }]);
       add(state, {
@@ -584,6 +621,7 @@ export function createCodexReducer(lane: { native_id: string }): TraceReducer {
           : {}),
         ...(tokens ? { tokens } : {}),
         ...(exit_code !== undefined ? { exit_code } : {}),
+        ...(summary !== undefined ? { input_summary: summary } : {}),
         ...(item.type === 'FileChange' && item.changes && typeof item.changes === 'object'
           ? { files: Object.keys(item.changes) }
           : {}),
@@ -641,11 +679,13 @@ export async function probeMeta(file: string): Promise<TraceMeta | 'pending'> {
   if (!record) return 'pending';
   if ('codex' in record) {
     const meta = record.codex;
+    const parent = meta.source?.subagent?.thread_spawn?.parent_thread_id;
     return {
       runtime: 'codex',
       native_id: meta.id,
       cwd: meta.cwd,
       ...(typeof meta.cli_version === 'string' ? { version: meta.cli_version } : {}),
+      ...(typeof parent === 'string' ? { parent_native_id: parent } : {}),
     };
   }
   const row = record.claude;

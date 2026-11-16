@@ -34,6 +34,45 @@ const codexAborted = [
   codexLine(codexAt(6), { type: 'token_count', info: null }),
 ];
 
+const subagentMeta = {
+  id: 'child',
+  cwd: '/repo',
+  source: { subagent: { thread_spawn: { parent_thread_id: 'parent', depth: 1 } } },
+};
+// Codex writes a spawned agent's rollout as the parent's history, an abort of the parent's
+// running turn, then the agent's own turns.
+const codexSubagent = [
+  codexLine(codexAt(0), subagentMeta, 'session_meta'),
+  codexLine(codexAt(0), { id: 'parent', cwd: '/repo' }, 'session_meta'),
+  codexLine(codexAt(0), { type: 'task_started', turn_id: 'parent-turn' }),
+  codexPrompt(codexAt(0), 'Review the change'),
+  codexLine(
+    codexAt(0),
+    { type: 'custom_tool_call', call_id: 'parent-script', name: 'exec', input: 'pwd' },
+    'response_item',
+  ),
+  codexLine(
+    codexAt(0),
+    { type: 'function_call', call_id: 'spawn-call', name: 'spawn_agent', arguments: '{}' },
+    'response_item',
+  ),
+  codexLine(codexAt(0), { type: 'turn_aborted', turn_id: 'parent-turn', reason: 'interrupted' }),
+  codexLine(codexAt(1), {
+    type: 'task_started',
+    turn_id: 'child-turn',
+    turn_attribution: { turn_id: 'child-turn', parent_turn_id: 'parent-turn' },
+  }),
+  codexLine(codexAt(2), {
+    type: 'item_completed',
+    item: {
+      type: 'CommandExecution',
+      id: 'child-command',
+      command: 'ls',
+      duration: { secs: 0, nanos: 0 },
+    },
+  }),
+];
+
 const claudeUser = (content: unknown, extra: Record<string, unknown> = {}) =>
   JSON.stringify({
     type: 'user',
@@ -441,6 +480,69 @@ describe('Codex rollout reducer', () => {
     reducer.push(codexPrompt(codexAt(2), 'Later prompt'));
     expect(reducer.title()).toBe('<div class="header">Fix this</div>');
   });
+
+  it('reads a spawned agent from its own turns, under the spawn call, without the inherited history', () => {
+    const reducer = createCodexReducer({ native_id: 'child' });
+    for (const line of codexSubagent) reducer.push(line);
+    const spans = reducer.spans();
+    expect(spans.map((span) => span.id)).toEqual(['child:turn:1', 'child-command']);
+    expect(spans[0]).toMatchObject({ kind: 'turn', parent: 'spawn-call' });
+    expect(reducer.title()).toBeUndefined();
+  });
+
+  it('summarizes commands, plain-text calls and agent calls', () => {
+    const reducer = createCodexReducer({ native_id: 'rollout' });
+    for (const line of [
+      codexLine(codexAt(0), { type: 'task_started', turn_id: 'summaries' }),
+      codexLine(
+        codexAt(1),
+        {
+          type: 'custom_tool_call',
+          call_id: 'script',
+          name: 'exec',
+          input: '\ntext(await run())\nmore',
+        },
+        'response_item',
+      ),
+      codexLine(codexAt(2), {
+        type: 'item_completed',
+        item: {
+          type: 'CommandExecution',
+          id: 'command',
+          command: ['/bin/zsh', '-lc', 'rg -n spawn src'],
+          duration: { secs: 0, nanos: 0 },
+        },
+      }),
+      codexLine(
+        codexAt(3),
+        {
+          type: 'function_call',
+          call_id: 'spawn',
+          namespace: 'collaboration',
+          name: 'spawn_agent',
+          arguments: '{"task_name":"patch_review","message":"gAAAA"}',
+        },
+        'response_item',
+      ),
+      codexLine(
+        codexAt(4),
+        {
+          type: 'function_call',
+          call_id: 'send',
+          namespace: 'collaboration',
+          name: 'send_message',
+          arguments: '{"target":"patch_review","message":"gAAAA"}',
+        },
+        'response_item',
+      ),
+    ])
+      reducer.push(line);
+    const byId = new Map(reducer.spans().map((span) => [span.id, span]));
+    expect(byId.get('script')?.input_summary).toBe('text(await run())');
+    expect(byId.get('command')?.input_summary).toBe('rg -n spawn src');
+    expect(byId.get('spawn')).toMatchObject({ kind: 'subagent', input_summary: 'patch_review' });
+    expect(byId.get('send')?.input_summary).toBe('patch_review');
+  });
 });
 
 describe('reducer state', () => {
@@ -497,6 +599,19 @@ describe('probeMeta', () => {
       runtime: 'codex',
       native_id: 'large-session',
       cwd: '/repo',
+    });
+    await rm(dir, { recursive: true });
+  });
+
+  it('places a spawned Codex agent under the thread that spawned it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'native-transcript-'));
+    const file = join(dir, 'child.jsonl');
+    await writeFile(file, `${codexSubagent.join('\n')}\n`);
+    expect(await probeMeta(file)).toEqual({
+      runtime: 'codex',
+      native_id: 'child',
+      cwd: '/repo',
+      parent_native_id: 'parent',
     });
     await rm(dir, { recursive: true });
   });

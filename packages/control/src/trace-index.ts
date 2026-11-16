@@ -14,7 +14,7 @@ import type { TraceLane, TraceMeta, TraceSpan } from '@pantheon/domain';
 import { inside, resolvedPath } from './context.js';
 import { runGit } from './git.js';
 
-const PARSER_VERSION = 6;
+const PARSER_VERSION = 7;
 const HEAD_BYTES = 4096;
 const CHUNK_BYTES = 4 * 1024 * 1024;
 const UNASSIGNED = 'unassigned';

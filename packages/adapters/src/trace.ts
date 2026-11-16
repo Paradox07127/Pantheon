@@ -77,7 +77,9 @@ export function toolInputSummary(value: unknown): string | undefined {
     input.query ??
     input.pattern ??
     input.description ??
-    input.prompt;
+    input.prompt ??
+    input.task_name ??
+    input.target;
   const text =
     Array.isArray(summary) && summary.every((part) => typeof part === 'string')
       ? summary.join(' ')
