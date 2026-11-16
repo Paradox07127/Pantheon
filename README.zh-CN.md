@@ -1,6 +1,15 @@
-# Pantheon
-
-[English](README.md) | 简体中文
+<div align="center">
+  <img src="apps/desktop/build/icons/256x256.png" alt="Pantheon" width="96">
+  <h1>Pantheon</h1>
+  <p>让 Claude Code、Codex 和 ACP agent 并排工作，每个会话一个 git worktree,改完经项目门禁合并。</p>
+  <p>
+    <a href="https://github.com/Paradox07127/Pantheon/releases"><img alt="状态：预发布测试版" src="https://img.shields.io/badge/status-pre--release-orange"></a>
+    <a href="LICENSE"><img alt="许可证:Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+    <img alt="macOS | Linux | Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
+    <img alt="Claude Code | Codex | ACP" src="https://img.shields.io/badge/runtimes-Claude%20Code%20%7C%20Codex%20%7C%20ACP-6f42c1">
+  </p>
+  <p><a href="README.md">English</a> | 简体中文</p>
+</div>
 
 > [!WARNING]
 > Pantheon 是一个开发中的早期产品，仍处于实验阶段。

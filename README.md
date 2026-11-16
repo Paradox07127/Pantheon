@@ -1,6 +1,15 @@
-# Pantheon
-
-English | [简体中文](README.zh-CN.md)
+<div align="center">
+  <img src="apps/desktop/build/icons/256x256.png" alt="Pantheon" width="96">
+  <h1>Pantheon</h1>
+  <p>Run Claude Code, Codex and ACP agents side by side, each in its own git worktree, and merge their work through your project gate.</p>
+  <p>
+    <a href="https://github.com/Paradox07127/Pantheon/releases"><img alt="Status: pre-release test build" src="https://img.shields.io/badge/status-pre--release-orange"></a>
+    <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+    <img alt="macOS | Linux | Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
+    <img alt="Claude Code | Codex | ACP" src="https://img.shields.io/badge/runtimes-Claude%20Code%20%7C%20Codex%20%7C%20ACP-6f42c1">
+  </p>
+  <p>English | <a href="README.zh-CN.md">简体中文</a></p>
+</div>
 
 > [!WARNING]
 > Pantheon is an early-stage product under development. It is experimental.
