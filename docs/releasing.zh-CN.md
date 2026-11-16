@@ -19,6 +19,8 @@ Pantheon 用 `0.1.0-dev.<YYYYMMDD>`,例如 `0.1.0-dev.20261115`。
 ## 步骤
 
 1. 选 `main` 上的一个提交。这个提交的 CI 必须是绿的。
+   - `main` 已经越过这个提交时，从发布分支打包:`git switch -c release/<版本号> <提交>`。第 3 步在这个分支上提交，第 7 步只推 tag:`git push origin v$V`。
+   - 在 macOS 上，不要把打包用的检出放在 `/tmp` 下。`/tmp` 是指向 `/private/tmp` 的符号链接,`tsc` 会因此报重复声明。
 2. 在打包机器上跑检查：
 
    ```sh

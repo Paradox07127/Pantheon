@@ -19,6 +19,8 @@ Pantheon uses `0.1.0-dev.<YYYYMMDD>`, for example `0.1.0-dev.20261115`.
 ## Steps
 
 1. Select a commit on `main`. CI must be green on that commit.
+   - If `main` has moved past that commit, build from a release branch: `git switch -c release/<version> <commit>`. Step 3 commits on that branch, and step 7 pushes only the tag: `git push origin v$V`.
+   - On macOS, do not put the build checkout under `/tmp`. `/tmp` is a symbolic link to `/private/tmp`, and `tsc` then reports duplicate declarations.
 2. Run the checks on the release machine:
 
    ```sh
