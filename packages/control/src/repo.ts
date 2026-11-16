@@ -31,7 +31,7 @@ import { projectAccess, resolvedPath, type ControlContext } from './context.js';
 import { runGit, type GitResult } from './git.js';
 import { gateFailed } from './landing.js';
 import { rangeDiff } from './landing-diff.js';
-import { mergePreview } from './merge-preview.js';
+import { mergeBase, mergePreview } from './merge-preview.js';
 import { PATCH_BOUND, TIME_BOUND } from './source-git.js';
 
 export const BOUND = { max_buffer: 4 * PATCH_BOUND, timeout_ms: TIME_BOUND };
@@ -246,11 +246,11 @@ async function mergeCounts(
   const key = `${head} ${target}`,
     cached = worktreeMerges.get(path);
   if (cached?.key === key) return cached.value;
-  const base = (await git(root, ['merge-base', target, head])).trim();
+  const base = await mergeBase(root, target, head);
   const [stat, merge] = await Promise.all([
-    git(root, ['diff', '--numstat', base, head, '--']),
-    // Nothing to merge cannot conflict.
-    ahead ? mergePreview(root, target, head, true) : undefined,
+    git(root, ['diff', '--numstat', base ?? target, head, '--']),
+    // Nothing to merge cannot conflict; histories with no common commit are not merged.
+    base && ahead ? mergePreview(root, target, head, true) : undefined,
   ]);
   let additions = 0,
     deletions = 0;
@@ -260,7 +260,7 @@ async function mergeCounts(
     additions += Number(added) || 0;
     deletions += Number(removed) || 0;
   }
-  const conflicts = merge ? previewed(merge)?.files.length : 0;
+  const conflicts = !base ? undefined : merge ? previewed(merge)?.files.length : 0;
   const value = { additions, deletions, ...(conflicts !== undefined ? { conflicts } : {}) };
   worktreeMerges.set(path, { key, value });
   return value;
@@ -516,15 +516,15 @@ export async function repoCompare(
     commitOf(root, 'HEAD'),
   ]);
   const previewed_at = ctx.store.now();
-  const [mergeBase, [behind, ahead], merge, listed] = await Promise.all([
-    git(root, ['merge-base', baseSha, headSha]),
+  const common = await mergeBase(root, baseSha, headSha);
+  const [[behind, ahead], merge, listed] = await Promise.all([
     sides(root, baseSha, headSha),
-    mergePreview(root, baseSha, headSha, true),
+    common && mergePreview(root, baseSha, headSha, true),
     listedWorktrees(root),
   ]);
-  const preview = previewed(merge);
+  const preview = merge && previewed(merge);
   const [diff, conflicts, others] = await Promise.all([
-    rangeDiff(ctx, p, projectId, { source: root, from_sha: mergeBase.trim(), to_sha: headSha }),
+    rangeDiff(ctx, p, projectId, { source: root, from_sha: common ?? baseSha, to_sha: headSha }),
     preview &&
       Promise.all(
         preview.files.slice(0, 20).map(async (path): Promise<RepoConflict> => {
@@ -545,7 +545,7 @@ export async function repoCompare(
       [...sessionWorktrees(ctx, projectId, root, listed).values()]
         .filter((worktree) => worktree.head_sha !== headSha)
         .map(async (worktree) => {
-          const from = (await git(root, ['merge-base', rootHead, worktree.head_sha])).trim();
+          const from = (await mergeBase(root, rootHead, worktree.head_sha)) ?? rootHead;
           return git(root, ['diff', '--name-only', '-z', from, worktree.head_sha, '--']);
         }),
     ),
@@ -553,7 +553,7 @@ export async function repoCompare(
   const elsewhere = new Set(others.flatMap((names) => names.split('\0')));
   return {
     ...diff,
-    merge_base: mergeBase.trim(),
+    merge_base: common ?? null,
     ahead,
     behind,
     ...(conflicts ? { conflicts, previewed_at } : {}),
@@ -1353,9 +1353,7 @@ export async function repoBlame(
   const pending = await Promise.all(
     [...sessionWorktrees(ctx, input.project_id, root, listed)].map(
       async ([session_id, worktree]) => {
-        const base = (
-          await settledGit(root, ['merge-base', history.head, worktree.head_sha])
-        ).trim();
+        const base = (await mergeBase(root, history.head, worktree.head_sha)) ?? history.head;
         const [diff, moved] = await Promise.all([
           git(root, [LITERAL, 'diff', '-U0', '--no-ext-diff', base, worktree.head_sha, '--', file]),
           git(root, [LITERAL, 'diff', '-U0', base, sha, '--', file]),

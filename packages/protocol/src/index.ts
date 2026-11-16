@@ -2503,11 +2503,11 @@ export interface RepoWorktree {
   behind: number;
   /** Files with uncommitted changes, untracked files included. */
   uncommitted: number;
-  /** Lines added from the merge base with the first folder's HEAD to this HEAD; uncommitted changes not included. */
+  /** Lines added from the merge base with the first folder's HEAD to this HEAD, or from that HEAD when the two share no history; uncommitted changes not included. */
   additions: number;
   /** Lines removed over the same range. */
   deletions: number;
-  /** Files that would conflict merging this HEAD into the first folder's HEAD; absent when this git has no merge preview. */
+  /** Files that would conflict merging this HEAD into the first folder's HEAD; absent when this git has no merge preview or the two share no history. */
   conflicts?: number;
 }
 export interface RepoStatusFile {
@@ -2555,14 +2555,15 @@ export interface RepoLog {
   /** True when commits beyond skip + limit exist. */
   has_more: boolean;
 }
-/** GET /v1/repo.compare; head against base, diffed from their merge base to head. */
+/** GET /v1/repo.compare; head against base, diffed from their merge base, or from base when they share no history, to head. */
 export interface RepoCompare extends LandingDiff {
-  merge_base: string;
+  /** null when base and head share no history. */
+  merge_base: string | null;
   /** Commits in head that base lacks. */
   ahead: number;
   /** Commits in base that head lacks. */
   behind: number;
-  /** Files that would conflict merging head into base, at most 20; absent when this git has no merge preview. */
+  /** Files that would conflict merging head into base, at most 20; absent when this git has no merge preview or the two share no history. */
   conflicts?: RepoConflict[];
   /** Unix milliseconds when that merge preview ran; absent with conflicts. */
   previewed_at?: number;

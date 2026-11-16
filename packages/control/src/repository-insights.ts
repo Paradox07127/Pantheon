@@ -3,7 +3,7 @@ import { requireThat, type Project, type Session, type Workspace } from '@panthe
 import type { StaleWorkspaces, WorkbenchSession } from '@pantheon/protocol';
 import type { ControlContext } from './context.js';
 import { runGit } from './git.js';
-import { mergePreview } from './merge-preview.js';
+import { mergeBase, mergePreview } from './merge-preview.js';
 
 /** After a new event the worktrees are read again at most this often, in milliseconds. */
 const REFRESH_MS = 2000;
@@ -179,6 +179,7 @@ async function readRepository(
         'Worktree commits could not be read',
       );
       if (Number(ahead.trim()) === 0) continue;
+      if (!(await mergeBase(source, target, worktree.head))) continue;
       const merge = await mergePreview(source, target, worktree.head, true);
       // 129: this git has no merge preview.
       if (merge.exit_code === 129) continue;

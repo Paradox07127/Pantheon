@@ -67,7 +67,10 @@ it('predicts clean and conflicting merges only for open sessions ahead of their 
   const f = workbenchFixture();
   const conflicting = await idleSession(f),
     clean = await idleSession(f),
-    unchanged = await idleSession(f);
+    unchanged = await idleSession(f),
+    unrelated = await idleSession(f);
+  git(unrelated.workspace.path, 'checkout', '--quiet', '--orphan', 'unrelated');
+  commit(unrelated.workspace.path, 'other.txt', 'other\n');
   commit(conflicting.workspace.path, 'answer.txt', 'session answer\n');
   commit(clean.workspace.path, 'clean.txt', 'clean\n');
   commit(f.source, 'answer.txt', 'target answer\n');
@@ -90,6 +93,10 @@ it('predicts clean and conflicting merges only for open sessions ahead of their 
     total: 0,
   });
   expect(rows.find((row) => row.id === unchanged.session.id)).not.toHaveProperty(
+    'predicted_conflicts',
+  );
+  // A worktree that shares no history with its target has no merge to predict.
+  expect(rows.find((row) => row.id === unrelated.session.id)).not.toHaveProperty(
     'predicted_conflicts',
   );
 });

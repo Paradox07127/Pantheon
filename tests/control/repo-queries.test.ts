@@ -110,6 +110,52 @@ it('lists the checkout, a session worktree and an outside worktree with counts a
   );
 });
 
+it('lists, compares and blames beside a session worktree that shares no history with the checkout', async () => {
+  const r = repoFixture();
+  const unrelatedTree = path.join(r.f.root, 'unrelated-tree');
+  git(r.f.source, 'worktree', 'add', '--quiet', '--detach', unrelatedTree, r.first);
+  git(unrelatedTree, 'checkout', '--quiet', '--orphan', 'unrelated');
+  git(unrelatedTree, 'rm', '--quiet', '-rf', '.');
+  writeFileSync(path.join(unrelatedTree, 'other.txt'), 'other\n');
+  git(unrelatedTree, 'add', 'other.txt');
+  git(unrelatedTree, 'commit', '--quiet', '-m', 'Unrelated start');
+  const workspace = r.f.store.insert<Workspace>('workspaces', {
+    id: id(),
+    revision: 1,
+    project_id: r.f.project.id,
+    kind: 'linked_worktree',
+    path: realpathSync(unrelatedTree),
+    source: r.f.source,
+    owner: 'none',
+    ownership_epoch: 0,
+  });
+  r.f.store.insert<Session>('sessions', {
+    id: id(),
+    revision: 1,
+    project_id: r.f.project.id,
+    runtime: r.f.adapter.name,
+    workspace_id: workspace.id,
+    state: 'open',
+    turn_count: 0,
+  });
+  const listed = (await r.f.control.repoWorktrees(user, r.f.project.id)).find(
+    (worktree) => worktree.branch === 'unrelated',
+  );
+  // With no merge base the counts run from the checkout's HEAD, and no merge is previewed.
+  expect(listed).toMatchObject({ kind: 'session', ahead: 1, additions: 1 });
+  expect(listed).not.toHaveProperty('conflicts');
+  const compared = await r.f.control.repoCompare(user, r.f.project.id, 'main', 'unrelated');
+  expect(compared).toMatchObject({ merge_base: null, ahead: 1, from_sha: r.second });
+  expect(compared).not.toHaveProperty('conflicts');
+  expect(compared.files).toContainEqual(expect.objectContaining({ path: 'other.txt' }));
+  expect(await r.f.control.repoCompare(user, r.f.project.id, 'main', 'feature')).toMatchObject({
+    merge_base: r.second,
+  });
+  expect(
+    await r.f.control.repoBlame(user, { project_id: r.f.project.id, path: 'answer.txt' }),
+  ).toMatchObject({ path: 'answer.txt', sha: r.second });
+});
+
 /** Changes the second answer line one way in the session worktree and another way on main. */
 function conflictingSides(r: ReturnType<typeof repoFixture>) {
   writeFileSync(path.join(r.sessionTree, 'answer.txt'), 'base\nsession side\n');
