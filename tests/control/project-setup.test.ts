@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import type { Session } from '@pantheon/domain';
@@ -58,7 +59,13 @@ it('opens an app debug session whose first message starts with the debug guide a
     {
       name: 'chrome_devtools',
       command: 'npx',
-      args: ['-y', 'chrome-devtools-mcp@1.13.0', '--browser-url=http://127.0.0.1:9333'],
+      args: [
+        '--prefix',
+        os.homedir(),
+        '-y',
+        'chrome-devtools-mcp@1.13.0',
+        '--browser-url=http://127.0.0.1:9333',
+      ],
       env: {},
     },
   ]);

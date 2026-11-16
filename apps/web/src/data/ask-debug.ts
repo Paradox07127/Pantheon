@@ -1,7 +1,8 @@
-import type { BridgeResult, WorkbenchSession } from '@pantheon/protocol';
+import type { BridgeResult, ProjectDefaultsRead, WorkbenchSession } from '@pantheon/protocol';
 import { toast } from '../components/Toast';
 import { t } from '../i18n';
 import { messageCommand } from '../screens/sessions/model';
+import { defaultRuntime } from '../screens/sessions/thread-model';
 import { askFix } from '../screens/sessions/panel';
 import { useShell } from '../store';
 import { appErrors, debugTarget } from './app-errors';
@@ -9,6 +10,7 @@ import { useBoard } from './board';
 import { runCommand } from './commands';
 import { currentProject, useCurrentProject } from './current-project';
 import { failureText } from './needs-you';
+import { effectiveSessionDefaults } from './project-defaults';
 import { composeState, type Session } from './transcript';
 import { readQuery } from './workbench-sessions';
 
@@ -103,6 +105,13 @@ export async function askDebugAgent({
     return;
   }
   const session = await debugSession(project.id, target.cdp_port);
+  // The daemon picks no runtime of its own, so a new session takes the defaults the new-session box does.
+  const read = session ? null : await readQuery('project.defaults', {});
+  const defaults = effectiveSessionDefaults(
+    project,
+    read?.ok ? (read.value as ProjectDefaultsRead) : null,
+  );
+  const runtime = defaultRuntime([], defaults?.runtime);
   const result: BridgeResult<unknown> = session
     ? await askFix(session.id, session.state, session.revision, [
         { id: `app-debug:${Date.now()}`, kind: 'reference', label: title, text: prompt },
@@ -114,6 +123,14 @@ export async function askDebugAgent({
           input: prompt,
           purpose: 'app_debug',
           ...(target.cdp_port !== null ? { cdp_port: target.cdp_port } : {}),
+          runtime,
+          ...(defaults?.runtime === runtime
+            ? {
+                ...(defaults.model ? { model: defaults.model } : {}),
+                ...(defaults.effort ? { effort: defaults.effort } : {}),
+                permission_mode: defaults.permission_mode,
+              }
+            : {}),
         },
         null,
       );

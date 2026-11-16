@@ -27,6 +27,7 @@ const debugListed = (id: string, extra: Partial<WorkbenchSession>) =>
   ({ id, created_at: '2026-11-16T08:00:00.000Z', app_debug: {}, ...extra }) as WorkbenchSession;
 
 let listed: WorkbenchSession[];
+let globalDefaults: unknown;
 let bridge: {
   command: ReturnType<typeof vi.fn>;
   query: ReturnType<typeof vi.fn>;
@@ -37,9 +38,14 @@ const sent = () => bridge.command.mock.calls.map(([c]) => c as Command);
 
 beforeEach(() => {
   listed = [];
+  globalDefaults = { runtime: 'claude', model: 'opus', permission_mode: 'auto_edit' };
   bridge = {
     command: vi.fn(async () => ({ ok: true, value: { id: 'session-new' } })),
-    query: vi.fn(async () => ({ ok: true, value: listed })),
+    query: vi.fn(async (method: string) =>
+      method === 'project.defaults'
+        ? { ok: true, value: { settings: [{ key: 'session_defaults', global: globalDefaults }] } }
+        : { ok: true, value: listed },
+    ),
     appInfo: vi.fn(async () => ({ version: '1.2.3' })),
     logsDir: vi.fn(async () => '/data/logs'),
   };
@@ -48,7 +54,18 @@ beforeEach(() => {
   mock.target = { repo_root: REPO, cdp_port: 41235 };
   mock.board = {
     board: {
-      projects: [{ id: 'pantheon', roots: [REPO] }],
+      projects: [
+        {
+          id: 'pantheon',
+          roots: [REPO],
+          session_defaults: {
+            runtime: 'codex',
+            model: 'gpt-5.5',
+            effort: 'high',
+            permission_mode: 'auto',
+          },
+        },
+      ],
       sessions: [
         { id: 'debug-live', state: 'open', revision: 4 },
         { id: 'debug-other-port', state: 'open', revision: 2 },
@@ -102,7 +119,15 @@ describe('asking the debug agent', () => {
         copied: false,
         command: {
           type: 'session.create',
-          input: { project_id: 'pantheon', purpose: 'app_debug', cdp_port: 41235 },
+          input: {
+            project_id: 'pantheon',
+            purpose: 'app_debug',
+            cdp_port: 41235,
+            runtime: 'codex',
+            model: 'gpt-5.5',
+            effort: 'high',
+            permission_mode: 'auto',
+          },
         },
         kind: 'result',
       },
@@ -125,6 +150,16 @@ describe('asking the debug agent', () => {
     expect(prompt).toContain('at PushButton (push.tsx:9)');
     expect(prompt).toContain('render loop warning');
     expect(vi.mocked(toast).mock.calls.at(-1)![0].kind ?? 'result').toBe(expected.kind);
+  });
+
+  it('opens the debug session on the global defaults when the project has none', async () => {
+    delete mock.board.board.projects[0].session_defaults;
+    await askDebugAgent({ title: 'Push failed' });
+    expect(sent()[0]!.input).toMatchObject({
+      runtime: 'claude',
+      model: 'opus',
+      permission_mode: 'auto_edit',
+    });
   });
 
   it('shows a failed send without offering to ask again', async () => {

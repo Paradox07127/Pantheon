@@ -27,6 +27,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { lstat, open, readlink } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {
   credentialRole,
@@ -293,7 +294,10 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
           {
             name: 'chrome_devtools',
             command: 'npx',
+            // In the project folder npm obeys its devEngines and refuses another Node version.
             args: [
+              '--prefix',
+              os.homedir(),
               '-y',
               'chrome-devtools-mcp@1.13.0',
               `--browser-url=http://127.0.0.1:${session.app_debug.cdp_port}`,
