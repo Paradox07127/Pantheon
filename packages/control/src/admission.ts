@@ -5,6 +5,7 @@ import {
   type RuntimeChoice,
 } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
+import { readUserConfig } from './user-config.js';
 
 export function runtime(
   ctx: ControlContext,
@@ -13,6 +14,8 @@ export function runtime(
 ): HarnessAdapter {
   const adapter = ctx.adapters.get(name);
   requireThat(adapter, 'unsupported_capability', `Runtime ${name} not available`);
+  if (readUserConfig(ctx.userConfigDir).runtimes?.[name]?.unverified_isolation === true)
+    return adapter;
   requireThat(
     adapter.report.capabilities[role === 'writer' ? 'write_isolation' : 'text_execution']
       ?.status === 'supported' &&

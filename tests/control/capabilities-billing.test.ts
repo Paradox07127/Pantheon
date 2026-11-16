@@ -1,7 +1,14 @@
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ClaudeAdapter, CodexAdapter, JsonRpcProcess, report } from '@pantheon/adapters';
+import {
+  AcpAdapter,
+  ClaudeAdapter,
+  CodexAdapter,
+  JsonRpcProcess,
+  acpProfiles,
+  report,
+} from '@pantheon/adapters';
 import {
   DomainError,
   NATIVE_ENV_ALLOWLIST,
@@ -97,6 +104,28 @@ describe('verified capabilities', () => {
         expect(runtime(ctx, name, role)).toBe(adapter);
     },
   );
+
+  it('admits an ACP runtime as writer and reviewer only once the user allows it without verified isolation', () => {
+    const userConfigDir = mkdtempSync(path.join(root, 'config-'));
+    const adapter = new AcpAdapter({ name: 'grok', profile: acpProfiles.grok! });
+    const ctx = {
+      adapters: new Map([['grok', adapter]]),
+      userConfigDir,
+    } as unknown as ControlContext;
+    for (const role of ['writer', 'reviewer'] as const)
+      expect(() => runtime(ctx, 'grok', role)).toThrow(
+        'grok: required execution isolation is not verified',
+      );
+    writeFileSync(
+      path.join(userConfigDir, 'config.json'),
+      JSON.stringify({ version: 1, runtimes: { grok: { unverified_isolation: true } } }),
+    );
+    for (const role of ['text', 'writer', 'reviewer'] as const)
+      expect(runtime(ctx, 'grok', role)).toBe(adapter);
+    expect(adapter.report.capabilities.write_isolation?.status).toBe('unsupported');
+    const absent = { adapters: new Map(), userConfigDir } as unknown as ControlContext;
+    expect(() => runtime(absent, 'grok', 'writer')).toThrow('Runtime grok not available');
+  });
 });
 
 // These are synthetic account fields. Only channel/plan may survive projection into events.

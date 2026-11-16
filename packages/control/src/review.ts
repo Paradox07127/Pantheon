@@ -6,6 +6,7 @@ import {
   id,
   requireThat,
   type BoardPlan,
+  type EffortLevel,
   type LeadNote,
   type Principal,
   type Project,
@@ -373,6 +374,8 @@ export function startReview(
     requester?: Review['requester'];
     range?: NonNullable<Review['range']>;
     plan?: Review['plan'];
+    /** Overrides the session defaults' model and effort of every reviewer session. */
+    choice?: { model?: string; effort?: EffortLevel };
   },
 ): Review {
   const project = ctx.store.must<Project>('projects', projectId),
@@ -403,13 +406,19 @@ export function startReview(
     const defaults = [settings?.reviewer, settings?.fallbacks?.reviewer, settings].find(
       (choice) => choice?.runtime === name,
     );
+    // A default effort may not fit a chosen model, so a chosen model takes only the chosen effort.
+    const model = options.choice?.model ?? defaults?.model,
+      effort =
+        options.choice?.model !== undefined
+          ? options.choice.effort
+          : (options.choice?.effort ?? defaults?.effort);
     const reviewer: Session = {
       id: id(),
       revision: 1,
       project_id: project.id,
       runtime: name,
-      ...(defaults?.model !== undefined ? { requested_model: defaults.model } : {}),
-      ...(defaults?.effort !== undefined ? { requested_effort: defaults.effort } : {}),
+      ...(model !== undefined ? { requested_model: model } : {}),
+      ...(effort !== undefined ? { requested_effort: effort } : {}),
       review_id: review.id,
       state: 'running',
       turn_count: 1,

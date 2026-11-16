@@ -47,6 +47,22 @@ it('accepts stored workflow slots, applicability and deferred step kinds', () =>
   );
 });
 
+it.each([
+  [{ type: 'review', runtime: 'reviewer', model: 'deep-model', effort: 'high' }, true],
+  [{ type: 'review', model: 'deep-model', effort: 'extreme' }, false],
+])('validates the model and effort of a review step %#', (kind, valid) => {
+  expect(
+    inputSchemas['workflow.definition.set'].safeParse({
+      project_id: 'project',
+      base_version: 0,
+      definition: {
+        ...definition,
+        slots: { ...definition.slots, before_merge: [{ id: 'look', title: 'Look', kind }] },
+      },
+    }).success,
+  ).toBe(valid);
+});
+
 it('validates workflow review bounds and approval decisions at the protocol boundary', () => {
   const schema = inputSchemas['workflow.definition.set'];
   expect(schema).toBeDefined();

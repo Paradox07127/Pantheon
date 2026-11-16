@@ -351,6 +351,34 @@ describe('runtimes page groups', () => {
     expect(publish().props.checked).toBe(false);
   });
 
+  it('offers a switch to allow a runtime without verified write isolation, and none to Claude or Codex', async () => {
+    const unverified = {
+      write_isolation: { status: 'unsupported' as const, evidence: 'probe' },
+      text_execution: { status: 'supported' as const, evidence: 'probe' },
+    };
+    const statuses = (extra: Partial<RuntimeStatus> = {}) => [
+      status('claude'),
+      status('codex'),
+      status('grok', { capabilities: unverified, ...extra }),
+    ];
+    bridge.answers['runtime.status'] = statuses();
+    const h = await page();
+    const label = zh('settings.runtimes.unverifiedIsolation');
+    const labelled = (n: ReactElement<any>) => n.props['aria-label'] === label;
+    const allow = () => find(group(tree(h), 'grok'), (n) => n.type === 'input' && labelled(n));
+    expect(allow().props.checked).toBe(false);
+    for (const name of ['Claude', 'Codex'])
+      expect(nodes(group(tree(h), name)).some(labelled)).toBe(false);
+    bridge.answers['runtime.status'] = statuses({ unverified_isolation: true });
+    allow().props.onChange({ target: { checked: true } });
+    await h.flush();
+    await h.flush();
+    expect(bridge.commands.map(({ type, input }) => ({ type, input }))).toEqual([
+      { type: 'runtime.config.set', input: { runtime: 'grok', unverified_isolation: true } },
+    ]);
+    expect(allow().props.checked).toBe(true);
+  });
+
   it('names a refused change inside the runtime group, not in a toast', async () => {
     bridge.answers['runtime.status'] = [status('claude'), status('codex')];
     bridge.commandAnswer = {

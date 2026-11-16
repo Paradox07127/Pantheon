@@ -1856,7 +1856,13 @@ export interface WorkflowLeafStep {
     | { type: 'approval' }
     | { type: 'prompt'; prompt: string; target?: 'task' | 'lead'; skill?: TurnSkill }
     /** Without a runtime, the first admitted reviewer other than the writer's runtime reviews. */
-    | { type: 'review'; runtime?: string; blocking?: boolean };
+    | {
+        type: 'review';
+        runtime?: string;
+        model?: string;
+        effort?: EffortLevel;
+        blocking?: boolean;
+      };
 }
 export interface WorkflowStep extends Omit<WorkflowLeafStep, 'kind'> {
   kind:

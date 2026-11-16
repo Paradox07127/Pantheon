@@ -120,6 +120,23 @@ const bridge = {
     }
     if (method === 'workflow.policy') return { ok: true, value: policy() };
     if (method === 'routing.table') return { ok: true, value: routing };
+    if (method === 'runtime.models')
+      return {
+        ok: true,
+        value:
+          params.runtime === 'codex'
+            ? [
+                {
+                  id: 'gpt-5',
+                  label: 'GPT-5',
+                  permission_modes: [],
+                  efforts: ['low', 'high'],
+                  default_effort: 'low',
+                  default: true,
+                },
+              ]
+            : [],
+      };
     if (method === 'extensions.inventory')
       return {
         ok: true,
@@ -999,6 +1016,54 @@ describe('step form', () => {
         kind: { type: 'review', runtime: 'codex', blocking: true },
       },
     ]);
+  });
+
+  it("saves a review step's model and effort, and leaves them out on the default", async () => {
+    const h = await tab();
+    labelled(h.value, '合并后加步骤').props.onClick();
+    await h.flush();
+    labelled(h.value, wf('kind')).props.onValueChange('review');
+    await h.flush();
+    type(h.value, wf('title'), 'Deep look');
+    labelled(h.value, wf('runtime')).props.onChange('codex');
+    await h.flush();
+    expect(
+      labelled(h.value, wf('model')).props.options.map((o: { label: string }) => o.label),
+    ).toEqual([wf('byDefault'), 'GPT-5']);
+    labelled(h.value, wf('model')).props.onChange('gpt-5');
+    await h.flush();
+    labelled(h.value, wf('effort')).props.onChange('high');
+    await h.flush();
+    button(h.value, wf('add')).props.onClick();
+    await h.flush();
+    saveButton(h.value).props.onClick();
+    await h.flush();
+    expect(saved().definition.slots.after_merge).toEqual([
+      {
+        id: 'new-step',
+        title: 'Deep look',
+        kind: { type: 'review', runtime: 'codex', model: 'gpt-5', effort: 'high', blocking: false },
+      },
+    ]);
+    bridge.view = view(3, {
+      ...definition(),
+      slots: { ...definition().slots, after_merge: saved().definition.slots.after_merge },
+    });
+    const again = await tab();
+    await pick(again, 'new-step');
+    expect(labelled(again.value, wf('effort')).props.value).toBe('high');
+    labelled(again.value, wf('model')).props.onChange('');
+    labelled(again.value, wf('effort')).props.onChange('');
+    await again.flush();
+    button(again.value, wf('apply')).props.onClick();
+    await again.flush();
+    saveButton(again.value).props.onClick();
+    await again.flush();
+    expect(saved().definition.slots.after_merge[0]!.kind).toStrictEqual({
+      type: 'review',
+      runtime: 'codex',
+      blocking: false,
+    });
   });
 
   it('edits a custom step in place', async () => {

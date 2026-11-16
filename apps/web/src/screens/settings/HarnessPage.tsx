@@ -188,7 +188,13 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
 
   const configure = async (
     runtime: string,
-    change: { enabled?: boolean; binary?: string; args?: string[]; artifacts?: boolean },
+    change: {
+      enabled?: boolean;
+      binary?: string;
+      args?: string[];
+      artifacts?: boolean;
+      unverified_isolation?: boolean;
+    },
   ) => {
     setSaving(runtime);
     const result = await runCommand('runtime.config.set', { runtime, ...change }, null);
@@ -389,6 +395,28 @@ export function HarnessPage({ projectId }: { projectId: string | null }) {
                   defaultMessage: 'Publish artifacts',
                 })}
                 onChange={(e) => void configure(runtime, { artifacts: e.target.checked })}
+              />
+            </Row>
+          )}
+          {s.installed && s.capabilities?.write_isolation?.status !== 'supported' && (
+            <Row
+              label={t({
+                id: 'settings.runtimes.unverifiedIsolation',
+                defaultMessage: 'Allow without verified isolation',
+              })}
+            >
+              <input
+                type="checkbox"
+                className="ps-sw"
+                checked={s.unverified_isolation === true}
+                disabled={saving === runtime}
+                aria-label={t({
+                  id: 'settings.runtimes.unverifiedIsolation',
+                  defaultMessage: 'Allow without verified isolation',
+                })}
+                onChange={(e) =>
+                  void configure(runtime, { unverified_isolation: e.target.checked })
+                }
               />
             </Row>
           )}

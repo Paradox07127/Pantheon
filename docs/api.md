@@ -510,7 +510,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `runtime.config.set` | `runtime`: string<br>`enabled?`: boolean<br>`binary?`: string<br>`args?`: string[]<br>`artifacts?`: boolean |  |
+| `runtime.config.set` | `runtime`: string<br>`enabled?`: boolean<br>`binary?`: string<br>`args?`: string[]<br>`artifacts?`: boolean<br>`unverified_isolation?`: boolean |  |
 | `runtime.reconnect` | `runtime`: string |  |
 
 ### session

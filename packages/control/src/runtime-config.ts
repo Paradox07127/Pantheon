@@ -15,6 +15,7 @@ export async function prepareRuntimeConfig(
     binary?: string;
     args?: string[];
     artifacts?: boolean;
+    unverified_isolation?: boolean;
   },
 ): Promise<Handler> {
   userOnly(principal);

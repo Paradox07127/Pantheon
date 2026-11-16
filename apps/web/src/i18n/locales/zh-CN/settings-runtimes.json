@@ -13,5 +13,6 @@
   "settings.runtimes.disconnected": "未连接",
   "settings.runtimes.disconnectedBecause": "未连接：{reason}",
   "settings.runtimes.showEmail": "显示邮箱",
-  "settings.runtimes.hideEmail": "隐藏 {email}"
+  "settings.runtimes.hideEmail": "隐藏 {email}",
+  "settings.runtimes.unverifiedIsolation": "未验证隔离也允许使用"
 }

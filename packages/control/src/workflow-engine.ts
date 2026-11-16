@@ -684,6 +684,7 @@ function startReviewStep(ctx: ControlContext, run: StepRun): void {
         step_run_id: run.id,
       },
       range,
+      choice: { model: kind.model, effort: kind.effort },
     });
     changeRun(ctx, { ...run, review_id: review.id }, 'running');
   } catch (error) {

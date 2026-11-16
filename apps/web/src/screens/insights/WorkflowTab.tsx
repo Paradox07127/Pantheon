@@ -33,6 +33,7 @@ import type { FlowPath, TaskKind } from '@pantheon/domain';
 import type {
   BoardModel,
   BoardTaskState,
+  EffortLevel,
   WorkflowDefinitionView,
   WorkflowStepResult,
 } from '@pantheon/protocol';
@@ -50,6 +51,7 @@ import { setAutoMerge } from '../../data/auto-merge';
 import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
 import { failureText } from '../../data/needs-you';
+import { useRuntimeModels } from '../../data/runtime-models';
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import {
   DEFAULT_QUOTA_THRESHOLD,
@@ -97,6 +99,7 @@ import {
   splitArgv,
   type GateCommand,
 } from '../settings/gate';
+import { EFFORT_LABEL, defaultModel } from '../sessions/thread-model';
 import { openSettingsPage } from '../settings/settings-jump';
 import { BarSlot } from './BarSlot';
 import './workflow.css';
@@ -247,6 +250,9 @@ interface LeafForm {
   target: 'task' | 'lead';
   skill: TurnSkill | null;
   runtime: string;
+  /** Null leaves the review's model or effort to the session defaults. */
+  model: string | null;
+  effort: EffortLevel | null;
   blocking: boolean;
   /** A saved step's tiers, domains and paths, which the form does not show for a group's step. */
   scope?: Pick<WorkflowLeafStep, 'applies_to' | 'when'>;
@@ -279,6 +285,8 @@ const blankLeaf = (slot: Slot): LeafForm => ({
   target: slot === 'before_merge' ? 'task' : 'lead',
   skill: null,
   runtime: KNOWN_RUNTIMES[0] ?? '',
+  model: null,
+  effort: null,
   blocking: false,
 });
 
@@ -322,6 +330,8 @@ function kindFields(kind: WorkflowLeafStep['kind']): Partial<LeafForm> & { kind:
     return {
       kind: 'review',
       runtime: kind.runtime ?? KNOWN_RUNTIMES[0] ?? '',
+      model: kind.model ?? null,
+      effort: kind.effort ?? null,
       blocking: !!kind.blocking,
     };
   return { kind: kind.type };
@@ -377,7 +387,13 @@ function leafKindOf(form: LeafForm): WorkflowLeafStep['kind'] | null {
     }
     case 'review':
       if (!form.runtime) return null;
-      return { type: 'review', runtime: form.runtime, blocking: form.blocking };
+      return {
+        type: 'review',
+        runtime: form.runtime,
+        ...(form.model && { model: form.model }),
+        ...(form.effort && { effort: form.effort }),
+        blocking: form.blocking,
+      };
   }
 }
 
@@ -961,6 +977,9 @@ export function WorkflowTab({
   const form = selected?.type === 'form' ? selected.form : null;
   const leaves = form ? (isGroup(form.kind) ? form.parts : [form]) : [];
   const skills = useSkillChoices(leaves.some((leaf) => leaf.kind === 'prompt') ? projectId : null);
+  const reviewModels = useRuntimeModels(projectId, [
+    ...new Set(leaves.filter((leaf) => leaf.kind === 'review').map((leaf) => leaf.runtime)),
+  ]);
   if (owner !== projectId) {
     setOwner(projectId);
     setWorkflowId(undefined);
@@ -1675,6 +1694,9 @@ export function WorkflowTab({
     const targetLabel = t({ id: 'insights.workflow.target', defaultMessage: 'Send to' });
     const skillLabel = t({ id: 'insights.workflow.skill', defaultMessage: 'Skill' });
     const runtimeLabel = t({ id: 'insights.workflow.runtime', defaultMessage: 'Runtime' });
+    const modelLabel = t({ id: 'insights.workflow.model', defaultMessage: 'Model' });
+    const effortLabel = t({ id: 'insights.workflow.effort', defaultMessage: 'Effort' });
+    const byDefault = t({ id: 'insights.workflow.byDefault', defaultMessage: 'Default' });
     const blockingLabel = t({
       id: 'insights.workflow.blocking',
       defaultMessage: 'Fail on blocking findings',
@@ -1728,6 +1750,11 @@ export function WorkflowTab({
         leaf.skill && !skills.some((s) => s.path === leaf.skill!.path)
           ? [leaf.skill, ...skills]
           : skills;
+      const listed = reviewModels[leaf.runtime],
+        models = listed?.state === 'ready' ? listed.models : [],
+        entry = models.find((m) => m.id === leaf.model || m.resolved === leaf.model);
+      // Without a model the review runs on the runtime's default one.
+      const efforts = (leaf.model === null ? defaultModel(models) : entry)?.efforts ?? [];
       return (
         <>
           {leaf.kind === 'command' && (
@@ -1805,11 +1832,49 @@ export function WorkflowTab({
                 <Select
                   aria-label={runtimeLabel}
                   value={leaf.runtime}
-                  onChange={(runtime) => set({ runtime })}
+                  onChange={(runtime) => set({ runtime, model: null, effort: null })}
                   options={offeredRuntimes(runtimeStatus, [leaf.runtime]).map((runtime) => ({
                     value: runtime,
                     label: runtimeName(runtime),
                   }))}
+                />,
+              )}
+              {field(
+                modelLabel,
+                <Select
+                  aria-label={modelLabel}
+                  value={leaf.model ?? ''}
+                  onChange={(id) => {
+                    const efforts = models.find((m) => m.id === id)?.efforts ?? [];
+                    set({
+                      model: id || null,
+                      ...(leaf.effort && !efforts.includes(leaf.effort) && { effort: null }),
+                    });
+                  }}
+                  options={[
+                    { value: '', label: byDefault },
+                    ...(leaf.model !== null && !entry
+                      ? [{ value: leaf.model, label: leaf.model }]
+                      : []),
+                    ...models.map((m) => ({ value: m.id, label: m.label })),
+                  ]}
+                />,
+              )}
+              {field(
+                effortLabel,
+                <Select
+                  aria-label={effortLabel}
+                  value={leaf.effort ?? ''}
+                  onChange={(effort) => set({ effort: (effort as EffortLevel) || null })}
+                  options={[
+                    { value: '', label: byDefault },
+                    ...[
+                      ...(leaf.effort !== null && !efforts.includes(leaf.effort)
+                        ? [leaf.effort]
+                        : []),
+                      ...efforts,
+                    ].map((level) => ({ value: level, label: EFFORT_LABEL[level] })),
+                  ]}
                 />,
               )}
               {field(

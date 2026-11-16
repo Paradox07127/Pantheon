@@ -463,11 +463,31 @@ it("reviews on the writer's runtime in a new read-only session when no other run
   });
 });
 
-it("opens the task session and its review on the project's defaults when the project uses one model", async () => {
+it.each([
+  [
+    "opens the task session and its review on the project's defaults when the project uses one model",
+    {},
+    {},
+  ],
+  [
+    "opens the review on the step's model and effort over the project's defaults",
+    { model: 'review-model', effort: 'low' },
+    { requested_model: 'review-model', requested_effort: 'low' },
+  ],
+  [
+    "opens the review on the step's model without the project's effort",
+    { model: 'review-model' },
+    { requested_model: 'review-model', requested_effort: undefined },
+  ],
+] as const)('%s', async (_name, choice, reviewed) => {
   vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(validationResult());
   const definition = empty();
   definition.slots.before_merge = [
-    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
+    {
+      id: 'second-look',
+      title: 'Review the diff',
+      kind: { type: 'review', blocking: true, ...choice },
+    },
   ];
   const { f, lead } = await setup(definition);
   addReviewer(f);
@@ -494,10 +514,12 @@ it("opens the task session and its review on the project's defaults when the pro
   );
   const review = f.store.must<Review>('reviews', runs(f)[0]!.review_id!);
   expect(review.runtimes).toEqual([defaults.runtime]);
-  expect(current(f, review.session_ids[0]!)).toMatchObject({
+  const { runtime, requested_model, requested_effort } = current(f, review.session_ids[0]!);
+  expect({ runtime, requested_model, requested_effort }).toEqual({
     runtime: defaults.runtime,
     requested_model: defaults.model,
     requested_effort: defaults.effort,
+    ...reviewed,
   });
 });
 

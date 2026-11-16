@@ -60,6 +60,7 @@ export type RuntimeStatus = PreflightRuntimeStatus & {
   binary?: string;
   args?: string[];
   artifacts?: boolean;
+  unverified_isolation?: boolean;
   capabilities?: CapabilityReport['capabilities'];
   /** Latest reported windows, observed at seen_at (Unix epoch milliseconds). */
   quota?: { windows: QuotaWindow[]; seen_at: number };
@@ -862,6 +863,8 @@ export const userConfigSchema = z
           enabled: z.boolean().optional(),
           /** Claude only: subscription sessions may publish artifacts; absent is on. */
           artifacts: z.boolean().optional(),
+          /** The runtime may be a writer, reviewer and text session without verified isolation; absent is off. */
+          unverified_isolation: z.boolean().optional(),
         }),
       )
       .optional(),
@@ -970,6 +973,8 @@ const workflowLeafStep = z.strictObject({
     z.strictObject({
       type: z.literal('review'),
       runtime: str.optional(),
+      model: str.optional(),
+      effort: z.enum(EFFORT_LEVELS).optional(),
       blocking: z.boolean().optional(),
     }),
   ]),
@@ -1870,6 +1875,7 @@ export const inputSchemas = {
     binary: str.optional(),
     args: z.array(str).optional(),
     artifacts: z.boolean().optional(),
+    unverified_isolation: z.boolean().optional(),
   }),
   'app.settings.set': z.strictObject({
     auto_git_init: z.boolean().optional(),
