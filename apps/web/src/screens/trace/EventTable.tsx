@@ -44,6 +44,8 @@ export interface EventTableProps {
   to: number;
   /** Id of the row last shown on the lanes. */
   shown: string | null;
+  /** Id of the newest row up to the replay's playhead; null at now, when every row shows. */
+  current?: string | null;
   onShow: (event: TraceEvent) => void;
   /** The events the rows were read from; a gate run's duration comes from its commands. */
   history: readonly DaemonEvent[] | null;
@@ -63,6 +65,7 @@ export function EventTable({
   titleOf,
   to,
   shown,
+  current = null,
   onShow,
   history,
   lanes,
@@ -94,6 +97,7 @@ export function EventTable({
     <section
       className="tlo-et"
       data-dated={dated || undefined}
+      data-replay={current !== null || undefined}
       aria-label={t({ id: 'trace.events.label', defaultMessage: 'Events' })}
     >
       <div className="tlo-er tlo-eh" aria-hidden="true">
@@ -129,7 +133,8 @@ export function EventTable({
                         <button
                           type="button"
                           className="tlo-er"
-                          data-sel={row.id === shown || undefined}
+                          data-sel={row.id === shown || row.id === current || undefined}
+                          aria-current={row.id === current ? 'true' : undefined}
                           onClick={() => onShow(row)}
                         />
                       }

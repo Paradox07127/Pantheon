@@ -82,10 +82,12 @@ vi.mock('@/data/trace', async (actual) => ({
   }),
 }));
 import { TraceScreen } from '@/screens/trace/TraceScreen';
-import { whenText } from '@/screens/board/panels-model';
+import { listText } from '@/lib/list-text';
+import { durationText, whenText } from '@/screens/board/panels-model';
+import { clockText } from '@/screens/trace/LaneOverlay';
 import { presetWindow } from '@/screens/trace/model';
 import { useShell } from '@/store';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const MIN = 60_000;
 const NOW = new Date(2026, 2, 8, 14, 20).getTime();
@@ -905,6 +907,109 @@ describe('trace screen event table', () => {
     expect(lanes.props.range).toEqual({ from: at - length / 2, to: at + length / 2 });
     expect(lanes.props.focus).toBe('session-a');
     expect(named(h.value, 'EventTable').props.shown).toBe(table.props.rows[0].id);
+  });
+});
+
+describe('trace screen as of the replay playhead', () => {
+  const replayed = (at: number | null) => {
+    const t = projectTrace();
+    t.lanes[0]!.turns = [
+      {
+        id: 'turn-a',
+        start: NOW - 40 * MIN,
+        end: NOW - 20 * MIN,
+        status: 'ok',
+        tokens: { input: 1000, output: 0 },
+        segments: [],
+      },
+      { id: 'turn-b', start: NOW - 5 * MIN, end: null, status: 'running', segments: [] },
+    ];
+    t.buckets = [
+      { at: NOW - 35 * MIN, llm: 2, tool: 1, error: 0 },
+      { at: NOW - 25 * MIN, llm: 1, tool: 0, error: 1 },
+      { at: NOW - 3 * MIN, llm: 5, tool: 5, error: 1 },
+    ];
+    t.stats = { ...zero, llm: 8, tool: 6, error: 2, tokens: { input: 1000, output: 0 } };
+    mock.trace = t;
+    mock.events = [asked(NOW - 50 * MIN), gateFailed(NOW - 20 * MIN), asked(NOW - 10 * MIN)];
+    const h = screen();
+    named(h.value, 'Lanes').props.onReplayAt(at);
+    h.render();
+    return h;
+  };
+  const kpiLabel = (h: HookHost<any>, id: string) => labelOf(h.value, zh(id));
+
+  it('shows each number as of the playhead, running sessions in place of sessions', () => {
+    const h = replayed(NOW - 30 * MIN);
+    expect(kpiLabel(h, 'trace.stat.sessions')).toBeUndefined();
+    expect(
+      [
+        'trace.stat.running',
+        'trace.stat.duration',
+        'trace.stat.calls',
+        'trace.stat.gateFailures',
+        'trace.stat.tokens',
+        'trace.stat.commits',
+      ].map((id) => kpiLabel(h, id)),
+    ).toEqual([
+      `${zh('trace.stat.running')} 1`,
+      `${zh('trace.stat.duration')} ${durationText(10 * MIN)}`,
+      `${zh('trace.stat.calls')} 3`,
+      `${zh('trace.stat.gateFailures')} 0`,
+      `${zh('trace.stat.tokens')} 500`,
+      `${zh('trace.stat.commits')} 0`,
+    ]);
+    expect(
+      nodes(h.value).some(
+        (n) => n.props['aria-label'] === zhf('trace.stat.errorCount', { count: 0 }),
+      ),
+    ).toBe(true);
+
+    named(h.value, 'Lanes').props.onReplayAt(null);
+    h.render();
+    expect(kpiLabel(h, 'trace.stat.running')).toBeUndefined();
+    expect(kpiLabel(h, 'trace.stat.sessions')).toBe(`${zh('trace.stat.sessions')} 1`);
+    expect(kpiLabel(h, 'trace.stat.calls')).toBe(`${zh('trace.stat.calls')} 14`);
+  });
+
+  it('lists only the events up to the playhead, the newest marked current', () => {
+    const h = replayed(NOW - 15 * MIN);
+    const table = named(h.value, 'EventTable');
+    expect(table.props.rows.map((r: { what: string }) => r.what)).toEqual(['gate_failed', 'asked']);
+    expect(table.props.current).toBe(table.props.rows[0].id);
+    const rows = nodes(child(h.value, 'EventTable').value)
+      .map((n) => n.props.render)
+      .filter((r) => r?.props.className === 'tlo-er');
+    expect(rows.map((r) => [r.props['aria-current'], r.props['data-sel']])).toEqual([
+      ['true', true],
+      [undefined, undefined],
+    ]);
+
+    named(h.value, 'Lanes').props.onReplayAt(null);
+    h.render();
+    expect(named(h.value, 'EventTable').props.rows).toHaveLength(3);
+    expect(named(h.value, 'EventTable').props.current).toBeNull();
+  });
+
+  it('puts the events over the replay bar by time, session and text, and steps through them and the turn starts', () => {
+    const h = replayed(null);
+    const replayer = named(child(h.value, 'Lanes').value, 'Replayer');
+    const bar = mount(() =>
+      (replayer.type as (props: unknown) => ReactElement<any>)(replayer.props),
+    ).value;
+    const gate = zhf('trace.event.gateFailedCount', { check: 'test', failed: 1 });
+    const ask = zhf('trace.event.asked', { tool: 'Bash' });
+    expect(
+      bar.props.ticks.map((tick: { label: string; tone?: string }) => [tick.label, tick.tone]),
+    ).toEqual([
+      [listText(clockText(NOW - 50 * MIN, NOW), 'session-a', ask), 'wait'],
+      [listText(clockText(NOW - 20 * MIN, NOW), 'session-a', gate), 'bad'],
+      [listText(clockText(NOW - 10 * MIN, NOW), 'session-a', ask), 'wait'],
+    ]);
+    expect(bar.props.replay.steps).toEqual(
+      [50, 40, 20, 10, 5].map((minutes) => NOW - minutes * MIN),
+    );
+    expect(bar.props.marks).toEqual([]);
   });
 });
 

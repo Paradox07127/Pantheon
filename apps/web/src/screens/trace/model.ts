@@ -1,4 +1,10 @@
-import type { ProjectHeatmap, ProjectTrace, SessionTrace, TraceStats } from '@pantheon/protocol';
+import type {
+  ProjectCollab,
+  ProjectHeatmap,
+  ProjectTrace,
+  SessionTrace,
+  TraceStats,
+} from '@pantheon/protocol';
 import type { DaemonEvent } from '../../data/sync';
 import { toolLabel } from '../../data/tool-calls';
 import { currentLocale } from '../../i18n';
@@ -8,6 +14,7 @@ export type TraceLaneView = ProjectTrace['lanes'][number];
 export type TraceTurn = TraceLaneView['turns'][number];
 export type TraceBucket = ProjectTrace['buckets'][number];
 export type TraceSpan = SessionTrace['spans'][number];
+export type TraceSubagent = ProjectCollab['subagents'][number];
 export type HeatCommit = ProjectHeatmap['commits'][number];
 
 export interface HeatCell {
@@ -51,7 +58,11 @@ export type TraceRow =
       turn: TraceTurn;
       span: TraceSpan;
       depth: number;
-    };
+    }
+  /** A subagent of the session row `below` rows up. */
+  | { kind: 'subagent'; key: string; lane: TraceLaneView; agent: TraceSubagent; below: number }
+  /** The subagents a closed lane leaves out. */
+  | { kind: 'more'; key: string; lane: TraceLaneView; agents: TraceSubagent[] };
 
 /** The steps of the one turn whose rows are open, by the key of that turn's row. */
 export interface TraceSteps {
@@ -117,6 +128,8 @@ export interface TraceEvent {
 export type TracePreset = '1h' | '24h' | '7d' | '30d';
 
 export type ReplaySpeed = 1 | 4 | 16;
+/** How the timeline's replay moves: an even pace from step to step, or across the axis at one speed. */
+export type ReplayMode = 'event' | 'time';
 
 /** Height of one lane row, px. */
 export const ROW_HEIGHT = 30;
@@ -130,8 +143,12 @@ const GAP_SHARE = 0.05;
 export const MIN_VIEW_MS = 60_000;
 /** Deepest indent of a step row. */
 const MAX_DEPTH = 2;
+/** Subagent rows under a closed lane, a row for the rest among them. */
+const MAX_SUBAGENTS = 6;
 /** How long a replay at 1x takes to cross the whole view. */
 export const REPLAY_MS = 60_000;
+/** How long a replay by event at 1x takes from one step to the next. */
+export const EVENT_MS = 880;
 
 /**
  * A turn's interval clipped to the window; null when it has no start or lies outside. Without an
@@ -387,20 +404,49 @@ export function stepRows(
 }
 
 /**
- * One row per lane in lane order, each open lane followed by one row per turn, and the turn
- * whose steps are given followed by one row per step.
+ * One row per lane in lane order, each Pantheon lane followed by its subagents by start, each open
+ * lane then by one row per turn, and the turn whose steps are given followed by one row per step.
+ * A closed lane lists at most MAX_SUBAGENTS rows, the last one standing for the rest.
  */
 export function traceRows(
   trace: ProjectTrace,
   open: ReadonlySet<string>,
   steps: TraceSteps | null = null,
+  subagents: readonly TraceSubagent[] = [],
 ): TraceRow[] {
+  const bySession = new Map<string, TraceSubagent[]>();
+  for (const agent of subagents)
+    bySession.set(agent.session_id, [...(bySession.get(agent.session_id) ?? []), agent]);
   return trace.lanes.flatMap((lane): TraceRow[] => {
     const key = lane.lane.key;
     const head: TraceRow = { kind: 'session', key, lane, stats: lane.stats };
-    if (!open.has(key)) return [head];
+    const agents =
+      lane.lane.source === 'external'
+        ? []
+        : [...(bySession.get(key) ?? [])].sort(
+            (a, b) =>
+              a.start - b.start || (a.span_id < b.span_id ? -1 : a.span_id > b.span_id ? 1 : 0),
+          );
+    const listed =
+      open.has(key) || agents.length <= MAX_SUBAGENTS ? agents : agents.slice(0, MAX_SUBAGENTS - 1);
+    const forks = listed.map((agent, i): TraceRow => ({
+      kind: 'subagent',
+      key: `${key}/subagent:${agent.span_id}`,
+      lane,
+      agent,
+      below: i + 1,
+    }));
+    if (listed.length < agents.length)
+      forks.push({
+        kind: 'more',
+        key: `${key}/subagents`,
+        lane,
+        agents: agents.slice(listed.length),
+      });
+    if (!open.has(key)) return [head, ...forks];
     return [
       head,
+      ...forks,
       ...lane.turns.flatMap((turn): TraceRow[] => {
         const row: TraceRow = { kind: 'turn', key: `${key}/${turn.id}`, lane, turn };
         if (!steps || row.key !== steps.turnKey) return [row];
@@ -468,6 +514,145 @@ export function panWindow(view: TraceWindow, full: TraceWindow, deltaMs: number)
 export function replayStep(share: number, dtMs: number, speed: ReplaySpeed): number | null {
   const next = share + dtMs / (REPLAY_MS / speed);
   return next >= 1 ? null : next;
+}
+
+/**
+ * The playhead's share dtMs later when it takes as long from each step to the next, over ascending
+ * step shares; it stops on the last step and is null once there.
+ */
+export function eventReplayStep(
+  share: number,
+  dtMs: number,
+  speed: ReplaySpeed,
+  steps: readonly number[],
+): number | null {
+  let i = steps.findIndex((at) => at > share);
+  if (i < 0) return null;
+  let at = share;
+  // Legs left to travel; a leg runs from one step to the next.
+  let left = dtMs / (EVENT_MS / speed);
+  for (;;) {
+    const from = i === 0 ? 0 : steps[i - 1]!;
+    const to = steps[i]!;
+    const need = (to - at) / (to - from);
+    if (left < need) return at + left * (to - from);
+    left -= need;
+    at = to;
+    if (++i === steps.length) return at;
+  }
+}
+
+/** The playhead's view of the trace's numbers. */
+export interface ReplayTotals {
+  /** Length of the union of the turns up to the time, ms. */
+  activeMs: number;
+  /** Lanes with a turn running at the time. */
+  running: number;
+  calls: number;
+  errors: number;
+  /** Each turn's tokens by the share of the turn passed. */
+  tokens: number;
+  /** Turns started by the time without reported usage. */
+  unreported: number;
+}
+
+/** How many of the ascending values are at or below value. */
+function countUpTo(sorted: readonly number[], value: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid]! <= value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Running sums from 0, one longer than values. */
+function prefix(values: readonly number[]): number[] {
+  const sums = [0];
+  for (const value of values) sums.push(sums.at(-1)! + value);
+  return sums;
+}
+
+/** Overlapping or touching intervals joined, by start. */
+function union(spans: readonly (readonly [number, number])[]): [number, number][] {
+  const joined: [number, number][] = [];
+  for (const [start, end] of [...spans].sort((a, b) => a[0] - b[0])) {
+    const last = joined.at(-1);
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else joined.push([start, end]);
+  }
+  return joined;
+}
+
+/**
+ * The trace's totals as of a time in the window: calls and errors from the buckets started by
+ * then, turns clipped at it. A turn without a start counts at its end, else at the window's start.
+ */
+export function replayTotals(
+  trace: ProjectTrace,
+  window: TraceWindow,
+): (time: number) => ReplayTotals {
+  const buckets = [...trace.buckets].sort((a, b) => a.at - b.at);
+  const bucketAt = buckets.map((b) => b.at);
+  const calls = prefix(buckets.map((b) => b.llm + b.tool));
+  const errors = prefix(buckets.map((b) => b.error));
+
+  // Times are taken from the window's start, so a rate times a time keeps its precision.
+  const origin = window.from;
+  const parts: { start: number; end: number; tokens: number; rate: number }[] = [];
+  const unreported: number[] = [];
+  const laneSpans: [number, number][] = [];
+  for (const lane of trace.lanes) {
+    const own: [number, number][] = [];
+    for (const turn of lane.turns) {
+      const span = turnSpan(turn, window);
+      if (span) own.push([span[0] - origin, span[1] - origin]);
+      const [start, end] = span
+        ? [span[0] - origin, span[1] - origin]
+        : [(turn.end ?? origin) - origin, (turn.end ?? origin) - origin];
+      const tokens = turn.tokens ? turn.tokens.input + turn.tokens.output : 0;
+      if (!turn.tokens) unreported.push(start);
+      parts.push({ start, end, tokens, rate: end > start ? tokens / (end - start) : 0 });
+    }
+    laneSpans.push(...union(own));
+  }
+  unreported.sort((a, b) => a - b);
+  const laneStarts = laneSpans.map(([start]) => start).sort((a, b) => a - b);
+  const laneEnds = laneSpans.map(([, end]) => end).sort((a, b) => a - b);
+  const busy = union(laneSpans);
+  const busyStarts = busy.map(([start]) => start);
+  const busyMs = prefix(busy.map(([start, end]) => end - start));
+  // A turn under way at t holds rate * (t - start) of its tokens: started minus ended sums.
+  const byStart = [...parts].sort((a, b) => a.start - b.start);
+  const starts = byStart.map((p) => p.start);
+  const startRate = prefix(byStart.map((p) => p.rate));
+  const startRateAt = prefix(byStart.map((p) => p.rate * p.start));
+  const byEnd = [...parts].sort((a, b) => a.end - b.end);
+  const ends = byEnd.map((p) => p.end);
+  const endRate = prefix(byEnd.map((p) => p.rate));
+  const endRateAt = prefix(byEnd.map((p) => p.rate * p.start));
+  const endTokens = prefix(byEnd.map((p) => p.tokens));
+
+  return (time) => {
+    const t = time - origin;
+    const b = countUpTo(bucketAt, time);
+    const k = countUpTo(busyStarts, t);
+    const last = busy[k - 1];
+    const s = countUpTo(starts, t);
+    const e = countUpTo(ends, t);
+    const tokens =
+      endTokens[e]! + t * (startRate[s]! - endRate[e]!) - (startRateAt[s]! - endRateAt[e]!);
+    return {
+      activeMs: last ? busyMs[k - 1]! + Math.min(t, last[1]) - last[0] : 0,
+      running: countUpTo(laneStarts, t) - countUpTo(laneEnds, t),
+      calls: calls[b]!,
+      errors: errors[b]!,
+      tokens: Math.max(0, Math.round(tokens)),
+      unreported: countUpTo(unreported, t),
+    };
+  };
 }
 
 /** Start and bucket of a preset window up to now; the start holds still within a bucket. */

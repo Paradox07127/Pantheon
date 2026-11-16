@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { PreviewCard } from '@base-ui/react/preview-card';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
@@ -133,10 +133,13 @@ export function LaneOverlay({ rows, first, count, axis, view, events, now }: Lan
                       lane.title,
                       clockText(event.at, view.to),
                     )}
-                    style={{
-                      left: pct(axis.position(event.at)),
-                      top: (first + i) * ROW_HEIGHT + (ROW_HEIGHT - MARK_PX) / 2,
-                    }}
+                    style={
+                      {
+                        left: pct(axis.position(event.at)),
+                        top: (first + i) * ROW_HEIGHT + (ROW_HEIGHT - MARK_PX) / 2,
+                        '--mark-at': axis.position(event.at),
+                      } as CSSProperties
+                    }
                   />
                 }
               />

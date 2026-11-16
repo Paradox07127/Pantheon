@@ -7,6 +7,12 @@
   "trace.replay.speedOption": "{speed} 倍速",
   "trace.replay.now": "回到现在",
   "trace.replay.positionStep": "{n, plural, =0 {第 1 步之前，共 {total} 步} other {第 # 步，共 {total} 步}}，{time}",
+  "trace.replay.mode": "回放节奏",
+  "trace.replay.byEvent": "按事件",
+  "trace.replay.byTime": "按时间",
+  "trace.replay.density": "活动：{llm, plural, other {# 次模型调用}}，{tool, plural, other {# 次工具调用}}，{error, plural, other {# 个错误}}",
+  "trace.replay.events": "事件",
+  "trace.stat.running": "运行中",
   "trace.turnStatus.ok": "完成",
   "trace.turnStatus.error": "出错",
   "trace.turnStatus.running": "运行中",
@@ -146,5 +152,9 @@
   "trace.laneState.queue": "排队",
   "trace.laneState.time": "{state} {duration}",
   "trace.stat.waited": "等你的时间",
-  "trace.read.states": "会话状态"
+  "trace.read.states": "会话状态",
+  "trace.now.tool": "工具",
+  "trace.now.subagent": "子 agent",
+  "trace.row.moreSubagents": "{count, plural, other {还有 # 个子 agent}}",
+  "trace.row.moreCount": "+{count}"
 }

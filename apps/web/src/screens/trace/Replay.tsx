@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -22,8 +23,12 @@ import {
 } from '../../lib/shortcuts';
 import { whenText } from '../board/panels-model';
 import {
+  eventReplayStep,
   replayStep,
+  stripBars,
+  type ReplayMode,
   type ReplaySpeed,
+  type TraceBucket,
   type traceAxis,
   type TraceTurn,
   type TraceWindow,
@@ -35,6 +40,12 @@ type Axis = ReturnType<typeof traceAxis>;
 const SPEEDS: ReplaySpeed[] = [1, 4, 16];
 /** Scrubber steps across the axis. */
 export const SCRUB_MAX = 1000;
+/** Shortest wait between two times a playing replay by time tells its numbers. */
+const MOMENT_MS = 250;
+/** Tallest column of the activity track, px, under its 2px error mark. */
+const DENSITY_PX = 30;
+
+const pct = (share: number) => `${share * 100}%`;
 
 // The replay keys answer everywhere except where they type, press, select or move a control.
 const KEY_OWNERS =
@@ -105,6 +116,8 @@ export interface TraceReplay {
   toggle: () => void;
   /** To a scrubber value; its end returns to now. */
   seek: (value: number) => void;
+  /** To a time, paused. */
+  seekTime: (time: number) => void;
   /** To the step before or after the playhead; past the last step returns to now. */
   step: (delta: 1 | -1) => void;
   /** Moves the knob alone to a share, or back to the playhead's on null. */
@@ -119,8 +132,9 @@ export interface TraceReplay {
 }
 
 /**
- * Plays the view from its start to its end. A playing frame writes the playhead to `--ph` and
- * `--ph-strip` on the host and to the bar's scrubber and time, without rendering.
+ * Plays the view from its start to its end, by time unless asked to go by event. A playing frame
+ * writes the playhead to `--ph` and `--ph-strip` on the host and to the bar's scrubber and time,
+ * without rendering; onMoment hears the time the page's numbers show, null at now.
  */
 export function useTraceReplay(
   axis: Axis,
@@ -129,6 +143,7 @@ export function useTraceReplay(
   host: RefObject<HTMLElement | null>,
   speed: ReplaySpeed,
   steps: readonly number[],
+  { mode = 'time', onMoment }: { mode?: ReplayMode; onMoment?: (time: number | null) => void } = {},
 ): TraceReplay {
   // The playhead is held as a time, so a refreshed axis moves its share and not its time.
   const [state, setState] = useState<{ time: number | null; playing: boolean }>({
@@ -141,8 +156,25 @@ export function useTraceReplay(
   const thumb = useRef<HTMLSpanElement | null>(null);
   const fill = useRef<HTMLElement | null>(null);
   const at = useRef<HTMLSpanElement | null>(null);
-  const shape = useRef({ axis, full, steps });
-  shape.current = { axis, full, steps };
+  // By event the playhead's legs end on each step and then on the view's end.
+  const shares = useMemo(
+    () => [
+      ...[...new Set(steps.map((s) => axis.position(s)))]
+        .filter((share) => share > 0 && share < 1)
+        .sort((a, b) => a - b),
+      1,
+    ],
+    [axis, steps],
+  );
+  const shape = useRef({ axis, full, steps, shares });
+  shape.current = { axis, full, steps, shares };
+  const moment = useRef<{ hear?: (time: number | null) => void; told?: number | null }>({});
+  moment.current.hear = onMoment;
+  const tell = useCallback((time: number | null) => {
+    if (moment.current.told === time) return;
+    moment.current.told = time;
+    moment.current.hear?.(time);
+  }, []);
 
   const preview = useCallback((share: number | null) => {
     const shown = share ?? (live.current === null ? 1 : shape.current.axis.position(live.current));
@@ -187,6 +219,10 @@ export function useTraceReplay(
     live.current = time;
     setState({ time, playing: false });
   }, []);
+  const seekTime = useCallback((time: number) => {
+    live.current = time;
+    setState({ time, playing: false });
+  }, []);
   const now = useCallback(() => {
     live.current = null;
     setState({ time: null, playing: false });
@@ -205,10 +241,16 @@ export function useTraceReplay(
     // Under reduced motion the playhead waits on each step instead of sliding between them.
     const reduced = reducedMotion();
     let last: number | null = null;
+    // The frame that last told the numbers by time; the start was told on play.
+    let told: number | null = null;
     const tick = (t: number) => {
-      const { axis, steps } = shape.current;
+      const { axis, steps, shares } = shape.current;
       const share = live.current === null ? 0 : axis.position(live.current);
-      const next = replayStep(share, last === null ? 0 : t - last, speed);
+      const dt = last === null ? 0 : t - last;
+      const next =
+        mode === 'event' && steps.length
+          ? eventReplayStep(share, dt, speed, shares)
+          : replayStep(share, dt, speed);
       last = t;
       if (next === null) {
         live.current = null;
@@ -220,11 +262,22 @@ export function useTraceReplay(
         ? (steps.findLast((s) => s <= live.current!) ?? axis.time(0))
         : live.current;
       paint(shown, true);
+      if (mode === 'event') {
+        const reached = steps.findLast((s) => s <= shown);
+        if (reached !== undefined) tell(reached);
+      } else if (told === null) told = t;
+      else if (t - told >= MOMENT_MS) {
+        told = t;
+        tell(shown);
+      }
       frame = requestAnimationFrame(tick);
     };
     let frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [state.playing, speed, paint]);
+  }, [state.playing, speed, mode, paint, tell]);
+
+  useEffect(() => tell(state.time), [state.time, state.playing, tell]);
+  useEffect(() => () => moment.current.hear?.(null), []);
 
   useLayoutEffect(() => {
     const el = host.current;
@@ -263,6 +316,7 @@ export function useTraceReplay(
     playing: state.playing,
     toggle,
     seek,
+    seekTime,
     step,
     preview,
     now,
@@ -305,6 +359,31 @@ export function ReplaySpeedControl({
   );
 }
 
+/** Whether the timeline's replay takes each step in the same time or crosses the view at one speed. */
+export function ReplayModeControl({
+  mode,
+  onMode,
+}: {
+  mode: ReplayMode;
+  onMode: (mode: ReplayMode) => void;
+}) {
+  return (
+    <RadioGroup<ReplayMode>
+      className="tb-seg"
+      aria-label={t({ id: 'trace.replay.mode', defaultMessage: 'Replay pace' })}
+      value={mode}
+      onValueChange={(value) => onMode(value)}
+    >
+      <Radio.Root value="event">
+        {t({ id: 'trace.replay.byEvent', defaultMessage: 'By event' })}
+      </Radio.Root>
+      <Radio.Root value="time">
+        {t({ id: 'trace.replay.byTime', defaultMessage: 'By time' })}
+      </Radio.Root>
+    </RadioGroup>
+  );
+}
+
 const KEY_GROUPS: ShortcutId[][] = [['replay-back', 'replay-forward'], ['replay-play']];
 
 /** The replay keys as key caps, as the user set them. */
@@ -329,6 +408,14 @@ export function ReplayKeys() {
 const shareAt = (x: number, box: { left: number; width: number }) =>
   Math.min(1, Math.max(0, (x - box.left) / Math.max(1, box.width)));
 
+/** An event over the replay track: its time, its status tone and its name. */
+export interface ReplayTick {
+  id: string;
+  at: number;
+  tone?: string;
+  label: string;
+}
+
 /** Play, scrub, the replay keys and the way back to now over the lanes' view. */
 export function ReplayBar({
   replay,
@@ -336,6 +423,8 @@ export function ReplayBar({
   view,
   full,
   marks,
+  density,
+  ticks,
   live,
   end,
 }: {
@@ -345,6 +434,10 @@ export function ReplayBar({
   full: TraceWindow;
   /** Drawn on the scrubber, coloured by their state; none leaves a bare track. */
   marks: readonly { at: number; state: string }[];
+  /** The activity drawn as the track, with a band over it for the ticks or else the marks. */
+  density?: { buckets: readonly TraceBucket[]; bucketMs: number };
+  /** Buttons in the band that move the playhead to their time. */
+  ticks?: readonly ReplayTick[];
   /** The time text at now; the view's end without it. */
   live?: string;
   /** Follows the time in place of the replay keys and the way back to now. */
@@ -354,6 +447,133 @@ export function ReplayBar({
   const share = replay.share ?? 1;
   // Set from the pointer down to its release; only the knob moves meanwhile.
   const drag = useRef<{ box: { left: number; width: number }; share: number } | null>(null);
+  const chart = useMemo(() => {
+    if (!density) return null;
+    const shown = density.buckets.filter((b) => b.at >= view.from && b.at < view.to);
+    const total = (key: 'llm' | 'tool' | 'error') => shown.reduce((n, b) => n + b[key], 0);
+    return (
+      <div
+        className="rpb-dens"
+        role="img"
+        aria-label={t(
+          {
+            id: 'trace.replay.density',
+            defaultMessage:
+              'Activity: {llm, plural, one {# model call} other {# model calls}}, {tool, plural, one {# tool call} other {# tool calls}}, {error, plural, one {# error} other {# errors}}',
+          },
+          { llm: total('llm'), tool: total('tool'), error: total('error') },
+        )}
+      >
+        {stripBars(shown, DENSITY_PX).map((bar) => {
+          const left = axis.position(bar.at);
+          const right = Math.min(1, axis.position(bar.at + density.bucketMs));
+          return (
+            <i
+              key={bar.at}
+              className="rpb-col"
+              style={{ left: pct(left), width: pct(right - left) }}
+            >
+              {bar.error && <i className="rpb-ce" />}
+              <i className="rpb-cl" style={{ height: bar.llm }} />
+              <i className="rpb-ct" style={{ height: bar.tool }} />
+            </i>
+          );
+        })}
+      </div>
+    );
+  }, [density, view.from, view.to, axis]);
+  const { seekTime } = replay;
+  const band = useMemo(
+    () =>
+      ticks?.length ? (
+        <div
+          className="rpb-band"
+          role="group"
+          aria-label={t({ id: 'trace.replay.events', defaultMessage: 'Events' })}
+        >
+          {ticks.map((tick) => (
+            <button
+              key={tick.id}
+              type="button"
+              className="rpb-tk"
+              // The slider's arrows already stop on every tick.
+              tabIndex={-1}
+              data-tone={tick.tone}
+              aria-label={tick.label}
+              title={tick.label}
+              style={{ left: pct(axis.position(tick.at)) }}
+              onClick={() => seekTime(tick.at)}
+            />
+          ))}
+        </div>
+      ) : null,
+    [ticks, axis, seekTime],
+  );
+  const markEls = marks.map((mark, i) => (
+    <i
+      key={`${mark.at}-${i}`}
+      className="rpb-mk"
+      data-state={mark.state}
+      style={{ left: `${axis.position(mark.at) * 100}%` }}
+    />
+  ));
+  const slider = (
+    <div
+      ref={replay.scrub}
+      className="rpb-scrub"
+      data-chart={chart ? '' : undefined}
+      role="slider"
+      tabIndex={0}
+      aria-label={t({ id: 'trace.replay.position', defaultMessage: 'Replay position' })}
+      aria-valuemin={0}
+      aria-valuemax={SCRUB_MAX}
+      aria-valuenow={Math.round(share * SCRUB_MAX)}
+      aria-valuetext={positionText(time, replay.steps, full.to)}
+      onKeyDown={(e) => {
+        if (shortcutMatches('replay-back', e) || e.key === 'ArrowDown') replay.step(-1);
+        else if (shortcutMatches('replay-forward', e) || e.key === 'ArrowUp') replay.step(1);
+        else if (shortcutMatches('replay-play', e)) {
+          if (!e.repeat) replay.toggle();
+        } else return;
+        e.preventDefault();
+      }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        const box = e.currentTarget.getBoundingClientRect();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        if (replay.playing) replay.toggle();
+        drag.current = { box, share: shareAt(e.clientX, box) };
+        replay.preview(drag.current.share);
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return;
+        drag.current.share = shareAt(e.clientX, drag.current.box);
+        replay.preview(drag.current.share);
+      }}
+      onPointerUp={() => {
+        if (!drag.current) return;
+        const value = Math.round(drag.current.share * SCRUB_MAX);
+        drag.current = null;
+        replay.seek(value);
+      }}
+      onPointerCancel={() => {
+        drag.current = null;
+        replay.preview(null);
+      }}
+    >
+      {!chart && (
+        <i ref={replay.fill} className="rpb-fill" style={{ transform: `scaleX(${share})` }} />
+      )}
+      {!chart && markEls}
+      <span
+        ref={replay.thumb}
+        className="rpb-th"
+        style={{ transform: `translateX(${share * 100}%)` }}
+      >
+        <i />
+      </span>
+    </div>
+  );
   return (
     <div
       className="trc-bar"
@@ -373,65 +593,20 @@ export function ReplayBar({
       >
         {replay.playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
       </button>
-      <div
-        ref={replay.scrub}
-        className="rpb-scrub"
-        role="slider"
-        tabIndex={0}
-        aria-label={t({ id: 'trace.replay.position', defaultMessage: 'Replay position' })}
-        aria-valuemin={0}
-        aria-valuemax={SCRUB_MAX}
-        aria-valuenow={Math.round(share * SCRUB_MAX)}
-        aria-valuetext={positionText(time, replay.steps, full.to)}
-        onKeyDown={(e) => {
-          if (shortcutMatches('replay-back', e) || e.key === 'ArrowDown') replay.step(-1);
-          else if (shortcutMatches('replay-forward', e) || e.key === 'ArrowUp') replay.step(1);
-          else if (shortcutMatches('replay-play', e)) {
-            if (!e.repeat) replay.toggle();
-          } else return;
-          e.preventDefault();
-        }}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          const box = e.currentTarget.getBoundingClientRect();
-          e.currentTarget.setPointerCapture(e.pointerId);
-          if (replay.playing) replay.toggle();
-          drag.current = { box, share: shareAt(e.clientX, box) };
-          replay.preview(drag.current.share);
-        }}
-        onPointerMove={(e) => {
-          if (!drag.current) return;
-          drag.current.share = shareAt(e.clientX, drag.current.box);
-          replay.preview(drag.current.share);
-        }}
-        onPointerUp={() => {
-          if (!drag.current) return;
-          const value = Math.round(drag.current.share * SCRUB_MAX);
-          drag.current = null;
-          replay.seek(value);
-        }}
-        onPointerCancel={() => {
-          drag.current = null;
-          replay.preview(null);
-        }}
-      >
-        <i ref={replay.fill} className="rpb-fill" style={{ transform: `scaleX(${share})` }} />
-        {marks.map((mark, i) => (
-          <i
-            key={`${mark.at}-${i}`}
-            className="rpb-mk"
-            data-state={mark.state}
-            style={{ left: `${axis.position(mark.at) * 100}%` }}
-          />
-        ))}
-        <span
-          ref={replay.thumb}
-          className="rpb-th"
-          style={{ transform: `translateX(${share * 100}%)` }}
-        >
-          <i />
-        </span>
-      </div>
+      {chart ? (
+        <div className="rpb-data">
+          {band ?? (
+            <div className="rpb-band" aria-hidden="true">
+              {markEls}
+            </div>
+          )}
+          {chart}
+          <i className="rpb-dim" aria-hidden="true" />
+          {slider}
+        </div>
+      ) : (
+        slider
+      )}
       <span ref={replay.at} className="trc-at" aria-hidden="true">
         {replay.time === null && live !== undefined ? live : whenText(time, full.to)}
       </span>

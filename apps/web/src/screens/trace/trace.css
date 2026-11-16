@@ -210,10 +210,18 @@ button.trc-kpi:focus-visible {
   outline-offset: -2px;
 }
 
-/* Replay: the playhead rides --ph-strip on the strip and --ph on the lanes, written each frame. */
+/*
+ * Replay: the playhead rides --ph-strip on the strip and --ph on the lanes, written each frame.
+ * Rows carry the axis share of their first activity (--row-s), bars their ends' (--seg-s, --seg-e)
+ * and lane marks their own (--mark-at).
+ */
 .trc-main[data-replay] {
   --ph: 0;
   --ph-strip: 0;
+  --row-s: 0;
+  --seg-s: 0;
+  --seg-e: 1;
+  --mark-at: 0;
 }
 .trc-sph {
   position: absolute;
@@ -240,13 +248,13 @@ button.trc-kpi:focus-visible {
   color: var(--tx2);
   font-variant-numeric: tabular-nums;
 }
-/* Columns match a lane row's so the playhead and the mask fall on the track column only. */
+/* Columns match a lane row's so the playhead falls on the track column only. */
 .trc-ph {
   position: sticky;
   top: 0;
   z-index: 1;
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-columns: var(--trc-cols);
   column-gap: var(--sp-3);
   width: 100%;
   padding: 0 var(--sp-3);
@@ -257,18 +265,8 @@ button.trc-kpi:focus-visible {
   position: relative;
   grid-column: 2;
 }
-.trc-main[data-replay] .trc-phm,
 .trc-main[data-replay] .trc-phl {
   display: block;
-}
-.trc-phm {
-  position: absolute;
-  display: none;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--ph) * 100%);
-  right: 0;
-  background-color: color-mix(in srgb, var(--sf) 85%, transparent);
 }
 .trc-phl {
   position: absolute;
@@ -282,6 +280,10 @@ button.trc-kpi:focus-visible {
 
 /* One card: the head with its moments, the break lengths and the scrolling rows. */
 .trc-lcard {
+  container: trc-lanes / inline-size;
+  /* Every row and layer: the name, the track and the now column. */
+  --trc-now: 216px;
+  --trc-cols: 172px minmax(0, 1fr) var(--trc-now);
   flex: 1;
   min-height: 0;
   display: flex;
@@ -294,7 +296,7 @@ button.trc-kpi:focus-visible {
 .trc-axis {
   flex: none;
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-columns: var(--trc-cols);
   column-gap: var(--sp-3);
   align-items: center;
   height: 24px;
@@ -345,7 +347,7 @@ button.trc-kpi:focus-visible {
 .trc-head,
 .trc-line {
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-columns: var(--trc-cols);
   column-gap: var(--sp-3);
   align-items: center;
   width: 100%;
@@ -372,7 +374,7 @@ button.trc-kpi:focus-visible {
 .trc-acts {
   position: absolute;
   top: 4px;
-  right: var(--sp-3);
+  right: calc(2 * var(--sp-3) + var(--trc-now));
   display: flex;
   gap: var(--sp-1);
   opacity: 0;
@@ -547,6 +549,92 @@ button.trc-kpi:focus-visible {
 .trc-st[data-status='running'] {
   background-color: var(--run);
 }
+.trc-st[data-status='ok'] {
+  background-color: var(--ok);
+}
+/* A subagent's name under its session's, and the count of those a closed lane leaves out. */
+.trc-sa {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 20px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.trc-sa span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* From the session row's middle down to where the subagent starts. */
+.trc-fork {
+  position: absolute;
+  bottom: 50%;
+  border-left: 1px dashed var(--series-3);
+}
+/* What the row does at the playhead, in the rows' last column. */
+.trc-now {
+  position: absolute;
+  top: 0;
+  right: var(--sp-3);
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: var(--trc-now);
+  overflow: hidden;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.trc-now[data-kind]::before {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--mu);
+  content: '';
+}
+.trc-now[data-kind='llm']::before {
+  background-color: var(--series-1);
+}
+.trc-now[data-kind='tool']::before {
+  background-color: var(--series-2);
+}
+.trc-now[data-kind='subagent']::before {
+  background-color: var(--series-3);
+}
+.trc-now[data-kind='wait']::before {
+  background-color: var(--wait);
+}
+.trc-now[data-kind='error']::before {
+  background-color: var(--bad);
+}
+.trc-call {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+}
+/* Below this width the now column gives its room back to the track. */
+@container trc-lanes (width < 1100px) {
+  .trc-axis,
+  .trc-gaps,
+  .trc-lanes {
+    --trc-cols: 172px minmax(0, 1fr);
+  }
+  .trc-now {
+    display: none;
+  }
+  .trc-acts {
+    right: var(--sp-3);
+  }
+}
 /* A step's name starts under its turn's start time, one indent per nesting level. */
 .trc-sn {
   min-width: 0;
@@ -633,11 +721,46 @@ button.trc-kpi:focus-visible {
 .trc-step {
   min-width: 2px;
 }
+/* The moving end of a running bar at now; under replay the playhead is that end. */
+.trc-seg[data-live]::after {
+  position: absolute;
+  top: -3px;
+  right: -1px;
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background-color: inherit;
+  content: '';
+  animation: trc-blink 1s steps(2, jump-none) infinite;
+}
+.trc-main[data-replay] .trc-seg[data-live]::after {
+  display: none;
+}
+/* Under replay a bar shows only its part left of the playhead. */
+.trc-main[data-replay] :is(.trc-seg, .trc-turn) {
+  transform: scaleX(
+    clamp(0, (var(--ph) - var(--seg-s)) / max(var(--seg-e) - var(--seg-s), 1e-9), 1)
+  );
+  transform-origin: left;
+}
+/* 1 from the moment the playhead reaches the row's first activity, else 0. */
+.trc-main[data-replay] .trc-row {
+  opacity: clamp(0, (var(--ph) - var(--row-s)) * 1e9 + 1, 1);
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+.trc-main[data-replay] .tlo-mark {
+  opacity: clamp(0, (var(--ph) - var(--mark-at)) * 1e9 + 1, 1);
+}
+@keyframes trc-blink {
+  50% {
+    opacity: 0;
+  }
+}
 /* Over the lanes' track column: the length each break mark cuts, centred on the mark. */
 .trc-gaps {
   flex: none;
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-columns: var(--trc-cols);
   column-gap: var(--sp-3);
   height: 16px;
   padding: 0 var(--sp-3);
@@ -1098,6 +1221,11 @@ button.trc-hn:focus-visible {
 }
 
 .pt[data-motion='reduced'] .trc-chev,
-.pt[data-motion='reduced'] .trc-dc {
+.pt[data-motion='reduced'] .trc-dc,
+.pt[data-motion='reduced'] .trc-main[data-replay] .trc-row {
   transition-duration: 0s;
+}
+/* Under reduced motion a bar shows whole once the playhead reaches its start. */
+.pt[data-motion='reduced'] .trc-main[data-replay] :is(.trc-seg, .trc-turn) {
+  transform: scaleX(clamp(0, (var(--ph) - var(--seg-s)) * 1e9 + 1, 1));
 }

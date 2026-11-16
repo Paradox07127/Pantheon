@@ -42,9 +42,10 @@ vi.mock('@/data/trace', async (actual) => ({
 }));
 import { timeAxis } from '@/lib/time-axis';
 import { ReplayBar, useTraceReplay } from '@/screens/trace/Replay';
+import { EVENT_MS, REPLAY_MS } from '@/screens/trace/model';
 import { TraceScreen } from '@/screens/trace/TraceScreen';
 import { useShell } from '@/store';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const SECOND = 1000;
 const MIN = 60 * SECOND;
@@ -193,6 +194,23 @@ describe('the replay bar on the timeline', () => {
     expect(named(child(h.value, 'Lanes').value, 'Replayer').props.speed).toBe(4);
   });
 
+  it('puts the replay mode in the top bar, by event first, and plays the bar in that mode', () => {
+    const h = screen();
+    const mode = labelled(child(h.value, 'ReplayModeControl').value, zh('trace.replay.mode'))!;
+    expect(
+      [mode.props.children]
+        .flat()
+        .map((n: ReactElement<any>) => [n.props.value, text(n.props.children)]),
+    ).toEqual([
+      ['event', zh('trace.replay.byEvent')],
+      ['time', zh('trace.replay.byTime')],
+    ]);
+    expect(named(child(h.value, 'Lanes').value, 'Replayer').props.mode).toBe('event');
+    mode.props.onValueChange('time');
+    h.render();
+    expect(named(child(h.value, 'Lanes').value, 'Replayer').props.mode).toBe('time');
+  });
+
   it('opens the session replay from a row and comes back to the same timeline', () => {
     const h = screen();
     const lanes = child(h.value, 'Lanes').value;
@@ -226,11 +244,14 @@ describe('the replay scrubber', () => {
   const axis = timeAxis([], full.from, full.to, 1000 * SECOND);
   const steps = [20 * SECOND, 50 * SECOND, 80 * SECOND];
   const marks = steps.map((at, i) => ({ at, state: i === 1 ? 'error' : 'ok' }) as const);
-  const scrubber = () => {
+  const scrubber = (
+    options: Parameters<typeof useTraceReplay>[6] = {},
+    extra: Partial<Parameters<typeof ReplayBar>[0]> = {},
+  ) => {
     const host = hostElement();
     const h = mount(() => {
-      const replay = useTraceReplay(axis, full, full, host, 1, steps);
-      return { replay, bar: ReplayBar({ replay, axis, view: full, full, marks }) };
+      const replay = useTraceReplay(axis, full, full, host, 1, steps, options);
+      return { replay, bar: ReplayBar({ replay, axis, view: full, full, marks, ...extra }) };
     });
     return { h, host };
   };
@@ -329,5 +350,93 @@ describe('the replay scrubber', () => {
     // At 1x the playhead crosses the view in a minute, so 21s in it has passed the first step only.
     frames.shift()!(21 * SECOND);
     expect(Number(host.props.get('--ph'))).toBeCloseTo(0.2);
+  });
+
+  it.each([
+    ['event', 0.2],
+    ['time', EVENT_MS / REPLAY_MS],
+  ] as const)('plays by %s', (mode, share) => {
+    const { h, host } = scrubber({ mode });
+    h.value.replay.seek(0);
+    h.render();
+    h.value.replay.toggle();
+    h.render();
+    frames.shift()!(0);
+    // By event the first step, a fifth of the view in, is one step's time away.
+    frames.shift()!(EVENT_MS);
+    expect(Number(host.props.get('--ph'))).toBeCloseTo(share);
+  });
+
+  it('tells the numbers each step reached by event, and the time at most every quarter second by time', () => {
+    const byEvent = vi.fn();
+    const e = scrubber({ mode: 'event', onMoment: byEvent }).h;
+    e.value.replay.seek(0);
+    e.render();
+    e.value.replay.toggle();
+    e.render();
+    byEvent.mockClear();
+    frames.shift()!(0);
+    frames.shift()!(EVENT_MS / 2);
+    expect(byEvent).not.toHaveBeenCalled();
+    frames.shift()!(EVENT_MS * 1.5);
+    expect(byEvent.mock.calls).toEqual([[20 * SECOND]]);
+
+    frames = [];
+    const byTime = vi.fn();
+    const m = scrubber({ mode: 'time', onMoment: byTime }).h;
+    m.value.replay.seek(0);
+    m.render();
+    m.value.replay.toggle();
+    m.render();
+    byTime.mockClear();
+    frames.shift()!(0);
+    frames.shift()!(100);
+    expect(byTime).not.toHaveBeenCalled();
+    frames.shift()!(300);
+    expect(byTime).toHaveBeenCalledTimes(1);
+    frames.shift()!(400);
+    expect(byTime).toHaveBeenCalledTimes(1);
+    m.value.replay.toggle();
+    m.render();
+    expect(byTime).toHaveBeenCalledTimes(2);
+    expect(byTime.mock.calls[1]![0]).toBe(m.value.replay.time);
+  });
+
+  const buckets = [
+    { at: 0, llm: 2, tool: 1, error: 0 },
+    { at: 50 * SECOND, llm: 1, tool: 3, error: 2 },
+    { at: 100 * SECOND, llm: 9, tool: 9, error: 9 },
+  ];
+  const ticks = [
+    { id: 'gate', at: 30 * SECOND, tone: 'bad', label: '00:00:30，fix the refund，检查未通过' },
+    { id: 'merge', at: 70 * SECOND, tone: 'ok', label: '00:01:10，fix the refund，已合并' },
+  ] as const;
+
+  it("draws the view's activity as the track and names its counts", () => {
+    const { h } = scrubber({}, { density: { buckets, bucketMs: 10 * SECOND } });
+    const chart = find(h.value.bar, (n) => n.props.role === 'img');
+    expect(chart.props['aria-label']).toBe(
+      zhf('trace.replay.density', { llm: 3, tool: 4, error: 2 }),
+    );
+    const columns = nodes(chart).filter((n) => n.props.className === 'rpb-col');
+    expect(columns.map((n) => n.props.style.left)).toEqual(['0%', '50%']);
+    expect(nodes(columns[1]).filter((n) => n.props.className === 'rpb-ce')).toHaveLength(1);
+    expect(nodes(columns[0]).filter((n) => n.props.className === 'rpb-ce')).toHaveLength(0);
+  });
+
+  it('puts a button per event over the track and moves the playhead to one on a click, paused', () => {
+    const { h } = scrubber({}, { density: { buckets, bucketMs: 10 * SECOND }, ticks });
+    const buttons = () => nodes(h.value.bar).filter((n) => n.props.className === 'rpb-tk');
+    expect(buttons().map((n) => [n.type, n.props['aria-label'], n.props.title])).toEqual(
+      ticks.map((tick) => ['button', tick.label, tick.label]),
+    );
+    expect(buttons().map((n) => n.props['data-tone'])).toEqual(['bad', 'ok']);
+    h.value.replay.toggle();
+    h.render();
+    expect(h.value.replay.playing).toBe(true);
+    buttons()[0]!.props.onClick();
+    h.render();
+    expect(h.value.replay.playing).toBe(false);
+    expect(slider(h).props['aria-valuenow']).toBe(300);
   });
 });

@@ -61,6 +61,125 @@
   border-radius: 50%;
   background: var(--sf);
 }
+/* The view's activity as the track: a 12px band of events over a 32px chart, dimmed right of the playhead. */
+.rpb-data {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding-top: 12px;
+}
+.rpb-scrub[data-chart] {
+  display: block;
+  height: 32px;
+}
+.rpb-scrub[data-chart]::before {
+  content: none;
+}
+.rpb-scrub[data-chart] .rpb-th > i {
+  top: 0;
+  left: -1px;
+  width: 2px;
+  height: 100%;
+  border: 0;
+  border-radius: 1px;
+  background: var(--ink);
+}
+.rpb-band {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 12px;
+}
+.rpb-band > .rpb-mk {
+  top: 1px;
+  height: 10px;
+}
+.rpb-tk {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 12px;
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+}
+.rpb-tk::before {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--mu);
+  content: '';
+}
+.rpb-tk[data-tone='bad']::before {
+  background-color: var(--bad);
+}
+.rpb-tk[data-tone='wait']::before {
+  background-color: var(--wait);
+}
+.rpb-tk[data-tone='ok']::before {
+  background-color: var(--ok);
+}
+.rpb-tk[data-tone='agent']::before {
+  background-color: var(--series-3);
+}
+.rpb-tk:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+.rpb-dens {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 32px;
+  pointer-events: none;
+}
+.rpb-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0 0.5px;
+  box-sizing: border-box;
+}
+.rpb-cl {
+  display: block;
+  flex: none;
+  background-color: var(--series-1);
+}
+.rpb-ct {
+  display: block;
+  flex: none;
+  background-color: var(--series-2);
+}
+.rpb-ce {
+  display: block;
+  flex: none;
+  height: 2px;
+  background-color: var(--bad);
+}
+/* Follows the playhead's --ph, written on the host each frame. */
+.rpb-dim {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: calc(var(--ph) * 100%);
+  display: none;
+  background-color: color-mix(in srgb, var(--sf) 70%, transparent);
+  pointer-events: none;
+}
+[data-replay] .rpb-dim {
+  display: block;
+}
 .rpb-keys {
   display: inline-flex;
   flex: none;

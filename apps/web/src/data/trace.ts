@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  ProjectCollab,
   ProjectHeatmap,
   ProjectTimeline,
   ProjectTrace,
@@ -70,6 +71,11 @@ const acceptHeatmap = (value: unknown): ProjectHeatmap | null =>
 
 const acceptSessionTrace = (value: unknown): SessionTrace | null =>
   Array.isArray((value as Partial<SessionTrace> | null)?.spans) ? (value as SessionTrace) : null;
+
+const acceptCollab = (value: unknown): ProjectCollab | null =>
+  Array.isArray((value as Partial<ProjectCollab> | null)?.subagents)
+    ? (value as ProjectCollab)
+    : null;
 
 const acceptTimeline = (value: unknown): ProjectTimeline | null =>
   Array.isArray((value as Partial<ProjectTimeline> | null)?.sessions)
@@ -204,6 +210,23 @@ export function useProjectTimeline(
     projectId && `${projectId}:${from}`,
     () => ({ project_id: projectId!, since: new Date(from).toISOString() }),
     acceptTimeline,
+    tick,
+    {},
+    true,
+  );
+}
+
+/** The project's subagent calls, messages and model changes over a window, refreshed like the trace. */
+export function useProjectCollab(
+  projectId: string | null,
+  window: { from: number; to: number } | null,
+): ReturnType<typeof useQuery<ProjectCollab>> {
+  const tick = useTraceTick(projectId);
+  return useQuery(
+    'project.collab',
+    projectId && window && `${projectId}:${window.from}:${window.to}`,
+    () => ({ project_id: projectId!, since: String(window!.from), until: String(window!.to) }),
+    acceptCollab,
     tick,
     {},
     true,

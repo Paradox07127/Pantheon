@@ -2,7 +2,7 @@
 .tlo-layer {
   position: relative;
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-columns: var(--trc-cols);
   column-gap: var(--sp-3);
   padding: 0 var(--sp-3);
   box-sizing: border-box;
@@ -181,6 +181,15 @@ button.tlo-er:focus-visible {
   position: absolute;
   left: 0;
   right: 0;
+}
+/* While the replay holds the table at its playhead, a row the playhead reaches fades in. */
+.tlo-et[data-replay] .tlo-el > li {
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .tlo-et[data-replay] .tlo-el > li {
+    opacity: 0;
+  }
 }
 .tlo-et-t,
 .tlo-et-d {

@@ -5,7 +5,9 @@ import {
   dayLabel,
   dayWindow,
   eventDays,
+  eventReplayStep,
   eventWindow,
+  EVENT_MS,
   firstError,
   heatCells,
   hourCells,
@@ -16,6 +18,7 @@ import {
   panWindow,
   presetWindow,
   replayStep,
+  replayTotals,
   ROW_HEIGHT,
   stepRows,
   stripBars,
@@ -538,6 +541,69 @@ describe('replayStep', () => {
   });
 });
 
+describe('eventReplayStep', () => {
+  const steps = [0.1, 0.5, 0.6];
+
+  it('takes as long to reach each step however far apart the steps lie', () => {
+    expect(eventReplayStep(0, EVENT_MS / 2, 1, steps)).toBeCloseTo(0.05);
+    expect(eventReplayStep(0.1, EVENT_MS / 2, 1, steps)).toBeCloseTo(0.3);
+    expect(eventReplayStep(0.5, EVENT_MS / 2, 1, steps)).toBeCloseTo(0.55);
+    expect(eventReplayStep(0.1, EVENT_MS / 2, 4, steps)).toBeCloseTo(0.6);
+  });
+
+  it('carries the rest of a long frame into the next leg', () => {
+    expect(eventReplayStep(0, 1.5 * EVENT_MS, 1, steps)).toBeCloseTo(0.3);
+  });
+
+  it('stops on the last step and is null once there', () => {
+    expect(eventReplayStep(0.55, 10 * EVENT_MS, 1, steps)).toBe(0.6);
+    expect(eventReplayStep(0.6, 1, 1, steps)).toBeNull();
+    expect(eventReplayStep(0.7, 1, 1, steps)).toBeNull();
+  });
+});
+
+describe('replayTotals', () => {
+  const t = trace([
+    lane('session-a', [
+      turn('turn-a', 10 * MIN, 20 * MIN, { tokens: { input: 600, output: 400 } }),
+      turn('turn-b', 30 * MIN, 40 * MIN),
+    ]),
+    lane('session-b', [turn('turn-c', 15 * MIN, 25 * MIN, { tokens: { input: 2000, output: 0 } })]),
+  ]);
+  t.buckets = [
+    { at: 0, llm: 1, tool: 2, error: 0 },
+    { at: 15 * MIN, llm: 3, tool: 1, error: 1 },
+    { at: 30 * MIN, llm: 2, tool: 0, error: 1 },
+  ];
+  const at = replayTotals(t, { from: 0, to: 60 * MIN });
+
+  it.each([
+    [
+      'counts no turn before the first starts',
+      5 * MIN,
+      { activeMs: 0, running: 0, calls: 3, errors: 0, tokens: 0, unreported: 0 },
+    ],
+    [
+      'counts a turn under way by the share of it passed',
+      15 * MIN,
+      { activeMs: 5 * MIN, running: 2, calls: 7, errors: 1, tokens: 500, unreported: 0 },
+    ],
+    [
+      'counts every turn whole after the last one ends',
+      50 * MIN,
+      { activeMs: 25 * MIN, running: 0, calls: 9, errors: 2, tokens: 3000, unreported: 1 },
+    ],
+  ])('%s', (_name, time, totals) => {
+    expect(at(time)).toEqual(totals);
+  });
+
+  it('counts a lane running from the start of its turn up to its end', () => {
+    expect([10 * MIN, 20 * MIN, 25 * MIN, 30 * MIN].map((time) => at(time).running)).toEqual([
+      1, 1, 0, 1,
+    ]);
+  });
+});
+
 describe('hourWindow', () => {
   it('runs from the local hour to the next', () => {
     expect(hourWindow('2026-03-08', 14)).toEqual({
@@ -741,6 +807,50 @@ describe('traceRows with steps', () => {
   it('adds no step rows under a closed lane', () => {
     const rows = traceRows(t, new Set(['session-main']), steps('native:claude:abc/turn-c'));
     expect(rows.map((r) => r.kind)).toEqual(['session', 'turn', 'turn', 'session']);
+  });
+});
+
+describe('traceRows with subagents', () => {
+  const t = trace([
+    lane('session-main', [turn('turn-a', 0, MIN)]),
+    lane('native:claude:abc', [turn('turn-c', 0, MIN)]),
+  ]);
+  const agent = (n: number, sessionId = 'session-main') => ({
+    session_id: sessionId,
+    span_id: `agent-${n}`,
+    name: `explore ${n}`,
+    start: n * 1000,
+    status: 'ok' as const,
+  });
+  const agents = (count: number) => Array.from({ length: count }, (_, i) => agent(count - i));
+
+  it('puts the subagents under their session row by start, before its turns', () => {
+    const rows = traceRows(t, new Set(['session-main']), null, [
+      agent(2),
+      agent(1),
+      agent(1, 'native:claude:abc'),
+    ]);
+    expect(rows.map((r) => [r.kind, r.key])).toEqual([
+      ['session', 'session-main'],
+      ['subagent', 'session-main/subagent:agent-1'],
+      ['subagent', 'session-main/subagent:agent-2'],
+      ['turn', 'session-main/turn-a'],
+      ['session', 'native:claude:abc'],
+    ]);
+    expect(rows[2]).toMatchObject({ kind: 'subagent', below: 2, agent: { name: 'explore 2' } });
+  });
+
+  it.each([
+    ['all six under a closed lane', new Set<string>(), 6, [6, 0]],
+    ['five and a row for the rest under a closed lane', new Set<string>(), 8, [5, 3]],
+    ['all of them under an open lane', new Set(['session-main']), 8, [8, 0]],
+  ] as const)('lists %s', (_, open, count, [listed, more]) => {
+    const rows = traceRows(t, open, null, agents(count));
+    const own = rows.filter((r) => r.lane.lane.key === 'session-main');
+    expect(own.filter((r) => r.kind === 'subagent')).toHaveLength(listed);
+    const rest = own.find((r) => r.kind === 'more');
+    expect(rest && rest.kind === 'more' ? rest.agents.length : 0).toBe(more);
+    if (rest) expect(own.indexOf(rest)).toBe(6);
   });
 });
 

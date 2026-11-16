@@ -72,6 +72,10 @@ const GLYPH: Record<TraceEventWhat, { icon: LucideIcon; tone?: 'wait' | 'bad' | 
   closed: { icon: CircleStop },
 };
 
+/** An event's status colour on the replay track: its glyph's tone, a merge passed, a dispatch an agent's. */
+export const eventTone = (event: TraceEvent): 'wait' | 'bad' | 'ok' | 'agent' | undefined =>
+  event.what === 'merged' ? 'ok' : event.what === 'dispatched' ? 'agent' : GLYPH[event.what].tone;
+
 export function EventGlyph({ event }: { event: TraceEvent }) {
   const { icon: Icon, tone } = GLYPH[event.what];
   return <Icon className="ic-sm trc-eg" data-tone={tone} aria-hidden="true" />;

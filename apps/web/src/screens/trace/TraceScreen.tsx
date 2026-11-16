@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
@@ -31,6 +32,7 @@ import { useEventHistory } from '../../data/logs';
 import {
   laneWallMs,
   stateIntervals,
+  useProjectCollab,
   useProjectHeatmap,
   useProjectTimeline,
   useProjectTrace,
@@ -53,7 +55,7 @@ import { BREAK_SHARE } from '../../lib/time-axis';
 import { Failure, Skeleton } from '../board/BoardScreen';
 import { Empty, useSize } from '../board/Charts';
 import { durationText, runtimeName, tokenText, whenText } from '../board/panels-model';
-import { ActivityList, KIND_TEXT } from './ActivityList';
+import { ActivityList, eventText, eventTone, KIND_TEXT } from './ActivityList';
 import {
   dayLabel,
   dayName,
@@ -69,6 +71,7 @@ import {
   MIN_VIEW_MS,
   panWindow,
   presetWindow,
+  replayTotals,
   ROW_HEIGHT,
   isTraceEvent,
   stripBars,
@@ -83,11 +86,13 @@ import {
   zoomWindow,
   type TraceEvent,
   type TraceEventKind,
+  type ReplayMode,
   type ReplaySpeed,
   type TracePreset,
   type TraceRow,
   type TraceSpan,
   type TraceSteps,
+  type TraceSubagent,
   type TraceTurn,
   type TraceWindow,
 } from './model';
@@ -96,9 +101,11 @@ import { RunsView } from '../runtime/RuntimeScreen';
 import {
   ReplayBar,
   replayMarks,
+  ReplayModeControl,
   ReplaySpeedControl,
   useTraceReplay,
   type ReplayMark,
+  type ReplayTick,
 } from './Replay';
 import { StepReplay } from './StepReplay';
 import '../board/board.css';
@@ -186,6 +193,25 @@ const LANE_STATE_TEXT: Record<LaneState, string> = {
   },
   get queue() {
     return t({ id: 'trace.laneState.queue', defaultMessage: 'Queued' });
+  },
+};
+type SegmentKind = TraceTurn['segments'][number]['kind'];
+/** What a session row's now column calls the turn segment under the playhead. */
+const DOING_TEXT: Record<SegmentKind, string> = {
+  get llm() {
+    return STEP_TEXT.llm;
+  },
+  get tool() {
+    return t({ id: 'trace.now.tool', defaultMessage: 'Tool' });
+  },
+  get subagent() {
+    return t({ id: 'trace.now.subagent', defaultMessage: 'Subagent' });
+  },
+  get wait() {
+    return LANE_STATE_TEXT.wait;
+  },
+  get error() {
+    return STATUS_TEXT.error;
   },
 };
 /** Sessions whose title the lanes grey out. */
@@ -353,6 +379,9 @@ interface Picked {
 }
 
 const pct = (share: number) => `${share * 100}%`;
+/** A bar's place on the axis, with its ends' shares for the replay to grow it by. */
+const barStyle = (x: number, to: number) =>
+  ({ left: pct(x), width: pct(Math.max(0, to - x)), '--seg-s': x, '--seg-e': to }) as CSSProperties;
 
 type Axis = ReturnType<typeof traceAxis>;
 type Lane = ProjectTrace['lanes'][number]['lane'];
@@ -382,9 +411,13 @@ const statNums = (
 });
 
 /** Git commits a session is known to have made within the trace's window. */
-const sessionCommits = (commits: ProjectHeatmap['commits'], trace: ProjectTrace) => {
+const sessionCommits = (
+  commits: ProjectHeatmap['commits'],
+  trace: ProjectTrace,
+  until: number | null = null,
+) => {
   const from = Date.parse(trace.from);
-  const to = Date.parse(trace.to);
+  const to = until ?? Date.parse(trace.to);
   return commits.filter((c) => c.lane_key !== null && c.at >= from && c.at <= to).length;
 };
 
@@ -415,11 +448,9 @@ const kpi = (label: string, value: string | null, dot?: 'bad' | 'wait', spoken =
   </div>
 );
 
-/** The window's tokens: a dash when no turn reported usage, a known part with a plus when some did not. */
-function tokensKpi(stats: TraceStats) {
+/** The window's tokens: a dash when no turn reported usage, a known part with a plus when count turns did not. */
+function tokensKpi(tokens: number, count: number) {
   const label = t({ id: 'trace.stat.tokens', defaultMessage: 'Tokens' });
-  const tokens = stats.tokens.input + stats.tokens.output;
-  const count = stats.turns_without_usage ?? 0;
   if (count === 0) return kpi(label, tokenText(tokens));
   if (tokens === 0)
     return kpi(
@@ -478,6 +509,9 @@ function TraceView({
   // The session whose step replay shows in place of the timeline.
   const [replaying, setReplaying] = useState<string | null>(null);
   const [speed, setSpeed] = useState<ReplaySpeed>(1);
+  const [replayMode, setReplayMode] = useState<ReplayMode>('event');
+  // The time the numbers and the event table show while the timeline replays; null at now.
+  const [replayAt, setReplayAt] = useState<number | null>(null);
   // Event kinds the event table leaves out.
   const [hidden, setHidden] = useState<ReadonlySet<TraceEventKind>>(() => new Set());
   const [shownEvent, setShownEvent] = useState<string | null>(null);
@@ -681,6 +715,9 @@ function TraceView({
     [sessionList],
   );
   const full = shownTrace && { from: Date.parse(shownTrace.from), to: Date.parse(shownTrace.to) };
+  const collab = useProjectCollab(lanesShown ? projectId : null, full);
+  // The now column reads calls from the picked lane's spans only.
+  const pickedTrace = useSessionTrace(lanesShown ? projectId : null, picked?.key ?? null);
   const windowEvents = useMemo(() => {
     if (!shownTrace || !events) return null;
     const [from, to] = [Date.parse(shownTrace.from), Date.parse(shownTrace.to)];
@@ -690,6 +727,11 @@ function TraceView({
   const tableEvents = useMemo(
     () => windowEvents?.filter((e) => !hidden.has(e.kind)) ?? null,
     [windowEvents, hidden],
+  );
+  const shownEvents = useMemo(
+    () =>
+      tableEvents && replayAt !== null ? tableEvents.filter((e) => e.at <= replayAt) : tableEvents,
+    [tableEvents, replayAt],
   );
   const toggleKind = (kind: TraceEventKind) =>
     setHidden((now) => {
@@ -801,9 +843,16 @@ function TraceView({
 
   const indexing =
     data?.indexing && data.indexing.done_files < data.indexing.total_files ? data.indexing : null;
-  const commits = data && heat.data && sessionCommits(heat.data.commits, data);
-  const gateFailures = windowEvents?.filter((e) => e.what === 'gate_failed').length ?? null;
-  const waited = full && intervals ? waitingMs(intervals, full.from, full.to) : null;
+  const totalsAt = useMemo(
+    () => data && replayTotals(data, { from: Date.parse(data.from), to: Date.parse(data.to) }),
+    [data],
+  );
+  const asOf = replayAt !== null && totalsAt ? totalsAt(replayAt) : null;
+  const commits = data && heat.data && sessionCommits(heat.data.commits, data, replayAt);
+  const gateFailures =
+    windowEvents?.filter((e) => e.what === 'gate_failed' && (replayAt === null || e.at <= replayAt))
+      .length ?? null;
+  const waited = full && intervals ? waitingMs(intervals, full.from, replayAt ?? full.to) : null;
   // Shown data a read is already replacing gets its status bar only once that read runs long.
   const traceReading = !!(trace.loading || trace.refreshing);
   const heatReading = !!(heat.loading || heat.refreshing);
@@ -967,6 +1016,9 @@ function TraceView({
               ))}
             </RadioGroup>
           )}
+          {lanesShown && !replaying && (
+            <ReplayModeControl mode={replayMode} onMode={setReplayMode} />
+          )}
           {lanesShown && <ReplaySpeedControl speed={speed} onSpeed={setSpeed} />}
           {tab === 'diagnose' && projectId && shownTrace?.diagnostics && (
             <AnalyzeMenu
@@ -1048,15 +1100,20 @@ function TraceView({
             <div className="trc-kpis">
               {kpi(
                 t({ id: 'trace.stat.duration', defaultMessage: 'Duration' }),
-                durationText(data.stats.active_ms),
+                durationText(asOf ? asOf.activeMs : data.stats.active_ms),
               )}
-              {kpi(
-                t({ id: 'trace.stat.sessions', defaultMessage: 'Sessions' }),
-                String(data.stats.sessions),
-              )}
+              {asOf
+                ? kpi(
+                    t({ id: 'trace.stat.running', defaultMessage: 'Running' }),
+                    String(asOf.running),
+                  )
+                : kpi(
+                    t({ id: 'trace.stat.sessions', defaultMessage: 'Sessions' }),
+                    String(data.stats.sessions),
+                  )}
               {kpi(
                 t({ id: 'trace.stat.calls', defaultMessage: 'Calls' }),
-                String(data.stats.llm + data.stats.tool),
+                String(asOf ? asOf.calls : data.stats.llm + data.stats.tool),
               )}
               {(gateFailures !== null || !history.error) &&
                 kpi(
@@ -1070,13 +1127,18 @@ function TraceView({
                   durationText(waited),
                   'wait',
                 )}
-              {tokensKpi(data.stats)}
+              {asOf
+                ? tokensKpi(asOf.tokens, asOf.unreported)
+                : tokensKpi(
+                    data.stats.tokens.input + data.stats.tokens.output,
+                    data.stats.turns_without_usage ?? 0,
+                  )}
               <button
                 type="button"
                 className="trc-kpi"
                 aria-label={t(
                   { id: 'trace.stat.errorCount', defaultMessage: 'Errors {count}' },
-                  { count: data.stats.error },
+                  { count: asOf ? asOf.errors : data.stats.error },
                 )}
                 disabled={!error}
                 onClick={showError}
@@ -1084,7 +1146,7 @@ function TraceView({
                 <span aria-hidden="true">
                   {t({ id: 'trace.stat.errors', defaultMessage: 'Errors' })}
                 </span>
-                <b aria-hidden="true">{data.stats.error}</b>
+                <b aria-hidden="true">{asOf ? asOf.errors : data.stats.error}</b>
               </button>
               {(commits !== null || !heat.error) &&
                 kpi(
@@ -1176,6 +1238,12 @@ function TraceView({
                       }
                       indexing={!!indexing}
                       speed={speed}
+                      mode={replayMode}
+                      onReplayAt={setReplayAt}
+                      at={replayAt}
+                      subagents={collab.data?.subagents ?? NO_SUBAGENTS}
+                      calls={pickedTrace.data?.spans ?? null}
+                      titleOf={titleOf}
                       onReplay={replayFrom}
                       range={range}
                       onRange={setRange}
@@ -1219,7 +1287,8 @@ function TraceView({
                     ))}
                   {lanesShown && shownTrace && lineSettled && (
                     <EventTable
-                      rows={tableEvents}
+                      rows={shownEvents}
+                      current={replayAt === null ? null : (shownEvents?.[0]?.id ?? null)}
                       error={history.error}
                       onRetry={history.reload}
                       titleOf={titleOf}
@@ -1264,6 +1333,12 @@ function Lanes({
   empty,
   indexing,
   speed,
+  mode,
+  onReplayAt,
+  at,
+  subagents,
+  calls,
+  titleOf,
   onReplay,
   range,
   onRange,
@@ -1295,6 +1370,16 @@ function Lanes({
   empty: string;
   indexing: boolean;
   speed: ReplaySpeed;
+  mode: ReplayMode;
+  /** Hears the time the page's numbers show while the replay bar plays; null at now. */
+  onReplayAt: (time: number | null) => void;
+  /** The time the page's numbers show; null at now. */
+  at: number | null;
+  /** The window's subagents of Pantheon sessions. */
+  subagents: readonly TraceSubagent[];
+  /** The picked lane's spans; null until read. */
+  calls: readonly TraceSpan[] | null;
+  titleOf: (sessionId: string) => string;
   /** Opens a session's step replay from its row. */
   onReplay: (key: string) => void;
   range: TraceWindow | null;
@@ -1326,7 +1411,11 @@ function Lanes({
   const view = range ?? full;
   const shown = useMemo(() => windowLanes(trace, view), [trace, view]);
   const axis = useMemo(() => traceAxis(shown, view), [shown, view]);
-  const rows = useMemo(() => traceRows(shown, open, steps), [shown, open, steps]);
+  const rows = useMemo(
+    () => traceRows(shown, open, steps, subagents),
+    [shown, open, steps, subagents],
+  );
+  const moment = at ?? full.to;
 
   // React's wheel listener is passive, so it cannot keep the page from scrolling.
   useEffect(() => {
@@ -1381,6 +1470,7 @@ function Lanes({
         }
         return onSteps(row.lane.lane.key, turn.id);
       }
+      if (row.kind === 'more') return onToggle(row.lane.lane.key);
       onToggle(row.key);
       onPick({ key: row.key, title: row.lane.lane.title || untitledText() });
     },
@@ -1453,7 +1543,6 @@ function Lanes({
               style={{ height: size.h, marginBottom: -size.h }}
             >
               <span className="trc-phc">
-                <i className="trc-phm" />
                 <i className="trc-phl" />
               </span>
             </div>
@@ -1478,6 +1567,8 @@ function Lanes({
                     session={id === undefined ? undefined : sessions.get(id)}
                     states={id === undefined ? undefined : states?.get(id)}
                     time={row.kind === 'session' ? times.get(row.key) : undefined}
+                    at={moment}
+                    calls={row.kind === 'session' && row.key === picked ? calls : undefined}
                     adopting={adopting}
                     onAdopt={onAdopt}
                     onReplay={onReplay}
@@ -1507,14 +1598,24 @@ function Lanes({
         full={full}
         host={host}
         speed={speed}
+        mode={mode}
+        bucketMs={bucketMs}
+        events={events}
+        titleOf={titleOf}
+        onMoment={onReplayAt}
       />
     </>
   );
 }
 
 const NO_MARKS: ReplayMark[] = [];
+const NO_SUBAGENTS: TraceSubagent[] = [];
 
-/** The replay bar; its steps are the picked session's turns, else every turn in the view. */
+/**
+ * The replay bar over the view's activity, with the table's events in the view as ticks; its steps
+ * are those events and the picked session's turns, else every turn in the view. Without events in
+ * the view the picked session's turns are marked instead.
+ */
 function Replayer({
   trace,
   picked,
@@ -1523,6 +1624,11 @@ function Replayer({
   full,
   host,
   speed,
+  mode,
+  bucketMs,
+  events,
+  titleOf,
+  onMoment,
 }: {
   trace: ProjectTrace;
   picked: string | null;
@@ -1531,17 +1637,41 @@ function Replayer({
   full: TraceWindow;
   host: RefObject<HTMLDivElement | null>;
   speed: ReplaySpeed;
+  mode: ReplayMode;
+  bucketMs: number;
+  events: readonly TraceEvent[] | null;
+  titleOf: (sessionId: string) => string;
+  onMoment: (time: number | null) => void;
 }) {
   const { marks, ofLane } = useMemo(() => replayMarks(trace, view, picked), [trace, view, picked]);
-  const steps = useMemo(() => marks.map((mark) => mark.at), [marks]);
-  const replay = useTraceReplay(axis, view, full, host, speed, steps);
+  const ticks = useMemo(
+    () =>
+      (events ?? [])
+        .filter((e) => e.at >= view.from && e.at <= view.to)
+        .sort((a, b) => a.at - b.at)
+        .map((e): ReplayTick => ({
+          id: e.id,
+          at: e.at,
+          tone: eventTone(e),
+          label: listText(clockText(e.at, full.to), titleOf(e.sessionId), eventText(e)),
+        })),
+    [events, view, full.to, titleOf],
+  );
+  const steps = useMemo(
+    () => [...new Set([...ticks, ...marks].map((step) => step.at))].sort((a, b) => a - b),
+    [ticks, marks],
+  );
+  const replay = useTraceReplay(axis, view, full, host, speed, steps, { mode, onMoment });
+  const density = useMemo(() => ({ buckets: trace.buckets, bucketMs }), [trace.buckets, bucketMs]);
   return (
     <ReplayBar
       replay={replay}
       axis={axis}
       view={view}
       full={full}
-      marks={ofLane ? marks : NO_MARKS}
+      marks={ofLane && ticks.length === 0 ? marks : NO_MARKS}
+      density={density}
+      ticks={ticks}
     />
   );
 }
@@ -1557,6 +1687,8 @@ const Row = memo(function Row({
   session,
   states,
   time,
+  at,
+  calls,
   onToggle,
   adopting,
   onAdopt,
@@ -1575,12 +1707,22 @@ const Row = memo(function Row({
   states?: readonly StateInterval[];
   /** A session row's wall-clock time. */
   time?: number;
+  /** The time the now column shows. */
+  at: number;
+  /** The picked session row's spans, whose call at that time its now column names. */
+  calls?: readonly TraceSpan[] | null;
   onToggle: (row: TraceRow) => void;
   adopting: string | null;
   onAdopt: (lane: Lane) => void;
   onReplay: (key: string) => void;
 }) {
-  const place = { top: index * ROW_HEIGHT, height: ROW_HEIGHT };
+  // Under replay the row shows once the playhead reaches first, its first activity.
+  const placed = (first: number | null) =>
+    ({
+      top: index * ROW_HEIGHT,
+      height: ROW_HEIGHT,
+      ...(first !== null && { '--row-s': axis.position(Math.max(first, view.from)) }),
+    }) as CSSProperties;
   const lane = row.lane.lane;
   if (row.kind === 'session') {
     const kind =
@@ -1594,6 +1736,12 @@ const Row = memo(function Row({
       const ms = Math.min(s.to ?? view.to, view.to) - Math.max(s.from, view.from);
       if (kind && ms > 0) stateTimes.set(kind, (stateTimes.get(kind) ?? 0) + ms);
     }
+    const first = Math.min(
+      ...row.lane.turns.flatMap((turn) => (turn.start === null ? [] : [turn.start])),
+      ...(shown ?? []).flatMap((s) => (LANE_STATE[s.state] ? [s.from] : [])),
+    );
+    const call = calls ? callAt(calls, at) : null;
+    const doing = call ? null : segmentAt(row.lane.turns, at);
     return (
       <div
         className="trc-row"
@@ -1601,7 +1749,7 @@ const Row = memo(function Row({
         aria-posinset={index + 1}
         aria-setsize={count}
         data-sel={focused || undefined}
-        style={place}
+        style={placed(Number.isFinite(first) ? first : null)}
       >
         <button
           type="button"
@@ -1655,6 +1803,15 @@ const Row = memo(function Row({
           </span>
           <Track turns={row.lane.turns} states={shown} axis={axis} view={view} />
         </button>
+        <span className="trc-now" data-kind={doing ?? undefined}>
+          {call ? (
+            <code className="trc-call">
+              {call.input_summary ? `${call.name} ${call.input_summary}` : call.name}
+            </code>
+          ) : (
+            doing && DOING_TEXT[doing]
+          )}
+        </span>
         <span className="trc-acts">
           <button
             type="button"
@@ -1707,7 +1864,7 @@ const Row = memo(function Row({
         aria-posinset={index + 1}
         aria-setsize={count}
         data-sel={focused || undefined}
-        style={place}
+        style={placed(span.start)}
       >
         <div className="trc-line">
           <span className="trc-sn" data-depth={depth} aria-hidden={bar ? true : undefined}>
@@ -1725,13 +1882,114 @@ const Row = memo(function Row({
               <i
                 className="trc-seg trc-step"
                 data-kind={span.status === 'error' ? 'error' : STEP_COLOR[span.kind as StepKind]}
+                data-live={span.status === 'running' || undefined}
                 role="img"
                 aria-label={bar.label}
-                style={{ left: pct(bar.x), width: pct(Math.max(0, bar.to - bar.x)) }}
+                style={barStyle(bar.x, bar.to)}
               />
             )}
           </span>
         </div>
+      </div>
+    );
+  }
+  if (row.kind === 'more') {
+    const label = t(
+      {
+        id: 'trace.row.moreSubagents',
+        defaultMessage: '{count, plural, one {# more subagent} other {# more subagents}}',
+      },
+      { count: row.agents.length },
+    );
+    return (
+      <div
+        className="trc-row"
+        role="listitem"
+        aria-posinset={index + 1}
+        aria-setsize={count}
+        style={placed(row.agents[0]!.start)}
+      >
+        <button
+          type="button"
+          className="trc-head"
+          aria-expanded={false}
+          aria-label={label}
+          onClick={() => onToggle(row)}
+        >
+          <span className="trc-sa" aria-hidden="true">
+            {t(
+              { id: 'trace.row.moreCount', defaultMessage: '+{count}' },
+              { count: row.agents.length },
+            )}
+          </span>
+        </button>
+      </div>
+    );
+  }
+  if (row.kind === 'subagent') {
+    const { agent } = row;
+    const running = agent.status === 'running';
+    const end = running ? view.to : agent.start + (agent.duration_ms ?? 0);
+    const bar =
+      end < view.from || agent.start > view.to
+        ? null
+        : {
+            x: axis.position(Math.max(agent.start, view.from)),
+            to: axis.position(Math.min(end, view.to)),
+          };
+    const busy = agent.start <= at && (running || at <= end);
+    return (
+      <div
+        className="trc-row"
+        role="listitem"
+        aria-posinset={index + 1}
+        aria-setsize={count}
+        data-sel={focused || undefined}
+        style={placed(agent.start)}
+      >
+        <div className="trc-line">
+          <span className="trc-sa" aria-hidden={bar ? true : undefined}>
+            <i className="trc-st" data-status={agent.status} />
+            <span>{agent.name}</span>
+          </span>
+          <span className="trc-track">
+            {axis.breaks.map((gap) => (
+              <i
+                key={gap.at}
+                className="trc-brk"
+                style={{ left: pct(gap.at), width: pct(BREAK_SHARE) }}
+              />
+            ))}
+            {bar && (
+              <>
+                <i
+                  className="trc-fork"
+                  aria-hidden="true"
+                  style={{ left: pct(bar.x), height: row.below * ROW_HEIGHT }}
+                />
+                <i
+                  className="trc-seg"
+                  data-kind="subagent"
+                  data-live={running || undefined}
+                  role="img"
+                  aria-label={t(
+                    { id: 'trace.step.bar', defaultMessage: '{name} {when}, {duration}, {status}' },
+                    {
+                      name: agent.name,
+                      when: whenText(agent.start, view.to),
+                      duration: durationText(end - agent.start),
+                      status: STATUS_TEXT[agent.status],
+                    },
+                  )}
+                  style={barStyle(bar.x, bar.to)}
+                />
+              </>
+            )}
+          </span>
+        </div>
+        <span className="trc-now" data-kind={busy ? 'subagent' : undefined}>
+          {busy && agent.name}
+        </span>
       </div>
     );
   }
@@ -1749,7 +2007,7 @@ const Row = memo(function Row({
       aria-posinset={index + 1}
       aria-setsize={count}
       data-sel={focused || undefined}
-      style={place}
+      style={placed(turn.start)}
     >
       <button
         type="button"
@@ -1804,10 +2062,7 @@ function Track({
   axis: Axis;
   view: TraceWindow;
 }) {
-  const place = (from: number, to: number) => {
-    const x = axis.position(from);
-    return { left: pct(x), width: pct(Math.max(0, axis.position(to) - x)) };
-  };
+  const place = (from: number, to: number) => barStyle(axis.position(from), axis.position(to));
   return (
     <span className="trc-track" aria-hidden="true">
       {axis.breaks.map((gap) => (
@@ -1822,7 +2077,13 @@ function Track({
         const from = Math.max(s.from, view.from);
         const to = Math.min(s.to ?? view.to, view.to);
         return kind && to > from ? (
-          <i key={i} className="trc-seg" data-state={kind} style={place(from, to)} />
+          <i
+            key={i}
+            className="trc-seg"
+            data-state={kind}
+            data-live={(kind === 'run' && s.to === null) || undefined}
+            style={place(from, to)}
+          />
         ) : null;
       })}
       {!states &&
@@ -1835,8 +2096,15 @@ function Track({
               {turn.segments.map((seg, i) => {
                 const from = Math.max(seg.from, view.from);
                 const to = Math.min(seg.to, view.to);
+                const live = turn.status === 'running' && i === turn.segments.length - 1;
                 return to > from ? (
-                  <i key={i} className="trc-seg" data-kind={seg.kind} style={place(from, to)} />
+                  <i
+                    key={i}
+                    className="trc-seg"
+                    data-kind={seg.kind}
+                    data-live={live || undefined}
+                    style={place(from, to)}
+                  />
                 ) : null;
               })}
             </span>
@@ -1844,6 +2112,28 @@ function Track({
         })}
     </span>
   );
+}
+
+/** The kind of the turn segment covering at; a running turn's last segment runs on to now. */
+function segmentAt(turns: readonly TraceTurn[], at: number): SegmentKind | null {
+  let found: SegmentKind | null = null;
+  for (const turn of turns)
+    turn.segments.forEach((seg, i) => {
+      const end = turn.status === 'running' && i === turn.segments.length - 1 ? Infinity : seg.to;
+      if (seg.from <= at && at <= end) found = seg.kind;
+    });
+  return found;
+}
+
+/** The model or tool call covering at that started last; a running call runs on to now. */
+function callAt(spans: readonly TraceSpan[], at: number): TraceSpan | null {
+  let found: TraceSpan | null = null;
+  for (const span of spans) {
+    if ((span.kind !== 'llm' && span.kind !== 'tool') || span.start === null) continue;
+    const end = span.end ?? (span.status === 'running' ? Infinity : span.start);
+    if (span.start <= at && at <= end && (!found || span.start >= found.start!)) found = span;
+  }
+  return found;
 }
 
 /** The window's activity by bucket; dragging across it picks the window the lanes show. */

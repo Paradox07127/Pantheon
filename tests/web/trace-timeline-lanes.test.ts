@@ -13,6 +13,8 @@ const mock = vi.hoisted(() => ({
   time: null as unknown,
   events: null as unknown[] | null,
   sessions: null as unknown[] | null,
+  collab: null as unknown,
+  spans: [] as unknown[],
 }));
 vi.mock('@/data/commands', () => ({ runCommand: vi.fn() }));
 vi.mock('@/data/logs', async (actual) => ({
@@ -44,7 +46,18 @@ vi.mock('@/data/trace', async (actual) => ({
     reload() {},
   }),
   useProjectHeatmap: () => ({ data: null, loading: false, error: null, reload() {} }),
-  useSessionTrace: () => ({ data: null, loading: false, error: null, reload() {} }),
+  useProjectCollab: (projectId: string | null) => ({
+    data: projectId ? mock.collab : null,
+    loading: false,
+    error: null,
+    reload() {},
+  }),
+  useSessionTrace: (projectId: string | null, laneKey: string | null) => ({
+    data: projectId && laneKey ? { lane: { title: laneKey }, spans: mock.spans } : null,
+    loading: false,
+    error: null,
+    reload() {},
+  }),
   useTraceTime: (projectId: string | null) => ({
     data: projectId ? mock.time : null,
     loading: false,
@@ -55,6 +68,7 @@ vi.mock('@/data/trace', async (actual) => ({
 }));
 import { TraceScreen } from '@/screens/trace/TraceScreen';
 import { durationText, whenText } from '@/screens/board/panels-model';
+import { ROW_HEIGHT } from '@/screens/trace/model';
 import { useShell } from '@/store';
 
 const MIN = 60_000;
@@ -168,6 +182,8 @@ beforeEach(() => {
   mock.time = { by_lane: { 'session-a': { wall_ms: 42 * MIN } } };
   mock.events = [];
   mock.sessions = [session('session-a', 'waiting'), session('session-b', 'merged')];
+  mock.collab = { messages: [], in_flight: [], subagents: [], model_changes: [] };
+  mock.spans = [];
   useShell.setState({ traceTab: 'timeline' });
   vi.stubGlobal('document', { activeElement: null, body: {} });
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
@@ -288,6 +304,123 @@ describe('trace timeline lanes by session state', () => {
     expect(() => named(h.value, 'Lanes')).toThrow();
     expect(() => named(h.value, 'Skeleton')).not.toThrow();
     expect(labelOf(h.value, '调用')).toBeUndefined();
+  });
+});
+
+const rowOf = (tree: unknown, key: string) => {
+  const lanes = child(tree, 'Lanes').value;
+  const el = find(lanes, (n) => !!rowComponent(n) && n.props.row.key === key);
+  return rowComponent(el)!(el.props);
+};
+const nowText = (row: ReactElement) => text(find(row, (n) => n.props.className === 'trc-now'));
+
+describe('trace timeline lanes under replay', () => {
+  beforeEach(() => {
+    const turn = (mock.trace as ProjectTrace).lanes[0]!.turns[0]!;
+    turn.segments = [
+      { from: NOW - 50 * MIN, to: NOW - 30 * MIN, kind: 'llm' },
+      { from: NOW - 30 * MIN, to: NOW - 20 * MIN, kind: 'tool' },
+    ];
+  });
+
+  it('gives each segment its start and end on the axis, so the playhead grows it in', () => {
+    const segs = nodes(track(sessionRow('session-a'))).filter(
+      (n) => n.props.className === 'trc-seg',
+    );
+    expect(segs[1]!.props['data-state']).toBe('run');
+    expect(segs[1]!.props.style['--seg-s']).toBeCloseTo(1 / 6);
+    expect(segs[1]!.props.style['--seg-e']).toBeCloseTo(1 / 2);
+  });
+
+  it('keeps the playhead line over the lanes without a mask', () => {
+    const lanes = nodes(child(screen().value, 'Lanes').value);
+    expect(lanes.some((n) => n.props.className === 'trc-phm')).toBe(false);
+    expect(lanes.some((n) => n.props.className === 'trc-phl')).toBe(true);
+  });
+
+  it('forks a subagent row from its session row with its name, bar and connector', () => {
+    mock.collab = {
+      ...(mock.collab as object),
+      subagents: [
+        {
+          session_id: 'session-a',
+          span_id: 'agent-1',
+          name: 'explore refunds',
+          start: NOW - 45 * MIN,
+          duration_ms: 5 * MIN,
+          status: 'ok',
+        },
+      ],
+    };
+    const h = screen();
+    const row = rowOf(h.value, 'session-a/subagent:agent-1');
+    expect(text(row)).toContain('explore refunds');
+    const bar = find(row, (n) => n.props['data-kind'] === 'subagent');
+    expect(parseFloat(bar.props.style.left)).toBeCloseTo(25);
+    expect(parseFloat(bar.props.style.width)).toBeCloseTo(100 / 12);
+    const fork = find(row, (n) => n.props.className === 'trc-fork');
+    expect(parseFloat(fork.props.style.left)).toBeCloseTo(25);
+    expect(fork.props.style.height).toBe(ROW_HEIGHT);
+    named(h.value, 'Lanes').props.onReplayAt(NOW - 43 * MIN);
+    h.render();
+    expect(nowText(rowOf(h.value, 'session-a/subagent:agent-1'))).toBe('explore refunds');
+  });
+
+  it.each([
+    ['in a model call', 40, '模型'],
+    ['in a tool call', 25, '工具'],
+    ['before its first turn', 55, ''],
+    ['at now, in the running turn', null, '工具'],
+  ] as const)('names what the session does %s in its now column', (_, ago, doing) => {
+    const h = screen();
+    if (ago !== null) named(h.value, 'Lanes').props.onReplayAt(NOW - ago * MIN);
+    h.render();
+    expect(nowText(rowOf(h.value, 'session-a'))).toBe(doing);
+  });
+
+  it("names the picked session's call at the playhead in its now column", () => {
+    mock.spans = [
+      {
+        id: 'call-1',
+        parent: 'turn-session-a',
+        turn: 'turn-session-a',
+        kind: 'tool',
+        name: 'Bash',
+        start: NOW - 28 * MIN,
+        end: NOW - 26 * MIN,
+        status: 'ok',
+        timing: 'native',
+        input_summary: 'pnpm test',
+      },
+    ];
+    vi.stubGlobal('HTMLElement', class {});
+    const h = screen();
+    named(h.value, 'Lanes').props.onPick({ key: 'session-a', title: 'refund api' });
+    named(h.value, 'Lanes').props.onReplayAt(NOW - 27 * MIN);
+    h.render();
+    expect(nowText(rowOf(h.value, 'session-a'))).toBe('Bash pnpm test');
+    expect(nowText(rowOf(h.value, 'session-b'))).toBe('');
+  });
+});
+
+describe('the subagent read', () => {
+  it("asks for the project's subagents over the trace window", async () => {
+    const query = vi.fn(async () => ({ ok: true, value: mock.collab }));
+    vi.stubGlobal('window', {
+      pantheon: { query },
+      addEventListener() {},
+      removeEventListener() {},
+    });
+    const { useProjectCollab } =
+      await vi.importActual<typeof import('@/data/trace')>('@/data/trace');
+    const h = mount(() => useProjectCollab('project-a', { from: FROM, to: NOW }));
+    await h.flush();
+    expect(query).toHaveBeenCalledWith('project.collab', {
+      project_id: 'project-a',
+      since: String(FROM),
+      until: String(NOW),
+    });
+    expect(h.value.data).toEqual(mock.collab);
   });
 });
 
