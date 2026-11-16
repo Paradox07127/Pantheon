@@ -1,6 +1,14 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -19,6 +27,7 @@ import {
   type HarnessAdapter,
   type NativeStatus,
   type PermissionDecision,
+  type PermissionMode,
   type Receipt,
   type RuntimeModel,
   type SessionHandle,
@@ -269,7 +278,7 @@ function reportedModel(options: ConfigOption[]): string | undefined {
 }
 
 /** The agent's model choices, each with the thought levels that name an effort level. */
-function listedModels(options: ConfigOption[]): RuntimeModel[] {
+function listedModels(options: ConfigOption[], permission_modes: PermissionMode[]): RuntimeModel[] {
   const model = options.find((option) => option.category === 'model');
   const thought = options.find((option) => option.category === 'thought_level');
   const efforts = choices(thought).flatMap((choice) => effortLevel(choice.value) ?? []);
@@ -279,8 +288,8 @@ function listedModels(options: ConfigOption[]): RuntimeModel[] {
     id: choice.value,
     label: labels.get(choice.value)!,
     ...(choice.description ? { description: choice.description } : {}),
-    // The adapter sets no ACP mode, so the runtime's own permission modes apply.
-    permission_modes: [],
+    // The adapter sets no ACP mode; only a profile's launch environment picks one.
+    permission_modes,
     efforts,
     default_effort,
     default: choice.value === model?.currentValue,
@@ -416,10 +425,15 @@ export class AcpAdapter implements HarnessAdapter {
         status: 'supported',
         evidence: 'setModel sends session/set_config_option, also during a turn',
       },
-      write_isolation: {
-        status: 'unsupported',
-        evidence: 'ACP runtimes have no verified write isolation',
-      },
+      // A profile that picks the sandbox at launch keeps the verdict its runtime was verified with.
+      ...(this.profile.permissionEnv
+        ? {}
+        : {
+            write_isolation: {
+              status: 'unsupported',
+              evidence: 'ACP runtimes have no verified write isolation',
+            },
+          }),
     });
   }
   async probe(): Promise<CapabilityReport> {
@@ -487,7 +501,7 @@ export class AcpAdapter implements HarnessAdapter {
       }>('session/new', { cwd, mcpServers: [] }, this.requestTimeoutMs);
       if (created?.sessionId && initialized.agentCapabilities?.sessionCapabilities?.close)
         await rpc.request('session/close', { sessionId: created.sessionId }, this.requestTimeoutMs);
-      return listedModels(created?.configOptions ?? []);
+      return listedModels(created?.configOptions ?? [], this.profile.permissionModes ?? []);
     } finally {
       await rpc.close();
     }
@@ -513,14 +527,33 @@ export class AcpAdapter implements HarnessAdapter {
       (this.name === 'agy' || this.name === 'grok') && !spec.remote
         ? prepareNativeState(this.name, spec, this.home)
         : { env: {}, args: [] };
+    const permissionEnv = this.profile.permissionEnv?.(spec.permission_mode ?? 'ask') ?? {};
+    const sandboxPatch =
+      spec.sandbox && !spec.remote
+        ? this.profile.sandboxPatch?.(spec.permission_mode ?? 'ask', spec.sandbox.writable_roots)
+        : undefined;
+    // The agent may write temporary folders, so the patch lives only until the agent has read it.
+    const patchDir = sandboxPatch
+      ? mkdtempSync(path.join(os.tmpdir(), 'pantheon-acp-patch-'))
+      : undefined;
+    if (patchDir) writeFileSync(path.join(patchDir, 'sandbox.yml'), sandboxPatch!, { mode: 0o600 });
     const rpc = new JsonRpcProcess(
       spec.remote?.binary ?? this.binary,
-      [...this.args, ...state.args],
+      [
+        ...this.args,
+        ...state.args,
+        ...(patchDir ? ['--patch', path.join(patchDir, 'sandbox.yml')] : []),
+      ],
       spec.cwd,
       spec.env_allowlist,
       spec.remote
-        ? spec.env
-        : { ...spec.env, ...nativeEnvironment(spec.env_allowlist), ...state.env },
+        ? { ...spec.env, ...permissionEnv }
+        : {
+            ...spec.env,
+            ...nativeEnvironment(spec.env_allowlist),
+            ...state.env,
+            ...permissionEnv,
+          },
       { jsonrpc: true, remote: spec.remote },
     );
     const handle: SessionHandle = {
@@ -780,7 +813,17 @@ export class AcpAdapter implements HarnessAdapter {
         answer(undefined);
         return;
       }
-      const write = WRITE_KINDS.includes(params.toolCall?.kind ?? '');
+      // A request may name only the call, whose fields came in its tool_call frames.
+      const call: Partial<ToolCallUpdate> = {
+        ...current.tools.get(params.toolCall?.toolCallId ?? ''),
+      };
+      for (const [field, value] of Object.entries(params.toolCall ?? {}))
+        if (value != null) Object.assign(call, { [field]: value });
+      const kind =
+        call.kind && call.kind !== 'other'
+          ? call.kind
+          : (this.profile.toolKinds?.[call.title ?? ''] ?? call.kind);
+      const write = WRITE_KINDS.includes(kind ?? '');
       if (current.readOnly && write) {
         answer(chooseOption(options, DECISION_OPTIONS.deny));
         return;
@@ -788,11 +831,11 @@ export class AcpAdapter implements HarnessAdapter {
       hold(
         current,
         frame.method,
-        params.toolCall?.title || params.toolCall?.kind || undefined,
+        call.title || kind || undefined,
         {
-          tool_call_id: params.toolCall?.toolCallId,
-          kind: params.toolCall?.kind,
-          input: params.toolCall?.rawInput,
+          tool_call_id: call.toolCallId,
+          kind,
+          input: call.rawInput,
         },
         (decision) =>
           answer(
@@ -851,19 +894,24 @@ export class AcpAdapter implements HarnessAdapter {
       env: Object.entries(env).map(([name, value]) => ({ name, value })),
     }));
     try {
-      const initialized = (await rpc.initialize(
-        {
-          protocolVersion: 1,
-          clientCapabilities: {
-            fs: { readTextFile: false, writeTextFile: false },
-            terminal: false,
-            elicitation: { form: {} },
+      const initialized = (await rpc
+        .initialize(
+          {
+            protocolVersion: 1,
+            clientCapabilities: {
+              fs: { readTextFile: false, writeTextFile: false },
+              terminal: false,
+              elicitation: { form: {} },
+            },
+            clientInfo: CLIENT_INFO,
           },
-          clientInfo: CLIENT_INFO,
-        },
-        null,
-        this.requestTimeoutMs,
-      )) as { agentCapabilities?: { promptCapabilities?: { image?: boolean } } };
+          null,
+          this.requestTimeoutMs,
+        )
+        .finally(() => {
+          // The agent composes its configuration before it answers initialize.
+          if (patchDir) rmSync(patchDir, { recursive: true, force: true });
+        })) as { agentCapabilities?: { promptCapabilities?: { image?: boolean } } };
       session.images = initialized.agentCapabilities?.promptCapabilities?.image === true;
       this.report.capabilities.images = {
         status: session.images ? 'supported' : 'unsupported',

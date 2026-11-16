@@ -29,10 +29,10 @@ export interface StepMoment {
   tests: NonNullable<TraceSpan['gate_state']>;
 }
 
-const SEARCHES = ['Glob', 'Grep'];
+const SEARCHES = ['Glob', 'Grep', 'glob', 'grep'];
 
 export function stepKind(name: string): StepKind {
-  if (name === 'Read') return 'read';
+  if (name === 'Read' || name === 'read') return 'read';
   if (SEARCHES.includes(name)) return 'search';
   if (EDITS.includes(name)) return 'edit';
   if (COMMANDS.includes(name)) return 'run';

@@ -21,6 +21,7 @@ import {
   type Handlers,
 } from './context.js';
 import { autoMerge } from './user-config.js';
+import { gateCommands } from './landing.js';
 import { relayingQuestion } from './approvals.js';
 import { runGit } from './git.js';
 import {
@@ -712,7 +713,7 @@ function reportDirectTask(
   leadId: string,
   report: ReturnType<(typeof inputSchemas)['task.report']['parse']>,
   commandId: string,
-): { task_id: string; reported_head: string } {
+): { task_id: string; reported_head: string; next: string } {
   const lead = ctx.store.must<Session>('sessions', leadId),
     claimed = lead.direct_task;
   requireThat(
@@ -751,7 +752,17 @@ function reportDirectTask(
     },
     commandId,
   );
-  return { task_id: claimed.id, reported_head: head };
+  // As autoMergeAfterTurn decides once this turn ends.
+  const project = ctx.store.must<Project>('projects', lead.project_id),
+    workspace = ctx.store.must<Workspace>('workspaces', lead.workspace_id!),
+    merges = autoMerge(ctx, project) && !!gateCommands(ctx, project, workspace, next)?.length;
+  return {
+    task_id: claimed.id,
+    reported_head: head,
+    next: merges
+      ? 'Pantheon now runs the gates and merges these commits once this turn ends; tell the user so.'
+      : 'Auto-merge is off, so these commits wait for the user to merge them from your session; tell the user so.',
+  };
 }
 
 export function tickTaskTracking(ctx: ControlContext): void {

@@ -237,7 +237,8 @@ const accepted = (type: CommandType, receipt: unknown) => {
     .map((key) => [key, (receipt as Record<string, unknown> | null)?.[key]] as const)
     .filter(([, value]) => value !== undefined)
     .map(([key, value]) => `${key}=${String(value)}`);
-  return `Accepted ${type}${fields.length ? `: ${fields.join(', ')}` : ''}`;
+  const next = (receipt as { next?: unknown } | null)?.next;
+  return `Accepted ${type}${fields.length ? `: ${fields.join(', ')}` : ''}${typeof next === 'string' ? `. ${next}` : ''}`;
 };
 
 const refused = (type: string, code: string, message?: string) =>

@@ -566,6 +566,7 @@ export const COMMANDS = [
   'shell',
   'command',
   'exec_command',
+  'bash',
 ];
 export const EDITS = [
   'Edit',
@@ -575,10 +576,12 @@ export const EDITS = [
   'fileChange',
   'file_change',
   'apply_patch',
+  'edit',
+  'write',
 ];
-const AGENTS = ['Task', 'Agent', 'collabAgentToolCall'];
-const WEB = ['WebFetch', 'WebSearch', 'webSearch'];
-export const READS = ['Read', 'Glob', 'Grep'];
+const AGENTS = ['Task', 'Agent', 'collabAgentToolCall', 'subagent', 'subagent_fork'];
+const WEB = ['WebFetch', 'WebSearch', 'webSearch', 'web_fetch', 'web_search'];
+export const READS = ['Read', 'Glob', 'Grep', 'read', 'glob', 'grep'];
 
 interface Kind {
   key: string;
@@ -674,7 +677,7 @@ function kindOf(name: string, input: unknown, own: string): Kind {
     return {
       key: 'read',
       rank: 5,
-      touched: [(name === 'Read' && text(i.file_path)) || own],
+      touched: [((name === 'Read' || name === 'read') && text(i.file_path)) || own],
       text: (n) =>
         t(
           {

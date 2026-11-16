@@ -4,6 +4,7 @@ import { expect, it, vi } from 'vitest';
 import type {
   BoardPlan,
   Principal,
+  Project,
   Session,
   SessionTurn,
   UserTurn,
@@ -368,6 +369,25 @@ it('records the worktree head when the lead reports its direct task done', async
   ]);
   expect(current(f, lead.id).direct_task?.id).toBe('a');
 });
+
+it.each([
+  [false, 'Auto-merge is off, so these commits wait for the user to merge them from your session'],
+  [true, 'Pantheon now runs the gates and merges these commits'],
+])(
+  'tells the lead who merges its reported direct task when auto-merge is %s',
+  async (autoMerge, next) => {
+    const f = workbenchFixture();
+    const lead = await leadWithPlan(f, [task('a')]);
+    const project = f.store.must<Project>('projects', f.project.id);
+    f.store.update('projects', { ...project, auto_merge: autoMerge }, project.revision);
+    start(f, lead.id, ['a']);
+    const worktree = f.store.must<Workspace>('workspaces', lead.workspace_id!).path;
+    writeFileSync(path.join(worktree, 'answer.txt'), 'done\n');
+    git(worktree, 'commit', '--quiet', '-am', 'Finish task a');
+
+    expect(report(f, lead.id, 'lead')).toMatchObject({ next: expect.stringContaining(next) });
+  },
+);
 
 it('refuses the done report of a direct task when the worktree head cannot be read', async () => {
   const f = workbenchFixture();

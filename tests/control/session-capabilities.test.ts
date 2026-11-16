@@ -30,6 +30,7 @@ it.each([
   ['claude', 'auto', null],
   ['claude', 'full_access', null],
   ['codex', 'full_access', 'auto'],
+  ['dsh', 'full_access', 'auto'],
 ] as const)(
   'lets the user create and select %s %s and refuses non-user choices',
   (runtime, permission_mode, refused) => {

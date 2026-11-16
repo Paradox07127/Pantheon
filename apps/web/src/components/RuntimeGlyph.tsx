@@ -142,8 +142,8 @@ const IDENTITY = new Map<string, RuntimeIdentity>([
       tone: '--rt-dsh',
       mark: 'deepseek',
       maker: 'deepseek',
-      // Its ACP session has no modes.
-      modes: [],
+      // Its sandbox, set at launch: plan runs read-only, auto edit writes inside the workspace.
+      modes: ['auto_edit', 'plan'],
       modeNames: {},
       skillSigil: '/',
       skillPath: false,

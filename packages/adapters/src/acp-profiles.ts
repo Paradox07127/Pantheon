@@ -1,9 +1,19 @@
+import type { PermissionMode } from '@pantheon/domain';
+
 export interface AcpProfile {
   binary: string;
   args: string[];
   resume: 'resume' | 'load';
   /** Extra arguments for the short process that only lists models; they keep it out of the history. */
   listArgs?: string[];
+  /** The modes permissionEnv sets at launch; without them the runtime's own permission modes apply. */
+  permissionModes?: PermissionMode[];
+  /** The environment that starts the agent in a permission mode. */
+  permissionEnv?: (mode: PermissionMode) => Record<string, string>;
+  /** A --patch file that lets the agent's sandbox write the session's roots; undefined adds none. */
+  sandboxPatch?: (mode: PermissionMode, writableRoots: string[]) => string | undefined;
+  /** ACP tool kinds by tool title, for an agent that reports every call as kind other. */
+  toolKinds?: Record<string, string>;
   /** Undefined leaves the request to the transport's method-not-found response. */
   handleRequest?: (request: {
     method: string;
@@ -27,6 +37,40 @@ export const acpProfiles: Record<string, AcpProfile> = {
     binary: 'dsh',
     args: ['--profile', 'acp'],
     resume: 'resume',
+    permissionModes: ['plan', 'auto_edit', 'full_access'],
+    // Its sandbox, chosen only at launch; workspace-write asks before going past the workspace.
+    permissionEnv: (mode) => ({
+      DSH_PERMISSION_MODE:
+        mode === 'plan'
+          ? 'read-only'
+          : mode === 'full_access'
+            ? 'danger-full-access'
+            : 'workspace-write',
+    }),
+    // A linked worktree commits into the source's objects and its own git folder, both outside it.
+    sandboxPatch: (mode, roots) =>
+      mode === 'plan'
+        ? undefined
+        : [
+            '- id: sandbox-policy',
+            '  config:',
+            "    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'",
+            '    workspaceRoot: !!js process.cwd()',
+            '    additionalWritableRoots:',
+            ...roots.map((root) => `      - ${JSON.stringify(root)}`),
+            '',
+          ].join('\n'),
+    toolKinds: {
+      bash: 'execute',
+      edit: 'edit',
+      write: 'edit',
+      read: 'read',
+      read_image: 'read',
+      glob: 'search',
+      grep: 'search',
+      web_fetch: 'fetch',
+      web_search: 'fetch',
+    },
   },
   muse: {
     binary: 'muse',

@@ -172,7 +172,7 @@ describe('runtime identity table', () => {
         appsLabel: 'Apps',
       },
       {
-        modes: [],
+        modes: ['auto_edit', 'plan'],
         skillSigil: '/',
         skillPath: false,
         turnSkills: false,

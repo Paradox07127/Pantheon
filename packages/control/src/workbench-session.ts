@@ -165,7 +165,7 @@ export const LEAD_INSTRUCTIONS = [
   'Add every request that changes the repository to your plan with update_board before you change anything. Write a small request that one session can finish right away as one task whose scope names the one or two files it changes; lead.workflow.path in project_read most likely makes its path direct, so claim it with start_task, change and commit it yourself, then call the report tool with kind done. A request that only answers a question and changes nothing needs no task; answer it in plain text. While your plan has an unfinished task your turns are read-only unless you work on a direct task.',
   'Split a request that needs several sessions in parallel or in stages into tasks with dependencies and milestones, and send the whole plan with update_board every time you change it.',
   "When a plan change is the user's to decide, such as splitting or removing a requested task or changing its deliverable after repeated failures, call propose_board with the change instead of edit_board; it waits on the board until the user decides, and withdraw_board_proposal takes it back.",
-  "Give every task its source (verbatim excerpts copied from the user's messages), its scope (the repository paths it may change) and its acceptance (the shell commands that must pass).",
+  "Give every task its source (verbatim excerpts copied from the user's messages), its scope (the repository paths it may change) and its acceptance (the shell commands that must pass). The gates run each acceptance command in a fresh clone of the commit that has the dependency folders but no build output, so begin a command with any build step it needs.",
   'Give a task that fixes a bug an acceptance command that runs a test that reproduces the bug: put the test file in its scope, and say in its goal that the session writes this test first and sees it fail before the fix. Give a task that adds behavior an acceptance command that runs a test of the new behavior.',
   'A task is done when its session merges. Give a task without commits, such as research or a document reply, done_when report; it may have no scope or acceptance, and it is done when you call accept_task with the evidence from its done report.',
   'Choose the model for each task with its runtime, model and effort fields.',
@@ -173,7 +173,7 @@ export const LEAD_INSTRUCTIONS = [
   'When project_read has lead.devices, a task may name the device its session runs on in device, with the reason in one sentence in device_reason. Put what the device must have in needs: os=<system> and arch=<architecture> as lead.devices gives them (such as os=macos or arch=arm64), and the device labels. Name what the task session holds for itself while it runs, such as a test database, a port, a simulator or a GPU, as a resource in uses; give tasks that would compete for the same thing the same resource name, or put them on different devices.',
   "lead.workflow.path in project_read gives the suggested path for each tier; when a task's path differs from it, give the reason in one sentence in flow_reason. A task whose path is review_loop is dispatched like one whose path is dispatch, and before it merges another runtime, or the task's own runtime when it is the only one, reviews its changes and sends blocking findings back to its session until the review passes or the review rounds run out.",
   "lead.workflow.steps in project_read lists the user's custom steps by slot: before_dispatch steps run before a task opens, before_merge steps after its gates pass and before it merges, and after_merge steps after it merges (for a done_when report task, after its done report and before you accept it). A task may wait there for the user's approval, a prompt turn or a review; a failed step comes back to you as a board update.",
-  'Calling start_task with a task whose path is direct means you do that task yourself, with no task session: change and commit it in your own worktree, then call the report tool with kind done. Pantheon runs the gates and merges your commits, and your session stays open.',
+  'Calling start_task with a task whose path is direct means you do that task yourself, with no task session: change and commit it in your own worktree, then call the report tool with kind done. Its receipt says whether Pantheon runs the gates and merges your commits or they wait for the user to merge them; tell the user which. Your session stays open.',
   'Work on one direct task at a time and start it on its own; stop_task with its id gives it up.',
   'lead.experiences in project_read lists the practices on trial or in force in this project; follow each one where it applies.',
   'When your plan has pending user edits, which board updates name by edit_id, first apply or reject each one with the resolve_edit op of edit_board and a reason, before you do anything else.',
@@ -3553,7 +3553,10 @@ export function checkPermissionMode(
 ): void {
   requireThat(
     (mode !== 'auto' || runtime === 'claude') &&
-      (mode !== 'full_access' || runtime === 'codex' || runtime === 'claude') &&
+      (mode !== 'full_access' ||
+        runtime === 'codex' ||
+        runtime === 'claude' ||
+        runtime === 'dsh') &&
       (!['auto', 'full_access'].includes(mode ?? '') ||
         (principal.role === 'user' && !principal.session_id)),
     'unsupported_capability',

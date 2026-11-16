@@ -187,6 +187,27 @@ describe('tool group labels', () => {
       '读了 1 个文件，另 1 项',
     );
   });
+
+  it("counts dsh's lowercase tool names by kind", () => {
+    expect(
+      toolGroupLabel([
+        c('bash', { command: 'ls' }),
+        c('edit', { file_path: '/repo/a.ts' }),
+        c('write', { file_path: '/repo/a.ts' }),
+      ]),
+    ).toBe('运行 1 条命令，改了 1 个文件');
+    expect(
+      toolGroupLabel([c('subagent'), c('subagent_fork'), c('web_fetch'), c('web_search')]),
+    ).toBe('派了 2 个子代理，查了 2 次网页');
+    expect(
+      toolGroupLabel([
+        c('read', { file_path: '/repo/a.ts' }),
+        c('read', { file_path: '/repo/a.ts' }),
+        c('glob'),
+        c('grep'),
+      ]),
+    ).toBe('读了 3 个文件');
+  });
 });
 
 describe('tool results', () => {

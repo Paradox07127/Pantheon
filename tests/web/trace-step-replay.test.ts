@@ -154,6 +154,23 @@ describe('the steps of one session', () => {
     expect(stepMoment(codex, steps, 3).files).toBe(3);
   });
 
+  it("reads dsh's lowercase tool names as reads, searches, edits and runs", () => {
+    const dsh = [
+      span('turn-1', { kind: 'turn', start: 1_000, status: 'running' }),
+      ...['read', 'glob', 'grep', 'edit', 'write', 'bash'].map((name, at) =>
+        span(`${name}-1`, { name, start: 2_000 + at * 1_000, end: 2_500 + at * 1_000 }),
+      ),
+    ];
+    expect(replaySteps(dsh).steps.map((s) => s.kind)).toEqual([
+      'read',
+      'search',
+      'search',
+      'edit',
+      'edit',
+      'run',
+    ]);
+  });
+
   it('counts the files an edit step names, not the paths in its input summary', () => {
     const spans = [
       span('turn-1', { kind: 'turn', start: 1_000, status: 'running' }),

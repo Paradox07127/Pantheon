@@ -92,9 +92,9 @@ export const verifiedCapabilities: Record<
           'dsh 0.2.1-rc.5 over ACP resumed the same session for a follow-up turn on 2026-11-15.',
       },
       write_isolation: {
-        status: 'unsupported',
+        status: 'supported',
         evidence:
-          'dsh 0.2.1-rc.5 over ACP wrote a file in its folder and one outside it on 2026-11-15 without a permission request.',
+          'dsh 0.2.2-rc.3 over ACP in workspace-write mode on 2026-11-16, in a linked worktree: wrote in the worktree; shell writes outside it and to the source .git/hooks failed with Operation not permitted once the permission request was refused; its commit asked through session/request_permission. Temporary folders stay writable.',
       },
     },
   },

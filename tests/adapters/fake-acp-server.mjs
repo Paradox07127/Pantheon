@@ -23,6 +23,15 @@ const replies =
     : [];
 if (process.env.FAKE_ACP_ARGV_LOG)
   writeFileSync(process.env.FAKE_ACP_ARGV_LOG, JSON.stringify(process.argv.slice(2)));
+const patchAt = process.argv.indexOf('--patch');
+if (process.env.FAKE_ACP_PATCH_LOG && patchAt > 0)
+  writeFileSync(
+    process.env.FAKE_ACP_PATCH_LOG,
+    JSON.stringify({
+      path: process.argv[patchAt + 1],
+      content: readFileSync(process.argv[patchAt + 1], 'utf8'),
+    }),
+  );
 const write = (frame) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n');
 const configOptions = [
   {
@@ -111,12 +120,17 @@ const ask = (method, params, then) => {
   waiting.set(id, then);
   write({ id, method, params });
 };
-const permission = (kind, onAllow, optionKinds = ['allow_once', 'allow_always', 'reject_once']) =>
+const permission = (
+  kind,
+  onAllow,
+  optionKinds = ['allow_once', 'allow_always', 'reject_once'],
+  toolCall = { toolCallId: 'call-edit', title: 'Edit notes.md', kind, rawInput: { path: 'x' } },
+) =>
   ask(
     'session/request_permission',
     {
       sessionId,
-      toolCall: { toolCallId: 'call-edit', title: 'Edit notes.md', kind, rawInput: { path: 'x' } },
+      toolCall,
       options: [
         { optionId: 'opt-allow-once', name: 'Allow', kind: 'allow_once' },
         { optionId: 'opt-allow-always', name: 'Always allow', kind: 'allow_always' },
@@ -256,10 +270,32 @@ const scripts = {
   'permission-no-allow-once'() {
     permission('edit', undefined, ['allow_always', 'reject_once']);
   },
+  // dsh's shape: the request names only the call, whose tool name and input came before with kind other.
+  'permission-call-id-only'() {
+    update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call-bash',
+      title: 'bash',
+      kind: 'other',
+      status: 'pending',
+      rawInput: { command: 'rm -rf build' },
+    });
+    permission(undefined, undefined, undefined, { toolCallId: 'call-bash' });
+  },
+  'permission-mode-env'() {
+    update({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: process.env.DSH_PERMISSION_MODE ?? 'unset' },
+    });
+    stop('end_turn');
+  },
   hold() {},
   // Titles the session from the start of the first text block, as grok does.
   titled() {
-    update({ sessionUpdate: 'session_info_update', title: prompt.params.prompt[0].text.slice(0, 20) });
+    update({
+      sessionUpdate: 'session_info_update',
+      title: prompt.params.prompt[0].text.slice(0, 20),
+    });
     stop('end_turn');
   },
   // Each turn adds 1 USD to the cumulative session cost a usage_update carries.
@@ -319,7 +355,10 @@ const scripts = {
       error: {
         code: -32603,
         message: 'Internal error',
-        data: { message: 'API error (status 402 Payment Required): usage balance exhausted', http_status: 402 },
+        data: {
+          message: 'API error (status 402 Payment Required): usage balance exhausted',
+          http_status: 402,
+        },
       },
     });
     prompt = undefined;

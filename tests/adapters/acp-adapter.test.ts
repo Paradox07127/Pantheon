@@ -97,7 +97,12 @@ describe('ACP adapter', () => {
         resume: 'resume',
       },
       agy: { binary: 'agy', args: ['acp'], resume: 'resume' },
-      dsh: { binary: 'dsh', args: ['--profile', 'acp'], resume: 'resume' },
+      dsh: {
+        binary: 'dsh',
+        args: ['--profile', 'acp'],
+        resume: 'resume',
+        permissionModes: ['plan', 'auto_edit', 'full_access'],
+      },
       muse: { binary: 'muse', args: ['acp'], resume: 'resume' },
       opencode: { binary: 'opencode', args: ['acp'], resume: 'resume' },
       cursor: { binary: 'cursor-agent', args: ['acp'], resume: 'load' },
@@ -271,6 +276,18 @@ describe('ACP adapter', () => {
       deny_reason: { status: 'unsupported' },
       steer: { status: 'unsupported' },
       write_isolation: { status: 'unsupported' },
+    });
+  });
+
+  it.each([
+    ['grok', true],
+    ['dsh', false],
+  ])('gives %s the blanket ACP write isolation verdict: %s', (name, blanket) => {
+    const adapter = new AcpAdapter({ name, profile: acpProfiles[name]! });
+    const verdict = expect(adapter.report.capabilities.write_isolation);
+    (blanket ? verdict : verdict.not).toEqual({
+      status: 'unsupported',
+      evidence: 'ACP runtimes have no verified write isolation',
     });
   });
 
@@ -663,6 +680,109 @@ describe('ACP adapter', () => {
     });
     await vi.waitFor(() =>
       expect(acp.events).toContainEqual(expect.objectContaining({ kind: 'permission.requested' })),
+    );
+  });
+
+  it('fills a request that names only its call from that tool call and refuses it read-only by the profile tool kind', async () => {
+    const acp = setup({}, undefined, { toolKinds: acpProfiles.dsh!.toolKinds });
+    const handle = await acp.start();
+    await acp.adapter.send(handle, { turn_id: 'asked-turn', input: 'permission-call-id-only' });
+    await vi.waitFor(() =>
+      expect(acp.events).toContainEqual(expect.objectContaining({ kind: 'permission.requested' })),
+    );
+    const requested = acp.events.find((event) => event.kind === 'permission.requested')!;
+    expect(requested).toMatchObject({
+      tool: 'bash',
+      detail: { tool_call_id: 'call-bash', kind: 'execute', input: { command: 'rm -rf build' } },
+    });
+    expect(acp.events).toContainEqual(
+      expect.objectContaining({ kind: 'tool.started', tool_call_id: 'call-bash', name: 'bash' }),
+    );
+    if (requested.kind !== 'permission.requested') throw new Error('unreachable');
+    await acp.adapter.answerPermission(handle, requested.request_id, 'deny');
+    await vi.waitFor(() => expect(acp.completions()).toHaveLength(1));
+    await acp.adapter.send(handle, {
+      turn_id: 'read-only-turn',
+      input: 'permission-call-id-only',
+      read_only: true,
+    });
+    await vi.waitFor(() => expect(acp.completions()).toHaveLength(2));
+    expect(acp.events.filter((event) => event.kind === 'permission.requested')).toHaveLength(1);
+    expect(
+      acp
+        .frames()
+        .filter((frame) => frame.result?.outcome)
+        .map((frame) => frame.result),
+    ).toEqual([
+      { outcome: { outcome: 'selected', optionId: 'opt-reject-once' } },
+      { outcome: { outcome: 'selected', optionId: 'opt-reject-once' } },
+    ]);
+  });
+
+  it.each([
+    ['plan', 'read-only'],
+    ['auto_edit', 'workspace-write'],
+    ['full_access', 'danger-full-access'],
+    [undefined, 'workspace-write'],
+  ] as const)(
+    'starts the agent with the environment the profile gives permission mode %s',
+    async (mode, sandbox) => {
+      const acp = setup({}, undefined, { permissionEnv: acpProfiles.dsh!.permissionEnv });
+      if (mode) acp.spec.permission_mode = mode;
+      const handle = await acp.start();
+      await acp.adapter.send(handle, { turn_id: 'env-turn', input: 'permission-mode-env' });
+      await vi.waitFor(() => expect(acp.completions()).toHaveLength(1));
+      expect(acp.events).toContainEqual(
+        expect.objectContaining({ kind: 'message.delta', text: sandbox }),
+      );
+    },
+  );
+
+  it.each([
+    ['auto_edit', true],
+    ['plan', false],
+  ] as const)(
+    'adds the sandbox writable roots to the agent launch in permission mode %s: %s',
+    async (mode, patched) => {
+      const acp = setup({}, undefined, { sandboxPatch: acpProfiles.dsh!.sandboxPatch });
+      const patchLog = path.join(acp.spec.cwd, 'patch.json');
+      acp.spec.env = { ...acp.spec.env, FAKE_ACP_PATCH_LOG: patchLog };
+      acp.spec.permission_mode = mode;
+      acp.spec.sandbox = {
+        writable_roots: [acp.spec.cwd, '/source/.git/objects', '/source/.git/worktrees/wt'],
+        protected_entries: [],
+      };
+      await acp.start();
+      if (!patched) {
+        expect(existsSync(patchLog)).toBe(false);
+        return;
+      }
+      const patch = JSON.parse(readFileSync(patchLog, 'utf8')) as { path: string; content: string };
+      expect(patch.content).toContain('id: sandbox-policy');
+      for (const root of acp.spec.sandbox.writable_roots)
+        expect(patch.content).toContain(JSON.stringify(root));
+      // The agent may write temporary folders, so the file must not outlive the launch.
+      expect(existsSync(patch.path)).toBe(false);
+    },
+  );
+
+  it("offers the profile's permission modes on every listed model", async () => {
+    const acp = setup();
+    const adapter = new AcpAdapter({
+      name: 'scripted-acp',
+      binary: process.execPath,
+      args: [server],
+      profile: {
+        binary: process.execPath,
+        args: [],
+        resume: 'resume',
+        permissionModes: acpProfiles.dsh!.permissionModes,
+      },
+    });
+    const models = await adapter.models(acp.spec.cwd);
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.map((model) => model.permission_modes)).toEqual(
+      models.map(() => ['plan', 'auto_edit', 'full_access']),
     );
   });
 

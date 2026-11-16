@@ -568,6 +568,21 @@ describe('overview model', () => {
     expect(toolTally([turn('t', 'completed', [tool('x', 'mcp__docs__search')])] as never)).toEqual([
       { kind: 'other', count: 1 },
     ]);
+    const dsh = ['read', 'glob', 'grep', 'edit', 'write', 'bash', 'todo_write'];
+    expect(
+      toolTally([
+        turn(
+          't',
+          'completed',
+          dsh.map((name) => tool(name, name)),
+        ),
+      ] as never),
+    ).toEqual([
+      { kind: 'read', count: 3 },
+      { kind: 'edit', count: 2 },
+      { kind: 'run', count: 1 },
+      { kind: 'other', count: 1 },
+    ]);
     expect(toolTally([])).toEqual([]);
   });
 
