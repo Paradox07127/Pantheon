@@ -7,6 +7,7 @@ import {
   type AgentEvent,
   type Approval,
   type BoardPlan,
+  type LeadNote,
   type LeadQuestion,
   type PermissionDecision,
   type Project,
@@ -30,8 +31,11 @@ import {
   type ControlContext,
   type Handlers,
 } from './context.js';
+import { isolationWaived } from './admission.js';
+import { charterMode, chartered } from './charter.js';
 import { SHELL_TOOLS } from './handoff.js';
-import { answerQuestion, askQuestion } from './lead-inbox.js';
+import { answerQuestion, appendNote, askQuestion, recordNote } from './lead-inbox.js';
+import { mustAsk } from './must-ask.js';
 import { unsnooze } from './session.js';
 import { projectDefaults, userConfigDirectory, writeUserConfig } from './user-config.js';
 
@@ -137,6 +141,77 @@ function relayQuestion(ctx: ControlContext, session: Session, approval: Approval
     source: { session_id: session.id, approval_id: approval.id },
     questions: approval.questions,
   });
+}
+
+/** The plan of a worker's lead when the project's charter lets the lead approve this prompt at once. */
+function leadApproves(
+  ctx: ControlContext,
+  session: Session,
+  approval: Approval,
+): BoardPlan | undefined {
+  if (
+    credentialRole(session, sessionWorkspaceKind(ctx, session)) !== 'worker' ||
+    approval.tool === 'AskUserQuestion' ||
+    approval.tool === 'ExitPlanMode' ||
+    session.permission_mode === 'plan' ||
+    // mustAsk cannot read the inputs of a runtime without verified isolation.
+    isolationWaived(ctx, session.runtime) ||
+    // mustAsk cannot see the part of the input the summary cut off.
+    approval.input_summary?.endsWith('…') ||
+    charterMode(ctx, session.project_id, 'approve_worker_prompts') !== 'on' ||
+    mustAsk(ctx, session.project_id, approval)
+  )
+    return;
+  return ctx.store.get<BoardPlan>('board_plans', session.task!.lead_session_id);
+}
+
+/** Prompts a lead's note lists by tool and input. */
+const APPROVED_PROMPT_LINES = 5;
+
+/** Keeps one unread note per task session of the prompts approved for its lead; it does not wake the lead. */
+function notePromptsApproved(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  session: Session,
+  approval: Approval,
+): void {
+  const index = plan.inbox.findIndex(
+      (note) => note.kind === 'prompts_approved' && note.session_id === session.id,
+    ),
+    // From the first prompt's own time, so the count that replaces this note includes it.
+    at = index < 0 ? approval.created_at : plan.inbox[index]!.at,
+    approved =
+      index < 0
+        ? [approval]
+        : ctx.store
+            .list<Approval>('approvals')
+            .filter(
+              (a) => a.session_id === session.id && a.decider === 'lead' && a.created_at >= at,
+            ),
+    note: LeadNote = {
+      at,
+      session_id: session.id,
+      task_id: session.task!.id,
+      kind: 'prompts_approved',
+      text: [
+        `${approved.length} permission ${approved.length === 1 ? 'prompt' : 'prompts'} of this session approved on your behalf, as the project's charter allows; the latest:`,
+        ...approved
+          .slice(-APPROVED_PROMPT_LINES)
+          .map((a) => `${a.tool ?? 'tool'} ${a.input_summary ?? ''}`.trim()),
+      ].join('\n'),
+    };
+  if (index < 0) appendNote(ctx, plan, note);
+  else
+    ctx.store.update<BoardPlan>(
+      'board_plans',
+      {
+        ...plan,
+        inbox: plan.inbox.map((entry, position) =>
+          position === index ? recordNote(ctx, plan, note) : entry,
+        ),
+      },
+      plan.revision,
+    );
 }
 
 /** Marks the board question relaying an approval answered once the approval is settled elsewhere. */
@@ -286,6 +361,7 @@ export function requestApproval(
         .must<Project>('projects', session.project_id)
         .permission_rules?.find((entry) => entry.rule === rule) ??
         projectDefaults(ctx.userConfigDir).permission_rules?.find((entry) => entry.rule === rule));
+    const plan = projectRule ? undefined : leadApproves(ctx, session, approval);
     if (projectRule) {
       const next = ctx.store.update<Approval>(
         'approvals',
@@ -294,6 +370,22 @@ export function requestApproval(
       );
       ctx.store.event('approval.approved', next, next.project_id, approvalEventPayload(next));
       enqueueAnswer(ctx, next);
+    } else if (plan) {
+      const lead = `session:${plan.id}`;
+      const next = ctx.store.update<Approval>(
+        'approvals',
+        { ...approval, state: 'approved', decider: 'lead', decided_by: lead },
+        approval.revision,
+      );
+      ctx.store.event('approval.approved', next, next.project_id, approvalEventPayload(next));
+      enqueueAnswer(ctx, next);
+      chartered(
+        ctx,
+        { id: lead, role: 'lead', project_id: next.project_id, session_id: plan.id },
+        'approve_worker_prompts',
+        next,
+      );
+      notePromptsApproved(ctx, plan, session, next);
     } else {
       unsnooze(ctx, session.id, 'needs_you');
       relayQuestion(ctx, session, approval);
@@ -438,6 +530,7 @@ export async function deliverPermissionAnswer(
           {
             ...rest,
             state: 'pending',
+            decider: 'user',
             refused: { decision, reason: receipt.reason ?? 'The runtime refused this answer' },
           },
           current.revision,

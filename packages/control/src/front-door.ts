@@ -9,7 +9,7 @@ import {
 import { inputSchemas, type Command } from '@pantheon/protocol';
 import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
 import { openAgent, openResident } from './resident.js';
-import { sessionHandlers } from './session.js';
+import { sessionHandlers, userWords } from './session.js';
 
 type Request = ReturnType<(typeof inputSchemas)['request.send']['parse']>;
 
@@ -48,8 +48,6 @@ function deliver(
   return { session_id: turn.session_id, turn_id: turn.id };
 }
 
-type PlanEvent = { sequence: number; kind: string; payload: string };
-
 /**
  * What the resident did with the user's turn, from the events on its plan while the turn ran; an
  * event belongs to the turn that was running when it happened, so a steer folds into that turn.
@@ -64,16 +62,16 @@ export function routingReceipt(
     )
     .get(turn.id) as { start: number | null; end: number | null };
   if (span.start === null || span.end === null) return;
-  const start = span.start;
-  const events = ctx.store.db
-    .prepare(
-      "SELECT sequence, kind, payload FROM events WHERE aggregate_id=? AND kind IN ('board.plan_updated', 'lead.question_asked') AND sequence<? ORDER BY sequence",
-    )
-    .all(turn.session_id, span.end) as PlanEvent[];
-  const plan = (event: PlanEvent | undefined) => event && (JSON.parse(event.payload) as BoardPlan);
-  const plans = events.filter((event) => event.kind === 'board.plan_updated'),
-    was = plan(plans.findLast((event) => event.sequence < start)),
-    now = plan(plans.findLast((event) => event.sequence > start));
+  const plan = (after: number, before: number) => {
+    const row = ctx.store.db
+      .prepare(
+        "SELECT payload FROM events WHERE aggregate_id=? AND kind='board.plan_updated' AND sequence>? AND sequence<? ORDER BY sequence DESC LIMIT 1",
+      )
+      .get(turn.session_id, after, before) as { payload: string } | undefined;
+    return row && (JSON.parse(row.payload) as BoardPlan);
+  };
+  const was = plan(-1, span.start),
+    now = plan(span.start, span.end);
   const lanes = (now?.lanes ?? []).filter((lane) => !was?.lanes.some((old) => old.id === lane.id)),
     tasks = (now?.tasks ?? []).filter((task) => !was?.tasks.some((old) => old.id === task.id)),
     taskIds = tasks.map((task) => task.id);
@@ -84,7 +82,13 @@ export function routingReceipt(
       ...(taskIds.length ? { task_ids: taskIds } : {}),
     };
   if (tasks.length) return { kind: 'added', lane_id: tasks[0]!.lane, task_ids: taskIds };
-  if (events.some((event) => event.kind === 'lead.question_asked' && event.sequence > start))
+  if (
+    ctx.store.db
+      .prepare(
+        "SELECT 1 FROM events WHERE aggregate_id=? AND kind='lead.question_asked' AND sequence>? AND sequence<? LIMIT 1",
+      )
+      .get(turn.session_id, span.start, span.end)
+  )
     return { kind: 'asked' };
   return { kind: 'answered' };
 }
@@ -137,7 +141,7 @@ export const frontDoorHandlers: Handlers = {
         'permission_denied',
         'Agent of another project',
       );
-      return deliver(ctx, p, c, openAgent(ctx, agent, c.command_id), turn.input);
+      return deliver(ctx, p, c, openAgent(ctx, agent, c.command_id), userWords(turn.input));
     }
     const session = openAgent(ctx, ctx.store.must<AgentProfile>('agents', agentId), c.command_id);
     let route: string;
@@ -155,7 +159,7 @@ export const frontDoorHandlers: Handlers = {
       p,
       c,
       session,
-      `[Pantheon] The user routes this request differently: ${route}.\n\n${turn.input}`,
+      `[Pantheon] The user routes this request differently: ${route}.\n\n${userWords(turn.input)}`,
     );
   },
 };

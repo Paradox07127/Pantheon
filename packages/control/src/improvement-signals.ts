@@ -304,8 +304,8 @@ export function improvementSignals(
     if (event.created_at < since || event.created_at > now) continue;
     if (event.kind === 'approval.approved' || event.kind === 'approval.rejected') {
       const approval = event.payload as Approval;
-      // A project rule answers without decided_by.
-      if (!approval.decided_by) continue;
+      // A project rule answers without decided_by; a lead's answer is not the user's habit.
+      if (!approval.decided_by || approval.decider === 'lead') continue;
       const command = commands.get(JSON.stringify([approval.session_id, approval.request_id]));
       if (!command) continue;
       const counts = approvals.get(command) ?? {

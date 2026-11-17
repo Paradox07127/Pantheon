@@ -359,6 +359,7 @@ function commandDecision(
   answeredByRule = false,
   projectRuleSupported = false,
   sessionId = 'command-session',
+  decider: 'user' | 'lead' = 'user',
 ) {
   const owner = { id: `approval-${index}`, revision: 1 };
   f.store.event('agent.permission.requested', { id: sessionId, revision: 1 }, f.project.id, {
@@ -374,7 +375,11 @@ function commandDecision(
     tool: 'Bash',
     rule: 'Bash(pnpm test)',
     state,
-    ...(answeredByRule ? { answered_by_rule: 'Bash(pnpm test)' } : { decided_by: 'local-user' }),
+    ...(answeredByRule
+      ? { answered_by_rule: 'Bash(pnpm test)' }
+      : decider === 'lead'
+        ? { decider, decided_by: 'session:lead-session' }
+        : { decided_by: 'local-user' }),
   });
   f.store.db.prepare('UPDATE events SET created_at=? WHERE event_id=?').run(at, event.event_id);
 }
@@ -426,6 +431,13 @@ it('excludes always-approved commands with a refusal, an existing project rule, 
   times(4, (index) => commandDecision(old.f, index));
   commandDecision(old.f, 4, 'approved', old.f.store.now() - 7 * 24 * 60 * 60 * 1000 - 1);
   expect(old.signals('always_approved_command')).toEqual([]);
+});
+
+it('does not count a prompt the lead approved under the charter as an approval by the user', async () => {
+  const { f, signals } = await setup();
+  times(4, (index) => commandDecision(f, index));
+  commandDecision(f, 4, 'approved', undefined, undefined, false, false, undefined, 'lead');
+  expect(signals('always_approved_command')).toEqual([]);
 });
 
 function gateFailure(

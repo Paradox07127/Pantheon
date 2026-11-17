@@ -85,6 +85,7 @@ import {
   contractMoveWaits,
   followContractModel,
   followContractRuntime,
+  INBOX_HEADER,
   noteUserMessage,
   returnNotes,
   takeContractChange,
@@ -482,6 +483,11 @@ export function acceptInput(
   );
   const handle = sessionHandle(ctx, session);
   requireThat(!handle || !queues.get(handle)?.settled, 'resource_busy', 'Session is closing');
+}
+
+/** The user's own words of a turn input, without the board updates digest appended to it. */
+export function userWords(input: string): string {
+  return input.split(`\n\n${INBOX_HEADER}`)[0]!;
 }
 
 const queueInput: Handler = (ctx, p, c) => {
@@ -1246,6 +1252,7 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         const finished = ctx.store.update('session_turns', { ...t, state }, t.revision);
         ctx.store.event(`turn.${state}`, finished, t.project_id, { error: failure });
       });
+      recordRouting(ctx, current.id);
       sent = send(next);
     }
   };

@@ -712,6 +712,11 @@ it('counts one stall and one loop of a turn, not the reminders that follow them'
 
 it('sums the time each permission request of the task session waited for its answer', async () => {
   const f = await workbenchFixture();
+  f.call(
+    'workflow.policy.set',
+    { project_id: f.project.id, charter: { approve_worker_prompts: 'ask' } },
+    null,
+  );
   const lead = await leadWithPlan(f, [
     task('a', {
       goal: script({ ask: { tool: 'Bash', input: { command: 'pnpm test' } } }, { hang: true }),

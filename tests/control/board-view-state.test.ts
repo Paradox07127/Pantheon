@@ -182,6 +182,11 @@ it('shows a dispatched task as claimed until its first turn runs, then as runnin
 
 it('shows a task whose session asks the user as waiting approval', async () => {
   const f = await workbenchFixture();
+  f.call(
+    'workflow.policy.set',
+    { project_id: f.project.id, charter: { approve_worker_prompts: 'ask' } },
+    null,
+  );
   const lead = await leadWithPlan(f, [
     task('a', { goal: script({ ask: { tool: 'Bash', input: { command: 'pnpm test' } } }) }),
   ]);

@@ -334,7 +334,9 @@ export interface LeadNote {
     | 'follow_up'
     | 'routine'
     | 'agent_proposal'
-    | 'signal';
+    | 'signal'
+    /** Permission prompts of one task session approved for the lead since it last read its inbox; does not wake the lead. */
+    | 'prompts_approved';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;

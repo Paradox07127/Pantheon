@@ -262,7 +262,8 @@ export interface Approval extends Entity {
   input_hash: string;
   /** Request input as one line of at most 300 characters; absent when the request has no input. */
   input_summary?: string;
-  decider: 'user';
+  /** lead: approved on the lead's behalf by the project's charter, without a model turn. */
+  decider: 'user' | 'lead';
   state: 'pending' | 'approved' | 'rejected' | 'void';
   reason?: 'session_lost' | 'input_replaced';
   created_at: number;

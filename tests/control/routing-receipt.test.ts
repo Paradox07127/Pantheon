@@ -1,5 +1,12 @@
 import { expect, it } from 'vitest';
-import type { Approval, BoardPlan, Principal, Session, SessionTurn } from '@pantheon/domain';
+import type {
+  AgentProfile,
+  Approval,
+  BoardPlan,
+  Principal,
+  Session,
+  SessionTurn,
+} from '@pantheon/domain';
 import { eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -178,6 +185,61 @@ it('steers the assistant once with a message that names the lane the user routes
   expect(added[0]!.input).toMatch(/^\[Pantheon\] The user routes this request/);
   expect(added[0]!.input).toContain('lane core (Core)');
   expect(added[0]!.input).toContain('Add a CSV export');
+});
+
+it('marks a turn that ended with another request queued behind it', async () => {
+  const f = await workbenchFixture();
+  let queued: Routed | undefined;
+
+  const turn = await heldTurn(f, () => {
+    queued = request(f, 'What does the answer file hold?');
+  });
+
+  expect(turnOf(f, queued!.turn_id).state).toBe('completed');
+  expect(turn).toMatchObject({ state: 'completed', routing: { kind: 'answered' } });
+});
+
+it("reroutes only the user's words of a request that carried board updates to another agent", async () => {
+  const f = await workbenchFixture();
+  const assistant = await askedAssistant(f);
+  writePlan(f, assistant, [lanes.core], [task('a', 'core')]);
+  const plan = f.store.must<BoardPlan>('board_plans', assistant);
+  f.store.update<BoardPlan>(
+    'board_plans',
+    {
+      ...plan,
+      inbox: [
+        {
+          id: 'note-risk',
+          at: f.store.now(),
+          session_id: '',
+          task_id: '',
+          kind: 'risk',
+          text: 'The disk is almost full',
+        },
+      ],
+    },
+    plan.revision,
+  );
+  const routed = request(f, 'Add a CSV export');
+  await idle(f, routed.session_id);
+  expect(turnOf(f, routed.turn_id).input).toContain('The disk is almost full');
+  const helper = f.call<AgentProfile>('agent.create', {
+    project_id: f.project.id,
+    template: 'custom',
+    name: 'Exporter',
+    role: 'Helper',
+    instructions: 'You help with exports.',
+  });
+
+  const rerouted = f.call<Routed>('request.reroute', {
+    turn_id: routed.turn_id,
+    to: { agent_id: helper.id },
+  });
+
+  const input = turnOf(f, rerouted.turn_id).input;
+  expect(input).toContain('Add a CSV export');
+  expect(input).not.toContain('The disk is almost full');
 });
 
 it('gives no routing receipt to a turn of a direct session', async () => {
