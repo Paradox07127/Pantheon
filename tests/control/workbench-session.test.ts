@@ -248,7 +248,7 @@ it.each(['merged', 'discarded'] as const)('renames a %s workbench session', asyn
   expect(f.list()[0]).toMatchObject({ state: outcome, title: 'Archived conversation' });
 });
 
-it('refuses session renames by non-users and renames of sessions without a worktree', async () => {
+it('refuses session renames by non-users and renames of baseline sessions', async () => {
   const f = await workbenchFixture();
   const session = await f.create();
   const planner: Principal = { id: 'planner', role: 'planner', project_id: f.project.id };
@@ -260,19 +260,32 @@ it('refuses session renames by non-users and renames of sessions without a workt
       planner,
     ),
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
-  const conversation = f.store.insert<Session>('sessions', {
+  const baseline = f.store.insert<Session>('sessions', {
     ...session,
-    id: 'conversation-without-worktree',
+    id: 'baseline-without-worktree',
     workspace_id: undefined,
+    baseline: { baseline_id: 'baseline-a' },
   });
   expect(() =>
-    f.call(
-      'session.rename',
-      { session_id: conversation.id, title: 'New title' },
-      conversation.revision,
-    ),
+    f.call('session.rename', { session_id: baseline.id, title: 'New title' }, baseline.revision),
   ).toThrow(expect.objectContaining({ code: 'invalid_state' }));
-  expect(f.store.must<Session>('sessions', conversation.id)).toEqual(conversation);
+  expect(f.store.must<Session>('sessions', baseline.id)).toEqual(baseline);
+});
+
+it('renames a resident session, which has no worktree', async () => {
+  const f = await workbenchFixture();
+  const resident = f.call<Session>('resident.open', {
+    project_id: f.project.id,
+    kind: 'assistant',
+  });
+  expect(resident.workspace_id).toBeUndefined();
+  const renamed = f.call<Session>(
+    'session.rename',
+    { session_id: resident.id, title: 'Release helper' },
+    resident.revision,
+  );
+  expect(renamed).toMatchObject({ title: 'Release helper', title_source: 'user' });
+  expect(f.list().find((each) => each.id === resident.id)!.title).toBe('Release helper');
 });
 
 it('refuses a stale revision when renaming a session', async () => {

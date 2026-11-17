@@ -70,7 +70,7 @@ const COPY = [
 const TOP = [[rowMenu('open')], ['rename', 'pin', 'snooze', 'markUnread'].map(m)];
 const OPEN = ['editor', 'terminal', 'fileManager'].map(rowMenu);
 const WHERE = [`${rowMenu('openIn')} ▸ ${OPEN.join(', ')}`, `${m('copy')} ▸ ${COPY.join(', ')}`];
-const NO_WORKTREE = zh('sessions.model.worktree.none');
+const NO_FOLDER = zh('sessions.model.workspace.none');
 const REMOVED = zh('sessions.model.worktree.removed');
 const MERGE_MAIN = t(
   { id: 'sessions.model.menu.mergeInto', defaultMessage: 'Merge into {target}…' },
@@ -135,16 +135,24 @@ describe('session menu groups', () => {
     const groups = sessionMenu(listed('done', { workspace_id: null }), { workspace: null });
     expect(shape(groups)).toEqual([...TOP, WHERE, ['archive', 'delete'].map(m)]);
     expect(entry(groups, m('rename'))).toMatchObject({ reason: m('baselineNoRename') });
-    for (const label of OPEN) expect(entry(groups, label)).toMatchObject({ reason: NO_WORKTREE });
+    for (const label of OPEN) expect(entry(groups, label)).toMatchObject({ reason: NO_FOLDER });
     const copy = entry(groups, m('copy')) as { items: { label: string; reason?: string }[] };
     expect(copy.items.map((i) => i.reason)).toEqual([
-      NO_WORKTREE,
+      NO_FOLDER,
       undefined,
-      NO_WORKTREE,
+      NO_FOLDER,
       undefined,
       undefined,
     ]);
     expect(copy.items.map((i) => i.label)).toEqual(COPY);
+  });
+
+  it('renames an idle resident session, which has no worktree, and does not offer to archive it', () => {
+    const resident = listed('idle', { workspace_id: null, resident: { kind: 'assistant' } });
+    const groups = sessionMenu(resident, { workspace: null });
+    expect(shape(groups)).toEqual([...TOP, WHERE, ['delete'].map(m)]);
+    expect(entry(groups, m('rename'))).not.toHaveProperty('reason');
+    for (const label of OPEN) expect(entry(groups, label)).toMatchObject({ reason: NO_FOLDER });
   });
 
   it('opens the lead only from a board task session', () => {

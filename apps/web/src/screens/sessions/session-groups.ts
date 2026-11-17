@@ -259,6 +259,10 @@ export interface SessionMenuContext {
 
 const optional = (reason: string | null | undefined) => (reason ? { reason } : {});
 
+/** Listed sessions without a workspace are baseline, runtime analysis and resident ones. */
+export const baselineRow = (s: WorkbenchSession): boolean =>
+  s.workspace_id === null && !s.resident && !s.runtime_review;
+
 /** A worktree session that has not ended; it can run checks and merge. */
 export const liveWorktree = (s: WorkbenchSession): boolean =>
   s.workspace_id !== null && s.workspace_kind !== 'in_place' && !ENDED_STATES.has(s.state);
@@ -311,7 +315,7 @@ export function sessionMenu(
         input: { session_id },
         keys: shortcutKeys('session-rename') || undefined,
         ...optional(
-          s.workspace_id === null
+          baselineRow(s)
             ? t({
                 id: 'sessions.model.menu.baselineNoRename',
                 defaultMessage: 'A baseline session cannot be renamed',
@@ -508,8 +512,8 @@ export function sessionMenu(
               input: { session_id },
             } as const,
           ]
-        : ENDED_STATES.has(s.state) ||
-            (s.workspace_id !== null && (s.state === 'idle' || s.state === 'ready'))
+        : // The daemon does not archive a resident session.
+          !s.resident && (ENDED_STATES.has(s.state) || s.state === 'idle' || s.state === 'ready')
           ? [
               {
                 label: t({ id: 'sessions.model.menu.archive', defaultMessage: 'Archive' }),
@@ -556,6 +560,12 @@ export function sessionMenu(
 const noWorktreeText = () =>
   t({ id: 'sessions.model.worktree.none', defaultMessage: 'This session has no worktree' });
 
+const noWorkspaceText = () =>
+  t({
+    id: 'sessions.model.workspace.none',
+    defaultMessage: 'This session has no folder of its own',
+  });
+
 /** The system file manager's name. */
 function fileManagerText(): string {
   const agent = globalThis.navigator?.userAgent ?? '';
@@ -565,12 +575,12 @@ function fileManagerText(): string {
   return t({ id: 'sessions.rowMenu.fileManager', defaultMessage: 'File manager' });
 }
 
-/** Why the session's worktree cannot be opened; null while it exists, ended or not. */
+/** Why the session's folder cannot be opened; null while it exists, ended or not. */
 export function worktreeReason(
   s: WorkbenchSession,
   workspace: { removed_at?: number } | null = null,
 ): string | null {
-  if (s.workspace_id === null) return noWorktreeText();
+  if (s.workspace_id === null) return noWorkspaceText();
   if (s.state === 'starting')
     return t({
       id: 'sessions.model.worktree.creating',

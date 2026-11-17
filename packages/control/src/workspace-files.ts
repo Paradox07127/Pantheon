@@ -90,8 +90,8 @@ function workspaceRoot(
       'permission_denied',
       'Session belongs to another project',
     );
-    requireThat(session.workspace_id, 'invalid_state', 'Session has no worktree');
-    root = ctx.store.must<Workspace>('workspaces', session.workspace_id).path;
+    if (session.workspace_id)
+      root = ctx.store.must<Workspace>('workspaces', session.workspace_id).path;
   }
   // Roots are registered resolved, so a symlink at the root was planted later.
   requireThat(

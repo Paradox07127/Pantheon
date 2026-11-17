@@ -205,7 +205,7 @@ describe('composer box', () => {
     const words = dragged(['text/plain']);
     box(h).props.onDragOver(words);
     expect(words.preventDefault).not.toHaveBeenCalled();
-    listed = { ...listed, workspace_id: null };
+    listed = { ...listed, state: 'discarded' };
     const closed = compose();
     const files = dragged(['Files']);
     box(closed).props.onDragOver(files);

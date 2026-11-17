@@ -354,12 +354,22 @@ export function acceptanceEvidence(
   return milestone.session_ids.filter((id) => merged.has(id)).map((id) => `session:${id}`);
 }
 
-/** The project's sessions a milestone can require: the ones with a worktree. */
+/** The project's sessions a milestone can require: the ones that work on its code. */
 export function milestoneSessions(
   sessions: readonly SnapshotSession[],
   projectId: string,
 ): SnapshotSession[] {
-  return sessions.filter((s) => s.project_id === projectId && s.workspace_id);
+  return sessions.filter(
+    (s) =>
+      s.project_id === projectId &&
+      !s.resident &&
+      !s.baseline &&
+      !s.intro &&
+      !s.change_story &&
+      !s.range_story &&
+      !s.runtime_review &&
+      !s.review_id,
+  );
 }
 
 /** One criterion per non-blank line. */

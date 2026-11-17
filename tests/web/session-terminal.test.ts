@@ -598,7 +598,8 @@ describe('terminal toggle', () => {
     const h = screen();
     thread(h).props.terminal.onToggle();
     h.render();
-    expect(terminalPanel(h)!.props.sessionId).toBeNull();
+    // The daemon opens the terminal of a session without a workspace in the project folder.
+    expect(terminalPanel(h)!.props.sessionId).toBe('baseline');
   });
 
   const shownWith = (one: WorkbenchSession) => {

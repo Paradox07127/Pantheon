@@ -1,5 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { credentialRole, type BoardPlan, type Principal, type Session } from '@pantheon/domain';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import { taskSessions } from '../../packages/control/dist/board-plan.js';
 import { eventually, settle, user } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
 
@@ -226,4 +228,47 @@ it('lists a resident with its kind and a task session with its plan task and lan
     lead: assistant.id,
     task: { id: 'b', title: 'Task b', lane: 'docs', lane_title: 'Docs' },
   });
+});
+
+it('finds the task session of a resident plan by its task binding, not its workspace', async () => {
+  const f = await workbenchFixture();
+  const assistant = await requested(f);
+  writePlan(f, assistant.id);
+  const worker = f.store.insert<Session>('sessions', {
+    id: 'task-session-without-workspace',
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    state: 'open',
+    turn_count: 0,
+    task: { lead_session_id: assistant.id, id: 'a', generation: 1 },
+  });
+  const ctx = f.control['ctx'] as ControlContext;
+  expect(taskSessions(ctx, assistant.id, 'a').map((each) => each.id)).toEqual([worker.id]);
+});
+
+it('lets a resident session ask or plan and refuses the modes that write', async () => {
+  const f = await workbenchFixture();
+  const assistant = open(f);
+  const planning = f.call<Session>(
+    'session.setPermissionMode',
+    { session_id: assistant.id, permission_mode: 'plan' },
+    assistant.revision,
+  );
+  expect(planning.permission_mode).toBe('plan');
+  expect(f.list().find((each) => each.id === assistant.id)!.permission_mode).toBe('plan');
+  expect(() =>
+    f.call(
+      'session.setPermissionMode',
+      { session_id: assistant.id, permission_mode: 'auto_edit' },
+      planning.revision,
+    ),
+  ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
+  expect(
+    f.call<Session>(
+      'session.setPermissionMode',
+      { session_id: assistant.id, permission_mode: 'ask' },
+      planning.revision,
+    ).permission_mode,
+  ).toBe('ask');
 });

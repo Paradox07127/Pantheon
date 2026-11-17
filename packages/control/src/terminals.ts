@@ -109,16 +109,18 @@ export class Terminals {
         'invalid_state',
         'Session has ended',
       );
-      requireThat(session.workspace_id, 'invalid_state', 'Session has no worktree');
-      const workspace = this.store.must<Workspace>('workspaces', session.workspace_id);
-      // A shell writing into the reservation before `git worktree add` breaks provisioning.
-      requireThat(
-        (workspace.provisioning?.state ?? 'ready') === 'ready' &&
-          workspace.removed_at === undefined,
-        'invalid_state',
-        'Worktree is not ready',
-      );
-      cwd = workspace.path;
+      // A session without a workspace gets the project's folder; the shell is the user's own.
+      if (session.workspace_id) {
+        const workspace = this.store.must<Workspace>('workspaces', session.workspace_id);
+        // A shell writing into the reservation before `git worktree add` breaks provisioning.
+        requireThat(
+          (workspace.provisioning?.state ?? 'ready') === 'ready' &&
+            workspace.removed_at === undefined,
+          'invalid_state',
+          'Worktree is not ready',
+        );
+        cwd = workspace.path;
+      }
     }
     const pty = this.spawn!(
       process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash'),

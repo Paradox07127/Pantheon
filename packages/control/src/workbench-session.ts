@@ -445,7 +445,7 @@ function referencedSession(ctx: ControlContext, projectId: string, sessionId: st
 /**
  * The attachments and skills a new turn carries. Attachments are copied into the session's
  * temporary directory: its sandbox denies reads of the data directory, and the temporary
- * directory is a writable root the session can read.
+ * directory is one the session can read, a writable root when it has a workspace.
  */
 export function turnExtras(
   ctx: ControlContext,
@@ -463,7 +463,6 @@ export function turnExtras(
     ...(summaries?.length ? { refs: input.refs, reference_context: summaries.join('\n\n') } : {}),
   };
   if (!input.attachments?.length) return skills;
-  requireThat(session.workspace_id, 'invalid_state', 'Only a worktree session takes attachments');
   const found = input.attachments.map((attachmentId) => {
     const directory = path.join(attachmentsDirectory(ctx, session.project_id), attachmentId);
     // Ids are generated UUIDs; any other id could name a directory outside this project.
@@ -477,7 +476,7 @@ export function turnExtras(
     };
     return { id: attachmentId, name: names[0]!, mime: meta.mime, source: directory };
   });
-  const temporary = writerTempDirectory(session.workspace_id),
+  const temporary = writerTempDirectory(session.workspace_id ?? session.id),
     target = path.join(temporary, 'attachments');
   // A link the session put in place of its temporary directory would redirect every path below.
   requireThat(
@@ -1674,21 +1673,32 @@ async function readMergedDiff(
   };
 }
 
-/** The worktree's committed, uncommitted and untracked changes against its base commit. */
+/**
+ * The worktree's committed, uncommitted and untracked changes against its base commit. A session
+ * without a workspace reads the project's first folder.
+ */
 export async function readSessionDiff(
   ctx: ControlContext,
   principal: Principal,
   sessionId: string,
 ): Promise<SessionDiff> {
   const session = ctx.store.must<Session>('sessions', sessionId);
-  requireThat(session.workspace_id, 'invalid_state', 'Session has no worktree');
-  const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
-  if (session.outcome === 'merged') return mergedSessionDiff(ctx, principal, session, workspace);
-  // A folder session's diff is the uncommitted work in the user's own checkout.
-  const inPlace = workspace.kind === 'in_place';
-  const run = inPlace
-    ? sourceGit(ctx, principal, session.project_id, workspace.path)
-    : workspaceReadAccess(ctx, principal, workspace).git;
+  const workspace = session.workspace_id
+    ? ctx.store.must<Workspace>('workspaces', session.workspace_id)
+    : undefined;
+  if (workspace && session.outcome === 'merged')
+    return mergedSessionDiff(ctx, principal, session, workspace);
+  // A folder session's diff, like one without a workspace, is the uncommitted work in the checkout.
+  const inPlace = workspace?.kind !== 'linked_worktree';
+  const run =
+    workspace?.kind === 'linked_worktree'
+      ? workspaceReadAccess(ctx, principal, workspace).git
+      : sourceGit(
+          ctx,
+          principal,
+          session.project_id,
+          workspace?.path ?? ctx.store.must<Project>('projects', session.project_id).roots[0]!,
+        );
   if (!run)
     throw new DomainError(
       'workspace_unavailable',
@@ -1700,13 +1710,14 @@ export async function readSessionDiff(
       'Session diff failed or exceeded its time bound',
     );
   };
-  const base = inPlace ? 'HEAD' : workspace.base_sha;
+  const base = inPlace ? 'HEAD' : workspace?.base_sha;
   if (!base) throw new DomainError('diff_base_missing', 'Worktree has no base commit');
   const approvals = ctx.store
     .list<Approval>('approvals')
     .filter((approval) => approval.session_id === session.id);
-  const activity = sessionActivity(ctx, session.project_id, approvals).get(session.id)?.at ?? 0,
-    cached = sessionDiffs.get(workspace.id);
+  const key = workspace?.id ?? session.id,
+    activity = sessionActivity(ctx, session.project_id, approvals).get(session.id)?.at ?? 0,
+    cached = sessionDiffs.get(key);
   if (
     cached &&
     cached.activity === activity &&
@@ -1724,12 +1735,12 @@ export async function readSessionDiff(
         return { session_id: session.id, base_sha: inPlace ? head : base, head_sha: head, ...diff };
       },
       (error: unknown) => {
-        if (sessionDiffs.get(workspace.id) === read) sessionDiffs.delete(workspace.id);
+        if (sessionDiffs.get(key) === read) sessionDiffs.delete(key);
         throw error;
       },
     ),
   };
-  sessionDiffs.set(workspace.id, read);
+  sessionDiffs.set(key, read);
   return read.diff;
 }
 
@@ -4903,7 +4914,7 @@ export const workbenchSessionHandlers: Handlers = {
       'permission_denied',
       'Session belongs to another project',
     );
-    requireThat(session.workspace_id, 'invalid_state', 'Only a worktree session can be renamed');
+    requireThat(!session.baseline, 'invalid_state', 'A baseline session cannot be renamed');
     revision(ctx, c, session);
     const next = ctx.store.update(
       'sessions',
@@ -5004,13 +5015,9 @@ export const workbenchSessionHandlers: Handlers = {
     requireThat(
       (session.workspace_id || session.baseline || session.runtime_review) &&
         session.state !== 'reconciling' &&
-        [
-          'merged',
-          'discarded',
-          'failed',
-          'done',
-          ...(session.workspace_id ? ['idle'] : []),
-        ].includes(listedState(ctx, session, waiting, newestBaselineId(ctx, session.project_id))),
+        ['merged', 'discarded', 'failed', 'done', 'idle'].includes(
+          listedState(ctx, session, waiting, newestBaselineId(ctx, session.project_id)),
+        ),
       'invalid_state',
       'Only merged, discarded, failed, done, idle or ready sessions can be archived',
     );
@@ -5210,9 +5217,15 @@ export const workbenchSessionHandlers: Handlers = {
       session = ctx.store.must<Session>('sessions', input.session_id);
     projectAccess(ctx, p, session.project_id, c.type);
     requireThat(
-      session.workspace_id && !session.outcome,
+      !session.outcome,
       'invalid_state',
-      'Only an unfinished worktree session has a permission mode',
+      'Only an unfinished session has a permission mode',
+    );
+    // A session without a workspace runs read-only, which only asking and planning keep.
+    requireThat(
+      session.workspace_id || READ_ONLY_MODES.includes(input.permission_mode),
+      'unsupported_capability',
+      'A read-only session only asks or plans',
     );
     revision(ctx, c, session);
     checkPermissionMode(session.runtime, input.permission_mode, p);
@@ -5513,6 +5526,8 @@ export function changeModel(
 
 type PermissionMode = NonNullable<SessionSpec['permission_mode']>;
 
+const READ_ONLY_MODES: readonly PermissionMode[] = ['ask', 'plan'];
+
 /** Reports whether the running command committed, once its transaction has ended. */
 export function afterCommit(ctx: ControlContext): () => boolean {
   let rolledBack = false;
@@ -5776,8 +5791,8 @@ export async function filesSearch(
       'permission_denied',
       'Session belongs to another project',
     );
-    requireThat(session.workspace_id, 'invalid_state', 'Session has no worktree');
-    cwd = ctx.store.must<Workspace>('workspaces', session.workspace_id).path;
+    if (session.workspace_id)
+      cwd = ctx.store.must<Workspace>('workspaces', session.workspace_id).path;
   }
   const files = await listedFiles(cwd);
   const needle = q.toLowerCase();

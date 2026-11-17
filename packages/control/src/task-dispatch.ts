@@ -198,7 +198,6 @@ export function placedTaskSessions(
   return sessions.filter(
     (session) =>
       session.project_id === projectId &&
-      session.workspace_id &&
       session.task &&
       !session.outcome &&
       session.state !== 'closed' &&
@@ -249,7 +248,7 @@ export function deviceLoads(
     }
     const binding = session.task,
       plan = binding && plans.get(binding.lead_session_id);
-    if (!plan || !session.workspace_id) continue;
+    if (!plan) continue;
     if (!placed.has(plan.project_id))
       placed.set(
         plan.project_id,
@@ -467,7 +466,6 @@ function earlierSessions(ctx: ControlContext, plan: BoardPlan, taskId: string): 
     .list<Session>('sessions')
     .filter(
       (session) =>
-        session.workspace_id &&
         session.task?.lead_session_id === plan.id &&
         session.task.id === taskId &&
         (session.task.generation ?? 1) > (ownEntry(plan.retired, taskId) ?? 0),
@@ -498,7 +496,6 @@ function stopRemovedTasks(ctx: ControlContext): void {
     // The stop it is given marks it, so a session is stopped once; a running merge records its own result first.
     if (
       !plan ||
-      !session.workspace_id ||
       session.outcome ||
       session.state === 'closed' ||
       session.stop_requested ||
@@ -1219,7 +1216,6 @@ export const taskDispatchHandlers: Handlers = {
       .list<Session>('sessions')
       .filter(
         (session) =>
-          session.workspace_id &&
           session.task?.lead_session_id === plan.id &&
           session.task.id === input.task_id &&
           !session.outcome &&

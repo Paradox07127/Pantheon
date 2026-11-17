@@ -826,6 +826,17 @@ describe('baseline sessions', () => {
     const board = { sessions: [open], session_turns: [] };
     expect(sessionScope(event('turn.started', 'b'), [], board)).toEqual(['b']);
   });
+
+  it('reads the list again after an event of a resident session the list does not name yet', () => {
+    const resident: Session = {
+      ...open,
+      id: 'r',
+      baseline: undefined,
+      resident: { kind: 'assistant' },
+    };
+    const board = { sessions: [resident], session_turns: [] };
+    expect(sessionScope(event('turn.started', 'r'), [], board)).toEqual(['r']);
+  });
 });
 
 describe('reading the worktree changes', () => {

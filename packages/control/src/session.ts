@@ -1636,6 +1636,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           profile_version: session.profile_version,
           ...(session.runtime_review ? { runtime_analysis: true as const } : {}),
           ...(session.baseline || session.resident ? { read_only_shell: true as const } : {}),
+          ...(session.permission_mode === 'plan' ? { permission_mode: 'plan' as const } : {}),
           control_instructions: session.runtime_review
             ? RUNTIME_REVIEW_CONTRACT
             : session.resident

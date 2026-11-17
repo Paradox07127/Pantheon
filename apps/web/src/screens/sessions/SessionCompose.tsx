@@ -426,7 +426,7 @@ export function SessionCompose({
   }, [statusFrom]);
   const statusShown = notice !== null || (statusFrom !== null && statusFrom <= Date.now());
   const ended = endedText(listed);
-  const attachable = !!listed?.workspace_id && ended === null;
+  const attachable = ended === null;
   const [modeError, setModeError] = useState<string | null>(null);
   // A file picked or a message sent clears an older mode or backend error, so what it reports shows.
   useEffect(() => {
@@ -749,12 +749,15 @@ export function SessionCompose({
   useShortcut(
     'permission-mode',
     () => {
-      if (!listed?.workspace_id || ended !== null || switching) return;
+      if (!listed || ended !== null || switching) return;
       const own = models[listed.runtime];
-      const modes = modelPermissionModes(
+      const offered = modelPermissionModes(
         listed.runtime,
         own?.state === 'ready' ? defaultModelFor(own.models, listed.model ?? undefined) : null,
       );
+      // A session without a workspace is read-only: it only asks or plans.
+      const modes: WorkbenchSession['permission_mode'][] =
+        listed.workspace_id !== null ? offered : offered.includes('plan') ? ['ask', 'plan'] : [];
       if (modes.length === 0) return;
       const at = modes.indexOf(listed.permission_mode);
       void switchMode(modes[(at + 1) % modes.length]!);
@@ -762,13 +765,22 @@ export function SessionCompose({
     active,
   );
 
-  const plannable = attachable && permissionModes(runtime).some((mode) => mode.value === 'plan');
-  const planning = !!listed?.workspace_id && listed.permission_mode === 'plan';
+  const plannable =
+    ended === null && permissionModes(runtime).some((mode) => mode.value === 'plan');
+  const planning = listed?.permission_mode === 'plan';
   function plan(on: boolean) {
     if (!listed || switching) return;
     if (on) beforePlan.current = listed.permission_mode;
     const back = beforePlan.current;
-    void switchMode(on ? 'plan' : back && back !== 'plan' ? back : defaultPermissionMode(runtime));
+    void switchMode(
+      on
+        ? 'plan'
+        : back && back !== 'plan'
+          ? back
+          : listed.workspace_id === null
+            ? 'ask'
+            : defaultPermissionMode(runtime),
+    );
   }
 
   const shownError = modeError ?? error ?? attachments.error;

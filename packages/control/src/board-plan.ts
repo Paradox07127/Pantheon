@@ -102,7 +102,6 @@ export function taskSessions(
 ): Session[] {
   return sessions.filter(
     (session) =>
-      session.workspace_id &&
       session.task?.lead_session_id === leadId &&
       session.task.id === taskId &&
       (currentBinding(plan, session.task)

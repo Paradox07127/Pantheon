@@ -168,20 +168,21 @@ it('refuses an attachment id that is unknown or belongs to another project', asy
   ).rejects.toThrow(expect.objectContaining({ code: 'not_found' }));
 });
 
-it('refuses attachments for a session without a worktree', async () => {
+it('copies the attachments of a resident session without a workspace into its own temporary directory', async () => {
   const f = await workbenchFixture();
   const attachment = attach(f, 'notes.txt', 'notes', 'text/plain');
-  const plain = f.store.insert<Session>('sessions', {
-    id: 'plain-conversation',
-    revision: 1,
+  const resident = f.call<Session>('resident.open', {
     project_id: f.project.id,
-    runtime: f.adapter.name,
-    state: 'open',
-    turn_count: 0,
+    kind: 'assistant',
   });
-  expect(() => sendWith(f, plain, { attachments: [attachment.id] })).toThrow(
-    expect.objectContaining({ code: 'invalid_state' }),
-  );
+  expect(resident.workspace_id).toBeUndefined();
+  const temporary = await temporaryDirectory(f, resident.id);
+  sendWith(f, resident, { attachments: [attachment.id] });
+  const copy = path.join(temporary, 'attachments', `${attachment.id}-notes.txt`);
+  expect(f.turns(resident.id)[0]).toMatchObject({
+    attachments: [{ id: attachment.id, name: 'notes.txt', mime: 'text/plain', path: copy }],
+  });
+  expect(readFileSync(copy, 'utf8')).toBe('notes');
 });
 
 it('ranks file name matches, then path matches, then ordered characters, shorter paths first', async () => {

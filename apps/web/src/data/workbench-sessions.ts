@@ -375,7 +375,7 @@ export const listedSessions = (projectId: string): readonly WorkbenchSession[] |
 const SESSION_PREFIXES = ['session.', 'turn.', 'workspace.', 'approval.', 'agent.', 'permission.'];
 
 /**
- * Ids of the worktree sessions the event can change: [] when none, null when it may change one
+ * Ids of the listed sessions the event can change: [] when none, null when it may change one
  * neither the list nor the board names yet.
  */
 export function sessionScope(
@@ -394,7 +394,11 @@ export function sessionScope(
     aggregate;
   if (listed.some((session) => session.id === owner)) return [owner];
   const known = board?.sessions.find((session) => session.id === owner);
-  if (known) return known.workspace_id || known.baseline ? [owner] : [];
+  // The list holds these kinds of session, resident ones without a workspace among them.
+  if (known)
+    return known.workspace_id || known.baseline || known.runtime_review || known.resident
+      ? [owner]
+      : [];
   return SESSION_PREFIXES.some((prefix) => event.kind.startsWith(prefix)) ? null : [];
 }
 

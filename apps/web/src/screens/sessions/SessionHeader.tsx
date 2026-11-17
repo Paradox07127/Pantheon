@@ -197,8 +197,8 @@ export function SessionHeader({
   const titleInput = useRef<HTMLInputElement>(null);
   const [discarding, setDiscarding] = useState(false);
   const discard = discardKind(session, listed);
-  // The daemon renames worktree sessions only.
-  const renamable = !!session?.workspace_id;
+  // The daemon renames every session but a baseline one.
+  const renamable = !!session && !session.baseline;
   const changes = listed?.changes ?? null;
   // A session on this machine has no device mark.
   const device = listed?.device_id && listed.device_id !== 'local' ? listed.device_id : null;
@@ -967,7 +967,9 @@ export function MoreMenu(props: {
   );
   // The daemon pushes a pull request only from a worktree on a source branch.
   const createReason =
-    worktreeReason(s, workspace) ??
+    (s.workspace_id === null
+      ? t({ id: 'sessions.model.worktree.none', defaultMessage: 'This session has no worktree' })
+      : worktreeReason(s, workspace)) ??
     (!workspace || s.workspace_kind === 'in_place'
       ? t({ id: 'sessions.model.worktree.none', defaultMessage: 'This session has no worktree' })
       : workspace.source_branch

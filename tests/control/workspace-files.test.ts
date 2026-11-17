@@ -43,6 +43,20 @@ it('lists directories before files by name, excluding ignored entries and git me
   });
 });
 
+it('lists the project folder for a resident session without a workspace', async () => {
+  const f = await workbenchFixture();
+  mkdirSync(path.join(f.source, 'resident-notes'));
+  const resident = f.call<Session>('resident.open', {
+    project_id: f.project.id,
+    kind: 'assistant',
+  });
+  const listed = await f.control.filesList(user, f.project.id, resident.id, undefined);
+  expect(listed.entries).toContainEqual({ name: 'resident-notes', kind: 'dir' });
+  expect(await f.control.filesSearch(user, f.project.id, resident.id, 'answer')).toEqual([
+    'answer.txt',
+  ]);
+});
+
 it('lists a link to a folder inside the workspace as a folder that opens', async () => {
   const f = await workbenchFixture();
   mkdirSync(path.join(f.source, 'docs'));
@@ -178,12 +192,13 @@ it('uses the session worktree for all queries and enforces project access and ow
     state: 'open',
     turn_count: 0,
   });
+  // A session without a workspace reads the project folder.
+  expect(f.control.filesRead(user, f.project.id, plain.id, 'source-only.ts').text).toContain(
+    'sourceOnly',
+  );
   for (const query of queries) {
     expect(() => query(other.id, session.id)).toThrow(
       expect.objectContaining({ code: 'permission_denied' }),
-    );
-    expect(() => query(f.project.id, plain.id)).toThrow(
-      expect.objectContaining({ code: 'invalid_state' }),
     );
     expect(() => query(f.project.id, undefined, { id: 'foreign', role: 'writer' })).toThrow(
       expect.objectContaining({ code: 'permission_denied' }),

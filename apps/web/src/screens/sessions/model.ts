@@ -1,4 +1,5 @@
 export {
+  baselineRow,
   needsAttention,
   readSessionView,
   groupWorkbenchSessions,

@@ -474,11 +474,29 @@ describe('composer attachments', () => {
     const h = host(() =>
       SessionCompose({
         session,
-        listed: { ...listed, workspace_id: null },
+        listed: { ...listed, state: 'discarded' },
         title: 'title of session-a',
       }),
     );
     expect(nodes(h.value).some((n) => text(n) === zh('sessions.composer.addFile'))).toBe(false);
+  });
+
+  it('sends the attachments of a resident session, which has no worktree', async () => {
+    session = { ...running, state: 'open', resident: { kind: 'assistant' } };
+    const h = host(() =>
+      SessionCompose({
+        session,
+        listed: { ...listed, state: 'idle', workspace_id: null, resident: { kind: 'assistant' } },
+        title: 'Assistant',
+      }),
+    );
+    await attach(h, meta('file-a'));
+    type(h, 'look at this');
+    box(h).props.onKeyDown(key({}));
+    await h.flush();
+    expect(command.mock.calls.map(([c]) => c.input)).toEqual([
+      { session_id: 'session-a', input: 'look at this', attachments: ['file-a'] },
+    ]);
   });
 
   it('queues the attachments with the message and sends their ids later', async () => {
@@ -705,7 +723,7 @@ describe('long pasted text', () => {
   });
 
   it('lets long text reach the box where the session takes no attachments', async () => {
-    const h = mount({ ...listed, workspace_id: null });
+    const h = mount({ ...listed, state: 'discarded' });
     expect(await paste(h, 'x'.repeat(5000))).not.toHaveBeenCalled();
     expect(attachFile).not.toHaveBeenCalled();
   });

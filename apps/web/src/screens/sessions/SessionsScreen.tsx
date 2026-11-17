@@ -335,7 +335,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
     <TerminalPanel
       key={`${projectId}:${listed.id}`}
       projectId={projectId}
-      sessionId={listed.workspace_id && !ENDED.has(listed.state) ? listed.id : null}
+      sessionId={!ENDED.has(listed.state) ? listed.id : null}
       ready={listed.state !== 'starting'}
       onBusy={setTerminalBusy}
       onClose={() => {

@@ -38,6 +38,7 @@ import { keyText, shortcutKeys, shortcutMatches, useShortcut } from '../lib/shor
 import { SCREEN_NAMES } from '../screens';
 import { useProjectsView } from '../screens/projects/view';
 import {
+  baselineRow,
   keepOrder,
   keptByView,
   needsAttention,
@@ -800,7 +801,7 @@ export function Sidebar({
     'session-rename',
     () => {
       const session = target();
-      if (session && session.workspace_id !== null) useShell.getState().renameSession(session.id);
+      if (session && !baselineRow(session)) useShell.getState().renameSession(session.id);
     },
     listed,
   );

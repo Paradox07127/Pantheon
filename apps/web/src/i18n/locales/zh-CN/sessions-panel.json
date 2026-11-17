@@ -42,6 +42,7 @@
   "sessions.model.menu.mergedArchiveOnly": "已合并的会话只能归档",
   "sessions.model.menu.mergingOrChecking": "正在合并或运行检查",
   "sessions.model.worktree.none": "这个会话没有 worktree",
+  "sessions.model.workspace.none": "这个会话没有自己的文件夹",
   "sessions.model.worktree.creating": "worktree 还在创建",
   "sessions.model.worktree.removed": "worktree 已删除",
   "sessions.model.ended.merged": "已合并",

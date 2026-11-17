@@ -728,11 +728,7 @@ export function ToolImages(props: { images: ToolImage[]; files: string[]; sessio
   const scope = useBoard((s) => {
     const session = s.board?.sessions.find((each) => each.id === props.sessionId);
     return session
-      ? JSON.stringify(
-          session.workspace_id
-            ? { project_id: session.project_id, session_id: session.id }
-            : { project_id: session.project_id },
-        )
+      ? JSON.stringify({ project_id: session.project_id, session_id: session.id })
       : null;
   });
   const [read, setRead] = useState<Record<string, string>>({});
