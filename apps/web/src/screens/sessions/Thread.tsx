@@ -89,7 +89,7 @@ import { showFile } from './FilesPanel';
 import { SessionCompose } from './SessionCompose';
 import { fail, useSecondTick } from './shared';
 import { CheckpointBack, ReplyActions, TurnActions } from './TurnMenu';
-import { WorkerStrip } from './WorkerStrip';
+import { RESIDENTS, WorkerStrip } from './WorkerStrip';
 import '../../components/state-icon.css';
 
 /** The session's worktree and its project's folders; tool call paths are shown relative to them. */
@@ -419,7 +419,7 @@ export function Thread(props: {
                       defaultMessage: 'Tell {name} what {project} should do next.',
                     },
                     {
-                      name: title,
+                      name: RESIDENTS.find((r) => r.kind === listed.resident!.kind)?.name ?? title,
                       project: board.projects.find((p) => p.id === session?.project_id)?.name ?? '',
                     },
                   )}

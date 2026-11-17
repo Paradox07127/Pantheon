@@ -10,6 +10,22 @@ import { GateSeg } from './SessionHeader';
 import { SessionRowButton } from './SessionRow';
 import './residents.css';
 
+/** The project's resident leads, in the order the sidebar lists them. */
+export const RESIDENTS = [
+  {
+    kind: 'assistant',
+    get name() {
+      return t({ id: 'components.sidebar.residentAssistant', defaultMessage: 'Assistant' });
+    },
+  },
+  {
+    kind: 'triage',
+    get name() {
+      return t({ id: 'components.sidebar.residentTriage', defaultMessage: 'Triage' });
+    },
+  },
+] as const;
+
 /** The counts of running, awaiting review and gate failed workers as one sentence. */
 export const workerCountsText = (counts: WorkerCounts): string =>
   t(

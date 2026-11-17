@@ -58,7 +58,7 @@ import {
 } from '../screens/sessions/model';
 import { SessionListRow, shownSessionId } from '../screens/sessions/SessionsScreen';
 import { setCreatedHere, useSplitRoom } from '../screens/sessions/shared';
-import { workerCountMarks, workerCountsText } from '../screens/sessions/WorkerStrip';
+import { RESIDENTS, workerCountMarks, workerCountsText } from '../screens/sessions/WorkerStrip';
 import { useShell } from '../store';
 import { LoadError } from './LoadError';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from './RuntimeGlyph';
@@ -196,22 +196,6 @@ const TYPES: Record<SessionType, { readonly label: string }> = {
     },
   },
 };
-
-/** The project's resident leads, in the order the sidebar lists them. */
-const RESIDENTS = [
-  {
-    kind: 'assistant',
-    get name() {
-      return t({ id: 'components.sidebar.residentAssistant', defaultMessage: 'Assistant' });
-    },
-  },
-  {
-    kind: 'triage',
-    get name() {
-      return t({ id: 'components.sidebar.residentTriage', defaultMessage: 'Triage' });
-    },
-  },
-] as const;
 
 /** The list without one entry, or with it again. */
 const flip = <T,>(list: readonly T[] | undefined, value: T, keep: boolean): T[] =>
