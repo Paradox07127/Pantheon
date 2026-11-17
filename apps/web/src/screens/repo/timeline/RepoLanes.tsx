@@ -17,7 +17,7 @@ import { elapsedText } from '../../../data/transcript';
 import { currentLocale, t } from '../../../i18n';
 import { listText } from '../../../lib/list-text';
 import { Failure, Skeleton } from '../../board/BoardScreen';
-import { Empty } from '../../board/Charts';
+import { Empty, useSize } from '../../board/Charts';
 import { shortSha } from '../history/CommitGraph';
 import { openRepoView } from '../route';
 import {
@@ -29,6 +29,7 @@ import {
   NAMED_SHARE,
   overviewDomain,
   readTimelineGroup,
+  releaseLabels,
   readTimelineZoom,
   share,
   shiftedEnd,
@@ -201,6 +202,7 @@ export function RepoLanes({
   const timeline = useRepoTimeline(projectId, from, end, group);
   const stories = useRangeStories(projectId);
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [lanesRef, lanesSize] = useSize();
   const [drag, setDrag] = useState<{ x: number; width: number; by: number } | null>(null);
   // sending is true while the start request is out.
   const [asked, setAsked] = useState<{
@@ -345,7 +347,14 @@ export function RepoLanes({
         aria-label={t({ id: 'repo.timeline.label', defaultMessage: 'Project timeline' })}
       >
         {read ? (
-          lanesPart(read, read.from !== from || read.to !== end, picked, setPicked)
+          lanesPart(
+            read,
+            read.from !== from || read.to !== end,
+            picked,
+            setPicked,
+            lanesRef,
+            lanesSize.w,
+          )
         ) : timeline.error ? (
           <Failure error={timeline.error} onRetry={timeline.reload} />
         ) : (
@@ -416,6 +425,8 @@ function lanesPart(
   busy: boolean,
   picked: Picked | null,
   onPick: (picked: Picked) => void,
+  ref: (el: HTMLElement | null) => void,
+  width: number,
 ) {
   if (timeline.lanes.length === 0)
     return (
@@ -433,8 +444,10 @@ function lanesPart(
         ? { month: 'numeric', day: 'numeric' }
         : { month: 'short' },
   );
+  // The track is the lanes' width less the name column and the right gap, as .rl-rel places it.
+  const named = releaseLabels(timeline.releases, from, to, Math.max(0, width - 176));
   return (
-    <div className="rl-lanes" aria-busy={busy || undefined}>
+    <div className="rl-lanes" aria-busy={busy || undefined} ref={ref}>
       <div className="rl-ax">
         <span className="rl-lh mu">
           {timeline.lanes.some((l) => l.kind === 'author' || l.kind === 'runtime')
@@ -452,14 +465,14 @@ function lanesPart(
         </div>
       </div>
       {timeline.lanes.map((lane) => laneRow(lane, timeline, picked, onPick))}
-      {timeline.releases.map((release) => (
+      {timeline.releases.map((release, i) => (
         <i
           key={release.sha + release.name}
           className="rl-rel"
           title={listText(release.name, stamp(release.at))}
           style={{ '--rl-at': share(release.at, from, to) } as CSSProperties}
         >
-          <span className="mono">{release.name}</span>
+          {named[i] && <span className="mono">{release.name}</span>}
         </i>
       ))}
     </div>

@@ -10,7 +10,9 @@ const store = vi.hoisted(
       setState: (patch: object) => Object.assign(state(), patch),
     }),
 );
-vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+vi.mock('react', async (actual) =>
+  (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true }),
+);
 vi.mock('@/data/board', () => ({
   useBoard: Object.assign((selector: any) => selector(mock.board), {
     getState: () => mock.board,
@@ -55,6 +57,7 @@ vi.mock('@/screens/repo/route', async (actual) => ({
 }));
 import { runtimeName } from '@/components/RuntimeGlyph';
 import { RepoLanes } from '@/screens/repo/timeline/RepoLanes';
+import { releaseLabels } from '@/screens/repo/timeline/lanes-model';
 import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.UTC(2026, 10, 15, 16);
@@ -276,6 +279,32 @@ describe('repository timeline lanes', () => {
     );
     const group = laneGroup(lanesOf('lanes-title').value, long);
     expect(text(find(group.props.children, (n) => n.props.title === long))).toBe(long);
+  });
+
+  it('keeps a marker for each release and names only the first of releases drawn on top of each other', () => {
+    const names = ['loomscreen-v1.0.0', 'loomscreen-v1.0.1', 'loomscreen-v1.0.2'];
+    reads.state.timeline = reads.landed({
+      ...timeline(lanes),
+      releases: names.map((name, i) => ({ sha: `${i}`.repeat(40), name, at: NOW - DAY + i })),
+    });
+    const all = nodes(lanesOf('lanes-releases').value);
+    const markers = names.map((name) =>
+      all.filter((n) => typeof n.props.title === 'string' && n.props.title.startsWith(name)),
+    );
+    expect(markers.map((m) => m.length)).toEqual([1, 1, 1]);
+    expect(names.filter((name) => all.some((n) => n.type === 'span' && text(n) === name))).toEqual([
+      'loomscreen-v1.0.0',
+    ]);
+  });
+
+  it.each([
+    ['three releases a few pixels apart draw one name', [0, 2, 4], [true, false, false]],
+    ['releases far apart draw every name', [0, 300, 600], [true, true, true]],
+    ['a name clear of the last drawn one is drawn again', [0, 10, 200], [true, false, true]],
+  ])('%s', (_name, lefts, drawn) => {
+    const from = NOW - 1000;
+    const releases = lefts.map((left, i) => ({ name: `v1.0.${i}`, at: from + left }));
+    expect(releaseLabels(releases.reverse(), from, from + 1000, 1000).reverse()).toEqual(drawn);
   });
 
   it('names the folded lane and how many lanes it holds', () => {

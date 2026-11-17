@@ -96,6 +96,7 @@
   "projects.baseline.askMore": "继续追问",
   "projects.baseline.confirmBaseline": "确认摸底",
   "projects.baseline.roundLimit": "已到轮数上限，第 {round} 轮，共 {limit} 轮",
+  "projects.baseline.noMoreQuestions": "没有更多问题了",
   "projects.baseline.answered": "已答 {answered}/{total}",
   "projects.baseline.answerBar": "答题",
   "projects.baseline.roundRow": "第 {round} 轮",

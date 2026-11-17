@@ -107,8 +107,11 @@
   white-space: nowrap;
 }
 .nc-event {
-  flex: none;
+  min-width: 0;
+  overflow: hidden;
   color: var(--tx2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .nc-wait {
   flex: none;

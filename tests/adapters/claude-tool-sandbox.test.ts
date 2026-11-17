@@ -1525,6 +1525,36 @@ describe('Claude read-only lead turns', () => {
       expect(await f.tool('Bash', { command }), command).toMatchObject({ behavior: 'allow' });
   });
 
+  it('allows read-only commands whose quoted or escaped patterns hold a pipe character', async () => {
+    const f = await live(leadSpec());
+    await f.adapter.send(f.handle, { turn_id: 'lead-turn', input: 'plan', read_only: true });
+    const cat = 'cat release/app-store/review-notes.txt | head -60';
+    const grep = 'grep -n -i "checklist\\|intel\\|testflight" docs/en/app-store.md | head -30';
+    const script = 'grep -n "appstore" scripts/release_candidate_check.sh | head';
+    for (const command of [
+      cat,
+      grep,
+      script,
+      `${cat}; ${grep}; ${script}`,
+      "grep -E 'a|b' notes.txt",
+      'grep a\\|b notes.txt',
+    ])
+      expect(await f.tool('Bash', { command }), command).toMatchObject({ behavior: 'allow' });
+    for (const command of [
+      `${cat} > out.txt; ${grep}; ${script}`,
+      `${cat}; ${grep} > out.txt; ${script}`,
+      `${cat}; ${grep}; ${script}; rm -f x`,
+      `${cat}; grep -n -i checklist* docs/en/app-store.md | head -30; ${script}`,
+      "grep 'a|b' notes.txt | rm notes.txt",
+      'grep "a|b" notes.txt | sh',
+      'grep "a\\"|rm notes.txt',
+    ])
+      expect(await f.tool('Bash', { command }), command).toEqual({
+        behavior: 'deny',
+        message: READ_ONLY_DENIAL,
+      });
+  });
+
   it('denies writes of a running turn once it is made read-only', async () => {
     const f = await live(leadSpec());
     await f.adapter.send(f.handle, { turn_id: 'lead-turn', input: 'plan' });

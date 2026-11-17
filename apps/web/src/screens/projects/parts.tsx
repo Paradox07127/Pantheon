@@ -62,6 +62,8 @@ export function Button(props: {
   busy?: boolean;
   state?: Availability;
   tone?: 'pri' | 'ghost';
+  /** Id of the element that says why or what next. */
+  describedBy?: string;
   onPress: () => void;
 }) {
   const off = props.busy || (props.state ? !props.state.enabled : false);
@@ -70,6 +72,7 @@ export function Button(props: {
       type="button"
       className={props.tone ? `btn ${props.tone}` : 'btn'}
       aria-disabled={off || undefined}
+      aria-describedby={props.describedBy}
       onClick={off ? undefined : props.onPress}
     >
       {props.busy && props.tone === 'pri'

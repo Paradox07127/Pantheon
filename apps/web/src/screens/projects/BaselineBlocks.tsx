@@ -382,11 +382,18 @@ export function ReviewBaseline({
       )}
     </>
   );
+  const noMoreId = `baseline-done-${baseline.id}`;
+  const noMore = questions.length === 0 && baseline.state === 'submitted' && (
+    <span id={noMoreId} className="mu">
+      {t({ id: 'projects.baseline.noMoreQuestions', defaultMessage: 'No more questions' })}
+    </span>
+  );
   const confirm = (
     <Button
       label={t({ id: 'projects.baseline.confirmBaseline', defaultMessage: 'Confirm baseline' })}
       tone="pri"
       busy={send.busy}
+      describedBy={noMore ? noMoreId : undefined}
       onPress={() =>
         void send.send(baselineConfirmRequest(baseline, { ...draft, answers }), onConfirmed)
       }
@@ -425,6 +432,7 @@ export function ReviewBaseline({
         >
           {askMore}
           {confirm}
+          {noMore}
           {count}
         </div>
       )}

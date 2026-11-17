@@ -293,6 +293,7 @@
   "board.setup.review": "确认基线",
   "board.setup.planning": "第一版计划",
   "board.setup.leadWriting": "lead 正在写计划",
+  "board.setup.leadWaiting": "lead 在等你处理",
   "board.setup.viewLead": "查看 lead",
   "board.setup.draftGraph": "基线给出的任务草图，{count, plural, other {# 个任务}}",
   "board.setup.draft": "草案",

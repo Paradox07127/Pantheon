@@ -68,13 +68,22 @@ vi.mock('@/data/worktree-setup', async (actual) => ({
 }));
 vi.mock('@/data/workbench-sessions', async (actual) => ({
   ...(await actual<object>()),
-  useSessionList: () => landed([]),
+  useSessionList: (projectId: string | null) =>
+    landed(
+      projectId
+        ? [
+            { id: 'lead-plan', state: 'running' },
+            { id: 'lead-asking', state: 'waiting', waiting_kind: 'approval' },
+          ]
+        : [],
+    ),
 }));
 import { BoardScreen, BoardView } from '@/screens/board/BoardScreen';
 import { ProjectSetup, ScratchStart } from '@/screens/board/ProjectSetup';
 import { PublishBar } from '@/screens/board/PublishBar';
 import { BaselinePopover, ReviewBaseline } from '@/screens/projects/BaselineBlocks';
 import { TaskGraph } from '@/screens/projects/TaskGraph';
+import { StateGlyph } from '@/components/SessionStateIcon';
 import { InsightsScreen, InsightsView } from '@/screens/insights/InsightsScreen';
 import { OverviewTab } from '@/screens/repo/OverviewTab';
 import type { SnapshotSession } from '@/screens/board/panels-model';
@@ -314,6 +323,21 @@ describe('project setup states', () => {
         expect(typed(draft, TaskGraph)!.props.tasks).toHaveLength(2);
         button(tree, zh('board.setup.viewLead')).props.onClick();
         expect(onOpenSession).toHaveBeenCalledWith('lead-plan');
+      },
+    ],
+    [
+      'says the planning lead waits for the user while its request is open',
+      setupOf('planning', {
+        baseline: baseline('confirmed'),
+        plan: { ...plan, id: 'lead-asking' },
+        planSince: NOW - 98_000,
+      }),
+      (tree: ReactNode) => {
+        expect(text(tree)).toContain(zh('board.setup.leadWaiting'));
+        expect(text(tree)).not.toContain(zh('board.setup.leadWriting'));
+        expect(typed(tree, StateGlyph)!.props.name).toBe('approval');
+        button(tree, zh('board.setup.viewLead')).props.onClick();
+        expect(onOpenSession).toHaveBeenCalledWith('lead-asking');
       },
     ],
     [

@@ -216,6 +216,24 @@ it('does not ask for another round at the round limit', () => {
   expect(mock.send).not.toHaveBeenCalled();
 });
 
+it.each([
+  ['says there are no more questions beside Confirm on a round without questions', [], true],
+  ['says nothing of that on a round with questions', [store], false],
+])('%s', (_name, questions, shown) => {
+  const h = mount(() => ReviewBaseline({ baseline: baseline(questions) }));
+  const confirm = render(find(h.value, (x) => x.props?.tone === 'pri')) as ReactElement<any>;
+  const line = nodes(h.value).find(
+    (x) => x.type === 'span' && text(x) === zh('projects.baseline.noMoreQuestions'),
+  );
+  if (!shown) {
+    expect(line).toBeUndefined();
+    expect(confirm.props['aria-describedby']).toBeUndefined();
+    return;
+  }
+  expect(line).toBeDefined();
+  expect(line!.props.id).toBe(confirm.props['aria-describedby']);
+});
+
 it('opens an answered round to its questions and answers', async () => {
   const answered = {
     questions: [store, checks],

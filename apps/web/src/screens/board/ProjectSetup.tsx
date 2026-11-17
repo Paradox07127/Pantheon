@@ -10,6 +10,7 @@ import { effectiveSessionDefaults, useLastProjectDefaults } from '../../data/pro
 import { useRuntimeModels } from '../../data/runtime-models';
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import { elapsedText } from '../../data/transcript';
+import { useSessionList } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { keyText, shortcutKeys } from '../../lib/shortcuts';
 import { baselineEntry, type ProjectBaseline } from '../projects/baseline';
@@ -63,6 +64,11 @@ export function ProjectSetup({
   const group = useRef<HTMLDivElement>(null);
   const now = useNow();
   const { state, baseline, busy, error } = setup;
+  // The board's sessions do not say whether one waits for the user; the session list does.
+  const lead = useSessionList(state === 'planning' ? setup.projectId : null).data?.find(
+    (session) => session.id === setup.plan?.id,
+  );
+  const waiting = lead?.state === 'waiting' ? (lead.waiting_kind ?? 'approval') : null;
   if (state === 'none') {
     const keys = keyText(shortcutKeys('palette'));
     return (
@@ -160,9 +166,11 @@ export function ProjectSetup({
       >
         <div className="pst-lead">
           <RuntimeGlyph runtime={plan.runtime} size={14} />
-          <StateGlyph name="running" />
+          <StateGlyph name={waiting ?? 'running'} />
           <span className="pst-lt">
-            {t({ id: 'board.setup.leadWriting', defaultMessage: 'Lead is writing the plan' })}
+            {waiting
+              ? t({ id: 'board.setup.leadWaiting', defaultMessage: 'Lead is waiting for you' })
+              : t({ id: 'board.setup.leadWriting', defaultMessage: 'Lead is writing the plan' })}
           </span>
           {setup.planSince !== null && (
             <span className="mono mu pst-n">{elapsedText(now - setup.planSince)}</span>

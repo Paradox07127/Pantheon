@@ -128,8 +128,8 @@ const READ_ONLY_GIT = new Set([
   'blame',
 ]);
 
-/** Splits a command on `;`, `&&` and `||` outside quotes and backslash escapes. */
-function simpleCommands(command: string): string[] {
+/** Splits a command on `;`, `&&` and `||`, or with `pipes` on `|`, outside quotes and backslash escapes. */
+function simpleCommands(command: string, pipes = false): string[] {
   const parts: string[] = [];
   let start = 0;
   let quote = '';
@@ -140,9 +140,13 @@ function simpleCommands(command: string): string[] {
       else if (char === '\\' && quote === '"') i++;
     } else if (char === '\\') i++;
     else if (char === "'" || char === '"') quote = char;
-    else if (char === ';' || ((char === '&' || char === '|') && command[i + 1] === char)) {
+    else if (
+      pipes
+        ? char === '|'
+        : char === ';' || ((char === '&' || char === '|') && command[i + 1] === char)
+    ) {
       parts.push(command.slice(start, i));
-      if (char !== ';') i++;
+      if (!pipes && char !== ';') i++;
       start = i + 1;
     }
   }
@@ -157,7 +161,8 @@ function readOnlyBash(
   // These redirections only discard output or merge it into the pipe.
   const unredirected = command.replace(/(^|\s)(?:2>&1|[12]?>\/dev\/null)(?=$|[\s;&|])/g, '$1');
   // Unquoted braces, globs (with the zsh extended glob ^) and parentheses expand into words the checks below never see.
-  if (/[{}*?[\]()^]/.test(unredirected.replace(/'[^']*'|"(?:[^"\\]|\\[\s\S])*"|\\[\s\S]/g, '')))
+  // A quote left open would hide the separators after it from the splitters.
+  if (/[{}*?[\]()^'"]/.test(unredirected.replace(/'[^']*'|"(?:[^"\\]|\\[\s\S])*"|\\[\s\S]/g, '')))
     return false;
   return simpleCommands(unredirected).every((part) => {
     if (/[<>;&`$\n\r]/.test(part)) return false;
@@ -188,7 +193,7 @@ function readOnlyPipeline(
   command: string,
   spec: Pick<SessionSpec, 'cwd' | 'project_roots' | 'sandbox'>,
 ): boolean {
-  return command.split('|').every((segment) => {
+  return simpleCommands(command, true).every((segment) => {
     // Dropping quotes and backslashes keeps `"-exec"` or `-e\xec` from passing as another word.
     const [program = '', ...args] = segment
       .trim()

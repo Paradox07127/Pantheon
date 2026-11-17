@@ -11,7 +11,7 @@ import {
 } from '../../apps/web/src/components/Toast.js';
 import { useShell } from '../../apps/web/src/store.js';
 import { zh } from './i18n-setup.js';
-import { mount, named, text } from './web-hook-host.js';
+import { mount, named, nodes, text } from './web-hook-host.js';
 import { mountToastStore } from './web-toast-store.js';
 
 const NOW = Date.UTC(2026, 10, 13, 9);
@@ -116,6 +116,18 @@ describe('notice cards', () => {
     h.render();
     expect(text(h.value as never)).toBe('等了 3 分');
     h.unmount();
+  });
+
+  it('puts how long a card has waited after what it waits for, as separate elements', () => {
+    noticeNeeds({ heading: 'lead', event: 'waiting for approval', since: NOW - 19 * 60_000 });
+    const items = mounted.items();
+    const event = items.findIndex((n) => n.type === 'span' && text(n) === 'waiting for approval');
+    const waited = items.findIndex(
+      (n) => typeof n.type === 'function' && n.type.name === 'NoticeWaited',
+    );
+    expect(event).toBeGreaterThan(-1);
+    expect(waited).toBeGreaterThan(event);
+    expect(nodes(items[event]).map((n) => n.type)).toEqual(['span']);
   });
 
   it('opens where a result card points when the card is pressed', () => {

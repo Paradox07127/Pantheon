@@ -83,6 +83,30 @@ export function laneBands(lane: RepoLane, spanRows: number) {
 export const share = (at: number, from: number, to: number) =>
   Math.min(1, Math.max(0, (at - from) / Math.max(1, to - from)));
 
+/**
+ * Whether each release's name is drawn on a track `width` px wide: in time order, a name only
+ * once it clears the last drawn one.
+ */
+export function releaseLabels(
+  releases: readonly { at: number; name: string }[],
+  from: number,
+  to: number,
+  width: number,
+): boolean[] {
+  const drawn = releases.map(() => false);
+  let clear = -Infinity;
+  const order = releases.map((_, i) => i).sort((a, b) => releases[a]!.at - releases[b]!.at);
+  for (const i of order) {
+    const release = releases[i]!;
+    const left = share(release.at, from, to) * width;
+    if (left < clear) continue;
+    drawn[i] = true;
+    // 7.2px is the advance of a 12px monospace glyph; 12px is the label's offset and padding.
+    clear = left + release.name.length * 7.2 + 12;
+  }
+  return drawn;
+}
+
 /** Axis ticks: hours over a day or less, every other midnight up to a month, else month starts. */
 export function axisTicks(from: number, to: number) {
   const span = to - from;
