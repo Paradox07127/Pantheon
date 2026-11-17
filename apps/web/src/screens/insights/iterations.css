@@ -119,18 +119,16 @@
   flex: none;
 }
 .itr-ct {
+  display: flex;
   flex: 1;
   min-width: 0;
   padding: 0;
-  overflow: hidden;
   border: 0;
   background: none;
   color: var(--tx);
   font: inherit;
   font-size: var(--fs-sm);
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .itr-ct:focus-visible,
 .itr-riskt:focus-visible,
@@ -518,7 +516,7 @@ button.itr-est:hover {
   position: relative;
   min-width: 0;
 }
-/* The box spans the time the task took; a title longer than the box runs past its end. */
+/* The box spans the time the task took; a title longer than the box is cut at its end. */
 .itg-bar {
   --itg-c: var(--bd3);
   position: absolute;
@@ -543,8 +541,7 @@ button.itr-est:hover {
   align-items: center;
   gap: 4px;
   box-sizing: border-box;
-  width: max-content;
-  min-width: 100%;
+  min-width: 0;
   padding: 0 var(--sp-2);
 }
 .itg-rt {
@@ -591,8 +588,7 @@ button.itr-est:hover {
   pointer-events: none;
 }
 .itg-bar .itr-ct {
-  flex: 1 0 auto;
-  overflow: visible;
+  display: flex;
   font-size: var(--fs-xs);
 }
 .itg-bar .itr-est {

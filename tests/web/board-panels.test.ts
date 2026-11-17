@@ -250,8 +250,8 @@ describe('board milestones', () => {
       tasks: { done, total },
     });
     const row = (html: string, title: string) => {
-      const start = html.indexOf(`<span class="nm">${title}</span>`);
-      const end = html.indexOf('<span class="nm">', start + 1);
+      const start = html.indexOf(`<span class="clip-1 nm" data-clip="">${title}</span>`);
+      const end = html.indexOf('<span class="clip-1 nm"', start + 1);
       return html.slice(start, end < 0 ? undefined : end);
     };
     const html = render(Milestones, {

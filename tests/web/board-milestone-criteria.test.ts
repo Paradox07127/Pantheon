@@ -311,7 +311,9 @@ describe('accepting a milestone criterion by criterion', () => {
 
   it('marks each criterion on the card pending or accepted', () => {
     const accepted = model(milestone('completed', [true, false]));
-    const html = renderToStaticMarkup(new HookHost(() => Milestones({ model: accepted })).render());
+    const tree = new HookHost(() => Milestones({ model: accepted })).render();
+    const list = labelled(tree, say('board.milestones.criteriaOf', { milestone: 'first release' }));
+    const html = renderToStaticMarkup(list);
     const mark = (criterion: string) =>
       html
         .match(

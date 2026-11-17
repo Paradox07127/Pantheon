@@ -22,7 +22,9 @@ export async function open(runDir, { ms = 60_000 } = {}) {
     const push = (text) => window.__verifyErrors.push(String(text).slice(0, 500));
     const original = console.error;
     console.error = (...args) => { push(args.map(String).join(' ')); original(...args); };
-    addEventListener('error', (e) => push(e.message));
+    // Chromium's note that resize notifications move to the next frame; the board's canvas lays out its
+    // cards inside React Flow's resize callback on purpose, so they land before the frame paints.
+    addEventListener('error', (e) => /^ResizeObserver loop/.test(e.message) || push(e.message));
     addEventListener('unhandledrejection', (e) => push(e.reason?.message ?? e.reason));
   })()`);
 

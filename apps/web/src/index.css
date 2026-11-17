@@ -457,7 +457,6 @@ body {
 /* Rows put a 16px glyph in a 20px slot 8px in, so their text starts 32px in. */
 .sb-pj{display:flex;align-items:center;gap:var(--sp-1);flex:none;width:100%;height:36px;padding:0 7px;border-radius:var(--r-sm);background:transparent;color:var(--tx);font:inherit;font-size:var(--fs-sm);text-align:left;transition:background-color var(--dur-1) var(--ease-std)}
 .sb-pj>:first-child{margin:0 2px}
-.sb-pj b{min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sb-pj>svg{margin-left:var(--sp-1);color:var(--mu)}
 .sb-pj:hover,.sb-pj[data-popup-open]{background:var(--st-hov)}
 .sb-pj:active{background:var(--st-on)}

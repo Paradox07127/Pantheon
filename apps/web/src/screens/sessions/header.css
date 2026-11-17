@@ -81,6 +81,10 @@
   display: flex;
   overflow: visible;
 }
+/* Lets the title's Clip shrink to the button, so the Clip and not the button cuts it. */
+.sh-rn {
+  display: flex;
+}
 .sh-recap {
   color: var(--mu);
 }

@@ -25,6 +25,7 @@ import {
   runtimeColor,
   runtimeName,
 } from '../../components/RuntimeGlyph';
+import { Clip } from '../../components/Clip';
 import { Select } from '../../components/Select';
 import { useBoard } from '../../data/board';
 import { pickBoardPage } from '../../data/board-page';
@@ -623,7 +624,7 @@ export function IterationsBarControls({
           >
             {t({ id: 'insights.iterations.previousShort', defaultMessage: 'Previous' })}
           </button>
-          <span className="itr-pickt">{title}</span>
+          <Clip className="itr-pickt" text={title} />
           <button
             type="button"
             aria-label={t({ id: 'insights.iterations.next', defaultMessage: 'Next iteration' })}
@@ -1121,7 +1122,7 @@ export function IterationsTab({ model, projectId, edit, onOpenTask, bar }: Itera
           </span>
         )}
         <button type="button" className="itr-ct" onClick={() => onOpenTask(task.id)}>
-          {task.title}
+          <Clip text={task.title} />
         </button>
         {task.priority === 'high' && (
           <span

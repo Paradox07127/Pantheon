@@ -1,9 +1,7 @@
-/* The data folder's path sits under its name on one line, and can be copied. */
+/* The data folder's path sits under its name, wraps anywhere, and can be copied. */
 .dp-path {
   font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   user-select: text;
 }
 .dp-path-sk {

@@ -36,6 +36,7 @@ import {
   recapLine,
 } from '../../components/SessionStateIcon';
 import { KeyHint } from '../../components/Shortcuts';
+import { Clip } from '../../components/Clip';
 import { Tip } from '../../components/Tip';
 import { toast } from '../../components/Toast';
 import { useBoard } from '../../data/board';
@@ -318,19 +319,17 @@ export function SessionHeader({
         />
       ) : renamable ? (
         <h1 className="sh-title sh-h1">
-          <Tip content={title}>
-            <button
-              type="button"
-              className="sh-title"
-              aria-label={t({
-                id: 'sessions.screen.editTitle',
-                defaultMessage: 'Edit session title',
-              })}
-              onClick={rename}
-            >
-              {title}
-            </button>
-          </Tip>
+          <button
+            type="button"
+            className="sh-title sh-rn"
+            aria-label={t({
+              id: 'sessions.screen.editTitle',
+              defaultMessage: 'Edit session title',
+            })}
+            onClick={rename}
+          >
+            <Clip text={title} />
+          </button>
         </h1>
       ) : (
         <h1 className="sh-title" title={title}>
@@ -364,7 +363,7 @@ export function SessionHeader({
       {branch && (
         <span className="sh-chip">
           <GitBranch aria-hidden="true" />
-          <span className="sh-cut">{branch.name ?? detachedText()}</span>
+          <Clip className="sh-cut" text={branch.name ?? detachedText()} />
           {aheadText(branch).map((count) => (
             <span key={count} className="sh-ahead">
               {count}

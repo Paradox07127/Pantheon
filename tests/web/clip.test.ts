@@ -12,7 +12,18 @@ const FULL = 'Rebuild the nightly refunds export with retries and a resumable cu
 
 // The host has no layout: the drawn element is a box whose content is `content` px and whose room is `room` px.
 const box = { content: 0, room: 0 };
+// The control the line sits in, when there is one; its focus and blur listeners land in `heard`.
+const heard: Record<string, () => void> = {};
+let inside: object | null = null;
+const control = {
+  matches: () => true,
+  addEventListener: (type: string, fn: () => void) => (heard[type] = fn),
+  removeEventListener: () => {},
+};
 const laidOut = {
+  get parentElement() {
+    return { closest: () => inside };
+  },
   get scrollWidth() {
     return box.content;
   },
@@ -37,6 +48,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  inside = null;
   unmountAll();
   vi.unstubAllGlobals();
 });
@@ -67,6 +79,22 @@ describe('text cut to fit its box', () => {
     expect(trigger.props.tabIndex).toBe(0);
     expect(text(trigger)).toBe(FULL);
     expect(text(find(tree, (n) => n.props.className === 'tooltip'))).toBe(FULL);
+  });
+
+  it("leaves a cut line in a control out of the tab order and opens its tooltip on the control's keyboard focus", () => {
+    inside = control;
+    const h = draw(1, 400, 120);
+    h.render();
+    const line = drawn(h.value);
+    expect(line.props['data-clip']).toBe('cut');
+    expect(line.props.tabIndex).toBeUndefined();
+    expect(find(h.value, (n) => n.type === Tip).props.open).toBe(false);
+    heard.focus!();
+    h.render();
+    expect(find(h.value, (n) => n.type === Tip).props.open).toBe(true);
+    heard.blur!();
+    h.render();
+    expect(find(h.value, (n) => n.type === Tip).props.open).toBe(false);
   });
 
   it('leaves a line that fits without a tooltip and out of the tab order', () => {

@@ -306,11 +306,6 @@
   gap: 12px;
   height: 32px;
 }
-.bp-msr .nm {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .bp-trk {
   height: 8px;
   border-radius: var(--r-sm);
@@ -396,9 +391,7 @@
 }
 .bp-crit span {
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .bp-crit .mk {
   flex: none;

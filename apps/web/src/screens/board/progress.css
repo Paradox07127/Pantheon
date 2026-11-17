@@ -396,9 +396,7 @@
   color: var(--tx);
   font: inherit;
   text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
 }
 .bpc-stn:hover {
   color: var(--tx);

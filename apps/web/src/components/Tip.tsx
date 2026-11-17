@@ -11,11 +11,25 @@ interface TipProps {
   // A focusable DOM element; the tooltip opens on its hover and keyboard focus.
   children: ReactElement;
   disabled?: boolean;
+  /** Set both to open the tooltip from outside as well as on hover and focus. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function Tip({ content, keys, side = 'top', children, disabled }: TipProps) {
+export function Tip({
+  content,
+  keys,
+  side = 'top',
+  children,
+  disabled,
+  open,
+  onOpenChange,
+}: TipProps) {
   return (
-    <Tooltip.Root disabled={disabled}>
+    <Tooltip.Root
+      disabled={disabled}
+      {...(onOpenChange ? { open, onOpenChange: (next: boolean) => onOpenChange(next) } : {})}
+    >
       <Tooltip.Trigger render={children} />
       <Tooltip.Portal>
         <Tooltip.Positioner side={side} sideOffset={8} style={{ zIndex: 60 }}>

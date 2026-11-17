@@ -4,6 +4,7 @@ import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { ChevronDown, ChevronRight, Flag, RotateCcw, Route, Undo2 } from 'lucide-react';
 import type { BoardHistory, BoardTaskState } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { ModelMark, RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { useBoard } from '../../data/board';
@@ -727,7 +728,7 @@ export function HistoryView({
             >
               <span className="bd-hs-lt">
                 {rowIcon(row)}
-                {rowTitle(row)}
+                <Clip text={rowTitle(row)} />
               </span>
               <span className="bd-hs-ln">
                 {row.merged} / {row.total}

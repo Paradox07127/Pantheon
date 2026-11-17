@@ -367,39 +367,47 @@
   background: var(--sel);
   color: var(--tx);
 }
+/* The bracket, then its label beside it in the same column. */
 .wfl-loop {
-  position: relative;
-  box-sizing: border-box;
-  width: 24px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
   margin-top: var(--wfl-anchor);
   margin-bottom: calc(-1 * var(--sp-4) - var(--wfl-anchor));
-  border: 1px dashed var(--bad);
 }
 .wfl-loop[data-side='end'] {
   grid-column: 3;
   justify-self: start;
-  border-left: 0;
-  border-radius: 0 var(--r-md) var(--r-md) 0;
 }
 .wfl-loop[data-side='start'] {
   grid-column: 1;
+  flex-direction: row-reverse;
   justify-self: end;
+}
+.wfl-loop > i {
+  flex: none;
+  align-self: stretch;
+  box-sizing: border-box;
+  width: 24px;
+  border: 1px dashed var(--bad);
+}
+.wfl-loop[data-side='end'] > i {
+  border-left: 0;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.wfl-loop[data-side='start'] > i {
   border-right: 0;
   border-radius: var(--r-md) 0 0 var(--r-md);
 }
 .wfl-loop > span {
-  position: absolute;
-  top: 50%;
+  min-width: 0;
   color: var(--tx2);
   font-size: var(--fs-xs);
-  white-space: nowrap;
-  transform: translateY(-50%);
-}
-.wfl-loop[data-side='end'] > span {
-  left: calc(100% + var(--sp-2));
+  overflow-wrap: anywhere;
 }
 .wfl-loop[data-side='start'] > span {
-  right: calc(100% + var(--sp-2));
+  text-align: end;
 }
 .wfl-pal {
   display: flex;

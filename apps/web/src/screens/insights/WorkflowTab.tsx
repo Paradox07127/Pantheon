@@ -2188,6 +2188,7 @@ export function WorkflowTab({
                   )}
                   style={{ gridRow: `${at(loop.to) + 1} / ${at(loop.from) + 1}` }}
                 >
+                  <i />
                   <span>{loop.text}</span>
                 </span>
               ))}

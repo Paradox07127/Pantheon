@@ -515,7 +515,9 @@ describe('session header', () => {
       }),
     );
     expect(html).toContain('<header');
-    expect(html).toMatch(/<button[^>]*aria-label="修改会话标题"[^>]*>Release notes<\/button>/);
+    expect(html).toMatch(
+      /<button[^>]*aria-label="修改会话标题"[^>]*><span[^>]*data-clip[^>]*>Release notes<\/span><\/button>/,
+    );
     expect(html).not.toMatch(/<button[^>]*aria-label="修改会话标题"[^>]*disabled/);
     expect(html).not.toContain('<input');
   });

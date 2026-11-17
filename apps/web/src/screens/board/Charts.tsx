@@ -32,6 +32,7 @@ import {
 } from './panels-model';
 import { StatusIcon } from './status';
 import { TellLead, useDialogContent } from './TellLead';
+import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
 import './charts.css';
 
@@ -629,7 +630,7 @@ export function Milestones({ model, actions }: { model: BoardModel; actions?: Mi
                 <div
                   className={`bp-msr${lead ? ' bp-msl' : ''}${finished ? ' fin' : ''}${actions ? ' with-acts' : ''}`}
                 >
-                  <span className="nm">{ms.title}</span>
+                  <Clip className="nm" text={ms.title} />
                   <span
                     className="bp-trk"
                     role="progressbar"

@@ -45,3 +45,6 @@
 .sb-pd[data-tone='run'] {
   background: var(--run);
 }
+.sb-pj-nm {
+  font-weight: 600;
+}

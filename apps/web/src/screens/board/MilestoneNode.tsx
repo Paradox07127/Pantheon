@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { Flag } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { t } from '../../i18n';
 import type { FlowOverlay } from './FlowOverlays';
 import { placeholder } from './MergedStack';
@@ -84,7 +85,7 @@ export function MilestoneNode({ data }: NodeProps<MilestoneFlowNode>) {
       <div className="bd-nd bd-ms">
         <div className="bd-nrow bd-nh">
           <Flag className="bd-ms-ic" aria-hidden="true" />
-          <span className="bd-nt">{milestone.title}</span>
+          <Clip className="bd-nt" text={milestone.title} />
         </div>
         <div className="bd-ms-p">
           <svg

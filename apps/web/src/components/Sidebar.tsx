@@ -61,6 +61,7 @@ import { SessionListRow, shownSessionId } from '../screens/sessions/SessionsScre
 import { setCreatedHere, useSplitRoom } from '../screens/sessions/shared';
 import { RESIDENTS, workerCountMarks, workerCountsText } from '../screens/sessions/WorkerStrip';
 import { useShell } from '../store';
+import { Clip } from './Clip';
 import { LoadError } from './LoadError';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from './RuntimeGlyph';
 import { SessionStateIcon, sessionStateLabel, StateGlyph } from './SessionStateIcon';
@@ -1087,7 +1088,7 @@ export function Sidebar({
         {projectWindow ? (
           <div className="sb-pj sb-fixed">
             {swatch}
-            <b>{project}</b>
+            <Clip className="sb-pj-nm" text={project ?? ''} />
           </div>
         ) : (
           <ProjectMenu
@@ -1103,13 +1104,16 @@ export function Sidebar({
             ) : (
               <>
                 {swatch}
-                <b>
-                  {project ??
+                <Clip
+                  className="sb-pj-nm"
+                  text={
+                    project ??
                     t({
                       id: 'components.sidebar.chooseProject',
                       defaultMessage: 'Choose a project',
-                    })}
-                </b>
+                    })
+                  }
+                />
                 {(attention === null || attention > 0) && (
                   <span
                     className="sb-dot"

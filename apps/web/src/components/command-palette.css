@@ -119,9 +119,6 @@
   text-overflow: ellipsis;
 }
 .cmdk-sub {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--mu);
   font-size: var(--fs-xs);
 }

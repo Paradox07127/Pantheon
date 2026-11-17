@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
@@ -207,7 +208,7 @@ export function IterationsGantt({
                                   className="itr-ct"
                                   onClick={() => onOpenTask(task.id)}
                                 >
-                                  {task.title}
+                                  <Clip text={task.title} />
                                 </button>
                                 {runtime && (
                                   <span

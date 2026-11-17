@@ -1,6 +1,7 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { useNow } from '../../data/needs-you';
+import { Clip } from '../../components/Clip';
 import { Tip } from '../../components/Tip';
 import { t } from '../../i18n';
 import {
@@ -452,11 +453,9 @@ export function StallPanel({
               const text = `${KIND_LABEL[r.kind]} ${durationText(r.ms)}`;
               return (
                 <div className="bpc-str" key={r.task.id}>
-                  <Tip content={r.task.title}>
-                    <button type="button" className="bpc-stn" onClick={() => onOpenTask(r.task.id)}>
-                      {r.task.title}
-                    </button>
-                  </Tip>
+                  <button type="button" className="bpc-stn" onClick={() => onOpenTask(r.task.id)}>
+                    <Clip text={r.task.title} />
+                  </button>
                   <span
                     className="bpc-stt"
                     role="img"

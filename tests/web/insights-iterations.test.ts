@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { zh } from './i18n-setup.js';
 import { HookHost, find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
+import { Clip } from '@/components/Clip';
 import { pickBoardPage, useBoardPage } from '@/data/board-page';
 import { boardEditing, setBoardEditing } from '@/screens/board/EditMode';
 import { useShell } from '@/store';
@@ -353,7 +354,7 @@ describe('iterations page frame', () => {
     expect([text(next), next.props.disabled]).toEqual([itr('nextShort'), false]);
     next.props.onClick();
     expect(onNext).toHaveBeenCalledOnce();
-    expect(text(find(labelled(tree, itr('shown')), (n) => n.type === 'span'))).toBe('Sprint seven');
+    expect(text(find(labelled(tree, itr('shown')), (n) => n.type === Clip))).toBe('Sprint seven');
   });
 });
 

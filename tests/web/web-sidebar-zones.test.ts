@@ -164,7 +164,7 @@ describe('sidebar zones', () => {
     });
     const project = section(html, side('currentProject'));
     expect(project).toMatch(
-      /^<button[^>]*aria-label="切换项目" class="sb-pj"><span class="pmono"[^>]*>A<\/span><b>Alpha<\/b><svg[^>]*lucide-chevron-down[^>]*>/,
+      /^<button[^>]*aria-label="切换项目" class="sb-pj"><span class="pmono"[^>]*>A<\/span><span class="clip-1 sb-pj-nm"[^>]*>Alpha<\/span><svg[^>]*lucide-chevron-down[^>]*>/,
     );
     for (const label of ['运行 1', '待处理 1', '待合并 1', '失败 0'])
       expect(project).not.toContain(`aria-label="${label}"`);

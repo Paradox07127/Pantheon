@@ -28,6 +28,7 @@ import {
   type PaletteItem,
   type PaletteSection,
 } from './palette';
+import { Clip } from './Clip';
 import { ProjectMonogram } from './ProjectMonogram';
 import { SessionStateIcon } from './SessionStateIcon';
 import { Tip } from './Tip';
@@ -418,7 +419,7 @@ function PaletteBody({
   const row = (item: PaletteItem) => {
     const i = indexOf(item);
     return (
-      <Tip key={item.id} content={item.label}>
+      <Tip key={item.id} content={item.label} disabled={!item.found}>
         <div
           key={item.id}
           id={optionId(i)}
@@ -442,25 +443,22 @@ function PaletteBody({
               <SquarePen size={16} />
             ) : null}
           </span>
-          <span className="cmdk-lb">
-            {item.found ? (
-              <>
-                {item.found.before}
-                <mark className="hit">{item.found.match}</mark>
-                {item.found.after}
-              </>
-            ) : (
-              item.label
-            )}
-          </span>
+          {item.found ? (
+            <span className="cmdk-lb">
+              {item.found.before}
+              <mark className="hit">{item.found.match}</mark>
+              {item.found.after}
+            </span>
+          ) : (
+            <Clip className="cmdk-lb" text={item.label} />
+          )}
           {item.sub && (
-            <span
+            <Clip
               className={
                 item.group === 'file' || item.group === 'project' ? 'cmdk-sub mono' : 'cmdk-sub'
               }
-            >
-              {item.sub}
-            </span>
+              text={item.sub}
+            />
           )}
           {item.keys && <span className="kbd">{keyText(item.keys)}</span>}
           {item.archived && (
