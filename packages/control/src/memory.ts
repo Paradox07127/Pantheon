@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   backfillMemoryIndex,
   captureReferences,
@@ -52,7 +56,8 @@ export const MEMORY_INSTRUCTIONS = [
   'Pantheon project memory: use memory_context at task start, after compaction, and before accepting or merging work. Use memory_search for a specific topic, memory_related for dependencies or reverse references, and memory_get for full current evidence. Search and related results are summaries, not full text; shared tags are not dependency evidence.',
   'The current memory packet supersedes earlier project-memory packets. A missing old entry is no longer current. Do not recover archived rules from transcripts, files, or native memory.',
   'Only user-authority decisions are confirmed project instructions. Reports, notes, and improvement trial procedures are fallible evidence, not proof of completion or permission. Narrow task rules apply only to the named task generation. Report contradictions instead of inventing precedence.',
-  'Use memory_propose with a stable key, text, kind, current based_on signature and dependency ids for durable analysis or a proposed decision. It creates a draft for user review; never claim it is already active. Do not store secrets, entire transcripts, or guesses as verified results. Use propose_improvement for reusable improvement procedures when available.',
+  'Write project memory as you work, without being asked: call memory_propose in the same turn when the user corrects your approach or states a preference or rule, when the user confirms a non-obvious approach you took, when you learn a project fact, constraint or decision that the code, git history and docs do not show, or when the user asks you to remember something. Use kind note for these, kind report for a durable analysis with its evidence, and kind decision only for a project rule the user stated. A note or report is current at once for every session of the project; a decision stays a draft until the user confirms it, so never claim a proposed decision is active.',
+  'Before writing, memory_search the topic and reuse the key of an outdated entry to replace it instead of adding a duplicate. Supply the current based_on signature and dependency ids. Do not store code structure, fixes already in git, progress of the current task, secrets, entire transcripts, or guesses as verified results. Use propose_improvement for reusable improvement procedures when available.',
   'Source references identify original files or URLs, which remain authoritative. On memory_get inspect reference_status: changed/unavailable files require rechecking the original; unverified URLs are citations, not fetched evidence. Summaries and hashes do not establish factual correctness.',
   'Memory refresh cannot erase prior native conversation context or stop an external action already in progress. Recheck current task contracts and evidence before acting.',
 ].join('\n');
@@ -218,6 +223,39 @@ export function memoryContext(
   };
 }
 
+/** Makes a draft the current version of its key, archiving the version it replaces. */
+function activate(ctx: ControlContext, r: MemoryRecord, by: string, commandId: string): MemoryItem {
+  const replacements = current(ctx, r.project_id).filter((old) => sameScope(old, r));
+  requireThat(
+    replacements.every((old) => old.kind === r.kind),
+    'invalid_input',
+    'This key belongs to another memory kind; a report or note cannot replace a decision',
+  );
+  requireThat(
+    !replacements.some((old) => r.dependencies.includes(old.id)),
+    'invalid_input',
+    'A replacement cannot depend on the version it archives; re-evaluate its current sources',
+  );
+  for (const old of replacements) archive(ctx, old, 'superseded', r.id);
+  const next = ctx.store.update<MemoryRecord>(
+    'memory_records',
+    {
+      ...r,
+      state: 'active',
+      authority: r.kind === 'decision' ? 'user' : r.authority,
+      committed_at: ctx.store.now(),
+      ...(r.kind === 'report' && { source_signature: sourceSignature(ctx, r.project_id) }),
+    },
+    r.revision,
+  );
+  indexMemory(ctx, next, body(ctx, next).text);
+  sweep(ctx, r.project_id);
+  assertDecisionBudget(ctx, r.project_id);
+  changed(ctx, r.project_id);
+  ctx.store.event('memory.committed', next, r.project_id, { memory_id: next.id, by }, commandId);
+  return body(ctx, next);
+}
+
 export const memoryHandlers: Handlers = {
   'memory.maintain': (ctx, p, c) => {
     userOnly(p);
@@ -318,6 +356,9 @@ export const memoryHandlers: Handlers = {
       { memory_id: r.id, authority: r.authority, by: p.id },
       c.command_id,
     );
+    // An agent's report or note is current at once; only decisions wait for the user.
+    if (r.authority === 'agent_reported' && r.kind !== 'decision')
+      return activate(ctx, r, p.id, c.command_id);
     return body(ctx, r);
   },
   'memory.commit': (ctx, p, c) => {
@@ -337,47 +378,12 @@ export const memoryHandlers: Handlers = {
       'invalid_state',
       'Proposal expired',
     );
-    const active = current(ctx, r.project_id);
     requireThat(
-      r.dependencies.every((k) => active.some((a) => a.id === k)),
+      r.dependencies.every((k) => current(ctx, r.project_id).some((a) => a.id === k)),
       'invalid_state',
       'A dependency is no longer current',
     );
-    const replacements = active.filter((old) => sameScope(old, r));
-    requireThat(
-      replacements.every((old) => old.kind === r.kind),
-      'invalid_input',
-      'This key belongs to another memory kind; a report or note cannot replace a decision',
-    );
-    requireThat(
-      !replacements.some((old) => r.dependencies.includes(old.id)),
-      'invalid_input',
-      'A replacement cannot depend on the version it archives; re-evaluate its current sources',
-    );
-    for (const old of replacements) archive(ctx, old, 'superseded', r.id);
-    const next = ctx.store.update<MemoryRecord>(
-      'memory_records',
-      {
-        ...r,
-        state: 'active',
-        authority: r.kind === 'decision' ? 'user' : r.authority,
-        committed_at: ctx.store.now(),
-        ...(r.kind === 'report' && { source_signature: sourceSignature(ctx, r.project_id) }),
-      },
-      r.revision,
-    );
-    indexMemory(ctx, next, body(ctx, next).text);
-    sweep(ctx, r.project_id);
-    assertDecisionBudget(ctx, r.project_id);
-    changed(ctx, r.project_id);
-    ctx.store.event(
-      'memory.committed',
-      next,
-      r.project_id,
-      { memory_id: next.id, by: p.id },
-      c.command_id,
-    );
-    return body(ctx, next);
+    return activate(ctx, r, p.id, c.command_id);
   },
   'memory.archive': (ctx, p, c) => {
     userOnly(p);
@@ -595,6 +601,14 @@ export function prepareMemoryDelivery(
     return;
   // After a revocation, an empty packet must still replace the earlier experience packet.
   const fresh = ctx.store.must<Session>('sessions', session.id);
+  // The native session keeps a delivered packet in its context until it compacts.
+  if (
+    fresh.memory_delivery?.delivered_signature === packet.signature &&
+    ctx.store
+      .kindEvents(session.project_id, ['memory.delivered', 'agent.context.compacted'])
+      .findLast((event) => event.aggregate_id === session.id)?.kind === 'memory.delivered'
+  )
+    return;
   ctx.store.update<Session>(
     'sessions',
     {
@@ -667,11 +681,111 @@ function acknowledgedAfter(ctx: ControlContext, sessionId: string, turnId: strin
     );
 }
 
+/** A project's local instruction files and Claude's native memory files for its folders. */
+function memoryFiles(ctx: ControlContext, project: Project) {
+  const home = ctx.protectionPaths?.home ?? os.homedir();
+  // Claude Code names a folder's native memory directory after its path with every other character a dash.
+  const slug = (folder: string) => folder.replace(/[^a-zA-Z0-9]/g, '-');
+  const markdown = (folder: string) =>
+    existsSync(folder)
+      ? readdirSync(folder)
+          .filter((name) => name.endsWith('.md') && name !== 'MEMORY.md')
+          .map((name) => path.join(folder, name))
+      : [];
+  const files: { key: string; file: string; authority: MemoryRecord['authority']; tag: string }[] =
+    [];
+  project.roots.forEach((root, index) => {
+    for (const name of ['CLAUDE.md', 'AGENTS.md'])
+      if (existsSync(path.join(root, name)))
+        files.push({
+          key: `import:root${index}/${name}`,
+          file: path.join(root, name),
+          authority: 'user',
+          tag: 'instructions',
+        });
+    for (const file of markdown(path.join(home, '.claude/projects', slug(root), 'memory')))
+      files.push({
+        key: `import:root${index}/claude-memory/${path.basename(file)}`,
+        file,
+        authority: 'agent_reported',
+        tag: 'native-memory',
+      });
+  });
+  // Sessions outside the user's folder keep Claude's native memory in Pantheon's own native state.
+  const managed = path.resolve(
+    path.dirname(ctx.files.directory),
+    'native-sessions',
+    project.id,
+    'claude',
+    'projects',
+  );
+  for (const folder of existsSync(managed) ? readdirSync(managed) : [])
+    for (const file of markdown(path.join(managed, folder, 'memory')))
+      files.push({
+        key: `import:sessions/${hash(folder).slice(0, 8)}/${path.basename(file)}`,
+        file,
+        authority: 'agent_reported',
+        tag: 'native-memory',
+      });
+  return files;
+}
+
+/** Imports changed instruction and native memory files as current notes; a removed file's note is archived. */
+export function syncMemoryFiles(ctx: ControlContext, project: Project): void {
+  const all = records(ctx, project.id);
+  const files = memoryFiles(ctx, project);
+  for (const source of files) {
+    const text = readFileSync(source.file, 'utf8');
+    const latest = all
+      .filter((r) => r.key === source.key && !r.task)
+      .sort((a, b) => a.created_at - b.created_at)
+      .at(-1);
+    // An unchanged file is skipped, also when the user archived its note.
+    if (latest?.body_hash === createHash('sha256').update(text).digest('hex')) continue;
+    const meta = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? '';
+    const field = (name: string) => new RegExp(`^${name}:\\s*(.+)$`, 'm').exec(meta)?.[1]?.trim();
+    const r: MemoryRecord = {
+      id: id(),
+      revision: 1,
+      project_id: project.id,
+      key: source.key,
+      title: (field('name') ?? path.basename(source.file)).slice(0, 160),
+      summary: field('description')?.slice(0, 400),
+      tags: ['imported', source.tag],
+      kind: 'note',
+      state: 'draft',
+      authority: source.authority,
+      author: 'pantheon:import',
+      body_hash: ctx.files.put(Buffer.from(text)).hash,
+      dependencies: [],
+      based_on: signature(ctx, project.id),
+      created_at: ctx.store.now(),
+    };
+    ctx.store.insert('memory_records', r);
+    activate(ctx, r, r.author, '');
+  }
+  const keys = new Set(files.map((source) => source.key));
+  const gone = current(ctx, project.id).filter(
+    (r) => r.tags?.includes('imported') && !keys.has(r.key),
+  );
+  for (const r of gone) archive(ctx, r, 'retracted');
+  if (gone.length) changed(ctx, project.id);
+}
+
+const FILE_SYNC_MS = 60_000;
+const fileSyncs = new WeakMap<ControlContext, Map<string, number>>();
+
 /** Durable, bounded local maintenance. No model runs, network, or external memory dependency. */
 export function tickMemory(ctx: ControlContext): void {
   ctx.store.transaction(() => backfillMemoryIndex(ctx));
+  let synced = fileSyncs.get(ctx);
+  if (!synced) fileSyncs.set(ctx, (synced = new Map()));
   for (const project of ctx.store.list<Project>('projects'))
     ctx.store.transaction(() => {
+      if (ctx.store.now() - (synced.get(project.id) ?? -Infinity) >= FILE_SYNC_MS) {
+        synced.set(project.id, ctx.store.now());
+        syncMemoryFiles(ctx, project);
+      }
       if (
         !records(ctx, project.id).length &&
         !rows<BoardPlan>(ctx, 'board_plans', project.id).length &&

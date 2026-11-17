@@ -469,6 +469,14 @@ describe('session input delivery', () => {
       s.f.call('memory.commit', { memory_id: draft.id }, draft.revision);
       const { session, first } = await s.open();
       await s.f.control.tick();
+      // A changed packet goes out again; an unchanged one is not resent.
+      const next = s.f.call<{ id: string; revision: number }>('memory.propose', {
+        project_id: s.f.project.id,
+        key: 'tone',
+        kind: 'decision',
+        text: 'Keep replies short',
+      });
+      s.f.call('memory.commit', { memory_id: next.id }, next.revision);
       s.steer.mockImplementation(async (_handle, turn) => ({
         turn_id: turn.turn_id,
         status: 'queued',

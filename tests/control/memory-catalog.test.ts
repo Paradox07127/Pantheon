@@ -702,7 +702,7 @@ it('includes the proposing session in directory, search and related summaries', 
     expires_at: Date.now() + 60000,
   };
   const packet = f.call<any>('memory.context', { project_id: f.project.id }, null, principal);
-  const draft = f.call<any>(
+  const note = f.call<any>(
     'memory.propose',
     {
       project_id: f.project.id,
@@ -715,8 +715,7 @@ it('includes the proposing session in directory, search and related summaries', 
     null,
     principal,
   );
-  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-  const directory = f.directory().records.find((r: MemorySummary) => r.id === draft.id);
+  const directory = f.directory().records.find((r: MemorySummary) => r.id === note.id);
   const search = f.call<any>('memory.search', { project_id: f.project.id, q: 'agent-note' });
   const related = f.call<any>('memory.related', {
     project_id: f.project.id,

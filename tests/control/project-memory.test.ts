@@ -1,6 +1,9 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { workbenchFixture } from './workbench-fixture.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import { syncMemoryFiles } from '../../packages/control/src/memory.js';
 
 it('replaces decisions atomically, hides archived ids and dependent reports, and restores only as a proposal', async () => {
   const f = await workbenchFixture();
@@ -123,7 +126,7 @@ it('expires memory at read time without relying on a scheduler and retains immut
   }
 });
 
-it('keeps proposals untrusted, excludes them from context, and prevents cross-project or task reads', async () => {
+it('makes an agent report current at once, keeps its decisions as drafts, and prevents cross-project or task reads', async () => {
   const f = await workbenchFixture();
   const s = await f.create();
   const p = {
@@ -133,26 +136,29 @@ it('keeps proposals untrusted, excludes them from context, and prevents cross-pr
     project_id: f.project.id,
     expires_at: Date.now() + 60000,
   };
-  const context = f.call<any>('memory.context', { project_id: f.project.id }, null, p);
-  const r = f.call<any>(
-    'memory.propose',
-    {
-      project_id: f.project.id,
-      key: 'tests',
-      kind: 'report',
-      text: 'All tests passed (an unverified claim)',
-      based_on: context.signature,
-    },
-    null,
-    p,
-  );
-  expect(r.authority).toBe('agent_reported');
-  expect(f.call<any>('memory.context', { project_id: f.project.id }).items).toEqual([]);
-  expect(() => f.call('memory.commit', { memory_id: r.id }, r.revision, p)).toThrow();
+  const propose = (key: string, kind: string, text: string) =>
+    f.call<any>(
+      'memory.propose',
+      {
+        project_id: f.project.id,
+        key,
+        kind,
+        text,
+        based_on: f.call<any>('memory.context', { project_id: f.project.id }, null, p).signature,
+      },
+      null,
+      p,
+    );
+  const report = propose('tests', 'report', 'All tests passed (an unverified claim)');
+  expect(report).toMatchObject({ state: 'active', authority: 'agent_reported' });
+  const decision = propose('db', 'decision', 'Use SQLite');
+  expect(decision.state).toBe('draft');
+  expect(
+    f.call<any>('memory.context', { project_id: f.project.id }).items.map((i: any) => i.id),
+  ).toEqual([report.id]);
+  expect(() => f.call('memory.commit', { memory_id: decision.id }, decision.revision, p)).toThrow();
   expect(() => f.call('memory.history', { project_id: f.project.id }, null, p)).toThrow();
   expect(() => f.call('memory.context', { project_id: 'other-project' }, null, p)).toThrow();
-  const active = f.call<any>('memory.commit', { memory_id: r.id }, r.revision);
-  expect(active.authority).toBe('agent_reported');
 });
 
 it('maintains current documents, rejects late jobs, and does not advance the source epoch when publishing', async () => {
@@ -347,7 +353,6 @@ it('scopes task memory by lead, task and generation, not by the worker session d
   const scope = { lead_session_id: lead.id, id: 'export', generation: 1 };
   const first = propose('k', 'worker note', undefined, w);
   expect(first.task).toEqual(scope);
-  f.call('memory.commit', { memory_id: first.id }, first.revision);
   expect(propose('own', 'named own scope', scope, w).task).toEqual(scope);
   const second = propose('k', 'user note', scope);
   f.call('memory.commit', { memory_id: second.id }, second.revision);
@@ -814,4 +819,105 @@ it('reports serialized record bytes and the full context budget even when decisi
         expect.objectContaining({ code: 'memory_budget_exceeded', details: read.budget }),
       );
   }
+});
+
+it('syncs instruction files and native memory files into current notes and follows their changes', async () => {
+  const f = await workbenchFixture();
+  const memory = path.join(
+    f.protectionPaths.home,
+    '.claude/projects',
+    f.source.replace(/[^a-zA-Z0-9]/g, '-'),
+    'memory',
+  );
+  mkdirSync(memory, { recursive: true });
+  writeFileSync(path.join(f.source, 'CLAUDE.md'), 'Reply in Simplified Chinese.');
+  writeFileSync(path.join(memory, 'MEMORY.md'), '- [Gate](gate.md) - index line');
+  const gate = path.join(memory, 'gate.md');
+  writeFileSync(
+    gate,
+    '---\nname: gate-machine\ndescription: Gates run on ws\n---\nRun gates on ws.',
+  );
+  const imported = () =>
+    f.store
+      .list<any>('memory_records')
+      .filter((r) => r.state === 'active' && r.tags?.includes('imported'));
+  const ctx = (f.control as any).ctx;
+  const sync = () => syncMemoryFiles(ctx, f.store.must<any>('projects', f.project.id));
+  sync();
+  expect(imported().map((r) => [r.key, r.kind, r.authority, r.title, r.summary])).toEqual(
+    expect.arrayContaining([
+      ['import:root0/CLAUDE.md', 'note', 'user', 'CLAUDE.md', undefined],
+      [
+        'import:root0/claude-memory/gate.md',
+        'note',
+        'agent_reported',
+        'gate-machine',
+        'Gates run on ws',
+      ],
+    ]),
+  );
+  expect(imported()).toHaveLength(2);
+  const first = imported().find((r) => r.key === 'import:root0/claude-memory/gate.md');
+  const search = f.call<any>('memory.search', { project_id: f.project.id, q: 'gates' });
+  expect(search.items.map((i: any) => i.id)).toContain(first.id);
+  sync();
+  expect(f.store.list('memory_records')).toHaveLength(2);
+  writeFileSync(gate, 'Run gates on the Mac Studio.');
+  sync();
+  expect(f.store.must<any>('memory_records', first.id)).toMatchObject({
+    state: 'archived',
+    reason: 'superseded',
+  });
+  const claude = imported().find((r) => r.key === 'import:root0/CLAUDE.md');
+  f.call('memory.archive', { memory_id: claude.id }, claude.revision);
+  rmSync(gate);
+  sync();
+  expect(imported()).toEqual([]);
+});
+
+it('delivers an unchanged memory packet once and again after the session compacts', async () => {
+  const f = await workbenchFixture({ delay: 10 });
+  const send = vi.spyOn(f.adapter, 'send');
+  const draft = f.call<any>('memory.propose', {
+    project_id: f.project.id,
+    key: 'style',
+    kind: 'decision',
+    text: 'Distinct delivered rule',
+  });
+  f.call('memory.commit', { memory_id: draft.id }, draft.revision);
+  const session = await f.create();
+  const sendTurn = async (input: string, count: number) => {
+    await eventually(
+      () =>
+        !f.store
+          .list<any>('session_turns')
+          .some((t) => t.state === 'running' || t.state === 'queued'),
+      () => f.control.tick(),
+    );
+    f.call(
+      'session.send',
+      { session_id: session.id, input },
+      f.store.must<any>('sessions', session.id).revision,
+    );
+    await eventually(
+      () => send.mock.calls.length === count,
+      () => f.control.tick(),
+    );
+    return send.mock.calls[count - 1]![1].input;
+  };
+  await eventually(
+    () =>
+      f.store.must<any>('sessions', session.id).state === 'open' &&
+      !!f.store.must<any>('sessions', session.id).memory_delivery?.delivered_signature,
+    () => f.control.tick(),
+  );
+  expect(send.mock.calls[0]![1].input).toContain('Distinct delivered rule');
+  expect(await sendTurn('Second turn', 2)).not.toContain('[Pantheon current project memory]');
+  f.store.event(
+    'agent.context.compacted',
+    f.store.must<any>('sessions', session.id),
+    f.project.id,
+    {},
+  );
+  expect(await sendTurn('After compaction', 3)).toContain('Distinct delivered rule');
 });

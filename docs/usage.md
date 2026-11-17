@@ -11,7 +11,18 @@ This guide describes the desktop app. The names in quotes are the names that the
 
 ## Install
 
-Download a package from the [Releases page](https://github.com/Paradox07127/Pantheon/releases). Each release is a pre-release test build.
+On macOS and Linux, run Pantheon from a checkout of this repository:
+
+```sh
+git clone https://github.com/Paradox07127/Pantheon.git
+cd Pantheon
+sh scripts/install.sh
+pnpm dev
+```
+
+The [development guide](development.md#requirements) gives the requirements. To update, stop `pnpm dev`, run `git pull` and `sh scripts/install.sh`, then run `pnpm dev` again.
+
+On Windows, or to use a package, download it from the [Releases page](https://github.com/Paradox07127/Pantheon/releases). Each release is a pre-release test build, and it can be older than `main`.
 Check the download against `SHA256SUMS` from the same release: `shasum -a 256 -c SHA256SUMS --ignore-missing`.
 
 | Platform           | File                           | Install                                                                          |
@@ -21,8 +32,7 @@ Check the download against `SHA256SUMS` from the same release: `shasum -a 256 -c
 | Linux              | `.AppImage`                    | `chmod +x Pantheon-<version>-<arch>.AppImage`, then run it.                      |
 | Windows            | `.exe`                         | Run the installer. Read the Windows notes below first.                           |
 
-To build the app from source, follow the [development guide](development.md).
-You can run the app from the checkout with `pnpm dev`, or package it with `pnpm package`.
+To build the packages yourself, run `pnpm package` and read the [development guide](development.md#packaging).
 
 | Platform | Package                | What you need on the machine                                                        |
 | -------- | ---------------------- | ----------------------------------------------------------------------------------- |

@@ -298,3 +298,15 @@ it('records a lead claiming its direct task as a start decision', async () => {
   ]);
   expect(history.days.reduce((sum, day) => sum + day.decisions, 0)).toBe(2);
 });
+
+it('reads a task claim after a finished system turn whose row is gone', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
+  // A baseline turn logs only its purpose; its session_turns row goes with its session.
+  const turn = { id: 'baseline-turn', revision: 1 };
+  f.store.event('turn.queued', turn, f.project.id, { purpose: 'baseline' });
+  f.store.event('turn.running', turn, f.project.id, {});
+  f.store.event('turn.completed', turn, f.project.id, {});
+  f.store.event('task.claimed', lead, f.project.id, { task_id: 'exports', generation: 1 });
+  expect(historyTask(f, `${lead.id}:exports`)).toMatchObject({ session_id: lead.id });
+});

@@ -70,8 +70,28 @@ Pantheon 是一个本机运行的原生编码 agent 会话工作台。
 
 ## 安装
 
-从 [Releases 页](https://github.com/Paradox07127/Pantheon/releases)下载安装包。
-每个 release 都是预发布的测试版。
+在 macOS 或 Linux 上，从本仓库的检出目录运行 Pantheon。这样用的是最新的 `main`。
+
+要求:Node 26(准确版本见 `package.json` 的 `devEngines.runtime`)、pnpm 12.11.2 和 git 2.38 或更高版本。
+macOS 还要装 Xcode 命令行工具。Linux 还要装 `bubblewrap` 和 `socat`。
+
+```sh
+git clone https://github.com/Paradox07127/Pantheon.git
+cd Pantheon
+sh scripts/install.sh
+pnpm dev
+```
+
+- `scripts/install.sh` 检查 Node 和 pnpm 的版本，按锁文件安装并构建。
+- `pnpm dev` 在改动后重新构建，并运行桌面端。桌面端拉起 daemon。
+- 更新时，先停掉 `pnpm dev`,运行 `git pull` 和 `sh scripts/install.sh`,再运行 `pnpm dev`。
+
+Pantheon 不自带运行时。安装你要用的 CLI(`claude`、`codex` 或 ACP agent),并登录。
+
+### 安装包
+
+[Releases 页](https://github.com/Paradox07127/Pantheon/releases)有安装包。每个 release 都是预发布的测试版，可能比 `main` 旧。
+Windows 上用安装程序。
 
 | 平台                   | 安装包              | 说明                                                    |
 | ---------------------- | ------------------- | ------------------------------------------------------- |
@@ -79,7 +99,6 @@ Pantheon 是一个本机运行的原生编码 agent 会话工作台。
 | Linux(x64、arm64)      | `.deb`、`.AppImage` | 需要 git 2.38+、`bubblewrap`、`socat` 和 `libatomic1`。 |
 | Windows 11(x64、arm64) | `.exe` 安装程序     | 需要 WSL 2,daemon 跑在 WSL 里。安装程序没有签名。       |
 
-Pantheon 不自带运行时。安装你要用的 CLI(`claude`、`codex` 或 ACP agent),并登录。
 各平台的细节见[使用说明](docs/usage.zh-CN.md#安装)。
 
 ## 从源码构建
@@ -92,17 +111,13 @@ Pantheon 不自带运行时。安装你要用的 CLI(`claude`、`codex` 或 ACP 
 | CLI      | `apps/cli`     | 命令行，以及原生会话使用的 MCP 工具服务。             |
 | 包       | `packages/*`   | 协议、领域类型、控制逻辑、SQLite 存储和运行时适配器。 |
 
-要求:Node 26(准确版本见 `package.json` 的 `devEngines.runtime`)、pnpm 12.11.2 和 git 2.38 或更高版本。
+要求见[安装](#安装)。
 
 ```sh
-sh scripts/install.sh
 pnpm demo
-pnpm dev
 ```
 
-- `scripts/install.sh` 检查 Node 和 pnpm 的版本，按锁文件安装并构建。
 - `pnpm demo` 在临时仓库里用脚本化的 fixture agent 走一遍工作台流程。它不调用模型，不修改你的项目。
-- `pnpm dev` 在改动后重新构建，并运行桌面端。桌面端拉起 daemon。
 
 只运行供其他客户端连接的 daemon:
 

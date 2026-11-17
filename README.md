@@ -70,8 +70,28 @@ The [usage guide](docs/usage.md) describes each feature.
 
 ## Install
 
-Download a package from the [Releases page](https://github.com/Paradox07127/Pantheon/releases).
-Each release is a pre-release test build.
+Run Pantheon from a checkout of this repository on macOS or Linux. You get the latest `main`.
+
+Requirements: Node 26 (the exact version is `devEngines.runtime` in `package.json`), pnpm 12.11.2 and git 2.38 or later.
+On macOS, also install the Xcode command line tools. On Linux, also install `bubblewrap` and `socat`.
+
+```sh
+git clone https://github.com/Paradox07127/Pantheon.git
+cd Pantheon
+sh scripts/install.sh
+pnpm dev
+```
+
+- `scripts/install.sh` checks the Node and pnpm versions, installs from the lockfile and builds.
+- `pnpm dev` rebuilds on change and runs the desktop app. The desktop app starts the daemon.
+- To update, stop `pnpm dev`, run `git pull` and `sh scripts/install.sh`, then run `pnpm dev` again.
+
+Pantheon does not include the runtimes. Install the CLIs that you use (`claude`, `codex`, or an ACP agent) and sign in to them.
+
+### Packages
+
+The [Releases page](https://github.com/Paradox07127/Pantheon/releases) has packages. Each release is a pre-release test build, and it can be older than `main`.
+On Windows, use the installer.
 
 | Platform                | Package             | Notes                                                             |
 | ----------------------- | ------------------- | ----------------------------------------------------------------- |
@@ -79,7 +99,6 @@ Each release is a pre-release test build.
 | Linux (x64, arm64)      | `.deb`, `.AppImage` | Needs git 2.38+, `bubblewrap`, `socat` and `libatomic1`.          |
 | Windows 11 (x64, arm64) | `.exe` installer    | Needs WSL 2. The daemon runs in WSL. The installer is not signed. |
 
-Pantheon does not include the runtimes. Install the CLIs that you use (`claude`, `codex`, or an ACP agent) and sign in to them.
 The [usage guide](docs/usage.md#install) gives the details for each platform.
 
 ## Build from source
@@ -92,17 +111,13 @@ The [usage guide](docs/usage.md#install) gives the details for each platform.
 | CLI           | `apps/cli`     | Command line and the MCP tool server that native sessions use.              |
 | Packages      | `packages/*`   | Protocol, domain types, control logic, SQLite store and runtime adapters.   |
 
-Requirements: Node 26 (the exact version is `devEngines.runtime` in `package.json`), pnpm 12.11.2 and git 2.38 or later.
+The requirements are in [Install](#install).
 
 ```sh
-sh scripts/install.sh
 pnpm demo
-pnpm dev
 ```
 
-- `scripts/install.sh` checks the Node and pnpm versions, installs from the lockfile and builds.
 - `pnpm demo` runs the workbench flow in a temporary repository with a scripted fixture agent. It does not call a model and does not change your projects.
-- `pnpm dev` rebuilds on change and runs the desktop app. The desktop app starts the daemon.
 
 To run only the daemon for other clients:
 

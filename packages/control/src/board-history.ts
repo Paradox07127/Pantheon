@@ -360,10 +360,11 @@ export function boardHistory(
         day.handbacks++;
       }
     } else if (event.kind === 'turn.running') {
+      // A system turn whose row is gone has only its purpose logged, with no id.
       const turn = turnOf.get(event.aggregate_id)!;
-      allRunning.set(turn.id, event.created_at);
+      allRunning.set(event.aggregate_id, event.created_at);
       if (sessionOf.get(turn.session_id)?.task || claims.has(turn.session_id))
-        running.set(turn.id, event.created_at);
+        running.set(event.aggregate_id, event.created_at);
     } else if (TURN_ENDS.includes(event.kind)) {
       const turn = turnOf.get(event.aggregate_id)!,
         session = sessionOf.get(turn.session_id);

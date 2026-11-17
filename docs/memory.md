@@ -18,11 +18,21 @@ Pantheon 管理记忆的生效状态，agent 提交分析候选，改进闭环�
 
 默认应用数据目录为 `~/Library/Application Support/Pantheon/`，测试使用隔离的数据目录。正文内容寻址，写临时文件、fsync、原子 rename，再在数据库事务里引用其 hash。事务失败留下的孤儿文件由已有恢复/回收机制处理；历史版本引用的正文保留。
 
-项目目录中的源码、既有用户决定文档仍是原有信息的来源。Pantheon **不自动导入这些文件，不复制历史正文到工作树，不生成第二份可写的 AGENTS.md/MEMORY.md**。普通项目 `rg` 不会碰到应用数据目录里的归档。需要迁移原有决定时，逐条明确提交、审阅；不要把旧文档整体自动提升为当前规则。
+项目目录中的源码、既有用户决定文档仍是原有信息的来源。Pantheon 不复制历史正文到工作树，不生成第二份可写的 AGENTS.md/MEMORY.md。普通项目 `rg` 不会碰到应用数据目录里的归档。
+
+后台维护每分钟把以下文件同步成当前 note，标签 `imported`，作者 `pantheon:import`:
+
+| 来源 | key | authority |
+|---|---|---|
+| 每个项目根目录的 `CLAUDE.md`、`AGENTS.md` | `import:root<i>/<文件名>` | user |
+| `~/.claude/projects/<根目录路径，非字母数字换成 ->/memory/*.md`(不含 `MEMORY.md` 索引) | `import:root<i>/claude-memory/<文件名>` | agent_reported |
+| Pantheon 自管 native 状态里 `native-sessions/<项目 ID>/claude/projects/*/memory/*.md` | `import:sessions/<目录名 hash 前 8 位>/<文件名>` | agent_reported |
+
+文件 frontmatter 的 `name` 作标题，`description` 作摘要。文件内容变化时生成新版本替代旧版本；文件删除时归档。用户归档的导入条目在文件内容不变时不再导入。导入的是 note，不进入决定预算，也不会被提升为当前规则。
 
 ## 生命周期与权威
 
-- `memory.propose` 创建 `draft`，默认读取永不包含候选。
+- 会话里的 agent 用 `memory.propose` 提交的 report、note 立即生效，authority 保持 `agent_reported`，同 key 的旧版本被替代。agent 提交的 decision 和用户在界面新建的条目创建 `draft`，默认读取永不包含草稿。
 - 用户 `memory.commit` 显式审阅后生效。同一项目、同一任务 generation、同一 key 被替代的修订在同一事务内归档。每次新正文都有新的 ID；被替代修订的 ID 永远不指向新正文。
 - 决定的 `authority=user` 来自真实用户提交/确认，不能由 agent 输入字段伪造。报告由 agent 提交时即使经用户确认，仍保留 `agent_reported`；“当前报告”不是“已验证事实”。
 - `memory.archive` 撤回；替代、过期、任务 generation 变化、依赖失效也会归档。普通 `get/search/related/context/project.read` 不返回已失效内容；带历史筛选的 search/related 仅允许用户凭据。
@@ -42,7 +52,7 @@ Pantheon 管理记忆的生效状态，agent 提交分析候选，改进闭环�
 2. `memory_search {"q":"数据库","kind":"decision","tag":"storage"}`：定向检索当前内容，可按 kind/tag/task_id/lead_session_id 精确筛选。tag 接受一个字符串或字符串数组，数组要求每个标签都匹配（沿用大小写折叠）；GET 查询可重复传 `tag=storage&tag=local`。`project_only: true` 只选无 task 的项目级记录；同时传 task_id 或 lead_session_id 时没有结果（目录和图谱查询直接拒绝这种组合）。返回标题、摘要、版本 ID、状态、作用域和命中理由，不打开正文。旧记录从索引取最多 600 UTF-8 bytes 摘要；显式摘要上限 400 字符；结果条目合计最多 16,000 bytes，`omitted` 显示未返回数量。依赖前必须用 get 读原文。FTS5 处理词语匹配，中文短词另用字面子串匹配，元数据支持精确匹配。
 3. `memory_get {"memory_id":"当前版本 ID"}`：读取当前版本。ID 不可读时重新获取 context，不能改用会话里早先读到的副本。
 4. `memory_related {"memory_id":"当前版本 ID","relation":"dependent","depth":2,"limit":10}`：查依赖、反向依赖、版本关系或同标签内容。最多两跳、30 条、16,000 bytes，同样只返回当前作用域的摘要；shared_tag 只表示同主题。
-5. `memory_propose`：提交分析、笔记或决定候选。例如：
+5. `memory_propose`：写入笔记、报告，或提交决定候选。启动指令要求 agent 不等用户要求、在同一回合内写入：用户纠正做法或说明偏好与规则、用户确认了一个不显然的做法、发现代码、git 历史和文档里看不到的项目事实、用户说要记住。写入前先 `memory_search`，用旧条目的 key 替代过时内容。例如：
 
 ```json
 {
@@ -60,7 +70,7 @@ Agent 没有 commit、archive、restore、history 权限。可复用的流程教
 
 ## 会话集成与预算
 
-启动指令解释上述工具和信任边界。每次 send/steer 之前重新生成当前作用域的 packet，不只启动时读取；`project.read` 也提供同一记忆视图。空项目不反复注入空 packet。压缩后再次发送时仍会检查当前状态。
+启动指令解释上述工具和信任边界。每次 send/steer 之前重新生成当前作用域的 packet，不只启动时读取；`project.read` 也提供同一记忆视图。空项目不反复注入空 packet。packet 签名与该会话上次送达的签名相同、且之后没有 `agent.context.compacted` 时不再注入，原生会话的上下文里已有它；签名变化或压缩之后的下一轮重新注入。
 
 正文与逐条元数据默认最多 12,000 UTF-8 bytes，手动 context 可设 1,000–24,000 bytes。这是字节预算，**不是精确 token 数**；固定说明和包壳另计。决定优先、报告按需；任何当前决定放不下时返回 `memory_budget_exceeded`，不悄悄删掉重要规则。用户管理界面仍可打开并缩短决定。`memory.read` 返回 `budget: { used_bytes, limit_bytes }`，默认限额 12,000 bytes；used_bytes 是当前全部可用记录与适用的改进闭环经验在截断前的序列化字节总量，不随目录筛选或分页改变。每条 `MemorySummary.bytes` 是该完整记录（含元数据与 JSON 转义正文）的序列化 UTF-8 大小。`memory.context` 的 `memory_budget_exceeded.details` 返回同样的 used_bytes 与本次请求的 limit_bytes。
 
@@ -94,7 +104,7 @@ FTS5 保留全部状态的本地索引，搜索结果经过统一有效性与权
 
 ## 验证范围
 
-- `tests/control/project-memory.test.ts`：替代和依赖失效、已替代 ID、过期关键词、请求重放、签名冲突、时间过期、角色与作用域、迟到任务、迟到送达回执、任务 generation、改进闭环撤回、事务回滚、租约恢复、预算门禁和有界重试。
+- `tests/control/project-memory.test.ts`：替代和依赖失效、已替代 ID、过期关键词、请求重放、签名冲突、时间过期、角色与作用域、迟到任务、迟到送达回执、任务 generation、改进闭环撤回、事务回滚、租约恢复、预算门禁、有界重试、agent 报告即时生效、文件同步与未变 packet 不重复注入。
 - `tests/daemon/project-memory.test.ts`：隔离 daemon、真实 HTTP、真实独立 CLI MCP 子进程、两个 fixture 会话的 adapter 输入、后台文档与重启恢复。
 - `tests/control/memory-catalog.test.ts`：无全文读取分页、中文/元数据检索、过期与历史门禁、版本/依赖/标签关系边界、损坏索引补建、来源文件变化与路径范围。
 - `tests/web/memory-read.test.ts`：按需读取、切换选中项与刷新期间隐藏上一条的正文。

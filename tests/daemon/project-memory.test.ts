@@ -110,10 +110,10 @@ it('runs HTTP decisions through real MCP child processes, two adapter sessions, 
     );
     expect(proposal.authority).toBe('agent_reported');
     expect(
-      receipt(await clients[1]!.callTool({ name: 'memory_search', arguments: { q: 'analysis' } }))
-        .items,
-    ).toEqual([]);
-    await f.call('memory.commit', { memory_id: proposal.id }, proposal.revision);
+      receipt(
+        await clients[1]!.callTool({ name: 'memory_search', arguments: { q: 'analysis' } }),
+      ).items.map((item: { id: string }) => item.id),
+    ).toEqual([proposal.id]);
     const current = await save('Use SQLite with versioned local text');
     const summary = receipt(
       await clients[0]!.callTool({

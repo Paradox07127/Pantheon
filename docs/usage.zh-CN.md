@@ -11,7 +11,18 @@
 
 ## 安装
 
-从 [Releases 页](https://github.com/Paradox07127/Pantheon/releases)下载安装包。每个 release 都是预发布的测试版。
+在 macOS 和 Linux 上，从本仓库的检出目录运行 Pantheon:
+
+```sh
+git clone https://github.com/Paradox07127/Pantheon.git
+cd Pantheon
+sh scripts/install.sh
+pnpm dev
+```
+
+要求见[开发说明](development.zh-CN.md#要求)。更新时，先停掉 `pnpm dev`,运行 `git pull` 和 `sh scripts/install.sh`,再运行 `pnpm dev`。
+
+在 Windows 上，或者要用安装包时，从 [Releases 页](https://github.com/Paradox07127/Pantheon/releases)下载。每个 release 都是预发布的测试版，可能比 `main` 旧。
 用同一个 release 里的 `SHA256SUMS` 核对下载的文件:`shasum -a 256 -c SHA256SUMS --ignore-missing`。
 
 | 平台              | 文件                        | 安装方法                                                |
@@ -21,8 +32,7 @@
 | Linux             | `.AppImage`                 | `chmod +x Pantheon-<版本>-<架构>.AppImage`,然后运行它。 |
 | Windows           | `.exe`                      | 运行安装程序。先读下面 Windows 的说明。                 |
 
-从源码构建 app 的步骤见[开发说明](development.zh-CN.md)。
-可以在检出目录里用 `pnpm dev` 运行，也可以用 `pnpm package` 打包。
+要自己打安装包，运行 `pnpm package`,并读[开发说明](development.zh-CN.md#打包)。
 
 | 平台    | 安装包                 | 机器上需要的东西                                                      |
 | ------- | ---------------------- | --------------------------------------------------------------------- |
