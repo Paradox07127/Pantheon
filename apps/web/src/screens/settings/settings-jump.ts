@@ -57,15 +57,21 @@ export function jumpTo(hit: SettingHit) {
   useSearchCursor.getState().setActive(0);
   if (hit.board) return openBoardTab(hit.board);
   if (hit.pageOnly) return;
-  // The page and its anchors render once the query is cleared.
-  requestAnimationFrame(() => {
-    const anchor = revealSetting(hit.id, 'center');
-    if (!anchor) return;
-    anchor.dataset.flash = 'on';
-    setTimeout(() => {
-      // 'off' keeps the fade-back transition until it ends.
-      anchor.dataset.flash = 'off';
-      anchor.addEventListener('transitionend', () => delete anchor.dataset.flash, { once: true });
-    }, 1200);
-  });
+  // The page renders once the query is cleared; a row that waits on the page's settings read renders
+  // frames later, so the anchor is looked for each frame for about a second (60 frames).
+  const reveal = (framesLeft: number) =>
+    requestAnimationFrame(() => {
+      const anchor = revealSetting(hit.id, 'center');
+      if (!anchor) {
+        if (framesLeft > 0) reveal(framesLeft - 1);
+        return;
+      }
+      anchor.dataset.flash = 'on';
+      setTimeout(() => {
+        // 'off' keeps the fade-back transition until it ends.
+        anchor.dataset.flash = 'off';
+        anchor.addEventListener('transitionend', () => delete anchor.dataset.flash, { once: true });
+      }, 1200);
+    });
+  reveal(60);
 }

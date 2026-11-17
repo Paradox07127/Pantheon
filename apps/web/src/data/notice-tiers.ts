@@ -163,11 +163,17 @@ export function needsCard(
       ...(allowed
         ? {
             actions: [
-              {
-                label: t({ id: 'data.noticeTiers.allowOnce', defaultMessage: 'Allow once' }),
-                run: () => respond(item, 'approve', name),
-                primary: true,
-              },
+              // A question request reaches here only when its questions could not be read, and the
+              // daemon approves one only with answers.
+              ...(item.binding?.action === 'AskUserQuestion'
+                ? []
+                : [
+                    {
+                      label: t({ id: 'data.noticeTiers.allowOnce', defaultMessage: 'Allow once' }),
+                      run: () => respond(item, 'approve', name),
+                      primary: true,
+                    },
+                  ]),
               {
                 label: t({ id: 'data.noticeTiers.reject', defaultMessage: 'Reject' }),
                 run: () => respond(item, 'reject', name),

@@ -262,6 +262,9 @@ export function PermissionCard({
     t({ id: 'sessions.parts.tool', defaultMessage: 'Tool' });
   const summary = item?.binding?.input_summary;
   const rule = permission.rule ?? item?.binding?.rule;
+  // A question request lands here only when its questions could not be read; the daemon approves
+  // it only with answers, which this card cannot collect.
+  const approvable = permission.tool !== 'AskUserQuestion';
   // The daemon cuts a summary to 300 characters, ending it with an ellipsis.
   const cut =
     input !== undefined ? isTruncated(input) : summary?.length === 300 && summary.endsWith('…');
@@ -360,20 +363,23 @@ export function PermissionCard({
           </span>
         )}
         <div className="rq-btns">
-          {button(
-            t({ id: 'sessions.card.allowOnce', defaultMessage: 'Allow once' }),
-            () => void respond({ decision: 'approve' }),
-            'btn pri',
-            true,
-          )}
-          {rule &&
+          {approvable &&
+            button(
+              t({ id: 'sessions.card.allowOnce', defaultMessage: 'Allow once' }),
+              () => void respond({ decision: 'approve' }),
+              'btn pri',
+              true,
+            )}
+          {approvable &&
+            rule &&
             button(
               t({ id: 'sessions.card.allowSession', defaultMessage: 'Allow for this session' }),
               () => void respond({ decision: 'approve_session' }),
               'btn',
               true,
             )}
-          {item?.binding?.project_rule_supported === true &&
+          {approvable &&
+            item?.binding?.project_rule_supported === true &&
             button(
               t({
                 id: 'sessions.card.allowProject',

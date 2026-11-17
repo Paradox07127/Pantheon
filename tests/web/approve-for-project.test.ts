@@ -76,6 +76,26 @@ describe('allowing a request for the whole project', () => {
     ]);
   });
 
+  it('offers only denying a question request whose questions could not be read', () => {
+    // The daemon approves such a request only with answers, which this card cannot collect.
+    expect(labels(card(undefined, { tool: 'AskUserQuestion', rule: undefined }))).toEqual(
+      choices('deny'),
+    );
+  });
+
+  it('keeps the notice of a question request whose questions could not be read to rejecting', () => {
+    const board = {
+      cursor: 0,
+      projects: [{ id: 'project-a', name: 'Alpha app' }],
+      sessions: [{ id: 'session-a', project_id: 'project-a', native_title: 'Fix login' }],
+    } as unknown as BoardSnapshot;
+    const away: NoticeWatch = { focused: false, sessionId: null } as NoticeWatch;
+    const asking = item(undefined);
+    asking.binding = { action: 'AskUserQuestion', input_summary: '{}' };
+    const notice = needsCard(asking, board, away, () => {})!;
+    expect(notice.options.actions!.map((a) => a.label)).toEqual([zh('data.noticeTiers.reject')]);
+  });
+
   it('keeps the notice card to allowing once and rejecting', () => {
     const board = {
       cursor: 0,
