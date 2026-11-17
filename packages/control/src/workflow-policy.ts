@@ -20,6 +20,7 @@ import {
   type ControlContext,
   type Handlers,
 } from './context.js';
+import { turnInputTokens } from './turn-usage.js';
 import { projectDefaults, type ProjectDefaults } from './user-config.js';
 
 type PolicySettings = Omit<
@@ -191,20 +192,11 @@ export function projectBudgetUse(
 ): { used_input_tokens: number; input_tokens: number; reached_at?: number } | undefined {
   const budget = workflowPolicy(ctx, projectId).project_budget;
   if (!budget) return;
-  // A running turn counts once it ends; its usage then holds the whole turn.
-  const rows = ctx.store.db
-    .prepare(
-      "SELECT json_extract(t.data,'$.usage.input_tokens') AS input_tokens, json_extract(t.data,'$.usage.tokens_unreported') AS unreported, min(e.created_at) AS ended_at FROM events e JOIN session_turns t ON t.id=e.aggregate_id WHERE e.project_id=? AND e.kind IN ('turn.completed','turn.failed','turn.cancelled') AND e.created_at>? GROUP BY t.id ORDER BY ended_at",
-    )
-    .all(projectId, budget.since) as {
-    input_tokens: number | null;
-    unreported: number | null;
-    ended_at: number;
-  }[];
+  const rows = turnInputTokens(ctx, { project_id: projectId, since: budget.since });
   let used = 0,
     reachedAt: number | undefined;
   for (const row of rows) {
-    if (!row.unreported) used += row.input_tokens ?? 0;
+    used += row.input_tokens;
     if (reachedAt === undefined && used >= budget.input_tokens) reachedAt = row.ended_at;
   }
   return {

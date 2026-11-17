@@ -11,11 +11,11 @@ import { LoadError } from '../../components/LoadError';
 import { Menu } from '@base-ui/react/menu';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { ChartGantt, Check, Ellipsis, SquarePen, Workflow } from 'lucide-react';
+import { Check, Ellipsis } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { useBoard } from '../../data/board';
 import { useBoardHistory } from '../../data/board-history';
-import { pickBoardPage, useBoardPage, type BoardPage } from '../../data/board-page';
+import { PAGES, pickBoardPage, useBoardPage, type BoardPage } from '../../data/board-page';
 import { useBoardView } from '../../data/board-view';
 import { ReadStatus } from '../../components/ReadStatus';
 import { Skeleton as LoadingBlock } from '../../components/Skeleton';
@@ -33,28 +33,20 @@ import { useShell } from '../../store';
 import type { BaselineChoice, ProjectBaseline } from '../projects/baseline';
 import { BaselinePopover } from '../projects/BaselineBlocks';
 import { BoardDevices } from './BoardDevices';
-import { SinceStrip } from './BoardFrame';
-import { CanvasView } from './CanvasView';
+import { CanvasPage } from './CanvasPage';
 import { Milestones } from './Charts';
 import { ColumnsPanel } from './Columns';
-import {
-  DraftTaskForm,
-  EditBar,
-  EditButton,
-  EditMode,
-  OrderLock,
-  setBoardEditing,
-  useBoardEditing,
-} from './EditMode';
+import { EditBar, EditButton, setBoardEditing, useBoardEditing } from './EditMode';
 import { baselineSyncReason, type SessionDefaults } from './frame-model';
-import { leadLine, LeadPanel } from './LeadPanel';
+import { leadLine } from './LeadPanel';
 import { LeadPlan } from './LeadPlan';
+import { HistoryPage } from './HistoryPage';
 import { HistoryView } from './HistoryView';
 import { RisksPanel } from './Lists';
-import { FlowGroupControl, hasPlanTasks, MainView } from './MainView';
+import { FlowGroupControl, hasPlanTasks } from './MainView';
 import { NewTask, planLead } from './NewTask';
-import { NowSummary } from './NowSummary';
-import { currentMilestone, MilestoneCard } from './MilestoneCard';
+import { NowPage } from './NowPage';
+import { currentMilestone } from './MilestoneCard';
 import type { EvidenceTab } from './TaskFocus';
 import {
   canvasOrder,
@@ -74,7 +66,6 @@ import {
   type PanelSpan,
 } from './panel-layout';
 import { type RunBoardCommand, type SnapshotMilestone, type SnapshotSession } from './panels-model';
-import { PlanProposals } from './PlanProposals';
 import {
   endedTurns,
   setupShown,
@@ -84,12 +75,10 @@ import {
   type TurnWait,
 } from './project-setup';
 import { ProjectSetup } from './ProjectSetup';
-import { CyclePanel, StallPanel, TaskProgressStrip, TrendPanel } from './ProgressCharts';
+import { CyclePanel, StallPanel, TrendPanel } from './ProgressCharts';
 import { ProgressTable } from './ProgressTable';
 import { PublishBar } from './PublishBar';
 import { TaskDrawer } from './TaskDrawer';
-import { TaskGroups } from './TaskGroups';
-import { UnsentEdits } from './UnsentEdits';
 import { isPlanTask } from './view-rules';
 import './board.css';
 
@@ -102,31 +91,6 @@ type TaskPanel = 'flow' | 'columns';
 
 const CANVAS_TABS: readonly OverviewSection[] = ['progress', 'milestones'];
 const NO_TASKS: Pick<BoardModel, 'tasks' | 'leads'> = { tasks: [] };
-
-// Labels are getters, so each is read in the language loaded by then.
-const PAGES: { key: BoardPage; label: string; icon: ReactNode }[] = [
-  {
-    key: 'now',
-    get label() {
-      return t({ id: 'board.history.span.now', defaultMessage: 'Now' });
-    },
-    icon: <Workflow className="ic-sm" aria-hidden="true" />,
-  },
-  {
-    key: 'history',
-    get label() {
-      return t({ id: 'board.history.span.history', defaultMessage: 'Whole history' });
-    },
-    icon: <ChartGantt className="ic-sm" aria-hidden="true" />,
-  },
-  {
-    key: 'canvas',
-    get label() {
-      return t({ id: 'board.view.canvas', defaultMessage: 'Canvas' });
-    },
-    icon: <SquarePen className="ic-sm" aria-hidden="true" />,
-  },
-];
 
 export const RANGES: { days: BoardDays; label: string }[] = [
   {
@@ -246,7 +210,7 @@ export const isEmpty = ({
   !counts.merged &&
   !counts.tokens;
 
-interface BoardViewProps {
+export interface BoardViewProps {
   model: BoardModel | null;
   loading: boolean;
   error: string | null;
@@ -842,7 +806,7 @@ export function BoardView(props: BoardViewProps) {
           >
             {PAGES.map((p) => (
               <Radio.Root key={p.key} value={p.key} aria-label={p.label}>
-                {p.icon}
+                <p.icon className="ic-sm" aria-hidden="true" />
                 <span className="tb-lbl">{p.label}</span>
               </Radio.Root>
             ))}
@@ -1010,144 +974,51 @@ export function BoardView(props: BoardViewProps) {
                   {baseline?.readFailure && <Failure {...baseline.readFailure} />}
                 </div>
               )}
-              {page === 'now' && model && shown && (
-                <section
-                  className="bov"
-                  aria-label={t({ id: 'board.strip.label', defaultMessage: 'Milestone and lead' })}
-                >
-                  {current ? (
-                    <PanelBoundary
-                      title={t({
-                        id: 'board.panels.currentMilestone',
-                        defaultMessage: 'Current milestone',
-                      })}
-                      model={model}
-                      onRetry={onRetry}
-                    >
-                      <MilestoneCard
-                        model={model}
-                        milestone={current}
-                        actions={scoped}
-                        onOpenTask={selectFlow}
-                      />
-                    </PanelBoundary>
-                  ) : (
-                    <TaskProgressStrip totals={model.task_progress.totals} />
-                  )}
-                  {projectId && <SinceStrip projectId={projectId} model={model} />}
-                  {!!model.leads?.length && (
-                    <PanelBoundary title="lead" model={model} onRetry={onRetry}>
-                      <LeadPanel
-                        model={shown}
-                        sessions={actions?.sessions ?? []}
-                        onOpenSession={onOpenSession}
-                        onOpenTask={selectFlow}
-                        run={actions?.run}
-                        stale={props.stale}
-                      />
-                    </PanelBoundary>
-                  )}
-                </section>
-              )}
-              {page === 'now' && model && projectId && (
-                <PlanProposals
-                  model={model}
-                  projectId={projectId}
-                  sessions={actions?.sessions ?? []}
-                />
-              )}
-              {page === 'now' ? (
-                <EditMode
-                  on={editing}
-                  projectId={projectId ?? ''}
-                  connecting={!!scoped}
-                  onTask={() => setFocusTask((n) => n + 1)}
-                  side={
-                    editing &&
-                    model &&
-                    projectId && (
-                      <>
-                        <DraftTaskForm model={model} projectId={projectId} titleRef={taskTitle} />
-                        <UnsentEdits model={model} projectId={projectId} />
-                        <OrderLock model={model} projectId={projectId} />
-                      </>
-                    )
-                  }
-                >
-                  <div className="bd-cv">
-                    {setupPanel ||
-                      (empty ? null : !shown ? (
-                        loadingPanel
-                      ) : (
-                        <PanelBoundary
-                          title={t({ id: 'board.panels.main', defaultMessage: 'Main view' })}
-                          model={model}
-                          onRetry={onRetry}
-                        >
-                          <MainView
-                            model={shown}
-                            projectId={projectId}
-                            selected={selectedIn('flow')}
-                            onSelect={selectFlow}
-                            onOpenSession={onOpenSession}
-                            onOpenEvidence={props.onOpenEvidence}
-                            onStartTask={onStartTask}
-                            tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
-                            editing={editing}
-                          />
-                        </PanelBoundary>
-                      ))}
-                  </div>
-                </EditMode>
-              ) : shown && (page === 'canvas' || !projectId) ? (
-                <div className="bd-body">
-                  <CanvasView
-                    projectId={projectId}
-                    bar={canvasBar}
-                    panels={canvasPanels}
-                    boardEmpty={empty}
-                    onLayout={onLayout}
-                    onDraw={() => useShell.getState().startNewSession()}
-                    tasks={
-                      !empty &&
-                      shown.tasks.some((t) => t.state) && (
-                        <div className="bd-s12">
-                          <PanelBoundary
-                            title={t({ id: 'board.panels.tasks', defaultMessage: 'Tasks' })}
-                            model={model}
-                            onRetry={onRetry}
-                          >
-                            <TaskGroups model={shown} onOpenTask={selectFlow} />
-                          </PanelBoundary>
-                        </div>
-                      )
-                    }
-                  />
-                </div>
-              ) : (
-                <div className="bd-body">
-                  {!model ? (
-                    loadingPanel
-                  ) : projectId ? (
-                    <HistoryTab
-                      projectId={projectId}
-                      empty={setupPanel}
-                      lanes={model.lanes}
-                      now={model.now}
-                      milestones={model.milestones}
-                      onOpenSession={onOpenSession}
-                      onOpenTask={(taskId) => {
-                        onPage('now');
-                        selectFlow(taskId);
-                      }}
-                      bar={historyBar}
-                    />
-                  ) : null}
-                </div>
-              )}
-              {page === 'now' && model && (
-                <NowSummary model={model} onOpenSession={onOpenSession} />
-              )}
+              {/* The pages hold no hooks; called inline, their elements stay in this view's tree. */}
+              {page === 'now'
+                ? NowPage({
+                    model,
+                    shown,
+                    current,
+                    projectId,
+                    actions,
+                    scoped,
+                    stale: props.stale,
+                    onRetry,
+                    onOpenSession,
+                    onOpenEvidence: props.onOpenEvidence,
+                    onStartTask,
+                    selectedIn,
+                    selectFlow,
+                    editing,
+                    taskTitle,
+                    setFocusTask,
+                    setupPanel,
+                    empty,
+                    loadingPanel,
+                  })
+                : shown && (page === 'canvas' || !projectId)
+                  ? CanvasPage({
+                      model,
+                      shown,
+                      projectId,
+                      canvasBar,
+                      canvasPanels,
+                      empty,
+                      onLayout,
+                      onRetry,
+                      selectFlow,
+                    })
+                  : HistoryPage({
+                      model,
+                      projectId,
+                      setupPanel,
+                      loadingPanel,
+                      onOpenSession,
+                      onPage,
+                      selectFlow,
+                      historyBar,
+                    })}
             </div>
             {page !== 'history' && drawer}
           </div>

@@ -1,50 +1,36 @@
 import {
   DomainError,
   requireThat,
-  type AgentProfile,
-  type AgentProposal,
   type Approval,
   type BoardPlan,
-  type ExternalEvent,
-  type Improvement,
-  type LandingItem,
-  type Milestone,
   type NeedsYouItem,
   type Principal,
   type Project,
   type Session,
   type SessionTurn,
-  type Workspace,
-  type StepRun,
-  type StoredWorkflowDefinition,
 } from '@pantheon/domain';
-import { projectAccess, type ControlContext } from './context.js';
-import { approvalAccess, approvalBindingCurrent, relayingQuestion } from './approvals.js';
-import { requireMergeReady, sessionList } from './workbench-session.js';
-import { usageLimitWaiting, usageResetAt } from './continuation.js';
-import { acceptInput } from './session.js';
+import type { ControlContext } from './context.js';
+import { usageLimitWaiting } from './continuation.js';
+import { pendingApprovalItems, settledApprovalItems } from './needs-you-approvals.js';
+import { sessionItems } from './needs-you-sessions.js';
+import { milestoneItems, planItems } from './needs-you-plans.js';
 import {
-  currentAcceptance,
-  currentDirectMerge,
-  ownEntry,
-  retiredBinding,
-  taskGeneration,
-} from './board-plan.js';
-import { milestoneView } from './project-facts.js';
-import { blockedReport } from './lead-inbox.js';
-import { stuckUpstream } from './task-dispatch.js';
-import { BACKGROUND_LONG_MS, longBackground } from './progress.js';
-import { projectBudgetUse, workflowPolicy } from './workflow-policy.js';
+  agentProposalItems,
+  definitionTrialItems,
+  improvementItems,
+  projectBudgetItems,
+  stepRunItems,
+} from './needs-you-workflow.js';
 
 /** A running merge with no progress event for this long is stuck; each gate command has a timeout. */
 const MERGE_STUCK_MS = 30 * 60_000;
 const MERGE_PROGRESS = ['session.merge_started', 'session.gate_started', 'session.gate_checked'];
 
 /** A stop whose process has not confirmed it stopped for this long needs the user. */
-const STOP_UNCONFIRMED_MS = 2 * 60_000;
+export const STOP_UNCONFIRMED_MS = 2 * 60_000;
 
 /** Session items listed under the session.failed kind, told apart by their reason. */
-type SessionAttention =
+export type SessionAttention =
   | 'merge_stuck'
   | 'lead_turn_failed'
   | 'continuation_limit_reached'
@@ -58,7 +44,7 @@ type SessionAttention =
   | 'usage_limit_waiting'
   | 'background_task_long';
 
-const NEXT_STEP: Record<
+export const NEXT_STEP: Record<
   | SessionAttention
   | 'lead_closed'
   | 'lead_wake_limited'
@@ -114,7 +100,7 @@ const NEXT_STEP: Record<
 };
 
 /** The aggregate's latest event of kind. */
-function latestEvent(
+export function latestEvent(
   ctx: ControlContext,
   aggregateId: string,
   kind: string,
@@ -142,7 +128,7 @@ export function stuckMerge(
 }
 
 /** The skip that hit the continuation limit, while the session has had no turn since. */
-function continuationLimit(
+export function continuationLimit(
   ctx: ControlContext,
   sessionId: string,
 ): { created_at: number } | undefined {
@@ -185,7 +171,7 @@ export function leadTurnFailed(
 }
 
 /** The command as an action, disabled with the code of the error its check throws. */
-function action(command: string, check: () => void): NeedsYouItem['actions'][number] {
+export function action(command: string, check: () => void): NeedsYouItem['actions'][number] {
   try {
     check();
     return { command, allowed: true };
@@ -196,7 +182,7 @@ function action(command: string, check: () => void): NeedsYouItem['actions'][num
 }
 
 /** A lost request stays open until its session starts a turn after the one that raised it. */
-function lostRequestOpen(ctx: ControlContext, approval: Approval): boolean {
+export function lostRequestOpen(ctx: ControlContext, approval: Approval): boolean {
   const session = ctx.store.get<Session>('sessions', approval.session_id ?? '');
   if (!approval.turn_id || !session || session.archived_at || session.outcome) return false;
   const turns = ctx.store
@@ -205,6 +191,14 @@ function lostRequestOpen(ctx: ControlContext, approval: Approval): boolean {
   return !turns
     .slice(turns.findIndex((turn) => turn.id === approval.turn_id) + 1)
     .some((turn) => turn.state !== 'queued' && turn.state !== 'cancelled' && executed(ctx, turn));
+}
+
+/** What every builder reads: who asks, and which projects are listed. */
+export interface NeedsYouScope {
+  principal: Principal;
+  projectId: string | undefined;
+  removed: Set<string>;
+  listedProject: (id: string) => boolean;
 }
 
 export function needsYou(
@@ -234,85 +228,10 @@ export function needsYou(
       .map((project) => project.id),
   );
   const listedProject = (id: string) => !removed.has(id) && (!projectId || id === projectId);
-  for (const approval of ctx.store
-    .list<Approval>('approvals')
-    .filter((a) => a.state === 'pending' && listedProject(a.project_id))) {
-    // The lead's board question for it is the one item.
-    if (relayingQuestion(ctx, approval)) continue;
-    let disabledReason: string | undefined;
-    try {
-      approvalAccess(ctx, principal, approval);
-      if (!approvalBindingCurrent(ctx, approval)) disabledReason = 'revision_conflict';
-    } catch (error) {
-      if (!(error instanceof DomainError)) throw error;
-      disabledReason = error.code;
-    }
-    if (principal.role === 'planner' && disabledReason) continue;
-    const escalated = latestEvent(ctx, approval.id, 'approval.escalated');
-    items.push({
-      source: { table: 'approvals', id: approval.id, revision: approval.revision },
-      kind: approval.kind,
-      project_id: approval.project_id,
-      ...(approval.session_id ? { session_id: approval.session_id } : {}),
-      status: approval.state,
-      created_at: approval.created_at,
-      reason: 'permission_requested',
-      actions: [
-        {
-          command: 'approval.respond',
-          allowed: !disabledReason,
-          ...(disabledReason ? { disabled_reason: disabledReason } : {}),
-        },
-      ],
-      binding: {
-        action: approval.tool,
-        input_hash: approval.input_hash,
-        input_summary: approval.input_summary,
-        ...(approval.rule ? { rule: approval.rule } : {}),
-        project_rule_supported: approval.project_rule_supported === true,
-      },
-      ...(approval.questions ? { questions: approval.questions } : {}),
-      ...(escalated
-        ? { waited_ms: ctx.store.now() - approval.created_at, escalated: true as const }
-        : {}),
-      ...(approval.session_id && ctx.store.get<BoardPlan>('board_plans', approval.session_id)
-        ? { next_step: NEXT_STEP.lead_permission }
-        : {}),
-    });
-  }
-  if (principal.role === 'user')
-    for (const approval of ctx.store
-      .list<Approval>('approvals')
-      .filter((a) => a.state !== 'pending' && listedProject(a.project_id))) {
-      const undelivered =
-        approval.delivery_error !== undefined && approval.resolved_at === undefined;
-      if (!undelivered && !(approval.reason === 'session_lost' && lostRequestOpen(ctx, approval)))
-        continue;
-      try {
-        approvalAccess(ctx, principal, approval);
-      } catch (error) {
-        if (!(error instanceof DomainError)) throw error;
-        continue;
-      }
-      items.push({
-        source: { table: 'approvals', id: approval.id, revision: approval.revision },
-        kind: approval.kind,
-        project_id: approval.project_id,
-        session_id: approval.session_id,
-        turn_id: approval.turn_id,
-        request_id: approval.request_id,
-        status: approval.state,
-        created_at: approval.created_at,
-        reason: undelivered ? 'answer_undelivered' : 'permission_voided',
-        actions: [],
-        binding: {
-          action: approval.tool,
-          input_hash: approval.input_hash,
-          input_summary: approval.input_summary,
-        },
-      });
-    }
+  const scope: NeedsYouScope = { principal, projectId, removed, listedProject };
+  items.push(...pendingApprovalItems(ctx, scope));
   if (principal.role === 'user') {
+    items.push(...settledApprovalItems(ctx, scope));
     const sessions = ctx.store
       .list<Session>('sessions')
       .filter(
@@ -322,631 +241,22 @@ export function needsYou(
           !removed.has(s.project_id) &&
           (!projectId || s.project_id === projectId),
       );
-    const listed = new Map(
-      [
-        ...new Set(
-          sessions
-            .filter((s) => s.workspace_id || s.baseline || s.runtime_review)
-            .map((s) => s.project_id),
-        ),
-      ].flatMap((id) =>
-        sessionList(ctx, principal, id, false).map((session) => [session.id, session] as const),
-      ),
-    );
     const plans = ctx.store
       .list<BoardPlan>('board_plans')
       .filter(
         (plan) => !removed.has(plan.project_id) && (!projectId || plan.project_id === projectId),
       );
-    const leads = new Set(plans.map((plan) => plan.id)),
-      planOf = new Map(plans.map((plan) => [plan.id, plan])),
-      sessionTurns = new Map<string, SessionTurn[]>();
-    for (const turn of ctx.store.list<SessionTurn>('session_turns')) {
-      const turns = sessionTurns.get(turn.session_id);
-      if (turns) turns.push(turn);
-      else sessionTurns.set(turn.session_id, [turn]);
-    }
-    for (const session of sessions) {
-      const audit = latestEvent(ctx, session.id, 'session.write_detected');
-      const outsideWorktree =
-        audit &&
-        (JSON.parse(audit.payload) as { reason?: string }).reason ===
-          'outside_worktree_write_detected';
-      if (audit)
-        items.push({
-          source: { table: 'sessions', id: session.id, revision: session.revision },
-          kind: 'session.failed',
-          project_id: session.project_id,
-          status: session.state,
-          created_at: audit.created_at,
-          reason: outsideWorktree ? 'outside_worktree_write_detected' : 'non_writer_write_detected',
-          actions: [],
-          next_step: outsideWorktree
-            ? 'This session wrote outside its worktree. Review the listed paths, then restore unintended changes.'
-            : 'This read-only session changed tracked files, or called a write tool. Review its changes and tool calls, then restore unintended changes.',
-        });
-      const row = listed.get(session.id),
-        latest = leads.has(session.id)
-          ? latestExecuted(ctx, sessionTurns.get(session.id) ?? [])
-          : undefined;
-      const mergeStarted = stuckMerge(ctx, session)
-        ? latestEvent(ctx, session.id, 'session.merge_started')
-        : undefined;
-      const limit =
-          leads.has(session.id) || session.task ? continuationLimit(ctx, session.id) : undefined,
-        resetAt = leads.has(session.id) || session.task ? usageResetAt(ctx, session.id) : undefined;
-      const workspace = session.workspace_id
-        ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
-        : undefined;
-      const stop = session.stop_requested,
-        stopUnconfirmed =
-          stop &&
-          (ctx.store.now() - stop.at >= STOP_UNCONFIRMED_MS ||
-            (latestEvent(ctx, session.id, 'session.discard_failed')?.created_at ?? -1) >= stop.at);
-      // The tracker keeps the alerts of running turns on the plan of the lead or of the task's lead.
-      const running = sessionTurns.get(session.id)?.findLast((turn) => turn.state === 'running'),
-        alerts = running
-          ? (ownEntry(
-              planOf.get(session.task?.lead_session_id ?? session.id)?.alerted,
-              running.id,
-            ) ?? [])
-          : [],
-        turnAlert: SessionAttention | undefined = leads.has(session.id)
-          ? alerts.includes('looping')
-            ? 'lead_turn_looping'
-            : alerts.includes('stalled')
-              ? 'lead_turn_stalled'
-              : undefined
-          : alerts.includes('still_looping')
-            ? 'task_turn_looping'
-            : alerts.includes('stall_unanswered')
-              ? 'task_turn_stalled'
-              : undefined;
-      // The tracker hands a failed gate or a blocked merge to the open lead of the task.
-      const taskPlan = session.task && planOf.get(session.task.lead_session_id),
-        taskLead = taskPlan && ctx.store.get<Session>('sessions', taskPlan.id),
-        leadHandles =
-          !!taskLead &&
-          taskLead.state !== 'closed' &&
-          !retiredBinding(taskPlan, session) &&
-          !(
-            (session.merge?.reason === 'gate_failed' || row?.gate?.state === 'failed') &&
-            (workflowPolicy(ctx, session.project_id).gate_on_fail === 'stop' ||
-              workflowPolicy(ctx, session.project_id).handback_limit === 0)
-          );
-      const kind: NeedsYouItem['kind'] | SessionAttention | undefined =
-        session.state === 'reconciling'
-          ? 'session.reconciling'
-          : workspace?.provisioning?.state === 'reconciling'
-            ? 'workspace_reconciling'
-            : stopUnconfirmed
-              ? 'stop_unconfirmed'
-              : row?.state === 'failed'
-                ? 'session.failed'
-                : mergeStarted
-                  ? 'merge_stuck'
-                  : row?.gate?.state === 'failed' && !leadHandles
-                    ? 'session.gate_failed'
-                    : session.merge?.state === 'blocked' && session.merge.reason === 'task_retired'
-                      ? 'task_retired'
-                      : row?.merge?.state === 'blocked' &&
-                          !['cancelled', 'workflow_approval'].includes(row.merge.reason ?? '') &&
-                          (!leadHandles || row.merge.reason === 'protected_paths')
-                        ? 'session.merge_blocked'
-                        : leads.has(session.id) && leadTurnFailed(ctx, session, latest)
-                          ? 'lead_turn_failed'
-                          : (turnAlert ??
-                            (resetAt !== undefined
-                              ? 'usage_limit_waiting'
-                              : limit
-                                ? 'continuation_limit_reached'
-                                : undefined));
-      // The lead hears of a task session's long background task; the user of any other session's.
-      if (!session.task)
-        for (const background of longBackground(ctx, session.id))
-          items.push({
-            source: { table: 'sessions', id: session.id, revision: session.revision },
-            kind: 'session.failed',
-            project_id: session.project_id,
-            status: session.state,
-            created_at: background.started_at + BACKGROUND_LONG_MS,
-            reason: 'background_task_long',
-            actions: [
-              action('session.background.stop', () =>
-                projectAccess(ctx, principal, session.project_id, 'session.background.stop'),
-              ),
-            ],
-            background,
-            next_step: NEXT_STEP.background_task_long,
-          });
-      if (!kind) continue;
-      if (
-        kind === 'task_turn_looping' ||
-        kind === 'task_turn_stalled' ||
-        kind === 'lead_turn_looping' ||
-        kind === 'lead_turn_stalled'
-      ) {
-        items.push({
-          source: { table: 'sessions', id: session.id, revision: session.revision },
-          kind: 'session.failed',
-          project_id: session.project_id,
-          status: session.state,
-          created_at: latestEvent(ctx, running!.id, 'turn.running')?.created_at ?? 0,
-          reason: kind,
-          actions: [
-            action('session.interrupt', () =>
-              projectAccess(ctx, principal, session.project_id, 'session.interrupt'),
-            ),
-          ],
-          next_step: NEXT_STEP[kind],
-        });
-        continue;
-      }
-      if (kind === 'usage_limit_waiting') {
-        const failed = sessionTurns.get(session.id)?.findLast((turn) => turn.state === 'failed');
-        items.push({
-          source: { table: 'sessions', id: session.id, revision: session.revision },
-          kind: 'session.failed',
-          project_id: session.project_id,
-          status: session.state,
-          created_at: failed ? (latestEvent(ctx, failed.id, 'turn.failed')?.created_at ?? 0) : 0,
-          reason: kind,
-          actions: [],
-          resets_at: resetAt,
-          next_step: NEXT_STEP[kind],
-        });
-        continue;
-      }
-      if (
-        kind === 'merge_stuck' ||
-        kind === 'lead_turn_failed' ||
-        kind === 'continuation_limit_reached' ||
-        kind === 'workspace_reconciling' ||
-        kind === 'stop_unconfirmed' ||
-        kind === 'task_retired'
-      ) {
-        items.push({
-          source: { table: 'sessions', id: session.id, revision: session.revision },
-          kind: 'session.failed',
-          project_id: session.project_id,
-          status: session.state,
-          created_at:
-            kind === 'merge_stuck'
-              ? mergeStarted!.created_at
-              : kind === 'lead_turn_failed'
-                ? (latestEvent(ctx, latest!.id, 'turn.failed')?.created_at ?? 0)
-                : kind === 'workspace_reconciling'
-                  ? (latestEvent(ctx, workspace!.id, 'workspace.provisioning')?.created_at ?? 0)
-                  : kind === 'stop_unconfirmed'
-                    ? stop!.at
-                    : kind === 'task_retired'
-                      ? (latestEvent(ctx, session.id, 'session.merge_blocked')?.created_at ?? 0)
-                      : limit!.created_at,
-          reason: kind,
-          // session.resolve answers a reconciling session, not its worktree.
-          actions:
-            kind === 'merge_stuck' ||
-            kind === 'workspace_reconciling' ||
-            kind === 'stop_unconfirmed' ||
-            kind === 'task_retired'
-              ? []
-              : [
-                  action('session.send', () => {
-                    projectAccess(ctx, principal, session.project_id, 'session.send');
-                    acceptInput(ctx, session, 'send');
-                  }),
-                ],
-          next_step: NEXT_STEP[kind],
-        });
-        continue;
-      }
-      const reason: NeedsYouItem['reason'] =
-        kind === 'session.failed'
-          ? 'session_failed'
-          : kind === 'session.gate_failed'
-            ? 'gate_failed'
-            : kind === 'session.merge_blocked'
-              ? 'merge_blocked'
-              : 'reconciliation_required';
-      const event = ctx.store.db
-        .prepare(
-          'SELECT created_at, payload FROM events WHERE aggregate_id=? AND kind=? ORDER BY sequence DESC LIMIT 1',
-        )
-        .get(
-          kind === 'session.failed' && session.baseline ? session.baseline.baseline_id : session.id,
-          kind === 'session.failed'
-            ? session.baseline
-              ? 'project.baseline_failed'
-              : 'session.closed'
-            : kind === 'session.gate_failed'
-              ? 'session.gate_checked'
-              : kind,
-        ) as { created_at: number; payload: string } | undefined;
-      const failureClass =
-        kind === 'session.merge_blocked'
-          ? session.merge?.failure_class
-          : kind === 'session.gate_failed' && event
-            ? (
-                JSON.parse(event.payload) as { results?: NonNullable<LandingItem['gate_results']> }
-              ).results?.find((result) => result.state !== 'skipped' && result.failure_class)
-                ?.failure_class
-            : undefined;
-      const actions: NeedsYouItem['actions'] = [];
-      if (kind === 'session.reconciling')
-        // Without a stored process identity session.resolve can never confirm the old process ended.
-        actions.push(
-          ...(session.process_identity
-            ? [{ command: 'session.resolve', allowed: true }]
-            : [
-                {
-                  command: 'session.resolve',
-                  allowed: false,
-                  disabled_reason: 'termination_unconfirmed',
-                },
-                ...(session.workspace_id &&
-                !session.baseline &&
-                (workspace?.kind !== 'in_place' || session.in_place)
-                  ? [{ command: 'session.discard', allowed: true }]
-                  : []),
-              ]),
-        );
-      else if (
-        kind === 'session.merge_blocked' &&
-        (workspace?.kind !== 'in_place' || session.in_place)
-      ) {
-        let disabledReason: string | undefined;
-        try {
-          projectAccess(ctx, principal, session.project_id, 'session.merge');
-          requireMergeReady(ctx, session, true);
-        } catch (error) {
-          if (!(error instanceof DomainError)) throw error;
-          disabledReason = error.code;
-        }
-        actions.push({
-          command: 'session.merge',
-          allowed: !disabledReason,
-          ...(disabledReason ? { disabled_reason: disabledReason } : {}),
-        });
-      }
-      items.push({
-        source: { table: 'sessions', id: session.id, revision: session.revision },
-        kind,
-        project_id: session.project_id,
-        status: session.state,
-        created_at: event?.created_at ?? 0,
-        reason,
-        actions,
-        ...(failureClass ? { failure_class: failureClass } : {}),
-      });
-    }
-    for (const plan of plans) {
-      for (const proposal of plan.pending_proposals ?? []) {
-        if (proposal.status !== 'pending') continue;
-        items.push({
-          source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-          kind: 'board.plan.proposal',
-          project_id: plan.project_id,
-          session_id: plan.id,
-          request_id: proposal.proposal_id,
-          status: 'pending',
-          created_at: proposal.created_at,
-          reason: 'plan_proposal_awaiting_decision',
-          actions: [
-            action('board.plan.proposal.resolve', () =>
-              projectAccess(ctx, principal, plan.project_id, 'board.plan.proposal.resolve'),
-            ),
-          ],
-          next_step: NEXT_STEP.plan_proposal_awaiting_decision,
-        });
-      }
-      for (const [subject, hold] of Object.entries(plan.external_holds ?? {})) {
-        const title = ctx.store
-          .list<ExternalEvent>('external_events')
-          .findLast(
-            (event) => event.project_id === plan.project_id && event.subject_key === subject,
-          )?.title;
-        items.push({
-          source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-          kind: 'external.approval',
-          project_id: plan.project_id,
-          session_id: plan.id,
-          request_id: subject,
-          status: 'pending',
-          created_at: hold.at,
-          reason: 'external_approval',
-          actions: [
-            action('external.approve', () =>
-              requireThat(principal.role === 'user', 'permission_denied', 'Only user'),
-            ),
-          ],
-          next_step: `Approve “${title ?? subject}” to let its tasks start.`,
-        });
-      }
-      for (const question of plan.questions ?? []) {
-        if (question.answer) continue;
-        items.push({
-          source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-          kind: 'lead.question',
-          project_id: plan.project_id,
-          session_id: plan.id,
-          request_id: question.id,
-          status: 'pending',
-          created_at: question.at,
-          reason: 'lead_question',
-          question,
-          actions: [
-            action('lead.question.answer', () =>
-              projectAccess(ctx, principal, plan.project_id, 'lead.question.answer'),
-            ),
-          ],
-        });
-      }
-      const owner = ctx.store.get<Session>('sessions', plan.id);
-      if (!owner || owner.state === 'closed')
-        for (const session of sessions.filter(
-          (session) => session.task?.lead_session_id === plan.id,
-        )) {
-          const blocked = blockedReport(ctx, session);
-          if (!blocked) continue;
-          items.push({
-            source: { table: 'sessions', id: session.id, revision: session.revision },
-            kind: 'session.failed',
-            project_id: plan.project_id,
-            session_id: plan.id,
-            task_id: `${plan.id}:${session.task!.id}`,
-            status: 'waiting',
-            created_at: blocked.at,
-            reason: 'task_blocked',
-            blocked,
-            actions: [],
-          });
-        }
-      for (const [taskId, entry] of Object.entries(plan.dispatch ?? {})) {
-        if (!entry.error) continue;
-        items.push({
-          source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-          kind: 'session.failed',
-          project_id: plan.project_id,
-          session_id: plan.id,
-          task_id: `${plan.id}:${taskId}`,
-          status: 'queued',
-          created_at: entry.error.at,
-          reason: 'task_dispatch_failed',
-          actions: [],
-          next_step: NEXT_STEP.task_dispatch_failed,
-        });
-      }
-      for (const [taskId, entry] of Object.entries(plan.dispatch ?? {})) {
-        const upstream = plan.tasks
-          .find((task) => task.id === taskId)
-          ?.depends_on.flatMap((upstreamId) => {
-            const stuck = stuckUpstream(ctx, plan, upstreamId)?.stuck;
-            return stuck ? [{ task_id: `${plan.id}:${upstreamId}`, stuck }] : [];
-          })[0];
-        if (!upstream) continue;
-        items.push({
-          source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-          kind: 'session.failed',
-          project_id: plan.project_id,
-          session_id: plan.id,
-          task_id: `${plan.id}:${taskId}`,
-          status: 'queued',
-          created_at: entry.requested_at,
-          reason: 'task_upstream_stuck',
-          actions: [],
-          upstream,
-          next_step: NEXT_STEP.task_upstream_stuck,
-        });
-      }
-      const lead = ctx.store.get<Session>('sessions', plan.id);
-      // A plan moved to another lead keeps the mark until its next wake.
-      if (plan.wake_failed && (!lead || lead.state === 'closed'))
-        items.push({
-          source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-          kind: 'session.failed',
-          project_id: plan.project_id,
-          session_id: plan.id,
-          status: 'closed',
-          created_at: plan.wake_failed.at,
-          reason: 'lead_closed',
-          actions: [
-            action('board.sync', () =>
-              projectAccess(ctx, principal, plan.project_id, 'board.sync'),
-            ),
-          ],
-          next_step: NEXT_STEP.lead_closed,
-        });
-      else if (plan.wake_failed?.reason === 'wake_limit')
-        items.push({
-          source: { table: 'board_plans', id: plan.id, revision: plan.revision },
-          kind: 'session.failed',
-          project_id: plan.project_id,
-          session_id: plan.id,
-          status: lead!.state,
-          created_at: plan.wake_failed.at,
-          reason: 'lead_wake_limited',
-          actions: [
-            action('session.send', () => {
-              projectAccess(ctx, principal, plan.project_id, 'session.send');
-              acceptInput(ctx, lead!, 'send');
-            }),
-          ],
-          next_step: NEXT_STEP.lead_wake_limited,
-        });
-    }
-    for (const milestone of ctx.store.list<Milestone>('milestones')) {
-      // A milestone the user created has no lead.
-      const leadId = milestone.owner_session_id;
-      if (
-        milestone.removed_at ||
-        (leadId ? !planOf.has(leadId) : !listedProject(milestone.project_id))
-      )
-        continue;
-      const view = milestoneView(ctx, milestone);
-      if (view.status !== 'ready_for_acceptance') continue;
-      const plan = leadId ? planOf.get(leadId) : undefined;
-      items.push({
-        source: { table: 'milestones', id: milestone.id, revision: milestone.revision },
-        kind: 'milestone.ready_for_acceptance',
-        project_id: milestone.project_id,
-        ...(leadId ? { session_id: leadId } : {}),
-        status: view.status,
-        // Ready since its last task was done, or since it last changed.
-        created_at: Math.max(
-          milestone.created_at,
-          latestEvent(ctx, milestone.id, 'milestone.revised')?.created_at ?? 0,
-          ...view.required_sessions.map(
-            (sessionId) => latestEvent(ctx, sessionId, 'session.merged')?.created_at ?? 0,
-          ),
-          ...(milestone.task_ids ?? []).map((taskId) =>
-            Math.max(
-              currentAcceptance(plan, taskId)?.at ?? 0,
-              currentDirectMerge(plan, taskId)?.at ?? 0,
-            ),
-          ),
-        ),
-        reason: 'milestone_ready_for_acceptance',
-        actions: [
-          action('milestone.accept', () =>
-            projectAccess(ctx, principal, milestone.project_id, 'milestone.accept'),
-          ),
-        ],
-        next_step: NEXT_STEP.milestone_ready_for_acceptance,
-      });
-    }
-    for (const run of ctx.store.list<StepRun>('workflow_step_runs')) {
-      if (
-        run.state !== 'waiting' ||
-        run.step.kind.type !== 'approval' ||
-        removed.has(run.project_id) ||
-        (projectId && run.project_id !== projectId)
-      )
-        continue;
-      const plan = planOf.get(run.lead_session_id),
-        task = plan?.tasks.find((t) => t.id === run.task_id);
-      if (!task || taskGeneration(plan, run.task_id) !== run.generation) continue;
-      items.push({
-        source: { table: 'workflow_step_runs', id: run.id, revision: run.revision },
-        kind: 'workflow.approval',
-        project_id: run.project_id,
-        session_id: run.session_id ?? run.lead_session_id,
-        task_id: `${run.lead_session_id}:${run.task_id}`,
-        task_title: task.title,
-        step_title: run.step.title,
-        status: 'waiting',
-        created_at: run.created_at,
-        reason: 'workflow_approval',
-        actions: (['approve', 'reject'] as const).map((decision) => ({
-          ...action('workflow.step.decide', () =>
-            projectAccess(ctx, principal, run.project_id, 'workflow.step.decide'),
-          ),
-          decision,
-        })),
-        next_step: `Approve or reject “${run.step.title}” for “${task.title}”.`,
-      });
-    }
-    for (const row of ctx.store.list<StoredWorkflowDefinition>('workflow_definitions')) {
-      if (
-        !row.trial ||
-        row.trial.done !== row.trial.tasks ||
-        removed.has(row.project_id) ||
-        (projectId && row.project_id !== projectId)
-      )
-        continue;
-      items.push({
-        source: { table: 'workflow_definitions', id: row.id, revision: row.revision },
-        kind: 'workflow.definition.trial',
-        project_id: row.project_id,
-        status: 'waiting',
-        created_at: row.trial.started_at,
-        reason: 'workflow_definition_trial_completed',
-        actions: (['keep', 'revert'] as const).map((decision) => ({
-          ...action('workflow.definition.trial.decide', () =>
-            projectAccess(ctx, principal, row.project_id, 'workflow.definition.trial.decide'),
-          ),
-          decision,
-        })),
-      });
-    }
-    // A candidate waits for the user: auto mode starts each trial as it proposes the improvement.
-    for (const improvement of ctx.store.list<Improvement>('improvements')) {
-      if (
-        improvement.status !== 'candidate' ||
-        removed.has(improvement.project_id) ||
-        (projectId && improvement.project_id !== projectId)
-      )
-        continue;
-      items.push({
-        source: { table: 'improvements', id: improvement.id, revision: improvement.revision },
-        kind: 'improvement.candidate',
-        project_id: improvement.project_id,
-        ...(improvement.lead_session_id ? { session_id: improvement.lead_session_id } : {}),
-        status: improvement.status,
-        created_at: improvement.proposed_at,
-        reason: 'improvement_awaiting_decision',
-        actions: [
-          action('improvement.decide', () =>
-            projectAccess(ctx, principal, improvement.project_id, 'improvement.decide'),
-          ),
-        ],
-        next_step: NEXT_STEP.improvement_awaiting_decision,
-      });
-    }
-    for (const proposal of ctx.store.list<AgentProposal>('agent_proposals')) {
-      if (proposal.state !== 'pending' || !listedProject(proposal.project_id)) continue;
-      const target = proposal.agent_id
-        ? ctx.store.must<AgentProfile>('agents', proposal.agent_id)
-        : undefined;
-      items.push({
-        source: { table: 'agent_proposals', id: proposal.id, revision: proposal.revision },
-        kind: 'agent.proposal',
-        project_id: proposal.project_id,
-        session_id: proposal.session_id,
-        status: proposal.state,
-        created_at: proposal.at,
-        reason: 'agent_proposal_awaiting_decision',
-        actions: [
-          action('agent.proposal.resolve', () =>
-            projectAccess(ctx, principal, proposal.project_id, 'agent.proposal.resolve'),
-          ),
-        ],
-        agent_proposal: {
-          id: proposal.id,
-          name: proposal.fields.name ?? target!.name,
-          template: target?.template ?? proposal.fields.template!,
-          ...(target && { agent_id: target.id }),
-          waited_ms: ctx.store.now() - proposal.at,
-        },
-        next_step: NEXT_STEP.agent_proposal_awaiting_decision,
-      });
-    }
-    for (const project of ctx.store.list<Project>('projects')) {
-      if (removed.has(project.id) || (projectId && project.id !== projectId)) continue;
-      const use = projectBudgetUse(ctx, project.id);
-      if (use?.reached_at === undefined) continue;
-      items.push({
-        source: {
-          table: 'workflow_policies',
-          id: project.id,
-          revision: workflowPolicy(ctx, project.id).revision,
-        },
-        kind: 'project.over_budget',
-        project_id: project.id,
-        status: 'over_budget',
-        created_at: use.reached_at,
-        reason: 'project_over_budget',
-        actions: [
-          action('workflow.policy.set', () =>
-            projectAccess(ctx, principal, project.id, 'workflow.policy.set'),
-          ),
-        ],
-        project_budget: {
-          used_input_tokens: use.used_input_tokens,
-          input_tokens: use.input_tokens,
-        },
-        next_step: `The project used ${use.used_input_tokens} input tokens since its budget was set, against a budget of ${use.input_tokens}; Pantheon opens no new task session and wakes no lead, and running turns finish. Work resumes once the user raises or clears the project budget.`,
-      });
-    }
+    const planOf = new Map(plans.map((plan) => [plan.id, plan]));
+    items.push(
+      ...sessionItems(ctx, scope, sessions, plans, planOf),
+      ...planItems(ctx, scope, plans, sessions),
+      ...milestoneItems(ctx, scope, planOf),
+      ...stepRunItems(ctx, scope, planOf),
+      ...definitionTrialItems(ctx, scope),
+      ...improvementItems(ctx, scope),
+      ...agentProposalItems(ctx, scope),
+      ...projectBudgetItems(ctx, scope),
+    );
   }
   return {
     items: items.sort(

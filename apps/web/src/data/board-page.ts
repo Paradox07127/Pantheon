@@ -1,13 +1,38 @@
 import { useSyncExternalStore } from 'react';
+import { ChartGantt, SquarePen, Workflow, type LucideIcon } from 'lucide-react';
+import { t } from '../i18n';
 
 /** The views available on the project board. */
 export type BoardPage = 'now' | 'history' | 'canvas';
 
-const PAGES: readonly BoardPage[] = ['now', 'history', 'canvas'];
+// Labels are getters, so each is read in the language loaded by then.
+export const PAGES: readonly { key: BoardPage; label: string; icon: LucideIcon }[] = [
+  {
+    key: 'now',
+    get label() {
+      return t({ id: 'board.history.span.now', defaultMessage: 'Now' });
+    },
+    icon: Workflow,
+  },
+  {
+    key: 'history',
+    get label() {
+      return t({ id: 'board.history.span.history', defaultMessage: 'Whole history' });
+    },
+    icon: ChartGantt,
+  },
+  {
+    key: 'canvas',
+    get label() {
+      return t({ id: 'board.view.canvas', defaultMessage: 'Canvas' });
+    },
+    icon: SquarePen,
+  },
+];
 
 /** The stored board view; anything else opens the now view. */
 export function readBoardPage(raw: string | null): BoardPage {
-  return PAGES.find((p) => p === raw) ?? 'now';
+  return PAGES.find((p) => p.key === raw)?.key ?? 'now';
 }
 
 const pageKey = (projectId: string) => `pantheon.board-page.${projectId}`;
