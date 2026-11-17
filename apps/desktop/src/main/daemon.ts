@@ -138,6 +138,7 @@ const failure = (
   message: string,
   status?: number,
   details?: Record<string, unknown>,
+  stack?: string,
 ) =>
   ({
     ok: false,
@@ -146,6 +147,7 @@ const failure = (
       message,
       ...(status === undefined ? {} : { status }),
       ...(details === undefined ? {} : { details }),
+      ...(stack === undefined ? {} : { stack }),
     },
   }) as const;
 
@@ -594,12 +596,13 @@ export class DaemonBridge {
       return failure('daemon_unavailable', String(error));
     }
     if (response.ok) return { ok: true, value: payload };
-    const { error, message, details } = payload as {
+    const { error, message, details, stack } = payload as {
       error: string;
       message?: string;
       details?: Record<string, unknown>;
+      stack?: string;
     };
-    return failure(error, message ?? error, response.status, details);
+    return failure(error, message ?? error, response.status, details, stack);
   }
 
   private connect(): Promise<BridgeResult<Connection>> {

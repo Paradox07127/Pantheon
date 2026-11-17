@@ -108,7 +108,12 @@ it('maps a daemon error to a failed result with its code and HTTP status', async
   );
   expect(result).toEqual({
     ok: false,
-    error: { code: 'not_found', message: 'sessions/missing', status: 400 },
+    error: {
+      code: 'not_found',
+      message: 'sessions/missing',
+      status: 400,
+      stack: expect.stringMatching(/^DomainError: sessions\/missing\n {4}at /),
+    },
   });
 });
 
@@ -120,7 +125,12 @@ it('maps unknown routes and missing session queries to the daemon error code', a
   });
   expect(await bridge.query('session.reviews', { session_id: 'w' })).toEqual({
     ok: false,
-    error: { code: 'not_found', message: 'sessions/w', status: 400 },
+    error: {
+      code: 'not_found',
+      message: 'sessions/w',
+      status: 400,
+      stack: expect.stringMatching(/^DomainError: sessions\/w\n {4}at /),
+    },
   });
 });
 
@@ -255,7 +265,7 @@ it('waits for a live but slow daemon instead of starting another one', async () 
   expect(found).toMatchObject({ ok: true, value: { started_here: false } });
 }, 15000);
 
-it('carries the details of a daemon error and repeats a query parameter given as a list', async () => {
+it('carries the details and stack of a daemon error and repeats a query parameter given as a list', async () => {
   const root = tempRoot();
   const directory = path.join(root, 'state');
   mkdirSync(directory);
@@ -270,6 +280,8 @@ it('carries the details of a daemon error and repeats a query parameter given as
           error: 'memory_budget_exceeded',
           message: 'Decisions do not fit',
           details: { used_bytes: 12500, limit_bytes: 12000 },
+          stack:
+            'DomainError: Decisions do not fit\n    at budget (packages/control/src/memory.ts:12:9)',
         }),
       );
       return;
@@ -312,6 +324,8 @@ it('carries the details of a daemon error and repeats a query parameter given as
       message: 'Decisions do not fit',
       status: 400,
       details: { used_bytes: 12500, limit_bytes: 12000 },
+      stack:
+        'DomainError: Decisions do not fit\n    at budget (packages/control/src/memory.ts:12:9)',
     },
   });
   await bridge.query('memory.read', { project_id: 'p', tag: ['storage', 'local'] });

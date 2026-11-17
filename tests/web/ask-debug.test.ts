@@ -16,7 +16,7 @@ vi.mock('@/data/app-errors', async (actual) => ({
   debugTarget: async () => mock.target,
 }));
 vi.mock('@/components/Toast', () => ({ toast: vi.fn(() => 'toast') }));
-import { appErrors, recordAppError } from '@/data/app-errors';
+import { appErrors, captureAppErrors, recordAppError } from '@/data/app-errors';
 import { askDebugAgent } from '@/data/ask-debug';
 import { runCommand } from '@/data/commands';
 import { toast } from '@/components/Toast';
@@ -236,6 +236,29 @@ describe('asking the debug agent', () => {
     });
   });
 
+  it('sets the error it is about apart, with its stack, before the recent problems', async () => {
+    mock.target = null;
+    recordAppError({ source: 'console', message: 'render loop warning' });
+    const error = recordAppError({
+      source: 'command',
+      command: 'session.archive',
+      code: 'invalid_request',
+      message: 'Cannot read properties of undefined',
+      status: 400,
+      stack:
+        'TypeError: Cannot read properties of undefined\n    at archive (packages/control/src/session.ts:40:7)',
+    });
+    await askDebugAgent({ title: 'Archive failed', error });
+    const prompt = vi.mocked(navigator.clipboard.writeText).mock.calls[0]![0];
+    const section = `The error:\n\n\`\`\`json\n${JSON.stringify(error, null, 2)}\n\`\`\``;
+    expect(prompt).toContain(`Archive failed\n\n${section}`);
+    expect(section).toContain('packages/control/src/session.ts:40:7');
+    const recent = prompt.slice(prompt.indexOf('Recent problems'));
+    expect(prompt.indexOf(section)).toBeLessThan(prompt.indexOf('Recent problems'));
+    expect(recent).toContain('render loop warning');
+    expect(recent).not.toContain(`"id":${error.id},`);
+  });
+
   it('opens the session it sent to from the toast', async () => {
     listed = [debugListed('debug-live', {})];
     await askDebugAgent({ title: 'Push failed' });
@@ -257,6 +280,69 @@ describe('recorded app errors', () => {
       message: 'Busy',
     });
     expect((entry.input as { input: string }).input).toHaveLength(500);
+  });
+
+  it('records the status, details and stack of a failed command', async () => {
+    const stack = 'TypeError: x is undefined\n' + '    at handler (control.ts:1:1)\n'.repeat(200);
+    bridge.command.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'invalid_request',
+        message: 'x is undefined',
+        status: 400,
+        details: { field: 'title' },
+        stack,
+      },
+    });
+    await runCommand('session.send', { session_id: 's', input: 'hi' }, null);
+    expect(appErrors().at(-1)).toMatchObject({
+      code: 'invalid_request',
+      status: 400,
+      details: { field: 'title' },
+      stack: stack.slice(0, 4000),
+    });
+  });
+
+  it('records uncaught errors, rejections and console errors with their stacks', () => {
+    const listeners = new Map<string, (event: unknown) => void>();
+    vi.stubGlobal('window', {
+      addEventListener: (type: string, listener: (event: unknown) => void) =>
+        listeners.set(type, listener),
+    });
+    const original = console.error;
+    console.error = () => {};
+    try {
+      captureAppErrors();
+      const thrown = new TypeError('bad render');
+      const cyclic: Record<string, unknown> = {};
+      cyclic.self = cyclic;
+      listeners.get('error')!({ error: thrown, message: 'bad render' });
+      listeners.get('error')!({
+        error: null,
+        message: 'Script error.',
+        filename: 'app.js',
+        lineno: 3,
+        colno: 9,
+      });
+      listeners.get('unhandledrejection')!({ reason: thrown });
+      console.error('Render failed:', thrown);
+      console.error('State', { tab: 'files', open: true });
+      console.error('State', cyclic);
+      expect(
+        appErrors()
+          .slice(-6)
+          .map(({ source, message, stack }) => ({ source, message, stack })),
+      ).toEqual([
+        { source: 'error', message: 'TypeError: bad render', stack: thrown.stack },
+        { source: 'error', message: 'Script error.', stack: 'app.js:3:9' },
+        { source: 'rejection', message: 'TypeError: bad render', stack: thrown.stack },
+        { source: 'console', message: 'Render failed: TypeError: bad render', stack: thrown.stack },
+        { source: 'console', message: 'State {"tab":"files","open":true}', stack: undefined },
+        { source: 'console', message: 'State [object Object]', stack: undefined },
+      ]);
+    } finally {
+      console.error = original;
+    }
   });
 
   it('keeps only the newest 50', () => {

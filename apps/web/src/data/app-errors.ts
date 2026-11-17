@@ -2,19 +2,27 @@ import type { DesktopBridge } from '@pantheon/protocol';
 
 /** A problem the running app ran into: a failed command, an uncaught error or a console error. */
 export interface AppError {
+  /** Increases with each entry recorded. */
+  id: number;
   /** ISO time it was recorded. */
   at: string;
   source: 'command' | 'error' | 'rejection' | 'console';
   message: string;
+  /** Where it was thrown, or the script position when no error came with it. */
+  stack?: string;
   command?: string;
   code?: string;
+  status?: number;
+  details?: unknown;
   input?: unknown;
 }
 
 const LIMIT = 50;
 const TEXT_LIMIT = 500;
+const STACK_LIMIT = 4000;
 
 let entries: AppError[] = [];
+let nextId = 1;
 let target: Promise<Awaited<ReturnType<DesktopBridge['debugTarget']>>> = Promise.resolve(null);
 
 const clip = (value: unknown): unknown =>
@@ -26,11 +34,24 @@ const clip = (value: unknown): unknown =>
         ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, clip(item)]))
         : value;
 
-/** Keeps the entry, its strings cut to 500 characters, with the newest 50 before it. */
-export function recordAppError(entry: Omit<AppError, 'at'>): void {
-  const kept = clip({ at: new Date().toISOString(), ...entry }) as AppError;
+/** Keeps the entry, its stack cut to 4000 characters and other strings to 500, with the newest 50 before it. */
+export function recordAppError({ stack, ...entry }: Omit<AppError, 'id' | 'at'>): AppError {
+  const kept = {
+    ...(clip({ id: nextId++, at: new Date().toISOString(), ...entry }) as AppError),
+    ...(stack === undefined ? {} : { stack: stack.slice(0, STACK_LIMIT) }),
+  };
   entries = [...entries, kept].slice(-LIMIT);
+  return kept;
 }
+
+const consoleText = (arg: unknown): string => {
+  if (arg instanceof Error || !arg || typeof arg !== 'object') return String(arg);
+  try {
+    return JSON.stringify(arg);
+  } catch {
+    return String(arg);
+  }
+};
 
 /** The recorded problems, oldest first. */
 export const appErrors = (): readonly AppError[] => entries;
@@ -38,14 +59,30 @@ export const appErrors = (): readonly AppError[] => entries;
 /** Records uncaught errors, unhandled rejections and console errors from here on; call once. */
 export function captureAppErrors(): void {
   window.addEventListener('error', (event) =>
-    recordAppError({ source: 'error', message: String(event.error ?? event.message) }),
+    recordAppError({
+      source: 'error',
+      message: String(event.error ?? event.message),
+      stack:
+        event.error instanceof Error && event.error.stack
+          ? event.error.stack
+          : `${event.filename}:${event.lineno}:${event.colno}`,
+    }),
   );
   window.addEventListener('unhandledrejection', (event) =>
-    recordAppError({ source: 'rejection', message: String(event.reason) }),
+    recordAppError({
+      source: 'rejection',
+      message: String(event.reason),
+      ...(event.reason instanceof Error && event.reason.stack ? { stack: event.reason.stack } : {}),
+    }),
   );
   const consoleError = console.error.bind(console);
   console.error = (...args: unknown[]) => {
-    recordAppError({ source: 'console', message: args.map(String).join(' ') });
+    const thrown = args.find((arg): arg is Error => arg instanceof Error && !!arg.stack);
+    recordAppError({
+      source: 'console',
+      message: args.map(consoleText).join(' '),
+      ...(thrown ? { stack: thrown.stack } : {}),
+    });
     consoleError(...args);
   };
   // A debug session reads this over CDP.

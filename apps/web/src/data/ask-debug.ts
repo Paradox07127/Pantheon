@@ -5,7 +5,7 @@ import { messageCommand } from '../screens/sessions/model';
 import { defaultRuntime } from '../screens/sessions/thread-model';
 import { askFix } from '../screens/sessions/panel';
 import { useShell } from '../store';
-import { appErrors, debugTarget } from './app-errors';
+import { appErrors, debugTarget, type AppError } from './app-errors';
 import { useBoard } from './board';
 import { runCommand } from './commands';
 import { currentProject, useCurrentProject } from './current-project';
@@ -20,7 +20,11 @@ export const canMessage = (session: Session): boolean =>
     .enabled;
 
 /** The report a debug session gets: the error, where the user was, and the app's recent problems. */
-async function debugPrompt(title: string, detail: string | undefined): Promise<string> {
+async function debugPrompt(
+  title: string,
+  detail: string | undefined,
+  error: AppError | undefined,
+): Promise<string> {
   const bridge = window.pantheon;
   const { screen, sessionId } = useShell.getState();
   const projectId = currentProject(
@@ -33,11 +37,13 @@ async function debugPrompt(title: string, detail: string | undefined): Promise<s
     .catch(() => null);
   const logs = await bridge?.logsDir().catch(() => null);
   const recent = appErrors()
+    .filter((entry) => entry.id !== error?.id)
     .slice(-20)
     .map((entry) => JSON.stringify(entry));
   // Sent to the model, so it stays in one language.
   return [
     `The user asked about this in the running Pantheon app:\n\n${title}`,
+    error ? `The error:\n\n\`\`\`json\n${JSON.stringify(error, null, 2)}\n\`\`\`` : '',
     detail ? `Detail:\n\n${detail}` : '',
     [
       `Screen: ${screen}`,
@@ -79,13 +85,16 @@ export async function askDebugAgent({
   title,
   detail,
   images,
+  error,
 }: {
   title: string;
   detail?: string;
+  /** The recorded entry the report is about, set apart from the recent ones. */
+  error?: AppError;
   /** PNG data URLs, attached to the message; dropped when the report is copied. */
   images?: readonly string[];
 }): Promise<boolean> {
-  const prompt = await debugPrompt(title, detail);
+  const prompt = await debugPrompt(title, detail, error);
   const target = window.pantheon ? await debugTarget() : null;
   if (!target) {
     await copied(prompt);

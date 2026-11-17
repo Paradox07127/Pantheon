@@ -1,6 +1,7 @@
 import { Toast } from '@base-ui/react/toast';
 import { Check, CircleDot, X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { appErrors } from '../data/app-errors';
 import { useNow } from '../data/needs-you';
 import { t } from '../i18n';
 import { useShell } from '../store';
@@ -82,13 +83,19 @@ export function toast({
 }: ToastOptions): string {
   const key = `${kind}:${title}`;
   const count = !action && last?.key === key ? last.count + 1 : 1;
+  // A failure toast follows the failure it reports, so an entry this fresh is that failure.
+  const newest = appErrors().at(-1);
+  const error = newest && Date.now() - Date.parse(newest.at) <= 2000 ? newest : undefined;
   const button =
     action ??
     (kind === 'failure' && askAgent
       ? {
           label: t({ id: 'components.toast.askAgent', defaultMessage: 'Ask agent' }),
           // Loaded on demand: the debug report reaches modules that themselves show toasts.
-          run: () => void import('../data/ask-debug').then((m) => m.askDebugAgent({ title })),
+          run: () =>
+            void import('../data/ask-debug').then((m) =>
+              m.askDebugAgent({ title, ...(error ? { error } : {}) }),
+            ),
         }
       : undefined);
   // The button stays pressable while the toast fades out.

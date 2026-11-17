@@ -1,11 +1,16 @@
 import path from 'node:path';
 import os from 'node:os';
 import { parseArgs } from 'node:util';
-import { startDaemon } from './index.js';
-import { acpProfiles, claudeOneShot, FixtureAdapter, withInstallFolders } from '@pantheon/adapters';
-import { runtimeConfig } from '@pantheon/control';
-import { defaultDataDirectory, defaultDesktopUserDataDirectory } from '@pantheon/protocol/paths';
-import { createRuntimeAdapter } from './runtime-registry.js';
+
+// Stack frames name the TypeScript sources; only modules loaded after this get mapped, so the rest load dynamically.
+process.setSourceMapsEnabled(true);
+const { startDaemon } = await import('./index.js');
+const { acpProfiles, claudeOneShot, FixtureAdapter, withInstallFolders } =
+  await import('@pantheon/adapters');
+const { runtimeConfig } = await import('@pantheon/control');
+const { defaultDataDirectory, defaultDesktopUserDataDirectory } =
+  await import('@pantheon/protocol/paths');
+const { createRuntimeAdapter } = await import('./runtime-registry.js');
 
 const { values } = parseArgs({
   options: {

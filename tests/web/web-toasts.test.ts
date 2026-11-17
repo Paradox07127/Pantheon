@@ -6,6 +6,7 @@ import { mountToastStore } from './web-toast-store.js';
 import { zh } from './i18n-setup.js';
 vi.mock('../../apps/web/src/data/ask-debug.js', () => ({ askDebugAgent: vi.fn(async () => {}) }));
 import { askDebugAgent } from '../../apps/web/src/data/ask-debug.js';
+import { recordAppError } from '../../apps/web/src/data/app-errors.js';
 
 const CSS = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/index.css'), 'utf8');
 
@@ -90,6 +91,25 @@ describe('toast layer', () => {
     mounted.store.state.toasts[0]!.actionProps?.onClick?.({} as never);
     await vi.waitFor(() => expect(askDebugAgent).toHaveBeenCalledWith({ title: 'Push failed' }));
     expect(mounted.shown()).toEqual([]);
+  });
+
+  it.each([
+    { name: 'the error recorded just before it', age: 1500, linked: true },
+    {
+      name: 'no error when the newest was recorded over 2 seconds before',
+      age: 2500,
+      linked: false,
+    },
+  ])('asks the debug agent about $name', async ({ age, linked }) => {
+    vi.mocked(askDebugAgent).mockClear();
+    const error = recordAppError({ source: 'command', code: 'not_found', message: 'sessions/s' });
+    vi.advanceTimersByTime(age);
+    toast({ title: 'Archive failed', kind: 'failure' });
+    mounted.store.state.toasts[0]!.actionProps?.onClick?.({} as never);
+    await vi.waitFor(() => expect(askDebugAgent).toHaveBeenCalledOnce());
+    expect(vi.mocked(askDebugAgent).mock.calls[0]![0]).toStrictEqual(
+      linked ? { title: 'Archive failed', error } : { title: 'Archive failed' },
+    );
   });
 
   it('runs its action once when pressed again as it closes', () => {

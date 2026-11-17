@@ -34,6 +34,9 @@ export async function runCommand(
       input,
       code: result.error.code,
       message: result.error.message,
+      ...(result.error.status === undefined ? {} : { status: result.error.status }),
+      ...(result.error.details === undefined ? {} : { details: result.error.details }),
+      ...(result.error.stack === undefined ? {} : { stack: result.error.stack }),
     });
   return result;
 }

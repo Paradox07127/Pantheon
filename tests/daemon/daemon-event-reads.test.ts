@@ -59,11 +59,19 @@ it('refuses the events of another project or of every project to a session crede
     const denied = await f.get('/v1/events?after=0&project_id=' + other.id, { headers });
     expect(denied).toEqual({
       status: 403,
-      body: { error: 'permission_denied', message: 'Project principal required' },
+      body: {
+        error: 'permission_denied',
+        message: 'Project principal required',
+        stack: expect.stringMatching(/^DomainError: /),
+      },
     });
     expect(await f.get('/v1/events?after=0', { headers })).toEqual({
       status: 403,
-      body: { error: 'permission_denied', message: 'Project scope required' },
+      body: {
+        error: 'permission_denied',
+        message: 'Project scope required',
+        stack: expect.stringMatching(/^DomainError: /),
+      },
     });
     const own = await f.get('/v1/events?after=0&project_id=' + mine.id, { headers });
     expect(own.status).toBe(200);
@@ -109,7 +117,11 @@ it('reads at most the requested number of events and refuses a limit out of rang
     for (const limit of ['0', '2001', '1.5', 'many', ''])
       expect(await f.get('/v1/events?after=0&limit=' + limit)).toEqual({
         status: 400,
-        body: { error: 'invalid_limit', message: 'Limit must be an integer from 1 to 2000' },
+        body: {
+          error: 'invalid_limit',
+          message: 'Limit must be an integer from 1 to 2000',
+          stack: expect.stringMatching(/^DomainError: /),
+        },
       });
   } finally {
     await f.close();

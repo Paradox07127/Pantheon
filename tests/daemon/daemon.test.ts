@@ -128,6 +128,80 @@ it('answers input the schema refuses with invalid_input and one readable line pe
     await f.close();
   }
 });
+it.each([
+  {
+    name: 'an unexpected exception in a command as invalid_request with its stack, logged with the stack',
+    request: 'command',
+    expected: {
+      status: 400,
+      error: 'invalid_request',
+      stack: true,
+      frame: /\.ts:\d+:\d+\)?$/,
+      loggedStack: true,
+    },
+  },
+  {
+    name: 'a domain error with its code and stack',
+    request: '/v1/session.reviews?session_id=w',
+    expected: {
+      status: 400,
+      error: 'not_found',
+      stack: true,
+      frame: /^\s+at /,
+      loggedStack: false,
+    },
+  },
+  {
+    name: 'refused input without a stack',
+    request: '/v1/session.reviews',
+    expected: {
+      status: 400,
+      error: 'invalid_input',
+      stack: false,
+      frame: null,
+      loggedStack: false,
+    },
+  },
+])('answers $name', async ({ request, expected }) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-errors-'));
+  mkdirSync(path.join(root, 'project'));
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const f = await startFixtureDaemon(root, [], {
+    failpoint: (name: string) => {
+      if (name === 'before_transaction_commit') (null as unknown as { project: string }).project;
+    },
+  });
+  try {
+    const { status, data } =
+      request === 'command'
+        ? await f.submit(
+            command(user.id, 'project.open', {
+              name: 'errors',
+              roots: [path.join(root, 'project')],
+            }),
+          )
+        : await fetch(f.daemon.url + request, {
+            headers: { Authorization: `Bearer ${f.daemon.token}` },
+          }).then(async (response) => ({ status: response.status, data: await response.json() }));
+    expect(status).toBe(expected.status);
+    expect(data.error).toBe(expected.error);
+    expect(data.details?.stack).toBeUndefined();
+    const line = logged.mock.calls
+      .map(([text]) => String(text))
+      .find((text) => text.includes(' failed: '));
+    expect(line).toMatch(new RegExp(`^(GET|POST) /v1/[a-z.]+ failed: ${expected.error}: `));
+    if (expected.stack) {
+      const frames = (data.stack as string).split('\n');
+      expect(frames.length).toBeLessThanOrEqual(15);
+      expect(frames[1]).toMatch(expected.frame!);
+      expect(line!.includes(frames[1]!)).toBe(expected.loggedStack);
+    } else expect(data).not.toHaveProperty('stack');
+  } finally {
+    logged.mockRestore();
+    await f.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 it('answers a command of another protocol version with 409 protocol_mismatch', async () => {
   const f = await serverFixture();
   try {

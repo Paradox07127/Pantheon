@@ -365,20 +365,29 @@ export async function startDaemon(options: DaemonOptions) {
       c.set('principal', principal);
       return next();
     });
-    app.onError((error, c) =>
-      c.json(
+    app.onError((error, c) => {
+      const stack = error.stack?.split('\n').slice(0, 15).join('\n');
+      const body =
         error instanceof DomainError
-          ? { error: error.code, message: error.message, details: error.details }
+          ? { error: error.code, message: error.message, details: error.details, stack }
           : error.name === 'ZodError'
             ? { error: 'invalid_input', message: issueLines(error) }
-            : { error: 'invalid_request', message: error.message },
+            : { error: 'invalid_request', message: error.message, stack };
+      const unexpected = !(error instanceof DomainError) && error.name !== 'ZodError';
+      // The desktop app writes the daemon's stderr to daemon.log.
+      console.error(
+        `${c.req.method} ${c.req.path} failed: ${body.error}: ${JSON.stringify(body.message)}` +
+          (unexpected ? `\n${error.stack}` : ''),
+      );
+      return c.json(
+        body,
         error instanceof DomainError && error.code === 'permission_denied'
           ? 403
           : error instanceof DomainError && error.code === 'protocol_mismatch'
             ? 409
             : 400,
-      ),
-    );
+      );
+    });
     app.notFound((c) =>
       c.json({ error: 'unknown_route', message: `${c.req.method} ${c.req.path}` }, 404),
     );

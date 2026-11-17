@@ -17,7 +17,14 @@ export type BridgeResult<T> =
   | { ok: true; value: T }
   | {
       ok: false;
-      error: { code: string; message: string; status?: number; details?: Record<string, unknown> };
+      error: {
+        code: string;
+        message: string;
+        status?: number;
+        details?: Record<string, unknown>;
+        /** Where the daemon threw it, its first 15 stack lines. */
+        stack?: string;
+      };
     };
 export interface DaemonInfo {
   url: string;
