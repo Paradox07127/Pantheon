@@ -172,6 +172,8 @@ export function archLayout(
   spec: ArchSpec,
   /** Node size, for nodes that hold more than an architecture node. */
   size: { w: number; h: number } = ARCH_NODE,
+  /** Gaps between columns and rows, for a diagram smaller than an architecture diagram. */
+  gap: { x: number; y: number } = ARCH_GAP,
 ): ArchLayout {
   const ids = new Set(spec.nodes.map((node) => node.id));
   const edges = mergeEdges(spec.edges).filter((edge) => ids.has(edge.from) && ids.has(edge.to));
@@ -194,8 +196,8 @@ export function archLayout(
     rows.set(column, row + 1);
     return {
       ...node,
-      x: column * (size.w + ARCH_GAP.x),
-      y: ARCH_PAD + row * (size.h + ARCH_GAP.y),
+      x: column * (size.w + gap.x),
+      y: ARCH_PAD + row * (size.h + gap.y),
     };
   });
   const at = new Map(nodes.map((node) => [node.id, node]));
@@ -204,12 +206,12 @@ export function archLayout(
   const path = (from: { x: number; y: number }, to: { x: number; y: number }): string => {
     const { w, h } = size;
     if (from.x === to.x) {
-      if (Math.abs(to.y - from.y) > h + ARCH_GAP.y) {
+      if (Math.abs(to.y - from.y) > h + gap.y) {
         // Out of the right side into the gap after the column, at most three quarters across it.
         const x = from.x + w;
-        reach = Math.max(reach, x + (ARCH_GAP.x * 3) / 4);
+        reach = Math.max(reach, x + (gap.x * 3) / 4);
         const [y1, y2] = [from.y + h / 2, to.y + h / 2];
-        return `M${x} ${y1}C${x + ARCH_GAP.x} ${y1} ${x + ARCH_GAP.x} ${y2} ${x} ${y2}`;
+        return `M${x} ${y1}C${x + gap.x} ${y1} ${x + gap.x} ${y2} ${x} ${y2}`;
       }
       const down = to.y > from.y;
       return `M${from.x + w / 2} ${down ? from.y + h : from.y}V${down ? to.y : to.y + h}`;
@@ -219,9 +221,9 @@ export function archLayout(
     const x2 = right ? to.x : to.x + w;
     const y1 = from.y + h / 2;
     const y2 = to.y + h / 2;
-    if (Math.abs(to.x - from.x) > w + ARCH_GAP.x) {
+    if (Math.abs(to.x - from.x) > w + gap.x) {
       // Into the column gap beside the source, along the row channel above it, out of the gap beside the target.
-      const side = right ? ARCH_GAP.x / 2 : -ARCH_GAP.x / 2;
+      const side = right ? gap.x / 2 : -gap.x / 2;
       const [g1, g2] = [x1 + side, x2 - side];
       const [m1, m2] = [(x1 + g1) / 2, (g2 + x2) / 2];
       const channel = from.y - ARCH_PAD / 2;
@@ -235,8 +237,8 @@ export function archLayout(
   const columns = Math.max(0, ...rows.keys()) + 1;
   const most = Math.max(0, ...rows.values());
   return {
-    width: Math.max(columns * size.w + (columns - 1) * ARCH_GAP.x, reach),
-    height: 2 * ARCH_PAD + most * size.h + Math.max(0, most - 1) * ARCH_GAP.y,
+    width: Math.max(columns * size.w + (columns - 1) * gap.x, reach),
+    height: 2 * ARCH_PAD + most * size.h + Math.max(0, most - 1) * gap.y,
     nodes,
     edges: drawn,
   };

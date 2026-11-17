@@ -459,6 +459,25 @@ describe('architecture diagram', () => {
     expect(laid.edges.filter((e) => e.both).map((e) => [e.from, e.to])).toEqual([['api', 'pay']]);
   });
 
+  it('spaces columns and rows by the gap it is given, the default unchanged', () => {
+    const chain = {
+      nodes: [
+        { id: 'a', label: 'A' },
+        { id: 'b', label: 'B' },
+        { id: 'c', label: 'C' },
+      ],
+      edges: [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'c' },
+      ],
+    };
+    const laid = archLayout(chain, { w: 72, h: 24 }, { x: 12, y: 8 });
+    expect(laid.width).toBe(3 * 72 + 2 * 12);
+    expect(laid.nodes.map((n) => n.x)).toEqual([0, 84, 168]);
+    expect(laid.edges.map((e) => e.d)).toEqual(['M72 24H84', 'M156 24H168']);
+    expect(archLayout(chain).width).toBe(3 * 140 + 2 * 40);
+  });
+
   // Points along a path of M, H, V and C commands, every curve and line cut in 50 steps.
   const along = (d: string) => {
     const points: [number, number][] = [];

@@ -80,16 +80,18 @@ const slice = (html: string, attr: string, until: string) => {
   return html.slice(start, html.indexOf(until, start + attr.length));
 };
 
-it('lists an option preview as numbered steps with their full names, in order, without a drawn graph', () => {
+it('draws an option preview as a task graph whose every node carries its full name', () => {
   const option = slice(card([direction]), 'Pass release acceptance', 'Stabilize orchestration');
-  expect(option).not.toContain('<svg');
-  const steps = [...option.matchAll(/<li[^>]*title="([^"]*)"[^>]*>/g)].map((m) => m[1]);
-  expect(steps).toEqual([
-    'Run acceptance on the release candidate',
-    'Fix signing docs',
-    'Fix failing acceptance scenarios on every platform',
-  ]);
-  expect(option).toContain('<ol');
+  const picture = slice(option, 'role="img"', '</button>');
+  expect(picture.match(/<path /g)).toHaveLength(1);
+  const named = [...picture.matchAll(/title="([^"]*)"[^>]*>([^<]*)</g)].map((m) => [m[1], m[2]]);
+  expect(named).toEqual(
+    [
+      'Fix failing acceptance scenarios on every platform',
+      'Run acceptance on the release candidate',
+      'Fix signing docs',
+    ].map((label) => [label, label]),
+  );
 });
 
 it('draws a picked option of a multiple choice question as a ticked box, a picked single choice by its letter', () => {

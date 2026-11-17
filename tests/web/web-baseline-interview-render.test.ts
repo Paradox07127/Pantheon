@@ -80,6 +80,10 @@ it('draws a direction question as three option cards, each with a picture of whe
   expect(group.match(/role="radio"/g)).toHaveLength(3);
   expect(group.match(/role="img"/g)).toHaveLength(3);
   expect(group).toContain('Cap frame rate');
+  const picture = group.slice(group.indexOf('role="img"'), group.indexOf('Multiple displays'));
+  expect(picture).toContain('<path ');
+  for (const label of ['Cap frame rate', 'Release 1.2'])
+    expect(picture).toContain(`title="${label}"`);
 });
 
 it('draws a Vega-Lite block of the introduction body in the main flow', () => {

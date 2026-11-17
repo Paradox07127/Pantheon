@@ -50,7 +50,11 @@ export type QuestionCardProps = CommonProps &
       }
   );
 
-/** An option's picture: its tasks as numbered steps in graph order, or a mermaid chart. */
+// Three columns fit a direction card three to a row; a wider graph scrolls in its box.
+const PREVIEW_NODE = { w: 96, h: 24 } as const;
+const PREVIEW_GAP = { x: 12, y: 8 } as const;
+
+/** An option's picture: a small task graph, or a mermaid chart. */
 function optionPreview(preview: BaselinePreview) {
   if (preview.kind === 'mermaid')
     return (
@@ -62,7 +66,7 @@ function optionPreview(preview: BaselinePreview) {
         <MermaidDiagram spec={preview.spec} height={96} />
       </span>
     );
-  const steps = [...archLayout(preview.spec).nodes].sort((a, b) => a.x - b.x || a.y - b.y);
+  const laid = archLayout(preview.spec, PREVIEW_NODE, PREVIEW_GAP);
   return (
     <span
       className="qc-pv"
@@ -78,13 +82,28 @@ function optionPreview(preview: BaselinePreview) {
         },
       )}
     >
-      <ol className="qc-steps">
-        {steps.map((node) => (
-          <li key={node.id} title={node.label}>
-            <span>{node.label}</span>
-          </li>
+      <span className="qc-gp" style={{ width: laid.width, height: laid.height }}>
+        <svg
+          width={laid.width}
+          height={laid.height}
+          viewBox={`0 0 ${laid.width} ${laid.height}`}
+          aria-hidden="true"
+        >
+          {laid.edges.map((edge) => (
+            <path key={`${edge.from}:${edge.to}`} d={edge.d} />
+          ))}
+        </svg>
+        {laid.nodes.map((node) => (
+          <span
+            key={node.id}
+            className="qc-gn"
+            title={node.label}
+            style={{ left: node.x, top: node.y, width: PREVIEW_NODE.w, height: PREVIEW_NODE.h }}
+          >
+            {node.label}
+          </span>
         ))}
-      </ol>
+      </span>
     </span>
   );
 }

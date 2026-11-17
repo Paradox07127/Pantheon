@@ -220,7 +220,7 @@
 /* Options with a picture of where each leads, side by side. */
 .qc-dir {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--sp-2);
 }
 .qc-dc {
@@ -275,34 +275,31 @@
   min-width: 0;
   overflow-x: auto;
 }
-/* An option's tasks as numbered steps, each cut after two lines. */
-.qc-steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: qc-step;
+.qc-gp {
+  position: relative;
+  display: block;
+}
+.qc-gp > svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.qc-gp path {
+  fill: none;
+  stroke: var(--bd3);
+  stroke-width: 1;
+}
+.qc-gn {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 0 var(--sp-1);
+  border: var(--hair) solid var(--bd3);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf);
   color: var(--tx2);
   font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-}
-.qc-steps > li {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  column-gap: var(--sp-1);
-  counter-increment: qc-step;
-}
-.qc-steps > li::before {
-  content: counter(qc-step);
-  color: var(--mu);
-  font-variant-numeric: tabular-nums;
-}
-.qc-steps > li > span {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  line-height: 22px;
+  white-space: nowrap;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
 }
