@@ -8,7 +8,12 @@ import {
 } from '@pantheon/domain';
 import { runtime } from './admission.js';
 import { ROLE_PROMPTS } from './agent-prompts.js';
-import { AGENT_TEMPLATES, BUILT_IN_TEMPLATES, type AgentTemplate } from './agent-templates.js';
+import {
+  AGENT_TEMPLATES,
+  BUILT_IN_TEMPLATES,
+  residentProfile,
+  type AgentTemplate,
+} from './agent-templates.js';
 import { projectAccess, userOnly, type ControlContext } from './context.js';
 
 /**
@@ -48,8 +53,15 @@ export function ensureAgents(ctx: ControlContext, projectId: string): AgentProfi
   return profiles;
 }
 
-/** An agent profile as agent.list returns it, with the built-in role prompt of its template. */
-export type AgentListed = AgentProfile & { role_prompt: string };
+/**
+ * An agent profile as agent.list returns it, with the built-in role prompt of its template and the
+ * tools and listens it works with: its own, or its template's while it stores none.
+ */
+export type AgentListed = AgentProfile & {
+  role_prompt: string;
+  effective_tools: NonNullable<AgentProfile['tools']>;
+  effective_listens: NonNullable<AgentProfile['listens']>;
+};
 
 export function agentList(ctx: ControlContext, p: Principal, projectId: string): AgentListed[] {
   userOnly(p);
@@ -57,12 +69,24 @@ export function agentList(ctx: ControlContext, p: Principal, projectId: string):
   return ctx.store
     .list<AgentProfile>('agents')
     .filter((agent) => agent.project_id === projectId)
-    .map((agent) => ({ ...agent, role_prompt: ROLE_PROMPTS[agent.template] }));
+    .map((agent) => {
+      const { tools, listens } = residentProfile(ctx.store, {
+        kind: agent.template,
+        agent_id: agent.id,
+      });
+      return {
+        ...agent,
+        role_prompt: ROLE_PROMPTS[agent.template],
+        effective_tools: tools,
+        effective_listens: listens,
+      };
+    });
 }
 
-/** The defaults of a template agent.create starts a new agent from. */
+/** The defaults of a template agent.create starts a new agent from, with its built-in role prompt. */
 export type AgentTemplateDefaults = Required<AgentTemplate> & {
   template: (typeof CREATED_TEMPLATES)[number];
+  role_prompt: string;
 };
 
 const CREATED_TEMPLATES = ['ideas', 'goals', 'custom'] as const;
@@ -73,6 +97,7 @@ export function agentTemplates(p: Principal): AgentTemplateDefaults[] {
     template,
     routines: [],
     ...AGENT_TEMPLATES[template],
+    role_prompt: ROLE_PROMPTS[template],
   }));
 }
 

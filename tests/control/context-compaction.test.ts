@@ -6,6 +6,15 @@ import { settle } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
+/** The contract lines a compacted task session is sent again. */
+const CONTRACT = [
+  'Goal: Exports download as CSV',
+  'Scope (the paths you may change):',
+  '- src/export.ts',
+  'Acceptance commands:',
+  '- pnpm test',
+  'Done when: this worktree merges.',
+].join('\n');
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 
 async function setup() {
@@ -76,15 +85,17 @@ async function setup() {
   return { f, lead, worker, initial, send, compact, next };
 }
 
-it('restores the starting task instructions on the next turn once per compaction', async () => {
+it('resends only the task contract on the next turn once per compaction', async () => {
   const { initial, send, compact, next } = await setup();
   expect(initial).toContain('Acceptance commands:\n- pnpm test');
   compact('first');
   expect(send).not.toHaveBeenCalled();
-  expect(await next()).toContain(initial);
+  const resent = await next();
+  expect(resent).toContain(CONTRACT);
+  expect(resent).not.toContain('You are a task session');
   expect(await next('Again')).toBe('Again');
   compact('second');
-  expect(await next()).toContain(initial);
+  expect(await next()).toContain(CONTRACT);
   expect(await next('Finish')).toBe('Finish');
 });
 
@@ -147,25 +158,29 @@ it('leaves a thrash signal with the session and cumulative count in the lead inb
   );
   await settle(f, lead);
   expect(f.turns(lead.id).at(-1)!.input).toContain('Compaction thrash');
+  expect(f.turns(lead.id).at(-1)!.input).toContain(
+    'What happened: Pantheon notes a risk on task export',
+  );
+  expect(f.turns(lead.id).at(-1)!.input).not.toContain('reports a risk');
 });
 
 it('keeps the contract pending when its input delivery is refused', async () => {
-  const { initial, send, compact, next } = await setup();
+  const { send, compact, next } = await setup();
   compact('first');
   send.mockImplementationOnce(async (_handle, turn) => ({
     turn_id: turn.turn_id,
     status: 'unsupported',
   }));
-  expect(await next()).toContain(initial);
-  expect(await next('Retry')).toContain(initial);
+  expect(await next()).toContain(CONTRACT);
+  expect(await next('Retry')).toContain(CONTRACT);
   expect(await next('Again')).toBe('Again');
 });
 
 it('restores the contract for each compaction received before the next turn', async () => {
-  const { initial, compact, next } = await setup();
+  const { compact, next } = await setup();
   compact('first');
   compact('second');
-  expect((await next()).split(initial)).toHaveLength(3);
+  expect((await next()).split(CONTRACT)).toHaveLength(3);
   expect(await next('Again')).toBe('Again');
 });
 
@@ -184,7 +199,7 @@ it('excludes manual compactions from both the thrash trigger and its history', a
 });
 
 it('keeps post-compaction instructions for the next ordinary turn when the user compacts again', async () => {
-  const { f, worker, initial, compact, send, next } = await setup();
+  const { f, worker, compact, send, next } = await setup();
   compact('automatic-first');
   f.call(
     'session.compact',
@@ -193,6 +208,6 @@ it('keeps post-compaction instructions for the next ordinary turn when the user 
   );
   await settle(f, worker);
   expect(send.mock.calls.at(-1)![1]).toMatchObject({ compact: true, input: 'Keep the plan' });
-  expect((await next()).split(initial)).toHaveLength(3);
+  expect((await next()).split(CONTRACT)).toHaveLength(3);
   expect(await next('Again')).toBe('Again');
 });

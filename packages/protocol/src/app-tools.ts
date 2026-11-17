@@ -48,26 +48,63 @@ export const appToolGroups = {
 
 export const appInputSchemas = {
   /** AppHelp; the command groups and screens, or one group's commands and the tools that call them. Resident leads only. */
-  'agent.app_help': z.strictObject({ topic: z.string().min(1).max(200).optional() }),
+  'agent.app_help': z.strictObject({
+    topic: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe('A command group name from the index; leave it out to read the index.'),
+  }),
   /** AgentSessionList; the project's listed sessions, optionally in one state. Resident leads only. */
-  'agent.sessions': z.strictObject({ state: z.string().min(1).max(40).optional() }),
+  'agent.sessions': z.strictObject({
+    state: z
+      .string()
+      .min(1)
+      .max(40)
+      .optional()
+      .describe(
+        'Keep only sessions in this state, written as the list shows it; leave it out for all.',
+      ),
+  }),
   /** AgentSessionRead; the state and last turns of one session of the project. Resident leads only. */
   'agent.session_read': z.strictObject({
-    session_id: str,
-    turns: z.number().int().min(1).max(20).default(5),
+    session_id: str.describe('The session id from session_list.'),
+    turns: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(5)
+      .describe('How many of the last turns to read, 1-20; default 5.'),
   }),
   /** GithubItems for a resident lead, as github.items reads them. */
-  'agent.github_items': z.strictObject({ project_id: str, kind: z.enum(['pr', 'issue']) }),
+  'agent.github_items': z.strictObject({
+    project_id: str,
+    kind: z.enum(['pr', 'issue']).describe('pr for pull requests, issue for issues.'),
+  }),
   /** GithubPullDetail for a resident lead, as github.pr.detail reads it. */
   'agent.github_pr': z.strictObject({
     project_id: str,
-    number: z.coerce.number().int().min(1),
+    number: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .describe('The pull request number, as github_items lists it.'),
   }),
   /** SignalIssue[] without samples; the project's signal issues, optionally of one state and source. Resident leads only. */
   'agent.signals': z.strictObject({
-    state: z.enum(SIGNAL_STATES).optional(),
-    source: z.enum(SIGNAL_SOURCES).optional(),
+    state: z
+      .enum(SIGNAL_STATES)
+      .optional()
+      .describe('Keep only issues in this state; leave it out for all.'),
+    source: z
+      .enum(SIGNAL_SOURCES)
+      .optional()
+      .describe('Keep only issues from this source; leave it out for all.'),
   }),
   /** SignalIssue; one signal issue of the project with its samples. Resident leads only. */
-  'agent.signal_read': z.strictObject({ id: str }),
+  'agent.signal_read': z.strictObject({
+    id: str.describe('The issue id from signal_list.'),
+  }),
 } as const satisfies Record<string, z.ZodType>;

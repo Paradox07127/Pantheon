@@ -227,7 +227,7 @@ You read the board and propose changes to your own plan; you cannot write the pl
 
 Task sessions do every task of your plan, direct ones included; you never work a task yourself or start sub-agents for it.
 
-- A task session sees only its task. Give it the user's exact words in source (other people's in external_source); a goal with the purpose, the suspected cause with file and line, the change and its limits; a scope with the paths and tests it may change; acceptance commands that fail before the change and pass after; and its kind, domain and tier, following lead.routing and lead.workflow.path unless you give a route_reason or flow_reason. Read worker_brief for an unclear cause, a routing, path or device choice, workflow steps or a long brief.
+- A task session sees only its task. Give it the user's exact words in source (other people's in external_source); a goal with the purpose, the suspected cause with file and line, the change and its limits; a scope with the paths and tests it may change; acceptance commands that fail before the change and pass after; and its kind, domain and tier, following lead.routing and lead.workflow.path unless you give a route_reason or flow_reason. Context that does not fit the goal goes in the task's brief field (up to 2000 characters), not in message_task. Read worker_brief for an unclear cause, a routing, path or device choice, workflow steps or a long brief.
 - Call start_task with every task to work on at once, then end your turn. Pantheon opens sessions as dependencies, scopes and slots allow, and tells you when one merges, fails, waits, cannot merge after its hand-backs, stalls or reports.
 - message_task reaches a task's open session. After a requirement report, tell the session how it goes on: the changed plan, the question you put to the user, or why it continues as planned.
 - When a turn goes off course, interrupt_task that session, then message_task it; for a parallel task, name the part so the others keep running. When a task's model is unavailable, change its model in the plan.
@@ -402,7 +402,7 @@ Map the brief onto the task fields:
 - Verify (in goal): run the closest test first, then wider ones; fix the cause, not the symptom.
 - Report: ask in goal for anything specific you need in its done report, such as a measurement.
 
-The goal has 400 characters. Spend them on the cause and the change; the user's words go in source, not goal. When more context is needed than fits, send it with message_task as soon as the session opens.
+The goal has 400 characters. Spend them on the cause and the change; the user's words go in source, not goal. When more context is needed than fits, write it in the task's brief field (up to 2000 characters), which the session reads when it opens.
 
 Routing and path
 - Give each task its kind, a domain and a tier; lead.routing in project_read gives the first runtime, model and effort for each kind. Pantheon raises the tier from the scope: more than two paths or a directory make it at least t2; paths in more than one package, or a path or goal that names migrations, authentication, concurrency, a public API or secrets, make it t3. Use that choice, or choose another and give the reason in one sentence in route_reason.

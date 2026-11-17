@@ -115,6 +115,37 @@ it('opens a follow-up session for a task whose session merged', async () => {
   expect(current(f, second.id).task).toMatchObject({ lead_session_id: lead.id, id: 'a' });
 });
 
+it('opens a session from the board with the first message dispatch sends, then what the user wrote', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [task('a', { brief: 'toCsv() reads rows too early.' })]);
+  const opened = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Task a\n\nFinish task a',
+    task_id: `${lead.id}:a`,
+  });
+  const first = f.turns(opened.id)[0]!.input;
+  for (const text of [
+    'Task a\n\nTask a of the plan "Export ships this week", lane "Core".',
+    'Goal:\nFinish task a\n\nBrief:\ntoCsv() reads rows too early.',
+    'Scope (the paths you may change):\n- src/a',
+    'Done when: this worktree merges after its gates pass.',
+  ])
+    expect(first).toContain(text);
+  expect(first).not.toContain("The user's message");
+
+  f.store.update<Session>(
+    'sessions',
+    { ...current(f, opened.id), state: 'closed', outcome: 'merged' },
+    current(f, opened.id).revision,
+  );
+  const again = await openTask(f, lead.id, 'a');
+  const next = f.turns(again.id)[0]!.input;
+  expect(next).toContain('Goal:\nFinish task a');
+  expect(next).toContain(`[Pantheon] The earlier session of this task ended merged.`);
+  expect(next).toMatch(/\n\nThe user's message:\nWork on task a$/);
+});
+
 it('refuses the user a session for a task whose upstream task is not done', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b', { depends_on: ['a'] })]);

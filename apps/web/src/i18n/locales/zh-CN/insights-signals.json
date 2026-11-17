@@ -41,5 +41,7 @@
   "insights.signals.mutedGroup": "由此信号静音",
   "insights.signals.history": "历史",
   "insights.signals.mute": "静音",
+  "insights.signals.sample": "示例",
+  "insights.signals.sampleOf": "示例，{source}",
   "insights.signals.resolve": "解决"
 }

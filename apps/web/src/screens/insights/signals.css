@@ -214,6 +214,20 @@
   font-size: var(--fs-sm);
   line-height: var(--lh-sm);
 }
+.sg-code {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
 .sg-acts {
   flex-direction: row;
 }

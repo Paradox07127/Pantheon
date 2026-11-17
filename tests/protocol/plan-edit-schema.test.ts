@@ -50,6 +50,7 @@ it('accepts task contract and milestone patches', () => {
     { done_when: 'report' },
     { milestone: 'release' },
     { milestone: null },
+    { brief: 'b'.repeat(2000) },
   ])
     expect(valid([{ type: 'set_task', task_id: 'api', patch }]), Object.keys(patch)[0]).toBe(true);
 });
@@ -142,6 +143,52 @@ it('gives the lead write tools to edit its plan and interrupt a task', () => {
     inputSchemas['task.interrupt'].safeParse({ project_id: 'project', task_id: 'api' }).success,
   ).toBe(true);
 });
+
+it('takes a brief of up to 2000 characters beside the 400-character goal', () => {
+  expect(valid([{ type: 'add_task', task: { ...task, brief: 'b'.repeat(2000) } }])).toBe(true);
+  for (const fields of [{ brief: 'b'.repeat(2001) }, { brief: '' }, { goal: 'g'.repeat(401) }])
+    expect(valid([{ type: 'add_task', task: { ...task, ...fields } }])).toBe(false);
+  expect(valid([{ type: 'set_task', task_id: 'api', patch: { brief: 'b'.repeat(2001) } }])).toBe(
+    false,
+  );
+});
+
+it('takes report text of up to 4000 characters, which the daemon allows a report task done report alone', () => {
+  const report = (kind: string, length: number) =>
+    inputSchemas['task.report'].safeParse({
+      project_id: 'project',
+      kind,
+      text: 'r'.repeat(length),
+      ...(kind === 'blocked' ? { reason: 'missing_context' } : {}),
+    }).success;
+  for (const kind of ['done', 'risk', 'task', 'dependency', 'requirement', 'blocked']) {
+    expect(report(kind, 4000), kind).toBe(true);
+    expect(report(kind, 4001), kind).toBe(false);
+  }
+});
+
+it.each(['task.interrupt', 'task.message'] as const)(
+  '%s takes an optional part: its number from 1 or its session id',
+  (type) => {
+    const input = {
+      project_id: 'project',
+      task_id: 'api',
+      ...(type === 'task.message' ? { text: 'Go on' } : {}),
+    };
+    const parse = (fields: Record<string, unknown>) =>
+      inputSchemas[type].safeParse({ ...input, ...fields }).success;
+    for (const fields of [{}, { part: 1 }, { part: 4 }, { part: 'session' }])
+      expect(parse(fields), JSON.stringify(fields)).toBe(true);
+    for (const fields of [
+      { part: 0 },
+      { part: 5 },
+      { part: 1.5 },
+      { part: '' },
+      { session_id: 's' },
+    ])
+      expect(parse(fields), JSON.stringify(fields)).toBe(false);
+  },
+);
 
 it('accepts moves before another task or to the end', () => {
   for (const before of ['ui', null])

@@ -294,6 +294,38 @@ describe('new agent dialog', () => {
       null,
     );
   });
+
+  it('shows the built-in role of the template read-only above the user’s instructions, and none for custom', () => {
+    agentMock.templates = [
+      template('ideas', { role_prompt: 'Built-in role of ideas' }),
+      template('goals', { role_prompt: 'Built-in role of goals' }),
+      template('custom', { role_prompt: '' }),
+    ];
+    const h = host(() => NewAgentDialog({ projectId: 'alpha', open: true, onClose: () => {} }));
+    const builtIn = () =>
+      nodes(h.value).find((n) => n.type === 'span' && text(n) === zh('sessions.agents.builtin'));
+    expect(builtIn()).toBeTruthy();
+    expect(text(h.value)).toContain('Built-in role of ideas');
+    expect(
+      nodes(h.value).some(
+        (n) =>
+          (n.type === 'input' || n.type === 'textarea') &&
+          n.props.value === 'Built-in role of ideas',
+      ),
+    ).toBe(false);
+    const pick = (name: string) => {
+      nodes(h.value)
+        .find(
+          (n) => n.props.role === 'radio' && text(n) === zh(`sessions.agents.template.${name}`),
+        )!
+        .props.onClick();
+      h.render();
+    };
+    pick('goals');
+    expect(text(h.value)).toContain('Built-in role of goals');
+    pick('custom');
+    expect(builtIn()).toBeUndefined();
+  });
 });
 
 describe('agent profile', () => {
@@ -410,7 +442,9 @@ describe('agent profile', () => {
       'session_failures',
       'trace_findings',
     ];
-    agentMock.agents = [agent('agent-ideas', 'ideas', { revision: 2, listens: [] })];
+    agentMock.agents = [
+      agent('agent-ideas', 'ideas', { revision: 2, listens: [], effective_listens: [] }),
+    ];
     const h = profile('agent-ideas');
     const caption = nodes(h.value).find(
       (n) => n.type === 'span' && text(n) === zh('sessions.agents.field.listens'),
@@ -437,6 +471,51 @@ describe('agent profile', () => {
     expect(runCommand).toHaveBeenLastCalledWith(
       'agent.update',
       { agent_id: 'agent-ideas', revision: 2, listens: sources },
+      null,
+    );
+  });
+
+  it('shows the effective tools and listens of a built-in agent and saves only what the user changed', async () => {
+    agentMock.agents = [
+      agent('agent-triage', 'triage', {
+        revision: 5,
+        effective_tools: ['board', 'memory'],
+        effective_listens: ['github', 'gate_failures'],
+      }),
+    ];
+    const h = profile('agent-triage');
+    const group = (key: string) => {
+      const caption = nodes(h.value).find(
+        (n) => n.type === 'span' && text(n) === zh(`sessions.agents.field.${key}`),
+      )!;
+      return nodes(h.value).find((n) => n.props['aria-labelledby'] === caption.props.id)!;
+    };
+    const checked = (key: string) =>
+      nodes(group(key))
+        .filter((n) => n.type === 'label')
+        .filter((n) => nodes(n).find((c) => c.props.type === 'checkbox')!.props.checked)
+        .map(text);
+    expect(checked('tools')).toEqual(['board', 'memory']);
+    expect(checked('listens')).toEqual([
+      zh('sessions.agents.listen.github'),
+      zh('sessions.agents.listen.gateFailures'),
+    ]);
+    const flaky = nodes(group('listens')).find(
+      (n) => n.type === 'label' && text(n) === zh('sessions.agents.listen.flakyTests'),
+    )!;
+    nodes(flaky)
+      .find((n) => n.props.type === 'checkbox')!
+      .props.onChange({ target: { checked: true } });
+    h.render();
+    pressed(h.value, zh('sessions.agents.save'))!.props.onClick();
+    await h.flush();
+    expect(runCommand).toHaveBeenLastCalledWith(
+      'agent.update',
+      {
+        agent_id: 'agent-triage',
+        revision: 5,
+        listens: ['github', 'gate_failures', 'flaky_tests'],
+      },
       null,
     );
   });

@@ -113,6 +113,19 @@ it('gives the assistant the kind, domain and tier rule in its dispatch module an
   expect(brief.text).toContain('more than two paths or a directory make it at least t2');
 });
 
+it('puts the long brief of a task in its brief field in the dispatch module and the worker_brief guide', async () => {
+  const f = await workbenchFixture();
+  const { session, prompt } = await resident(f, 'assistant');
+  expect(prompt).toContain(
+    "Context that does not fit the goal goes in the task's brief field (up to 2000 characters), not in message_task.",
+  );
+  const brief = await guide<{ text: string }>(f, session.id, 'worker_brief');
+  expect(brief.text).toContain(
+    "write it in the task's brief field (up to 2000 characters), which the session reads when it opens.",
+  );
+  expect(brief.text).not.toContain('send it with message_task as soon as the session opens');
+});
+
 it('does not tell a new goals session that takes over to rewrite the plan with update_board', async () => {
   const f = await workbenchFixture();
   const { session } = await resident(f, 'goals');

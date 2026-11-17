@@ -179,7 +179,7 @@ const discardNotes = (f: Fixture, leadId: string) =>
 /** The dispatch failure notes the lead got, read or not. */
 const dispatchNotes = (f: Fixture, leadId: string) =>
   planOf(f, leadId).inbox.filter((note) => note.kind === 'dispatch_failed').length +
-  f.turns(leadId).filter((turn) => turn.input.includes(': dispatch_failed: ')).length;
+  f.turns(leadId).filter((turn) => turn.input.includes('<note kind="dispatch_failed"')).length;
 
 it('tells the lead and the user once when the session of a started task cannot open', async () => {
   const f = await workbenchFixture();
@@ -281,7 +281,9 @@ it('opens a session for a started task with the runtime, model and effort the pl
     permission_mode: 'ask',
     title: 'Task a',
   });
-  expect(f.turns(opened!.id)[0]!.input).toBe('Task a\n\nFinish task a');
+  expect(f.turns(opened!.id)[0]!.input).toMatch(
+    /^Task a\n\nTask a of the plan "[^"]*", lane "[^"]*"\.\n\nGoal:\nFinish task a\n/,
+  );
   expect(planOf(f, lead.id).dispatch).toEqual({});
   expect(
     f.store
@@ -1287,7 +1289,7 @@ it('tells a task session that opens again how the earlier session of the task en
   await f.control.tick();
   const second = sessionsOf(f, lead.id, 'a').find((session) => session.id !== first!.id);
   const input = f.turns(second!.id)[0]!.input;
-  expect(input.startsWith('Task a\n\nFinish task a')).toBe(true);
+  expect(input).toMatch(/^Task a\n\nTask a of the plan [^\n]*\n\nGoal:\nFinish task a\n/);
   expect(input).toContain('The approach changed');
 });
 

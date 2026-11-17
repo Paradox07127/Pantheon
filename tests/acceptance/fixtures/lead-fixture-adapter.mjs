@@ -20,11 +20,12 @@ export async function leadAnswers(input, read, leadId) {
   const project_id = facts.project.id;
   const plan = facts.plans.find((candidate) => candidate.lead_session_id === leadId);
   const steps = [];
+  // A held user edit's note says `the user asks to change tasks that have open sessions (edit <id>):`.
   const edits = [
     ...new Set(
-      lines
-        .filter((line) => line.includes(': user_edit: '))
-        .flatMap((line) => [...line.matchAll(/\bedit_id ([^\s:]+)/g)].map((match) => match[1])),
+      lines.flatMap((line) =>
+        [...line.matchAll(/have open sessions \(edit ([^)\s]+)\):/g)].map((match) => match[1]),
+      ),
     ),
   ];
   if (edits.length)
@@ -41,9 +42,9 @@ export async function leadAnswers(input, read, leadId) {
   const accepted = new Set();
   for (const task of plan.tasks) {
     if (task.done_when !== 'report' || task.state === 'done') continue;
-    // A digest line is `- <task title or id>[ (generation n)] / <session>: <kind>: <text>`.
+    // A done note says `What happened: Task <id> "<title>" sent a done report, status <status>: "<text>".`
     const done = new RegExp(
-      `^- (?:${pattern(task.title)}|${pattern(task.id)})(?: \\(generation \\d+\\))? / .*?: done: (.+)$`,
+      `^What happened: Task ${pattern(task.id)} "${pattern(task.title)}" sent a done report, status \\w+: "(.+)"\\.$`,
     );
     const evidence = lines.map((line) => done.exec(line)?.[1]).find(Boolean);
     if (!evidence) continue;

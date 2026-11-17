@@ -37,6 +37,7 @@ const issue = (id: string, extra: Record<string, unknown> = {}) => ({
   first_seen: NOW - 60_000,
   last_seen: NOW,
   routed: [],
+  samples: [],
   history: [{ at: NOW - 60_000, state: 'new', text: 'First signal' }],
   ...extra,
 });
@@ -138,6 +139,37 @@ describe('signals tab', () => {
     button(h, zh('insights.signals.resolve'))!.props.onClick();
     await h.flush();
     expect(runCommand).toHaveBeenLastCalledWith('signal.resolve', { id: 'env' }, null);
+  });
+
+  it('shows the newest sample of the selected issue as code, labelled by its origin', () => {
+    read.issues = [issue('env', { samples: ['older sample line', 'newest sample line'] })];
+    const h = tab();
+    nodes(h.value)
+      .find((n) => n.props.role === 'option')!
+      .props.onClick();
+    h.render();
+    const sample = nodes(h.value).find(
+      (n) =>
+        n.type === 'section' &&
+        String(n.props['aria-label']).startsWith(zh('insights.signals.sample')),
+    )!;
+    expect(sample.props['aria-label']).toContain(zh('insights.signals.source.gate'));
+    expect(nodes(sample).some((n) => n.type === 'pre')).toBe(true);
+    expect(text(sample)).toContain('newest sample line');
+    expect(text(sample)).not.toContain('older sample line');
+  });
+
+  it('shows no sample section for an issue without samples', () => {
+    const h = tab();
+    nodes(h.value)
+      .find((n) => n.props.role === 'option')!
+      .props.onClick();
+    h.render();
+    expect(
+      nodes(h.value).some((n) =>
+        String(n.props['aria-label'] ?? '').startsWith(zh('insights.signals.sample')),
+      ),
+    ).toBe(false);
   });
 
   it('says in one sentence that there is nothing to show', () => {

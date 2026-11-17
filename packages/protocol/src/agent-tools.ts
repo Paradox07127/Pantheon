@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { AgentToolGroup, EffortLevel, SignalSource } from '@pantheon/domain';
+import { routineFields } from './always-on-tools.js';
 
 const str = z.string().min(1).max(65536);
-const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 // index.ts imports this file before it defines EFFORT_LEVELS.
 const EFFORTS = [
   'none',
@@ -56,30 +56,52 @@ export const SIGNAL_SOURCES = [
 export const AGENT_EVENT_SOURCES = ['github', ...SIGNAL_SOURCES] as const;
 
 // The daemon checks that a routine has exactly one of every_minutes and at.
-const routineInput = z.strictObject({
-  id: z
-    .string()
-    .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/)
-    .optional(),
-  prompt: z.string().min(1).max(2000),
-  every_minutes: z.number().int().min(60).optional(),
-  at: clockTime.optional(),
-  active_hours: z.strictObject({ from: clockTime, to: clockTime }).optional(),
-  enabled: z.boolean(),
-});
+const routineInput = z.strictObject(routineFields);
 
 /** The fields of an agent profile that agent.update changes and agent.propose may propose. */
 const changeFields = {
-  name: z.string().min(1).max(80).optional(),
-  role: z.string().min(1).max(24).optional(),
-  instructions: z.string().min(1).max(20000).optional(),
-  brief: z.string().min(1).max(4000).optional(),
-  tools: z.array(z.enum(AGENT_TOOL_GROUPS)).max(AGENT_TOOL_GROUPS.length).optional(),
-  listens: z.array(z.enum(AGENT_EVENT_SOURCES)).max(AGENT_EVENT_SOURCES.length).optional(),
-  runtime: str.optional(),
-  model: str.optional(),
-  effort: z.enum(EFFORTS).optional(),
-  routines: z.array(routineInput).max(10).optional(),
+  name: z.string().min(1).max(80).optional().describe('The agent name, 1-80 characters.'),
+  role: z
+    .string()
+    .min(1)
+    .max(24)
+    .optional()
+    .describe('A short label of what the agent does, 1-24 characters.'),
+  instructions: z
+    .string()
+    .min(1)
+    .max(20000)
+    .optional()
+    .describe(
+      'The role prompt, up to 20000 characters: what the agent owns, how it works, and when it speaks to the user.',
+    ),
+  brief: z
+    .string()
+    .min(1)
+    .max(4000)
+    .optional()
+    .describe('Why the agent is needed, up to 4000 characters; the user reads it on the card.'),
+  tools: z
+    .array(z.enum(AGENT_TOOL_GROUPS))
+    .max(AGENT_TOOL_GROUPS.length)
+    .optional()
+    .describe('The tool groups the agent gets; give only the groups its work needs.'),
+  listens: z
+    .array(z.enum(AGENT_EVENT_SOURCES))
+    .max(AGENT_EVENT_SOURCES.length)
+    .optional()
+    .describe('The event sources that wake the agent: github or a kind of signal.'),
+  runtime: str.optional().describe("The runtime of the agent's session; absent means the default."),
+  model: str.optional().describe('The model of that runtime; absent means its default.'),
+  effort: z
+    .enum(EFFORTS)
+    .optional()
+    .describe('The reasoning effort; absent means the runtime default.'),
+  routines: z
+    .array(routineInput)
+    .max(10)
+    .optional()
+    .describe('Up to 10 routines; a change replaces the whole list.'),
 };
 
 const createFields = {
@@ -105,12 +127,23 @@ export const agentInputSchemas = {
   /** AgentProposal; proposes a new agent with the agent.create fields, or with agent_id a change of the given fields, for the user to decide on. Resident leads with the agents group only. */
   'agent.propose': z.strictObject({
     project_id: str,
-    agent_id: str.optional(),
+    agent_id: str
+      .optional()
+      .describe('The id from list_agents of the agent to change; leave it out for a new agent.'),
     ...changeFields,
-    template: z.enum(AGENT_TEMPLATE_NAMES).optional(),
+    template: z
+      .enum(AGENT_TEMPLATE_NAMES)
+      .optional()
+      .describe('For a new agent: ideas, goals or custom. Leave it out for a change.'),
   }),
   /** Guide, the text of the named guide, or GuideList, the name and use of each guide, for a name it does not know. Lead sessions only. */
-  'agent.guide': z.strictObject({ name: z.string().min(1).max(80) }),
+  'agent.guide': z.strictObject({
+    name: z
+      .string()
+      .min(1)
+      .max(80)
+      .describe('The guide name exactly as your instructions list it.'),
+  }),
   /** AgentList; the project's agents with their role, tools and routines. Resident leads with the agents group only. */
   'agent.agents': z.strictObject({ project_id: str }),
   /** AgentProposal; the user only. create applies the proposal with fields over it, decline turns it down; the proposing agent is told either way. */

@@ -111,6 +111,8 @@ export interface BoardPlan extends Entity {
     id: string;
     title: string;
     goal: string;
+    /** What the goal has no room for: purpose, known cause, files and limits. */
+    brief?: string;
     lane: string;
     milestone?: string;
     iteration?: string;
@@ -185,6 +187,8 @@ export interface BoardPlan extends Entity {
     string,
     'merged' | 'blocked' | 'failed' | 'waiting' | 'turn_failed' | 'no_changes'
   >;
+  /** Each task's state when the lead last took a digest, by task id; '' holds the plan version. */
+  last_told?: Record<string, string>;
   /** Task sessions, by id, whose task contract the lead changed since their last turn was queued. */
   contract_changed?: string[];
   /** The merge problems, by session id, Pantheon already handed back to the session to fix. */
@@ -242,6 +246,7 @@ export type PlanEditOp =
           | 'needs'
           | 'uses'
           | 'goal'
+          | 'brief'
           | 'scope'
           | 'acceptance'
           | 'done_when'
@@ -283,6 +288,8 @@ export interface PendingPlanEdit {
 export interface PlanProposal {
   proposal_id: string;
   ops: PendingPlanEdit['ops'];
+  /** Lanes the proposal adds to the plan before its ops apply. */
+  lanes?: BoardPlan['lanes'];
   reason: string;
   base_version: number;
   created_at: number;
@@ -349,7 +356,7 @@ export interface LeadNote {
   answer?: string;
   /** The task generation a report was sent in. */
   generation?: number;
-  /** The turn of a user message to a task session, or the turn that reported a block. */
+  /** The turn of a user message to a task session, or the turn that reported a block or requirement. */
   turn_id?: string;
   /** The causal depth of the turn the note came from. */
   causal_depth?: number;
@@ -362,6 +369,25 @@ export interface LeadNote {
     /** Whether this edit should wake the lead; absent on older notes. */
     wake?: boolean;
   };
+  /** What became of the user's edit or the lead's proposal a user_edit note tells of. */
+  edit_state?: 'pending' | 'applied' | 'withdrawn' | 'proposal';
+  /** The user edit a withdrawn note names. */
+  edit_id?: string;
+  proposal_id?: string;
+  decision?: 'accept' | 'reject';
+  /** The commit a merged session landed at and the branch it landed on. */
+  commit?: string;
+  source_branch?: string;
+  /** The SHAs a review read. */
+  reviewed_shas?: string;
+  routine_id?: string;
+  /** When the routine last ran before this run; absent when it never ran. */
+  last_run_at?: number;
+  /** The external request's subject key and source; source 'pantheon' marks a note Pantheon wrote itself. */
+  subject_key?: string;
+  source?: string;
+  /** Whether a signal note is an interrupt for one issue or the periodic digest. */
+  signal?: 'interrupt' | 'digest';
 }
 export interface MilestoneView {
   milestone: Milestone;

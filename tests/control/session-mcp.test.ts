@@ -179,15 +179,9 @@ it('describes project_read facts without promising feedback', async () => {
   const client = await connect((await sessionFixture('planner')).spec);
   const tool = (await client.listTools()).tools.find((tool) => tool.name === 'project_read');
   expect(tool).toBeDefined();
-  for (const fact of [
-    'project details',
-    'brief',
-    'milestones',
-    'cursor',
-    "every lead's board plan",
-  ])
+  for (const fact of ['details', 'brief', 'milestones', "every lead's board plan"])
     expect(tool!.description).toContain(fact);
-  expect(tool!.description).toContain("each task's sessions and state");
+  expect(tool!.description).toContain("each task's state and sessions");
   expect(tool!.description).not.toMatch(/feedback/i);
 });
 
@@ -871,8 +865,9 @@ it('exposes draw without credential fields and returns field errors and redraw r
   const client = await connect(f.spec);
   const tool = (await client.listTools()).tools.find((tool) => tool.name === 'draw')!;
   expect(tool).toBeDefined();
-  expect(tool.description).toContain('Optional source');
-  expect(tool.description).toContain('Optional size');
+  const fields = tool.inputSchema.properties as Record<string, { description?: string }>;
+  expect(fields.source?.description).toContain('Optional single line');
+  expect(fields.size?.description).toContain('card height');
   expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual([
     'title',
     'kind',
@@ -952,7 +947,9 @@ it('offers sortable tables through draw and returns table cell errors', async ()
   expect(tool.inputSchema.properties?.kind).toMatchObject({
     enum: expect.arrayContaining(['table']),
   });
-  expect(tool.description).toContain('sort or scan');
+  expect(
+    (tool.inputSchema.properties as Record<string, { description?: string }>).spec?.description,
+  ).toContain('sort?: { key, direction }');
   const spec = {
     columns: [{ key: 'value', title: 'Value', type: 'number' }],
     rows: [{ value: 2 }, {}],

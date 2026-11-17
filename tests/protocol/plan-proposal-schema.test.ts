@@ -46,6 +46,7 @@ it('accepts all patch op kinds and keeps proposal tool schemas plain objects', (
     { type: 'move_task', task_id: 'api', before: null },
     { type: 'set_iterations', iterations: [] },
     { type: 'set_milestone', milestone_id: 'release', patch: { title: 'Launch' } },
+    { type: 'add_lane', lane: { id: 'ideas', title: 'Ideas' } },
   ])
     expect(inputSchemas['board.plan.propose'].safeParse({ ...proposal, ops: [op] }).success).toBe(
       true,

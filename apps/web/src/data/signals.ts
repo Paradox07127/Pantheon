@@ -1,8 +1,8 @@
 import type { SignalIssue } from '@pantheon/domain';
 import { useProjectQuery, type ProjectReadState } from './project-read';
 
-/** An issue as signal.list returns it, without its samples. */
-export type ListedSignal = Omit<SignalIssue, 'samples' | 'recent'>;
+/** An issue as signal.list returns it, with its samples and without its signal times. */
+export type ListedSignal = Omit<SignalIssue, 'recent'>;
 
 const SIGNAL_KINDS: ReadonlySet<string> = new Set(['signal_issue.changed']);
 

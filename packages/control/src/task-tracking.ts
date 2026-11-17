@@ -32,9 +32,9 @@ import {
   blockedReport,
   contractMoveWaits,
   DIGEST_BUDGET,
+  foldDigest,
   followContractModel,
   followContractRuntime,
-  INBOX_HEADER,
   recordNote,
   takeContractChange,
   takeInbox,
@@ -74,7 +74,13 @@ import {
   taskReportGeneration,
   unsnooze,
 } from './session.js';
-import { dispatchQueue, dispatchTasks, placedTaskSessions, taskPlaces } from './task-dispatch.js';
+import {
+  dispatchQueue,
+  dispatchTasks,
+  placedTaskSessions,
+  selectedParts,
+  taskPlaces,
+} from './task-dispatch.js';
 import { executed, stuckMerge } from './needs-you.js';
 import { finishingMerge } from './project-facts.js';
 import { finishStops } from './workbench-session.js';
@@ -959,6 +965,11 @@ export function tickTaskTracking(ctx: ControlContext): void {
       if (state === last) continue;
       if (state) {
         notified[session.id] = state;
+        const landed =
+          state === 'merged'
+            ? (latestEvent(ctx, session.id, 'session.merged')?.payload as
+                { branch?: string; to_sha?: string } | undefined)
+            : undefined;
         notes.push(
           recordNote(ctx, plan, {
             at: ctx.store.now(),
@@ -968,6 +979,8 @@ export function tickTaskTracking(ctx: ControlContext): void {
             text:
               trackedText(ctx, session, state, latestTurns, skipped) +
               (state === 'waiting' ? placeWaiters(ctx, plan, session) : ''),
+            ...(landed?.to_sha ? { commit: landed.to_sha } : {}),
+            ...(landed?.branch ? { source_branch: landed.branch } : {}),
           }),
         );
         changed = true;
@@ -1218,7 +1231,7 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
       'session_turns',
       {
         ...waiting,
-        input: waiting.input + digest.text.slice(INBOX_HEADER.length),
+        input: foldDigest(waiting.input, digest.text),
         lead_note_ids: [...(waiting.lead_note_ids ?? []), ...digest.note_ids],
         causal_depth: Math.max(waiting.causal_depth ?? 0, depth),
       },
@@ -1466,6 +1479,11 @@ function taskReport(
   const plan = ctx.store.get<BoardPlan>('board_plans', task.lead_session_id);
   requireThat(plan, 'not_found', `Not found: board plan ${task.lead_session_id}`);
   requireThat(
+    input.text.length <= 400 || reportDone(plan, { kind: input.kind, task_id: task.id }),
+    'invalid_input',
+    `text: only the done report of a report task may be longer than 400 characters; task ${task.id} is done when its worktree merges`,
+  );
+  requireThat(
     input.kind === 'blocked' || plan.inbox.length < INBOX_LIMIT,
     'resource_busy',
     `The lead has ${INBOX_LIMIT} unread notes; report again after it reads them`,
@@ -1477,8 +1495,10 @@ function taskReport(
     kind: input.kind,
     text: input.text,
     ...(input.kind === 'done' ? { status: input.status ?? ('done' as const) } : {}),
-    ...(input.kind === 'blocked'
-      ? { reason: input.reason, turn_id: causeTurn(ctx, p.session_id!)?.id }
+    ...(input.kind === 'blocked' ? { reason: input.reason } : {}),
+    // The turn a blocked or requirement report holds the session in, until a later one starts.
+    ...(input.kind === 'blocked' || input.kind === 'requirement'
+      ? { turn_id: causeTurn(ctx, p.session_id!)?.id }
       : {}),
     // The generation tells task.accept whether the report predates a contract change.
     generation: taskReportGeneration(ctx, ctx.store.must<Session>('sessions', p.session_id!)),
@@ -1613,9 +1633,10 @@ export const taskTrackingHandlers: Handlers = {
       'task_accepted',
       `Task ${input.task_id} is accepted; change its contract or stop it with stop_task to reopen it`,
     );
-    const open = taskSessions(ctx, plan.id, input.task_id)
-      .filter((candidate) => candidate.state !== 'closed')
-      .at(-1);
+    const open = selectedParts(
+      taskSessions(ctx, plan.id, input.task_id).filter((candidate) => candidate.state !== 'closed'),
+      input,
+    ).at(-1);
     requireThat(
       open,
       'invalid_state',

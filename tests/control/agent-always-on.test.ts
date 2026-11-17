@@ -170,6 +170,32 @@ it('runs a routine every hour on the same timer, inside its active hours, until 
   expect(profile().routines).toHaveLength(10);
 });
 
+it('gives each routine note its routine id and the time the routine last ran', async () => {
+  const { f, assistant, as, advance, start } = await clockFixture();
+  const routine = as<{ id: string }>('agent.routine.set', {
+    prompt: 'Look for stalled tasks',
+    every_minutes: 60,
+    enabled: true,
+  });
+  advance(60 * MINUTE);
+  await f.control.tick();
+  await eventually(
+    () => trackerTurns(f, assistant.id).length === 1,
+    () => f.control.tick(),
+  );
+  expect(trackerTurns(f, assistant.id)[0]!.input).toContain(
+    `routine="${routine.id}">\nWhat happened: your routine "${routine.id}" is due. Its prompt: "Look for stalled tasks"\nLast run: never.`,
+  );
+  advance(60 * MINUTE);
+  await f.control.tick();
+  const notes = notesOf(f, 'routine');
+  expect(notes).toMatchObject([
+    { routine_id: routine.id },
+    { routine_id: routine.id, last_run_at: start + 60 * MINUTE },
+  ]);
+  expect(notes[0]!.last_run_at).toBeUndefined();
+});
+
 it('stores what the resident tells the user as a message with its event', async () => {
   const { f, assistant, as } = await clockFixture();
   const message = as<AgentMessage>('agent.tell_user', {

@@ -22,10 +22,12 @@ const git = (cwd, ...args) =>
 const WAIT_MS = 60000;
 const MCP_TOOLS = new Set(['update_board', 'report', 'project_read', 'milestone_accept']);
 const REPORT_A = 'Task A is finished';
-const MERGED_NOTE = 'merged: The session merged into its source.';
+const MERGED_NOTE = '<note kind="merged"';
 const FAIL_REASON = 'Task C cannot start';
-const FAILED_NOTE = `turn_failed: The latest turn of the session failed. Reason: ${FAIL_REASON}`;
-const BLOCKED_NOTE = 'blocked: The merge of the session is blocked. Reason: gate_failed';
+const FAILED_NOTE = `<note kind="turn_failed"`;
+const FAILED_TEXT = `The latest turn of the session failed. Reason: ${FAIL_REASON}`;
+const BLOCKED_NOTE = '<note kind="blocked"';
+const BLOCKED_TEXT = 'The merge of the session is blocked. Reason: gate_failed';
 /** Ticks the event cursor must stay still for before the daemon counts as settled. */
 const QUIET_TICKS = 20;
 const passingGate = [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }];
@@ -331,7 +333,8 @@ export async function run({ workspace, evidenceDir }) {
       edge_met: edge(merged, 'A', 'B')?.state === 'met',
       lead_tracker_turns: wokenA.tracker.length,
       lead_woken_with_notes:
-        trackerA.input.includes(`done: ${REPORT_A}`) && trackerA.input.includes(MERGED_NOTE),
+        trackerA.input.includes(`sent a done report, status done: "${REPORT_A}"`) &&
+        trackerA.input.includes(MERGED_NOTE),
     };
 
     // Accepting M before B merges is refused.
@@ -482,7 +485,9 @@ export async function run({ workspace, evidenceDir }) {
           ['session.merge_started', 'session.merged'].includes(event.kind) &&
           event.aggregate_id === sessionC.id,
       ),
-      lead_notified: wokenC.tracker.some((turn) => turn.input.includes(FAILED_NOTE)),
+      lead_notified: wokenC.tracker.some(
+        (turn) => turn.input.includes(FAILED_NOTE) && turn.input.includes(FAILED_TEXT),
+      ),
     };
 
     // With auto_merge off and a failing gate, the user's merge of C is blocked.
@@ -538,7 +543,9 @@ export async function run({ workspace, evidenceDir }) {
       merge_state: blockedC.merge.state,
       reason: blockedC.merge.reason ?? null,
       head_unchanged: headAfterBlock.sha === headBeforeBlock.sha,
-      lead_notified: wokenBlocked.tracker.some((turn) => turn.input.includes(BLOCKED_NOTE)),
+      lead_notified: wokenBlocked.tracker.some(
+        (turn) => turn.input.includes(BLOCKED_NOTE) && turn.input.includes(BLOCKED_TEXT),
+      ),
     };
 
     // A restart on the same directory and options keeps the settled state and merges nothing again.

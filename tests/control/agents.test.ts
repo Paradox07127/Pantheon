@@ -136,6 +136,23 @@ it('gives a new project an assistant and a triage profile once, with their templ
   ).toEqual(listed.map((agent) => agent.id).sort());
 });
 
+it('lists the tools and listens each profile works with, its template’s while it stores none', async () => {
+  const f = await workbenchFixture();
+  expect(profileOf(f, 'triage')).toMatchObject({
+    effective_tools: TRIAGE_TEMPLATE.tools,
+    effective_listens: TRIAGE_TEMPLATE.listens,
+  });
+  update(f, { tools: ['board', 'memory'] });
+  const assistant = profileOf(f, 'assistant');
+  expect(assistant).toMatchObject({
+    tools: ['board', 'memory'],
+    effective_tools: ['board', 'memory'],
+    effective_listens: ASSISTANT_TEMPLATE.listens,
+  });
+  expect(assistant).not.toHaveProperty('listens');
+  expect(f.store.must<AgentProfile>('agents', assistant.id)).not.toHaveProperty('effective_tools');
+});
+
 it('links a resident session stored without a profile to the profile of its kind', async () => {
   const f = await workbenchFixture();
   const stored = f.store.insert<Session>('sessions', {
@@ -422,7 +439,12 @@ it('lists the defaults of the templates a new agent starts from, to the user onl
   expect(listed.map((each) => each.template)).toEqual(['ideas', 'goals', 'custom']);
   for (const each of listed) {
     const { routines = [], ...defaults } = AGENT_TEMPLATES[each.template];
-    expect(each).toEqual({ template: each.template, ...defaults, routines });
+    expect(each).toEqual({
+      template: each.template,
+      ...defaults,
+      routines,
+      role_prompt: ROLE_PROMPTS[each.template],
+    });
   }
   expect(listed.find((each) => each.template === 'goals')!.routines).toEqual([
     expect.objectContaining({ every_ms: 7 * 24 * 60 * 60_000, enabled: true }),

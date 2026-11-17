@@ -87,7 +87,7 @@ it('tells the lead when a merge task reports done without commits while auto-mer
     'The session reported done, but its worktree has no commits since it started and auto-merge is off, so nothing merges it. Commits since it started: 0; worktree clean: yes.',
   );
   expect(told(f, lead.id)).toHaveLength(1);
-  expect(told(f, lead.id)[0]!.input).toContain(': no_changes: The session reported done');
+  expect(told(f, lead.id)[0]!.input).toContain('": The session reported done');
 });
 
 it('tells the lead when a task reports done while its worktree has uncommitted files', async () => {

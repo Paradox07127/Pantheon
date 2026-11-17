@@ -29,9 +29,10 @@ import {
 import { sessionDefaults } from './user-config.js';
 import { runtime } from './admission.js';
 import { ownEntry, planUnfinished, planViews, retiredBinding } from './board-plan.js';
+import { residentPlan } from './agent-always-on.js';
 import { deviceHasLabel, listDevices } from './devices.js';
 import { history } from './project-facts.js';
-import { INBOX_HEADER, appendNote } from './lead-inbox.js';
+import { INBOX_HEADER, appendNote, opText } from './lead-inbox.js';
 import { reviewPlan } from './review.js';
 import { projectRoutingTable } from './routing-table.js';
 import {
@@ -55,6 +56,17 @@ type PlanInput = Omit<
 type PlanTask = PlanInput['tasks'][number];
 type EditOp = ReturnType<(typeof inputSchemas)['board.plan.edit']['parse']>['ops'][number];
 type PatchOp = Exclude<EditOp, { type: 'resolve_edit' }>;
+type ProposedOp = ReturnType<(typeof inputSchemas)['board.plan.propose']['parse']>['ops'][number];
+type PlanOp = Exclude<ProposedOp, { type: 'add_lane' }>;
+type Lane = BoardPlan['lanes'][number];
+
+/** A proposal's ops apart: the lanes it adds and the ops that apply after them. */
+function splitLanes(ops: ProposedOp[]): { lanes: Lane[]; ops: PlanOp[] } {
+  return {
+    lanes: ops.flatMap((op) => (op.type === 'add_lane' ? [op.lane] : [])),
+    ops: ops.filter((op): op is PlanOp => op.type !== 'add_lane'),
+  };
+}
 type TaskTier = TaskKind['tier'];
 
 /** Task fields a user edit changes at once even while the task has an unfinished session. */
@@ -436,11 +448,13 @@ function refuseUnexplained(
 }
 
 /** The lead's plan as a whole plan input, its milestones read from the lead's milestone rows. */
-function planContent(ctx: ControlContext, plan: BoardPlan): PlanInput {
+function planContent(ctx: ControlContext, plan: BoardPlan, lanes: Lane[] = []): PlanInput {
   return {
     project_id: plan.project_id,
-    headline: plan.headline,
-    lanes: plan.lanes,
+    // A resident's plan starts without a headline; its first change names it after the session.
+    headline:
+      plan.headline || (ctx.store.get<Session>('sessions', plan.id)?.title ?? plan.id).slice(0, 80),
+    lanes: [...plan.lanes, ...lanes],
     iterations: plan.iterations ?? [],
     order_lock: plan.order_lock,
     tasks: plan.tasks,
@@ -518,6 +532,7 @@ function storePlan(
     canonical({
       title: task.title,
       goal: task.goal,
+      brief: task.brief,
       source: task.source,
       external_source: task.external_source,
       scope: task.scope,
@@ -553,6 +568,7 @@ function storePlan(
   const contractHash = (task: BoardPlan['tasks'][number]) =>
     hash({
       goal: task.goal,
+      ...(task.brief ? { brief: task.brief } : {}),
       scope: task.scope,
       acceptance: task.acceptance,
       workflow_id: task.workflow_id,
@@ -614,6 +630,7 @@ function storePlan(
     notified: current?.notified ?? {},
     ...(current?.wake_failed ? { wake_failed: current.wake_failed } : {}),
     ...(current?.external_holds ? { external_holds: current.external_holds } : {}),
+    ...(current?.last_told ? { last_told: current.last_told } : {}),
     contract_changed: [...new Set([...(current?.contract_changed ?? []), ...told])],
     ...(current?.handed_back ? { handed_back: current.handed_back } : {}),
     ...(current?.alerted ? { alerted: current.alerted } : {}),
@@ -850,35 +867,6 @@ const opsTiers = (ops: PatchOp[]) =>
     ),
   );
 
-function opText(op: PatchOp): string {
-  switch (op.type) {
-    case 'lock_order':
-      return `lock order of tasks ${op.task_ids.join(', ')}`;
-    case 'unlock_order':
-      return 'unlock task order';
-    case 'set_iterations':
-      return `set iterations ${op.iterations.map((iteration) => iteration.id).join(', ')}`;
-    case 'add_task':
-      return `add task ${op.task.id} "${op.task.title}", quoting: ${op.task.source.join(' / ')}`;
-    case 'move_task':
-      return `move task ${op.task_id} ${op.before === null ? 'to the end' : `before ${op.before}`}`;
-    case 'remove_task':
-      return `remove task ${op.task_id}`;
-    case 'set_task':
-      return `set ${Object.entries(op.patch)
-        .map(
-          ([key, value]) => `${key} ${typeof value === 'string' ? value : JSON.stringify(value)}`,
-        )
-        .join(', ')} of task ${op.task_id}`;
-    case 'set_dependencies':
-      return `make task ${op.task_id} depend on ${op.depends_on.join(', ') || 'nothing'}`;
-    case 'set_milestone':
-      return `set ${Object.entries(op.patch)
-        .map(([key, value]) => `${key} ${value ?? 'none'}`)
-        .join(', ')} of milestone ${op.milestone_id}`;
-  }
-}
-
 /** Applies the lead's ops and the user edits it applies, and records the user edits it resolves. */
 function leadEdit(
   ctx: ControlContext,
@@ -886,6 +874,7 @@ function leadEdit(
   plan: BoardPlan,
   ops: EditOp[],
   commandId: string,
+  lanes: Lane[] = [],
 ): BoardPlan {
   requireThat(
     p.role === 'user' || ops.every((op) => op.type !== 'lock_order' && op.type !== 'unlock_order'),
@@ -914,7 +903,7 @@ function leadEdit(
   }
   // A user edit the lead applies stays unchecked, as it is when the user's edit applies at once.
   const leadTasks = new Set(ops.flatMap((op) => (op.type === 'resolve_edit' ? [] : opTaskIds(op))));
-  return storePlan(ctx, p, plan.id, applyOps(planContent(ctx, plan), patches), commandId, {
+  return storePlan(ctx, p, plan.id, applyOps(planContent(ctx, plan, lanes), patches), commandId, {
     pendingEdits: pending,
     leadTasks,
     writtenTiers: opsTiers(ops.flatMap((op) => (op.type === 'resolve_edit' ? [] : [op]))),
@@ -936,7 +925,7 @@ function resolveProposal(
   plan: BoardPlan,
   proposal: PlanProposal,
   resolution: Pick<PlanProposal, 'status' | 'resolution_reason'>,
-  note: Pick<LeadNote, 'task_id' | 'text'>,
+  note: Pick<LeadNote, 'task_id' | 'text' | 'decision'>,
   commandId: string,
 ): void {
   const resolved: PlanProposal = { ...proposal, ...resolution, resolved_at: ctx.store.now() };
@@ -948,7 +937,14 @@ function resolveProposal(
         entry.proposal_id === proposal.proposal_id ? resolved : entry,
       ),
     },
-    { at: ctx.store.now(), session_id: '', kind: 'user_edit', ...note },
+    {
+      at: ctx.store.now(),
+      session_id: '',
+      kind: 'user_edit',
+      edit_state: 'proposal',
+      proposal_id: proposal.proposal_id,
+      ...note,
+    },
     commandId,
   );
   ctx.store.event('board.plan_proposal_resolved', next, plan.project_id, resolved, commandId);
@@ -1021,6 +1017,7 @@ function userEdit(
     session_id: '',
     task_id: taskIds[0] ?? '',
     kind: 'user_edit',
+    edit_state: applied ? 'applied' : 'pending',
     text: applied
       ? `The user changed your plan:\n${lines}`
       : `The user asks to change tasks that have unfinished sessions; apply or reject it with edit_board resolve_edit, edit_id ${editId}:\n${lines}`,
@@ -1040,6 +1037,7 @@ function userEdit(
               (
                 [
                   'goal',
+                  'brief',
                   'scope',
                   'acceptance',
                   'done_when',
@@ -1125,6 +1123,8 @@ function withdrawEdit(
     session_id: '',
     task_id: edit.task_ids[0]!,
     kind: 'user_edit',
+    edit_state: 'withdrawn',
+    edit_id: editId,
     text: `The user withdrew edit ${editId}, so your plan stays as it is; it no longer waits for you, so do not call edit_board resolve_edit for it:\n${edit.ops.map((op) => `- ${opText(op)}`).join('\n')}`,
   };
   appendNote(ctx, { ...plan, pending_edits: pending }, note, commandId);
@@ -1187,7 +1187,11 @@ export const projectBoardHandlers: Handlers = {
     const input = inputSchemas['board.plan.propose'].parse(c.input);
     projectAccess(ctx, p, input.project_id, c.type);
     requireThat(p.role === 'lead', 'permission_denied', 'Lead session required');
-    const plan = ctx.store.get<BoardPlan>('board_plans', p.session_id!);
+    const caller = ctx.store.get<Session>('sessions', p.session_id!);
+    // A resident proposes on its plan from the start, empty as it is.
+    const plan = caller?.resident
+      ? residentPlan(ctx, caller)
+      : ctx.store.get<BoardPlan>('board_plans', p.session_id!);
     requireThat(
       plan?.project_id === input.project_id,
       'not_found',
@@ -1206,19 +1210,14 @@ export const projectBoardHandlers: Handlers = {
       'invalid_input',
       'A lead may have at most 8 pending proposals in one plan',
     );
-    const edited = applyOps(planContent(ctx, plan), input.ops);
+    const { lanes, ops } = splitLanes(input.ops);
+    const edited = applyOps(planContent(ctx, plan, lanes), ops);
     refuseInvalid(ctx, edited);
-    refuseUnexplained(
-      ctx,
-      plan.id,
-      plan,
-      edited,
-      new Set(input.ops.flatMap(opTaskIds)),
-      opsTiers(input.ops),
-    );
+    refuseUnexplained(ctx, plan.id, plan, edited, new Set(ops.flatMap(opTaskIds)), opsTiers(ops));
     const proposal: PlanProposal = {
       proposal_id: id(),
-      ops: input.ops,
+      ops,
+      ...(lanes.length ? { lanes } : {}),
       reason: input.reason,
       base_version: input.base_version,
       created_at: ctx.store.now(),
@@ -1234,11 +1233,11 @@ export const projectBoardHandlers: Handlers = {
     if (applied)
       resolveProposal(
         ctx,
-        leadEdit(ctx, p, next, input.ops, c.command_id),
+        leadEdit(ctx, p, next, ops, c.command_id, lanes),
         proposal,
         { status: 'accepted' },
         {
-          task_id: input.ops.flatMap(opTaskIds)[0] ?? '',
+          task_id: ops.flatMap(opTaskIds)[0] ?? '',
           text: `Plan proposal ${proposal.proposal_id} applied at once, as plan changes are set to apply automatically`,
         },
         c.command_id,
@@ -1306,16 +1305,22 @@ export const projectBoardHandlers: Handlers = {
       (entry) => entry.proposal_id === input.proposal_id && entry.status === 'pending',
     );
     requireThat(proposal, 'not_found', `Not found: pending plan proposal ${input.proposal_id}`);
-    const ops = input.ops ?? proposal.ops;
+    const written = input.ops && splitLanes(input.ops),
+      ops = written?.ops ?? proposal.ops;
     // Ops the user wrote at acceptance are checked as a user edit is.
     const applied =
       input.decision !== 'accept'
         ? plan
-        : input.ops
-          ? storePlan(ctx, p, plan.id, applyOps(planContent(ctx, plan), input.ops), c.command_id, {
-              quoted: input.ops.flatMap((op) => (op.type === 'add_task' ? op.task.source : [])),
-            })
-          : leadEdit(ctx, p, plan, ops, c.command_id);
+        : written
+          ? storePlan(
+              ctx,
+              p,
+              plan.id,
+              applyOps(planContent(ctx, plan, written.lanes), ops),
+              c.command_id,
+              { quoted: ops.flatMap((op) => (op.type === 'add_task' ? op.task.source : [])) },
+            )
+          : leadEdit(ctx, p, plan, ops, c.command_id, proposal.lanes);
     resolveProposal(
       ctx,
       applied,
@@ -1326,6 +1331,7 @@ export const projectBoardHandlers: Handlers = {
       },
       {
         task_id: ops.flatMap(opTaskIds)[0] ?? '',
+        decision: input.decision,
         text: `The user chose to ${input.decision} plan proposal ${proposal.proposal_id}${input.reason ? `: ${input.reason}` : ''}${input.decision === 'accept' && input.ops ? `\nThe user changed the ops that applied:\n${ops.map((op) => `- ${opText(op)}`).join('\n')}` : ''}`,
       },
       c.command_id,

@@ -181,7 +181,10 @@ export function modelText(
   return listText(runtime, name, effort && EFFORT_LABEL[effort], backend);
 }
 
-/** The first message of a session opened from a board task. */
+/**
+ * The composer text of a session opened from a board task. Left as it is, the daemon opens the
+ * session with the first message dispatch sends; other text follows that message.
+ */
 export const taskPrompt = (task: { title: string; goal: string }): string =>
   `${task.title}\n\n${task.goal}`;
 

@@ -174,6 +174,28 @@ it('keeps one budget when wakes are folded into the queued lead turn', async () 
   for (const note of notes) expect(delivered(inputs.join('\n'), note)).toBe(true);
 });
 
+it('counts the notes folded into the queued lead turn in its one wake line', async () => {
+  const f = await workbenchFixture({ delay: 1500 });
+  const { lead, worker } = await leadWithTask(f);
+  const running = f.call<SessionTurn>(
+    'session.send',
+    { session_id: lead.id, input: 'Check the plan again' },
+    current(f, lead.id).revision,
+  );
+  await eventually(
+    () => f.store.must<SessionTurn>('session_turns', running.id).state === 'running',
+    () => f.control.tick(),
+  );
+  requirement(f, worker.id, 'Task a needs the import path too');
+  requirement(f, worker.id, 'Task a needs the export path too');
+  await f.control.tick();
+  const [queued] = told(f, lead.id);
+  expect(told(f, lead.id)).toHaveLength(1);
+  expect(queued!.input).toContain('Task a needs the export path too');
+  expect(queued!.input.match(/^Wake at /gm)).toHaveLength(1);
+  expect(queued!.input).toMatch(/^Wake at \S+\. 2 update\(s\); not a user request\.$/m);
+});
+
 it('caps tracker notes in the inbox and keeps the overflow readable by id', async () => {
   const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);

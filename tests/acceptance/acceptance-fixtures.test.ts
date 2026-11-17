@@ -192,7 +192,9 @@ const LEAD = 'lead-session';
 const digest = (...lines: string[]) =>
   ['[Pantheon] Board updates since your last message:', ...lines].join('\n');
 const heldEdit = (editId: string) =>
-  `- Remove the old exporter / : user_edit: The user asks to change tasks that have unfinished sessions; apply or reject it with edit_board resolve_edit, edit_id ${editId}:`;
+  `What happened: the user asks to change tasks that have open sessions (edit ${editId}):`;
+const doneNote = (id: string, title: string) =>
+  `What happened: Task ${id} "${title}" sent a done report, status done: "${title} is finished".`;
 const CODE = { id: 'code', title: 'Add the export command', session_ids: ['code-session'] };
 const NOTES = {
   id: 'notes',
@@ -250,7 +252,7 @@ it('applies every user edit that waits for the lead in one edit_board call on th
   const input = digest(
     heldEdit('edit-7'),
     '- make task cleanup depend on code',
-    '- Remove the old exporter / cleanup-session: waiting: The session waits for the user to answer a permission request.',
+    'What happened: Task cleanup "Remove the old exporter": The session waits for the user to answer a permission request.',
     heldEdit('edit-8'),
     '- set model fixture-large of task cleanup',
   );
@@ -273,8 +275,8 @@ it('applies every user edit that waits for the lead in one edit_board call on th
 
 it('accepts a report task on the done report in its notes and leaves other done reports alone', async () => {
   const input = digest(
-    '- Add the export command / Code session: done: Add the export command is finished',
-    '- Write the export notes / Notes session: done: Write the export notes is finished',
+    doneNote('code', 'Add the export command'),
+    doneNote('notes', 'Write the export notes'),
   );
   expect(await leadAnswers(input, async () => projectRead({}), LEAD)).toEqual([acceptNotes]);
 });
@@ -282,7 +284,9 @@ it('accepts a report task on the done report in its notes and leaves other done 
 it.each([
   [
     'after the merge of its last task',
-    digest('- Add the export command / Code session: merged: The session merged into its source.'),
+    digest(
+      'What happened: Task code "Add the export command" session code-session merged into main at c0ffee1.',
+    ),
     projectRead({ code: 'done', notes: 'done' }, [
       exportMilestone('other-lead', 'ready_for_acceptance'),
       exportMilestone(LEAD, 'ready_for_acceptance'),
@@ -291,7 +295,7 @@ it.each([
   ],
   [
     'once the report task the lead accepts was the last',
-    digest('- Write the export notes / Notes session: done: Write the export notes is finished'),
+    digest(doneNote('notes', 'Write the export notes')),
     projectRead({ code: 'done' }, [
       exportMilestone(LEAD, 'active', ['task:notes:active', 'session:notes-session:open']),
     ]),

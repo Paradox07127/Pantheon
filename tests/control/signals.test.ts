@@ -111,6 +111,17 @@ it('groups a hundred signals of one fingerprint into one issue that is delivered
   expect(notes()).toHaveLength(1);
 });
 
+it('lists each issue with its samples to the user, without its signal times', async () => {
+  const { f, record } = await signalFixture();
+  for (const index of [1, 2, 3, 4])
+    record({ sample: `Run ${index}: src/totals.ts(3,1) error TS2322` });
+  const [listed] = f.control.signalList(user, f.project.id);
+  expect(listed!.samples).toEqual(
+    [2, 3, 4].map((index) => `Run ${index}: src/totals.ts(3,1) error TS2322`),
+  );
+  expect(listed).not.toHaveProperty('recent');
+});
+
 it('wakes a listening triage once after the group window and leaves the assistant without listens alone', async () => {
   const { record, advance, notes, wakes } = await signalFixture();
   const gate = record({ sample: 'error TS2322 in the private sample' });

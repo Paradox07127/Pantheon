@@ -110,7 +110,7 @@ it('lists the notes past the digest budget by id only and says how to read them'
 
   const digest = nextDigest(f, lead.id),
     lines = digest.split('\n');
-  const full = lines.filter((line) => line.includes(': risk: Risk '));
+  const full = lines.filter((line) => line.includes('reports a risk: "Risk '));
   expect(full.length).toBeGreaterThan(0);
   expect(full.length).toBeLessThan(30);
   expect(full.join('\n').length).toBeLessThanOrEqual(6000);
@@ -130,7 +130,7 @@ it('cuts a long note in the digest and names the id that reads it whole', async 
 
   const digest = nextDigest(f, lead.id);
   expect(digest).toContain(`(${text.length} chars; read_note long-note for the full text)`);
-  expect(digest).toContain('turn_failed: Start ');
+  expect(digest).toContain('What happened: Task a "Serve exports over HTTP": Start ');
   expect(digest).not.toContain(' end');
 });
 
@@ -141,7 +141,7 @@ it('still lists a stored note that has no id', async () => {
     { at: 1, session_id: worker.id, task_id: 'a', kind: 'risk', text: 'An old note' },
   ]);
 
-  expect(nextDigest(f, lead.id)).toContain(': risk: An old note');
+  expect(nextDigest(f, lead.id)).toContain('reports a risk: "An old note"');
 });
 
 it('reads a note back by id after the inbox is taken, for the lead that owns it only', async () => {
@@ -211,7 +211,7 @@ it("leaves the lead a note without waking it when the user writes to a task sess
   expect(planOf(f, lead.id).inbox).toHaveLength(1);
   const digest = nextDigest(f, lead.id);
   expect(digest).toContain(
-    `: user_message: ${message.slice(0, 200)}… (${message.length} chars; read_note ${note!.id} for the full text)`,
+    `the user wrote to the session of task a "Serve exports over HTTP": "${message.slice(0, 200)}… (${message.length} chars; read_note ${note!.id} for the full text)"`,
   );
   expect(digest).not.toContain(message.slice(0, 201));
   expect(readNote(f, lead.id, note!.id!).text).toBe(message);
@@ -235,9 +235,9 @@ it('keeps the whole digest within its budget, with one closing line for the note
   const digest = nextDigest(f, lead.id),
     lines = digest.split('\n');
   expect(digest.length).toBeLessThanOrEqual(6000);
-  expect(digest).toContain(': risk: Old ');
+  expect(digest).toContain('reports a risk: "Old ');
   const listed = lines.filter((line) => /^- risk: task a, note note-/.test(line)).length,
-    full = lines.filter((line) => line.includes(': risk: ')).length;
+    full = lines.filter((line) => line.includes('reports a risk: "')).length;
   expect(listed).toBeGreaterThan(0);
   expect(lines.at(-1)).toBe(
     `${listed} more notes; read_note <id> reads each. ${201 - full - listed} notes past the size limit are not listed; they come with your next update.`,

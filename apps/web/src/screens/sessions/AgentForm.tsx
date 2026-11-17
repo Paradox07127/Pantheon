@@ -298,6 +298,8 @@ export function agentFieldRows(props: {
   fields?: ReadonlySet<FieldKey>;
   error?: Refusal | null;
   disabled?: boolean;
+  /** The built-in role prompt, shown read-only above the user's instructions. */
+  rolePrompt?: string;
 }): ReactNode[] {
   const { draft, set, id, disabled } = props;
   const shown = (key: FieldKey) => !props.fields || props.fields.has(key);
@@ -524,6 +526,15 @@ export function agentFieldRows(props: {
     shown('role') &&
       text('role', t({ id: 'sessions.agents.field.role', defaultMessage: 'Role' }), 24),
     shown('instructions') &&
+      props.rolePrompt && [
+        <span key="builtin-l" className="ag-lb">
+          {t({ id: 'sessions.agents.builtin', defaultMessage: 'Built-in role' })}
+        </span>,
+        <div key="builtin" className="ag-fc">
+          <Clip as="div" className="ag-rp" text={props.rolePrompt} lines={3} />
+        </div>,
+      ],
+    shown('instructions') &&
       text(
         'instructions',
         t({ id: 'sessions.agents.field.instructions', defaultMessage: 'Your instructions' }),
@@ -686,6 +697,7 @@ export function NewAgentDialog({
                 projectId,
                 error,
                 disabled: !draft || busy,
+                rolePrompt: template === 'custom' ? undefined : prefill?.role_prompt,
               })}
               {error && !error.field && (
                 <p className="ag-err ag-wide" role="alert">
@@ -724,7 +736,6 @@ export function AgentProfilePanel({
   onClose: () => void;
 }) {
   const agents = useAgents(projectId);
-  const templates = useAgentTemplates();
   const profile = agents?.find((agent) => agent.id === agentId);
   // Edits keep the revision they started from, so a change made meanwhile is not overwritten.
   const [edit, setEdit] = useState<{ revision: number; draft: AgentDraft } | null>(null);
@@ -732,11 +743,10 @@ export function AgentProfilePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Refusal | null>(null);
   if (!profile) return null;
-  const defaults = templates?.find((each) => each.template === profile.template);
   const base = draftOf({
     ...profile,
-    tools: profile.tools ?? defaults?.tools,
-    listens: profile.listens ?? defaults?.listens,
+    tools: profile.effective_tools,
+    listens: profile.effective_listens,
   });
   const draft = edit?.draft ?? base;
   const changed = edit ? changedFields(edit.draft, base) : {};

@@ -669,7 +669,8 @@ export const appHelpGroups: AppHelpGroup[] = [
       },
       {
         type: 'task.message',
-        about: "A message to the latest open session of a task in the calling lead's plan.",
+        about:
+          "A message to the latest open session of a task in the calling lead's plan, or to the part it names.",
         tool: 'message_task',
       },
       { type: 'task.report', tool: 'report' },

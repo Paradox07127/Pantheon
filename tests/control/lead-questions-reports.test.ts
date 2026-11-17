@@ -144,7 +144,9 @@ it('posts a question without ending the lead turn, waits only on named tasks, an
   const wake = f.turns(lead.id).find((turn) => turn.origin === 'tracker')!;
   expect(wake.input).toContain('Which export format?');
   expect(wake.input).toContain('JSON');
-  expect(wake.input).toContain('- answer: Question: Which export format?');
+  expect(wake.input).toContain(
+    'What happened: the user answered your question: "Which export format?" Answer: "JSON".',
+  );
   expect(f.store.kindEvents(f.project.id, ['lead.note_added']).at(-1)!.payload).toMatchObject({
     kind: 'answer',
     question_id: card.id,
@@ -187,13 +189,14 @@ it('posts a question without ending the lead turn, waits only on named tasks, an
 });
 
 it.each([
-  'missing_context',
-  'missing_permission',
-  'environment_problem',
-  'conflicting_requirements',
+  { kind: 'blocked', reason: 'missing_context' },
+  { kind: 'blocked', reason: 'missing_permission' },
+  { kind: 'blocked', reason: 'environment_problem' },
+  { kind: 'blocked', reason: 'conflicting_requirements' },
+  { kind: 'requirement', reason: undefined },
 ])(
-  'delivers a blocked report for %s and waits without automatic merge or handbacks',
-  async (reason) => {
+  'delivers a $kind report ($reason) and waits without automatic merge or handbacks',
+  async ({ kind, reason }) => {
     const f = await workbenchFixture();
     const { lead } = await planned(f);
     const worker = await boundTaskSession(f, lead.id, 'format');
@@ -203,18 +206,20 @@ it.each([
       'task.report',
       {
         project_id: f.project.id,
-        kind: 'blocked',
+        kind,
         reason,
         text: 'Need a decision before proceeding.',
       },
       null,
       principal(f, worker, 'worker'),
     );
-    expect(f.turns(lead.id).find((turn) => turn.origin === 'tracker')!.input).toContain(reason);
+    expect(f.turns(lead.id).find((turn) => turn.origin === 'tracker')!.input).toContain(
+      reason ?? 'Need a decision before proceeding.',
+    );
     const note = f.store.kindEvents(f.project.id, ['task.reported']).at(-1)!.payload;
     expect(note).toMatchObject({
-      kind: 'blocked',
-      reason,
+      kind,
+      ...(reason ? { reason } : {}),
       text: 'Need a decision before proceeding.',
     });
     const project = f.store.must<Project>('projects', f.project.id);

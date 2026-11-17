@@ -520,7 +520,11 @@ const milestoneInput = {
   criteria: strings.min(1),
 };
 const boardText = z.string().min(1).max(400);
-const boardNote = z.strictObject({ text: boardText });
+/** One part of a parallel task: its part number from 1, or the id of its session. */
+const partSelector = z.union([z.number().int().min(1).max(4), z.string().min(1)]).optional();
+const boardNote = z.strictObject({
+  text: boardText.describe('The note, at most 400 characters.'),
+});
 const planId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/);
 const planTitle = z.string().min(1).max(80);
 const taskPriority = z.enum(['high', 'normal', 'low']);
@@ -529,16 +533,25 @@ const runtimeChoice = z.strictObject({
   model: str.optional(),
   effort: z.enum(EFFORT_LEVELS).optional(),
 });
-const taskKind = z.strictObject({ domain: z.enum(taskDomains), tier: z.enum(taskTiers) });
+const taskKind = z
+  .strictObject({
+    domain: z
+      .enum(taskDomains)
+      .describe('review, frontend-ui, script-infra, backend-logic or docs-chore.'),
+    tier: z.enum(taskTiers).describe('t1, t2 or t3; Pantheon may raise it from the scope.'),
+  })
+  .describe(
+    '`domain` (review, frontend-ui, script-infra, backend-logic, docs-chore) and `tier` (t1, t2, t3). Pantheon may raise the tier from the scope.',
+  );
 const calendarDay = z.iso.date();
 const planIterations = z
   .array(
     z
       .strictObject({
-        id: z.string(),
-        title: z.string(),
-        starts_on: calendarDay,
-        ends_on: calendarDay,
+        id: z.string().describe('Short id that tasks name in `iteration`.'),
+        title: z.string().describe('The iteration name shown on the board.'),
+        starts_on: calendarDay.describe('First day, YYYY-MM-DD.'),
+        ends_on: calendarDay.describe('Last day, YYYY-MM-DD, not before starts_on.'),
       })
       .refine((iteration) => iteration.starts_on <= iteration.ends_on, {
         message: 'starts_on must be on or before ends_on',
@@ -550,63 +563,173 @@ const planIterations = z
   );
 const planTask = z
   .strictObject({
-    id: planId,
-    title: planTitle,
-    goal: boardText,
-    lane: planId,
-    milestone: planId.optional(),
-    iteration: z.string().optional(),
-    estimate: z.number().int().min(1).max(13).optional(),
-    depends_on: z.array(planId).max(16),
+    id: planId.describe(
+      'Stable id (letters, digits, `_.-`, at most 40); keep it when the task stays, since sessions and history hang on it.',
+    ),
+    title: planTitle.describe('At most 80 characters; what the task delivers.'),
+    goal: boardText.describe(
+      'At most 400 characters: what to change and why, and how to tell it is done. The task session sees only this task, so put what does not fit in `brief`.',
+    ),
+    /** What the goal has no room for: purpose, known cause, files and limits. */
+    brief: z
+      .string()
+      .min(1)
+      .max(2000)
+      .optional()
+      .describe(
+        'Optional, up to 2000 characters: what the goal has no room for, such as the purpose, the files, symbols or symptoms you found, the known cause and what not to touch. Write your own conclusions; the session cannot read your conversation.',
+      ),
+    lane: planId.describe('The id of its lane.'),
+    milestone: planId.optional().describe('The id of the milestone it counts toward.'),
+    iteration: z.string().optional().describe('The id of an iteration in `iterations`.'),
+    estimate: z
+      .number()
+      .int()
+      .min(1)
+      .max(13)
+      .optional()
+      .describe('Optional size estimate, 1-13, shown on the board.'),
+    depends_on: z
+      .array(planId)
+      .max(16)
+      .describe('Ids of tasks that must be done before this one opens, at most 16.'),
     /** Verbatim quotes of the user's messages to the lead, or of text the user wrote in an external event. */
-    source: z.array(boardText).max(4),
+    source: z
+      .array(boardText)
+      .max(4)
+      .describe(
+        "1-4 excerpts copied verbatim from the user's messages; a quote no user message contains is refused. May be empty only when `external_source` is given.",
+      ),
     /** Verbatim quotes of what other people wrote in an external event. */
-    external_source: z.array(boardText).max(4).optional(),
+    external_source: z
+      .array(boardText)
+      .max(4)
+      .optional()
+      .describe(
+        'Up to 4 verbatim excerpts of what other people wrote in an external request; the task session reads them as information, not instructions.',
+      ),
     /** The subject key of the external request, such as github:owner/repo#12, the task was planned for. */
-    external_subject: str.optional(),
+    external_subject: str
+      .optional()
+      .describe(
+        'The subject key of the external request the task serves, such as github:owner/repo#12, as its board update names it.',
+      ),
     /** Repository-relative paths or directories the task may change. */
-    scope: z.array(z.string().min(1).max(200)).max(16),
+    scope: z
+      .array(z.string().min(1).max(200))
+      .max(16)
+      .describe(
+        'Repository-relative paths or directories the task may change, 1-16 (may be empty for done_when report). List test, build or CI configuration files by exact path when the task must change them.',
+      ),
     /** Shell commands that must pass before the task is done. */
-    acceptance: z.array(z.string().min(1).max(400)).max(8),
+    acceptance: z
+      .array(z.string().min(1).max(400))
+      .max(8)
+      .describe(
+        '1-8 shell commands that must pass (may be empty for done_when report). They run in a fresh clone with dependency folders but no build output; start with the build step a command needs.',
+      ),
     /** The runtime, model and effort of the session Pantheon opens for the task. */
-    runtime: str.optional(),
-    model: str.optional(),
-    effort: z.enum(EFFORT_LEVELS).optional(),
+    runtime: str
+      .optional()
+      .describe(
+        "The runtime of the task's session; absent means the project's writer default when one is set, else lead.routing's choice for its kind.",
+      ),
+    model: str
+      .optional()
+      .describe("The model of the task's session; absent means the default for its runtime."),
+    effort: z
+      .enum(EFFORT_LEVELS)
+      .optional()
+      .describe("The reasoning effort of the task's session; absent means the default."),
     kind: taskKind.optional(),
-    task_type: z.enum(['feature', 'fix', 'research', 'infra', 'docs']).optional(),
+    task_type: z
+      .enum(['feature', 'fix', 'research', 'infra', 'docs'])
+      .optional()
+      .describe('feature, fix, research, infra or docs; shown on the board.'),
     /** Tokens; stored for display without enforcing the budget. */
-    token_budget: z.number().int().positive().optional(),
+    token_budget: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Tokens, shown on the board; not enforced.'),
     /** Why the runtime, model or effort differs from the routing table's first choice. */
-    route_reason: boardText.optional(),
+    route_reason: boardText
+      .optional()
+      .describe(
+        "One sentence on why runtime, model or effort differ from lead.routing's first choice.",
+      ),
     /** The device id the task's session runs on; absent means this machine. */
-    device: str.optional(),
+    device: str
+      .optional()
+      .describe('The device id from lead.devices the session runs on; absent means this machine.'),
     /** Why the task runs on the device. */
-    device_reason: boardText.optional(),
+    device_reason: boardText.optional().describe('One sentence on why it runs there.'),
     /** Labels the device must have. */
-    needs: z.array(z.string().min(1).max(64)).max(8).optional(),
+    needs: z
+      .array(z.string().min(1).max(64))
+      .max(8)
+      .optional()
+      .describe(
+        'Labels the device must have: os=<system>, arch=<architecture> and device labels as lead.devices gives them; at most 8.',
+      ),
     /** Named resources of the device the session holds while it runs, and how many of each. */
-    uses: z.record(str, z.number().int().positive()).optional(),
+    uses: z
+      .record(str, z.number().int().positive())
+      .optional()
+      .describe(
+        'Resources the session holds while it runs, name to amount, such as {"postgres": 1}; only names lead.devices lists for that device, at most the listed amount.',
+      ),
     /** The flow path the task takes; absent means the one the workflow policy gives its tier. */
-    path: z.enum(flowPaths).optional(),
-    workflow_id: str.optional(),
+    path: z
+      .enum(flowPaths)
+      .optional()
+      .describe(
+        'direct, dispatch, review_loop or parallel; absent means lead.workflow.path for its tier.',
+      ),
+    workflow_id: str
+      .optional()
+      .describe("A named workflow from lead.workflow; absent means the project's default."),
     parallel: z
       .array(
         z.strictObject({
-          title: planTitle,
-          goal: boardText,
-          scope: z.array(z.string().min(1).max(200)).min(1).max(16),
-          acceptance: z.array(z.string().min(1).max(400)).min(1).max(8),
+          title: planTitle.describe('At most 80 characters; what this part delivers.'),
+          goal: boardText.describe(
+            "At most 400 characters: this part's own goal; its session sees only this part.",
+          ),
+          scope: z
+            .array(z.string().min(1).max(200))
+            .min(1)
+            .max(16)
+            .describe(
+              'The paths this part may change, 1-16; keep them apart from the other parts.',
+            ),
+          acceptance: z
+            .array(z.string().min(1).max(400))
+            .min(1)
+            .max(8)
+            .describe('1-8 shell commands that must pass for this part.'),
         }),
       )
       .min(2)
       .max(4)
-      .optional(),
+      .optional()
+      .describe(
+        'For path parallel: 2-4 parts, each with its own `title`, `goal`, `scope` and `acceptance`; one session opens per part.',
+      ),
     /** Why the task takes a different flow path from the one its kind is given. */
-    flow_reason: boardText.optional(),
+    flow_reason: boardText
+      .optional()
+      .describe('One sentence on why `path` differs from the suggested one.'),
     /** A report task is done when the lead accepts its done report; it may have no scope or acceptance. */
-    done_when: z.enum(['merged', 'report']).optional(),
+    done_when: z
+      .enum(['merged', 'report'])
+      .optional()
+      .describe(
+        'merged (default): done when its session merges. report: done when you accept its done report; for research or a document reply.',
+      ),
     /** Absent means normal. */
-    priority: taskPriority.optional(),
+    priority: taskPriority.optional().describe('high, normal (default) or low.'),
   })
   .refine(
     (task) => task.done_when === 'report' || (task.scope.length > 0 && task.acceptance.length > 0),
@@ -615,70 +738,153 @@ const planTask = z
         'A task that is done when merged needs at least one scope path and acceptance command',
     },
   );
-const planPatchOp = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('set_iterations'), iterations: planIterations }),
-  z.strictObject({ type: z.literal('add_task'), task: planTask }),
-  z.strictObject({ type: z.literal('remove_task'), task_id: planId }),
-  z.strictObject({ type: z.literal('move_task'), task_id: planId, before: planId.nullable() }),
+const opTaskId = planId.describe('The id of the task in your plan.');
+const planChangeOps = [
   z.strictObject({
-    type: z.literal('set_task'),
-    task_id: planId,
-    patch: z.strictObject({
-      goal: planTask.shape.goal.optional(),
-      scope: planTask.shape.scope.optional(),
-      acceptance: planTask.shape.acceptance.optional(),
-      done_when: planTask.shape.done_when,
-      milestone: planId.nullable().optional(),
-      iteration: z.string().nullable().optional(),
-      estimate: planTask.shape.estimate,
-      runtime: str.optional(),
-      /** null takes the task's model or effort away, so the runtime's default applies. */
-      model: str.nullable().optional(),
-      effort: z.enum(EFFORT_LEVELS).nullable().optional(),
-      title: planTitle.optional(),
-      lane: planId.optional(),
-      priority: taskPriority.optional(),
-      kind: taskKind.optional(),
-      /** null takes the task's type or budget away. */
-      task_type: planTask.shape.task_type.nullable(),
-      token_budget: planTask.shape.token_budget.nullable(),
-      route_reason: boardText.optional(),
-      device: planTask.shape.device,
-      device_reason: planTask.shape.device_reason,
-      needs: planTask.shape.needs,
-      uses: planTask.shape.uses,
-      /** null takes the task's own path and flow_reason away, so its tier's path applies. */
-      path: z.enum(flowPaths).nullable().optional(),
-      flow_reason: planTask.shape.flow_reason,
-      /** null takes the task's named workflow away, so the project's default one applies. */
-      workflow_id: str.nullable().optional(),
-      parallel: planTask.shape.parallel,
-    }),
+    type: z.literal('set_iterations').describe('set_iterations: replace the iteration list.'),
+    iterations: planIterations.describe(
+      'The full list of iterations: `id`, `title`, `starts_on` and `ends_on` as YYYY-MM-DD.',
+    ),
   }),
   z.strictObject({
-    type: z.literal('set_dependencies'),
-    task_id: planId,
-    depends_on: z.array(planId).max(16),
+    type: z.literal('add_task').describe('add_task: add one task.'),
+    task: planTask.describe('A full task, with the same fields as a task of update_board.'),
+  }),
+  z.strictObject({
+    type: z.literal('remove_task').describe('remove_task: remove the task `task_id`.'),
+    task_id: opTaskId,
+  }),
+  z.strictObject({
+    type: z.literal('move_task').describe('move_task: move the task `task_id` in the order.'),
+    task_id: opTaskId,
+    before: planId.nullable().describe('The task it goes before, or null for the end.'),
+  }),
+  z.strictObject({
+    type: z.literal('set_task').describe('set_task: change fields of the task `task_id`.'),
+    task_id: opTaskId,
+    patch: z
+      .strictObject({
+        goal: planTask.shape.goal.optional(),
+        brief: planTask.shape.brief,
+        scope: planTask.shape.scope.optional(),
+        acceptance: planTask.shape.acceptance.optional(),
+        done_when: planTask.shape.done_when,
+        milestone: planId
+          .nullable()
+          .optional()
+          .describe('The id of the milestone it counts toward; null removes it.'),
+        iteration: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('The id of an iteration; null removes it.'),
+        estimate: planTask.shape.estimate,
+        runtime: planTask.shape.runtime,
+        /** null takes the task's model or effort away, so the runtime's default applies. */
+        model: str
+          .nullable()
+          .optional()
+          .describe("The model of the task's session; null returns to the runtime's default."),
+        effort: z
+          .enum(EFFORT_LEVELS)
+          .nullable()
+          .optional()
+          .describe("The reasoning effort; null returns to the runtime's default."),
+        title: planTask.shape.title.optional(),
+        lane: planTask.shape.lane.optional(),
+        priority: planTask.shape.priority,
+        kind: planTask.shape.kind,
+        /** null takes the task's type or budget away. */
+        task_type: planTask.shape.task_type
+          .nullable()
+          .describe('feature, fix, research, infra or docs; null removes it.'),
+        token_budget: planTask.shape.token_budget
+          .nullable()
+          .describe('Tokens, shown on the board; null removes it.'),
+        route_reason: planTask.shape.route_reason,
+        device: planTask.shape.device,
+        device_reason: planTask.shape.device_reason,
+        needs: planTask.shape.needs,
+        uses: planTask.shape.uses,
+        /** null takes the task's own path and flow_reason away, so its tier's path applies. */
+        path: z
+          .enum(flowPaths)
+          .nullable()
+          .optional()
+          .describe(
+            'direct, dispatch, review_loop or parallel; null removes it and its flow_reason, so the path for its tier applies.',
+          ),
+        flow_reason: planTask.shape.flow_reason,
+        /** null takes the task's named workflow away, so the project's default one applies. */
+        workflow_id: str
+          .nullable()
+          .optional()
+          .describe("A named workflow from lead.workflow; null returns to the project's default."),
+        parallel: planTask.shape.parallel,
+      })
+      .describe('Only the fields that change; the others keep their value.'),
+  }),
+  z.strictObject({
+    type: z
+      .literal('set_dependencies')
+      .describe('set_dependencies: replace what the task `task_id` depends on.'),
+    task_id: opTaskId,
+    depends_on: planTask.shape.depends_on.describe(
+      'The full list of task ids it depends on, at most 16; [] for none.',
+    ),
   }),
   /** due_on null takes the milestone's due day away. */
   z.strictObject({
-    type: z.literal('set_milestone'),
-    milestone_id: planId,
-    patch: z.strictObject({
-      title: planTitle.optional(),
-      due_on: calendarDay.nullable().optional(),
-    }),
+    type: z.literal('set_milestone').describe('set_milestone: change one milestone.'),
+    milestone_id: planId.describe('The id of the milestone in your plan.'),
+    patch: z
+      .strictObject({
+        title: planTitle.optional().describe('The new title, at most 80 characters.'),
+        due_on: calendarDay
+          .nullable()
+          .optional()
+          .describe('The due day, YYYY-MM-DD; null removes the day.'),
+      })
+      .describe('`title` and/or `due_on`.'),
+  }),
+] as const;
+const planLane = z.strictObject({
+  id: planId.describe('Short id (letters, digits, `_.-`) that tasks name in `lane`.'),
+  title: planTitle.describe('At most 80 characters.'),
+});
+const planPatchOp = z.discriminatedUnion('type', [
+  ...planChangeOps,
+  /** A proposal's new lane, which its tasks may name. */
+  z.strictObject({
+    type: z
+      .literal('add_lane')
+      .describe(
+        'add_lane: add a lane to your plan, so tasks this proposal adds can name it; give it before those tasks.',
+      ),
+    lane: planLane.describe('The new lane: `id` not used by another lane, and `title`.'),
   }),
 ]);
+// A plan edit adds no lane; update_board writes the lanes.
 const planEditOp = z.discriminatedUnion('type', [
-  ...planPatchOp.options,
-  z.strictObject({ type: z.literal('lock_order'), task_ids: z.array(planId) }),
-  z.strictObject({ type: z.literal('unlock_order') }),
+  ...planChangeOps,
   z.strictObject({
-    type: z.literal('resolve_edit'),
-    edit_id: str,
-    decision: z.enum(['apply', 'reject']),
-    reason: boardText.optional(),
+    type: z.literal('lock_order').describe("lock_order: the user's own; a lead's call is refused."),
+    task_ids: z.array(planId).describe('The task order to lock.'),
+  }),
+  z.strictObject({
+    type: z
+      .literal('unlock_order')
+      .describe("unlock_order: the user's own; a lead's call is refused."),
+  }),
+  z.strictObject({
+    type: z
+      .literal('resolve_edit')
+      .describe('resolve_edit: answer a user edit that still waits for you.'),
+    edit_id: str.describe('The edit_id the board update named.'),
+    decision: z
+      .enum(['apply', 'reject'])
+      .describe("apply to accept the user's edit, reject to turn it down."),
+    reason: boardText.optional().describe('Why, in under 400 characters.'),
   }),
 ]);
 /** The plan version a write was based on; a write based on an older one is refused. */
@@ -1131,51 +1337,86 @@ export type BackendProfile = z.infer<typeof backendProfileSchema>;
 export type UserConfig = z.infer<typeof userConfigSchema>;
 const improvementChange = z.discriminatedUnion('type', [
   z.strictObject({
-    type: z.literal('policy_change'),
-    param: workflowParam,
+    type: z.literal('policy_change').describe('policy_change: change one workflow parameter.'),
+    param: workflowParam.describe('The workflow parameter, as lead.workflow names it.'),
     /** The tier whose path changes; absent for a parameter that is not per tier. */
-    tier: z.enum(taskTiers).optional(),
-    to: z.unknown(),
+    tier: z
+      .enum(taskTiers)
+      .optional()
+      .describe('For path: the tier whose path changes; absent for other parameters.'),
+    to: z.unknown().describe('The value the parameter should take.'),
   }),
   z.strictObject({
-    type: z.literal('experience'),
+    type: z.literal('experience').describe('experience: a procedure to try in this project.'),
     /** Absent applies to every domain. */
-    domain: z.enum(taskDomains).optional(),
+    domain: z
+      .enum(taskDomains)
+      .optional()
+      .describe('The task domain it applies to; absent for every domain.'),
     /** Absent applies to every tier. */
-    tier: z.enum(taskTiers).optional(),
+    tier: z.enum(taskTiers).optional().describe('The tier it applies to; absent for every tier.'),
     /** Absent applies to every runtime. */
-    runtime: str.optional(),
+    runtime: str.optional().describe('The runtime it applies to; absent for every runtime.'),
     procedure: z
       .string()
       .min(1)
-      .refine((text) => new TextEncoder().encode(text).length <= 600, 'At most 600 bytes'),
-    countercondition: boardText.optional(),
+      .refine((text) => new TextEncoder().encode(text).length <= 600, 'At most 600 bytes')
+      .describe('What to do, at most 600 bytes, written so a session can follow it.'),
+    countercondition: boardText
+      .optional()
+      .describe('Optional: when the procedure does not apply, under 400 characters.'),
   }),
 ]);
+const boardNoteList = (text: string) => z.array(boardNote).max(16).describe(text);
 // MCP tools omit bound fields; the daemon checks references on the complete plan.
 export const boardPlanInputSchema = z.strictObject({
   project_id: str,
-  base_version: baseVersion,
-  headline: planTitle,
+  base_version: baseVersion.describe(
+    'The plan_version of your current plan from project_read; 0 before your first plan. A different number is refused with the current one.',
+  ),
+  headline: planTitle.describe("The plan's title on the board, at most 80 characters."),
   lanes: z
-    .array(z.strictObject({ id: planId, title: planTitle, fanout_reason: boardText.optional() }))
+    .array(
+      planLane.extend({
+        fanout_reason: boardText
+          .optional()
+          .describe('One sentence on why tasks of this lane run at the same time.'),
+      }),
+    )
     .min(1)
-    .max(16),
-  iterations: planIterations.default([]),
-  tasks: z.array(planTask).max(64),
+    .max(16)
+    .describe('1-16 lanes; give each request its own lane.'),
+  iterations: planIterations
+    .default([])
+    .describe(
+      'Optional time boxes: `id`, `title`, `starts_on` and `ends_on` as YYYY-MM-DD, start not after end.',
+    ),
+  tasks: z
+    .array(planTask)
+    .max(64)
+    .describe('Up to 64 tasks. Leaving out a task that exists removes it.'),
   milestones: z
     .array(
       z.strictObject({
-        id: planId,
-        title: planTitle,
-        criteria: z.array(boardText).min(1).max(12),
-        tasks: z.array(planId).min(1).max(64),
-        due_on: calendarDay.optional(),
+        id: planId.describe('Short id that tasks name in `milestone`.'),
+        title: planTitle.describe('At most 80 characters.'),
+        criteria: z
+          .array(boardText)
+          .min(1)
+          .max(12)
+          .describe('1-12 checkable statements of what must hold.'),
+        tasks: z.array(planId).min(1).max(64).describe('The ids of its tasks.'),
+        due_on: calendarDay.optional().describe('Optional due day, YYYY-MM-DD.'),
       }),
     )
-    .max(16),
-  risks: z.array(boardNote).max(16),
-  assumptions: z.array(boardNote).max(16),
+    .max(16)
+    .describe('Up to 16 milestones.'),
+  risks: boardNoteList(
+    'Up to 16 `{ text }`, each at most 400 characters: what could go wrong, and its effect.',
+  ),
+  assumptions: boardNoteList(
+    'Up to 16 `{ text }`: each decision you made for the user on an open point, so they can correct it.',
+  ),
 });
 
 const workflowLeafStep = z.strictObject({
@@ -1416,17 +1657,36 @@ export const visualSpecs = {
 };
 
 export const visualDrawInputSchema = z.strictObject({
-  title: z.string().min(1).max(120),
-  kind: z.enum(['vega-lite', 'kline', 'mermaid', 'graph', 'html', 'table']),
-  spec: z.unknown(),
+  title: z.string().min(1).max(120).describe('1-120 characters; the question the chart answers.'),
+  kind: z
+    .enum(['vega-lite', 'kline', 'mermaid', 'graph', 'html', 'table'])
+    .describe('vega-lite, graph, mermaid, table, kline or html.'),
+  spec: z
+    .unknown()
+    .describe(
+      'Depends on kind. vega-lite: a Vega-Lite JSON object, at most 512 KB, data inline (no data.url), transparent background, units labelled. graph: { nodes: [{ id, label, group? }], edges: [{ from, to, label? }], direction?: "LR" or "TB" }, 1-200 nodes with unique ids, at most 400 edges between existing nodes. mermaid: { source }, 1-20000 characters. table: { columns: [{ key, title, type: text, number or date }], rows: [{ key: value }], sort?: { key, direction } }. kline: { candles: [{ time, open, high, low, close, volume? }], lines?: [{ name, points: [{ time, value }] }] }, 1-5000 candles, at most 8 lines, time strictly increasing in one form (ISO date, ISO date-time or Unix seconds). html: { html }, one self-contained document with scripts, styles and data inline, no network; only when no other kind fits.',
+    ),
   source: z
     .string()
     .max(500)
     .regex(/^[^\r\n\u2028\u2029]*$/)
-    .optional(),
-  size: visualSize.optional(),
-  replaces: str.optional(),
-  pin: visualSize.optional(),
+    .optional()
+    .describe(
+      'Optional single line, at most 500 characters, naming the data file, command, URL or query.',
+    ),
+  size: visualSize
+    .optional()
+    .describe('S, M or L card height in the conversation; leave out for the default.'),
+  replaces: str
+    .optional()
+    .describe(
+      'The visual_id of an earlier chart from this session to redraw in place; its id and pin stay.',
+    ),
+  pin: visualSize
+    .optional()
+    .describe(
+      'S, M or L to put the chart on the project board; only when the user asks for it there.',
+    ),
 });
 
 /** Session event emitted after a visual is stored, including a failed kind spec. */
@@ -1526,7 +1786,12 @@ export const inputSchemas = {
   /** The user only; deleting the applied theme goes back to the default first. */
   'theme.delete': z.strictObject({ theme_id: str }),
   /** A session credential; opens url in the session's browser panel of the desktop window, returns BrowserPage. */
-  'browser.open': z.strictObject({ url: z.url({ protocol: /^https?$/ }).max(8192) }),
+  'browser.open': z.strictObject({
+    url: z
+      .url({ protocol: /^https?$/ })
+      .max(8192)
+      .describe("The http or https address to open in the session's browser panel."),
+  }),
   /** A session credential; returns the url, title and visible text of the session's browser panel page. */
   'browser.read': z.strictObject({}),
   /** A session credential; returns the url, title and a PNG of the session's browser panel page. */
@@ -1554,16 +1819,38 @@ export const inputSchemas = {
   /** A session credential; returns a BrowserPage with a PNG of the desktop window. */
   'app.screenshot': z.strictObject({}),
   /** A session credential; returns AppDom for the whole window or the first element selector matches. */
-  'app.dom': z.strictObject({ selector: z.string().min(1).max(200).optional() }),
+  'app.dom': z.strictObject({
+    selector: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe('A CSS selector; the first match is read. Absent reads the whole window.'),
+  }),
   /** Returns AppLogs, the last lines of the daemon log, only those containing grep when given. */
   'app.logs': z.strictObject({
-    lines: z.number().int().min(1).max(500).default(200),
-    grep: z.string().min(1).max(200).optional(),
+    lines: z
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .default(200)
+      .describe('How many of the last log lines to read, 1-500; default 200.'),
+    grep: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe('Keep only the lines that contain this text.'),
   }),
   /** Returns UserStyleRead. */
   'style.read': z.strictObject({}),
   /** A session credential or the user; replaces the user stylesheet and turns it on, returns UserStyleRead. */
-  'style.set': z.strictObject({ css: userStyleCss }),
+  'style.set': z.strictObject({
+    css: userStyleCss.describe(
+      'The whole stylesheet, at most 65536 characters. Select [data-debug-region] and other data-* attributes rather than class names. @import, url() other than data: URLs and backslash escapes are refused.',
+    ),
+  }),
   /** The user only; turns the user stylesheet on or off and keeps its CSS, returns UserStyleRead. */
   'style.enable': z.strictObject({ enabled: z.boolean() }),
   /** The user only; empties the user stylesheet, returns UserStyleRead. */
@@ -1583,8 +1870,16 @@ export const inputSchemas = {
     project_id: str,
     /** The lead whose plan the user edits; absent for a lead, which edits its own plan. */
     lead_session_id: str.optional(),
-    base_version: baseVersion,
-    ops: z.array(planEditOp).min(1).max(32),
+    base_version: baseVersion.describe(
+      'The plan_version from your last project_read; a different one is refused with the current number.',
+    ),
+    ops: z
+      .array(planEditOp)
+      .min(1)
+      .max(32)
+      .describe(
+        "1-32 changes applied in order, each with a `type`: add_task, remove_task, move_task, set_task, set_dependencies, set_milestone or set_iterations. lock_order and unlock_order are the user's own; a lead's call is refused.",
+      ),
   }),
   /** Takes back a user edit that still waits for the lead; the user only. */
   'board.plan.edit.withdraw': z.strictObject({
@@ -1595,12 +1890,23 @@ export const inputSchemas = {
   /** Holds a change to the calling lead's plan for the user's decision. */
   'board.plan.propose': z.strictObject({
     project_id: str,
-    base_version: baseVersion,
-    reason: boardText.max(280),
-    ops: z.array(planPatchOp).min(1).max(32),
+    base_version: baseVersion.describe('The plan_version from your last project_read.'),
+    reason: boardText
+      .max(280)
+      .describe('Why the user should accept it, under 280 characters; the card shows it.'),
+    ops: z
+      .array(planPatchOp)
+      .min(1)
+      .max(32)
+      .describe(
+        '1-32 changes, the same types as edit_board except lock_order, unlock_order and resolve_edit, and add_lane to add a lane.',
+      ),
   }),
   /** Takes back a proposal that still waits for the user; the lead only. */
-  'board.plan.proposal.withdraw': z.strictObject({ project_id: str, proposal_id: str }),
+  'board.plan.proposal.withdraw': z.strictObject({
+    project_id: str,
+    proposal_id: str.describe('The id of your proposal that still waits for the user.'),
+  }),
   /** Applies or rejects a pending lead proposal; the user only. */
   'board.plan.proposal.resolve': z.strictObject({
     project_id: str,
@@ -1616,47 +1922,69 @@ export const inputSchemas = {
     project_id: str,
     /** The lead whose plan the user acts on; absent for a lead, which acts on its own plan. */
     lead_session_id: str.optional(),
-    task_ids: z.array(planId).min(1).max(16),
+    task_ids: z
+      .array(planId)
+      .min(1)
+      .max(16)
+      .describe(
+        '1-16 ids of tasks in your plan. Give every task you want started; a non-resident lead gives a direct task alone.',
+      ),
   }),
   'task.handback': z.strictObject({
     lead_session_id: str,
     task_id: planId,
     reason: z.string(),
   }),
-  /** A message to the latest open session of a task in the calling lead's plan. */
+  /** A message to the latest open session of a task in the calling lead's plan, or to the part it names. */
   'task.message': z.strictObject({
     project_id: str,
-    task_id: planId,
-    text: z.string().min(1).max(2000),
+    task_id: planId.describe('The task whose open session gets the message.'),
+    part: partSelector.describe(
+      'For a parallel task: the number (1-4) or title of the part to message; absent reaches the latest open session.',
+    ),
+    text: z
+      .string()
+      .min(1)
+      .max(2000)
+      .describe(
+        '1-2000 characters, self-contained: the session has not seen your conversation. It arrives prefixed [Lead].',
+      ),
   }),
   /** Accepts the done report of a report task in the calling lead's plan. */
   'task.accept': z.strictObject({
     project_id: str,
-    task_id: planId,
-    evidence: z.string().min(1).max(2000),
+    task_id: planId.describe('The report task whose done report you accept.'),
+    evidence: z
+      .string()
+      .min(1)
+      .max(2000)
+      .describe('1-2000 characters: what in the report shows the task is done.'),
   }),
   /** Drops the start request of a task in the calling lead's plan and discards its open sessions. */
   'task.stop': z.strictObject({
     project_id: str,
     /** The lead whose plan the user acts on; absent for a lead, which acts on its own plan. */
     lead_session_id: str.optional(),
-    task_id: planId,
-    reason: boardText,
+    task_id: planId.describe('The task to stop.'),
+    reason: boardText.describe('Why it stops, under 400 characters; kept on the board.'),
   }),
   /** Interrupts the running turn of a task in the calling lead's plan, so a pending change takes effect now. */
   'task.interrupt': z.strictObject({
     project_id: str,
     /** The lead whose plan the user acts on; absent for a lead, which acts on its own plan. */
     lead_session_id: str.optional(),
-    task_id: planId,
+    task_id: planId.describe('The task whose running turn is interrupted.'),
+    part: partSelector.describe(
+      'For a parallel task: the number (1-4) or title of the part to interrupt; absent interrupts the latest open session.',
+    ),
   }),
   /** Stops one background task of the session working on a task in the calling lead's plan. */
   'task.background.stop': z.strictObject({
     project_id: str,
     /** The lead whose plan the user acts on; absent for a lead, which acts on its own plan. */
     lead_session_id: str.optional(),
-    task_id: planId,
-    background_id: str,
+    task_id: planId.describe('The task whose session runs the background task.'),
+    background_id: str.describe('The id of the background task, as the session reports it.'),
   }),
   'workflow.definition.set': z.strictObject({
     project_id: str,
@@ -1727,8 +2055,12 @@ export const inputSchemas = {
   /** A lead's proposal to change the workflow, resting on the retrospectives it names. */
   'improvement.propose': z.strictObject({
     project_id: str,
-    retrospective_ids: z.array(str).min(2).max(20),
-    change: improvementChange,
+    retrospective_ids: z
+      .array(str)
+      .min(2)
+      .max(20)
+      .describe('2-20 ids of the retrospectives the change rests on.'),
+    change: improvementChange.describe('The one change to the workflow you propose.'),
   }),
   /** The user's decision on an improvement. */
   'improvement.decide': z.discriminatedUnion('decision', [
@@ -1747,9 +2079,25 @@ export const inputSchemas = {
   ]),
   'task.report': z.strictObject({
     project_id: str,
-    kind: z.enum(['risk', 'task', 'dependency', 'done', 'requirement', 'blocked']),
-    text: boardText,
-    status: z.enum(['done', 'done_with_concerns']).optional(),
+    kind: z
+      .enum(['risk', 'task', 'dependency', 'done', 'requirement', 'blocked'])
+      .describe(
+        'requirement (the task as written cannot be done; holds the merge), blocked (you cannot go on), risk, task (a suggested follow-up task), dependency (an order between tasks), or done.',
+      ),
+    /** Up to 4000 characters for the done report of a report task; 400 for every other report. */
+    text: z
+      .string()
+      .min(1)
+      .max(4000)
+      .describe(
+        '1-400 characters; up to 4000 for the done report of a report task. For done: what changed or what you concluded, the acceptance commands you ran and their result, what is left open.',
+      ),
+    status: z
+      .enum(['done', 'done_with_concerns'])
+      .optional()
+      .describe(
+        'For kind done only: done (default) or done_with_concerns; name the concern in text.',
+      ),
     /** Required for a blocked report. */
     reason: z
       .enum([
@@ -1758,15 +2106,22 @@ export const inputSchemas = {
         'environment_problem',
         'conflicting_requirements',
       ])
-      .optional(),
+      .optional()
+      .describe(
+        'Required for kind blocked: missing_context, missing_permission, environment_problem or conflicting_requirements.',
+      ),
   }),
   'lead.ask': z.strictObject({
     project_id: str,
-    question: str,
-    options: z.array(str).min(2).max(4),
-    recommended: str,
-    assumption: str,
-    blocks: z.array(planId),
+    question: str.describe('One question the user can answer without reading your conversation.'),
+    options: z.array(str).min(2).max(4).describe('2-4 short answers.'),
+    recommended: str.describe('One of the options, the one you would choose.'),
+    assumption: str.describe(
+      'What you do until the user answers; the plan should already follow it.',
+    ),
+    blocks: z
+      .array(planId)
+      .describe('Ids of the tasks that must wait for the answer; [] when none.'),
   }),
   'lead.question.answer': z.strictObject({
     project_id: str,
@@ -1777,12 +2132,20 @@ export const inputSchemas = {
     answers: z.record(str, str).optional(),
   }),
   /** Reads one note of the calling lead's plan in full, by the id its digest names; read-only. */
-  'lead.note.read': z.strictObject({ project_id: str, note_id: str }),
+  'lead.note.read': z.strictObject({
+    project_id: str,
+    note_id: str.describe('The id a note digest names.'),
+  }),
   'project.baseline.start': z.strictObject({
     project_id: str,
-    runtime: str.optional(),
-    model: str.optional(),
-    effort: z.enum(EFFORT_LEVELS).optional(),
+    runtime: str
+      .optional()
+      .describe('The runtime of the baseline session; absent uses the default.'),
+    model: str.optional().describe('The model of the baseline session; absent uses the default.'),
+    effort: z
+      .enum(EFFORT_LEVELS)
+      .optional()
+      .describe('The reasoning effort of the baseline session; absent uses the default.'),
   }),
   /** The user only; starts a read-only introduction session and returns { session_id }. */
   'project.intro.start': z.strictObject({ project_id: str }),
@@ -1834,10 +2197,18 @@ export const inputSchemas = {
   'milestone.create': z.strictObject({ project_id: str, ...milestoneInput }),
   'milestone.revise': z.strictObject({ milestone_id: str, ...milestoneInput }),
   'milestone.accept': z.strictObject({
-    milestone_id: str,
-    evidence_refs: strings.min(1),
+    milestone_id: str.describe('The id of the milestone in your plan.'),
+    evidence_refs: strings
+      .min(1)
+      .describe('What shows the criteria hold: merged task ids, commits or report ids.'),
     /** Indices into the milestone's criteria; when given, every criterion must be in it. Absent accepts the whole milestone. */
-    criteria_checked: z.array(z.number().int()).max(256).optional(),
+    criteria_checked: z
+      .array(z.number().int())
+      .max(256)
+      .optional()
+      .describe(
+        'Indices of the criteria you checked; every criterion must be in it. Absent accepts the whole milestone.',
+      ),
   }),
   'project.open': z.strictObject({
     name: str,
@@ -2127,16 +2498,29 @@ export const inputSchemas = {
   'session.merge': z.strictObject({
     session_id: str.optional(),
     project_id: str.optional(),
-    task_id: planId.optional(),
+    task_id: planId
+      .optional()
+      .describe("The task whose session's merge stopped on files outside its scope."),
     /** Lands files outside the scope of the session's board task. */
-    allow_out_of_scope: z.boolean().optional(),
+    allow_out_of_scope: z.boolean().optional().describe('true to merge those files anyway.'),
     /** Why a lead lands files outside the task's scope; kept on the merge event. */
-    reason: boardText.optional(),
+    reason: boardText
+      .optional()
+      .describe('Why the task needs those files, under 400 characters; kept on the merge record.'),
   }),
   'session.gates.run': z.strictObject({ session_id: str, only_failed: z.boolean().optional() }),
   'session.gates.cancel': z.strictObject({ session_id: str }),
   'session.merge.cancel': z.strictObject({ session_id: str }),
-  'review.request': z.strictObject({ session_id: str, runtimes: strings.min(1) }),
+  'review.request': z.strictObject({
+    session_id: str.describe(
+      'The task session to review, from project_read; it must have commits.',
+    ),
+    runtimes: strings
+      .min(1)
+      .describe(
+        "The reviewing runtimes, at least one; choose runtimes other than the writer's when available.",
+      ),
+  }),
   'review.finding': z
     .strictObject({
       location: findingText,

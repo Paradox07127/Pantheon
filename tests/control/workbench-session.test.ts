@@ -777,6 +777,7 @@ it.each([
   expect(contract).toBeGreaterThan(guide);
   for (const text of [
     '## Paths outside your scope',
+    'Pantheon holds the merge until the lead answers, so a partial fix does not land as if it were complete.',
     '## When an acceptance command keeps failing',
     `- done: ${done}`,
     '- memory_search and memory_get:',

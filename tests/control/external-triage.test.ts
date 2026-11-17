@@ -151,7 +151,7 @@ it('hands an issue to the project triage session as a note that wakes it, openin
     },
   ]);
   const [wake] = f.wakes(triage.id);
-  expect(wake!.input).toContain('external: External request from github: Totals are wrong');
+  expect(wake!.input).toContain('What happened: External request from github: Totals are wrong');
   expect(wake!.input).toContain('The weekly total counts refunds twice.');
   expect(f.store.list<ExternalEvent>('external_events')).toMatchObject([
     { state: 'handled', session_id: triage.id },
@@ -208,4 +208,27 @@ it('holds the tasks of a request the user has not approved and starts them once 
         ),
     () => f.control.tick(),
   );
+});
+
+it('tells the lead once in a held wake, and once in the approval wake, what it may start', async () => {
+  const f = await triageFixture('approve');
+  f.report();
+  const triage = await f.handOn();
+  const held = f.wakes(triage.id)[0]!.input;
+  expect(held.match(/not approved/g)).toHaveLength(1);
+  expect(held).toContain(
+    'The user has not approved this request; plan its tasks and leave them unstarted.',
+  );
+
+  f.call('external.approve', { project_id: f.project.id, subject_key: SUBJECT });
+  f.later(MINUTE);
+  await eventually(
+    () => f.wakes(triage.id).length === 2,
+    () => f.control.tick(),
+  );
+  await f.settleTriage(triage.id);
+  const approved = f.wakes(triage.id).at(-1)!.input;
+  expect(approved).toContain('What happened: The user approved this request.');
+  expect(approved.match(/start (its|the tasks)/g)).toHaveLength(1);
+  expect(approved).toContain('The user approved this subject only; start its still-needed tasks.');
 });

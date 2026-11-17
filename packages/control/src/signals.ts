@@ -417,7 +417,7 @@ function deliver(
     plan = appendNote(
       ctx,
       plan,
-      { at: now, session_id: '', task_id: '', kind: 'signal', text },
+      { at: now, session_id: '', task_id: '', kind: 'signal', text, signal: via },
       cause,
     );
   for (const issue of issues)
@@ -509,7 +509,10 @@ timerHandlers.set(HOLD, (ctx, timer) => {
 /** The issue as lists show it, without its samples and signal times. */
 const listed = ({ samples: _samples, recent: _recent, ...issue }: SignalIssue) => issue;
 
-/** The project's signal issues for the user, newest signal first; open is every one not muted or resolved. */
+/**
+ * The project's signal issues for the user with their samples, newest signal first; open is every
+ * one not muted or resolved.
+ */
 export function signalList(
   ctx: ControlContext,
   p: Principal,
@@ -529,7 +532,7 @@ export function signalList(
             : issue.state === state)),
     )
     .sort((a, b) => b.last_seen - a.last_seen)
-    .map(listed);
+    .map(({ recent: _recent, ...issue }) => issue);
 }
 
 /** The user's issue of the command, checked for project access. */

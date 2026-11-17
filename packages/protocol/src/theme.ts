@@ -2,46 +2,68 @@ import { z } from 'zod';
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const roles = z.strictObject({
-  accent: hex.optional(),
-  danger: hex.optional(),
-  success: hex.optional(),
-  warning: hex.optional(),
-  review: hex.optional(),
+  accent: hex.optional().describe('The accent colour, #rrggbb.'),
+  danger: hex.optional().describe('Stays a red, #rrggbb.'),
+  success: hex.optional().describe('Stays a green, #rrggbb.'),
+  warning: hex.optional().describe('Stays an amber, #rrggbb.'),
+  review: hex.optional().describe('The review colour, #rrggbb.'),
 });
+const rolesField =
+  'Role colours (accent, danger, success, warning, review), each 3:1 on surface-1; at the top level for both modes or inside one mode.';
 const mode = z.strictObject({
-  anchors: z.strictObject({
-    'surface-0': hex,
-    'text-primary': hex,
-    'surface-1': hex.optional(),
-    'surface-2': hex.optional(),
-    'surface-3': hex.optional(),
-    'text-secondary': hex.optional(),
-    'text-muted': hex.optional(),
-  }),
-  roles: roles.optional(),
+  anchors: z
+    .strictObject({
+      'surface-0': hex.describe('The page background and the darkest surface, #rrggbb.'),
+      'text-primary': hex.describe(
+        'The strongest text, #rrggbb; needs 4.5:1 on surface-0, surface-1 and surface-2 (aim for 7:1).',
+      ),
+      'surface-1': hex.optional().describe('Optional surface, no darker than surface-0.'),
+      'surface-2': hex.optional().describe('Optional surface, no darker than surface-1.'),
+      'surface-3': hex.optional().describe('Optional surface, no darker than surface-2.'),
+      'text-secondary': hex.optional().describe('Optional secondary text, #rrggbb.'),
+      'text-muted': hex
+        .optional()
+        .describe('Optional muted text, #rrggbb; needs 3:1 (aim for 4.5:1).'),
+    })
+    .describe(
+      "Colours written #rrggbb. Tint the grays with the theme's hue and keep neighbouring surfaces close.",
+    ),
+  roles: roles.optional().describe(rolesField),
 });
 
 export const themeInputSchema = z
   .strictObject({
-    label: z.string().min(1).max(40),
-    light: mode.optional(),
-    dark: mode.optional(),
-    roles: roles.optional(),
+    label: z.string().min(1).max(40).describe('The theme name, 1-40 characters.'),
+    light: mode.optional().describe('The light mode: anchors and optional roles.'),
+    dark: mode
+      .optional()
+      .describe(
+        'The dark mode: anchors and optional roles; a second version of the idea rather than an inversion.',
+      ),
+    roles: roles.optional().describe(rolesField),
     backdrop: z
       .strictObject({
-        svg: z.string().min(1).max(131072),
+        svg: z
+          .string()
+          .min(1)
+          .max(131072)
+          .describe(
+            'One SVG drawn behind the app, at most 131072 characters, starting with <svg, that animates only with its own <style>; it may not contain script, foreignObject, iframe or image elements, event attributes such as onload=, href or url() other than #fragments, @import, backslash escapes or &# character references.',
+          ),
         glass: z
           .union([
             z.strictObject({
-              blur: z.number().min(0).max(40),
-              tint: hex,
-              opacity: z.number().min(0).max(1),
+              blur: z.number().min(0).max(40).describe('Blur radius, 0-40.'),
+              tint: hex.describe('Tint colour, #rrggbb.'),
+              opacity: z.number().min(0).max(1).describe('Tint opacity, 0-1.'),
             }),
             z.literal(false),
           ])
-          .optional(),
+          .optional()
+          .describe('{ blur, tint, opacity } for the panels over the backdrop, or false.'),
       })
-      .optional(),
+      .optional()
+      .describe('Optional { svg, glass? } drawn behind the app.'),
   })
   .refine((input) => input.light !== undefined || input.dark !== undefined, {
     message: 'give a light mode, a dark mode or both',

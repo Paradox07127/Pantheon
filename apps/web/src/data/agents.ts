@@ -17,8 +17,12 @@ import { useQuery } from './workbench-sessions';
 export type { AgentProfile, AgentProposal, AgentToolGroup };
 export type AgentRoutine = AgentProfile['routines'][number];
 export type EventSource = NonNullable<AgentProfile['listens']>[number];
-/** A profile as agent.list returns it, with the built-in role prompt of its template. */
-export type AgentListed = AgentProfile & { role_prompt: string };
+/** A profile as agent.list returns it, with the built-in role prompt of its template and what it works with. */
+export type AgentListed = AgentProfile & {
+  role_prompt: string;
+  effective_tools: AgentToolGroup[];
+  effective_listens: EventSource[];
+};
 /** The templates a new agent is created from; assistant and triage come with the project. */
 export type CreatedTemplate = 'ideas' | 'goals' | 'custom';
 
@@ -30,6 +34,7 @@ export interface AgentTemplateDefaults {
   tools: AgentToolGroup[];
   listens: EventSource[];
   routines: AgentRoutine[];
+  role_prompt: string;
 }
 
 /** A template's name in the interface's language. */

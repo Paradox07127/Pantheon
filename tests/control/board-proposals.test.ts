@@ -36,8 +36,8 @@ async function setup(planChanges: 'confirm' | 'default' = 'confirm') {
 
 const REQUEST = 'Ship the export API and a download button this week.';
 
-function leadOf(f: Fixture): Principal {
-  const lead = insertSession(f);
+function leadOf(f: Fixture, extra: Parameters<typeof insertSession>[1] = {}): Principal {
+  const lead = insertSession(f, extra);
   f.store.insert('session_turns', {
     id: id(),
     revision: 1,
@@ -220,6 +220,67 @@ it.each([
     expect(wakes(f, lead)).toBe(0);
   },
 );
+
+it.each([
+  { planChanges: 'default', stored: false },
+  { planChanges: 'default', stored: true },
+  { planChanges: 'confirm', stored: false },
+  { planChanges: 'confirm', stored: true },
+] as const)(
+  'lets a resident with an empty plan (plan changes $planChanges, row stored: $stored) propose a new lane with a task',
+  async ({ planChanges, stored }) => {
+    const { f } = await setup(planChanges);
+    const lead = leadOf(f, { title: 'Ideas', resident: { kind: 'ideas' } });
+    if (stored)
+      f.store.insert<BoardPlan>('board_plans', {
+        id: lead.session_id!,
+        revision: 1,
+        project_id: f.project.id,
+        headline: '',
+        lanes: [],
+        tasks: [],
+        plan_version: 0,
+        pending_edits: [],
+        risks: [],
+        assumptions: [],
+        inbox: [],
+        notified: {},
+        updated_at: f.store.now(),
+      });
+    const receipt = f.call<{ proposal_id: string; applied: boolean }>(
+      'board.plan.propose',
+      {
+        project_id: f.project.id,
+        base_version: 0,
+        reason: 'The user asked for a download button.',
+        ops: [
+          { type: 'add_lane', lane: { id: 'ideas', title: 'Ideas' } },
+          { type: 'add_task', task: { ...TASKS[1], lane: 'ideas' } },
+        ],
+      },
+      null,
+      lead,
+    );
+    expect(receipt.applied).toBe(planChanges === 'default');
+    if (planChanges === 'confirm') decide(f, lead, receipt.proposal_id, 'accept');
+    expect(planOf(f, lead)).toMatchObject({
+      lanes: [{ id: 'ideas', title: 'Ideas' }],
+      tasks: [{ id: 'ui', lane: 'ideas' }],
+      plan_version: 1,
+    });
+    expect(planOf(f, lead).pending_proposals).toMatchObject([{ status: 'accepted' }]);
+  },
+);
+
+it('refuses an add_lane op for a lane the plan has', async () => {
+  const { f } = await setup();
+  const lead = leadOf(f);
+  writePlan(f, lead);
+  expect(
+    failure(() => propose(f, lead, [{ type: 'add_lane', lane: { id: 'core', title: 'Again' } }]))
+      .code,
+  ).toBe('invalid_input');
+});
 
 it('holds a lead proposal without changing tasks and lists it in both plan views and needs-you', async () => {
   const { f, clock } = await setup();

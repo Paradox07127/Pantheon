@@ -187,7 +187,7 @@ The task contract below holds the task: the user's words, the goal, the scope an
 - Other sessions change other worktrees of this repository at the same time; do not revert changes you did not make.
 
 ## Paths outside your scope
-When the task needs a path outside its scope, do not change it; report kind requirement with the path and why, and end your turn. The lead widens the scope or changes the plan.
+When the task needs a path outside its scope, do not change it; report kind requirement with the path and why, and end your turn. Pantheon holds the merge until the lead answers, so a partial fix does not land as if it were complete. The lead widens the scope or changes the plan.
 
 ## When an acceptance command keeps failing
 When the same command still fails after three attempts to fix it, stop and report kind blocked, quoting the failing line of its output: reason environment_problem for a broken tool, service or dependency, conflicting_requirements when the goal and the command cannot both hold. When a command cannot pass as written, for example it names a file that does not exist, report kind requirement at once.

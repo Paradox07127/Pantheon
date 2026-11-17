@@ -159,9 +159,7 @@ it.each([
     await f.control.tick();
     expect(fromTracker(f, worker.id)).toHaveLength(1);
     const [wake] = fromTracker(f, lead.id);
-    expect(wake!.input).toContain(
-      `: blocked: The merge of the session is blocked. Reason: ${reason}`,
-    );
+    expect(wake!.input).toContain(`": The merge of the session is blocked. Reason: ${reason}`);
     expect(planOf(f, lead.id).notified).toEqual({ [worker.id]: 'blocked' });
   },
 );
@@ -198,7 +196,7 @@ it('hands a turn without commits back once, then tells the lead of the second', 
   expect(planOf(f, lead.id).handed_back).toEqual({ [worker.id]: ['no_changes'] });
   const wakes = fromTracker(f, lead.id);
   expect(wakes).toHaveLength(1);
-  expect(wakes[0]!.input).toContain(': no_changes: ');
+  expect(wakes[0]!.input).toContain('<note kind="no_changes"');
   expect(planOf(f, lead.id).notified).toEqual({ [worker.id]: 'no_changes' });
 });
 
@@ -319,7 +317,7 @@ it('tells the lead once when a running turn makes no progress for ten minutes', 
   const wakes = fromTracker(f, lead.id);
   expect(wakes).toHaveLength(1);
   expect(wakes[0]!.input).toContain(
-    ': stalled: The running turn of the session makes no progress. No progress for 11 minutes',
+    '": The running turn of the session makes no progress. No progress for 11 minutes',
   );
   expect(planOf(f, lead.id).alerted).toEqual({ [turn.id]: ['stalled'] });
   expect(current(f, worker.id).state).toBe('running');
@@ -364,7 +362,7 @@ it('tells the lead once when the same tool call fails three times in a row', asy
   const wakes = fromTracker(f, lead.id);
   expect(wakes).toHaveLength(1);
   expect(wakes[0]!.input).toContain(
-    ': looping: The running turn of the session repeats a failing tool call. Its last 3 calls of Bash failed, each with the input {"command":"pnpm test"}.',
+    '": The running turn of the session repeats a failing tool call. Its last 3 calls of Bash failed, each with the input {"command":"pnpm test"}.',
   );
 });
 
@@ -413,8 +411,8 @@ it('wakes the lead at once when a merge is blocked while merges wait', async () 
   await f.control.tick();
   const wakes = fromTracker(f, lead.id);
   expect(wakes).toHaveLength(1);
-  expect(wakes[0]!.input).toContain(': merged: ');
-  expect(wakes[0]!.input).toContain(': blocked: ');
+  expect(wakes[0]!.input).toContain('<note kind="merged"');
+  expect(wakes[0]!.input).toContain('<note kind="blocked"');
 });
 
 const acceptTask = (f: Fixture, leadId: string, taskId: string) =>
@@ -450,7 +448,7 @@ it('makes a report task done when its lead accepts the done report, so its miles
     sessionOf(f, worker.id, 'worker'),
   );
   const [wake] = fromTracker(f, lead.id);
-  expect(wake!.input).toContain(': done: Use CSV with a header row');
+  expect(wake!.input).toContain('sent a done report, status done: "Use CSV with a header row');
   await settle(f, lead);
 
   expect(acceptTask(f, lead.id, 'r')).toMatchObject({ id: 'r', state: 'done' });

@@ -130,12 +130,21 @@ it('tells the lead once when a task session merges', async () => {
   expect(told(f, lead.id)).toEqual([]);
 
   // No other task session runs or merges, so the merge wakes the lead without the merge window.
+  f.store.event('session.merged', current(f, worker.id), f.project.id, {
+    branch: 'main',
+    to_sha: 'c0ffee1',
+  });
   patch(f, worker.id, { state: 'closed', outcome: 'merged' });
   await f.control.tick();
   const turns = told(f, lead.id);
   expect(turns).toHaveLength(1);
   expect(turns[0]!.input).toContain('Serve exports over HTTP');
-  expect(turns[0]!.input).toContain('merged');
+  expect(turns[0]!.input).toContain(`session ${worker.id} merged into main at c0ffee1.`);
+  expect(f.store.kindEvents(f.project.id, ['lead.note_added']).at(-1)!.payload).toMatchObject({
+    kind: 'merged',
+    commit: 'c0ffee1',
+    source_branch: 'main',
+  });
   expect(planOf(f, lead.id)).toMatchObject({ inbox: [], notified: { [worker.id]: 'merged' } });
 
   await f.control.tick();
@@ -256,8 +265,8 @@ it('tells the lead when a task session fails or waits, and again after it waits 
   const text = told(f, lead.id)
     .map((turn) => turn.input)
     .join('\n');
-  expect(text.match(/: waiting:/g)).toHaveLength(2);
-  expect(text.match(/: failed:/g)).toHaveLength(1);
+  expect(text.match(/<note kind="waiting"/g)).toHaveLength(2);
+  expect(text.match(/<note kind="failed"/g)).toHaveLength(1);
   expect(text).toContain('Add a download button');
   expect(planOf(f, lead.id)).toMatchObject({
     inbox: [],
@@ -374,7 +383,9 @@ it('wakes an idle lead at once with a requirement report', async () => {
   const turns = told(f, lead.id);
   expect(turns).toHaveLength(1);
   expect(turns[0]).toMatchObject({ state: 'queued', delivery: 'pending' });
-  expect(turns[0]!.input).toContain(': requirement: The user asked for CSV but the goal says JSON');
+  expect(turns[0]!.input).toContain(
+    'reports a requirement: "The user asked for CSV but the goal says JSON',
+  );
   expect(planOf(f, lead.id).inbox).toEqual([]);
 });
 
@@ -442,7 +453,7 @@ it('tells the lead when the merge of a task session is blocked, with the reason'
   await f.control.tick();
   const turns = told(f, lead.id);
   expect(turns).toHaveLength(1);
-  expect(turns[0]!.input).toContain(': blocked:');
+  expect(turns[0]!.input).toContain('<note kind="blocked"');
   expect(turns[0]!.input).toContain('local_changes');
   expect(planOf(f, lead.id).notified).toEqual({ [worker.id]: 'blocked' });
 });
@@ -471,7 +482,7 @@ it('tells the lead when the latest turn of a task session fails, and again after
   const [first] = told(f, lead.id);
   expect(told(f, lead.id)).toHaveLength(1);
   expect(first!.input).toContain(
-    ': turn_failed: The latest turn of the session failed. Reason: provider overloaded',
+    '": The latest turn of the session failed. Reason: provider overloaded',
   );
   expect(planOf(f, lead.id).notified).toEqual({ [worker.id]: 'turn_failed' });
   await settle(f, lead);
@@ -493,7 +504,7 @@ it('tells the lead when the latest turn of a task session fails, and again after
   const text = told(f, lead.id)
     .map((turn) => turn.input)
     .join('\n');
-  expect(text.match(/: turn_failed:/g)).toHaveLength(2);
+  expect(text.match(/<note kind="turn_failed"/g)).toHaveLength(2);
   expect(text).toContain('Reason: context window exceeded');
   expect(planOf(f, lead.id)).toMatchObject({
     inbox: [],
@@ -537,7 +548,7 @@ it('reports a closed task session as ended even when its latest turn failed', as
   await f.control.tick();
   const turns = told(f, lead.id);
   expect(turns).toHaveLength(1);
-  expect(turns[0]!.input).toContain(': failed:');
+  expect(turns[0]!.input).toContain('<note kind="failed"');
   expect(turns[0]!.input).not.toContain('turn_failed');
   expect(planOf(f, lead.id).notified).toEqual({ [worker.id]: 'failed' });
 });
@@ -1011,7 +1022,7 @@ it.each([
   await f.control.tick();
   expect(fromTracker(f, worker.id)).toHaveLength(handbacks);
   expect(told(f, lead.id)[0]!.input).toContain(
-    ': blocked: The merge of the session is blocked. Reason: gate_failed',
+    '": The merge of the session is blocked. Reason: gate_failed',
   );
 });
 
@@ -1028,7 +1039,7 @@ it('tells the lead instead of handing back a failed gate whose last lines did no
 
   expect(fromTracker(f, worker.id)).toHaveLength(1);
   expect(told(f, lead.id)[0]!.input).toContain(
-    ': blocked: The merge of the session is blocked. Reason: gate_failed',
+    '": The merge of the session is blocked. Reason: gate_failed',
   );
 });
 
@@ -1060,7 +1071,7 @@ it('hands a turn without commits back once, then tells the lead when the next on
   expect(planOf(f, lead.id).handed_back).toEqual({ [worker.id]: ['no_changes'] });
   const wakes = told(f, lead.id);
   expect(wakes).toHaveLength(1);
-  expect(wakes[0]!.input).toContain(': no_changes: ');
+  expect(wakes[0]!.input).toContain('<note kind="no_changes"');
 });
 
 it('hands a blocked merge back with the contract its lead changed in the meantime', async () => {
@@ -1261,7 +1272,7 @@ it('tells the lead that a turn stopped at its wall-clock limit kept its changes 
 
   await f.control.tick();
   const [note] = told(f, lead.id);
-  expect(note!.input).toContain(': turn_failed: The latest turn of the session failed.');
+  expect(note!.input).toContain('": The latest turn of the session failed.');
   expect(note!.input).toContain('wall-clock time limit');
   expect(note!.input).toContain('uncommitted changes in its worktree are still there');
   expect(note!.input).toContain('another message to the session continues where it stopped');

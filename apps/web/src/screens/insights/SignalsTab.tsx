@@ -212,6 +212,7 @@ export function SignalsTab({ projectId }: { projectId: string }) {
     const Icon = SOURCE_ICONS[issue.source];
     const sent = sentTo(issue);
     const muted = mutedBy(issue).length;
+    const sample = issue.samples.at(-1);
     const history = [
       ...issue.history.map((entry) => ({ at: entry.at, text: stateName(entry.state) })),
       ...issue.routed.flatMap((entry) => {
@@ -282,6 +283,23 @@ export function SignalsTab({ projectId }: { projectId: string }) {
                 )}
             </dl>
           </section>
+          {sample && (
+            <section
+              className="sg-sec"
+              aria-label={t(
+                { id: 'insights.signals.sampleOf', defaultMessage: 'Sample, {source}' },
+                { source: sourceName(issue.source) },
+              )}
+            >
+              <div className="sg-sh">
+                <span className="cap">
+                  {t({ id: 'insights.signals.sample', defaultMessage: 'Sample' })}
+                </span>
+                <span className="sg-n sg-end">{sourceName(issue.source)}</span>
+              </div>
+              <pre className="sg-code">{sample}</pre>
+            </section>
+          )}
           {muted > 0 && (
             <section className="sg-sec" aria-labelledby="sg-muted-h">
               <div className="sg-sh">

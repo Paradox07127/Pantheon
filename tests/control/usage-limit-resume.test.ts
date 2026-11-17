@@ -281,7 +281,7 @@ it('tells the lead of a task session turn that failed for another reason', async
       .some(
         (turn) =>
           turn.origin === 'tracker' &&
-          turn.input.includes(': turn_failed: The latest turn of the session failed.'),
+          turn.input.includes('": The latest turn of the session failed.'),
       ),
   ).toBe(true);
 });

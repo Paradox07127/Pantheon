@@ -128,12 +128,13 @@ export function wakeAgent(
   kind: LeadNote['kind'],
   text: string,
   cause: string,
+  fields: Partial<LeadNote> = {},
 ): void {
   const resident = openAgent(ctx, profile, cause);
   const plan = appendNote(
     ctx,
     residentPlan(ctx, resident),
-    { at: ctx.store.now(), session_id: '', task_id: '', kind, text },
+    { at: ctx.store.now(), session_id: '', task_id: '', kind, text, ...fields },
     cause,
   );
   wakeLead(ctx, plan, cause);
@@ -152,7 +153,20 @@ timerHandlers.set(ROUTINE, (ctx, timer) => {
     profile = ctx.store.get<AgentProfile>('agents', timer.subject_id.slice(0, split)),
     routine = profile?.routines.find((each) => each.id === timer.subject_id.slice(split + 1));
   if (!profile || profile.archived_at || !routine?.enabled) return;
-  wakeAgent(ctx, profile, 'routine', routine.prompt, `timer:${timer.id}`);
+  // Routine ids are unique within the profile, whose residents' plans hold its notes.
+  const last = ctx.store
+    .kindEvents(profile.project_id, ['lead.note_added'])
+    .filter(
+      (event) =>
+        ctx.store.get<Session>('sessions', event.aggregate_id)?.resident?.agent_id === profile.id,
+    )
+    .map((event) => event.payload as LeadNote)
+    .filter((note) => note.kind === 'routine' && note.routine_id === routine.id)
+    .at(-1);
+  wakeAgent(ctx, profile, 'routine', routine.prompt, `timer:${timer.id}`, {
+    routine_id: routine.id,
+    ...(last ? { last_run_at: last.at } : {}),
+  });
   return nextRun(routine, ctx.store.now());
 });
 

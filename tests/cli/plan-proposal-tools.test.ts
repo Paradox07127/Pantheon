@@ -45,8 +45,8 @@ it('offers plain proposal tools to the lead with bound project and revision and 
   const tools = (await client.listTools()).tools;
   const propose = tools.find((tool) => tool.name === 'propose_board')!;
   const withdraw = tools.find((tool) => tool.name === 'withdraw_board_proposal')!;
-  expect(propose.description).toContain('edit_board');
-  expect(propose.description).toContain("user's to decide");
+  expect(propose.description).toContain('card for the user');
+  expect(propose.description).toContain('withdraw_board_proposal');
   expect(Object.keys(propose.inputSchema.properties ?? {})).toEqual([
     'base_version',
     'reason',
