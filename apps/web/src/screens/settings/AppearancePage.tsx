@@ -48,6 +48,7 @@ import {
   type Swatches,
 } from '../../data/theme';
 import { sessionTitle } from '../../data/transcript';
+import { clearUserStyle, setUserStyleEnabled, useUserStyle } from '../../data/user-style';
 import { t } from '../../i18n';
 import { keyText } from '../../lib/shortcuts';
 import { resolveTheme, useShell } from '../../store';
@@ -206,6 +207,7 @@ export function AppearancePage() {
           {active && !activeBuiltIn && (
             <SavedThemeRow key={active.id} id={active.id} label={active.label} />
           )}
+          <UserStyleRow />
         </div>
       </Section>
       <Section title={t({ id: 'settings.appearance.text', defaultMessage: 'Text' })}>
@@ -630,6 +632,90 @@ function SavedThemeRow({ id, label }: { id: string; label: string }) {
                 onClick={() => void remove()}
               >
                 {t({ id: 'settings.appearance.deleteThemeConfirm', defaultMessage: 'Delete' })}
+              </button>
+            </div>
+          </AlertDialog.Popup>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+    </Row>
+  );
+}
+
+/** The user stylesheet a session wrote: on or off, its rule count and, once confirmed, clearing it. */
+function UserStyleRow() {
+  const style = useUserStyle();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!style?.css) return null;
+  const label = t({ id: 'settings.appearance.userStyle', defaultMessage: 'User styles' });
+  const enable = async (enabled: boolean) => {
+    const result = await setUserStyleEnabled(enabled);
+    if (!result.ok) toast({ title: failureText(result.error), kind: 'failure' });
+  };
+  const clear = async () => {
+    setBusy(true);
+    const result = await clearUserStyle();
+    setBusy(false);
+    if (result.ok) setConfirming(false);
+    else toast({ title: failureText(result.error), kind: 'failure' });
+  };
+  return (
+    <Row label={label}>
+      <span className="mu">
+        {t(
+          {
+            id: 'settings.appearance.userStyleRules',
+            defaultMessage: '{count, plural, one {# rule} other {# rules}}',
+          },
+          { count: style.rules },
+        )}
+      </span>
+      <input
+        type="checkbox"
+        className="ps-sw"
+        aria-label={label}
+        checked={style.enabled}
+        onChange={(e) => void enable(e.target.checked)}
+      />
+      <button type="button" className="btn sm dng" onClick={() => setConfirming(true)}>
+        {t({ id: 'settings.appearance.clearUserStyle', defaultMessage: 'Clear' })}
+      </button>
+      <AlertDialog.Root
+        open={confirming}
+        onOpenChange={(next) => {
+          if (!next && !busy) setConfirming(false);
+        }}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Backdrop className="pj-scrim" />
+          <AlertDialog.Popup className="pj-dlg pj-rm pop">
+            <div className="pj-dh">
+              <AlertDialog.Title className="pj-dt">
+                {t({
+                  id: 'settings.appearance.clearUserStyleTitle',
+                  defaultMessage: 'Clear the user styles?',
+                })}
+              </AlertDialog.Title>
+            </div>
+            <AlertDialog.Description className="pj-rm-body">
+              {t({
+                id: 'settings.appearance.clearUserStyleBody',
+                defaultMessage: 'The stylesheet is deleted for good. This cannot be undone.',
+              })}
+            </AlertDialog.Description>
+            <div className="pj-df">
+              <span style={{ flex: 1 }} />
+              <AlertDialog.Close className="btn" disabled={busy}>
+                {t({ id: 'sessions.parts.cancel', defaultMessage: 'Cancel' })}
+              </AlertDialog.Close>
+              <button
+                type="button"
+                className="btn dng"
+                disabled={busy}
+                aria-disabled={busy || undefined}
+                onClick={() => void clear()}
+              >
+                {t({ id: 'settings.appearance.clearUserStyleConfirm', defaultMessage: 'Clear' })}
               </button>
             </div>
           </AlertDialog.Popup>

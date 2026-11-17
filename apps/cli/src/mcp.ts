@@ -17,6 +17,7 @@ import {
   prettifyError,
   sessionTools,
   coordinationTools,
+  appDebugTools,
   BROWSER_TEXT_LIMIT,
   type BrowserPage,
   type Principal,
@@ -40,6 +41,7 @@ type Identity = {
   story_id?: string;
   extension_runtimes?: string[];
   allowed_tool_names?: string[];
+  app_debug?: true;
 };
 
 type ToolCommand =
@@ -128,6 +130,18 @@ const descriptions: Record<ToolCommand, string> = {
     "Read the page open in this session's browser panel: its url, title and visible text, at most 50000 characters, noting when the text was cut. Open a page with browser_open first, or read the one the user opened.",
   'browser.screenshot':
     "Take a PNG screenshot of the page open in this session's browser panel, with its url and title. Open a page with browser_open first, or capture the one the user opened.",
+  'app.errors':
+    'Read the recent errors the running Pantheon desktop app recorded, as JSON objects with their messages, stacks and context. Fails when no desktop window is connected.',
+  'app.screenshot':
+    'Take a PNG screenshot of the running Pantheon desktop app window, with its url and title. Fails when no desktop window is connected.',
+  'app.dom':
+    'Read the HTML of the running Pantheon desktop app window, or of the first element the CSS selector (at most 200 characters) matches, and the named regions of the window with their rectangles. Regions are the [data-debug-region] elements. Fails when no desktop window is connected.',
+  'app.logs':
+    'Read the last lines of the Pantheon daemon log: lines (1–500, default 200) of them, only those containing grep (at most 200 characters) when given. Returns no lines while the log does not exist.',
+  'style.read':
+    'Read the user stylesheet the Pantheon app applies over its own styles: css, enabled, the number of rules and the revision.',
+  'style.set':
+    'Replace the user stylesheet the Pantheon app applies over its own styles with css (at most 65536 characters) and turn it on; the app shows it at once. Read style_read first and send the whole stylesheet. Select [data-debug-region] and other data-* attributes rather than class names. @import, url() other than data: URLs and backslash escapes are refused. The user can turn it off in Settings > Appearance. Returns the stylesheet as style_read does.',
 };
 
 const INVENTORY_TOOL = 'project_extensions_inventory';
@@ -175,13 +189,21 @@ const storyBound = (type: CommandType) =>
   type === 'change_story.submit' || type === 'range_story.submit';
 
 const browserTool = (type: CommandType) =>
-  type === 'browser.open' || type === 'browser.read' || type === 'browser.screenshot';
+  type === 'browser.open' ||
+  type === 'browser.read' ||
+  type === 'browser.screenshot' ||
+  type === 'app.errors' ||
+  type === 'app.screenshot' ||
+  type === 'app.dom';
 // The daemon waits 30 s for the desktop window and answers before this.
 const BROWSER_WAIT_MS = 35_000;
 
-function browserContent(type: CommandType, page: BrowserPage) {
+function browserContent(type: CommandType, answer: unknown) {
+  if (type === 'app.errors' || type === 'app.dom')
+    return [{ type: 'text' as const, text: JSON.stringify(answer) }];
+  const page = answer as BrowserPage;
   const heading = `URL: ${page.url}\nTitle: ${page.title}`;
-  if (type === 'browser.screenshot')
+  if (type === 'browser.screenshot' || type === 'app.screenshot')
     return [
       { type: 'image' as const, data: page.png ?? '', mimeType: 'image/png' },
       { type: 'text' as const, text: heading },
@@ -222,6 +244,9 @@ const boundRevision = (type: CommandType) =>
   type === 'lead.ask' ||
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
+  type === 'app.logs' ||
+  type === 'style.read' ||
+  type === 'style.set' ||
   browserTool(type);
 
 // Submits after which the session ends its turn; other write receipts carry ids the next call needs.
@@ -321,8 +346,10 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
     Object.entries({
       ...sessionTools[identity.principal.role as keyof typeof sessionTools],
       ...(identity.allowed_tool_names ? coordinationTools : {}),
-    }).filter(
-      ([, type]) => !identity.allowed_tool_names || identity.allowed_tool_names.includes(type),
+    }).filter(([, type]) =>
+      identity.allowed_tool_names
+        ? identity.allowed_tool_names.includes(type)
+        : identity.app_debug || !(Object.values(appDebugTools) as string[]).includes(type),
     ),
   ) as Record<string, CommandType>;
   const boundInputs: Record<string, (typeof boundFields)[number][]> = {};
@@ -474,7 +501,7 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
           command(current.principal.id, type, input, null),
           BROWSER_WAIT_MS,
         );
-        return { content: browserContent(type, answer.receipt as BrowserPage) };
+        return { content: browserContent(type, answer.receipt) };
       }
       const result = await send(
         command(

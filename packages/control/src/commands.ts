@@ -22,6 +22,7 @@ import { improvementHandlers } from './improvements.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
 import { themeHandlers } from './theme.js';
+import { styleHandlers } from './user-style.js';
 import { appSettingsHandlers } from './app-settings.js';
 import { deviceHandlers } from './devices.js';
 import { externalEventHandlers } from './external-events.js';
@@ -52,6 +53,7 @@ export const handlers: Handlers = {
   ...externalEventHandlers,
   ...visualHandlers,
   ...themeHandlers,
+  ...styleHandlers,
 };
 
 export const preparers: Preparers = {

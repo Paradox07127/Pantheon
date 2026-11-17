@@ -219,6 +219,15 @@ const browserTools = {
   browser_read: 'browser.read',
   browser_screenshot: 'browser.screenshot',
 } as const;
+/** The tools that read the running app and change its user stylesheet; only app_debug sessions get them. */
+export const appDebugTools = {
+  app_errors: 'app.errors',
+  app_screenshot: 'app.screenshot',
+  app_dom: 'app.dom',
+  app_logs: 'app.logs',
+  style_read: 'style.read',
+  style_set: 'style.set',
+} as const;
 export const sessionTools = {
   reviewer: { ...memoryTools, review_finding: 'review.finding' },
   planner: {
@@ -227,6 +236,7 @@ export const sessionTools = {
     draw: 'visual.draw',
     theme: 'theme.set',
     ...browserTools,
+    ...appDebugTools,
   },
   lead: {
     ...memoryTools,
@@ -253,6 +263,7 @@ export const sessionTools = {
     draw: 'visual.draw',
     theme: 'theme.set',
     ...browserTools,
+    ...appDebugTools,
   },
   worker: {
     ...memoryTools,
@@ -261,6 +272,7 @@ export const sessionTools = {
     draw: 'visual.draw',
     theme: 'theme.set',
     ...browserTools,
+    ...appDebugTools,
   },
 } as const;
 
@@ -296,6 +308,12 @@ export const leadToolEffects = {
   browser_open: 'write',
   browser_read: 'read',
   browser_screenshot: 'read',
+  app_errors: 'read',
+  app_screenshot: 'read',
+  app_dom: 'read',
+  app_logs: 'read',
+  style_read: 'read',
+  style_set: 'write',
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
 
 /** Extra tools exist only for daemon-created, purpose-bound project sessions. */
@@ -386,6 +404,50 @@ const browserPage = z.strictObject({
 });
 /** What a browser tool returns about the session's browser panel page. */
 export type BrowserPage = z.infer<typeof browserPage>;
+/** The most characters of HTML an app_dom answer carries. */
+export const APP_DOM_LIMIT = 100_000;
+const appErrors = z.array(z.record(z.string(), z.json())).max(200);
+/** The recent errors the app window recorded, as it records them. */
+export type AppErrors = z.infer<typeof appErrors>;
+const appDom = z.strictObject({
+  html: z.string().max(APP_DOM_LIMIT),
+  regions: z
+    .array(
+      z.strictObject({
+        name: z.string().max(200),
+        rect: z.strictObject({
+          x: z.number(),
+          y: z.number(),
+          width: z.number(),
+          height: z.number(),
+        }),
+      }),
+    )
+    .max(500),
+});
+/** The HTML of the app window or of one selector in it, and the window's named regions. */
+export type AppDom = z.infer<typeof appDom>;
+/** The most characters of the user stylesheet. */
+export const USER_STYLE_LIMIT = 65_536;
+/** Why the app may not apply this stylesheet: it would load something from outside. */
+export function userStyleProblems(css: string): string[] {
+  const problems: string[] = [];
+  if (/@import/i.test(css)) problems.push('stylesheet uses @import');
+  for (const match of css.matchAll(/url\(\s*["']?\s*([^)"'\s]*)/gi))
+    if (!/^data:/i.test(match[1]!))
+      problems.push(`stylesheet url(${match[1]}) must be a data: URL`);
+  // image-set() takes a plain string URL, which the url( check above does not see.
+  if (/image-set\(/i.test(css)) problems.push('stylesheet uses image-set()');
+  // Escapes can spell @import or url( past the checks above.
+  if (css.includes('\\')) problems.push('stylesheet contains a backslash escape');
+  return problems;
+}
+const userStyleCss = z
+  .string()
+  .max(USER_STYLE_LIMIT)
+  .superRefine((css, ctx) => {
+    for (const message of userStyleProblems(css)) ctx.addIssue({ code: 'custom', message });
+  });
 const milestoneInput = {
   title: str,
   required_sessions: strings.min(1),
@@ -1355,16 +1417,43 @@ export const inputSchemas = {
   'browser.read': z.strictObject({}),
   /** A session credential; returns the url, title and a PNG of the session's browser panel page. */
   'browser.screenshot': z.strictObject({}),
-  /** The user only; the desktop window's answer to the browser request named by request_id. */
+  /**
+   * The user only; the desktop window's answer to the browser request named by request_id:
+   * page for open, read, screenshot and app_screenshot, errors for app_errors, dom for app_dom.
+   */
   'browser.result': z
     .strictObject({
       request_id: str,
       page: browserPage.optional(),
+      errors: appErrors.optional(),
+      dom: appDom.optional(),
       error: z.strictObject({ code: str, message: z.string().max(65536) }).optional(),
     })
-    .refine((answer) => (answer.page === undefined) !== (answer.error === undefined), {
-      message: 'Give either page or error',
-    }),
+    .refine(
+      (answer) =>
+        [answer.page, answer.errors, answer.dom, answer.error].filter((part) => part !== undefined)
+          .length === 1,
+      { message: 'Give one of page, errors, dom or error' },
+    ),
+  /** A session credential; returns AppErrors, the recent errors of the desktop window. */
+  'app.errors': z.strictObject({}),
+  /** A session credential; returns a BrowserPage with a PNG of the desktop window. */
+  'app.screenshot': z.strictObject({}),
+  /** A session credential; returns AppDom for the whole window or the first element selector matches. */
+  'app.dom': z.strictObject({ selector: z.string().min(1).max(200).optional() }),
+  /** Returns AppLogs, the last lines of the daemon log, only those containing grep when given. */
+  'app.logs': z.strictObject({
+    lines: z.number().int().min(1).max(500).default(200),
+    grep: z.string().min(1).max(200).optional(),
+  }),
+  /** Returns UserStyleRead. */
+  'style.read': z.strictObject({}),
+  /** A session credential or the user; replaces the user stylesheet and turns it on, returns UserStyleRead. */
+  'style.set': z.strictObject({ css: userStyleCss }),
+  /** The user only; turns the user stylesheet on or off and keeps its CSS, returns UserStyleRead. */
+  'style.enable': z.strictObject({ enabled: z.boolean() }),
+  /** The user only; empties the user stylesheet, returns UserStyleRead. */
+  'style.clear': z.strictObject({}),
   'project.read': z.strictObject({ project_id: str }),
   'board.plan.update': boardPlanInputSchema.refine(
     (plan) =>
@@ -2176,6 +2265,8 @@ export const querySchemas = {
   'theme.list': z.strictObject({}),
   /** ThemeRead; the user only. */
   'theme.get': z.strictObject({ theme_id: str }),
+  /** UserStyleRead; the user only. */
+  'style.read': z.strictObject({}),
   /** BackendSummary[]. */
   'backend.list': z.strictObject({}),
   /** ImportCandidates. */
@@ -2229,6 +2320,25 @@ export interface ThemeSetReceipt {
 export interface ThemeAppliedPayload {
   theme_id: string | null;
   previous_theme_id?: string;
+  by_session_id?: string;
+}
+/** The app.logs receipt; empty while the daemon log does not exist. */
+export interface AppLogs {
+  lines: string[];
+}
+/** GET /v1/style.read and the style commands' receipt; revision 0 before the first change. */
+export interface UserStyleRead {
+  css: string;
+  enabled: boolean;
+  /** The blocks the stylesheet opens, nested ones included. */
+  rules: number;
+  revision: number;
+}
+/** Event style.changed, after every change of the user stylesheet. */
+export interface StyleChangedPayload {
+  revision: number;
+  enabled: boolean;
+  rules: number;
   by_session_id?: string;
 }
 /** GET /v1/theme.list; the built-in themes, then the saved ones newest first, swatches from the light mode when the theme has one. */

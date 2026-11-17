@@ -48,6 +48,21 @@
   </head>
   <body class="pt" spellcheck="false">
     <div id="root"></div>
+    <script>
+      // The head's stylesheets are all in by now, so the user's rules come after them; App keeps it in step.
+      (function () {
+        var css = null;
+        try {
+          css = localStorage.getItem('pantheon.userStyle.v1');
+        } catch (e) {}
+        if (css) {
+          var style = document.createElement('style');
+          style.id = 'pt-user-style';
+          style.textContent = css;
+          document.head.append(style);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

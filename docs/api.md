@@ -255,6 +255,10 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `app.dom` | `selector?`: string | app_dom (planner), app_dom (lead), app_dom (worker) |
+| `app.errors` | — | app_errors (planner), app_errors (lead), app_errors (worker) |
+| `app.logs` | `lines?`: integer<br>`grep?`: string | app_logs (planner), app_logs (lead), app_logs (worker) |
+| `app.screenshot` | — | app_screenshot (planner), app_screenshot (lead), app_screenshot (worker) |
 | `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean<br>`baseline_range_story?`: boolean |  |
 
 ### approval
@@ -281,7 +285,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `browser.open` | `url`: string | browser_open (planner), browser_open (lead), browser_open (worker) |
 | `browser.read` | — | browser_read (planner), browser_read (lead), browser_read (worker) |
-| `browser.result` | `request_id`: string<br>`page?`: object<br>`error?`: object |  |
+| `browser.result` | `request_id`: string<br>`page?`: object<br>`errors?`: object[]<br>`dom?`: object<br>`error?`: object |  |
 | `browser.screenshot` | — | browser_screenshot (planner), browser_screenshot (lead), browser_screenshot (worker) |
 
 ### change_story
@@ -551,6 +555,15 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.steer` | `session_id`: string<br>`input`: string<br>`refs?`: (object \| object)[]<br>`attachments?`: string[]<br>`skills?`: object[]<br>`app?`: object |  |
 | `session.unarchive` | `session_id`: string |  |
 
+### style
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `style.clear` | — |  |
+| `style.enable` | `enabled`: boolean |  |
+| `style.read` | — | style_read (planner), style_read (lead), style_read (worker) |
+| `style.set` | `css`: string | style_set (planner), style_set (lead), style_set (worker) |
+
 ### task
 
 | type | input | MCP 工具 |
@@ -705,6 +718,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `session.tool_image` | `session_id`: string<br>`hash`: string |
 | `session.trace` | `project_id`: string<br>`lane_key`: string<br>`turn?`: string |
 | `session.turn_diff` | `session_id`: string<br>`turn_id`: string |
+| `style.read` | — |
 | `symbols.search` | `project_id`: string<br>`session_id?`: string<br>`q`: string |
 | `task.trace` | `project_id`: string<br>`lead_session_id`: string<br>`task_id`: string |
 | `theme.get` | `theme_id`: string |

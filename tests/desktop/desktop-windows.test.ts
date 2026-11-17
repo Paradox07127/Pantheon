@@ -1420,6 +1420,8 @@ describe('Help and About menus', () => {
         '键盘快捷键',
         '打开日志文件夹',
         '复制诊断信息',
+        '调试视图…',
+        '关闭用户样式',
         ...(platform === 'darwin' ? [] : ['关于 Pantheon']),
       ]);
       const appItems = menu[0]!.submenu as MenuItemConstructorOptions[];
@@ -1437,6 +1439,17 @@ describe('Help and About menus', () => {
       expect(main.webContents.sent).toEqual([]);
     },
   );
+
+  it('turns user styles off in the focused window and opens the debug view in the main one', async () => {
+    const { main, call, windows, focus, click } = await startMain('darwin');
+    await call(main, 'pantheon:openWindow', sessionRequest);
+    const session = windows[1]!;
+    focus(session);
+    click('关闭用户样式');
+    click('调试视图…');
+    expect(session.webContents.sent).toEqual([['pantheon:menu', 'disable-user-style']]);
+    expect(main.webContents.sent).toEqual([['pantheon:menu', 'debug-view']]);
+  });
 
   it.each(['darwin', 'win32', 'linux'] as const)(
     'gives the About panel the app name, version and chosen icon on %s',

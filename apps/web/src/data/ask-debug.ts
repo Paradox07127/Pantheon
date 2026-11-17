@@ -78,7 +78,8 @@ async function debugSession(projectId: string): Promise<Session | null> {
 
 /**
  * Sends the error, with what the app knows around it, to the Pantheon repository's debug session,
- * opening one when there is none; copies the report where no debug session can reach this app.
+ * else to a read-only one in the current project, opening one when there is none; copies the report
+ * when there is neither.
  * False when the upload or the send failed, so the report is neither sent nor copied.
  */
 export async function askDebugAgent({
@@ -95,26 +96,30 @@ export async function askDebugAgent({
   images?: readonly string[];
 }): Promise<boolean> {
   const prompt = await debugPrompt(title, detail, error);
+  const board = useBoard.getState().board;
   const target = window.pantheon ? await debugTarget() : null;
-  if (!target) {
-    await copied(prompt);
-    toast({
-      title: t({ id: 'data.askDebug.copied', defaultMessage: 'Copied the error report' }),
-    });
-    return true;
-  }
-  const project = useBoard.getState().board?.projects.find((p) => p.roots[0] === target.repo_root);
+  const repo = target && board?.projects.find((p) => p.roots[0] === target.repo_root);
+  // Without the Pantheon repository, a read-only session in the user's own project looks at the app.
+  const current = window.pantheon
+    ? currentProject(board, useCurrentProject.getState().projectId)
+    : null;
+  const project = repo || current;
+  const inPlace = !repo;
   if (!project) {
     await copied(prompt);
-    toast({
-      title: t({
-        id: 'data.askDebug.noProject',
-        defaultMessage:
-          'Add the Pantheon repository as a project to ask an agent; the report was copied',
-      }),
-      kind: 'failure',
-      askAgent: false,
-    });
+    toast(
+      target
+        ? {
+            title: t({
+              id: 'data.askDebug.noProject',
+              defaultMessage:
+                'Add the Pantheon repository as a project to ask an agent; the report was copied',
+            }),
+            kind: 'failure',
+            askAgent: false,
+          }
+        : { title: t({ id: 'data.askDebug.copied', defaultMessage: 'Copied the error report' }) },
+    );
     return true;
   }
   const attachments: string[] = [];
@@ -156,13 +161,15 @@ export async function askDebugAgent({
           project_id: project.id,
           input: prompt,
           purpose: 'app_debug',
+          // The daemon holds an in-place debug session in plan mode.
+          ...(inPlace ? { workspace: 'in_place' } : {}),
           runtime,
           ...(attachments.length ? { attachments } : {}),
           ...(defaults?.runtime === runtime
             ? {
                 ...(defaults.model ? { model: defaults.model } : {}),
                 ...(defaults.effort ? { effort: defaults.effort } : {}),
-                permission_mode: defaults.permission_mode,
+                ...(inPlace ? {} : { permission_mode: defaults.permission_mode }),
               }
             : {}),
         },

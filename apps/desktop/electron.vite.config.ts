@@ -84,7 +84,11 @@ export * as ReactFlow from '@xyflow/react';
     resolve: { alias: { '@': path.join(webRoot, 'src') } },
     define: { __WEB_VERSION__: JSON.stringify(webVersion) },
     // electron-vite turns minify off for the renderer unless it is set here.
-    build: { minify: true, rolldownOptions: { input: path.join(webRoot, 'index.html') } },
+    build: {
+      minify: true,
+      // Component names stay readable in a packaged build's stacks and debug reports.
+      rolldownOptions: { input: path.join(webRoot, 'index.html'), output: { keepNames: true } },
+    },
     plugins: [sourceLocations(path.resolve(webRoot, '../..')), react(), tailwindcss()],
   },
 });

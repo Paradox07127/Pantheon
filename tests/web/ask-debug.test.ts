@@ -19,6 +19,7 @@ vi.mock('@/components/Toast', () => ({ toast: vi.fn(() => 'toast') }));
 import { appErrors, captureAppErrors, recordAppError } from '@/data/app-errors';
 import { askDebugAgent } from '@/data/ask-debug';
 import { runCommand } from '@/data/commands';
+import { useCurrentProject } from '@/data/current-project';
 import { toast } from '@/components/Toast';
 
 const REPO = '/work/pantheon';
@@ -70,14 +71,17 @@ beforeEach(() => {
             permission_mode: 'auto',
           },
         },
+        { id: 'shop', roots: ['/work/shop'], session_defaults: { runtime: 'claude' } },
       ],
       sessions: [
         { id: 'debug-live', state: 'open', revision: 4 },
         { id: 'debug-archived', state: 'open', revision: 2 },
+        { id: 'shop-diagnosis', state: 'open', revision: 3 },
       ],
     },
     refresh: vi.fn(),
   };
+  useCurrentProject.setState({ projectId: null });
   vi.mocked(toast).mockClear();
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -85,20 +89,67 @@ afterEach(() => vi.unstubAllGlobals());
 describe('asking the debug agent', () => {
   it.each([
     {
-      name: 'copies the report without a debug target',
+      name: 'copies the report without a debug target or a current project',
       target: null,
+      current: null,
       sessions: [],
       expected: { copied: true, command: null, kind: 'result' },
     },
     {
-      name: 'copies the report when no project holds the repository',
+      name: 'copies the report when no project holds the repository and none is current',
       target: { repo_root: '/elsewhere' },
+      current: null,
       sessions: [],
       expected: { copied: true, command: null, kind: 'failure' },
     },
     {
+      name: 'opens a read-only debug session in the current project when no project holds the repository',
+      target: { repo_root: '/elsewhere' },
+      current: 'shop',
+      sessions: [],
+      expected: {
+        copied: false,
+        command: {
+          type: 'session.create',
+          input: {
+            project_id: 'shop',
+            purpose: 'app_debug',
+            workspace: 'in_place',
+            runtime: 'claude',
+          },
+        },
+        kind: 'result',
+      },
+    },
+    {
+      name: "sends to the current project's live debug session when no project holds the repository",
+      target: { repo_root: '/elsewhere' },
+      current: 'shop',
+      sessions: [debugListed('shop-diagnosis', {})],
+      expected: {
+        copied: false,
+        command: { type: 'session.send', input: { session_id: 'shop-diagnosis' } },
+        kind: 'result',
+      },
+    },
+    {
+      name: 'opens a read-only debug session in the current project of a packaged app',
+      target: null,
+      current: 'shop',
+      sessions: [],
+      expected: {
+        copied: false,
+        command: {
+          type: 'session.create',
+          input: { project_id: 'shop', purpose: 'app_debug', workspace: 'in_place' },
+        },
+        kind: 'result',
+      },
+    },
+    {
       name: 'sends to the live debug session whatever port the app had when it opened',
       target: { repo_root: REPO },
+      current: 'shop',
       sessions: [debugListed('debug-live', {})],
       expected: {
         copied: false,
@@ -109,6 +160,7 @@ describe('asking the debug agent', () => {
     {
       name: 'opens a debug session when the only one is archived',
       target: { repo_root: REPO },
+      current: 'shop',
       sessions: [debugListed('debug-archived', { archived_at: '2026-11-16T09:00:00.000Z' })],
       expected: {
         copied: false,
@@ -126,8 +178,9 @@ describe('asking the debug agent', () => {
         kind: 'result',
       },
     },
-  ])('$name', async ({ target, sessions, expected }) => {
+  ])('$name', async ({ target, current, sessions, expected }) => {
     mock.target = target;
+    useCurrentProject.setState({ projectId: current });
     listed = sessions;
     recordAppError({ source: 'console', message: 'render loop warning' });
     const delivered = await askDebugAgent({
@@ -143,6 +196,9 @@ describe('asking the debug agent', () => {
         ? [{ type: expected.command.type, input: expect.objectContaining(expected.command.input) }]
         : [],
     );
+    // The daemon holds a session in the user's own folder in plan mode.
+    if (commands[0]?.input.workspace === 'in_place')
+      expect(commands[0].input).not.toHaveProperty('permission_mode');
     const prompt = expected.copied ? writeText.mock.calls[0]![0] : String(commands[0]!.input.input);
     expect(prompt).toContain('Push failed');
     expect(prompt).toContain('at PushButton (push.tsx:9)');

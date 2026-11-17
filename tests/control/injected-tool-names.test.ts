@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { Session } from '@pantheon/domain';
 import { coordinationTools, sessionTools } from '@pantheon/protocol';
-import { appDebugSkill } from '../../packages/control/src/app-debug-skill.js';
+import { appDebugSkill, appDiagnoseSkill } from '../../packages/control/src/app-debug-skill.js';
 import { baselineSkill } from '../../packages/control/src/baseline-skill.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import { purposeSessionInstructions } from '../../packages/control/src/context.js';
@@ -44,6 +44,7 @@ const injected: Record<string, string> = {
   'range story': purpose({ range_story: {} as Session['range_story'] }),
   memory: MEMORY_INSTRUCTIONS,
   'app debug': appDebugSkill,
+  'app diagnosis': appDiagnoseSkill,
   'project setup': projectSetupSkill,
 };
 
@@ -63,6 +64,7 @@ it('finds the tool names the instructions call', () => {
     'memory_context',
     'project_baseline_submit',
     'range_story_submit',
+    'style_read',
   ])
     expect(names).toContain(name);
 });

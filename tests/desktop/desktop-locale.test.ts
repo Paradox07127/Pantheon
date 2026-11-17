@@ -76,6 +76,8 @@ describe('menu language', () => {
       'Keyboard Shortcuts',
       'Open Logs Folder',
       'Copy Diagnostics',
+      'Debug View…',
+      'Turn Off User Styles',
     ]);
   });
 
@@ -117,6 +119,8 @@ describe('menu language', () => {
       'Keyboard Shortcuts',
       'Open Logs Folder',
       'Copy Diagnostics',
+      'Debug View…',
+      'Turn Off User Styles',
       'About Pantheon',
     ]);
     expect(labels('linux')).toEqual(labels('win32'));
@@ -171,6 +175,8 @@ describe('menu language', () => {
       '键盘快捷键',
       '打开日志文件夹',
       '复制诊断信息',
+      '调试视图…',
+      '关闭用户样式',
     ]);
     expect(labels('win32')).toContain('退出');
     expect(labels('win32').at(-1)).toBe('关于 Pantheon');

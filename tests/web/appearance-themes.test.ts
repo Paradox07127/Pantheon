@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { ThemeList } from '@pantheon/protocol';
 import { mount, named, nodes, text, unmountAll } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true }),
 );
@@ -22,6 +22,7 @@ import { toastManager } from '@/components/Toast';
 import { useBoard } from '@/data/board';
 import { failureText } from '@/data/needs-you';
 import { setUserThemes } from '@/data/theme';
+import { setUserStyle } from '@/data/user-style';
 import { ProjectSettingsScreen } from '@/screens/settings/ProjectSettingsScreen';
 
 const swatches = { surface0: 'rgb(1,1,1)', surface1: 'rgb(2,2,2)', accent: 'rgb(3,3,3)' };
@@ -96,6 +97,7 @@ beforeEach(() => {
 afterEach(() => {
   unmountAll();
   setUserThemes({ list: null, active: null });
+  setUserStyle(null);
   useBoard.setState({ board: null });
   vi.unstubAllGlobals();
 });
@@ -175,6 +177,57 @@ describe('the applied saved theme', () => {
       .props.onClick();
     await row.flush();
     expect(sent()).toEqual([['theme.delete', { theme_id: 'paper' }]]);
+  });
+});
+
+describe('the user styles row', () => {
+  const row = async () => {
+    const h = child(named((await page()).value, 'UserStyleRow'));
+    const buttons = (name: string) =>
+      nodes(h.value).filter((n) => n.type === 'button' && text(n.props.children) === name);
+    const dialog = () =>
+      nodes(h.value).find((n) => n.props.open !== undefined && 'onOpenChange' in n.props)!;
+    return { h, buttons, dialog };
+  };
+  beforeEach(() =>
+    setUserStyle({ css: '.sb{opacity:0.9}.tb{}', enabled: true, rules: 2, revision: 3 }),
+  );
+
+  it('shows the rule count and turns the stylesheet off and on with its switch', async () => {
+    const { h } = await row();
+    expect(text(h.value)).toContain(zhf('settings.appearance.userStyleRules', { count: 2 }));
+    const toggle = nodes(h.value).find((n) => n.type === 'input')!;
+    expect(toggle.props['aria-label']).toBe(zh('settings.appearance.userStyle'));
+    expect(toggle.props.checked).toBe(true);
+    toggle.props.onChange({ target: { checked: false } });
+    toggle.props.onChange({ target: { checked: true } });
+    await h.flush();
+    expect(sent()).toEqual([
+      ['style.enable', { enabled: false }],
+      ['style.enable', { enabled: true }],
+    ]);
+  });
+
+  it('asks before clearing the stylesheet, then clears it', async () => {
+    const { h, buttons, dialog } = await row();
+    expect(dialog().props.open).toBe(false);
+    buttons(zh('settings.appearance.clearUserStyle'))[0]!.props.onClick();
+    h.render();
+    expect(dialog().props.open).toBe(true);
+    expect(text(dialog())).toContain(zh('settings.appearance.clearUserStyleTitle'));
+    expect(sent()).toEqual([]);
+    buttons(zh('settings.appearance.clearUserStyleConfirm')).at(-1)!.props.onClick();
+    await h.flush();
+    expect(sent()).toEqual([['style.clear', {}]]);
+  });
+
+  it('is not there while the stylesheet is empty', async () => {
+    setUserStyle({ css: '', enabled: true, rules: 0, revision: 4 });
+    const h = await page();
+    const drawn = nodes(h.value).find(
+      (n) => typeof n.type === 'function' && n.type.name === 'UserStyleRow',
+    )!;
+    expect(child(drawn).value).toBeNull();
   });
 });
 

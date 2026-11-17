@@ -138,6 +138,13 @@ beforeAll(async () => {
       disconnect() {}
     },
   );
+  vi.stubGlobal(
+    'MutationObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal('requestAnimationFrame', (run: () => void) => frames.push(run));
   vi.stubGlobal('cancelAnimationFrame', (id: number) => delete frames[id - 1]);
   useBoard.setState({

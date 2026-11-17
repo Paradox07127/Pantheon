@@ -15,6 +15,14 @@ import {
   useUserThemes,
   watchThemeApplied,
 } from '../data/theme';
+import {
+  applyUserStyle,
+  keepUserStyleLast,
+  loadUserStyle,
+  shownCss,
+  useUserStyle,
+  watchStyleChanged,
+} from '../data/user-style';
 import { t } from '../i18n';
 import { onMac } from '../lib/shortcuts';
 import { closeNotice, toast } from './Toast';
@@ -98,6 +106,25 @@ export function useUserTheme(): ThemeRead | null {
     if (loaded) applyUserTheme(active);
   }, [loaded, active]);
   return active;
+}
+
+/** Puts the user stylesheet on the page and keeps it there, last in the head; every window runs it once. */
+export function useUserStyleSheet(): void {
+  const style = useUserStyle();
+  useEffect(() => {
+    void loadUserStyle();
+    const stop = watchStyleChanged();
+    const observer = new MutationObserver(() => keepUserStyleLast());
+    observer.observe(document.head, { childList: true });
+    return () => {
+      stop();
+      observer.disconnect();
+    };
+  }, []);
+  // Until the first read lands, the copy index.html put on the first frame stays.
+  useLayoutEffect(() => {
+    if (style) applyUserStyle(shownCss(style));
+  }, [style]);
 }
 
 /** The scheme the first frame's copy of the theme holds the window in; null without one. */

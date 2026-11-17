@@ -1742,8 +1742,12 @@ const openFolder = async (folder: string): Promise<void> => {
 const sendMenuAction = (action: MenuAction): void => {
   const focused = focusedWindow();
   const context = focused && windows.get(focused);
-  // A session window has no settings, sidebar or projects screen of its own.
-  const mainOnly = action === 'new-session' || action === 'open-project' || action === 'settings';
+  // A session window has no settings, sidebar, projects screen or debug view of its own.
+  const mainOnly =
+    action === 'new-session' ||
+    action === 'open-project' ||
+    action === 'settings' ||
+    action === 'debug-view';
   if (action === 'about' || (context?.kind === 'session' && mainOnly)) {
     const main = reveal();
     if (action === 'new-session' && context?.project_id)

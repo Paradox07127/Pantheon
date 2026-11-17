@@ -202,6 +202,13 @@ beforeAll(async () => {
       disconnect() {}
     },
   );
+  vi.stubGlobal(
+    'MutationObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal('requestAnimationFrame', () => 0);
   vi.stubGlobal('cancelAnimationFrame', () => {});
   vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => 'flex' }));

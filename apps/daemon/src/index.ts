@@ -610,6 +610,7 @@ export async function startDaemon(options: DaemonOptions) {
       'backend.list': (p) => control.backendList(p),
       'theme.list': (p) => control.themeList(p),
       'theme.get': (p, i) => control.themeGet(p, i.theme_id),
+      'style.read': (p) => control.styleRead(p),
       'import.candidates': (p) => control.importCandidates(p),
       'session.importable': (p, i) => control.importableSessions(p, i.project_id),
     };

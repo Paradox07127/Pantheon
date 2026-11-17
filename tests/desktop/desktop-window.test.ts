@@ -258,6 +258,8 @@ describe('application menu', () => {
     ['后退', 'CmdOrCtrl+[', 'back'],
     ['前进', 'CmdOrCtrl+]', 'forward'],
     ['键盘快捷键', undefined, 'shortcuts'],
+    ['调试视图…', undefined, 'debug-view'],
+    ['关闭用户样式', undefined, 'disable-user-style'],
   ])('sends %s on %s as the %s action', (label, accelerator, action) => {
     for (const platform of ['darwin', 'win32'] as const) {
       const { send, template } = menu(platform);
@@ -331,6 +333,9 @@ describe('application menu', () => {
       'separator',
       '打开日志文件夹',
       '复制诊断信息',
+      '调试视图…',
+      'separator',
+      '关闭用户样式',
     ]);
   });
 

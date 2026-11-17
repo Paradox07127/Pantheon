@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw } from 'lucide-react';
 import { create } from 'zustand';
 import {
+  APP_DOM_LIMIT,
   command,
   USER_PRINCIPAL_ID,
+  type AppDom,
+  type AppErrors,
   type BrowserBounds,
   type BrowserPage,
   type BrowserRequest,
@@ -11,6 +14,7 @@ import {
   type DesktopBridge,
 } from '@pantheon/protocol';
 import { toast } from '../../components/Toast';
+import { appErrors } from '../../data/app-errors';
 import { failureText } from '../../data/needs-you';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
@@ -59,10 +63,49 @@ function loaded(bridge: DesktopBridge, sessionId: string, url: string): Promise<
   });
 }
 
+/** This window's HTML, or the first element's that selector matches, and its named regions. */
+function appDom(selector: string | undefined): AppDom | null {
+  const root = document.querySelector(selector ?? 'body');
+  if (!root) return null;
+  return {
+    html: root.outerHTML.slice(0, APP_DOM_LIMIT),
+    regions: [...document.querySelectorAll<HTMLElement>('[data-debug-region]')]
+      .slice(0, 500)
+      .map((el) => ({ name: el.dataset.debugRegion!, rect: boundsOf(el) })),
+  };
+}
+
 async function browserAnswer(
   bridge: DesktopBridge,
   request: BrowserRequest,
-): Promise<{ page: BrowserPage } | { error: { code: string; message: string } }> {
+): Promise<
+  | { page: BrowserPage }
+  | { errors: AppErrors }
+  | { dom: AppDom }
+  | { error: { code: string; message: string } }
+> {
+  // An entry's details and input came over IPC, so they are JSON.
+  if (request.action === 'app_errors') return { errors: appErrors() as unknown as AppErrors };
+  if (request.action === 'app_dom') {
+    const dom = appDom(request.selector);
+    return dom
+      ? { dom }
+      : {
+          error: {
+            code: 'app_dom_not_found',
+            message: `No element in the app window matches ${request.selector}`,
+          },
+        };
+  }
+  if (request.action === 'app_screenshot') {
+    const shot = await bridge
+      .captureRegion({ x: 0, y: 0, width: innerWidth, height: innerHeight })
+      .catch(ipcFailed);
+    if (!shot.ok) return { error: { code: shot.error.code, message: shot.error.message } };
+    // A BrowserPage's png is the base64 alone, without the data URL's prefix.
+    const png = shot.value.slice(shot.value.indexOf(',') + 1);
+    return { page: { url: location.href, title: document.title, png } };
+  }
   if (request.action === 'open') {
     const shell = useShell.getState();
     // The window has one browser view; a session the user is not viewing does not take it.

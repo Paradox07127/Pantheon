@@ -20,7 +20,12 @@ import { ShortcutSheet } from './components/Shortcuts';
 import { Sidebar, useSidebarLayout } from './components/Sidebar';
 import { toast, Toasts } from './components/Toast';
 import { TitleBarEnd } from './components/TitleBarEnd';
-import { ThemeBackdrop, useForcedScheme, useUserTheme } from './components/UserTheme';
+import {
+  ThemeBackdrop,
+  useForcedScheme,
+  useUserStyleSheet,
+  useUserTheme,
+} from './components/UserTheme';
 import { WindowControls } from './components/WindowControls';
 import { useBoard } from './data/board';
 import { currentProject, useCurrentProject } from './data/current-project';
@@ -217,6 +222,7 @@ export function App() {
   const systemReduced = useSystemReducedMotion();
   const display = useSessionDisplay();
   const userTheme = useUserTheme();
+  useUserStyleSheet();
   // A saved theme that gives one scheme holds the window in it, leaving the stored choice as it is.
   const forced = useForcedScheme();
   const accent = useAccent();

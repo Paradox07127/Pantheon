@@ -54,6 +54,7 @@ export const tables = [
   'memory_jobs',
   'external_events',
   'themes',
+  'user_styles',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -145,6 +146,14 @@ export const migrations: readonly Migration[] = [
     version: 2,
     up(db) {
       db.exec("CREATE INDEX outbox_pending ON outbox(state) WHERE state='pending';");
+    },
+  },
+  {
+    version: 3,
+    up(db) {
+      db.exec(
+        'CREATE TABLE user_styles (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
+      );
     },
   },
 ];

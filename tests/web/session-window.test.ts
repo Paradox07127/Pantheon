@@ -129,6 +129,13 @@ const frames: (() => void)[] = [];
 beforeEach(() => {
   mock.items.clear();
   frames.length = 0;
+  vi.stubGlobal(
+    'MutationObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal('requestAnimationFrame', (run: () => void) => frames.push(run));
   vi.stubGlobal('cancelAnimationFrame', () => {});
   mock.board = {

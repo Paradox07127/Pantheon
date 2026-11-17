@@ -71,6 +71,7 @@ import {
   sessionPrincipal,
   sessionAction,
   purposeSessionTools,
+  sessionWorkspaceKind,
   userOnly,
   revision,
   type ControlContext,
@@ -178,6 +179,8 @@ import {
 import { prepareRuntimeConfig } from './runtime-config.js';
 import { readAppSettings } from './app-settings.js';
 import { themeList, themeRead } from './theme.js';
+import { styleRead } from './user-style.js';
+import { appLogs } from './app-logs.js';
 import { listDevices, refreshDevices, reprobeDevice, sshHosts } from './devices.js';
 import { backendList, externalEvents, readUserConfig } from './user-config.js';
 import { onDevice, pullRemoteWorkspace } from './remote-workspace.js';
@@ -434,9 +437,17 @@ export class Control extends EventEmitter {
     if (principal.session_id && sessionChoice) sessionAction(this.ctx, principal, command.type);
     // A browser page is live and a screenshot large, so these keep no receipt.
     if (command.type === 'browser.open')
-      return this.browser.call(principal, 'open', (input as { url: string }).url);
+      return this.browser.call(principal, 'open', { url: (input as { url: string }).url });
     if (command.type === 'browser.read' || command.type === 'browser.screenshot')
       return this.browser.call(principal, command.type === 'browser.read' ? 'read' : 'screenshot');
+    if (command.type === 'app.errors') return this.browser.call(principal, 'app_errors');
+    if (command.type === 'app.screenshot') return this.browser.call(principal, 'app_screenshot');
+    if (command.type === 'app.dom')
+      return this.browser.call(principal, 'app_dom', input as { selector?: string });
+    // The log and the stylesheet are read as they are now, so these keep no receipt either.
+    if (command.type === 'app.logs')
+      return appLogs(this.ctx, input as ReturnType<(typeof inputSchemas)['app.logs']['parse']>);
+    if (command.type === 'style.read') return styleRead(this.ctx);
     if (command.type === 'browser.result') {
       userOnly(principal);
       return this.browser.answer(
@@ -914,7 +925,8 @@ export class Control extends EventEmitter {
       baseline_id: session.baseline?.baseline_id,
       story_id: session.change_story?.story_id ?? session.range_story?.story_id,
       ...(session.baseline ? { extension_runtimes: inventoryRuntimes(this.ctx) } : {}),
-      allowed_tool_names: purposeSessionTools(session),
+      allowed_tool_names: purposeSessionTools(session, sessionWorkspaceKind(this.ctx, session)),
+      ...(session.app_debug ? { app_debug: true as const } : {}),
     };
   }
   needsYou(principal: Principal, projectId?: string): { items: NeedsYouItem[] } {
@@ -1124,6 +1136,10 @@ export class Control extends EventEmitter {
   themeGet(principal: Principal, themeId: string) {
     userOnly(principal);
     return themeRead(this.ctx, themeId);
+  }
+  styleRead(principal: Principal) {
+    userOnly(principal);
+    return styleRead(this.ctx);
   }
   importCandidates(principal: Principal) {
     userOnly(principal);

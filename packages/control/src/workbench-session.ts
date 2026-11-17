@@ -129,7 +129,7 @@ import { managedSessionSpec } from './native-session.js';
 import { projectFacts } from './project-facts.js';
 import { runTimes, sessionRun } from './run-state.js';
 import { sessionTasks } from './session-tasks.js';
-import { appDebugSkill } from './app-debug-skill.js';
+import { appDebugSkill, appDiagnoseSkill } from './app-debug-skill.js';
 import { projectSetupSkill } from './project-setup-skill.js';
 import { worktreeSandbox } from './protection.js';
 import { ownWorkspaceOnly } from './workspace-files.js';
@@ -4293,6 +4293,8 @@ export function openWorktreeSession(
       workspace.revision,
     );
   const workflow = board && taskWorkflow(ctx, board.plan, board.task.id);
+  // Diagnosing the running app in the user's own folder must leave that folder as it is.
+  const diagnosis = input.purpose === 'app_debug' && input.workspace === 'in_place';
   const session = insert<Session>(
     ctx,
     'sessions',
@@ -4321,7 +4323,7 @@ export function openWorktreeSession(
       state: 'running',
       turn_count: 1,
       workspace_id: workspace.id,
-      permission_mode: input.permission_mode,
+      permission_mode: diagnosis ? 'plan' : input.permission_mode,
       ...(input.fast ? { fast: true as const } : {}),
       ...(input.ultracode ? { ultracode: true as const } : {}),
       ...(input.purpose === 'app_debug' ? { app_debug: true as const } : {}),
@@ -4354,7 +4356,11 @@ export function openWorktreeSession(
     ...(input.purpose
       ? {
           reference_context: [
-            input.purpose === 'app_debug' ? appDebugSkill : projectSetupSkill,
+            diagnosis
+              ? appDiagnoseSkill
+              : input.purpose === 'app_debug'
+                ? appDebugSkill
+                : projectSetupSkill,
             extras.reference_context,
           ]
             .filter((part) => part !== undefined)

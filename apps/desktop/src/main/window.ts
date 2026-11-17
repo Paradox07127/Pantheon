@@ -515,6 +515,10 @@ export function appMenuTemplate(options: AppMenuOptions): MenuItemConstructorOpt
     separator,
     { label: text.openLogs, click: openLogs },
     { label: text.copyDiagnostics, click: () => send('copy-diagnostics') },
+    { label: text.debugView, click: () => send('debug-view') },
+    separator,
+    // A stylesheet that hides the settings page cannot reach a native menu.
+    { label: text.disableUserStyle, click: () => send('disable-user-style') },
   ];
   if (platform === 'darwin')
     return [

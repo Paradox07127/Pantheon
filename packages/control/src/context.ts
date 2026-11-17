@@ -16,6 +16,7 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import {
+  appDebugTools,
   sessionTools,
   coordinationTools,
   leadToolEffects,
@@ -250,9 +251,17 @@ export function userOnly(p: Principal) {
   );
 }
 
+const appDebugActions: string[] = Object.values(appDebugTools);
+
 /** The only tools of a purpose-bound session; undefined for every other session. */
-export function purposeSessionTools(session: Session): string[] | undefined {
+export function purposeSessionTools(
+  session: Session,
+  workspaceKind?: Workspace['kind'],
+): string[] | undefined {
   if (session.runtime_review) return ['trace.evidence', 'trace.report'];
+  // Diagnosing the running app in the user's project folder only reads the app and its stylesheet.
+  if (session.app_debug && workspaceKind === 'in_place')
+    return [...appDebugActions, 'project.read'];
   if (session.intro)
     return [
       'memory.context',
@@ -342,12 +351,13 @@ export function sessionAction(ctx: ControlContext, principal: Principal, action:
     'Runtime reflection can read project facts only',
   );
   const tools = sessionTools[principal.role as keyof typeof sessionTools];
-  const purposeTools = purposeSessionTools(session);
+  const purposeTools = purposeSessionTools(session, sessionWorkspaceKind(ctx, session));
   const permitted = purposeTools ? { ...tools, ...coordinationTools } : tools;
   requireThat(
     permitted &&
       (Object.values(permitted) as string[]).includes(action) &&
-      (!purposeTools || purposeTools.includes(action)),
+      (!purposeTools || purposeTools.includes(action)) &&
+      (session.app_debug || !appDebugActions.includes(action)),
     'permission_denied',
     'Action outside session role',
   );

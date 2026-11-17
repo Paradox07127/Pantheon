@@ -10,6 +10,7 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { inspectorTabs } from '@/screens/sessions/inspector-model';
 import { FilesPanel } from '@/screens/sessions/FilesPanel';
 import { BrowserPanel, answerBrowser } from '@/screens/sessions/BrowserPanel';
+import { appErrors, recordAppError } from '@/data/app-errors';
 import { toastManager } from '@/components/Toast';
 import { useShell } from '@/store';
 import { useBoard } from '@/data/board';
@@ -613,5 +614,92 @@ describe('a session opening a page in the browser panel', () => {
     const { result, shell } = await opened('session-b');
     expect(result).toMatchObject({ error: { code: 'browser_busy' } });
     expect([shell.sessionId, shell.sessionTab]).toEqual(['session-b', null]);
+  });
+});
+
+describe('a diagnosis session reading the app window', () => {
+  const region = (name: string, left: number) => ({
+    dataset: { debugRegion: name },
+    getBoundingClientRect: () => ({ left: left + 0.4, top: 10.6, width: 200.2, height: 40 }),
+  });
+  const answered = async (
+    request: { action: string; selector?: string },
+    html = '<body></body>',
+  ) => {
+    const sent: { type: string; input: Record<string, unknown> }[] = [];
+    const bridge = {
+      command: vi.fn(async (c: (typeof sent)[number]) => {
+        sent.push(c);
+        return { ok: true };
+      }),
+      captureRegion: vi.fn(async () => ({ ok: true, value: 'data:image/png;base64,AQID' })),
+    };
+    const matched = { outerHTML: html };
+    vi.stubGlobal('document', {
+      title: 'Pantheon',
+      querySelector: (selector: string) =>
+        selector === 'body' || selector === '.sb' ? matched : null,
+      querySelectorAll: () => [region('board.lead', 0), region('board.progress', 300)],
+    });
+    vi.stubGlobal('location', { href: 'app://pantheon/index.html' });
+    vi.stubGlobal('innerWidth', 1440);
+    vi.stubGlobal('innerHeight', 900);
+    await answerBrowser(
+      bridge as never,
+      {
+        request_id: 'request-a',
+        session_id: 'diagnosis',
+        ...request,
+      } as never,
+    );
+    return { result: sent[0]!.input, bridge };
+  };
+
+  it('answers app_errors with the errors the window recorded', async () => {
+    recordAppError({ source: 'console', message: 'render loop warning' });
+    const { result } = await answered({ action: 'app_errors' });
+    expect(result).toEqual({ request_id: 'request-a', errors: [...appErrors()] });
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ source: 'console', message: 'render loop warning' }),
+    );
+  });
+
+  it('answers app_screenshot with a PNG of the whole window, its base64 without the data URL prefix', async () => {
+    const { result, bridge } = await answered({ action: 'app_screenshot' });
+    expect(bridge.captureRegion).toHaveBeenCalledWith({ x: 0, y: 0, width: 1440, height: 900 });
+    expect(result).toEqual({
+      request_id: 'request-a',
+      page: { url: 'app://pantheon/index.html', title: 'Pantheon', png: 'AQID' },
+    });
+  });
+
+  it.each([
+    { name: 'the whole window', selector: undefined },
+    { name: 'the element a selector matches', selector: '.sb' },
+  ])('answers app_dom with the HTML of $name and the named regions', async ({ selector }) => {
+    const { result } = await answered({ action: 'app_dom', selector }, '<div class="sb"></div>');
+    expect(result).toEqual({
+      request_id: 'request-a',
+      dom: {
+        html: '<div class="sb"></div>',
+        regions: [
+          { name: 'board.lead', rect: { x: 0, y: 11, width: 200, height: 40 } },
+          { name: 'board.progress', rect: { x: 300, y: 11, width: 200, height: 40 } },
+        ],
+      },
+    });
+  });
+
+  it('cuts the HTML of app_dom to 100000 characters', async () => {
+    const { result } = await answered({ action: 'app_dom' }, `<body>${'x'.repeat(200_000)}</body>`);
+    expect((result.dom as { html: string }).html).toHaveLength(100_000);
+  });
+
+  it('answers app_dom with an error when the selector matches nothing', async () => {
+    const { result } = await answered({ action: 'app_dom', selector: '.missing' });
+    expect(result).toEqual({
+      request_id: 'request-a',
+      error: { code: 'app_dom_not_found', message: expect.stringContaining('.missing') },
+    });
   });
 });
