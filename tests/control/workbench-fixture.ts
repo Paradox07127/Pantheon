@@ -80,6 +80,8 @@ export async function workbenchFixture(
     adoptable?: boolean;
     externalSources?: ExternalSource[];
     localCommand?: LocalCommand;
+    /** Runs the app as if built in the project's source checkout. */
+    appCheckout?: boolean;
   } = {},
 ) {
   const cache = path.join(process.cwd(), 'node_modules/.cache');
@@ -118,6 +120,7 @@ export async function workbenchFixture(
       // No fixture asks a real service for events.
       externalSources: options.externalSources ?? [],
       localCommand: options.localCommand,
+      ...(options.appCheckout ? { appRoot: source } : {}),
     };
   // A commit survives a process crash in WAL mode without the disk sync the daemon asks for.
   store.db.exec('PRAGMA synchronous=NORMAL');

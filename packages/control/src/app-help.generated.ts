@@ -577,6 +577,12 @@ export const appHelpGroups: AppHelpGroup[] = [
     about: 'the user only',
     commands: [
       {
+        type: 'signal.app_error',
+        about:
+          'SignalIssue; the user only. Reports an error or a crash of the app itself to the project whose root is the checkout the app runs from; null when no open project is.',
+        tool: 'the user does this in the app',
+      },
+      {
         type: 'signal.mute',
         about: 'SignalIssue; the user only. Mutes the issue: it keeps counting and wakes no agent.',
         tool: 'the user does this in the app',

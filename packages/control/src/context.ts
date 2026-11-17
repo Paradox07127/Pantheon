@@ -47,6 +47,7 @@ export interface ControlContext {
   readonly userConfigDir?: string;
   readonly turnWallTimeMs?: number;
   readonly mcpEntry?: string;
+  readonly appRoot?: string;
   readonly readProcess: NonNullable<ControlOptions['readProcess']>;
   readonly issueSessionCredential?: ControlOptions['issueSessionCredential'];
   readonly revokeSessionCredential?: ControlOptions['revokeSessionCredential'];

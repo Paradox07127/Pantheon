@@ -36,6 +36,7 @@ import { sessionRangeAsync } from './landing-diff.js';
 import { runGit } from './git.js';
 import { workflowResults } from './workflow-results.js';
 import { checkGates, gateFailed } from './landing.js';
+import { recordMergedCheck } from './signal-sources.js';
 
 const EMPTY_WORKFLOW_DEFINITION: WorkflowDefinition = {
   slots: { before_dispatch: [], before_merge: [], after_merge: [] },
@@ -1118,6 +1119,13 @@ function runCommandStep(ctx: ControlContext, pending: StepRun): void {
           result.error ?? result.tail,
         );
         if (!passed) reportFailure(ctx, finished, result.error ?? result.tail);
+        if (run.slot === 'after_merge')
+          recordMergedCheck(ctx, {
+            project_id: run.project_id,
+            name: run.step.title,
+            passed,
+            output: result.error ?? result.tail,
+          });
       });
     })
     .catch((error) => {

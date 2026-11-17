@@ -29,6 +29,7 @@ import { onDevice } from './remote-workspace.js';
 import { sessionWorkflow, workflowCondition, type ConditionAnswers } from './workflow-engine.js';
 import { forgetWorktreeReads } from './workbench-session.js';
 import { headerPath } from './landing-diff.js';
+import { recordGateRun } from './signal-sources.js';
 
 type GateCommands = NonNullable<Project['gates']>[string];
 export type LandingProgress = NonNullable<NonNullable<Session['merge']>['landing']>;
@@ -492,6 +493,15 @@ export async function checkGates(
     check_spec_hash: hash(commands),
     results,
   });
+  ctx.store.transaction(() =>
+    recordGateRun(ctx, {
+      project_id: owner.projectId,
+      session_id: owner.session_id,
+      commit,
+      results,
+      runner: policy.gate_runner,
+    }),
+  );
   return results;
 }
 

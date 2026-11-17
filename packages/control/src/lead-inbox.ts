@@ -32,6 +32,7 @@ import { taskRuntime } from './task-dispatch.js';
 import { changeModel, workerInstructions } from './workbench-session.js';
 import { causeTurn, chainDepth } from './progress.js';
 import { retiredBinding } from './board-plan.js';
+import { recordRuntimeUnavailable } from './signal-sources.js';
 
 export const INBOX_HEADER = '[Pantheon] Board updates since your last message:';
 /** Characters of one digest, so the notes leave most of the lead's turn input to everything else. */
@@ -617,6 +618,7 @@ function tellRuntimeUnavailable(
         note.text.startsWith(`${opening},`),
     );
   if (told) return;
+  recordRuntimeUnavailable(ctx, session, target);
   appendNote(ctx, plan, {
     at: ctx.store.now(),
     session_id: session.id,

@@ -1,4 +1,4 @@
-import type { DesktopBridge } from '@pantheon/protocol';
+import { command, USER_PRINCIPAL_ID, type DesktopBridge } from '@pantheon/protocol';
 
 /** A problem the running app ran into: a failed command, an uncaught error or a console error. */
 export interface AppError {
@@ -53,36 +53,73 @@ const consoleText = (arg: unknown): string => {
   }
 };
 
+// Per minute: one report per message and 30 in all, so a render loop of console errors cannot flood the daemon.
+const REPORT_MS = 60_000;
+const REPORT_LIMIT = 30;
+/** When each message was last reported, by kind and message with its numbers blanked. */
+const reported = new Map<string, number>();
+let reportTimes: number[] = [];
+
+/** Sends the entry to the daemon's signals, unless the same message or too many went within the minute. */
+function report(kind: 'error' | 'unhandled_rejection' | 'console', entry: AppError): void {
+  const bridge = window.pantheon;
+  if (!bridge || !entry.message) return;
+  const now = Date.now(),
+    key = `${kind}\n${entry.message.replace(/\d+/g, '0')}`;
+  for (const [each, at] of reported) if (now - at >= REPORT_MS) reported.delete(each);
+  reportTimes = reportTimes.filter((at) => now - at < REPORT_MS);
+  if (reported.has(key) || reportTimes.length >= REPORT_LIMIT) return;
+  reported.set(key, now);
+  reportTimes.push(now);
+  const input = {
+    kind,
+    message: entry.message,
+    ...(entry.stack === undefined ? {} : { stack: entry.stack }),
+  };
+  void bridge.command(command(USER_PRINCIPAL_ID, 'signal.app_error', input, null)).catch(() => {});
+}
+
 /** The recorded problems, oldest first. */
 export const appErrors = (): readonly AppError[] => entries;
 
 /** Records uncaught errors, unhandled rejections and console errors from here on; call once. */
 export function captureAppErrors(): void {
   window.addEventListener('error', (event) =>
-    recordAppError({
-      source: 'error',
-      message: String(event.error ?? event.message),
-      stack:
-        event.error instanceof Error && event.error.stack
-          ? event.error.stack
-          : `${event.filename}:${event.lineno}:${event.colno}`,
-    }),
+    report(
+      'error',
+      recordAppError({
+        source: 'error',
+        message: String(event.error ?? event.message),
+        stack:
+          event.error instanceof Error && event.error.stack
+            ? event.error.stack
+            : `${event.filename}:${event.lineno}:${event.colno}`,
+      }),
+    ),
   );
   window.addEventListener('unhandledrejection', (event) =>
-    recordAppError({
-      source: 'rejection',
-      message: String(event.reason),
-      ...(event.reason instanceof Error && event.reason.stack ? { stack: event.reason.stack } : {}),
-    }),
+    report(
+      'unhandled_rejection',
+      recordAppError({
+        source: 'rejection',
+        message: String(event.reason),
+        ...(event.reason instanceof Error && event.reason.stack
+          ? { stack: event.reason.stack }
+          : {}),
+      }),
+    ),
   );
   const consoleError = console.error.bind(console);
   console.error = (...args: unknown[]) => {
     const thrown = args.find((arg): arg is Error => arg instanceof Error && !!arg.stack);
-    recordAppError({
-      source: 'console',
-      message: args.map(consoleText).join(' '),
-      ...(thrown ? { stack: thrown.stack } : {}),
-    });
+    report(
+      'console',
+      recordAppError({
+        source: 'console',
+        message: args.map(consoleText).join(' '),
+        ...(thrown ? { stack: thrown.stack } : {}),
+      }),
+    );
     consoleError(...args);
   };
   // A debug session reads this over CDP.

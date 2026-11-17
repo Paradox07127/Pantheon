@@ -1,9 +1,12 @@
+import { fileURLToPath } from 'node:url';
 import {
   id,
   requireThat,
   type AgentProfile,
   type Principal,
   type Project,
+  type RuntimeFinding,
+  type Session,
   type SignalIssue,
   type SignalSource,
   type Timer,
@@ -14,6 +17,7 @@ import { residentProfile } from './agent-templates.js';
 import { ensureAgents } from './agents.js';
 import {
   projectAccess,
+  resolvedPath,
   userOnly,
   type ControlContext,
   type Handlers,
@@ -21,6 +25,8 @@ import {
 } from './context.js';
 import { appendNote } from './lead-inbox.js';
 import { openAgent } from './resident.js';
+import { RUNTIME_LOOKBACK_MS, runtimeDiagnostics } from './runtime-findings.js';
+import { appErrorFingerprint, normalizeMessage } from './signal-normalize.js';
 import { wakeLead } from './task-tracking.js';
 import { scheduleTimer, timerHandlers } from './timers.js';
 
@@ -48,8 +54,8 @@ const KEPT = 20;
 type Priority = SignalIssue['priority'];
 
 /**
- * Per source: the priority of a new issue, of a new crash, how long a new issue is held to see
- * whether it resolves on its own, and the signals within an hour that escalate it.
+ * Per source: the priority of a new issue, of a new crash, how long a new issue other than a crash
+ * is held to see whether it resolves on its own, and the signals within an hour that escalate it.
  */
 const SOURCE_RULES: Record<
   SignalSource,
@@ -58,7 +64,8 @@ const SOURCE_RULES: Record<
   gate_failures: { priority: 'interrupt' },
   flaky_tests: { priority: 'record' },
   app_errors: { priority: 'record', crash: 'interrupt', escalate_at: 10 },
-  session_failures: { priority: 'digest', hold_ms: 3 * MINUTE_MS },
+  // Its crash is a provider outage, seen across several sessions already.
+  session_failures: { priority: 'digest', crash: 'interrupt', hold_ms: 3 * MINUTE_MS },
   trace_findings: { priority: 'digest' },
 };
 
@@ -218,7 +225,7 @@ export function recordSignal(ctx: ControlContext, input: SignalInput): SignalIss
       ),
     cause = muter(ctx, input.project_id, input.source, input.fingerprint);
   if (!found) {
-    const state = cause ? 'muted' : rule.hold_ms ? 'holding' : 'new';
+    const state = cause ? 'muted' : rule.hold_ms && !crash ? 'holding' : 'new';
     const issue = ctx.store.insert<SignalIssue>('signal_issues', {
       id: id(),
       revision: 1,
@@ -534,7 +541,135 @@ function userIssue(ctx: ControlContext, p: Principal, issueId: string, action: s
   return issue;
 }
 
+/** The checkout this package is built in, which a development build of the app runs from. */
+const BUILT_IN_CHECKOUT = fileURLToPath(new URL('../../../', import.meta.url));
+const SAMPLE_STACK_LINES = 20;
+
+/** The open project whose root is the checkout the running app is built from. */
+function appProject(ctx: ControlContext): Project | undefined {
+  const checkout = resolvedPath(ctx.appRoot ?? BUILT_IN_CHECKOUT);
+  return ctx.store
+    .list<Project>('projects')
+    .find(
+      (project) =>
+        project.removed_at === undefined &&
+        project.roots.some((root) => resolvedPath(root) === checkout),
+    );
+}
+
+const TRACE_RECORDED = 'signal.trace_finding_recorded';
+/** Per control: the state of the store and trace index last read, and by project the recorded findings' ids with their times. */
+const traceSeen = new WeakMap<
+  ControlContext,
+  { read: string; projects: Map<string, Map<string, number>> }
+>();
+
+const sessionKind = (session: Session) =>
+  session.resident?.kind ??
+  (session.task
+    ? 'task'
+    : session.review_id
+      ? 'review'
+      : session.app_debug
+        ? 'app_debug'
+        : 'session');
+
+/** Who a finding's lane belongs to: the agent profile of its session, else the session's kind. */
+function findingOwner(ctx: ControlContext, finding: RuntimeFinding) {
+  const session = finding.lane_key
+    ? ctx.store.get<Session>('sessions', finding.lane_key)
+    : undefined;
+  const profile = session?.resident?.agent_id
+    ? ctx.store.get<AgentProfile>('agents', session.resident.agent_id)
+    : undefined;
+  if (profile) return { key: `agent ${profile.id}`, name: profile.name };
+  const kind = session ? sessionKind(session) : 'native';
+  return { key: kind, name: kind };
+}
+
+/**
+ * Records each runtime finding of the last hour the first time a scan sees it; a finding still
+ * ongoing is recorded once it ends. Returns whether it recorded any; the caller owns the
+ * transaction.
+ */
+export function recordTraceFindings(ctx: ControlContext): boolean {
+  const state = traceSeen.get(ctx) ?? { read: '', projects: new Map() };
+  const read = () => `${ctx.store.cursor()} ${ctx.trace?.revision ?? 0}`;
+  if (state.read === read()) return false;
+  // Kept only when the records commit; otherwise the next scan reads them from the store again.
+  traceSeen.delete(ctx);
+  const to = ctx.store.now(),
+    from = to - RUNTIME_LOOKBACK_MS;
+  let recorded = false;
+  for (const project of ctx.store.list<Project>('projects')) {
+    if (project.removed_at !== undefined) continue;
+    let seen = state.projects.get(project.id);
+    if (!seen) {
+      // A finding is recorded after it happens, so the records since from cover every finding after it.
+      seen = new Map(
+        ctx.store.kindEventsSince(project.id, [TRACE_RECORDED], from).map((event) => {
+          const payload = event.payload as { finding_id: string; at: number };
+          return [payload.finding_id, payload.at];
+        }),
+      );
+      state.projects.set(project.id, seen);
+    }
+    for (const [findingId, at] of seen) if (at < from) seen.delete(findingId);
+    const { findings } = runtimeDiagnostics(ctx, project.id, from, to, {
+      native: ctx.trace?.lanes(project.id, from, to) ?? [],
+      excludeLanes: ctx.store
+        .list<Session>('sessions')
+        .filter((session) => session.project_id === project.id && session.runtime_review)
+        .map((session) => session.id),
+      live: false,
+      limit: Infinity,
+    });
+    for (const finding of findings) {
+      if (seen.has(finding.id)) continue;
+      const owner = findingOwner(ctx, finding);
+      const { id: _id, evidence: _evidence, evidence_ids: _ids, ...shown } = finding;
+      const issue = recordSignal(ctx, {
+        project_id: project.id,
+        source: 'trace_findings',
+        fingerprint: `${finding.kind} ${owner.key}`,
+        title: `${finding.kind} in ${owner.name} sessions`,
+        sample: JSON.stringify(shown),
+        at: finding.at,
+      });
+      ctx.store.event(TRACE_RECORDED, issue, project.id, {
+        finding_id: finding.id,
+        at: finding.at,
+      });
+      seen.set(finding.id, finding.at);
+      recorded = true;
+    }
+  }
+  state.read = read();
+  traceSeen.set(ctx, state);
+  return recorded;
+}
+
 export const signalHandlers: Handlers = {
+  'signal.app_error': (ctx, p, c) => {
+    userOnly(p);
+    const input = inputSchemas['signal.app_error'].parse(c.input);
+    const crash = input.kind === 'crash';
+    const project = appProject(ctx);
+    if (!project || (crash && input.reason === 'clean-exit')) return null;
+    return listed(
+      recordSignal(ctx, {
+        project_id: project.id,
+        source: 'app_errors',
+        fingerprint: crash ? `crash:${input.reason ?? 'unknown'}` : appErrorFingerprint(input),
+        title: normalizeMessage(input.message),
+        sample: [
+          input.message,
+          ...(input.stack?.split('\n').slice(0, SAMPLE_STACK_LINES) ?? []),
+        ].join('\n'),
+        ...(crash && { priority_hint: 'crash' as const }),
+      }),
+    );
+  },
   'signal.mute': (ctx, p, c) => {
     const input = inputSchemas['signal.mute'].parse(c.input);
     return listed(muteSignal(ctx, userIssue(ctx, p, input.id, c.type).id, c.command_id));

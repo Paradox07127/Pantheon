@@ -35,6 +35,8 @@ import {
 } from 'electron';
 import {
   BROWSER_TEXT_LIMIT,
+  command,
+  USER_PRINCIPAL_ID,
   ZOOM_FACTORS,
   type AppInfo,
   type AttachmentMeta,
@@ -1493,6 +1495,19 @@ function createWindow(context: WindowContext): BrowserWindow {
   contents.on('render-process-gone', (_event, { reason, exitCode }) => {
     // A reload during a quit keeps the window open, which cancels the quit.
     if (reason === 'clean-exit' || quitting) return;
+    void bridge.command(
+      command(
+        USER_PRINCIPAL_ID,
+        'signal.app_error',
+        {
+          kind: 'crash',
+          message: `Renderer process gone: ${reason} (exit code ${exitCode})`,
+          reason,
+          exit_code: exitCode,
+        },
+        null,
+      ),
+    );
     const now = Date.now();
     const recovery = crashRecovery(lastRecovery, now);
     if (recovery === 'give-up') {

@@ -1868,6 +1868,14 @@ export const inputSchemas = {
   'signal.mute': z.strictObject({ id: str }),
   /** SignalIssue; the user only. Resolves the issue; its next signal is a regression. */
   'signal.resolve': z.strictObject({ id: str }),
+  /** SignalIssue; the user only. Reports an error or a crash of the app itself to the project whose root is the checkout the app runs from; null when no open project is. */
+  'signal.app_error': z.strictObject({
+    kind: z.enum(['error', 'unhandled_rejection', 'console', 'crash']),
+    message: z.string().min(1).max(500),
+    stack: z.string().max(4000).optional(),
+    reason: z.string().min(1).max(200).optional(),
+    exit_code: z.number().int().optional(),
+  }),
   /** The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none. */
   'resident.open': z.union([
     z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),

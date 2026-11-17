@@ -16,6 +16,7 @@ import { noteCompactionThrash } from './lead-inbox.js';
 import { unsnooze } from './session.js';
 import { isRuntimeHeld } from './runtime-status.js';
 import { recapSession } from './session-recap.js';
+import { recordTurnEnd } from './signal-sources.js';
 
 export function saveSessionHandle(ctx: ControlContext, handle: SessionHandle): void {
   ctx.store.transaction(() => {
@@ -280,6 +281,7 @@ export function agentEvent(ctx: ControlContext, sessionId: string, event: AgentE
         received_bytes: event.received_bytes,
       } satisfies VisualDrawingPayload);
     else ctx.store.event(`agent.${event.kind}`, s, s.project_id, payload);
+    if (event.kind === 'turn.completed') recordTurnEnd(ctx, s, event);
     if (event.kind === 'turn.completed') unsnooze(ctx, s.id, 'turn_ended');
     if (event.kind === 'session.exited') unsnooze(ctx, s.id, 'session_ended');
     return true;

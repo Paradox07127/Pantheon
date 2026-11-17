@@ -155,7 +155,7 @@ import { projectsSummary, summaryProjects } from './projects-summary.js';
 import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
 import { agentProposal } from './agent-proposals.js';
-import { signalList } from './signals.js';
+import { recordTraceFindings, signalList } from './signals.js';
 import { continueSession } from './continuation.js';
 import { appendNote } from './lead-inbox.js';
 import type { ProtectionPaths } from './protection.js';
@@ -279,6 +279,8 @@ export interface ControlOptions {
   turnWallTimeMs?: number;
   /** Absolute path of the CLI entry a session's Pantheon MCP server runs; absent means the one built in this repository. */
   mcpEntry?: string;
+  /** The source checkout the running app is built from; absent means the one this package is built in. */
+  appRoot?: string;
   /** Where external events come from; absent means GitHub through the gh CLI. */
   externalSources?: ExternalSource[];
   /** Runs local connection and GitHub commands; absent means execFile. */
@@ -373,6 +375,7 @@ export class Control extends EventEmitter {
       userConfigDir: options.userConfigDir,
       turnWallTimeMs: options.turnWallTimeMs,
       mcpEntry: options.mcpEntry,
+      appRoot: options.appRoot,
       readProcess: options.readProcess ?? readProcess,
       issueSessionCredential: options.issueSessionCredential,
       revokeSessionCredential: options.revokeSessionCredential,
@@ -1229,6 +1232,7 @@ export class Control extends EventEmitter {
     const trace = this.ctx.trace;
     if (!trace) return;
     const progress = await trace.scan(traceProjects(this.ctx), budgetMs);
+    if (this.store.transaction(() => recordTraceFindings(this.ctx))) this.ctx.changed();
     // A query's own scan may have read the change in first; compare with what was announced.
     if (trace.revision !== this.announcedTrace) {
       this.announcedTrace = trace.revision;

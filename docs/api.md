@@ -589,6 +589,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `signal.app_error` | `kind`: "error" \| "unhandled_rejection" \| "console" \| "crash"<br>`message`: string<br>`stack?`: string<br>`reason?`: string<br>`exit_code?`: integer |  |
 | `signal.mute` | `id`: string |  |
 | `signal.resolve` | `id`: string |  |
 
