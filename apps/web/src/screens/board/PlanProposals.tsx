@@ -1,6 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import {
   addedTaskFields,
@@ -141,7 +142,7 @@ function ProposalCard({
       return (
         <li key={row.at} className="bd-pp-row" data-change="remove">
           {sign('remove')}
-          <span className="bd-pp-nm">{taskTitle(op.task_id)}</span>
+          <Clip className="bd-pp-nm" text={taskTitle(op.task_id)} />
           {drop(row)}
         </li>
       );
@@ -171,7 +172,7 @@ function ProposalCard({
                 onChange={(e) => retitle(row.at, e.target.value)}
               />
             ) : (
-              <span className="bd-pp-nm">{op.task.title}</span>
+              <Clip className="bd-pp-nm" text={op.task.title} />
             )}
             {type && <span className="bd-pp-mu">{TASK_TYPE[type].label}</span>}
             {ups.length > 0 && (
@@ -224,7 +225,7 @@ function ProposalCard({
     return (
       <li key={row.at} className="bd-pp-row">
         <span className="bd-pp-sign" aria-hidden="true" />
-        <span className="bd-pp-nm">{nameOf(op)}</span>
+        <Clip className="bd-pp-nm" text={nameOf(op)} />
         {changeList(opChanges(model, leadId, op))}
         {drop(row)}
       </li>
@@ -242,9 +243,7 @@ function ProposalCard({
       <div className="bd-pp-h">
         {runtime && <RuntimeGlyph runtime={runtime} />}
         <b className="bd-pp-t">{title}</b>
-        <span className="bd-pp-why" title={proposal.reason}>
-          {proposal.reason}
-        </span>
+        <Clip className="bd-pp-why" text={proposal.reason} lines={2} />
       </div>
       <ul className="bd-pp-rows">{rows.map(line)}</ul>
       {mode === 'view' && (

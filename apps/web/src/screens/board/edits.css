@@ -220,13 +220,7 @@
   font-weight: 600;
 }
 .bd-pp-why {
-  display: -webkit-box;
-  min-width: 0;
-  overflow: hidden;
   color: var(--mu);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
 }
 .bd-pp-rows {
   display: flex;
@@ -236,13 +230,16 @@
   padding: 0;
   list-style: none;
 }
+/* Lines of 20px between 6px pads keep a one-line row 32px; a wrapping change list grows it. */
 .bd-pp-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  box-sizing: border-box;
   min-height: 32px;
-  padding: 0 8px;
+  padding: 6px 8px;
   border-radius: var(--r-sm);
+  line-height: 20px;
 }
 .bd-pp-row[data-change='add'] {
   background: color-mix(in srgb, var(--ok) 9%, transparent);
@@ -261,28 +258,30 @@
 .bd-pp-row[data-change='remove'] .bd-pp-sign {
   color: var(--bad);
 }
-.bd-pp-nm {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .bd-pp-row[data-change='remove'] .bd-pp-nm {
   color: var(--mu);
   text-decoration: line-through;
 }
 .bd-pp-mu {
-  flex: none;
+  min-width: 0;
   color: var(--mu);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .bd-pp-in {
   flex: 1;
   min-width: 0;
+  margin: -4px 0;
   cursor: text;
 }
 .bd-pp-in[aria-invalid='true'] {
   border-color: var(--bad);
+}
+.bd-pp-row > .bd-bn-ch {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.bd-pp-row:has(> .bd-bn-ch) > .bd-pp-nm {
+  max-width: 50%;
 }
 .bd-pp-row .ib {
   flex: none;

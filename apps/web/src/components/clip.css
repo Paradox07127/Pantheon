@@ -1,0 +1,17 @@
+.clip-1 {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The number of lines comes inline from `lines`. */
+.clip-n {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+}
+.clip-more {
+  flex: none;
+}

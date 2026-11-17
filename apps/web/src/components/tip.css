@@ -10,7 +10,10 @@
   color: var(--on-ink);
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);
-  white-space: pre;
+  /* Keeps the newlines a tip is written with; a long full text from Clip wraps inside the window. */
+  max-width: min(480px, calc(100vw - 32px));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   pointer-events: none;
   transform-origin: var(--transform-origin);
   transition:

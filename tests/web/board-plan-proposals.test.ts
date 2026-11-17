@@ -119,7 +119,7 @@ describe('lead plan proposals on the board', () => {
     expect(mark!.props.runtime).toBe('claude');
     expect(text(title)).toBe(zhf('board.plan.proposal.title', { lead: 'Refunds lead' }));
     expect(why!.props.className).toBe('bd-pp-why');
-    expect(why!.props.title).toBe('The diff report failed its gate three times');
+    expect(text(why)).toBe('The diff report failed its gate three times');
   });
 
   it('lists each op in order: removed and added tasks with their signs, others as changes', () => {
@@ -396,13 +396,21 @@ describe('lead plan proposals on the board', () => {
     ]);
   });
 
+  it('keeps the whole of a long reason and a long task name in the card', () => {
+    const reason = `The diff report failed its gate three times; ${'the refunds export keeps timing out '.repeat(8)}`;
+    const name = `Rebuild the nightly refunds export ${'with retries and a resumable cursor '.repeat(4)}`;
+    const h = cards(board([proposal('p-1', NOW, { reason, ops: [newTask('c9', name)] })]))[0]!;
+    expect(text(h.value)).toContain(reason);
+    expect(text(h.value)).toContain(name);
+  });
+
   it('orders the cards by when each proposal was made', () => {
     const titles = cards(
       board([
         proposal('p-late', NOW, { reason: 'later' }),
         proposal('p-early', NOW - 60_000, { reason: 'earlier' }),
       ]),
-    ).map((h) => find(h.value, (n) => n.props.className === 'bd-pp-why').props.title);
+    ).map((h) => text(find(h.value, (n) => n.props.className === 'bd-pp-why')));
     expect(titles).toEqual(['earlier', 'later']);
   });
 });

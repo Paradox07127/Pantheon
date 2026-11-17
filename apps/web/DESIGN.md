@@ -47,6 +47,10 @@ Read this before changing `apps/web/src`. Tokens live in `src/index.css`: the sh
 - Parts of one task (a parallel task's parts) reuse the task's status glyphs and the drawer's link rows, in plan order; a part with a session opens it, one without is a plain row. A glyph that stands alone is `role=img` with the name and status in its `aria-label`.
 - Images and links do not drag out of the window (`-webkit-user-drag: none`); an element the user drags sets `draggable`.
 - Interface text is not selectable (`.pt` has `user-select: none`). What the user copies gets `user-select: text`: the session thread, markdown, `pre` and `code`, the trace detail, request card bodies, the task drawer, retrospective and history content, banner and toast messages, paths and ids in settings and experience entries, and `input`, `textarea` and `[contenteditable]`. Buttons and tabs inside them stay unselectable.
+- Text in a box of limited width takes one of three treatments. Wrap is the default: `overflow-wrap: anywhere`, and every flex or grid child on the way gets `min-width: 0`.
+- Cut to one line only where the row height is fixed (sidebar rows, table cells, tabs, chips) and only through `Clip` (`src/components/Clip.tsx`), which shows the full text in a tooltip on hover and keyboard focus when the text is really cut.
+- Cut to N lines only through `Clip` with `lines={N}`, which adds a show-more button when the text is really cut.
+- Nothing is drawn outside its card or pane; `node tests/acceptance/verify/run.mjs --boot layout.overflow-scan` reports what is.
 
 ## Page frame
 

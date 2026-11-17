@@ -137,6 +137,8 @@ export function text(tree: ReactNode): string {
         (node.type.name === 'EmptyState' && node.props.inline))
     )
       return text((node.type as (props: unknown) => ReactNode)(node.props));
+    // Clip keeps its whole text in the DOM, given as a prop.
+    if (typeof node.type === 'function' && node.type.name === 'Clip') return node.props.text;
     return text(node.props.children);
   }
   return tree === null || tree === undefined || typeof tree === 'boolean' ? '' : String(tree);

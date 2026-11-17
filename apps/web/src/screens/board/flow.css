@@ -928,6 +928,7 @@
 .bd-bn-ch {
   display: grid;
   gap: 4px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -942,10 +943,11 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
   min-width: 0;
   color: var(--tx2);
   font-family: var(--font-mono);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .bd-diff s {
   color: var(--mu);

@@ -178,5 +178,7 @@
   "components.questionCard.graphPreview": "任务图，{count, plural, other {# 个任务}}：{tasks}",
   "components.questionCard.flowPreview": "流程图",
   "components.requestCard.questionFrom": "来自 {who} 的提问",
-  "components.toast.askAgent": "问 agent"
+  "components.toast.askAgent": "问 agent",
+  "components.clip.more": "展开",
+  "components.clip.less": "收起"
 }
