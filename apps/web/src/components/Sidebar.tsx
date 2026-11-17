@@ -39,23 +39,30 @@ import { SCREEN_NAMES } from '../screens';
 import { useProjectsView } from '../screens/projects/view';
 import {
   keepOrder,
+  keptByView,
   needsAttention,
   onlyWaiting,
   readSessionView,
+  SESSION_TYPES,
   sessionRow,
   sidebarGroups,
   treeDepths,
   treeLines,
   unfoldEntered,
+  workerCounts,
   type SessionListView,
+  type SessionType,
   type SidebarGroup,
   type SidebarGroupKey,
   type TreeLine,
 } from '../screens/sessions/model';
 import { SessionListRow, shownSessionId } from '../screens/sessions/SessionsScreen';
-import { useSplitRoom } from '../screens/sessions/shared';
+import { setCreatedHere, useSplitRoom } from '../screens/sessions/shared';
+import { workerCountMarks, workerCountsText } from '../screens/sessions/WorkerStrip';
 import { useShell } from '../store';
 import { LoadError } from './LoadError';
+import { compareRuntimes, RuntimeGlyph, runtimeName } from './RuntimeGlyph';
+import { SessionStateIcon, sessionStateLabel, StateGlyph } from './SessionStateIcon';
 import { ProjectMonogram } from './ProjectMonogram';
 import { KeyHint } from './Shortcuts';
 import { Skeleton } from './Skeleton';
@@ -167,13 +174,69 @@ const SORTS = [
   },
 ] as const;
 
+const TYPES: Record<SessionType, { readonly label: string }> = {
+  resident: {
+    get label() {
+      return t({ id: 'components.sidebar.typeResident', defaultMessage: 'Resident' });
+    },
+  },
+  worker: {
+    get label() {
+      return t({ id: 'components.sidebar.typeWorker', defaultMessage: 'Worker' });
+    },
+  },
+  direct: {
+    get label() {
+      return t({ id: 'components.sidebar.typeDirect', defaultMessage: 'Direct' });
+    },
+  },
+  review: {
+    get label() {
+      return t({ id: 'components.sidebar.typeReview', defaultMessage: 'Review' });
+    },
+  },
+};
+
+/** The project's resident leads, in the order the sidebar lists them. */
+const RESIDENTS = [
+  {
+    kind: 'assistant',
+    get name() {
+      return t({ id: 'components.sidebar.residentAssistant', defaultMessage: 'Assistant' });
+    },
+  },
+  {
+    kind: 'triage',
+    get name() {
+      return t({ id: 'components.sidebar.residentTriage', defaultMessage: 'Triage' });
+    },
+  },
+] as const;
+
+/** The list without one entry, or with it again. */
+const flip = <T,>(list: readonly T[] | undefined, value: T, keep: boolean): T[] =>
+  keep ? (list ?? []).filter((each) => each !== value) : [...(list ?? []), value];
+
 function ViewMenu({
   view,
+  runtimes,
   onChange,
 }: {
   view: SessionListView;
+  /** The runtimes of the project's sessions and those the view leaves out. */
+  runtimes: readonly string[];
   onChange: (view: SessionListView) => void;
 }) {
+  const check = (key: string, label: ReactNode, checked: boolean, pick: (on: boolean) => void) => (
+    <Menu.CheckboxItem key={key} checked={checked} onCheckedChange={pick}>
+      <span className="pjm-ck">
+        <Menu.CheckboxItemIndicator>
+          <Check className="ic-sm" aria-hidden="true" />
+        </Menu.CheckboxItemIndicator>
+      </span>
+      {label}
+    </Menu.CheckboxItem>
+  );
   const radio = (value: string, label: string, pick: () => void) => (
     <Menu.RadioItem key={value} value={value} closeOnClick onClick={pick}>
       <span className="pjm-ck">
@@ -184,7 +247,7 @@ function ViewMenu({
       {label}
     </Menu.RadioItem>
   );
-  const label = t({ id: 'components.sidebar.viewMenu', defaultMessage: 'Group and sort' });
+  const label = t({ id: 'components.sidebar.viewMenu', defaultMessage: 'Group, sort and filter' });
   return (
     <Menu.Root>
       <Tip content={label}>
@@ -216,6 +279,42 @@ function ViewMenu({
                 )}
               </Menu.RadioGroup>
             </Menu.Group>
+            <Menu.Separator className="pjm-sep" />
+            <Menu.Group>
+              <Menu.GroupLabel className="sb-vm-h">
+                {t({ id: 'components.sidebar.types', defaultMessage: 'Type' })}
+              </Menu.GroupLabel>
+              {SESSION_TYPES.map((type) =>
+                check(type, TYPES[type].label, !view.hiddenTypes?.includes(type), (on) =>
+                  onChange({ ...view, hiddenTypes: flip(view.hiddenTypes, type, on) }),
+                ),
+              )}
+            </Menu.Group>
+            {runtimes.length > 0 && (
+              <>
+                <Menu.Separator className="pjm-sep" />
+                <Menu.Group>
+                  <Menu.GroupLabel className="sb-vm-h">
+                    {t({ id: 'components.sidebar.runtimes', defaultMessage: 'Runtime' })}
+                  </Menu.GroupLabel>
+                  {runtimes.map((runtime) =>
+                    check(
+                      runtime,
+                      <>
+                        <RuntimeGlyph runtime={runtime} />
+                        {runtimeName(runtime)}
+                      </>,
+                      !view.hiddenRuntimes?.includes(runtime),
+                      (on) =>
+                        onChange({
+                          ...view,
+                          hiddenRuntimes: flip(view.hiddenRuntimes, runtime, on),
+                        }),
+                    ),
+                  )}
+                </Menu.Group>
+              </>
+            )}
             <Menu.Separator className="pjm-sep" />
             <Menu.CheckboxItem
               checked={view.archived}
@@ -521,6 +620,20 @@ export function Sidebar({
   const peekTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   if (!layout.collapsed && peek !== 'shut') setPeek('shut');
   const [view, setView] = useSessionView(currentProjectId);
+  const all = list.data ?? [];
+  // Each kind's newest resident lead that is not archived; null until one is opened.
+  const residentOf = (kind: string) =>
+    all
+      .filter((s) => s.resident?.kind === kind && !s.archived_at)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
+  const residents = view.hiddenTypes?.includes('resident')
+    ? []
+    : RESIDENTS.map((r) => ({ kind: r.kind, name: r.name, session: residentOf(r.kind) })).filter(
+        (r) => !r.session || keptByView(r.session, view),
+      );
+  const runtimes = [
+    ...new Set([...all.map((s) => s.runtime), ...(view.hiddenRuntimes ?? [])]),
+  ].sort(compareRuntimes);
   // The project whose list shows only the sessions that need the user; null when none does.
   const [waitingIn, setWaitingIn] = useState<string | null>(null);
   const waitingCount = (list.data ?? []).filter((s) => !s.archived_at && needsAttention(s)).length;
@@ -537,7 +650,13 @@ export function Sidebar({
   // The check is a new function each render; the unread ids say when the groups change.
   const unreadIds = (list.data ?? []).filter(unread).map((s) => s.id);
   const fresh = useMemo(
-    () => sidebarGroups(list.data ?? [], view, unread, now),
+    () =>
+      sidebarGroups(
+        (list.data ?? []).filter((s) => !s.resident && keptByView(s, view)),
+        view,
+        unread,
+        now,
+      ),
     [list.data, view, unreadIds.join('\n'), now],
   );
   const shown = useRef<{ view: SessionListView; groups: SidebarGroup[] } | null>(null);
@@ -574,15 +693,32 @@ export function Sidebar({
   const [active, setActive] = useState<string | null>(null);
   // Rows picked with the select key; the keyboard focus moves without changing them.
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const stops = groups.flatMap((group) => {
-    const shut = !group.bare && folded(group.key, group.folded);
-    const rows = shut ? [] : group.rows.flatMap((r) => [r.session, ...r.children]);
-    const bare = !!group.bare;
-    return [
-      ...(bare ? [] : [{ key: `group:${group.key}`, group: group.key, shut, bare, session: null }]),
-      ...rows.map((session) => ({ key: session.id, group: group.key, shut, bare, session })),
-    ];
-  });
+  const stops: {
+    key: string;
+    group: SidebarGroupKey;
+    shut: boolean;
+    bare: boolean;
+    session: WorkbenchSession | null;
+  }[] = [
+    ...residents.map((r) => ({
+      key: `resident:${r.kind}`,
+      group: 'tree' as const,
+      shut: false,
+      bare: true,
+      session: null,
+    })),
+    ...groups.flatMap((group) => {
+      const shut = !group.bare && folded(group.key, group.folded);
+      const rows = shut ? [] : group.rows.flatMap((r) => [r.session, ...r.children]);
+      const bare = !!group.bare;
+      return [
+        ...(bare
+          ? []
+          : [{ key: `group:${group.key}`, group: group.key, shut, bare, session: null }]),
+        ...rows.map((session) => ({ key: session.id, group: group.key, shut, bare, session })),
+      ];
+    }),
+  ];
   const visible = stops.flatMap((stop) => (stop.session ? [stop.session] : []));
   const tabStop =
     stops.find((stop) => stop.key === active)?.key ??
@@ -879,6 +1015,76 @@ export function Sidebar({
     );
   };
   const openSettingsHere = () => openSettings(currentProjectId);
+  // resident.open returns the open resident of the kind, opening one when there is none.
+  const openResident = (kind: (typeof RESIDENTS)[number]['kind']) => {
+    if (!currentProjectId) return;
+    void runCommand('resident.open', { project_id: currentProjectId, kind }, null).then(
+      (result) => {
+        if (!result.ok) return toast({ title: failureText(result.error), kind: 'failure' });
+        const id = (result.value as { id?: unknown } | null)?.id;
+        if (typeof id !== 'string') return;
+        setCreatedHere(id);
+        openSession(id);
+      },
+    );
+  };
+  const residentRow = (r: (typeof residents)[number]) => {
+    const s = r.session;
+    const key = `resident:${r.kind}`;
+    const counts = workerCounts(s ? all.filter((w) => w.lead === s.id && !w.archived_at) : []);
+    const waits = s
+      ? (allNeeds.items ?? []).filter(
+          (item) =>
+            item.project_id === currentProjectId &&
+            (item.session_id === s.id ||
+              (item.source.table === 'sessions' && item.source.id === s.id)),
+        ).length
+      : 0;
+    const name = [
+      r.name,
+      s
+        ? sessionStateLabel(s)
+        : t({ id: 'components.sidebar.residentNotStarted', defaultMessage: 'Not started' }),
+      ...(counts.running + counts.review + counts.failed > 0 ? [workerCountsText(counts)] : []),
+      ...(waits > 0
+        ? [
+            t(
+              {
+                id: 'components.sidebar.residentWaits',
+                defaultMessage:
+                  '{count, plural, one {# item waits for you} other {# items wait for you}}',
+              },
+              { count: waits },
+            ),
+          ]
+        : []),
+    ].join(t({ id: 'sessions.screen.separator', defaultMessage: ', ' }));
+    return (
+      <button
+        key={key}
+        type="button"
+        className="ss-rr"
+        aria-current={(!!s && s.id === shownId) || undefined}
+        aria-label={name}
+        data-stop={key}
+        tabIndex={key === tabStop ? 0 : -1}
+        onClick={() => openResident(r.kind)}
+      >
+        {s ? (
+          <SessionStateIcon session={s} place="list" />
+        ) : (
+          <StateGlyph name="idle" place="list" />
+        )}
+        <span className="ss-ttl">{r.name}</span>
+        <span className="ss-rsum">{workerCountMarks(counts)}</span>
+        {waits > 0 && (
+          <span className="ss-rct" aria-hidden="true">
+            {waits}
+          </span>
+        )}
+      </button>
+    );
+  };
   // The open sidebar's content; the rail floats it in a panel too.
   const body = () => (
     <>
@@ -996,7 +1202,7 @@ export function Sidebar({
               {SCREEN_NAMES.memory}
             </button>
             <div className="sb-sh">
-              <span>{SCREEN_NAMES.sessions}</span>
+              <span>{t({ id: 'components.sidebar.agents', defaultMessage: 'Agents' })}</span>
               {waitingCount > 0 && (
                 <button
                   type="button"
@@ -1018,28 +1224,7 @@ export function Sidebar({
                   {waitingCount}
                 </button>
               )}
-              <ViewMenu view={view} onChange={setView} />
-              <Tip
-                content={t(
-                  { id: 'components.sidebar.newSessionTip', defaultMessage: 'New session {keys}' },
-                  { keys: keyText(shortcutKeys('new')) },
-                )}
-              >
-                <button
-                  type="button"
-                  className="ib"
-                  aria-label={t({
-                    id: 'components.sidebar.newSession',
-                    defaultMessage: 'New session',
-                  })}
-                  aria-keyshortcuts="Meta+N"
-                  aria-current={(screen === 'sessions' && sessionId === '') || undefined}
-                  onClick={startNewSession}
-                >
-                  <SquarePen aria-hidden="true" />
-                  <KeyHint id="new" />
-                </button>
-              </Tip>
+              <ViewMenu view={view} runtimes={runtimes} onChange={setView} />
             </div>
             <nav
               className="ss-list"
@@ -1055,6 +1240,45 @@ export function Sidebar({
                 if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
               }}
             >
+              {residents.length > 0 && (
+                <div
+                  className="ss-grp"
+                  role="group"
+                  aria-label={t({
+                    id: 'components.sidebar.residents',
+                    defaultMessage: 'Residents',
+                  })}
+                >
+                  {residents.map(residentRow)}
+                </div>
+              )}
+              <div className="ss-zh">
+                <span>{SCREEN_NAMES.sessions}</span>
+                <Tip
+                  content={t(
+                    {
+                      id: 'components.sidebar.newSessionTip',
+                      defaultMessage: 'New session {keys}',
+                    },
+                    { keys: keyText(shortcutKeys('new')) },
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="ib"
+                    aria-label={t({
+                      id: 'components.sidebar.newSession',
+                      defaultMessage: 'New session',
+                    })}
+                    aria-keyshortcuts="Meta+N"
+                    aria-current={(screen === 'sessions' && sessionId === '') || undefined}
+                    onClick={startNewSession}
+                  >
+                    <SquarePen aria-hidden="true" />
+                    <KeyHint id="new" />
+                  </button>
+                </Tip>
+              </div>
               {!list.data && listError}
               {!list.data && !list.error && (
                 <div className="ss-grp" aria-busy="true">

@@ -16,6 +16,7 @@ import { Collapsible } from '@base-ui/react/collapsible';
 import { Tooltip } from '@base-ui/react/tooltip';
 import {
   AppWindow,
+  Bell,
   Bot,
   CheckIcon,
   ChevronRight,
@@ -88,6 +89,7 @@ import { showFile } from './FilesPanel';
 import { SessionCompose } from './SessionCompose';
 import { fail, useSecondTick } from './shared';
 import { CheckpointBack, ReplyActions, TurnActions } from './TurnMenu';
+import { WorkerStrip } from './WorkerStrip';
 import '../../components/state-icon.css';
 
 /** The session's worktree and its project's folders; tool call paths are shown relative to them. */
@@ -135,6 +137,8 @@ export function Thread(props: {
   sessions?: readonly WorkbenchSession[];
   /** The session bar's terminal switch. */
   terminal?: TerminalToggle;
+  /** The listed sessions working on tasks this one dispatched. */
+  workers?: readonly WorkbenchSession[];
 }) {
   const { board, sessionId, listed, active = true } = props;
   // Read when asked, so a new list read does not render every turn again.
@@ -361,6 +365,7 @@ export function Thread(props: {
             {...(props.terminal ? { terminal: props.terminal } : {})}
           />
         ))}
+      {listed?.resident && !props.head && <WorkerStrip workers={props.workers ?? []} />}
       {finding && view && <ThreadFind turns={view.turns} scroller={flow} />}
       <div className="ss-flow" data-debug-region="sessions.transcript">
         {!props.head && timeline !== 'off' && (
@@ -406,6 +411,20 @@ export function Thread(props: {
                 {spoken}
               </div>
               {history.error && <LoadError message={history.error} onRetry={history.reload} />}
+              {listed?.resident && view?.turns.length === 0 && (
+                <p className="ss-emp">
+                  {t(
+                    {
+                      id: 'sessions.residents.empty',
+                      defaultMessage: 'Tell {name} what {project} should do next.',
+                    },
+                    {
+                      name: title,
+                      project: board.projects.find((p) => p.id === session?.project_id)?.name ?? '',
+                    },
+                  )}
+                </p>
+              )}
               {!view
                 ? !history.error && (
                     <div className="tr-typing" aria-busy="true">
@@ -489,6 +508,13 @@ const checkpointAfter = (next: TurnView | undefined) =>
     ? next.turn.id
     : null;
 
+/** The one line a resident's turn woken by its workers, an outside event or a plan sync folds to. */
+const WAKE: Partial<Record<NonNullable<SessionTurn['origin']>, () => string>> = {
+  tracker: () => t({ id: 'sessions.residents.wake.tracker', defaultMessage: 'Workers reported' }),
+  external: () => t({ id: 'sessions.residents.wake.external', defaultMessage: 'Outside event' }),
+  sync: () => t({ id: 'sessions.residents.wake.sync', defaultMessage: 'Plan synced' }),
+};
+
 const PantheonMark = () => (
   <svg className="ss-pg" viewBox="0 0 14 14" aria-hidden="true">
     <path d="M1.8 5.2 7 2.2l5.2 3zM3.5 6.8v4M7 6.8v4M10.5 6.8v4M2 12.2h10" />
@@ -541,6 +567,9 @@ export function ThreadTurn(props: {
   useEffect(() => {
     if (streaming) setCaret(true);
   }, [streaming]);
+  // A wake turn of a resident shows its input only once opened.
+  const [wakeOpen, setWakeOpen] = useState(false);
+  const wake = listed?.resident && turn.origin ? WAKE[turn.origin] : undefined;
   // A compaction is drawn as a mark, not as a message.
   const compaction = turn.origin === 'compaction';
   // Every origin but lead is Pantheon writing to the session.
@@ -589,6 +618,25 @@ export function ThreadTurn(props: {
             )}
           </ThreadMark>
         )
+      ) : wake ? (
+        <>
+          <button
+            type="button"
+            className="ss-ev"
+            aria-expanded={wakeOpen}
+            onClick={() => setWakeOpen((was) => !was)}
+          >
+            <Bell className="ic-sm" aria-hidden="true" />
+            <span className="ss-ttl">{wake()}</span>
+            {sent && <span className="ss-evt">{sent}</span>}
+            <ChevronRight className="ic-sm ss-evc" aria-hidden="true" />
+          </button>
+          {wakeOpen && (
+            <div className="ss-evn" data-find="input">
+              {shownInput(turn)}
+            </div>
+          )}
+        </>
       ) : (
         <div className="ss-uh" data-from={from ?? undefined}>
           <div className="ss-uc">

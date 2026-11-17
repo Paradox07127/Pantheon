@@ -653,10 +653,8 @@ export interface Session extends Entity {
     /** The device resources the task used when the session opened, which it holds until it ends. */
     uses?: Record<string, number>;
   };
-  /** The outside subject, such as github:owner/repo#12, whose events opened this lead. */
-  external_subject?: string;
-  /** The user has not approved work on the external subject: its turns are read-only and none of its tasks opens. */
-  external_hold?: boolean;
+  /** A lead the project keeps for one role: it plans and dispatches, never writes or works on a task itself. */
+  resident?: { kind: 'assistant' | 'triage' };
   /**
    * The task of its own plan a lead works on itself; reported_head is its worktree's commit when it
    * reported the task done. Not task, which would make the session a worker.
@@ -696,11 +694,19 @@ export interface SessionRecap {
 export function credentialRole(
   session: Pick<
     Session,
-    'review_id' | 'baseline' | 'change_story' | 'range_story' | 'intro' | 'workspace_id' | 'task'
+    | 'review_id'
+    | 'baseline'
+    | 'change_story'
+    | 'range_story'
+    | 'intro'
+    | 'workspace_id'
+    | 'task'
+    | 'resident'
   >,
   workspaceKind?: Workspace['kind'],
 ): Role {
   if (session.review_id) return 'reviewer';
+  if (session.resident) return 'lead';
   if (
     session.baseline ||
     session.change_story ||
@@ -923,6 +929,8 @@ export interface ExternalRead {
   mode?: Project['external_events'];
   sources: ExternalSourceStatus[];
   events: ExternalEvent[];
+  /** The subject keys that wait for the user's approval. */
+  held: string[];
 }
 export interface Event {
   sequence: number;
@@ -1596,6 +1604,8 @@ export interface BoardPlan extends Entity {
     source: string[];
     /** Verbatim quotes of what other people wrote in an external event; not the user's words. */
     external_source?: string[];
+    /** The external subject, such as github:owner/repo#12, the task was planned for. */
+    external_subject?: string;
     scope: string[];
     acceptance: string[];
     runtime?: string;
@@ -1650,6 +1660,8 @@ export interface BoardPlan extends Entity {
   >;
   /** The wake the lead refused because it has closed, or held after too many wakes; cleared by the next wake it takes. */
   wake_failed?: { reason: 'lead_closed' | 'wake_limit'; at: number };
+  /** External subjects the user has not approved, by subject key: their tasks do not start until then. */
+  external_holds?: Record<string, { at: number }>;
   /** Notes for the lead's next message. */
   inbox: LeadNote[];
   /** The last task session state the lead was told of, by session id. */
@@ -2073,7 +2085,8 @@ export interface LeadNote {
     | 'plan_review_failed'
     | 'user_edit'
     | 'answer'
-    | 'usage_reset';
+    | 'usage_reset'
+    | 'external';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;

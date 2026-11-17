@@ -265,10 +265,13 @@ describe('session list title row', () => {
     { ...session('d', 'waiting'), archived_at: '2026-01-02T00:00:00.000Z' },
   ];
 
-  it('counts the sessions that need you in a chip before the group and sort menu and new session', () => {
+  it('counts the sessions that need you in a chip before the group, sort and filter menu, and puts new session on the sessions title', () => {
     const html = render({ sessions: waiting });
     expect(html).toMatch(
-      /<div class="sb-sh"><span>会话<\/span><button type="button" class="sb-wait" aria-pressed="false" aria-label="只看等你的 2 个会话">2<\/button><button[^>]*aria-label="分组与排序"[^>]*>.*?<button[^>]*aria-label="新会话"[^>]*><svg[^>]*>.*?<\/svg><span class="kbd hk" aria-hidden="true">⌘N<\/span><\/button>/,
+      /<div class="sb-sh"><span>智能体<\/span><button type="button" class="sb-wait" aria-pressed="false" aria-label="只看等你的 2 个会话">2<\/button><button[^>]*aria-label="分组、排序与筛选"[^>]*>.*?<\/button><\/div>/,
+    );
+    expect(html).toMatch(
+      /<div class="ss-zh"><span>会话<\/span><button[^>]*aria-label="新会话"[^>]*><svg[^>]*>.*?<\/svg><span class="kbd hk" aria-hidden="true">⌘N<\/span><\/button><\/div>/,
     );
   });
 

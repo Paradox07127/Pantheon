@@ -1,15 +1,18 @@
 import {
   DomainError,
   requireThat,
+  type BoardPlan,
   type ExternalEvent,
   type Project,
   type Session,
 } from '@pantheon/domain';
 import { inputSchemas, USER_PRINCIPAL_ID } from '@pantheon/protocol';
-import type { ControlContext, Handlers } from './context.js';
+import { ownEntry } from './board-plan.js';
+import { projectAccess, type ControlContext, type Handlers } from './context.js';
 import { externalEvents } from './user-config.js';
-import { startLead } from './lead-session.js';
-import { queueTurn } from './task-tracking.js';
+import { appendNote } from './lead-inbox.js';
+import { openResident } from './resident.js';
+import { wakeLead } from './task-tracking.js';
 
 // Sources are polled about once a minute; two minutes joins the events of two polls in a row.
 const SETTLE_MS = 2 * 60 * 1000;
@@ -56,9 +59,8 @@ export function settledExternalEvents(ctx: ControlContext): ExternalEvent[][] {
 }
 
 const HELD_TEXT =
-    'The user has not approved this request yet. You are read-only: read the code and write the board plan. Its tasks start once the user approves.',
-  APPROVED_TEXT =
-    'The user approved this request. You are no longer read-only on its account: start the tasks of your plan.';
+    'The user has not approved this request yet. Plan its tasks; they start once the user approves.',
+  APPROVED_TEXT = 'The user approved this request: start the tasks of your plan for it.';
 
 /** What the lead reads about the events: the subject, who raised them and each new text with its author. */
 function eventBrief(events: ExternalEvent[], texts: ExternalEvent['texts'], held: boolean): string {
@@ -66,6 +68,7 @@ function eventBrief(events: ExternalEvent[], texts: ExternalEvent['texts'], held
   return [
     `External request from ${latest.source}: ${latest.title}`,
     latest.url,
+    `Subject: ${latest.subject_key}; give the tasks for it this external_subject.`,
     `Raised by ${[...new Set(events.map((event) => `${event.actor} (${event.kind})`))].join(', ')}.`,
     ...texts.map((text) =>
       text.own
@@ -77,8 +80,8 @@ function eventBrief(events: ExternalEvent[], texts: ExternalEvent['texts'], held
 }
 
 /**
- * Hands each settled group of events to a lead: the open lead that has the subject, or a new one.
- * The lead is held for the user's approval unless the project takes events in auto mode and the
+ * Hands each settled group of events to the project's triage session as a note on its plan. The
+ * subject is held for the user's approval unless the project takes events in auto mode and the
  * user alone raised and wrote all of them.
  */
 export function tickExternalIntake(ctx: ControlContext): void {
@@ -86,7 +89,7 @@ export function tickExternalIntake(ctx: ControlContext): void {
     try {
       ctx.store.transaction(() => handOver(ctx, events));
     } catch (error) {
-      // A lead that cannot start fails its events with the reason; the rest of the tick still runs.
+      // A triage session that cannot open fails its events with the reason; the rest of the tick still runs.
       if (!(error instanceof DomainError)) throw error;
       for (const event of events)
         ctx.store.update(
@@ -95,6 +98,50 @@ export function tickExternalIntake(ctx: ControlContext): void {
           event.revision,
         );
     }
+}
+
+/** The triage session's plan; an empty one while it has written none. */
+function triagePlan(ctx: ControlContext, triage: Session): BoardPlan {
+  return (
+    ctx.store.get<BoardPlan>('board_plans', triage.id) ??
+    ctx.store.insert<BoardPlan>('board_plans', {
+      id: triage.id,
+      revision: 1,
+      project_id: triage.project_id,
+      headline: '',
+      lanes: [],
+      tasks: [],
+      plan_version: 0,
+      pending_edits: [],
+      risks: [],
+      assumptions: [],
+      inbox: [],
+      notified: {},
+      updated_at: ctx.store.now(),
+    })
+  );
+}
+
+/** Stores the plan's holds, leaves its lead the note and wakes the lead. */
+function noteTriage(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  holds: BoardPlan['external_holds'],
+  text: string,
+  cause: string,
+): void {
+  const { external_holds: _holds, ...rest } = plan;
+  const next = appendNote(
+    ctx,
+    ctx.store.update(
+      'board_plans',
+      holds && Object.keys(holds).length ? { ...rest, external_holds: holds } : rest,
+      plan.revision,
+    ),
+    { at: ctx.store.now(), session_id: '', task_id: '', kind: 'external', text },
+    cause,
+  );
+  wakeLead(ctx, next, cause);
 }
 
 function handOver(ctx: ControlContext, events: ExternalEvent[]): void {
@@ -121,41 +168,36 @@ function handOver(ctx: ControlContext, events: ExternalEvent[]): void {
     .flatMap((event) => event.texts)
     .filter((text) => !seen.has(key(text)) && seen.add(key(text)));
   const cause = `external:${first.id}`,
-    open = ctx.store
-      .list<Session>('sessions')
-      .find(
-        (session) =>
-          session.project_id === first.project_id &&
-          session.external_subject === first.subject_key &&
-          !session.outcome &&
-          session.state !== 'closed',
-      );
-  const lead =
-    open ??
-    startLead(
+    triage = openResident(
       ctx,
       { id: USER_PRINCIPAL_ID, role: 'user' },
       project.id,
-      first.title,
-      eventBrief(events, texts, hold),
+      'triage',
       cause,
-      'external',
+    ),
+    plan = triagePlan(ctx, triage),
+    wasHeld = ownEntry(plan.external_holds, first.subject_key) !== undefined;
+  if (hold && !wasHeld)
+    ctx.store.event(
+      'board.external_held',
+      plan,
+      project.id,
+      { subject_key: first.subject_key },
+      cause,
     );
-  // A project without a git folder keeps its events until it has one.
-  if (!lead) return;
-  const held = hold || lead.external_hold === true,
-    marked = ctx.store.update(
-      'sessions',
-      { ...lead, external_subject: first.subject_key, ...(held && { external_hold: true }) },
-      lead.revision,
-    );
-  if (held && !lead.external_hold)
-    ctx.store.event('session.external_held', marked, marked.project_id, {}, cause);
-  if (open) queueTurn(ctx, marked, eventBrief(events, texts, held), 'external', cause);
+  noteTriage(
+    ctx,
+    plan,
+    hold && !wasHeld
+      ? { ...plan.external_holds, [first.subject_key]: { at: ctx.store.now() } }
+      : plan.external_holds,
+    eventBrief(events, texts, hold || wasHeld),
+    cause,
+  );
   for (const event of events)
     ctx.store.update(
       'external_events',
-      { ...event, state: 'handled' as const, session_id: lead.id },
+      { ...event, state: 'handled' as const, session_id: triage.id },
       event.revision,
     );
 }
@@ -167,13 +209,19 @@ export const externalEventHandlers: Handlers = {
       'permission_denied',
       'Only user can approve an external request',
     );
-    const { session_id } = inputSchemas['external.approve'].parse(c.input),
-      session = ctx.store.must<Session>('sessions', session_id);
-    requireThat(session.external_hold, 'invalid_state', 'This session does not wait for approval');
-    const { external_hold: _held, ...rest } = session;
-    const next = ctx.store.update('sessions', rest, session.revision);
-    ctx.store.event('session.external_approved', next, next.project_id, {}, c.command_id);
-    queueTurn(ctx, next, APPROVED_TEXT, 'external', c.command_id);
-    return ctx.store.must<Session>('sessions', session_id);
+    const { project_id, subject_key } = inputSchemas['external.approve'].parse(c.input);
+    projectAccess(ctx, p, project_id, c.type);
+    const plan = ctx.store
+      .list<BoardPlan>('board_plans')
+      .find(
+        (candidate) =>
+          candidate.project_id === project_id &&
+          ownEntry(candidate.external_holds, subject_key) !== undefined,
+      );
+    requireThat(plan, 'invalid_state', 'This request does not wait for approval');
+    const { [subject_key]: _held, ...holds } = plan.external_holds!;
+    ctx.store.event('board.external_approved', plan, project_id, { subject_key }, c.command_id);
+    noteTriage(ctx, plan, holds, `${APPROVED_TEXT}\nSubject: ${subject_key}`, c.command_id);
+    return ctx.store.must<BoardPlan>('board_plans', plan.id);
   },
 };

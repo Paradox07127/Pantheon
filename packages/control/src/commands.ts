@@ -26,6 +26,7 @@ import { styleHandlers } from './user-style.js';
 import { appSettingsHandlers } from './app-settings.js';
 import { deviceHandlers } from './devices.js';
 import { externalEventHandlers } from './external-events.js';
+import { residentHandlers } from './resident.js';
 
 export const handlers: Handlers = {
   ...memoryHandlers,
@@ -51,6 +52,7 @@ export const handlers: Handlers = {
   ...appSettingsHandlers,
   ...deviceHandlers,
   ...externalEventHandlers,
+  ...residentHandlers,
   ...visualHandlers,
   ...themeHandlers,
   ...styleHandlers,

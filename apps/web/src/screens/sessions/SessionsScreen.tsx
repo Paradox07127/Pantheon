@@ -575,6 +575,9 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
                 : {})}
               sessions={referable}
               {...(terminable ? { terminal: terminalToggle } : {})}
+              {...(current?.resident
+                ? { workers: (list.data ?? []).filter((s) => s.lead === current.id) }
+                : {})}
             />
           </section>
         )}

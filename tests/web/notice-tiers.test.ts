@@ -99,10 +99,10 @@ const workflowStep = approval('step-1', 'beta-login', {
   actions: [{ command: 'workflow.step.decide', allowed: true }],
 });
 const externalRequest = approval('beta-docs', 'beta-docs', {
-  source: { table: 'sessions', id: 'beta-docs', revision: 1 },
+  source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
   kind: 'external.approval',
   reason: 'external_approval',
-  session_id: undefined,
+  request_id: 'github:acme/docs#3',
   binding: undefined,
   actions: [{ command: 'external.approve', allowed: true }],
 });
@@ -276,10 +276,10 @@ describe('cards for what needs the user', () => {
       actions: [{ command: 'workflow.step.decide', allowed: true }],
     });
     const held = approval('beta-docs', 'beta-docs', {
-      source: { table: 'sessions', id: 'beta-docs', revision: 1 },
+      source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
       kind: 'external.approval',
       reason: 'external_approval',
-      session_id: undefined,
+      request_id: 'github:acme/docs#3',
       binding: undefined,
       actions: [{ command: 'external.approve', allowed: true }],
     });
@@ -294,7 +294,7 @@ describe('cards for what needs the user', () => {
         since: NOW - 2 * 60_000,
       },
       {
-        id: 'sessions:beta-docs',
+        id: 'board_plans:beta-docs:github:acme/docs#3',
         heading: 'Write docs',
         event: zh('data.noticeTiers.waitsApproval'),
         summary: reasonText('external_approval'),

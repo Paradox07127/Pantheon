@@ -3,6 +3,7 @@ import {
   requireThat,
   type Approval,
   type BoardPlan,
+  type ExternalEvent,
   type Improvement,
   type LandingItem,
   type Milestone,
@@ -353,21 +354,6 @@ export function needsYou(
           next_step:
             'This read-only session changed tracked files, or called a write tool. Review its changes and tool calls, then restore unintended changes.',
         });
-      if (session.external_hold && session.state !== 'running')
-        items.push({
-          source: { table: 'sessions', id: session.id, revision: session.revision },
-          kind: 'external.approval',
-          project_id: session.project_id,
-          status: session.state,
-          created_at: latestEvent(ctx, session.id, 'session.external_held')!.created_at,
-          reason: 'external_approval',
-          actions: [
-            action('external.approve', () =>
-              requireThat(principal.role === 'user', 'permission_denied', 'Only user'),
-            ),
-          ],
-          next_step: `Approve “${session.title}” to let its tasks start.`,
-        });
       const row = listed.get(session.id),
         latest = leads.has(session.id)
           ? latestExecuted(ctx, sessionTurns.get(session.id) ?? [])
@@ -635,6 +621,29 @@ export function needsYou(
             ),
           ],
           next_step: NEXT_STEP.plan_proposal_awaiting_decision,
+        });
+      }
+      for (const [subject, hold] of Object.entries(plan.external_holds ?? {})) {
+        const title = ctx.store
+          .list<ExternalEvent>('external_events')
+          .findLast(
+            (event) => event.project_id === plan.project_id && event.subject_key === subject,
+          )?.title;
+        items.push({
+          source: { table: 'board_plans', id: plan.id, revision: plan.revision },
+          kind: 'external.approval',
+          project_id: plan.project_id,
+          session_id: plan.id,
+          request_id: subject,
+          status: 'pending',
+          created_at: hold.at,
+          reason: 'external_approval',
+          actions: [
+            action('external.approve', () =>
+              requireThat(principal.role === 'user', 'permission_denied', 'Only user'),
+            ),
+          ],
+          next_step: `Approve “${title ?? subject}” to let its tasks start.`,
         });
       }
       for (const question of plan.questions ?? []) {

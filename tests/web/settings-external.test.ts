@@ -60,6 +60,7 @@ const read = (fields: Partial<ExternalRead> = {}): BridgeResult<unknown> => ({
         title: 'Sign callbacks',
         actor: 'robin',
         actor_trust: 'write',
+        subject_key: 'github:acme/reports#40',
         session_id: 'working',
         received_at: NOW - 18 * MINUTE,
       }),
@@ -74,6 +75,7 @@ const read = (fields: Partial<ExternalRead> = {}): BridgeResult<unknown> => ({
       event({ title: 'Old request', session_id: 'gone', received_at: NOW - 26 * 60 * MINUTE }),
       event({ title: 'No runtime', state: 'failed', error: 'Runtime absent not available' }),
     ],
+    held: ['github:acme/reports#12'],
     ...fields,
   } satisfies ExternalRead,
 });
@@ -136,7 +138,7 @@ beforeEach(() => {
       cursor: 1,
       projects: [project],
       sessions: [
-        session('held', { state: 'open', external_hold: true }),
+        session('held', { state: 'open', resident: { kind: 'triage' } }),
         session('working', { state: 'running', title: 'Sign callbacks' }),
       ],
     },
@@ -281,7 +283,11 @@ describe('external requests settings page', () => {
     approve.props.onClick();
     await h.flush();
     expect(sent()).toEqual([
-      { type: 'external.approve', input: { session_id: 'held' }, expected_revision: null },
+      {
+        type: 'external.approve',
+        input: { project_id: project.id, subject_key: 'github:acme/reports#12' },
+        expected_revision: null,
+      },
     ]);
     expect(bridge.queries).toHaveLength(2);
   });

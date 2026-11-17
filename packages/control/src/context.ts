@@ -361,24 +361,7 @@ export function sessionAction(ctx: ControlContext, principal: Principal, action:
     'permission_denied',
     'Action outside session role',
   );
-  requireThat(
-    !session.external_hold || heldLeadActions.has(action),
-    'permission_denied',
-    'This lead waits for the user to approve the external request; until then it can only read, use memory and write its plan',
-  );
 }
-
-/** What a lead may do while it waits for the user to approve an external request. */
-const heldLeadActions = new Set<string>(
-  Object.entries(sessionTools.lead)
-    .filter(
-      ([tool, action]) =>
-        leadToolEffects[tool as keyof typeof leadToolEffects] === 'read' ||
-        action.startsWith('memory.') ||
-        action.startsWith('board.plan.'),
-    )
-    .map(([, action]) => action),
-);
 
 export function sessionMcp(
   ctx: ControlContext,

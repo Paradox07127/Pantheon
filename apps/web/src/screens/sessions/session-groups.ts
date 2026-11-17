@@ -97,13 +97,29 @@ function groupOf(s: WorkbenchSession, unread: (s: WorkbenchSession) => boolean):
 
 export type SessionSort = 'activity' | 'created' | 'title';
 
+/** What a session is to the list's type filter: a project's resident lead, a board task's worker, a runtime analysis, or one the user opened. */
+export type SessionType = 'resident' | 'worker' | 'direct' | 'review';
+
+export const SESSION_TYPES: readonly SessionType[] = ['resident', 'worker', 'direct', 'review'];
+
+export const sessionType = (s: WorkbenchSession): SessionType =>
+  s.resident ? 'resident' : s.lead ? 'worker' : s.runtime_review ? 'review' : 'direct';
+
 export interface SessionListView {
   /** lead: by who opened or forked each session; time: by day of the sorted time. */
   grouping: 'lead' | 'state' | 'time';
   sort: SessionSort;
   /** Whether the archived sessions are listed. */
   archived: boolean;
+  /** The types the list leaves out; absent leaves none out. */
+  hiddenTypes?: readonly SessionType[];
+  /** The runtimes the list leaves out, so a runtime first seen later still shows. */
+  hiddenRuntimes?: readonly string[];
 }
+
+/** Whether the view's type and runtime filters keep the session. */
+export const keptByView = (s: WorkbenchSession, view: SessionListView): boolean =>
+  !view.hiddenTypes?.includes(sessionType(s)) && !view.hiddenRuntimes?.includes(s.runtime);
 
 export const DEFAULT_SESSION_VIEW: SessionListView = {
   grouping: 'lead',
@@ -118,11 +134,21 @@ export function readSessionView(raw: string | null): SessionListView {
       grouping?: unknown;
       sort?: unknown;
       archived?: unknown;
+      hiddenTypes?: unknown;
+      hiddenRuntimes?: unknown;
     } | null;
+    const strings = (list: unknown): string[] =>
+      Array.isArray(list) ? list.filter((each): each is string => typeof each === 'string') : [];
+    const types = strings(value?.hiddenTypes).filter((each): each is SessionType =>
+      SESSION_TYPES.includes(each as SessionType),
+    );
+    const runtimes = strings(value?.hiddenRuntimes);
     return {
       grouping: value?.grouping === 'state' || value?.grouping === 'time' ? value.grouping : 'lead',
       sort: value?.sort === 'created' || value?.sort === 'title' ? value.sort : 'activity',
       archived: value?.archived === true,
+      ...(types.length > 0 ? { hiddenTypes: types } : {}),
+      ...(runtimes.length > 0 ? { hiddenRuntimes: runtimes } : {}),
     };
   } catch {
     return DEFAULT_SESSION_VIEW;
@@ -781,6 +807,59 @@ export function keepOrder(
       }),
     };
   });
+}
+
+export interface WorkerCounts {
+  running: number;
+  review: number;
+  /** Workers whose newest gate run failed and that have not ended. */
+  failed: number;
+}
+
+const workerRunning = (s: WorkbenchSession) =>
+  s.stopping || ['starting', 'running', 'merging'].includes(s.state);
+const gateFailed = (s: WorkbenchSession) =>
+  s.gate?.state === 'failed' && !ENDED_STATES.has(s.state);
+
+/** How many of the workers run, await review and failed their gates. */
+export function workerCounts(workers: readonly WorkbenchSession[]): WorkerCounts {
+  return {
+    running: workers.filter(workerRunning).length,
+    review: workers.filter((s) => s.state === 'ready').length,
+    failed: workers.filter(gateFailed).length,
+  };
+}
+
+/** The workers of one plan lane, with how many merged; finished once every one of them ended. */
+export interface WorkerLane {
+  key: string;
+  title: string;
+  workers: WorkbenchSession[];
+  merged: number;
+  running: number;
+  failed: number;
+  finished: boolean;
+}
+
+/** The workers by their task's lane, lanes still at work first, each in the order its first worker opened. */
+export function workerLanes(workers: readonly WorkbenchSession[]): WorkerLane[] {
+  const lanes = new Map<string, WorkbenchSession[]>();
+  for (const s of [...workers].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+    const key = s.task?.lane ?? '';
+    lanes.set(key, [...(lanes.get(key) ?? []), s]);
+  }
+  const all = [...lanes].map(([key, shown]) => ({
+    key,
+    title:
+      shown.find((s) => s.task)?.task?.lane_title ??
+      t({ id: 'sessions.residents.otherLane', defaultMessage: 'Other tasks' }),
+    workers: shown,
+    merged: shown.filter((s) => s.state === 'merged').length,
+    running: shown.filter(workerRunning).length,
+    failed: shown.filter((s) => s.state === 'failed' || gateFailed(s)).length,
+    finished: shown.every((s) => FINISHED.has(s.state)),
+  }));
+  return [...all.filter((lane) => !lane.finished), ...all.filter((lane) => lane.finished)];
 }
 
 /** `+a −d` of the worktree's changes; empty when nothing changed or the worktree is not in use. */

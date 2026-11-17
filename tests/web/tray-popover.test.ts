@@ -66,10 +66,12 @@ const workflowApproval: NeedsYouItem = {
 };
 
 const heldRequest: NeedsYouItem = {
-  source: { table: 'sessions', id: 'lead-2', revision: 1 },
+  source: { table: 'board_plans', id: 'lead-2', revision: 1 },
   kind: 'external.approval',
   project_id: 'beta',
-  status: 'open',
+  session_id: 'lead-2',
+  request_id: 'github:acme/docs#3',
+  status: 'pending',
   created_at: NOW - 3 * MINUTE,
   reason: 'external_approval',
   actions: [],
@@ -328,7 +330,7 @@ describe('tray popover waiting group', () => {
     });
   });
 
-  it('lists an external request that waits for approval and opens its lead', async () => {
+  it('lists an external request that waits for approval and opens its triage session', async () => {
     needs = [heldRequest, failedSession];
     const tree = (await popover()).value;
     const waiting = group(tree, WAITING);

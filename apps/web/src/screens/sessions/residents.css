@@ -1,0 +1,212 @@
+/* A resident lead in the sidebar: its state, name, the counts of its workers and what waits for the user. */
+.ss-rr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--row);
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.ss-rr:hover {
+  background: var(--st-hov);
+}
+.ss-rr:active {
+  background: var(--st-on);
+}
+.ss-rr[aria-current] {
+  background: var(--sel);
+  color: var(--tx);
+  font-weight: 500;
+}
+.ss-rsum {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+}
+.ss-rct {
+  flex: none;
+  min-width: 16px;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* The title of the list under the residents, with the new session button at its end. */
+.ss-zh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  height: var(--row);
+  margin-top: var(--sp-2);
+  padding: 0 7px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--mu);
+}
+.ss-zh > span {
+  flex: 1;
+}
+.ss-zh .ib {
+  width: 22px;
+  height: 22px;
+}
+.ss-zh .ib[aria-current] {
+  background: var(--sel);
+  color: var(--tx);
+}
+.ss-wc {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ss-wn {
+  font-variant-numeric: tabular-nums;
+}
+/* The workers bar under a resident's session bar; open, its lanes float under it. */
+.ss-ws {
+  position: relative;
+  flex: none;
+}
+.ss-wsb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+  border: 0;
+  border-bottom: var(--hair) solid var(--bd2);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.ss-wsb:hover {
+  background: var(--sf2);
+}
+.ss-wsc {
+  margin-left: auto;
+  color: var(--mu);
+  transition: transform var(--dur-2) var(--ease-std);
+}
+.ss-wsb[aria-expanded='true'] .ss-wsc {
+  transform: rotate(180deg);
+}
+.ss-wpop {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: var(--sp-3);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: 360px;
+  max-height: 60vh;
+  padding: var(--sp-1);
+  overflow-y: auto;
+}
+.ss-lane {
+  display: flex;
+  flex-direction: column;
+}
+.ss-lh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  height: var(--row);
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.ss-lh:hover {
+  background: var(--st-hov);
+}
+.ss-lh[aria-expanded='false'] > .ss-ttl {
+  color: var(--mu);
+}
+.ss-lseg {
+  display: inline-flex;
+  flex: none;
+}
+.ss-lnum {
+  flex: none;
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* A wake turn: one muted line with no surface, so it never reads as the user's message. */
+.ss-ev {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: calc(100% + 16px);
+  height: var(--row);
+  margin: 0 -8px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.ss-ev:hover {
+  background: var(--sf2);
+  color: var(--tx2);
+}
+.ss-evc {
+  transition: transform var(--dur-2) var(--ease-std);
+}
+.ss-ev[aria-expanded='true'] .ss-evc {
+  transform: rotate(90deg);
+}
+.ss-evt {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.ss-evn {
+  padding: 0 0 var(--sp-1) var(--sp-6);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* A resident that has not been spoken to yet. */
+.ss-emp {
+  margin: auto 0;
+  padding: var(--sp-8) 0;
+  color: var(--tx2);
+  font-size: var(--fs-md);
+  text-align: center;
+  text-wrap: balance;
+}

@@ -601,6 +601,7 @@ function storePlan(
     inbox: current?.inbox ?? [],
     notified: current?.notified ?? {},
     ...(current?.wake_failed ? { wake_failed: current.wake_failed } : {}),
+    ...(current?.external_holds ? { external_holds: current.external_holds } : {}),
     contract_changed: [...new Set([...(current?.contract_changed ?? []), ...told])],
     ...(current?.handed_back ? { handed_back: current.handed_back } : {}),
     ...(current?.alerted ? { alerted: current.alerted } : {}),

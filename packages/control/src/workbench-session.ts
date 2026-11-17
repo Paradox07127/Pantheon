@@ -160,7 +160,7 @@ import {
 import { writerTempDirectory } from './workspace-removal.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
-const WORKBENCH_TURN_MS = 6 * 60 * 60 * 1000;
+export const WORKBENCH_TURN_MS = 6 * 60 * 60 * 1000;
 
 export const LEAD_INSTRUCTIONS = [
   'You are a lead session: you plan the board for the requests the user brings you.',
@@ -198,6 +198,36 @@ export const LEAD_INSTRUCTIONS = [
   'Board updates cut a long note short and list notes past their size limit by id only; call read_note with the note id to read one in full before you act on it.',
   "The project board shows what you write with the Pantheon tools: update_board and edit_board write the plan panels (lanes, tasks and their dependencies, milestones, risks and assumptions), and Pantheon fills in task states and progress from the sessions; draw with pin puts a chart on the board when the user asks for one there, and draw with replaces redraws it in place; rerun_baseline refreshes the baseline, introduction and repository panels and needs the user's approval. When the work changes, update the plan in the same turn.",
 ].join('\n');
+
+/** LEAD_INSTRUCTIONS without the direct path, since a resident lead dispatches every task. */
+const RESIDENT_LEAD_LINES = LEAD_INSTRUCTIONS.split('\n').flatMap((line) => {
+  if (!line.includes('direct')) return [line];
+  // The planning rule stays without its sentences on claiming a task.
+  if (!line.startsWith('Add every request')) return [];
+  return [
+    line
+      .split(/(?<=\.) /)
+      .filter((sentence) => !sentence.includes('direct'))
+      .join(' '),
+  ];
+});
+
+const residentInstructions = (name: string, ...extra: string[]) =>
+  [
+    `You are the resident ${name} of this project.`,
+    'You do not change code: your session is read-only, and task sessions do every task of your plan.',
+    'Give each request its own lane in your plan and put the tasks of that request in it.',
+    ...extra,
+    ...RESIDENT_LEAD_LINES,
+  ].join('\n');
+
+export const RESIDENT_INSTRUCTIONS: Record<NonNullable<Session['resident']>['kind'], string> = {
+  assistant: residentInstructions('Assistant'),
+  triage: residentInstructions(
+    'Triage',
+    'You take GitHub issues, gate failures and error reports; first check whether your plan already has a task for the same problem, and only then start tasks. Give each task for an external request the subject its note names as external_subject.',
+  ),
+};
 
 export function workerInstructions(
   ctx: ControlContext,
@@ -840,6 +870,14 @@ function listedState(
         : session.runtime_review.report
           ? 'done'
           : 'failed';
+  if (session.resident)
+    return session.state === 'running'
+      ? 'running'
+      : waiting
+        ? 'waiting'
+        : session.state === 'closed'
+          ? 'done'
+          : 'idle';
   if (!session.workspace_id) {
     const baseline = ctx.store.must<ProjectBaseline>(
       'project_baselines',
@@ -1061,7 +1099,7 @@ function listedSessions(
     .filter(
       (session) =>
         session.project_id === projectId &&
-        (session.workspace_id || session.baseline || session.runtime_review),
+        (session.workspace_id || session.baseline || session.runtime_review || session.resident),
     )
     .map((session) => {
       const requests = pending.filter((approval) => approval.session_id === session.id);
@@ -1372,6 +1410,7 @@ export function sessionList(
       ...(session.backend_id ? { backend_id: session.backend_id } : {}),
       ...(session.forked_from ? { forked_from: session.forked_from } : {}),
       ...(session.app_debug ? { app_debug: session.app_debug } : {}),
+      ...(session.resident ? { resident: session.resident } : {}),
     };
     const plan = session.task ? planOf(session.task.lead_session_id) : undefined;
     const task = plan && sessionPlanTask(plan, session);
@@ -1532,6 +1571,17 @@ export function sessionList(
           }
         : {}),
       ...(session.task ? { lead: session.task.lead_session_id } : {}),
+      ...(task
+        ? {
+            task: {
+              id: task.id,
+              title: task.title,
+              lane: task.lane,
+              lane_title: plan!.lanes.find((lane) => lane.id === task.lane)?.title ?? task.lane,
+              ...(task.milestone ? { milestone: task.milestone } : {}),
+            },
+          }
+        : {}),
       ...marks,
     });
   });

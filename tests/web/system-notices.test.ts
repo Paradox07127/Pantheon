@@ -81,10 +81,11 @@ const step = need('step-1', {
   actions: [{ command: 'workflow.step.decide', allowed: true }],
 });
 const external = need('beta-docs', {
-  source: { table: 'sessions', id: 'beta-docs', revision: 1 },
+  source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
   kind: 'external.approval',
   reason: 'external_approval',
-  session_id: undefined,
+  session_id: 'beta-docs',
+  request_id: 'github:acme/docs#3',
   binding: undefined,
   actions: [{ command: 'external.approve', allowed: true }],
 });
@@ -584,7 +585,7 @@ describe('a click on a system notification', () => {
     for (const target of sent().map((n) => n.target)) click!(target);
     expect(openProjectNeed.mock.calls).toEqual([
       ['beta', 'workflow_step_runs:step-1'],
-      ['beta', 'sessions:beta-docs'],
+      ['beta', 'board_plans:beta-docs:github:acme/docs#3'],
     ]);
     expect(openProjectSession).not.toHaveBeenCalled();
   });

@@ -3,6 +3,7 @@ import { lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  credentialRole,
   DomainError,
   id,
   SessionStartError,
@@ -102,7 +103,9 @@ import {
   applyFastMode,
   applyUltracode,
   autoMergeAfterTurn,
+  RESIDENT_INSTRUCTIONS,
   turnExtras,
+  WORKBENCH_TURN_MS,
   workbenchSessionSpec,
 } from './workbench-session.js';
 
@@ -1035,10 +1038,7 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
           const s = ctx.store.must<Session>('sessions', turn.session_id);
           contract = prepareContractDelivery(ctx, s, turn.id);
           const t = ctx.store.must<SessionTurn>('session_turns', turn.id);
-          readOnly =
-            t.origin === 'reflection' ||
-            s.external_hold === true ||
-            (!s.direct_task && planUnfinished(ctx, s.id));
+          readOnly = t.origin === 'reflection' || (!s.direct_task && planUnfinished(ctx, s.id));
           const next = ctx.store.update(
             'session_turns',
             {
@@ -1572,7 +1572,8 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
         session.baseline ||
         session.change_story ||
         session.range_story ||
-        session.intro
+        session.intro ||
+        session.resident
         ? 'reviewer'
         : session.workspace_id
           ? 'writer'
@@ -1634,13 +1635,15 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           effort: session.requested_effort,
           profile_version: session.profile_version,
           ...(session.runtime_review ? { runtime_analysis: true as const } : {}),
-          ...(session.baseline ? { read_only_shell: true as const } : {}),
+          ...(session.baseline || session.resident ? { read_only_shell: true as const } : {}),
           control_instructions: session.runtime_review
             ? RUNTIME_REVIEW_CONTRACT
-            : purposeSessionInstructions(session, {
-                rounds: readAppSettings(ctx).baseline_rounds,
-                visuals: readAppSettings(ctx).baseline_visuals,
-              }),
+            : session.resident
+              ? RESIDENT_INSTRUCTIONS[session.resident.kind]
+              : purposeSessionInstructions(session, {
+                  rounds: readAppSettings(ctx).baseline_rounds,
+                  visuals: readAppSettings(ctx).baseline_visuals,
+                }),
           account_ref: session.account_ref,
           role: session.review_id || session.runtime_review ? 'reviewer' : 'planner',
           cwd: analysisPath ?? reviewerPath ?? project.roots[0]!,
@@ -1709,13 +1712,14 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           env_allowlist: NATIVE_ENV_ALLOWLIST,
           skills: [],
           mcp_servers: [],
-          pantheon_mcp: sessionMcp(ctx, session, session.review_id ? 'reviewer' : 'planner'),
+          pantheon_mcp: sessionMcp(ctx, session, credentialRole(session)),
           extensions: { mode: 'none' },
           device_id: session.device_id ?? 'local',
           budget: {
             max_turns: 1,
-            wall_time_ms:
-              session.review_id || session.runtime_review
+            wall_time_ms: session.resident
+              ? (ctx.turnWallTimeMs ?? WORKBENCH_TURN_MS)
+              : session.review_id || session.runtime_review
                 ? REVIEW_WALL_TIME_MS
                 : session.baseline
                   ? BASELINE_WALL_TIME_MS

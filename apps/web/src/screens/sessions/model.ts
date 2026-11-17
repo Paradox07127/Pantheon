@@ -13,6 +13,11 @@ export {
   keepOrder,
   changesText,
   sessionRow,
+  sessionType,
+  keptByView,
+  workerCounts,
+  workerLanes,
+  SESSION_TYPES,
 } from './session-groups';
 export type {
   SessionGroupKey,
@@ -23,6 +28,9 @@ export type {
   SidebarGroup,
   TreeLine,
   SessionRow,
+  SessionType,
+  WorkerCounts,
+  WorkerLane,
 } from './session-groups';
 export {
   turnErrorText,

@@ -943,6 +943,10 @@ export class Control extends EventEmitter {
         .filter((event) => event.project_id === projectId)
         .reverse()
         .slice(0, 50),
+      held: this.ctx.store
+        .list<BoardPlan>('board_plans')
+        .filter((plan) => plan.project_id === projectId)
+        .flatMap((plan) => Object.keys(plan.external_holds ?? {})),
     };
   }
   projectsSummary(principal: Principal, readChanges: true | 'cached' = true) {

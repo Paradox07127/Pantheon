@@ -114,13 +114,13 @@ export function GlobalExternal() {
 export function ExternalPage({ project }: { project: Project }) {
   const board = useBoard((s) => s.board);
   const sessions = (board?.sessions ?? []).filter((s) => s.project_id === project.id);
-  // A source is asked about once a minute; a lead that opens or is approved changes its revision.
+  // A source is asked about once a minute; a request handed on or approved changes the triage session's revision.
   const now = useNow(MINUTE);
   const read = useExternalRead(
     project,
     project.revision +
       Math.floor(now / MINUTE) +
-      sessions.reduce((sum, s) => sum + (s.external_subject ? s.revision : 0), 0),
+      sessions.reduce((sum, s) => sum + (s.resident?.kind === 'triage' ? s.revision : 0), 0),
   );
   const [failure, setFailure] = useState<Failure | null>(null);
   const [sending, setSending] = useState(false);
@@ -182,7 +182,7 @@ export function ExternalPage({ project }: { project: Project }) {
         'idle',
         t({ id: 'settings.permissions.sessionGone', defaultMessage: 'Deleted session' }),
       );
-    if (session.external_hold)
+    if (read.data!.held.includes(event.subject_key))
       return (
         <span className="xr-out">
           <span className="hp-dot" data-s="wait" aria-hidden="true" />
@@ -198,7 +198,7 @@ export function ExternalPage({ project }: { project: Project }) {
                 { id: 'settings.external.approveNamed', defaultMessage: 'Approve: {title}' },
                 { title: event.title },
               )}
-              onClick={() => void send(() => approveExternal(session.id))}
+              onClick={() => void send(() => approveExternal(project, event.subject_key))}
             >
               {t({ id: 'settings.external.approve', defaultMessage: 'Approve' })}
             </button>
@@ -233,7 +233,7 @@ export function ExternalPage({ project }: { project: Project }) {
       { id: 'settings.external.mode', defaultMessage: 'How to take requests from {source}' },
       { source: name },
     );
-  // The approve button sits on the newest request of each held lead.
+  // The approve button sits on the newest request of each held subject.
   const shown = new Set<string>();
   return (
     <div className="xr-pg" data-setting-id="external.mode">
@@ -297,8 +297,8 @@ export function ExternalPage({ project }: { project: Project }) {
           {read.data.events.map((event) => {
             const Icon = KIND_ICON[event.kind] ?? CircleDot;
             const session = sessions.find((s) => s.id === event.session_id);
-            const first = event.session_id !== undefined && !shown.has(event.session_id);
-            if (event.session_id !== undefined) shown.add(event.session_id);
+            const first = event.session_id !== undefined && !shown.has(event.subject_key);
+            if (event.session_id !== undefined) shown.add(event.subject_key);
             return (
               <div
                 key={event.id}

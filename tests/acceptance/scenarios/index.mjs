@@ -15,6 +15,7 @@ import * as nativeRuntimeAdmission from './native-runtime-admission.mjs';
 import * as nativeSessionRecovery from './native-session-recovery.mjs';
 import * as nativeExtensionIsolation from './native-extension-isolation.mjs';
 import * as repositoryFixtureReproducibility from './repository-fixture-reproducibility.mjs';
+import * as residentAssistant from './resident-assistant.mjs';
 import * as reviewIsolationFindings from './review-isolation-findings.mjs';
 import * as runtimeHandoff from './runtime-handoff.mjs';
 import * as steerAndDelivery from './steer-and-delivery.mjs';
@@ -51,6 +52,7 @@ for (const scenario of [
   nativeExtensionIsolation,
   appDailyLoop,
   firstRunImport,
+  residentAssistant,
 ]) {
   if (scenarios.has(scenario.title)) throw new Error(`Duplicate scenario title: ${scenario.title}`);
   scenarios.set(scenario.title, scenario);

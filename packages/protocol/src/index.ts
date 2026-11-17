@@ -496,6 +496,8 @@ const planTask = z
     source: z.array(boardText).max(4),
     /** Verbatim quotes of what other people wrote in an external event. */
     external_source: z.array(boardText).max(4).optional(),
+    /** The subject key of the external request, such as github:owner/repo#12, the task was planned for. */
+    external_subject: str.optional(),
     /** Repository-relative paths or directories the task may change. */
     scope: z.array(z.string().min(1).max(200)).max(16),
     /** Shell commands that must pass before the task is done. */
@@ -1788,7 +1790,9 @@ export const inputSchemas = {
     key: z.enum(PROJECT_SETTING_KEYS),
     param: workflowPolicySettings.keyof().optional(),
   }),
-  'external.approve': z.strictObject({ session_id: str }),
+  'external.approve': z.strictObject({ project_id: str, subject_key: str }),
+  /** The user only; returns the project's open resident session of the kind, opening one when there is none. */
+  'resident.open': z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
   'github.pr.create': z.strictObject({
     session_id: str,
     title: str.optional(),
@@ -2629,6 +2633,9 @@ export interface WorkbenchSession {
   } | null;
   /** The lead session of the board task this session was opened from; absent for other sessions. */
   lead?: string;
+  /** The plan task this session was opened from, with the title of its lane. */
+  task?: { id: string; title: string; lane: string; lane_title: string; milestone?: string };
+  resident?: NonNullable<Session['resident']>;
   /** ISO time the user pinned the session; absent when it is not pinned. */
   pinned_at?: string;
   /** ISO time the user archived the session; absent when it is not archived. */

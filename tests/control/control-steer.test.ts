@@ -5,6 +5,7 @@ import { FixtureAdapter } from '@pantheon/adapters';
 import { command } from '@pantheon/protocol';
 import type {
   AgentEventSink,
+  BoardPlan,
   CancelReceipt,
   DeliveryReceipt,
   HarnessAdapter,
@@ -402,15 +403,39 @@ describe('session input delivery', () => {
     }
   });
 
-  it('holds a steer during a compaction and sends it afterwards as a read-only turn of a held session', async () => {
+  it('holds a steer during a compaction and sends it afterwards as a read-only turn of a lead with an unfinished plan', async () => {
     const s = steeringFixture(true);
     try {
       const { session, first } = await s.open();
       await s.f.control.tick();
       s.complete();
       await eventually(() => s.row(first).state === 'completed');
-      const held = s.f.store.must<Session>('sessions', session.id);
-      s.f.store.update('sessions', { ...held, external_hold: true }, held.revision);
+      s.f.store.insert<BoardPlan>('board_plans', {
+        id: session.id,
+        revision: 1,
+        project_id: s.f.project.id,
+        headline: 'Export ships',
+        lanes: [{ id: 'core', title: 'Core' }],
+        tasks: [
+          {
+            id: 'a',
+            title: 'Task a',
+            goal: 'Finish task a',
+            lane: 'core',
+            depends_on: [],
+            source: ['send'],
+            scope: ['src/a.ts'],
+            acceptance: ['pnpm test'],
+          },
+        ],
+        plan_version: 1,
+        pending_edits: [],
+        risks: [],
+        assumptions: [],
+        inbox: [],
+        notified: {},
+        updated_at: s.f.store.now(),
+      });
       const compaction = s.f.call<SessionTurn>(
         'session.compact',
         { session_id: session.id },

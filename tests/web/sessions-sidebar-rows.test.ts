@@ -331,7 +331,13 @@ describe('sidebar view menu and search', () => {
       (n) => typeof n.props.className === 'string' && n.props.className.includes('pjm'),
     );
     expect(popup.props.className).toContain('sb-vm');
-    const item = find(menu, (n) => 'checked' in n.props && 'onCheckedChange' in n.props);
+    const item = find(
+      menu,
+      (n) =>
+        'checked' in n.props &&
+        'onCheckedChange' in n.props &&
+        text(n.props.children) === zh('components.sidebar.showArchived'),
+    );
     const parts = nodes(item.props.children);
     expect(text(item.props.children)).toBe(zh('components.sidebar.showArchived'));
     expect(parts.at(-1)!.props).toMatchObject({ className: 'ps-sw', 'aria-hidden': 'true' });

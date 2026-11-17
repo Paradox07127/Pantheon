@@ -1925,6 +1925,81 @@
         "session-specs.json"
       ],
       "status": "not_run"
+    },
+    {
+      "id": "A039",
+      "title": "常驻助理派两条需求的 worker 并接手旧计划(fixture)",
+      "gate": "G2",
+      "mode": "integration",
+      "timeout_ms": 300000,
+      "setup": [
+        "fixture daemon 跑本仓库代码，只登记 fixture 适配器；没有真实模型",
+        "临时 git 仓库，项目门禁一条必过命令，开自动合并，会话默认 runtime 为 fixture"
+      ],
+      "steps": [
+        "用户对同一项目两次 resident.open kind assistant,记下两次返回的会话 id",
+        "用户给助理发一条消息：助理用 update_board 写两个 lane 各一个 t1 任务的计划，再 start_task 两个任务",
+        "等两个任务会话写文件、提交、自动合并，助理收到回报且回合都结束",
+        "数助理的 tracker 唤醒回合，查 needs_you.list 里的 lead_wake_limited",
+        "把助理会话置为 closed(原生进程结束),再 resident.open,核对计划和两个任务会话挂到新 id"
+      ],
+      "assertions": [
+        {
+          "path": "open.same_session",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "assistant.direct_task",
+          "op": "eq",
+          "expected": null
+        },
+        {
+          "path": "assistant.wakes_at_most_two",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "assistant.wake_failed",
+          "op": "eq",
+          "expected": null
+        },
+        {
+          "path": "workers.merged",
+          "op": "eq",
+          "expected": [
+            "greeting",
+            "notes"
+          ]
+        },
+        {
+          "path": "needs_you.wake_limited",
+          "op": "eq",
+          "expected": 0
+        },
+        {
+          "path": "reopen.new_session",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "reopen.plan_moved",
+          "op": "eq",
+          "expected": true
+        },
+        {
+          "path": "reopen.task_sessions_moved",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "receipts.json",
+        "events.json",
+        "board.json",
+        "observations.json"
+      ],
+      "status": "not_run"
     }
   ]
 }

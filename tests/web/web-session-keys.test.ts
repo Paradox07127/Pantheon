@@ -93,7 +93,18 @@ const LIST = [
   session('r1', 'running', 5),
   session('d1', 'done', 1),
 ];
-const STOPS = ['group:waiting', 'w1', 'group:working', 'r1', 'r2', 'group:ended', 'i1', 'd1'];
+const STOPS = [
+  'resident:assistant',
+  'resident:triage',
+  'group:waiting',
+  'w1',
+  'group:working',
+  'r1',
+  'r2',
+  'group:ended',
+  'i1',
+  'd1',
+];
 
 type Listener = (e: KeyboardEvent) => void;
 let listeners: { type: string; run: Listener }[];
@@ -216,7 +227,7 @@ const rowIds = (h: HookHost<any>) =>
 /** Fake list stops, one per key, recording focus. */
 const stops = (keys: readonly string[]) =>
   keys.map((key) => ({
-    dataset: key.startsWith('group:') ? { stop: key } : { session: key },
+    dataset: /^(group|resident):/.test(key) ? { stop: key } : { session: key },
     focus: vi.fn(),
   }));
 
@@ -225,7 +236,7 @@ function listKey(h: HookHost<any>, from: string, key: string, mods = {}) {
   const nav = find(h.value, (n) => n.type === 'nav');
   const e = event(key, {
     ...mods,
-    target: { dataset: from.startsWith('group:') ? { stop: from } : { session: from } },
+    target: { dataset: /^(group|resident):/.test(from) ? { stop: from } : { session: from } },
     currentTarget: { querySelectorAll: () => els },
   });
   nav.props.onKeyDown(e);
@@ -282,7 +293,8 @@ describe('session list keys', () => {
     expect(listKey(h, 'group:waiting', 'ArrowDown').focused).toBe('w1');
     expect(listKey(h, 'w1', 'ArrowDown').focused).toBe('group:working');
     expect(listKey(h, 'w1', 'ArrowUp').focused).toBe('group:waiting');
-    expect(listKey(h, 'r2', 'Home').focused).toBe('group:waiting');
+    expect(listKey(h, 'r2', 'Home').focused).toBe('resident:assistant');
+    expect(listKey(h, 'resident:triage', 'ArrowDown').focused).toBe('group:waiting');
     expect(listKey(h, 'r2', 'End').focused).toBe('group:ended');
     expect(listKey(h, 'group:ended', 'ArrowDown')).toEqual({ focused: null, handled: true });
   });
@@ -293,7 +305,7 @@ describe('session list keys', () => {
       nodes(h.value)
         .filter((n) => n.props.tabIndex === 0)
         .map((n) => n.props.session?.id ?? n.props['data-stop']);
-    expect(tabStops()).toEqual(['group:waiting']);
+    expect(tabStops()).toEqual(['resident:assistant']);
     listKey(h, 'w1', 'ArrowDown');
     expect(tabStops()).toEqual(['group:working']);
   });

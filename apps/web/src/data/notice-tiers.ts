@@ -92,8 +92,10 @@ function heading(board: BoardSnapshot, projectId: string, sessionId: string | un
 export function needsKey(item: NeedsYouItem): string | null {
   if (item.kind === 'permission' && item.reason === 'permission_requested') return item.source.id;
   if (item.kind === 'lead.question') return `${item.source.id}:${item.request_id ?? ''}`;
-  if (item.kind === 'workflow.approval' || item.kind === 'external.approval')
-    return `${item.source.table}:${item.source.id}`;
+  if (item.kind === 'workflow.approval') return `${item.source.table}:${item.source.id}`;
+  // One plan holds every held external request of its lead.
+  if (item.kind === 'external.approval')
+    return `${item.source.table}:${item.source.id}:${item.request_id ?? ''}`;
   return null;
 }
 
@@ -103,7 +105,7 @@ export const answeredInStrip = (item: NeedsYouItem): boolean =>
   item.kind === 'workflow.approval' ||
   item.kind === 'external.approval';
 
-/** The session the item waits in; an external request's source is the session itself. */
+/** The session the item waits in; a session item's source is the session itself. */
 export const needsSession = (item: NeedsYouItem): string | undefined =>
   item.session_id ?? (item.source.table === 'sessions' ? item.source.id : undefined);
 

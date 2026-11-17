@@ -158,6 +158,7 @@ const wakingNote = (plan: BoardPlan, note: LeadNote) =>
   note.kind in TRACKED_TEXT ||
   note.kind === 'requirement' ||
   note.kind === 'answer' ||
+  note.kind === 'external' ||
   note.kind === 'usage_reset' ||
   note.kind === 'dispatch_failed' ||
   note.kind === 'review_completed' ||
@@ -1093,6 +1094,19 @@ function tellChangedContracts(ctx: ControlContext): void {
     }
 }
 
+/** A resident lead's notes wait this long after its last tracker turn, so they come as one turn. */
+const RESIDENT_WAKE_MS = 60_000;
+
+/** When the newest tracker turn of the lead was queued; 0 when it has none. */
+function lastWake(ctx: ControlContext, leadId: string): number {
+  const { at } = ctx.store.db
+    .prepare(
+      "SELECT max(created_at) AS at FROM events WHERE kind='turn.queued' AND json_extract(payload,'$.session_id')=? AND json_extract(payload,'$.origin')='tracker'",
+    )
+    .get(leadId) as { at: number | null };
+  return at ?? 0;
+}
+
 /** Tracker turns queued for the lead within WAKE_WINDOW_MS. */
 function recentWakes(ctx: ControlContext, leadId: string): number {
   const { count } = ctx.store.db
@@ -1116,9 +1130,14 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
     acceptInput(ctx, lead, running ? 'steer' : 'send');
   } catch (error) {
     if (!(error instanceof DomainError)) throw error;
-    // A closed lead takes no turn again, so the refusal stays on the plan for the user.
+    // A closed lead takes no turn again, so the refusal stays on the plan for the user; the next
+    // resident.open hands a resident's plan to a new session instead.
     const current = ctx.store.must<BoardPlan>('board_plans', plan.id);
-    if (lead.state === 'closed' && current.wake_failed?.reason !== 'lead_closed') {
+    if (
+      lead.state === 'closed' &&
+      !lead.resident &&
+      current.wake_failed?.reason !== 'lead_closed'
+    ) {
       const refused = ctx.store.update(
         'board_plans',
         { ...current, wake_failed: { reason: 'lead_closed' as const, at: ctx.store.now() } },
@@ -1139,8 +1158,11 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
             turn.origin === 'tracker',
         )
     : undefined;
+  // A resident gathers the notes of a whole window into its next turn instead of hitting the limit.
+  if (!waiting && lead.resident && ctx.store.now() - lastWake(ctx, lead.id) < RESIDENT_WAKE_MS)
+    return;
   // Notes folded into the queued turn add no turn, so only a new one counts against the limit.
-  if (!waiting && recentWakes(ctx, lead.id) >= WAKE_LIMIT) {
+  if (!waiting && !lead.resident && recentWakes(ctx, lead.id) >= WAKE_LIMIT) {
     const current = ctx.store.must<BoardPlan>('board_plans', plan.id);
     if (current.wake_failed?.reason !== 'wake_limit') {
       const held = ctx.store.update(
@@ -1255,7 +1277,7 @@ export function queueTurn(
 }
 
 /** The plan with each task's state and sessions and the recent commits of each git folder. */
-function syncBrief(
+export function syncBrief(
   ctx: ControlContext,
   plan: BoardPlan | undefined,
   logs: [string, GitResult][],
@@ -1291,7 +1313,7 @@ function syncBrief(
   return lines.join('\n');
 }
 
-const TAKEOVER_TEXT =
+export const TAKEOVER_TEXT =
   'You take over the plan of an earlier lead session that has ended; project_read shows it as yours.';
 
 function boardSync(ctx: ControlContext, p: Principal, c: Command, logs: [string, GitResult][]) {
@@ -1374,6 +1396,11 @@ function taskReport(ctx: ControlContext, p: Principal, c: Command, git: GitResul
     'A blocked report requires a reason category',
   );
   projectAccess(ctx, p, input.project_id, c.type);
+  requireThat(
+    p.role !== 'lead' || !ctx.store.must<Session>('sessions', p.session_id!).resident,
+    'permission_denied',
+    'A resident lead works on no task itself, so it has nothing to report; its task sessions report',
+  );
   if (p.role === 'lead') return reportDirectTask(ctx, p.session_id!, input, c.command_id, git[0]);
   requireThat(p.role === 'worker', 'permission_denied', 'Worker session required');
   // A worker credential is only issued to a session opened from a task.

@@ -356,6 +356,11 @@ function taskWaits(
   if (holders.length) return { wait: 'scope', task_ids: holders };
 }
 
+/** True while the task's external request waits for the user's approval. */
+const externalHeld = (plan: BoardPlan, task: PlanTask): boolean =>
+  task.external_subject !== undefined &&
+  ownEntry(plan.external_holds, task.external_subject) !== undefined;
+
 /**
  * The project's requested tasks without a session, higher priority first and then oldest request
  * first, each with what it waits for; a task without a wait opens on the next tick, taking its
@@ -407,7 +412,7 @@ export function dispatchQueue(
       sessionLimit = deviceId === 'local' ? localLimit : device?.max_sessions;
     const wait: DispatchWait | undefined =
       (policy.dispatch_paused ? 'paused' : undefined) ??
-      (ctx.store.get<Session>('sessions', plan.id)?.external_hold ? 'approval' : undefined) ??
+      (externalHeld(plan, task) ? 'approval' : undefined) ??
       taskWaits(ctx, plan, task, held)?.wait ??
       (task.kind &&
       taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(task.kind.tier) &&
@@ -975,11 +980,6 @@ function claimDirectTask(
   );
   const lead = ctx.store.must<Session>('sessions', plan.id);
   requireThat(
-    !lead.external_hold,
-    'invalid_state',
-    'This request waits for the user to approve it; you can start a task once the user approves',
-  );
-  requireThat(
     !lead.direct_task,
     'invalid_state',
     `You already work on task ${lead.direct_task?.id}; it stays yours until it merges or you stop it with stop_task`,
@@ -1091,9 +1091,19 @@ export const taskDispatchHandlers: Handlers = {
     const input = inputSchemas['task.start'].parse(c.input);
     projectAccess(ctx, p, input.project_id, c.type);
     const plan = actingPlan(ctx, p, input.project_id, input.lead_session_id);
+    for (const taskId of input.task_ids) {
+      const task = plan.tasks.find((candidate) => candidate.id === taskId);
+      requireThat(
+        p.role !== 'lead' || !task || !externalHeld(plan, task),
+        'invalid_state',
+        `Task ${taskId} is for an external request that waits for the user to approve it; you can start it once the user approves`,
+      );
+    }
     // The user starting a direct task asks for a task session to do it now.
+    // A resident lead never works on a task itself, so its direct tasks are dispatched.
     if (
       p.role === 'lead' &&
+      !ctx.store.must<Session>('sessions', plan.id).resident &&
       input.task_ids.some((taskId) => {
         const task = plan.tasks.find((candidate) => candidate.id === taskId);
         return task && taskPath(ctx, input.project_id, task) === 'direct';

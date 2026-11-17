@@ -307,7 +307,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `external.approve` | `session_id`: string |  |
+| `external.approve` | `project_id`: string<br>`subject_key`: string |  |
 
 ### github
 
@@ -496,6 +496,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `repo.discard_undo` | `project_id`: string<br>`undo_id`: string |  |
 | `repo.push` | `project_id`: string |  |
 | `repo.revert` | `project_id`: string<br>`sha`: string |  |
+
+### resident
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `resident.open` | `project_id`: string<br>`kind`: "assistant" \| "triage" |  |
 
 ### review
 

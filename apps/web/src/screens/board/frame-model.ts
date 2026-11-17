@@ -458,7 +458,11 @@ export function needCommand(
       revision: null,
     };
   if (item.kind === 'external.approval' && key === 'approve')
-    return { type: 'external.approve', input: { session_id: item.source.id }, revision: null };
+    return {
+      type: 'external.approve',
+      input: { project_id: item.project_id, subject_key: item.request_id },
+      revision: null,
+    };
   if (key === 'approve' || key === 'approve_session' || key === 'reject')
     return {
       type: 'approval.respond',
@@ -512,8 +516,8 @@ export function needCommand(
 export const needKey = (
   item: Pick<NeedItem, 'source' | 'task_id' | 'kind' | 'request_id'>,
 ): string =>
-  // One plan holds every proposal of its lead, so the proposal's id tells them apart.
-  `${item.source.table}:${item.source.id}:${item.kind === 'board.plan.proposal' ? item.request_id : (item.task_id ?? '')}`;
+  // One plan holds every proposal and held external request of its lead, so their ids tell them apart.
+  `${item.source.table}:${item.source.id}:${item.kind === 'board.plan.proposal' || item.kind === 'external.approval' ? item.request_id : (item.task_id ?? '')}`;
 
 /**
  * The session the item is about; none for a milestone or a proposal, whose session_id is the lead
