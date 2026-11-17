@@ -177,6 +177,20 @@ node scripts/acceptance.mjs --case A001 --driver tests/acceptance/driver.mjs --o
 - 跑界面场景前，先运行 `pnpm --filter @pantheon/desktop bundle`。
 - `node tests/acceptance/memory-catalog-smoke.mjs` 在隔离的数据库和 Electron 实例里检查记忆屏。先构建桌面端。它不启动模型。
 
+## 端到端驱动
+
+`tests/acceptance/verify/` 放端到端驱动。它们启动隔离的 fixture daemon 和桌面 app,经 CDP 按功能清单点击，并核对 daemon 状态。
+
+```sh
+pnpm build && pnpm --filter @pantheon/desktop bundle
+node tests/acceptance/verify/run.mjs --boot [--out <目录>] [--size WxH] [条目 id...]
+```
+
+- `--boot` 启动 `boot.mjs`,跑驱动(不给条目 id 就跑 `drivers/` 下的全部),再关掉 app。退出码 0 表示全部通过,1 表示有驱动失败或抛异常,2 表示 app 没启动起来。
+- 每轮写 `results.json`,并给每个驱动在运行目录的 `history.jsonl` 追加一行。
+- 跑单个驱动：先启动 `node tests/acceptance/verify/boot.mjs`,等输出 `READY <目录>`,再跑 `node tests/acceptance/verify/drivers/<条目 id>.mjs <目录>` 或 `node tests/acceptance/verify/run.mjs <目录> <条目 id>`。
+- 驱动要能在同一个 app 里重复跑，也不依赖驱动的先后顺序：开头用 daemon 命令设好前置状态，标题用 `Date.now()` 取唯一值，改仓库用 `newProject()`。
+
 ## 评测
 
 `scripts/eval.mjs` 量合并的结果里有多少通不过隐藏检查。冻结任务取自本仓库的提交历史。

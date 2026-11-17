@@ -111,6 +111,8 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 - `event-client.mjs` 是事件 WebSocket 客户端、事件投影、慢读的事件 socket 和 `waitFor` 轮询。
 - `workspace-root.mjs` 在仓库的 `node_modules/.cache/` 下建托管工作树的根目录。
 
+`tests/acceptance/verify/` 是端到端驱动：启动隔离的 fixture daemon 和桌面 app,经 CDP 按功能清单点击并核对 daemon 状态。
+
 `tests/eval/` 是评测运行器，量「合并进 main 的结果里通不过隐藏检查的比例」:
 
 - `tasks/<任务名>/task.json` 是冻结任务，取自本仓库的提交历史：起点是一个提交的父提交，隐藏检查是那次提交的测试。隐藏检查的文件不存副本，`hidden_files` 只列路径，内容从原提交取。

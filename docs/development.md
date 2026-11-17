@@ -177,6 +177,20 @@ node scripts/acceptance.mjs --case A001 --driver tests/acceptance/driver.mjs --o
 - Before you run an interface scenario, run `pnpm --filter @pantheon/desktop bundle`.
 - `node tests/acceptance/memory-catalog-smoke.mjs` checks the memory screen in an isolated database and Electron instance. Build the desktop app first. It does not start a model.
 
+## End-to-end drivers
+
+`tests/acceptance/verify/` holds end-to-end drivers. They start an isolated fixture daemon and the desktop app, click through the feature list over CDP, and check the daemon state.
+
+```sh
+pnpm build && pnpm --filter @pantheon/desktop bundle
+node tests/acceptance/verify/run.mjs --boot [--out <dir>] [--size WxH] [entry ids...]
+```
+
+- `--boot` starts `boot.mjs`, runs the drivers (all of `drivers/` when no ids are given) and stops the app. Exit code 0 means every driver passed, 1 means a driver failed or threw, 2 means the app did not start.
+- Each run writes `results.json` and appends one line per driver to `history.jsonl` in the run directory.
+- To run a single driver, start `node tests/acceptance/verify/boot.mjs`, wait for `READY <dir>`, then run `node tests/acceptance/verify/drivers/<entry id>.mjs <dir>` or `node tests/acceptance/verify/run.mjs <dir> <entry id>`.
+- A driver must run again in the same app and must not depend on the order of drivers. Set its starting state with daemon commands at the top, take titles from `Date.now()`, and use `newProject()` to change a repository.
+
 ## Eval
 
 `scripts/eval.mjs` measures how many merged results fail hidden checks. The frozen tasks come from the history of this repository.
