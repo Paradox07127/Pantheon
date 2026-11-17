@@ -27,6 +27,7 @@ import {
   CHOSEN_PATHS,
   PATH_LABEL,
   IMPROVEMENT_MODE_LABEL,
+  PLAN_CHANGES_LABEL,
   setPolicy,
   STATUS_LABEL,
   tierText,
@@ -115,6 +116,7 @@ function paramText(key: RowKey, value: unknown): string {
   if (key === 'acceptance_wake') return WAKE_LABEL[value as WorkflowPolicy['acceptance_wake']];
   if (key === 'improvement_mode')
     return IMPROVEMENT_MODE_LABEL[value as WorkflowPolicy['improvement_mode']];
+  if (key === 'plan_changes') return PLAN_CHANGES_LABEL[value as WorkflowPolicy['plan_changes']];
   if (key === 'gate_on_fail')
     return ON_FAIL_LABEL[value as NonNullable<WorkflowPolicy['gate_on_fail']>];
   return String(value);
@@ -576,6 +578,16 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
         }),
       ),
     ),
+    plan_changes: row(
+      'plan_changes',
+      choice(
+        'plan_changes',
+        PARAM_LABEL.plan_changes,
+        policy.plan_changes,
+        PLAN_CHANGES_LABEL,
+        (plan_changes) => ({ plan_changes }),
+      ),
+    ),
   } satisfies Partial<Record<RowKey, ReactNode>>;
   if (only) return <div className="ps-rows">{rows[only as keyof typeof rows]}</div>;
 
@@ -612,7 +624,10 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
       )}
       {global && autoMerge && <GlobalAutoMerge setting={autoMerge} />}
       <div className="ps-grp">
-        <div className="ps-rows">{rows.improvement_mode}</div>
+        <div className="ps-rows">
+          {rows.plan_changes}
+          {rows.improvement_mode}
+        </div>
       </div>
     </>
   );

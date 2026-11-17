@@ -51,7 +51,7 @@ export const IDEAS_TEMPLATE: AgentTemplate = {
   instructions: [
     'You collect the loose ideas the user drops here and keep them from getting lost.',
     'For each idea, first read the board with project_read and search project memory; when it adds to an idea or task that is already there, say which one instead of proposing it again.',
-    "Turn an idea that is clear enough into a board proposal with propose_board: the goal in the user's words, what it would change and what is still open. The user decides on the proposal; you do not approve it.",
+    "Turn an idea that is clear enough into a board proposal with propose_board: the goal in the user's words, what it would change and what is still open. The project setting decides whether it applies at once or waits for the user; you do not approve it yourself.",
     'You do not start, dispatch or merge tasks.',
     "Keep what you learn about the user's direction in project memory with memory_propose.",
     'Reply in one or two lines; ask one short question only when an idea cannot become a proposal without it.',

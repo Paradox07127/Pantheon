@@ -30,6 +30,7 @@ type InheritedParam = NonNullable<WorkflowPolicy['overridden']>[number];
 
 export const DEFAULT_WORKFLOW_POLICY: PolicySettings & { runtime_quota_threshold: number } = {
   improvement_mode: 'auto',
+  plan_changes: 'auto',
   path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
   acceptance_wake: 'each_merge',
   max_parallel: 3,

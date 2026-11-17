@@ -6,6 +6,7 @@ import {
   type AgentProposal,
   type AgentRoutine,
   type AgentToolGroup,
+  type Principal,
   type Session,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
@@ -44,6 +45,17 @@ function decisionText(proposal: AgentProposal, name: string): string {
   return proposal.state === 'created'
     ? `The user approved your proposal ${proposal.id}: the agent ${name} was created.`
     : `The user approved your proposal ${proposal.id}: the agent ${name} was changed.`;
+}
+
+export function agentProposal(
+  ctx: ControlContext,
+  p: Principal,
+  proposalId: string,
+): AgentProposal {
+  userOnly(p);
+  const proposal = ctx.store.must<AgentProposal>('agent_proposals', proposalId);
+  projectAccess(ctx, p, proposal.project_id, 'agent.proposal');
+  return proposal;
 }
 
 export const agentProposalHandlers: Handlers = {
@@ -112,6 +124,7 @@ export const agentProposalHandlers: Handlers = {
         ...proposal,
         state: !agent ? 'declined' : proposal.agent_id ? 'changed' : 'created',
         ...(agent && { result_agent_id: agent.id }),
+        ...(input.fields && { edited_fields: input.fields }),
         resolved_at: ctx.store.now(),
       },
       proposal.revision,

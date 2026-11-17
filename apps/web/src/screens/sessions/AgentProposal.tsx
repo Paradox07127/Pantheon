@@ -5,6 +5,7 @@ import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import {
   noteProposalDecided,
   templateName,
+  useAgentProposal,
   useAgents,
   useDecidedProposal,
   type AgentProposal,
@@ -12,7 +13,6 @@ import {
 import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
 import { focusRequest, useWantedRequest } from '../../data/focus-request';
-import { useNeedsYou } from '../../data/needs-you';
 import { receiptOf } from '../../data/tool-calls';
 import type { ToolItem, ToolState } from '../../data/transcript';
 import { t } from '../../i18n';
@@ -29,9 +29,6 @@ import {
   type Refusal,
 } from './AgentForm';
 import { OrchestrationRow } from './orchestration';
-
-// The needs-you list may lag a new proposal by a read; a proposal younger than this counts as waiting.
-const SETTLED_MS = 60_000;
 
 /** A routine's schedule in one line. */
 function scheduleText(draft: ReturnType<typeof routineDraft>): string {
@@ -92,14 +89,9 @@ export function AgentProposalCall(props: {
   const projectId = useBoard(
     (s) => s.board?.sessions.find((each) => each.id === props.sessionId)?.project_id ?? null,
   );
-  const needs = useNeedsYou(projectId);
   const agents = useAgents(projectId);
   const here = useDecidedProposal(id);
-  const resolved = useBoard((s) =>
-    id
-      ? s.events.findLast((e) => e.kind === 'agent_proposal.resolved' && e.aggregate_id === id)
-      : undefined,
-  );
+  const stored = useAgentProposal(id);
   const [draft, setDraft] = useState<AgentDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Refusal | null>(null);
@@ -116,42 +108,26 @@ export function AgentProposalCall(props: {
   const fields = proposal.fields;
   const target = proposal.agent_id ? agents?.find((agent) => agent.id === proposal.agent_id) : null;
   const name = fields.name ?? target?.name ?? '';
-  const listed = needs.items?.some(
-    (item) => item.source.table === 'agent_proposals' && item.source.id === proposal.id,
-  );
-  const payload = resolved?.payload as { state?: unknown } | undefined;
-  const state =
-    here && here.state !== 'pending'
-      ? here.state
-      : typeof payload?.state === 'string'
-        ? payload.state
-        : // A decision made while this window ran arrives as an event; absence only dates older ones.
-          needs.items && !needs.error && !listed && Date.now() - proposal.at > SETTLED_MS
-          ? 'decided'
-          : 'pending';
+  const known = here && here.state !== 'pending' ? here : stored;
 
-  if (state !== 'pending') {
-    const at = here?.resolved_at ?? resolved?.created_at;
+  if (known && known.state !== 'pending') {
+    const { state, resolved_at: at } = known;
+    const decided = known.edited_fields?.name ?? known.fields.name ?? target?.name ?? '';
     const line =
       state === 'created'
         ? t(
             { id: 'sessions.agents.proposal.created', defaultMessage: 'You created {name}' },
-            { name },
+            { name: decided },
           )
         : state === 'changed'
           ? t(
               { id: 'sessions.agents.proposal.changed', defaultMessage: 'You changed {name}' },
-              { name },
+              { name: decided },
             )
-          : state === 'declined'
-            ? t(
-                { id: 'sessions.agents.proposal.declined', defaultMessage: 'You declined {name}' },
-                { name },
-              )
-            : t(
-                { id: 'sessions.agents.proposal.decided', defaultMessage: 'You decided on {name}' },
-                { name },
-              );
+          : t(
+              { id: 'sessions.agents.proposal.declined', defaultMessage: 'You declined {name}' },
+              { name: decided },
+            );
     return (
       <div className={`ag-ln${props.enter}`}>
         {state === 'declined' ? <X aria-hidden="true" /> : <Check aria-hidden="true" />}
@@ -307,7 +283,7 @@ export function AgentProposalCall(props: {
           <button
             type="button"
             className="btn"
-            disabled={busy}
+            disabled={busy || !known}
             onClick={() => {
               setDraft(null);
               setError(null);
@@ -320,7 +296,7 @@ export function AgentProposalCall(props: {
             <button
               type="button"
               className="btn"
-              disabled={busy}
+              disabled={busy || !known}
               onClick={() => void decide('decline')}
             >
               {t({ id: 'sessions.agents.proposal.decline', defaultMessage: 'Decline' })}
@@ -328,7 +304,7 @@ export function AgentProposalCall(props: {
             <button
               type="button"
               className="btn"
-              disabled={busy}
+              disabled={busy || !known}
               onClick={() => {
                 setError(null);
                 setDraft(base);
@@ -341,7 +317,7 @@ export function AgentProposalCall(props: {
         <button
           type="button"
           className="btn pri"
-          disabled={busy}
+          disabled={busy || !known}
           aria-busy={busy || undefined}
           onClick={() => void decide('create')}
         >

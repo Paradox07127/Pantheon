@@ -37,6 +37,7 @@ export type {
 /** The fields of workflow.policy.set besides project_id; an absent field stays as it is. */
 export interface PolicyPatch {
   improvement_mode?: WorkflowPolicy['improvement_mode'];
+  plan_changes?: WorkflowPolicy['plan_changes'];
   path?: WorkflowPolicy['path'];
   acceptance_wake?: WorkflowPolicy['acceptance_wake'];
   max_parallel?: number;
@@ -286,6 +287,7 @@ export const PARAM_LABEL: Record<
   | 'dispatch_paused'
   | 'runtime_quota_threshold'
   | 'improvement_mode'
+  | 'plan_changes'
   | 'project_budget'
   | 'budget'
   | 'gate_on_fail',
@@ -332,6 +334,9 @@ export const PARAM_LABEL: Record<
       id: 'data.workflowPolicy.param.improvementMode',
       defaultMessage: 'Workflow improvement',
     });
+  },
+  get plan_changes() {
+    return t({ id: 'settings.workflow.planChanges', defaultMessage: 'Plan changes' });
   },
   get project_budget() {
     return t({
@@ -405,6 +410,18 @@ export const IMPROVEMENT_MODE_LABEL: Record<WorkflowPolicy['improvement_mode'], 
   },
   get off() {
     return t({ id: 'data.workflowPolicy.mode.off', defaultMessage: 'Off' });
+  },
+};
+
+export const PLAN_CHANGES_LABEL: Record<WorkflowPolicy['plan_changes'], string> = {
+  get auto() {
+    return t({ id: 'settings.workflow.planChanges.auto', defaultMessage: 'Lead applies them' });
+  },
+  get confirm() {
+    return t({
+      id: 'settings.workflow.planChanges.confirm',
+      defaultMessage: 'Wait for my approval',
+    });
   },
 };
 

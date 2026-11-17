@@ -503,6 +503,7 @@ export async function startDaemon(options: DaemonOptions) {
       'project.usage.read': (p, i) => control.projectUsageRead(p, i.project_id),
       'agent.list': (p, i) => control.agentList(p, i.project_id),
       'agent.templates': (p) => control.agentTemplates(p),
+      'agent.proposal': (p, i) => control.agentProposal(p, i.proposal_id),
       'retrospective.list': (p, i) => control.retrospectiveList(p, i.project_id, i.task_id),
       'routing.table': (p, i) => control.routingTable(p, i.project_id),
       'workflow.definition': (p, i) => control.workflowDefinition(p, i.project_id, i.id),

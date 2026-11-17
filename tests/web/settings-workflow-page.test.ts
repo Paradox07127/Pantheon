@@ -38,6 +38,7 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   project_id: 'alpha',
   policy_version: 2,
   improvement_mode: 'confirm',
+  plan_changes: 'auto',
   path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
   acceptance_wake: 'each_merge',
   max_parallel: 3,
@@ -128,6 +129,23 @@ describe('workflow settings page', () => {
     expect(rowNames(tree(h))).not.toContain(param('handbackLimit'));
     expect(rowNames(tree(h)).at(-1)).toBe(param('improvementMode'));
     expect(groups.flatMap((g) => rowNames(g))).not.toContain(param('improvementMode'));
+  });
+
+  it('sends the plan changes choice the user picks', async () => {
+    const h = await page();
+    const row = labelled(tree(h), zh('settings.workflow.planChanges'));
+    expect(row.props.role).toBe('group');
+    const wait = find(
+      row,
+      (n) => n.props.value !== undefined && text(n) === zh('settings.workflow.planChanges.confirm'),
+    );
+    find(row, (n) => typeof n.props.onValueChange === 'function').props.onValueChange(
+      wait.props.value,
+    );
+    await h.flush();
+    expect(bridge.commands.map((c) => [c.type, c.input])).toEqual([
+      ['workflow.policy.set', { project_id: 'alpha', plan_changes: 'confirm' }],
+    ]);
   });
 
   it('sets a count typed between its steps and refuses one out of range in its row', async () => {

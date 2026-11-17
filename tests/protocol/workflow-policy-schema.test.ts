@@ -7,6 +7,7 @@ it('accepts a workflow policy change and refuses an unknown parameter value', ()
     schema.safeParse({
       project_id: 'project',
       improvement_mode: 'confirm',
+      plan_changes: 'confirm',
       path: { t1: 'dispatch' },
       max_parallel: 2,
       task_size_hint: null,
@@ -17,6 +18,7 @@ it('accepts a workflow policy change and refuses an unknown parameter value', ()
     false,
   );
   expect(schema.safeParse({ project_id: 'project', pinned: ['gate'] }).success).toBe(false);
+  expect(schema.safeParse({ project_id: 'project', plan_changes: 'off' }).success).toBe(false);
 });
 
 it('accepts a budget cell and null for one, and refuses a cell without its wall-clock limit', () => {

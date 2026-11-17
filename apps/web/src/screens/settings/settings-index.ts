@@ -1,5 +1,10 @@
 import { KNOWN_RUNTIMES, runtimeName } from '../../components/RuntimeGlyph';
-import { PATH_LABEL, IMPROVEMENT_MODE_LABEL, WAKE_LABEL } from '../../data/workflow-policy';
+import {
+  PATH_LABEL,
+  IMPROVEMENT_MODE_LABEL,
+  PLAN_CHANGES_LABEL,
+  WAKE_LABEL,
+} from '../../data/workflow-policy';
 import { LOCALE_NAMES, t, type Message } from '../../i18n';
 import { revealText } from '../../lib/platform-text';
 import type { InsightsSection } from '../insights/InsightsScreen';
@@ -1733,6 +1738,13 @@ export const SETTINGS_INDEX: SettingRecord[] = [
       id: 'settings.search.keywords.autoMerge',
       defaultMessage: 'land, worktree',
     }),
+  },
+  {
+    id: 'workflow.planChanges',
+    page: 'workflow',
+    section: improvementMode,
+    label: defineMessage({ id: 'settings.workflow.planChanges', defaultMessage: 'Plan changes' }),
+    options: () => Object.values(PLAN_CHANGES_LABEL),
   },
   {
     id: 'workflow.improvementMode',

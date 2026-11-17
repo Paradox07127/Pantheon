@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { AgentProfile, AgentProposal, AgentToolGroup } from '@pantheon/protocol';
 import { t } from '../i18n';
+import { useBoard } from './board';
 import { useProjectQuery } from './project-read';
 import { useQuery } from './workbench-sessions';
 
@@ -67,6 +68,24 @@ export const OFFERED_LISTENS: readonly EventSource[] = ['github'];
 /** The project's agents from agent.list, archived ones included; null until read. */
 export function useAgents(projectId: string | null): AgentProfile[] | null {
   return useProjectQuery<AgentProfile[]>('agent.list', projectId, Array.isArray).read;
+}
+
+/** The proposal as the daemon stores it, read again once it is decided; null until read. */
+export function useAgentProposal(id: string | null): AgentProposal | null {
+  const resolved = useBoard((s) =>
+    id
+      ? (s.events.findLast((e) => e.kind === 'agent_proposal.resolved' && e.aggregate_id === id)
+          ?.sequence ?? 0)
+      : 0,
+  );
+  return useQuery<AgentProposal>(
+    'agent.proposal',
+    id,
+    (proposal_id) => ({ proposal_id }),
+    (value) =>
+      value && typeof value === 'object' && 'state' in value ? (value as AgentProposal) : null,
+    resolved,
+  ).data;
 }
 
 /** The defaults of the ideas, goals and custom templates; null until read. */

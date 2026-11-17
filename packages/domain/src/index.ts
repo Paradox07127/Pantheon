@@ -783,6 +783,8 @@ export interface AgentProposal extends Entity {
   agent_id?: string;
   /** The agent.create fields of a new agent, or the changed fields. */
   fields: Partial<AgentFields>;
+  /** The fields the user changed when deciding; absent when none. */
+  edited_fields?: Partial<AgentFields>;
   state: 'pending' | 'created' | 'changed' | 'declined';
   result_agent_id?: string;
   at: number;
@@ -2066,6 +2068,8 @@ export interface WorkflowPolicy extends Entity {
   policy_version: number;
   /** Whether improvements start their trial on their own, wait for the user, or are not made. */
   improvement_mode: 'auto' | 'confirm' | 'off';
+  /** Whether a lead's plan proposal applies at once or waits for the user. */
+  plan_changes: 'auto' | 'confirm';
   /** Whether the lead makes a task of each tier itself or dispatches a task session, reviewed or not; an absent tier takes its default. */
   path: Partial<Record<TaskKind['tier'], Exclude<FlowPath, 'parallel'>>>;
   /** Whether the lead wakes after each merge or once every task of a milestone has ended. */

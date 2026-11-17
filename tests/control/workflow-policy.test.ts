@@ -43,6 +43,7 @@ it('reads the default policy at version 0 when the project has none', async () =
     project_id: f.project.id,
     policy_version: 0,
     improvement_mode: 'auto',
+    plan_changes: 'auto',
     path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
     acceptance_wake: 'each_merge',
     max_parallel: 3,
@@ -60,6 +61,15 @@ it('stores a user change to max_parallel at version 1 and records what changed',
   expect(policyOf(f)).toMatchObject({ max_parallel: 2, policy_version: 1 });
   expect(changes(f).map((event) => event.payload)).toEqual([
     { param: 'max_parallel', from: 3, to: 2, by: 'user', policy_version: 1 },
+  ]);
+});
+
+it('stores a plan changes setting and reads it back', async () => {
+  const f = await opened();
+  set(f, { plan_changes: 'confirm' });
+  expect(policyOf(f)).toMatchObject({ plan_changes: 'confirm', policy_version: 1 });
+  expect(changes(f).map((event) => event.payload)).toEqual([
+    { param: 'plan_changes', from: 'auto', to: 'confirm', by: 'user', policy_version: 1 },
   ]);
 });
 

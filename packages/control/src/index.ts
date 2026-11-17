@@ -154,6 +154,7 @@ import { needsYou } from './needs-you.js';
 import { projectsSummary, summaryProjects } from './projects-summary.js';
 import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
+import { agentProposal } from './agent-proposals.js';
 import { continueSession } from './continuation.js';
 import { appendNote } from './lead-inbox.js';
 import type { ProtectionPaths } from './protection.js';
@@ -743,6 +744,9 @@ export class Control extends EventEmitter {
   }
   agentTemplates(principal: Principal) {
     return agentTemplates(principal);
+  }
+  agentProposal(principal: Principal, proposalId: string) {
+    return agentProposal(this.ctx, principal, proposalId);
   }
   projectUsageRead(principal: Principal, projectId: string) {
     return projectUsageRead(this.ctx, principal, projectId);

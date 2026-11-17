@@ -55,7 +55,11 @@ async function defaultsFixture() {
 
 it('follows the global values where a project has none of its own', async () => {
   const f = await defaultsFixture();
-  f.setGlobal('workflow_policy', { max_parallel: 2, gate_on_fail: 'stop' });
+  f.setGlobal('workflow_policy', {
+    max_parallel: 2,
+    gate_on_fail: 'stop',
+    plan_changes: 'confirm',
+  });
   f.setGlobal('session_defaults', {
     runtime: 'fixture',
     permission_mode: 'plan',
@@ -69,7 +73,12 @@ it('follows the global values where a project has none of its own', async () => 
     model_families: { 'fixture-': 'fixture' },
     project_defaults: { auto_merge: true, external_events: 'approve' },
   });
-  expect(f.policy()).toMatchObject({ max_parallel: 2, gate_on_fail: 'stop', policy_version: 0 });
+  expect(f.policy()).toMatchObject({
+    max_parallel: 2,
+    gate_on_fail: 'stop',
+    plan_changes: 'confirm',
+    policy_version: 0,
+  });
   expect(f.policy().defaults).toMatchObject({ max_parallel: 2, gate_on_fail: 'stop' });
   expect(usageTargets(f.ctx, f.current())).toEqual({ fixture: 500 });
   expect(f.externalMode()).toBe('approve');
@@ -88,11 +97,15 @@ it('follows the global values where a project has none of its own', async () => 
 
 it('reads the project value over the global one, also when it equals the built-in default', async () => {
   const f = await defaultsFixture();
-  f.setGlobal('workflow_policy', { max_parallel: 2 });
+  f.setGlobal('workflow_policy', { max_parallel: 2, plan_changes: 'confirm' });
   f.setGlobal('usage_targets', { fixture: 500, claude: 900 });
   f.setGlobal('external_events', 'approve');
   f.setGlobal('auto_merge', true);
-  f.call('workflow.policy.set', { project_id: f.project.id, max_parallel: 2 }, null);
+  f.call(
+    'workflow.policy.set',
+    { project_id: f.project.id, max_parallel: 2, plan_changes: 'auto' },
+    null,
+  );
   f.call(
     'project.usageTargets.set',
     {
@@ -112,7 +125,7 @@ it('reads the project value over the global one, also when it equals the built-i
     f.current().revision,
   );
   expect(f.current()).toMatchObject({ auto_merge: false, external_events: 'off' });
-  expect(f.policy().max_parallel).toBe(2);
+  expect(f.policy()).toMatchObject({ max_parallel: 2, plan_changes: 'auto' });
   expect(usageTargets(f.ctx, f.current())).toEqual({ fixture: 100, claude: 900 });
   expect(f.externalMode()).toBeUndefined();
   expect(f.mergePolicy()).toBe(false);
@@ -337,6 +350,7 @@ it('keeps a policy stored before global values as the project value, and absent 
       project_id: other.id,
       policy_version: 1,
       improvement_mode: 'auto',
+      plan_changes: 'auto',
       path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
       acceptance_wake: 'each_merge',
       max_parallel: 3,

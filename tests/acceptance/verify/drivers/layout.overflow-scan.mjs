@@ -204,6 +204,7 @@ result.seed.settled = Boolean(settled);
 result.seed.plan = planned ? `${tasks.length} tasks` : 'plan not on board.view';
 
 // The resident proposes a change to its plan, which waits on the board for the user.
+await call('workflow.policy.set', { project_id, plan_changes: 'confirm' });
 const leadOf = async () =>
   (await query('board.view', { project_id, days: '7' })).leads?.find(
     (l) => l.session_id === assistant,

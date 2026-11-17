@@ -976,6 +976,7 @@ const storedTierBudget = z
 /** Workflow policy settings as a policy stores them; the project budget belongs to each project alone. */
 const workflowPolicySettings = z.strictObject({
   improvement_mode: z.enum(['auto', 'confirm', 'off']).optional(),
+  plan_changes: z.enum(['auto', 'confirm']).optional(),
   path: z
     .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
     .optional(),
@@ -1642,6 +1643,7 @@ export const inputSchemas = {
   'workflow.policy.set': z.strictObject({
     project_id: str,
     improvement_mode: z.enum(['auto', 'confirm', 'off']).optional(),
+    plan_changes: z.enum(['auto', 'confirm']).optional(),
     /** Merged into the current path by tier. */
     path: z
       .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
@@ -2135,6 +2137,8 @@ export const querySchemas = {
   'project.read': z.strictObject({ project_id: str }),
   /** The user only; returns the project's AgentProfile records. */
   'agent.list': z.strictObject({ project_id: str }),
+  /** The user only; returns the stored AgentProposal, with the fields the user edited once decided. */
+  'agent.proposal': z.strictObject({ proposal_id: str }),
   /** The user only; returns the defaults of the ideas, goals and custom templates a new agent starts from. */
   'agent.templates': z.strictObject({}),
   'project.usage.read': z.strictObject({ project_id: str }),

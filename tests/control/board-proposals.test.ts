@@ -20,8 +20,8 @@ function failure(fn: () => unknown): { code?: string; message?: string } {
   throw new Error('Expected the command to fail');
 }
 
-/** A fixture whose clock moves only when the test moves it. */
-async function setup() {
+/** A fixture whose clock moves only when the test moves it, where plan proposals wait for the user unless it keeps the default. */
+async function setup(planChanges: 'confirm' | 'default' = 'confirm') {
   const clock = { now: 1_700_000_000_000 };
   const f = await fixture({
     adapter: new FixtureAdapter(100),
@@ -29,6 +29,8 @@ async function setup() {
     now: () => clock.now,
   });
   cleanups.push(() => f.close());
+  if (planChanges === 'confirm')
+    f.call('workflow.policy.set', { project_id: f.project.id, plan_changes: 'confirm' }, null);
   return { f, clock };
 }
 
@@ -184,6 +186,40 @@ const needs = (f: Fixture) =>
   f.control
     .needsYou(user, f.project.id)
     .items.filter((item) => item.kind === 'board.plan.proposal');
+const wakes = (f: Fixture, lead: Principal) =>
+  f.store
+    .list<SessionTurn>('session_turns')
+    .filter((turn) => turn.session_id === lead.session_id && turn.origin === 'tracker').length;
+
+it.each([
+  { planChanges: 'default', applied: true, title: 'Export API', status: 'accepted', waiting: 0 },
+  { planChanges: 'confirm', applied: false, title: 'API', status: 'pending', waiting: 1 },
+] as const)(
+  'with plan changes $planChanges, a proposal applied: $applied leaves the task titled $title',
+  async ({ planChanges, applied, title, status, waiting }) => {
+    const { f } = await setup(planChanges);
+    const lead = leadOf(f);
+    writePlan(f, lead);
+    const receipt = f.call<{ proposal_id: string; applied: boolean }>(
+      'board.plan.propose',
+      {
+        project_id: f.project.id,
+        base_version: planOf(f, lead).plan_version,
+        reason: 'The export needs a narrower contract',
+        ops: [rename()],
+      },
+      null,
+      lead,
+    );
+    expect(receipt.applied).toBe(applied);
+    expect(planOf(f, lead).tasks[0]!.title).toBe(title);
+    expect(planOf(f, lead).pending_proposals).toMatchObject([
+      { proposal_id: receipt.proposal_id, status },
+    ]);
+    expect(needs(f)).toHaveLength(waiting);
+    expect(wakes(f, lead)).toBe(0);
+  },
+);
 
 it('holds a lead proposal without changing tasks and lists it in both plan views and needs-you', async () => {
   const { f, clock } = await setup();

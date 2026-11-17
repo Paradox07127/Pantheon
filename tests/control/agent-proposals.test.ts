@@ -149,3 +149,24 @@ it('creates the proposed agent under the name the user edited, declines another,
     f.control.needsYou(user, f.project.id).items.filter((each) => each.kind === 'agent.proposal'),
   ).toEqual([]);
 });
+
+it('answers agent.proposal with the proposal as stored, with the fields the user edited, to the user only', async () => {
+  const { f, assistant, as, refusal } = await proposalFixture();
+  const proposal = as<AgentProposal>(assistant, 'agent.propose', IDEAS);
+  expect(f.control.agentProposal(user, proposal.id)).toMatchObject({ state: 'pending' });
+  expect(f.control.agentProposal(user, proposal.id)).not.toHaveProperty('edited_fields');
+  f.call('agent.proposal.resolve', {
+    proposal_id: proposal.id,
+    decision: 'create',
+    fields: { name: 'Idea box' },
+  });
+  expect(f.control.agentProposal(user, proposal.id)).toMatchObject({
+    state: 'created',
+    fields: { name: 'Ideas' },
+    edited_fields: { name: 'Idea box' },
+  });
+  const other: Principal = { ...lead(f, assistant.id), project_id: 'other-project' };
+  expect(await refusal(() => f.control.agentProposal(other, proposal.id))).toBe(
+    'permission_denied',
+  );
+});

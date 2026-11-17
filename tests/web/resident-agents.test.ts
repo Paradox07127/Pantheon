@@ -22,11 +22,16 @@ const runCommand = vi.hoisted(() =>
   vi.fn(async (..._args: unknown[]) => ({ ok: true, value: { id: 'new-assistant' } as unknown })),
 );
 vi.mock('@/data/commands', () => ({ runCommand }));
-const agentMock = vi.hoisted(() => ({ agents: null as any, templates: null as any }));
+const agentMock = vi.hoisted(() => ({
+  agents: null as any,
+  templates: null as any,
+  proposal: (_id: string): any => null,
+}));
 vi.mock('@/data/agents', async (actual) => ({
   ...(await actual<object>()),
   useAgents: () => agentMock.agents,
   useAgentTemplates: () => agentMock.templates,
+  useAgentProposal: (id: string | null) => (id ? agentMock.proposal(id) : null),
 }));
 const toast = vi.hoisted(() => vi.fn());
 vi.mock('@/components/Toast', async (actual) => ({ ...(await actual<object>()), toast }));
@@ -96,6 +101,7 @@ beforeEach(() => {
   toast.mockClear();
   agentMock.agents = null;
   agentMock.templates = null;
+  agentMock.proposal = () => null;
 });
 afterEach(() => {
   unmountAll();
@@ -348,7 +354,7 @@ describe('agent proposal', () => {
     state: 'pending',
     at: 1,
   });
-  const call = (id: string) =>
+  const call = (id: string, receipt: object = {}) =>
     host(() =>
       AgentProposalCall({
         item: {
@@ -356,7 +362,7 @@ describe('agent proposal', () => {
           id: `call-${id}`,
           name: 'mcp__pantheon__propose_agent',
           input: { project_id: 'alpha', ...proposal(id).fields },
-          output: JSON.stringify({ receipt: proposal(id) }),
+          output: JSON.stringify({ receipt: { ...proposal(id), ...receipt } }),
           ok: true,
         } as ToolItem,
         state: 'ok',
@@ -368,6 +374,7 @@ describe('agent proposal', () => {
     );
   beforeEach(() => {
     mock.board.board.sessions = [{ id: 'res-assistant', project_id: 'alpha', revision: 1 }];
+    agentMock.proposal = proposal;
   });
 
   it('offers Create, Edit and Decline, and creates with the name edited in place', async () => {
@@ -408,6 +415,35 @@ describe('agent proposal', () => {
     );
     expect(pressed(h.value, zh('sessions.agents.create'))).toBeUndefined();
     expect(text(h.value)).toContain(zhf('sessions.agents.proposal.declined', { name: 'Ideas' }));
+  });
+
+  it('shows a just made proposal the daemon has as created as one line, without Create', () => {
+    agentMock.proposal = (id) => ({ ...proposal(id), state: 'created', resolved_at: Date.now() });
+    const h = call('proposal-c', { at: Date.now() });
+    expect(pressed(h.value, zh('sessions.agents.create'))).toBeUndefined();
+    expect(text(h.value)).toContain(zhf('sessions.agents.proposal.created', { name: 'Ideas' }));
+  });
+
+  it('names the agent by the name the user edited once created', async () => {
+    runCommand.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        ...proposal('proposal-d'),
+        state: 'created',
+        edited_fields: { name: 'Idea box' },
+        resolved_at: 2,
+      },
+    });
+    const h = call('proposal-d');
+    pressed(h.value, zh('sessions.agents.proposal.edit'))!.props.onClick();
+    h.render();
+    labelled(h.value, zh('sessions.agents.field.name')).props.onChange({
+      target: { value: 'Idea box' },
+    });
+    h.render();
+    pressed(h.value, zh('sessions.agents.create'))!.props.onClick();
+    await h.flush();
+    expect(text(h.value)).toContain(zhf('sessions.agents.proposal.created', { name: 'Idea box' }));
   });
 });
 

@@ -7,5 +7,8 @@
   "settings.workflow.range": "{param}要是 {low} 到 {high} 之间的整数",
   "settings.workflow.runtimeLimit": "{runtime} 并发上限",
   "settings.workflow.on": "开",
-  "settings.workflow.off": "关"
+  "settings.workflow.off": "关",
+  "settings.workflow.planChanges": "计划改动",
+  "settings.workflow.planChanges.auto": "lead 直接改",
+  "settings.workflow.planChanges.confirm": "等我批准"
 }

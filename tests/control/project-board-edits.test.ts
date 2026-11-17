@@ -105,6 +105,7 @@ it.each(['accept', 'reject'] as const)(
   'wakes the lead when the user chooses to %s its proposal',
   async (decision) => {
     const f = await setup();
+    f.call('workflow.policy.set', { project_id: f.project.id, plan_changes: 'confirm' }, null);
     const lead = leadOf(f);
     writePlan(f, lead);
     const { proposal_id } = f.call<{ proposal_id: string }>(

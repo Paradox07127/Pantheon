@@ -52,6 +52,5 @@
   "sessions.agents.proposal.decline": "拒绝",
   "sessions.agents.proposal.created": "你创建了{name}",
   "sessions.agents.proposal.changed": "你修改了{name}",
-  "sessions.agents.proposal.declined": "你拒绝了{name}",
-  "sessions.agents.proposal.decided": "你已决定{name}"
+  "sessions.agents.proposal.declined": "你拒绝了{name}"
 }

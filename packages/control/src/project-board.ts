@@ -929,6 +929,31 @@ function leadEdit(
   });
 }
 
+/** Records the proposal's outcome on the plan its accepted ops reached, leaves the lead a note and reviews an accepted change. */
+function resolveProposal(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  proposal: PlanProposal,
+  resolution: Pick<PlanProposal, 'status' | 'resolution_reason'>,
+  note: Pick<LeadNote, 'task_id' | 'text'>,
+  commandId: string,
+): void {
+  const resolved: PlanProposal = { ...proposal, ...resolution, resolved_at: ctx.store.now() };
+  const next = appendNote(
+    ctx,
+    {
+      ...plan,
+      pending_proposals: (plan.pending_proposals ?? []).map((entry) =>
+        entry.proposal_id === proposal.proposal_id ? resolved : entry,
+      ),
+    },
+    { at: ctx.store.now(), session_id: '', kind: 'user_edit', ...note },
+    commandId,
+  );
+  ctx.store.event('board.plan_proposal_resolved', next, plan.project_id, resolved, commandId);
+  if (resolved.status === 'accepted') reviewPlan(ctx, next, commandId);
+}
+
 /**
  * Applies a user edit that touches no unfinished task session, or only renames, moves or retypes
  * a task; holds any other edit whole for the lead. Either way the lead gets a note of it.
@@ -1198,7 +1223,24 @@ export const projectBoardHandlers: Handlers = {
       plan.revision,
     );
     ctx.store.event('board.plan_proposed', next, input.project_id, proposal, c.command_id);
-    return { ...planView(ctx, input.project_id, plan.id), proposal_id: proposal.proposal_id };
+    const applied = workflowPolicy(ctx, input.project_id).plan_changes === 'auto';
+    if (applied)
+      resolveProposal(
+        ctx,
+        leadEdit(ctx, p, next, input.ops, c.command_id),
+        proposal,
+        { status: 'accepted' },
+        {
+          task_id: input.ops.flatMap(opTaskIds)[0] ?? '',
+          text: `Plan proposal ${proposal.proposal_id} applied at once, as plan changes are set to apply automatically`,
+        },
+        c.command_id,
+      );
+    return {
+      ...planView(ctx, input.project_id, plan.id),
+      proposal_id: proposal.proposal_id,
+      applied,
+    };
   },
   'board.plan.proposal.withdraw': (ctx, p, c) => {
     const input = inputSchemas['board.plan.proposal.withdraw'].parse(c.input);
@@ -1267,29 +1309,20 @@ export const projectBoardHandlers: Handlers = {
               quoted: input.ops.flatMap((op) => (op.type === 'add_task' ? op.task.source : [])),
             })
           : leadEdit(ctx, p, plan, ops, c.command_id);
-    const resolved: PlanProposal = {
-      ...proposal,
-      status: input.decision === 'accept' ? 'accepted' : 'rejected',
-      ...(input.reason ? { resolution_reason: input.reason } : {}),
-      resolved_at: ctx.store.now(),
-    };
-    const next = appendNote(
+    resolveProposal(
       ctx,
+      applied,
+      proposal,
       {
-        ...applied,
-        pending_proposals: proposals.map((entry) => (entry === proposal ? resolved : entry)),
+        status: input.decision === 'accept' ? 'accepted' : 'rejected',
+        ...(input.reason ? { resolution_reason: input.reason } : {}),
       },
       {
-        at: ctx.store.now(),
-        session_id: '',
         task_id: ops.flatMap(opTaskIds)[0] ?? '',
-        kind: 'user_edit',
         text: `The user chose to ${input.decision} plan proposal ${proposal.proposal_id}${input.reason ? `: ${input.reason}` : ''}${input.decision === 'accept' && input.ops ? `\nThe user changed the ops that applied:\n${ops.map((op) => `- ${opText(op)}`).join('\n')}` : ''}`,
       },
       c.command_id,
     );
-    ctx.store.event('board.plan_proposal_resolved', next, input.project_id, resolved, c.command_id);
-    if (input.decision === 'accept') reviewPlan(ctx, next, c.command_id);
     // The lead waits on its proposal, and only the lead starts a task it adds.
     wakeLead(ctx, ctx.store.must<BoardPlan>('board_plans', plan.id), c.command_id);
     return planView(ctx, input.project_id, plan.id);
