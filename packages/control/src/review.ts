@@ -34,6 +34,7 @@ import {
   type Handlers,
 } from './context.js';
 import { sessionDefaults } from './user-config.js';
+import { finalOutput } from './agent-app-tools.js';
 import { runGit } from './git.js';
 import { sessionGoal, sessionRangeAsync, type DiffRange } from './landing-diff.js';
 import { confirmTermination } from './process.js';
@@ -53,9 +54,9 @@ import { sessionWorkflow, taskWorkflow } from './workflow-engine.js';
 
 export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
 export const reviewInstruction =
-  'Review the changes independently against the task goal. Report each finding using the Pantheon review_finding tool with { location, quote, evidence, impact, blocking, reproduction? }. Set blocking to true for a must-fix-before-merge finding, false for report-only. Blocking findings require reproduction steps or failing test evidence in reproduction. Deleted code also counts as a finding. Quote the diff verbatim and include concrete evidence and impact.';
-const planInstruction =
-  'Review the board plan independently before its high-risk tasks start. Check four things: task granularity (whether one session can finish each task), dependencies (complete and in order), scope overlap between tasks that can run at once, and whether each acceptance command can run. Report each finding using the Pantheon review_finding tool with { location, quote, evidence, impact, blocking, reproduction? }. Set blocking to true for a must-fix-before-merge finding, false for report-only. Blocking findings require reproduction steps or failing test evidence in reproduction. Use the task id as the location, quote plan.json verbatim and include concrete evidence and impact.';
+  'Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly. When you find nothing, reply with one line naming what you checked.';
+const planInstruction = (listed: string) =>
+  `Review this board plan before its high-risk tasks start: ${listed}. Record each problem with review_finding, with the task id as location and a quote copied exactly from plan.json. When you find nothing, reply with one line naming what you checked.`;
 
 /** The session, requester and goal of a review.request, once its permissions are checked. */
 function reviewTarget(ctx: ControlContext, principal: Principal, command: Command) {
@@ -574,7 +575,7 @@ export function reviewPlan(ctx: ControlContext, plan: BoardPlan, cause: string):
   startReview(ctx, plan.project_id, [reviewer], {
     round: reviews.length + 1,
     cause,
-    prompt: `${planInstruction}\n\nHigh-risk tasks to review: ${listed}.\n\nplan.json:\n${content.toString('utf8')}`,
+    prompt: `${planInstruction(listed)}\n\n${content.toString('utf8')}`,
     artifact: { name: 'plan.json', content },
     requester: { lead_session_id: plan.id },
     plan: { tasks },
@@ -784,7 +785,12 @@ export function settleReview(
         ? 'completed'
         : 'failed';
   if (state === 'running') return;
-  const next = ctx.store.update<Review>('reviews', { ...review, state }, review.revision);
+  const incomplete = state === 'completed' ? incompleteReason(ctx, review, turns) : undefined;
+  const next = ctx.store.update<Review>(
+    'reviews',
+    { ...review, state, ...(incomplete ? { incomplete } : {}) },
+    review.revision,
+  );
   ctx.store.event(
     `review.${state}`,
     next,
@@ -793,6 +799,29 @@ export function settleReview(
   );
   ctx.store.enqueue('review.remove', { review_id: review.id });
   notifyRequestingLead(ctx, next, turns);
+}
+
+/** Why a reviewer gave no full result: its turn did not complete, it could not read the input, or it left neither a finding nor a reply. */
+function incompleteReason(
+  ctx: ControlContext,
+  review: Review,
+  turns: SessionTurn[],
+): string | undefined {
+  const reasons = review.session_ids.flatMap((sessionId) => {
+    const name = ctx.store.get<Session>('sessions', sessionId)?.runtime ?? sessionId,
+      turn = turns.find((t) => t.session_id === sessionId),
+      findings = review.findings.filter((finding) => finding.runtime === name);
+    if (turn?.state !== 'completed') return [`reviewer ${name} ${turn?.state ?? 'failed'}`];
+    if (findings.some((finding) => finding.artifact_error))
+      return [`reviewer ${name} could not read the review input`];
+    if (
+      !findings.some((finding) => finding.status !== 'rejected') &&
+      !finalOutput(ctx, sessionId, turn.id)
+    )
+      return [`reviewer ${name} ended its turn with no finding and no reply`];
+    return [];
+  });
+  return reasons.length ? reasons.join('; ') : undefined;
 }
 
 /** Durable review results return to the owning plan; a transfer routes them to its new lead. */

@@ -219,6 +219,7 @@ const agent = (id: string, template: string, extra: Record<string, unknown> = {}
   name: NAMES[template as keyof typeof NAMES] ?? 'Agent',
   role: template,
   instructions: `Instructions of ${id}`,
+  role_prompt: `Built-in role of ${template}`,
   routines: [],
   created_by: { kind: 'user' },
   created_at: 1,
@@ -326,6 +327,116 @@ describe('agent profile', () => {
     expect(runCommand).toHaveBeenLastCalledWith(
       'agent.unarchive',
       { agent_id: 'agent-ideas' },
+      null,
+    );
+  });
+
+  /** The section a visible caption names, through its aria-labelledby. */
+  const section = (tree: unknown, name: string) => {
+    const caption = nodes(tree as never).find(
+      (n) => (n.type === 'span' || n.type === 'label') && text(n) === name,
+    );
+    return nodes(tree as never).find(
+      (n) => n.type === 'section' && caption && n.props['aria-labelledby'] === caption.props.id,
+    );
+  };
+
+  it('shows the built-in role read-only and saves the user’s instructions through agent.update', async () => {
+    agentMock.agents = [
+      agent('agent-assistant', 'assistant', { revision: 6, instructions: undefined }),
+    ];
+    const h = profile('agent-assistant');
+    const builtIn = section(h.value, zh('sessions.agents.builtin'))!;
+    expect(text(builtIn)).toContain('Built-in role of assistant');
+    expect(nodes(builtIn).filter((n) => n.type === 'textarea' || n.type === 'input')).toEqual([]);
+    const own = section(h.value, zh('sessions.agents.field.instructions'))!;
+    pressed(own, zh('sessions.agents.instructions.add'))!.props.onClick();
+    h.render();
+    labelled(h.value, zh('sessions.agents.field.instructions')).props.onChange({
+      target: { value: '  Reply in Chinese.  ' },
+    });
+    h.render();
+    pressed(
+      section(h.value, zh('sessions.agents.field.instructions')),
+      zh('sessions.agents.save'),
+    )!.props.onClick();
+    await h.flush();
+    expect(runCommand).toHaveBeenLastCalledWith(
+      'agent.update',
+      { agent_id: 'agent-assistant', revision: 6, instructions: 'Reply in Chinese.' },
+      null,
+    );
+    expect(text(section(h.value, zh('sessions.agents.builtin')))).toContain(
+      'Built-in role of assistant',
+    );
+  });
+
+  it('shows Add instructions while the agent has no instructions of the user', () => {
+    agentMock.agents = [agent('agent-triage', 'triage', { instructions: undefined })];
+    const own = section(profile('agent-triage').value, zh('sessions.agents.field.instructions'))!;
+    expect(pressed(own, zh('sessions.agents.instructions.add'))).toBeTruthy();
+    expect(nodes(own).some((n) => n.type === 'textarea')).toBe(false);
+  });
+
+  it('shows a custom agent only the user’s instructions, without a built-in section', () => {
+    agentMock.agents = [agent('agent-custom', 'custom', { name: 'Release notes' })];
+    const h = profile('agent-custom');
+    expect(section(h.value, zh('sessions.agents.builtin'))).toBeUndefined();
+    expect(text(h.value)).not.toContain('Built-in role of custom');
+    const own = section(h.value, zh('sessions.agents.field.instructions'))!;
+    expect(text(own)).toContain('Instructions of agent-custom');
+    expect(pressed(own, zh('sessions.agents.instructions.add'))).toBeUndefined();
+    nodes(own)
+      .find((n) => n.props['aria-label'] === zh('sessions.agents.instructions.edit'))!
+      .props.onClick();
+    h.render();
+    labelled(h.value, zh('sessions.agents.field.instructions')).props.onChange({
+      target: { value: ' ' },
+    });
+    h.render();
+    const save = pressed(
+      section(h.value, zh('sessions.agents.field.instructions')),
+      zh('sessions.agents.save'),
+    )!;
+    expect(save.props.disabled).toBe(true);
+  });
+
+  it('lists six listens switches and saves the picked sources through agent.update', async () => {
+    const sources = [
+      'github',
+      'gate_failures',
+      'flaky_tests',
+      'app_errors',
+      'session_failures',
+      'trace_findings',
+    ];
+    agentMock.agents = [agent('agent-ideas', 'ideas', { revision: 2, listens: [] })];
+    const h = profile('agent-ideas');
+    const caption = nodes(h.value).find(
+      (n) => n.type === 'span' && text(n) === zh('sessions.agents.field.listens'),
+    )!;
+    const group = () =>
+      nodes(h.value).find((n) => n.props['aria-labelledby'] === caption.props.id)!;
+    const switches = () => nodes(group()).filter((n) => n.type === 'label');
+    expect(switches().map(text)).toEqual([
+      zh('sessions.agents.listen.github'),
+      zh('sessions.agents.listen.gateFailures'),
+      zh('sessions.agents.listen.flakyTests'),
+      zh('sessions.agents.listen.appErrors'),
+      zh('sessions.agents.listen.sessionFailures'),
+      zh('sessions.agents.listen.traceFindings'),
+    ]);
+    for (let i = 0; i < sources.length; i++) {
+      nodes(switches()[i])
+        .find((n) => n.props.type === 'checkbox')!
+        .props.onChange({ target: { checked: true } });
+      h.render();
+    }
+    pressed(h.value, zh('sessions.agents.save'))!.props.onClick();
+    await h.flush();
+    expect(runCommand).toHaveBeenLastCalledWith(
+      'agent.update',
+      { agent_id: 'agent-ideas', revision: 2, listens: sources },
       null,
     );
   });

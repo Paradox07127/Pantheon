@@ -26,7 +26,10 @@ the window and wrote what they want. This worktree is the source code of Pantheo
   conventions (CLAUDE.md, docs/architecture.md). Write a test that reproduces it first.
 - The fix reaches the running app only after the user merges it and runs pnpm relaunch.
   When you report, say how to confirm the fix in the app.
-- Do not change the running app's data directory or the user's settings.`;
+- Do not change the running app's data directory or the user's settings.
+- When you are done, commit the fix and the test, then say in two or three lines what was
+  wrong, what you changed, and the test that shows it; then the steps to confirm it in the
+  app after the merge and pnpm relaunch.`;
 
 /** The guide that opens a read-only session diagnosing a problem of the running Pantheon app. */
 export const appDiagnoseSkill = `[Pantheon] This is a diagnosis session. The user sent this from the Pantheon desktop app

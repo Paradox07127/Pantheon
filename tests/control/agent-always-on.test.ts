@@ -17,7 +17,7 @@ import type {
 } from '@pantheon/domain';
 import { command } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import { ALWAYS_ON_LINES } from '../../packages/control/dist/agent-prompts.js';
+import { TOOL_GROUP_MODULES } from '../../packages/control/dist/agent-prompts.js';
 import { eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -273,10 +273,10 @@ it('gives a default assistant the always-on tools and lines, and a board-only pr
   const names = await residentToolNames();
   expect(names).toEqual(expect.arrayContaining(ALWAYS_ON));
   const instructions = await firstInstructions();
-  for (const line of ALWAYS_ON_LINES) expect(instructions).toContain(line);
+  expect(instructions).toContain(TOOL_GROUP_MODULES.always_on);
 
   const narrow = await residentToolNames(['board']);
   for (const name of ALWAYS_ON) expect(narrow).not.toContain(name);
   const plain = await firstInstructions(['board']);
-  for (const line of ALWAYS_ON_LINES) expect(plain).not.toContain(line);
+  expect(plain).not.toContain(TOOL_GROUP_MODULES.always_on);
 });

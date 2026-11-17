@@ -57,7 +57,7 @@ const cut = (text: string) =>
   text.length > TEXT_LIMIT ? `${text.slice(0, TEXT_LIMIT - 1)}…` : text;
 
 /** The text the agent wrote after its last tool call in the turn. */
-function finalOutput(ctx: ControlContext, sessionId: string, turnId: string): string {
+export function finalOutput(ctx: ControlContext, sessionId: string, turnId: string): string {
   const rows = ctx.store.db
     .prepare(
       "SELECT kind, payload ->> '$.text' AS text FROM events WHERE aggregate_id=? AND kind IN ('agent.message.delta', 'agent.tool.started') AND payload ->> '$.turn_id'=? ORDER BY sequence",

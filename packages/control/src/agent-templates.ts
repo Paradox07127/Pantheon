@@ -54,8 +54,7 @@ export const GOALS_TEMPLATE: AgentTemplate = {
   routines: [
     {
       id: 'weekly-review',
-      prompt:
-        'Compare each open milestone with the work done since the last review, and report what slipped or is stuck.',
+      prompt: 'Run the weekly review.',
       every_ms: WEEK_MS,
       enabled: true,
     },

@@ -961,11 +961,18 @@ function settleReviewStep(ctx: ControlContext, run: StepRun): void {
   if (review.state === 'running') return;
   const kind = run.step.kind as Extract<WorkflowStep['kind'], { type: 'review' }>,
     blocking = review.findings.filter((f) => f.status === 'open' && f.blocking);
-  if (!kind.blocking || (review.state === 'completed' && !blocking.length)) {
+  if (!kind.blocking || (review.state === 'completed' && !review.incomplete && !blocking.length)) {
     changeRun(ctx, run, 'passed');
     return;
   }
-  if (!blocking.length) return failStep(ctx, run, `Review ${review.id} ${review.state}`);
+  if (!blocking.length)
+    return failStep(
+      ctx,
+      run,
+      review.incomplete
+        ? `Review ${review.id} incomplete: ${review.incomplete}`
+        : `Review ${review.id} ${review.state}`,
+    );
   const findings = blocking.map(
     (f) =>
       `${f.location}\nQuote: ${f.quote}\nEvidence: ${f.evidence}\nImpact: ${f.impact}${f.reproduction === undefined ? '' : `\nReproduction: ${JSON.stringify(f.reproduction)}`}`,

@@ -180,6 +180,47 @@
 .ag-arch {
   justify-content: flex-start;
 }
+/* The built-in role prompt and the user's instructions, each a section of the profile. */
+.ag-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+}
+.ag-sh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--ctl);
+}
+.ag-rp {
+  white-space: pre-wrap;
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  user-select: text;
+}
+.ag-ui {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  user-select: text;
+}
+.ag-sa {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.ag-li {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
 /* An agent proposal in the conversation: one framed card, its parts split by hairlines. */
 .ag-pc {
   display: flex;

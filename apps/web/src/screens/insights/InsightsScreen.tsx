@@ -54,11 +54,12 @@ import { localDay } from '../board/usage-model';
 import { CollabTab } from './CollabTab';
 import { DigestPanel, weekSwitch } from './DigestPanel';
 import { IterationsTab } from './IterationsTab';
+import { SignalsTab } from './SignalsTab';
 import { WorkflowTab } from './WorkflowTab';
 import '../board/board.css';
 
 export type InsightsSection =
-  'iterations' | 'collab' | 'workflow' | 'quality' | 'usage' | 'retro' | 'digest';
+  'iterations' | 'collab' | 'workflow' | 'quality' | 'usage' | 'retro' | 'digest' | 'signals';
 
 // Labels are getters, so each is read in the language loaded by then.
 const SECTIONS: { key: InsightsSection; label: string }[] = [
@@ -102,6 +103,12 @@ const SECTIONS: { key: InsightsSection; label: string }[] = [
     key: 'digest',
     get label() {
       return t({ id: 'insights.digest.label', defaultMessage: 'Weekly digest' });
+    },
+  },
+  {
+    key: 'signals',
+    get label() {
+      return t({ id: 'insights.sections.signals', defaultMessage: 'Signals' });
     },
   },
 ];
@@ -160,6 +167,7 @@ const OWN_READS: ReadonlySet<string> = new Set([
   'collab',
   'workflow',
   'digest',
+  'signals',
 ]);
 
 /** The weekly digest of the 7 days through the day `week` weeks before today, read on its own. */
@@ -459,6 +467,12 @@ export function InsightsView(props: InsightsViewProps) {
               ),
             }
           : undefined,
+        signals: projectId
+          ? {
+              title: t({ id: 'insights.sections.signals', defaultMessage: 'Signals' }),
+              node: <SignalsTab projectId={projectId} />,
+            }
+          : undefined,
         merges: {
           title: t({ id: 'board.merges.title', defaultMessage: 'Local merge history' }),
           node: (
@@ -514,7 +528,7 @@ export function InsightsView(props: InsightsViewProps) {
           {projectId && model && (hidden.length > 0 || changed) && (
             <HiddenMenu hidden={hidden} tabs={TABS} onLayout={onLayout} />
           )}
-          {section !== 'digest' && (
+          {section !== 'digest' && section !== 'signals' && (
             <RadioGroup<BoardDays>
               className="tb-seg"
               aria-label={t({ id: 'board.headline.range', defaultMessage: 'Time range' })}

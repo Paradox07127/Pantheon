@@ -1,4 +1,13 @@
 import { useSyncExternalStore } from 'react';
+import {
+  ChartGantt,
+  CircleAlert,
+  CircleDot,
+  Flag,
+  ShieldCheck,
+  Terminal,
+  type LucideIcon,
+} from 'lucide-react';
 import type { AgentProfile, AgentProposal, AgentToolGroup } from '@pantheon/protocol';
 import { t } from '../i18n';
 import { useBoard } from './board';
@@ -8,6 +17,8 @@ import { useQuery } from './workbench-sessions';
 export type { AgentProfile, AgentProposal, AgentToolGroup };
 export type AgentRoutine = AgentProfile['routines'][number];
 export type EventSource = NonNullable<AgentProfile['listens']>[number];
+/** A profile as agent.list returns it, with the built-in role prompt of its template. */
+export type AgentListed = AgentProfile & { role_prompt: string };
 /** The templates a new agent is created from; assistant and triage come with the project. */
 export type CreatedTemplate = 'ideas' | 'goals' | 'custom';
 
@@ -61,11 +72,49 @@ export const OFFERED_TOOLS: readonly AgentToolGroup[] = [
 ];
 
 /** The event sources an agent may listen to. */
-export const OFFERED_LISTENS: readonly EventSource[] = ['github'];
+export const OFFERED_LISTENS: readonly EventSource[] = [
+  'github',
+  'gate_failures',
+  'flaky_tests',
+  'app_errors',
+  'session_failures',
+  'trace_findings',
+];
+
+/** The icon of each event source, in the profile's listens and on the signals list. */
+export const SOURCE_ICONS: Readonly<Record<EventSource, LucideIcon>> = {
+  github: CircleDot,
+  gate_failures: ShieldCheck,
+  flaky_tests: Flag,
+  app_errors: CircleAlert,
+  session_failures: Terminal,
+  trace_findings: ChartGantt,
+};
+
+/** What listening to the source brings, in the interface's language. */
+export function listenName(source: EventSource): string {
+  switch (source) {
+    case 'github':
+      return t({ id: 'sessions.agents.listen.github', defaultMessage: 'GitHub' });
+    case 'gate_failures':
+      return t({ id: 'sessions.agents.listen.gateFailures', defaultMessage: 'Gate failures' });
+    case 'flaky_tests':
+      return t({ id: 'sessions.agents.listen.flakyTests', defaultMessage: 'Flaky tests' });
+    case 'app_errors':
+      return t({ id: 'sessions.agents.listen.appErrors', defaultMessage: 'App errors' });
+    case 'session_failures':
+      return t({
+        id: 'sessions.agents.listen.sessionFailures',
+        defaultMessage: 'Session failures',
+      });
+    default:
+      return t({ id: 'sessions.agents.listen.traceFindings', defaultMessage: 'Trace findings' });
+  }
+}
 
 /** The project's agents from agent.list, archived ones included; null until read. */
-export function useAgents(projectId: string | null): AgentProfile[] | null {
-  return useProjectQuery<AgentProfile[]>('agent.list', projectId, Array.isArray).read;
+export function useAgents(projectId: string | null): AgentListed[] | null {
+  return useProjectQuery<AgentListed[]>('agent.list', projectId, Array.isArray).read;
 }
 
 /** The proposal as the daemon stores it, read again once it is decided; null until read. */

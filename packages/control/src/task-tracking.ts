@@ -1288,17 +1288,25 @@ export function queueTurn(
   return turn;
 }
 
-/** The plan with each task's state and sessions and the recent commits of each git folder. */
+/**
+ * The plan with each task's state and sessions and the recent commits of each git folder; a lead
+ * that cannot write its plan is not asked to rewrite it.
+ */
 export function syncBrief(
   ctx: ControlContext,
   plan: BoardPlan | undefined,
   logs: [string, GitResult][],
+  readOnly = false,
 ): string {
-  const lines = [
-    'Sync the board with the project as it is now.',
-    'Below are your plan with the state and sessions of each task, and the recent commits of each git folder of the project. Rewrite your plan from them and send it with update_board: keep the ids of tasks that still apply, add tasks for work that is under way without one, and remove tasks that are no longer needed.',
-    'Do not implement anything; when the plan is written, end your turn.',
-  ];
+  const lines = readOnly
+    ? [
+        'Below are your plan with the state and sessions of each task, and the recent commits of each git folder of the project; check them before you go on within your role.',
+      ]
+    : [
+        'Sync the board with the project as it is now.',
+        'Below are your plan with the state and sessions of each task, and the recent commits of each git folder of the project. Rewrite your plan from them and send it with update_board: keep the ids of tasks that still apply, add tasks for work that is under way without one, and remove tasks that are no longer needed.',
+        'Do not implement anything; when the plan is written, end your turn.',
+      ];
   if (plan) {
     lines.push(`Your plan: ${plan.headline}`);
     for (const task of plan.tasks) {

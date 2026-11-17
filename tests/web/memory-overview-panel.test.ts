@@ -52,7 +52,6 @@ const context = (extra: Partial<MemoryContext> = {}): MemoryContext => ({
   ],
   omitted: 2,
   bytes: 8412,
-  instructions: '',
   ...extra,
 });
 

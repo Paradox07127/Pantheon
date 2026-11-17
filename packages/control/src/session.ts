@@ -1,4 +1,9 @@
-import { prepareMemoryDelivery, finishMemoryDelivery, MEMORY_INSTRUCTIONS } from './memory.js';
+import {
+  prepareMemoryDelivery,
+  finishMemoryDelivery,
+  MEMORY_INSTRUCTIONS,
+  MEMORY_READ_INSTRUCTIONS,
+} from './memory.js';
 import { lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,6 +43,8 @@ import {
   resolvedPath,
   sessionMcp,
   purposeSessionInstructions,
+  purposeSessionTools,
+  sessionWorkspaceKind,
   sessionAdapter,
   bindSessionAdapter,
   type ControlContext,
@@ -1736,10 +1743,17 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
                   : STORY_WALL_TIME_MS,
           },
         });
-    if (!session.runtime_review)
-      spec.control_instructions = [MEMORY_INSTRUCTIONS, spec.control_instructions]
-        .filter(Boolean)
-        .join('\n\n');
+    // Only a session with memory tools hears about memory, and only one that can write about writing.
+    const tools = purposeSessionTools(session, sessionWorkspaceKind(ctx, session));
+    const memoryText =
+      !tools || tools.includes('memory.propose')
+        ? MEMORY_INSTRUCTIONS
+        : tools.includes('memory.context')
+          ? MEMORY_READ_INSTRUCTIONS
+          : undefined;
+    spec.control_instructions = [memoryText, spec.control_instructions]
+      .filter(Boolean)
+      .join('\n\n');
     session = ctx.store.must<Session>('sessions', session.id);
     if (resumed) {
       confirmTermination(ctx, session);

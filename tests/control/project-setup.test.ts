@@ -109,7 +109,9 @@ it.each([
     await awaitWorkspaceReady(f.control, session.workspace_id!);
     const spec = workbenchSessionSpec(ctx, f.store.must<Session>('sessions', session.id));
     expect(spec.pantheon_mcp).toBeDefined();
-    expect(spec.control_instructions!.includes('before you change anything')).toBe(planned);
+    expect(spec.control_instructions!.includes('update_board before anything changes')).toBe(
+      planned,
+    );
   },
 );
 

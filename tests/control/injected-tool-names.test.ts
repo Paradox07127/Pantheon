@@ -5,7 +5,10 @@ import { appDebugSkill, appDiagnoseSkill } from '../../packages/control/src/app-
 import { baselineSkill } from '../../packages/control/src/baseline-skill.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import { purposeSessionInstructions } from '../../packages/control/src/context.js';
-import { MEMORY_INSTRUCTIONS } from '../../packages/control/src/memory.js';
+import {
+  MEMORY_INSTRUCTIONS,
+  MEMORY_READ_INSTRUCTIONS,
+} from '../../packages/control/src/memory.js';
 import { projectSetupSkill } from '../../packages/control/src/project-setup-skill.js';
 import { LEAD_INSTRUCTIONS } from '../../packages/control/src/agent-prompts.js';
 import { workerInstructions } from '../../packages/control/src/workbench-session.js';
@@ -40,7 +43,9 @@ const injected: Record<string, string> = {
   intro: purpose({ intro: {} as Session['intro'] }),
   'change story': purpose({ change_story: {} as Session['change_story'] }),
   'range story': purpose({ range_story: {} as Session['range_story'] }),
+  reviewer: purpose({ review_id: 'review-1' }),
   memory: MEMORY_INSTRUCTIONS,
+  'memory without writing': MEMORY_READ_INSTRUCTIONS,
   'app debug': appDebugSkill,
   'app diagnosis': appDiagnoseSkill,
   'project setup': projectSetupSkill,
@@ -59,9 +64,9 @@ it('finds the tool names the instructions call', () => {
     'project_read',
     'ask_user',
     'request_review',
-    'memory_context',
+    'memory_propose',
     'project_baseline_submit',
-    'range_story_submit',
+    'review_finding',
     'style_read',
   ])
     expect(names).toContain(name);

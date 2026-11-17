@@ -124,7 +124,8 @@ export async function inPlaceSessionSpec(
       ...(session.task ? [workerInstructions(ctx, session.task, questionTool)] : []),
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
       ...(planningLead ? [LEAD_INSTRUCTIONS] : []),
-      ...(questionTool && !planningLead
+      // workerInstructions tells a task session how to ask.
+      ...(questionTool && !planningLead && !session.task
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,
           ]

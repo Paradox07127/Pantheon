@@ -106,9 +106,10 @@ describe('engineering board tabs', () => {
     'usage',
     'retro',
     'digest',
+    'signals',
   ];
 
-  it('names the tabs iterations, collaboration, workflow, quality, usage, retrospectives and weekly digest in that order', () => {
+  it('names the tabs iterations, collaboration, workflow, quality, usage, retrospectives, weekly digest and signals in that order', () => {
     const html = insights('quality');
     expect(html).toContain(`aria-label="${zh('insights.tabs.label')}"`);
     expect(tabs(html)).toEqual(
@@ -120,6 +121,7 @@ describe('engineering board tabs', () => {
         'board.sections.usage',
         'board.panels.retro',
         'insights.digest.label',
+        'insights.sections.signals',
       ].map(zh),
     );
     expect(sections.map(insightsSectionLabel)).toEqual(tabs(html));
@@ -149,7 +151,7 @@ describe('engineering board tabs', () => {
 
   it('gives each tab its own place at the end of the top bar, only the shown tab’s on screen', () => {
     const places = [...insights('collab').matchAll(/<span class="ins-bar"( hidden="")?/g)];
-    expect(places).toHaveLength(7);
+    expect(places).toHaveLength(8);
     expect(places.filter((m) => !m[1])).toHaveLength(1);
   });
 

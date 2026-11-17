@@ -1,13 +1,16 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { Bot, Plus, X } from 'lucide-react';
+import { Bot, Pencil, Plus, X } from 'lucide-react';
 import type { AgentRoutineInput } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { Select } from '../../components/Select';
 import { toast } from '../../components/Toast';
 import {
   OFFERED_LISTENS,
   OFFERED_TOOLS,
+  SOURCE_ICONS,
   agentName,
+  listenName,
   useAgents,
   templateName,
   useAgentTemplates,
@@ -523,7 +526,7 @@ export function agentFieldRows(props: {
     shown('instructions') &&
       text(
         'instructions',
-        t({ id: 'sessions.agents.field.instructions', defaultMessage: 'Role prompt' }),
+        t({ id: 'sessions.agents.field.instructions', defaultMessage: 'Your instructions' }),
         20000,
         7,
       ),
@@ -541,7 +544,15 @@ export function agentFieldRows(props: {
         t({ id: 'sessions.agents.field.listens', defaultMessage: 'Listens' }),
         OFFERED_LISTENS,
         draft.listens,
-        () => t({ id: 'sessions.agents.listen.github', defaultMessage: 'GitHub' }),
+        (source) => {
+          const Icon = SOURCE_ICONS[source];
+          return (
+            <>
+              <Icon className="ag-li" aria-hidden="true" />
+              {listenName(source)}
+            </>
+          );
+        },
       ),
     shown('model') && [
       <span key="model-l" className="ag-lb">
@@ -581,6 +592,10 @@ export function agentFieldRows(props: {
 }
 
 const CREATED: readonly CreatedTemplate[] = ['ideas', 'goals', 'custom'];
+// The profile edits the user's instructions in a section of their own.
+const PROFILE_FIELDS: ReadonlySet<FieldKey> = new Set(
+  FIELD_KEYS.filter((key) => key !== 'instructions'),
+);
 const EMPTY = draftOf({});
 // A custom agent has no built-in role prompt, so it needs the user's.
 const ready = (draft: AgentDraft | null, template: CreatedTemplate) =>
@@ -713,6 +728,7 @@ export function AgentProfilePanel({
   const profile = agents?.find((agent) => agent.id === agentId);
   // Edits keep the revision they started from, so a change made meanwhile is not overwritten.
   const [edit, setEdit] = useState<{ revision: number; draft: AgentDraft } | null>(null);
+  const [instructions, setInstructions] = useState<{ revision: number; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Refusal | null>(null);
   if (!profile) return null;
@@ -747,6 +763,24 @@ export function AgentProfilePanel({
     if (result.ok) setEdit(null);
     else setError(refusalOf(result.error));
   };
+  const saveInstructions = async () => {
+    const text = instructions?.text.trim();
+    if (!instructions || !text || busy) return;
+    setBusy(true);
+    setError(null);
+    const result = await runCommand(
+      'agent.update',
+      { agent_id: profile.id, revision: instructions.revision, instructions: text },
+      null,
+    );
+    setBusy(false);
+    if (result.ok) setInstructions(null);
+    else setError(refusalOf(result.error));
+  };
+  const ownLabel = t({
+    id: 'sessions.agents.field.instructions',
+    defaultMessage: 'Your instructions',
+  });
   const archive = async () => {
     if (busy) return;
     setBusy(true);
@@ -801,6 +835,7 @@ export function AgentProfilePanel({
             set,
             id: `ag-${profile.id}`,
             projectId,
+            fields: PROFILE_FIELDS,
             error,
             disabled: busy,
           })}
@@ -826,6 +861,103 @@ export function AgentProfilePanel({
             </button>
           </div>
         )}
+        {/* A custom agent has no built-in role prompt. */}
+        {profile.template !== 'custom' && (
+          <section className="ag-sec" aria-labelledby={`ag-${profile.id}-builtin`}>
+            <div className="ag-sh">
+              <span className="cap" id={`ag-${profile.id}-builtin`}>
+                {t({ id: 'sessions.agents.builtin', defaultMessage: 'Built-in role' })}
+              </span>
+            </div>
+            <Clip as="div" className="ag-rp" text={profile.role_prompt} lines={3} />
+          </section>
+        )}
+        <section className="ag-sec" aria-labelledby={`ag-${profile.id}-own`}>
+          <div className="ag-sh">
+            {instructions ? (
+              <label className="cap" id={`ag-${profile.id}-own`} htmlFor={`ag-${profile.id}-ta`}>
+                {ownLabel}
+              </label>
+            ) : (
+              <span className="cap" id={`ag-${profile.id}-own`}>
+                {ownLabel}
+              </span>
+            )}
+            {!instructions && profile.instructions && (
+              <button
+                type="button"
+                className="ib ag-end"
+                aria-label={t({
+                  id: 'sessions.agents.instructions.edit',
+                  defaultMessage: 'Edit instructions',
+                })}
+                disabled={busy}
+                onClick={() =>
+                  setInstructions({ revision: profile.revision, text: profile.instructions! })
+                }
+              >
+                <Pencil aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          {instructions ? (
+            <>
+              <textarea
+                id={`ag-${profile.id}-ta`}
+                className="ag-ta"
+                rows={9}
+                maxLength={20000}
+                value={instructions.text}
+                disabled={busy}
+                aria-invalid={error?.field === 'instructions' || undefined}
+                onChange={(e) => setInstructions({ ...instructions, text: e.target.value })}
+              />
+              {error?.field === 'instructions' && (
+                <span className="ag-err" role="alert">
+                  {error.text}
+                </span>
+              )}
+              <div className="ag-sa">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => {
+                    setInstructions(null);
+                    setError(null);
+                  }}
+                >
+                  {t({ id: 'sessions.agents.cancel', defaultMessage: 'Cancel' })}
+                </button>
+                <button
+                  type="button"
+                  className="btn pri"
+                  disabled={
+                    busy ||
+                    !instructions.text.trim() ||
+                    instructions.text.trim() === (profile.instructions ?? '')
+                  }
+                  aria-busy={busy || undefined}
+                  onClick={() => void saveInstructions()}
+                >
+                  {t({ id: 'sessions.agents.save', defaultMessage: 'Save' })}
+                </button>
+              </div>
+            </>
+          ) : profile.instructions ? (
+            <p className="ag-ui">{profile.instructions}</p>
+          ) : (
+            <button
+              type="button"
+              className="btn sm ag-add"
+              disabled={busy}
+              onClick={() => setInstructions({ revision: profile.revision, text: '' })}
+            >
+              <Plus aria-hidden="true" />
+              {t({ id: 'sessions.agents.instructions.add', defaultMessage: 'Add instructions' })}
+            </button>
+          )}
+        </section>
         {profile.template !== 'assistant' && (
           <div className="ag-acts ag-arch">
             <button type="button" className="btn" disabled={busy} onClick={() => void archive()}>

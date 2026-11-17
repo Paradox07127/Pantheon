@@ -97,6 +97,7 @@ export function workflowResults(
         ended: review.state !== 'running',
         passed:
           review.state === 'completed' &&
+          !review.incomplete &&
           !review.findings.some((finding) => finding.blocking && finding.status !== 'rejected'),
       });
     }

@@ -149,7 +149,7 @@ it('gives a resident the handoff guide by name, and the list of guides for a nam
     as(f, resident.id, 'lead'),
   );
   expect(guide.name).toBe('handoff');
-  expect(guide.text).toContain("Write in it the user's open requests");
+  expect(guide.text).toContain('Open requests and promises');
   expect(guide.text).toContain('memory_propose');
   const index = await f.call<Promise<{ guides: { name: string; when: string }[] }>>(
     'agent.guide',
@@ -157,7 +157,13 @@ it('gives a resident the handoff guide by name, and the list of guides for a nam
     null,
     as(f, resident.id, 'lead'),
   );
-  expect(index.guides.map((each) => each.name)).toEqual(['handoff']);
+  expect(index.guides.map((each) => each.name)).toEqual([
+    'handoff',
+    'merge_and_gate',
+    'gate_failure_triage',
+    'milestone_review',
+    'worker_brief',
+  ]);
 });
 
 it('measures a runtime without an auto-compaction point against its context window', async () => {

@@ -11,6 +11,7 @@ import type {
   SessionSpec,
   UserTurn,
 } from '@pantheon/domain';
+import { REVIEWER_BASE } from '../../packages/control/dist/context.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -112,6 +113,33 @@ it('reviews a workbench session from its diff and lists the findings for that se
       status: 'open',
     }),
   ]);
+});
+
+it('gives the reviewer its guide as instructions and only the job and the artifact as its first message', async () => {
+  const w = await workbenchFixture();
+  const reviewer = new ReviewerAdapter('session-reviewer');
+  w.control.adapters.set(reviewer.name, reviewer);
+  const session = await w.create();
+  const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
+  await eventually(
+    () =>
+      w.turns(session.id)[0]!.state === 'completed' &&
+      w.store.must<Session>('sessions', session.id).state === 'open',
+    () => w.control.tick(),
+  );
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'reviewed answer\n');
+  git(workspace.path, 'commit', '--quiet', '-am', 'Update the answer');
+  await w.call('review.request', { session_id: session.id, runtimes: [reviewer.name] });
+  await eventually(
+    () => reviewer.starts[0]?.turn !== undefined,
+    () => w.control.tick(),
+  );
+  const { spec, turn } = reviewer.starts[0]!;
+  expect(spec.control_instructions).toContain('You are a reviewer in a read-only session.');
+  expect(spec.control_instructions).toContain(REVIEWER_BASE);
+  expect(turn!.input).toMatch(
+    /^Review these changes against the task goal\. Record each problem with review_finding; quote the diff exactly\. When you find nothing, reply with one line naming what you checked\.\n\nTask goal:\n/,
+  );
 });
 
 /** A workbench session with a committed change and a running review by two reviewer runtimes. */

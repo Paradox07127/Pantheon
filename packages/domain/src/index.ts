@@ -1012,6 +1012,8 @@ export interface Review extends Entity {
   round: number;
   runtimes: string[];
   state: 'running' | 'completed' | 'failed';
+  /** Set on a completed review that does not pass: why a reviewer gave no full result. */
+  incomplete?: string;
   findings: ReviewFinding[];
   session_ids: string[];
   /** Review request and completion times, epoch milliseconds; read from review events. */

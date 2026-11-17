@@ -65,7 +65,6 @@ export interface MemoryContext {
   }[];
   omitted: number;
   bytes: number;
-  instructions: string;
 }
 
 /** Reference identity only. The original project file or URL remains authoritative. */

@@ -734,10 +734,10 @@ it('tells a lead to plan a small change as one direct task before it changes the
   expect(instructions).not.toContain('Use update_board only when');
   for (const phrase of [
     'every request that changes the repository',
-    'as one task whose scope names the one or two files it changes',
-    'claim it with start_task',
-    'only answers a question and changes nothing needs no task; answer it in plain text',
-    'call the report tool with kind done',
+    'Write a small request that one session can finish right away as one task.',
+    'Claim it with start_task',
+    'only asks a question and changes nothing needs no task; answer it in plain text',
+    'call report with kind done',
   ])
     expect(instructions).toContain(phrase);
 });

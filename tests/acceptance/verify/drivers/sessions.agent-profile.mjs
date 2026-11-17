@@ -60,6 +60,8 @@ const panelJs = (name) => `(() => {
     mainWidth: Math.round(m.width),
     chip: aside.querySelector('.ag-ih .chip')?.textContent ?? null,
     buttons: [...aside.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') ?? b.textContent.trim()),
+    sections: [...aside.querySelectorAll('section')].map((s) => s.querySelector('.cap')?.textContent ?? null),
+    text: aside.innerText,
   };
 })()`;
 
@@ -115,6 +117,30 @@ const chip = await poll(() =>
 check('资料头部显示新角色', chip === ROLE, chip ?? (await page.evaluate(panelJs(NAME)))?.chip);
 check('对照组：头部不再是旧角色', chip && chip !== before.role);
 
+check(
+  '自定义智能体的资料只有 你的指令，没有 内置角色',
+  panel?.sections.join() === '你的指令',
+  panel?.sections,
+);
+check(
+  '你的指令 显示 agent.list 的 instructions',
+  panel?.text.includes(before.instructions),
+  before.instructions,
+);
+const OWN = `You check things for ${NAME} and report twice.`;
+await page.click({ role: 'button', name: '编辑指令', exact: true, within: PANEL(NAME) });
+await page.fill({ role: 'textbox', name: '你的指令', exact: true, within: PANEL(NAME) }, OWN);
+await page.click({ role: 'button', name: '保存', exact: true, within: PANEL(NAME) });
+const own = await poll(async () => {
+  const now = await agentOf(agentId);
+  return now.instructions === OWN && now;
+});
+check('保存指令后 agent.list 的 instructions 是新值', own?.instructions === OWN, own?.instructions);
+const ownShown = await poll(() =>
+  page.evaluate(panelJs(NAME)).then((p) => (p?.text.includes(OWN) ? true : null)),
+);
+check('保存后 你的指令 显示新值', ownShown);
+
 await page.click({ role: 'button', name: '归档', exact: true, within: PANEL(NAME) });
 const archived = await poll(async () => {
   const now = await agentOf(agentId);
@@ -145,9 +171,31 @@ check('撤销后侧栏行回来', returned);
 
 await rightClick(assistantId);
 await page.click({ role: 'menuitem', name: '资料', exact: true });
-const assistant = await poll(() => page.evaluate(panelJs('Assistant')));
+const assistant = await poll(() => page.evaluate(panelJs('助理')));
 check('助理的资料打开了', assistant, assistant);
 check('助理的资料没有 归档', assistant && !assistant.buttons.includes('归档'), assistant?.buttons);
+const assistantListed = await agentOf(assistantId);
+check(
+  '助理的资料有 内置角色 和 你的指令 两段',
+  assistant?.sections.join() === '内置角色,你的指令',
+  assistant?.sections,
+);
+check(
+  '内置角色 显示 agent.list 的 role_prompt 开头',
+  assistant?.text.includes(assistantListed.role_prompt.split('\n')[0]),
+  assistantListed.role_prompt.split('\n')[0],
+);
+check(
+  '内置角色 只读：资料里没有含 role_prompt 的输入框',
+  await page.evaluate(
+    `[...document.querySelectorAll('aside.ag-insp textarea, aside.ag-insp input')].every((el) => !el.value.includes(${JSON.stringify(assistantListed.role_prompt.split('\n')[0])}))`,
+  ),
+);
+check(
+  '助理没有自己的指令时显示 添加指令',
+  !assistantListed.instructions && assistant?.buttons.includes('添加指令'),
+  { instructions: assistantListed.instructions ?? null, buttons: assistant?.buttons },
+);
 
 result.shot = await page.screenshot(result.id);
 await page.click({ role: 'button', name: '关闭资料', exact: true });

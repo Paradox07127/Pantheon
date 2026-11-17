@@ -670,7 +670,8 @@ afterEach(async () => {
   for (const close of closings.splice(0)) await close();
 });
 
-it('gives a task session the user quote, scope and acceptance commands of its task', async () => {
+/** The session spec of a task session started for the CSV export task of a lead's plan. */
+async function csvTaskSession(task: Record<string, unknown> = {}) {
   const adapter = new FixtureAdapter();
   const starts = vi.spyOn(adapter, 'start');
   const f = await fixture({
@@ -720,6 +721,7 @@ it('gives a task session the user quote, scope and acceptance commands of its ta
           source: ['Export the report as CSV', 'keep the header row'],
           scope: ['src/export', 'tests/export.test.ts'],
           acceptance: ['pnpm build', 'pnpm exec vitest run tests/export.test.ts'],
+          ...task,
         },
       ],
       milestones: [],
@@ -735,11 +737,14 @@ it('gives a task session the user quote, scope and acceptance commands of its ta
       expires_at: f.store.now() + 60000,
     },
   );
-  const worker = await opened({
+  return opened({
     input: 'Build it',
     task_id: `${lead.platform_session_id}:csv`,
   });
-  const instructions = worker.control_instructions!;
+}
+
+it('gives a task session the user quote, scope and acceptance commands of its task', async () => {
+  const instructions = (await csvTaskSession()).control_instructions!;
   for (const text of [
     '"Export the report as CSV"',
     '"keep the header row"',
@@ -751,6 +756,33 @@ it('gives a task session the user quote, scope and acceptance commands of its ta
     'requirement',
   ])
     expect(instructions).toContain(text);
+});
+
+it.each([
+  [
+    'a task its merge completes',
+    {},
+    'Merging this worktree completes the task; you do not declare it done. When your last commit passes every acceptance command, end your turn, and Pantheon runs the gates and merges it.',
+  ],
+  [
+    'a report task',
+    { done_when: 'report' },
+    'This task needs no commit. Deliver your conclusion with report kind done; the lead accepts the task on the evidence you give.',
+  ],
+])('gives the session of %s the worker guide, then its contract', async (_, task, done) => {
+  const instructions = (await csvTaskSession(task)).control_instructions!;
+  const guide = instructions.indexOf('You are a task session.'),
+    contract = instructions.indexOf('You work on task csv "CSV export"');
+  expect(guide).toBeGreaterThanOrEqual(0);
+  expect(contract).toBeGreaterThan(guide);
+  for (const text of [
+    '## Paths outside your scope',
+    '## When an acceptance command keeps failing',
+    `- done: ${done}`,
+    '- memory_search and memory_get:',
+  ])
+    expect(instructions.slice(guide, contract)).toContain(text);
+  expect(instructions.slice(contract)).toContain('Goal: Reports download as CSV');
 });
 
 it.each([

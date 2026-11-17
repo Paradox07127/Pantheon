@@ -16,6 +16,7 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import { runtime } from './admission.js';
+import { BOARD_READ_ONLY_TEMPLATES } from './agent-prompts.js';
 import { residentPlan, routineOf, scheduleRoutine } from './agent-always-on.js';
 import { AGENT_TEMPLATES, BUILT_IN_TEMPLATES } from './agent-templates.js';
 import { checkAgentFields, ensureAgents } from './agents.js';
@@ -151,7 +152,12 @@ export function openAgent(
             `It left the handoff note ${handoffKey(profile)} in project memory: read it with memory_get or memory_search before you act on anything.`,
           ]
         : []),
-      syncBrief(ctx, ctx.store.must<BoardPlan>('board_plans', session.id), []),
+      syncBrief(
+        ctx,
+        ctx.store.must<BoardPlan>('board_plans', session.id),
+        [],
+        BOARD_READ_ONLY_TEMPLATES.includes(profile.template),
+      ),
     ].join('\n'),
     'sync',
     cause,

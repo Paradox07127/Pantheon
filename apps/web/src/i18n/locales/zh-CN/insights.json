@@ -4,5 +4,6 @@
   "insights.tabs.more": "更多标签页",
   "insights.sections.iterations": "迭代",
   "insights.sections.collab": "协作",
-  "insights.sections.workflow": "流程"
+  "insights.sections.workflow": "流程",
+  "insights.sections.signals": "信号"
 }

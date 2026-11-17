@@ -138,7 +138,9 @@ it('starts a read-only reviewer on another runtime when the plan has a high-risk
   expect(start.spec.role).toBe('reviewer');
   expect(start.spec.sandbox?.writable_roots).toEqual([]);
   expect(start.turn!.input).toContain('Finish task risky');
-  expect(start.turn!.input).toContain('scope overlap');
+  expect(start.spec.control_instructions).toContain(
+    'do tasks that can run at once have overlapping scopes',
+  );
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const file = path.join(
     reviewerDirectory(ctx, f.project.id, review!.id, review!.session_ids[0]!),

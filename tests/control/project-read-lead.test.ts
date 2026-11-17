@@ -304,11 +304,11 @@ it('tells a lead to read before it plans, ask only what reading cannot settle, s
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const instructions = workbenchSessionSpec(ctx, sessionOf(f)).control_instructions!;
   for (const text of [
-    'Before you plan a request, call project_read',
+    'Call project_read, then read the code',
     'at most 3 questions',
     'call ask_user',
     "the plan's assumptions",
-    'a test that reproduces the bug',
+    'a test reproducing the bug',
   ])
     expect(instructions).toContain(text);
 });
@@ -327,9 +327,9 @@ it('mounts the Pantheon tools on a lead and says which board panel each tool upd
   const spec = workbenchSessionSpec(ctx, sessionOf(f));
   expect(spec.pantheon_mcp?.args.at(-1)).toBe('mcp');
   for (const text of [
-    'update_board and edit_board write the plan panels',
-    'draw with pin',
-    'rerun_baseline refreshes the baseline, introduction and repository panels',
+    'The board shows what you write: the plan panels show your lanes',
+    'give it pin only when the user asks to see the chart on the board',
+    'rerun_baseline reassesses the project when the user asks for it',
   ])
     expect(spec.control_instructions).toContain(text);
 });

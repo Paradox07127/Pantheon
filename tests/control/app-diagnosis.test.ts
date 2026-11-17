@@ -190,6 +190,20 @@ it('opens the diagnosis session in the project folder in plan mode with the diag
   expect(f.list().find((row) => row.id === session.id)).toMatchObject({ app_debug: true });
 });
 
+it('tells the diagnosis session in the project folder nothing about project memory, which it cannot use', async () => {
+  const f = await workbenchFixture({ managedWorkspaces: false });
+  const session = await diagnosis(f);
+  await eventually(
+    () => f.start.mock.calls.some(([spec]) => spec.platform_session_id === session.id),
+    () => f.control.tick(),
+  );
+  const instructions = f.start.mock.calls.find(
+    ([spec]) => spec.platform_session_id === session.id,
+  )![0].control_instructions!;
+  expect(instructions).toContain(f.source);
+  expect(instructions).not.toMatch(/memory_|project memory/i);
+});
+
 it('refuses a diagnosis session on another device, as every session in the project folder', async () => {
   const f = await workbenchFixture();
   expect(() => diagnosis(f, { device_id: 'build-box' })).toThrow(

@@ -37,6 +37,7 @@ export const DEFAULT_LAYOUT: BoardLayout = {
   usage: places(['quota', 12], ['runtime', 12], ['usage', 12], ['roles', 12]),
   retro: places(['retro', 12]),
   digest: places(['digest', 12]),
+  signals: places(['signals', 12]),
 };
 
 const record = (value: unknown): Record<string, unknown> | null =>

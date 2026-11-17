@@ -11,7 +11,9 @@ import type {
   Retrospective,
   Review,
   Session,
+  SessionHandle,
   StepRun,
+  UserTurn,
   WorkflowDefinition,
   WorkflowStep,
   Workspace,
@@ -41,6 +43,13 @@ const principal = (f: Fixture, id: string): Principal => ({
 const workerOf = (f: Fixture, lead: Session) =>
   f.store.list<Session>('sessions').find((s) => s.task?.lead_session_id === lead.id)!;
 const script = (...steps: object[]) => `fixture-script\n${JSON.stringify(steps)}`;
+
+/** A reviewer whose turns end with no finding and no reply. */
+class SilentReviewer extends FixtureAdapter {
+  override send(handle: SessionHandle, turn: UserTurn) {
+    return super.send(handle, { ...turn, input: script() });
+  }
+}
 
 async function setup(
   definition: WorkflowDefinition,
@@ -441,6 +450,32 @@ it('reviews on another runtime, returns blocking findings to the task session, a
       .kindEvents(f.project.id, ['lead.note_added'])
       .some((e) => (e.payload as LeadNote).kind === 'review_completed'),
   ).toBe(false);
+});
+
+it('fails a blocking review step whose reviewer ends its turn with no finding and no reply', async () => {
+  vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(validationResult());
+  const definition = empty();
+  definition.slots.before_merge = [
+    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
+  ];
+  const { f, lead } = await setup(definition);
+  const reviewer = new SilentReviewer(1);
+  reviewer.name = 'reviewer';
+  f.control.adapters.set(reviewer.name, reviewer);
+  const worker = await build(f, lead);
+  await eventually(
+    () => ['passed', 'failed'].includes(runs(f)[0]?.state ?? ''),
+    () => f.control.tick(),
+    10000,
+  );
+  const run = runs(f)[0]!;
+  expect(run.state).toBe('failed');
+  expect(f.store.must<Review>('reviews', run.review_id!)).toMatchObject({
+    state: 'completed',
+    findings: [],
+    incomplete: 'reviewer reviewer ended its turn with no finding and no reply',
+  });
+  expect(current(f, worker.id).outcome).toBeUndefined();
 });
 
 it("reviews on the writer's runtime in a new read-only session when no other runtime can review, and merges once the review passes", async () => {

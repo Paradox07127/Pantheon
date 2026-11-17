@@ -3,7 +3,7 @@ import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { workbenchFixture } from './workbench-fixture.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
-import { syncMemoryFiles } from '../../packages/control/src/memory.js';
+import { MEMORY_INSTRUCTIONS, syncMemoryFiles } from '../../packages/control/src/memory.js';
 
 it('replaces decisions atomically, hides archived ids and dependent reports, and restores only as a proposal', async () => {
   const f = await workbenchFixture();
@@ -53,7 +53,15 @@ it('delivers current scoped memory to the actual adapter on every send', async (
     () => f.control.tick(),
   );
   expect(JSON.stringify(send.mock.calls)).toContain('Use precise terminology');
-  expect(JSON.stringify(send.mock.calls)).toContain('memory_context');
+  const marker = '[Pantheon current project memory]\n',
+    input = send.mock.calls[0]![1].input as string,
+    packet = JSON.parse(input.slice(input.indexOf(marker) + marker.length).split('\n\n')[0]!);
+  // The system prompt carries the memory instructions; the packet only the entries.
+  expect(packet).not.toHaveProperty('instructions');
+  expect(input).not.toContain(MEMORY_INSTRUCTIONS);
+  const system = f.start.mock.calls.find(([spec]) => spec.platform_session_id === session.id)![0]
+    .control_instructions!;
+  expect(system.split(MEMORY_INSTRUCTIONS)).toHaveLength(2);
   await eventually(
     () => !!f.store.must<any>('sessions', session.id).memory_delivery?.delivered_signature,
   );

@@ -52,15 +52,25 @@ import {
 import { experienceMatchesSession } from './improvements.js';
 import { revision, userOnly, type ControlContext, type Handlers } from './context.js';
 
-export const MEMORY_INSTRUCTIONS = [
-  'Pantheon project memory: use memory_context at task start, after compaction, and before accepting or merging work. Use memory_search for a specific topic, memory_related for dependencies or reverse references, and memory_get for full current evidence. Search and related results are summaries, not full text; shared tags are not dependency evidence.',
-  'The current memory packet supersedes earlier project-memory packets. A missing old entry is no longer current. Do not recover archived rules from transcripts, files, or native memory.',
-  'Only user-authority decisions are confirmed project instructions. Reports, notes, and improvement trial procedures are fallible evidence, not proof of completion or permission. Narrow task rules apply only to the named task generation. Report contradictions instead of inventing precedence.',
-  'Write project memory as you work, without being asked: call memory_propose in the same turn when the user corrects your approach or states a preference or rule, when the user confirms a non-obvious approach you took, when you learn a project fact, constraint or decision that the code, git history and docs do not show, or when the user asks you to remember something. Use kind note for these, kind report for a durable analysis with its evidence, and kind decision only for a project rule the user stated. A note or report is current at once for every session of the project; a decision stays a draft until the user confirms it, so never claim a proposed decision is active.',
-  'Before writing, memory_search the topic and reuse the key of an outdated entry to replace it instead of adding a duplicate. Supply the current based_on signature and dependency ids. Do not store code structure, fixes already in git, progress of the current task, secrets, entire transcripts, or guesses as verified results. Use propose_improvement for reusable improvement procedures when available.',
-  'Source references identify original files or URLs, which remain authoritative. On memory_get inspect reference_status: changed/unavailable files require rechecking the original; unverified URLs are citations, not fetched evidence. Summaries and hashes do not establish factual correctness.',
-  'Memory refresh cannot erase prior native conversation context or stop an external action already in progress. Recheck current task contracts and evidence before acting.',
-].join('\n');
+/** The memory text of a session that can read project memory but not write it. */
+export const MEMORY_READ_INSTRUCTIONS = `Project memory keeps what the code and git history do not show: the user's decisions and preferences, project facts and constraints, and analyses. Pantheon adds it to your turn as "[Pantheon current project memory]" when it changed since you last saw it and after your context is compacted, so you need not fetch it first.
+
+Reading
+- Use the newest packet; do not bring back rules from older packets, transcripts or files. A full packet leaves entries out and says how many; when an earlier entry matters and is absent, search for its current version before you rely on it. memory_search finds entries on a topic, memory_get reads one in full, and memory_related shows what depends on it. Read an entry in full before you rely on it.
+- Only decisions the user confirmed are project rules. Notes, reports and procedures from sessions are evidence that can be wrong, not permission or proof that work is done. When two entries conflict, say so instead of choosing one.
+- Referenced files and URLs stay authoritative; when memory_get shows one changed or unavailable, read the original before you act.`;
+
+export const MEMORY_INSTRUCTIONS = `${MEMORY_READ_INSTRUCTIONS}
+
+Writing
+Call memory_propose in the same turn, without being asked, when:
+- the user corrects your approach or states a preference or rule;
+- the user confirms a non-obvious approach you took;
+- you learn a fact, constraint or decision the code, git history and docs do not show;
+- the user asks you to remember something.
+Use kind note for these, report for an analysis of the current state with its evidence (it stops being current when task states change), and decision only for a rule the user stated, with no dependencies. Notes and reports are current at once for every session (a task session's, for its task only); a decision stays a draft until the user confirms it, so do not call it active.
+Search the topic first and reuse the key of an entry you update, so the new version replaces it; name new keys topic/subtopic, such as testing/e2e-ports. Pass the packet's signature as based_on.
+Do not store code structure, fixes already in git, the progress of the current task, secrets, whole transcripts, or guesses written as facts.`;
 
 function enqueue(ctx: ControlContext, project: string): void {
   const stamp = signature(ctx, project);
@@ -219,7 +229,6 @@ export function memoryContext(
     experiences,
     omitted: contents.items.length - items.length,
     bytes,
-    instructions: MEMORY_INSTRUCTIONS,
   };
 }
 

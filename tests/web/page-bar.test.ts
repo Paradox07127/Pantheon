@@ -81,6 +81,7 @@ describe('page top bar', () => {
         'board.sections.usage',
         'board.panels.retro',
         'insights.digest.label',
+        'insights.sections.signals',
       ].map((id) => zh(id)),
     );
     expect(bar).toMatch(

@@ -266,7 +266,10 @@ export function AgentProposalCall(props: {
           {fields.instructions && (
             <div className="ag-pp">
               <span className="cap">
-                {t({ id: 'sessions.agents.field.instructions', defaultMessage: 'Role prompt' })}
+                {t({
+                  id: 'sessions.agents.field.instructions',
+                  defaultMessage: 'Your instructions',
+                })}
               </span>
               <Clip as="div" className="ag-pt" text={fields.instructions} lines={3} />
             </div>

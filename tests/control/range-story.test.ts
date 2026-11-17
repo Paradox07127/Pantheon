@@ -3,6 +3,10 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 import type { ChangeStory, Principal, RangeStory, Session, Workspace } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
+import {
+  MEMORY_INSTRUCTIONS,
+  MEMORY_READ_INSTRUCTIONS,
+} from '../../packages/control/dist/memory.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -70,6 +74,21 @@ it('starts a read-only session whose brief lists the sessions merged in the rang
   });
   expect(session.title).toBeTruthy();
   expect(w.turns(story.session_id!)[0]!.input).toContain(`### ${session.title}`);
+});
+
+it('tells the story session how to read project memory but not how to write it', async () => {
+  const { w, startStory } = await mergedSession();
+  const story = await startStory();
+  await eventually(
+    () => w.start.mock.calls.some(([spec]) => spec.platform_session_id === story.session_id),
+    () => w.control.tick(),
+  );
+  const instructions = w.start.mock.calls.find(
+    ([spec]) => spec.platform_session_id === story.session_id,
+  )![0].control_instructions!;
+  expect(instructions).not.toContain('memory_propose');
+  expect(instructions).toContain(MEMORY_READ_INSTRUCTIONS);
+  expect(instructions).not.toContain(MEMORY_INSTRUCTIONS);
 });
 
 it('leaves out the change story of another range of the merged session', async () => {
