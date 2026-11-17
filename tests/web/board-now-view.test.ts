@@ -20,7 +20,6 @@ vi.mock('@/store', () => ({
 }));
 import { readBoardPage } from '@/data/board-page';
 import { BoardView } from '@/screens/board/BoardScreen';
-import { SinceStrip } from '@/screens/board/BoardFrame';
 import { LeadPanel } from '@/screens/board/LeadPanel';
 import { MilestoneCard } from '@/screens/board/MilestoneCard';
 import { readCanvasOrder, saveCanvasOrder } from '@/screens/board/panel-layout';
@@ -377,18 +376,21 @@ describe('project board bar', () => {
     expect(names(more.props.children)).not.toContain('NewTask');
   });
 
-  it('puts the milestone, the away line and the leads on one strip in the now view only', () => {
+  it('puts the since-you-left card above the strip of the milestone and the leads, in the now view only', () => {
     const model = board({ milestones: [milestone], leads: [lead('lead-1')] });
-    const strip = (page: 'now' | 'canvas') => {
-      const h = mount(() => BoardView(viewProps({ model, page, projectId: 'project-a' })));
-      return nodes(h.value).find((n) => n.props['aria-label'] === zh('board.strip.label'));
-    };
-    const now = strip('now');
-    expect(now).toBeTruthy();
-    expect(names(now)).toEqual(
-      expect.arrayContaining(['MilestoneCard', 'SinceStrip', 'LeadPanel']),
-    );
-    expect(strip('canvas')).toBeUndefined();
+    const view = (page: 'now' | 'canvas') =>
+      mount(() => BoardView(viewProps({ model, page, projectId: 'project-a' }))).value;
+    const strip = (tree: ReactNode) =>
+      nodes(tree).find((n) => n.props['aria-label'] === zh('board.strip.label'));
+    const now = view('now');
+    expect(names(strip(now))).toEqual(expect.arrayContaining(['MilestoneCard', 'LeadPanel']));
+    expect(names(strip(now))).not.toContain('BriefCard');
+    const parts = names(now);
+    expect(parts).toContain('BriefCard');
+    expect(parts.indexOf('BriefCard')).toBeLessThan(parts.indexOf('MilestoneCard'));
+    const canvas = view('canvas');
+    expect(strip(canvas)).toBeUndefined();
+    expect(names(canvas)).not.toContain('BriefCard');
   });
 });
 
@@ -495,59 +497,6 @@ describe('milestone line', () => {
       ),
     ).toBe(true);
     expect(inside((n) => n.props.className === 'bms-cell')).toBe(true);
-  });
-});
-
-describe('away line', () => {
-  it('says how long the user was away and counts merges, failures and lead questions since', () => {
-    stored.set(
-      'pantheon.board-seen.v2',
-      JSON.stringify({
-        'project-a': { at: NOW - 3 * HOUR, status: { a: 'running', b: 'running', c: 'failed' } },
-      }),
-    );
-    const merge = (at: number) =>
-      ({
-        session_id: `m-${at}`,
-        title: '',
-        merged_at: at,
-        sha: 'sha',
-      }) as BoardModel['merges'][number];
-    const need = (kind: string, created_at: number) =>
-      ({
-        source: { table: 'board_plans', id: 'lead-1', revision: 1 },
-        kind,
-        project_id: 'project-a',
-        session_id: 'lead-1',
-        status: 'pending',
-        created_at,
-        reason: 'lead_question',
-        actions: [],
-        unblocks: 0,
-      }) as unknown as NonNullable<BoardModel['needs']>[number];
-    const model = board({
-      tasks: [
-        task('a', { status: 'failed' }),
-        task('b', { status: 'done' }),
-        task('c', { status: 'failed' }),
-      ],
-      merges: [merge(NOW - HOUR), merge(NOW - 2 * HOUR), merge(NOW - 5 * HOUR)],
-      needs: [
-        need('lead.question', NOW - HOUR),
-        need('lead.question', NOW - 4 * HOUR),
-        need('permission', NOW - HOUR),
-      ],
-    });
-    const h = mount(() => SinceStrip({ projectId: 'project-a', model }));
-    expect(text(h.value)).toContain('离开 3 小时');
-    expect(
-      nodes(h.value)
-        .filter((n) => n.props.className === 'bf-sc')
-        .map(text),
-    ).toEqual(['合并 2', '失败 1', '提问 1']);
-    expect(
-      nodes(h.value).some((n) => n.type === 'button' && text(n) === zh('board.frame.since.read')),
-    ).toBe(true);
   });
 });
 

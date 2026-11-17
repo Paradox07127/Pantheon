@@ -1,5 +1,5 @@
 import type { AgentProfile, ProjectBaseline } from '@pantheon/domain';
-import type { BoardModel, BoardSnapshot, BoardTaskStatus, CommandType } from '@pantheon/protocol';
+import type { BoardModel, BoardSnapshot, CommandType } from '@pantheon/protocol';
 import type { GlyphName } from '../../components/SessionStateIcon';
 import { agentName, shownAgents, templateName } from '../../data/agents';
 import { shortId } from '../../data/format';
@@ -664,46 +664,4 @@ export function needWhat(item: NeedItem, session?: SnapshotSession): string {
         item.binding?.action || t({ id: 'board.needs.toolFallback', defaultMessage: 'a tool' }),
     },
   );
-}
-
-/* Since the last visit */
-
-export interface SeenBoard {
-  at: number;
-  status: Record<string, BoardTaskStatus>;
-}
-
-export interface SinceLast {
-  merged: number;
-  failed: number;
-  /** Questions the leads asked since. */
-  questions: number;
-}
-
-/** What the user has now seen of the board. */
-export function seenOf(model: BoardModel): SeenBoard {
-  return {
-    at: model.now,
-    status: Object.fromEntries(model.tasks.map((t) => [t.id, t.status])),
-  };
-}
-
-/** What changed since the board was last read; null on the first visit or when nothing did. */
-export function sinceLast(seen: SeenBoard | null | undefined, model: BoardModel): SinceLast | null {
-  if (!seen) return null;
-  // A task the read range left out had ended before it; it is new only if it ended since or is unfinished.
-  const failed = model.tasks.filter(
-    (t) =>
-      t.status === 'failed' &&
-      (seen.status[t.id] !== undefined
-        ? seen.status[t.id] !== 'failed'
-        : t.ended_at === null || t.ended_at > seen.at),
-  ).length;
-  const since = {
-    merged: model.merges.filter((m) => m.merged_at > seen.at).length,
-    failed,
-    questions: boardNeeds(model).filter((n) => n.kind === 'lead.question' && n.created_at > seen.at)
-      .length,
-  };
-  return Object.values(since).some((n) => n > 0) ? since : null;
 }

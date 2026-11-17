@@ -37,6 +37,7 @@ import { SHELL_TOOLS } from './handoff.js';
 import { answerQuestion, appendNote, askQuestion, recordNote } from './lead-inbox.js';
 import { mustAsk } from './must-ask.js';
 import { unsnooze } from './session.js';
+import { wakeLead } from './task-tracking.js';
 import { projectDefaults, userConfigDirectory, writeUserConfig } from './user-config.js';
 
 const detailInput = (detail: unknown): unknown =>
@@ -121,7 +122,10 @@ export function relayingQuestion(
   }
 }
 
-/** Puts a task session's question on its lead's board, which answers the approval in turn. */
+/**
+ * Puts a task session's question on its lead's board, which answers the approval in turn; when the
+ * charter lets the lead answer it, the lead is woken with the question too.
+ */
 function relayQuestion(ctx: ControlContext, session: Session, approval: Approval): void {
   if (
     approval.tool !== 'AskUserQuestion' ||
@@ -132,7 +136,7 @@ function relayQuestion(ctx: ControlContext, session: Session, approval: Approval
   const plan = ctx.store.get<BoardPlan>('board_plans', session.task!.lead_session_id);
   if (!plan) return;
   const first = approval.questions[0]!;
-  askQuestion(ctx, plan, {
+  const asked = askQuestion(ctx, plan, {
     question: first.question,
     options: first.options.map((option) => option.label),
     recommended: first.recommended ?? '',
@@ -141,6 +145,21 @@ function relayQuestion(ctx: ControlContext, session: Session, approval: Approval
     source: { session_id: session.id, approval_id: approval.id },
     questions: approval.questions,
   });
+  if (charterMode(ctx, session.project_id, 'answer_worker_questions') !== 'on') return;
+  const noted = appendNote(ctx, ctx.store.must<BoardPlan>('board_plans', plan.id), {
+    at: asked.at,
+    session_id: session.id,
+    task_id: session.task!.id,
+    kind: 'worker_question',
+    question_id: asked.id,
+    text: approval.questions
+      .map(
+        (entry) =>
+          `${entry.question} Options: ${entry.options.map((option) => option.label).join(' / ')}.`,
+      )
+      .join('\n'),
+  });
+  wakeLead(ctx, noted, '');
 }
 
 /** The plan of a worker's lead when the project's charter lets the lead approve this prompt at once. */
@@ -642,23 +661,36 @@ export const approvalHandlers: Handlers = {
   },
 };
 
-/**
- * Writes the decision and any answers into the approval and queues them for its runtime.
- * With a command, the approval must have the revision the command expects.
- */
+type ApprovalAnswer = Omit<
+  ReturnType<(typeof inputSchemas)['approval.respond']['parse']>,
+  'approval_id'
+>;
+
+/** The user's answer to an approval, as settleApproval writes it. */
 export function answerApproval(
   ctx: ControlContext,
   p: Principal,
   approval: Approval,
-  {
-    decision,
-    reason,
-    answers,
-  }: Omit<ReturnType<(typeof inputSchemas)['approval.respond']['parse']>, 'approval_id'>,
+  answer: ApprovalAnswer,
   cause: string,
   expected?: Command,
 ): Approval | { error: 'revision_conflict'; message: string } {
   approvalAccess(ctx, p, approval);
+  return settleApproval(ctx, p, approval, answer, cause, expected);
+}
+
+/**
+ * Writes the decision and any answers into the approval and queues them for its runtime.
+ * With a command, the approval must have the revision the command expects.
+ */
+export function settleApproval(
+  ctx: ControlContext,
+  p: Principal,
+  approval: Approval,
+  { decision, reason, answers }: ApprovalAnswer,
+  cause: string,
+  expected?: Command,
+): Approval | { error: 'revision_conflict'; message: string } {
   const asking = approval.tool === 'AskUserQuestion';
   requireThat(!answers || asking, 'invalid_input', 'Only an AskUserQuestion request has answers');
   requireThat(

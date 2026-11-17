@@ -273,7 +273,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'lead',
     about:
-      "Reads one note of the calling lead's plan in full, by the id its digest names; read-only",
+      "Reads one note of the calling lead's plan in full, by the id its digest names; read-only; The calling lead's answer to a task session's question on its own plan; the first answer wins",
     commands: [
       { type: 'lead.ask', tool: 'ask_user' },
       {
@@ -283,6 +283,12 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'read_note',
       },
       { type: 'lead.question.answer', tool: 'the user does this in the app' },
+      {
+        type: 'lead.worker_question.answer',
+        about:
+          "The calling lead's answer to a task session's question on its own plan; the first answer wins.",
+        tool: 'answer_worker_question',
+      },
     ],
   },
   {

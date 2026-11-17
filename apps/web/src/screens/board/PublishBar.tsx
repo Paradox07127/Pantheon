@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { Bot, ChevronDown, Paperclip } from 'lucide-react';
+import { Bot, ChevronDown, MessageSquare, Paperclip, Plus, Route, Workflow } from 'lucide-react';
 import type { SessionTurn } from '@pantheon/domain';
 import type { BoardModel, BridgeResult, CommandType } from '@pantheon/protocol';
-import { Menu, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../components/Menu';
+import {
+  Menu,
+  MenuItem,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  SubMenu,
+} from '../../components/Menu';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { Tip } from '../../components/Tip';
 import { useAgents } from '../../data/agents';
 import { useBoard } from '../../data/board';
+import { useBoardView } from '../../data/board-view';
 import { EMPTY_DRAFT, useDrafts, whenUploaded } from '../../data/drafts';
 import { failureText } from '../../data/needs-you';
 import {
@@ -16,6 +24,12 @@ import {
   useRequestTarget,
   type RequestChoice,
 } from '../../data/request-target';
+import {
+  rerouteChoices,
+  routingText,
+  type RerouteChoice,
+  type Routing,
+} from '../../data/routing-receipt';
 import { useRuntimeStatus } from '../../data/runtime-status';
 import type { DaemonEvent } from '../../data/sync';
 import { t } from '../../i18n';
@@ -102,12 +116,10 @@ const TURN_END: Record<string, SessionTurn['state']> = {
  */
 function progress(
   receipt: Receipt,
+  turn: SessionTurn | undefined,
   turns: readonly SessionTurn[],
   events: readonly DaemonEvent[],
 ): { step: number; failure: string | null } {
-  const turn = receipt.turn
-    ? turns.find((t) => t.id === receipt.turn)
-    : turns.find((t) => t.session_id === receipt.session);
   if (!turn) return { step: 0, failure: null };
   const ran = events.find((e) => e.kind === 'turn.running' && e.aggregate_id === turn.id);
   const began = ran?.sequence ?? receipt.after;
@@ -149,18 +161,127 @@ function progress(
   };
 }
 
+const ROUTE_DIFFERENTLY = () =>
+  t({ id: 'board.routingReceipt.routeDifferently', defaultMessage: 'Route differently' });
+
+const CHOICE_ICON = {
+  answer_here: <MessageSquare aria-hidden="true" />,
+  new_plan: <Plus aria-hidden="true" />,
+};
+
+/**
+ * What a resident did with the user's turn, and a menu that sends the request again by another
+ * route; a refused route shows its reason under the line.
+ */
+export function RoutingLine({
+  turn,
+  run,
+}: {
+  turn: SessionTurn & { routing: Routing };
+  run: PublishCommand;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const view = useBoardView(turn.project_id, 1).data;
+  const names = {
+    lanes: view?.lanes ?? [],
+    tasks: view?.tasks ?? NO_TASKS,
+    agents: useAgents(turn.project_id) ?? [],
+  };
+  const resident = useBoard(
+    (s) => s.board?.sessions.find((each) => each.id === turn.session_id)?.resident,
+  );
+  const said = routingText(turn, turn.routing, names);
+  const choices = rerouteChoices(turn, turn.routing, resident, names);
+  const lanes = choices.filter((choice) => typeof choice.to === 'object' && 'lane_id' in choice.to);
+  const reroute = async (choice: RerouteChoice) => {
+    setBusy(true);
+    setError(null);
+    const result = await run('request.reroute', { turn_id: turn.id, to: choice.to }, null);
+    setBusy(false);
+    if (!result.ok) setError(failureText(result.error));
+  };
+  const item = (choice: RerouteChoice) => (
+    <MenuItem
+      key={choice.key}
+      icon={
+        typeof choice.to === 'string' ? (
+          CHOICE_ICON[choice.to]
+        ) : 'agent_id' in choice.to ? (
+          <Bot aria-hidden="true" />
+        ) : undefined
+      }
+      onClick={() => void reroute(choice)}
+    >
+      {choice.name}
+    </MenuItem>
+  );
+  return (
+    <>
+      <div
+        className="pb-rr"
+        role="group"
+        aria-label={t(
+          { id: 'board.routingReceipt.routed', defaultMessage: 'Routed: {route}' },
+          { route: said },
+        )}
+      >
+        <Route className="ic-sm" aria-hidden="true" />
+        <span>{said}</span>
+        <Menu
+          label={ROUTE_DIFFERENTLY()}
+          align="end"
+          trigger={
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={busy}
+              aria-busy={busy || undefined}
+            >
+              {ROUTE_DIFFERENTLY()}
+            </button>
+          }
+        >
+          {choices.filter((choice) => typeof choice.to === 'string').map(item)}
+          {lanes.length > 0 && (
+            <SubMenu
+              label={t({ id: 'board.routingReceipt.addToPlan', defaultMessage: 'Add to a plan' })}
+              icon={<Workflow aria-hidden="true" />}
+            >
+              {lanes.map(item)}
+            </SubMenu>
+          )}
+          {choices
+            .filter((choice) => typeof choice.to === 'object' && 'agent_id' in choice.to)
+            .map(item)}
+        </Menu>
+      </div>
+      {error && (
+        <span className="tr-err" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
 function ReceiptCard({
   receipt,
   turns,
   events,
   tasks,
+  run,
 }: {
   receipt: Receipt;
   turns: readonly SessionTurn[];
   events: readonly DaemonEvent[];
   tasks: readonly BoardTask[];
+  run: PublishCommand;
 }) {
-  const { step, failure } = progress(receipt, turns, events);
+  const turn = receipt.turn
+    ? turns.find((t) => t.id === receipt.turn)
+    : turns.find((t) => t.session_id === receipt.session);
+  const { step, failure } = progress(receipt, turn, turns, events);
   const created = step >= 3 ? tasks.filter((t) => !receipt.before.has(t.id)) : NO_TASKS;
   return (
     <section
@@ -179,39 +300,45 @@ function ReceiptCard({
           {clock(receipt.at)}
         </time>
       </div>
-      <ol
-        className="pb-steps"
-        aria-label={t({ id: 'board.lead.publish.progress', defaultMessage: 'Progress' })}
-      >
-        {STEPS.map(({ label }, i) => (
-          <li
-            key={label}
-            data-st={i < step ? 'done' : i === step ? (failure ? 'bad' : 'cur') : undefined}
-            aria-current={i === step && !failure ? 'step' : undefined}
+      {turn?.routing ? (
+        <RoutingLine turn={{ ...turn, routing: turn.routing }} run={run} />
+      ) : (
+        <>
+          <ol
+            className="pb-steps"
+            aria-label={t({ id: 'board.lead.publish.progress', defaultMessage: 'Progress' })}
           >
-            <i className="pb-sd" aria-hidden="true" />
-            <span>{label}</span>
-            {i < STEPS.length - 1 && <i className="pb-sl" aria-hidden="true" />}
-          </li>
-        ))}
-      </ol>
-      {failure && (
-        <span className="tr-err" role="alert">
-          {failure}
-        </span>
-      )}
-      {created.length > 0 && (
-        <ul
-          className="pb-tasks"
-          aria-label={t({ id: 'board.lead.publish.created', defaultMessage: 'Created tasks' })}
-        >
-          {created.map((t) => (
-            <li key={t.id}>
-              <StatusIcon status={t.status} />
-              {t.title}
-            </li>
-          ))}
-        </ul>
+            {STEPS.map(({ label }, i) => (
+              <li
+                key={label}
+                data-st={i < step ? 'done' : i === step ? (failure ? 'bad' : 'cur') : undefined}
+                aria-current={i === step && !failure ? 'step' : undefined}
+              >
+                <i className="pb-sd" aria-hidden="true" />
+                <span>{label}</span>
+                {i < STEPS.length - 1 && <i className="pb-sl" aria-hidden="true" />}
+              </li>
+            ))}
+          </ol>
+          {failure && (
+            <span className="tr-err" role="alert">
+              {failure}
+            </span>
+          )}
+          {created.length > 0 && (
+            <ul
+              className="pb-tasks"
+              aria-label={t({ id: 'board.lead.publish.created', defaultMessage: 'Created tasks' })}
+            >
+              {created.map((t) => (
+                <li key={t.id}>
+                  <StatusIcon status={t.status} />
+                  {t.title}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </section>
   );
@@ -460,6 +587,7 @@ export function PublishBar({
           turns={turns}
           events={events}
           tasks={tasks ?? NO_TASKS}
+          run={run}
         />
       )}
     </div>

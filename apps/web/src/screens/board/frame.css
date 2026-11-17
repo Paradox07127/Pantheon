@@ -216,6 +216,25 @@
   color: var(--tx2);
   font-size: var(--fs-xs);
 }
+/* What a resident did with a request, under the receipt's title or the user's turn. */
+.pb-rr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.pb-rr > svg {
+  flex: none;
+  color: var(--mu);
+}
+.pb-rr > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 @supports (corner-shape: superellipse(1.25)) {
   .pt :is(.pb-sd, .pb-sl),
   .pt .pb-sl::after {
@@ -334,54 +353,77 @@
   margin: 2px 0 6px;
 }
 
-/* Since the last visit, on the milestone and lead strip: how long away, then a chip per kind of change. */
-.bf-since {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
+/* Since you left: a header across the card, then a cell per kind of change with its count and links. */
+.bf-brief {
   flex: none;
-  min-width: 0;
+  margin: var(--sp-3) var(--sp-6) 0;
   transition: opacity var(--dur-2) var(--ease-in);
 }
 @starting-style {
-  .bf-since {
+  .bf-brief {
     opacity: 0;
   }
 }
-.bf-away {
-  margin-right: var(--sp-1);
+.bf-brief > .bf-brief-h {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+}
+.bf-brief-t {
+  font-weight: 600;
+}
+.bf-brief-at {
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bf-brief-read {
+  margin-left: auto;
+}
+.bf-brief > .bf-brief-c {
+  gap: var(--sp-2);
+}
+.bf-brief-it {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.bf-brief-lk {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--tx2);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  transition: color var(--dur-1) var(--ease-std);
+}
+a.bf-brief-lk:hover {
+  color: var(--tx);
+}
+.bf-brief-lk > span {
+  min-width: 0;
+}
+.bf-brief-lk > svg.lucide {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.bf-brief-frac {
+  flex: none;
+  margin-left: auto;
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.bf-brief-n {
   color: var(--mu);
   font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.bf-sc {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 20px;
-  padding: 0 var(--sp-2);
-  border-radius: var(--r-sm);
-  background: var(--sf2);
-  color: var(--tx2);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.bf-sc::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--ok);
-}
-.bf-sc[data-kind='failed']::before {
-  background: var(--bad);
-}
-.bf-sc[data-kind='questions']::before {
-  background: var(--wait);
-}
-.bf-read {
-  margin-left: var(--sp-1);
 }

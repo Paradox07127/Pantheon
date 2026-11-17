@@ -595,6 +595,7 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'accept_task',
     'read_note',
     'ask_user',
+    'answer_worker_question',
     'stop_task',
     'report',
     'interrupt_task',

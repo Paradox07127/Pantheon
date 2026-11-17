@@ -1,0 +1,19 @@
+{
+  "board.brief.label": "你离开后",
+  "board.brief.read": "标为已读",
+  "board.brief.waiting": "等你处理",
+  "board.brief.waitingCount": "{count, plural, other {# 项等你处理}}",
+  "board.brief.blocks": "{count, plural, other {阻塞 # 个任务}}",
+  "board.brief.milestones": "里程碑有进展",
+  "board.brief.milestonesCount": "{count, plural, other {# 个里程碑有进展}}",
+  "board.brief.milestoneDone": "{done} / {total}",
+  "board.brief.merged": "已合并",
+  "board.brief.mergedCount": "已合并 {count} 个",
+  "board.brief.untitledSession": "未命名会话",
+  "board.brief.failed": "失败",
+  "board.brief.failedCount": "失败 {count} 个",
+  "board.brief.assumptions": "新假设",
+  "board.brief.assumptionsCount": "{count, plural, other {# 条新假设}}",
+  "board.brief.proposals": "智能体提议",
+  "board.brief.proposalsCount": "{count, plural, other {# 个智能体提议}}"
+}

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -229,58 +229,6 @@ describe('board headline and cards', () => {
     expect(count).toContain('aria-label="未完成的依赖任务 1 个"');
     expect(count).toContain('lucide-network');
     expect(count).not.toContain('lucide-git-branch');
-  });
-});
-
-describe('since-last chips', () => {
-  afterEach(() => {
-    vi.doUnmock('react');
-    vi.resetModules();
-    vi.unstubAllGlobals();
-  });
-
-  it('marks each kind of change with a dot of its status colour', async () => {
-    vi.resetModules();
-    vi.doMock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
-    const { HookHost, nodes } = await import('./web-hook-host.js');
-    const { SinceStrip } = await import('../../apps/web/src/screens/board/BoardFrame.js');
-    const stored = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => stored.get(key) ?? null,
-      setItem: (key: string, value: string) => stored.set(key, value),
-    });
-    let model = board([task('a', 'running')]);
-    const h = new HookHost(() => SinceStrip({ projectId: 'project-a', model }));
-    h.render();
-    model = board([task('a', 'failed')], {
-      now: NOW + 60_000,
-      merges: [
-        {
-          session_id: 'merged-a',
-          title: '',
-          merged_at: NOW + 30_000,
-          from_sha: null,
-          sha: 'merge-sha',
-          additions: 0,
-          deletions: 0,
-          story_id: null,
-        },
-      ],
-    });
-    h.render();
-    expect(
-      nodes(h.value)
-        .filter((n) => n.props.className === 'bf-sc')
-        .map((n) => n.props['data-kind']),
-    ).toEqual(['merged', 'failed']);
-    const css = readFileSync(
-      new URL('../../apps/web/src/screens/board/frame.css', import.meta.url),
-      'utf8',
-    );
-    expect(css).toMatch(/\n\.bf-sc::before \{[^}]*background: var\(--ok\)/);
-    expect(css).toMatch(/\n\.bf-sc\[data-kind='failed'\]::before \{[^}]*var\(--bad\)/);
-    expect(css).toMatch(/\n\.bf-sc\[data-kind='questions'\]::before \{[^}]*var\(--wait\)/);
-    h.unmount();
   });
 });
 

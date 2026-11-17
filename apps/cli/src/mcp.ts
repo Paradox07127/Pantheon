@@ -98,6 +98,8 @@ const descriptions: Record<ToolCommand, string> = {
     'Read one note of your board updates in full, by the note id the update names. Use it when an update was cut short or listed by id only, before you act on that note. Refused for an id that is not one of your notes.',
   'lead.ask':
     "Ask the user one question on a card in needs-you and return at once. Use it only when the answer changes a task's scope, what counts as done, or an irreversible step; decide smaller points yourself. Give question, 2-4 options, recommended (one of the options), assumption (how you proceed meanwhile) and blocks (the task ids that must wait; [] when none). Keep working on the tasks it does not block; the answer arrives later as a board update. Refused without a plan: write one with update_board first, even if it holds only what you know.",
+  'lead.worker_question.answer':
+    "Answer a task session's question only when the plan, project memory or the user's quoted words settle it; cite them. Otherwise leave it for the user, who sees the question too. Give question_id from the worker_question board update, answers keyed by each question's text word for word, and at least one citation: user_words (words copied exactly from the asking task's source), assumption (a plan assumption's text), memory (a current memory id) or earlier_answer (the id of an answered question of your plan). The answer goes back to the session at once. Refused once the question is answered, for a citation that does not resolve, and when the project's charter leaves these questions to the user.",
   'agent.follow_up':
     'Wake yourself once, later, with note: give exactly one of after_minutes (1-10080) or at (Unix epoch milliseconds). Set one for a time you promised the user, a deadline, or an outcome no board update will bring, such as commits waiting for the user to merge; board updates already wake you for task results. Each call adds a timer, and timers survive a new session of you. The note is all you get when you wake, so write what to check and why. Refused with both or neither of after_minutes and at.',
   'agent.tell_user':
@@ -270,6 +272,7 @@ const boundRevision = (type: CommandType) =>
   type === 'trace.report' ||
   type === 'lead.note.read' ||
   type === 'lead.ask' ||
+  type === 'lead.worker_question.answer' ||
   type === 'agent.follow_up' ||
   type === 'agent.tell_user' ||
   type === 'agent.routine.set' ||

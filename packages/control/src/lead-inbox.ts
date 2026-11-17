@@ -14,7 +14,9 @@ import {
 import { inputSchemas } from '@pantheon/protocol';
 import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
 import { runtime } from './admission.js';
-import { answerApproval } from './approvals.js';
+import { answerApproval, settleApproval } from './approvals.js';
+import { charterMode, chartered } from './charter.js';
+import { current, visible } from './memory-access.js';
 import { buildHandoff } from './handoff.js';
 import {
   nativeTurnActive,
@@ -358,7 +360,14 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       since,
       `How to handle: ${WAITING_HANDLING[kind]}`,
     ];
-  } else if (TASK_STUCK.includes(kind))
+  } else if (kind === 'worker_question')
+    lines = [
+      startTag([...onTask, ['session', note.session_id], ['question', note.question_id]]),
+      `What happened: Task ${taskRef} asks: ${text}`,
+      since,
+      "How to handle: answer with answer_worker_question only when the task's quoted user words, a plan assumption, a current memory entry or an earlier answer settles it, citing that source; otherwise leave it for the user, who sees the question too.",
+    ];
+  else if (TASK_STUCK.includes(kind))
     lines = [
       startTag([...onTask, ['session', note.session_id]]),
       `What happened: Task ${taskRef}${part === undefined ? '' : ` part ${part + 1}`}: ${text}`,
@@ -601,8 +610,9 @@ export function answerQuestion(
   question: LeadQuestion,
   text: string,
   cause = '',
+  by: Pick<LeadQuestion, 'answered_by' | 'citations'> = {},
 ): { plan: BoardPlan; question: LeadQuestion & Required<Pick<LeadQuestion, 'answer'>> } {
-  const answered = { ...question, answer: { text, at: ctx.store.now() } };
+  const answered = { ...question, ...by, answer: { text, at: ctx.store.now() } };
   const next = ctx.store.update(
     'board_plans',
     {
@@ -616,6 +626,16 @@ export function answerQuestion(
   ctx.store.event('lead.question_answered', next, plan.project_id, answered, cause);
   return { plan: next, question: answered };
 }
+
+type CitationKind = NonNullable<LeadQuestion['citations']>[number]['kind'];
+
+/** What the ref of each citation kind must be to resolve. */
+const CITATION_REFS: Record<CitationKind, string> = {
+  user_words: "words copied exactly from the asking task's source",
+  assumption: "the whole text of one of your plan's assumptions",
+  memory: 'the id of a current memory entry you can read',
+  earlier_answer: 'the id of an answered question of your plan',
+};
 
 export const leadInboxHandlers: Handlers = {
   'lead.ask': (ctx, p, c) => {
@@ -689,6 +709,66 @@ export const leadInboxHandlers: Handlers = {
       c.command_id,
     );
     wakeLead(ctx, noted, c.command_id);
+    return answered;
+  },
+  'lead.worker_question.answer': (ctx, p, c) => {
+    const input = inputSchemas['lead.worker_question.answer'].parse(c.input);
+    projectAccess(ctx, p, input.project_id, c.type);
+    requireThat(p.role === 'lead', 'permission_denied', 'Lead session required');
+    const plan = ctx.store.get<BoardPlan>('board_plans', p.session_id!),
+      question = plan?.questions?.find((entry) => entry.id === input.question_id);
+    requireThat(
+      plan && question,
+      'not_found',
+      `Not found: question ${input.question_id} in your plan`,
+    );
+    requireThat(
+      question.source,
+      'invalid_input',
+      `Question ${question.id} is your own question for the user; only the user answers it`,
+    );
+    requireThat(!question.answer, 'invalid_state', 'This question has already been answered');
+    requireThat(
+      charterMode(ctx, plan.project_id, 'answer_worker_questions') === 'on',
+      'permission_denied',
+      "The project's charter leaves task session questions to the user",
+    );
+    const asking = ctx.store.must<Session>('sessions', question.source.session_id),
+      lead = ctx.store.must<Session>('sessions', plan.id);
+    const resolves: Record<CitationKind, (ref: string) => boolean> = {
+      user_words: (ref) =>
+        !!plan.tasks
+          .find((task) => task.id === asking.task!.id)
+          ?.source.some((quote) => quote.includes(ref)),
+      assumption: (ref) => plan.assumptions.some((entry) => entry.text === ref),
+      memory: (ref) =>
+        current(ctx, plan.project_id).some((record) => record.id === ref && visible(record, lead)),
+      earlier_answer: (ref) =>
+        plan.questions!.some((entry) => entry.id === ref && entry.answer !== undefined),
+    };
+    for (const citation of input.citations)
+      requireThat(
+        resolves[citation.kind](citation.ref),
+        'invalid_input',
+        `Citation ${citation.kind} "${citation.ref}" does not resolve; give ${CITATION_REFS[citation.kind]}`,
+      );
+    const { question: answered } = answerQuestion(
+      ctx,
+      plan,
+      question,
+      Object.values(input.answers).join('\n'),
+      c.command_id,
+      { answered_by: 'lead', citations: input.citations },
+    );
+    const settled = settleApproval(
+      ctx,
+      p,
+      { ...ctx.store.must<Approval>('approvals', question.source.approval_id), decider: 'lead' },
+      { decision: 'approve', answers: input.answers },
+      c.command_id,
+    );
+    if ('error' in settled) return settled;
+    chartered(ctx, p, 'answer_worker_questions', settled);
     return answered;
   },
   'lead.note.read': (ctx, p, c) => {

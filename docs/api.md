@@ -353,6 +353,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `lead.ask` | `project_id`: string<br>`question`: string<br>`options`: string[]<br>`recommended`: string<br>`assumption`: string<br>`blocks`: string[] | ask_user (lead) |
 | `lead.note.read` | `project_id`: string<br>`note_id`: string | read_note (lead) |
 | `lead.question.answer` | `project_id`: string<br>`lead_session_id`: string<br>`question_id`: string<br>`answer`: string<br>`answers?`: object |  |
+| `lead.worker_question.answer` | `project_id`: string<br>`question_id`: string<br>`answers`: object<br>`citations`: object[] | answer_worker_question (lead) |
 
 ### mcp
 

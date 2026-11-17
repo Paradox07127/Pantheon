@@ -23,7 +23,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The now view's strip: the current milestone, the time away and the leads, on one line while they fit. */
+/* The now view's strip: the current milestone and the leads, on one line while they fit. */
 .bov {
   display: flex;
   flex: none;

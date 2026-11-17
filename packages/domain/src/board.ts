@@ -93,6 +93,13 @@ export interface LeadQuestion {
   source?: { session_id: string; approval_id: string };
   /** The relayed question's original questions. */
   questions?: ApprovalQuestion[];
+  /** Who answered a relayed worker question; absent when the user did. */
+  answered_by?: 'user' | 'lead';
+  /**
+   * What the lead's answer rests on: words of the asking task's source, a plan assumption's text, a
+   * current memory id, or the id of an answered question of the plan.
+   */
+  citations?: { kind: 'user_words' | 'assumption' | 'memory' | 'earlier_answer'; ref: string }[];
 }
 /** One lead session's part of the project board, keyed by that session's id. */
 export interface BoardPlan extends Entity {
@@ -350,7 +357,9 @@ export interface LeadNote {
     /** A message another agent of the project left for the user, sent to the main agent instead. */
     | 'agent_report'
     /** Permission prompts of one task session approved for the lead since it last read its inbox; does not wake the lead. */
-    | 'prompts_approved';
+    | 'prompts_approved'
+    /** A task session asked a question its lead may answer; wakes the lead. */
+    | 'worker_question';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;

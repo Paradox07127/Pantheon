@@ -26,6 +26,7 @@ import {
 import { autoMerge } from './user-config.js';
 import { gateCommands } from './landing.js';
 import { relayingQuestion } from './approvals.js';
+import { charterMode } from './charter.js';
 import { runGit, type GitResult } from './git.js';
 import {
   appendNote,
@@ -170,6 +171,7 @@ const wakingNote = (plan: BoardPlan, note: LeadNote) =>
   note.kind in TRACKED_TEXT ||
   note.kind === 'requirement' ||
   note.kind === 'answer' ||
+  note.kind === 'worker_question' ||
   note.kind === 'external' ||
   note.kind === 'follow_up' ||
   note.kind === 'routine' ||
@@ -824,7 +826,16 @@ export function tickTaskTracking(ctx: ControlContext): void {
   const waiting = new Set(
     ctx.store
       .list<Approval>('approvals')
-      .filter((approval) => approval.kind === 'permission' && approval.state === 'pending')
+      .filter(
+        (approval) =>
+          approval.kind === 'permission' &&
+          approval.state === 'pending' &&
+          // The lead was told of this question with a worker_question note instead.
+          !(
+            relayingQuestion(ctx, approval) &&
+            charterMode(ctx, approval.project_id, 'answer_worker_questions') === 'on'
+          ),
+      )
       .map((approval) => approval.session_id),
   );
   const latestTurns = new Map<string, SessionTurn>(),

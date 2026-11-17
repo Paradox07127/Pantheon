@@ -264,6 +264,7 @@ export const sessionTools = {
     accept_task: 'task.accept',
     read_note: 'lead.note.read',
     ask_user: 'lead.ask',
+    answer_worker_question: 'lead.worker_question.answer',
     stop_task: 'task.stop',
     report: 'task.report',
     interrupt_task: 'task.interrupt',
@@ -311,6 +312,7 @@ export const leadToolEffects = {
   accept_task: 'write',
   read_note: 'read',
   ask_user: 'write',
+  answer_worker_question: 'write',
   stop_task: 'write',
   report: 'write',
   interrupt_task: 'write',
@@ -366,6 +368,7 @@ export const leadToolGroups: Record<
   milestone_accept: 'board',
   read_note: 'board',
   ask_user: 'board',
+  answer_worker_question: 'board',
   propose_improvement: 'board',
   sync_board: 'board',
   rerun_baseline: 'board',
@@ -2165,6 +2168,29 @@ export const inputSchemas = {
     answer: str,
     /** A relayed worker question only: question text to the answer, as approval.respond takes it. */
     answers: z.record(str, str).optional(),
+  }),
+  /** The calling lead's answer to a task session's question on its own plan; the first answer wins. */
+  'lead.worker_question.answer': z.strictObject({
+    project_id: str,
+    question_id: str.describe('The question id the worker_question board update names.'),
+    answers: z
+      .record(str, str.describe('Your answer to that question.'))
+      .describe("Each question of the task session's request, word for word, to your answer."),
+    citations: z
+      .array(
+        z.strictObject({
+          kind: z
+            .enum(['user_words', 'assumption', 'memory', 'earlier_answer'])
+            .describe(
+              "user_words: words of the asking task's source; assumption: a plan assumption; memory: a current memory entry; earlier_answer: an answered question of your plan.",
+            ),
+          ref: str.describe(
+            'For user_words, the words copied exactly; for assumption, its whole text; for memory, the memory id; for earlier_answer, the question id.',
+          ),
+        }),
+      )
+      .min(1)
+      .describe('What settles the answer; at least one.'),
   }),
   /** Reads one note of the calling lead's plan in full, by the id its digest names; read-only. */
   'lead.note.read': z.strictObject({

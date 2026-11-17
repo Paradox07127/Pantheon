@@ -85,6 +85,7 @@ import {
   type SplitEntry,
   type TerminalToggle,
 } from './SessionHeader';
+import { RoutingLine } from '../board/PublishBar';
 import { showFile } from './FilesPanel';
 import { SessionCompose } from './SessionCompose';
 import { fail, useSecondTick } from './shared';
@@ -729,6 +730,9 @@ export function ThreadTurn(props: {
                 <div className={`ss-user${entering}`} data-find="input">
                   {turn.input}
                 </div>
+                {turn.routing && (
+                  <RoutingLine turn={{ ...turn, routing: turn.routing }} run={runCommand} />
+                )}
               </>
             )}
             {turn.handoff && (

@@ -28,11 +28,7 @@ import {
 } from '../../apps/web/src/data/request-target.js';
 import { useShell } from '../../apps/web/src/store.js';
 import type { DaemonEvent } from '../../apps/web/src/data/sync.js';
-import {
-  NeedsStrip,
-  SinceStrip,
-  useNeedImprovements,
-} from '../../apps/web/src/screens/board/BoardFrame.js';
+import { NeedsStrip, useNeedImprovements } from '../../apps/web/src/screens/board/BoardFrame.js';
 import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import { LeadPanel } from '../../apps/web/src/screens/board/LeadPanel.js';
 import { PublishBar, type PublishCommand } from '../../apps/web/src/screens/board/PublishBar.js';
@@ -48,8 +44,6 @@ import {
   requirementSessionInput,
   requirementTarget,
   requirementTargets,
-  seenOf,
-  sinceLast,
   type BoardLead,
   type BoardNeed,
 } from '../../apps/web/src/screens/board/frame-model.js';
@@ -121,143 +115,6 @@ const board = (tasks: BoardModel['tasks'], merged = 0): BoardModel =>
     findings: [],
     risks: [],
   }) as unknown as BoardModel;
-
-const merge = (at: number): BoardModel['merges'][number] => ({
-  session_id: `merged-at-${at}`,
-  title: '',
-  merged_at: at,
-  from_sha: null,
-  sha: 'merge-sha',
-  additions: 0,
-  deletions: 0,
-  story_id: null,
-});
-
-describe('since the last visit', () => {
-  it('shows nothing on the first visit of a project', () => {
-    expect(sinceLast(undefined, board([task('a', 'done')], 2))).toBeNull();
-  });
-
-  it('counts new merges, newly failed tasks and new lead questions', () => {
-    const seen = {
-      at: NOW - 3_600_000,
-      status: {
-        a: 'running',
-        b: 'running',
-        c: 'todo',
-        d: 'todo',
-        f: 'failed',
-        g: 'running',
-      } as Record<string, BoardTaskStatus>,
-      blocked: ['d'],
-    };
-    const now = {
-      ...board(
-        [
-          task('a', 'done', { ended_at: NOW - 60_000 }),
-          task('b', 'waiting'),
-          task('c', 'todo', { blocked_since: NOW - 60_000, blockers: ['upstream'] }),
-          task('d', 'todo', { blocked_since: NOW - 7_200_000, blockers: ['upstream'] }),
-          task('e', 'done', { ended_at: NOW - 30_000 }),
-          task('f', 'failed'),
-          task('g', 'failed'),
-        ],
-        3,
-      ),
-      merges: [merge(NOW - 30_000), merge(NOW - 60_000), merge(NOW - 7_200_000)],
-      needs: [
-        need({ kind: 'lead.question', created_at: NOW - 60_000 }),
-        need({ kind: 'lead.question', created_at: NOW - 7_200_000 }),
-        need({ created_at: NOW - 60_000 }),
-      ],
-    };
-    expect(sinceLast(seen, now)).toEqual({ merged: 2, failed: 1, questions: 1 });
-  });
-
-  it('reports nothing when a task only starts waiting for an approval', () => {
-    const read = seenOf(board([task('a', 'running')]));
-    expect(sinceLast(read, board([task('a', 'waiting')]))).toBeNull();
-  });
-
-  it('reports nothing when a wider range only brings older tasks and merges into view', () => {
-    const today = {
-      ...board([task('a', 'running')], 1),
-      merges: [merge(NOW - 60_000)],
-    };
-    const read = seenOf(today);
-    const fortnight = {
-      ...board(
-        [
-          task('a', 'running'),
-          task('old-done', 'done', { ended_at: NOW - 3 * 86_400_000 }),
-          task('old-failed', 'failed', { ended_at: NOW - 2 * 86_400_000 }),
-        ],
-        3,
-      ),
-      since: NOW - 14 * 86_400_000,
-      merges: [merge(NOW - 60_000), merge(NOW - 3 * 86_400_000), merge(NOW - 5 * 86_400_000)],
-    };
-    expect(sinceLast(read, fortnight)).toBeNull();
-  });
-
-  it('still reports a new merge while an older one ages out of the range', () => {
-    const read = seenOf({ ...board([], 1), merges: [merge(NOW - 23 * 3_600_000)] });
-    const later = {
-      ...board([], 1),
-      since: NOW + 2 * 3_600_000 - 86_400_000,
-      now: NOW + 2 * 3_600_000,
-      merges: [merge(NOW + 3_600_000)],
-    };
-    expect(sinceLast(read, later)).toEqual({ merged: 1, failed: 0, questions: 0 });
-  });
-
-  it('shows nothing once read, and nothing when nothing changed', () => {
-    const now = board(
-      [task('a', 'done'), task('b', 'failed'), task('c', 'todo', { blocked_since: NOW })],
-      4,
-    );
-    const read = seenOf(now);
-    expect(read).toEqual({
-      at: NOW,
-      status: { a: 'done', b: 'failed', c: 'todo' },
-    });
-    expect(sinceLast(read, now)).toBeNull();
-  });
-});
-
-describe('since-last strip', () => {
-  const stubStorage = () => {
-    const stored = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => stored.get(key) ?? null,
-      setItem: (key: string, value: string) => stored.set(key, value),
-    });
-  };
-
-  it('stays closed when the range widens without anything new, and opens on a new merge', () => {
-    stubStorage();
-    let model: BoardModel = { ...board([task('a', 'running')], 1), merges: [merge(NOW - 60_000)] };
-    const h = mount(() => SinceStrip({ projectId: 'project-a', model }));
-    expect(h.value).toBeNull();
-    model = {
-      ...board(
-        [task('a', 'running'), task('old-done', 'done', { ended_at: NOW - 86_400_000 * 3 })],
-        2,
-      ),
-      since: NOW - 14 * 86_400_000,
-      merges: [merge(NOW - 60_000), merge(NOW - 86_400_000 * 3)],
-    };
-    h.render();
-    expect(h.value).toBeNull();
-    model = {
-      ...model,
-      now: NOW + 60_000,
-      merges: [merge(NOW + 30_000), ...model.merges],
-    };
-    h.render();
-    expect(text(h.value)).toContain(say('board.frame.since.mergedCount', { count: 1 }));
-  });
-});
 
 const need = (extra: Partial<BoardNeed>): BoardNeed => ({
   source: { table: 'approvals', id: 'approval-1', revision: 3 },

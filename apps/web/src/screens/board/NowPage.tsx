@@ -1,8 +1,8 @@
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { t } from '../../i18n';
-import { SinceStrip } from './BoardFrame';
 import { PanelBoundary, type BoardViewProps } from './BoardScreen';
+import { BriefCard } from './BriefCard';
 import { DraftTaskForm, EditMode, OrderLock } from './EditMode';
 import { LeadPanel } from './LeadPanel';
 import { MainView } from './MainView';
@@ -12,7 +12,7 @@ import { PlanProposals } from './PlanProposals';
 import { TaskProgressStrip } from './ProgressCharts';
 import { UnsentEdits } from './UnsentEdits';
 
-/** The now view's body: milestone and lead, plan proposals, the main view and the summary. */
+/** The now view's body: what happened since the user left, milestone and lead, plan proposals, the main view and the summary. */
 export function NowPage({
   model,
   shown,
@@ -56,6 +56,14 @@ export function NowPage({
 }) {
   return (
     <>
+      {model && projectId && (
+        <BriefCard
+          projectId={projectId}
+          model={model}
+          sessions={actions?.sessions ?? []}
+          onOpenTask={selectFlow}
+        />
+      )}
       {model && shown && (
         <section
           className="bov"
@@ -80,7 +88,6 @@ export function NowPage({
           ) : (
             <TaskProgressStrip totals={model.task_progress.totals} />
           )}
-          {projectId && <SinceStrip projectId={projectId} model={model} />}
           {!!model.leads?.length && (
             <PanelBoundary title="lead" model={model} onRetry={onRetry}>
               <LeadPanel

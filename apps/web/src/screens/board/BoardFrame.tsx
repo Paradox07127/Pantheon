@@ -18,19 +18,10 @@ import {
   needKey,
   needSession,
   needWho,
-  seenOf,
-  sinceLast,
   type BoardLead,
   type BoardNeed,
-  type SeenBoard,
-  type SinceLast,
 } from './frame-model';
-import {
-  durationText,
-  type RunBoardCommand,
-  type SnapshotMilestone,
-  type SnapshotSession,
-} from './panels-model';
+import type { RunBoardCommand, SnapshotMilestone, SnapshotSession } from './panels-model';
 import './frame.css';
 
 /** Each lead's state in the headline bar; a lead opens its session. */
@@ -256,92 +247,5 @@ export function NeedsStrip({
         )}
       </section>
     </Fold>
-  );
-}
-
-const SEEN_KEY = 'pantheon.board-seen.v2';
-
-function readSeen(projectId: string): SeenBoard | undefined {
-  try {
-    const all = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') as Record<string, SeenBoard>;
-    return all[projectId];
-  } catch {
-    return undefined;
-  }
-}
-
-function writeSeen(projectId: string, seen: SeenBoard) {
-  try {
-    const all = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') as Record<string, SeenBoard>;
-    localStorage.setItem(SEEN_KEY, JSON.stringify({ ...all, [projectId]: seen }));
-  } catch {
-    // The strip then shows changes since this visit until the app closes.
-  }
-}
-
-const SINCE: { key: keyof SinceLast; label: (count: number) => string }[] = [
-  {
-    key: 'merged',
-    label: (count) =>
-      t({ id: 'board.frame.since.mergedCount', defaultMessage: 'Merged {count}' }, { count }),
-  },
-  {
-    key: 'failed',
-    label: (count) =>
-      t({ id: 'board.frame.since.failedCount', defaultMessage: 'Failed {count}' }, { count }),
-  },
-  {
-    key: 'questions',
-    label: (count) =>
-      t({ id: 'board.frame.since.questions', defaultMessage: 'Questions {count}' }, { count }),
-  },
-];
-
-/**
- * How long the user was away and what changed on the board since they last marked it read; the
- * first visit only remembers it.
- */
-export function SinceStrip({ projectId, model }: { projectId: string; model: BoardModel }) {
-  const [seen, setSeen] = useState<{ projectId: string; board: SeenBoard } | null>(null);
-  useEffect(() => {
-    if (seen?.projectId === projectId) return;
-    let board = readSeen(projectId);
-    if (!board) {
-      board = seenOf(model);
-      writeSeen(projectId, board);
-    }
-    setSeen({ projectId, board });
-  }, [projectId, model, seen]);
-  const current = useMemo(
-    () => (seen?.projectId === projectId ? sinceLast(seen.board, model) : null),
-    [seen, projectId, model],
-  );
-  if (!current || !seen) return null;
-  const read = () => {
-    const board = seenOf(model);
-    writeSeen(projectId, board);
-    setSeen({ projectId, board });
-  };
-  return (
-    <div
-      className="bf-since"
-      role="group"
-      aria-label={t({ id: 'board.frame.since.label', defaultMessage: 'Since last visit' })}
-    >
-      <span className="bf-away">
-        {t(
-          { id: 'board.frame.since.away', defaultMessage: 'Away {duration}' },
-          { duration: durationText(model.now - seen.board.at) },
-        )}
-      </span>
-      {SINCE.filter((s) => current[s.key] > 0).map((s) => (
-        <span key={s.key} className="bf-sc" data-kind={s.key}>
-          {s.label(current[s.key])}
-        </span>
-      ))}
-      <button type="button" className="btn bf-read" onClick={read}>
-        {t({ id: 'board.frame.since.read', defaultMessage: 'Mark as read' })}
-      </button>
-    </div>
   );
 }
