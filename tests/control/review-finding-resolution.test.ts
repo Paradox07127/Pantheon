@@ -18,7 +18,7 @@ import type {
   SessionTurn,
   UserTurn,
 } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import { awaitWorkspaceReady, countingGit, eventually, gitRunsOf, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 const content = "return title.toLowerCase().replace(/[^a-z0-9]+/g, '-');\n";
@@ -239,6 +239,7 @@ it('marks an open finding stale once a new commit of the reviewed session no lon
 
   await f.writerTurn(content.replace('title.', 'title.trim().'));
   const head = git(f.workspace.path, 'rev-parse', 'HEAD');
+  await eventually(() => statuses()[0] === 'stale');
   expect(statuses()).toEqual(['stale', 'open', 'open', 'rejected']);
   expect(f.row(review).findings[2]!.resolution?.outcome).toBe('adopted');
   expect(staleEvents().map((event) => [event.aggregate_id, event.payload])).toEqual([
@@ -262,7 +263,41 @@ it('marks a finding stale on recording when the reviewed session already moved p
   await f.writerTurn(content.replace('title.', 'title.trim().'));
   f.reviewers[0]!.finding({ ...finding, quote: 'title.toLowerCase()' });
   f.reviewers[0]!.finding({ ...finding, quote: ".replace(/[^a-z0-9]+/g, '-')" });
+  await eventually(() => f.row(review).findings[0]!.status === 'stale');
   expect(f.row(review).findings.map((row) => row.status)).toEqual(['stale', 'open']);
+});
+
+it('reads the diff for stale findings without blocking the daemon, only for the files they name', async () => {
+  const f = await sessionReviewFixture();
+  const review = await f.request();
+  f.reviewers[0]!.finding({ ...finding, quote: 'title.toLowerCase()' });
+  writeFileSync(
+    path.join(f.workspace.path, 'src/slug.js'),
+    content.replace('title.', 'title.trim().'),
+  );
+  writeFileSync(path.join(f.workspace.path, 'src/other.js'), 'other();\n');
+  git(f.workspace.path, 'add', '-A');
+  git(f.workspace.path, 'commit', '--quiet', '-m', 'Change slugify');
+  const head = git(f.workspace.path, 'rev-parse', 'HEAD');
+  const range = `--no-color --no-ext-diff ${f.workspace.base_sha} ${head}`;
+  const runs = countingGit();
+  try {
+    runs.slowOn(range);
+    let during = 0;
+    const timer = setInterval(() => {
+      const log = runs.log();
+      if (log.includes('slow start') && !log.includes('slow done')) during++;
+    }, 50);
+    await f.writerTurn();
+    await eventually(() => f.row(review).findings[0]!.status === 'stale');
+    clearInterval(timer);
+    expect(during).toBeGreaterThan(0);
+    const diffs = gitRunsOf(runs.runs(), 'diff').filter((args) => args.includes(range));
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0]).toMatch(/ -- src\/slug\.js$/);
+  } finally {
+    runs.restore();
+  }
 });
 
 const zero = {

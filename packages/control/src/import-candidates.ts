@@ -12,6 +12,7 @@ const SCAN_MS = 300;
 const PRESELECT_SESSIONS = 3;
 const PRESELECT_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const GIT_CONCURRENCY = 4;
 const TEMPORARY_ROOTS = ['/tmp', '/private/tmp', '/private/var/folders', os.tmpdir()];
 
 type Remote = ImportCandidate['remote'];
@@ -162,10 +163,15 @@ export async function importableSessions(
   const roots = new Set(project.roots.map((root) => resolvedPath(root)));
   const sessions = ctx.trace?.importable(projectId) ?? [];
   // A session in a repository nested inside a root works on that repository, not the project's.
-  const kept = await Promise.all(
-    sessions.map(async (session) => {
-      const top = await toplevel(resolvedPath(session.cwd));
-      return top === null || roots.has(resolvedPath(top));
+  const kept: boolean[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: GIT_CONCURRENCY }, async () => {
+      while (next < sessions.length) {
+        const index = next++;
+        const top = await toplevel(resolvedPath(sessions[index]!.cwd));
+        kept[index] = top === null || roots.has(resolvedPath(top));
+      }
     }),
   );
   return sessions.filter((_, index) => kept[index]);

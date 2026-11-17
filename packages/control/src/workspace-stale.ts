@@ -8,10 +8,10 @@ import {
   type Session,
   type Workspace,
 } from '@pantheon/domain';
-import { inputSchemas, type StaleWorkspaces } from '@pantheon/protocol';
-import { projectAccess, type ControlContext, type Handlers } from './context.js';
+import { inputSchemas, type Command, type StaleWorkspaces } from '@pantheon/protocol';
+import { projectAccess, type ControlContext, type Handler } from './context.js';
 import { runGit } from './git.js';
-import { removeWorkspaceInTransaction } from './workspace-removal.js';
+import { removeWorkspace } from './workspace-removal.js';
 import { repositoryInsights } from './repository-insights.js';
 
 /** A worktree is measured again at most this often, in milliseconds. */
@@ -129,44 +129,47 @@ export function workspaceStale(
   };
 }
 
-export const workspaceStaleHandlers: Handlers = {
-  'workspace.prune_stale': (ctx, p, c) => {
-    requireThat(p.role === 'user', 'permission_denied', 'Only the user can prune worktrees');
-    const { project_id } = c.input as ReturnType<
-      (typeof inputSchemas)['workspace.prune_stale']['parse']
-    >;
-    projectAccess(ctx, p, project_id, c.type);
-    ctx.store.must<Project>('projects', project_id);
+/** workspace.prune_stale; git runs outside the store's transactions, and the handler returns the count. */
+export function prepareStalePrune(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  requireThat(p.role === 'user', 'permission_denied', 'Only the user can prune worktrees');
+  const { project_id } = c.input as ReturnType<
+    (typeof inputSchemas)['workspace.prune_stale']['parse']
+  >;
+  projectAccess(ctx, p, project_id, c.type);
+  ctx.store.must<Project>('projects', project_id);
+  const git = (cwd: string, args: string[]) => runGit(cwd, args, undefined, true);
+  return (async () => {
     let removed = 0;
     for (const workspace of staleWorkspaces(ctx, project_id)) {
       // Worktrees are detached: commits no branch or tag holds would become unreachable,
       // so a worktree whose HEAD is not shown held or archived is kept.
-      const head = runGit(workspace.path, ['rev-parse', '--verify', 'HEAD^{commit}']);
+      const head = await git(workspace.path, ['rev-parse', '--verify', 'HEAD^{commit}']);
       const sha = head.stdout.toString().trim();
       if (head.exit_code !== 0) continue;
-      const held = runGit(workspace.path, [
-        'for-each-ref',
-        '--contains',
+      // Prints nothing when a branch or tag contains the commit.
+      const unheld = await git(workspace.path, [
+        'rev-list',
+        '-n1',
         sha,
-        'refs/heads',
-        'refs/tags',
+        '--not',
+        '--branches',
+        '--tags',
       ]);
-      if (held.exit_code !== 0) continue;
-      if (!held.stdout.toString().trim()) {
+      if (unheld.exit_code !== 0) continue;
+      if (unheld.stdout.toString().trim()) {
         const archive = `refs/pantheon/archive/${workspace.id}`;
-        if (runGit(workspace.path, ['update-ref', archive, sha]).exit_code !== 0) continue;
-        const archived = runGit(workspace.path, ['rev-parse', '--verify', archive]);
+        if ((await git(workspace.path, ['update-ref', archive, sha])).exit_code !== 0) continue;
+        const archived = await git(workspace.path, ['rev-parse', '--verify', archive]);
         if (archived.exit_code !== 0 || archived.stdout.toString().trim() !== sha) continue;
       }
-      const jobId = ctx.store.enqueue('workspace.remove', {
-        workspace_id: workspace.id,
-        reason: 'stale',
-      });
-      removeWorkspaceInTransaction(ctx, workspace.id, jobId);
+      const jobId = ctx.store.transaction(() =>
+        ctx.store.enqueue('workspace.remove', { workspace_id: workspace.id, reason: 'stale' }),
+      );
+      await removeWorkspace(ctx, workspace.id, jobId);
       if (!existsSync(workspace.path)) removed++;
     }
     for (const workspace of ctx.store.list<Workspace>('workspaces'))
       if (workspace.project_id === project_id) sizes.get(ctx)?.delete(workspace.id);
-    return { removed };
-  },
-};
+    return () => ({ removed });
+  })();
+}

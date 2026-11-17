@@ -24,8 +24,10 @@ export function sourceGit(
   sourcePath: string,
 ) {
   const source = checkedSource(ctx, principal, projectId, sourcePath);
-  return (args: string[], bound: { max_buffer: number; timeout_ms: number }) =>
-    runGit(source, args, undefined, true, bound);
+  return (
+    args: string[],
+    bound: { max_buffer: number; timeout_ms: number; env?: NodeJS.ProcessEnv },
+  ) => runGit(source, args, undefined, true, bound);
 }
 
 /** Files of `git diff --numstat -z` output. */

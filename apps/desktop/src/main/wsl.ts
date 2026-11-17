@@ -208,7 +208,8 @@ export const wslPathFromWindows = (
     return share[1]!.toLowerCase() === distro.toLowerCase()
       ? (share[2] ?? '\\').replaceAll('\\', '/')
       : undefined;
-  const drive = /^([a-z]):(\\.*)?$/i.exec(winPath);
+  // Either slash separates, and a \\?\ prefix only lifts the path length limit.
+  const drive = /^(?:\\\\\?\\)?([a-z]):([\\/].*)?$/i.exec(winPath);
   return drive
     ? `${root}${drive[1]!.toLowerCase()}${(drive[2] ?? '').replaceAll('\\', '/')}`
     : undefined;

@@ -104,10 +104,10 @@ it('previews the project and selected start points without changing files or rec
   }).toEqual(before);
 });
 
-it('reports project commit time, changed paths and upstream distance only when an upstream exists', () => {
+it('reports project commit time, changed paths and upstream distance only when an upstream exists', async () => {
   const f = workbenchFixture();
   const committedAt = Number(git(f.source, 'log', '-1', '--format=%ct')) * 1000;
-  const head = f.control.projectHead(user, f.project.id);
+  const head = await f.control.projectHead(user, f.project.id);
   expect(head).toMatchObject({ committed_at: committedAt, uncommitted: 0 });
   expect(head).not.toHaveProperty('ahead_upstream');
   git(f.source, 'branch', 'upstream');
@@ -116,7 +116,7 @@ it('reports project commit time, changed paths and upstream distance only when a
   git(f.source, 'commit', '--quiet', '-am', 'Move main');
   git(f.source, 'mv', 'answer.txt', 'renamed answer.txt');
   writeFileSync(path.join(f.source, 'new\nfile.txt'), 'untracked\n');
-  expect(f.control.projectHead(user, f.project.id)).toMatchObject({
+  expect(await f.control.projectHead(user, f.project.id)).toMatchObject({
     ahead_upstream: 1,
     uncommitted: 2,
   });

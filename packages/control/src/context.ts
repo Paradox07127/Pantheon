@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readdirSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { constants, lstatSync, readdirSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import {
   credentialRole,
   requireThat,
@@ -26,7 +26,7 @@ import {
 } from '@pantheon/protocol';
 import type { Store, ArtifactFiles } from '@pantheon/store';
 import type { ControlOptions } from './index.js';
-import { runGit } from './git.js';
+import { runGit, type GitResult } from './git.js';
 import { introInstructions } from './project-intro-brief.js';
 import { baselineSkill } from './baseline-skill.js';
 import type { TraceIndex } from './trace-index.js';
@@ -408,11 +408,48 @@ export function rootOf(project: Project, paths: string[]): string | undefined {
   return paths.length > 0 && found.length === 1 ? found[0] : undefined;
 }
 
+const gitFolders = new Map<string, { identity: string; git: boolean }>();
+
+/** The root's real path, and the identity of it and its .git entry that keys the cached answer. */
+function folderIdentity(root: string): { real: string; identity: string } | undefined {
+  let real: string;
+  try {
+    real = realpathSync(root);
+  } catch {
+    return undefined;
+  }
+  const entry = (file: string) => {
+    const stat = lstatSync(file, { throwIfNoEntry: false });
+    return stat ? `${stat.dev}:${stat.ino}:${stat.mode & constants.S_IFMT}` : 'missing';
+  };
+  return { real, identity: `${entry(real)}|${entry(path.join(real, '.git'))}` };
+}
+
+function rememberGitFolder(folder: { real: string; identity: string }, result: GitResult): boolean {
+  const git =
+    result.exit_code === 0 && realpathSync(result.stdout.toString().trim()) === folder.real;
+  gitFolders.set(folder.real, { identity: folder.identity, git });
+  return git;
+}
+
 /** True only when the root is itself the top level of a git checkout. */
 export function gitFolder(root: string): boolean {
-  const result = runGit(root, ['rev-parse', '--show-toplevel']);
-  return (
-    result.exit_code === 0 && realpathSync(result.stdout.toString().trim()) === realpathSync(root)
+  const folder = folderIdentity(root);
+  if (!folder) return false;
+  const cached = gitFolders.get(folder.real);
+  if (cached?.identity === folder.identity) return cached.git;
+  return rememberGitFolder(folder, runGit(root, ['rev-parse', '--show-toplevel']));
+}
+
+/** gitFolder without blocking the event loop while git runs. */
+export async function gitFolderAsync(root: string): Promise<boolean> {
+  const folder = folderIdentity(root);
+  if (!folder) return false;
+  const cached = gitFolders.get(folder.real);
+  if (cached?.identity === folder.identity) return cached.git;
+  return rememberGitFolder(
+    folder,
+    await runGit(root, ['rev-parse', '--show-toplevel'], undefined, true),
   );
 }
 

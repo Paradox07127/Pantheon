@@ -385,11 +385,15 @@ it('counts only archived session worktrees on disk, caches their size, and prune
   expect(f.control.workspaceStale(user, f.project.id).size_bytes).toBeGreaterThan(0);
   const branches = git(f.source, 'show-ref', '--heads');
   git(f.source, 'worktree', 'lock', archivedWorkspace.path);
-  expect(f.call('workspace.prune_stale', { project_id: f.project.id })).toEqual({ removed: 0 });
+  expect(await f.call('workspace.prune_stale', { project_id: f.project.id })).toEqual({
+    removed: 0,
+  });
   expect(f.store.must<Workspace>('workspaces', archivedWorkspace.id).removed_at).toBeUndefined();
   expect(f.control.workspaceStale(user, f.project.id).count).toBe(1);
   git(f.source, 'worktree', 'unlock', archivedWorkspace.path);
-  expect(f.call('workspace.prune_stale', { project_id: f.project.id })).toEqual({ removed: 1 });
+  expect(await f.call('workspace.prune_stale', { project_id: f.project.id })).toEqual({
+    removed: 1,
+  });
   expect(existsSync(archivedWorkspace.path)).toBe(false);
   expect(existsSync(f.store.must<Workspace>('workspaces', active.workspace_id!).path)).toBe(true);
   expect(existsSync(unowned.path)).toBe(true);
@@ -419,7 +423,9 @@ it('keeps commits made on an archived detached worktree reachable after pruning 
     { ...current, state: 'closed', archived_at: '2026-11-13T00:00:00Z' },
     current.revision,
   );
-  expect(f.call('workspace.prune_stale', { project_id: f.project.id })).toEqual({ removed: 1 });
+  expect(await f.call('workspace.prune_stale', { project_id: f.project.id })).toEqual({
+    removed: 1,
+  });
   expect(existsSync(workspace.path)).toBe(false);
   expect(git(f.source, 'for-each-ref', '--contains', commit)).not.toBe('');
 });

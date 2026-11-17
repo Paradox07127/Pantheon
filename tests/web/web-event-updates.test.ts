@@ -18,6 +18,7 @@ import { useProjectQuery } from '@/data/project-read';
 import { useSessionGates, useSessionPreflight } from '@/data/session-panel';
 import { startSync, type DaemonEvent, type SyncView } from '@/data/sync';
 import { buildTranscript, type SessionTurn } from '@/data/transcript';
+import { useRepoWorkingDiff } from '@/data/repo-local';
 import { useProjectHead } from '@/data/runtime-models';
 import { useRunSpans, useSessionTrace, useTurnSteps } from '@/data/trace';
 import {
@@ -371,20 +372,28 @@ it('reads the whole session list again after a baseline is confirmed or the gate
   expect(reads).toEqual(['session.list', 'session.list', 'session.list']);
 });
 
-it('reads the diffs, the session list and the project head again when the window regains focus', async () => {
+it('reads the diffs, the session list, the project head and the local changes again when the window regains focus', async () => {
   answers['session.diff'] = { files: [], truncated: false };
   answers['session.turn_diff'] = { files: [], truncated: false };
   answers['project.head'] = { branch: 'main', sha: 'abc', subject: 'first' };
+  answers['repo.working_diff'] = { files: [] };
   mock.board = { ...mock.board, board: { cursor: 0, sessions: [], session_turns: [] } };
   const views = [
     mount(() => useSessionDiff('session-a')),
     mount(() => useTurnDiff('session-a', 'turn-a')),
     mount(() => useSessionList('project-a')),
     mount(() => useProjectHead('project-a')),
+    mount(() => useRepoWorkingDiff('project-a')),
   ];
   for (const h of views) await h.flush();
   const before = [...reads].sort();
-  expect(before).toEqual(['project.head', 'session.diff', 'session.list', 'session.turn_diff']);
+  expect(before).toEqual([
+    'project.head',
+    'repo.working_diff',
+    'session.diff',
+    'session.list',
+    'session.turn_diff',
+  ]);
   for (const listener of listeners.focus ?? []) listener();
   for (const h of views) {
     h.render();
@@ -496,33 +505,52 @@ function holdQueries() {
   return pending;
 }
 
-it('shows a slow read of the session diff that another read of it overtook in time', async () => {
+it('reads the session diff again after an event only once the read out answered', async () => {
   const pending = holdQueries();
   const h = mount(() => useSessionDiff('session-a'));
   await h.flush();
   await deliver(h, event(1, 'session.renamed', 'session-a'));
+  expect(reads).toEqual(['session.diff']);
+  pending[0]!({ ok: true, value: { files: [], truncated: false } });
+  await h.flush();
+  expect(h.value).toMatchObject({ data: { truncated: false }, loading: false });
+  await vi.advanceTimersByTimeAsync(500);
+  await h.flush();
   expect(reads).toEqual(['session.diff', 'session.diff']);
-  pending[0]!({ ok: true, value: { files: [], truncated: false } });
-  await h.flush();
-  expect(h.value).toMatchObject({ data: { truncated: false }, loading: false, refreshing: true });
+  expect(h.value).toMatchObject({ data: { truncated: false }, refreshing: true });
   pending[1]!({ ok: true, value: { files: [], truncated: true } });
   await h.flush();
   expect(h.value).toMatchObject({ data: { truncated: true }, loading: false });
 });
 
-it('keeps the newer session diff when an older read answers after it', async () => {
-  const pending = holdQueries();
-  const h = mount(() => useSessionDiff('session-a'));
+it('counts the gap between two session diff reads from when the first one answered', async () => {
+  const start = Date.now();
+  const sent: number[] = [];
+  (window as any).pantheon.query = vi.fn((method: string) => {
+    reads.push(method);
+    sent.push(Date.now() - start);
+    return new Promise((resolve) =>
+      setTimeout(() => resolve({ ok: true, value: { files: [], truncated: false } }), 1_000),
+    );
+  });
+  const h = mount(() => useSessionDiff('session-gap'));
   await h.flush();
-  await deliver(h, event(1, 'session.renamed', 'session-a'));
-  pending[1]!({ ok: true, value: { files: [], truncated: true } });
-  await h.flush();
-  pending[0]!({ ok: true, value: { files: [], truncated: false } });
-  await h.flush();
-  expect(h.value).toMatchObject({ data: { truncated: true }, loading: false });
+  mock.board = { ...mock.board, events: [event(1, 'session.renamed', 'session-gap')] };
+  h.render();
+  for (let elapsed = 50; elapsed <= 4_000; elapsed += 50) {
+    await vi.advanceTimersByTimeAsync(50);
+    if (elapsed === 2_600)
+      mock.board = {
+        ...mock.board,
+        events: [...mock.board.events, event(2, 'session.renamed', 'session-gap')],
+      };
+    h.render();
+    await h.flush();
+  }
+  expect(sent).toEqual([0, 1_500, 3_000]);
 });
 
-it('shows a slow project read that a board move overtook in time', async () => {
+it('reads the project head again after a repository event, once the read out answered', async () => {
   const pending = holdQueries();
   mock.board = {
     ...mock.board,
@@ -531,13 +559,19 @@ it('shows a slow project read that a board move overtook in time', async () => {
   };
   const h = mount(() => useProjectHead('project-a'));
   await h.flush();
-  mock.board = { ...mock.board, board: { ...mock.board.board, cursor: 2 }, changed: 2 };
+  mock.board = {
+    ...mock.board,
+    board: { ...mock.board.board, cursor: 2 },
+    changed: 2,
+    events: [event(2, 'session.merged', 'session-a')],
+  };
   h.render();
   await h.flush();
-  expect(reads).toEqual(['project.head', 'project.head']);
+  expect(reads).toEqual(['project.head']);
   pending[0]!({ ok: true, value: { branch: 'main', sha: 'abc', subject: 'first' } });
   await h.flush();
   expect(h.value.read).toEqual({ branch: 'main', sha: 'abc', subject: 'first' });
+  expect(reads).toEqual(['project.head', 'project.head']);
 });
 
 it('is not loading the project head while no project is open', async () => {

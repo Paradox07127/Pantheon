@@ -595,7 +595,7 @@ export function needsYou(
         let disabledReason: string | undefined;
         try {
           projectAccess(ctx, principal, session.project_id, 'session.merge');
-          requireMergeReady(ctx, session);
+          requireMergeReady(ctx, session, true);
         } catch (error) {
           if (!(error instanceof DomainError)) throw error;
           disabledReason = error.code;

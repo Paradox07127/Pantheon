@@ -17,7 +17,7 @@ import {
   recoverDiscardBackups,
   repoWorkingDiff,
 } from './repo-write.js';
-import { workspaceStale } from './workspace-stale.js';
+import { prepareStalePrune, workspaceStale } from './workspace-stale.js';
 import { assertMemoryFresh } from './memory.js';
 import {
   memoryRead,
@@ -102,11 +102,16 @@ import {
   projectBaselineRead,
   projectFactsRead,
 } from './baseline.js';
-import { changeStoryDiff, changeStoryList } from './change-story.js';
+import {
+  changeStoryDiff,
+  changeStoryList,
+  isPreparedChangeStory,
+  prepareChangeStory,
+} from './change-story.js';
 import { rangeStoryList } from './range-story.js';
 import { projectIntroRead } from './project-intro.js';
 import { filesList, filesRead, sessionToolImage, symbolsSearch } from './workspace-files.js';
-import { readTurnDiff } from './checkpoint.js';
+import { prepareRollback, readTurnDiff } from './checkpoint.js';
 import {
   addAttachment,
   filesSearch,
@@ -114,6 +119,7 @@ import {
   projectHead,
   sessionCreatePreview,
   prepareSessionModels,
+  prefetchMergeReads,
   prefetchWorktreeReads,
   projectTimeline,
   readSessionDiff,
@@ -558,6 +564,20 @@ export class Control extends EventEmitter {
       if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
       return prepareRepoWrite(this.ctx, principal, command).then(apply);
     }
+    // Their git runs outside the command's transaction.
+    if (command.type === 'session.rollback' || command.type === 'workspace.prune_stale') {
+      if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
+      const prepared = (command.type === 'session.rollback' ? prepareRollback : prepareStalePrune)(
+        this.ctx,
+        principal,
+        command,
+      );
+      return prepared instanceof Promise ? prepared.then(apply) : apply(prepared);
+    }
+    if (isPreparedChangeStory(command.type)) {
+      if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
+      return prepareChangeStory(this.ctx, principal, command).then(apply);
+    }
     if (command.type === 'session.reconnect') {
       if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
       userOnly(principal);
@@ -760,12 +780,20 @@ export class Control extends EventEmitter {
   sessionList(principal: Principal, projectId: string, readChanges: true | 'cached' = true) {
     return sessionList(this.ctx, principal, projectId, readChanges);
   }
-  /** Reads ahead asynchronously the worktrees the session list reads, of the project or of every summary project. */
+  /**
+   * Reads ahead asynchronously the worktrees the session list and the needs-you merge actions read,
+   * of the project or of every summary project.
+   */
   async prefetchWorktreeReads(principal: Principal, projectId?: string) {
     const projects = projectId
       ? [projectId]
       : summaryProjects(this.ctx, principal).map((project) => project.id);
-    await Promise.all(projects.map((id) => prefetchWorktreeReads(this.ctx, principal, id)));
+    await Promise.all(
+      projects.flatMap((id) => [
+        prefetchWorktreeReads(this.ctx, principal, id),
+        prefetchMergeReads(this.ctx, principal, id),
+      ]),
+    );
   }
   sessionDiff(principal: Principal, sessionId: string) {
     return readSessionDiff(this.ctx, principal, sessionId);

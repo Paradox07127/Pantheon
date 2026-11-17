@@ -134,8 +134,21 @@ function traversal(target: string): { links: string[]; real: string; stop?: stri
   return { links, real, stop };
 }
 
+// Git answers about configuration files, kept while every file they came from stays unchanged.
+const userConfigs = new Map<string, { stamps: Map<string, string>; files: string[] }>();
+const includes = new Map<string, { stamp: string; paths: string[] }>();
+
+function stamp(file: string): string {
+  const stat = statSync(file, { bigint: true, throwIfNoEntry: false });
+  return stat ? `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}` : '';
+}
+
 /** The global and system configuration files git reads for a session that runs with this home. */
 function userConfigFiles(home: string): string[] {
+  const key = `${home}\0${process.env.GIT_CONFIG_NOSYSTEM ?? ''}`,
+    cached = userConfigs.get(key);
+  if (cached && [...cached.stamps].every(([file, value]) => stamp(file) === value))
+    return cached.files;
   const listed = runGit('/', ['config', '--null', '--show-origin', '--list'], undefined, false, {
     env: {
       HOME: home,
@@ -152,7 +165,38 @@ function userConfigFiles(home: string): string[] {
           .filter((field, index) => index % 2 === 0 && field.startsWith('file:'))
           .map((field) => field.slice('file:'.length))
       : [];
-  return [...new Set([`${home}/.gitconfig`, `${home}/.config/git/config`, ...origins])];
+  const files = [...new Set([`${home}/.gitconfig`, `${home}/.config/git/config`, ...origins])];
+  if (listed.exit_code === 0)
+    userConfigs.set(key, { stamps: new Map(files.map((file) => [file, stamp(file)])), files });
+  return files;
+}
+
+/** The include paths a configuration file names, as written. */
+function includePaths(file: string): string[] {
+  const current = stamp(file),
+    cached = includes.get(file);
+  if (cached?.stamp === current) return cached.paths;
+  // Outside any checkout, so a commondir planted in one cannot make git refuse to read.
+  const listed = runGit('/', [
+    'config',
+    '--file',
+    file,
+    '--null',
+    '--get-regexp',
+    '^include(if\\..*)?\\.path$',
+  ]);
+  // Status 1 means no include; any other failure is not kept.
+  if (listed.exit_code !== 0 && listed.exit_code !== 1) return [];
+  const paths =
+    listed.exit_code === 0
+      ? listed.stdout
+          .toString()
+          .split('\0')
+          .filter(Boolean)
+          .map((entry) => entry.slice(entry.indexOf('\n') + 1))
+      : [];
+  includes.set(file, { stamp: current, paths });
+  return paths;
 }
 
 /**
@@ -174,18 +218,7 @@ function configFiles(roots: string[], home: string, files: string[]): string[] {
       key = `${folder}\0${real}`;
     if (seen.has(key) || !statSync(real, { throwIfNoEntry: false })?.isFile()) continue;
     seen.add(key);
-    // Outside any checkout, so a commondir planted in one cannot make git refuse to read.
-    const listed = runGit('/', [
-      'config',
-      '--file',
-      real,
-      '--null',
-      '--get-regexp',
-      '^include(if\\..*)?\\.path$',
-    ]);
-    if (listed.exit_code !== 0) continue;
-    for (const entry of listed.stdout.toString().split('\0').filter(Boolean)) {
-      const value = entry.slice(entry.indexOf('\n') + 1);
+    for (const value of includePaths(real))
       pending.push(
         value.startsWith('~/')
           ? `${home}/${value.slice(2)}`
@@ -193,7 +226,6 @@ function configFiles(roots: string[], home: string, files: string[]): string[] {
             ? value
             : `${folder}/${value}`,
       );
-    }
   }
   return [...found];
 }

@@ -33,6 +33,7 @@ import { inside, revision, userOnly, type ControlContext, type Handler } from '.
 import { runGit } from './git.js';
 import { BOUND, commitOf, git, projectRoot, relativeFile } from './repo.js';
 import { numstatFiles, PATCH_BOUND } from './source-git.js';
+import { onWslAutomount } from './wsl-mount.js';
 
 const UNDO_MS = 10 * 60 * 1000;
 const COMMIT_TIMEOUT_MS = 120000;
@@ -431,7 +432,26 @@ function userGit(
   return new Promise((resolve) => {
     const child = execFile(
       'git',
-      [LITERAL, ...args],
+      [
+        // Automatic maintenance after a commit would repack the user's repository while they wait.
+        '-c',
+        'maintenance.auto=false',
+        '-c',
+        'gc.auto=0',
+        // Windows git checks out CRLF and writes stat data drvfs reports differently.
+        ...(onWslAutomount(root)
+          ? [
+              '-c',
+              'core.autocrlf=input',
+              '-c',
+              'core.checkStat=minimal',
+              '-c',
+              'core.trustctime=false',
+            ]
+          : []),
+        LITERAL,
+        ...args,
+      ],
       {
         cwd: root,
         // Signing and hooks may need the user's ssh and gpg agents.
@@ -655,26 +675,60 @@ export async function repoWorkingDiff(
   // It runs the user's own git, outside every session sandbox.
   userOnly(p);
   const root = projectRoot(ctx, p, projectId);
-  const [head, branch, upstream, statuses, numstat, untracked] = await Promise.all([
+  const tracked = (...patch: string[]) => [
+    'diff',
+    ...PLAIN_DIFF,
+    '--raw',
+    '--numstat',
+    ...patch,
+    '-z',
+    '--find-renames',
+    'HEAD',
+    '--',
+  ];
+  const [head, branch, upstream, whole, untracked] = await Promise.all([
     userRead(root, ['rev-parse', '--verify', 'HEAD']),
     optional(root, ['symbolic-ref', '--short', '-q', 'HEAD']),
     upstreamOf(root),
     // The user's git, so clean filters and autocrlf compare the worktree as a commit would.
-    userRead(root, ['diff', ...PLAIN_DIFF, '--name-status', '-z', '--find-renames', 'HEAD', '--']),
-    userRead(root, ['diff', ...PLAIN_DIFF, '--numstat', '-z', '--find-renames', 'HEAD', '--']),
+    userGit(root, tracked('-p')),
     userRead(root, ['ls-files', '--others', '--exclude-standard', '-z']),
   ]);
+  let patch = '',
+    truncated = false;
+  let output = whole.stdout.toString();
+  if (whole.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+    output = await userRead(root, tracked());
+    truncated = true;
+  } else requireThat(whole.ok, 'workspace_read_failed', whole.output);
+  // Raw entries, then numstat entries, then a NUL and the patch.
+  const tokens = output.split('\0');
+  let index = 0;
+  const raw: { letter: string; old_path: string | undefined; file: string }[] = [];
+  for (; tokens[index]?.startsWith(':'); index++) {
+    const letter = tokens[index]!.split(' ')[4]![0]!;
+    const old_path = letter === 'R' ? tokens[++index]! : undefined;
+    raw.push({ letter, old_path, file: tokens[++index]! });
+  }
+  const numstatStart = index;
+  for (; /^(\d+|-)\t(\d+|-)\t/.test(tokens[index] ?? ''); index++)
+    // A rename leaves the path empty and is followed by the old and the new path.
+    if (/^(\d+|-)\t(\d+|-)\t$/.test(tokens[index]!)) index += 2;
+  const numstat = tokens.slice(numstatStart, index).join('\0');
+  if (!truncated) {
+    patch = tokens.slice(index + 1).join('\0');
+    // As a patch run bounded at PATCH_BOUND would have been cut off.
+    if (Buffer.byteLength(patch) > PATCH_BOUND) {
+      patch = '';
+      truncated = true;
+    }
+  }
   const counts = new Map(
     numstatFiles(Buffer.from(numstat)).map((file) => [file.path, file] as const),
   );
   const files: RepoWorkingDiffFile[] = [];
-  const tokens = statuses.split('\0');
-  for (let index = 0; index < tokens.length; index++) {
-    const letter = tokens[index]![0];
-    if (!letter) continue;
-    const old_path = letter === 'R' ? tokens[++index]! : undefined,
-      file = tokens[++index]!,
-      counted = counts.get(file);
+  for (const { letter, old_path, file } of raw) {
+    const counted = counts.get(file);
     files.push({
       path: file,
       ...(letter === 'R' ? { old_path } : {}),
@@ -690,8 +744,6 @@ export async function repoWorkingDiff(
       deletions: counted ? counted.deletions : null,
     });
   }
-  let patch = '',
-    truncated = false;
   const append = async (args: string[], env?: NodeJS.ProcessEnv) => {
     const remaining = PATCH_BOUND - Buffer.byteLength(patch);
     if (truncated || remaining <= 0) return void (truncated = true);
@@ -700,7 +752,6 @@ export async function repoWorkingDiff(
     else if (result.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') truncated = true;
     else throw new DomainError('workspace_read_failed', result.output);
   };
-  await append(['diff', ...PLAIN_DIFF, '--find-renames', 'HEAD', '--']);
   if (untracked) {
     // An index holding only the untracked files, as intent to add, diffs them all as new files in one run.
     const scratch = mkdtempSync(path.join(tmpdir(), 'pantheon-untracked-'));

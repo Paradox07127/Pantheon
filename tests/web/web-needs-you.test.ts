@@ -37,6 +37,7 @@ describe('refetch trigger', () => {
   });
 
   it.each([
+    'workspace.repository_changed',
     'lead.question_asked',
     'lead.question_answered',
     'task.reported',

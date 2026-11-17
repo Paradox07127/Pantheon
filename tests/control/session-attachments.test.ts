@@ -181,7 +181,7 @@ it('refuses attachments for a session without a worktree', () => {
   );
 });
 
-it('ranks file name matches, then path matches, then ordered characters, shorter paths first', () => {
+it('ranks file name matches, then path matches, then ordered characters, shorter paths first', async () => {
   const f = workbenchFixture();
   const files = [
     'src/app.ts',
@@ -201,15 +201,15 @@ it('ranks file name matches, then path matches, then ordered characters, shorter
   git(f.source, 'commit', '--quiet', '-m', 'Add files');
   writeFileSync(path.join(f.source, 'notes.txt'), 'untracked\n');
   const search = (q: string) => f.control.filesSearch(user, f.project.id, undefined, q);
-  expect(search('APP')).toEqual([
+  expect(await search('APP')).toEqual([
     'src/app.ts',
     'test/unit/app.test.ts',
     'src/apple/x.ts',
     'docs/api-plan.md',
   ]);
-  expect(search('a.ts')).not.toContain('out/a.ts');
-  expect(search('notes')).toEqual(['notes.txt']);
-  const all = search('');
+  expect(await search('a.ts')).not.toContain('out/a.ts');
+  expect(await search('notes')).toEqual(['notes.txt']);
+  const all = await search('');
   expect(all).toHaveLength(50);
   expect(all).not.toContain('out/a.ts');
 });

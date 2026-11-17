@@ -261,7 +261,10 @@ export function workspaceReadAccess(
     'scope_violation',
     'Workspace Git metadata is not local',
   );
-  const git = (args: string[], bound: { max_buffer: number; timeout_ms: number }) =>
+  const git = (
+    args: string[],
+    bound: { max_buffer: number; timeout_ms: number; env?: NodeJS.ProcessEnv },
+  ) =>
     runGit(workspace.path, args, undefined, true, {
       ...bound,
       work_tree: workspace.path,

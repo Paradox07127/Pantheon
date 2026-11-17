@@ -1,9 +1,12 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import type { Principal, Session, Workspace } from '@pantheon/domain';
+import type { SessionDiff } from '@pantheon/protocol';
+import { numstatFiles } from '../../packages/control/dist/source-git.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
-import { git, workbenchFixture } from './workbench-fixture.js';
+import { git, gitRuns, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
 
@@ -149,6 +152,138 @@ it('stops reading untracked files one by one past the diff bound and leaves thei
   });
   expect(diff).toMatchObject({ patch: null, truncated: true });
 }, 120000);
+
+/** Output of a git run that may exit 1, as a no-index diff of differing files does. */
+const gitOutput = (cwd: string, ...args: string[]) =>
+  spawnSync('git', args, {
+    cwd,
+    env: { PATH: process.env.PATH, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    encoding: 'buffer',
+    maxBuffer: 64 * 1024 * 1024,
+  }).stdout;
+
+/** The files and patch of a worktree diff that reads each untracked file with its own no-index diffs. */
+function perFileDiff(work: string, base: string) {
+  const options = ['--no-ext-diff', '--no-textconv'];
+  const files: SessionDiff['files'] = numstatFiles(
+    gitOutput(work, 'diff', '--numstat', '-z', ...options, '--find-renames', base, '--'),
+  ).map((file) => ({ ...file, untracked: false }));
+  let patch = gitOutput(work, 'diff', ...options, '--find-renames', base, '--').toString();
+  const untracked = gitOutput(work, 'ls-files', '--others', '--exclude-standard', '-z')
+    .toString()
+    .split('\0')
+    .filter(Boolean);
+  for (const [index, file] of untracked.entries()) {
+    if (index >= 200) {
+      files.push({ path: file, additions: null, deletions: null, untracked: true });
+      continue;
+    }
+    const noIndex = (...extra: string[]) =>
+      gitOutput(work, 'diff', '--no-index', ...extra, ...options, '--', '/dev/null', file);
+    const [stat] = numstatFiles(noIndex('--numstat', '-z'));
+    files.push({
+      path: file,
+      additions: stat ? stat.additions : 0,
+      deletions: stat ? stat.deletions : 0,
+      untracked: true,
+    });
+    patch += noIndex().toString();
+  }
+  const truncated = untracked.length > 200 || Buffer.byteLength(patch) > 1024 * 1024;
+  return { files, patch: truncated ? null : patch, truncated };
+}
+
+it.each([
+  {
+    name: 'text, binary, empty and nested files',
+    write: (work: string) => {
+      writeFileSync(path.join(work, 'answer.txt'), 'changed\n');
+      writeFileSync(path.join(work, 'notes.txt'), 'one\ntwo\n');
+      writeFileSync(path.join(work, 'binary.bin'), 'a\0b\nc\n');
+      writeFileSync(path.join(work, 'empty.txt'), '');
+      mkdirSync(path.join(work, 'nested dir'));
+      writeFileSync(path.join(work, 'nested dir', 'last line.txt'), 'one\ntwo');
+    },
+  },
+  {
+    name: 'more untracked files than the diff bound',
+    write: (work: string) => {
+      mkdirSync(path.join(work, 'many'));
+      for (let index = 0; index <= 200; index++)
+        writeFileSync(path.join(work, 'many', `file-${String(index).padStart(3, '0')}.txt`), '1\n');
+    },
+  },
+  {
+    name: 'untracked files past the patch bound',
+    write: (work: string) => {
+      writeFileSync(path.join(work, 'large.txt'), 'a line of the large file\n'.repeat(50_000));
+      writeFileSync(path.join(work, 'small.txt'), 'small\n');
+    },
+  },
+])(
+  'diffs untracked $name as a no-index diff of each file does',
+  async ({ write }) => {
+    const f = workbenchFixture();
+    const { session, workspace } = await idleSession(f);
+    write(workspace.path);
+    const diff = await f.control.sessionDiff(user, session.id);
+    expect(diff).toEqual({
+      session_id: session.id,
+      base_sha: workspace.base_sha,
+      head_sha: git(workspace.path, 'rev-parse', 'HEAD'),
+      ...perFileDiff(workspace.path, workspace.base_sha!),
+    });
+  },
+  120000,
+);
+
+it('diffs any number of untracked files with the same git runs', async () => {
+  const f = workbenchFixture();
+  const few = await idleSession(f),
+    many = await idleSession(f);
+  for (const [{ workspace }, count] of [
+    [few, 2],
+    [many, 12],
+  ] as const)
+    for (let index = 0; index < count; index++)
+      writeFileSync(path.join(workspace.path, `new-${index}.txt`), `${index}\n`);
+  // The session search index runs git in the background without runGit's options, and runGit
+  // probes each repository's config on its first calls, as many times as those calls overlap.
+  const probe = /(^| )(config --null |rev-parse --path-format=absolute )/;
+  const runs = async ({ session }: typeof few) =>
+    (await gitRuns(() => f.control.sessionDiff(user, session.id))).filter(
+      (run) => run.startsWith('-c core.fsmonitor=false ') && !probe.test(run),
+    ).length;
+  expect(await runs(many)).toBe(await runs(few));
+});
+
+it('reads the session diff once until the session has new activity', async () => {
+  const f = workbenchFixture();
+  const { session, workspace } = await idleSession(f);
+  changeWorktree(workspace.path);
+  vi.useFakeTimers({ toFake: ['Date'] });
+  onTestFinished(() => void vi.useRealTimers());
+  const read = () => f.control.sessionDiff(user, session.id);
+  const heads = (runs: string[]) => runs.filter((run) => run.endsWith(' rev-parse HEAD')).length;
+  const diffs: SessionDiff[] = [];
+  const first = await gitRuns(async () => {
+    diffs.push(...(await Promise.all([read(), read()])), await read());
+  });
+  expect(heads(first)).toBe(1);
+  expect(diffs[1]).toEqual(diffs[0]);
+  expect(diffs[2]).toEqual(diffs[0]);
+  writeFileSync(path.join(workspace.path, 'later.txt'), 'later\n');
+  vi.setSystemTime(Date.now() + 1);
+  f.store.event(
+    'session.gate_checked',
+    f.store.must<Session>('sessions', session.id),
+    f.project.id,
+    { commit: 'head', results: [] },
+  );
+  const second = await gitRuns(async () => diffs.push(await read()));
+  expect(heads(second)).toBe(1);
+  expect(diffs[3]!.files.map((file) => file.path)).toContain('later.txt');
+});
 
 it('discards an idle session and removes its worktree', async () => {
   const f = workbenchFixture();

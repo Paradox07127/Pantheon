@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import {
   hash,
   type BoardPlan,
@@ -143,6 +143,14 @@ it('lists a blocked merge with its event time and the merge handler retry precon
   const event = blockMerge(f, session.id);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   const items = () => f.control.needsYou(user, f.project.id).items;
+  // needsYou shows the repository states the last read ahead found; each read is kept two seconds.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  onTestFinished(() => void vi.useRealTimers());
+  const readAhead = async () => {
+    vi.setSystemTime(Date.now() + 2000);
+    await f.control.prefetchWorktreeReads(user, f.project.id);
+  };
+  await readAhead();
   expect(items()).toEqual([
     {
       source: { table: 'sessions', id: session.id, revision: current(f, session.id).revision },
@@ -155,11 +163,13 @@ it('lists a blocked merge with its event time and the merge handler retry precon
     },
   ]);
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'changed\n');
+  await readAhead();
   expect(items()[0]!.actions).toEqual([
     { command: 'session.merge', allowed: false, disabled_reason: 'uncommitted_changes' },
   ]);
   git(workspace.path, 'add', '.');
   git(workspace.path, 'commit', '--quiet', '-m', 'Change answer');
+  await readAhead();
   const cursor = f.store.cursor();
   expect(items()[0]!.actions).toEqual([{ command: 'session.merge', allowed: true }]);
   expect(f.store.cursor()).toBe(cursor);

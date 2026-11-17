@@ -34,7 +34,7 @@ import {
 } from './context.js';
 import { sessionDefaults } from './user-config.js';
 import { runGit } from './git.js';
-import { sessionGoal, sessionRange, type DiffRange } from './landing-diff.js';
+import { sessionGoal, sessionRange, sessionRangeAsync, type DiffRange } from './landing-diff.js';
 import { confirmTermination } from './process.js';
 import { closeReconciledSession } from './session.js';
 import { assertManagedLocation } from './protection.js';
@@ -619,72 +619,106 @@ export function recordFinding(
     .findings.find((item) => item.id === finding.id);
 }
 
-/**
- * Marks stale the open, unresolved findings on the session's reviews whose quote is no longer in
- * the diff of its current range, once its head moved past the reviewed range. The caller owns the
- * transaction.
- */
-export function markStaleFindings(ctx: ControlContext, session: Session): void {
-  if (session.review_id) return;
-  const reviews = ctx.store
+const openFinding = (finding: ReviewFinding) => finding.status === 'open' && !finding.resolution;
+
+const reviewsWithOpenFindings = (ctx: ControlContext, sessionId: string) =>
+  ctx.store
     .list<Review>('reviews')
     .filter(
       (review) =>
-        review.session_id === session.id &&
-        review.range &&
-        review.findings.some((finding) => finding.status === 'open' && !finding.resolution),
+        review.session_id === sessionId && review.range && review.findings.some(openFinding),
     );
-  if (!reviews.length) return;
+
+/**
+ * Marks stale the open, unresolved findings on the session's reviews whose quote is no longer in
+ * the diff of its current range, once its head moved past the reviewed range. Git runs in the
+ * background, so the marks come later, in a transaction of their own.
+ */
+export function markStaleFindings(ctx: ControlContext, session: Session): void {
+  if (session.review_id || !reviewsWithOpenFindings(ctx, session.id).length) return;
+  const work: Promise<void> = staleFindings(ctx, session).finally(() =>
+    ctx.completions.delete(work),
+  );
+  ctx.completions.add(work);
+}
+
+/** The files open findings name as `path:line`; undefined when one names none, so all are read. */
+function findingFiles(reviews: Review[]): string[] | undefined {
+  const files = new Set<string>();
+  for (const finding of reviews.flatMap((review) => review.findings.filter(openFinding))) {
+    const place = /^(.+?):(\d+)(?:-\d+)?$/.exec(finding.location);
+    if (!place) return undefined;
+    files.add(place[1]!);
+  }
+  return [...files];
+}
+
+async function staleFindings(ctx: ControlContext, session: Session): Promise<void> {
   let range: DiffRange, source: string;
   try {
-    range = sessionRange(ctx, session);
+    range = await sessionRangeAsync(ctx, session);
     source = checkedPath(
       ctx,
       ctx.store.must<Project>('projects', session.project_id),
       range.source,
     );
   } catch (error) {
-    // This runs while the turn's end is recorded: with no range to read, the findings stay as they are.
+    // With no range to read, the findings stay as they are.
     if (error instanceof DomainError) return;
     throw error;
   }
-  let changes: Buffer | undefined;
-  for (const review of reviews) {
-    if (review.range!.to_sha === range.to_sha) continue;
-    if (!changes) {
-      const diff = runGit(source, [
-        'diff',
-        '--no-color',
-        '--no-ext-diff',
-        range.from_sha,
-        range.to_sha,
-      ]);
-      if (diff.exit_code !== 0) return;
-      changes = diff.stdout;
+  const moved = reviewsWithOpenFindings(ctx, session.id).filter(
+    (review) => review.range!.to_sha !== range.to_sha,
+  );
+  if (!moved.length) return;
+  // A finding recorded meanwhile may name a file this diff leaves out; its own recording checks it.
+  const checked = new Set(
+    moved.flatMap((review) => review.findings.filter(openFinding).map((finding) => finding.id)),
+  );
+  const files = findingFiles(moved);
+  const diff = await runGit(
+    source,
+    [
+      '--literal-pathspecs',
+      'diff',
+      '--no-color',
+      '--no-ext-diff',
+      range.from_sha,
+      range.to_sha,
+      ...(files ? ['--', ...files] : []),
+    ],
+    undefined,
+    true,
+  );
+  if (diff.exit_code !== 0 || ctx.closing) return;
+  ctx.store.transaction(() => {
+    for (const { id: reviewId } of moved) {
+      const review = ctx.store.must<Review>('reviews', reviewId);
+      const stale = review.findings.filter(
+        (finding) =>
+          checked.has(finding.id) &&
+          openFinding(finding) &&
+          !diff.stdout.includes(Buffer.from(finding.quote)),
+      );
+      if (!stale.length) continue;
+      const next = ctx.store.update<Review>(
+        'reviews',
+        {
+          ...review,
+          findings: review.findings.map((finding) =>
+            stale.includes(finding) ? { ...finding, status: 'stale' as const } : finding,
+          ),
+        },
+        review.revision,
+      );
+      for (const finding of stale)
+        ctx.store.event('review.finding_marked_stale', next, review.project_id, {
+          finding_id: finding.id,
+          to_sha: range.to_sha,
+        });
     }
-    const stale = review.findings.filter(
-      (finding) =>
-        finding.status === 'open' &&
-        !finding.resolution &&
-        !changes!.includes(Buffer.from(finding.quote)),
-    );
-    if (!stale.length) continue;
-    const next = ctx.store.update<Review>(
-      'reviews',
-      {
-        ...review,
-        findings: review.findings.map((finding) =>
-          stale.includes(finding) ? { ...finding, status: 'stale' as const } : finding,
-        ),
-      },
-      review.revision,
-    );
-    for (const finding of stale)
-      ctx.store.event('review.finding_marked_stale', next, review.project_id, {
-        finding_id: finding.id,
-        to_sha: range.to_sha,
-      });
-  }
+  });
+  ctx.changed();
 }
 
 export function settleReview(ctx: ControlContext, reviewId: string, recovering = false): void {

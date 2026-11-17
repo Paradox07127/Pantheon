@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { TraceIndex } from '@pantheon/control';
@@ -216,5 +226,47 @@ describe('import candidates', () => {
     await expect(fx.f.control.importableSessions(user, 'no-such-project')).rejects.toMatchObject({
       code: 'not_found',
     });
+  });
+
+  it('asks git about at most four session folders at a time', async () => {
+    const fx = historyFixture();
+    const folders = Array.from({ length: 8 }, (_, n) => {
+      const folder = path.join(fx.f.projectRoot, `area-${n}`);
+      mkdirSync(folder);
+      fx.claude(folder, fx.now - HOUR_MS);
+      return folder;
+    });
+    await fx.indexed(() => importCandidates(fx.ctx, []));
+    const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim(),
+      bin = path.join(fx.homes, 'bin'),
+      running = path.join(fx.homes, 'running'),
+      peaks = path.join(fx.homes, 'peaks.log');
+    mkdirSync(bin);
+    mkdirSync(running);
+    writeFileSync(peaks, '');
+    writeFileSync(
+      path.join(bin, 'git'),
+      [
+        '#!/bin/sh',
+        `touch '${running}/'$$`,
+        `ls '${running}' | wc -l >> '${peaks}'`,
+        'sleep 0.3',
+        `rm -f '${running}/'$$`,
+        `exec '${real}' "$@"`,
+        '',
+      ].join('\n'),
+    );
+    chmodSync(path.join(bin, 'git'), 0o755);
+    const PATH = process.env.PATH;
+    process.env.PATH = `${bin}:${PATH}`;
+    try {
+      const sessions = await fx.f.control.importableSessions(user, fx.f.project.id);
+      expect(sessions.map((session) => session.cwd).sort()).toEqual(folders.sort());
+    } finally {
+      process.env.PATH = PATH;
+    }
+    const counts = readFileSync(peaks, 'utf8').split('\n').filter(Boolean).map(Number);
+    expect(counts.length).toBeGreaterThanOrEqual(folders.length);
+    expect(Math.max(...counts)).toBeLessThanOrEqual(4);
   });
 });

@@ -1,6 +1,17 @@
-import { chmodSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import type {
   AgentEventSink,
   BoardPlan,
@@ -10,7 +21,28 @@ import type {
   SessionTurn,
 } from '@pantheon/domain';
 import { eventually, user } from '../helpers.js';
+import { gitFolder, type ControlContext } from '../../packages/control/dist/context.js';
+import { finishWriteAudit, startWriteAudit } from '../../packages/control/dist/non-writer-audit.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
+
+/** Puts a git first on PATH that logs each call's arguments and takes a second for status. */
+function slowGit() {
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'pantheon-slow-git-'));
+  const log = path.join(directory, 'calls.log');
+  writeFileSync(
+    path.join(directory, 'git'),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nfor arg in "$@"; do [ "$arg" = status ] && sleep 1; done\nexec '${real}' "$@"\n`,
+    { mode: 0o755 },
+  );
+  const previous = process.env.PATH;
+  process.env.PATH = `${directory}${path.delimiter}${previous}`;
+  onTestFinished(() => {
+    process.env.PATH = previous;
+    rmSync(directory, { recursive: true, force: true });
+  });
+  return () => (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []);
+}
 
 async function auditingSession(kind: 'plan' | 'text' | 'review' | 'read-only' = 'plan') {
   const f = workbenchFixture();
@@ -403,4 +435,35 @@ it('snapshots before runtime startup and skips writer turns after plan mode ends
     );
   expect(snapshots).toHaveLength(1);
   expect(git(f.source, 'status', '--porcelain')).toBe('');
+});
+
+it('keeps answering other work while the audit waits on git status', async () => {
+  const f = await auditingSession();
+  const ctx = { store: f.store } as ControlContext;
+  slowGit();
+  for (const audit of [
+    () => startWriteAudit(ctx, f.spec, 'a later turn', true),
+    () => finishWriteAudit(ctx, f.session.id),
+  ]) {
+    const order: string[] = [];
+    const timer = new Promise<void>((resolve) =>
+      setTimeout(() => resolve(void order.push('timer')), 50),
+    );
+    await audit();
+    order.push('audit');
+    await timer;
+    expect(order).toEqual(['timer', 'audit']);
+  }
+});
+
+it('asks git once per root until its .git entry changes', () => {
+  const calls = slowGit();
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-git-folder-'));
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+  const lookups = () => calls().filter((call) => call.endsWith(' rev-parse --show-toplevel'));
+  expect([gitFolder(root), gitFolder(root)]).toEqual([false, false]);
+  expect(lookups()).toHaveLength(1);
+  git(root, 'init', '--quiet');
+  expect(gitFolder(root)).toBe(true);
+  expect(lookups()).toHaveLength(2);
 });

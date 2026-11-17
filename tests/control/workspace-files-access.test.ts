@@ -176,9 +176,15 @@ it('lets a task worker search only its own worktree for file names', async () =>
   const otherWorkspace = await awaitWorkspaceReady(f.control, other.workspace_id!);
   writeFileSync(path.join(otherWorkspace.path, 'theirs.ts'), 'export {};');
   const worker = workerOf(f, own);
-  expect(() => f.control.filesSearch(worker, f.project.id, other.id, 'theirs')).toThrow(denied);
-  expect(() => f.control.filesSearch(worker, f.project.id, undefined, 'answer')).toThrow(denied);
-  expect(f.control.filesSearch(user, f.project.id, other.id, 'theirs')).toContain('theirs.ts');
+  await expect(f.control.filesSearch(worker, f.project.id, other.id, 'theirs')).rejects.toThrow(
+    denied,
+  );
+  await expect(f.control.filesSearch(worker, f.project.id, undefined, 'answer')).rejects.toThrow(
+    denied,
+  );
+  expect(await f.control.filesSearch(user, f.project.id, other.id, 'theirs')).toContain(
+    'theirs.ts',
+  );
 });
 
 it('refuses a protected file reached by swapping a checked folder for a link while it opens', async () => {

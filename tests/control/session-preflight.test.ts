@@ -67,7 +67,7 @@ function gateChecked(
 it('blocks a session with no new commits', async () => {
   const f = workbenchFixture();
   const { session } = await idleSession(f);
-  expect(f.control.sessionPreflight(user, session.id)).toEqual({
+  expect(await f.control.sessionPreflight(user, session.id)).toEqual({
     target_branch: 'main',
     source_root: f.source,
     commit_count: 0,
@@ -86,7 +86,7 @@ it('blocks uncommitted worktree changes and counts only committed changes', asyn
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   writeFileSync(path.join(workspace.path, 'untracked.txt'), 'uncommitted\n');
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     commit_count: 1,
     files_changed: 1,
     worktree_clean: false,
@@ -101,12 +101,12 @@ it('blocks edited tracked files in the source folder but not untracked ones', as
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   writeFileSync(path.join(f.source, 'source-only.txt'), 'untracked source file\n');
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     source_clean: true,
     can_merge: true,
   });
   writeFileSync(path.join(f.source, 'answer.txt'), 'edited in the source folder\n');
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     target_branch: 'main',
     source_root: f.source,
     worktree_clean: true,
@@ -121,7 +121,7 @@ it('blocks a detached source repository and reports no target branch', async () 
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   git(f.source, 'checkout', '--quiet', '--detach', 'HEAD');
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     target_branch: null,
     conflicts: { state: 'unknown' },
     source_root: f.source,
@@ -136,13 +136,13 @@ it('blocks a source repository that checked out another branch than the session 
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   git(f.source, 'checkout', '--quiet', '-b', 'release');
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     target_branch: 'release',
     can_merge: false,
     blocked_reason: 'target_branch_changed',
   });
   git(f.source, 'checkout', '--quiet', 'main');
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     target_branch: 'main',
     can_merge: true,
   });
@@ -171,11 +171,11 @@ it('allows a clean session whose configured gates have never run', async () => {
   const { session, workspace } = await idleSession(f);
   setGate(f);
   commit(workspace.path, 'answer.txt', 'unchecked\n');
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     gate: { configured_total: 2, last: 'none' },
     can_merge: true,
   });
-  expect(f.control.sessionPreflight(user, session.id)).not.toHaveProperty('blocked_reason');
+  expect(await f.control.sessionPreflight(user, session.id)).not.toHaveProperty('blocked_reason');
 });
 
 it('allows a clean session with a gate checked on an older commit', async () => {
@@ -185,7 +185,7 @@ it('allows a clean session with a gate checked on an older commit', async () => 
   const checked = commit(workspace.path, 'answer.txt', 'checked\n');
   gateChecked(f, session, checked, [{ exit_code: 0, timed_out: false }]);
   commit(workspace.path, 'answer.txt', 'newer\n');
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     commit_count: 2,
     files_changed: 1,
     gate: { configured_total: 2, last: 'stale' },
@@ -214,7 +214,7 @@ it('previews a clean session with a passed gate without changing repositories or
   const sourceHead = git(f.source, 'rev-parse', 'HEAD'),
     cursor = f.store.cursor(),
     pending = f.store.pending();
-  expect(f.control.sessionPreflight(user, session.id)).toEqual({
+  expect(await f.control.sessionPreflight(user, session.id)).toEqual({
     target_branch: 'destination',
     source_root: f.source,
     commit_count: 3,
@@ -243,7 +243,7 @@ it.each([
   const head = commit(workspace.path, 'answer.txt', 'committed\n');
   // Only the first command ran; configured_total still counts both commands.
   gateChecked(f, session, head, [result]);
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     gate: { configured_total: 2, last: 'failed' },
     can_merge: true,
   });
@@ -262,7 +262,7 @@ it.skipIf(insideSandbox)(
       () => f.control.tick(),
       10000,
     );
-    expect(f.control.sessionPreflight(user, session.id).gate.last).toBe('passed');
+    expect((await f.control.sessionPreflight(user, session.id)).gate.last).toBe('passed');
     expect(f.list().find((listed) => listed.id === session.id)?.gate?.state).toBe('passed');
 
     f.call<Project>(
@@ -277,7 +277,7 @@ it.skipIf(insideSandbox)(
       },
       f.store.must<Project>('projects', f.project.id).revision,
     );
-    expect(f.control.sessionPreflight(user, session.id).gate.last).toBe('stale');
+    expect((await f.control.sessionPreflight(user, session.id)).gate.last).toBe('stale');
     expect(f.list().find((listed) => listed.id === session.id)?.gate?.state).toBe('stale');
   },
 );
@@ -290,7 +290,7 @@ it.each<Partial<Session>>([
   const f = workbenchFixture();
   const { session } = await idleSession(f);
   f.store.update<Session>('sessions', { ...session, ...fields }, session.revision);
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     can_merge: false,
     blocked_reason: 'resource_busy',
   });
@@ -301,7 +301,7 @@ it('blocks a session while its gates are running', async () => {
   const { session } = await idleSession(f);
   setGate(f);
   f.call('session.gates.run', { session_id: session.id }, session.revision);
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     can_merge: false,
     blocked_reason: 'resource_busy',
   });
@@ -311,7 +311,7 @@ it.each(['closed', 'reconciling'] as const)('blocks a session that is %s', async
   const f = workbenchFixture();
   const { session } = await idleSession(f);
   f.store.update<Session>('sessions', { ...session, state }, session.revision);
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     can_merge: false,
     blocked_reason: 'invalid_state',
   });
@@ -327,13 +327,13 @@ it('requires project read access and rejects a session without a worktree', asyn
     state: 'open',
     turn_count: 0,
   });
-  expect(() =>
+  await expect(
     f.control.sessionPreflight(
       { id: 'outsider', role: 'planner', project_id: 'another-project' },
       session.id,
     ),
-  ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
-  expect(() => f.control.sessionPreflight(user, session.id)).toThrow(
+  ).rejects.toThrow(expect.objectContaining({ code: 'permission_denied' }));
+  await expect(f.control.sessionPreflight(user, session.id)).rejects.toThrow(
     expect.objectContaining({ code: 'invalid_state' }),
   );
 });
@@ -344,7 +344,7 @@ it('previews conflicting commits without changing either checkout or merge eligi
   const head = commit(workspace.path, 'answer.txt', 'session change\n');
   const target = commit(f.source, 'answer.txt', 'target change\n');
   const cursor = f.store.cursor();
-  expect(f.control.sessionPreflight(user, session.id)).toMatchObject({
+  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     conflicts: { state: 'conflicts', files: ['answer.txt'] },
     can_merge: true,
   });
@@ -368,5 +368,7 @@ it('reports unknown conflicts when merge-tree does not support write-tree', asyn
       };
     return run(...args);
   }) as typeof run);
-  expect(f.control.sessionPreflight(user, session.id).conflicts).toEqual({ state: 'unknown' });
+  expect((await f.control.sessionPreflight(user, session.id)).conflicts).toEqual({
+    state: 'unknown',
+  });
 });

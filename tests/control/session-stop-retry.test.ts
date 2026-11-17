@@ -104,6 +104,9 @@ function open(f: ReturnType<typeof fixture>) {
   });
 }
 
+/** A tick starts stop retries without waiting for them, and a retry's write audit runs git. */
+const retries = (f: ReturnType<typeof fixture>) => Promise.all([...f.control['ctx'].completions]);
+
 function send(f: ReturnType<typeof fixture>, session: Session) {
   return f.call<SessionTurn>(
     'session.send',
@@ -166,6 +169,7 @@ it('spaces stop retries without rewriting the session and records confirmation o
     await eventually(() => f.store.must<Session>('sessions', session.id).stop_pending === true);
     const pending = f.store.must<Session>('sessions', session.id);
     await f.control.tick();
+    await retries(f);
     for (let i = 0; i < 19; i++) {
       now += 50;
       await f.control.tick();
@@ -175,6 +179,7 @@ it('spaces stop retries without rewriting the session and records confirmation o
     now += 50;
     stub.close.mockRejectedValueOnce(new Error('Close still unavailable'));
     await f.control.tick();
+    await retries(f);
     expect(stub.close).toHaveBeenCalledTimes(3);
     expect(f.store.must<Session>('sessions', session.id)).toEqual(pending);
     expect(
@@ -244,7 +249,11 @@ it('schedules other work during one stop retry and waits for it on shutdown', as
     retryTick = f.control.tick().then(() => {
       tickFinished = true;
     });
-    await vi.advanceTimersByTimeAsync(0);
+    // The next turn's start and the other retry each run the write audit's git in real time.
+    await eventually(
+      () => tickFinished && !f.control.handles.has(second.id),
+      () => vi.advanceTimersByTimeAsync(0),
+    );
     expect(tickFinished).toBe(true);
     expect(f.store.must<Timer>('timers', timer.id).state).toBe('fired');
     expect(f.store.must<SessionTurn>('session_turns', next.id).state).toBe('running');
@@ -296,7 +305,11 @@ it('waits for an existing conversation close on shutdown without starting anothe
     await f.control.tick();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     stub.complete(f.control.handles.get(turn.id)!, 'failed');
-    await vi.advanceTimersByTimeAsync(0);
+    // The turn's write audit runs git before the close starts.
+    await eventually(
+      () => release !== undefined,
+      () => vi.advanceTimersByTimeAsync(0),
+    );
     expect(release).toBeDefined();
     let finished = false;
     shutdown = f.control.shutdown().then(() => {

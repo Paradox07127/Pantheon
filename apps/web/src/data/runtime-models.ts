@@ -9,8 +9,7 @@ import {
   type ExtensionInventory,
 } from './extensions';
 import { failureText } from './needs-you';
-import { useProjectQuery } from './project-read';
-import { useFocusTick } from './workbench-sessions';
+import { REPOSITORY_KINDS, useProjectQuery } from './project-read';
 
 export type ModelsState =
   | { state: 'loading' }
@@ -247,14 +246,9 @@ const isHead = (value: unknown): boolean => {
 
 /**
  * GET /v1/project.head: the branch and commit the project's first folder has checked out; read
- * again on window focus.
+ * again after repository events and on window focus.
  */
-export function useProjectHead(project_id: string | null) {
-  const head = useProjectQuery<ProjectHead>('project.head', project_id, isHead);
-  const focus = useFocusTick();
-  const { reload } = head;
-  useEffect(() => {
-    if (focus) reload();
-  }, [focus, reload]);
-  return head;
-}
+export const useProjectHead = (project_id: string | null) =>
+  useProjectQuery<ProjectHead>('project.head', project_id, isHead, undefined, {
+    kinds: REPOSITORY_KINDS,
+  });

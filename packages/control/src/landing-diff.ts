@@ -9,7 +9,7 @@ import {
 import type { DiffHunk, LandingDiff, LandingDiffFile } from '@pantheon/protocol';
 import type { ControlContext } from './context.js';
 import { PATCH_BOUND, TIME_BOUND, checkedSource } from './source-git.js';
-import { runGit } from './git.js';
+import { runGit, type GitResult } from './git.js';
 
 // Lockfiles are not here: a lockfile change can change what gets installed.
 const GENERATED = [/(^|\/)dist\//, /\.min\.(js|css)$/];
@@ -77,8 +77,26 @@ function diffRange(range: DiffRange): string[] {
   return ['--no-ext-diff', '--no-textconv', '--find-renames', range.from_sha, range.to_sha, '--'];
 }
 
-// --raw gives each file's status; -z keeps paths unquoted. Both lists come in patch order.
-const LISTING = ['diff', '--raw', '--numstat', '-z'];
+// --raw gives each file's status; -z keeps paths unquoted. Both lists come in patch order, then a
+// NUL and the patch, with no color and fixed prefixes whatever color.ui, diff.noprefix or
+// diff.mnemonicPrefix the project sets.
+const LISTING = [
+  'diff',
+  '--raw',
+  '--numstat',
+  '-z',
+  '-p',
+  '--no-color',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+];
+
+/** The listing and the patch of a LISTING run; no patch when the output ends inside the listing. */
+function splitListing(output: Buffer): [Buffer, Buffer | undefined] {
+  // Neither list has an empty field, so their first empty one is the NUL before the patch.
+  const end = output.indexOf('\0\0');
+  return end === -1 ? [output, undefined] : [output.subarray(0, end + 1), output.subarray(end + 2)];
+}
 
 function landingFiles(listing: string): LandingDiffFile[] {
   const tokens = listing.split('\0');
@@ -120,24 +138,36 @@ function landingFiles(listing: string): LandingDiffFile[] {
 
 const ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
 
+/** A name as a patch prints it, without the C-style quoting git gives unusual paths. */
+function unquoted(name: string): string {
+  if (!name.startsWith('"')) return name;
+  // Byte by byte: with core.quotePath=false the quoted name keeps raw UTF-8 beside its escapes.
+  const quoted = Buffer.from(name.slice(1, -1));
+  const bytes: number[] = [];
+  for (let i = 0; i < quoted.length; i++) {
+    if (quoted[i] !== 0x5c) bytes.push(quoted[i]!);
+    else if (/[0-7]/.test(String.fromCharCode(quoted[++i]!))) {
+      bytes.push(parseInt(quoted.toString('latin1', i, i + 3), 8));
+      i += 2;
+    } else bytes.push(ESCAPES[String.fromCharCode(quoted[i]!)] ?? quoted[i]!);
+  }
+  return Buffer.from(bytes).toString();
+}
+
 /** The path of a `--- a/…` or `+++ b/…` patch line, undefined for /dev/null. */
 function patchPath(line: string): string | undefined {
-  // Git quotes unusual paths C-style and ends a path containing a space with a tab.
-  let name = line.slice(4).replace(/\t$/, '');
-  if (name.startsWith('"')) {
-    // Byte by byte: with core.quotePath=false the quoted name keeps raw UTF-8 beside its escapes.
-    const quoted = Buffer.from(name.slice(1, -1));
-    const bytes: number[] = [];
-    for (let i = 0; i < quoted.length; i++) {
-      if (quoted[i] !== 0x5c) bytes.push(quoted[i]!);
-      else if (/[0-7]/.test(String.fromCharCode(quoted[++i]!))) {
-        bytes.push(parseInt(quoted.toString('latin1', i, i + 3), 8));
-        i += 2;
-      } else bytes.push(ESCAPES[String.fromCharCode(quoted[i]!)] ?? quoted[i]!);
-    }
-    name = Buffer.from(bytes).toString();
-  }
+  // Git ends a path containing a space with a tab.
+  const name = unquoted(line.slice(4).replace(/\t$/, ''));
   return name === '/dev/null' ? undefined : name.slice(2);
+}
+
+/** The path of a `diff --git a/… b/…` line, without renames, so both names are the same path. */
+export function headerPath(line: string): string {
+  const names = line.slice('diff --git '.length);
+  const first = names.startsWith('"')
+    ? /^"(?:[^"\\]|\\.)*"/.exec(names)![0]
+    : names.slice(0, (names.length - 1) / 2);
+  return unquoted(first).slice(2);
 }
 
 /** A null patch is a truncated one. */
@@ -198,22 +228,13 @@ export function rangeDiffSync(
   range: DiffRange,
 ): LandingDiff {
   const source = checkedSource(ctx, principal, projectId, range.source);
-  const args = diffRange(range);
-  const listing = runGit(source, [...LISTING, ...args]);
-  if (listing.exit_code !== 0) failed();
-  // No color and fixed prefixes, whatever color.ui, diff.noprefix or diff.mnemonicPrefix the project sets.
-  const patch = runGit(source, [
-    'diff',
-    '--no-color',
-    '--src-prefix=a/',
-    '--dst-prefix=b/',
-    ...args,
-  ]);
-  if (patch.exit_code !== 0) failed();
+  const diff = runGit(source, [...LISTING, ...diffRange(range)]);
+  if (diff.exit_code !== 0) failed();
+  const [listing, patch = Buffer.alloc(0)] = splitListing(diff.stdout);
   return landingResult(
     range,
-    listing.stdout.toString(),
-    patch.stdout.length > PATCH_BOUND ? null : patch.stdout.toString(),
+    listing.toString(),
+    patch.length > PATCH_BOUND ? null : patch.toString(),
   );
 }
 
@@ -228,22 +249,18 @@ export async function rangeDiffWithSyncBounds(
   range: DiffRange,
 ): Promise<LandingDiff> {
   const source = checkedSource(ctx, principal, projectId, range.source);
-  const args = diffRange(range);
-  const [listing, patch] = await Promise.all([
-    runGit(source, [...LISTING, ...args], undefined, true, SYNC_BOUND),
-    runGit(
-      source,
-      ['diff', '--no-color', '--src-prefix=a/', '--dst-prefix=b/', ...args],
-      undefined,
-      true,
-      SYNC_BOUND,
-    ),
-  ]);
-  if (listing.exit_code !== 0 || patch.exit_code !== 0) failed();
+  // Each part keeps the bound it had as a run of its own.
+  const diff = await runGit(source, [...LISTING, ...diffRange(range)], undefined, true, {
+    max_buffer: 2 * SYNC_BOUND.max_buffer + 1,
+    timeout_ms: SYNC_BOUND.timeout_ms,
+  });
+  if (diff.exit_code !== 0) failed();
+  const [listing, patch = Buffer.alloc(0)] = splitListing(diff.stdout);
+  if (listing.length > SYNC_BOUND.max_buffer || patch.length > SYNC_BOUND.max_buffer) failed();
   return landingResult(
     range,
-    listing.stdout.toString(),
-    patch.stdout.length > PATCH_BOUND ? null : patch.stdout.toString(),
+    listing.toString(),
+    patch.length > PATCH_BOUND ? null : patch.toString(),
   );
 }
 
@@ -255,36 +272,27 @@ export async function rangeDiff(
   range: DiffRange,
 ): Promise<LandingDiff> {
   const source = checkedSource(ctx, principal, projectId, range.source);
-  const args = diffRange(range);
-  const [listing, patch] = await Promise.all([
-    runGit(source, [...LISTING, ...args], undefined, true, {
-      max_buffer: 4 * PATCH_BOUND,
-      timeout_ms: TIME_BOUND,
-    }),
-    runGit(
-      source,
-      ['diff', '--no-color', '--src-prefix=a/', '--dst-prefix=b/', ...args],
-      undefined,
-      true,
-      {
-        max_buffer: PATCH_BOUND,
-        timeout_ms: TIME_BOUND,
-      },
-    ),
-  ]);
-  if (listing.exit_code !== 0) failed();
-  const truncated =
-    patch.exit_code !== 0 && /ERR_CHILD_PROCESS_STDIO_MAXBUFFER/.test(patch.error ?? '');
-  if (patch.exit_code !== 0 && !truncated) failed();
+  const diff = await runGit(source, [...LISTING, ...diffRange(range)], undefined, true, {
+    max_buffer: 4 * PATCH_BOUND + 1 + PATCH_BOUND,
+    timeout_ms: TIME_BOUND,
+  });
+  // Output past the bound keeps its start, so a whole listing still comes with a truncated patch.
+  const overflowed =
+    diff.exit_code !== 0 && /ERR_CHILD_PROCESS_STDIO_MAXBUFFER/.test(diff.error ?? '');
+  if (diff.exit_code !== 0 && !overflowed) failed();
+  const [listing, patch] = splitListing(diff.stdout);
+  if (listing.length > 4 * PATCH_BOUND || (overflowed && !patch)) failed();
   return landingResult(
     range,
-    listing.stdout.toString(),
-    truncated ? null : patch.stdout.toString(),
+    listing.toString(),
+    overflowed || (patch && patch.length > PATCH_BOUND) ? null : (patch ?? '').toString(),
   );
 }
 
-/** A workbench session's committed range: its recorded merge once merged, else its base commit to its worktree HEAD. */
-export function sessionRange(ctx: ControlContext, session: Session): DiffRange {
+const HEAD_COMMIT = ['rev-parse', '--verify', 'HEAD^{commit}'];
+
+/** A merged session's recorded range, else the worktree whose HEAD ends the range. */
+function rangeStart(ctx: ControlContext, session: Session): DiffRange | Workspace {
   requireThat(session.workspace_id, 'invalid_state', 'Session has no worktree');
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
   requireThat(
@@ -303,7 +311,10 @@ export function sessionRange(ctx: ControlContext, session: Session): DiffRange {
   }
   if (!workspace.base_sha)
     throw new DomainError('diff_base_missing', 'Worktree has no base commit');
-  const head = runGit(workspace.path, ['rev-parse', '--verify', 'HEAD^{commit}']);
+  return workspace;
+}
+
+function headRange(workspace: Workspace, head: GitResult): DiffRange {
   if (head.exit_code !== 0)
     throw new DomainError(
       'workspace_unavailable',
@@ -311,9 +322,28 @@ export function sessionRange(ctx: ControlContext, session: Session): DiffRange {
     );
   return {
     source: workspace.source!,
-    from_sha: workspace.base_sha,
+    from_sha: workspace.base_sha!,
     to_sha: head.stdout.toString().trim(),
   };
+}
+
+/** A workbench session's committed range: its recorded merge once merged, else its base commit to its worktree HEAD. */
+export function sessionRange(ctx: ControlContext, session: Session): DiffRange {
+  const start = rangeStart(ctx, session);
+  return 'from_sha' in start ? start : headRange(start, runGit(start.path, HEAD_COMMIT));
+}
+
+/** sessionRange without blocking the daemon; heads keeps each worktree's HEAD read for one request. */
+export async function sessionRangeAsync(
+  ctx: ControlContext,
+  session: Session,
+  heads = new Map<string, Promise<GitResult>>(),
+): Promise<DiffRange> {
+  const start = rangeStart(ctx, session);
+  if ('from_sha' in start) return start;
+  let head = heads.get(start.path);
+  if (!head) heads.set(start.path, (head = runGit(start.path, HEAD_COMMIT, undefined, true)));
+  return headRange(start, await head);
 }
 
 /** A workbench session's goal: its title and the start of its first turn's input. */

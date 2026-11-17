@@ -16,6 +16,7 @@ import { inside, managedRootOf, resolvedPath, type ControlContext } from './cont
 import { copyDependencyFolders } from './dependency-folders.js';
 import { restoreCheckpoint } from './checkpoint.js';
 import { runGit } from './git.js';
+import { onWslAutomount } from './wsl-mount.js';
 import { returnNotes } from './lead-inbox.js';
 import { unsnooze } from './session.js';
 
@@ -266,7 +267,21 @@ export function startWorkspaceProvisioning(ctx: ControlContext, workspaceId: str
       const added = (queue.get(source) ?? Promise.resolve())
         .catch(() => {})
         .then(() =>
-          git(source, ['worktree', 'add', '--detach', workspace.path, commit], 'worktree'),
+          git(
+            source,
+            [
+              'worktree',
+              'add',
+              // Windows git prunes the registration of a worktree at a path it cannot see, unless locked.
+              ...(onWslAutomount(source)
+                ? ['--lock', '--reason', 'Pantheon session worktree']
+                : []),
+              '--detach',
+              workspace.path,
+              commit,
+            ],
+            'worktree',
+          ),
         );
       queue.set(source, added);
       await added;
@@ -278,7 +293,7 @@ export function startWorkspaceProvisioning(ctx: ControlContext, workspaceId: str
       );
       check();
       if (workspace.provisioning!.checkpoint)
-        restoreCheckpoint(workspace.path, workspace.provisioning!.checkpoint);
+        await restoreCheckpoint(workspace.path, workspace.provisioning!.checkpoint);
       record(ctx, workspaceId, { phase: 'dependencies', progress: undefined });
       // Sessions can work without dependencies; failing here would keep the session from starting.
       let dependenciesSkipped: string | undefined;

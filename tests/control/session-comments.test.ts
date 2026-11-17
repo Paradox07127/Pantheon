@@ -60,7 +60,7 @@ it('stores all comment fields and lists by path, line and creation time within o
   ]);
   for (const text of ['', 'x'.repeat(10_001)]) expect(() => add(f, session.id, { text })).toThrow();
   expect(f.control.sessionComments(user, session.id)).toHaveLength(4);
-  expect(f.control.sessionPreflight(user, other.id).open_comments).toBe(1);
+  expect((await f.control.sessionPreflight(user, other.id)).open_comments).toBe(1);
 });
 
 it("keeps the commented line's text and the turn whose diff it was made on", async () => {
@@ -82,16 +82,19 @@ it('resolves open comments to sent and kept and omits the count once none remain
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'changed\n');
   git(workspace.path, 'add', '.');
   git(workspace.path, 'commit', '--quiet', '-m', 'Change the answer');
-  const before = f.control.sessionPreflight(user, session.id);
+  const before = await f.control.sessionPreflight(user, session.id);
   expect(before.can_merge).toBe(true);
   expect(before).not.toHaveProperty('open_comments');
   const sent = add(f, session.id);
   const kept = add(f, session.id);
-  expect(f.control.sessionPreflight(user, session.id)).toEqual({ ...before, open_comments: 2 });
+  expect(await f.control.sessionPreflight(user, session.id)).toEqual({
+    ...before,
+    open_comments: 2,
+  });
   f.call('session.comment.resolve', { comment_id: sent.id, state: 'sent' }, sent.revision);
-  expect(f.control.sessionPreflight(user, session.id).open_comments).toBe(1);
+  expect((await f.control.sessionPreflight(user, session.id)).open_comments).toBe(1);
   f.call('session.comment.resolve', { comment_id: kept.id, state: 'kept' }, kept.revision);
-  expect(f.control.sessionPreflight(user, session.id)).toEqual(before);
+  expect(await f.control.sessionPreflight(user, session.id)).toEqual(before);
   expect(f.control.sessionComments(user, session.id).map((comment) => comment.state)).toEqual([
     'sent',
     'kept',
@@ -103,7 +106,7 @@ it('deletes a comment from storage and the open count, and refuses a stale revis
   const f = workbenchFixture();
   const session = await idleSession(f);
   const comment = add(f, session.id);
-  expect(f.control.sessionPreflight(user, session.id).open_comments).toBe(1);
+  expect((await f.control.sessionPreflight(user, session.id)).open_comments).toBe(1);
   for (const [type, input] of [
     ['session.comment.resolve', { comment_id: comment.id, state: 'kept' }],
     ['session.comment.delete', { comment_id: comment.id }],
@@ -115,7 +118,7 @@ it('deletes a comment from storage and the open count, and refuses a stale revis
   f.call('session.comment.delete', { comment_id: comment.id }, comment.revision);
   expect(f.control.sessionComments(user, session.id)).toEqual([]);
   expect(f.store.get('session_comments', comment.id)).toBeUndefined();
-  expect(f.control.sessionPreflight(user, session.id)).not.toHaveProperty('open_comments');
+  expect(await f.control.sessionPreflight(user, session.id)).not.toHaveProperty('open_comments');
 });
 
 it.each(['lead', 'worker'] as const)('refuses comment mutations by a %s session', async (role) => {

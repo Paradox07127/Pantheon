@@ -1,32 +1,25 @@
-import { useEffect } from 'react';
 import type { RepoWorkingDiff, RepoWorkingDiffFile } from '@pantheon/protocol';
 import { t } from '../i18n';
 import { runCommand } from './commands';
 import { failureText } from './needs-you';
-import { useProjectQuery } from './project-read';
-import { useFocusTick } from './workbench-sessions';
+import { WORKTREE_KINDS, useProjectQuery } from './project-read';
 
 export type { RepoWorkingDiff, RepoWorkingDiffFile as RepoWorkingFile };
 
 export type LocalResult<T> = { ok: true; value: T } | { ok: false; code: string; error: string };
 
 /** GET /v1/repo.working_diff for the project's local checkout, read again on window focus. */
-export function useRepoWorkingDiff(projectId: string | null) {
-  const diff = useProjectQuery<RepoWorkingDiff>(
+export const useRepoWorkingDiff = (projectId: string | null) =>
+  useProjectQuery<RepoWorkingDiff>(
     'repo.working_diff',
     projectId,
     (value) =>
       typeof value === 'object' &&
       value !== null &&
       Array.isArray((value as RepoWorkingDiff).files),
+    undefined,
+    { kinds: WORKTREE_KINDS },
   );
-  const focus = useFocusTick();
-  const { reload } = diff;
-  useEffect(() => {
-    if (focus) reload();
-  }, [focus, reload]);
-  return diff;
-}
 
 // Their message is git's own output: a failed hook, a rejected push, a conflicting revert.
 const GIT_OUTPUT = [

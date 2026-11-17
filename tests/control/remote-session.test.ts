@@ -499,6 +499,55 @@ it('deletes the device worktree, temporary files and sync refs when the session 
   expect(git(f.source, 'for-each-ref', 'refs/pantheon/sync/')).toBe('');
 });
 
+it('deletes the sync refs on this machine with one git run', async () => {
+  const f = deviceFixture();
+  const session = f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
+  await f.settle(session);
+  // Logs each update-ref run on one line: its arguments, then what it read from stdin.
+  const shims = path.join(path.dirname(f.deviceRepo), 'ref-shims'),
+    log = path.join(shims, 'update-ref.log'),
+    before = process.env.PATH!;
+  mkdirSync(shims);
+  writeFileSync(log, '');
+  writeFileSync(
+    path.join(shims, 'git'),
+    [
+      '#!/bin/sh',
+      'case " $* " in',
+      `  *" update-ref --stdin "*) input=$(mktemp); cat > "$input"; printf '%s | %s\\n' "$*" "$(tr '\\n' ' ' < "$input")" >> '${log}'; PATH='${before}' exec git "$@" < "$input" ;;`,
+      `  *" update-ref "*) printf '%s\\n' "$*" >> '${log}' ;;`,
+      'esac',
+      `PATH='${before}' exec git "$@"`,
+      '',
+    ].join('\n'),
+  );
+  chmodSync(path.join(shims, 'git'), 0o755);
+  process.env.PATH = `${shims}:${before}`;
+  cleanups.unshift(async () => {
+    process.env.PATH = before;
+  });
+
+  f.control.execute(
+    user,
+    command(user.id, 'session.discard', { session_id: session.id }, f.current(session.id).revision),
+  );
+  await eventually(
+    () => git(f.deviceRepo, 'for-each-ref', 'refs/pantheon/sync/') === '',
+    () => f.control.tick(),
+    10000,
+  );
+
+  // The device's run names its repository with -C.
+  const local = readFileSync(log, 'utf8')
+    .split('\n')
+    .filter((line) => line.includes('refs/pantheon/sync/') && !line.includes(' -C '));
+  expect(local).toEqual([
+    expect.stringMatching(/ update-ref --stdin \| delete refs\/pantheon\/sync\//),
+  ]);
+  expect(local[0]!.match(/delete /g)).toHaveLength(7);
+  expect(git(f.source, 'for-each-ref', 'refs/pantheon/sync/')).toBe('');
+});
+
 it('deletes the device worktree, temporary files and sync refs when an idle session is deleted', async () => {
   const f = deviceFixture();
   const session = f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));

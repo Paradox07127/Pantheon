@@ -99,7 +99,7 @@ it('refuses merge, gate runs, merge admission, preflight and a backend change fo
     code: 'invalid_state',
     message: expect.stringMatching(noGate),
   });
-  expect(refusal(() => f.control.sessionPreflight(user, session.id))).toMatchObject({
+  await expect(f.control.sessionPreflight(user, session.id)).rejects.toMatchObject({
     code: 'invalid_state',
     message: expect.stringMatching(noGate),
   });

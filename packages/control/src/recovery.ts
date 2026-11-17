@@ -53,24 +53,27 @@ function recoverArtifacts(ctx: ControlContext): void {
  * Restores the checkpoint of each rollback the daemon left unfinished again and writes its record.
  * A checkpoint that cannot be restored drops the intent and reconciles the session.
  */
-function recoverRollbacks(ctx: ControlContext): void {
-  for (const session of ctx.store.list<Session>('sessions').filter((s) => s.rollback_pending)) {
-    const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
-    let head: string;
-    try {
-      head = restoreCheckpoint(workspace.path, session.rollback_pending!.checkpoint);
-    } catch (error) {
+async function recoverRollbacks(ctx: ControlContext): Promise<void> {
+  for (const pending of ctx.store.list<Session>('sessions').filter((s) => s.rollback_pending)) {
+    const workspace = ctx.store.must<Workspace>('workspaces', pending.workspace_id!);
+    const restored = await restoreCheckpoint(workspace.path, pending.rollback_pending!.checkpoint)
+      .then((head) => ({ head }))
+      .catch((error: unknown) => ({ error }));
+    rollbackTransaction(ctx, () => {
+      const session = ctx.store.must<Session>('sessions', pending.id);
+      if ('head' in restored) {
+        finishRollback(ctx, session, restored.head);
+        return;
+      }
       const next = ctx.store.update(
         'sessions',
         { ...session, rollback_pending: undefined, state: 'reconciling' as const },
         session.revision,
       );
       ctx.store.event('session.reconciling', next, next.project_id, {
-        reason: `rollback checkpoint could not be restored: ${String(error)}`,
+        reason: `rollback checkpoint could not be restored: ${String(restored.error)}`,
       });
-      continue;
-    }
-    finishRollback(ctx, session, head);
+    });
   }
 }
 
@@ -93,7 +96,6 @@ export function recover(ctx: ControlContext): void {
     recoverChildProcesses(ctx);
     recoverGateRuns(ctx);
     recoverWorkflowSteps(ctx);
-    recoverRollbacks(ctx);
     for (const workspace of ctx.store
       .list<Workspace>('workspaces')
       .filter((workspace) => workspace.owner.startsWith('landing:')))
@@ -272,6 +274,8 @@ export async function reconcile(ctx: ControlContext): Promise<void> {
   if (ctx.busy || ctx.closing) return;
   ctx.busy = true;
   try {
+    // Restoring files runs git asynchronously, so unfinished rollbacks finish here, not in recover.
+    await recoverRollbacks(ctx);
     for (const session of ctx.store
       .list<Session>('sessions')
       .filter((s) => s.state === 'reconciling' && s.workspace_id)) {

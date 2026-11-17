@@ -242,7 +242,7 @@ it('repeats failed and skipped steps while carrying passed results and their tes
   expect(f.control.projectGatesHistory(user, f.project.id).runs[0]!.results).toEqual(
     history.results,
   );
-  expect(f.control.sessionPreflight(user, session.id).gate.last).toBe('passed');
+  expect((await f.control.sessionPreflight(user, session.id)).gate.last).toBe('passed');
 });
 
 it('reruns the passed steps before a failed one as setup in a fresh candidate clone', async () => {

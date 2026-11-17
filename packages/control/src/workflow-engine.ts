@@ -177,16 +177,34 @@ export function taskWorkflow(
 /** The id of the review a review loop task gets before its merge when its definition has no blocking one. */
 export const REVIEW_LOOP_STEP_ID = 'review-loop';
 
-/** Conditions inspect Git's diff, never an agent's account of which files changed. */
+/**
+ * Conditions inspect Git's diff, never an agent's account of which files changed. Callers that
+ * check several steps at once pass changed, which keeps each session's paths for the others.
+ */
 export function workflowCondition(
   ctx: ControlContext,
   step: WorkflowStep,
   sessionId?: string,
   slot?: Slot,
   taskId?: string,
+  changed?: Map<string, string[]>,
 ): boolean {
   if (!step.when) return true;
   if (!sessionId) return false;
+  // Within one check the session, slot and task fix the workspace, base and head the paths come from.
+  const key = JSON.stringify([sessionId, slot ?? null, taskId ?? null]);
+  const paths = changed?.get(key) ?? changedPaths(ctx, sessionId, slot, taskId);
+  changed?.set(key, paths);
+  return paths.some((file) => step.when!.changed_paths.some((glob) => matchesGlob(file, glob)));
+}
+
+/** The paths the session's range changes, as a step condition for slot and task reads them. */
+function changedPaths(
+  ctx: ControlContext,
+  sessionId: string,
+  slot?: Slot,
+  taskId?: string,
+): string[] {
   const session = ctx.store.must<Session>('sessions', sessionId);
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   // A direct task's merge leaves its lead open; its plan keeps the landed range.
@@ -224,7 +242,7 @@ export function workflowCondition(
           sessionRange(ctx, part),
         )
       : [range];
-  const paths = ranges.flatMap((changed) => {
+  return ranges.flatMap((changed) => {
     const result = runGit(merged ? changed.source : workspace.path, [
       'diff',
       '--name-only',
@@ -237,7 +255,6 @@ export function workflowCondition(
     requireThat(result.exit_code === 0, 'git_failed', result.stderr.toString().trim());
     return result.stdout.toString().split('\0').filter(Boolean);
   });
-  return paths.some((file) => step.when!.changed_paths.some((glob) => matchesGlob(file, glob)));
 }
 
 const appliesTo = (step: WorkflowStep, task: PlanTask) =>

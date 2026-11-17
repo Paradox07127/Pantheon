@@ -10,19 +10,26 @@ import {
   type Project,
   type Session,
   type SessionTurn,
+  type StorySubmission,
 } from '@pantheon/domain';
-import { inputSchemas, USER_PRINCIPAL_ID, type LandingDiff } from '@pantheon/protocol';
+import {
+  inputSchemas,
+  USER_PRINCIPAL_ID,
+  type Command,
+  type LandingDiff,
+} from '@pantheon/protocol';
 import {
   projectAccess,
   revision,
   userOnly,
   type ControlContext,
+  type Handler,
   type Handlers,
 } from './context.js';
 import { runtime } from './admission.js';
-import { runGit } from './git.js';
+import { runGit, type GitResult } from './git.js';
 import { checkedSource } from './source-git.js';
-import { rangeDiffSync, rangeDiffWithSyncBounds, sessionRange } from './landing-diff.js';
+import { rangeDiffSync, rangeDiffWithSyncBounds, sessionRangeAsync } from './landing-diff.js';
 import { cardPatch, checkStory } from './change-story-check.js';
 import { renderStoryBrief } from './change-story-brief.js';
 import { storyContext } from './change-story-evidence.js';
@@ -35,7 +42,7 @@ const quote = (value: string) =>
   /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 
 /** The project, range and brief of what change_story.start explains. */
-function storyTarget(
+async function storyTarget(
   ctx: ControlContext,
   p: Principal,
   input: { session_id: string },
@@ -43,16 +50,82 @@ function storyTarget(
 ) {
   const session = ctx.store.must<Session>('sessions', input.session_id);
   projectAccess(ctx, p, session.project_id, action);
-  const range = sessionRange(ctx, session);
+  const range = await sessionRangeAsync(ctx, session);
   requireThat(range.from_sha !== range.to_sha, 'invalid_state', 'No committed changes to explain');
   const context = storyContext(ctx, session, range.to_sha);
   return {
     project_id: session.project_id,
     range,
     fields: { workbench_session_id: session.id, context },
-    diff: () => rangeDiffSync(ctx, p, session.project_id, range),
+    diff: () => rangeDiffWithSyncBounds(ctx, p, session.project_id, range),
     brief: (diff: LandingDiff) => renderStoryBrief(context, diff, []),
   };
+}
+
+/** The running or ready story of the same session, range and context as target. */
+function existingStory(ctx: ControlContext, target: Awaited<ReturnType<typeof storyTarget>>) {
+  return ctx.store
+    .list<ChangeStory>('change_stories')
+    .find(
+      (story) =>
+        story.project_id === target.project_id &&
+        story.workbench_session_id === target.fields.workbench_session_id &&
+        story.source === target.range.source &&
+        story.from_sha === target.range.from_sha &&
+        story.to_sha === target.range.to_sha &&
+        hash(story.context) === hash(target.fields.context) &&
+        (story.state === 'running' || story.state === 'ready'),
+    );
+}
+
+/** The files the submission's diagrams anchor quotes in. */
+function anchoredFiles(submission: StorySubmission): string[] {
+  const files = submission.cards.flatMap(({ diagram }) =>
+    !diagram
+      ? []
+      : diagram.type === 'flow'
+        ? diagram.nodes.map((node) => node.anchor?.file)
+        : diagram.type === 'ui'
+          ? diagram.regions.map((region) => region.anchor?.file)
+          : diagram.type === 'decision'
+            ? diagram.rows.flatMap((row) => [row.before_anchor?.file, row.after_anchor?.file])
+            : [diagram.file],
+  );
+  return [...new Set(files.filter((file) => file !== undefined))];
+}
+
+/** Each file's text at each commit, read in one cat-file run; absent where it is no file there. */
+async function shownFiles(
+  source: string,
+  shas: string[],
+  files: string[],
+): Promise<Map<string, string>> {
+  // Batch input ends each name at a newline, so a path containing one is never found.
+  const names = files
+    .filter((file) => !file.includes('\n'))
+    .flatMap((file) => shas.map((sha) => [sha, file] as const));
+  const shown = new Map<string, string>();
+  if (!names.length) return shown;
+  const read = await runGit(
+    source,
+    ['cat-file', '--batch'],
+    Buffer.from(names.map(([sha, file]) => `${sha}:${file}\n`).join('')),
+    true,
+  );
+  if (read.exit_code !== 0) return shown;
+  let at = 0;
+  for (const [sha, file] of names) {
+    const end = read.stdout.indexOf('\n', at);
+    const header = read.stdout.toString('utf8', at, end);
+    at = end + 1;
+    // A missing or ambiguous name has no contents; a found one is `<oid> <type> <size>`.
+    if (/ (missing|ambiguous)$/.test(header)) continue;
+    const [, type, size] = header.split(' ');
+    if (type === 'blob')
+      shown.set(JSON.stringify([sha, file]), read.stdout.toString('utf8', at, at + Number(size)));
+    at += Number(size) + 1;
+  }
+  return shown;
 }
 
 function storyDiff(ctx: ControlContext, p: Principal, story: ChangeStory): LandingDiff {
@@ -70,11 +143,12 @@ export function changeStoryDiff(
   return rangeDiffWithSyncBounds(ctx, p, story.project_id, story);
 }
 
-function outdated(
+async function outdated(
   ctx: ControlContext,
   story: ChangeStory,
-  cache: Map<string, string | null>,
-): boolean {
+  cache: Map<string, Promise<string | null>>,
+  heads: Map<string, Promise<GitResult>>,
+): Promise<boolean> {
   if (!story.workbench_session_id) return true;
   const key = story.workbench_session_id;
   const saved = hash({
@@ -83,22 +157,18 @@ function outdated(
     to_sha: story.to_sha,
     context: story.context,
   });
-  if (cache.has(key)) return cache.get(key) !== saved;
-  const session =
-    story.workbench_session_id && ctx.store.get<Session>('sessions', story.workbench_session_id);
-  if (!session) {
-    cache.set(key, null);
-    return true;
+  if (!cache.has(key)) {
+    const session = ctx.store.get<Session>('sessions', key);
+    cache.set(
+      key,
+      session
+        ? sessionRangeAsync(ctx, session, heads)
+            .then((range) => hash({ ...range, context: storyContext(ctx, session, range.to_sha) }))
+            .catch(() => null)
+        : Promise.resolve(null),
+    );
   }
-  try {
-    const range = sessionRange(ctx, session);
-    const current = hash({ ...range, context: storyContext(ctx, session, range.to_sha) });
-    cache.set(key, current);
-    return current !== saved;
-  } catch {
-    cache.set(key, null);
-    return true;
-  }
+  return (await cache.get(key)!) !== saved;
 }
 
 function createStorySession(
@@ -151,98 +221,120 @@ function boundStory(ctx: ControlContext, p: Principal, storyId: string, action: 
   return { story, session };
 }
 
-export function changeStoryList(
+export async function changeStoryList(
   ctx: ControlContext,
   p: Principal,
   projectId: string,
-): ChangeStory[] {
+): Promise<ChangeStory[]> {
   projectAccess(ctx, p, projectId, 'project.read');
-  const cache = new Map<string, string | null>();
-  return ctx.store
-    .list<ChangeStory>('change_stories')
-    .filter((story) => story.project_id === projectId)
-    .map((story) => ({ ...story, outdated: outdated(ctx, story, cache) }));
+  const cache = new Map<string, Promise<string | null>>(),
+    heads = new Map<string, Promise<GitResult>>();
+  return Promise.all(
+    ctx.store
+      .list<ChangeStory>('change_stories')
+      .filter((story) => story.project_id === projectId)
+      .map(async (story) => ({ ...story, outdated: await outdated(ctx, story, cache, heads) })),
+  );
 }
 
-export const changeStoryHandlers: Handlers = {
-  'change_story.start': (ctx, p, c) => {
-    userOnly(p);
-    const input = inputSchemas['change_story.start'].parse(c.input);
+export const isPreparedChangeStory = (type: string): boolean =>
+  type === 'change_story.start' || type === 'change_story.submit';
+
+/**
+ * Reads the git a change_story.start or change_story.submit needs before its transaction; the
+ * returned handler records the command.
+ */
+export async function prepareChangeStory(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+): Promise<Handler> {
+  return c.type === 'change_story.start' ? prepareStart(ctx, p, c) : prepareSubmit(ctx, p, c);
+}
+
+async function prepareStart(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  userOnly(p);
+  const input = inputSchemas['change_story.start'].parse(c.input);
+  revision(ctx, c);
+  const target = await storyTarget(ctx, p, input, c.type);
+  const seen = existingStory(ctx, target);
+  const diff = seen ? undefined : await target.diff();
+  return (ctx, p, c) => {
     revision(ctx, c);
-    const target = storyTarget(ctx, p, input, c.type);
-    const existing = ctx.store
-      .list<ChangeStory>('change_stories')
-      .find(
-        (story) =>
-          story.project_id === target.project_id &&
-          story.workbench_session_id === target.fields.workbench_session_id &&
-          story.source === target.range.source &&
-          story.from_sha === target.range.from_sha &&
-          story.to_sha === target.range.to_sha &&
-          hash(story.context) === hash(target.fields.context) &&
-          (story.state === 'running' || story.state === 'ready'),
-      );
+    const existing = existingStory(ctx, target);
     if (existing) return existing;
-    const project = ctx.store.must<Project>('projects', target.project_id);
-    const diff = target.diff();
-    const brief = diff.truncated ? undefined : target.brief(diff);
-    const base = {
-      id: id(),
-      revision: 1,
-      project_id: project.id,
-      ...target.fields,
-      ...target.range,
-    };
-    if (brief === undefined || brief.length > BRIEF_BOUND) {
-      const story: ChangeStory = {
-        ...base,
-        state: 'failed',
-        reason: 'diff_too_large',
-        created_at: ctx.store.now(),
-      };
-      ctx.store.insert('change_stories', story);
-      return story;
-    }
-    const runtimes = [...ctx.adapters.keys()];
-    const runtimeName = runtimes.includes('claude') ? 'claude' : runtimes[0]!;
-    const session = createStorySession(ctx, project, base.id, runtimeName, brief);
+    if (!diff) return ctx.store.must<ChangeStory>('change_stories', seen!.id);
+    return startStory(ctx, c, target, diff);
+  };
+}
+
+function startStory(
+  ctx: ControlContext,
+  c: Command,
+  target: Awaited<ReturnType<typeof storyTarget>>,
+  diff: LandingDiff,
+): ChangeStory {
+  const project = ctx.store.must<Project>('projects', target.project_id);
+  const brief = diff.truncated ? undefined : target.brief(diff);
+  const base = {
+    id: id(),
+    revision: 1,
+    project_id: project.id,
+    ...target.fields,
+    ...target.range,
+  };
+  if (brief === undefined || brief.length > BRIEF_BOUND) {
     const story: ChangeStory = {
       ...base,
-      state: 'running',
-      session_id: session.id,
-      runtime: runtimeName,
-      deadline: ctx.store.now() + STORY_WALL_TIME_MS,
+      state: 'failed',
+      reason: 'diff_too_large',
       created_at: ctx.store.now(),
     };
     ctx.store.insert('change_stories', story);
-    ctx.store.event(
-      'change_story.started',
-      story,
-      project.id,
-      { session_id: session.id },
-      c.command_id,
-    );
     return story;
-  },
-  'change_story.submit': (ctx, p, c) => {
-    const { story_id, ...submission } = inputSchemas['change_story.submit'].parse(c.input);
+  }
+  const runtimes = [...ctx.adapters.keys()];
+  const runtimeName = runtimes.includes('claude') ? 'claude' : runtimes[0]!;
+  const session = createStorySession(ctx, project, base.id, runtimeName, brief);
+  const story: ChangeStory = {
+    ...base,
+    state: 'running',
+    session_id: session.id,
+    runtime: runtimeName,
+    deadline: ctx.store.now() + STORY_WALL_TIME_MS,
+    created_at: ctx.store.now(),
+  };
+  ctx.store.insert('change_stories', story);
+  ctx.store.event(
+    'change_story.started',
+    story,
+    project.id,
+    { session_id: session.id },
+    c.command_id,
+  );
+  return story;
+}
+
+async function prepareSubmit(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  const { story_id, ...submission } = inputSchemas['change_story.submit'].parse(c.input);
+  revision(ctx, c);
+  const { story } = boundStory(ctx, p, story_id, c.type);
+  // The session may not read workspaces; the diff is read as the user who started the story.
+  const owner: Principal = { id: USER_PRINCIPAL_ID, role: 'user' };
+  const diff = await rangeDiffWithSyncBounds(ctx, owner, story.project_id, story);
+  const source = checkedSource(ctx, owner, story.project_id, story.source);
+  const shown = await shownFiles(source, [diff.from_sha, diff.to_sha], anchoredFiles(submission));
+  const checked = checkStory({
+    diff,
+    task: { acceptance: story.context?.acceptance ?? [] },
+    gates: story.context?.checks.state === 'recorded' ? story.context.checks.results : [],
+    submission,
+    show: (sha, file) => shown.get(JSON.stringify([sha, file])) ?? null,
+  });
+  if (!checked.ok) throw new DomainError('invalid_input', checked.errors.join('\n'));
+  return (ctx, p, c) => {
     revision(ctx, c);
     const { story, session } = boundStory(ctx, p, story_id, c.type);
-    // The session may not read workspaces; the diff is read as the user who started the story.
-    const owner: Principal = { id: USER_PRINCIPAL_ID, role: 'user' };
-    const diff = storyDiff(ctx, owner, story);
-    const source = checkedSource(ctx, owner, story.project_id, story.source);
-    const checked = checkStory({
-      diff,
-      task: { acceptance: story.context?.acceptance ?? [] },
-      gates: story.context?.checks.state === 'recorded' ? story.context.checks.results : [],
-      submission,
-      show: (sha, file) => {
-        const shown = runGit(source, ['show', `${sha}:${file}`]);
-        return shown.exit_code === 0 ? shown.stdout.toString() : null;
-      },
-    });
-    if (!checked.ok) throw new DomainError('invalid_input', checked.errors.join('\n'));
     const next = ctx.store.update<ChangeStory>(
       'change_stories',
       { ...story, state: 'ready', result: checked.result },
@@ -256,7 +348,10 @@ export const changeStoryHandlers: Handlers = {
       c.command_id,
     );
     return next;
-  },
+  };
+}
+
+export const changeStoryHandlers: Handlers = {
   'change_story.revert_patch': (ctx, p, c) => {
     userOnly(p);
     const input = inputSchemas['change_story.revert_patch'].parse(c.input);

@@ -268,6 +268,9 @@ async function mergeCounts(
   return value;
 }
 
+// Each worktree runs several git processes; a slow filesystem stalls under all of them at once.
+const WORKTREE_READS = 4;
+
 export async function repoWorktrees(
   ctx: ControlContext,
   p: Principal,
@@ -283,29 +286,36 @@ export async function repoWorktrees(
   const sessions = ctx.store
     .list<Session>('sessions')
     .filter((session) => session.project_id === projectId);
-  return Promise.all(
-    listed.map(async (worktree): Promise<RepoWorktree> => {
-      const [[behind, ahead], status] = await Promise.all([
-        sides(root, rootHead, worktree.head_sha),
-        git(worktree.path, STATUS),
-      ]);
-      const counts = await mergeCounts(root, worktree.path, rootHead, worktree.head_sha, ahead);
-      const workspace = workspaces.find((candidate) => candidate.path === worktree.path),
-        session =
-          workspace && sessions.find((candidate) => candidate.workspace_id === workspace.id);
-      return {
-        path: worktree.path,
-        branch: worktree.branch,
-        head_sha: worktree.head_sha,
-        kind: worktree.path === root ? 'checkout' : session ? 'session' : 'external',
-        ...(worktree.path !== root && session ? { session_id: session.id } : {}),
-        ahead,
-        behind,
-        uncommitted: parsedStatus(status).files.length,
-        ...counts,
-      };
-    }),
-  );
+  const read = async (worktree: (typeof listed)[number]): Promise<RepoWorktree> => {
+    const [[behind, ahead], status] = await Promise.all([
+      sides(root, rootHead, worktree.head_sha),
+      git(worktree.path, STATUS),
+    ]);
+    const counts = await mergeCounts(root, worktree.path, rootHead, worktree.head_sha, ahead);
+    const workspace = workspaces.find((candidate) => candidate.path === worktree.path),
+      session = workspace && sessions.find((candidate) => candidate.workspace_id === workspace.id);
+    return {
+      path: worktree.path,
+      branch: worktree.branch,
+      head_sha: worktree.head_sha,
+      kind: worktree.path === root ? 'checkout' : session ? 'session' : 'external',
+      ...(worktree.path !== root && session ? { session_id: session.id } : {}),
+      ahead,
+      behind,
+      uncommitted: parsedStatus(status).files.length,
+      ...counts,
+    };
+  };
+  const worktrees: RepoWorktree[] = [];
+  let next = 0;
+  const reader = async () => {
+    while (next < listed.length) {
+      const index = next++;
+      worktrees[index] = await read(listed[index]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(WORKTREE_READS, listed.length) }, reader));
+  return worktrees;
 }
 
 export async function repoStatus(
@@ -716,27 +726,30 @@ export async function repoCommitAfter(
           end: movedLine(shifts, hunk.new_start + hunk.new_count - 1, true),
         });
   }
-  const logged = await Promise.all(
-    ranges
-      .slice(0, 20)
-      .map((range) =>
-        runGit(
-          root,
-          [
-            LITERAL,
-            'log',
-            UNSIGNED,
-            '-s',
-            '--format=%H%x00%ct%x00%s',
-            `-L${range.start},${range.end}:${range.file}`,
-            `${commit}..${head}`,
-          ],
-          undefined,
-          true,
-          BOUND,
-        ),
-      ),
-  );
+  const traced = ranges.slice(0, 20);
+  const logOf = (some: typeof traced) =>
+    runGit(
+      root,
+      [
+        LITERAL,
+        'log',
+        UNSIGNED,
+        '-s',
+        '--format=%H%x00%ct%x00%s',
+        ...some.map((range) => `-L${range.start},${range.end}:${range.file}`),
+        `${commit}..${head}`,
+      ],
+      undefined,
+      true,
+      BOUND,
+    );
+  // One log over all ranges lists the commits changing any of them, but fails whole on one it cannot trace.
+  const together = traced.length ? await logOf(traced) : undefined;
+  const logged = !together
+    ? []
+    : together.exit_code === 0 || traced.length === 1
+      ? [together]
+      : await Promise.all(traced.map((range) => logOf([range])));
   const later = new Map<string, RepoCommitAfter['later'][number]>();
   // A range git cannot trace, as in a file HEAD no longer has, adds nothing.
   for (const result of logged.filter((result) => result.exit_code === 0))
@@ -804,6 +817,7 @@ interface History {
   overview: RepoTimeline['overview'];
   extent: RepoTimeline['extent'];
   sessions: Map<string, string>;
+  commits: { sha: string; at: number }[];
 }
 /** By project root; rebuilt when that root's HEAD moves, and shared by the calls that start meanwhile. */
 const histories = new Map<string, { head: string; history: Promise<History> }>();
@@ -814,7 +828,7 @@ async function headHistory(ctx: ControlContext, projectId: string, root: string)
   const head = await commitOf(root, 'HEAD');
   const cached = histories.get(root);
   if (cached?.head === head) return cached.history;
-  const entry = { head, history: builtHistory(ctx, projectId, root, head) };
+  const entry = { head, history: builtHistory(ctx, projectId, root, head, cached?.history) };
   histories.set(root, entry);
   entry.history.catch(() => {
     if (histories.get(root) === entry) histories.delete(root);
@@ -827,14 +841,28 @@ async function builtHistory(
   projectId: string,
   root: string,
   head: string,
+  previous?: Promise<History>,
 ): Promise<History> {
-  const commits = (await git(root, ['log', UNSIGNED, '--format=%H %ct', head, '--'], HISTORY_BOUND))
+  const before = await previous?.catch(() => undefined);
+  // A HEAD that only gained commits keeps the earlier history and reads just the new ones.
+  const descends =
+    before &&
+    (await runGit(root, ['merge-base', '--is-ancestor', before.head, head], undefined, true, BOUND))
+      .exit_code === 0;
+  const commits = (
+    await git(
+      root,
+      ['log', UNSIGNED, '--format=%H %ct', descends ? `${before.head}..${head}` : head, '--'],
+      HISTORY_BOUND,
+    )
+  )
     .split('\n')
     .filter(Boolean)
     .map((line) => {
       const [sha, time] = line.split(' ');
       return { sha: sha!, at: Number(time) * 1000 };
-    });
+    })
+    .concat(descends ? before.commits : []);
   const sessions = await mergingSessions(ctx, projectId, root);
   const weeks = new Map<number, { agent: number; user: number }>();
   let first = Infinity,
@@ -855,7 +883,7 @@ async function builtHistory(
   for (let start = first; start <= last; start += WEEK)
     overview.push({ start, ...(weeks.get(start) ?? { agent: 0, user: 0 }) });
   const extent = commits.length ? { first: oldest, last: newest } : null;
-  return { head, overview, extent, sessions };
+  return { head, overview, extent, sessions, commits };
 }
 
 /** Commits the revisions reach with a commit time in [from, to), oldest first. */

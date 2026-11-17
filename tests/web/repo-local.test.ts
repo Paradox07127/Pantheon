@@ -586,20 +586,6 @@ describe('local checkout changes', () => {
     expect(nodes(pane).filter((n) => n.props.role === 'checkbox')).toEqual([]);
   });
 
-  it('reads the changes again when the window regains focus', () => {
-    const focused: (() => void)[] = [];
-    vi.stubGlobal('window', {
-      addEventListener: (type: string, listener: () => void) =>
-        type === 'focus' && focused.push(listener),
-      removeEventListener() {},
-    });
-    const h = local();
-    expect(mock.reload).not.toHaveBeenCalled();
-    for (const listener of focused) listener();
-    h.render();
-    expect(mock.reload).toHaveBeenCalledTimes(1);
-  });
-
   // Only a modified file's lines can go back through git apply -R without undoing more.
   it.each(['untracked', 'added', 'renamed', 'deleted'] as const)(
     'offers no line selection in a file that is %s',

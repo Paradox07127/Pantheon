@@ -42,7 +42,8 @@ async function idleWorkbenchSession(base: (source: string) => void = () => {}) {
       w.store.must<Session>('sessions', session.id).state === 'open',
     () => w.control.tick(),
   );
-  const startStory = () => w.call<ChangeStory>('change_story.start', { session_id: session.id });
+  const startStory = () =>
+    w.call<Promise<ChangeStory>>('change_story.start', { session_id: session.id });
   return { w, session, workspace, sourceHead, startStory };
 }
 
@@ -55,7 +56,7 @@ function commitAnswer(repository: string, contents: string) {
 it('explains an unmerged workbench session from its base commit to its worktree HEAD', async () => {
   const { w, session, workspace, startStory } = await idleWorkbenchSession();
   const head = commitAnswer(workspace.path, 'explained\n');
-  const story = startStory();
+  const story = await startStory();
   expect(story).toMatchObject({
     project_id: w.project.id,
     workbench_session_id: session.id,
@@ -68,9 +69,9 @@ it('explains an unmerged workbench session from its base commit to its worktree 
   const brief = w.turns(story.session_id!)[0]!.input;
   expect(brief).toContain(`Goal: ${session.title}\nRename the answer file and explain why`);
   expect(brief).toContain('+explained');
-  expect(startStory()).toEqual(story);
+  expect(await startStory()).toEqual(story);
 
-  const ready = w.call<ChangeStory>(
+  const ready = await w.call<Promise<ChangeStory>>(
     'change_story.submit',
     {
       story_id: story.id,
@@ -96,7 +97,7 @@ it('explains a merged workbench session from the range its merge fast-forwarded'
     () => w.store.must<Workspace>('workspaces', workspace.id).removed_at !== undefined,
     () => w.control.tick(),
   );
-  const story = startStory();
+  const story = await startStory();
   expect(story).toMatchObject({
     workbench_session_id: session.id,
     source: w.source,
@@ -109,12 +110,10 @@ it('explains a merged workbench session from the range its merge fast-forwarded'
 
 it('refuses to explain a workbench session without committed changes', async () => {
   const { startStory } = await idleWorkbenchSession();
-  expect(startStory).toThrow(
-    expect.objectContaining({
-      code: 'invalid_state',
-      message: 'No committed changes to explain',
-    }),
-  );
+  await expect(startStory()).rejects.toMatchObject({
+    code: 'invalid_state',
+    message: 'No committed changes to explain',
+  });
 });
 
 function attachStoryTask(
@@ -193,7 +192,7 @@ it('freezes task acceptance and exact commit/configuration command evidence for 
       })),
     },
   );
-  const story = startStory();
+  const story = await startStory();
   expect(story.context).toMatchObject({
     acceptance,
     goal: 'Explain the committed answer',
@@ -210,7 +209,7 @@ it('freezes task acceptance and exact commit/configuration command evidence for 
   expect(brief).toContain('node","check-answer.js');
   expect(brief).toContain('answer verified');
   expect(brief).toContain('does not certify that requirement passed');
-  const ready = submitStory(w, story, {
+  const ready = await submitStory(w, story, {
     overall: { before: ['old'], after: ['new'] },
     cards: [card('Answer', ['H1'])],
     noise: [],
@@ -272,7 +271,7 @@ it('counts a gate that ran the before-merge command steps as recorded evidence o
       })),
     },
   );
-  expect(startStory().context?.checks).toMatchObject({
+  expect((await startStory()).context?.checks).toMatchObject({
     state: 'recorded',
     spec_hash: hash(commands),
   });
@@ -307,7 +306,7 @@ it("binds a parallel part's gate run to its story", async () => {
     w.project.id,
     { commit: head, check_spec_hash: hash(commands), results: [] },
   );
-  expect(startStory().context).toMatchObject({
+  expect((await startStory()).context).toMatchObject({
     acceptance: ['test -f first.txt'],
     goal: 'Explain the first',
     checks: { state: 'recorded', spec_hash: hash(commands) },
@@ -328,7 +327,7 @@ it('uses the session task generation rather than a replacement task contract', a
     plan.revision,
   );
   w.store.event('board.plan_updated', next, w.project.id, next);
-  const story = startStory();
+  const story = await startStory();
   expect(story.context?.acceptance).toEqual(['test -f old-answer.txt']);
   expect(w.turns(story.session_id!)[0]!.input).not.toContain('replacement.txt');
 });
@@ -360,9 +359,9 @@ it('marks command evidence from another commit or configuration stale and never 
       ],
     },
   );
-  const story = startStory();
+  const story = await startStory();
   expect(story.context?.checks.state).toBe('stale');
-  const ready = submitStory(w, story, smallSubmission);
+  const ready = await submitStory(w, story, smallSubmission);
   expect(ready.result?.cards[0]!.evidence).toEqual([]);
   w.store.event(
     'session.gate_checked',
@@ -370,20 +369,21 @@ it('marks command evidence from another commit or configuration stale and never 
     w.project.id,
     { commit: workspace.base_sha, check_spec_hash: hash([command]), results: [] },
   );
-  expect(startStory().context?.checks.state).toBe('stale');
+  expect((await startStory()).context?.checks.state).toBe('stale');
 });
 
 it('keeps story hunks bound to the explained range and flags later commits or checks as outdated', async () => {
   const { w, workspace, startStory } = await idleWorkbenchSession();
   const head = commitAnswer(workspace.path, 'first change\n');
-  const story = startStory();
+  const story = await startStory();
   commitAnswer(workspace.path, 'later change\n');
   const diff = await w.control.changeStoryDiff(user, story.id);
   expect(diff.to_sha).toBe(head);
   expect(diff.hunks[0]!.text).toContain('+first change');
   expect(diff.hunks[0]!.text).not.toContain('later change');
   expect(
-    w.control.changeStoryList(user, w.project.id).find((row) => row.id === story.id)?.outdated,
+    (await w.control.changeStoryList(user, w.project.id)).find((row) => row.id === story.id)
+      ?.outdated,
   ).toBe(true);
   expect(() =>
     w.control.changeStoryDiff(
@@ -396,7 +396,7 @@ it('keeps story hunks bound to the explained range and flags later commits or ch
 it('allows fresh command evidence to produce a new interpretation of the same commit', async () => {
   const { w, session, workspace, startStory } = await idleWorkbenchSession();
   const head = commitAnswer(workspace.path, 'explained\n');
-  const first = startStory();
+  const first = await startStory();
   const command = { name: 'Check', argv: ['node', 'check.js'] };
   w.call(
     'project.gate.set',
@@ -414,9 +414,10 @@ it('allows fresh command evidence to produce a new interpretation of the same co
     },
   );
   expect(
-    w.control.changeStoryList(user, w.project.id).find((row) => row.id === first.id)?.outdated,
+    (await w.control.changeStoryList(user, w.project.id)).find((row) => row.id === first.id)
+      ?.outdated,
   ).toBe(true);
-  const second = startStory();
+  const second = await startStory();
   expect(second.id).not.toBe(first.id);
   expect(second.to_sha).toBe(first.to_sha);
   expect(second.context?.checks.state).toBe('recorded');
@@ -471,7 +472,7 @@ function submitStory(
   submission: unknown,
   by: Principal = storyPrincipal(w, story),
 ) {
-  return w.call<ChangeStory>(
+  return w.call<Promise<ChangeStory>>(
     'change_story.submit',
     { story_id: story.id, ...(submission as object) },
     null,
@@ -485,7 +486,7 @@ const storySessions = (w: ReturnType<typeof workbenchFixture>) =>
 it('keeps a change story session that never started queued across a restart and starts it on the next tick', async () => {
   const { w, workspace, startStory } = await idleWorkbenchSession();
   commitAnswer(workspace.path, 'explained\n');
-  const story = startStory();
+  const story = await startStory();
   const turnJob = () =>
     w.store
       .pending()
@@ -510,7 +511,7 @@ it('records a workbench session diff too large to interpret as failed without op
   );
   git(workspace.path, 'add', '-A');
   git(workspace.path, 'commit', '--quiet', '-m', 'Generate a large file');
-  expect(startStory()).toMatchObject({
+  expect(await startStory()).toMatchObject({
     workbench_session_id: session.id,
     state: 'failed',
     reason: 'diff_too_large',
@@ -521,14 +522,15 @@ it('records a workbench session diff too large to interpret as failed without op
 it('refuses a workbench session story submission naming an unknown hunk and keeps a checked one', async () => {
   const { w, workspace, startStory } = await idleWorkbenchSession(smallBase);
   commitSmallChange(workspace.path);
-  const story = startStory();
+  const story = await startStory();
   const wrong = { ...smallSubmission, cards: [card('Change line two', ['H1', 'H9'])] };
-  expect(() => submitStory(w, story, wrong)).toThrow(
-    expect.objectContaining({ code: 'invalid_input', message: expect.stringContaining('H9') }),
-  );
+  await expect(submitStory(w, story, wrong)).rejects.toMatchObject({
+    code: 'invalid_input',
+    message: expect.stringContaining('H9'),
+  });
   expect(w.store.must<ChangeStory>('change_stories', story.id).state).toBe('running');
 
-  const ready = submitStory(w, story, smallSubmission);
+  const ready = await submitStory(w, story, smallSubmission);
   expect(ready.state).toBe('ready');
   expect(ready.result).toMatchObject({ uninterpreted: ['H3'], hunk_total: 4 });
 });
@@ -536,7 +538,7 @@ it('refuses a workbench session story submission naming an unknown hunk and keep
 it('refuses a workbench session story submission from anyone but the bound session', async () => {
   const { w, session, workspace, startStory } = await idleWorkbenchSession(smallBase);
   commitSmallChange(workspace.path);
-  const story = startStory();
+  const story = await startStory();
   const explained: Principal = {
     id: `session:${session.id}`,
     role: 'planner',
@@ -545,9 +547,9 @@ it('refuses a workbench session story submission from anyone but the bound sessi
     expires_at: w.store.now() + 60000,
   };
   for (const by of [user, explained])
-    expect(() => submitStory(w, story, smallSubmission, by)).toThrow(
-      expect.objectContaining({ code: 'permission_denied' }),
-    );
+    await expect(async () => submitStory(w, story, smallSubmission, by)).rejects.toMatchObject({
+      code: 'permission_denied',
+    });
   expect(w.store.must<ChangeStory>('change_stories', story.id).state).toBe('running');
 });
 
@@ -563,7 +565,7 @@ it('writes a patch that reverts only one card of a merged workbench session and 
     () => w.store.must<Workspace>('workspaces', workspace.id).removed_at !== undefined,
     () => w.control.tick(),
   );
-  const story = submitStory(w, startStory(), smallSubmission);
+  const story = await submitStory(w, await startStory(), smallSubmission);
   const { path: file, commands } = w.call<{ path: string; commands: string[] }>(
     'change_story.revert_patch',
     { story_id: story.id, card: 1 },
@@ -584,7 +586,7 @@ it('writes a patch that reverts only one card of a merged workbench session and 
 
   const other = await idleWorkbenchSession(smallBase);
   commitSmallChange(other.workspace.path);
-  const shared = submitStory(other.w, other.startStory(), {
+  const shared = await submitStory(other.w, await other.startStory(), {
     ...smallSubmission,
     cards: [
       card('Change line two', ['H1', 'H2', 'H4'], { acceptance: [] }),
@@ -618,7 +620,7 @@ it('gives revert commands that stop on a dirty source checkout and commit only t
     () => w.store.must<Workspace>('workspaces', workspace.id).removed_at !== undefined,
     () => w.control.tick(),
   );
-  const story = submitStory(w, startStory(), smallSubmission);
+  const story = await submitStory(w, await startStory(), smallSubmission);
   const { commands } = w.call<{ path: string; commands: string[] }>('change_story.revert_patch', {
     story_id: story.id,
     card: 1,
@@ -679,7 +681,7 @@ it('marks whitespace as noise only where it cannot change behavior and keeps loc
     'pnpm-lock.yaml': 'lockfileVersion: 2\n',
     'dist/out.js': 'built(2);\n',
   });
-  const brief = w.turns(startStory().session_id!)[0]!.input;
+  const brief = w.turns((await startStory()).session_id!)[0]!.input;
   expect(Object.fromEntries(briefHunks(brief))).toEqual({
     'p.py': undefined,
     'config.yaml': undefined,
@@ -711,7 +713,7 @@ it('marks a block as moved only when the same lines leave and arrive once in the
       filler('second') +
       block('red', 'green', 'blue'),
   });
-  const brief = w.turns(startStory().session_id!)[0]!.input;
+  const brief = w.turns((await startStory()).session_id!)[0]!.input;
   expect(briefHunks(brief)).toEqual([
     ['copied.js', 'moved'],
     ['copied.js', 'moved'],
@@ -734,7 +736,7 @@ it('splits a file that turns into a symlink into hunks of that file and keeps la
   rmSync(path.join(workspace.path, 'link.txt'));
   symlinkSync('answer.txt', path.join(workspace.path, 'link.txt'));
   writeFiles(workspace.path, { 'café.txt': 'new\n', 'notes with space.txt': 'new\n' });
-  const brief = w.turns(startStory().session_id!)[0]!.input;
+  const brief = w.turns((await startStory()).session_id!)[0]!.input;
   expect(briefHunks(brief).map(([file]) => file)).toEqual([
     'café.txt',
     'link.txt',
@@ -750,6 +752,6 @@ it('splits hunks of a quoted file name with an emoji when the project turns off 
     writeFiles(source, { [name]: 'old\n', 'plain.txt': 'old\n' });
   });
   writeFiles(workspace.path, { [name]: 'new\n', 'plain.txt': 'new\n' });
-  const brief = w.turns(startStory().session_id!)[0]!.input;
+  const brief = w.turns((await startStory()).session_id!)[0]!.input;
   expect(briefHunks(brief).map(([file]) => file)).toEqual(['plain.txt', name]);
 });

@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   closeSync,
   constants,
   mkdtempSync,
   mkdirSync,
   openSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -204,3 +206,51 @@ export function insertSession(f: ReturnType<typeof fixture>, extra: Partial<Sess
     ...extra,
   });
 }
+
+/**
+ * Puts a git first on PATH that logs each run as `cwd|GIT_ALLOW_PROTOCOL|arguments`, without the
+ * leading `-c` options. A run whose arguments contain the text given to slowOn logs `slow start`,
+ * sleeps a second and logs `slow done` before git runs.
+ */
+export function countingGit() {
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const bin = mkdtempSync(path.join(process.cwd(), 'node_modules/.cache/counting-git-')),
+    log = path.join(bin, 'runs.log'),
+    slow = path.join(bin, 'slow');
+  writeFileSync(log, '');
+  writeFileSync(slow, '');
+  writeFileSync(
+    path.join(bin, 'git'),
+    [
+      '#!/bin/sh',
+      `printf '%s|%s|%s\\n' "$PWD" "$GIT_ALLOW_PROTOCOL" "$*" >> '${log}'`,
+      `pattern=$(cat '${slow}')`,
+      `if [ -n "$pattern" ]; then case "$*" in *"$pattern"*) echo 'slow start' >> '${log}'; sleep 1; echo 'slow done' >> '${log}';; esac; fi`,
+      `exec '${real}' "$@"`,
+      '',
+    ].join('\n'),
+  );
+  chmodSync(path.join(bin, 'git'), 0o755);
+  const PATH = process.env.PATH;
+  process.env.PATH = `${bin}:${PATH}`;
+  const lines = () => readFileSync(log, 'utf8').split('\n').filter(Boolean);
+  return {
+    runs: () =>
+      lines()
+        .filter((line) => line.includes('|'))
+        .map((line) => line.replace(/(^[^|]*\|[^|]*\|)(?:-c \S+ )*/, '$1')),
+    log: lines,
+    reset: () => writeFileSync(log, ''),
+    slowOn: (text: string) => writeFileSync(slow, text),
+    restore: () => {
+      process.env.PATH = PATH;
+      rmSync(bin, { recursive: true, force: true });
+    },
+  };
+}
+
+/** The arguments of each logged run whose subcommand is name. */
+export const gitRunsOf = (runs: string[], name: string) =>
+  runs
+    .map((run) => run.split('|').slice(2).join('|'))
+    .filter((args) => args.replace(/^--literal-pathspecs /, '').split(' ')[0] === name);

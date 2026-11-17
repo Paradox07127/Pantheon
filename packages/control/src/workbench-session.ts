@@ -26,7 +26,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { lstat, open, readlink } from 'node:fs/promises';
+import { lstat, mkdtemp, open, readlink, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -91,7 +91,13 @@ import {
   type Handlers,
 } from './context.js';
 import { admitWriterChoice } from './admission.js';
-import { checkpointRef, forkCheckpoint, gitWorkspace, restorableTurns } from './checkpoint.js';
+import {
+  CHECKPOINTS,
+  checkpointRef,
+  forkCheckpoint,
+  gitWorkspace,
+  restorableTurns,
+} from './checkpoint.js';
 import { buildHandoff } from './handoff.js';
 import { sessionEnded } from './baseline.js';
 import {
@@ -490,18 +496,6 @@ const trackedDiff = (base: string, ...extra: string[]) => [
   base,
   '--',
 ];
-const untrackedDiff = (file: string, ...extra: string[]) => [
-  'diff',
-  '--no-index',
-  ...extra,
-  ...DIFF_OPTIONS,
-  '--',
-  '/dev/null',
-  file,
-];
-// A no-index diff exits 1 when the files differ.
-const noIndexDiffed = (code: number | null) => code === 0 || code === 1;
-
 /** Untracked files a diff reads with Git, and the time it spends on them; later files come without lines. */
 const UNTRACKED_DIFF_BOUND = 200,
   UNTRACKED_DIFF_TIME = 3 * TIME_BOUND;
@@ -582,13 +576,14 @@ function worktreeChanges(directory: string, base: string): WorkbenchSession['cha
   return changesOf(tracked, untrackedFiles, untrackedAdditions);
 }
 
+/** worktreeChanges read asynchronously, with the changed and untracked paths it read. */
 async function prefetchedChanges(
   directory: string,
   base: string,
-): Promise<WorkbenchSession['changes']> {
+): Promise<{ changes: WorkbenchSession['changes']; paths?: string[] }> {
   const tracked = await runGit(directory, trackedDiff(base, '--numstat', '-z'), undefined, true),
     untracked = await runGit(directory, UNTRACKED, undefined, true);
-  if (tracked.exit_code !== 0 || untracked.exit_code !== 0) return null;
+  if (tracked.exit_code !== 0 || untracked.exit_code !== 0) return { changes: null };
   const untrackedFiles = untrackedOf(untracked);
   let untrackedAdditions = 0;
   try {
@@ -596,9 +591,12 @@ async function prefetchedChanges(
       untrackedAdditions += await readUntrackedLines(path.join(directory, file));
   } catch {
     // The session removed or replaced a file while it was read.
-    return null;
+    return { changes: null };
   }
-  return changesOf(tracked, untrackedFiles, untrackedAdditions);
+  return {
+    changes: changesOf(tracked, untrackedFiles, untrackedAdditions),
+    paths: [...numstatFiles(tracked.stdout).map((file) => file.path), ...untrackedFiles],
+  };
 }
 
 const untrackedOf = (untracked: GitResult) =>
@@ -665,6 +663,8 @@ interface WorktreeRead {
   at: number;
   activity: number;
   changes?: WorkbenchSession['changes'];
+  /** The changed and untracked paths a prefetch read with changes. */
+  paths?: string[];
   facts?: SessionGitFacts | null;
   head?: string | null;
   /** The asynchronous read of the entry's missing fields, shared by concurrent prefetches. */
@@ -722,6 +722,28 @@ function worktreeRead(workspaceId: string, activity: number): WorktreeRead {
   };
   worktreeReads.set(workspaceId, read);
   return read;
+}
+
+/**
+ * The changed and untracked paths a prefetch read in a session's worktree, while that read is
+ * the list's current one; undefined when there is none.
+ */
+export function prefetchedPaths(
+  ctx: ControlContext,
+  projectId: string,
+): (session: Session, workspaceId: string) => string[] | undefined {
+  const approvals = ctx.store
+    .list<Approval>('approvals')
+    .filter((approval) => approval.project_id === projectId);
+  const activities = sessionActivity(ctx, projectId, approvals),
+    now = Date.now();
+  return (session, workspaceId) => {
+    const read = worktreeReads.get(workspaceId);
+    return read?.activity === (activities.get(session.id)?.at ?? 0) &&
+      now - read.at < WORKTREE_READ_MS
+      ? read.paths
+      : undefined;
+  };
 }
 
 /** A folder session's checked folder, read against its HEAD; undefined when the folder cannot be read. */
@@ -1148,7 +1170,10 @@ async function prefetchListedGit(ctx: ControlContext, p: Principal, listed: List
     const next = listedGit(ctx, p, listed);
     if (!('read' in next)) return;
     if (next.read === 'changes')
-      cached.changes = await prefetchedChanges(next.directory, next.base);
+      ({ changes: cached.changes, paths: cached.paths } = await prefetchedChanges(
+        next.directory,
+        next.base,
+      ));
     else if (next.read === 'facts') {
       cached.facts = sessionGitFacts(
         await runGit(workspace.path, BRANCH_STATUS, undefined, true),
@@ -1589,10 +1614,64 @@ export async function readSessionDiff(
   };
   const base = inPlace ? 'HEAD' : workspace.base_sha;
   if (!base) throw new DomainError('diff_base_missing', 'Worktree has no base commit');
+  const approvals = ctx.store
+    .list<Approval>('approvals')
+    .filter((approval) => approval.session_id === session.id);
+  const activity = sessionActivity(ctx, session.project_id, approvals).get(session.id)?.at ?? 0,
+    cached = sessionDiffs.get(workspace.id);
+  if (
+    cached &&
+    cached.activity === activity &&
+    (cached.reading || Date.now() - cached.at < WORKTREE_READ_MS)
+  )
+    return cached.diff;
+  const read: SessionDiffRead = {
+    at: Date.now(),
+    activity,
+    reading: true,
+    diff: worktreeDiff(run, failed, base).then(
+      ({ head, ...diff }) => {
+        read.at = Date.now();
+        delete read.reading;
+        return { session_id: session.id, base_sha: inPlace ? head : base, head_sha: head, ...diff };
+      },
+      (error: unknown) => {
+        if (sessionDiffs.get(workspace.id) === read) sessionDiffs.delete(workspace.id);
+        throw error;
+      },
+    ),
+  };
+  sessionDiffs.set(workspace.id, read);
+  return read.diff;
+}
+
+interface SessionDiffRead {
+  /** When the read started, then when it ended; WORKTREE_READ_MS counts from it. */
+  at: number;
+  activity: number;
+  /** Set while the read runs; concurrent requests share it. */
+  reading?: true;
+  diff: Promise<SessionDiff>;
+}
+
+/** Session diffs by workspace id, read again after the session's last activity moved or they aged out. */
+const sessionDiffs = new Map<string, SessionDiffRead>();
+
+/** The worktree's head and its changes against the base commit. */
+async function worktreeDiff(
+  run: (
+    args: string[],
+    bound: { max_buffer: number; timeout_ms: number; env?: NodeJS.ProcessEnv },
+  ) => Promise<GitResult>,
+  failed: () => never,
+  base: string,
+): Promise<Pick<SessionDiff, 'files' | 'patch' | 'truncated'> & { head: string }> {
   const bound = { max_buffer: 4 * PATCH_BOUND, timeout_ms: TIME_BOUND };
-  const head = await run(['rev-parse', 'HEAD'], { max_buffer: 4096, timeout_ms: TIME_BOUND });
-  const numstat = await run(trackedDiff(base, '--numstat', '-z'), bound);
-  const untracked = await run(UNTRACKED, bound);
+  const [head, numstat, untracked] = await Promise.all([
+    run(['rev-parse', 'HEAD'], { max_buffer: 4096, timeout_ms: TIME_BOUND }),
+    run(trackedDiff(base, '--numstat', '-z'), bound),
+    run(UNTRACKED, bound),
+  ]);
   if (head.exit_code !== 0 || numstat.exit_code !== 0 || untracked.exit_code !== 0) failed();
   const files: SessionDiff['files'] = numstatFiles(numstat.stdout).map((file) => ({
     ...file,
@@ -1601,44 +1680,79 @@ export async function readSessionDiff(
   let patch = '',
     truncated = false;
   // Appends a patch within the remaining bound; false when the command failed.
-  const append = async (args: string[], accepted: (code: number | null) => boolean) => {
+  const append = async (diff: (max_buffer: number) => Promise<GitResult | undefined>) => {
     const remaining = PATCH_BOUND - Buffer.byteLength(patch);
     if (truncated || remaining <= 0) return (truncated = true);
-    const result = await run(args, { max_buffer: remaining, timeout_ms: TIME_BOUND });
-    if (accepted(result.exit_code)) patch += result.stdout.toString();
+    const result = await diff(remaining);
+    // A diff without a result ran out of time.
+    if (!result) truncated = true;
+    else if (result.exit_code === 0) patch += result.stdout.toString();
     else if (/ERR_CHILD_PROCESS_STDIO_MAXBUFFER/.test(result.error ?? '')) truncated = true;
     else return false;
     return true;
   };
-  if (!(await append(trackedDiff(base), (code) => code === 0))) failed();
-  const deadline = Date.now() + UNTRACKED_DIFF_TIME;
-  for (const [index, file] of untracked.stdout.toString().split('\0').filter(Boolean).entries()) {
-    // Each untracked file costs its own Git processes; past the bounds its lines stay unknown.
-    if (index >= UNTRACKED_DIFF_BOUND || Date.now() >= deadline) {
+  if (
+    !(await append((max_buffer) => run(trackedDiff(base), { max_buffer, timeout_ms: TIME_BOUND })))
+  )
+    failed();
+  const listed = untracked.stdout.toString().split('\0').filter(Boolean),
+    bounded = listed.slice(0, UNTRACKED_DIFF_BOUND);
+  // Past the file bound the lines of later untracked files stay unknown.
+  if (listed.length > bounded.length) truncated = true;
+  let stats: Map<string, ReturnType<typeof numstatFiles>[number]> | undefined;
+  if (bounded.length) {
+    // An index holding only the untracked files, as intent to add, diffs them all as new files in one run.
+    const scratch = await mkdtemp(path.join(os.tmpdir(), 'pantheon-untracked-')),
+      pathspecs = path.join(scratch, 'paths'),
+      env = { GIT_INDEX_FILE: path.join(scratch, 'index') },
+      deadline = Date.now() + UNTRACKED_DIFF_TIME;
+    // Undefined when the run did not end by the deadline.
+    const indexed = async (args: string[], max_buffer: number) => {
+      if (Date.now() >= deadline) return undefined;
+      const result = await run(args, { max_buffer, timeout_ms: deadline - Date.now(), env });
+      return result.exit_code === null && Date.now() >= deadline ? undefined : result;
+    };
+    try {
+      await writeFile(pathspecs, bounded.join('\0'));
+      const added = await indexed(
+        [
+          '--literal-pathspecs',
+          'add',
+          '--intent-to-add',
+          `--pathspec-from-file=${pathspecs}`,
+          '--pathspec-file-nul',
+        ],
+        bound.max_buffer,
+      );
+      const counted =
+        added?.exit_code === 0
+          ? await indexed(['diff', '--numstat', '-z', ...DIFF_OPTIONS, '--'], bound.max_buffer)
+          : added;
+      if (counted && counted.exit_code !== 0) failed();
+      if (!counted) truncated = true;
+      else {
+        stats = new Map(numstatFiles(counted.stdout).map((file) => [file.path, file] as const));
+        if (!(await append((max_buffer) => indexed(['diff', ...DIFF_OPTIONS, '--'], max_buffer))))
+          failed();
+      }
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
+  for (const [index, file] of listed.entries()) {
+    if (!stats || index >= bounded.length) {
       files.push({ path: file, additions: null, deletions: null, untracked: true });
-      truncated = true;
       continue;
     }
-    const counted = await run(untrackedDiff(file, '--numstat', '-z'), bound);
-    if (!noIndexDiffed(counted.exit_code)) failed();
-    const [stat] = numstatFiles(counted.stdout);
+    const stat = stats.get(file);
     files.push({
       path: file,
       additions: stat ? stat.additions : 0,
       deletions: stat ? stat.deletions : 0,
       untracked: true,
     });
-    if (!(await append(untrackedDiff(file), noIndexDiffed))) failed();
   }
-  const headSha = head.stdout.toString().trim();
-  return {
-    session_id: session.id,
-    base_sha: inPlace ? headSha : base,
-    head_sha: headSha,
-    files,
-    patch: truncated ? null : patch,
-    truncated,
-  };
+  return { head: head.stdout.toString().trim(), files, patch: truncated ? null : patch, truncated };
 }
 
 const nativeKeys = (ctx: ControlContext, sessionId: string) =>
@@ -2613,37 +2727,50 @@ export function projectTimeline(
 }
 
 /** Reads merge facts without running gates, queuing a merge or updating either repository. */
-export function sessionPreflight(
+export async function sessionPreflight(
   ctx: ControlContext,
   p: Principal,
   sessionId: string,
-): SessionPreflight {
-  const session = ctx.store.must<Session>('sessions', sessionId);
-  projectAccess(ctx, p, session.project_id, 'project.read');
-  requireThat(session.workspace_id, 'invalid_state', 'Session has no worktree');
-  refuseInPlace(ctx, session, NO_MERGE_GATE);
-  const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id),
-    source = workspace.source ?? workspace.path,
-    worktree = mergeWorktreeState(workspace),
-    sourceState = mergeSourceState(workspace),
-    commits = runGit(workspace.path, [
-      'rev-list',
-      '--count',
-      `${workspace.base_sha}..${worktree.head}`,
-    ]),
-    files = runGit(workspace.path, [
-      'diff',
-      '--name-only',
-      '-z',
-      workspace.base_sha!,
-      worktree.head,
-    ]);
+): Promise<SessionPreflight> {
+  const started = ctx.store.must<Session>('sessions', sessionId);
+  projectAccess(ctx, p, started.project_id, 'project.read');
+  requireThat(started.workspace_id, 'invalid_state', 'Session has no worktree');
+  refuseInPlace(ctx, started, NO_MERGE_GATE);
+  const workspace = ctx.store.must<Workspace>('workspaces', started.workspace_id),
+    source = workspace.source ?? workspace.path;
+  const [worktreeStatus, sourceStatus] = await Promise.all([
+    runGit(workspace.path, BRANCH_STATUS, undefined, true),
+    runGit(source, SOURCE_STATUS, undefined, true),
+  ]);
+  const worktree = worktreeStateOf(worktreeStatus);
+  requireThat(worktree, 'workspace_read_failed', 'Worktree status could not be read');
+  const sourceState = sourceStateOf(sourceStatus);
+  requireThat(sourceState, 'workspace_read_failed', 'Source repository status could not be read');
+  const { branch: targetBranch, clean: sourceClean } = sourceState;
+  const [commits, files, merge] = await Promise.all([
+    runGit(
+      workspace.path,
+      ['rev-list', '--count', `${workspace.base_sha}..${worktree.head}`],
+      undefined,
+      true,
+    ),
+    runGit(
+      workspace.path,
+      ['diff', '--name-only', '-z', workspace.base_sha!, worktree.head],
+      undefined,
+      true,
+    ),
+    targetBranch !== null
+      ? mergePreview(source, `refs/heads/${targetBranch}`, worktree.head, true)
+      : undefined,
+  ]);
   requireThat(
     commits.exit_code === 0 && files.exit_code === 0,
     'workspace_read_failed',
     'Worktree changes could not be read',
   );
-  const { branch: targetBranch, clean: sourceClean } = sourceState,
+  // The session may have moved while Git ran.
+  const session = ctx.store.must<Session>('sessions', sessionId),
     commands = gateCommands(
       ctx,
       ctx.store.must<Project>('projects', session.project_id),
@@ -2661,22 +2788,22 @@ export function sessionPreflight(
         }
       | undefined;
   let conflicts: SessionPreflight['conflicts'] = { state: 'unknown' };
-  if (targetBranch !== null) {
-    const merge = mergePreview(source, `refs/heads/${targetBranch}`, worktree.head);
-    if (merge.exit_code !== 129) {
-      requireThat(
-        merge.exit_code === 0 || merge.exit_code === 1,
-        'workspace_read_failed',
-        'Merge conflicts could not be read',
-      );
-      const paths = merge.stdout.toString().split('\0\0')[0]!.split('\0').slice(1, 51);
-      conflicts = merge.exit_code === 0 ? { state: 'none' } : { state: 'conflicts', files: paths };
-    }
+  if (merge && merge.exit_code !== 129) {
+    requireThat(
+      merge.exit_code === 0 || merge.exit_code === 1,
+      'workspace_read_failed',
+      'Merge conflicts could not be read',
+    );
+    const paths = merge.stdout.toString().split('\0\0')[0]!.split('\0').slice(1, 51);
+    conflicts = merge.exit_code === 0 ? { state: 'none' } : { state: 'conflicts', files: paths };
   }
   const openComments = ctx.store
     .list<SessionComment>('session_comments')
     .filter((comment) => comment.session_id === session.id && comment.state === 'open').length;
-  const blockedReason = mergeBlockedReason(ctx, session, { worktree, source: sourceState })?.code;
+  const blockedReason = mergeBlockedReason(ctx, session, {
+    worktree: () => worktree,
+    source: () => sourceState,
+  })?.code;
   return {
     target_branch: targetBranch,
     source_root: source,
@@ -3159,49 +3286,148 @@ function releaseRetiredClaim(
   ctx.store.event('task.released', next, next.project_id, { task_id: direct.id });
 }
 
+type WorktreeState = { clean: boolean; head: string };
+type SourceState = { branch: string | null; clean: boolean };
+
 /** Whether the worktree has no uncommitted or untracked files, and its HEAD; null when Git cannot read them. */
-function worktreeState(workspace: Workspace): { clean: boolean; head: string } | null {
-  const status = runGit(workspace.path, STATUS),
-    head = runGit(workspace.path, HEAD_COMMIT);
-  if (status.exit_code !== 0 || head.exit_code !== 0) return null;
-  return { clean: !status.stdout.toString().trim(), head: headOf(head)! };
+function worktreeState(workspace: Workspace): WorktreeState | null {
+  return worktreeStateOf(runGit(workspace.path, BRANCH_STATUS));
 }
 
-const STATUS = ['status', '--porcelain=v1'],
-  HEAD_COMMIT = ['rev-parse', '--verify', 'HEAD^{commit}'];
+function worktreeStateOf(status: GitResult): WorktreeState | null {
+  const current = branchStatus(status);
+  // A branch without commits has no HEAD commit.
+  if (!current || current.head === '(initial)') return null;
+  return { clean: current.uncommitted === 0, head: current.head };
+}
+
+const HEAD_COMMIT = ['rev-parse', '--verify', 'HEAD^{commit}'],
+  SOURCE_STATUS = [...BRANCH_STATUS, '--untracked-files=no'];
 
 const headOf = (head: GitResult) => (head.exit_code === 0 ? head.stdout.toString().trim() : null);
 
-function mergeWorktreeState(workspace: Workspace): { clean: boolean; head: string } {
+function mergeWorktreeState(workspace: Workspace): WorktreeState {
   const state = worktreeState(workspace);
   requireThat(state, 'workspace_read_failed', 'Worktree status could not be read');
   return state;
 }
 
 /** The source repository's checked-out branch, null when HEAD is detached, and whether its tracked files are unedited. */
-function mergeSourceState(workspace: Workspace): { branch: string | null; clean: boolean } {
-  const source = workspace.source ?? workspace.path,
-    status = runGit(source, ['status', '--porcelain=v1', '--untracked-files=no']),
-    branch = runGit(source, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-  requireThat(
-    status.exit_code === 0 && (branch.exit_code === 0 || branch.exit_code === 1),
-    'workspace_read_failed',
-    'Source repository status could not be read',
-  );
-  return {
-    branch: branch.exit_code === 0 ? branch.stdout.toString().trim() : null,
-    clean: !status.stdout.toString().trim(),
-  };
+function mergeSourceState(workspace: Workspace): SourceState {
+  const state = sourceStateOf(runGit(workspace.source ?? workspace.path, SOURCE_STATUS));
+  requireThat(state, 'workspace_read_failed', 'Source repository status could not be read');
+  return state;
 }
 
-/** The first admission block; preflight can supply the repository states it already read. */
+function sourceStateOf(status: GitResult): SourceState | null {
+  const current = branchStatus(status);
+  return current && { branch: current.branch, clean: current.uncommitted === 0 };
+}
+
+/** Reads of the repository states a merge admits on; undefined when the state is not known. */
+interface MergeReads {
+  worktree: (workspace: Workspace) => WorktreeState | undefined;
+  source: (workspace: Workspace) => SourceState | undefined;
+}
+
+const gitMergeReads: MergeReads = { worktree: mergeWorktreeState, source: mergeSourceState };
+
+const MERGE_READ_MS = 2000;
+
+/** The last asynchronous read of a repository state; state is undefined until one completes. */
+interface MergeStateRead<T> {
+  at: number;
+  state?: T | null;
+  refresh?: Promise<boolean>;
+}
+
+/** The needs-you merge actions' reads, of worktrees by workspace id and of source repositories by path. */
+const worktreeMergeReads = new Map<string, MergeStateRead<WorktreeState>>(),
+  sourceMergeReads = new Map<string, MergeStateRead<SourceState>>();
+
+const cachedMergeReads: MergeReads = {
+  worktree: (workspace) => worktreeMergeReads.get(workspace.id)?.state ?? undefined,
+  source: (workspace) =>
+    sourceMergeReads.get(workspace.source ?? workspace.path)?.state ?? undefined,
+};
+
+/** Reads key's state again unless it was read under MERGE_READ_MS ago or is being read; true when it moved. */
+function refreshMergeState<T>(
+  reads: Map<string, MergeStateRead<T>>,
+  key: string,
+  read: () => Promise<T | null>,
+): Promise<boolean> {
+  const known = reads.get(key);
+  if (known?.refresh) return known.refresh;
+  if (known && Date.now() - known.at < MERGE_READ_MS) return Promise.resolve(false);
+  const refresh = read().then((state) => {
+    reads.set(key, { at: Date.now(), state });
+    return JSON.stringify(state) !== JSON.stringify(known?.state);
+  });
+  reads.set(key, { ...(known ?? { at: 0 }), refresh });
+  return refresh;
+}
+
+/**
+ * Reads asynchronously the repository states of the project's blocked merges, which needsYou shows
+ * from this cache alone; emits workspace.repository_changed when a state moved.
+ */
+export function prefetchMergeReads(
+  ctx: ControlContext,
+  p: Principal,
+  projectId: string,
+): Promise<void> {
+  // needsYou serves only user and planner principals.
+  if (p.role !== 'user' && p.role !== 'planner') return Promise.resolve();
+  projectAccess(ctx, p, projectId, 'project.read');
+  const reads = ctx.store
+    .list<Session>('sessions')
+    .filter(
+      (session) =>
+        session.project_id === projectId &&
+        session.merge?.state === 'blocked' &&
+        session.workspace_id,
+    )
+    .flatMap((session) => {
+      const workspace = ctx.store.get<Workspace>('workspaces', session.workspace_id!);
+      if (!workspace || workspace.kind === 'in_place' || !workspaceReady(workspace)) return [];
+      const source = workspace.source ?? workspace.path;
+      return [
+        refreshMergeState(worktreeMergeReads, workspace.id, async () =>
+          worktreeStateOf(await runGit(workspace.path, BRANCH_STATUS, undefined, true)),
+        ),
+        refreshMergeState(sourceMergeReads, source, async () =>
+          sourceStateOf(await runGit(source, SOURCE_STATUS, undefined, true)),
+        ),
+      ];
+    });
+  const work: Promise<void> = Promise.all(reads)
+    .then((moved) => {
+      if (ctx.closing || !moved.includes(true)) return;
+      // Clients read the needs-you items again only after an event.
+      ctx.store.event(
+        'workspace.repository_changed',
+        ctx.store.must<Project>('projects', projectId),
+        projectId,
+        {},
+      );
+      ctx.changed();
+    })
+    .finally(() => ctx.completions.delete(work));
+  ctx.completions.add(work);
+  return work;
+}
+
+const MERGE_STATE_UNKNOWN = {
+  code: 'workspace_read_failed',
+  message: 'The repository states are not read yet',
+};
+
+/** The first admission block; a repository state read does not know blocks as unknown. */
 function mergeBlockedReason(
   ctx: ControlContext,
   session: Session,
-  read?: {
-    worktree: ReturnType<typeof mergeWorktreeState>;
-    source: ReturnType<typeof mergeSourceState>;
-  },
+  read: MergeReads = gitMergeReads,
 ): { code: string; message: string } | undefined {
   if (ctx.store.must<Workspace>('workspaces', session.workspace_id!).kind === 'in_place')
     return { code: 'invalid_state', message: NO_MERGE_GATE };
@@ -3218,7 +3444,9 @@ function mergeBlockedReason(
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   if (!workspaceReady(workspace))
     return { code: 'invalid_state', message: 'Worktree is not ready' };
-  const { clean, head } = read?.worktree ?? mergeWorktreeState(workspace);
+  const worktree = read.worktree(workspace);
+  if (!worktree) return MERGE_STATE_UNKNOWN;
+  const { clean, head } = worktree;
   // The session agent commits its own work; Pantheon never commits for it.
   if (!clean)
     return {
@@ -3227,7 +3455,8 @@ function mergeBlockedReason(
     };
   if (head === workspace.base_sha)
     return { code: 'no_changes', message: 'The worktree has no commits to merge' };
-  const source = read?.source ?? mergeSourceState(workspace);
+  const source = read.source(workspace);
+  if (!source) return MERGE_STATE_UNKNOWN;
   if (source.branch === null)
     return {
       code: 'source_detached',
@@ -3245,9 +3474,12 @@ function mergeBlockedReason(
     };
 }
 
-/** Preconditions shared by merge admission and the needs-you retry action. */
-export function requireMergeReady(ctx: ControlContext, session: Session): void {
-  const blocked = mergeBlockedReason(ctx, session);
+/**
+ * Preconditions shared by merge admission and the needs-you retry action; cached reads only the
+ * repository states prefetchMergeReads last read.
+ */
+export function requireMergeReady(ctx: ControlContext, session: Session, cached = false): void {
+  const blocked = mergeBlockedReason(ctx, session, cached ? cachedMergeReads : gitMergeReads);
   if (blocked) throw new DomainError(blocked.code, blocked.message);
 }
 
@@ -3965,19 +4197,27 @@ export const workbenchSessionHandlers: Handlers = {
     }
     let checkpoint: string | undefined;
     let beforeTurnId = input.before_turn_id;
+    // The commit of each of the source session's checkpoints by ref, in one read.
+    const checkpoints = () =>
+      new Map(
+        runGit(workspace.path, [
+          'for-each-ref',
+          '--format=%(refname) %(objectname)',
+          `${CHECKPOINTS}/${workspace.id}/${source.id}/`,
+        ])
+          .stdout.toString()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => line.split(' ') as [string, string]),
+      );
     if (input.before_turn_id) {
       const turn = ctx.store.get<SessionTurn>('session_turns', input.before_turn_id);
       const found =
         turn?.session_id === source.id
-          ? runGit(workspace.path, [
-              'rev-parse',
-              '--verify',
-              '--quiet',
-              `${checkpointRef(workspace, source.id, turn.id)}^{commit}`,
-            ])
+          ? checkpoints().get(checkpointRef(workspace, source.id, turn.id))
           : undefined;
-      requireThat(found?.exit_code === 0, 'invalid_state', 'Turn has no checkpoint');
-      checkpoint = found.stdout.toString().trim();
+      requireThat(found, 'invalid_state', 'Turn has no checkpoint');
+      checkpoint = found;
     } else if (source.state === 'running' && !input.before_span_id) {
       // The end of the last completed turn is the checkpoint the next turn took before it ran.
       const turns = ctx.store
@@ -3998,21 +4238,17 @@ export const workbenchSessionHandlers: Handlers = {
           .filter((event) => event.aggregate_id === source.id)
           .map((event) => (event.payload as { turn_id: string }).turn_id),
       );
+      let refs: Map<string, string> | undefined;
       for (const turn of later) {
-        const found = runGit(workspace.path, [
-          'rev-parse',
-          '--verify',
-          '--quiet',
-          `${checkpointRef(workspace, source.id, turn.id)}^{commit}`,
-        ]);
+        const found = (refs ??= checkpoints()).get(checkpointRef(workspace, source.id, turn.id));
         // A turn that ran without its checkpoint has changed the current files already.
         requireThat(
-          found.exit_code === 0 || !uncaptured.has(turn.id),
+          found !== undefined || !uncaptured.has(turn.id),
           'invalid_state',
           'A later turn of the source session has no checkpoint; fork from an earlier turn',
         );
-        if (found.exit_code !== 0) continue;
-        checkpoint = found.stdout.toString().trim();
+        if (found === undefined) continue;
+        checkpoint = found;
         break;
       }
     } else {
@@ -5014,11 +5250,17 @@ export async function applyModel(
 }
 
 /** The branch and commit checked out in the project's first folder. */
-export function projectHead(ctx: ControlContext, p: Principal, projectId: string): ProjectHead {
+export async function projectHead(
+  ctx: ControlContext,
+  p: Principal,
+  projectId: string,
+): Promise<ProjectHead> {
   projectAccess(ctx, p, projectId, 'project.read');
   const root = ctx.store.must<Project>('projects', projectId).roots[0]!;
-  const status = branchStatus(runGit(root, BRANCH_STATUS)),
-    head = runGit(root, ['log', '-1', '--format=%H%x00%s%x00%ct']);
+  const [status, head] = await Promise.all([
+    runGit(root, BRANCH_STATUS, undefined, true).then(branchStatus),
+    runGit(root, ['log', '-1', '--format=%H%x00%s%x00%ct'], undefined, true),
+  ]);
   requireThat(
     status && head.exit_code === 0,
     'workspace_read_failed',
@@ -5035,17 +5277,55 @@ export function projectHead(ctx: ControlContext, p: Principal, projectId: string
   };
 }
 
+const FILE_LIST_MS = 5000;
+
+/** The last file listing of each searched folder, by path, with the HEAD and index it was read at. */
+const fileLists = new Map<string, { key: string; at: number; files: Promise<string[]> }>();
+
+/** The folder's tracked and unignored files; untracked files show FILE_LIST_MS late at most. */
+async function listedFiles(cwd: string): Promise<string[]> {
+  // An unborn HEAD still prints the index path, then HEAD itself.
+  const [index, head] = (
+    await runGit(cwd, ['rev-parse', '--git-path', 'index', 'HEAD'], undefined, true)
+  ).stdout
+    .toString()
+    .split('\n');
+  const indexed = await stat(path.resolve(cwd, index!)).then(
+    (file) => file.mtimeMs,
+    () => 0,
+  );
+  const key = `${head}\0${indexed}`,
+    now = Date.now();
+  for (const [folder, list] of fileLists)
+    if (now - list.at >= FILE_LIST_MS) fileLists.delete(folder);
+  const cached = fileLists.get(cwd);
+  if (cached?.key === key) return cached.files;
+  const files = runGit(
+    cwd,
+    ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    undefined,
+    true,
+  ).then((listed) => {
+    requireThat(listed.exit_code === 0, 'workspace_read_failed', 'Files could not be listed');
+    return [...new Set(listed.stdout.toString().split('\0').filter(Boolean))];
+  });
+  fileLists.set(cwd, { key, at: now, files });
+  // A failed listing is not kept.
+  files.catch(() => fileLists.get(cwd)?.files === files && fileLists.delete(cwd));
+  return files;
+}
+
 /**
  * Tracked and unignored files of the session's worktree, or of the project's first folder, that
  * match q: file name matches first, then path matches, then paths holding q's characters in order.
  */
-export function filesSearch(
+export async function filesSearch(
   ctx: ControlContext,
   p: Principal,
   projectId: string,
   sessionId: string | undefined,
   q: string,
-): string[] {
+): Promise<string[]> {
   ownWorkspaceOnly(ctx, p, projectId, sessionId);
   let cwd = ctx.store.must<Project>('projects', projectId).roots[0]!;
   if (sessionId) {
@@ -5058,9 +5338,7 @@ export function filesSearch(
     requireThat(session.workspace_id, 'invalid_state', 'Session has no worktree');
     cwd = ctx.store.must<Workspace>('workspaces', session.workspace_id).path;
   }
-  const listed = runGit(cwd, ['ls-files', '-z', '--cached', '--others', '--exclude-standard']);
-  requireThat(listed.exit_code === 0, 'workspace_read_failed', 'Files could not be listed');
-  const files = [...new Set(listed.stdout.toString().split('\0').filter(Boolean))];
+  const files = await listedFiles(cwd);
   const needle = q.toLowerCase();
   if (!needle) return files.slice(0, 50);
   const rank = (file: string): number => {

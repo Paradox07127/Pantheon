@@ -28,7 +28,7 @@ import {
   revision,
   projectAccess,
   userOnly,
-  gitFolder,
+  gitFolderAsync,
   inside,
   insert,
   projectFolder,
@@ -43,7 +43,11 @@ import {
   type Handlers,
 } from './context.js';
 import { runtime } from './admission.js';
-import { finishWriteAudit, startWriteAudit } from './non-writer-audit.js';
+import {
+  finishReconciledWriteAudit,
+  finishWriteAudit,
+  startWriteAudit,
+} from './non-writer-audit.js';
 import { agentEvent, saveSessionHandle, stopSession, turnDelivery } from './agent.js';
 import { loseSessionApprovals } from './approvals.js';
 import { REVIEW_WALL_TIME_MS, reviewerDirectory, settleReview } from './review.js';
@@ -379,7 +383,7 @@ export function unsnooze(ctx: ControlContext, sessionId: string, reason: string,
 
 /** The caller owns the transaction and has confirmed termination. */
 export function closeReconciledSession(ctx: ControlContext, session: Session, cause = ''): Session {
-  finishWriteAudit(ctx, session.id);
+  finishReconciledWriteAudit(ctx, session.id);
   session = ctx.store.must<Session>('sessions', session.id);
   const { queued_handoff, ...rest } = session;
   const next = ctx.store.update(
@@ -1040,7 +1044,7 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
           return next;
         });
         if (spec)
-          startWriteAudit(
+          await startWriteAudit(
             ctx,
             spec,
             turn.id,
@@ -1145,7 +1149,7 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
     for (;;) {
       await sent.ready;
       const state = await sent.completed;
-      finishWriteAudit(ctx, initial.session_id);
+      await finishWriteAudit(ctx, initial.session_id);
       lastState = state;
       if (state === 'failed') result = 'failed';
       while (injections.size) await Promise.all([...injections]);
@@ -1626,10 +1630,8 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
             : reviewerPath
               ? { workspace: { id: session.id, path: reviewerPath } }
               : {
-                  project_roots: project.roots.map((root) => ({
-                    path: root,
-                    git: gitFolder(root),
-                  })),
+                  // git is filled in once this start holds the session.
+                  project_roots: project.roots.map((root) => ({ path: root, git: false })),
                 }),
           ...((session.review_id || analysisPath) && ctx.protectionPaths
             ? {
@@ -1728,12 +1730,13 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
     let chosen: Session;
     try {
       if (remote) await prepareRemoteWorkspace(ctx, session);
+      for (const root of spec.project_roots ?? []) root.git = await gitFolderAsync(root.path);
       requireThat(
         !ctx.store.must<Session>('sessions', session.id).stop_requested,
         'invalid_state',
         'Session is being discarded',
       );
-      startWriteAudit(
+      await startWriteAudit(
         ctx,
         spec,
         turn.id,
@@ -1829,7 +1832,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
         ctx.cancelling.set(key, completion);
         const stop = await stopSession(ctx, adapter, handle!, 'close');
         if (ctx.handles.get(key) === handle)
-          finishTurn(
+          await finishTurn(
             ctx,
             key,
             ctx.closing ? 'failed' : state,
@@ -1884,7 +1887,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
     else if (!handle) {
       if (session.queued_handoff && (!(error instanceof SessionStartError) || error.stop.stopped))
         ctx.store.transaction(() => retryQueuedHandoff(ctx, session.id, failure));
-      finishTurn(
+      await finishTurn(
         ctx,
         key,
         'failed',
@@ -1911,7 +1914,7 @@ function unconfirmedProcess(
   }
 }
 
-export function finishTurn(
+export async function finishTurn(
   ctx: ControlContext,
   key: string,
   state: 'completed' | 'failed' | 'cancelled',
@@ -1919,9 +1922,9 @@ export function finishTurn(
   stop?: { receipt?: CancelReceipt; error?: string; reason?: string },
   turnState = state,
   errorCode?: string,
-): void {
+): Promise<void> {
+  await finishWriteAudit(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id);
   ctx.store.transaction(() => {
-    finishWriteAudit(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id);
     const t = ctx.store.must<SessionTurn>('session_turns', key),
       s = ctx.store.must<Session>('sessions', t.session_id);
     if (
@@ -2018,7 +2021,7 @@ export async function stopTurn(
   const stopping = (async () => {
     ctx.endTurns.get(key)?.(reason);
     const stop = await stopSession(ctx, sessionAdapter(ctx, session)!, handle, method);
-    finishTurn(ctx, key, 'failed', reason, { ...stop, reason });
+    await finishTurn(ctx, key, 'failed', reason, { ...stop, reason });
     if (stop.receipt?.stopped === true) {
       ctx.handles.delete(key);
       ctx.endTurns.delete(key);

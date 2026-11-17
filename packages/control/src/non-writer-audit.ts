@@ -1,8 +1,8 @@
 import { lstatSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentEvent, Session, SessionSpec } from '@pantheon/domain';
-import { gitFolder, type ControlContext } from './context.js';
-import { runGit } from './git.js';
+import { gitFolderAsync, type ControlContext } from './context.js';
+import { runGit, type GitResult } from './git.js';
 
 interface WriteSnapshot {
   turn_id: string;
@@ -30,12 +30,17 @@ function currentSnapshot(ctx: ControlContext, sessionId: string) {
     : undefined;
 }
 
-/** Tracked changes as git reports them, plus a stat fingerprint per changed path; no contents are read. */
-function worktreeState(roots: string[]): Pick<WriteSnapshot, 'status' | 'fingerprints'> {
+const STATUS = ['status', '--porcelain=v1', '-z', '--untracked-files=no'];
+
+/** Tracked changes as git reported them per root, plus a stat fingerprint per changed path; no contents are read. */
+function worktreeState(
+  roots: string[],
+  results: GitResult[],
+): Pick<WriteSnapshot, 'status' | 'fingerprints'> {
   const status: Record<string, string> = {};
   const fingerprints: Record<string, string> = {};
-  for (const root of roots) {
-    const result = runGit(root, ['status', '--porcelain=v1', '-z', '--untracked-files=no']);
+  for (const [rootIndex, root] of roots.entries()) {
+    const result = results[rootIndex]!;
     if (result.exit_code !== 0) throw new Error(result.stderr.toString() || result.error);
     const fields = result.stdout.toString().split('\0');
     for (let index = 0; index < fields.length; index++) {
@@ -56,13 +61,20 @@ function worktreeState(roots: string[]): Pick<WriteSnapshot, 'status' | 'fingerp
   return { status, fingerprints };
 }
 
+async function currentState(roots: string[]) {
+  return worktreeState(
+    roots,
+    await Promise.all(roots.map((root) => runGit(root, STATUS, undefined, true))),
+  );
+}
+
 /** The baseline is durable so a reconciled session can still be audited after a daemon restart. */
-export function startWriteAudit(
+export async function startWriteAudit(
   ctx: ControlContext,
   spec: SessionSpec,
   turnId: string,
   readOnly: boolean,
-): void {
+): Promise<void> {
   const previous = currentSnapshot(ctx, spec.platform_session_id);
   if (previous?.snapshot.turn_id === turnId) return;
   const session = ctx.store.must<Session>('sessions', spec.platform_session_id);
@@ -71,20 +83,51 @@ export function startWriteAudit(
     return;
   }
   // Protected entries outside the project are kept unwritable by the runtime sandbox.
-  const roots = (spec.project_roots?.map((root) => root.path) ?? [spec.cwd]).filter(gitFolder);
-  const snapshot: WriteSnapshot = { turn_id: turnId, roots, ...worktreeState(roots) };
-  ctx.store.event('session.write_snapshot', session, session.project_id, snapshot);
+  const candidates = spec.project_roots?.map((root) => root.path) ?? [spec.cwd];
+  const git = await Promise.all(candidates.map(gitFolderAsync));
+  const roots = candidates.filter((_, index) => git[index]);
+  const snapshot: WriteSnapshot = { turn_id: turnId, roots, ...(await currentState(roots)) };
+  ctx.store.event(
+    'session.write_snapshot',
+    ctx.store.must<Session>('sessions', session.id),
+    session.project_id,
+    snapshot,
+  );
 }
 
 /** Compare tracked files and the session's persisted tool trace, including calls whose writes were undone. */
-export function finishWriteAudit(ctx: ControlContext, sessionId: string): void {
+export async function finishWriteAudit(ctx: ControlContext, sessionId: string): Promise<void> {
   const baseline = currentSnapshot(ctx, sessionId);
   if (!baseline) return;
-  const { sequence, snapshot } = baseline;
-  let paths: string[] = [];
+  const { snapshot } = baseline;
   // A hashed baseline also covered protected entries and cannot be retaken now, so only tools are checked.
-  if (!('hashes' in snapshot)) {
-    const current = worktreeState(snapshot.roots);
+  const current = 'hashes' in snapshot ? undefined : await currentState(snapshot.roots);
+  recordWriteAudit(ctx, sessionId, baseline, current);
+}
+
+/** finishWriteAudit for a caller inside a transaction, so git runs synchronously. */
+export function finishReconciledWriteAudit(ctx: ControlContext, sessionId: string): void {
+  const baseline = currentSnapshot(ctx, sessionId);
+  if (!baseline) return;
+  const { snapshot } = baseline;
+  const current =
+    'hashes' in snapshot
+      ? undefined
+      : worktreeState(
+          snapshot.roots,
+          snapshot.roots.map((root) => runGit(root, STATUS)),
+        );
+  recordWriteAudit(ctx, sessionId, baseline, current);
+}
+
+function recordWriteAudit(
+  ctx: ControlContext,
+  sessionId: string,
+  { sequence, snapshot }: NonNullable<ReturnType<typeof currentSnapshot>>,
+  current: Pick<WriteSnapshot, 'status' | 'fingerprints'> | undefined,
+): void {
+  let paths: string[] = [];
+  if (current && !('hashes' in snapshot))
     paths = [...new Set([...Object.keys(snapshot.status), ...Object.keys(current.status)])]
       .filter(
         (file) =>
@@ -92,7 +135,6 @@ export function finishWriteAudit(ctx: ControlContext, sessionId: string): void {
           snapshot.fingerprints[file] !== current.fingerprints[file],
       )
       .sort();
-  }
   const session = ctx.store.must<Session>('sessions', sessionId);
   const tools = new Set<string>();
   for (const event of ctx.store.kindEvents(session.project_id, ['agent.tool.started'])) {

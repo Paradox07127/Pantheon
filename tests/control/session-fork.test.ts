@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import type { Session, SessionTurn, Workspace } from '@pantheon/domain';
 import { eventually, settle, user } from '../helpers.js';
-import { dispatchEveryTier, git, workbenchFixture } from './workbench-fixture.js';
+import { dispatchEveryTier, git, gitRuns, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
 const current = (f: Fixture, session: Session) => f.store.must<Session>('sessions', session.id);
@@ -163,6 +163,50 @@ it('forks a running source from the end of its last completed turn and leaves th
   expect(handoff).not.toContain('fixture-script');
   expect(current(f, source).state).toBe('running');
   expect(f.turns(source.id)).toEqual(turnsBefore);
+});
+
+it('reads the checkpoints of every later turn of a running source with one git run', async () => {
+  const f = workbenchFixture();
+  const source = f.create('Start the export');
+  await settle(f, source);
+  const work = workspace(f, source).path;
+  const second = await send(f, source, 'Add a footer');
+  await send(f, source, 'Add a title');
+  const rollback = f.call(
+    'session.rollback',
+    { session_id: source.id, turn_id: second.id },
+    current(f, source).revision,
+  );
+  await eventually(
+    () =>
+      f.store
+        .kindEvents(f.project.id, ['session.process_closed'])
+        .some((event) => event.aggregate_id === source.id),
+    () => f.control.tick(),
+  );
+  await rollback;
+  f.call(
+    'session.send',
+    { session_id: source.id, input: 'fixture-script\n[{"hang":true}]' },
+    current(f, source).revision,
+  );
+  await eventually(
+    () => f.turns(source.id).at(-1)?.state === 'running',
+    () => f.control.tick(),
+  );
+  // Two rolled back turns and the running one come after the last completed turn, none with a checkpoint.
+  const prefix = `refs/pantheon/checkpoints/${source.workspace_id}/${source.id}/`;
+  for (const ref of git(f.source, 'for-each-ref', '--format=%(refname)', prefix).split('\n'))
+    if (ref) git(f.source, 'update-ref', '-d', ref);
+  writeFileSync(path.join(work, 'answer.txt'), 'while running\n');
+  let branch!: Session;
+  const runs = await gitRuns(() => (branch = fork(f, source)));
+  expect(runs.filter((run) => run.includes(prefix))).toHaveLength(1);
+  await settle(f, branch);
+  // No later turn kept a checkpoint, so the fork takes the current files.
+  expect(readFileSync(path.join(workspace(f, branch).path, 'answer.txt'), 'utf8')).toBe(
+    'while running\n',
+  );
 });
 
 it('refuses to fork a running source whose running turn took no checkpoint', async () => {
@@ -368,7 +412,7 @@ it('leaves rolled back turns out of the whole-record handoff', async () => {
   const source = f.create('Start export');
   await settle(f, source);
   const second = await send(f, source, 'Discard this header');
-  f.call(
+  await f.call(
     'session.rollback',
     { session_id: source.id, turn_id: second.id },
     current(f, source).revision,

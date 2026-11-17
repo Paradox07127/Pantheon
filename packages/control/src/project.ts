@@ -105,7 +105,7 @@ function projectRoots(ctx: ControlContext, targets: string[]): string[] {
 /** Writers work in linked worktrees, so each root becomes a git repository with a first commit made as the user. */
 function requireGitRoots(ctx: ControlContext, roots: string[]): void {
   const git = (root: string, args: string[]) =>
-    execFileSync('git', args, { cwd: root, stdio: 'pipe', encoding: 'utf8' });
+    execFileSync('git', args, { cwd: root, stdio: 'pipe', encoding: 'utf8', timeout: 120000 });
   const autoInit = autoGitInit(ctx.userConfigDir);
   for (const root of roots) {
     const hasHead = () =>

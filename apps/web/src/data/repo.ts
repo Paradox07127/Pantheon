@@ -12,7 +12,7 @@ import type {
   RepoTimeline,
   RepoWorktree,
 } from '@pantheon/protocol';
-import { useProjectQuery } from './project-read';
+import { REPOSITORY_KINDS, WORKTREE_KINDS, useProjectQuery } from './project-read';
 
 export type {
   GithubItems,
@@ -33,7 +33,9 @@ const isObject = (value: unknown) => typeof value === 'object' && value !== null
 
 /** GET /v1/repo.worktrees; the project repository's worktrees, the project folder first. */
 export const useRepoWorktrees = (projectId: string | null) =>
-  useProjectQuery<RepoWorktree[]>('repo.worktrees', projectId, Array.isArray);
+  useProjectQuery<RepoWorktree[]>('repo.worktrees', projectId, Array.isArray, undefined, {
+    kinds: REPOSITORY_KINDS,
+  });
 
 /** GET /v1/repo.status for one worktree path from useRepoWorktrees. */
 export const useRepoStatus = (projectId: string | null, path: string) =>
@@ -42,6 +44,7 @@ export const useRepoStatus = (projectId: string | null, path: string) =>
     projectId,
     (value) => isObject(value) && Array.isArray((value as RepoStatus).files),
     { path },
+    { kinds: WORKTREE_KINDS },
   );
 
 /** GET /v1/repo.log; newest first, `limit` commits after skipping `skip`. */
@@ -51,6 +54,7 @@ export const useRepoLog = (projectId: string | null, limit: number, skip = 0, re
     projectId,
     (value) => isObject(value) && Array.isArray((value as RepoLog).commits),
     { limit: String(limit), skip: String(skip), ...(ref !== undefined ? { ref } : {}) },
+    { kinds: REPOSITORY_KINDS },
   );
 
 /** GET /v1/repo.commit_diff; one commit against its first parent. */
@@ -60,6 +64,7 @@ export const useRepoCommitDiff = (projectId: string | null, sha: string) =>
     projectId,
     (value) => isObject(value) && Array.isArray((value as LandingDiff).files),
     { sha },
+    { kinds: REPOSITORY_KINDS },
   );
 
 /** GET /v1/repo.commit_after; the gate, later changes and upstream state after one commit. */
@@ -69,6 +74,7 @@ export const useRepoCommitAfter = (projectId: string | null, sha: string) =>
     projectId,
     (value) => isObject(value) && Array.isArray((value as RepoCommitAfter).later),
     { sha },
+    { kinds: REPOSITORY_KINDS },
   );
 
 /** GET /v1/repo.compare; head from its merge base with base. */
@@ -78,6 +84,7 @@ export const useRepoCompare = (projectId: string | null, base: string, head: str
     projectId,
     (value) => isObject(value) && Array.isArray((value as RepoCompare).files),
     { base, head },
+    { kinds: REPOSITORY_KINDS },
   );
 
 /** GET /v1/repo.timeline; lanes over [from, to) in ms, plus the whole history by week. */
@@ -101,6 +108,7 @@ export const useRepoBlame = (projectId: string | null, path: string) =>
     projectId,
     (value) => isObject(value) && Array.isArray((value as RepoBlame).chunks),
     { path },
+    { kinds: REPOSITORY_KINDS },
   );
 
 /** GET /v1/repo.file_history; one file's recent commits, weekly changes and co-changed files. */
@@ -110,6 +118,7 @@ export const useRepoFileHistory = (projectId: string | null, path: string) =>
     projectId,
     (value) => isObject(value) && Array.isArray((value as RepoFileHistory).changes),
     { path },
+    { kinds: REPOSITORY_KINDS },
   );
 
 /** GET /v1/github.items for open pull requests. */

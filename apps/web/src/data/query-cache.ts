@@ -9,6 +9,15 @@ export interface CachedQuery {
   trigger?: string;
   /** Number of the read whose answer `data` holds. */
   answered?: number;
+  /** When the last read sent answered. */
+  settledAt?: number;
+  /** The one read sent once the read out answers, for every ask made while it was out. */
+  queued?: {
+    read: () => Promise<BridgeResult<unknown>>;
+    trigger?: string;
+    answer: Promise<BridgeResult<unknown>>;
+    resolve: (result: BridgeResult<unknown>) => void;
+  };
 }
 
 const LIMIT = 64;
@@ -87,7 +96,8 @@ function touch(name: string, entry: CachedQuery): void {
 
 /**
  * Starts read(), or with `share` joins the read of the same query still out; given a `trigger`,
- * only a read sent for the same trigger.
+ * only a read sent for the same trigger. Any other ask while a read is out waits for the one read
+ * sent after it answers.
  */
 export function readCached(
   method: string,
@@ -96,20 +106,43 @@ export function readCached(
   share: boolean,
   trigger?: string,
 ): Promise<BridgeResult<unknown>> {
-  const name = id(method, key);
+  return request(id(method, key), read, share, trigger);
+}
+
+function request(
+  name: string,
+  read: () => Promise<BridgeResult<unknown>>,
+  share: boolean,
+  trigger?: string,
+): Promise<BridgeResult<unknown>> {
   const entry = entries.get(name) ?? { data: null, readAt: null };
-  if (share && entry.inflight && (trigger === undefined || entry.trigger === trigger))
-    return entry.inflight;
+  if (entry.inflight) {
+    if (share && (trigger === undefined || entry.trigger === trigger)) return entry.inflight;
+    if (!entry.queued) {
+      let resolve!: (result: BridgeResult<unknown>) => void;
+      const answer = new Promise<BridgeResult<unknown>>((done) => (resolve = done));
+      entry.queued = { read, trigger, answer, resolve };
+    } else Object.assign(entry.queued, { read, trigger });
+    return entry.queued.answer;
+  }
   const inflight = read();
   numbers.set(inflight, ++started);
   entry.inflight = inflight;
   entry.trigger = trigger;
   touch(name, entry);
   void inflight.finally(() => {
-    if (entry.inflight === inflight) {
-      delete entry.inflight;
-      delete entry.trigger;
-    }
+    delete entry.inflight;
+    delete entry.trigger;
+    entry.settledAt = Date.now();
+    const queued = entry.queued;
+    if (!queued) return;
+    delete entry.queued;
+    // Sent on the entry the cache holds now, which an emptied cache replaced.
+    const next = request(name, queued.read, false, queued.trigger);
+    void next.then((result) => {
+      numbers.set(queued.answer, numbers.get(next)!);
+      queued.resolve(result);
+    });
   });
   return inflight;
 }

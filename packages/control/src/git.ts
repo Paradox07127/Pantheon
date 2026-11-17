@@ -1,8 +1,9 @@
 import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { nativeEnvironment } from '@pantheon/adapters';
 import { cachedDriverConfig, DRIVER_PATTERN } from './git-config-cache.js';
+import { onWslAutomount, wslAutomountRoot, wslDrivePath } from './wsl-mount.js';
 
 export interface GitResult {
   exit_code: number | null;
@@ -50,6 +51,7 @@ export function runGit(
     const refused = { exit_code: null, stdout: Buffer.alloc(0), stderr: Buffer.from(error), error };
     return asynchronous ? Promise.resolve(refused) : refused;
   }
+  const linked = execution.env?.GIT_DIR === undefined ? driveLinkedWorktree(cwd) : undefined;
   const config = [
     '-c',
     'core.fsmonitor=false',
@@ -57,8 +59,15 @@ export function runGit(
     'core.hooksPath=/dev/null',
     '-c',
     'commit.gpgsign=false',
+    // Windows git writes the index with stat data drvfs reports differently, and checks out CRLF.
+    ...(onWslAutomount(cwd)
+      ? ['-c', 'core.autocrlf=input', '-c', 'core.checkStat=minimal', '-c', 'core.trustctime=false']
+      : ['-c', 'core.autocrlf=false']),
+    // Automatic maintenance can prune worktrees registered under paths this system cannot see.
     '-c',
-    'core.autocrlf=false',
+    'maintenance.auto=false',
+    '-c',
+    'gc.auto=0',
     // A signature check prints gpg output into parsed log formats and runs gpg.program.
     '-c',
     'log.showSignature=false',
@@ -79,6 +88,7 @@ export function runGit(
     GIT_TERMINAL_PROMPT: '0',
     GIT_OPTIONAL_LOCKS: '0',
     ...(metadata ? { GIT_DIR: metadata, GIT_COMMON_DIR: metadata } : {}),
+    ...linked,
     ...(execution.work_tree ? { GIT_WORK_TREE: execution.work_tree } : {}),
     LC_ALL: 'C',
     GIT_AUTHOR_NAME: 'Pantheon Check',
@@ -202,7 +212,7 @@ export function runGit(
       });
     const result = spawnSync('git', [...config, ...command], {
       ...options,
-      maxBuffer: 64 * 1024 * 1024,
+      maxBuffer: execution.max_buffer ?? 64 * 1024 * 1024,
       stdio: [data ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       input: data,
     });
@@ -247,7 +257,12 @@ export function runGit(
           : run([...new Set(result.stdout.toString().split('\0').filter(Boolean))]),
     );
   // Caller environment can point git at other config, which the cache does not track.
-  const cached = Object.keys(execution.env ?? {}).some((key) => key.startsWith('GIT_'))
+  const cached = Object.keys(execution.env ?? {}).some(
+    (key) =>
+      key.startsWith('GIT_') &&
+      key !== 'GIT_INDEX_FILE' &&
+      key !== 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  )
     ? undefined
     : cachedDriverConfig(cwd, execution.work_tree);
   if (!cached) return query();
@@ -275,6 +290,35 @@ function ownMetadata(cwd: string): string | undefined {
   const metadata = path.resolve(cwd, '.git');
   try {
     return statSync(metadata).isDirectory() ? metadata : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The git directory of a worktree in cwd that a Windows tool made, whose .git names it by drive
+ * letter, which git in WSL reads as a relative path.
+ */
+function driveLinkedWorktree(cwd: string): Record<string, string> | undefined {
+  const root = wslAutomountRoot();
+  if (root === undefined) return undefined;
+  const dotGit = path.resolve(cwd, '.git');
+  try {
+    if (!statSync(dotGit).isFile()) return undefined;
+    const link = /^gitdir: (.+?)[\r\n]*$/s.exec(readFileSync(dotGit, 'utf8'))?.[1];
+    const mapped = link && wslDrivePath(link, root);
+    if (!mapped) return undefined;
+    // Resolved as git resolves a relative commondir, so config origins match the config cache.
+    const gitdir = realpathSync(mapped);
+    const commondir = path.join(gitdir, 'commondir');
+    const common = existsSync(commondir)
+      ? wslDrivePath(readFileSync(commondir, 'utf8').replace(/[\r\n]+$/, ''), root)
+      : undefined;
+    return {
+      GIT_DIR: gitdir,
+      GIT_WORK_TREE: path.resolve(cwd),
+      ...(common ? { GIT_COMMON_DIR: realpathSync(common) } : {}),
+    };
   } catch {
     return undefined;
   }

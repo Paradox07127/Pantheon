@@ -665,8 +665,11 @@ export function removeRemoteWorkspace(ctx: ControlContext, workspace: Workspace)
   if (!session) return;
   ctx.toolRelays.get(session.id)?.();
   ctx.toolRelays.delete(session.id);
-  for (const name of SYNC_REFS)
-    runGit(workspace.source!, ['update-ref', '-d', syncRef(workspace, name)]);
+  runGit(
+    workspace.source!,
+    ['update-ref', '--stdin'],
+    Buffer.from(SYNC_REFS.map((name) => `delete ${syncRef(workspace, name)}\n`).join('')),
+  );
   const device = ctx.devices?.get(session.device_id!);
   if (!device?.online) return;
   // Only this machine has no ssh target, and it runs no device session.

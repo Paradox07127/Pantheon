@@ -103,7 +103,7 @@ async function deliver(e: DaemonEvent, ...hosts: HookHost<any>[]) {
   await settle(...hosts);
 }
 
-it('keeps the event read when a whole read sent before it lands after it', async () => {
+it('sends the event read once the whole read out lands and keeps its answer', async () => {
   const h = mount(() => useSessionList('project-order'));
   await h.flush();
   reads[0]!.answer({ ok: true, value: [listed('session-a', 'running')] });
@@ -111,11 +111,11 @@ it('keeps the event read when a whole read sent before it lands after it', async
 
   await focus(h);
   await deliver(event(1, 'turn.completed', 'session-a', 'project-order'), h);
+  expect(sessionLists()).toHaveLength(2);
+  reads[1]!.answer({ ok: true, value: [listed('session-a', 'running')] });
+  await h.flush();
   expect(sessionLists()).toHaveLength(3);
   reads[2]!.answer({ ok: true, value: [listed('session-a', 'done')] });
-  await h.flush();
-  expect(states(h)).toEqual(['done']);
-  reads[1]!.answer({ ok: true, value: [listed('session-a', 'running')] });
   await h.flush();
   expect(states(h)).toEqual(['done']);
 });
@@ -161,10 +161,11 @@ it("keeps a list's newer whole read in the cache when another list takes an olde
   expect(sessionLists()).toHaveLength(1);
   a.value.reload();
   await settle(a, b);
+  expect(sessionLists()).toHaveLength(1);
+  reads[0]!.answer({ ok: true, value: [listed('session-a', 'running')] });
+  await settle(a, b);
   expect(sessionLists()).toHaveLength(2);
   reads[1]!.answer({ ok: true, value: [listed('session-a', 'done')] });
-  await settle(a, b);
-  reads[0]!.answer({ ok: true, value: [listed('session-a', 'running')] });
   await settle(a, b);
   expect(listedSessions('project-shared-whole')?.map((session) => session.state)).toEqual(['done']);
 });
@@ -179,10 +180,11 @@ it("keeps a list's newer whole read in the cache when another list takes an olde
   expect(sessionLists()).toHaveLength(2);
   a.value.reload();
   await settle(a, b);
+  expect(sessionLists()).toHaveLength(2);
+  reads[1]!.answer({ ok: true, value: [listed('session-a', 'waiting')] });
+  await settle(a, b);
   expect(sessionLists()).toHaveLength(3);
   reads[2]!.answer({ ok: true, value: [listed('session-a', 'done')] });
-  await settle(a, b);
-  reads[1]!.answer({ ok: true, value: [listed('session-a', 'waiting')] });
   await settle(a, b);
   expect(listedSessions('project-shared-event')?.map((session) => session.state)).toEqual(['done']);
 });
@@ -217,6 +219,7 @@ it("reads a worker's gates and preflight again after its lead's plan changes", a
   const preflight = mount(() => useSessionPreflight('session-worker'));
   await settle(gates, preflight);
   expect(reads.map((r) => r.method).sort()).toEqual(['session.gates', 'session.preflight']);
+  for (const read of reads) read.answer({ ok: true, value: {} });
 
   await deliver(event(1, 'board.plan_updated', 'session-lead', 'project-plan'), gates, preflight);
   expect(reads.map((r) => r.method).sort()).toEqual([
@@ -246,6 +249,7 @@ it("reads a session's gates and preflight again after another session merges int
 
   await deliver(merged(1, '/repo/other'), gates, preflight);
   expect(reads.map((r) => r.method).sort()).toEqual(['session.gates', 'session.preflight']);
+  for (const read of reads) read.answer({ ok: true, value: {} });
   await deliver(merged(2, '/repo/main'), gates, preflight);
   expect(reads.map((r) => r.method).sort()).toEqual([
     'session.gates',

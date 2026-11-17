@@ -123,7 +123,7 @@ it('keeps a queued lead message when the user interrupts a task session', async 
     delivery_reason: 'interrupted',
   });
   await eventually(
-    () => row(f, leadMessage).state === 'running',
+    () => row(f, leadMessage).state === 'running' && row(f, leadMessage).delivery !== 'pending',
     () => f.control.tick(),
   );
   expect(row(f, leadMessage).delivery).toBe('delivered');
@@ -151,7 +151,7 @@ it('keeps the queued tracker digest when the user interrupts the lead', async ()
   interrupt(lead);
   await eventually(() => row(f, leadTurn).state === 'cancelled');
   await eventually(
-    () => row(f, digest).state === 'running',
+    () => row(f, digest).state === 'running' && row(f, digest).delivery !== 'pending',
     () => f.control.tick(),
   );
   expect(row(f, digest).delivery).toBe('delivered');
@@ -202,7 +202,7 @@ it("lets the lead interrupt a running task turn and keep the session's commits",
   expect(interruptTask()).toMatchObject({ task_id: 'a', session_id: worker.id });
   await eventually(() => row(f, first).state === 'cancelled');
   await eventually(
-    () => row(f, leadMessage).state === 'running',
+    () => row(f, leadMessage).state === 'running' && row(f, leadMessage).delivery !== 'pending',
     () => f.control.tick(),
   );
   expect(current(f, worker.id)).toMatchObject({ native_id: expect.any(String) });

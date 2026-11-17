@@ -62,7 +62,8 @@ export async function tick(ctx: ControlContext): Promise<void> {
         await startTurn(ctx, payload.turn_id!);
         ctx.store.mark(out.id, 'done');
       } else if (out.kind === 'session.merge') mergeSession(ctx, payload.session_id!, out.id);
-      else if (out.kind === 'workspace.remove') removeWorkspace(ctx, payload.workspace_id!, out.id);
+      else if (out.kind === 'workspace.remove')
+        await removeWorkspace(ctx, payload.workspace_id!, out.id);
       else if (out.kind === 'review.remove')
         removeReviewDirectories(ctx, payload.review_id!, out.id);
     }

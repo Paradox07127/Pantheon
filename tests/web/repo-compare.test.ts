@@ -126,6 +126,7 @@ let mergeBaseAt: number;
 beforeEach(() => {
   mock.board = {
     board: { cursor: 1, sessions: [{ id: 'refund-session', state: 'idle', revision: 7 }] },
+    events: [],
     status: { state: 'live' },
     resync: 0,
     refresh() {},

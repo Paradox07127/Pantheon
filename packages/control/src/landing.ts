@@ -28,6 +28,7 @@ import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
 import { sessionWorkflow, workflowCondition } from './workflow-engine.js';
 import { forgetWorktreeReads } from './workbench-session.js';
+import { headerPath } from './landing-diff.js';
 
 type GateCommands = NonNullable<Project['gates']>[string];
 export type LandingProgress = NonNullable<NonNullable<Session['merge']>['landing']>;
@@ -113,11 +114,12 @@ export function beforeMergeCommands(
   session: Session,
   task: BoardPlan['tasks'][number],
 ): GateCommands {
+  const changed = new Map<string, string[]>();
   return sessionWorkflow(ctx, session)
     .definition.slots.before_merge.filter(
       (step) =>
         step.kind.type === 'command' &&
-        workflowCondition(ctx, step, session.id) &&
+        workflowCondition(ctx, step, session.id, undefined, undefined, changed) &&
         (!step.applies_to?.tiers ||
           (task.kind && step.applies_to.tiers.includes(task.kind.tier))) &&
         (!step.applies_to?.domains ||
@@ -229,6 +231,61 @@ async function changedPaths(cwd: string, parent: string, candidate: string): Pro
     index += count;
   }
   return [...new Set(paths)];
+}
+
+/** Each file's patch since the candidate forked from parent, from one diff of them all. */
+async function filePatches(
+  cwd: string,
+  parent: string,
+  candidate: string,
+  files: string[],
+): Promise<Map<string, string>> {
+  if (!files.length) return new Map();
+  const lines = new Map<string, string[]>();
+  const patch = await git(cwd, [
+    '--literal-pathspecs',
+    'diff',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--no-renames',
+    '--no-color',
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
+    '--unified=0',
+    `${parent}...${candidate}`,
+    '--',
+    ...files,
+  ]);
+  let file: string | undefined;
+  for (const line of patch.split('\n')) {
+    // A file that changes type has two parts, each with its own header.
+    if (line.startsWith('diff --git ')) file = headerPath(line);
+    if (file === undefined) continue;
+    const own = lines.get(file);
+    if (own) own.push(line);
+    else lines.set(file, [line]);
+  }
+  return new Map([...lines].map(([name, own]) => [name, own.join('\n')]));
+}
+
+/** The files that name an object in commit, from one cat-file run. */
+async function presentIn(cwd: string, commit: string, files: string[]): Promise<Set<string>> {
+  // Batch input ends each name at a newline, so a path containing one counts as present.
+  const asked = files.filter((file) => !file.includes('\n'));
+  const present = new Set(files.filter((file) => file.includes('\n')));
+  if (!asked.length) return present;
+  const result = await runGit(
+    cwd,
+    ['cat-file', '--batch-check'],
+    Buffer.from(asked.map((file) => `${commit}:${file}\n`).join('')),
+    true,
+  );
+  if (result.exit_code !== 0) throw new Error(gitFailure(result));
+  const lines = result.stdout.toString().split('\n');
+  asked.forEach((file, index) => {
+    if (!/ (?:missing|ambiguous)$/.test(lines[index]!)) present.add(file);
+  });
+  return present;
 }
 
 /** Changed paths of the candidate outside every scope path. */
@@ -511,16 +568,19 @@ export async function landWorkspace(
           item.source,
           ref ? `+${commit}:${ref}` : commit,
         ]);
+      let sourceHead: string | undefined;
       if (!onto && commands?.length) {
         // Gates check what will land, so a session behind a moved source is rebased first.
-        const head = await git(item.source, ['rev-parse', '--verify', 'HEAD^{commit}'], sourceEnv);
-        await fetchBase(head);
-        if (!(await isAncestor(workspace.path, head, target))) onto = head;
+        sourceHead = await git(item.source, ['rev-parse', '--verify', 'HEAD^{commit}'], sourceEnv);
+        await fetchBase(sourceHead);
+        if (!(await isAncestor(workspace.path, sourceHead, target))) onto = sourceHead;
       }
       // Checked before a rebase, which would write the files into the worktree.
       const landsOn =
-        onto ?? (await git(item.source, ['rev-parse', '--verify', 'HEAD^{commit}'], sourceEnv));
-      await fetchBase(landsOn);
+        onto ??
+        sourceHead ??
+        (await git(item.source, ['rev-parse', '--verify', 'HEAD^{commit}'], sourceEnv));
+      if (landsOn !== sourceHead) await fetchBase(landsOn);
       const changed = await changedPaths(workspace.path, landsOn, target);
       const agentConfiguration = changed.filter((file) =>
         AGENT_CONFIGURATION.some((entry) => within(file, entry)),
@@ -542,43 +602,35 @@ export async function landWorkspace(
             ),
           ),
         );
+        const patches = await filePatches(
+          workspace.path,
+          landsOn,
+          target,
+          changed.filter(testPath),
+        );
+        // A file the acceptance names counts only when it existed before: a new one is the task's output.
+        const existed = await presentIn(
+          workspace.path,
+          landsOn,
+          changed.filter((file) => inputs.some((input) => within(file, input))),
+        );
         const verificationFiles: string[] = [];
         for (const file of changed) {
-          const test = testPath(file);
           const configuration =
             /^(?:\.github\/workflows\/|\.circleci\/)|(?:^|\/)(?:package\.json|pnpm-workspace\.ya?ml|\.gitlab-ci\.ya?ml|Jenkinsfile|Makefile|(?:vitest|jest|playwright|eslint)\.config\.[^/]+|tsconfig(?:\.[^/]+)?\.json|pytest\.ini|tox\.ini|pyproject\.toml)$/.test(
               file,
             );
-          let weakened = false;
-          if (test) {
-            const patch = await git(workspace.path, [
-              '--literal-pathspecs',
-              'diff',
-              '--no-ext-diff',
-              '--no-textconv',
-              '--no-renames',
-              '--unified=0',
-              `${landsOn}...${target}`,
-              '--',
-              file,
-            ]);
-            weakened =
-              /\ndeleted file mode /.test(patch) ||
+          const patch = patches.get(file);
+          const weakened =
+            patch !== undefined &&
+            (/\ndeleted file mode /.test(patch) ||
               /^-.*\b(?:expect\s*\(|(?:it|test|describe|xit|xtest|xdescribe)\s*(?:\(|\.))/m.test(
                 patch,
               ) ||
               /^\+.*(?:\b(?:it|test|describe)\s*\.\s*skip\b|\.\s*only\b|\b(?:xit|xtest|xdescribe)\s*\()/m.test(
                 patch,
-              );
-          }
-          // A file the acceptance names counts only when it existed before: a new one is the task's output.
-          const runByAcceptance =
-            inputs.some((input) => within(file, input)) &&
-            (await git(workspace.path, ['cat-file', '-t', `${landsOn}:${file}`]).then(
-              () => true,
-              () => false,
-            ));
-          if (weakened || configuration || runByAcceptance) verificationFiles.push(file);
+              ));
+          if (weakened || configuration || existed.has(file)) verificationFiles.push(file);
         }
         const unlisted = verificationFiles.filter(
           (file) => !task.scope.some((entry) => segments(entry).join('/') === file),

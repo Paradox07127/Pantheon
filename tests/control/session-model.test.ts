@@ -200,10 +200,10 @@ it('lists the models of a runtime', async () => {
   ]);
 });
 
-it('reads the branch and commit at the project HEAD', () => {
+it('reads the branch and commit at the project HEAD', async () => {
   const f = workbenchFixture();
   const sha = git(f.source, 'rev-parse', 'HEAD');
-  expect(f.control.projectHead(user, f.project.id)).toEqual({
+  expect(await f.control.projectHead(user, f.project.id)).toEqual({
     branch: 'main',
     sha,
     subject: 'Initial files',
@@ -211,7 +211,7 @@ it('reads the branch and commit at the project HEAD', () => {
     uncommitted: 0,
   });
   git(f.source, 'checkout', '--quiet', '--detach');
-  expect(f.control.projectHead(user, f.project.id)).toEqual({
+  expect(await f.control.projectHead(user, f.project.id)).toEqual({
     branch: null,
     sha,
     subject: 'Initial files',

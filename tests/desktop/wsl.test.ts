@@ -211,6 +211,8 @@ describe('path conversion', () => {
     expect(wslPathFromWindows('\\\\WSL$\\ubuntu\\home\\u', 'Ubuntu')).toBe('/home/u');
     expect(wslPathFromWindows('\\\\wsl.localhost\\Ubuntu\\', 'Ubuntu')).toBe('/');
     expect(wslPathFromWindows('C:\\x y\\z', 'Ubuntu')).toBe('/mnt/c/x y/z');
+    expect(wslPathFromWindows('D:/coding warehouse/x', 'Ubuntu')).toBe('/mnt/d/coding warehouse/x');
+    expect(wslPathFromWindows('\\\\?\\D:\\x\\y', 'Ubuntu')).toBe('/mnt/d/x/y');
   });
 
   it('has no Linux path for another distro, a network share or a relative path', () => {

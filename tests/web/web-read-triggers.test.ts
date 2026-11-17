@@ -11,6 +11,8 @@ vi.mock('@/data/board', () => ({
   }),
 }));
 import { useProjectQuery } from '@/data/project-read';
+import { useRepoStatus } from '@/data/repo';
+import { useProjectHead } from '@/data/runtime-models';
 import { useSessionReviews } from '@/data/session-panel';
 import { startSync, type DaemonEvent } from '@/data/sync';
 
@@ -22,13 +24,13 @@ const board = (cursor: number): BoardSnapshot => ({
   session_turns: [],
   workspaces: [],
 });
-const event = (sequence: number, kind: string): DaemonEvent => ({
+const event = (sequence: number, kind: string, project_id = 'project-a'): DaemonEvent => ({
   sequence,
   event_id: `event-${sequence}`,
   kind,
   aggregate_id: 'session-a',
   aggregate_revision: 1,
-  project_id: 'project-a',
+  project_id,
   causation_id: '',
   created_at: 0,
   payload: null,
@@ -59,6 +61,8 @@ beforeEach(() => {
         return answer.promise;
       }),
     },
+    addEventListener() {},
+    removeEventListener() {},
   });
   mock.board = {
     board: board(1),
@@ -146,8 +150,11 @@ it('does not join a read sent before the board changed', async () => {
   mock.board = { ...mock.board, board: board(2), cursor: 2, changed: 2 };
   const second = mount(() => useProjectQuery('project.facts.read', 'project-moved', isFacts));
   await second.flush();
-  expect(reads).toHaveLength(2);
+  expect(reads).toHaveLength(1);
   reads[0]!.answer({ ok: true, value: { facts: ['before'] } });
+  await first.flush();
+  await second.flush();
+  expect(reads).toHaveLength(2);
   reads[1]!.answer({ ok: true, value: { facts: ['after'] } });
   await second.flush();
   expect(second.value.read).toEqual({ facts: ['after'] });
@@ -219,35 +226,73 @@ it('reads again once the board lands after a remount joined a read sent before a
   expect(mock.board.board.cursor).toBe(6);
   second.render();
   await second.flush();
+  expect(reads).toHaveLength(1);
+  reads[0]!.answer({ ok: true, value: [] });
+  await second.flush();
   expect(reads.map((r) => r.method)).toEqual(['session.reviews', 'session.reviews']);
   sync.stop();
 });
 
-it('reads a query of live repository state again when only streamed events move the board', async () => {
+it.each([
+  ['project.head', (project: string) => useProjectHead(project)],
+  ['repo.status', (project: string) => useRepoStatus(project, '/src/project')],
+])(
+  'reads %s again after a repository event, not when unrelated events move the board',
+  async (method, read) => {
+    const { at, sync, push } = await connected();
+    const project = `project-${method}`;
+    const h = mount(() => read(project));
+    await h.flush();
+    expect(reads.map((r) => r.method)).toEqual([method]);
+    reads[0]!.answer({
+      ok: true,
+      value: { files: [], branch: 'main', sha: 'abc', subject: 'first' },
+    });
+    await h.flush();
+
+    at.cursor = 7;
+    push({ type: 'event', event: event(6, 'agent.message.delta', project) });
+    push({ type: 'event', event: event(7, 'session.renamed', project) });
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(mock.board.board.cursor).toBe(7);
+    h.render();
+    await h.flush();
+    expect(reads.map((r) => r.method)).toEqual([method]);
+
+    at.cursor = 8;
+    push({ type: 'event', event: event(8, 'workspace.repository_changed', project) });
+    await vi.advanceTimersByTimeAsync(200);
+    h.render();
+    await h.flush();
+    expect(reads.map((r) => r.method)).toEqual([method, method]);
+    sync.stop();
+  },
+);
+
+it.each([
+  ['project.head', 1, (project: string) => useProjectHead(project)],
+  ['repo.status', 2, (project: string) => useRepoStatus(project, '/src/project')],
+])('reads %s %i times when a tool call finishes', async (method, count, read) => {
   const { at, sync, push } = await connected();
-  const live = mount(() => useProjectQuery('repo.status', 'project-streamed', isFacts));
-  const stored = mount(() =>
-    useProjectQuery('workflow.policy', 'project-streamed', isFacts, undefined, { events: true }),
-  );
-  await live.flush();
-  await stored.flush();
-  for (const read of reads) read.answer({ ok: true, value: {} });
-  await live.flush();
-  await stored.flush();
+  const project = `project-tool-${method}`;
+  const h = mount(() => read(project));
+  await h.flush();
+  reads[0]!.answer({
+    ok: true,
+    value: { files: [], branch: 'main', sha: 'abc', subject: 'first' },
+  });
+  await h.flush();
 
   at.cursor = 6;
-  push({ type: 'event', event: event(6, 'agent.native') });
-  await vi.advanceTimersByTimeAsync(2_500);
-  expect(mock.board.board.cursor).toBe(6);
-  live.render();
-  stored.render();
-  await live.flush();
-  await stored.flush();
-  expect(reads.map((r) => r.method)).toEqual(['repo.status', 'workflow.policy', 'repo.status']);
+  push({ type: 'event', event: event(6, 'agent.tool.completed', project) });
+  await vi.advanceTimersByTimeAsync(200);
+  h.render();
+  await h.flush();
+  expect(reads.map((r) => r.method)).toEqual(Array(count).fill(method));
   sync.stop();
 });
 
-it('asks the daemon again on reload instead of joining the reload of another query', async () => {
+it('asks the daemon again on reload once the read out answers instead of joining it', async () => {
   const first = mount(() => useProjectQuery('project.facts.read', 'project-reload', isFacts));
   const second = mount(() => useProjectQuery('project.facts.read', 'project-reload', isFacts));
   await first.flush();
@@ -260,8 +305,11 @@ it('asks the daemon again on reload instead of joining the reload of another que
   await first.flush();
   second.value.reload();
   await second.flush();
-  expect(reads).toHaveLength(3);
+  expect(reads).toHaveLength(2);
   reads[1]!.answer({ ok: true, value: { facts: ['before'] } });
+  await first.flush();
+  await second.flush();
+  expect(reads).toHaveLength(3);
   reads[2]!.answer({ ok: true, value: { facts: ['after'] } });
   await second.flush();
   expect(second.value.read).toEqual({ facts: ['after'] });
@@ -297,6 +345,9 @@ it('sends one read for two queries of the same input when the board moves', asyn
   mock.board = { ...mock.board, board: board(2), cursor: 2, changed: 2 };
   a.render();
   b.render();
+  await a.flush();
+  await b.flush();
+  reads[0]!.answer({ ok: true, value: [] });
   await a.flush();
   await b.flush();
   expect(reads.map((r) => r.method)).toEqual(['session.reviews', 'session.reviews']);

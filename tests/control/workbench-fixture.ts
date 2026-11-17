@@ -1,6 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
@@ -237,3 +245,27 @@ export const dispatchEveryTier = (f: ReturnType<typeof workbenchFixture>) =>
     { project_id: f.project.id, path: { t1: 'dispatch' } },
     f.store.get<WorkflowPolicy>('workflow_policies', f.project.id)?.revision ?? null,
   );
+
+const quoted = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
+
+/** The arguments of each git run made while `run` runs, through a script on PATH that logs them. */
+export async function gitRuns(run: () => unknown): Promise<string[]> {
+  const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  const bin = mkdtempSync(path.join(process.cwd(), 'node_modules/.cache/counting-git-')),
+    log = path.join(bin, 'runs.log');
+  writeFileSync(log, '');
+  writeFileSync(
+    path.join(bin, 'git'),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quoted(log)}\nexec ${quoted(real)} "$@"\n`,
+  );
+  chmodSync(path.join(bin, 'git'), 0o755);
+  const PATH = process.env.PATH;
+  process.env.PATH = `${bin}:${PATH}`;
+  try {
+    await run();
+    return readFileSync(log, 'utf8').split('\n').filter(Boolean);
+  } finally {
+    process.env.PATH = PATH;
+    rmSync(bin, { recursive: true, force: true });
+  }
+}

@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
+import { wslAutomountRoot, wslDrivePath } from './wsl-mount.js';
 
 export const DRIVER_PATTERN =
   '^(filter\\..*\\.(clean|smudge|process|required)|merge\\..*\\.driver)$';
@@ -61,6 +62,11 @@ function real(file: string) {
 // Mirrors git discovery from `start` upward; `located` checks the answer against git's own.
 function repositoryLayout(start: string) {
   const paths: string[] = [];
+  // As runGit does, a drive path a Windows tool wrote is read in the mount WSL gives that drive.
+  const root = wslAutomountRoot();
+  const resolve = (link: string, base: string) =>
+    (root === undefined ? undefined : wslDrivePath(link, root)) ??
+    (path.isAbsolute(link) ? link : `${base}/${link}`);
   try {
     let gitdir: string | undefined;
     for (let directory = start; !gitdir; directory = path.dirname(directory)) {
@@ -71,7 +77,7 @@ function repositoryLayout(start: string) {
       else if (stat?.isFile()) {
         const link = /^gitdir: (.+?)[\r\n]*$/s.exec(readFileSync(dotGit, 'utf8'))?.[1];
         if (!link) return undefined;
-        const raw = path.isAbsolute(link) ? link : `${directory}/${link}`;
+        const raw = resolve(link, directory);
         paths.push(raw);
         gitdir = realpathSync(raw);
       } else if (stat) return undefined;
@@ -86,7 +92,7 @@ function repositoryLayout(start: string) {
     let commondir = gitdir;
     if (existsSync(path.join(gitdir, 'commondir'))) {
       const link = readFileSync(path.join(gitdir, 'commondir'), 'utf8').replace(/[\r\n]+$/, '');
-      const raw = path.isAbsolute(link) ? link : `${gitdir}/${link}`;
+      const raw = resolve(link, gitdir);
       paths.push(raw);
       commondir = realpathSync(raw);
     }

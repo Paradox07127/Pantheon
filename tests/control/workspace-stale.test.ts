@@ -32,7 +32,9 @@ it('keeps an archived worktree whose unheld commits could not be recorded under 
   const archive = path.join(f.source, '.git/refs/pantheon/archive');
   mkdirSync(archive, { recursive: true });
   writeFileSync(path.join(archive, `${workspace.id}.lock`), '');
-  expect(f.call('workspace.prune_stale', { project_id: f.project.id })).toEqual({ removed: 0 });
+  expect(await f.call('workspace.prune_stale', { project_id: f.project.id })).toEqual({
+    removed: 0,
+  });
   expect(existsSync(workspace.path)).toBe(true);
   expect(f.store.must<Workspace>('workspaces', workspace.id).removed_at).toBeUndefined();
   expect(git(workspace.path, 'rev-parse', 'HEAD')).toBe(commit);

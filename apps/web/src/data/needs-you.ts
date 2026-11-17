@@ -151,6 +151,7 @@ export function touchesNeedsYou(kind: string): boolean {
       'session.recovered',
       'session.closed',
       'workspace.provisioning',
+      'workspace.repository_changed',
       'project.gate_set',
       'project.baseline_failed',
       'project.removed',

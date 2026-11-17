@@ -4,6 +4,7 @@ import type { StaleWorkspaces, WorkbenchSession } from '@pantheon/protocol';
 import type { ControlContext } from './context.js';
 import { runGit } from './git.js';
 import { mergeBase, mergePreview } from './merge-preview.js';
+import { prefetchedPaths } from './workbench-session.js';
 
 /** After a new event the worktrees are read again at most this often, in milliseconds. */
 const REFRESH_MS = 2000;
@@ -111,6 +112,8 @@ async function readRepository(
       requireThat(result.exit_code === 0, 'workspace_read_failed', failure);
       return result.stdout.toString();
     };
+    // A fresh prefetch of the session list has read the changed paths already.
+    const prefetched = prefetchedPaths(ctx, projectId);
     const worktrees: RepositoryRead['worktrees'] = new Map(),
       predictions: RepositoryRead['predictions'] = new Map(),
       targets = new Map<string, string>(),
@@ -129,20 +132,22 @@ async function readRepository(
         worktree = {
           key,
           head: (await git(workspace.path, ['rev-parse', '--verify', 'HEAD'], failure)).trim(),
-          files: [
-            await git(
-              workspace.path,
-              ['diff', '--name-only', '-z', workspace.base_sha!, '--'],
-              failure,
-            ),
-            await git(
-              workspace.path,
-              ['ls-files', '-z', '--others', '--exclude-standard'],
-              failure,
-            ),
-          ]
-            .flatMap((names) => names.split('\0'))
-            .filter(Boolean),
+          files:
+            prefetched(session, workspace.id) ??
+            [
+              await git(
+                workspace.path,
+                ['diff', '--name-only', '-z', workspace.base_sha!, '--'],
+                failure,
+              ),
+              await git(
+                workspace.path,
+                ['ls-files', '-z', '--others', '--exclude-standard'],
+                failure,
+              ),
+            ]
+              .flatMap((names) => names.split('\0'))
+              .filter(Boolean),
         };
       }
       worktrees.set(session.id, worktree);

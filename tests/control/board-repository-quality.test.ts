@@ -7,7 +7,7 @@ import * as gitCommands from '../../packages/control/dist/git.js';
 import { IDLE_REFRESH_MS } from '../../packages/control/dist/repository-insights.js';
 import { DISK_REFRESH_MS } from '../../packages/control/dist/workspace-stale.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
-import { git, workbenchFixture } from './workbench-fixture.js';
+import { git, gitRuns, workbenchFixture } from './workbench-fixture.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
@@ -290,6 +290,32 @@ it('reads cached repository facts without starting git or walking directories', 
   expect(runGit).not.toHaveBeenCalled();
   expect(walk).not.toHaveBeenCalled();
   expect(stat).not.toHaveBeenCalled();
+});
+
+it('takes the changed paths of worktrees from a fresh list prefetch instead of reading them again', async () => {
+  const f = workbenchFixture();
+  const first = await idleSession(f),
+    second = await idleSession(f);
+  for (const row of [first, second]) {
+    commit(row.workspace.path, 'answer.txt', `${row.session.id}\n`);
+    writeFileSync(path.join(row.workspace.path, 'untracked.txt'), `${row.session.id}\n`);
+  }
+  vi.useFakeTimers({ toFake: ['Date'] });
+  const shared = () => f.control.workspaceStale(user, f.project.id).shared_files;
+  const runs = await gitRuns(async () => {
+    await f.control.prefetchWorktreeReads(user, f.project.id);
+    await eventually(() => shared() !== undefined);
+  });
+  const ids = [first.session.id, second.session.id].sort();
+  expect(shared()).toEqual({
+    files: [
+      { path: 'answer.txt', session_ids: ids },
+      { path: 'untracked.txt', session_ids: ids },
+    ],
+    total: 2,
+  });
+  // The prefetch reads each worktree's changed and untracked paths once; nothing reads them again.
+  expect(runs.filter((run) => / diff --name-only | ls-files /.test(run))).toHaveLength(2);
 });
 
 const immediates = async () => {

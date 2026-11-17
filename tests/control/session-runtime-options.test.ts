@@ -32,7 +32,7 @@ it('rolls back only files for the files scope and preserves the native conversat
   const second = await send('Second');
   const native = current().native_id;
   writeFileSync(path.join(work, 'answer.txt'), 'after second');
-  f.call(
+  await f.call(
     'session.rollback',
     { session_id: session.id, turn_id: second.id, scope: 'files' },
     current().revision,
@@ -70,7 +70,7 @@ it.each(['conversation', 'both'])(
     const third = await send('Third');
     writeFileSync(path.join(work, 'answer.txt'), 'keep conversation-only files');
     const native = current().native_id;
-    f.call(
+    await f.call(
       'session.rollback',
       { session_id: session.id, turn_id: second.id, scope },
       current().revision,

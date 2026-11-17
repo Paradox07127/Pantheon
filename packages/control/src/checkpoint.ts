@@ -1,5 +1,15 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmdirSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  utimesSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -10,14 +20,14 @@ import {
   type SessionTurn,
   type Workspace,
 } from '@pantheon/domain';
-import { inputSchemas, type SessionTurnDiff } from '@pantheon/protocol';
+import { inputSchemas, type Command, type SessionTurnDiff } from '@pantheon/protocol';
 import { numstatFiles, PATCH_BOUND, TIME_BOUND } from './source-git.js';
 import {
   projectAccess,
   revision,
   sessionAdapter,
   type ControlContext,
-  type Handlers,
+  type Handler,
 } from './context.js';
 import { runGit } from './git.js';
 import { nativeTurnActive, releaseIdleConversation, withoutNativeConversation } from './session.js';
@@ -36,19 +46,29 @@ export function gitWorkspace(ctx: ControlContext, session: Session): Workspace |
   return workspace.kind === 'linked_worktree' ? workspace : undefined;
 }
 
+let configuredExcludes: { key: string; file: string | undefined } | undefined;
+
 /** The user's global excludes file, when there is one. */
 export function globalExcludesFile(): string | undefined {
-  const configured = spawnSync(
-    'git',
-    ['config', '--global', '--path', '--get', 'core.excludesFile'],
-    { encoding: 'utf8' },
-  );
-  const file =
-    configured.status === 0 && configured.stdout.trim()
-      ? configured.stdout.trim()
-      : process.env.XDG_CONFIG_HOME
-        ? path.join(process.env.XDG_CONFIG_HOME, 'git/ignore')
-        : path.join(os.homedir(), '.config/git/ignore');
+  const config = process.env.XDG_CONFIG_HOME
+    ? path.join(process.env.XDG_CONFIG_HOME, 'git')
+    : path.join(os.homedir(), '.config/git');
+  // git config --global reads these two files, so the setting is read again only when one changes.
+  const key = [path.join(os.homedir(), '.gitconfig'), path.join(config, 'config')]
+    .map((file) => `${file}\0${statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? ''}`)
+    .join('\0');
+  let file = configuredExcludes?.key === key ? configuredExcludes.file : undefined;
+  if (configuredExcludes?.key !== key) {
+    const configured = spawnSync(
+      'git',
+      ['config', '--global', '--path', '--get', 'core.excludesFile'],
+      { encoding: 'utf8', timeout: 5000 },
+    );
+    file = configured.status === 0 ? configured.stdout.trim() || undefined : undefined;
+    // A timed out read is not kept, so the next call asks again.
+    if (!configured.error) configuredExcludes = { key, file };
+  }
+  file ??= path.join(config, 'ignore');
   return existsSync(file) ? file : undefined;
 }
 
@@ -63,6 +83,47 @@ const attachedHead = () =>
     'worktree_head_attached',
     'Worktree HEAD is on a branch; checkpoints only work on a detached HEAD',
   );
+
+/** The linked worktree's own index, in the git directory its .git file names. */
+function worktreeIndex(worktree: string): string | undefined {
+  try {
+    const gitdir = /^gitdir: (.+)$/m.exec(readFileSync(path.join(worktree, '.git'), 'utf8'))?.[1];
+    return gitdir && path.join(path.resolve(worktree, gitdir.trim()), 'index');
+  } catch {
+    return undefined;
+  }
+}
+
+/** Copies the worktree's own index to `index`, whose stat data spares add hashing every unchanged file. */
+function copyWorktreeIndex(worktree: string, index: string): void {
+  const own = worktreeIndex(worktree);
+  try {
+    if (own) {
+      copyFileSync(own, index);
+      // Git treats entries as possibly changed by the index's own mtime; a newer copy hides them.
+      const { atime, mtime } = statSync(own);
+      utimesSync(index, atime, mtime);
+    }
+  } catch {
+    /* Without its own index, read-tree starts from an empty one. */
+  }
+}
+
+/**
+ * Fills the temporary index with the worktree's files, without ignored ones, on top of `head`.
+ * It starts from a copy of the worktree's own index; read-tree --reset still makes the entries
+ * exactly `head`'s first.
+ */
+async function stageWorktree(
+  worktree: string,
+  index: string,
+  head: string,
+  git: (args: string[]) => Promise<string>,
+): Promise<void> {
+  copyWorktreeIndex(worktree, index);
+  await git(['read-tree', '--reset', head]);
+  await git([...globalExcludes(), 'add', '-A']);
+}
 
 /**
  * Stores the worktree's files, without ignored ones, as a commit on HEAD under the turn's
@@ -87,8 +148,7 @@ export async function captureCheckpoint(
     const attached = await runGit(workspace.path, ['symbolic-ref', '-q', 'HEAD'], undefined, true);
     if (attached.exit_code === 0) throw attachedHead();
     const head = await git(['rev-parse', '--verify', 'HEAD^{commit}']);
-    await git(['read-tree', head]);
-    await git([...globalExcludes(), 'add', '-A']);
+    await stageWorktree(workspace.path, env.GIT_INDEX_FILE, head, git);
     const tree = await git(['write-tree']);
     const commit = await git([
       'commit-tree',
@@ -161,9 +221,10 @@ export function restorableTurns(ctx: ControlContext, projectId: string): Map<str
 /** Freezes a fork's files and HEAD under its own ref without changing the source index. */
 export function forkCheckpoint(workspace: Workspace, ref: string, checkpoint?: string): void {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'pantheon-checkpoint-'));
+  const index = path.join(directory, 'index');
   const git = (args: string[]): string => {
     const result = runGit(workspace.path, args, undefined, false, {
-      env: { GIT_INDEX_FILE: path.join(directory, 'index') },
+      env: { GIT_INDEX_FILE: index },
     });
     requireThat(
       result.exit_code === 0,
@@ -175,7 +236,9 @@ export function forkCheckpoint(workspace: Workspace, ref: string, checkpoint?: s
   try {
     if (!checkpoint) {
       const head = git(['rev-parse', '--verify', 'HEAD^{commit}']);
-      git(['read-tree', head]);
+      // Synchronous, as stageWorktree is not: the fork runs inside a command's transaction.
+      copyWorktreeIndex(workspace.path, index);
+      git(['read-tree', '--reset', head]);
       git([...globalExcludes(), 'add', '-A']);
       const tree = git(['write-tree']);
       checkpoint = git(['commit-tree', tree, '-p', head, '-m', 'Pantheon session fork']);
@@ -209,28 +272,32 @@ export async function readTurnDiff(
     throw new DomainError('workspace_read_failed', 'Turn diff failed or exceeded its time bound');
   };
   const small = { max_buffer: 4096, timeout_ms: TIME_BOUND };
-  const checkpoint = async (turn: SessionTurn) => {
-    const found = await run(
-      [
-        'rev-parse',
-        '--verify',
-        '--quiet',
-        `${checkpointRef(workspace, session.id, turn.id)}^{tree}`,
-      ],
-      small,
-    );
-    if (found.exit_code !== 0 && found.exit_code !== 1) failed();
-    return found.exit_code === 0 ? found.stdout.toString().trim() : undefined;
-  };
-  // The turn id becomes part of a git revision, so only the session's own turns are looked up.
+  const listed = await run(
+    [
+      'for-each-ref',
+      '--format=%(refname) %(tree)',
+      `${CHECKPOINTS}/${workspace.id}/${session.id}/`,
+    ],
+    { max_buffer: PATCH_BOUND, timeout_ms: TIME_BOUND },
+  );
+  if (listed.exit_code !== 0) failed();
+  const trees = new Map(
+    listed.stdout
+      .toString()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.split(' ') as [string, string]),
+  );
+  const checkpoint = (turn: SessionTurn) =>
+    trees.get(checkpointRef(workspace, session.id, turn.id)) || undefined;
   const turns = ctx.store
     .list<SessionTurn>('session_turns')
     .filter((t) => t.session_id === session.id);
   const index = turns.findIndex((t) => t.id === turnId);
-  const from = index === -1 ? undefined : await checkpoint(turns[index]!);
+  const from = index === -1 ? undefined : checkpoint(turns[index]!);
   if (!from) throw new DomainError('checkpoint_missing', 'This turn has no checkpoint');
   let to: string | undefined;
-  for (const later of turns.slice(index + 1)) if ((to = await checkpoint(later))) break;
+  for (const later of turns.slice(index + 1)) if ((to = checkpoint(later))) break;
   if (!to) {
     const directory = mkdtempSync(path.join(os.tmpdir(), 'pantheon-turn-diff-'));
     const env = { GIT_INDEX_FILE: path.join(directory, 'index') };
@@ -244,8 +311,7 @@ export async function readTurnDiff(
       return result.stdout.toString().trim();
     };
     try {
-      await git(['read-tree', 'HEAD']);
-      await git([...globalExcludes(), 'add', '-A']);
+      await stageWorktree(workspace.path, env.GIT_INDEX_FILE, 'HEAD', git);
       to = await git(['write-tree']);
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -275,9 +341,13 @@ export async function readTurnDiff(
  * ones, then moves the detached HEAD to the checkpoint's parent with the index equal to it.
  * Refuses a HEAD on a branch before changing anything.
  */
-export function restoreCheckpoint(worktree: string, checkpoint: string): string {
-  const git = (args: string[], input?: Buffer, exitCodes: (number | null)[] = [0]): string => {
-    const result = runGit(worktree, args, input);
+export async function restoreCheckpoint(worktree: string, checkpoint: string): Promise<string> {
+  const git = async (
+    args: string[],
+    input?: Buffer,
+    exitCodes: (number | null)[] = [0],
+  ): Promise<string> => {
+    const result = await runGit(worktree, args, input, true);
     requireThat(
       exitCodes.includes(result.exit_code),
       'invalid_workspace',
@@ -287,20 +357,22 @@ export function restoreCheckpoint(worktree: string, checkpoint: string): string 
   };
   const paths = (output: string) => output.split('\0').filter(Boolean);
   // symbolic-ref exits 1 for a detached HEAD.
-  if (git(['symbolic-ref', '-q', 'HEAD'], undefined, [0, 1])) throw attachedHead();
-  const head = git(['rev-parse', '--verify', `${checkpoint}^`]).trim();
+  if (await git(['symbolic-ref', '-q', 'HEAD'], undefined, [0, 1])) throw attachedHead();
+  const head = (await git(['rev-parse', '--verify', `${checkpoint}^`])).trim();
   // Listed before read-tree brings back the checkpoint's .gitignore, so today's rules apply.
-  const inCheckpoint = new Set(paths(git(['ls-tree', '-r', '-z', '--name-only', checkpoint])));
+  const inCheckpoint = new Set(
+    paths(await git(['ls-tree', '-r', '-z', '--name-only', checkpoint])),
+  );
   const outside = [
-    ...paths(git(['ls-files', '-z'])),
-    ...paths(git([...globalExcludes(), 'ls-files', '-z', '--others', '--exclude-standard'])),
+    ...paths(await git(['ls-files', '-z'])),
+    ...paths(await git([...globalExcludes(), 'ls-files', '-z', '--others', '--exclude-standard'])),
   ].filter((file) => !inCheckpoint.has(file));
-  git(['read-tree', '--reset', '-u', checkpoint]);
+  await git(['read-tree', '--reset', '-u', checkpoint]);
   // check-ignore exits 1 when none of the files is ignored by the checkpoint's rules.
   const ignoredThen = new Set(
     outside.length
       ? paths(
-          git(
+          await git(
             [...globalExcludes(), 'check-ignore', '-z', '--stdin'],
             Buffer.from(outside.map((file) => `${file}\0`).join('')),
             [0, 1],
@@ -319,9 +391,9 @@ export function restoreCheckpoint(worktree: string, checkpoint: string): string 
       rmdirSync(directory);
   }
   // --no-deref detaches HEAD even if it was put on a branch since the check, so no branch moves.
-  git(['update-ref', '--no-deref', 'HEAD', head]);
-  git(['read-tree', '--reset', head]);
-  git(['update-index', '-q', '--refresh'], undefined, [0, 1]);
+  await git(['update-ref', '--no-deref', 'HEAD', head]);
+  await git(['read-tree', '--reset', head]);
+  await git(['update-index', '-q', '--refresh'], undefined, [0, 1]);
   return head;
 }
 
@@ -376,24 +448,14 @@ export function finishRollback(
   return next;
 }
 
-/** Commits fn by itself from inside a command's open transaction, which goes on afterwards. */
-function commitApart<T>(ctx: ControlContext, fn: () => T): T {
-  // The command has only read so far, so committing its transaction here writes nothing of it.
-  ctx.store.db.exec('COMMIT');
-  try {
-    return ctx.store.transaction(fn);
-  } finally {
-    ctx.store.db.exec('BEGIN IMMEDIATE');
-  }
-}
-
 /** Deletes the checkpoint refs of the workspace's sessions from the repository that outlives it. */
-export function deleteCheckpoints(workspace: Workspace): void {
-  const listed = runGit(workspace.source!, [
-    'for-each-ref',
-    '--format=%(refname)',
-    `${CHECKPOINTS}/${workspace.id}/`,
-  ]);
+export async function deleteCheckpoints(workspace: Workspace): Promise<void> {
+  const listed = await runGit(
+    workspace.source!,
+    ['for-each-ref', '--format=%(refname)', `${CHECKPOINTS}/${workspace.id}/`],
+    undefined,
+    true,
+  );
   requireThat(
     listed.exit_code === 0,
     'invalid_workspace',
@@ -401,10 +463,11 @@ export function deleteCheckpoints(workspace: Workspace): void {
   );
   const refs = listed.stdout.toString().split('\n').filter(Boolean);
   if (!refs.length) return;
-  const deleted = runGit(
+  const deleted = await runGit(
     workspace.source!,
     ['update-ref', '--stdin'],
     Buffer.from(refs.map((ref) => `delete ${ref}\n`).join('')),
+    true,
   );
   requireThat(
     deleted.exit_code === 0,
@@ -413,93 +476,123 @@ export function deleteCheckpoints(workspace: Workspace): void {
   );
 }
 
-export const checkpointHandlers: Handlers = {
-  'session.rollback': (ctx, p, c) => {
-    requireThat(p.role === 'user', 'permission_denied', 'Only user can roll back a session');
-    const input = inputSchemas['session.rollback'].parse(c.input),
-      session = ctx.store.must<Session>('sessions', input.session_id);
-    projectAccess(ctx, p, session.project_id, c.type);
-    revision(ctx, c, session);
-    requireThat(!session.outcome, 'invalid_state', `Session was ${session.outcome}`);
-    requireThat(session.merge?.state !== 'running', 'invalid_state', 'Session is being merged');
-    requireThat(
-      session.state === 'open' && !session.stop_pending,
-      'invalid_state',
-      `Session is ${session.stop_pending ? 'stopping' : session.state}`,
-    );
-    // Absent is both: the files and the conversation go back to before the turn.
-    const scope = input.scope ?? 'both';
-    // The turn id becomes part of a git revision, so only the session's own turns are looked up.
-    const turn = ctx.store.get<SessionTurn>('session_turns', input.turn_id);
-    requireThat(turn?.session_id === session.id, 'invalid_state', 'Turn has no checkpoint');
-    // An idle native process writes nothing, so the files are restored while it closes.
-    const idle = ctx.idleConversations.has(session.id);
-    requireThat(
-      idle || !nativeTurnActive(ctx, session),
-      'invalid_state',
-      'Session still has a native process; retry once it has closed',
-    );
-    if (scope === 'conversation') {
-      if (idle) releaseIdleConversation(ctx, session);
-      const next = ctx.store.update(
-        'sessions',
-        rollBackConversation(ctx, session, turn.id),
-        session.revision,
-      );
-      ctx.store.event(
-        'session.rolled_back',
-        next,
-        next.project_id,
-        { turn_id: turn.id, scope },
-        c.command_id,
-      );
-      return next;
-    }
-    const workspace = gitWorkspace(ctx, session);
-    requireThat(workspace, 'invalid_state', 'Only a git worktree session can restore files');
+/** The session.rollback checks; a files rollback runs them again where it stores its intent. */
+function rollbackChecks(ctx: ControlContext, p: Principal, c: Command) {
+  requireThat(p.role === 'user', 'permission_denied', 'Only user can roll back a session');
+  const input = inputSchemas['session.rollback'].parse(c.input),
+    session = ctx.store.must<Session>('sessions', input.session_id);
+  projectAccess(ctx, p, session.project_id, c.type);
+  revision(ctx, c, session);
+  requireThat(!session.outcome, 'invalid_state', `Session was ${session.outcome}`);
+  requireThat(session.merge?.state !== 'running', 'invalid_state', 'Session is being merged');
+  requireThat(
+    session.state === 'open' && !session.stop_pending,
+    'invalid_state',
+    `Session is ${session.stop_pending ? 'stopping' : session.state}`,
+  );
+  // The files move while no transaction is open, so a second rollback must not start meanwhile.
+  requireThat(
+    !session.rollback_pending,
+    'rollback_in_progress',
+    'Session is finishing a rollback; the daemon completes it on restart',
+  );
+  // The turn id becomes part of a git revision, so only the session's own turns are looked up.
+  const turn = ctx.store.get<SessionTurn>('session_turns', input.turn_id);
+  requireThat(turn?.session_id === session.id, 'invalid_state', 'Turn has no checkpoint');
+  // An idle native process writes nothing, so the files are restored while it closes.
+  const idle = ctx.idleConversations.has(session.id);
+  requireThat(
+    idle || !nativeTurnActive(ctx, session),
+    'invalid_state',
+    'Session still has a native process; retry once it has closed',
+  );
+  // Absent is both: the files and the conversation go back to before the turn.
+  return { input, session, turn, idle, scope: input.scope ?? 'both' };
+}
+
+const conversationRollback: Handler = (ctx, p, c) => {
+  const { session, turn, idle } = rollbackChecks(ctx, p, c);
+  if (idle) releaseIdleConversation(ctx, session);
+  const next = ctx.store.update(
+    'sessions',
+    rollBackConversation(ctx, session, turn.id),
+    session.revision,
+  );
+  ctx.store.event(
+    'session.rolled_back',
+    next,
+    next.project_id,
+    { turn_id: turn.id, scope: 'conversation' },
+    c.command_id,
+  );
+  return next;
+};
+
+/**
+ * session.rollback. Restoring files runs git outside the store's transactions: the intent is
+ * committed, the files are restored, and the returned handler records the rollback.
+ */
+export function prepareRollback(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+): Handler | Promise<Handler> {
+  const { input, session, turn, scope } = rollbackChecks(ctx, p, c);
+  if (scope === 'conversation') return conversationRollback;
+  const workspace = gitWorkspace(ctx, session);
+  requireThat(workspace, 'invalid_state', 'Only a git worktree session can restore files');
+  // A lead's merged direct task is on the source branch; its earlier commits are not the worktree's base.
+  const merged = ctx.store.db
+    .prepare(
+      "SELECT max(sequence) AS sequence FROM events WHERE aggregate_id=? AND kind='session.merged'",
+    )
+    .get(session.id) as { sequence: number | null };
+  const queued = ctx.store.db
+    .prepare('SELECT min(sequence) AS sequence FROM events WHERE aggregate_id=?')
+    .get(input.turn_id) as { sequence: number | null };
+  requireThat(
+    merged.sequence === null || (queued.sequence ?? 0) > merged.sequence,
+    'invalid_state',
+    'The turn started before the last merge of this session, whose changes are on the source branch now; roll back only to a turn after it',
+  );
+  return (async () => {
     // Checked before the intent is stored, so a refusal leaves nothing for recovery to finish.
-    if (runGit(workspace.path, ['symbolic-ref', '-q', 'HEAD']).exit_code === 0)
-      throw attachedHead();
-    // A lead's merged direct task is on the source branch; its earlier commits are not the worktree's base.
-    const merged = ctx.store.db
-      .prepare(
-        "SELECT max(sequence) AS sequence FROM events WHERE aggregate_id=? AND kind='session.merged'",
-      )
-      .get(session.id) as { sequence: number | null };
-    const queued = ctx.store.db
-      .prepare('SELECT min(sequence) AS sequence FROM events WHERE aggregate_id=?')
-      .get(input.turn_id) as { sequence: number | null };
-    requireThat(
-      merged.sequence === null || (queued.sequence ?? 0) > merged.sequence,
-      'invalid_state',
-      'The turn started before the last merge of this session, whose changes are on the source branch now; roll back only to a turn after it',
+    const attached = await runGit(workspace.path, ['symbolic-ref', '-q', 'HEAD'], undefined, true);
+    if (attached.exit_code === 0) throw attachedHead();
+    const found = await runGit(
+      workspace.path,
+      [
+        'rev-parse',
+        '--verify',
+        '--quiet',
+        `${checkpointRef(workspace, session.id, turn.id)}^{commit}`,
+      ],
+      undefined,
+      true,
     );
-    if (idle) releaseIdleConversation(ctx, session);
-    const found = runGit(workspace.path, [
-      'rev-parse',
-      '--verify',
-      '--quiet',
-      `${checkpointRef(workspace, session.id, turn.id)}^{commit}`,
-    ]);
     requireThat(found.exit_code === 0, 'invalid_state', 'Turn has no checkpoint');
     const checkpoint = found.stdout.toString().trim();
     // Kept when the command fails after the files moved, so recover can finish the rollback.
-    const pending = commitApart(ctx, () =>
-      ctx.store.update(
+    const pending = ctx.store.transaction(() => {
+      const { session: current, idle } = rollbackChecks(ctx, p, c);
+      if (idle) releaseIdleConversation(ctx, current);
+      return ctx.store.update(
         'sessions',
         {
-          ...session,
+          ...current,
           rollback_pending: {
             checkpoint,
             turn_id: input.turn_id,
             ...(scope === 'files' ? { scope } : {}),
           },
         },
-        session.revision,
-      ),
-    );
-    const head = restoreCheckpoint(workspace.path, checkpoint);
+        current.revision,
+      );
+    });
+    const head = await restoreCheckpoint(workspace.path, checkpoint);
     ctx.failpoint('after_rollback_restore_before_record');
-    return finishRollback(ctx, pending, head, c.command_id);
-  },
-};
+    // The idle process closing meanwhile may have written the session again.
+    return (ctx: ControlContext) =>
+      finishRollback(ctx, ctx.store.must<Session>('sessions', pending.id), head, c.command_id);
+  })();
+}

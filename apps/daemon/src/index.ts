@@ -547,7 +547,10 @@ export async function startDaemon(options: DaemonOptions) {
       },
       'session.reviews': (p, i) => control.sessionReviews(p, i.session_id),
       'session.comments': (p, i) => control.sessionComments(p, i.session_id),
-      'needs_you.list': (p, i) => control.needsYou(p, i.project_id),
+      'needs_you.list': async (p, i) => {
+        await prefetch(p, i.project_id);
+        return timed('needs_you.list', () => control.needsYou(p, i.project_id));
+      },
       'external.read': (p, i) => control.externalRead(p, i.project_id),
       'projects.summary': async (p) => {
         await prefetch(p);

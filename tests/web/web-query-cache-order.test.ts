@@ -39,20 +39,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('keeps the newer read in the cache when an older read of another mount answers last', async () => {
+it('sends the read a board move asks for once the read out answers, and keeps its answer', async () => {
   const first = mount(facts('project-order'));
   await first.flush();
   mock.board = { ...mock.board, board: board(2), changed: 2 };
   const second = mount(facts('project-order'));
   await second.flush();
+  expect(reads).toHaveLength(1);
+  reads[0]!({ ok: true, value: { facts: ['older'] } });
+  await first.flush();
+  await second.flush();
   expect(reads).toHaveLength(2);
   reads[1]!({ ok: true, value: { facts: ['newer'] } });
   await second.flush();
-  reads[0]!({ ok: true, value: { facts: ['older'] } });
-  await first.flush();
 
   const third = mount(facts('project-order'));
   expect(third.value.read).toEqual({ facts: ['newer'] });
+});
+
+it('sends one more read for every trigger that came while a read of the query was out', async () => {
+  const h = mount(facts('project-pressure'));
+  await h.flush();
+  for (const cursor of [2, 3]) {
+    mock.board = { ...mock.board, board: board(cursor), changed: cursor };
+    h.render();
+    await h.flush();
+  }
+  expect(reads).toHaveLength(1);
+  reads[0]!({ ok: true, value: { facts: ['first'] } });
+  await h.flush();
+  expect(reads).toHaveLength(2);
+  reads[1]!({ ok: true, value: { facts: ['last'] } });
+  await h.flush();
+  expect(reads).toHaveLength(2);
+  expect(h.value.read).toEqual({ facts: ['last'] });
 });
 
 it('keeps no answer of a read sent before the board resynced', async () => {

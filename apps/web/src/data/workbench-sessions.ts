@@ -83,29 +83,53 @@ const REFETCH_GAP_MS = 500;
 /**
  * Counts up after the event named by `sequence`: streamed frames STREAM_REFRESH_MS after, every
  * other event REFRESH_DELAY_MS after, but never sooner than REFETCH_GAP_MS after the last count.
- * Events that arrive while a count is pending join it.
+ * Given the query the count reads, the gap starts when its last read answered, and a count due
+ * while a read of it is out waits for that read. Events that arrive while a count is pending join it.
  */
-export function useRefetchTick(sequence: number, stream: boolean): number {
+export function useRefetchTick(
+  sequence: number,
+  stream: boolean,
+  query?: readonly [method: string, key: string | null],
+): number {
   const [tick, setTick] = useState(0);
-  const timer = useRef<{ id: ReturnType<typeof setTimeout>; at: number } | null>(null);
+  const timer = useRef<{ id?: ReturnType<typeof setTimeout>; at: number } | null>(null);
   const lastRead = useRef(-Infinity);
+  const read = useRef(query);
+  read.current = query;
   useEffect(() => {
     if (!sequence) return;
+    const out = () => {
+      const [method, key] = read.current ?? [];
+      return method && key ? cachedQuery(method, key) : undefined;
+    };
+    const arm = (at: number) => {
+      const pending = {
+        at,
+        id: setTimeout(() => {
+          const inflight = out()?.inflight;
+          if (inflight) {
+            pending.at = Infinity;
+            void inflight.finally(() => {
+              if (timer.current === pending) arm(Date.now() + REFETCH_GAP_MS);
+            });
+            return;
+          }
+          timer.current = null;
+          lastRead.current = Date.now();
+          setTick((n) => n + 1);
+        }, at - Date.now()),
+      };
+      timer.current = pending;
+    };
     const now = Date.now();
     const at = Math.max(
       now + (stream ? STREAM_REFRESH_MS : REFRESH_DELAY_MS),
       lastRead.current + REFETCH_GAP_MS,
+      (out()?.settledAt ?? -Infinity) + REFETCH_GAP_MS,
     );
     if (timer.current && timer.current.at <= at) return;
     if (timer.current) clearTimeout(timer.current.id);
-    timer.current = {
-      at,
-      id: setTimeout(() => {
-        timer.current = null;
-        lastRead.current = Date.now();
-        setTick((n) => n + 1);
-      }, at - now),
-    };
+    arm(at);
   }, [sequence, stream]);
   useEffect(
     () => () => {
@@ -564,7 +588,7 @@ export function useSessionDiff(sessionId: string | null): QueryState<SessionDiff
     sessionId !== null && touchesSession(e, sessionId, board);
   const sequence = useBoard((s) => newest(s.events, keep(s.board))?.sequence ?? 0);
   const stream = useBoard((s) => STREAM_KINDS.has(newest(s.events, keep(s.board))?.kind ?? ''));
-  const tick = useRefetchTick(sequence, stream) + useFocusTick();
+  const tick = useRefetchTick(sequence, stream, ['session.diff', sessionId]) + useFocusTick();
   return useQuery('session.diff', sessionId, diffParams, acceptDiff, tick, DIFF_TEXT);
 }
 
@@ -589,7 +613,7 @@ export function useTurnDiff(
     sessionId !== null && touchesSession(e, sessionId, board);
   const sequence = useBoard((s) => newest(s.events, keep(s.board))?.sequence ?? 0);
   const stream = useBoard((s) => STREAM_KINDS.has(newest(s.events, keep(s.board))?.kind ?? ''));
-  const tick = useRefetchTick(sequence, stream) + useFocusTick();
   const key = sessionId !== null && turnId !== null ? `${sessionId}\n${turnId}` : null;
+  const tick = useRefetchTick(sequence, stream, ['session.turn_diff', key]) + useFocusTick();
   return useQuery('session.turn_diff', key, turnDiffParams, acceptTurnDiff, tick, TURN_DIFF_TEXT);
 }

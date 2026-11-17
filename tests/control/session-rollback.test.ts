@@ -33,9 +33,9 @@ const rollback = (f: Fixture, session: Session, turnId: string) =>
     current(f, session.id).revision,
   );
 
-function refusal(run: () => unknown): DomainError {
+async function refusal(run: () => unknown): Promise<DomainError> {
   try {
-    run();
+    await run();
   } catch (error) {
     expect(error).toBeInstanceOf(DomainError);
     return error as DomainError;
@@ -263,7 +263,7 @@ it('keeps the rollback intent and refuses input when the rollback record fails t
     if (name === 'before_transaction_commit') throw new Error('Store write failed');
   });
 
-  expect(() => rollback(f, session, second.id)).toThrow('Store write failed');
+  await expect(rollback(f, session, second.id)).rejects.toThrow('Store write failed');
   failpoint.mockRestore();
   await eventually(
     () => events(f, 'session.process_closed').some((event) => event.aggregate_id === session.id),
@@ -274,7 +274,7 @@ it('keeps the rollback intent and refuses input when the rollback record fails t
   expect(failed.rollback_pending).toEqual({ checkpoint, turn_id: second.id });
   expect(failed.native_id).toBe(oldNative);
   expect(events(f, 'session.rolled_back')).toEqual([]);
-  const refused = refusal(() =>
+  const refused = await refusal(() =>
     f.call('session.send', { session_id: session.id, input: 'Add a footer row' }, failed.revision),
   );
   expect(refused.code).toBe('rollback_in_progress');
@@ -377,18 +377,18 @@ it('refuses a rollback while the session runs, after it merged, and for a turn w
     { session_id: session.id, input: 'Add a footer row' },
     current(f, session.id).revision,
   );
-  const running = refusal(() => rollback(f, session, second.id));
+  const running = await refusal(() => rollback(f, session, second.id));
   expect(running.code).toBe('invalid_state');
   expect(running.message).toMatch(/running/);
   await settle(f, session);
 
-  const unknown = refusal(() => rollback(f, session, 'turn-without-checkpoint'));
+  const unknown = await refusal(() => rollback(f, session, 'turn-without-checkpoint'));
   expect(unknown.code).toBe('invalid_state');
   expect(unknown.message).toMatch(/checkpoint/);
 
   const idle = current(f, session.id);
   f.store.update('sessions', { ...idle, outcome: 'merged' as const }, idle.revision);
-  const merged = refusal(() => rollback(f, session, second.id));
+  const merged = await refusal(() => rollback(f, session, second.id));
   expect(merged.code).toBe('invalid_state');
   expect(merged.message).toMatch(/merged/);
   expect(events(f, 'session.rolled_back')).toEqual([]);
@@ -400,7 +400,7 @@ it('refuses to roll back a worktree whose HEAD points at the source branch and l
   const sessionCommit = git(work, 'rev-parse', 'HEAD');
   git(work, 'symbolic-ref', 'HEAD', 'refs/heads/main');
 
-  const refused = refusal(() => rollback(f, session, second.id));
+  const refused = await refusal(() => rollback(f, session, second.id));
   expect(refused.code).toBe('worktree_head_attached');
   expect(git(f.source, 'rev-parse', 'refs/heads/main')).toBe(sourceMain);
   expect(readFileSync(path.join(work, 'answer.txt'), 'utf8')).toBe('header\n');

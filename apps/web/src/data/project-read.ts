@@ -6,7 +6,7 @@ import { useBoard } from './board';
 import { runCommand } from './commands';
 import { failureText } from './needs-you';
 import { cachedQuery, noteResync, readCached, storeQuery } from './query-cache';
-import { SLOW_CODES, SLOW_RETRY_MS } from './sync';
+import { SLOW_CODES, SLOW_RETRY_MS, type DaemonEvent } from './sync';
 
 export type { ProjectRead };
 export type MilestoneView = ProjectRead['milestones'][number];
@@ -30,6 +30,43 @@ export interface ProjectReadState {
   /** The read is one an earlier mount cached and this one's own read has not landed; no authority. */
   stale: boolean;
   reload: () => void;
+}
+
+/** Event kinds after which the project's Git state may differ: commits, merges, rollbacks, worktrees. */
+export const REPOSITORY_KINDS: ReadonlySet<string> = new Set([
+  'workspace.repository_changed',
+  'workspace.ready',
+  'workspace.registered',
+  'workspace.removed',
+  'session.merged',
+  'session.rolled_back',
+  'session.discarded',
+  'session.deleted',
+  'session.archived',
+  'session.unarchived',
+  'session.forked',
+  'session.adopted',
+  'session.write_detected',
+  'turn.completed',
+]);
+
+/** REPOSITORY_KINDS plus finished tool calls, which can write an in-place session's checkout mid-turn. */
+export const WORKTREE_KINDS: ReadonlySet<string> = new Set([
+  ...REPOSITORY_KINDS,
+  'agent.tool.completed',
+]);
+
+/** Sequence of the newest event of the project whose kind is one of `kinds`; 0 when none. */
+function newestOf(
+  events: readonly DaemonEvent[],
+  project_id: string | null,
+  kinds: ReadonlySet<string>,
+) {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!;
+    if (event.project_id === project_id && kinds.has(event.kind)) return event.sequence;
+  }
+  return 0;
 }
 
 const readQuery = (
@@ -70,15 +107,30 @@ export function useProjectQuery<T>(
   valid: (value: unknown) => boolean,
   /** More query input, such as which of the project's objects to read. */
   extra?: Record<string, string>,
-  /** events: only events that change the board can change the answer, so streamed ones read nothing. */
-  options?: { events?: boolean },
+  /**
+   * events: only events that change the board can change the answer, so streamed ones read nothing.
+   * kinds: only the project's events of these kinds can change the answer; it reads again after
+   * them and on window focus instead of after each board read.
+   */
+  options?: { events?: boolean; kinds?: ReadonlySet<string> },
 ): Omit<ProjectReadState, 'read'> & { read: T | null } {
   const of = extra ? JSON.stringify(extra) : '';
   const cacheKey = (id: string) => (of ? `${id} ${of}` : id);
   const identity = project_id ? `${method} ${cacheKey(project_id)}` : null;
   const ready = useBoard((s) => s.board !== null);
   const events = options?.events ?? false;
-  const changed = useBoard((s) => (events ? s.changed : (s.board?.cursor ?? 0)));
+  const kinds = options?.kinds;
+  const changed = useBoard((s) =>
+    kinds ? newestOf(s.events, project_id, kinds) : events ? s.changed : (s.board?.cursor ?? 0),
+  );
+  const [focused, setFocused] = useState(0);
+  const followsFocus = kinds !== undefined;
+  useEffect(() => {
+    if (!followsFocus) return;
+    const focus = () => setFocused((n) => n + 1);
+    window.addEventListener('focus', focus);
+    return () => window.removeEventListener('focus', focus);
+  }, [followsFocus]);
   const live = useBoard((s) => s.status.state === 'live');
   const resync = useBoard((s) => s.resync);
   noteResync(resync);
@@ -123,7 +175,7 @@ export function useProjectQuery<T>(
     const bridge = window.pantheon;
     const run = ++runs.current.started;
     const valid = check.current;
-    const trigger = `${changed} ${resync}`;
+    const trigger = `${changed} ${focused} ${resync}`;
     const before = counted.current;
     const share = !before || (before.reconnected === reconnected && before.attempt === attempt);
     counted.current = { reconnected, attempt };
@@ -195,7 +247,7 @@ export function useProjectQuery<T>(
             };
       });
     });
-  }, [method, project_id, of, ready, changed, reconnected, resync, attempt]);
+  }, [method, project_id, of, ready, changed, focused, reconnected, resync, attempt]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
   if (!project_id)

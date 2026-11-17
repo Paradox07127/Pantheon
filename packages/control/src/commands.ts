@@ -1,11 +1,9 @@
-import { workspaceStaleHandlers } from './workspace-stale.js';
 import { runtimeReviewHandlers } from './runtime-review.js';
 import { memoryHandlers } from './memory.js';
 import { projectIntroHandlers } from './project-intro.js';
 import { baselineHandlers } from './baseline.js';
 import { changeStoryHandlers } from './change-story.js';
 import { rangeStoryHandlers } from './range-story.js';
-import { checkpointHandlers } from './checkpoint.js';
 import type { Handlers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
 import { projectBoardHandlers } from './project-board.js';
@@ -29,7 +27,6 @@ import { deviceHandlers } from './devices.js';
 import { externalEventHandlers } from './external-events.js';
 
 export const handlers: Handlers = {
-  ...workspaceStaleHandlers,
   ...memoryHandlers,
   ...projectHandlers,
   ...projectFactHandlers,
@@ -40,7 +37,6 @@ export const handlers: Handlers = {
   ...rangeStoryHandlers,
   ...sessionHandlers,
   ...runtimeReviewHandlers,
-  ...checkpointHandlers,
   ...workbenchSessionHandlers,
   ...approvalHandlers,
   ...reviewHandlers,

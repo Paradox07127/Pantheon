@@ -6,20 +6,35 @@ import { managedRootOf, resolvedPath, type ControlContext } from './context.js';
 import { deleteCheckpoints } from './checkpoint.js';
 import { runGit } from './git.js';
 import { removeRemoteWorkspace } from './remote-workspace.js';
+import { onWslAutomount } from './wsl-mount.js';
 
 // Kept short: tests create unix sockets under TMPDIR and macOS caps socket paths at 104 bytes.
 export function writerTempDirectory(workspaceId: string): string {
   return path.join(realpathSync(os.tmpdir()), `pantheon-${workspaceId.slice(0, 12)}`);
 }
 
-/** Removes the worktree inside the caller's transaction. */
-export function removeWorkspaceInTransaction(
+/** By workspace id, the removal running now; a second call for it waits on that one. */
+const removals = new WeakMap<ControlContext, Map<string, Promise<void>>>();
+
+/** Removes the worktree; git runs outside the store's transactions. Call it outside one. */
+export function removeWorkspace(
   ctx: ControlContext,
   workspaceId: string,
   jobId: string,
-): void {
+): Promise<void> {
+  let running = removals.get(ctx);
+  if (!running) removals.set(ctx, (running = new Map()));
+  const current = running.get(workspaceId);
+  // The later job stays pending; the next tick finds the workspace removed and marks it done.
+  if (current) return current;
+  const removal = removeOnce(ctx, workspaceId, jobId).finally(() => running.delete(workspaceId));
+  running.set(workspaceId, removal);
+  return removal;
+}
+
+async function removeOnce(ctx: ControlContext, workspaceId: string, jobId: string): Promise<void> {
   const workspace = ctx.store.must<Workspace>('workspaces', workspaceId);
-  const skip = () => ctx.store.mark(jobId, 'done');
+  const skip = () => ctx.store.transaction(() => ctx.store.mark(jobId, 'done'));
   if (workspace.kind !== 'linked_worktree') return skip();
   // The job stays pending until provisioning has stopped writing the worktree.
   if (['queued', 'running'].includes(workspace.provisioning?.state ?? '')) return;
@@ -43,12 +58,25 @@ export function removeWorkspaceInTransaction(
       .kindEvents(workspace.project_id, ['session.merged'])
       .findLast((event) => event.aggregate_id === merged.id)?.payload as
       { to_sha?: string } | undefined;
-    const head = runGit(workspace.path, ['rev-parse', '--verify', 'HEAD^{commit}']);
+    const head = await runGit(
+      workspace.path,
+      ['rev-parse', '--verify', 'HEAD^{commit}'],
+      undefined,
+      true,
+    );
     if (head.exit_code !== 0 || head.stdout.toString().trim() !== landed?.to_sha) return skip();
   }
+  // Provisioning locks worktrees of a drive repository, and remove refuses a locked one.
+  if (onWslAutomount(workspace.source!))
+    await runGit(workspace.source!, ['worktree', 'unlock', workspace.path], undefined, true);
   // Without --force Git refuses a worktree with changed or untracked files; it clears the
   // metadata of a folder deleted by hand and leaves other worktrees' metadata alone.
-  runGit(workspace.source!, ['worktree', 'remove', ...(merged ? [] : ['--force']), workspace.path]);
+  await runGit(
+    workspace.source!,
+    ['worktree', 'remove', ...(merged ? [] : ['--force']), workspace.path],
+    undefined,
+    true,
+  );
   // Git refuses the reservation a failed provisioning never populated; rmdir takes only an empty one.
   const identity = workspace.provisioning?.directory_identity;
   if (identity && ['failed', 'cancelled'].includes(workspace.provisioning!.state))
@@ -61,19 +89,19 @@ export function removeWorkspaceInTransaction(
     }
   if (existsSync(workspace.path)) return skip();
   // A linked worktree's checkpoint refs live in its source repository.
-  deleteCheckpoints(workspace);
+  await deleteCheckpoints(workspace);
   rmSync(writerTempDirectory(workspace.id), { recursive: true, force: true });
   ctx.failpoint('after_workspace_delete');
-  const next = ctx.store.update<Workspace>(
-    'workspaces',
-    { ...workspace, removed_at: ctx.store.now() },
-    workspace.revision,
-  );
-  ctx.store.event('workspace.removed', next, workspace.project_id, {});
-  removeRemoteWorkspace(ctx, workspace);
-  ctx.store.mark(jobId, 'done');
-}
-
-export function removeWorkspace(ctx: ControlContext, workspaceId: string, jobId: string): void {
-  ctx.store.transaction(() => removeWorkspaceInTransaction(ctx, workspaceId, jobId));
+  ctx.store.transaction(() => {
+    // Read again: the row may have changed while git ran.
+    const latest = ctx.store.must<Workspace>('workspaces', workspaceId);
+    const next = ctx.store.update<Workspace>(
+      'workspaces',
+      { ...latest, removed_at: ctx.store.now() },
+      latest.revision,
+    );
+    ctx.store.event('workspace.removed', next, workspace.project_id, {});
+    removeRemoteWorkspace(ctx, latest);
+    ctx.store.mark(jobId, 'done');
+  });
 }

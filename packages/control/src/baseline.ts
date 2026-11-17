@@ -115,14 +115,16 @@ function located(root: string, relative: string): boolean {
 
 /** True when any reference resolves inside any of the roots. */
 export function sourced(roots: string[], refs: string[]): boolean {
-  return refs.some((ref) =>
-    roots.some((root) => {
-      const commit = /^commit:([0-9a-fA-F]{7,40})$/.exec(ref);
-      if (commit) return runGit(root, ['cat-file', '-e', `${commit[1]}^{commit}`]).exit_code === 0;
-      const file = /^file:(.+?)(?::[1-9][0-9]*)?$/.exec(ref);
-      return !!file && located(root, file[1]!);
-    }),
-  );
+  const commits = refs.flatMap((ref) => /^commit:([0-9a-fA-F]{7,40})$/.exec(ref)?.[1] ?? []);
+  const files = refs.flatMap((ref) => /^file:(.+?)(?::[1-9][0-9]*)?$/.exec(ref)?.[1] ?? []);
+  if (files.some((file) => roots.some((root) => located(root, file)))) return true;
+  if (!commits.length) return false;
+  const input = Buffer.from(commits.map((commit) => `${commit}^{commit}\n`).join(''));
+  return roots.some((root) => {
+    const checked = runGit(root, ['cat-file', '--batch-check'], input);
+    // A missing or ambiguous name prints its input followed by that word instead.
+    return checked.exit_code === 0 && /^[0-9a-f]+ commit \d+$/m.test(checked.stdout.toString());
+  });
 }
 
 /** Task lists by root default to those of the newest submitted or confirmed baseline. */
