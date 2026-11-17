@@ -138,6 +138,27 @@ let statusAsked = 0;
 /** The forced read in flight; a plain read joins it instead of overtaking it with the cached answer. */
 let statusForced: Promise<void> | null = null;
 
+/** The runtimes a read lists, in display order, and why each cannot start a session (of `kind` when given). */
+export function runtimeChoices(
+  read: RuntimeStatusRead,
+  kind?: SessionKind,
+): { runtimes: readonly string[]; unavailable: Readonly<Record<string, string>> } {
+  const unavailable =
+    read.state === 'ready'
+      ? Object.fromEntries(
+          read.statuses.flatMap((s) => {
+            const why = unavailableReason(s) ?? (kind ? kindReason(s, kind) : null);
+            return why ? [[s.runtime, why]] : [];
+          }),
+        )
+      : NONE;
+  const runtimes =
+    read.state === 'ready'
+      ? read.statuses.map((s) => s.runtime).sort(compareRuntimes)
+      : NO_RUNTIMES;
+  return { runtimes, unavailable };
+}
+
 /**
  * GET /v1/runtime.status on mount, every EVERY_MS and after each connection change; unavailable maps
  * a runtime to why it cannot start a session (of `kind` when given).
@@ -173,19 +194,7 @@ export function useRuntimeStatus(kind?: SessionKind) {
     seen.current = changed;
     void load(false);
   }, [changed, load]);
-  const unavailable =
-    read.state === 'ready'
-      ? Object.fromEntries(
-          read.statuses.flatMap((s) => {
-            const why = unavailableReason(s) ?? (kind ? kindReason(s, kind) : null);
-            return why ? [[s.runtime, why]] : [];
-          }),
-        )
-      : NONE;
-  const runtimes =
-    read.state === 'ready'
-      ? read.statuses.map((s) => s.runtime).sort(compareRuntimes)
-      : NO_RUNTIMES;
+  const { runtimes, unavailable } = runtimeChoices(read, kind);
   // Unavailable for a reason of their own setup, whatever the session asks of them.
   const disconnected =
     read.state === 'ready'

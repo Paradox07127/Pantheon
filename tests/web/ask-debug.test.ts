@@ -283,6 +283,21 @@ describe('asking the debug agent', () => {
     expect(sent()[0]!.input).not.toHaveProperty('cdp_port');
   });
 
+  it('opens the debug session on a runtime that can run when nothing names one', async () => {
+    delete mock.board.board.projects[0].session_defaults;
+    globalDefaults = {};
+    const statuses = [
+      { runtime: 'claude', enabled: true, installed: false, auth: { state: 'unknown' } },
+      { runtime: 'codex', enabled: true, installed: true, auth: { state: 'logged_in' } },
+    ];
+    const answer = bridge.query.getMockImplementation() as (method: string) => Promise<unknown>;
+    bridge.query.mockImplementation(async (method: string) =>
+      method === 'runtime.status' ? { ok: true, value: statuses } : answer(method),
+    );
+    await askDebugAgent({ title: 'Push failed' });
+    expect(sent()[0]!.input).toMatchObject({ runtime: 'codex' });
+  });
+
   it('shows a failed send without offering to ask again', async () => {
     bridge.command.mockResolvedValueOnce({ ok: false, error: { code: 'busy', message: 'Busy' } });
     expect(await askDebugAgent({ title: 'Push failed' })).toBe(false);

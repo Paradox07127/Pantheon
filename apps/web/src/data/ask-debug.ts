@@ -13,6 +13,7 @@ import { failureText } from './needs-you';
 import { effectiveSessionDefaults } from './project-defaults';
 import { composeState, type Session } from './transcript';
 import { readQuery } from './workbench-sessions';
+import { readStatus, runtimeChoices } from './runtime-status';
 
 /** Whether session.send or session.steer, whichever the session's state takes, can go to it now. */
 export const canMessage = (session: Session): boolean =>
@@ -146,7 +147,9 @@ export async function askDebugAgent({
     project,
     read?.ok ? (read.value as ProjectDefaultsRead) : null,
   );
-  const runtime = defaultRuntime([], defaults?.runtime);
+  // Like the new-session box, the default falls back to a runtime that can start a session here.
+  const choices = session ? null : runtimeChoices(await readStatus(false), 'writer');
+  const runtime = defaultRuntime(choices?.runtimes ?? [], defaults?.runtime, choices?.unavailable);
   const result: BridgeResult<unknown> = session
     ? await askFix(
         session.id,
