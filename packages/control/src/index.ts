@@ -71,7 +71,7 @@ import {
   sessionPrincipal,
   sessionAction,
   purposeSessionTools,
-  residentTools,
+  leadSessionTools,
   sessionWorkspaceKind,
   userOnly,
   revision,
@@ -932,7 +932,7 @@ export class Control extends EventEmitter {
       ...(session.baseline ? { extension_runtimes: inventoryRuntimes(this.ctx) } : {}),
       allowed_tool_names:
         purposeSessionTools(session, sessionWorkspaceKind(this.ctx, session)) ??
-        residentTools(this.ctx, session),
+        leadSessionTools(this.ctx, session),
       ...(session.app_debug ? { app_debug: true as const } : {}),
     };
   }

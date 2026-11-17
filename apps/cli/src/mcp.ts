@@ -98,6 +98,13 @@ const descriptions: Record<ToolCommand, string> = {
     'Read one note of your board updates in full, by the note id the update names. Use it when an update was cut short or listed by id only.',
   'lead.ask':
     'Post a question card in needs-you and return immediately; keep working on independent tasks. Supply question, 2-4 options, recommended (one of those options), assumption (how you proceed before an answer), and blocks (only the task ids that must wait for the answer; use [] when none wait). The user answers later; their answer reaches you as a lead note and wakes you. A recommendation is never submitted automatically.',
+  'agent.follow_up':
+    'Wake yourself later with note: give exactly one of after_minutes (1-10080) or at (Unix epoch milliseconds). Set one after you dispatch work, for when you expect its result.',
+  'agent.tell_user':
+    'Leave the user a message in your conversation and notify them; urgency high only when they must act soon. The only way, besides ask_user, to reach the user from a turn Pantheon woke you for.',
+  'agent.routine.set':
+    'Add a routine, or replace the one with this id: prompt runs every_minutes (at least 60) or daily at a local HH:MM, exactly one of them; active_hours moves a run outside them to their next from. At most 10 routines; enabled false keeps it without running.',
+  'agent.routine.cancel': 'Remove one of your routines, by routine_id, and its next run.',
   'task.stop':
     "Stop one task of your plan, by task id, with the reason in under 400 characters: Pantheon drops its start request and discards its open sessions. The receipt lists each session's step: discarded, or stopping while Pantheon waits for its process to stop and then discards it. Once no session is left the task is todo and start_task can start it again. A task without a start request or an open session is refused. Stopping the direct task you work on gives it up and leaves your worktree as it is.",
   'session.merge':
@@ -142,6 +149,16 @@ const descriptions: Record<ToolCommand, string> = {
     'Read the user stylesheet the Pantheon app applies over its own styles: css, enabled, the number of rules and the revision.',
   'style.set':
     'Replace the user stylesheet the Pantheon app applies over its own styles with css (at most 65536 characters) and turn it on; the app shows it at once. Read style_read first and send the whole stylesheet. Select [data-debug-region] and other data-* attributes rather than class names. @import, url() other than data: URLs and backslash escapes are refused. The user can turn it off in Settings > Appearance. Returns the stylesheet as style_read does.',
+  'agent.app_help':
+    'Read the Pantheon app manual. Without topic: one line per command group and the screens where the user does things. With topic (a group name from that index): each command of the group and the lead tool that calls it, or that the user does it in the app.',
+  'agent.sessions':
+    "List this project's sessions: id, title, type (resident, worker, direct or review), state, runtime, task, changed files and lines, and last activity. Optional state keeps only sessions in that listed state.",
+  'agent.session_read':
+    'Read one session of this project: its state and the input and final output of its last turns (default 5, at most 20). Each text is cut to 1500 characters and the whole answer to 12000, dropping the oldest turns first; cut_turns says how many were dropped.',
+  'agent.github_items':
+    "List the open pull requests (kind pr) or issues (kind issue) of the project's GitHub repository, newest update first, at most 30.",
+  'agent.github_pr':
+    'Read one pull request of the GitHub repository by number, with its checks and review threads.',
 };
 
 const INVENTORY_TOOL = 'project_extensions_inventory';
@@ -242,6 +259,10 @@ const boundRevision = (type: CommandType) =>
   type === 'trace.report' ||
   type === 'lead.note.read' ||
   type === 'lead.ask' ||
+  type === 'agent.follow_up' ||
+  type === 'agent.tell_user' ||
+  type === 'agent.routine.set' ||
+  type === 'agent.routine.cancel' ||
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
   type === 'app.logs' ||

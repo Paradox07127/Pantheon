@@ -40,7 +40,7 @@ import { useMemorySessionTurns } from '../../data/memory';
 import { reducedMotion } from '../../lib/motion';
 import { failureText, type NeedsYouState } from '../../data/needs-you';
 import type { DaemonEvent } from '../../data/sync';
-import { workspaceFile } from '../../data/tool-calls';
+import { pantheonTool, workspaceFile } from '../../data/tool-calls';
 import {
   buildTranscript,
   composeState,
@@ -515,6 +515,25 @@ const WAKE: Partial<Record<NonNullable<SessionTurn['origin']>, () => string>> = 
   sync: () => t({ id: 'sessions.residents.wake.sync', defaultMessage: 'Plan synced' }),
 };
 
+/** A tell_user call as the text it told the user, which reads as the agent's reply; null for any other item. */
+function toldText(item: TranscriptItem): TranscriptItem | null {
+  if (item.kind !== 'tool' || pantheonTool(item.name) !== 'tell_user') return null;
+  const told = (item.input as { text?: unknown } | null)?.text;
+  return typeof told === 'string' ? { kind: 'text', text: told } : null;
+}
+
+/** foldTurn, with what tell_user calls told the user kept outside the folded work. */
+function foldTold(items: TranscriptItem[], told: ReadonlySet<TranscriptItem>) {
+  const fold = foldTurn(items);
+  if (!fold) return null;
+  const work = fold.work.filter((item) => !told.has(item));
+  if (!work.some((item) => item.kind === 'tool')) return null;
+  const kept = items.filter(
+    (item) => fold.kept.includes(item) || (told.has(item) && fold.work.includes(item)),
+  );
+  return { ...fold, work, kept };
+}
+
 const PantheonMark = () => (
   <svg className="ss-pg" viewBox="0 0 14 14" aria-hidden="true">
     <path d="M1.8 5.2 7 2.2l5.2 3zM3.5 6.8v4M7 6.8v4M10.5 6.8v4M2 12.2h10" />
@@ -559,7 +578,13 @@ export function ThreadTurn(props: {
   const runtime = useBoard(
     (s) => s.board?.sessions.find((k) => k.id === turn.session_id)?.runtime ?? '',
   );
-  const reply = view.items.flatMap((item) => (item.kind === 'text' ? [item.text] : []));
+  const told = new Set<TranscriptItem>();
+  const shown = view.items.map((item) => {
+    const said = toldText(item);
+    if (said) told.add(said);
+    return said ?? item;
+  });
+  const reply = shown.flatMap((item) => (item.kind === 'text' ? [item.text] : []));
   const model = turn.reported_model ?? turn.model ?? null;
   const spoke = view.started_at ?? view.at;
   // Kept after streaming stops so the caret can fade out.
@@ -582,7 +607,7 @@ export function ThreadTurn(props: {
   const entering = props.fresh.has(`turn:${turn.id}`) ? ' tr-in' : '';
   const expanded = useLook().transcript === 'expanded';
   // An expanded transcript shows the whole turn.
-  const fold = working || expanded || compaction ? null : foldTurn(view.items);
+  const fold = working || expanded || compaction ? null : foldTold(shown, told);
   const items = (shown: TranscriptItem[]) => (
     <Items
       items={shown}
@@ -741,7 +766,7 @@ export function ThreadTurn(props: {
           {items(fold.tail)}
         </>
       ) : (
-        items(view.items)
+        items(shown)
       )}
       {(streaming || caret) && (
         <span

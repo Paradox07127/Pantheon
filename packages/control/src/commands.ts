@@ -27,6 +27,8 @@ import { appSettingsHandlers } from './app-settings.js';
 import { deviceHandlers } from './devices.js';
 import { externalEventHandlers } from './external-events.js';
 import { residentHandlers } from './resident.js';
+import { agentAlwaysOnHandlers } from './agent-always-on.js';
+import { agentAppToolPreparers } from './agent-app-tools.js';
 
 export const handlers: Handlers = {
   ...memoryHandlers,
@@ -53,6 +55,7 @@ export const handlers: Handlers = {
   ...deviceHandlers,
   ...externalEventHandlers,
   ...residentHandlers,
+  ...agentAlwaysOnHandlers,
   ...visualHandlers,
   ...themeHandlers,
   ...styleHandlers,
@@ -67,4 +70,5 @@ export const preparers: Preparers = {
   'board.sync': prepareBoardSync,
   'review.request': prepareReviewRequest,
   'session.resolve': prepareResolve,
+  ...agentAppToolPreparers,
 };

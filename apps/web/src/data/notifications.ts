@@ -302,12 +302,38 @@ function eventBody(event: DaemonEvent): string | null {
 const turnSession = (event: DaemonEvent, board: BoardSnapshot): string | undefined =>
   board.session_turns.find((t) => t.id === event.aggregate_id)?.session_id;
 
-/** The notice of a turn end, a check run, a merge or a blocked merge; none for an event turned off. */
+// A resident's turn Pantheon woke it for ends quietly; the agent reaches the user with tell_user or ask_user.
+const WAKE_ORIGINS: readonly (string | undefined)[] = ['tracker', 'sync', 'external'];
+
+/** The notice of a message an agent left for the user; it opens the agent's conversation. */
+function messageNotice(
+  event: DaemonEvent,
+  board: BoardSnapshot,
+  p: NotificationPrefs,
+): Notice | null {
+  const message = (event.payload ?? {}) as {
+    text?: string;
+    urgency?: string;
+    session_id?: string;
+    agent_name?: string;
+  };
+  const project = board.projects.find((p) => p.id === event.project_id);
+  if (!project || !message.session_id || !p.events.question_asked.system) return null;
+  return {
+    title: listText(project.name, message.agent_name),
+    body: message.text ?? '',
+    target: { project_id: project.id, session_id: message.session_id },
+    ...(message.urgency === 'high' ? sound('question_asked', p) : { silent: true }),
+  };
+}
+
+/** The notice of a turn end, a check run, a merge, a blocked merge or an agent's message; none for an event turned off. */
 export function eventNotice(
   event: DaemonEvent,
   board: BoardSnapshot,
   p: NotificationPrefs = getNotificationPrefs(),
 ): Notice | null {
+  if (event.kind === 'agent_message.created') return messageNotice(event, board, p);
   const kind = EVENT_KINDS[event.kind];
   if (!kind || !p.events[kind].system) return null;
   const body = eventBody(event);
@@ -316,6 +342,9 @@ export function eventNotice(
   const project = board.projects.find((p) => p.id === event.project_id);
   const session = board.sessions.find((s) => s.id === sessionId);
   if (!sessionId || !project || session?.change_story) return null;
+  const turn = board.session_turns.find((t) => t.id === event.aggregate_id);
+  if (TURN_ENDS.includes(event.kind) && session?.resident && WAKE_ORIGINS.includes(turn?.origin))
+    return null;
   const notice = {
     title: session ? listText(project.name, sessionTitle(session, board)) : project.name,
     body,

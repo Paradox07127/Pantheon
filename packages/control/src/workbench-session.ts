@@ -134,6 +134,7 @@ import { projectFacts } from './project-facts.js';
 import { runTimes, sessionRun } from './run-state.js';
 import { sessionTasks } from './session-tasks.js';
 import { appDebugSkill, appDiagnoseSkill } from './app-debug-skill.js';
+import { ALWAYS_ON_LINES } from './agent-always-on.js';
 import { projectSetupSkill } from './project-setup-skill.js';
 import { worktreeSandbox } from './protection.js';
 import { ownWorkspaceOnly } from './workspace-files.js';
@@ -162,6 +163,7 @@ import {
   workspaceReadAccess,
 } from './workspace.js';
 import { writerTempDirectory } from './workspace-removal.js';
+import { appToolInstructions } from './agent-app-tools.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
 export const WORKBENCH_TURN_MS = 6 * 60 * 60 * 1000;
@@ -217,13 +219,17 @@ const RESIDENT_LEAD_LINES = LEAD_INSTRUCTIONS.split('\n').flatMap((line) => {
 });
 
 /** The platform rules of a resident session, then the role prompt of its agent profile. */
-export const residentInstructions = (profile: Pick<AgentProfile, 'name' | 'instructions'>) =>
+export const residentInstructions = (
+  profile: Pick<AgentProfile, 'name' | 'instructions'> & Required<Pick<AgentProfile, 'tools'>>,
+) =>
   [
     `You are the resident ${profile.name} of this project.`,
     'You do not change code: your session is read-only, and task sessions do every task of your plan.',
     'Give each request its own lane in your plan and put the tasks of that request in it.',
     'Do not implement the tasks of your plan yourself or start sub-agents for them; task sessions do them.',
     ...RESIDENT_LEAD_LINES,
+    ...(profile.tools.includes('always_on') ? ALWAYS_ON_LINES : []),
+    ...appToolInstructions(profile.tools),
     'Your role:',
     profile.instructions,
   ].join('\n');

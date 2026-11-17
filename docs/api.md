@@ -255,6 +255,15 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `agent.app_help` | `topic?`: string | app_help (lead) |
+| `agent.follow_up` | `project_id`: string<br>`after_minutes?`: integer<br>`at?`: integer<br>`note`: string | follow_up (lead) |
+| `agent.github_items` | `project_id`: string<br>`kind`: "pr" \| "issue" | github_items (lead) |
+| `agent.github_pr` | `project_id`: string<br>`number`: integer | github_pr (lead) |
+| `agent.routine.cancel` | `project_id`: string<br>`routine_id`: string | routine_cancel (lead) |
+| `agent.routine.set` | `project_id`: string<br>`id?`: string<br>`prompt`: string<br>`every_minutes?`: integer<br>`at?`: string<br>`active_hours?`: object<br>`enabled`: boolean | routine_set (lead) |
+| `agent.session_read` | `session_id`: string<br>`turns?`: integer | session_read (lead) |
+| `agent.sessions` | `state?`: string | session_list (lead) |
+| `agent.tell_user` | `project_id`: string<br>`text`: string<br>`urgency`: "normal" \| "high" | tell_user (lead) |
 | `agent.update` | `agent_id`: string<br>`revision`: integer<br>`name?`: string<br>`instructions?`: string<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra" |  |
 
 ### app

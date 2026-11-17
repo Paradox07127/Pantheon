@@ -264,6 +264,54 @@ describe('resident conversation', () => {
     expect(text(h.value)).toContain('Task Runtime filter: gate failed, 2 unit tests');
   });
 
+  it('shows what a woken turn told the user as its reply, outside the folded work', () => {
+    const event = (sequence: number, kind: string, payload: object) => ({
+      sequence,
+      event_id: `event-${sequence}`,
+      kind,
+      aggregate_id: 'res-assistant',
+      aggregate_revision: 1,
+      project_id: 'alpha',
+      causation_id: '',
+      created_at: sequence,
+      payload: { turn_id: 'turn-a', ...payload },
+    });
+    const call = (sequence: number, id: string, name: string, input: object) => [
+      event(sequence, 'agent.tool.started', { tool_call_id: id, name, input }),
+      event(sequence + 1, 'agent.tool.completed', { tool_call_id: id, ok: true, output: 'ok' }),
+    ];
+    const view = buildTranscript(
+      [turn({ origin: 'tracker' })],
+      [
+        ...call(1, 'call-read', 'Bash', { command: 'git log -1' }),
+        ...call(3, 'call-tell', 'mcp__pantheon__tell_user', {
+          text: 'The runtime filter merged.',
+          urgency: 'normal',
+        }),
+        event(5, 'agent.message.delta', { text: 'Told the user.' }),
+      ],
+    ).turns[0]!;
+    const h = host(() =>
+      ThreadTurn({
+        view,
+        folders: [],
+        status: { kind: 'ended', tool: null, since: null },
+        fresh: new Set(),
+        request: () => null,
+        listed: resident('res-assistant', 'assistant'),
+      }),
+    );
+    const named = (tree: unknown, name: string) =>
+      nodes(tree as any).filter((n) => (n.type as { name?: string }).name === name);
+    const [work] = named(h.value, 'TurnWork');
+    const folded = named(work!.props.children, 'Items').flatMap((n) => n.props.items);
+    const shown = named(h.value, 'Items')
+      .flatMap((n) => n.props.items)
+      .filter((item) => !folded.includes(item));
+    expect(folded.map((item: any) => item.name)).toEqual(['Bash']);
+    expect(shown).toContainEqual({ kind: 'text', text: 'The runtime filter merged.' });
+  });
+
   it('shows the user’s own turn as it is, without folding it', () => {
     const h = draw({ input: 'Add a runtime filter' });
     expect(folds(h)).toEqual([]);

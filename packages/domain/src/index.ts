@@ -943,6 +943,8 @@ export interface Timer {
   due_at: number;
   state: 'pending' | 'fired' | 'cancelled';
   fired_at?: number;
+  /** The text an agent follow-up wakes its resident with. */
+  note?: string;
 }
 /** One thing that happened outside the app, as a source adapter reports it. */
 export interface ExternalEvent {
@@ -2141,7 +2143,9 @@ export interface LeadNote {
     | 'user_edit'
     | 'answer'
     | 'usage_reset'
-    | 'external';
+    | 'external'
+    | 'follow_up'
+    | 'routine';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;

@@ -6,6 +6,7 @@ import {
   appDebugTools,
   command,
   coordinationTools,
+  leadToolGroups,
   sessionTools,
   type CommandType,
 } from '@pantheon/protocol';
@@ -65,6 +66,17 @@ const open = (f: Fixture, extra: Record<string, unknown> = {}) =>
 const diagnosis = (f: Fixture, extra: Record<string, unknown> = {}) =>
   open(f, { purpose: 'app_debug', workspace: 'in_place', ...extra });
 
+/** A lead that is not a resident gets every lead tool but those of the resident-only groups. */
+const directLeadActions = () =>
+  Object.entries(sessionTools.lead)
+    .filter(
+      ([name]) =>
+        !['always_on', 'app', 'sessions', 'github', 'agents'].includes(
+          leadToolGroups[name as keyof typeof leadToolGroups],
+        ),
+    )
+    .map(([, action]): string => action);
+
 it.each([
   [
     'an app debug session in the project folder gets only the app tools and project_read',
@@ -78,9 +90,7 @@ it.each([
     'lead',
     () =>
       [
-        ...(Object.values(sessionTools.lead) as string[]).filter(
-          (action) => !appActions.includes(action),
-        ),
+        ...directLeadActions().filter((action) => !appActions.includes(action)),
         ...appActions,
       ].sort(),
   ],
@@ -89,7 +99,7 @@ it.each([
     {},
     'lead',
     () =>
-      (Object.values(sessionTools.lead) as string[])
+      directLeadActions()
         .filter((action) => !appActions.includes(action))
         .sort(),
   ],

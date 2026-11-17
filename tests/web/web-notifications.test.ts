@@ -151,6 +151,66 @@ describe('event notices', () => {
     });
   });
 
+  const residentBoard = {
+    ...board,
+    sessions: [
+      ...board.sessions,
+      {
+        id: 'beta-assistant',
+        project_id: 'beta',
+        native_title: 'Assistant',
+        resident: { kind: 'assistant' },
+      },
+    ],
+    session_turns: [
+      ...board.session_turns,
+      ...(['tracker', 'sync', 'external', undefined] as const).map((origin) => ({
+        id: `turn-assistant-${origin ?? 'user'}`,
+        session_id: 'beta-assistant',
+        project_id: 'beta',
+        ...(origin && { origin }),
+      })),
+    ],
+  } as unknown as BoardSnapshot;
+  const assistant = { project_id: 'beta', session_id: 'beta-assistant' };
+
+  it.each([
+    ['no notice for a resident turn its workers woke', 'turn.completed', 'turn-assistant-tracker'],
+    ['no notice for a resident turn a plan sync woke', 'turn.completed', 'turn-assistant-sync'],
+    [
+      'no notice for a resident turn an outside event woke',
+      'turn.failed',
+      'turn-assistant-external',
+    ],
+  ])('gives %s', (_name, kind, turnId) => {
+    expect(eventNotice(event(kind, turnId), residentBoard)).toBeNull();
+  });
+
+  it.each([
+    [
+      "the user's own resident turn end",
+      event('turn.completed', 'turn-assistant-user'),
+      { body: zh('data.notifications.turnEnded'), target: assistant },
+    ],
+    [
+      'a message the agent left for the user, opening its conversation',
+      event('agent_message.created', 'message-1', {
+        session_id: 'beta-assistant',
+        text: 'The login fix merged; nothing waits on you.',
+        urgency: 'normal',
+        agent_name: 'Assistant',
+      }),
+      {
+        title: 'Beta app, Assistant',
+        body: 'The login fix merged; nothing waits on you.',
+        target: assistant,
+        silent: true,
+      },
+    ],
+  ])('notifies %s', (_name, given, expected) => {
+    expect(eventNotice(given, residentBoard)).toMatchObject(expected);
+  });
+
   it('leaves a request to the needs-you list', () => {
     const requested = event('approval.requested', 'approval-2', {
       session_id: 'beta-login',

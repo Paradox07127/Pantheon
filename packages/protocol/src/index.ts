@@ -10,7 +10,7 @@ import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
 import { rangeStoryInputSchemas } from './range-story.js';
 import { themeInputSchema, type ThemeInput } from './theme.js';
 import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
-import { appInputSchemas, appToolEffects, appTools } from './app-tools.js';
+import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
 import type {
   AgentToolGroup,
   ApprovalQuestion,
@@ -336,7 +336,7 @@ export const leadToolGroups: Record<keyof typeof sessionTools.lead, AgentToolGro
   ...inGroup(browserTools, 'browser'),
   ...inGroup(appDebugTools, 'app_debug'),
   ...inGroup(alwaysOnTools, 'always_on'),
-  ...inGroup(appTools, 'app'),
+  ...appToolGroups,
   project_read: 'board',
   update_board: 'board',
   edit_board: 'board',

@@ -4,6 +4,7 @@ import { constants, lstatSync, readdirSync, readlinkSync, realpathSync, statSync
 import {
   credentialRole,
   requireThat,
+  type AgentToolGroup,
   type Principal,
   type RuntimeModel,
   type Entity,
@@ -309,10 +310,28 @@ export function purposeSessionTools(
     ];
 }
 
-/** The actions of a resident's lead tools in its agent profile's groups; undefined for every other session. */
-export function residentTools(ctx: ControlContext, session: Session): string[] | undefined {
-  if (!session.resident) return undefined;
-  const groups = residentProfile(ctx.store, session.resident).tools;
+/** Tool groups whose commands serve resident sessions only. */
+const RESIDENT_GROUPS: readonly AgentToolGroup[] = [
+  'always_on',
+  'app',
+  'sessions',
+  'github',
+  'agents',
+];
+
+/**
+ * The actions of a lead session's tools: a resident's are those of its agent profile's groups,
+ * another lead's every group but the resident ones; undefined for every other session.
+ */
+export function leadSessionTools(ctx: ControlContext, session: Session): string[] | undefined {
+  const groups = session.resident
+    ? residentProfile(ctx.store, session.resident).tools
+    : credentialRole(session, sessionWorkspaceKind(ctx, session)) === 'lead'
+      ? (Object.values(leadToolGroups) as AgentToolGroup[]).filter(
+          (group) => !RESIDENT_GROUPS.includes(group),
+        )
+      : undefined;
+  if (!groups) return undefined;
   return Object.entries(sessionTools.lead)
     .filter(([name]) => groups.includes(leadToolGroups[name as keyof typeof leadToolGroups]))
     .map(([, action]): string => action)
@@ -364,7 +383,8 @@ export function sessionAction(ctx: ControlContext, principal: Principal, action:
   );
   const tools = sessionTools[principal.role as keyof typeof sessionTools];
   const purposeTools =
-    purposeSessionTools(session, sessionWorkspaceKind(ctx, session)) ?? residentTools(ctx, session);
+    purposeSessionTools(session, sessionWorkspaceKind(ctx, session)) ??
+    leadSessionTools(ctx, session);
   const permitted = purposeTools ? { ...tools, ...coordinationTools } : tools;
   requireThat(
     permitted &&
