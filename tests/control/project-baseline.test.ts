@@ -1495,7 +1495,7 @@ it('leaves no project configuration behind when opening the planning lead fails'
         ...adapter.report,
         capabilities: {
           ...adapter.report.capabilities,
-          write_isolation: { status: 'unknown', evidence: 'Unchecked' },
+          read_isolation: { status: 'unknown', evidence: 'Unchecked' },
         },
       };
     await expect(async () =>
@@ -1512,14 +1512,15 @@ it('leaves no project configuration behind when opening the planning lead fails'
   }
 });
 
-it('opens a lead session with the baseline result only when confirmed with plan_board', async () => {
+it('hands the baseline result to the Assistant resident only when confirmed with plan_board', async () => {
   const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const leads = () =>
+    const worktrees = () =>
       f.store
         .list<Session>('sessions')
         .filter((session) => session.workspace_id && !session.baseline && !session.task);
+    const residents = () => f.store.list<Session>('sessions').filter((session) => session.resident);
     const confirm = (baseline: ProjectBaseline, extra: Record<string, unknown> = {}) =>
       f.call<Promise<ProjectBaseline & { lead_session_id?: string }>>(
         'project.baseline.confirm',
@@ -1530,44 +1531,28 @@ it('opens a lead session with the baseline result only when confirmed with plan_
     const plain = await confirm(await f.handIn(f.startBaseline(), head));
     expect(plain.state).toBe('confirmed');
     expect(plain).not.toHaveProperty('lead_session_id');
-    expect(leads()).toEqual([]);
+    expect(residents()).toEqual([]);
 
     const planned = await confirm(await f.handIn(f.startBaseline(), head), { plan_board: true });
     expect(planned.state).toBe('confirmed');
-    const [lead] = leads();
-    expect(leads()).toHaveLength(1);
+    expect(worktrees()).toEqual([]);
+    const [lead] = residents();
+    expect(residents()).toHaveLength(1);
+    expect(lead!.resident?.kind).toBe('assistant');
     expect(planned.lead_session_id).toBe(lead!.id);
     // The stored baseline names the planning lead, so the board can follow it after a reload.
     expect(f.store.get<ProjectBaseline>('project_baselines', planned.id)!.plan_session_id).toBe(
       lead!.id,
     );
-    expect(lead!.title).toBe('Baseline plan');
-    expect(lead).toMatchObject({ runtime: 'claude', permission_mode: 'ask' });
-    const [first] = f.store
+    const handed = f.store
       .list<SessionTurn>('session_turns')
       .filter((turn) => turn.session_id === lead!.id);
-    expect(first!.input).toContain('update_board');
-    expect(first!.input).toContain('Importer');
-    expect(first!.input).toContain('Ship the fixture library');
-    expect(first!.input).toContain('Is publishing in scope?');
-  } finally {
-    await f.close();
-  }
-});
-
-it("names the planning lead's worktree folder after its title, not its first message", async () => {
-  const f = await setup({ managedWorkspaces: true });
-  try {
-    const head = f.populate();
-    const baseline = await f.handIn(f.startBaseline(), head);
-    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
-      'project.baseline.confirm',
-      { baseline_id: baseline.id, answers: [], plan_board: true },
-      baseline.revision,
-    );
-    const lead = f.store.must<Session>('sessions', planned.lead_session_id!);
-    const folder = path.basename(f.store.must<Workspace>('workspaces', lead.workspace_id!).path);
-    expect(folder).toBe(`baseline-plan-${lead.workspace_id!.slice(0, 8)}`);
+    expect(handed).toHaveLength(1);
+    expect(handed[0]!.origin).toBe('baseline');
+    expect(handed[0]!.input).toContain('update_board');
+    expect(handed[0]!.input).toContain('Importer');
+    expect(handed[0]!.input).toContain('Ship the fixture library');
+    expect(handed[0]!.input).toContain('Is publishing in scope?');
   } finally {
     await f.close();
   }
@@ -1621,17 +1606,29 @@ it('hands the confirmed baseline a lead started back to that lead', async () => 
   }
 });
 
-it('opens a new lead for a baseline whose lead has closed', async () => {
+it('hands a baseline whose lead has closed to the Assistant resident', async () => {
   const f = await setup({ managedWorkspaces: true });
   try {
     const { lead, confirm } = await leadBaseline(f);
     const closed = f.store.must<Session>('sessions', lead.id);
     f.store.update<Session>('sessions', { ...closed, state: 'closed' }, closed.revision);
 
+    const worktrees = f.store.list<Session>('sessions').filter((session) => session.workspace_id);
+
     const planned = await confirm();
     expect(planned.lead_session_id).toBeTruthy();
     expect(planned.lead_session_id).not.toBe(lead.id);
-    expect(f.store.must<Session>('sessions', planned.lead_session_id!).title).toBe('Baseline plan');
+    const resident = f.store.must<Session>('sessions', planned.lead_session_id!);
+    expect(resident.resident?.kind).toBe('assistant');
+    expect(planned.plan_session_id).toBe(resident.id);
+    expect(f.store.list<Session>('sessions').filter((session) => session.workspace_id)).toEqual(
+      worktrees,
+    );
+    expect(
+      f.store
+        .list<SessionTurn>('session_turns')
+        .filter((turn) => turn.session_id === resident.id && turn.origin === 'baseline'),
+    ).toHaveLength(1);
     expect(
       f.store
         .list<SessionTurn>('session_turns')

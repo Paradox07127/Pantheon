@@ -55,8 +55,7 @@ import { runtime } from './admission.js';
 import { runGit } from './git.js';
 import { collectFacts, type ProjectFacts } from './baseline-facts.js';
 import { renderScanSeed } from './baseline-brief.js';
-import { startLead } from './lead-session.js';
-import { readSessionOpening, type SessionOpening } from './workbench-session.js';
+import { openResident } from './resident.js';
 import { acceptInput } from './session.js';
 import { queueTurn } from './task-tracking.js';
 import { readAppSettings } from './app-settings.js';
@@ -571,11 +570,7 @@ export const baselinePreparers: Preparers = {
     const commits = readAppSettings(ctx).baseline_range_story
       ? await rangeCommits(ctx, project, now - RECENT_MS, now)
       : [];
-    // The start point of the lead a confirmation that plans the board starts.
-    const opening = target.input.plan_board
-      ? await readSessionOpening(ctx, { project_id: project.id })
-      : undefined;
-    return (ctx, p, c) => confirm(ctx, p, c, gitRoots, now, commits, opening);
+    return (ctx, p, c) => confirm(ctx, p, c, gitRoots, now, commits);
   },
 };
 
@@ -828,7 +823,6 @@ function confirm(
   gitRoots: Set<string>,
   now: number,
   commits: RangeCommit[],
-  opening?: SessionOpening,
 ): unknown {
   const { input, baseline } = confirmTarget(ctx, p, c);
   revision(ctx, c, baseline);
@@ -979,17 +973,9 @@ function confirm(
     );
     return { ...next, lead_session_id: starter.id };
   }
-  const lead = startLead(
-    ctx,
-    p,
-    projectId,
-    'Baseline plan',
-    firstPlanMessage(result, brief, rounds),
-    c.command_id,
-    'baseline',
-    opening!,
-  );
-  if (!lead) return next;
+  const lead = openResident(ctx, p, projectId, 'assistant', c.command_id);
+  acceptInput(ctx, lead, lead.state === 'running' ? 'steer' : 'send');
+  queueTurn(ctx, lead, firstPlanMessage(result, brief, rounds), 'baseline', c.command_id);
   const planned = ctx.store.update<ProjectBaseline>(
     'project_baselines',
     { ...next, plan_session_id: lead.id },

@@ -1,3 +1,5 @@
+import { rmSync } from 'node:fs';
+import path from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import type {
@@ -638,26 +640,65 @@ it('queues the sync after the running turn of a lead', async () => {
   expect(f.store.must<SessionTurn>('session_turns', running.id).state).toBe('running');
 });
 
-it('opens a new lead to sync the board when no lead takes input', async () => {
+const worktreeSessions = (f: Fixture) =>
+  f.store
+    .list<Session>('sessions')
+    .filter((session) => session.workspace_id)
+    .map((session) => session.id);
+
+it('syncs the board on the Assistant resident, without a worktree, when no lead takes input', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   patch(f, lead.id, { state: 'closed' });
+  const worktrees = worktreeSessions(f);
 
   const { session_ids } = await sync(f);
   expect(session_ids).toHaveLength(1);
-  expect(session_ids[0]).not.toBe(lead.id);
-  const opened = current(f, session_ids[0]!);
-  expect(opened.workspace_id).toBeTruthy();
-  expect(opened).not.toHaveProperty('task');
-  expect(opened.title).toBe('Board sync');
-  expect(f.turns(opened.id)[0]!.input).toContain('update_board');
+  const resident = current(f, session_ids[0]!);
+  expect(resident.resident?.kind).toBe('assistant');
+  expect(worktreeSessions(f)).toEqual(worktrees);
+  expect(synced(f, resident.id)).toHaveLength(1);
+  expect(synced(f, resident.id)[0]!.input).toContain('update_board');
   expect(synced(f, lead.id)).toEqual([]);
 
   expect(() => sync(f, sessionOf(f, lead.id, 'lead'))).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
+});
+
+it('syncs the board on the Assistant resident of a project without git', async () => {
+  const f = await workbenchFixture();
+  rmSync(path.join(f.project.roots[0]!, '.git'), { recursive: true, force: true });
+
+  const { session_ids } = await sync(f);
+  expect(session_ids).toHaveLength(1);
+  expect(current(f, session_ids[0]!).resident?.kind).toBe('assistant');
+  expect(synced(f, session_ids[0]!)).toHaveLength(1);
+  expect(worktreeSessions(f)).toEqual([]);
+});
+
+it('keeps the plan of the Assistant resident and names the unfinished tasks of an ended lead in its sync', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  await settle(f, lead);
+  writePlan(f, lead.id);
+  patch(f, lead.id, { state: 'closed' });
+  const assistant = f.call<Session>('resident.open', {
+    project_id: f.project.id,
+    kind: 'assistant',
+  });
+  writePlan(f, assistant.id, [{ ...planTasks[0]!, id: 'c', title: 'Write the export docs' }]);
+  patch(f, assistant.id, { state: 'closed' });
+
+  const [resident] = (await sync(f)).session_ids;
+  expect(resident).not.toBe(assistant.id);
+  expect(planOf(f, resident!).tasks.map((task) => task.id)).toEqual(['c']);
+  expect(planOf(f, lead.id).tasks.map((task) => task.id)).toEqual(['a', 'b']);
+  const brief = synced(f, resident!).at(-1)!.input;
+  expect(brief).toContain('- a "Serve exports over HTTP"');
+  expect(brief).toContain('- b "Add a download button"');
 });
 
 it.each(['running', 'submitted'] as const)(
@@ -689,7 +730,7 @@ it.each(['running', 'submitted'] as const)(
     );
     const { session_ids } = await sync(f);
     expect(session_ids).toHaveLength(1);
-    expect(current(f, session_ids[0]!).title).toBe('Board sync');
+    expect(current(f, session_ids[0]!).resident?.kind).toBe('assistant');
   },
 );
 
@@ -708,7 +749,7 @@ it('does not sync a lead again while its sync turn runs', async () => {
   expect(synced(f, lead.id)).toHaveLength(1);
 });
 
-it('lets the lead opened by a sync take over the plan of an ended lead', async () => {
+it('lets the Assistant resident a sync opens take over the plan of an ended lead', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');
   await settle(f, lead);
@@ -717,6 +758,7 @@ it('lets the lead opened by a sync take over the plan of an ended lead', async (
   patch(f, lead.id, { state: 'closed', outcome: 'discarded' });
 
   const [successor] = (await sync(f)).session_ids;
+  expect(current(f, successor!).resident?.kind).toBe('assistant');
   expect(f.store.get<BoardPlan>('board_plans', lead.id)).toBeUndefined();
   expect(planOf(f, successor!).tasks.map((task) => task.id)).toEqual(['a', 'b']);
   expect(current(f, worker.id).task).toEqual({

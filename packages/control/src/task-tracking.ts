@@ -39,7 +39,7 @@ import {
   takeContractChange,
   takeInbox,
 } from './lead-inbox.js';
-import { startLead } from './lead-session.js';
+import { openResident } from './resident.js';
 import { wrapUpOverBudget } from './budget-wrap-up.js';
 import { usageLimitWaiting, usageResetAt } from './continuation.js';
 import {
@@ -77,7 +77,7 @@ import {
 import { dispatchQueue, dispatchTasks, placedTaskSessions, taskPlaces } from './task-dispatch.js';
 import { executed, stuckMerge } from './needs-you.js';
 import { finishingMerge } from './project-facts.js';
-import { finishStops, readSessionOpening, type SessionOpening } from './workbench-session.js';
+import { finishStops } from './workbench-session.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import {
   advanceSteps,
@@ -1326,13 +1326,7 @@ export function syncBrief(
 export const TAKEOVER_TEXT =
   'You take over the plan of an earlier lead session that has ended; project_read shows it as yours.';
 
-function boardSync(
-  ctx: ControlContext,
-  p: Principal,
-  c: Command,
-  logs: [string, GitResult][],
-  opening?: SessionOpening,
-) {
+function boardSync(ctx: ControlContext, p: Principal, c: Command, logs: [string, GitResult][]) {
   const input = inputSchemas['board.sync'].parse(c.input);
   projectAccess(ctx, p, input.project_id, c.type);
   if (p.role === 'lead')
@@ -1350,19 +1344,21 @@ function boardSync(
     'invalid_state',
     'A baseline of this project is running or waiting for confirmation; update the board after it is confirmed',
   );
+  // Read before the sync opens or briefs a session, so only an earlier sync or baseline turn counts.
   const turns = ctx.store.list<SessionTurn>('session_turns');
+  const pending = (sessionId: string) =>
+    turns.some(
+      (turn) =>
+        turn.session_id === sessionId &&
+        (turn.origin === 'sync' || turn.origin === 'baseline') &&
+        (turn.state === 'queued' || turn.state === 'running'),
+    );
   const sessionIds: string[] = [];
   for (const plan of ctx.store.list<BoardPlan>('board_plans')) {
     if (plan.project_id !== input.project_id) continue;
     const lead = ctx.store.get<Session>('sessions', plan.id);
     if (!lead) continue;
-    const pending = turns.some(
-      (turn) =>
-        turn.session_id === lead.id &&
-        (turn.origin === 'sync' || turn.origin === 'baseline') &&
-        (turn.state === 'queued' || turn.state === 'running'),
-    );
-    if (!pending) {
+    if (!pending(lead.id)) {
       try {
         acceptInput(ctx, lead, lead.state === 'running' ? 'steer' : 'send');
       } catch (error) {
@@ -1374,31 +1370,41 @@ function boardSync(
     sessionIds.push(lead.id);
   }
   if (!sessionIds.length) {
-    // The newest plan of an ended lead becomes the new lead's, so its tasks are not planned twice.
+    const resident = openResident(ctx, p, input.project_id, 'assistant', c.command_id);
+    const own = ctx.store.get<BoardPlan>('board_plans', resident.id);
     const ended = ctx.store
       .list<BoardPlan>('board_plans')
-      .filter(
-        (plan) =>
-          plan.project_id === input.project_id &&
-          ctx.store.get<Session>('sessions', plan.id)?.state === 'closed',
-      )
+      .filter((plan) => {
+        const lead = ctx.store.get<Session>('sessions', plan.id);
+        return plan.project_id === input.project_id && lead?.state === 'closed' && !lead.resident;
+      })
       .sort((a, b) => b.updated_at - a.updated_at)[0];
-    const brief = syncBrief(ctx, ended, logs);
-    const text = ended ? `${TAKEOVER_TEXT}\n${brief}` : brief;
-    const lead = startLead(
-      ctx,
-      p,
-      input.project_id,
-      'Board sync',
-      text,
-      c.command_id,
-      'sync',
-      opening!,
-    );
-    if (lead) {
-      if (ended) transferPlan(ctx, ended, lead.id, c.command_id);
-      sessionIds.push(lead.id);
+    let text: string;
+    if (!own && ended) {
+      // The resident takes over the newest plan of an ended lead, so its tasks are not planned twice.
+      transferPlan(ctx, ended, resident.id, c.command_id);
+      text = `${TAKEOVER_TEXT}\n${syncBrief(ctx, ctx.store.must<BoardPlan>('board_plans', resident.id), logs)}`;
+    } else {
+      const lead = ended && ctx.store.get<Session>('sessions', ended.id);
+      const unfinished = (ended?.tasks ?? []).filter(
+        (task) => taskState(ended, task.id, taskSessions(ctx, ended!.id, task.id), lead) !== 'done',
+      );
+      text = [
+        syncBrief(ctx, own, logs),
+        ...(unfinished.length
+          ? [
+              `An ended lead session left these tasks of its plan ${ended!.id} unfinished; add the ones that still apply to your plan:`,
+              ...unfinished.map((task) => `- ${task.id} "${task.title}"`),
+            ]
+          : []),
+      ].join('\n');
     }
+    if (!pending(resident.id)) {
+      const next = ctx.store.must<Session>('sessions', resident.id);
+      acceptInput(ctx, next, next.state === 'running' ? 'steer' : 'send');
+      queueTurn(ctx, next, text, 'sync', c.command_id);
+    }
+    sessionIds.push(resident.id);
   }
   return { session_ids: sessionIds };
 }
@@ -1418,12 +1424,7 @@ export function prepareBoardSync(ctx: ControlContext, p: Principal, c: Command):
           await runGit(root, ['log', '-20', '--format=%h %cs %s'], undefined, true),
         ]),
     );
-    // The start point of a lead the user's sync may start.
-    const opening =
-      p.role === 'lead'
-        ? undefined
-        : await readSessionOpening(ctx, { project_id: input.project_id });
-    return (ctx: ControlContext, p: Principal, c: Command) => boardSync(ctx, p, c, logs, opening);
+    return (ctx: ControlContext, p: Principal, c: Command) => boardSync(ctx, p, c, logs);
   })();
 }
 

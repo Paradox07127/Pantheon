@@ -14,7 +14,7 @@ import type { ProjectDefaultsRead } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { requestApproval } from '../../packages/control/dist/approvals.js';
 import { improvementSignals } from '../../packages/control/dist/improvement-signals.js';
-import { usageTargets } from '../../packages/control/dist/user-config.js';
+import { sessionDefaults, usageTargets } from '../../packages/control/dist/user-config.js';
 import { fixture, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -77,12 +77,13 @@ it('follows the global values where a project has none of its own', async () => 
   const { session_ids } = await f.call<{ session_ids: string[] }>('board.sync', {
     project_id: f.project.id,
   });
+  // The Assistant resident that takes the sync runs read-only, so it takes no permission mode.
   expect(f.store.must<Session>('sessions', session_ids[0]!)).toMatchObject({
     runtime: 'fixture',
-    permission_mode: 'plan',
     requested_model: 'fixture-large',
     requested_effort: 'low',
   });
+  expect(sessionDefaults(f.ctx, f.current())?.permission_mode).toBe('plan');
 });
 
 it('reads the project value over the global one, also when it equals the built-in default', async () => {
@@ -185,10 +186,7 @@ it('returns a project to the global value once its own value is cleared', async 
     f.current().revision,
   );
   f.call('project.sessionDefaults.clear', { project_id: f.project.id }, f.current().revision);
-  const { session_ids } = await f.call<{ session_ids: string[] }>('board.sync', {
-    project_id: f.project.id,
-  });
-  expect(f.store.must<Session>('sessions', session_ids[0]!).permission_mode).toBe('plan');
+  expect(sessionDefaults(f.ctx, f.current())?.permission_mode).toBe('plan');
   f.call(
     'workflow.policy.set',
     { project_id: f.project.id, max_parallel: 1 },
