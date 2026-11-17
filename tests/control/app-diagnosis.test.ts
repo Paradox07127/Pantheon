@@ -18,7 +18,7 @@ import {
 import { eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const appActions = Object.values(appDebugTools) as string[];
 const everyAction = [
@@ -56,7 +56,7 @@ function granted(f: Fixture, session: Session): string[] {
 }
 
 const open = (f: Fixture, extra: Record<string, unknown> = {}) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'The sidebar overlaps the board',
@@ -102,16 +102,16 @@ it.each([
         .filter((action) => !appActions.includes(action))
         .sort(),
   ],
-] as const)('%s', (_, extra, role, expected) => {
-  const f = workbenchFixture();
-  const session = open(f, extra);
+] as const)('%s', async (_, extra, role, expected) => {
+  const f = await workbenchFixture();
+  const session = await open(f, extra);
   expect(principalOf(f, session).role).toBe(role);
   expect(granted(f, session)).toEqual(expected());
 });
 
-it('lists the allowed tools of the diagnosis session only', () => {
-  const f = workbenchFixture();
-  const inPlace = diagnosis(f);
+it('lists the allowed tools of the diagnosis session only', async () => {
+  const f = await workbenchFixture();
+  const inPlace = await diagnosis(f);
   expect(purposeSessionTools(inPlace, kindOf(f, inPlace))).toEqual([
     'app.errors',
     'app.screenshot',
@@ -121,19 +121,19 @@ it('lists the allowed tools of the diagnosis session only', () => {
     'style.set',
     'project.read',
   ]);
-  const worktree = open(f, { purpose: 'app_debug' });
+  const worktree = await open(f, { purpose: 'app_debug' });
   expect(purposeSessionTools(worktree, kindOf(f, worktree))).toBeUndefined();
-  const ordinary = open(f, { workspace: 'in_place' });
+  const ordinary = await open(f, { workspace: 'in_place' });
   expect(purposeSessionTools(ordinary, kindOf(f, ordinary))).toBeUndefined();
 });
 
-it('refuses an app tool to an ordinary session and an editing tool to the diagnosis session', () => {
-  const f = workbenchFixture();
+it('refuses an app tool to an ordinary session and an editing tool to the diagnosis session', async () => {
+  const f = await workbenchFixture();
   const run = (session: Session, type: CommandType, input: Record<string, unknown>) => {
     const principal = principalOf(f, session);
     return () => f.control.execute(principal, command(principal.id, type, input));
   };
-  const ordinary = open(f);
+  const ordinary = await open(f);
   for (const type of ['app.logs', 'style.read'] as const)
     expect(run(ordinary, type, {}), type).toThrow(
       expect.objectContaining({
@@ -144,7 +144,7 @@ it('refuses an app tool to an ordinary session and an editing tool to the diagno
   expect(run(ordinary, 'style.set', { css: '' })).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
-  const inPlace = diagnosis(f);
+  const inPlace = await diagnosis(f);
   expect(run(inPlace, 'app.logs', {})()).toEqual({ lines: [] });
   for (const [type, input] of [
     ['theme.set', { label: 'Paper', light: { anchors: {} } }],
@@ -157,9 +157,9 @@ it('refuses an app tool to an ordinary session and an editing tool to the diagno
 });
 
 it('opens the diagnosis session in the project folder in plan mode with the diagnosis guide first', async () => {
-  const f = workbenchFixture({ managedWorkspaces: false });
+  const f = await workbenchFixture({ managedWorkspaces: false });
   const send = vi.spyOn(f.adapter, 'send');
-  const session = diagnosis(f, { permission_mode: 'auto_edit' });
+  const session = await diagnosis(f, { permission_mode: 'auto_edit' });
   expect(session).toMatchObject({ app_debug: true, permission_mode: 'plan' });
   expect(f.store.must<Workspace>('workspaces', session.workspace_id!)).toMatchObject({
     kind: 'in_place',
@@ -180,8 +180,8 @@ it('opens the diagnosis session in the project folder in plan mode with the diag
   expect(f.list().find((row) => row.id === session.id)).toMatchObject({ app_debug: true });
 });
 
-it('refuses a diagnosis session on another device, as every session in the project folder', () => {
-  const f = workbenchFixture();
+it('refuses a diagnosis session on another device, as every session in the project folder', async () => {
+  const f = await workbenchFixture();
   expect(() => diagnosis(f, { device_id: 'build-box' })).toThrow(
     expect.objectContaining({ code: 'invalid_input' }),
   );
@@ -214,8 +214,8 @@ it('has the diagnosis guide keep the project as it is and end with an issue draf
     expect(appDiagnoseSkill).toContain(part);
 });
 
-it('reads the last lines of the daemon log, only the matching ones with grep, none without a log', () => {
-  const f = workbenchFixture();
+it('reads the last lines of the daemon log, only the matching ones with grep, none without a log', async () => {
+  const f = await workbenchFixture();
   const logs = (input: Record<string, unknown>) =>
     f.call<{ lines: string[] }>('app.logs', input).lines;
   expect(logs({})).toEqual([]);

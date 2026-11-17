@@ -20,7 +20,7 @@ afterEach(async () => {
 describe('trace reads', () => {
   it('keeps a turn queued long before the window that never ran', async () => {
     let clock = base;
-    const f = fixture({ now: () => clock });
+    const f = await fixture({ now: () => clock });
     cleanups.push(() => f.close());
     const session = f.store.insert<Session>('sessions', {
       id: 'waiting',
@@ -75,7 +75,7 @@ describe('trace reads', () => {
       return trace;
     };
     const growing = index('growing');
-    const f = fixture({ now: () => base, controlOptions: { trace: growing } });
+    const f = await fixture({ now: () => base, controlOptions: { trace: growing } });
     cleanups.push(() => f.close());
     const nativeId = 'b1c2d3e4-0000-4000-8000-000000000001';
     const file = path.join(claudeHome, 'projects/-repo', `${nativeId}.jsonl`);

@@ -72,54 +72,57 @@ it.each(
       operation,
     })),
   ),
-)('ignores repository drivers during $operation with $attributes', ({ attributes, operation }) => {
-  for (const hardened of [false, true]) {
-    const { root, markers } = repository(attributes);
-    let args: string[];
-    let input: Buffer | undefined;
-    if (operation === 'checkout') {
-      unlinkSync(path.join(root, 'filtered.txt'));
-      args = ['checkout', '--', 'filtered.txt'];
-    } else if (operation === 'apply') {
-      args = ['apply', '--index'];
-      input = patch;
-    } else {
-      for (const name of ['filtered.txt', 'external.txt', 'converted.txt'])
-        writeFileSync(path.join(root, name), 'changed\n');
-      args =
-        operation === 'add'
-          ? ['add', '--', '*.txt']
-          : operation === 'blame'
-            ? ['blame', 'HEAD', '--', 'converted.txt']
-            : operation === 'literal diff'
-              ? ['--literal-pathspecs', 'diff']
-              : ['diff'];
-    }
-    if (hardened) {
-      const result = runGit(root, args, input);
-      expect(result.stderr.toString()).toBe('');
-      expect(result.exit_code).toBe(0);
-      expect(Object.values(markers).filter(existsSync)).toEqual([]);
-      if (operation.endsWith('diff')) expect(result.stdout.toString()).toContain('+changed');
-    } else {
-      plainGit(root, args, input);
-      const expected =
-        operation === 'checkout'
-          ? ['smudge']
-          : operation.endsWith('diff')
-            ? ['clean', 'command', 'textconv']
+)(
+  'ignores repository drivers during $operation with $attributes',
+  async ({ attributes, operation }) => {
+    for (const hardened of [false, true]) {
+      const { root, markers } = repository(attributes);
+      let args: string[];
+      let input: Buffer | undefined;
+      if (operation === 'checkout') {
+        unlinkSync(path.join(root, 'filtered.txt'));
+        args = ['checkout', '--', 'filtered.txt'];
+      } else if (operation === 'apply') {
+        args = ['apply', '--index'];
+        input = patch;
+      } else {
+        for (const name of ['filtered.txt', 'external.txt', 'converted.txt'])
+          writeFileSync(path.join(root, name), 'changed\n');
+        args =
+          operation === 'add'
+            ? ['add', '--', '*.txt']
             : operation === 'blame'
-              ? ['textconv']
-              : operation === 'apply'
-                ? // Reading may reuse the index stat cache; writing always invokes smudge.
-                  ['smudge']
-                : ['clean'];
-      for (const name of expected) expect(existsSync(markers[name]!)).toBe(true);
+              ? ['blame', 'HEAD', '--', 'converted.txt']
+              : operation === 'literal diff'
+                ? ['--literal-pathspecs', 'diff']
+                : ['diff'];
+      }
+      if (hardened) {
+        const result = await runGit(root, args, input, true);
+        expect(result.stderr.toString()).toBe('');
+        expect(result.exit_code).toBe(0);
+        expect(Object.values(markers).filter(existsSync)).toEqual([]);
+        if (operation.endsWith('diff')) expect(result.stdout.toString()).toContain('+changed');
+      } else {
+        plainGit(root, args, input);
+        const expected =
+          operation === 'checkout'
+            ? ['smudge']
+            : operation.endsWith('diff')
+              ? ['clean', 'command', 'textconv']
+              : operation === 'blame'
+                ? ['textconv']
+                : operation === 'apply'
+                  ? // Reading may reuse the index stat cache; writing always invokes smudge.
+                    ['smudge']
+                  : ['clean'];
+        for (const name of expected) expect(existsSync(markers[name]!)).toBe(true);
+      }
     }
-  }
-});
+  },
+);
 
-it('does not run a repository merge driver during a rebase and stops on a conflict instead', () => {
+it('does not run a repository merge driver during a rebase and stops on a conflict instead', async () => {
   for (const hardened of [false, true]) {
     const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-drivers-'));
     roots.push(root);
@@ -141,12 +144,14 @@ it('does not run a repository merge driver during a rebase and stops on a confli
     chmodSync(script, 0o700);
     plainGit(root, ['config', 'merge.fixture.driver', `${script} %O %A %B`]);
     if (hardened) {
-      const result = runGit(root, ['rebase', '--quiet', 'main']);
+      const result = await runGit(root, ['rebase', '--quiet', 'main'], undefined, true);
       expect(existsSync(marker)).toBe(false);
       expect(result.exit_code).not.toBe(0);
-      expect(runGit(root, ['diff', '--name-only', '--diff-filter=U']).stdout.toString()).toBe(
-        'merged.txt\n',
-      );
+      expect(
+        (
+          await runGit(root, ['diff', '--name-only', '--diff-filter=U'], undefined, true)
+        ).stdout.toString(),
+      ).toBe('merged.txt\n');
     } else {
       plainGit(root, ['rebase', '--quiet', 'main']);
       expect(existsSync(marker)).toBe(true);
@@ -154,12 +159,12 @@ it('does not run a repository merge driver during a rebase and stops on a confli
   }
 });
 
-it('ignores a filter driver whose name contains an equals sign', () => {
+it('ignores a filter driver whose name contains an equals sign', async () => {
   for (const hardened of [false, true]) {
     const { root, markers } = repository('.gitattributes', 'fixture=driver');
     writeFileSync(path.join(root, 'filtered.txt'), 'changed\n');
     if (hardened) {
-      const result = runGit(root, ['add', '--', 'filtered.txt']);
+      const result = await runGit(root, ['add', '--', 'filtered.txt'], undefined, true);
       expect(result.exit_code).toBe(0);
       expect(existsSync(markers.clean!)).toBe(false);
     } else {

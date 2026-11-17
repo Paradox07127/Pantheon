@@ -435,15 +435,6 @@ function rememberGitFolder(folder: { real: string; identity: string }, result: G
 }
 
 /** True only when the root is itself the top level of a git checkout. */
-export function gitFolder(root: string): boolean {
-  const folder = folderIdentity(root);
-  if (!folder) return false;
-  const cached = gitFolders.get(folder.real);
-  if (cached?.identity === folder.identity) return cached.git;
-  return rememberGitFolder(folder, runGit(root, ['rev-parse', '--show-toplevel']));
-}
-
-/** gitFolder without blocking the event loop while git runs. */
 export async function gitFolderAsync(root: string): Promise<boolean> {
   const folder = folderIdentity(root);
   if (!folder) return false;

@@ -35,7 +35,7 @@ import {
 } from './context.js';
 import { artifactLimit } from './files.js';
 import { runGit } from './git.js';
-import { protectionList } from './protection.js';
+import { protectionListWithoutWorkspace } from './protection.js';
 
 // Files the app previews from their bytes rather than their text.
 const MEDIA: Record<string, string> = {
@@ -102,7 +102,7 @@ function workspaceRoot(
   const unreadable =
     p.role === 'user' || !ctx.protectionPaths
       ? []
-      : protectionList({ ...ctx.protectionPaths, otherWorkspaces: [] })
+      : protectionListWithoutWorkspace({ ...ctx.protectionPaths, otherWorkspaces: [] })
           .filter((entry) => entry.deny === 'read_write')
           .map((entry) => entry.path);
   return { root, unreadable };

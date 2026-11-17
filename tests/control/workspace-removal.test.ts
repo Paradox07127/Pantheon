@@ -74,7 +74,7 @@ async function removalFixture() {
     input: Record<string, unknown>,
     revision: number | null = null,
   ) => control.execute(user, command(user.id, type, input, revision)) as T;
-  const project = call<Project>('project.open', {
+  const project = await call<Project>('project.open', {
     name: 'Workspace cleanup',
     roots: [source],
   });
@@ -114,7 +114,7 @@ async function removalFixture() {
       store.close();
       store = new Store(database, clock.now);
       control = new Control(store, files, [adapter], failpoint, options);
-      control.recover();
+      await control.recover();
     },
   };
 }

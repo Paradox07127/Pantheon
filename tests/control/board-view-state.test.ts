@@ -22,7 +22,7 @@ import {
 } from '../helpers.js';
 import { dispatchEveryTier, git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -68,7 +68,7 @@ function patch(f: Fixture, sessionId: string, fields: Partial<Session>) {
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
   dispatchEveryTier(f);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -145,7 +145,7 @@ const merge = (f: Fixture, sessionId: string) =>
   f.call<Session>('session.merge', { session_id: sessionId }, current(f, sessionId).revision);
 
 it('shows a task never started as todo and a started task whose upstream is not done as waiting upstream', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('a', { goal: script({ hang: true }) }),
     task('b', { depends_on: ['a'] }),
@@ -162,7 +162,7 @@ it('shows a task never started as todo and a started task whose upstream is not 
 });
 
 it('shows a dispatched task as claimed until its first turn runs, then as running', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a', { goal: script({ hang: true }) })]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -181,7 +181,7 @@ it('shows a dispatched task as claimed until its first turn runs, then as runnin
 });
 
 it('shows a task whose session asks the user as waiting approval', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('a', { goal: script({ ask: { tool: 'Bash', input: { command: 'pnpm test' } } }) }),
   ]);
@@ -200,7 +200,7 @@ it('shows a task whose session asks the user as waiting approval', async () => {
 });
 
 it('shows a task whose merge is blocked, or whose session is reconciling, as blocked', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   const blocked = await settledTask(f, lead.id, 'a');
   commit(f, blocked, 'README.md');
@@ -221,7 +221,7 @@ it('shows a task whose merge is blocked, or whose session is reconciling, as blo
 });
 
 it('shows a task whose turn completed and whose session is ready but not merged as awaiting merge', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const session = await settledTask(f, lead.id, 'a');
   commit(f, session, 'src/a/x.ts');
@@ -234,7 +234,7 @@ it('shows a task whose turn completed and whose session is ready but not merged 
 });
 
 it('shows the history of a task without running git when no list read its worktree', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const session = await settledTask(f, lead.id, 'a');
   commit(f, session, 'src/a/x.ts');
@@ -245,7 +245,7 @@ it('shows the history of a task without running git when no list read its worktr
 });
 
 it('shows a task whose turn ended with no commit, or failed, as needing attention', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('a'),
     task('b', { goal: script({ fail: 'The build broke' }) }),
@@ -260,7 +260,7 @@ it('shows a task whose turn ended with no commit, or failed, as needing attentio
 });
 
 it('shows a parallel task whose workers all ended with nothing to merge as needing attention', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const part = (name: string) => ({
     title: `Part ${name}`,
     goal: `Write part ${name}`,
@@ -284,7 +284,7 @@ it('shows a parallel task whose workers all ended with nothing to merge as needi
 });
 
 it('keeps a task running, not needing attention, while its worktree cannot be read', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const session = await settledTask(f, lead.id, 'a');
   const worktree = f.store.must<Workspace>('workspaces', session.workspace_id!).path;
@@ -295,7 +295,7 @@ it('keeps a task running, not needing attention, while its worktree cannot be re
 it.skipIf(insideSandbox)(
   'shows a task as gating while its merge runs, then merged with its retrospective',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const lead = await leadWithPlan(f, [task('a', { acceptance: ['true'] })]);
     const session = await settledTask(f, lead.id, 'a');
     commit(f, session, 'src/a/x.ts');
@@ -327,7 +327,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('shows a task as failed once its sessions closed without a merge, until it is started again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const session = await settledTask(f, lead.id, 'a');
   f.call('session.discard', { session_id: session.id }, current(f, session.id).revision);
@@ -341,13 +341,13 @@ it('shows a task as failed once its sessions closed without a merge, until it is
 it.skipIf(insideSandbox)(
   'shows a direct task by its lead: running once claimed, blocked once its hand-backs ran out, then done',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     git(f.source, 'config', 'user.name', 'Source User');
     git(f.source, 'config', 'user.email', 'source@example.invalid');
     // Each run prints another line, so a hand-back never repeats the one before it; it passes once the marker exists.
     const gate = gateFolder(f.root),
       fixed = path.join(gate.dir, 'fixed');
-    f.call(
+    await f.call(
       'project.gate.set',
       {
         project_id: f.project.id,
@@ -369,7 +369,7 @@ it.skipIf(insideSandbox)(
       f.store.must<Project>('projects', f.project.id).revision,
     );
     f.call('workflow.policy.set', { project_id: f.project.id, handback_limit: 2 }, null);
-    const lead = f.create('Plan the export feature');
+    const lead = await f.create('Plan the export feature');
     await settle(f, lead);
     f.call(
       'board.plan.update',
@@ -437,7 +437,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('shows an accepted report task as merged, done by its acceptance', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   const worker = await settledTask(f, lead.id, 'a');
   await f.call(
@@ -457,7 +457,7 @@ it('shows an accepted report task as merged, done by its acceptance', async () =
 });
 
 it('shows a report task whose session reported done as awaiting acceptance until it runs again or is accepted', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), task('b')]);
   const worker = await settledTask(f, lead.id, 'a');
   const reportDone = (sessionId: string, text: string) =>
@@ -521,7 +521,7 @@ async function acceptedReportTask(f: Fixture, leadId: string, taskId: string) {
 }
 
 it('counts a report task done on the day it was accepted after the plan removes it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), task('b')]);
   await acceptedReportTask(f, lead.id, 'a');
   const earlier = f.store.now() - 2 * DAY;
@@ -547,7 +547,7 @@ it('counts a report task done on the day it was accepted after the plan removes 
 });
 
 it('leaves out an accepted report task whose worker stays open once it was accepted before the range', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   const worker = await acceptedReportTask(f, lead.id, 'a');
   expect(current(f, worker.id).state).not.toBe('closed');
@@ -562,7 +562,7 @@ it('leaves out an accepted report task whose worker stays open once it was accep
 });
 
 it('keeps a report task whose worker merged before acceptance unfinished, with its dependents unmet', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), task('b', { depends_on: ['a'] })]);
   const worker = await settledTask(f, lead.id, 'a');
   patch(f, worker.id, { state: 'closed', outcome: 'merged' });
@@ -573,7 +573,7 @@ it('keeps a report task whose worker merged before acceptance unfinished, with i
 });
 
 it('names the scope and capacity waits of queued tasks', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('a', { goal: script({ hang: true }), scope: ['src/a'] }),
     task('b', { scope: ['src/a/b.ts'] }),
@@ -589,7 +589,7 @@ it('names the scope and capacity waits of queued tasks', async () => {
 });
 
 it('names the retry wait of a task whose session failed to open', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   startTasks(f, lead.id, ['a']);
   const plan = planOf(f, lead.id);
@@ -604,7 +604,7 @@ it('names the retry wait of a task whose session failed to open', async () => {
 });
 
 it('returns what the plan chose and what the claiming session runs, even when they differ', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const second = new FixtureAdapter();
   second.name = 'second';
   f.control.adapters.set(second.name, second);
@@ -645,7 +645,7 @@ it('returns what the plan chose and what the claiming session runs, even when th
 });
 
 it('lists a user edit of a running task as pending on its lead and its task until the lead resolves it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a', { goal: script({ hang: true }) }), task('b')]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -722,7 +722,7 @@ function markMerged(f: Fixture, sessionId: string) {
 }
 
 it('shows a parallel task as failed once one part merged and the other closed unmerged with no retry queued', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, workers } = await parallelWorkers(f);
   markMerged(f, workers[0]!.id);
   patch(f, workers[1]!.id, { state: 'closed' });
@@ -730,7 +730,7 @@ it('shows a parallel task as failed once one part merged and the other closed un
 });
 
 it('counts a parallel task done in the daily trend only once every part merged', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, workers } = await parallelWorkers(f);
   markMerged(f, workers[0]!.id);
   const board = () => f.control.boardView(user, f.project.id, 1);
@@ -742,7 +742,7 @@ it('counts a parallel task done in the daily trend only once every part merged',
 });
 
 it('counts a parallel task by all its parts and keeps the blockers of a part that is not the newest', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, workers } = await parallelWorkers(f);
   const turnState = (sessionId: string, state: SessionTurn['state']) => {
     const turn = f.turns(sessionId).at(-1)!;

@@ -6,7 +6,7 @@ import { workbenchFixture } from './workbench-fixture.js';
 it.each(['succeeds', 'fails'] as const)(
   'checks a lost session before holding the runtime when the fresh start %s',
   async (outcome) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     let finishCheck!: () => void;
     const checking = new Promise<void>((resolve) => {
       finishCheck = resolve;
@@ -33,7 +33,7 @@ it.each(['succeeds', 'fails'] as const)(
         turn_id: turn.turn_id,
         status: 'delivered',
       }));
-      const session = f.create('First input');
+      const session = await f.create('First input');
       await awaitWorkspaceReady(f.control, session.workspace_id!);
       await eventually(
         () => send.mock.calls.length === 1,
@@ -83,7 +83,7 @@ it.each(['succeeds', 'fails'] as const)(
           .events(0, f.project.id, 10000)
           .filter((event) => event.kind === 'runtime.connection_changed'),
       ).toEqual([]);
-      const sibling = f.create('Sibling input');
+      const sibling = await f.create('Sibling input');
       await awaitWorkspaceReady(f.control, sibling.workspace_id!);
       expect(f.turns(sibling.id)[0]!.state).toBe('queued');
       finishCheck();
@@ -161,7 +161,7 @@ it.each(['succeeds', 'fails'] as const)(
 );
 
 it('shares one fresh start check between two lost sessions', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   let finishCheck!: () => void;
   const checking = new Promise<void>((resolve) => {
     finishCheck = resolve;
@@ -173,8 +173,8 @@ it('shares one fresh start check between two lost sessions', async () => {
     status: 'delivered',
   }));
   try {
-    const first = f.create('First session');
-    const second = f.create('Second session');
+    const first = await f.create('First session');
+    const second = await f.create('Second session');
     await awaitWorkspaceReady(f.control, first.workspace_id!);
     await awaitWorkspaceReady(f.control, second.workspace_id!);
     await eventually(
@@ -209,7 +209,7 @@ it('shares one fresh start check between two lost sessions', async () => {
 });
 
 it('reports a reconnect failure with its runtime and reason', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   Object.assign(f.adapter, {
     reconnect: vi.fn(async () => {
       throw new Error('startup refused');
@@ -224,7 +224,7 @@ it('reports a reconnect failure with its runtime and reason', async () => {
 });
 
 it('queries reporting and unsupported MCP runtimes and rejects unsupported reconnect', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const reported = [
     { name: 'files', state: 'connected' },
     { name: 'search', state: 'failed', reason: 'connection refused' },
@@ -234,7 +234,7 @@ it('queries reporting and unsupported MCP runtimes and rejects unsupported recon
   expect(await f.control.mcpStatus(user, { project_id: f.project.id, runtime: 'fixture' })).toEqual(
     { runtime: 'fixture', reconnect_available: false, servers: reported },
   );
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.control.handles.size > 0,
@@ -256,10 +256,10 @@ it('queries reporting and unsupported MCP runtimes and rejects unsupported recon
 });
 
 it('reconnects an MCP server through a supporting live session adapter', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const reconnectMcp = vi.fn(async () => {});
   Object.assign(f.adapter, { reconnectMcp });
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.control.handles.size > 0,
@@ -280,11 +280,11 @@ it('reconnects an MCP server through a supporting live session adapter', async (
 it.each([false, true])(
   'fails an undelivered first turn without marking the runtime when reconnect is available: %s',
   async (supportsReconnect) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const reconnect = vi.fn(async () => {});
     if (supportsReconnect) Object.assign(f.adapter, { reconnect });
     f.start.mockRejectedValueOnce(new Error('fixture could not start'));
-    const session = f.create();
+    const session = await f.create();
     await awaitWorkspaceReady(f.control, session.workspace_id!);
     await eventually(
       () => f.start.mock.calls.length > 0,

@@ -5,7 +5,7 @@ import type { Principal, Session, SessionTurn, Workspace } from '@pantheon/domai
 import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
 import { git } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 const open: Fixture[] = [];
 afterEach(async () => {
@@ -17,20 +17,20 @@ const script = (steps: unknown[]) => `fixture-script\n${JSON.stringify(steps)}`;
 
 /** A daemon whose turns end after half a second, with a lead whose plan holds task a. */
 async function deadlineBench() {
-  const f = fixture({ managedWorkspaces: true, controlOptions: { turnWallTimeMs: 500 } });
+  const f = await fixture({ managedWorkspaces: true, controlOptions: { turnWallTimeMs: 500 } });
   open.push(f);
   git(f.projectRoot, 'init', '--quiet', '--initial-branch=main');
   writeFileSync(path.join(f.projectRoot, 'README.md'), 'fixture\n');
   git(f.projectRoot, 'add', '.');
   git(f.projectRoot, 'commit', '--quiet', '-m', 'Initial files');
   const create = (input: string, task_id?: string) =>
-    f.call<Session>('session.create', {
+    f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input,
       ...(task_id ? { task_id } : {}),
     });
-  const lead = create(script([{ say: 'Plan the export feature' }]));
+  const lead = await create(script([{ say: 'Plan the export feature' }]));
   await settle(f, lead);
   const leadPrincipal: Principal = {
     id: `session:${lead.id}`,
@@ -65,7 +65,12 @@ async function deadlineBench() {
     null,
     leadPrincipal,
   );
-  return { f, lead, leadPrincipal, startTask: (input: string) => create(input, `${lead.id}:a`) };
+  return {
+    f,
+    lead,
+    leadPrincipal,
+    startTask: async (input: string) => await create(input, `${lead.id}:a`),
+  };
 }
 
 const turnsOf = (f: Fixture, sessionId: string) =>
@@ -93,7 +98,7 @@ const completions = (f: Fixture, turn: SessionTurn) =>
 
 it('records the deadline reason on a task turn that hit the wall clock', async () => {
   const { f, startTask } = await deadlineBench();
-  const worker = startTask(script([{ hang: true }]));
+  const worker = await startTask(script([{ hang: true }]));
   await settle(f, worker);
   const [turn] = turnsOf(f, worker.id);
   expect(turn).toMatchObject({ state: 'failed' });
@@ -106,7 +111,7 @@ it('records the deadline reason on a task turn that hit the wall clock', async (
 
 it('keeps uncommitted worktree changes after a deadline-killed turn and resumes on the next message', async () => {
   const { f, startTask } = await deadlineBench();
-  const worker = startTask(
+  const worker = await startTask(
     script([{ write: { path: 'draft.txt', text: 'half done\n' } }, { hang: true }]),
   );
   await settle(f, worker);

@@ -76,7 +76,7 @@ async function gateFixture() {
     revision: number | null = null,
     principal: Principal = user,
   ) => control.execute(principal, command(principal.id, type, input, revision)) as T;
-  const project = call<Project>('project.open', {
+  const project = await call<Project>('project.open', {
     name: 'Landing project',
     roots: [source],
   });
@@ -84,7 +84,11 @@ async function gateFixture() {
   const current = () => store.must<Session>('sessions', session!.id);
   const events = (kind: string) => store.events().filter((event) => event.kind === kind);
   const create = (input: string) =>
-    call<Session>('session.create', { project_id: project.id, runtime: adapter.name, input });
+    call<Promise<Session>>('session.create', {
+      project_id: project.id,
+      runtime: adapter.name,
+      input,
+    });
   const idle = (sessionId: string) =>
     store.must<Session>('sessions', sessionId).state === 'open' &&
     store
@@ -115,7 +119,7 @@ async function gateFixture() {
     },
     /** Opens the session whose worktree the gate checks and waits until its first turn ends. */
     async open() {
-      session = create('Change the answer');
+      session = await create('Change the answer');
       const workspace = await awaitWorkspaceReady(control, session.workspace_id!);
       await eventually(
         () => idle(session!.id),
@@ -138,7 +142,7 @@ async function gateFixture() {
       store.close();
       store = new Store(database);
       control = new Control(store, files, [adapter], undefined, { workspaceRoot });
-      control.recover();
+      await control.recover();
     },
   };
 }
@@ -155,7 +159,7 @@ it('sets and clears a user gate with project revisions, events and unchanged aut
       { project_id: f.project.id, root, commands },
       f.project.revision,
     ),
-    next = f.control.execute(user, sent) as Project;
+    next = (await f.control.execute(user, sent)) as Project;
   expect(next).toMatchObject({
     gates: { [root]: commands },
     revision: f.project.revision + 1,
@@ -174,7 +178,7 @@ it('sets and clears a user gate with project revisions, events and unchanged aut
       f.project.revision,
     ),
   ).toThrowError(expect.objectContaining({ code: 'revision_conflict' }));
-  const cleared = f.call<Project>(
+  const cleared = await f.call<Project>(
     'project.gate.set',
     { project_id: f.project.id, root: f.project.roots[0]!, commands: [] },
     next.revision,
@@ -493,7 +497,7 @@ it.skipIf(insideSandbox)(
     expect(f.store.pending().some((job) => job.kind === 'session.merge')).toBe(true);
     const events = vi.fn();
     f.control.on('events', events);
-    const other = f.create('Keep working while the merge waits');
+    const other = await f.create('Keep working while the merge waits');
     await eventually(
       () =>
         f.store

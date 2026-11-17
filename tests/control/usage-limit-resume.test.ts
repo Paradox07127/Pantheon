@@ -3,7 +3,7 @@ import type { AgentEvent, BoardPlan, Principal, Session, Timer } from '@pantheon
 import { eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const RESUME_TEXT =
   '[Pantheon] Your last turn stopped because the usage limit was used up. The limit has reset. Check where your work stopped, then continue.';
@@ -47,7 +47,7 @@ function writePlan(f: Fixture, leadId: string) {
 }
 
 const startTask = (f: Fixture, leadId: string) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -111,7 +111,7 @@ const usageLimit = (resets_at?: number) => ({
 /** Waits until the session's turns have ended and it takes input again. */
 
 async function leadWithPlan(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   return lead;
@@ -130,12 +130,12 @@ function turnFailedNotes(f: Fixture, leadId: string, workerId: string) {
 }
 
 it('waits for the usage limit to reset without telling the lead the turn failed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   skewedClock(f);
   const lead = await leadWithPlan(f);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
   failNextTurn(f, usageLimit(resetsAt));
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   await f.control.tick();
   expect(f.turns(worker.id)).toMatchObject([{ state: 'failed' }]);
@@ -144,12 +144,12 @@ it('waits for the usage limit to reset without telling the lead the turn failed'
 });
 
 it('continues the session once the usage limit has reset', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const lead = await leadWithPlan(f);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
   failNextTurn(f, usageLimit(resetsAt));
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   await f.control.tick();
   expect(continuations(f, worker.id)).toEqual([]);
@@ -164,12 +164,12 @@ it('continues the session once the usage limit has reset', async () => {
 });
 
 it('keeps the resume pending while the session refuses input and continues once it takes input', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const lead = await leadWithPlan(f);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
   failNextTurn(f, usageLimit(resetsAt));
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   await f.control.tick();
   const stopping = current(f, worker.id);
@@ -187,12 +187,12 @@ it('keeps the resume pending while the session refuses input and continues once 
 });
 
 it('drops the pending resume once a later turn of the session runs', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const lead = await leadWithPlan(f);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
   failNextTurn(f, usageLimit(resetsAt));
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   const [timer] = pendingResumes(f, worker.id);
   expect(timer).toBeDefined();
@@ -210,12 +210,12 @@ it('drops the pending resume once a later turn of the session runs', async () =>
 });
 
 it('waits thirty minutes when the runtime does not say when the limit resets', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   skewedClock(f);
   const lead = await leadWithPlan(f);
   failNextTurn(f, usageLimit());
   const before = f.store.now();
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   const after = f.store.now();
   const [timer] = pendingResumes(f, worker.id);
@@ -235,12 +235,12 @@ it.each([
     due: MINUTE,
   },
 ])('$name', async ({ later, due }) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const lead = await leadWithPlan(f);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
   failNextTurn(f, usageLimit(resetsAt));
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   advance(later);
   failNextTurn(f, usageLimit(resetsAt + later));
@@ -255,10 +255,10 @@ it.each([
 });
 
 it('leaves a session a person drives failed after a usage-limit failure', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   failNextTurn(f, usageLimit(f.store.now() + MINUTE));
-  const session = f.create();
+  const session = await f.create();
   await settle(f, session);
   expect(f.store.list<Timer>('timers')).toEqual([]);
   advance(10 * MINUTE);
@@ -268,10 +268,10 @@ it('leaves a session a person drives failed after a usage-limit failure', async 
 });
 
 it('tells the lead of a task session turn that failed for another reason', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f);
   failNextTurn(f, { error: 'provider overloaded' });
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   await f.control.tick();
   expect(pendingResumes(f, worker.id)).toEqual([]);
@@ -297,7 +297,7 @@ const trackerTurns = (f: Fixture, sessionId: string) =>
   f.turns(sessionId).filter((turn) => turn.origin === 'tracker');
 
 it('resumes a lead after the reset with one board update turn', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const lead = await leadWithPlan(f);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
@@ -319,12 +319,12 @@ it('resumes a lead after the reset with one board update turn', async () => {
 });
 
 it('holds a lead wake while the lead waits for its usage limit and delivers the digest with the reset in one turn', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   // The lead's native session stays open, so the spy must see the resume that opened it.
   vi.spyOn(f.adapter, 'resume');
   const lead = await leadWithPlan(f);
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
   failNextTurn(f, usageLimit(resetsAt));
@@ -356,12 +356,12 @@ it('holds a lead wake while the lead waits for its usage limit and delivers the 
 });
 
 it('refuses a lead message to a task session that waits for its usage limit and names the reset time', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   skewedClock(f);
   const lead = await leadWithPlan(f);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
   failNextTurn(f, usageLimit(resetsAt));
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
 
   expect(() =>
@@ -381,11 +381,11 @@ it('refuses a lead message to a task session that waits for its usage limit and 
 });
 
 it('does not hand a merge problem back to a task session that waits for its usage limit', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   skewedClock(f);
   const lead = await leadWithPlan(f);
   failNextTurn(f, usageLimit(f.store.now() + 2 * 60 * MINUTE));
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
   f.store.event('session.merge_started', current(f, worker.id), f.project.id, { auto: true }, '');
   const session = current(f, worker.id);
@@ -409,12 +409,12 @@ it('does not hand a merge problem back to a task session that waits for its usag
 });
 
 it('lists a daemon-driven session waiting for a usage reset in needs-you with the reset time', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   skewedClock(f);
   const lead = await leadWithPlan(f);
   const resetsAt = f.store.now() + 2 * 60 * MINUTE;
   failNextTurn(f, usageLimit(resetsAt));
-  const worker = startTask(f, lead.id);
+  const worker = await startTask(f, lead.id);
   await settle(f, worker);
 
   expect(

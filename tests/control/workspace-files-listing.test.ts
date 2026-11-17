@@ -18,7 +18,7 @@ vi.mock('node:fs', async (original) => {
 });
 
 it('measures only the directory entries it returns', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const many = path.join(f.source, 'many');
   mkdirSync(many);
   for (let index = 0; index < 3000; index++)

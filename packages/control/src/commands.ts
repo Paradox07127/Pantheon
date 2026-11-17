@@ -7,7 +7,7 @@ import { rangeStoryHandlers, rangeStoryPreparers } from './range-story.js';
 import type { Handlers, Preparers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
 import { projectBoardHandlers } from './project-board.js';
-import { projectHandlers } from './project.js';
+import { projectHandlers, projectPreparers } from './project.js';
 import { prepareResolve, sessionHandlers } from './session.js';
 import { workbenchSessionHandlers } from './workbench-session.js';
 import { approvalHandlers } from './approvals.js';
@@ -59,6 +59,7 @@ export const handlers: Handlers = {
 };
 
 export const preparers: Preparers = {
+  ...projectPreparers,
   ...baselinePreparers,
   ...projectIntroPreparers,
   ...rangeStoryPreparers,

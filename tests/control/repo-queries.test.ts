@@ -12,8 +12,8 @@ const HOUR = 60 * 60 * 1000,
   DAY = 24 * HOUR;
 
 /** main at a second commit, a session worktree on feature one commit ahead, a detached external worktree at the first commit. */
-function repoFixture() {
-  const f = workbenchFixture();
+async function repoFixture() {
+  const f = await workbenchFixture();
   const first = git(f.source, 'rev-parse', 'HEAD');
   writeFileSync(path.join(f.source, 'answer.txt'), 'base\nsecond\n');
   git(f.source, 'commit', '--quiet', '-am', 'Second answer line');
@@ -64,7 +64,7 @@ function repoFixture() {
 }
 
 it('lists the checkout, a session worktree and an outside worktree with counts against the checkout', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   const worktrees = await r.f.control.repoWorktrees(user, r.f.project.id);
   expect(worktrees).toHaveLength(3);
   expect(worktrees).toEqual(
@@ -111,7 +111,7 @@ it('lists the checkout, a session worktree and an outside worktree with counts a
 });
 
 it('lists, compares and blames beside a session worktree that shares no history with the checkout', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   const unrelatedTree = path.join(r.f.root, 'unrelated-tree');
   git(r.f.source, 'worktree', 'add', '--quiet', '--detach', unrelatedTree, r.first);
   git(unrelatedTree, 'checkout', '--quiet', '--orphan', 'unrelated');
@@ -157,7 +157,7 @@ it('lists, compares and blames beside a session worktree that shares no history 
 });
 
 /** Changes the second answer line one way in the session worktree and another way on main. */
-function conflictingSides(r: ReturnType<typeof repoFixture>) {
+function conflictingSides(r: Awaited<ReturnType<typeof repoFixture>>) {
   writeFileSync(path.join(r.sessionTree, 'answer.txt'), 'base\nsession side\n');
   git(r.sessionTree, 'commit', '--quiet', '-am', 'Session side');
   writeFileSync(path.join(r.f.source, 'answer.txt'), 'base\nmain side\n');
@@ -165,7 +165,7 @@ function conflictingSides(r: ReturnType<typeof repoFixture>) {
 }
 
 it('counts the files a worktree would conflict on and previews again only once a HEAD moves', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   conflictingSides(r);
   const session = async () =>
     (await r.f.control.repoWorktrees(user, r.f.project.id)).find(
@@ -182,7 +182,7 @@ it('counts the files a worktree would conflict on and previews again only once a
 });
 
 it('reads staged and untracked files of a worktree and refuses a folder that is not one', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   expect(await r.f.control.repoStatus(user, r.f.project.id, r.f.source)).toEqual({
     path: r.source,
     branch: 'main',
@@ -206,7 +206,7 @@ it('reads staged and untracked files of a worktree and refuses a folder that is 
 });
 
 it('lists untracked files when the repository hides them from status', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   git(r.f.source, 'config', 'status.showUntrackedFiles', 'no');
   expect((await r.f.control.repoStatus(user, r.f.project.id, r.f.source)).files).toContainEqual({
     path: 'draft.txt',
@@ -218,7 +218,7 @@ it('lists untracked files when the repository hides them from status', async () 
 });
 
 it('lists and counts each untracked file of a new folder', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   mkdirSync(path.join(r.f.source, 'newdir'));
   writeFileSync(path.join(r.f.source, 'newdir/a.ts'), 'a\n');
   writeFileSync(path.join(r.f.source, 'newdir/b.ts'), 'b\n');
@@ -233,7 +233,7 @@ it('lists and counts each untracked file of a new folder', async () => {
 });
 
 it('pages the log, names the session whose merge landed a commit and refuses an option as ref', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   const log = await r.f.control.repoLog(user, { project_id: r.f.project.id, limit: 200, skip: 0 });
   expect(log.has_more).toBe(false);
   expect(log.commits.map((commit) => commit.sha)).toEqual([r.second, r.first]);
@@ -264,7 +264,7 @@ it('pages the log, names the session whose merge landed a commit and refuses an 
 });
 
 it('diffs a commit against its parent, and a root commit against the empty tree', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   const root = await r.f.control.repoCommitDiff(user, r.f.project.id, r.first);
   expect(root).toMatchObject({
     from_sha: EMPTY_TREE,
@@ -283,7 +283,7 @@ it('diffs a commit against its parent, and a root commit against the empty tree'
 });
 
 it('compares two commits from their merge base with counts on both sides', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   expect(await r.f.control.repoCompare(user, r.f.project.id, 'main', 'feature')).toMatchObject({
     merge_base: r.second,
     ahead: 1,
@@ -305,7 +305,7 @@ it('compares two commits from their merge base with counts on both sides', async
 });
 
 it('gives the first conflict of each file and counts the files no other session changes', async () => {
-  const r = repoFixture();
+  const r = await repoFixture();
   conflictingSides(r);
   // A worktree made outside Pantheon is no session, so its change to answer.txt does not count.
   git(r.outsideTree, 'commit', '--quiet', '-am', 'Outside change');
@@ -356,7 +356,7 @@ describe('after a commit', () => {
   });
 
   it('gives the gate of the session merge that ended at the commit and of the one before on its branch', async () => {
-    const r = repoFixture();
+    const r = await repoFixture();
     const project = r.f.project.id;
     const after = (sha: string) => r.f.control.repoCommitAfter(user, { project_id: project, sha });
     expect(await after(r.second)).toMatchObject({ gate: null, previous_gate_ms: null });
@@ -397,7 +397,7 @@ describe('after a commit', () => {
   });
 
   it('counts the dependency entries a commit changes over every package.json', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const after = async () =>
       (
         await f.control.repoCommitAfter(user, {
@@ -428,7 +428,7 @@ describe('after a commit', () => {
   });
 
   it('lists later commits that change the lines a commit added, newest first, not those that only move them', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const commit = (content: string, message: string) => {
       writeFileSync(path.join(f.source, 'later.txt'), content);
       git(f.source, 'add', 'later.txt');
@@ -453,7 +453,7 @@ describe('after a commit', () => {
   });
 
   it('gives the upstream of the branch and how far HEAD is ahead of it', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const upstream = async () =>
       (await f.control.repoCommitAfter(user, { project_id: f.project.id, sha: 'HEAD' })).upstream;
     expect(await upstream()).toBeNull();
@@ -491,7 +491,7 @@ function commitsAt(source: string, times: number[]): string[] {
 
 describe('repository timeline', () => {
   it('gives a lane with more than 200 commits as day bins instead of points', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const start = Math.ceil(Date.now() / HOUR) * HOUR + HOUR;
     commitsAt(
       f.source,
@@ -520,7 +520,7 @@ describe('repository timeline', () => {
   });
 
   it('keeps main and the six busiest of nine session lanes and folds the other three', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const now = Date.now();
     // Session index lands index + 1 commits, so the first three are the quietest.
     const shas = commitsAt(
@@ -592,7 +592,7 @@ describe('repository timeline', () => {
   });
 
   it('reuses the merged-commit mapping while HEAD stays and rebuilds it once HEAD moves', async () => {
-    const r = repoFixture();
+    const r = await repoFixture();
     const range = {
       project_id: r.f.project.id,
       from: Date.now() - DAY,
@@ -626,7 +626,7 @@ describe('repository timeline', () => {
   it.each(['说明.md', './说明.md', '说明.md/', '.', './'])(
     'puts a commit in the workstream whose module %s holds a non-ASCII file it touches',
     async (module) => {
-      const f = workbenchFixture();
+      const f = await workbenchFixture();
       writeFileSync(path.join(f.source, '说明.md'), 'one\n');
       writeFileSync(path.join(f.source, 'notes.md'), 'one\n');
       git(f.source, 'add', '--all');
@@ -674,7 +674,7 @@ describe('repository timeline', () => {
   );
 
   it('lists a commit in the range below a later commit dated before the range', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const start = Math.ceil(Date.now() / HOUR) * HOUR + HOUR;
     const shas = commitsAt(f.source, [start, start - 3 * DAY]);
     const timeline = await f.control.repoTimeline(user, {
@@ -686,7 +686,7 @@ describe('repository timeline', () => {
   });
 
   it('lanes commits by git author, and the commits and span of a session under its runtime', async () => {
-    const r = repoFixture();
+    const r = await repoFixture();
     git(
       r.f.source,
       'commit',
@@ -719,7 +719,7 @@ describe('repository timeline', () => {
   });
 
   it('groups by branch over a day or less and by workstream over longer when no grouping is given', async () => {
-    const r = repoFixture();
+    const r = await repoFixture();
     const now = Date.now();
     const read = (from: number, to: number) =>
       r.f.control.repoTimeline(user, { project_id: r.f.project.id, from, to });
@@ -730,7 +730,7 @@ describe('repository timeline', () => {
   });
 
   it('gives the times of the first and last commit of the whole history', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const start = Math.ceil(Date.now() / HOUR) * HOUR + HOUR;
     commitsAt(f.source, [start + 5 * HOUR, start]);
     const times = git(f.source, 'log', '--format=%ct', 'main')
@@ -765,7 +765,7 @@ describe('repository timeline', () => {
 
 describe('file blame and history', () => {
   it('blames each line to its commit and gives the lines a session worktree changes', async () => {
-    const r = repoFixture();
+    const r = await repoFixture();
     r.f.store.event('session.merged', r.session, r.f.project.id, {
       from_sha: r.first,
       to_sha: r.second,
@@ -798,7 +798,7 @@ describe('file blame and history', () => {
   });
 
   it('moves the lines a session changes onto the blamed commit when main changed above them', async () => {
-    const r = repoFixture();
+    const r = await repoFixture();
     writeFileSync(path.join(r.sessionTree, 'answer.txt'), 'base\nchanged\n');
     git(r.sessionTree, 'commit', '--quiet', '-am', 'Change the second line');
     const above = Array.from({ length: 20 }, (_, index) => `top ${index}\n`).join('');
@@ -814,7 +814,7 @@ describe('file blame and history', () => {
   });
 
   it('reads only the named file when its name holds pathspec characters', async () => {
-    const r = repoFixture();
+    const r = await repoFixture();
     writeFileSync(path.join(r.f.source, 'test[1].json'), '1\n');
     writeFileSync(path.join(r.f.source, 'test1.json'), '1\n');
     git(r.f.source, '--literal-pathspecs', 'add', 'test[1].json', 'test1.json');
@@ -833,7 +833,7 @@ describe('file blame and history', () => {
   });
 
   it('names a non-ASCII file changed together with this one as it is', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     writeFileSync(path.join(f.source, '说明.md'), 'one\n');
     writeFileSync(path.join(f.source, 'notes.md'), 'one\n');
     git(f.source, 'add', '--all');
@@ -846,7 +846,7 @@ describe('file blame and history', () => {
   });
 
   it('counts a week’s change to a file below a later commit dated before the weeks', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     commitsAt(f.source, [Date.now(), Date.now() - 300 * DAY]);
     const history = await f.control.repoFileHistory(user, {
       project_id: f.project.id,
@@ -856,7 +856,7 @@ describe('file blame and history', () => {
   });
 
   it.each(['../x', '/etc/passwd', 'docs/../../x'])('refuses the path %s', async (file) => {
-    const r = repoFixture();
+    const r = await repoFixture();
     await expect(
       r.f.control.repoBlame(user, { project_id: r.f.project.id, path: file }),
     ).rejects.toMatchObject({ code: 'invalid_input' });
@@ -866,7 +866,7 @@ describe('file blame and history', () => {
   });
 
   it('lists the commits that changed a file, its weekly counts and the files changed with it', async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const commit = (files: Record<string, string>, message: string) => {
       for (const [name, content] of Object.entries(files))
         writeFileSync(path.join(f.source, name), content);

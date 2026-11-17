@@ -12,7 +12,7 @@ import { doneReported } from '../../packages/control/dist/task-tracking.js';
 import { eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const signoff: WorkflowDefinition = {
   slots: {
     before_dispatch: [],
@@ -33,8 +33,8 @@ const trackerTurns = (f: Fixture, id: string) =>
   f.turns(id).filter((turn) => turn.origin === 'tracker').length;
 
 async function reportTask(definition?: WorkflowDefinition) {
-  const f = workbenchFixture({ delay: 1 });
-  const lead = f.create('Plan the export');
+  const f = await workbenchFixture({ delay: 1 });
+  const lead = await f.create('Plan the export');
   await settle(f, lead);
   if (definition)
     f.call('workflow.definition.set', {
@@ -118,7 +118,7 @@ it('holds the done report of a report task and its acceptance until the after-me
 
 /** Opens the report task in the user's own folder instead of a worktree. */
 async function inPlaceReportSession(f: Fixture, leadId: string) {
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     task_id: `${leadId}:export`,

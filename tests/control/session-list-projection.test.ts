@@ -11,7 +11,7 @@ import {
 import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
 const listed = (f: Fixture, sessionId: string) => f.list().find((row) => row.id === sessionId)!;
@@ -21,7 +21,7 @@ const patch = (f: Fixture, sessionId: string, fields: Partial<Session>) => {
 };
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -70,8 +70,8 @@ function pendingRequest(
   });
 }
 
-function setGate(f: Fixture) {
-  f.call<Project>(
+async function setGate(f: Fixture) {
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -123,7 +123,7 @@ async function sendTurn(f: Fixture, sessionId: string) {
 }
 
 it('tells a permission request from a question while the session waits', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const asking = await idleSession(f),
     permitting = await idleSession(f);
   expect(listed(f, asking.id)).not.toHaveProperty('waiting_kind');
@@ -136,7 +136,7 @@ it('tells a permission request from a question while the session waits', async (
 });
 
 it('shows the oldest unanswered request with the same detail as needs-you', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   pendingRequest(f, session.id, 'newer-request', 'Edit');
   pendingRequest(f, session.id, 'oldest-request', 'Bash', {
@@ -164,7 +164,7 @@ it('shows the oldest unanswered request with the same detail as needs-you', asyn
 });
 
 it('uses the newest turn with context tokens and omits context without its window', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   expect(listed(f, session.id)).not.toHaveProperty('context');
   const turn = f.turns(session.id)[0]!;
@@ -194,8 +194,8 @@ it('uses the newest turn with context tokens and omits context without its windo
   expect(listed(f, session.id).context).toEqual({ used_tokens: 0, window_tokens: 100000 });
 });
 
-it('marks a baseline session awaiting review of its submitted baseline', () => {
-  const f = workbenchFixture();
+it('marks a baseline session awaiting review of its submitted baseline', async () => {
+  const f = await workbenchFixture();
   f.store.insert<ProjectBaseline>('project_baselines', {
     id: 'submitted-baseline',
     revision: 1,
@@ -232,7 +232,7 @@ it('marks a baseline session awaiting review of its submitted baseline', () => {
 });
 
 it('flags a reconciling session and a session whose stop is pending', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   expect(listed(f, session.id)).toMatchObject({ reconciling: false, stopping: false });
   patch(f, session.id, { state: 'reconciling' });
@@ -246,7 +246,7 @@ it('flags a reconciling session and a session whose stop is pending', async () =
 });
 
 it('flags a session whose discard waits for its native process to close', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   f.call('session.discard', { session_id: session.id }, current(f, session.id).revision);
   expect(current(f, session.id)).toMatchObject({ stop_requested: { by: 'user' } });
@@ -260,7 +260,7 @@ it('flags a session whose discard waits for its native process to close', async 
 });
 
 it('lists a clean worktree whose commits change no file as ready', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   git(workspace.path, 'commit', '--quiet', '--allow-empty', '-m', 'Empty commit');
@@ -273,21 +273,21 @@ it('lists a clean worktree whose commits change no file as ready', async () => {
 });
 
 it('leaves the gate out without gate commands or without a run', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   gateChecked(f, session.id, 0);
   expect(listed(f, session.id)).not.toHaveProperty('gate');
   const unchecked = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   expect(listed(f, unchecked.id)).not.toHaveProperty('gate');
   expect(listed(f, session.id)).toHaveProperty('gate');
 });
 
 it('summarizes the latest gate run as passed or failed with its end time', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const passing = await idleSession(f),
     failing = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   const passed = gateChecked(f, passing.id, 0);
   gateChecked(f, failing.id, 0);
   const failed = gateChecked(f, failing.id, 3);
@@ -310,9 +310,9 @@ it('summarizes the latest gate run as passed or failed with its end time', async
 });
 
 it('shows a gate run that is still checking as running', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
   expect(listed(f, session.id).gate).toEqual({
     state: 'running',
@@ -329,18 +329,18 @@ it('shows a gate run that is still checking as running', async () => {
 });
 
 it('shows a running session with the failed gate of its previous turn', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   gateChecked(f, session.id, 1);
   patch(f, session.id, { state: 'running' });
   expect(listed(f, session.id)).toMatchObject({ state: 'running', gate: { state: 'failed' } });
 });
 
 it('marks the gate stale once a turn ends after the run', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   const checked = gateChecked(f, session.id, 0);
   await sendTurn(f, session.id);
   expect(listed(f, session.id).gate).toEqual({
@@ -354,9 +354,9 @@ it('marks the gate stale once a turn ends after the run', async () => {
 });
 
 it('marks the gate stale once the worktree head left the commit the run checked', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   const checked = gateChecked(f, session.id, 0);
   expect(listed(f, session.id).gate).toMatchObject({ state: 'passed' });
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
@@ -374,7 +374,7 @@ it('marks the gate stale once the worktree head left the commit the run checked'
 });
 
 it('moves the last activity time when a turn ends', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const opened = f.store
     .kindEvents(f.project.id, ['session.opened'])
@@ -398,7 +398,7 @@ it('moves the last activity time when a turn ends', async () => {
 });
 
 it('projects a recoverable failed turn without closing its idle session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const turn = f.turns(session.id)[0]!;
   const failed = f.store.update<SessionTurn>(
@@ -422,7 +422,7 @@ it('projects a recoverable failed turn without closing its idle session', async 
 });
 
 it('does not replace the main turn result with a steer or a rolled-back turn', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const turn = f.turns(session.id)[0]!;
   const failed = f.store.update<SessionTurn>(
@@ -463,9 +463,9 @@ it('does not replace the main turn result with a steer or a rolled-back turn', a
 });
 
 it('shows the gate of a merge as running until it is checked, and stops counting once the merge is cancelled', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   const passed = gateChecked(f, session.id, 0);
   const merging = patch(f, session.id, { merge: { state: 'running' } });
   f.store.event('session.gate_started', merging, f.project.id, {

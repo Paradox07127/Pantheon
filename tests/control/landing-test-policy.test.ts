@@ -80,13 +80,13 @@ const cases = [
 it.each(cases)(
   'hands an unlisted %s to the lead until its exact path is scoped',
   async (_label, file, before, after, acceptance) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     mkdirSync(path.dirname(path.join(f.source, file)), { recursive: true });
     writeFileSync(path.join(f.source, file), before);
     git(f.source, 'add', '.');
     git(f.source, 'commit', '--quiet', '-m', 'Add verification input');
     const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-    const lead = f.create('Maintain the answer');
+    const lead = await f.create('Maintain the answer');
     await awaitWorkspaceReady(f.control, lead.workspace_id!);
     await eventually(
       () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
@@ -118,7 +118,7 @@ it.each(cases)(
       notified: {},
       updated_at: f.store.now(),
     });
-    const worker = f.create();
+    const worker = await f.create();
     const workspace = await awaitWorkspaceReady(f.control, worker.workspace_id!);
     await eventually(
       () => f.turns(worker.id).every((turn) => turn.state === 'completed'),

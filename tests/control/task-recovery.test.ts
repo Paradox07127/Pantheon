@@ -12,7 +12,7 @@ import type {
 import { awaitWorkspaceReady, eventually, insideSandbox, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -58,7 +58,7 @@ const writePlan = (
   );
 
 const openTask = (f: Fixture, leadId: string, taskId: string) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -82,7 +82,7 @@ function patch(f: Fixture, sessionId: string, fields: Partial<Session>) {
 }
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, tasks);
   return lead;
@@ -100,8 +100,8 @@ function skewedClock(f: Fixture) {
 const project = (f: Fixture) => f.store.must<Project>('projects', f.project.id);
 const passingGate = [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }];
 
-function mergeAutomatically(f: Fixture) {
-  f.call(
+async function mergeAutomatically(f: Fixture) {
+  await f.call(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands: passingGate },
     project(f).revision,
@@ -135,9 +135,9 @@ it.each([
 ])(
   'hands a merge blocked by $reason back to the task session once, then tells the lead',
   async ({ reason, merge, says }) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const lead = await leadWithPlan(f, [task('a')]);
-    const worker = openTask(f, lead.id, 'a');
+    const worker = await openTask(f, lead.id, 'a');
     await settle(f, worker);
 
     startedAutomatically(f, worker.id);
@@ -167,9 +167,9 @@ it.each([
 );
 
 it('tells the lead at once, without a hand-back, when a merge the user started is blocked', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   patch(f, worker.id, { merge: { state: 'blocked', reason: 'gate_failed' } });
@@ -179,10 +179,10 @@ it('tells the lead at once, without a hand-back, when a merge the user started i
 });
 
 it('hands a turn without commits back once, then tells the lead of the second', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  mergeAutomatically(f);
-  const worker = openTask(f, lead.id, 'a');
+  await mergeAutomatically(f);
+  const worker = await openTask(f, lead.id, 'a');
   await eventually(
     () => fromTracker(f, lead.id).length > 0,
     () => f.control.tick(),
@@ -203,10 +203,10 @@ it('hands a turn without commits back once, then tells the lead of the second', 
 });
 
 it('waits for the lead instead of handing back a turn without commits that reported a requirement', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const lead = await leadWithPlan(f, [task('a')]);
-  mergeAutomatically(f);
-  const worker = openTask(f, lead.id, 'a');
+  await mergeAutomatically(f);
+  const worker = await openTask(f, lead.id, 'a');
   await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => f.turns(worker.id)[0]?.state === 'running',
@@ -236,12 +236,12 @@ it('waits for the lead instead of handing back a turn without commits that repor
 });
 
 it('does not hand back a report task whose turn ends without commits', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('r', { done_when: 'report', scope: [], acceptance: [] }),
   ]);
-  mergeAutomatically(f);
-  const worker = openTask(f, lead.id, 'r');
+  await mergeAutomatically(f);
+  const worker = await openTask(f, lead.id, 'r');
   await settle(f, worker);
   for (let i = 0; i < 3; i++) await f.control.tick();
   expect(fromTracker(f, worker.id)).toEqual([]);
@@ -249,13 +249,13 @@ it('does not hand back a report task whose turn ends without commits', async () 
 });
 
 it.skipIf(insideSandbox)('merges automatically once the handed back turn commits', async () => {
-  const f = workbenchFixture({ delay: 1500 });
+  const f = await workbenchFixture({ delay: 1500 });
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   // The merge gate runs the task's acceptance commands too.
   const lead = await leadWithPlan(f, [task('a', { acceptance: ['true'], scope: ['answer.txt'] })]);
-  mergeAutomatically(f);
-  const worker = openTask(f, lead.id, 'a');
+  await mergeAutomatically(f);
+  const worker = await openTask(f, lead.id, 'a');
   const workspace = await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => fromTracker(f, worker.id).length === 1,
@@ -279,7 +279,7 @@ it.skipIf(insideSandbox)('merges automatically once the handed back turn commits
 /** A task session whose first turn runs for longer than the test. */
 async function runningWorker(f: Fixture, leadId: string) {
   (f.adapter as { delay: number }).delay = 60000;
-  const worker = openTask(f, leadId, 'a');
+  const worker = await openTask(f, leadId, 'a');
   await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => f.turns(worker.id)[0]?.state === 'running',
@@ -301,7 +301,7 @@ const toolEvent = (
   });
 
 it('tells the lead once when a running turn makes no progress for ten minutes', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const { worker, turn } = await runningWorker(f, lead.id);
@@ -326,7 +326,7 @@ it('tells the lead once when a running turn makes no progress for ten minutes', 
 });
 
 it('does not call a turn stalled while a tool call is under way', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const { worker, turn } = await runningWorker(f, lead.id);
@@ -340,7 +340,7 @@ it('does not call a turn stalled while a tool call is under way', async () => {
 });
 
 it('tells the lead once when the same tool call fails three times in a row', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const { worker, turn } = await runningWorker(f, lead.id);
   const fail = (id: string, input: unknown) => {
@@ -369,10 +369,10 @@ it('tells the lead once when the same tool call fails three times in a row', asy
 });
 
 it('wakes the lead once for merges within thirty seconds of the first', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
-  const first = openTask(f, lead.id, 'a'),
-    second = openTask(f, lead.id, 'b');
+  const first = await openTask(f, lead.id, 'a'),
+    second = await openTask(f, lead.id, 'b');
   await settle(f, first);
   await settle(f, second);
   const advance = skewedClock(f);
@@ -396,10 +396,10 @@ it('wakes the lead once for merges within thirty seconds of the first', async ()
 });
 
 it('wakes the lead at once when a merge is blocked while merges wait', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
-  const merged = openTask(f, lead.id, 'a'),
-    blocked = openTask(f, lead.id, 'b');
+  const merged = await openTask(f, lead.id, 'a'),
+    blocked = await openTask(f, lead.id, 'b');
   await settle(f, merged);
   await settle(f, blocked);
   skewedClock(f);
@@ -426,8 +426,8 @@ const acceptTask = (f: Fixture, leadId: string, taskId: string) =>
   );
 
 it('makes a report task done when its lead accepts the done report, so its milestone can be accepted', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   const research = task('r', {
     done_when: 'report',
@@ -437,7 +437,7 @@ it('makes a report task done when its lead accepts the done report, so its miles
   });
   const milestones = [{ id: 'm1', title: 'Format chosen', criteria: ['A format'], tasks: ['r'] }];
   writePlan(f, lead.id, [research], milestones);
-  const worker = openTask(f, lead.id, 'r');
+  const worker = await openTask(f, lead.id, 'r');
   await settle(f, worker);
   expect(() => acceptTask(f, lead.id, 'r')).toThrow(
     expect.objectContaining({ code: 'invalid_state' }),
@@ -469,9 +469,9 @@ it('makes a report task done when its lead accepts the done report, so its miles
 });
 
 it('refuses to accept a task that is done when merged, even after a done report', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
   await f.call(
     'task.report',
@@ -488,8 +488,8 @@ it('refuses to accept a task that is done when merged, even after a done report'
 });
 
 it('lets only report tasks leave scope and acceptance empty', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   expect(() => writePlan(f, lead.id, [task('a', { scope: [] })])).toThrow();
   expect(() => writePlan(f, lead.id, [task('a', { acceptance: [] })])).toThrow();

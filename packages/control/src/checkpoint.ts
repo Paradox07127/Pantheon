@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -51,9 +50,10 @@ export function gitWorkspace(ctx: ControlContext, session: Session): Workspace |
 }
 
 let configuredExcludes: { key: string; file: string | undefined } | undefined;
+const readingExcludes = new Map<string, Promise<string | undefined>>();
 
 /** The user's global excludes file, when there is one. */
-export function globalExcludesFile(): string | undefined {
+export async function globalExcludesFile(): Promise<string | undefined> {
   const config = process.env.XDG_CONFIG_HOME
     ? path.join(process.env.XDG_CONFIG_HOME, 'git')
     : path.join(os.homedir(), '.config/git');
@@ -63,22 +63,44 @@ export function globalExcludesFile(): string | undefined {
     .join('\0');
   let file = configuredExcludes?.key === key ? configuredExcludes.file : undefined;
   if (configuredExcludes?.key !== key) {
-    const configured = spawnSync(
-      'git',
-      ['config', '--global', '--path', '--get', 'core.excludesFile'],
-      { encoding: 'utf8', timeout: 5000 },
-    );
-    file = configured.status === 0 ? configured.stdout.trim() || undefined : undefined;
-    // A timed out read is not kept, so the next call asks again.
-    if (!configured.error) configuredExcludes = { key, file };
+    let reading = readingExcludes.get(key);
+    if (!reading) {
+      reading = runGit(
+        '/',
+        ['config', '--global', '--path', '--get', 'core.excludesFile'],
+        undefined,
+        true,
+        {
+          timeout_ms: 5000,
+          // The user's own global configuration, which runGit otherwise hides.
+          env: {
+            HOME: process.env.HOME,
+            XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+            GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
+          },
+        },
+      )
+        .then((configured) => {
+          const found =
+            configured.exit_code === 0
+              ? configured.stdout.toString().trim() || undefined
+              : undefined;
+          // A timed out read is not kept, so the next call asks again.
+          if (configured.exit_code !== null) configuredExcludes = { key, file: found };
+          return found;
+        })
+        .finally(() => readingExcludes.delete(key));
+      readingExcludes.set(key, reading);
+    }
+    file = await reading;
   }
   file ??= path.join(config, 'ignore');
   return existsSync(file) ? file : undefined;
 }
 
 /** `-c` arguments that apply the user's global excludes file, which runGit's environment hides. */
-export function globalExcludes(): string[] {
-  const file = globalExcludesFile();
+export async function globalExcludes(): Promise<string[]> {
+  const file = await globalExcludesFile();
   return file ? ['-c', `core.excludesFile=${file}`] : [];
 }
 
@@ -126,7 +148,7 @@ async function stageWorktree(
 ): Promise<void> {
   copyWorktreeIndex(worktree, index);
   await git(['read-tree', '--reset', head]);
-  await git([...globalExcludes(), 'add', '-A']);
+  await git([...(await globalExcludes()), 'add', '-A']);
 }
 
 /**
@@ -372,7 +394,9 @@ export async function restoreCheckpoint(worktree: string, checkpoint: string): P
   );
   const outside = [
     ...paths(await git(['ls-files', '-z'])),
-    ...paths(await git([...globalExcludes(), 'ls-files', '-z', '--others', '--exclude-standard'])),
+    ...paths(
+      await git([...(await globalExcludes()), 'ls-files', '-z', '--others', '--exclude-standard']),
+    ),
   ].filter((file) => !inCheckpoint.has(file));
   await git(['read-tree', '--reset', '-u', checkpoint]);
   // check-ignore exits 1 when none of the files is ignored by the checkpoint's rules.
@@ -380,7 +404,7 @@ export async function restoreCheckpoint(worktree: string, checkpoint: string): P
     outside.length
       ? paths(
           await git(
-            [...globalExcludes(), 'check-ignore', '-z', '--stdin'],
+            [...(await globalExcludes()), 'check-ignore', '-z', '--stdin'],
             Buffer.from(outside.map((file) => `${file}\0`).join('')),
             [0, 1],
           ),

@@ -8,12 +8,12 @@ import { numstatFiles } from '../../packages/control/dist/source-git.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, gitRuns, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 /** A session whose first turn has ended, with its ready worktree and the source HEAD it started from. */
 async function idleSession(f: Fixture) {
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -42,7 +42,7 @@ const discard = (f: Fixture, sessionId: string, principal: Principal = user) =>
   );
 
 it('lists committed, uncommitted and untracked changes against the session base commit', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
   changeWorktree(workspace.path);
   const diff = await f.control.sessionDiff(user, session.id);
@@ -66,7 +66,7 @@ it('lists committed, uncommitted and untracked changes against the session base 
 it.each(['answer.txt', 'answer.txt\n'])(
   'counts the lines of an untracked symbolic link to %j in the list as the diff does',
   async (target) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { session, workspace } = await idleSession(f);
     symlinkSync(target, path.join(workspace.path, 'link.txt'));
     const diff = await f.control.sessionDiff(user, session.id);
@@ -77,7 +77,7 @@ it.each(['answer.txt', 'answer.txt\n'])(
 );
 
 it('lists a session as ready only once it has commits and nothing uncommitted', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   // The list reuses a worktree read for two seconds; an edit outside a turn shows after that.
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -118,7 +118,7 @@ it('lists a session as ready only once it has commits and nothing uncommitted', 
 });
 
 it('counts untracked lines without Git, binary files as none and only the first 2000 files', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { workspace } = await idleSession(f);
   writeFileSync(path.join(workspace.path, 'a-last-line.txt'), 'one\ntwo');
   writeFileSync(path.join(workspace.path, 'binary.bin'), 'a\0b\nc\n');
@@ -134,7 +134,7 @@ it('counts untracked lines without Git, binary files as none and only the first 
 }, 120000);
 
 it('stops reading untracked files one by one past the diff bound and leaves their counts unknown', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   mkdirSync(path.join(workspace.path, 'many'));
   for (let index = 0; index <= 200; index++)
@@ -229,7 +229,7 @@ it.each([
 ])(
   'diffs untracked $name as a no-index diff of each file does',
   async ({ write }) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { session, workspace } = await idleSession(f);
     write(workspace.path);
     const diff = await f.control.sessionDiff(user, session.id);
@@ -244,7 +244,7 @@ it.each([
 );
 
 it('diffs any number of untracked files with the same git runs', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const few = await idleSession(f),
     many = await idleSession(f);
   for (const [{ workspace }, count] of [
@@ -264,7 +264,7 @@ it('diffs any number of untracked files with the same git runs', async () => {
 });
 
 it('reads the session diff once until the session has new activity', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   changeWorktree(workspace.path);
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -292,7 +292,7 @@ it('reads the session diff once until the session has new activity', async () =>
 });
 
 it('discards an idle session and removes its worktree', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   changeWorktree(workspace.path);
   discard(f, session.id);
@@ -310,9 +310,9 @@ it('discards an idle session and removes its worktree', async () => {
 });
 
 it('closes the native process of a running session before discarding it', async () => {
-  const f = workbenchFixture({ delay: 4000 });
+  const f = await workbenchFixture({ delay: 4000 });
   const close = vi.spyOn(f.adapter, 'close');
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'running',
@@ -337,7 +337,7 @@ it('closes the native process of a running session before discarding it', async 
 });
 
 it('refuses to discard twice, a session without a worktree and a non-user principal', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   const planner: Principal = {
     id: 'planner',
@@ -365,7 +365,7 @@ it('refuses to discard twice, a session without a worktree and a non-user princi
 });
 
 it('refuses a session diff to a principal outside the project', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   const outsider: Principal = {
     id: 'outsider',

@@ -31,10 +31,10 @@ async function sessionTools(extra: Partial<Session> = {}) {
     await daemon.close();
     rmSync(root, { recursive: true, force: true });
   });
-  const project = daemon.control.execute(
+  const project = (await daemon.control.execute(
     user,
     command(user.id, 'project.open', { name: 'browser', roots: [path.join(root, 'project')] }),
-  ) as Project;
+  )) as Project;
   const session = daemon.store.insert<Session>('sessions', {
     id: 'browsing-session',
     revision: 1,

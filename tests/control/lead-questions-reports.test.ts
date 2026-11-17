@@ -13,7 +13,7 @@ import type { ControlContext } from '../../packages/control/src/context.js';
 import { eventually, settle, user } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const planOf = (f: Fixture, id: string) => f.store.must<BoardPlan>('board_plans', id);
 const principal = (f: Fixture, session: Session, role: 'lead' | 'worker'): Principal => ({
@@ -24,7 +24,7 @@ const principal = (f: Fixture, session: Session, role: 'lead' | 'worker'): Princ
   expires_at: f.store.now() + 60_000,
 });
 async function planned(f: Fixture, direct = false) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   const owner = principal(f, lead, 'lead');
   f.call(
@@ -66,7 +66,7 @@ const ask = (f: Fixture, owner: Principal) =>
   f.call<{ id: string }>('lead.ask', { project_id: f.project.id, ...question }, null, owner);
 
 it('posts a question without ending the lead turn, waits only on named tasks, and delivers its answer', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, owner } = await planned(f);
   const running = f.call<SessionTurn>(
     'session.send',
@@ -152,7 +152,7 @@ it('posts a question without ending the lead turn, waits only on named tasks, an
   });
   await f.control.tick();
   expect(f.store.list<Session>('sessions').some((s) => s.task?.id === 'format')).toBe(true);
-  const directFixture = workbenchFixture();
+  const directFixture = await workbenchFixture();
   const { owner: directOwner } = await planned(directFixture, true);
   const schema = inputSchemas['lead.ask'];
   for (const options of [['CSV'], ['a', 'b', 'c', 'd', 'e']])
@@ -194,9 +194,9 @@ it.each([
 ])(
   'delivers a blocked report for %s and waits without automatic merge or handbacks',
   async (reason) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { lead } = await planned(f);
-    const worker = boundTaskSession(f, lead.id, 'format');
+    const worker = await boundTaskSession(f, lead.id, 'format');
     await settle(f, worker);
     const turns = f.turns(worker.id).length;
     f.call(
@@ -267,9 +267,9 @@ it.each([
 );
 
 it('keeps a blocked report in needs-you when its lead has closed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead } = await planned(f);
-  const worker = boundTaskSession(f, lead.id, 'format');
+  const worker = await boundTaskSession(f, lead.id, 'format');
   await settle(f, worker);
   const idle = current(f, lead.id);
   f.store.update('sessions', { ...idle, state: 'closed' as const }, idle.revision);
@@ -302,9 +302,9 @@ it('keeps a blocked report in needs-you when its lead has closed', async () => {
 it.each(['done', 'done_with_concerns'])(
   'preserves the done report status %s in the lead note and event',
   async (status) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { lead } = await planned(f);
-    const worker = boundTaskSession(f, lead.id, 'format');
+    const worker = await boundTaskSession(f, lead.id, 'format');
     await settle(f, worker);
     await f.call(
       'task.report',

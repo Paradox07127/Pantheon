@@ -12,10 +12,10 @@ import { workbenchFixture } from './workbench-fixture.js';
 
 /** The model input of the first turn of a session created with these extra fields. */
 async function firstInput(extra: Record<string, unknown>) {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
   const start = vi.spyOn(f.adapter, 'start');
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'A habit tracker for runners',
@@ -92,7 +92,7 @@ it.each([
 ])(
   'gives a session with purpose %s the lead planning instructions: %s',
   async (purpose, planned) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
     Object.assign(ctx, {
       issueSessionCredential: () => ({
@@ -100,7 +100,7 @@ it.each([
         daemon_url: 'http://127.0.0.1:4321',
       }),
     });
-    const session = f.call<Session>('session.create', {
+    const session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'A habit tracker for runners',
@@ -113,8 +113,8 @@ it.each([
   },
 );
 
-it('rejects a purpose it does not know', () => {
-  const f = workbenchFixture();
+it('rejects a purpose it does not know', async () => {
+  const f = await workbenchFixture();
   expect(() =>
     f.call('session.create', {
       project_id: f.project.id,
@@ -140,7 +140,7 @@ it('has the setup guide settle requirements a few questions at a time and build 
 });
 
 it('reads a project folder with fewer than three files as empty, as the baseline does', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   expect((await f.control.projectFactsRead(user, f.project.id)).empty).toBe(true);
   mkdirSync(path.join(f.source, 'src'));
   writeFileSync(path.join(f.source, 'src/index.ts'), 'export {};\n');

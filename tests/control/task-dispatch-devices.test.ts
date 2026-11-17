@@ -77,7 +77,7 @@ async function deviceBoard(config: Record<string, unknown>) {
     revision: number | null = null,
     principal: Principal = user,
   ) => control.execute(principal, command(principal.id, type, input, revision)) as T;
-  const project = call<Project>('project.open', { name: 'Device project', roots: [source] });
+  const project = await call<Project>('project.open', { name: 'Device project', roots: [source] });
   const current = (sessionId: string) => store.must<Session>('sessions', sessionId);
   const settle = async (session: Session) => {
     await awaitWorkspaceReady(control, session.workspace_id!);
@@ -92,7 +92,7 @@ async function deviceBoard(config: Record<string, unknown>) {
       10000,
     );
   };
-  const leadSession = call<Session>('session.create', {
+  const leadSession = await call<Session>('session.create', {
     project_id: project.id,
     runtime: adapter.name,
     input: 'Plan the GPU work',
@@ -330,7 +330,7 @@ it('counts a device resource named like an object property', async () => {
 });
 
 const userOpens = (f: Awaited<ReturnType<typeof deviceBoard>>, taskId: string) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: 'fixture',
     task_id: `${f.leadId}:${taskId}`,
@@ -340,7 +340,7 @@ const userOpens = (f: Awaited<ReturnType<typeof deviceBoard>>, taskId: string) =
 it('opens the session the user starts for a task on the task device', async () => {
   const f = await deviceBoard(devices);
   f.plan([reportTask('train', onBuildBox)]);
-  const session = userOpens(f, 'train');
+  const session = await userOpens(f, 'train');
   expect(session.device_id).toBe('build-box');
   await f.settle(session);
 });

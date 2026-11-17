@@ -21,9 +21,12 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-function setup(turnSummarizer: (prompt: string, signal: AbortSignal) => Promise<Reply>) {
+async function setup(turnSummarizer: (prompt: string, signal: AbortSignal) => Promise<Reply>) {
   const userConfigDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-recap-config-'));
-  const f = fixture({ managedWorkspaces: true, controlOptions: { turnSummarizer, userConfigDir } });
+  const f = await fixture({
+    managedWorkspaces: true,
+    controlOptions: { turnSummarizer, userConfigDir },
+  });
   cleanups.push(async () => {
     await f.close();
     rmSync(userConfigDir, { recursive: true, force: true });
@@ -34,10 +37,10 @@ function setup(turnSummarizer: (prompt: string, signal: AbortSignal) => Promise<
   git(f.projectRoot, 'commit', '--quiet', '-m', 'Initial files');
   return f;
 }
-type Fixture = ReturnType<typeof setup>;
+type Fixture = Awaited<ReturnType<typeof setup>>;
 
 async function completeTurn(f: Fixture, input: string) {
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input,
@@ -107,7 +110,7 @@ describe('session recaps', () => {
       },
     ];
     const summarizer = vi.fn(async (_prompt: string, _signal: AbortSignal) => replies.shift()!);
-    const f = setup(summarizer);
+    const f = await setup(summarizer);
     const input = `Fix the login redirect${'.'.repeat(3000)}`;
     const { session, turn } = await completeTurn(f, input);
     await eventually(() => recaps(f).length === 1);
@@ -176,7 +179,7 @@ describe('session recaps', () => {
     ],
   ])('writes no recap for %s', async (_name, prepare) => {
     const summarizer = vi.fn(async () => ({ text: json('First recap') }));
-    const f = setup(summarizer);
+    const f = await setup(summarizer);
     const { session, turn } = await completeTurn(f, 'Fix the login redirect');
     await eventually(() => recaps(f).length === 1);
     prepare(f, turn);
@@ -194,7 +197,7 @@ describe('session recaps', () => {
       async () => ({ text: json('Third recap') }),
     ];
     const summarizer = vi.fn(async (_prompt: string, _signal: AbortSignal) => replies.shift()!());
-    const f = setup(summarizer);
+    const f = await setup(summarizer);
     const { session, turn } = await completeTurn(f, 'Fix the login redirect');
     await eventually(() => recaps(f).length === 1);
     inject(f, session.id, turn.id, { kind: 'turn.completed', status: 'completed' });
@@ -217,7 +220,7 @@ describe('session recaps', () => {
   ])('writes no recap when the reply is %s', async (_name, text) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const summarizer = vi.fn(async () => ({ text }));
-    const f = setup(summarizer);
+    const f = await setup(summarizer);
     const { session } = await completeTurn(f, 'Fix the login redirect');
     await eventually(() => logged.mock.calls.length === 1);
     expect(recaps(f)).toEqual([]);
@@ -228,7 +231,7 @@ describe('session recaps', () => {
     const summarizer = vi.fn(async () => ({
       text: json('标'.repeat(100), '做'.repeat(200), '批'.repeat(200)),
     }));
-    const f = setup(summarizer);
+    const f = await setup(summarizer);
     const { session } = await completeTurn(f, '修一下登录后的跳转');
     await eventually(() => recaps(f).length === 1);
     expect(f.store.must<Session>('sessions', session.id).recap).toMatchObject({
@@ -243,7 +246,7 @@ describe('session recaps', () => {
     const summarizer = vi.fn(async (): Promise<Reply> => {
       throw new Error('model unavailable');
     });
-    const f = setup(summarizer);
+    const f = await setup(summarizer);
     const { turn } = await completeTurn(f, 'Fix the login redirect');
     await eventually(() => logged.mock.calls.length === 1);
     expect(summarizer).toHaveBeenCalledTimes(1);
@@ -259,7 +262,7 @@ describe('session recaps', () => {
       signal = given;
       return new Promise<Reply>(() => {});
     });
-    const f = setup(summarizer);
+    const f = await setup(summarizer);
     const { turn } = await completeTurn(f, 'Fix the login redirect');
     await eventually(() => signal !== undefined);
     expect(f.store.must<SessionTurn>('session_turns', turn.id).state).toBe('completed');

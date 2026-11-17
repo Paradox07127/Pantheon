@@ -14,7 +14,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 const codex = { runtime: 'codex', model: 'gpt-fixture', effort: 'high' } as const;
 
@@ -42,12 +42,12 @@ function failure(fn: () => unknown): { code?: string; message?: string } {
   throw new Error('Expected the command to fail');
 }
 
-function setup(withLeaderboards = true) {
+async function setup(withLeaderboards = true) {
   const configDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-route-reason-'));
   const giveLeaderboards = () =>
     writeFileSync(path.join(configDir, 'leaderboards.json'), JSON.stringify(leaderboards));
   if (withLeaderboards) giveLeaderboards();
-  const f = fixture({
+  const f = await fixture({
     adapter: new FixtureAdapter(100),
     managedWorkspaces: true,
     controlOptions: { userConfigDir: configDir },
@@ -135,14 +135,14 @@ function write(f: Fixture, lead: Principal, tasks: unknown[], headline = 'Export
   );
 }
 
-it('fills in the kind of a task whose scope is all under the web app source', () => {
-  const { f, lead } = setup();
+it('fills in the kind of a task whose scope is all under the web app source', async () => {
+  const { f, lead } = await setup();
   write(f, lead, [task({ scope: ['apps/web/src/export.tsx'] })]);
   expect(taskOf(f, lead)?.kind).toEqual({ domain: 'frontend-ui', tier: 't1' });
 });
 
-it('keeps the domain the lead wrote and takes the higher tier of a scope across packages', () => {
-  const { f, lead } = setup();
+it('keeps the domain the lead wrote and takes the higher tier of a scope across packages', async () => {
+  const { f, lead } = await setup();
   write(f, lead, [
     task({
       kind: { domain: 'review', tier: 't1' },
@@ -152,14 +152,14 @@ it('keeps the domain the lead wrote and takes the higher tier of a scope across 
   expect(taskOf(f, lead)?.kind).toEqual({ domain: 'review', tier: 't3' });
 });
 
-it('rates a task t3 when its goal names a risk', () => {
-  const { f, lead } = setup();
+it('rates a task t3 when its goal names a risk', async () => {
+  const { f, lead } = await setup();
   write(f, lead, [task({ goal: 'Move the token store to a new migration' })]);
   expect(taskOf(f, lead)?.kind?.tier).toBe('t3');
 });
 
-it('refuses a lead write that leaves the first choice without route_reason and takes one with it', () => {
-  const { f, lead } = setup();
+it('refuses a lead write that leaves the first choice without route_reason and takes one with it', async () => {
+  const { f, lead } = await setup();
   const error = failure(() =>
     write(f, lead, [task({ kind: { domain: 'backend-logic', tier: 't2' }, model: 'other-model' })]),
   );
@@ -179,14 +179,14 @@ it('refuses a lead write that leaves the first choice without route_reason and t
   expect(taskOf(f, lead)?.model).toBe('other-model');
 });
 
-it('asks no route_reason for a cell the routing table has no data for', () => {
-  const { f, lead } = setup();
+it('asks no route_reason for a cell the routing table has no data for', async () => {
+  const { f, lead } = await setup();
   write(f, lead, [task({ kind: { domain: 'review', tier: 't2' }, model: 'other-model' })]);
   expect(taskOf(f, lead)?.model).toBe('other-model');
 });
 
-it('does not check again a task the write leaves as it was', () => {
-  const { f, lead, giveLeaderboards } = setup(false);
+it('does not check again a task the write leaves as it was', async () => {
+  const { f, lead, giveLeaderboards } = await setup(false);
   const old = task({ kind: { domain: 'backend-logic', tier: 't2' }, model: 'other-model' });
   write(f, lead, [old]);
   giveLeaderboards();
@@ -194,8 +194,8 @@ it('does not check again a task the write leaves as it was', () => {
   expect(planOf(f, lead)?.headline).toBe('Export ships next week');
 });
 
-it('asks no route_reason of a user edit that changes the model', () => {
-  const { f, lead } = setup();
+it('asks no route_reason of a user edit that changes the model', async () => {
+  const { f, lead } = await setup();
   write(f, lead, [task()]);
   f.call('board.plan.edit', {
     project_id: f.project.id,
@@ -206,8 +206,8 @@ it('asks no route_reason of a user edit that changes the model', () => {
   expect(taskOf(f, lead)?.model).toBe('other-model');
 });
 
-it('refuses a path other than the workflow policy gives without flow_reason and takes one with it', () => {
-  const { f, lead } = setup();
+it('refuses a path other than the workflow policy gives without flow_reason and takes one with it', async () => {
+  const { f, lead } = await setup();
   const error = failure(() =>
     write(f, lead, [task({ kind: { domain: 'backend-logic', tier: 't2' }, path: 'direct' })]),
   );
@@ -226,16 +226,16 @@ it('refuses a path other than the workflow policy gives without flow_reason and 
   expect(taskOf(f, lead)?.path).toBe('direct');
 });
 
-it('refuses a task that names a runtime this daemon does not have', () => {
-  const { f, lead } = setup();
+it('refuses a task that names a runtime this daemon does not have', async () => {
+  const { f, lead } = await setup();
   const error = failure(() => write(f, lead, [task({ runtime: 'missing-runtime' })]));
   expect(error.code).toBe('invalid_input');
   expect(error.message).toContain('api');
   expect(error.message).toContain('missing-runtime');
 });
 
-it('asks flow_reason again when the tier of a task changes or the write drops the reason', () => {
-  const { f, lead } = setup();
+it('asks flow_reason again when the tier of a task changes or the write drops the reason', async () => {
+  const { f, lead } = await setup();
   write(f, lead, [task({ kind: { domain: 'backend-logic', tier: 't1' }, path: 'direct' })]);
   const harder = failure(() =>
     write(f, lead, [task({ kind: { domain: 'backend-logic', tier: 't3' }, path: 'direct' })]),
@@ -250,8 +250,8 @@ it('asks flow_reason again when the tier of a task changes or the write drops th
   expect(dropped.message).toContain('flow_reason');
 });
 
-it('refuses a task off the default runtime without route_reason when the project uses one model', () => {
-  const { f, lead } = setup();
+it('refuses a task off the default runtime without route_reason when the project uses one model', async () => {
+  const { f, lead } = await setup();
   const claudeAdapter = new FixtureAdapter(100);
   claudeAdapter.name = 'claude';
   f.control.adapters.set(claudeAdapter.name, claudeAdapter);
@@ -324,8 +324,8 @@ function withDevices(f: Fixture) {
 
 const onGpuBox = { device: 'gpu-box', device_reason: 'Only the GPU box has CUDA' };
 
-it('refuses a task on a device that is not configured and lists the configured ones', () => {
-  const { f, lead } = setup();
+it('refuses a task on a device that is not configured and lists the configured ones', async () => {
+  const { f, lead } = await setup();
   withDevices(f);
   const error = failure(() =>
     write(f, lead, [task({ device: 'cloud-box', device_reason: 'It is fast' })]),
@@ -337,8 +337,8 @@ it('refuses a task on a device that is not configured and lists the configured o
   expect(planOf(f, lead)).toBeUndefined();
 });
 
-it('refuses a task on another device without device_reason', () => {
-  const { f, lead } = setup();
+it('refuses a task on another device without device_reason', async () => {
+  const { f, lead } = await setup();
   withDevices(f);
   const error = failure(() => write(f, lead, [task({ device: 'gpu-box' })]));
   expect(error.code).toBe('invalid_input');
@@ -347,8 +347,8 @@ it('refuses a task on another device without device_reason', () => {
   expect(taskOf(f, lead)?.device).toBe('gpu-box');
 });
 
-it('refuses a task whose needs its device lacks and names the devices that have them', () => {
-  const { f, lead } = setup();
+it('refuses a task whose needs its device lacks and names the devices that have them', async () => {
+  const { f, lead } = await setup();
   withDevices(f);
   const error = failure(() => write(f, lead, [task({ needs: ['cuda'] })]));
   expect(error.code).toBe('invalid_input');
@@ -367,8 +367,8 @@ it('refuses a task whose needs its device lacks and names the devices that have 
   expect(taskOf(f, lead)?.device).toBe('mac-mini');
 });
 
-it('refuses a task that uses more of a resource than its device has', () => {
-  const { f, lead } = setup();
+it('refuses a task that uses more of a resource than its device has', async () => {
+  const { f, lead } = await setup();
   withDevices(f);
   const error = failure(() => write(f, lead, [task({ ...onGpuBox, uses: { gpu: 2 } })]));
   expect(error.code).toBe('invalid_input');
@@ -380,8 +380,8 @@ it('refuses a task that uses more of a resource than its device has', () => {
   expect(taskOf(f, lead)?.uses).toEqual({ gpu: 1 });
 });
 
-it('checks the device for the runtime the task opens on, which the writer choice decides', () => {
-  const { f, lead } = setup();
+it('checks the device for the runtime the task opens on, which the writer choice decides', async () => {
+  const { f, lead } = await setup();
   withDevices(f);
   const claudeAdapter = new FixtureAdapter(100);
   claudeAdapter.name = 'claude';
@@ -412,8 +412,8 @@ it('checks the device for the runtime the task opens on, which the writer choice
   expect(error.message).toContain('runs on runtime claude');
 });
 
-it('asks route_reason again when the write drops the reason', () => {
-  const { f, lead } = setup();
+it('asks route_reason again when the write drops the reason', async () => {
+  const { f, lead } = await setup();
   const other = { kind: { domain: 'backend-logic', tier: 't2' }, model: 'other-model' };
   write(f, lead, [task({ ...other, route_reason: 'The user asked for this model' })]);
   const dropped = failure(() => write(f, lead, [task(other)]));

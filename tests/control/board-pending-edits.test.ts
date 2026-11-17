@@ -17,7 +17,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 function failure(fn: () => unknown): { code?: string; message?: string } {
   try {
@@ -29,9 +29,9 @@ function failure(fn: () => unknown): { code?: string; message?: string } {
 }
 
 /** A fixture whose clock moves only when the test moves it. */
-function setup() {
+async function setup() {
   const clock = { now: 1_700_000_000_000 };
-  const f = fixture({
+  const f = await fixture({
     adapter: new FixtureAdapter(100),
     managedWorkspaces: true,
     now: () => clock.now,
@@ -157,8 +157,8 @@ const setModel = (taskId: string, model = 'claude-opus-4-5') => ({
   patch: { model },
 });
 
-it('gives each pending user edit its ops, base version and creation time', () => {
-  const { f, clock } = setup();
+it('gives each pending user edit its ops, base version and creation time', async () => {
+  const { f, clock } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -178,8 +178,8 @@ it('gives each pending user edit its ops, base version and creation time', () =>
   ]);
 });
 
-it('lists an edit the lead rejected with its reason until a later user edit touches its tasks', () => {
-  const { f, clock } = setup();
+it('lists an edit the lead rejected with its reason until a later user edit touches its tasks', async () => {
+  const { f, clock } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -209,8 +209,8 @@ it('lists an edit the lead rejected with its reason until a later user edit touc
   expect(leadRow(f, lead).rejected_edits).toEqual([]);
 });
 
-it('keeps only the 20 newest rejected edits, newest first', () => {
-  const { f, clock } = setup();
+it('keeps only the 20 newest rejected edits, newest first', async () => {
+  const { f, clock } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -227,7 +227,7 @@ it('keeps only the 20 newest rejected edits, newest first', () => {
 });
 
 it('withdraws a pending user edit, leaves the lead a note that does not wake it, and resolving it is not found', async () => {
-  const { f } = setup();
+  const { f } = await setup();
   // Real worktrees, so a tick reports no failed provisioning that would wake the lead itself.
   git(f.projectRoot, 'init', '--quiet', '--initial-branch=main');
   git(f.projectRoot, 'commit', '--quiet', '--allow-empty', '-m', 'Initial commit');
@@ -262,8 +262,8 @@ it('withdraws a pending user edit, leaves the lead a note that does not wake it,
   expect(failure(() => resolve(f, lead, edit_id, 'apply')).code).toBe('not_found');
 });
 
-it('refuses to withdraw an edit in effect, decided or withdrawn with invalid_state', () => {
-  const { f } = setup();
+it('refuses to withdraw an edit in effect, decided or withdrawn with invalid_state', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -282,8 +282,8 @@ it('refuses to withdraw an edit in effect, decided or withdrawn with invalid_sta
   expect(failure(() => withdraw(f, user, lead, 'missing')).code).toBe('not_found');
 });
 
-it('refuses a withdraw from the lead', () => {
-  const { f } = setup();
+it('refuses a withdraw from the lead', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -294,8 +294,8 @@ it('refuses a withdraw from the lead', () => {
   expect(planOf(f, lead).pending_edits[0]!.status).toBe('withdrawn');
 });
 
-it('exposes only edits waiting for the lead in the project plan view', () => {
-  const { f, clock } = setup();
+it('exposes only edits waiting for the lead in the project plan view', async () => {
+  const { f, clock } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -307,8 +307,8 @@ it('exposes only edits waiting for the lead in the project plan view', () => {
   expect(read()).toEqual([]);
 });
 
-it('tracks immediate and pending edit delivery from stored application and turn events', () => {
-  const { f, clock } = setup();
+it('tracks immediate and pending edit delivery from stored application and turn events', async () => {
+  const { f, clock } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const worker = running(f, lead, 'api');
@@ -360,8 +360,8 @@ it('tracks immediate and pending edit delivery from stored application and turn 
   expect(recent()).toEqual([]);
 });
 
-it('keeps rejected and withdrawn edits out of recent delivery progress', () => {
-  const { f } = setup();
+it('keeps rejected and withdrawn edits out of recent delivery progress', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -372,8 +372,8 @@ it('keeps rejected and withdrawn edits out of recent delivery progress', () => {
   expect(leadRow(f, lead).recent_edits).toEqual([]);
 });
 
-it('lets only the user lock and unlock task order and refuses reordering through edits or updates', () => {
-  const { f } = setup(),
+it('lets only the user lock and unlock task order and refuses reordering through edits or updates', async () => {
+  const { f } = await setup(),
     lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -426,8 +426,8 @@ it('lets only the user lock and unlock task order and refuses reordering through
   ).toBe(true);
 });
 
-it('takes a named workflow off a task with null, so the default one applies again', () => {
-  const { f } = setup();
+it('takes a named workflow off a task with null, so the default one applies again', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const workflow = (id: string | null) =>

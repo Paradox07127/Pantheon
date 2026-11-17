@@ -45,7 +45,7 @@ async function approvalFixture() {
     status: 'delivered',
   }));
   let failpoint: string | undefined;
-  const f = fixture({
+  const f = await fixture({
     adapter,
     now: clock.now,
     failpoint: (name) => {
@@ -58,7 +58,7 @@ async function approvalFixture() {
     f.store.transaction(() => {});
     return { ok: true };
   });
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: adapter.name,
     input: 'Request permission',
@@ -576,8 +576,11 @@ const exportQuestions = [
 ];
 
 /** Gives the fixture session a lead whose plan has its task, when it is a task session. */
-function leadOf(f: Awaited<ReturnType<typeof approvalFixture>>, taskSession: boolean): string {
-  const lead = f.call<Session>('session.create', {
+async function leadOf(
+  f: Awaited<ReturnType<typeof approvalFixture>>,
+  taskSession: boolean,
+): Promise<string> {
+  const lead = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.session.runtime,
     input: 'Plan the export feature',
@@ -640,7 +643,7 @@ it.each([
   async (_name, taskSession, cards) => {
     const f = await approvalFixture();
     try {
-      const leadId = leadOf(f, taskSession),
+      const leadId = await leadOf(f, taskSession),
         approval = askExport(f),
         questions = boardQuestions(f, leadId);
       expect(questions).toHaveLength(cards);
@@ -670,7 +673,7 @@ it.each([
 ] as const)('sends a board answer with %s back to the task session', async (_name, extra) => {
   const f = await approvalFixture();
   try {
-    const leadId = leadOf(f, true),
+    const leadId = await leadOf(f, true),
       approval = askExport(f),
       [card] = boardQuestions(f, leadId);
     f.call('lead.question.answer', {
@@ -703,7 +706,7 @@ it.each(['approve', 'reject'] as const)(
   async (decision) => {
     const f = await approvalFixture();
     try {
-      const leadId = leadOf(f, true),
+      const leadId = await leadOf(f, true),
         approval = askExport(f);
       f.respond(
         approval,
@@ -943,11 +946,11 @@ it.each([0, 3600000])('keeps recovered approvals terminal %i ms after the reques
     const recoveredStore = new Store(f.store.file, f.clock.now);
     try {
       const restarted = new Control(recoveredStore, f.files, [f.adapter]);
-      restarted.recover();
+      await restarted.recover();
       const terminal = recoveredStore.must<Approval>('approvals', approval.id);
       expect(terminal).toMatchObject({ state: 'void', reason: 'session_lost' });
       await restarted.tick();
-      restarted.recover();
+      await restarted.recover();
       await restarted.tick();
       expect(recoveredStore.must<Approval>('approvals', approval.id)).toEqual(terminal);
       expect(
@@ -1013,7 +1016,7 @@ it('projects pending approvals with project isolation', async () => {
 
 it('delivers a queued permission decision to the fake agent and records its native resolution', async () => {
   const clock = createVirtualClock(1700000000000),
-    f = fixture({ now: clock.now, managedWorkspaces: true }),
+    f = await fixture({ now: clock.now, managedWorkspaces: true }),
     adapter = new FakeAgentAdapter({
       dir: path.join(f.root, 'agent'),
       script: {
@@ -1036,14 +1039,14 @@ it('delivers a queued permission decision to the fake agent and records its nati
       };
       control.on('events', listener);
     });
-    const session = control.execute(
+    const session = (await control.execute(
       user,
       command(user.id, 'session.create', {
         project_id: f.project.id,
         runtime: adapter.name,
         input: 'Read with permission',
       }),
-    ) as Session;
+    )) as Session;
     await awaitWorkspaceReady(control, session.workspace_id!);
     await control.tick();
     await requested;
@@ -1408,7 +1411,7 @@ it('requeues interrupted sent permission answers on recovery', async () => {
     const out = f.store.pending().find((out) => out.kind === 'permission.answer')!;
     f.store.mark(out.id, 'sent');
     const restarted = new Control(f.store, f.files, [f.adapter]);
-    restarted.recover();
+    await restarted.recover();
     expect(f.store.pending().some((entry) => entry.id === out.id)).toBe(true);
   } finally {
     await f.close();

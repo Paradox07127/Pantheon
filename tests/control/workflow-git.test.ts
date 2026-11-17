@@ -13,11 +13,11 @@ import type {
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
-import { workflowCondition } from '../../packages/control/dist/workflow-engine.js';
+import { readConditions, workflowCondition } from '../../packages/control/dist/workflow-engine.js';
 import { awaitWorkspaceReady, countingGit, eventually, gitRunsOf, settle } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const restores: (() => void)[] = [];
 afterEach(() => {
@@ -75,10 +75,10 @@ async function workflowTask(beforeMerge: WorkflowStep[]) {
       stop_scope: 'process-group',
     },
   });
-  const f = workbenchFixture({ delay: 1 });
+  const f = await workbenchFixture({ delay: 1 });
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
-  const lead = f.create('Plan the export');
+  const lead = await f.create('Plan the export');
   await settle(f, lead);
   const definition: WorkflowDefinition = {
     slots: { before_dispatch: [], before_merge: beforeMerge, after_merge: [] },
@@ -140,8 +140,8 @@ async function workflowTask(beforeMerge: WorkflowStep[]) {
 }
 
 it('reads the changed paths of a step condition from the merge base with one source rev-parse', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => current(f, session.id).state === 'open' && f.turns(session.id)[0]?.state === 'completed',
@@ -164,9 +164,9 @@ it('reads the changed paths of a step condition from the merge base with one sou
   };
   const counter = countingGit();
   restores.push(counter.restore);
-  workflowCondition(contextOf(f), step, session.id, 'before_merge');
+  await readConditions(contextOf(f), session.id, 'before_merge');
   counter.reset();
-  const changed = new Map<string, string[]>();
+  const changed = await readConditions(contextOf(f), session.id, 'before_merge');
   expect(
     workflowCondition(contextOf(f), step, session.id, 'before_merge', undefined, changed),
   ).toBe(true);

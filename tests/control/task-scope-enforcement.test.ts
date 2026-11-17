@@ -5,14 +5,14 @@ import type { BoardPlan, Principal, Project, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, insideSandbox } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadId = 'lead-session-of-plan';
 
 /** A workbench whose source repository names the user who rebases onto it. */
-function mergeFixture() {
-  const f = workbenchFixture();
+async function mergeFixture() {
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   return f;
@@ -52,7 +52,7 @@ const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessio
 
 /** An idle session bound to the board task, with its ready worktree. */
 async function taskSession(f: Fixture, taskId: string) {
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'completed' && current(f, session.id).state === 'open',
@@ -101,7 +101,7 @@ const leadOf = (f: Fixture, sessionId: string): Principal => ({
 
 /** An idle lead whose plan holds the tasks, written through update_board. */
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
@@ -131,7 +131,7 @@ async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
 
 /** An idle session the user opened for the lead's task, with its ready worktree. */
 async function leadTaskSession(f: Fixture, lead: Session, taskId: string) {
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -158,7 +158,7 @@ const mergeTask = (f: Fixture, lead: Session, taskId: string, reason: string) =>
 it.skipIf(insideSandbox)(
   'lets a lead merge files outside the task scope that no unfinished task holds, recording why',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const lead = await leadWithPlan(f, [task('first'), task('second')]);
     const { session, workspace } = await leadTaskSession(f, lead, 'first');
     commit(workspace.path, 'src/first/x.ts', 'export const x = 1;\n');
@@ -186,7 +186,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('refuses a lead merge of files outside the task scope that another unfinished task holds', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const lead = await leadWithPlan(f, [task('first'), task('second')]);
   const { session, workspace } = await leadTaskSession(f, lead, 'first');
   commit(workspace.path, 'src/second/y.ts', 'export const y = 2;\n');
@@ -197,7 +197,7 @@ it('refuses a lead merge of files outside the task scope that another unfinished
 });
 
 it('checks files committed after the block against the scope when a lead merges', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const lead = await leadWithPlan(f, [task('first'), task('second')]);
   const { session, workspace } = await leadTaskSession(f, lead, 'first');
   commit(workspace.path, 'README.md', 'Names the first module\n');
@@ -215,7 +215,7 @@ it('checks files committed after the block against the scope when a lead merges'
 });
 
 it('refuses a lead merge of a task in the plan of another lead', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const owner = await leadWithPlan(f, [task('first')]);
   const other = await leadWithPlan(f, [task('third')]);
   const { session, workspace } = await leadTaskSession(f, owner, 'first');
@@ -229,7 +229,7 @@ it('refuses a lead merge of a task in the plan of another lead', async () => {
 });
 
 it('blocks every file a report task with no scope paths merges', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setPlan(f, [task('notes', { done_when: 'report', scope: [] })]);
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
   const { session, workspace } = await taskSession(f, 'notes');
@@ -247,9 +247,9 @@ it('blocks every file a report task with no scope paths merges', async () => {
 it.skipIf(insideSandbox)(
   'blocks a later task that changed the same file outside its scope as an earlier one before rebasing it',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     // A gate rebases the later task onto the earlier one before it checks it.
-    f.call<Project>(
+    await f.call<Project>(
       'project.gate.set',
       {
         project_id: f.project.id,

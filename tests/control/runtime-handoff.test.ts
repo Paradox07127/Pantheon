@@ -199,7 +199,7 @@ it('leaves out rolled back turns and their output', () => {
   expect(before).not.toContain('Add a summary row');
 });
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadOf = (f: Fixture, leadId: string): Principal => ({
@@ -254,14 +254,14 @@ const exitedProcess = (f: Fixture, sessionId: string) => {
 
 /** A fixture project with a second writer runtime and an idle task session on the first one. */
 async function idleTaskSession(task: PlanTask = planTask({ model: 'fixture' })) {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const second = new FixtureAdapter(200);
   second.name = 'second';
   f.control.adapters.set(second.name, second);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, task);
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     model: task.model,
@@ -744,14 +744,14 @@ it('refuses lead messages queued behind a turn while the task waits to move runt
 });
 
 it('moves a task session to the default runtime when its lead removes the runtime override', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const second = new FixtureAdapter(200);
   second.name = 'second';
   f.control.adapters.set(second.name, second);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, planTask({ model: 'fixture', runtime: 'second' }));
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: 'second',
     model: 'fixture',

@@ -11,9 +11,9 @@ import { createVirtualClock } from '../acceptance/lib/clock.mjs';
 const MINUTE = 60_000;
 
 /** A project that takes external events and sources that count their polls. */
-function sourceFixture(mode: 'approve' | null, ...sources: ExternalSource[]) {
+async function sourceFixture(mode: 'approve' | null, ...sources: ExternalSource[]) {
   const clock = createVirtualClock(1700000000000),
-    f = fixture({ now: clock.now, controlOptions: { externalSources: sources } }),
+    f = await fixture({ now: clock.now, controlOptions: { externalSources: sources } }),
     ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   if (mode)
     f.call('project.externalEvents.set', { project_id: f.project.id, mode }, f.project.revision);
@@ -40,7 +40,7 @@ function counting(id: string, wait = MINUTE) {
 
 it('polls a source with the projects that take external events, then waits the time the source asked for', async () => {
   const source = counting('mail', 5 * MINUTE),
-    f = sourceFixture('approve', source);
+    f = await sourceFixture('approve', source);
   try {
     await f.poll();
     expect(source.polls).toEqual([[f.project.id]]);
@@ -58,7 +58,7 @@ it('polls a source with the projects that take external events, then waits the t
 
 it('polls no source while no project takes external events', async () => {
   const source = counting('mail'),
-    f = sourceFixture(null, source);
+    f = await sourceFixture(null, source);
   try {
     await f.poll();
     expect(source.polls).toEqual([]);
@@ -71,7 +71,7 @@ it('polls no source while no project takes external events', async () => {
 it('keeps the error of a source that failed, polls the other sources, and asks the failed one again a minute later', async () => {
   const broken = counting('mail'),
     working = counting('github'),
-    f = sourceFixture('approve', broken, working);
+    f = await sourceFixture('approve', broken, working);
   try {
     broken.failure = 'gh: not logged in';
     await f.poll();
@@ -92,7 +92,7 @@ it('keeps the error of a source that failed, polls the other sources, and asks t
 
 it('polls the sources from the daemon tick without waiting for them', async () => {
   const source = counting('mail'),
-    f = sourceFixture('approve', source);
+    f = await sourceFixture('approve', source);
   try {
     await eventually(
       () => source.polls.length === 1,

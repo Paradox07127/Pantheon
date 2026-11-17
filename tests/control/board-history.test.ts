@@ -3,10 +3,10 @@ import type { BoardPlan, Milestone, Session, SessionTurn, StepRun } from '@panth
 import { user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
-function leadWithPlan(f: Fixture, taskIds: string[]) {
-  const lead = f.create('Plan the export feature');
+async function leadWithPlan(f: Fixture, taskIds: string[]) {
+  const lead = await f.create('Plan the export feature');
   f.call(
     'board.plan.update',
     {
@@ -63,9 +63,9 @@ const gate = (f: Fixture, session: Session, exit_code: number) =>
 const historyTask = (f: Fixture, id: string) =>
   f.control.boardHistory(user, f.project.id).tasks.find((task) => task.id === id)!;
 
-it('counts gate attempts toward the generation the session worked on when each gate ran', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, ['exports']);
+it('counts gate attempts toward the generation the session worked on when each gate ran', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
   const worker = taskWorker(f, lead.id, 'exports');
   gate(f, worker, 1);
   gate(f, worker, 0);
@@ -97,9 +97,9 @@ it('counts gate attempts toward the generation the session worked on when each g
   expect(historyTask(f, `${lead.id}:exports`)).toHaveProperty('gate_passed_on_attempt', 1);
 });
 
-it('does not count the turn a workflow prompt step queues on the task session as a handback', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, ['exports']);
+it('does not count the turn a workflow prompt step queues on the task session as a handback', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
   const worker = taskWorker(f, lead.id, 'exports');
   const turn: SessionTurn = {
     id: 'changelog-turn',
@@ -144,9 +144,9 @@ it('does not count the turn a workflow prompt step queues on the task session as
   expect(history.days.reduce((sum, day) => sum + day.handbacks, 0)).toBe(0);
 });
 
-it('gives a revised milestone no reached time until it is accepted again', () => {
-  const f = workbenchFixture();
-  const merged = f.create('Merge the export');
+it('gives a revised milestone no reached time until it is accepted again', async () => {
+  const f = await workbenchFixture();
+  const merged = await f.create('Merge the export');
   const ended = f.store.must<Session>('sessions', merged.id);
   f.store.update<Session>(
     'sessions',
@@ -180,9 +180,9 @@ it('gives a revised milestone no reached time until it is accepted again', () =>
   expect(reached()).toMatchObject({ state: 'completed', reached_at: again });
 });
 
-it('keeps reading the history after the clock steps back across local midnight', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, ['exports']);
+it('keeps reading the history after the clock steps back across local midnight', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
   const plan = f.store.must<BoardPlan>('board_plans', lead.id);
   const now = vi.spyOn(f.store, 'now').mockReturnValue(new Date(2027, 10, 17, 0, 1).getTime());
   f.store.event('board.plan_updated', plan, f.project.id, plan);
@@ -192,9 +192,9 @@ it('keeps reading the history after the clock steps back across local midnight',
   expect(days.at(-1)).toMatchObject({ date: '2027-11-17', decisions: 1 });
 });
 
-it('reads only the project rows of turns, step runs, approvals and milestones', () => {
-  const f = workbenchFixture();
-  leadWithPlan(f, ['exports']);
+it('reads only the project rows of turns, step runs, approvals and milestones', async () => {
+  const f = await workbenchFixture();
+  await leadWithPlan(f, ['exports']);
   const list = vi.spyOn(f.store, 'list');
   f.control.boardHistory(user, f.project.id);
   const tables = new Set(list.mock.calls.map(([table]) => table));
@@ -202,9 +202,9 @@ it('reads only the project rows of turns, step runs, approvals and milestones', 
     expect(tables).not.toContain(table);
 });
 
-it('counts the parts of one parallel dispatch as one attempt', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, ['exports']);
+it('counts the parts of one parallel dispatch as one attempt', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
   const one = taskWorker(f, lead.id, 'exports', 'exports-part-one');
   const two = taskWorker(f, lead.id, 'exports', 'exports-part-two');
   f.store.event('task.dispatched', lead, f.project.id, {
@@ -215,9 +215,9 @@ it('counts the parts of one parallel dispatch as one attempt', () => {
   expect(historyTask(f, `${lead.id}:exports`)).toMatchObject({ attempts: 1 });
 });
 
-it('keeps the reason of a rejected approval inside a parallel step that then fails', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, ['exports']);
+it('keeps the reason of a rejected approval inside a parallel step that then fails', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
   const approval = { id: 'sign-off', title: 'Sign off', kind: { type: 'approval' as const } };
   const run = (id: string, step: StepRun['step'], state: StepRun['state']) => {
     const row = f.store.insert<StepRun>('workflow_step_runs', {
@@ -254,9 +254,9 @@ it('keeps the reason of a rejected approval inside a parallel step that then fai
   });
 });
 
-it('completes a task when its last unmerged part is discarded', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, ['exports']);
+it('completes a task when its last unmerged part is discarded', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
   const one = taskWorker(f, lead.id, 'exports', 'exports-part-one');
   const two = taskWorker(f, lead.id, 'exports', 'exports-part-two');
   const end = (session: Session, outcome: 'merged' | 'discarded', at: Date) => {
@@ -276,9 +276,9 @@ it('completes a task when its last unmerged part is discarded', () => {
   expect(days.find((day) => day.date === '2027-10-04')).toMatchObject({ merged: 1 });
 });
 
-it('reads a direct task claimed by its lead under the lead session', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, ['exports']);
+it('reads a direct task claimed by its lead under the lead session', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
   f.store.event('task.claimed', lead, f.project.id, { task_id: 'exports', generation: 1 });
   expect(historyTask(f, `${lead.id}:exports`)).toMatchObject({
     session_id: lead.id,
@@ -287,9 +287,9 @@ it('reads a direct task claimed by its lead under the lead session', () => {
   });
 });
 
-it('records a lead claiming its direct task as a start decision', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, ['exports']);
+it('records a lead claiming its direct task as a start decision', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, ['exports']);
   f.store.event('task.claimed', lead, f.project.id, { task_id: 'exports', generation: 1 });
   const history = f.control.boardHistory(user, f.project.id);
   expect(history.decisions.map(({ kind, title }) => ({ kind, title }))).toEqual([

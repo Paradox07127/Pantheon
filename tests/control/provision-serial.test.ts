@@ -32,8 +32,8 @@ exec "${realGit}" "$@"
   chmodSync(path.join(bin, 'git'), 0o755);
   process.env.PATH = `${bin}:${realPath}`;
 
-  const f = workbenchFixture();
-  const sessions = [f.create('One'), f.create('Two'), f.create('Three')];
+  const f = await workbenchFixture();
+  const sessions = [await f.create('One'), await f.create('Two'), await f.create('Three')];
   for (const session of sessions) await awaitWorkspaceReady(f.control, session.workspace_id!);
 
   const lines = readFileSync(log, 'utf8').trim().split('\n');

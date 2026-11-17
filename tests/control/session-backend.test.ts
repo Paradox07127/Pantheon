@@ -72,11 +72,11 @@ class RecordingAdapter extends FixtureAdapter {
   }
 }
 
-function setup(delay = 40) {
+async function setup(delay = 40) {
   const configDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-user-config-'));
   writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(userConfig));
   const adapter = new RecordingAdapter(delay);
-  const f = fixture({
+  const f = await fixture({
     adapter,
     managedWorkspaces: true,
     controlOptions: { userConfigDir: configDir, readProcess: () => undefined },
@@ -90,7 +90,7 @@ function setup(delay = 40) {
   git(f.projectRoot, 'add', '.');
   git(f.projectRoot, 'commit', '--quiet', '-m', 'Initial files');
   const create = (input: Record<string, unknown>) =>
-    f.call<Session>('session.create', {
+    f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       input: 'Work through the backend',
       ...input,
@@ -111,16 +111,16 @@ function setup(delay = 40) {
 }
 
 it('hands the user configuration directory to the native session', async () => {
-  const { adapter, configDir, create, settled } = setup();
-  const session = create({ runtime: 'fixture' });
+  const { adapter, configDir, create, settled } = await setup();
+  const session = await create({ runtime: 'fixture' });
   await settled(session);
   expect(adapter.launches[0]!.spec.user_config_dir).toBe(configDir);
 });
 
 it('starts a session on the chosen backend and keeps its key out of the database', async () => {
   vi.stubEnv(keyVariable, backendKey);
-  const { f, adapter, create, settled } = setup();
-  const session = create({ runtime: 'fixture', backend: 'relay' });
+  const { f, adapter, create, settled } = await setup();
+  const session = await create({ runtime: 'fixture', backend: 'relay' });
   expect(session.backend_id).toBe('relay');
   await settled(session);
   expect(adapter.launches).toHaveLength(1);
@@ -139,8 +139,8 @@ it('starts a session on the chosen backend and keeps its key out of the database
       expect(JSON.stringify(row)).not.toContain(backendKey);
 });
 
-it('refuses a backend the configuration lacks or the runtime cannot send to', () => {
-  const { create } = setup();
+it('refuses a backend the configuration lacks or the runtime cannot send to', async () => {
+  const { create } = await setup();
   expect(() => create({ runtime: 'fixture', backend: 'missing' })).toThrow(
     expect.objectContaining({ code: 'invalid_input', message: 'Unknown backend missing' }),
   );
@@ -152,9 +152,9 @@ it('refuses a backend the configuration lacks or the runtime cannot send to', ()
   );
 });
 
-it('lists the configured backends with the runtimes that can send to each, never the key', () => {
+it('lists the configured backends with the runtimes that can send to each, never the key', async () => {
   vi.stubEnv(keyVariable, backendKey);
-  const { f } = setup();
+  const { f } = await setup();
   const listed = f.control.backendList(user);
   expect(listed).toEqual([
     {
@@ -203,8 +203,8 @@ it('lists the configured backends with the runtimes that can send to each, never
   ]);
 });
 
-it('lists backends only to the user', () => {
-  const { f } = setup();
+it('lists backends only to the user', async () => {
+  const { f } = await setup();
   expect(() => f.control.backendList({ id: 'agent', role: 'planner' })).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
@@ -212,8 +212,8 @@ it('lists backends only to the user', () => {
 
 it('shows the backend of a session in the session list until it is cleared', async () => {
   vi.stubEnv(keyVariable, backendKey);
-  const { f, create, settled, revision } = setup();
-  const session = create({ runtime: 'fixture', backend: 'relay' });
+  const { f, create, settled, revision } = await setup();
+  const session = await create({ runtime: 'fixture', backend: 'relay' });
   await settled(session);
   const listed = () => f.control.sessionList(user, f.project.id).find((s) => s.id === session.id)!;
   expect(listed().backend_id).toBe('relay');
@@ -221,9 +221,9 @@ it('shows the backend of a session in the session list until it is cleared', asy
   expect(listed()).not.toHaveProperty('backend_id');
 });
 
-it('takes the runtime from the model family when none is given', () => {
-  const { create } = setup();
-  const session = create({ model: 'fixture-x' });
+it('takes the runtime from the model family when none is given', async () => {
+  const { create } = await setup();
+  const session = await create({ model: 'fixture-x' });
   expect(session).toMatchObject({ runtime: 'fixture', requested_model: 'fixture-x' });
   const missing = expect.objectContaining({
     code: 'invalid_input',
@@ -235,7 +235,7 @@ it('takes the runtime from the model family when none is given', () => {
 
 it('turns fast mode off when the model on the new backend has none', async () => {
   vi.stubEnv(keyVariable, backendKey);
-  const { f, adapter, settled, revision } = setup();
+  const { f, adapter, settled, revision } = await setup();
   vi.spyOn(adapter, 'models').mockResolvedValue([
     {
       id: 'fixture',
@@ -267,8 +267,8 @@ it('turns fast mode off when the model on the new backend has none', async () =>
 
 it('switches the backend between turns and resumes the native session on it', async () => {
   vi.stubEnv(keyVariable, backendKey);
-  const { f, adapter, create, settled, live, revision } = setup();
-  const session = create({ runtime: 'fixture', backend: 'relay' });
+  const { f, adapter, create, settled, live, revision } = await setup();
+  const session = await create({ runtime: 'fixture', backend: 'relay' });
   await settled(session);
   expect(live(session)).toBe(true);
   const changed = f.call<Session>(
@@ -315,8 +315,8 @@ it('switches the backend between turns and resumes the native session on it', as
 
 it('takes the effort chosen with the backend and keeps the stored one when none is given', async () => {
   vi.stubEnv(keyVariable, backendKey);
-  const { f, create, settled, revision } = setup();
-  const session = create({ runtime: 'fixture', backend: 'relay', effort: 'low' });
+  const { f, create, settled, revision } = await setup();
+  const session = await create({ runtime: 'fixture', backend: 'relay', effort: 'low' });
   await settled(session);
   const changed = f.call<Session>(
     'session.setBackend',
@@ -343,8 +343,8 @@ it('takes the effort chosen with the backend and keeps the stored one when none 
 
 it('refuses a backend for a session on a remote device and still clears one', async () => {
   vi.stubEnv(keyVariable, backendKey);
-  const { f, create, settled, revision } = setup();
-  const session = create({ runtime: 'fixture' });
+  const { f, create, settled, revision } = await setup();
+  const session = await create({ runtime: 'fixture' });
   await settled(session);
   const idle = f.store.must<Session>('sessions', session.id);
   f.store.update<Session>('sessions', { ...idle, device_id: 'build-box' }, idle.revision);
@@ -357,8 +357,8 @@ it('refuses a backend for a session on a remote device and still clears one', as
 
 it('refuses to switch the backend during a turn', async () => {
   vi.stubEnv(keyVariable, backendKey);
-  const { f, create, settled, revision } = setup(1000);
-  const session = create({ runtime: 'fixture', backend: 'relay' });
+  const { f, create, settled, revision } = await setup(1000);
+  const session = await create({ runtime: 'fixture', backend: 'relay' });
   await settled(session, 'running');
   expect(() =>
     f.call(
@@ -374,8 +374,8 @@ it('refuses to switch the backend during a turn', async () => {
 
 it('fails the turn with the reason when the backend key is not set', async () => {
   vi.stubEnv(keyVariable, undefined);
-  const { adapter, create, settled, turns } = setup();
-  const session = create({ runtime: 'fixture', backend: 'relay' });
+  const { adapter, create, settled, turns } = await setup();
+  const session = await create({ runtime: 'fixture', backend: 'relay' });
   await settled(session, 'failed');
   expect(adapter.launches).toHaveLength(0);
   expect(turns(session)[0]!.delivery_reason).toMatch(/backend_key_missing|environment variable/);

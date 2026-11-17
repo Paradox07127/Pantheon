@@ -4,10 +4,10 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-it('answers with the MCP servers the session last reported at its start, without asking the runtime', () => {
-  const f = workbenchFixture();
-  const session = f.create();
-  const other = f.create('Read something else');
+it('answers with the MCP servers the session last reported at its start, without asking the runtime', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
+  const other = await f.create('Read something else');
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const adapter = ctx.adapters.get(session.runtime)!;
   adapter.mcpStatus = () => {
@@ -56,9 +56,9 @@ it('answers with the MCP servers the session last reported at its start, without
   );
 });
 
-it('names the servers a session loaded when its start reports none', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('names the servers a session loaded when its start reports none', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   agentEvent(ctx, session.id, {
     key: 'extensions-applied',

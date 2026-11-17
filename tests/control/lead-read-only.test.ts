@@ -10,7 +10,7 @@ import type {
 import { awaitWorkspaceReady, eventually, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadOf = (f: Fixture, sessionId: string): Principal => ({
@@ -48,9 +48,9 @@ async function delivered(f: Fixture, send: { mock: { calls: unknown[][] } }, ses
 }
 
 it('makes lead turns read-only while the plan has an unfinished task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -80,11 +80,11 @@ it('makes lead turns read-only while the plan has an unfinished task', async () 
 });
 
 it('makes the running lead turn read-only once its plan update leaves an unfinished task', async () => {
-  const f = workbenchFixture({ delay: 5000 });
+  const f = await workbenchFixture({ delay: 5000 });
   const setTurnReadOnly = vi.fn();
   (f.adapter as HarnessAdapter).setTurnReadOnly = setTurnReadOnly;
   const send = vi.spyOn(f.adapter, 'send');
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () => send.mock.calls.length === 1,
@@ -115,9 +115,9 @@ it('makes the running lead turn read-only once its plan update leaves an unfinis
 });
 
 it('never makes turns of a session without a plan read-only', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
-  const session = f.create('Rename the answer file');
+  const session = await f.create('Rename the answer file');
   await settle(f, session);
   expect(send.mock.calls.map(([, sent]) => (sent as UserTurn).read_only ?? false)).toEqual([false]);
   expect((await delivered(f, send, session)).read_only ?? false).toBe(false);

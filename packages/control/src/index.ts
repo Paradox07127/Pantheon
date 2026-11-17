@@ -685,13 +685,13 @@ export class Control extends EventEmitter {
       projectAccess(this.ctx, principal, projectId, command.type);
       return prepareGithubReferences(this.ctx, projectId, refs).then(
         () =>
-          prepareSessionModels(this.ctx, principal, command)?.then(() => apply()) ??
+          prepareSessionModels(this.ctx, principal, command)?.then(applyPrepared) ??
           applyPrepared(),
       );
     }
     if (![key, commandKey].some((k) => this.store.receipt(k))) {
       const modelsChecked = prepareSessionModels(this.ctx, principal, command);
-      if (modelsChecked) return modelsChecked.then(() => apply());
+      if (modelsChecked) return modelsChecked.then(applyPrepared);
     }
     // Skills are checked against the runtimes' inventories, which are read asynchronously.
     const skillsChecked =
@@ -1177,10 +1177,10 @@ export class Control extends EventEmitter {
   symbolsSearch(principal: Principal, projectId: string, sessionId: string | undefined, q: string) {
     return symbolsSearch(this.ctx, principal, projectId, sessionId, q);
   }
-  recover(): void {
+  async recover(): Promise<void> {
     recoverWorkspaceProvisioning(this.ctx);
     recoverDiscardBackups(this.ctx);
-    recover(this.ctx);
+    await recover(this.ctx);
     // The first list after a start then finds the worktrees read or being read.
     this.prefetchWorktreeReads({ id: USER_PRINCIPAL_ID, role: 'user' }).catch((error) =>
       this.emit('diagnostic', error),

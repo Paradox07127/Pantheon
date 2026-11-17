@@ -55,7 +55,7 @@ export async function copyDependencyFolders(
   const listed = await runGit(
     source,
     [
-      ...globalExcludes(),
+      ...(await globalExcludes()),
       'ls-files',
       '--others',
       '--ignored',

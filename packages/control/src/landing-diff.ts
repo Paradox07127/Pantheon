@@ -309,13 +309,10 @@ function headRange(workspace: Workspace, head: GitResult): DiffRange {
   };
 }
 
-/** A workbench session's committed range: its recorded merge once merged, else its base commit to its worktree HEAD. */
-export function sessionRange(ctx: ControlContext, session: Session): DiffRange {
-  const start = rangeStart(ctx, session);
-  return 'from_sha' in start ? start : headRange(start, runGit(start.path, HEAD_COMMIT));
-}
-
-/** sessionRange without blocking the daemon; heads keeps each worktree's HEAD read for one request. */
+/**
+ * A workbench session's committed range: its recorded merge once merged, else its base commit to
+ * its worktree HEAD; heads keeps each worktree's HEAD read for one request.
+ */
 export async function sessionRangeAsync(
   ctx: ControlContext,
   session: Session,

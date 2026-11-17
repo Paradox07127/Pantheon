@@ -8,9 +8,9 @@ import type { Principal, Project, RoleUsage, Session, SessionTurn, Usage } from 
 import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-function usageFixture() {
+async function usageFixture() {
   let clock = Date.now();
-  const f = fixture({ now: () => clock });
+  const f = await fixture({ now: () => clock });
   const base = clock;
   const session = (id: string, projectId: string, tags: Partial<Session> = {}) =>
     f.store.insert<Session>('sessions', {
@@ -42,11 +42,11 @@ function usageFixture() {
 }
 
 it('groups project sessions by role and sums their tokens, tool calls and turn time', async () => {
-  const f = usageFixture();
+  const f = await usageFixture();
   try {
     const otherRoot = path.join(f.root, 'other');
     mkdirSync(otherRoot);
-    const other = f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
+    const other = await f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
     const writerA = f.session('writer-a', f.project.id);
     const reviewer = f.session('reviewer', f.project.id, { review_id: 'some-review' });
     f.session('main', f.project.id);
@@ -158,9 +158,9 @@ it.each([
     usage: { role: 'main', turns: 1, input_tokens: 0, output_tokens: 0, turns_without_usage: 1 },
   },
 ])('$name', async ({ traceEvents, usage }) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   if (traceEvents) Object.assign(f.adapter, { traceEvents });
-  const session = f.create('Rename the answer file');
+  const session = await f.create('Rename the answer file');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -189,11 +189,11 @@ it.each([
 });
 
 it('refuses a usage read from a principal of another project', async () => {
-  const f = usageFixture();
+  const f = await usageFixture();
   try {
     const otherRoot = path.join(f.root, 'other');
     mkdirSync(otherRoot);
-    const other = f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
+    const other = await f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
     const reading = f.session('usage-reader', other.id);
     const foreign: Principal = {
       id: `session:${reading.id}`,
@@ -224,10 +224,10 @@ it('serves role usage at the project.usage.read query', async () => {
     intervalMs: 60000,
   });
   try {
-    const project = daemon.control.execute(
+    const project = (await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name: 'Usage query', roots: [work] }, null),
-    ) as Project;
+    )) as Project;
     daemon.store.insert<Session>('sessions', {
       id: 'query-writer',
       revision: 1,

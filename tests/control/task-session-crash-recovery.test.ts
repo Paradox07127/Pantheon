@@ -16,11 +16,11 @@ const nativeStarts = (daemon: BenchDaemon, sessionId: string) =>
 /** A project whose lead has planned task a; the daemon that set it up is stopped. */
 async function plannedProject(bench: ReturnType<typeof crashBench>) {
   const setup = bench.start();
-  const project = setup.call<Project>('project.open', {
+  const project = await setup.call<Project>('project.open', {
     name: 'Crash project',
     roots: [bench.source],
   });
-  const lead = setup.call<Session>('session.create', {
+  const lead = await setup.call<Session>('session.create', {
     project_id: project.id,
     runtime: 'fixture',
     input: script([{ say: 'Plan the export feature' }]),

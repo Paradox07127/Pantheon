@@ -242,7 +242,7 @@ it('lists each device with its configuration entry and what holds it now', async
     path.join(configDir, 'config.json'),
     JSON.stringify({ version: 1, devices: { 'build-box': entry } }),
   );
-  const f = fixture({ controlOptions: { userConfigDir: configDir } });
+  const f = await fixture({ controlOptions: { userConfigDir: configDir } });
   try {
     const listed = await f.control.listDevices(user);
     expect(listed.map((device) => device.id)).toEqual(['local', 'build-box']);

@@ -27,7 +27,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-function traceFixture(withIndex = false) {
+async function traceFixture(withIndex = false) {
   const homes = mkdtempSync(path.join(os.tmpdir(), 'project-trace-'));
   cleanups.push(() => rmSync(homes, { recursive: true, force: true }));
   const claudeHome = path.join(homes, 'claude'),
@@ -41,7 +41,7 @@ function traceFixture(withIndex = false) {
     : undefined;
   if (trace) cleanups.push(() => trace.close());
   let clock = base;
-  const f = fixture({ now: () => clock, controlOptions: trace ? { trace } : {} });
+  const f = await fixture({ now: () => clock, controlOptions: trace ? { trace } : {} });
   cleanups.push(() => f.close());
   const record = (time: number, kind: string, entity: Entity, payload: unknown = {}) => {
     clock = time;
@@ -140,8 +140,8 @@ function traceFixture(withIndex = false) {
 }
 
 /** Two sessions of two turns each; the first turn of the first runs a passing and a failing tool. */
-function eventsFixture() {
-  const f = traceFixture();
+async function eventsFixture() {
+  const f = await traceFixture();
   const first = f.session('first'),
     second = f.session('second');
   f.turn(first, 'first-turn-1', at(10), at(20), {
@@ -161,7 +161,7 @@ const turnOf = (trace: ProjectTrace, id: string) =>
 
 describe('project trace from the event log', () => {
   it('summarizes recorded tool inputs and preserves reported shell exit codes', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('tools');
     f.turn(owner, 'tools-turn', at(0), at(30));
     const calls = [
@@ -208,7 +208,7 @@ describe('project trace from the event log', () => {
   });
 
   it('names every file a recorded tool call gives', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('files');
     f.turn(owner, 'files-turn', at(0), at(30));
     const calls = [
@@ -231,7 +231,7 @@ describe('project trace from the event log', () => {
   });
 
   it('counts only consecutive identical calls started after a failed result in the same turn', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('retries');
     f.turn(owner, 'retry-turn', at(0), at(30));
     f.turn(owner, 'next-turn', at(31), at(50));
@@ -292,7 +292,7 @@ describe('project trace from the event log', () => {
   });
 
   it('exposes reported turn cache reads and costs and omits unreported values', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('usage');
     f.turn(owner, 'reported', at(0), at(10), {
       usage: { input_tokens: 100, output_tokens: 5, cached_input_tokens: 80, cost_usd: 0 },
@@ -308,7 +308,7 @@ describe('project trace from the event log', () => {
   });
 
   it('includes reported cost and tokens on project trace turns', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('usage-project');
     f.turn(owner, 'reported-cost', at(0), at(10), {
       usage: { input_tokens: 100, output_tokens: 5, cached_input_tokens: 80, cost_usd: 0 },
@@ -324,7 +324,7 @@ describe('project trace from the event log', () => {
   });
 
   it('lists project tool calls newest first and filters the complete command', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('calls');
     f.turn(owner, 'calls-turn', at(0), at(30));
     const calls = [
@@ -382,7 +382,7 @@ describe('project trace from the event log', () => {
   });
 
   it('queries native tool commands and paths with consecutive retry counts after indexing', async () => {
-    const f = traceFixture(true);
+    const f = await traceFixture(true);
     const command = 'x'.repeat(210) + 'needle';
     const row = (second: number, extra: object) =>
       JSON.stringify({
@@ -448,7 +448,7 @@ describe('project trace from the event log', () => {
   });
 
   it('returns duration percentiles, reported cache share and failures for a project window', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('diagnosis');
     for (let index = 0; index < 6; index++) {
       const id = `measured-${index}`;
@@ -476,7 +476,7 @@ describe('project trace from the event log', () => {
   });
 
   it('reports duration percentiles and cache totals for the requested window', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('statistics');
     f.turn(owner, 'statistics-turn', at(0), at(50), {
       usage: { input_tokens: 100, output_tokens: 5, cached_input_tokens: 80 },
@@ -511,8 +511,8 @@ describe('project trace from the event log', () => {
     expect(empty.stats.tokens).not.toHaveProperty('cache_read');
   });
 
-  it('breaks down a managed request and a sub-threshold approval with independent work', () => {
-    const f = traceFixture();
+  it('breaks down a managed request and a sub-threshold approval with independent work', async () => {
+    const f = await traceFixture();
     const owner = f.session('first');
     const turn = f.turn(owner, 'turn', at(3), at(20));
     const second = f.session('second');
@@ -560,7 +560,7 @@ describe('project trace from the event log', () => {
     expect(clipped).toMatchObject({ wall_ms: 3_000, work_ms: 1_000 });
   });
   it('lists each session as a lane with its turns, tool calls, errors and active time', async () => {
-    const f = eventsFixture();
+    const f = await eventsFixture();
     const trace = await f.query(iso(0), iso(100));
     expect(trace).toMatchObject({ epoch: null, indexing: null, from: iso(0), to: iso(100) });
     expect(trace.lanes.map(({ lane }) => [lane.key, lane.source, lane.title])).toEqual([
@@ -588,7 +588,7 @@ describe('project trace from the event log', () => {
   });
 
   it('leaves out a steer delivered into the running turn', async () => {
-    const f = eventsFixture();
+    const f = await eventsFixture();
     const steer = f.store.insert<SessionTurn>('session_turns', {
       id: 'first-steer',
       revision: 1,
@@ -608,7 +608,7 @@ describe('project trace from the event log', () => {
   });
 
   it('splits a turn into wait, tool and error segments that cover it without overlap', async () => {
-    const f = eventsFixture();
+    const f = await eventsFixture();
     const turn = turnOf(await f.query(iso(0), iso(100)), 'first-turn-1');
     expect(turn).toMatchObject({ start: at(10), end: at(20), status: 'ok' });
     expect(turn.segments).toEqual([
@@ -627,7 +627,7 @@ describe('project trace from the event log', () => {
   });
 
   it('returns only the lanes and turns that intersect the window', async () => {
-    const f = eventsFixture();
+    const f = await eventsFixture();
     const trace = await f.query(iso(45), iso(70));
     expect(trace.lanes.map(({ lane }) => lane.key)).toEqual(['second']);
     expect(trace.lanes[0]!.turns.map((turn) => turn.id)).toEqual(['second-turn-2']);
@@ -635,7 +635,7 @@ describe('project trace from the event log', () => {
   });
 
   it('counts only the spans inside the window of a turn that crosses its start', async () => {
-    const f = eventsFixture();
+    const f = await eventsFixture();
     const trace = await f.query(iso(15), iso(100), 5000);
     expect(trace.lanes[0]!.turns.map((turn) => turn.id)).toEqual(['first-turn-1', 'first-turn-2']);
     const tools = trace.buckets.reduce((total, bucket) => total + bucket.tool, 0);
@@ -645,7 +645,7 @@ describe('project trace from the event log', () => {
   });
 
   it('keeps the tool calls of a turn that ran for days before the window', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const owner = f.session('long');
     const day = 24 * 60 * 60;
     f.turn(owner, 'long-turn', at(0), at(4 * day));
@@ -660,7 +660,7 @@ describe('project trace from the event log', () => {
   });
 
   it('counts each span once in the bucket of its start and widens buckets past the limit', async () => {
-    const f = eventsFixture();
+    const f = await eventsFixture();
     const trace = await f.query(iso(0), iso(100), 5000);
     expect(trace.buckets).toHaveLength(20);
     expect(trace.buckets[2]).toEqual({ at: at(10), llm: 0, tool: 1, error: 0 });
@@ -677,7 +677,7 @@ describe('project trace from the event log', () => {
   });
 
   it('returns the spans of one turn and refuses an unknown lane', async () => {
-    const f = eventsFixture();
+    const f = await eventsFixture();
     const trace = await f.control.sessionTrace(user, f.project.id, 'first', 'first-turn-1');
     expect(trace.lane).toMatchObject({ key: 'first', session_id: 'first', title: 'Session first' });
     expect(trace.spans.map((span) => span.id)).toEqual([
@@ -701,7 +701,7 @@ describe('project trace from the event log', () => {
   });
 
   it('gives no tokens to a turn whose runtime reported no token counts', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const silent = f.session('silent');
     f.turn(silent, 'silent-turn', at(10), at(20), {
       usage: { input_tokens: 0, output_tokens: 0, context_tokens: 900, tokens_unreported: true },
@@ -718,7 +718,7 @@ describe('project trace from the event log', () => {
   });
 
   it('counts the turns of the window whose tokens are unknown', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const silent = f.session('silent');
     f.turn(silent, 'silent-turn', at(10), at(20), {
       usage: { input_tokens: 0, output_tokens: 0, context_tokens: 900, tokens_unreported: true },
@@ -736,7 +736,7 @@ describe('project trace from the event log', () => {
   });
 
   it('gives zero tokens to a turn cancelled before it ran', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const silent = f.session('silent');
     const queued = f.store.insert<SessionTurn>('session_turns', {
       id: 'queued-turn',
@@ -760,7 +760,7 @@ describe('project trace from the event log', () => {
 
 describe('project trace merged with native transcripts', () => {
   it('scans once for queries less than two seconds after a complete scan', async () => {
-    const f = traceFixture(true);
+    const f = await traceFixture(true);
     const scan = vi.spyOn(f.trace!, 'scan');
     vi.useFakeTimers({ toFake: ['Date'] });
     cleanups.push(() => vi.useRealTimers());
@@ -813,7 +813,7 @@ describe('project heatmap', () => {
   }
 
   it('attributes commits through a merge and through Bash output, and counts them per day', async () => {
-    const f = traceFixture(true);
+    const f = await traceFixture(true);
     const root = f.projectRoot;
     git(root, 'init', '-q');
     writeFileSync(path.join(root, 'a.txt'), 'one\ntwo\n');
@@ -927,7 +927,7 @@ describe('project heatmap', () => {
   });
 
   it('lists each recorded merge of the days at its merge time, several of one session apart', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const lead = f.session('lead'),
       worker = f.session('worker');
     const first = f.record(local(9), 'session.merged', lead, {
@@ -960,7 +960,7 @@ describe('project heatmap', () => {
   });
 
   it('reads the commit history again only once the refs change', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const root = f.projectRoot;
     git(root, 'init', '-q');
     writeFileSync(path.join(root, 'a.txt'), 'one\n');
@@ -993,7 +993,7 @@ describe('project heatmap', () => {
   });
 
   it('leaves Pantheon checkpoint commits out of the whole history', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const root = f.projectRoot;
     git(root, 'init', '-q');
     writeFileSync(path.join(root, 'a.txt'), 'one\n');
@@ -1027,7 +1027,7 @@ describe('project heatmap', () => {
   });
 
   it('counts the project calls and errors per local hour of each day', async () => {
-    const f = traceFixture();
+    const f = await traceFixture();
     const morning = f.session('morning'),
       afternoon = f.session('afternoon');
     f.turn(morning, 'morning-turn', local(9, 10), local(9, 50));

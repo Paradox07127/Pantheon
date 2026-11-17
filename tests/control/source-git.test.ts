@@ -5,7 +5,7 @@ import { git, workbenchFixture } from './workbench-fixture.js';
 import { user } from '../helpers.js';
 
 it('counts the changed lines of files whose name holds a tab', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const tracked = 'tab\tname.txt',
     fresh = 'new\tfile.txt';
   writeFileSync(path.join(f.source, tracked), 'one\ntwo\n');

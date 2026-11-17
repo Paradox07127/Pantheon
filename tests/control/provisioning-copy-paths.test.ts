@@ -30,7 +30,7 @@ vi.mock('node:fs/promises', async (original) => {
 });
 
 it('stops copying a large copy path when provisioning is stopped', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   mkdirSync(path.join(f.source, 'large'));
   for (let index = 0; index < 200; index++)
     writeFileSync(path.join(f.source, 'large', `file-${index}`), 'content\n');
@@ -41,7 +41,7 @@ it('stops copying a large copy path when provisioning is stopped', async () => {
   );
   paced.on = true;
   try {
-    const session = f.create();
+    const session = await f.create();
     const workspace = () => f.store.must<Workspace>('workspaces', session.workspace_id!);
     await eventually(
       () => workspace().provisioning?.phase === 'copy',

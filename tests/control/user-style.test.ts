@@ -6,10 +6,10 @@ import { workbenchFixture } from './workbench-fixture.js';
 
 const css = '[data-debug-region="sidebar"]{width:240px}\n@media (max-width:600px){main{gap:0}}';
 
-function styles() {
-  const f = workbenchFixture();
-  const sessionOf = (purpose?: 'app_debug'): Principal => {
-    const session = f.call<Session>('session.create', {
+async function styles() {
+  const f = await workbenchFixture();
+  const sessionOf = async (purpose?: 'app_debug'): Promise<Principal> => {
+    const session = await f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'Make the sidebar narrower',
@@ -33,23 +33,23 @@ function styles() {
   return { f, sessionOf, run, changes, read: () => f.control.styleRead(user) };
 }
 
-it('reads an empty stylesheet that is on before the first change', () => {
-  const s = styles();
+it('reads an empty stylesheet that is on before the first change', async () => {
+  const s = await styles();
   expect(s.read()).toEqual({ css: '', enabled: true, rules: 0, revision: 0 });
   expect(s.run('style.read', {})).toEqual(s.read());
 });
 
-it('stores the stylesheet the user sets, counts its rules and announces the change', () => {
-  const s = styles();
+it('stores the stylesheet the user sets, counts its rules and announces the change', async () => {
+  const s = await styles();
   const receipt = s.run('style.set', { css });
   expect(receipt).toEqual({ css, enabled: true, rules: 3, revision: 1 });
   expect(s.read()).toEqual(receipt);
   expect(s.changes()).toEqual([{ revision: 1, enabled: true, rules: 3 }]);
 });
 
-it('lets an app debug session set the stylesheet and names it in the change', () => {
-  const s = styles();
-  const debug = s.sessionOf('app_debug');
+it('lets an app debug session set the stylesheet and names it in the change', async () => {
+  const s = await styles();
+  const debug = await s.sessionOf('app_debug');
   s.run('style.set', { css }, debug);
   expect(s.run('style.read', {}, debug)).toEqual({ css, enabled: true, rules: 3, revision: 1 });
   expect(s.changes()).toEqual([
@@ -59,14 +59,15 @@ it('lets an app debug session set the stylesheet and names it in the change', ()
     expect(() => s.run(type, { enabled: false }, debug), type).toThrow(
       expect.objectContaining({ code: 'permission_denied' }),
     );
-  expect(() => s.run('style.set', { css: '' }, s.sessionOf())).toThrow(
+  const ordinary = await s.sessionOf();
+  expect(() => s.run('style.set', { css: '' }, ordinary)).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
   expect(s.read().css).toBe(css);
 });
 
-it('refuses a stylesheet that imports or loads from outside and keeps the stored one', () => {
-  const s = styles();
+it('refuses a stylesheet that imports or loads from outside and keeps the stored one', async () => {
+  const s = await styles();
   s.run('style.set', { css });
   for (const refused of [
     '@import "https://example.com/theme.css";',
@@ -79,8 +80,8 @@ it('refuses a stylesheet that imports or loads from outside and keeps the stored
   expect(s.run('style.set', { css: inline })).toMatchObject({ css: inline, revision: 2 });
 });
 
-it('turns the stylesheet off and on keeping its CSS, and clears it', () => {
-  const s = styles();
+it('turns the stylesheet off and on keeping its CSS, and clears it', async () => {
+  const s = await styles();
   s.run('style.set', { css });
   expect(s.run('style.enable', { enabled: false })).toEqual({
     css,
@@ -104,7 +105,7 @@ it('turns the stylesheet off and on keeping its CSS, and clears it', () => {
 });
 
 it('keeps the stylesheet when control restarts', async () => {
-  const s = styles();
+  const s = await styles();
   s.run('style.set', { css });
   s.run('style.enable', { enabled: false });
   await s.f.restart();

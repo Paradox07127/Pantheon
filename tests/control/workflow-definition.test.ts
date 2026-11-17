@@ -3,12 +3,12 @@ import { FixtureAdapter } from '@pantheon/adapters';
 import { type ExtensionInventory, type Principal, type Project } from '@pantheon/domain';
 import { fixture, user } from '../helpers.js';
 
-const fixtures: ReturnType<typeof fixture>[] = [];
+const fixtures: Awaited<ReturnType<typeof fixture>>[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
 });
-const opened = () => {
-  const f = fixture();
+const opened = async () => {
+  const f = await fixture();
   fixtures.push(f);
   return f;
 };
@@ -18,8 +18,8 @@ const empty = () => ({
   review: { max_rounds: 3 },
 });
 
-it('stores and versions definitions, refuses stale writes, and projects the fixed path', () => {
-  const f = opened();
+it('stores and versions definitions, refuses stale writes, and projects the fixed path', async () => {
+  const f = await opened();
   const set = (base_version: number, definition = empty()) =>
     f.call('workflow.definition.set', { project_id: f.project.id, definition, base_version });
   expect(set(0)).toMatchObject({ definition_version: 1 });
@@ -47,8 +47,8 @@ it('stores and versions definitions, refuses stale writes, and projects the fixe
   });
 });
 
-it('allows only the user to store a definition, with prompt and review steps where they have a task to work on', () => {
-  const f = opened();
+it('allows only the user to store a definition, with prompt and review steps where they have a task to work on', async () => {
+  const f = await opened();
   const lead: Principal = {
     id: 'session:lead',
     role: 'lead',
@@ -112,7 +112,7 @@ const withSkill = (skill: { name: string; path: string }) => ({
 });
 
 it("checks a prompt step's skill against the runtimes' inventories and the project's disabled skills", async () => {
-  const f = opened();
+  const f = await opened();
   const adapter = f.adapter as FixtureAdapter & {
     inventory?: () => Promise<ExtensionInventory>;
   };
@@ -155,7 +155,7 @@ it("checks a prompt step's skill against the runtimes' inventories and the proje
 });
 
 it('limits a definition trial to tasks reaching the changed slot and asks the user to keep or revert', async () => {
-  const f = opened();
+  const f = await opened();
   const { startSlot } = await import('../../packages/control/dist/workflow-engine.js');
   const ctx = (
     f.control as unknown as { ctx: import('../../packages/control/dist/context.js').ControlContext }
@@ -242,7 +242,7 @@ it('limits a definition trial to tasks reaching the changed slot and asks the us
 });
 
 it('copies independent named definitions, switches the default and enforces project ownership and unique names', async () => {
-  const f = opened();
+  const f = await opened();
   const project_id = f.project.id;
   const original = f.control.workflowDefinition(user, project_id);
   expect(original).toMatchObject({ id: project_id, name: 'Default', is_default: true });
@@ -270,7 +270,10 @@ it('copies independent named definitions, switches the default and enforces proj
   expect(
     f.control.workflowDefinition(user, project_id, project_id).definition.review.max_rounds,
   ).toBe(3);
-  const other = f.call<Project>('project.open', { name: 'Other', roots: [opened().projectRoot] });
+  const other = await f.call<Project>('project.open', {
+    name: 'Other',
+    roots: [(await opened()).projectRoot],
+  });
   expect(() => f.control.workflowDefinition(user, other.id, copy.id)).toThrow();
   const { taskWorkflow, sessionWorkflow } =
     await import('../../packages/control/dist/workflow-engine.js');
@@ -325,7 +328,7 @@ it('copies independent named definitions, switches the default and enforces proj
   });
 });
 
-const engine = async (f: ReturnType<typeof opened>) => ({
+const engine = async (f: Awaited<ReturnType<typeof opened>>) => ({
   ...(await import('../../packages/control/dist/workflow-engine.js')),
   ctx: (
     f.control as unknown as { ctx: import('../../packages/control/dist/context.js').ControlContext }
@@ -337,7 +340,7 @@ const inSlot = (slot: 'before_dispatch' | 'before_merge' | 'after_merge', ...ids
   slots: { ...empty().slots, [slot]: ids.map(signoff) },
 });
 const insertPlan = (
-  f: ReturnType<typeof opened>,
+  f: Awaited<ReturnType<typeof opened>>,
   ids: string[],
   extra: Partial<import('@pantheon/domain').BoardPlan> = {},
 ) =>
@@ -366,14 +369,14 @@ const insertPlan = (
     updated_at: Date.now(),
     ...extra,
   });
-const trialOf = (f: ReturnType<typeof opened>) =>
+const trialOf = (f: Awaited<ReturnType<typeof opened>>) =>
   f.store.must<import('@pantheon/domain').StoredWorkflowDefinition>(
     'workflow_definitions',
     f.project.id,
   ).trial;
 
 it('keeps a task that already has runs in the changed slot on its pinned version and out of the trial', async () => {
-  const f = opened();
+  const f = await opened();
   const { startSlot, ctx } = await engine(f);
   f.call('workflow.definition.set', {
     project_id: f.project.id,
@@ -401,7 +404,7 @@ it('keeps a task that already has runs in the changed slot on its pinned version
 });
 
 it('keeps a step run without a workflow id on the original definition after the default changes', async () => {
-  const f = opened();
+  const f = await opened();
   const { startSlot, taskWorkflow, ctx } = await engine(f);
   const project_id = f.project.id;
   f.call('workflow.definition.set', {
@@ -451,7 +454,7 @@ it('keeps a step run without a workflow id on the original definition after the 
 });
 
 it('enrolls only tasks that reach the changed after-merge slot after the trial started', async () => {
-  const f = opened();
+  const f = await opened();
   const { advanceSteps, ctx } = await engine(f);
   f.call('workflow.definition.set', {
     project_id: f.project.id,

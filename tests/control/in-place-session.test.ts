@@ -24,7 +24,7 @@ import { writerTempDirectory } from '../../packages/control/dist/workspace-remov
 import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-const contextOf = (f: ReturnType<typeof workbenchFixture>) =>
+const contextOf = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   (f.control as unknown as { ctx: ControlContext }).ctx;
 
 /** Everything a write to the folder or its repository would change. */
@@ -43,8 +43,17 @@ const refusal = (run: () => unknown) => {
   throw new Error('Expected a refusal');
 };
 
+const rejection = async (run: () => Promise<unknown>) => {
+  try {
+    await run();
+  } catch (error) {
+    return error as { code: string; message: string };
+  }
+  throw new Error('Expected a refusal');
+};
+
 it('adopts a native session in its own folder without provisioning or writing to it', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const nativeId = randomUUID(),
     folder = realpathSync(f.source);
   f.nativeRecord(nativeId);
@@ -78,7 +87,7 @@ it('adopts a native session in its own folder without provisioning or writing to
 });
 
 it('resumes the adopted native session in the original folder on its first turn', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const nativeId = randomUUID();
   const session = await f.adopt({ native_id: nativeId });
   f.call('session.send', { session_id: session.id, input: 'Continue' }, session.revision);
@@ -95,7 +104,7 @@ it('resumes the adopted native session in the original folder on its first turn'
 });
 
 it('builds a spec for the user folder that holds a planner credential, never a lead one', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   Object.assign(f.adapter, { generatesTitles: true });
   const roles: string[] = [];
   const ctx = contextOf(f);
@@ -107,7 +116,7 @@ it('builds a spec for the user folder that holds a planner credential, never a l
   });
   const session = await f.adopt({ title: 'Terminal work', permission_mode: 'auto_edit' });
   expect(session).toMatchObject({ title: 'Terminal work', permission_mode: 'auto_edit' });
-  const spec = inPlaceSessionSpec(ctx, session);
+  const spec = await inPlaceSessionSpec(ctx, session);
   const folder = realpathSync(f.source);
   expect(spec).toMatchObject({ cwd: folder, role: 'writer', permission_mode: 'auto_edit' });
   expect(spec).not.toHaveProperty('auto_title');
@@ -130,7 +139,7 @@ it('builds a spec for the user folder that holds a planner credential, never a l
 });
 
 it('shares one workspace between sessions adopted from the same folder', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const first = await f.adopt(),
     second = await f.adopt();
   expect(second.workspace_id).toBe(first.workspace_id);
@@ -140,7 +149,7 @@ it('shares one workspace between sessions adopted from the same folder', async (
 });
 
 it('refuses an adopted native id, a folder outside the project, a moved native home and an unknown record', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const adopt = (nativeId: string) => () =>
     f.call('session.adopt', {
       project_id: f.project.id,
@@ -161,7 +170,7 @@ it('refuses an adopted native id, a folder outside the project, a moved native h
   expect(refusal(adopt(randomUUID())).code).toBe('not_found');
 
   const project = f.store.must<Project>('projects', f.project.id);
-  f.call(
+  await f.call(
     'project.environment.set',
     {
       project_id: project.id,
@@ -177,8 +186,8 @@ it('refuses an adopted native id, a folder outside the project, a moved native h
   expect(refusal(adopt(moved)).code).toBe('invalid_state');
 });
 
-it('finds a running Claude process that holds the native session', () => {
-  const f = workbenchFixture();
+it('finds a running Claude process that holds the native session', async () => {
+  const f = await workbenchFixture();
   const claudeHome = path.join(f.root, 'claude-home'),
     sessions = path.join(claudeHome, 'sessions'),
     nativeId = randomUUID();
@@ -220,8 +229,8 @@ it('finds a running Claude process that holds the native session', () => {
 
 it.runIf(process.platform === 'linux')(
   'reads the clock ticks since boot that Claude writes as procStart on Linux',
-  () => {
-    const f = workbenchFixture();
+  async () => {
+    const f = await workbenchFixture();
     const claudeHome = path.join(f.root, 'claude-home'),
       nativeId = randomUUID();
     mkdirSync(path.join(claudeHome, 'sessions'), { recursive: true });
@@ -238,13 +247,13 @@ it.runIf(process.platform === 'linux')(
 );
 
 it('lets an in-place session write its project root but not repository settings, Claude state or worktrees', async () => {
-  const f = workbenchFixture();
-  const worktree = f.store.must<Workspace>('workspaces', f.create().workspace_id!);
+  const f = await workbenchFixture();
+  const worktree = f.store.must<Workspace>('workspaces', (await f.create()).workspace_id!);
   await awaitWorkspaceReady(f.control, worktree.id);
   const tempDir = path.join(realpathSync(f.root), 'temp'),
     folder = realpathSync(f.source);
   mkdirSync(tempDir);
-  const sandbox = inPlaceSandbox({
+  const sandbox = await inPlaceSandbox({
     ...f.protectionPaths,
     projectRoot: folder,
     tempDir,
@@ -261,7 +270,7 @@ it('lets an in-place session write its project root but not repository settings,
 });
 
 it('refuses an in-place turn after the session replaced its temporary folder or project root with a symlink', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const ctx = contextOf(f);
   Object.assign(ctx, {
     issueSessionCredential: () => ({
@@ -276,7 +285,9 @@ it('refuses an in-place turn after the session replaced its temporary folder or 
   rmSync(temporary, { recursive: true, force: true });
   symlinkSync(elsewhere, temporary);
   try {
-    expect(refusal(() => inPlaceSessionSpec(ctx, session)).code).toBe('sandbox_path_replaced');
+    expect((await rejection(() => inPlaceSessionSpec(ctx, session))).code).toBe(
+      'sandbox_path_replaced',
+    );
   } finally {
     rmSync(temporary, { force: true });
   }
@@ -288,10 +299,10 @@ it('refuses an in-place turn after the session replaced its temporary folder or 
   symlinkSync(path.dirname(folder), linkedParent);
   const sandbox = (projectRoot: string) => () =>
     inPlaceSandbox({ ...f.protectionPaths, projectRoot, tempDir, otherWorkspaces: [] });
-  expect(refusal(sandbox(path.join(linkedParent, path.basename(folder)))).code).toBe(
+  expect((await rejection(sandbox(path.join(linkedParent, path.basename(folder))))).code).toBe(
     'sandbox_path_replaced',
   );
   const linkedRoot = path.join(realpathSync(f.root), 'linked-root');
   symlinkSync(folder, linkedRoot);
-  expect(refusal(sandbox(linkedRoot)).code).toBe('sandbox_path_replaced');
+  expect((await rejection(sandbox(linkedRoot))).code).toBe('sandbox_path_replaced');
 });

@@ -72,7 +72,7 @@ function sourceTemplate(cache: string) {
   return (template = source);
 }
 
-export function workbenchFixture(
+export async function workbenchFixture(
   options: {
     managedWorkspaces?: boolean;
     delay?: number;
@@ -141,12 +141,12 @@ export function workbenchFixture(
     revision: number | null = null,
     principal: Principal = user,
   ) => control.execute(principal, command(principal.id, type, input, revision)) as T;
-  const project = call<Project>('project.open', {
+  const project = await call<Project>('project.open', {
     name: 'Workbench project',
     roots: [source],
   });
   const create = (input = 'Rename the answer file and explain why', principal: Principal = user) =>
-    call<Session>(
+    call<Promise<Session>>(
       'session.create',
       { project_id: project.id, runtime: adapter.name, input },
       null,
@@ -168,7 +168,7 @@ export function workbenchFixture(
       ...controlOptions,
       readProcess,
     });
-    control.recover();
+    await control.recover();
     await control.reconcile();
   };
   /** Writes a Claude transcript as a terminal session in cwd would leave it. */
@@ -232,13 +232,13 @@ export function workbenchFixture(
 }
 
 /** A session bound to the task before its turn runs, without the checks and the note of one the user opens from the board. */
-export function boundTaskSession(
-  f: ReturnType<typeof workbenchFixture>,
+export async function boundTaskSession(
+  f: Awaited<ReturnType<typeof workbenchFixture>>,
   leadId: string,
   taskId: string,
   input = 'Build it',
 ) {
-  const opened = f.create(input);
+  const opened = await f.create(input);
   return f.store.update<Session>(
     'sessions',
     { ...opened, task: { lead_session_id: leadId, id: taskId, generation: 1 } },
@@ -247,7 +247,7 @@ export function boundTaskSession(
 }
 
 /** Sends every task a lead starts to a task session, which the default path of t1 tasks does not. */
-export const dispatchEveryTier = (f: ReturnType<typeof workbenchFixture>) =>
+export const dispatchEveryTier = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   f.call(
     'workflow.policy.set',
     { project_id: f.project.id, path: { t1: 'dispatch' } },

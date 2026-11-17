@@ -12,18 +12,18 @@ const cache = fileURLToPath(new URL('../node_modules/.cache/', import.meta.url))
 await mkdir(cache, { recursive: true });
 const root = await mkdtemp(path.join(cache, 'pantheon-demo-'));
 let daemon;
-const git = (cwd, args) => {
-  const result = runGit(cwd, args);
+const git = async (cwd, args) => {
+  const result = await runGit(cwd, args, undefined, true);
   if (result.exit_code !== 0) throw new Error(result.error ?? result.stderr.toString());
   return result.stdout.toString().trim();
 };
 try {
   const source = path.join(root, 'project');
   await mkdir(source);
-  git(source, ['init', '--initial-branch=fixture-source']);
+  await git(source, ['init', '--initial-branch=fixture-source']);
   await writeFile(path.join(source, 'README.md'), 'Fixture project\n');
-  git(source, ['add', '--', 'README.md']);
-  git(source, ['commit', '-m', 'Create fixture project']);
+  await git(source, ['add', '--', 'README.md']);
+  await git(source, ['commit', '-m', 'Create fixture project']);
   daemon = await startDaemon({
     directory: path.join(root, 'state'),
     workspaceRoot: path.join(root, 'workspaces'),
@@ -79,9 +79,9 @@ try {
   });
   console.log('First turn completed');
   await writeFile(path.join(workspace.path, 'CHANGE.md'), 'A change made in the worktree\n');
-  git(workspace.path, ['add', '--', 'CHANGE.md']);
-  git(workspace.path, ['commit', '-m', 'Add the demo change']);
-  const commit = git(workspace.path, ['rev-parse', 'HEAD']);
+  await git(workspace.path, ['add', '--', 'CHANGE.md']);
+  await git(workspace.path, ['commit', '-m', 'Add the demo change']);
+  const commit = await git(workspace.path, ['rev-parse', 'HEAD']);
   console.log(`Committed in the worktree: ${commit}`);
   const session = daemon.store.get('sessions', created.id);
   await call('session.merge', { session_id: session.id }, session.revision);
@@ -91,8 +91,11 @@ try {
       throw new Error(`Merge blocked: ${JSON.stringify(current.merge)}`);
     return current.outcome === 'merged';
   });
-  const head = git(source, ['rev-parse', 'refs/heads/fixture-source']);
-  if (head !== commit || git(source, ['status', '--porcelain', '--untracked-files=all']) !== '')
+  const head = await git(source, ['rev-parse', 'refs/heads/fixture-source']);
+  if (
+    head !== commit ||
+    (await git(source, ['status', '--porcelain', '--untracked-files=all'])) !== ''
+  )
     throw new Error('Source repository does not contain the clean merged commit');
   console.log('Session merged into the source branch');
   console.log(`Source branch head: ${head}`);

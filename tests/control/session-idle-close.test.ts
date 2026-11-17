@@ -6,8 +6,8 @@ import { eventually, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 it('records an idle conversation as closed after its adapter stops reporting the exited process', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const idle = f.store.must<Session>('sessions', session.id);

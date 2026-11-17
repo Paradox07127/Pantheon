@@ -3,7 +3,7 @@ import type { Approval, BoardPlan, LeadNote, Principal, Session } from '@pantheo
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const MINUTE = 60_000;
@@ -52,7 +52,7 @@ function skewedClock(f: Fixture) {
 }
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -75,7 +75,7 @@ async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
 /** A task session whose first turn runs for longer than the test. */
 async function runningWorker(f: Fixture, leadId: string) {
   (f.adapter as { delay: number }).delay = 60000;
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -93,7 +93,7 @@ async function runningWorker(f: Fixture, leadId: string) {
 }
 
 it('tells the lead when one tool call stays open far past the stall window', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const { worker, turn, event } = await runningWorker(f, lead.id);
@@ -117,7 +117,7 @@ it('tells the lead when one tool call stays open far past the stall window', asy
 });
 
 it('does not call a turn stalled while its permission request waits for the user, and counts the answer as progress', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const { worker, event } = await runningWorker(f, lead.id);
@@ -158,7 +158,7 @@ it('does not call a turn stalled while its permission request waits for the user
 });
 
 it('lists a task session in needs-you when its stall alert gets no lead action within the window', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const { worker } = await runningWorker(f, lead.id);
@@ -184,7 +184,7 @@ it('lists a task session in needs-you when its stall alert gets no lead action w
 });
 
 it('tells the user when a lead turn makes no progress for the stall window', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   f.call(
@@ -212,7 +212,7 @@ it('tells the user when a lead turn makes no progress for the stall window', asy
 });
 
 it('clears the stall of a lead turn from needs-you once the turn makes progress again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   f.call(
@@ -239,7 +239,7 @@ it('clears the stall of a lead turn from needs-you once the turn makes progress 
 });
 
 it('drops the stall of a task turn that made progress again, and tells the lead of its stalls once', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const { turn, event } = await runningWorker(f, lead.id);
@@ -260,7 +260,7 @@ it('drops the stall of a task turn that made progress again, and tells the lead 
 });
 
 it('does not call a turn stalled while it streams text', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const { event } = await runningWorker(f, lead.id);

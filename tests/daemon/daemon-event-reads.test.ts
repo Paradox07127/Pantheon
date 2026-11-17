@@ -15,12 +15,12 @@ async function eventFixture() {
     adapters: [new FixtureAdapter()],
   });
   const headers = { Authorization: `Bearer ${daemon.token}` };
-  const open = (name: string) => {
+  const open = async (name: string) => {
     mkdirSync(path.join(root, name));
-    return daemon.control.execute(
+    return (await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name, roots: [path.join(root, name)] }),
-    ) as Project;
+    )) as Project;
   };
   const reader = (project: Project, id: string) =>
     daemon.auth.issueSession(
@@ -53,8 +53,8 @@ async function eventFixture() {
 it('refuses the events of another project or of every project to a session credential', async () => {
   const f = await eventFixture();
   try {
-    const mine = f.open('mine'),
-      other = f.open('other');
+    const mine = await f.open('mine'),
+      other = await f.open('other');
     const headers = { Authorization: `Bearer ${f.reader(mine, 'event-reader')}` };
     const denied = await f.get('/v1/events?after=0&project_id=' + other.id, { headers });
     expect(denied).toEqual({
@@ -84,7 +84,7 @@ it('refuses the events of another project or of every project to a session crede
 it('checks access to events without building the board', async () => {
   const f = await eventFixture();
   try {
-    const project = f.open('watched');
+    const project = await f.open('watched');
     const snapshot = vi.spyOn(f.daemon.control, 'snapshot');
     expect((await f.get('/v1/events?after=0&project_id=' + project.id)).status).toBe(200);
     const ws = new WebSocket(f.daemon.url.replace('http:', 'ws:') + '/v1/events/ws');
@@ -109,7 +109,7 @@ it('checks access to events without building the board', async () => {
 it('reads at most the requested number of events and refuses a limit out of range', async () => {
   const f = await eventFixture();
   try {
-    for (const name of ['first', 'second', 'third']) f.open(name);
+    for (const name of ['first', 'second', 'third']) await f.open(name);
     const page = await f.get('/v1/events?after=0&limit=2');
     expect(page.status).toBe(200);
     expect(page.body.events).toHaveLength(2);
@@ -131,7 +131,7 @@ it('reads at most the requested number of events and refuses a limit out of rang
 it('reads only the events of one session: its own, its turns and its approvals', async () => {
   const f = await eventFixture();
   try {
-    const project = f.open('sessions');
+    const project = await f.open('sessions');
     const add = (session: string) => {
       const row = f.daemon.store.insert<Session>('sessions', {
         id: session,

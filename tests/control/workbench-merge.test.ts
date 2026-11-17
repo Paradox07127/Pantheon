@@ -16,11 +16,11 @@ import type { ControlContext } from '../../packages/control/src/context.js';
 import { insideSandbox, awaitWorkspaceReady, eventually, heldIndexLock, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 /** A workbench whose source repository names the user who rebases onto it. */
-function mergeFixture(options: Parameters<typeof workbenchFixture>[0] = {}) {
-  const f = workbenchFixture(options);
+async function mergeFixture(options: Parameters<typeof workbenchFixture>[0] = {}) {
+  const f = await workbenchFixture(options);
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   return f;
@@ -29,7 +29,7 @@ function mergeFixture(options: Parameters<typeof workbenchFixture>[0] = {}) {
 /** A session whose first turn has ended, with its ready worktree and the source HEAD it started from. */
 async function idleSession(f: Fixture) {
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -68,8 +68,8 @@ const payloads = (f: Fixture, sessionId: string, kind: string) =>
 const removed = (f: Fixture, workspaceId: string) =>
   f.store.must<Workspace>('workspaces', workspaceId).removed_at !== undefined;
 
-function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
-  f.call<Project>(
+async function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
+  await f.call<Project>(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     f.store.must<Project>('projects', f.project.id).revision,
@@ -77,7 +77,7 @@ function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
 }
 
 it('fast-forwards the source branch to the session commit and removes the worktree', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'merged\n');
   expect((await merge(f, session.id)).merge).toEqual({ state: 'running' });
@@ -107,7 +107,7 @@ it('fast-forwards the source branch to the session commit and removes the worktr
 });
 
 it('fast-forwards the source once another git gives up the index lock it held', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'merged\n');
   const held = heldIndexLock('merge --ff-only');
@@ -122,7 +122,7 @@ it('fast-forwards the source once another git gives up the index lock it held', 
 });
 
 it('drops and records a queued merge of a session that no longer exists', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const job = f.store.enqueue('session.merge', { session_id: 'retired-session' });
   await expect(f.control.tick()).resolves.toBeUndefined();
   expect(f.store.pending().map((pending) => pending.id)).not.toContain(job);
@@ -132,19 +132,19 @@ it('drops and records a queued merge of a session that no longer exists', async 
 });
 
 it('bases the worktree on the branch read when the session opened, though the source switched branch before provisioning', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const mainHead = git(f.source, 'rev-parse', 'HEAD');
   git(f.source, 'checkout', '--quiet', '-b', 'other');
   commit(f.source, 'other.txt', 'other\n');
   git(f.source, 'checkout', '--quiet', 'main');
-  const session = f.create();
+  const session = await f.create();
   git(f.source, 'checkout', '--quiet', 'other');
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   expect(workspace).toMatchObject({ source_branch: 'main', base_sha: mainHead });
 });
 
 it('rebases the session onto a newer source commit and keeps the history linear', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'session.txt', 'session\n');
   const theirs = commit(f.source, 'source.txt', 'source\n');
@@ -174,7 +174,7 @@ it('rebases the session onto a newer source commit and keeps the history linear'
 });
 
 it('rebases without moving another branch that points at the session commit', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const ours = commit(workspace.path, 'session.txt', 'session\n');
   git(f.source, 'branch', 'kept-at-session', ours);
@@ -193,7 +193,7 @@ it('rebases without moving another branch that points at the session commit', as
 it.each(['an untracked file', 'a new commit'])(
   'keeps a merged worktree that received %s after its merge',
   async (change) => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
     commit(workspace.path, 'answer.txt', 'merged\n');
     await merge(f, session.id);
@@ -210,7 +210,7 @@ it.each(['an untracked file', 'a new commit'])(
 );
 
 it('blocks a gated merge whose commit reaches a dependency folder through a symbolic link', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   commit(f.source, '.gitignore', 'node_modules/\n');
   commit(f.source, 'packages/app/index.js', 'export {};\n');
   mkdirSync(path.join(f.source, 'packages/app/node_modules/pkg'), { recursive: true });
@@ -219,7 +219,7 @@ it('blocks a gated merge whose commit reaches a dependency folder through a symb
     'module.exports = 42;\n',
   );
   const { session, workspace, sourceHead } = await idleSession(f);
-  setGate(f, [{ name: 'Never reached', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
+  await setGate(f, [{ name: 'Never reached', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
   rmSync(path.join(workspace.path, 'packages'), { recursive: true });
   symlinkSync('elsewhere', path.join(workspace.path, 'packages'));
   git(workspace.path, 'add', '-A');
@@ -238,7 +238,7 @@ it('blocks a gated merge whose commit reaches a dependency folder through a symb
 });
 
 it('blocks a conflicting merge, keeps the worktree and clears the block on the next message', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const ours = commit(workspace.path, 'answer.txt', 'session\n');
   const theirs = commit(f.source, 'answer.txt', 'source\n');
@@ -279,9 +279,9 @@ it('blocks a conflicting merge, keeps the worktree and clears the block on the n
 it.skipIf(insideSandbox)(
   'blocks a merge whose project gate fails and leaves the source unchanged',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace, sourceHead } = await idleSession(f);
-    setGate(f, [
+    await setGate(f, [
       {
         name: 'Always fails',
         argv: [process.execPath, '-e', "process.stderr.write('gate broke'); process.exit(3)"],
@@ -309,10 +309,10 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'gates the session commit rebased onto a source that moved, not the stale commit',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
     // The gate passes only once the source's fix is under the session commit.
-    setGate(f, [
+    await setGate(f, [
       {
         name: 'Needs the source fix',
         argv: [
@@ -335,9 +335,9 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'runs gates outside temporary directories, where managed workspaces may be created',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
-    setGate(f, [
+    await setGate(f, [
       {
         name: 'Not in a temporary directory',
         argv: [
@@ -355,7 +355,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('blocks rebasing a session whose commits include a merge, whose own changes a rebase drops', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'session.txt', 'session\n');
   commit(f.source, 'source.txt', 'source\n');
@@ -375,7 +375,7 @@ it('blocks rebasing a session whose commits include a merge, whose own changes a
 });
 
 it('blocks a session commit that changes agent configuration and never writes it into the worktree', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   // Committed through the index alone and hidden from status, so the worktree never holds it.
   const settings = path.join(f.root, 'agent-settings.json');
@@ -405,9 +405,9 @@ it('blocks a session commit that changes agent configuration and never writes it
 it.skipIf(insideSandbox)(
   'fails the gate when a gate command changes tracked files of the candidate',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace, sourceHead } = await idleSession(f);
-    setGate(f, [
+    await setGate(f, [
       {
         name: 'Rewrites the answer',
         argv: [
@@ -430,7 +430,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('refuses uncommitted work, no commits, a non-user principal and a discarded session', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const planner: Principal = {
     id: 'planner',
@@ -467,8 +467,8 @@ it('refuses uncommitted work, no commits, a non-user principal and a discarded s
 });
 
 it('refuses to merge a session while its turn runs', async () => {
-  const f = mergeFixture({ delay: 4000 });
-  const session = f.create();
+  const f = await mergeFixture({ delay: 4000 });
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'running',
@@ -480,9 +480,9 @@ it('refuses to merge a session while its turn runs', async () => {
 it.skipIf(insideSandbox)(
   'lists a merging session and refuses its messages until the gate ends',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
-    setGate(f, [
+    await setGate(f, [
       {
         name: 'Wait for release',
         argv: [
@@ -542,9 +542,9 @@ const hasProcess = (f: Fixture, sessionId: string) =>
 it.skipIf(insideSandbox)(
   'refuses to discard a session while its merge gate runs and lands it once the gate passes',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
-    setGate(f, [
+    await setGate(f, [
       {
         name: 'Wait for release',
         argv: [
@@ -582,7 +582,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('refuses to discard a session whose merge moved the source and still closes its process, then records the merge', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'merged before the discard\n');
   expect(hasProcess(f, session.id)).toBe(true);
@@ -614,7 +614,7 @@ it('refuses to discard a session whose merge moved the source and still closes i
 });
 
 it('refuses to merge a session that is being discarded', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'discarded before the merge\n');
   expect(hasProcess(f, session.id)).toBe(true);
@@ -629,7 +629,7 @@ it('refuses to merge a session that is being discarded', async () => {
 });
 
 it('restarts after a crash that left a session gate process record', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'crashed during the gate\n');
   await merge(f, session.id);
@@ -654,7 +654,7 @@ it('restarts after a crash that left a session gate process record', async () =>
 });
 
 it('kills a gate process left running whose record holds a whole-second start time', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'gate still running at the crash\n');
   await merge(f, session.id);
@@ -693,7 +693,7 @@ it('kills a gate process left running whose record holds a whole-second start ti
 });
 
 it('finishes a merge queued before a restart and moves the source once', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'restarted\n');
   await merge(f, session.id);
@@ -709,7 +709,7 @@ it('finishes a merge queued before a restart and moves the source once', async (
 });
 
 it('completes a merge rerun after a crash that already moved the source', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'landed before the crash\n');
   await merge(f, session.id);
@@ -725,7 +725,7 @@ it('completes a merge rerun after a crash that already moved the source', async 
 });
 
 it('blocks the merge of a worktree left partway through a rebase and leaves the source as it was', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'first.txt', 'first\n');
   commit(workspace.path, 'second.txt', 'second\n');
@@ -757,9 +757,9 @@ it('blocks the merge of a worktree left partway through a rebase and leaves the 
 it.skipIf(insideSandbox)(
   'records the merged range once and skips the gate when a merge reruns after a crash that followed the fast-forward',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace, sourceHead } = await idleSession(f);
-    setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
+    await setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
     commit(workspace.path, 'first.txt', 'first\n');
     const head = commit(workspace.path, 'second.txt', 'second\n');
     let crashed = false;
@@ -803,8 +803,8 @@ it.skipIf(insideSandbox)(
 );
 
 it('discards a session whose worktree is still being prepared', async () => {
-  const f = mergeFixture();
-  const session = f.create();
+  const f = await mergeFixture();
+  const session = await f.create();
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   f.call<Session>('session.discard', { session_id: session.id }, session.revision);
   expect(current(f, session.id)).toMatchObject({ state: 'closed', outcome: 'discarded' });
@@ -822,7 +822,7 @@ it('discards a session whose worktree is still being prepared', async () => {
 });
 
 it('merges two sessions asked to merge at once into the same source one after the other', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const first = await idleSession(f),
     second = await idleSession(f);
   commit(first.workspace.path, 'add.txt', 'add\n');
@@ -900,7 +900,7 @@ const settled = (f: Fixture, sessionId: string) =>
   );
 
 it('blocks a task merge that changes files outside the task scope and lands once the scope covers them', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setScopes(f, { api: ['src/a'] });
   const { session, workspace, sourceHead } = await taskSession(f, 'api');
   commit(workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
@@ -927,8 +927,9 @@ it.skipIf(insideSandbox).each([
 ])(
   'does not count the files of an earlier task merge against a later task rebased onto it, %s',
   async (_, gated) => {
-    const f = mergeFixture();
-    if (gated) setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
+    const f = await mergeFixture();
+    if (gated)
+      await setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
     setScopes(f, { first: ['src/a'], second: ['src/b'] });
     const first = await taskSession(f, 'first'),
       second = await taskSession(f, 'second');
@@ -971,7 +972,7 @@ it.each([
     conflict: 'README.md',
   },
 ])('$name', async ({ scope, seed, change, conflict }) => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   if (seed) commit(f.source, seed, 'export const old = 1;\n');
   setScopes(f, { api: scope });
   const { session, workspace, sourceHead } = await taskSession(f, 'api');
@@ -989,10 +990,10 @@ it.each([
 it.skipIf(insideSandbox)(
   'does not land a task merge whose scope narrowed while its gate ran',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     setScopes(f, { api: ['src/a', 'README.md'] });
     const { session, workspace, sourceHead } = await taskSession(f, 'api');
-    setGate(f, [
+    await setGate(f, [
       {
         name: 'Wait for release',
         argv: [
@@ -1020,7 +1021,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('lands files outside the task scope when the user allows them, and refuses that to a session credential', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setScopes(f, { api: ['src/a'] });
   const { session, workspace } = await taskSession(f, 'api');
   const head = commit(workspace.path, 'README.md', 'Allowed by the user\n');
@@ -1047,7 +1048,7 @@ it('lands files outside the task scope when the user allows them, and refuses th
 });
 
 it('hands a merge blocked by files outside the scope back to the task session with those files', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setScopes(f, { api: ['src/a'] });
   const { session } = await taskSession(f, 'api');
   f.store.event('session.merge_started', current(f, session.id), f.project.id, { auto: true }, '');
@@ -1068,7 +1069,7 @@ it('hands a merge blocked by files outside the scope back to the task session wi
 });
 
 it('blocks the merge of a session left from a removed task whose id a new task reuses', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setScopes(f, { api: ['src/a'] });
   const { session, workspace, sourceHead } = await taskSession(f, 'api');
   // The lead removed task api and planned a new task under the same id.
@@ -1087,7 +1088,7 @@ it('blocks the merge of a session left from a removed task whose id a new task r
 });
 
 it('checks the task scope of the plan a new lead took over while the merge read the worktree', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setScopes(f, { api: ['src/a'] });
   const { session, workspace, sourceHead } = await taskSession(f, 'api');
   commit(workspace.path, 'README.md', 'Outside the scope\n');
@@ -1110,7 +1111,7 @@ it('checks the task scope of the plan a new lead took over while the merge read 
 });
 
 it('blocks the merge of a task session whose plan cannot be found', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setScopes(f, { api: ['src/a'] });
   const { session, workspace, sourceHead } = await taskSession(f, 'api');
   const plan = f.store.must<BoardPlan>('board_plans', leadId);
@@ -1123,7 +1124,7 @@ it('blocks the merge of a task session whose plan cannot be found', async () => 
 });
 
 it('refuses a merge after the source repository checked out another branch than the session started from', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'meant for main\n');
   git(f.source, 'checkout', '--quiet', '-b', 'release');
@@ -1139,7 +1140,7 @@ it('refuses a merge after the source repository checked out another branch than 
 });
 
 it('blocks a queued merge when the source repository checks out another branch before it lands', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'meant for main\n');
   await merge(f, session.id);
@@ -1159,7 +1160,7 @@ it('blocks a queued merge when the source repository checks out another branch b
 });
 
 it('merges into the checked-out branch for a worktree recorded without its starting branch', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
   const recorded = f.store.must<Workspace>('workspaces', workspace.id);
   const { source_branch: _, ...earlier } = recorded;
@@ -1178,9 +1179,9 @@ it('merges into the checked-out branch for a worktree recorded without its start
 it.skipIf(insideSandbox)(
   'gates a merge rerun again when the gate changed after an earlier run gated the same commit',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace, sourceHead } = await idleSession(f);
-    setGate(f, [
+    await setGate(f, [
       {
         name: 'Changed gate',
         argv: [process.execPath, '-e', "process.stderr.write('new gate'); process.exit(3)"],
@@ -1221,7 +1222,7 @@ it.skipIf(insideSandbox)(
 it.each([true, false])(
   'archives a merged session only when auto archive is %s',
   async (enabled) => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     Object.assign((f.control as unknown as { ctx: ControlContext }).ctx, {
       userConfigDir: path.join(f.root, 'config'),
     });

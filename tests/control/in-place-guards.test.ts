@@ -15,7 +15,7 @@ import { withoutNativeConversation } from '../../packages/control/dist/session.j
 import { eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const contextOf = (f: Fixture) => (f.control as unknown as { ctx: ControlContext }).ctx;
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
@@ -90,7 +90,7 @@ async function send(f: Fixture, session: Session, input = 'Continue') {
 }
 
 it('writes no checkpoint ref into the user folder before a turn', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   // A detached HEAD is where a worktree session's checkpoint would be written.
   git(f.source, 'checkout', '--quiet', '--detach');
   const session = inPlaceSession(f, inPlaceWorkspace(f));
@@ -101,7 +101,7 @@ it('writes no checkpoint ref into the user folder before a turn', async () => {
 });
 
 it('lists no turn to roll back to for a session in the user folder', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   git(f.source, 'checkout', '--quiet', '--detach');
   const session = inPlaceSession(f, inPlaceWorkspace(f));
   expect((await send(f, session)).state).toBe('completed');
@@ -111,7 +111,7 @@ it('lists no turn to roll back to for a session in the user folder', async () =>
 });
 
 it('refuses to roll back a session in the user folder and keeps its native session', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   git(f.source, 'checkout', '--quiet', '--detach');
   const session = inPlaceSession(f, inPlaceWorkspace(f));
   const turn = await send(f, session);
@@ -130,19 +130,19 @@ it('refuses to roll back a session in the user folder and keeps its native sessi
   expect(current(f, session.id).native_id).toBe(session.native_id);
 });
 
-it('refuses to clear the native session of a session in the user folder for a runtime change', () => {
-  const f = workbenchFixture({ adoptable: true });
+it('refuses to clear the native session of a session in the user folder for a runtime change', async () => {
+  const f = await workbenchFixture({ adoptable: true });
   const ctx = contextOf(f);
   const session = inPlaceSession(f, inPlaceWorkspace(f));
   expect(refusal(() => withoutNativeConversation(ctx, session)).code).toBe('invalid_state');
-  const worktree = f.create();
+  const worktree = await f.create();
   expect(withoutNativeConversation(ctx, { ...worktree, native_id: 'native' }).native_id).toBe(
     undefined,
   );
 });
 
 it("sends a turn to Pantheon's own live process but refuses it while another process holds the native session", async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const ctx = contextOf(f);
   // Pids above the platform maximum, so no real process is ever named.
   const own = 999_999,
@@ -188,7 +188,7 @@ it("sends a turn to Pantheon's own live process but refuses it while another pro
 });
 
 it('adopts again from a folder whose in-place row belonged to a removed project', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const removed = f.store.insert<Project>('projects', {
     id: randomUUID(),
     revision: 1,
@@ -214,7 +214,7 @@ it('adopts again from a folder whose in-place row belonged to a removed project'
 });
 
 it('deletes a session in the user folder without removing the folder', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   // Inside the managed root, so only the workspace kind keeps the removal away.
   const folder = path.join(f.root, 'managed', 'user-folder');
   mkdirSync(folder);
@@ -239,7 +239,7 @@ it('deletes a session in the user folder without removing the folder', async () 
 });
 
 it('leaves the user folder and its sessions alone when provisioning reaches its row', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const ctx = contextOf(f);
   const workspace = inPlaceWorkspace(f, f.source, {
     provisioning: { state: 'queued', base_ref: 'HEAD' },
@@ -256,7 +256,7 @@ it('leaves the user folder and its sessions alone when provisioning reaches its 
 });
 
 it('keeps an in-place session whose turns never ran out of reconciling after a restart', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const workspace = inPlaceWorkspace(f);
   const idle = inPlaceSession(f, workspace);
   const waiting = inPlaceSession(f, workspace, { state: 'running', turn_count: 1 });
@@ -280,8 +280,8 @@ it('keeps an in-place session whose turns never ran out of reconciling after a r
   expect(events(f, 'session.reconciling', waiting.id)).toEqual([]);
 });
 
-it('offers no discard or merge for a session in the user folder', () => {
-  const f = workbenchFixture({ adoptable: true });
+it('offers no discard or merge for a session in the user folder', async () => {
+  const f = await workbenchFixture({ adoptable: true });
   const workspace = inPlaceWorkspace(f);
   const reconciling = inPlaceSession(f, workspace, { state: 'reconciling' });
   const blocked = inPlaceSession(f, workspace, { merge: { state: 'blocked', reason: 'conflict' } });
@@ -296,8 +296,8 @@ it('offers no discard or merge for a session in the user folder', () => {
 });
 
 it('refuses to open a task that completes by merging in the user folder, and opens a report task there', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export');
   await eventually(
     () => current(f, lead.id).state === 'open',
     () => f.control.tick(),
@@ -329,7 +329,7 @@ it('refuses to open a task that completes by merging in the user folder, and ope
     updated_at: f.store.now(),
   });
   const open = (taskId: string) =>
-    f.call<Session>('session.create', {
+    f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       task_id: `${lead.id}:${taskId}`,
@@ -338,12 +338,12 @@ it('refuses to open a task that completes by merging in the user folder, and ope
     });
   expect(refusal(() => open('export')).code).toBe('invalid_input');
   expect(f.store.list<Session>('sessions').filter((s) => s.task)).toEqual([]);
-  const report = open('notes');
+  const report = await open('notes');
   expect(f.store.must<Workspace>('workspaces', report.workspace_id!).kind).toBe('in_place');
 });
 
 it('records the error code of a turn whose launch failed with a domain error, and none for other errors', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const session = inPlaceSession(f, inPlaceWorkspace(f));
   f.resume.mockRejectedValueOnce(
     new DomainError('billing_channel_mismatch', 'Backend provider is not in effect'),

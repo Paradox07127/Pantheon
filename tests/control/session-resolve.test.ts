@@ -110,7 +110,7 @@ async function restartedFixture(options: { reviewer?: boolean; identityOnSend?: 
   // A session review needs a runtime other than the one that wrote the session.
   const adapter = runtime('fixture'),
     reviewer = runtime('session-reviewer');
-  const f = fixture({ adapter, now: () => 1700000000000, managedWorkspaces: true });
+  const f = await fixture({ adapter, now: () => 1700000000000, managedWorkspaces: true });
   commitProjectRoot(f.projectRoot);
   const readProcess = vi.fn<(pid: number) => ProcessIdentity | undefined>(() => undefined);
   const controlOptions = { ...f.controlOptions, readProcess };
@@ -121,14 +121,14 @@ async function restartedFixture(options: { reviewer?: boolean; identityOnSend?: 
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.controlOptions!.workspaceRoot!, { recursive: true, force: true });
   });
-  const written = control.execute(
+  const written = (await control.execute(
     user,
     command(user.id, 'session.create', {
       project_id: f.project.id,
       runtime: adapter.name,
       input: 'Interrupted input',
     }),
-  ) as Session;
+  )) as Session;
   const workspace = await awaitWorkspaceReady(control, written.workspace_id!);
   await eventually(
     () => control.handles.size === 1,
@@ -165,12 +165,12 @@ async function restartedFixture(options: { reviewer?: boolean; identityOnSend?: 
     { ...originalSession, native_id: 'saved-direct-session', process_identity: oldIdentity },
     originalSession.revision,
   );
-  const restart = () => {
+  const restart = async () => {
     control = new Control(f.store, f.files, [adapter, reviewer], undefined, controlOptions);
-    control.recover();
+    await control.recover();
     return control;
   };
-  if (!options.reviewer) restart();
+  if (!options.reviewer) await restart();
   // Worktree setup and recovery read the process table too; tests count only later reads.
   readProcess.mockClear();
   const session = () => f.store.must<Session>('sessions', sessionId);
@@ -538,7 +538,7 @@ it('never uses an old process identity after an unconfirmed resume spawn', async
 it('does not replay a pending resume after another daemon restart', async () => {
   const f = await restartedFixture();
   f.resolve('resume_session');
-  f.restart();
+  await f.restart();
   await f.control.tick();
   expect(f.resume).not.toHaveBeenCalled();
   f.resolve('resume_session');
@@ -552,7 +552,7 @@ it('quarantines an idle resumed session after another restart', async () => {
   await f.control.tick();
   expect(f.session().state).toBe('open');
   f.readProcess.mockReturnValue(newIdentity);
-  f.restart();
+  await f.restart();
   expect(f.session().state).toBe('reconciling');
   expect(() => f.resolve('close')).toThrow(
     expect.objectContaining({ code: 'termination_unconfirmed' }),
@@ -561,7 +561,7 @@ it('quarantines an idle resumed session after another restart', async () => {
 
 it('closes a terminated reviewer session during recovery', async () => {
   const f = await restartedFixture({ reviewer: true });
-  f.restart();
+  await f.restart();
   expect(f.readProcess).toHaveBeenCalledWith(oldIdentity.pid);
   expect(f.session().state).toBe('closed');
   expect(f.store.must<Review>('reviews', f.review!.id).state).toBe('failed');
@@ -576,7 +576,7 @@ it('closes a terminated reviewer session during recovery', async () => {
 it('keeps an unconfirmed reviewer visible until session resolution can close it', async () => {
   const f = await restartedFixture({ reviewer: true });
   f.readProcess.mockReturnValue(oldIdentity);
-  f.restart();
+  await f.restart();
   expect(f.session().state).toBe('reconciling');
   expect(f.control.needsYou(user).items).toContainEqual(
     expect.objectContaining({

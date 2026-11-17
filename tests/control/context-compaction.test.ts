@@ -5,16 +5,16 @@ import { agentEvent } from '../../packages/control/dist/agent.js';
 import { settle } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 
 async function setup() {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   Object.assign(ctx, {
     issueSessionCredential: () => ({ daemon_url: 'http://fixture', token_file: 'fixture-token' }),
   });
-  const lead = f.create('Let users download exports');
+  const lead = await f.create('Let users download exports');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -48,7 +48,7 @@ async function setup() {
       expires_at: f.store.now() + 60_000,
     },
   );
-  const worker = boundTaskSession(f, lead.id, 'export');
+  const worker = await boundTaskSession(f, lead.id, 'export');
   await settle(f, worker);
   const initial = f.start.mock.calls
     .find(([spec]) => spec.platform_session_id === worker.id)![0]
@@ -99,7 +99,7 @@ it('projects durable compaction counts per session and ignores replayed events',
     2,
   );
   expect(f.list().find((session) => session.id === lead.id)).toHaveProperty('compaction_count', 1);
-  const other = f.create('Another conversation');
+  const other = await f.create('Another conversation');
   expect(f.list().find((session) => session.id === other.id)).toHaveProperty('compaction_count', 0);
   await settle(f, other);
   await f.control.shutdown();

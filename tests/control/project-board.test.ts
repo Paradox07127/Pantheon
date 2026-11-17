@@ -25,8 +25,8 @@ function failure(fn: () => unknown): { code?: string; message?: string } {
   throw new Error('Expected the command to fail');
 }
 
-function setup() {
-  const f = fixture({ adapter: new FixtureAdapter(100), managedWorkspaces: true });
+async function setup() {
+  const f = await fixture({ adapter: new FixtureAdapter(100), managedWorkspaces: true });
   cleanups.push(() => f.close());
   return f;
 }
@@ -34,7 +34,7 @@ function setup() {
 const REQUEST = 'Ship the export API and a download button this week.';
 
 function said(
-  f: ReturnType<typeof setup>,
+  f: Awaited<ReturnType<typeof setup>>,
   sessionId: string,
   input: string,
   origin?: SessionTurn['origin'],
@@ -52,7 +52,7 @@ function said(
   });
 }
 
-function leadOf(f: ReturnType<typeof setup>, request: string | null = REQUEST): Principal {
+function leadOf(f: Awaited<ReturnType<typeof setup>>, request: string | null = REQUEST): Principal {
   const lead = insertSession(f);
   if (request) said(f, lead.id, request);
   return {
@@ -101,7 +101,7 @@ function plan(extra: Record<string, unknown> = {}) {
   };
 }
 
-function writePlan(f: ReturnType<typeof setup>, principal: Principal, value = plan()) {
+function writePlan(f: Awaited<ReturnType<typeof setup>>, principal: Principal, value = plan()) {
   return f.call<BoardPlanView>(
     'board.plan.update',
     {
@@ -115,8 +115,8 @@ function writePlan(f: ReturnType<typeof setup>, principal: Principal, value = pl
   );
 }
 
-it('keeps each lead to its own plan and milestones', () => {
-  const f = setup();
+it('keeps each lead to its own plan and milestones', async () => {
+  const f = await setup();
   const first = leadOf(f),
     second = leadOf(f);
   writePlan(f, first);
@@ -156,8 +156,8 @@ it('keeps each lead to its own plan and milestones', () => {
   expect(failure(() => writePlan(f, user)).code).toBe('permission_denied');
 });
 
-it('refuses a plan whose tasks, lanes or milestones do not line up', () => {
-  const f = setup();
+it('refuses a plan whose tasks, lanes or milestones do not line up', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   const base = plan();
   const refusal = (value: Record<string, unknown>) =>
@@ -189,8 +189,8 @@ it('refuses a plan whose tasks, lanes or milestones do not line up', () => {
 
 type PlanTask = ReturnType<typeof plan>['tasks'][number];
 
-it('refuses a task whose source is not a quote of what the user told a lead', () => {
-  const f = setup();
+it('refuses a task whose source is not a quote of what the user told a lead', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   said(f, lead.session_id!, 'Pantheon: ship the CSV export too', 'tracker');
   const worker = insertSession(f);
@@ -213,8 +213,8 @@ it('refuses a task whose source is not a quote of what the user told a lead', ()
   expect(f.store.list<BoardPlan>('board_plans')).toEqual([]);
 });
 
-it('accepts a source quoted from the first user message of any lead in the project', () => {
-  const f = setup();
+it('accepts a source quoted from the first user message of any lead in the project', async () => {
+  const f = await setup();
   const first = leadOf(f);
   expect(writePlan(f, first).tasks.map((task) => task.id)).toEqual(['api', 'ui']);
   const successor = leadOf(f, null);
@@ -226,8 +226,8 @@ it('accepts a source quoted from the first user message of any lead in the proje
   });
 });
 
-it('refuses a task that names the fixture runtime, which only tests run on', () => {
-  const f = setup();
+it('refuses a task that names the fixture runtime, which only tests run on', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   const [api, ui] = plan().tasks as [PlanTask, PlanTask];
   const error = failure(() =>
@@ -239,8 +239,8 @@ it('refuses a task that names the fixture runtime, which only tests run on', () 
   expect(f.store.list<BoardPlan>('board_plans')).toEqual([]);
 });
 
-it('refuses a task with no scope or no acceptance command in the schema', () => {
-  const f = setup();
+it('refuses a task with no scope or no acceptance command in the schema', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   const [api, ui] = plan().tasks as [PlanTask, PlanTask];
   for (const field of ['scope', 'acceptance'] as const) {

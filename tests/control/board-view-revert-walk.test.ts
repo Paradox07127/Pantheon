@@ -13,8 +13,8 @@ afterEach(() => {
 
 /** A lead merged two commits onto main; `first` is the older one. */
 async function mergedLead() {
-  const f = workbenchFixture();
-  const lead = f.create('Build exports');
+  const f = await workbenchFixture();
+  const lead = await f.create('Build exports');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () => f.turns(lead.id)[0]?.state === 'completed',
@@ -85,8 +85,8 @@ it('keeps the event loop running while it resolves the merged branches for the b
 });
 
 it('shows the board with no reverts counted once the repository of a merge in the range moved', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Build exports');
+  const f = await workbenchFixture();
+  const lead = await f.create('Build exports');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () => f.turns(lead.id)[0]?.state === 'completed',

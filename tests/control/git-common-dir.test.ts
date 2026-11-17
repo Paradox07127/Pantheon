@@ -15,7 +15,7 @@ import { user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 it("does not read configuration that a .git/commondir in the project's checkout points git at", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   // A commit with a signature, so log.showSignature makes git run gpg.program on it.
   const signed = execFileSync('git', ['hash-object', '-w', '-t', 'commit', '--stdin'], {
     cwd: f.source,

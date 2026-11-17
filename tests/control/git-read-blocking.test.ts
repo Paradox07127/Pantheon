@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -10,11 +10,11 @@ import {
   autoMergeAfterTurn,
   forgetWorktreeReads,
 } from '../../packages/control/dist/workbench-session.js';
-import type { BoardPlan, Project, Review, Session } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
-import { git, workbenchFixture } from './workbench-fixture.js';
+import type { BoardPlan, Principal, Project, Review, Session } from '@pantheon/domain';
+import { awaitWorkspaceReady, eventually, settle, user, waitOutStatusReuse } from '../helpers.js';
+import { dispatchEveryTier, git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const restores: (() => void)[] = [];
 afterEach(() => {
@@ -45,14 +45,17 @@ function gitWrapper(slow: string[]) {
     process.env.PATH = previous;
     rmSync(directory, { recursive: true, force: true });
   });
-  // Each call's subcommand, after the -c options runGit puts first.
+  // Each runGit call's subcommand, after the -c options runGit puts first; the search index
+  // reads branches with a plain git on its own timer.
   return () =>
-    (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []).map((line) => {
-      const words = line.split(' ');
-      let index = 0;
-      while (words[index] === '-c') index += 2;
-      return words[index]!;
-    });
+    (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : [])
+      .filter((line) => line.startsWith('-c '))
+      .map((line) => {
+        const words = line.split(' ');
+        let index = 0;
+        while (words[index] === '-c') index += 2;
+        return words[index]!;
+      });
 }
 
 /** Whether a 50 ms timer started now fired before the returned check runs. */
@@ -64,7 +67,7 @@ function timerFired(): () => boolean {
 }
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -82,7 +85,7 @@ function commit(repository: string, name: string) {
 }
 
 it('reads the project HEAD while the event loop runs, with status and log at once', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const calls = gitWrapper(['status', 'log']);
   const fired = timerFired(),
     started = performance.now();
@@ -96,7 +99,7 @@ it('reads the project HEAD while the event loop runs, with status and log at onc
 });
 
 it('reads merge preflight while the event loop runs, with one status per repository', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'change.txt');
   // Past the recheck interval, so the first read sees the commit and reads the Git configuration again.
@@ -120,7 +123,7 @@ it('reads merge preflight while the event loop runs, with one status per reposit
 });
 
 it('reports a detached source and an unborn worktree branch from the merged status reads', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'change.txt');
   git(f.source, 'checkout', '--quiet', '--detach');
@@ -138,7 +141,7 @@ it('reports a detached source and an unborn worktree branch from the merged stat
 });
 
 it('lists a blocked merge without running Git and never as mergeable before its states are read', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'change.txt');
   const blocked = f.store.update<Session>(
@@ -168,7 +171,7 @@ it('lists a blocked merge without running Git and never as mergeable before its 
 });
 
 it('searches files while the event loop runs and lists a folder again only when HEAD moves', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const calls = gitWrapper(['ls-files']);
   const fired = timerFired();
   expect(await f.control.filesSearch(user, f.project.id, undefined, 'answer')).toEqual([
@@ -188,7 +191,7 @@ it('searches files while the event loop runs and lists a folder again only when 
 });
 
 it('lists a folder while the event loop runs, with one ignore check', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const calls = gitWrapper(['check-ignore']);
   const fired = timerFired();
   expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
@@ -199,7 +202,7 @@ it('lists a folder while the event loop runs, with one ignore check', async () =
 });
 
 it('reads the range and diff of a review request while the event loop runs', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'change.txt');
   const head = git(workspace.path, 'rev-parse', 'HEAD');
@@ -215,7 +218,7 @@ it('reads the range and diff of a review request while the event loop runs', asy
 });
 
 it('queues a merge while the event loop runs, reading both repository states at once', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'change.txt');
   gitWrapper(['status']);
@@ -232,8 +235,8 @@ it('queues a merge while the event loop runs, reading both repository states at 
 });
 
 it('starts a gate run while the event loop runs', async () => {
-  const f = workbenchFixture();
-  f.call(
+  const f = await workbenchFixture();
+  await f.call(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands: [{ name: 'Check', argv: ['true'] }] },
     f.store.must<Project>('projects', f.project.id).revision,
@@ -255,7 +258,7 @@ it('starts a gate run while the event loop runs', async () => {
 });
 
 it('forks the current files while the event loop runs, without reading the project start point', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   const calls = gitWrapper(['write-tree']);
   const fired = timerFired();
@@ -269,7 +272,7 @@ it('forks the current files while the event loop runs, without reading the proje
 });
 
 it('removes the ref of a fork whose command fails after its files were frozen', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   gitWrapper(['update-ref']);
   const fired = timerFired();
@@ -291,7 +294,7 @@ it('removes the ref of a fork whose command fails after its files were frozen', 
 });
 
 it('previews a session start point while the event loop runs, with one git run', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   // The first read of the repository also reads its Git configuration.
   await f.control.sessionCreatePreview(user, { project_id: f.project.id });
   const head = git(f.source, 'rev-parse', 'HEAD');
@@ -307,7 +310,7 @@ it('previews a session start point while the event loop runs, with one git run',
 });
 
 it('lists sessions without running Git', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { workspace } = await idleSession(f);
   commit(workspace.path, 'change.txt');
   const calls = gitWrapper([]);
@@ -317,7 +320,7 @@ it('lists sessions without running Git', async () => {
 });
 
 it('reads the diff of a merged session once', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const { session, workspace } = await idleSession(f);
@@ -340,7 +343,7 @@ it('reads the diff of a merged session once', async () => {
 });
 
 it('reads a session diff again once its worktree reads are forgotten', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'change.txt');
   await f.control.sessionDiff(user, session.id);
@@ -354,10 +357,10 @@ it('reads a session diff again once its worktree reads are forgotten', async () 
 });
 
 it('merges a task session after its turn while the event loop runs', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
-  f.call(
+  await f.call(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -422,12 +425,154 @@ it('merges a task session after its turn while the event loop runs', async () =>
 });
 
 it('reads the start point of a new session with one git run', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   await f.control.sessionCreatePreview(user, { project_id: f.project.id });
   const calls = gitWrapper([]);
-  const session = f.create();
+  const session = await f.create();
   expect(
     calls().filter((call) => ['symbolic-ref', 'show-ref', 'rev-parse'].includes(call)),
   ).toEqual(['rev-parse']);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
+});
+
+it('creates a session while the event loop runs as it reads the start point', async () => {
+  const f = await workbenchFixture();
+  await f.control.sessionCreatePreview(user, { project_id: f.project.id });
+  gitWrapper(['rev-parse']);
+  const fired = timerFired();
+  const session = await f.create();
+  expect(fired()).toBe(true);
+  await awaitWorkspaceReady(f.control, session.workspace_id!);
+});
+
+it('opens the session of a started task without blocking the event loop', async () => {
+  const f = await workbenchFixture();
+  dispatchEveryTier(f);
+  const lead = await f.create('Plan the export feature');
+  await settle(f, lead);
+  const principal: Principal = {
+    id: `session:${lead.id}`,
+    role: 'lead',
+    project_id: f.project.id,
+    session_id: lead.id,
+    expires_at: f.store.now() + 60000,
+  };
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [
+        {
+          id: 'a',
+          title: 'Task a',
+          goal: 'Finish task a',
+          lane: 'core',
+          depends_on: [],
+          source: ['Plan the export feature'],
+          scope: ['src/a'],
+          acceptance: ['pnpm test'],
+        },
+      ],
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    principal,
+  );
+  f.call('task.start', { project_id: f.project.id, task_ids: ['a'] }, null, principal);
+  gitWrapper(['rev-parse']);
+  // The longest time between two runs of a 10 ms interval while the tick runs.
+  let last = performance.now(),
+    longest = 0;
+  const interval = setInterval(() => {
+    longest = Math.max(longest, performance.now() - last);
+    last = performance.now();
+  }, 10);
+  restores.push(() => clearInterval(interval));
+  await f.control.tick();
+  clearInterval(interval);
+  longest = Math.max(longest, performance.now() - last);
+  expect(
+    f.store.list<Session>('sessions').filter((session) => session.task?.id === 'a'),
+  ).toHaveLength(1);
+  expect(longest).toBeLessThan(800);
+});
+
+it('opens a project on an existing repository while the event loop runs', async () => {
+  const f = await workbenchFixture();
+  const repository = path.join(f.root, 'existing-repository');
+  mkdirSync(repository);
+  git(repository, 'init', '--quiet');
+  commit(repository, 'notes.txt');
+  gitWrapper(['--verify']);
+  const fired = timerFired();
+  const project = await f.call<Project | Promise<Project>>('project.open', {
+    name: 'Existing repository',
+    roots: [repository],
+  });
+  expect(project.name).toBe('Existing repository');
+  expect(fired()).toBe(true);
+});
+
+it('opens a project on an empty folder while the event loop runs its init and first commit', async () => {
+  const f = await workbenchFixture();
+  const folder = path.join(f.root, 'empty-folder');
+  mkdirSync(folder);
+  gitWrapper(['init', 'commit']);
+  const fired = timerFired();
+  const project = await f.call<Project | Promise<Project>>('project.open', {
+    name: 'Empty folder',
+    roots: [folder],
+  });
+  expect(git(folder, 'rev-parse', '--show-toplevel')).toBe(project.roots[0]);
+  expect(fired()).toBe(true);
+});
+
+it('reads the status of a reviewer left reconciling while the event loop runs at daemon start', async () => {
+  const f = await workbenchFixture();
+  const { session: parent, workspace } = await idleSession(f);
+  writeFileSync(path.join(workspace.path, 'answer.txt'), 'a change to review\n');
+  git(workspace.path, 'commit', '--quiet', '-am', 'Update the answer');
+  f.control.adapters.set('fixture-reviewer', f.adapter);
+  const review = await f.call<Review>('review.request', {
+    session_id: parent.id,
+    runtimes: ['fixture-reviewer'],
+  });
+  const started = f.store.must<Session>('sessions', review.session_ids[0]!);
+  const reviewer = f.store.update(
+    'sessions',
+    { ...started, state: 'reconciling' as const, process_identity: { pid: 2_000_000_000 } },
+    started.revision,
+  );
+  f.store.event('session.write_snapshot', reviewer, f.project.id, {
+    turn_id: 'reviewer-turn',
+    roots: [f.source],
+    status: {},
+    fingerprints: {},
+  });
+  const file = path.join(f.source, 'answer.txt');
+  writeFileSync(file, 'changed while the daemon was down\n');
+  gitWrapper(['status']);
+  // The state the reviewer had when a 50 ms timer fired; restart reconciles after recovery.
+  let stateWhenFired: string | undefined;
+  const timer = setTimeout(
+    () => (stateWhenFired = f.store.must<Session>('sessions', reviewer.id).state),
+    50,
+  );
+  restores.push(() => clearTimeout(timer));
+  await f.restart(() => undefined);
+  expect(stateWhenFired).toBe('reconciling');
+  expect(f.store.must<Session>('sessions', reviewer.id).state).toBe('closed');
+  expect(
+    f.store
+      .events()
+      .filter(
+        (event) => event.aggregate_id === reviewer.id && event.kind === 'session.write_audited',
+      )
+      .at(-1),
+  ).toEqual(expect.objectContaining({ payload: expect.objectContaining({ paths: [file] }) }));
 });

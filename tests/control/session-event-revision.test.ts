@@ -4,12 +4,12 @@ import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 it('records runtime events without revising the running session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   vi.spyOn(f.adapter, 'send').mockImplementation(async (_handle, turn) => ({
     turn_id: turn.turn_id,
     status: 'delivered',
   }));
-  const created = f.create();
+  const created = await f.create();
   await awaitWorkspaceReady(f.control, created.workspace_id!);
   await eventually(
     () => f.turns(created.id)[0]!.delivery === 'delivered',

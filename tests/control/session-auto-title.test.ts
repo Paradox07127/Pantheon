@@ -8,8 +8,8 @@ import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 /** A workbench fixture whose fixture adapter stands in for the named runtime. */
-function runtimeFixture(runtime: 'claude' | 'codex') {
-  const f = workbenchFixture();
+async function runtimeFixture(runtime: 'claude' | 'codex') {
+  const f = await workbenchFixture();
   f.control.adapters.delete(f.adapter.name);
   f.adapter.name = runtime;
   const real = runtime === 'claude' ? new ClaudeAdapter() : new CodexAdapter();
@@ -26,12 +26,12 @@ const generated = (title: string, key = 'title'): AgentEvent => ({
   title,
 });
 
-const renames = (f: ReturnType<typeof runtimeFixture>) =>
+const renames = (f: Awaited<ReturnType<typeof runtimeFixture>>) =>
   f.store.kindEvents(f.project.id, ['session.renamed']).map((event) => event.payload);
 
 it('lets the runtime name a new conversation and shows the title it generated', async () => {
-  const f = runtimeFixture('claude');
-  const session = f.create('Fix the importer\nIt drops the last row');
+  const f = await runtimeFixture('claude');
+  const session = await f.create('Fix the importer\nIt drops the last row');
   expect(session.title).toBe('Fix the importer');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
@@ -49,9 +49,9 @@ it('lets the runtime name a new conversation and shows the title it generated', 
   expect(renames(f)).toEqual([{ title: 'Importer drops the last row', source: 'auto' }]);
 });
 
-it('drops a generated title that arrives after the user renamed the session', () => {
-  const f = runtimeFixture('codex');
-  const session = f.create('Fix the importer');
+it('drops a generated title that arrives after the user renamed the session', async () => {
+  const f = await runtimeFixture('codex');
+  const session = await f.create('Fix the importer');
   const renamed = f.call<Session>(
     'session.rename',
     { session_id: session.id, title: 'My own name' },
@@ -62,9 +62,9 @@ it('drops a generated title that arrives after the user renamed the session', ()
   expect(renames(f)).toEqual([{ title: 'My own name' }]);
 });
 
-it('keeps the title of a task session, of a fixture session and on an empty generated title', () => {
-  const f = runtimeFixture('claude');
-  const created = f.create('Work on a planned task');
+it('keeps the title of a task session, of a fixture session and on an empty generated title', async () => {
+  const f = await runtimeFixture('claude');
+  const created = await f.create('Work on a planned task');
   const task = f.store.update<Session>(
     'sessions',
     { ...created, title: 'Planned task', task: { lead_session_id: 'lead', id: 'task-1' } },
@@ -72,7 +72,7 @@ it('keeps the title of a task session, of a fixture session and on an empty gene
   );
   agentEvent(f.ctx, task.id, generated('Generated task title'));
   expect(f.store.must<Session>('sessions', task.id).title).toBe('Planned task');
-  const plain = f.create('Fix the importer');
+  const plain = await f.create('Fix the importer');
   agentEvent(f.ctx, plain.id, generated(' \n ', 'empty'));
   expect(f.store.must<Session>('sessions', plain.id).title).toBe('Fix the importer');
   const fixture = f.store.update<Session>(
@@ -86,15 +86,15 @@ it('keeps the title of a task session, of a fixture session and on an empty gene
 });
 
 it('keeps pushing the native title for sessions the runtime does not name', async () => {
-  const f = runtimeFixture('claude');
-  const conversation = f.create('Fix the importer');
+  const f = await runtimeFixture('claude');
+  const conversation = await f.create('Fix the importer');
   await awaitWorkspaceReady(f.control, conversation.workspace_id!);
   expect(workbenchSessionSpec(f.ctx, conversation)).toMatchObject({ auto_title: true });
   // A lead the board opened is titled by the board, and its first message is an instruction.
-  const lead = f.create('Plan the work the sync found');
+  const lead = await f.create('Plan the work the sync found');
   const [first] = f.turns(lead.id) as SessionTurn[];
   f.store.update<SessionTurn>('session_turns', { ...first!, origin: 'sync' }, first!.revision);
-  const task = f.create('Work on a planned task');
+  const task = await f.create('Work on a planned task');
   const assigned = f.store.update<Session>(
     'sessions',
     { ...task, task: { lead_session_id: lead.id, id: 'task-1' } },

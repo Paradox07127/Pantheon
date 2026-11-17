@@ -76,9 +76,14 @@ import {
 import { dispatchQueue, dispatchTasks, placedTaskSessions, taskPlaces } from './task-dispatch.js';
 import { executed, stuckMerge } from './needs-you.js';
 import { finishingMerge } from './project-facts.js';
-import { finishStops } from './workbench-session.js';
+import { finishStops, readSessionOpening, type SessionOpening } from './workbench-session.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
-import { advanceSteps, afterMergeHolds } from './workflow-engine.js';
+import {
+  advanceSteps,
+  afterMergeHolds,
+  readMergeConditions,
+  type ConditionAnswers,
+} from './workflow-engine.js';
 
 type Tracked = BoardPlan['notified'][string];
 type Alert = NonNullable<BoardPlan['alerted']>[string][number];
@@ -718,6 +723,7 @@ function reportDirectTask(
   report: ReturnType<(typeof inputSchemas)['task.report']['parse']>,
   commandId: string,
   parsed: GitResult | undefined,
+  conditions: ConditionAnswers,
 ): { task_id: string; reported_head: string; next: string } {
   const lead = ctx.store.must<Session>('sessions', leadId),
     claimed = lead.direct_task;
@@ -758,7 +764,8 @@ function reportDirectTask(
   // As autoMergeAfterTurn decides once this turn ends.
   const project = ctx.store.must<Project>('projects', lead.project_id),
     workspace = ctx.store.must<Workspace>('workspaces', lead.workspace_id!),
-    merges = autoMerge(ctx, project) && !!gateCommands(ctx, project, workspace, next)?.length;
+    merges =
+      autoMerge(ctx, project) && !!gateCommands(ctx, project, workspace, next, conditions)?.length;
   return {
     task_id: claimed.id,
     reported_head: head,
@@ -1316,7 +1323,13 @@ export function syncBrief(
 export const TAKEOVER_TEXT =
   'You take over the plan of an earlier lead session that has ended; project_read shows it as yours.';
 
-function boardSync(ctx: ControlContext, p: Principal, c: Command, logs: [string, GitResult][]) {
+function boardSync(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  logs: [string, GitResult][],
+  opening?: SessionOpening,
+) {
   const input = inputSchemas['board.sync'].parse(c.input);
   projectAccess(ctx, p, input.project_id, c.type);
   if (p.role === 'lead')
@@ -1359,7 +1372,16 @@ function boardSync(ctx: ControlContext, p: Principal, c: Command, logs: [string,
       .sort((a, b) => b.updated_at - a.updated_at)[0];
     const brief = syncBrief(ctx, ended, logs);
     const text = ended ? `${TAKEOVER_TEXT}\n${brief}` : brief;
-    const lead = startLead(ctx, p, input.project_id, 'Board sync', text, c.command_id, 'sync');
+    const lead = startLead(
+      ctx,
+      p,
+      input.project_id,
+      'Board sync',
+      text,
+      c.command_id,
+      'sync',
+      opening!,
+    );
     if (lead) {
       if (ended) transferPlan(ctx, ended, lead.id, c.command_id);
       sessionIds.push(lead.id);
@@ -1383,12 +1405,23 @@ export function prepareBoardSync(ctx: ControlContext, p: Principal, c: Command):
           await runGit(root, ['log', '-20', '--format=%h %cs %s'], undefined, true),
         ]),
     );
-    return (ctx: ControlContext, p: Principal, c: Command) => boardSync(ctx, p, c, logs);
+    // The start point of a lead the user's sync may start.
+    const opening =
+      p.role === 'lead'
+        ? undefined
+        : await readSessionOpening(ctx, { project_id: input.project_id });
+    return (ctx: ControlContext, p: Principal, c: Command) => boardSync(ctx, p, c, logs, opening);
   })();
 }
 
 // Blocked and requirement reports, and the done report of a report task, wake the lead.
-function taskReport(ctx: ControlContext, p: Principal, c: Command, git: GitResult[]) {
+function taskReport(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  git: GitResult[],
+  conditions: ConditionAnswers = new Map(),
+) {
   const input = inputSchemas['task.report'].parse(c.input);
   requireThat(
     input.kind !== 'blocked' || input.reason,
@@ -1401,7 +1434,8 @@ function taskReport(ctx: ControlContext, p: Principal, c: Command, git: GitResul
     'permission_denied',
     'A resident lead works on no task itself, so it has nothing to report; its task sessions report',
   );
-  if (p.role === 'lead') return reportDirectTask(ctx, p.session_id!, input, c.command_id, git[0]);
+  if (p.role === 'lead')
+    return reportDirectTask(ctx, p.session_id!, input, c.command_id, git[0], conditions);
   requireThat(p.role === 'worker', 'permission_denied', 'Worker session required');
   // A worker credential is only issued to a session opened from a task.
   const task = ctx.store.must<Session>('sessions', p.session_id!).task!;
@@ -1485,10 +1519,14 @@ export function prepareTaskReport(
             ]
           : [];
   if (!reads.length) return (ctx, p, c) => taskReport(ctx, p, c, []);
-  return Promise.all(reads.map((args) => runGit(workspace!.path, args, undefined, true))).then(
-    (git): Handler =>
+  return Promise.all([
+    Promise.all(reads.map((args) => runGit(workspace!.path, args, undefined, true))),
+    // A lead's report says whether its gate merges the task, which its conditions decide.
+    p.role === 'lead' ? readMergeConditions(ctx, session!.id) : new Map(),
+  ]).then(
+    ([git, conditions]): Handler =>
       (ctx, p, c) =>
-        taskReport(ctx, p, c, git),
+        taskReport(ctx, p, c, git, conditions),
   );
 }
 

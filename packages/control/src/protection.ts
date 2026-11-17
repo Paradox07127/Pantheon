@@ -37,7 +37,40 @@ function entryPaths(target: string): string[] {
   return named === resolved ? [resolved] : [named, resolved];
 }
 
-export function protectionList(input: ProtectionPaths): ProtectionEntry[] {
+export async function protectionList(input: ProtectionPaths): Promise<ProtectionEntry[]> {
+  const entries = protectionListWithoutWorkspace(input);
+  const add = (target: string | undefined, deny: ProtectionEntry['deny'], reason: string) => {
+    if (target === undefined) return;
+    for (const entry of entryPaths(target)) entries.push({ path: entry, deny, reason });
+  };
+  if (input.workspacePath) {
+    const { pointer, gitDir, commonDir } = gitMetadata(input.workspacePath);
+    add(pointer, 'write', 'Workspace git metadata pointer');
+    add(path.join(commonDir, 'hooks'), 'write', 'Workspace git hooks');
+    const repository = [path.join(commonDir, 'config'), path.join(gitDir, 'config.worktree')];
+    for (const file of repository) add(file, 'write', 'Workspace git configuration');
+    for (const target of await configFiles(
+      [input.workspacePath, gitDir, commonDir].map(resolvedPath),
+      input.home,
+      [...repository, ...(await userConfigFiles(input.home))],
+    ))
+      if (!entries.some((entry) => entry.path === target))
+        entries.push({ path: target, deny: 'write', reason: 'Workspace git configuration' });
+  }
+  if (input.workspacePath)
+    for (const [name, reason] of [
+      ['.claude', 'Workspace Claude configuration'],
+      ['.codex', 'Workspace Codex configuration'],
+      ['.mcp.json', 'Workspace MCP configuration'],
+    ] as const)
+      add(path.join(input.workspacePath, name), 'write', reason);
+  return entries;
+}
+
+/** The entries of protectionList that need no git: all of them for an input without a workspace. */
+export function protectionListWithoutWorkspace(
+  input: Omit<ProtectionPaths, 'workspacePath'>,
+): ProtectionEntry[] {
   const entries: ProtectionEntry[] = [];
   const add = (target: string | undefined, deny: ProtectionEntry['deny'], reason: string) => {
     if (target === undefined) return;
@@ -55,27 +88,6 @@ export function protectionList(input: ProtectionPaths): ProtectionEntry[] {
   add(input.codexHome, 'write', 'Codex configuration and state');
   for (const file of ['.zshrc', '.zprofile', '.zshenv', '.bashrc', '.bash_profile', '.profile'])
     add(path.join(input.home, file), 'write', 'Shell startup configuration');
-  if (input.workspacePath) {
-    const { pointer, gitDir, commonDir } = gitMetadata(input.workspacePath);
-    add(pointer, 'write', 'Workspace git metadata pointer');
-    add(path.join(commonDir, 'hooks'), 'write', 'Workspace git hooks');
-    const repository = [path.join(commonDir, 'config'), path.join(gitDir, 'config.worktree')];
-    for (const file of repository) add(file, 'write', 'Workspace git configuration');
-    for (const target of configFiles(
-      [input.workspacePath, gitDir, commonDir].map(resolvedPath),
-      input.home,
-      [...repository, ...userConfigFiles(input.home)],
-    ))
-      if (!entries.some((entry) => entry.path === target))
-        entries.push({ path: target, deny: 'write', reason: 'Workspace git configuration' });
-  }
-  if (input.workspacePath)
-    for (const [name, reason] of [
-      ['.claude', 'Workspace Claude configuration'],
-      ['.codex', 'Workspace Codex configuration'],
-      ['.mcp.json', 'Workspace MCP configuration'],
-    ] as const)
-      add(path.join(input.workspacePath, name), 'write', reason);
   return entries;
 }
 
@@ -137,6 +149,8 @@ function traversal(target: string): { links: string[]; real: string; stop?: stri
 // Git answers about configuration files, kept while every file they came from stays unchanged.
 const userConfigs = new Map<string, { stamps: Map<string, string>; files: string[] }>();
 const includes = new Map<string, { stamp: string; paths: string[] }>();
+const readingUserConfigs = new Map<string, Promise<string[]>>();
+const readingIncludes = new Map<string, Promise<string[]>>();
 
 function stamp(file: string): string {
   const stat = statSync(file, { bigint: true, throwIfNoEntry: false });
@@ -144,19 +158,34 @@ function stamp(file: string): string {
 }
 
 /** The global and system configuration files git reads for a session that runs with this home. */
-function userConfigFiles(home: string): string[] {
+async function userConfigFiles(home: string): Promise<string[]> {
   const key = `${home}\0${process.env.GIT_CONFIG_NOSYSTEM ?? ''}`,
     cached = userConfigs.get(key);
   if (cached && [...cached.stamps].every(([file, value]) => stamp(file) === value))
     return cached.files;
-  const listed = runGit('/', ['config', '--null', '--show-origin', '--list'], undefined, false, {
-    env: {
-      HOME: home,
-      GIT_CONFIG_GLOBAL: undefined,
-      GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM,
-      XDG_CONFIG_HOME: undefined,
+  let reading = readingUserConfigs.get(key);
+  if (!reading) {
+    reading = listUserConfigFiles(home, key).finally(() => readingUserConfigs.delete(key));
+    readingUserConfigs.set(key, reading);
+  }
+  return reading;
+}
+
+async function listUserConfigFiles(home: string, key: string): Promise<string[]> {
+  const listed = await runGit(
+    '/',
+    ['config', '--null', '--show-origin', '--list'],
+    undefined,
+    true,
+    {
+      env: {
+        HOME: home,
+        GIT_CONFIG_GLOBAL: undefined,
+        GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM,
+        XDG_CONFIG_HOME: undefined,
+      },
     },
-  });
+  );
   const origins =
     listed.exit_code === 0
       ? listed.stdout
@@ -172,19 +201,27 @@ function userConfigFiles(home: string): string[] {
 }
 
 /** The include paths a configuration file names, as written. */
-function includePaths(file: string): string[] {
+async function includePaths(file: string): Promise<string[]> {
   const current = stamp(file),
     cached = includes.get(file);
   if (cached?.stamp === current) return cached.paths;
+  const key = `${file}\0${current}`;
+  let reading = readingIncludes.get(key);
+  if (!reading) {
+    reading = listIncludePaths(file, current).finally(() => readingIncludes.delete(key));
+    readingIncludes.set(key, reading);
+  }
+  return reading;
+}
+
+async function listIncludePaths(file: string, current: string): Promise<string[]> {
   // Outside any checkout, so a commondir planted in one cannot make git refuse to read.
-  const listed = runGit('/', [
-    'config',
-    '--file',
-    file,
-    '--null',
-    '--get-regexp',
-    '^include(if\\..*)?\\.path$',
-  ]);
+  const listed = await runGit(
+    '/',
+    ['config', '--file', file, '--null', '--get-regexp', '^include(if\\..*)?\\.path$'],
+    undefined,
+    true,
+  );
   // Status 1 means no include; any other failure is not kept.
   if (listed.exit_code !== 0 && listed.exit_code !== 1) return [];
   const paths =
@@ -204,7 +241,7 @@ function includePaths(file: string): string[] {
  * file they include, whether or not an include's condition holds now: each symlink on the way,
  * and the file itself or its first component still missing.
  */
-function configFiles(roots: string[], home: string, files: string[]): string[] {
+async function configFiles(roots: string[], home: string, files: string[]): Promise<string[]> {
   const found = new Set<string>(),
     seen = new Set<string>(),
     pending = [...files];
@@ -218,7 +255,7 @@ function configFiles(roots: string[], home: string, files: string[]): string[] {
       key = `${folder}\0${real}`;
     if (seen.has(key) || !statSync(real, { throwIfNoEntry: false })?.isFile()) continue;
     seen.add(key);
-    for (const value of includePaths(real))
+    for (const value of await includePaths(real))
       pending.push(
         value.startsWith('~/')
           ? `${home}/${value.slice(2)}`
@@ -291,10 +328,9 @@ export function worktreeSandbox(
   const writable_roots = roots.map(resolvedPath);
   // The source entries are replaced below, and the workspace's .git is a pointer file whose
   // hooks and config paths cannot be resolved, so only its agent configuration entries remain.
-  const entries = protectionList({
+  const entries = protectionListWithoutWorkspace({
     ...input,
     sourceRepo: undefined,
-    workspacePath: undefined,
     otherWorkspaces: input.taskSession ? [] : input.otherWorkspaces,
   });
   if (input.taskSession)
@@ -354,13 +390,13 @@ export function worktreeSandbox(
  * A session in the user's own folder writes its project root directly, so the whole root is
  * writable and only the repository's settings, agent configuration and other worktrees are not.
  */
-export function inPlaceSandbox(
+export async function inPlaceSandbox(
   input: Omit<ProtectionPaths, 'sourceRepo' | 'workspacePath'> & {
     projectRoot: string;
     tempDir: string;
   },
-): { writable_roots: string[]; protected_entries: ProtectionEntry[] } {
-  const entries = protectionList({ ...input, workspacePath: input.projectRoot });
+): Promise<{ writable_roots: string[]; protected_entries: ProtectionEntry[] }> {
+  const entries = await protectionList({ ...input, workspacePath: input.projectRoot });
   const { gitDir, commonDir } = gitMetadata(input.projectRoot),
     worktrees = path.join(commonDir, 'worktrees'),
     // A linked worktree commits through its own metadata folder and the shared objects and refs.
@@ -428,7 +464,7 @@ export function plannerProtectionList(
   input: Omit<ProtectionPaths, 'sourceRepo' | 'workspacePath'> & { workspaceRoot?: string },
 ): ProtectionEntry[] {
   return [
-    ...protectionList({ ...input, otherWorkspaces: [] }),
+    ...protectionListWithoutWorkspace({ ...input, otherWorkspaces: [] }),
     ...[
       ...input.otherWorkspaces,
       ...nativeRecordsAndSkills(input),
@@ -450,7 +486,7 @@ export function reviewerProtectionList(
   },
 ): ProtectionEntry[] {
   return [
-    ...protectionList(input),
+    ...protectionListWithoutWorkspace(input),
     ...[...input.otherReviewers, ...nativeRecordsAndSkills(input)].flatMap((target) =>
       entryPaths(target).map((entry): ProtectionEntry => ({
         path: entry,

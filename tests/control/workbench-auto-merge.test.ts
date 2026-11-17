@@ -14,10 +14,10 @@ import { autoMergeAfterTurn } from '../../packages/control/dist/workbench-sessio
 import { insideSandbox, awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
-function mergeFixture() {
-  const f = workbenchFixture();
+async function mergeFixture() {
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   return f;
@@ -26,7 +26,7 @@ function mergeFixture() {
 /** An idle session working on a board task; only task sessions merge automatically. */
 async function idleSession(f: Fixture, onTask = true) {
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -119,8 +119,8 @@ function handedBackEnough(f: Fixture, sessionId: string, reason: string) {
   );
 }
 
-function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
-  f.call<Project>(
+async function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
+  await f.call<Project>(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     project(f).revision,
@@ -149,9 +149,9 @@ async function settle(f: Fixture, sessionId: string, turnId: string, state = 'co
 it.skipIf(insideSandbox)(
   'merges a clean worktree with new commits when a turn completes',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
-    setGate(f, passing);
+    await setGate(f, passing);
     setAutoMerge(f, true);
     const head = commit(workspace.path, 'answer.txt', 'merged\n');
     send(f, session.id);
@@ -167,9 +167,9 @@ it.skipIf(insideSandbox)(
 );
 
 it('does not merge when a compaction the user asked for completes', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   commit(workspace.path, 'answer.txt', 'not merged by a compaction\n');
   const turn = f.call<SessionTurn>(
@@ -203,9 +203,9 @@ it.each([
     auto: true,
   },
 ])('$name', async ({ onTask, gated, auto }) => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f, onTask);
-  if (gated) setGate(f, passing);
+  if (gated) await setGate(f, passing);
   if (auto) setAutoMerge(f, true);
   commit(workspace.path, 'answer.txt', 'kept\n');
   const turn = send(f, session.id);
@@ -217,9 +217,9 @@ it.each([
 });
 
 it('does not merge a session that leads a board plan when its turn completes', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   f.store.transaction(() =>
     f.store.insert<BoardPlan>('board_plans', {
@@ -248,9 +248,9 @@ it('does not merge a session that leads a board plan when its turn completes', a
 });
 
 it('does not merge after the source repository checked out another branch than the session started from', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   commit(workspace.path, 'answer.txt', 'meant for main\n');
   git(f.source, 'checkout', '--quiet', '-b', 'release');
@@ -266,9 +266,9 @@ it('does not merge after the source repository checked out another branch than t
 });
 
 it('blocks the merge for the user when the source repository has edited tracked files', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   commit(workspace.path, 'answer.txt', 'ready to merge\n');
   writeFileSync(path.join(f.source, 'answer.txt'), 'edited in the source\n');
@@ -291,10 +291,10 @@ it('blocks the merge for the user when the source repository has edited tracked 
 });
 
 it('does not merge a worktree with uncommitted files', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
   handedBackEnough(f, session.id, 'uncommitted_changes');
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   commit(workspace.path, 'answer.txt', 'committed\n');
   writeFileSync(path.join(workspace.path, 'draft.txt'), 'draft\n');
@@ -309,10 +309,10 @@ it('does not merge a worktree with uncommitted files', async () => {
 it.skipIf(insideSandbox)(
   'stops at a blocked merge when the gate fails and does not retry',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace, sourceHead } = await idleSession(f);
     handedBackEnough(f, session.id, 'gate_failed');
-    setGate(f, failing);
+    await setGate(f, failing);
     setAutoMerge(f, true);
     commit(workspace.path, 'answer.txt', 'gated\n');
     send(f, session.id);
@@ -332,9 +332,9 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'merges once the gate run the user started during the turn end has finished',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
-    setGate(f, passing);
+    await setGate(f, passing);
     setAutoMerge(f, true);
     const head = commit(workspace.path, 'answer.txt', 'merged after the gate run\n');
     await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
@@ -355,9 +355,9 @@ it.skipIf(insideSandbox)(
 );
 
 it('does not merge after a failed turn', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   commit(workspace.path, 'answer.txt', 'failed\n');
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (_handle, turn) => ({
@@ -373,9 +373,9 @@ it('does not merge after a failed turn', async () => {
 });
 
 it('does not merge after an interrupted turn', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   commit(workspace.path, 'answer.txt', 'interrupted\n');
   // The next turn outlasts the test unless it is interrupted.
@@ -394,9 +394,9 @@ it('does not merge after an interrupted turn', async () => {
 it.skipIf(insideSandbox)(
   'does not merge an idle session when auto-merge is turned on, only after its next turn',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleSession(f);
-    setGate(f, passing);
+    await setGate(f, passing);
     const head = commit(workspace.path, 'answer.txt', 'later\n');
     setAutoMerge(f, true);
     for (let i = 0; i < 3; i++) await f.control.tick();
@@ -414,9 +414,9 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)('rebases onto a newer source commit before it merges', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { session, workspace } = await idleSession(f);
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   commit(workspace.path, 'session.txt', 'session\n');
   const theirs = commit(f.source, 'source.txt', 'source\n');
@@ -433,8 +433,8 @@ it.skipIf(insideSandbox)('rebases onto a newer source commit before it merges', 
   expect(git(f.source, 'show', 'main:source.txt')).toBe('source');
 });
 
-it('stores auto-merge on the project at its revision and records each change', () => {
-  const f = workbenchFixture();
+it('stores auto-merge on the project at its revision and records each change', async () => {
+  const f = await workbenchFixture();
   const events = () =>
     f.store.db
       .prepare("SELECT payload FROM events WHERE kind='project.auto_merge_set' ORDER BY sequence")

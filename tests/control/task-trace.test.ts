@@ -6,7 +6,7 @@ import type { TaskTraceEntry } from '@pantheon/protocol';
 import { eventually, insideSandbox, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -32,7 +32,7 @@ const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessio
 
 /** A lead with tasks a and b started, and the settled session of each. */
 async function startedTasks(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -87,12 +87,12 @@ const trace = (f: Fixture, leadId: string, taskId: string) =>
 it.skipIf(insideSandbox)(
   'lists the start request, dispatch, lead message, report and merge of a task in time order',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     git(f.source, 'config', 'user.name', 'Source User');
     git(f.source, 'config', 'user.email', 'source@example.invalid');
     const { lead, a } = await startedTasks(f);
     report(f, a.id, 'The export format is undecided');
-    f.call<Project>(
+    await f.call<Project>(
       'project.gate.set',
       {
         project_id: f.project.id,
@@ -142,7 +142,7 @@ it.skipIf(insideSandbox)(
 );
 
 it("leaves out the other task's entries and cuts long texts", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, a, b } = await startedTasks(f);
   report(f, b.id, 'Task b found a risk');
   message(f, lead.id, 'b', 'Look at the download button');
@@ -162,7 +162,7 @@ it("leaves out the other task's entries and cuts long texts", async () => {
 });
 
 it('shows one user edit of two tasks in the trace of each', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead } = await startedTasks(f);
   f.call(
     'board.plan.edit',

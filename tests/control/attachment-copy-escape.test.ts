@@ -22,9 +22,9 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 it('refuses to copy an attachment through a directory the session replaced with a link', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { writerTempDirectory } = await import('../../packages/control/dist/workspace-removal.js');
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const temporary = writerTempDirectory(session.workspace_id!);
   f.temporaryDirectories.push(temporary);
@@ -58,9 +58,9 @@ it('refuses to copy an attachment through a directory the session replaced with 
 });
 
 it('removes nothing in the folder a replaced attachments directory points to', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { writerTempDirectory } = await import('../../packages/control/dist/workspace-removal.js');
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const temporary = writerTempDirectory(session.workspace_id!);
   f.temporaryDirectories.push(temporary);

@@ -92,7 +92,7 @@ function controlledAdapter() {
 }
 
 let opened = 0;
-function open(f: ReturnType<typeof fixture>) {
+function open(f: Awaited<ReturnType<typeof fixture>>) {
   return f.store.insert<Session>('sessions', {
     id: `conversation-${++opened}`,
     revision: 1,
@@ -105,9 +105,10 @@ function open(f: ReturnType<typeof fixture>) {
 }
 
 /** A tick starts stop retries without waiting for them, and a retry's write audit runs git. */
-const retries = (f: ReturnType<typeof fixture>) => Promise.all([...f.control['ctx'].completions]);
+const retries = (f: Awaited<ReturnType<typeof fixture>>) =>
+  Promise.all([...f.control['ctx'].completions]);
 
-function send(f: ReturnType<typeof fixture>, session: Session) {
+function send(f: Awaited<ReturnType<typeof fixture>>, session: Session) {
   return f.call<SessionTurn>(
     'session.send',
     { session_id: session.id, input: 'Continue the conversation' },
@@ -117,7 +118,7 @@ function send(f: ReturnType<typeof fixture>, session: Session) {
 
 it('records one unconfirmed-stop event while retries keep failing', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter, now: () => 100000 });
+    f = await fixture({ adapter: stub.adapter, now: () => 100000 });
   stub.close.mockImplementation(async (_handle, deadline) => stub.receipt(false, deadline));
   try {
     const session = open(f),
@@ -136,7 +137,7 @@ it('records one unconfirmed-stop event while retries keep failing', async () => 
 
 it('keeps scheduling while a pending stop hangs', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter, now: () => 100000 });
+    f = await fixture({ adapter: stub.adapter, now: () => 100000 });
   let hang = false;
   stub.close.mockImplementation(async (_handle, deadline) =>
     hang ? new Promise<CancelReceipt>(() => {}) : stub.receipt(false, deadline),
@@ -159,7 +160,7 @@ it('keeps scheduling while a pending stop hangs', async () => {
 it('spaces stop retries without rewriting the session and records confirmation once', async () => {
   let now = 100000;
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter, now: () => now });
+    f = await fixture({ adapter: stub.adapter, now: () => now });
   stub.close.mockImplementation(async (_handle, deadline) => stub.receipt(false, deadline));
   try {
     const session = open(f),
@@ -208,7 +209,7 @@ it('spaces stop retries without rewriting the session and records confirmation o
 it('schedules other work during one stop retry and waits for it on shutdown', async () => {
   let now = 100000;
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter, now: () => now });
+    f = await fixture({ adapter: stub.adapter, now: () => now });
   let release: (() => void) | undefined,
     retryTick: Promise<void> | undefined,
     shutdown: Promise<void> | undefined;
@@ -292,7 +293,7 @@ it('schedules other work during one stop retry and waits for it on shutdown', as
 
 it('waits for an existing conversation close on shutdown without starting another stop', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter });
+    f = await fixture({ adapter: stub.adapter });
   let release: (() => void) | undefined, shutdown: Promise<void> | undefined;
   stub.close.mockImplementation(async (_handle, deadline) => {
     await new Promise<void>((resolve) => {

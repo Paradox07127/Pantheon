@@ -84,7 +84,7 @@ describe('project extension overrides', () => {
   });
 
   it('stores and reads overrides per runtime, emits the change, and checks revision and user authority', async () => {
-    const f = fixture({ adapter: inventoryAdapter() });
+    const f = await fixture({ adapter: inventoryAdapter() });
     try {
       const input = { project_id: f.project.id, runtime: 'fixture', overrides };
       const sent = command(user.id, 'project.extensions.set', input, f.project.revision);
@@ -128,7 +128,7 @@ describe('project extension overrides', () => {
   });
 
   it('refuses unregistered runtimes and adapters without inventory without changing the project', async () => {
-    const f = fixture();
+    const f = await fixture();
     try {
       for (const runtime of ['fixture', 'missing']) {
         expect(() =>
@@ -149,7 +149,7 @@ describe('project extension overrides', () => {
   });
 
   it('accepts agy overrides and lists its user-level extensions from the Gemini files', async () => {
-    const f = fixture();
+    const f = await fixture();
     try {
       const home = path.join(f.root, 'agy-home');
       mkdirSync(path.join(home, '.agents', 'skills', 'y'), { recursive: true });
@@ -175,7 +175,7 @@ describe('project extension overrides', () => {
   });
 
   it('accepts grok overrides and lists its user-level extensions from grok inspect', async () => {
-    const f = fixture();
+    const f = await fixture();
     try {
       const home = path.join(f.root, 'grok-home');
       mkdirSync(home);
@@ -218,7 +218,7 @@ describe('project extension overrides', () => {
 
   it('checks project read access before fetching inventory with the project root', async () => {
     const adapter = inventoryAdapter(),
-      f = fixture({ adapter });
+      f = await fixture({ adapter });
     try {
       await expect(
         f.control.extensionsInventory(
@@ -254,11 +254,11 @@ describe('project extension overrides', () => {
     const adapter = Object.assign(new FixtureAdapter(), {
         inventory: vi.fn(async (cwd: string) => (cwd === folder ? second : inventory)),
       }),
-      f = fixture({ adapter });
+      f = await fixture({ adapter });
     try {
       mkdirSync(path.join(f.root, 'second'));
       folder = realpathSync(path.join(f.root, 'second'));
-      f.call(
+      await f.call(
         'project.environment.set',
         {
           project_id: f.project.id,
@@ -296,7 +296,7 @@ describe('project extension overrides', () => {
       `starts the main session without extensions despite %s overrides on ${mode}`,
       async (source) => {
         const adapter = inventoryAdapter(),
-          f = fixture({ adapter });
+          f = await fixture({ adapter });
         const control = new Control(f.store, f.files, [adapter]);
         const start = vi.spyOn(adapter, 'start'),
           resume = vi.spyOn(adapter, 'resume');
@@ -342,7 +342,7 @@ describe('project extension overrides', () => {
       const actual =
         await vi.importActual<typeof import('node:child_process')>('node:child_process');
       vi.mocked(spawn).mockImplementation(actual.spawn);
-      const f = workbenchFixture();
+      const f = await workbenchFixture();
       try {
         const adapter = Object.assign(f.adapter, { inventory: vi.fn(async () => inventory) });
         vi.spyOn(adapter, 'send').mockImplementation(async (_handle, turn) => ({
@@ -356,7 +356,7 @@ describe('project extension overrides', () => {
             f.project.revision,
           );
         if (source === 'legacy') setLegacyExtensions(f.store, f.project);
-        const session = f.create();
+        const session = await f.create();
         await awaitWorkspaceReady(f.control, session.workspace_id!);
         await eventually(
           () => f.start.mock.calls.length > 0,
@@ -401,7 +401,7 @@ describe('project extension overrides', () => {
       const actual =
         await vi.importActual<typeof import('node:child_process')>('node:child_process');
       vi.mocked(spawn).mockImplementation(actual.spawn);
-      const f = workbenchFixture();
+      const f = await workbenchFixture();
       try {
         const adapter = Object.assign(f.adapter, { inventory: vi.fn(async () => inventory) });
         vi.spyOn(adapter, 'send').mockImplementation(async (_handle, turn) => ({
@@ -413,7 +413,7 @@ describe('project extension overrides', () => {
           { project_id: f.project.id, runtime: adapter.name, overrides: { ...empty, ...saved } },
           f.project.revision,
         );
-        const session = f.create();
+        const session = await f.create();
         await awaitWorkspaceReady(f.control, session.workspace_id!);
         await eventually(
           () => f.start.mock.calls.length > 0,
@@ -434,7 +434,7 @@ describe('project extension overrides', () => {
   it('keeps the account connectors off for a project saved with the retired connector switch', async () => {
     const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
     vi.mocked(spawn).mockImplementation(actual.spawn);
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     try {
       const adapter = Object.assign(f.adapter, { inventory: vi.fn(async () => inventory) });
       vi.spyOn(adapter, 'send').mockImplementation(async (_handle, turn) => ({
@@ -451,7 +451,7 @@ describe('project extension overrides', () => {
         },
         f.project.revision,
       );
-      const session = f.create();
+      const session = await f.create();
       await awaitWorkspaceReady(f.control, session.workspace_id!);
       await eventually(
         () => f.start.mock.calls.length > 0,
@@ -501,7 +501,7 @@ describe('project extension overrides', () => {
   ])('$name MCP servers and skills in a worktree writer session', async ({ opened, disabled }) => {
     const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
     vi.mocked(spawn).mockImplementation(actual.spawn);
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     try {
       const adapter = Object.assign(f.adapter, { inventory: vi.fn(async () => mixedInventory) });
       vi.spyOn(adapter, 'send').mockImplementation(async (_handle, turn) => ({
@@ -514,7 +514,7 @@ describe('project extension overrides', () => {
           { project_id: f.project.id, runtime: adapter.name, overrides: { ...empty, ...opened } },
           f.project.revision,
         );
-      const session = f.create();
+      const session = await f.create();
       await awaitWorkspaceReady(f.control, session.workspace_id!);
       await eventually(
         () => f.start.mock.calls.length > 0,

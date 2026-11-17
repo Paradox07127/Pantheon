@@ -49,13 +49,14 @@ import {
   type Preparers,
 } from './context.js';
 import { sessionDefaults } from './user-config.js';
-import { DISABLED, projectHandlers, readPantheonFile } from './project.js';
+import { DISABLED, projectHandlers, readPantheonFile, setProjectGate } from './project.js';
 import { projectFactHandlers } from './project-facts.js';
 import { runtime } from './admission.js';
 import { runGit } from './git.js';
 import { collectFacts, type ProjectFacts } from './baseline-facts.js';
 import { renderScanSeed } from './baseline-brief.js';
 import { startLead } from './lead-session.js';
+import { readSessionOpening, type SessionOpening } from './workbench-session.js';
 import { acceptInput } from './session.js';
 import { queueTurn } from './task-tracking.js';
 import { readAppSettings } from './app-settings.js';
@@ -561,10 +562,8 @@ export const baselinePreparers: Preparers = {
     };
   },
   'project.baseline.confirm': async (ctx, p, c) => {
-    const project = ctx.store.must<Project>(
-      'projects',
-      confirmTarget(ctx, p, c).baseline.project_id,
-    );
+    const target = confirmTarget(ctx, p, c),
+      project = ctx.store.must<Project>('projects', target.baseline.project_id);
     // The gate check this confirmation makes reads the answers cached here.
     const git = await Promise.all(project.roots.map(gitFolderAsync));
     const gitRoots = new Set(project.roots.filter((_, index) => git[index]));
@@ -572,7 +571,11 @@ export const baselinePreparers: Preparers = {
     const commits = readAppSettings(ctx).baseline_range_story
       ? await rangeCommits(ctx, project, now - RECENT_MS, now)
       : [];
-    return (ctx, p, c) => confirm(ctx, p, c, gitRoots, now, commits);
+    // The start point of the lead a confirmation that plans the board starts.
+    const opening = target.input.plan_board
+      ? await readSessionOpening(ctx, { project_id: project.id })
+      : undefined;
+    return (ctx, p, c) => confirm(ctx, p, c, gitRoots, now, commits, opening);
   },
 };
 
@@ -825,6 +828,7 @@ function confirm(
   gitRoots: Set<string>,
   now: number,
   commits: RangeCommit[],
+  opening?: SessionOpening,
 ): unknown {
   const { input, baseline } = confirmTarget(ctx, p, c);
   revision(ctx, c, baseline);
@@ -842,12 +846,17 @@ function confirm(
       expected_revision: ctx.store.get<ProjectBrief>('project_briefs', projectId)?.revision ?? null,
     });
   for (const gate of input.gates ?? [])
-    projectHandlers['project.gate.set']!(ctx, p, {
-      ...c,
-      type: 'project.gate.set',
-      input: { project_id: projectId, root: gate.root, commands: gate.commands },
-      expected_revision: ctx.store.must<Project>('projects', projectId).revision,
-    });
+    setProjectGate(
+      ctx,
+      p,
+      {
+        ...c,
+        type: 'project.gate.set',
+        input: { project_id: projectId, root: gate.root, commands: gate.commands },
+        expected_revision: ctx.store.must<Project>('projects', projectId).revision,
+      },
+      gitRoots,
+    );
   // Checked extensions stay off; ones this baseline turned off and the user unchecked go back on.
   const kept = input.extensions ?? [];
   const unchecked = (ctx.store.must<Project>('projects', projectId).extension_auto ?? []).filter(
@@ -978,6 +987,7 @@ function confirm(
     firstPlanMessage(result, brief, rounds),
     c.command_id,
     'baseline',
+    opening!,
   );
   if (!lead) return next;
   const planned = ctx.store.update<ProjectBaseline>(

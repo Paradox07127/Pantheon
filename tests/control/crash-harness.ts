@@ -141,7 +141,7 @@ export function crashBench(options: { delay?: number } = {}) {
   /** Opens a daemon on the data directory the crash left, as the next daemon start does. */
   const restart = async () => {
     const daemon = start();
-    daemon.control.recover();
+    await daemon.control.recover();
     await daemon.control.reconcile();
     return daemon;
   };

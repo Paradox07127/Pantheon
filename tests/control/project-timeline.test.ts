@@ -11,8 +11,8 @@ import { workbenchFixture } from './workbench-fixture.js';
 const base = Date.parse('2026-01-01T12:00:00Z');
 const iso = (seconds: number) => new Date(base + seconds * 1000).toISOString();
 
-function timelineFixture() {
-  const f = workbenchFixture();
+async function timelineFixture() {
+  const f = await workbenchFixture();
   const now = vi.spyOn(f.store, 'now').mockReturnValue(base);
   const record = (
     seconds: number,
@@ -73,8 +73,8 @@ function timelineFixture() {
   return { ...f, now, record, session, turn, approval };
 }
 
-it('ends a merging interval when cancellation is confirmed', () => {
-  const f = timelineFixture();
+it('ends a merging interval when cancellation is confirmed', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('cancelled-work');
   f.record(1, 'workspace.ready', workspace);
   f.record(2, 'session.merge_started', session);
@@ -88,8 +88,8 @@ it('ends a merging interval when cancellation is confirmed', () => {
   ]);
 });
 
-it('replays provisioning, two turns, a permission wait, idle time and a merge', () => {
-  const f = timelineFixture();
+it('replays provisioning, two turns, a permission wait, idle time and a merge', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('first');
   const first = f.turn(session, 'first-turn'),
     second = f.turn(session, 'second-turn'),
@@ -137,8 +137,8 @@ it('replays provisioning, two turns, a permission wait, idle time and a merge', 
   expect(f.store.cursor()).toBe(cursor);
 });
 
-it('leaves a running lane open and defaults the window to the last seven days', () => {
-  const f = timelineFixture();
+it('leaves a running lane open and defaults the window to the last seven days', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('running');
   const turn = f.turn(session, 'running-turn');
   f.record(2, 'workspace.ready', workspace);
@@ -163,8 +163,8 @@ it('leaves a running lane open and defaults the window to the last seven days', 
   });
 });
 
-it('replays events before since to clip a pending wait and resume the running turn', () => {
-  const f = timelineFixture();
+it('replays events before since to clip a pending wait and resume the running turn', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('clipped');
   const turn = f.turn(session, 'clipped-turn'),
     permission = f.approval(session, 'clipped-permission');
@@ -182,8 +182,8 @@ it('replays events before since to clip a pending wait and resume the running tu
   ]);
 });
 
-it('separates queue time from running time and readiness for review', () => {
-  const f = timelineFixture();
+it('separates queue time from running time and readiness for review', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('queued');
   const first = f.turn(session, 'active-turn'),
     second = f.turn(session, 'queued-turn');
@@ -203,8 +203,8 @@ it('separates queue time from running time and readiness for review', () => {
   ]);
 });
 
-it('keeps a lane that waits through the whole window without new events', () => {
-  const f = timelineFixture();
+it('keeps a lane that waits through the whole window without new events', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('still-waiting');
   const turn = f.turn(session, 'still-waiting-turn'),
     permission = f.approval(session, 'still-waiting-permission');
@@ -223,8 +223,8 @@ it('keeps a lane that waits through the whole window without new events', () => 
   ]);
 });
 
-it('ends a steer that was delivered into the running turn with that turn', () => {
-  const f = timelineFixture();
+it('ends a steer that was delivered into the running turn with that turn', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('steered');
   const main = f.turn(session, 'main-turn'),
     steer = { ...f.turn(session, 'steer-turn'), kind: 'steer' as const };
@@ -247,8 +247,8 @@ it('ends a steer that was delivered into the running turn with that turn', () =>
   ]);
 });
 
-it('ends a steer whose delivery failed without a turn end', () => {
-  const f = timelineFixture();
+it('ends a steer whose delivery failed without a turn end', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('refused-steer');
   const main = f.turn(session, 'refused-main-turn'),
     steer = { ...f.turn(session, 'refused-steer-turn'), kind: 'steer' as const };
@@ -266,8 +266,8 @@ it('ends a steer whose delivery failed without a turn end', () => {
   ]);
 });
 
-it('ends a session discarded after its provisioning failed as discarded', () => {
-  const f = timelineFixture();
+it('ends a session discarded after its provisioning failed as discarded', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('failed-then-discarded');
   f.record(2, 'workspace.provisioning', workspace, { state: 'failed' });
   f.record(2, 'session.closed', session, { reason: 'workspace_failed' });
@@ -281,8 +281,8 @@ it('ends a session discarded after its provisioning failed as discarded', () => 
   ]);
 });
 
-it('leaves out a deleted session whose events remain', () => {
-  const f = timelineFixture();
+it('leaves out a deleted session whose events remain', async () => {
+  const f = await timelineFixture();
   const kept = f.session('kept'),
     deleted = f.session('deleted');
   const keptTurn = f.turn(kept.session, 'kept-turn'),
@@ -313,8 +313,8 @@ it('leaves out a deleted session whose events remain', () => {
   ]);
 });
 
-it('lists only recently active worktree sessions of the project in first event order', () => {
-  const f = timelineFixture();
+it('lists only recently active worktree sessions of the project in first event order', async () => {
+  const f = await timelineFixture();
   const later = f.session('later', 4),
     earlier = f.session('earlier', 0),
     quiet = f.session('quiet', 0);
@@ -338,8 +338,8 @@ it('lists only recently active worktree sessions of the project in first event o
 
 it.each(['approval.rejected', 'approval.void'])(
   'keeps waiting for the remaining permission after %s',
-  (kind) => {
-    const f = timelineFixture();
+  async (kind) => {
+    const f = await timelineFixture();
     const { session, workspace } = f.session('waiting');
     const turn = f.turn(session, 'waiting-turn'),
       first = f.approval(session, 'first-permission'),
@@ -365,8 +365,8 @@ it.each([
   ['session.closed', {}, 'failed', null],
   ['workspace.provisioning', { state: 'failed' }, 'failed', null],
   ['workspace.provisioning', { state: 'cancelled' }, 'failed', null],
-] as const)('ends the lane on %s with %j', (kind, payload, state, to) => {
-  const f = timelineFixture();
+] as const)('ends the lane on %s with %j', async (kind, payload, state, to) => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('ended');
   f.record(2, kind, kind.startsWith('workspace.') ? workspace : session, payload);
   f.record(3, 'session.closed', session);
@@ -378,8 +378,8 @@ it.each([
   ]);
 });
 
-it('returns to idle after a blocked merge and after failed or cancelled turns', () => {
-  const f = timelineFixture();
+it('returns to idle after a blocked merge and after failed or cancelled turns', async () => {
+  const f = await timelineFixture();
   const { session, workspace } = f.session('retry');
   const first = f.turn(session, 'failed-turn'),
     second = f.turn(session, 'cancelled-turn');
@@ -403,8 +403,8 @@ it('returns to idle after a blocked merge and after failed or cancelled turns', 
   ]);
 });
 
-it('refuses access from another project principal', () => {
-  const f = timelineFixture();
+it('refuses access from another project principal', async () => {
+  const f = await timelineFixture();
   expect(() =>
     f.control.projectTimeline(
       { id: 'other', role: 'planner', session_id: 'other', project_id: 'other-project' },
@@ -424,10 +424,10 @@ it('serves the timeline at GET /v1/project.timeline and validates since', async 
     now: () => base,
   });
   try {
-    const project = daemon.control.execute(
+    const project = (await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name: 'Timeline project', roots: [work] }),
-    ) as Project;
+    )) as Project;
     const workspace = daemon.store.insert<Workspace>('workspaces', {
       id: 'timeline-workspace',
       revision: 1,

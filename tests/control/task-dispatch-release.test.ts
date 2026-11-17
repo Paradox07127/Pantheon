@@ -3,7 +3,7 @@ import type { BoardPlan, HarnessAdapter, Principal, Session, SessionTurn } from 
 import { eventually, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadOf = (f: Fixture, sessionId: string): Principal => ({
@@ -55,7 +55,7 @@ const turnWriteUnlock = (f: Fixture, status: 'supported' | 'unsupported') => {
 
 /** A lead that claimed direct task a and runs a writable turn on it. */
 async function writingLead(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   updatePlan(f, lead.id, [task('a'), task('b')]);
   f.call('task.start', { project_id: f.project.id, task_ids: ['a'] }, null, leadOf(f, lead.id));
@@ -81,7 +81,7 @@ const stopTask = (f: Fixture, leadId: string) =>
   );
 
 it('interrupts the writable lead turn whose direct task is stopped when the runtime cannot take write access back', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   turnWriteUnlock(f, 'unsupported');
   const interrupt = vi.spyOn(f.adapter, 'interrupt');
   const lead = await writingLead(f);
@@ -93,7 +93,7 @@ it('interrupts the writable lead turn whose direct task is stopped when the runt
 });
 
 it('interrupts the writable lead turn whose direct task leaves the plan when the runtime cannot take write access back', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   turnWriteUnlock(f, 'unsupported');
   const interrupt = vi.spyOn(f.adapter, 'interrupt');
   const lead = await writingLead(f);
@@ -106,7 +106,7 @@ it('interrupts the writable lead turn whose direct task leaves the plan when the
 });
 
 it('continues the lead read-only after interrupting its writable turn for a stopped direct task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   turnWriteUnlock(f, 'unsupported');
   const lead = await writingLead(f);
   const before = f.turns(lead.id).length;
@@ -120,7 +120,7 @@ it('continues the lead read-only after interrupting its writable turn for a stop
 });
 
 it('only makes the lead turn read-only when the runtime can take write access back', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   turnWriteUnlock(f, 'supported');
   const interrupt = vi.spyOn(f.adapter, 'interrupt');
   const setTurnReadOnly = vi.fn();

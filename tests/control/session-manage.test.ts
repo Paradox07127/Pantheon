@@ -14,7 +14,7 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
 const planner = (f: Fixture): Principal => ({
@@ -45,7 +45,7 @@ const kinds = (f: Fixture, sessionId: string) =>
     .map((event) => event.kind);
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -56,9 +56,9 @@ async function idleSession(f: Fixture) {
   return current(f, session.id);
 }
 
-it('pins and unpins a session for the user only', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('pins and unpins a session for the user only', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   expect(() => run(f, 'session.pin', session.id, { pinned: true }, planner(f))).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
@@ -73,9 +73,9 @@ it('pins and unpins a session for the user only', () => {
   );
 });
 
-it('archives an ended session, keeps it listed and restores it', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('archives an ended session, keeps it listed and restores it', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   expect(() => run(f, 'session.archive', session.id)).toThrow(
     expect.objectContaining({ code: 'invalid_state' }),
   );
@@ -98,9 +98,9 @@ it('archives an ended session, keeps it listed and restores it', () => {
   );
 });
 
-it('archives a failed session', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('archives a failed session', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   end(f, session.id, {});
   expect(f.list()[0]).toMatchObject({ state: 'failed' });
   expect(typeof run(f, 'session.archive', session.id).archived_at).toBe('string');
@@ -109,7 +109,7 @@ it('archives a failed session', () => {
 it.each(['idle', 'ready'] as const)(
   'archives a listed %s session without removing its worktree or closing its native session',
   async (state) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const session = await idleSession(f);
     const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
     if (state === 'ready') {
@@ -147,8 +147,8 @@ it.each(['idle', 'ready'] as const)(
 );
 
 it('refuses to archive a running session and names the allowed states', async () => {
-  const f = workbenchFixture({ delay: 4000 });
-  const session = f.create();
+  const f = await workbenchFixture({ delay: 4000 });
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]?.state === 'running',
@@ -167,7 +167,7 @@ it('refuses to archive a running session and names the allowed states', async ()
 it.each(['waiting', 'merging', 'reconciling'] as const)(
   'refuses to archive a %s session',
   async (state) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const session = await idleSession(f);
     if (state === 'waiting')
       f.store.insert<Approval>('approvals', {
@@ -205,7 +205,7 @@ it.each(['waiting', 'merging', 'reconciling'] as const)(
 it.each(['session.send', 'session.steer'] as const)(
   '%s restores an archived idle session before queuing the turn',
   async (type) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const session = await idleSession(f);
     const archived = f.store.update<Session>(
       'sessions',
@@ -260,11 +260,11 @@ it.each(['session.send', 'session.steer'] as const)(
   },
 );
 
-it('refuses to delete for another principal, a merged session and one a milestone names', () => {
-  const f = workbenchFixture();
-  const merged = f.create('Merged work'),
-    named = f.create('Named work'),
-    free = f.create('Free work');
+it('refuses to delete for another principal, a merged session and one a milestone names', async () => {
+  const f = await workbenchFixture();
+  const merged = await f.create('Merged work'),
+    named = await f.create('Named work'),
+    free = await f.create('Free work');
   end(f, merged.id, { outcome: 'merged' });
   end(f, named.id, { outcome: 'discarded' });
   end(f, free.id, { outcome: 'discarded' });
@@ -287,7 +287,7 @@ it('refuses to delete for another principal, a merged session and one a mileston
 });
 
 it('deletes a running worktree session: closes its process, removes its worktree and rows, keeps its events', async () => {
-  const f = workbenchFixture({ delay: 4000 });
+  const f = await workbenchFixture({ delay: 4000 });
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const upload = f.control.addAttachment(
     user,
@@ -296,7 +296,7 @@ it('deletes a running worktree session: closes its process, removes its worktree
     'text/plain',
     new TextEncoder().encode('notes'),
   );
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Read the notes',
@@ -343,16 +343,16 @@ it('deletes a running worktree session: closes its process, removes its worktree
 });
 
 it('deletes an ended session with its reviews and keeps native history outside the state root or still in use', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const outside = path.join(f.root, 'outside-history'),
     shared = path.join(f.root, 'state/native-sessions/shared');
   for (const directory of [outside, shared]) {
     mkdirSync(directory, { recursive: true });
     writeFileSync(path.join(directory, 'history.jsonl'), '{}\n');
   }
-  const legacy = f.create('Legacy history'),
-    first = f.create('First sharer'),
-    second = f.create('Second sharer');
+  const legacy = await f.create('Legacy history'),
+    first = await f.create('First sharer'),
+    second = await f.create('Second sharer');
   end(f, legacy.id, { outcome: 'discarded', native_state_dir: outside });
   end(f, first.id, { outcome: 'discarded', native_state_dir: shared });
   end(f, second.id, { outcome: 'discarded', native_state_dir: shared });
@@ -392,8 +392,8 @@ it('deletes an ended session with its reviews and keeps native history outside t
 });
 
 it('shows a plan task whose only session was deleted as a task without sessions', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export');
   f.call(
     'board.plan.update',
     {
@@ -426,7 +426,7 @@ it('shows a plan task whose only session was deleted as a task without sessions'
       expires_at: f.store.now() + 60000,
     },
   );
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',

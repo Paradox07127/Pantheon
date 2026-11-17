@@ -17,7 +17,7 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { workbenchSessionSpec } from '../../packages/control/dist/workbench-session.js';
 import { fixture, registerWorkspace, user } from '../helpers.js';
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
@@ -44,11 +44,11 @@ const leaderboards = {
   ],
 };
 
-function setup(options: { leaderboards?: boolean } = {}) {
+async function setup(options: { leaderboards?: boolean } = {}) {
   const configDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-lead-read-'));
   if (options.leaderboards)
     writeFileSync(path.join(configDir, 'leaderboards.json'), JSON.stringify(leaderboards));
-  const f = fixture({
+  const f = await fixture({
     managedWorkspaces: true,
     controlOptions: {
       userConfigDir: configDir,
@@ -123,8 +123,8 @@ function retrospective(f: Fixture, fields: Partial<Retrospective>): Retrospectiv
   });
 }
 
-it('gives a lead the current workflow policy and the new value after the user changes it', () => {
-  const f = setup();
+it('gives a lead the current workflow policy and the new value after the user changes it', async () => {
+  const f = await setup();
   const lead = principalOf(f, sessionOf(f), 'lead');
   expect(read(f, lead).lead?.workflow).toEqual({
     policy_version: 0,
@@ -146,8 +146,8 @@ it('gives a lead the current workflow policy and the new value after the user ch
   expect(read(f, lead).lead?.workflow).toMatchObject({ policy_version: 2, handback_limit: 0 });
 });
 
-it('leaves the lead section out for a task session and for the user', () => {
-  const f = setup();
+it('leaves the lead section out for a task session and for the user', async () => {
+  const f = await setup();
   const leadSession = sessionOf(f);
   const worker = sessionOf(f, { lead_session_id: leadSession.id, id: 'api' });
   expect(read(f, principalOf(f, leadSession, 'lead'))).toHaveProperty('lead');
@@ -155,8 +155,8 @@ it('leaves the lead section out for a task session and for the user', () => {
   expect(read(f)).not.toHaveProperty('lead');
 });
 
-it('lists the routing cells that have a first choice with only their picks', () => {
-  const f = setup({ leaderboards: true });
+it('lists the routing cells that have a first choice with only their picks', async () => {
+  const f = await setup({ leaderboards: true });
   for (const name of ['codex', 'claude']) {
     const adapter = new FixtureAdapter();
     adapter.name = name;
@@ -184,13 +184,13 @@ it('lists the routing cells that have a first choice with only their picks', () 
   });
 });
 
-it('lists no routing cell when no cell has a first choice', () => {
-  const f = setup();
+it('lists no routing cell when no cell has a first choice', async () => {
+  const f = await setup();
   expect(read(f, principalOf(f, sessionOf(f), 'lead')).lead!.routing).toEqual([]);
 });
 
-it('lists only the experiences on trial or in force, newest first', () => {
-  const f = setup();
+it('lists only the experiences on trial or in force, newest first', async () => {
+  const f = await setup();
   const lead = principalOf(f, sessionOf(f), 'lead');
   const older = improvement(f, {
     status: 'active',
@@ -229,8 +229,8 @@ it('lists only the experiences on trial or in force, newest first', () => {
   ]);
 });
 
-it("lists at most ten of the lead's own retrospectives, newest first, with their outcome facts", () => {
-  const f = setup();
+it("lists at most ten of the lead's own retrospectives, newest first, with their outcome facts", async () => {
+  const f = await setup();
   const leadSession = sessionOf(f);
   const lead = principalOf(f, leadSession, 'lead');
   for (let i = 1; i <= 12; i++)
@@ -280,8 +280,8 @@ it("lists at most ten of the lead's own retrospectives, newest first, with their
   });
 });
 
-it('keeps fixed task session and hand-back counts out of the lead instructions', () => {
-  const f = setup();
+it('keeps fixed task session and hand-back counts out of the lead instructions', async () => {
+  const f = await setup();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const instructions = workbenchSessionSpec(ctx, sessionOf(f)).control_instructions!;
   expect(instructions).toContain('lead session');
@@ -289,8 +289,8 @@ it('keeps fixed task session and hand-back counts out of the lead instructions',
   expect(instructions).not.toMatch(/\b(three|3) (task sessions|times)\b/i);
 });
 
-it('tells a lead to read before it plans, ask only what reading cannot settle, state its assumptions and reproduce bugs', () => {
-  const f = setup();
+it('tells a lead to read before it plans, ask only what reading cannot settle, state its assumptions and reproduce bugs', async () => {
+  const f = await setup();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const instructions = workbenchSessionSpec(ctx, sessionOf(f)).control_instructions!;
   for (const text of [
@@ -303,16 +303,16 @@ it('tells a lead to read before it plans, ask only what reading cannot settle, s
     expect(instructions).toContain(text);
 });
 
-it('tells a lead that needs may name a system, an architecture and device labels', () => {
-  const f = setup();
+it('tells a lead that needs may name a system, an architecture and device labels', async () => {
+  const f = await setup();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const instructions = workbenchSessionSpec(ctx, sessionOf(f)).control_instructions!;
   for (const text of ['os=<system>', 'arch=<architecture>', 'labels'])
     expect(instructions).toContain(text);
 });
 
-it('mounts the Pantheon tools on a lead and says which board panel each tool updates', () => {
-  const f = setup();
+it('mounts the Pantheon tools on a lead and says which board panel each tool updates', async () => {
+  const f = await setup();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const spec = workbenchSessionSpec(ctx, sessionOf(f));
   expect(spec.pantheon_mcp?.args.at(-1)).toBe('mcp');
@@ -324,8 +324,8 @@ it('mounts the Pantheon tools on a lead and says which board panel each tool upd
     expect(spec.control_instructions).toContain(text);
 });
 
-it('lists the devices for a lead only once a device or this machine is configured', () => {
-  const f = setup();
+it('lists the devices for a lead only once a device or this machine is configured', async () => {
+  const f = await setup();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const lead = principalOf(f, sessionOf(f), 'lead');
   expect(read(f, lead).lead).not.toHaveProperty('devices');

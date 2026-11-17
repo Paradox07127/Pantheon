@@ -43,7 +43,7 @@ const script = (...steps: unknown[]) =>
   `Work on the device\nfixture-script\n${JSON.stringify(steps)}`;
 
 /** A project whose sessions can run on a device that is a directory of this machine. */
-function deviceFixture(options: ControlOptions = {}) {
+async function deviceFixture(options: ControlOptions = {}) {
   const cache = path.join(process.cwd(), 'node_modules/.cache');
   mkdirSync(cache, { recursive: true });
   const root = mkdtempSync(path.join(cache, 'pantheon-remote-')),
@@ -118,12 +118,12 @@ function deviceFixture(options: ControlOptions = {}) {
     input: Record<string, unknown>,
     revision: number | null = null,
   ) => control.execute(user, command(user.id, type, input, revision)) as T;
-  const project = call<Project>('project.open', { name: 'Device project', roots: [source] });
+  const project = await call<Project>('project.open', { name: 'Device project', roots: [source] });
   const current = (sessionId: string) => store.must<Session>('sessions', sessionId);
   const turns = (sessionId: string) =>
     store.list<SessionTurn>('session_turns').filter((turn) => turn.session_id === sessionId);
   const create = (input: string, extra: Record<string, unknown> = {}) =>
-    call<Session>('session.create', {
+    call<Promise<Session>>('session.create', {
       project_id: project.id,
       runtime: adapter.name,
       input,
@@ -174,7 +174,7 @@ const read = (directory: string, file: string) => readFileSync(path.join(directo
 const hold = { ask: { tool: 'Bash', input: { command: 'true' } } };
 
 /** Answers the request of the hold step, so the turn goes on to its later steps. */
-async function release(f: ReturnType<typeof deviceFixture>, session: Session) {
+async function release(f: Awaited<ReturnType<typeof deviceFixture>>, session: Session) {
   const pending = () =>
     f.store
       .list<Approval>('approvals')
@@ -194,21 +194,21 @@ afterAll(async () => {
 });
 /** Two settled sessions on the device, shared by the tests that only compute specs from them. */
 async function twoSessions() {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   // The fixture outlives each test; afterAll removes it.
   const cleanup = cleanups.pop()!;
   f.probed({ max_sessions: 2 });
-  const session = f.create(script({ say: 'Ready' }));
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
-  const other = f.create(script({ say: 'Ready' }));
+  const other = await f.create(script({ say: 'Ready' }));
   await f.settle(other);
   return { f, session, other, cleanup };
 }
 const sharedSessions = () => (specFixture ??= twoSessions());
 
 it('brings a file the device wrote and committed back into the local worktree', async () => {
-  const f = deviceFixture();
-  const session = f.create(
+  const f = await deviceFixture();
+  const session = await f.create(
     script(
       { write: { path: 'notes.txt', text: 'written on the device\n' } },
       { commit: 'Notes written on the device' },
@@ -227,10 +227,10 @@ it('brings a file the device wrote and committed back into the local worktree', 
 });
 
 it('authors a device commit as the local repository would', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   git(f.source, 'config', 'user.name', 'Local Author');
   git(f.source, 'config', 'user.email', 'local-author@example.invalid');
-  const session = f.create(
+  const session = await f.create(
     script({ write: { path: 'notes.txt', text: 'first\n' } }, { commit: 'First notes' }),
   );
   await f.settle(session);
@@ -241,8 +241,8 @@ it('authors a device commit as the local repository would', async () => {
 });
 
 it('carries uncommitted local changes to the device and the device turn back again', async () => {
-  const f = deviceFixture();
-  const session = f.create(
+  const f = await deviceFixture();
+  const session = await f.create(
     script({ write: { path: 'notes.txt', text: 'first\n' } }, { commit: 'First notes' }),
   );
   await f.settle(session);
@@ -264,8 +264,10 @@ it('carries uncommitted local changes to the device and the device turn back aga
 });
 
 it('does not bring back a file that was deleted locally between two turns', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'scratch.txt', text: 'from the device\n' } }));
+  const f = await deviceFixture();
+  const session = await f.create(
+    script({ write: { path: 'scratch.txt', text: 'from the device\n' } }),
+  );
   await f.settle(session);
   const local = f.local(session);
   expect(read(local, 'scratch.txt')).toBe('from the device\n');
@@ -280,8 +282,8 @@ it('does not bring back a file that was deleted locally between two turns', asyn
 });
 
 it('leaves ignored files where they are on both sides', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const local = f.local(session);
   mkdirSync(path.join(local, 'node_modules'));
@@ -405,7 +407,7 @@ it('lets a device session call a session tool that runs on this machine', async 
       '});',
     ].join('\n'),
   );
-  const f = deviceFixture({
+  const f = await deviceFixture({
     issueSessionCredential: (sessionId) => ({
       token_file: path.join(root, 'session-tokens', sessionId),
       daemon_url: 'http://127.0.0.1:4321',
@@ -413,7 +415,7 @@ it('lets a device session call a session tool that runs on this machine', async 
     mcpEntry: tools,
   });
   cleanups.push(async () => rmSync(root, { recursive: true, force: true }));
-  const session = f.create(
+  const session = await f.create(
     script({ tool: { name: 'report', arguments: { summary: 'Done on the device' } } }),
   );
   await f.settle(session);
@@ -438,8 +440,8 @@ it('lets a device session call a session tool that runs on this machine', async 
   ).toBe(true);
 });
 
-it('refuses a session on an offline device or with a backend', () => {
-  const f = deviceFixture();
+it('refuses a session on an offline device or with a backend', async () => {
+  const f = await deviceFixture();
   expect(() => f.create('Fix it', { backend: 'proxy' })).toThrow(
     expect.objectContaining({ code: 'invalid_input' }),
   );
@@ -453,8 +455,10 @@ it('refuses a session on an offline device or with a backend', () => {
 });
 
 it('fails the turn and keeps the pull pending when the device changes cannot be brought back', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'notes.txt', text: 'stranded\n' } }, hold));
+  const f = await deviceFixture();
+  const session = await f.create(
+    script({ write: { path: 'notes.txt', text: 'stranded\n' } }, hold),
+  );
   await eventually(
     () => existsSync(path.join(f.deviceWork(session), 'notes.txt')),
     () => f.control.tick(),
@@ -474,8 +478,8 @@ it('fails the turn and keeps the pull pending when the device changes cannot be 
 });
 
 it('deletes the device worktree, temporary files and sync refs when the session is discarded', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
   await f.settle(session);
   const device = f.deviceWork(session),
     tmp = device.replace('/w/', '/tmp/');
@@ -500,8 +504,8 @@ it('deletes the device worktree, temporary files and sync refs when the session 
 });
 
 it('deletes the sync refs on this machine with one git run', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
   await f.settle(session);
   // Logs each update-ref run on one line: its arguments, then what it read from stdin.
   const shims = path.join(path.dirname(f.deviceRepo), 'ref-shims'),
@@ -549,8 +553,8 @@ it('deletes the sync refs on this machine with one git run', async () => {
 });
 
 it('deletes the sync refs on this machine without holding up the daemon', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
   await f.settle(session);
   const counter = countingGit();
   cleanups.unshift(async () => counter.restore());
@@ -577,8 +581,8 @@ it('deletes the sync refs on this machine without holding up the daemon', async 
 });
 
 it('deletes the device worktree, temporary files and sync refs when an idle session is deleted', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
   await f.settle(session);
   const device = f.deviceWork(session),
     tmp = device.replace('/w/', '/tmp/');
@@ -598,8 +602,8 @@ it('deletes the device worktree, temporary files and sync refs when an idle sess
 });
 
 it('keeps what each side staged where the sync changed nothing', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const local = f.local(session),
     device = f.deviceWork(session);
@@ -622,7 +626,7 @@ it('keeps what each side staged where the sync changed nothing', async () => {
   }
 });
 
-const failure = (f: ReturnType<typeof deviceFixture>, turn: SessionTurn) =>
+const failure = (f: Awaited<ReturnType<typeof deviceFixture>>, turn: SessionTurn) =>
   (
     f.store
       .events(0, undefined, Number.MAX_SAFE_INTEGER)
@@ -632,8 +636,10 @@ const failure = (f: ReturnType<typeof deviceFixture>, turn: SessionTurn) =>
   )?.error;
 
 it('keeps a device file whose pull failed when the next turn starts', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'notes.txt', text: 'stranded\n' } }, hold));
+  const f = await deviceFixture();
+  const session = await f.create(
+    script({ write: { path: 'notes.txt', text: 'stranded\n' } }, hold),
+  );
   await eventually(
     () => existsSync(path.join(f.deviceWork(session), 'notes.txt')),
     () => f.control.tick(),
@@ -654,8 +660,8 @@ it('keeps a device file whose pull failed when the next turn starts', async () =
 });
 
 it('keeps a file that appeared on the device after the last turn ended', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   writeFileSync(path.join(f.deviceWork(session), 'late.txt'), 'written after the turn\n');
 
@@ -668,8 +674,8 @@ it('keeps a file that appeared on the device after the last turn ended', async (
 });
 
 /** Starts a second turn that runs `steps` on the device once `release` answers it, and waits until it runs. */
-async function slowSecondTurn(f: ReturnType<typeof deviceFixture>, ...steps: unknown[]) {
-  const session = f.create(script({ say: 'Ready' }));
+async function slowSecondTurn(f: Awaited<ReturnType<typeof deviceFixture>>, ...steps: unknown[]) {
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   f.send(session.id, script(hold, ...steps));
   await eventually(
@@ -681,7 +687,7 @@ async function slowSecondTurn(f: ReturnType<typeof deviceFixture>, ...steps: unk
 }
 
 it('keeps the changes made on this machine while the device turn runs', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   const session = await slowSecondTurn(f, { write: { path: 'notes.txt', text: 'device\n' } });
   const local = f.local(session);
   writeFileSync(path.join(local, 'answer.txt'), 'changed locally\n');
@@ -696,7 +702,7 @@ it('keeps the changes made on this machine while the device turn runs', async ()
 });
 
 it('fails the turn, marks the file and keeps the local version when both sides changed it', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   const session = await slowSecondTurn(f, { write: { path: 'answer.txt', text: 'device\n' } });
   const local = f.local(session);
   writeFileSync(path.join(local, 'answer.txt'), 'local\n');
@@ -719,10 +725,10 @@ it('fails the turn, marks the file and keeps the local version when both sides c
 });
 
 it('leaves a file only this machine ignores as it is when the device writes the same path', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   mkdirSync(path.join(f.source, '.git/info'), { recursive: true });
   writeFileSync(path.join(f.source, '.git/info/exclude'), 'secret.txt\n');
-  const session = f.create(script({ say: 'Ready' }));
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const local = f.local(session);
   writeFileSync(path.join(local, 'secret.txt'), 'local only\n');
@@ -753,8 +759,8 @@ it('keeps the project variables of a device session and gives it the temporary d
 });
 
 it('copies the attachments of a device turn to the device and names the copies there', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const sent: UserTurn[] = [];
   const send = f.adapter.send.bind(f.adapter);
@@ -787,7 +793,7 @@ it('copies the attachments of a device turn to the device and names the copies t
 });
 
 it('keeps the commits of this machine and the files of the device when both committed during a turn', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   const session = await slowSecondTurn(
     f,
     { write: { path: 'notes.txt', text: 'device\n' } },
@@ -811,14 +817,14 @@ it('keeps the commits of this machine and the files of the device when both comm
 it('finishes bringing the device changes back before shutdown returns', async () => {
   // Every device command takes a moment, as over a network.
   const slow = ['/bin/sh', '-c', 'sleep 0.4; eval "$1"', 'sh'];
-  const f = deviceFixture({
+  const f = await deviceFixture({
     deviceLink: () => ({
       transport: slow,
       gitUrl: (target) => target,
       withSocket: (localSocket) => ({ transport: slow, socket: localSocket }),
     }),
   });
-  const session = f.create(
+  const session = await f.create(
     script({ write: { path: 'notes.txt', text: 'written on the device\n' } }, { wait: 60000 }),
   );
   await eventually(
@@ -833,8 +839,8 @@ it('finishes bringing the device changes back before shutdown returns', async ()
 });
 
 it('lands the local files again on a device that lost its worktree', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'notes.txt', text: 'not committed\n' } }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ write: { path: 'notes.txt', text: 'not committed\n' } }));
   await f.settle(session);
   const device = f.deviceWork(session);
   // An idle process that is past its limit closes; the next turn starts a new one, which prepares the device again.
@@ -855,8 +861,8 @@ it('lands the local files again on a device that lost its worktree', async () =>
 });
 
 it('applies an ignore rule of this machine that is newer than the last push to the device', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const local = f.local(session),
     device = f.deviceWork(session);
@@ -874,7 +880,7 @@ it('applies an ignore rule of this machine that is newer than the last push to t
 });
 
 it('keeps a file a rule of the repository takes back out of the global ignore rules', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   const config = path.join(path.dirname(f.deviceRepo), 'global-gitconfig'),
     before = process.env.GIT_CONFIG_GLOBAL;
   mkdirSync(path.dirname(config), { recursive: true });
@@ -887,7 +893,7 @@ it('keeps a file a rule of the repository takes back out of the global ignore ru
   });
   mkdirSync(path.join(f.source, '.git/info'), { recursive: true });
   writeFileSync(path.join(f.source, '.git/info/exclude'), '!notes.log\n');
-  const session = f.create(script({ say: 'Ready' }));
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const local = f.local(session);
   writeFileSync(path.join(local, 'notes.log'), 'kept\n');
@@ -901,8 +907,8 @@ it('keeps a file a rule of the repository takes back out of the global ignore ru
 });
 
 it('replaces a link the device runtime planted where an attachment copy goes', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const sent: UserTurn[] = [];
   const send = f.adapter.send.bind(f.adapter);
@@ -941,12 +947,12 @@ it('replaces a link the device runtime planted where an attachment copy goes', a
 });
 
 /** Runs `line` in a shell each time the merge of both file sets starts, after the local snapshot was taken. */
-function duringMerge(f: ReturnType<typeof deviceFixture>, line: string) {
+function duringMerge(f: Awaited<ReturnType<typeof deviceFixture>>, line: string) {
   beforeGit(f, ' merge-tree ', line);
 }
 
 /** Runs `line` in a shell before each git command whose arguments contain `call`. */
-function beforeGit(f: ReturnType<typeof deviceFixture>, call: string, line: string) {
+function beforeGit(f: Awaited<ReturnType<typeof deviceFixture>>, call: string, line: string) {
   const shims = path.join(path.dirname(f.deviceRepo), 'shims'),
     before = process.env.PATH!;
   mkdirSync(shims, { recursive: true });
@@ -962,7 +968,7 @@ function beforeGit(f: ReturnType<typeof deviceFixture>, call: string, line: stri
 }
 
 it('keeps a file saved on this machine while the device changes are being brought back', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   const session = await slowSecondTurn(f, { write: { path: 'notes.txt', text: 'device\n' } });
   const local = f.local(session);
   writeFileSync(path.join(local, 'mine.txt'), 'local\n');
@@ -977,7 +983,7 @@ it('keeps a file saved on this machine while the device changes are being brough
 });
 
 it('fails the turn instead of writing over a file saved while the device changes are being brought back', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   const session = await slowSecondTurn(f, { write: { path: 'notes.txt', text: 'device\n' } });
   const local = f.local(session);
   writeFileSync(path.join(local, 'mine.txt'), 'local\n');
@@ -994,8 +1000,8 @@ it('fails the turn instead of writing over a file saved while the device changes
 });
 
 it('names a transport without the session tools forward beside the one that carries it', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const local = f.local(session);
   (f.ctx as { deviceLink: ControlContext['deviceLink'] }).deviceLink = () => ({
@@ -1019,8 +1025,8 @@ it('names a transport without the session tools forward beside the one that carr
 });
 
 it('publishes running and done pull states to event subscribers and session reads', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const seen: unknown[] = [];
   f.control.on('events', () => {
@@ -1043,8 +1049,10 @@ it('publishes running and done pull states to event subscribers and session read
 });
 
 it('retries a failed pull, reports its reason and brings the stranded result back', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ write: { path: 'notes.txt', text: 'stranded\n' } }, hold));
+  const f = await deviceFixture();
+  const session = await f.create(
+    script({ write: { path: 'notes.txt', text: 'stranded\n' } }, hold),
+  );
   await eventually(
     () => existsSync(path.join(f.deviceWork(session), 'notes.txt')),
     () => f.control.tick(),
@@ -1081,8 +1089,8 @@ it('retries a failed pull, reports its reason and brings the stranded result bac
 });
 
 it('refuses reconnect for a local session and lists its pull as not needed', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Local' }), { device_id: 'local' });
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Local' }), { device_id: 'local' });
   await f.settle(session);
   expect(
     f.control.sessionList(user, f.project.id).find((item) => item.id === session.id)!.remote_pull,
@@ -1091,9 +1099,9 @@ it('refuses reconnect for a local session and lists its pull as not needed', asy
 });
 
 it('lists a direct device session with its identity and opening time until it ends', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   f.probed({ resources: { gpu: 1, 'test-db': 2 } });
-  const session = f.create(script({ say: 'Ready' }));
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const listed = (await f.control.listDevices(user)).find((device) => device.id === 'build-box')!;
   const opened = f.store
@@ -1118,8 +1126,8 @@ it('lists a direct device session with its identity and opening time until it en
 });
 
 it('runs the sync git commands on the device without the hooks and file monitor its repository names', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const marker = path.join(path.dirname(f.deviceRepo), 'ran.log'),
     monitor = path.join(path.dirname(f.deviceRepo), 'monitor.sh'),
@@ -1138,7 +1146,7 @@ it('runs the sync git commands on the device without the hooks and file monitor 
 });
 
 it('keeps a commit made on this machine while the device commit is being brought back', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   const session = await slowSecondTurn(
     f,
     { write: { path: 'notes.txt', text: 'device\n' } },
@@ -1161,8 +1169,8 @@ it('keeps a commit made on this machine while the device commit is being brought
 });
 
 it('gives up a device command that does not finish', async () => {
-  const f = deviceFixture();
-  const session = f.create(script({ say: 'Ready' }));
+  const f = await deviceFixture();
+  const session = await f.create(script({ say: 'Ready' }));
   await f.settle(session);
   const started = path.join(path.dirname(f.deviceRepo), 'hung');
   const hung = ['/bin/sh', '-c', `touch '${started}'; exec sleep 30`, 'sh'];
@@ -1189,11 +1197,11 @@ it('gives up a device command that does not finish', async () => {
 });
 
 it('prepares two device sessions of one project one after the other on a device without its repository', async () => {
-  const f = deviceFixture();
+  const f = await deviceFixture();
   f.probed({ max_sessions: 2 });
-  const sessions = [f.create(script({ say: 'Ready' }))];
+  const sessions = [await f.create(script({ say: 'Ready' }))];
   await f.settle(sessions[0]!);
-  sessions.push(f.create(script({ say: 'Ready' })));
+  sessions.push(await f.create(script({ say: 'Ready' })));
   await f.settle(sessions[1]!);
   // Each device command holds a lock while it runs and notes when another one already held it.
   const commands = path.join(f.home, 'commands');

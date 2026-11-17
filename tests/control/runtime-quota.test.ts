@@ -7,9 +7,9 @@ import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
 async function setup() {
-  const f = workbenchFixture({ delay: 10 });
+  const f = await workbenchFixture({ delay: 10 });
   dispatchEveryTier(f);
-  const lead = f.create('Plan a report');
+  const lead = await f.create('Plan a report');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () =>
@@ -36,7 +36,7 @@ it('shares the latest quota across sessions and retains it through a runtime sta
   vi.spyOn(f.store, 'now').mockReturnValue(seenAt);
   const reset = seenAt + 60000;
   f.quota([{ window: 'five_hour', used_percent: 92, resets_at: reset }]);
-  const second = f.create('Read the plan');
+  const second = await f.create('Read the plan');
   await awaitWorkspaceReady(f.control, second.workspace_id!);
   await eventually(
     () => f.start.mock.calls.length === 2,

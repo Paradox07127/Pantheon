@@ -17,18 +17,22 @@ import type {
 } from '@pantheon/domain';
 import { fixture, user, eventually, registerWorkspace } from '../helpers.js';
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 /** Worktree sessions in a git project beside the fixture's plain-folder one; needs managed workspaces. */
-function sessions(f: Fixture) {
+async function sessions(f: Fixture) {
   const root = path.join(f.root, 'sessions');
   mkdirSync(root);
-  const project = f.call<Project>('project.open', {
+  const project = await f.call<Project>('project.open', {
     name: 'Worktree sessions',
     roots: [root],
   });
   const create = (input = 'Discuss') =>
-    f.call<Session>('session.create', { project_id: project.id, runtime: f.adapter.name, input });
+    f.call<Promise<Session>>('session.create', {
+      project_id: project.id,
+      runtime: f.adapter.name,
+      input,
+    });
   return { project, create };
 }
 
@@ -42,7 +46,7 @@ async function ready(f: Fixture, session: Session) {
 }
 
 async function conversation(f: Fixture) {
-  const session = sessions(f).create();
+  const session = await (await sessions(f)).create();
   await ready(f, session);
   const turn = f.store
     .list<SessionTurn>('session_turns')
@@ -52,9 +56,9 @@ async function conversation(f: Fixture) {
 
 describe('transactional control', () => {
   it('deduplicates 100 session create commands and rejects altered input', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
-      const { project } = sessions(f);
+      const { project } = await sessions(f);
       const c = command(user.id, 'session.create', {
         project_id: project.id,
         runtime: f.adapter.name,
@@ -73,7 +77,7 @@ describe('transactional control', () => {
     }
   });
   it('gives adapters a real-time stop deadline when the store clock runs ahead', async () => {
-    const f = fixture({ now: () => Date.now() + 100 * 60000, managedWorkspaces: true });
+    const f = await fixture({ now: () => Date.now() + 100 * 60000, managedWorkspaces: true });
     try {
       const cancel = vi.spyOn(f.adapter, 'cancel');
       await conversation(f);
@@ -87,7 +91,7 @@ describe('transactional control', () => {
   });
   it('reaches the turn start failpoint', async () => {
     const reached: string[] = [],
-      f = fixture({ failpoint: (name) => reached.push(name), managedWorkspaces: true });
+      f = await fixture({ failpoint: (name) => reached.push(name), managedWorkspaces: true });
     try {
       await conversation(f);
       await f.control.tick();
@@ -98,28 +102,28 @@ describe('transactional control', () => {
   });
   it('rolls back state, events, receipts and outbox together', async () => {
     let fail = false;
-    const f = fixture({
+    const f = await fixture({
       failpoint: () => {
         if (fail) throw new Error('injected crash');
       },
       managedWorkspaces: true,
     });
     try {
-      const { create } = sessions(f);
+      const { create } = await sessions(f);
       const before = f.store.cursor();
       fail = true;
-      expect(() => create()).toThrow('injected crash');
+      await expect(create()).rejects.toThrow('injected crash');
       expect(f.store.list('sessions')).toHaveLength(0);
       expect(f.store.pending()).toHaveLength(0);
       expect(f.store.cursor()).toBe(before);
       fail = false;
-      expect(create().state).toBe('running');
+      expect((await create()).state).toBe('running');
     } finally {
       await f.close();
     }
   });
   it('rejects symlink scope escapes', async () => {
-    const f = fixture();
+    const f = await fixture();
     try {
       const outside = path.join(f.root, 'outside');
       mkdirSync(outside);
@@ -138,9 +142,9 @@ describe('transactional control', () => {
     }
   });
   it('denies a spoofed actor identity', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
-      const { project } = sessions(f);
+      const { project } = await sessions(f);
       const worker = {
         id: 'worker',
         role: 'planner' as const,
@@ -161,7 +165,7 @@ describe('transactional control', () => {
     }
   });
   it('does not admit a project containing the control plane directory', async () => {
-    const f = fixture();
+    const f = await fixture();
     try {
       expect(() => f.call('project.open', { name: 'too broad', roots: [f.root] })).toThrow(
         /control database/,
@@ -173,7 +177,7 @@ describe('transactional control', () => {
 });
 describe('execution and ownership', () => {
   it('supports a conversation over several turns', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
       const { session: created, turn } = await conversation(f);
       await eventually(
@@ -201,7 +205,7 @@ it('enforces a conversation wall-clock limit without claiming completion', async
   vi.spyOn(adapter, 'start').mockImplementation((spec, sink) =>
     start({ ...spec, budget: { ...spec.budget, wall_time_ms: 30 } }, sink),
   );
-  const f = fixture({ adapter, managedWorkspaces: true });
+  const f = await fixture({ adapter, managedWorkspaces: true });
   try {
     const { session, turn } = await conversation(f);
     await eventually(
@@ -216,7 +220,7 @@ it('enforces a conversation wall-clock limit without claiming completion', async
 
 describe('storage boundaries', () => {
   it('retains monotonic event history across database reopen', async () => {
-    const f = fixture();
+    const f = await fixture();
     try {
       const events = f.store.events();
       const db = new Store(f.store.file);
@@ -230,7 +234,7 @@ describe('storage boundaries', () => {
     }
   });
   it('detects missing or modified artifacts and collects only orphan content', async () => {
-    const f = fixture();
+    const f = await fixture();
     try {
       const a = f.files.put(Buffer.from('expected')),
         b = f.files.put(Buffer.from('orphan'));
@@ -334,7 +338,7 @@ function eventFixtureAdapter() {
 describe('reconciliation and late accounting', () => {
   it('records late usage without changing the old conversation result', async () => {
     const stub = eventFixtureAdapter(),
-      f = fixture({ adapter: stub.adapter, managedWorkspaces: true });
+      f = await fixture({ adapter: stub.adapter, managedWorkspaces: true });
     try {
       const { session: created, turn } = await conversation(f);
       await f.control.tick();
@@ -411,7 +415,7 @@ describe('reconciliation and late accounting', () => {
 describe('conversation termination', () => {
   it('fails an interrupted conversation turn', async () => {
     const stub = controlledAdapter(),
-      f = fixture({ adapter: stub.adapter, managedWorkspaces: true });
+      f = await fixture({ adapter: stub.adapter, managedWorkspaces: true });
     try {
       const { turn } = await conversation(f);
       await f.control.tick();
@@ -425,7 +429,7 @@ describe('conversation termination', () => {
 
   it('preserves a failed conversation completion error in its event', async () => {
     const stub = controlledAdapter(),
-      f = fixture({ adapter: stub.adapter, managedWorkspaces: true });
+      f = await fixture({ adapter: stub.adapter, managedWorkspaces: true });
     try {
       const { turn } = await conversation(f);
       await f.control.tick();
@@ -444,7 +448,7 @@ describe('conversation termination', () => {
     const stub = controlledAdapter(),
       stop = stub.receipt(false);
     vi.mocked(stub.adapter.close).mockResolvedValue(stop);
-    const f = fixture({ adapter: stub.adapter, managedWorkspaces: true });
+    const f = await fixture({ adapter: stub.adapter, managedWorkspaces: true });
     try {
       const { session, turn } = await conversation(f);
       await f.control.tick();
@@ -468,7 +472,7 @@ describe('conversation termination', () => {
 
   it('shutdown fails a conversation turn with daemon_shutdown and waits for completion', async () => {
     const stub = controlledAdapter(),
-      f = fixture({ adapter: stub.adapter, managedWorkspaces: true });
+      f = await fixture({ adapter: stub.adapter, managedWorkspaces: true });
     try {
       const { turn } = await conversation(f);
       await f.control.tick();
@@ -496,7 +500,7 @@ it.each(['rejected', 'timeout'])(
         release = resolve;
       });
     });
-    const f = fixture({ adapter: stub.adapter, managedWorkspaces: true });
+    const f = await fixture({ adapter: stub.adapter, managedWorkspaces: true });
     let shutdown: Promise<void> | undefined;
     try {
       // Provisioning waits in real time, so the worktree is ready before timers are faked.
@@ -537,7 +541,7 @@ it('records daemon_shutdown when a conversation completes while dispatch is retu
     });
     return receipt;
   };
-  const f = fixture({ adapter: stub.adapter, managedWorkspaces: true });
+  const f = await fixture({ adapter: stub.adapter, managedWorkspaces: true });
   try {
     await conversation(f);
     const ticking = f.control.tick();

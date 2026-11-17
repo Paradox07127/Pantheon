@@ -37,7 +37,7 @@ import { sessionDefaults } from './user-config.js';
 import { runGit } from './git.js';
 import { sessionGoal, sessionRangeAsync, type DiffRange } from './landing-diff.js';
 import { confirmTermination } from './process.js';
-import { currentStateAtStart, reconciledWriteRoots } from './non-writer-audit.js';
+import type { WrittenState } from './non-writer-audit.js';
 import { closeReconciledSession } from './session.js';
 import { assertManagedLocation } from './protection.js';
 import {
@@ -745,7 +745,13 @@ async function staleFindings(ctx: ControlContext, session: Session): Promise<voi
   ctx.changed();
 }
 
-export function settleReview(ctx: ControlContext, reviewId: string, recovering = false): void {
+/** `reconciled` holds the tracked state of the review's reconciling sessions, read before the transaction. */
+export function settleReview(
+  ctx: ControlContext,
+  reviewId: string,
+  recovering = false,
+  reconciled: ReadonlyMap<string, WrittenState> = new Map(),
+): void {
   const review = ctx.store.must<Review>('reviews', reviewId);
   if (recovering) {
     for (const sessionId of review.session_ids) {
@@ -757,11 +763,7 @@ export function settleReview(ctx: ControlContext, reviewId: string, recovering =
         if (error instanceof DomainError && error.code === 'termination_unconfirmed') continue;
         throw error;
       }
-      closeReconciledSession(
-        ctx,
-        session,
-        currentStateAtStart(reconciledWriteRoots(ctx, session.id)),
-      );
+      closeReconciledSession(ctx, session, reconciled.get(session.id));
     }
   }
   if (review.state !== 'running') return;

@@ -24,10 +24,10 @@ async function terminalDaemon(spawn: TerminalSpawn) {
     adapters: [],
     terminalSpawn: spawn,
   });
-  const project = daemon.control.execute(
+  const project = (await daemon.control.execute(
     user,
     command(user.id, 'project.open', { name: 'terminal', roots: [projectRoot] }),
-  ) as Project;
+  )) as Project;
   const open = async () =>
     (await daemon.control.execute(
       user,

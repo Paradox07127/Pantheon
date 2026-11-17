@@ -14,12 +14,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, readdir: vi.fn(actual.readdir), lstat: vi.fn(actual.lstat) };
 });
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 afterEach(() => vi.useRealTimers());
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -37,7 +37,7 @@ function commit(directory: string, file: string, text: string) {
 }
 
 it('totals measured linked worktrees and excludes missing and removed worktrees', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const workspaces = ['first', 'second'].map((id) => {
     const directory = path.join(f.root, id);
     mkdirSync(directory);
@@ -64,7 +64,7 @@ it('totals measured linked worktrees and excludes missing and removed worktrees'
 });
 
 it('predicts clean and conflicting merges only for open sessions ahead of their target', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const conflicting = await idleSession(f),
     clean = await idleSession(f),
     unchanged = await idleSession(f),
@@ -102,7 +102,7 @@ it('predicts clean and conflicting merges only for open sessions ahead of their 
 });
 
 it('recomputes the prediction when only the target head moves', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'session answer\n');
   const prediction = () => f.list().find((row) => row.id === session.id)?.predicted_conflicts;
@@ -116,7 +116,7 @@ it('recomputes the prediction when only the target head moves', async () => {
 });
 
 it('lists shared paths with open session ids and ignores private and finished changes', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const first = await idleSession(f),
     second = await idleSession(f),
     third = await idleSession(f),
@@ -148,7 +148,7 @@ it('lists shared paths with open session ids and ignores private and finished ch
 });
 
 it('keeps the same path in two project folders out of the shared files', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const first = await idleSession(f);
   const other = path.join(f.root, 'project/other'),
     worktree = path.join(f.root, 'other-worktree');
@@ -183,7 +183,7 @@ it('keeps the same path in two project folders out of the shared files', async (
 });
 
 it('limits conflict and shared path lists while preserving their full counts', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   for (let index = 0; index < 55; index++)
     writeFileSync(path.join(f.source, `file-${String(index).padStart(2, '0')}`), 'base\n');
   git(f.source, 'add', '.');
@@ -209,7 +209,7 @@ it('limits conflict and shared path lists while preserving their full counts', a
 });
 
 it('summarizes repeated gate command failures in the board range and detects same-commit flakes', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   const now = new Date(2027, 2, 16, 12).getTime();
   const clock = vi.spyOn(f.store, 'now').mockReturnValue(now);
@@ -247,7 +247,7 @@ it('summarizes repeated gate command failures in the board range and detects sam
 });
 
 it('leaves gate commands that were skipped after failing out of repeated gate failures', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   for (const head of ['first-head', 'second-head'])
     f.store.event('session.gate_checked', session, f.project.id, {
@@ -261,7 +261,7 @@ it('leaves gate commands that were skipped after failing out of repeated gate fa
 });
 
 it('reads cached repository facts without starting git or walking directories', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'session answer\n');
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -293,7 +293,7 @@ it('reads cached repository facts without starting git or walking directories', 
 });
 
 it('takes the changed paths of worktrees from a fresh list prefetch instead of reading them again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const first = await idleSession(f),
     second = await idleSession(f);
   for (const row of [first, second]) {
@@ -330,7 +330,7 @@ const sessionEvent = (f: Fixture, session: { id: string }) =>
   );
 
 it('keeps the measured size of a worktree after a session event and walks it again only after the refresh interval', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   const disk = () => f.control.workspaceStale(user, f.project.id).worktree_disk!;
   await eventually(() => disk().unmeasured === 0);
@@ -350,7 +350,7 @@ it('keeps the measured size of a worktree after a session event and walks it aga
 });
 
 it('keeps the predictions after a session event and reads only the worktree of that session again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const changed = await idleSession(f),
     quiet = await idleSession(f);
   commit(f.source, 'answer.txt', 'target answer\n');
@@ -396,7 +396,7 @@ it('keeps the predictions after a session event and reads only the worktree of t
 });
 
 it('orders gate failures by failed runs then name and limits the summary to ten commands', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   const results = Array.from({ length: 12 }, (_, index) => ({
     name: `Check ${String(index).padStart(2, '0')}`,

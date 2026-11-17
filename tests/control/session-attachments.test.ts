@@ -13,7 +13,7 @@ import type { Project, Session, UserTurn } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const attach = (f: Fixture, name: string, text: string, mime: string, projectId = f.project.id) =>
   f.control.addAttachment(user, projectId, name, mime, new TextEncoder().encode(text));
@@ -26,7 +26,7 @@ async function temporaryDirectory(f: Fixture, workspaceId: string): Promise<stri
 }
 
 async function idleSession(f: Fixture): Promise<Session> {
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await temporaryDirectory(f, session.workspace_id!);
   await eventually(
@@ -44,12 +44,12 @@ const sendWith = (f: Fixture, session: Session, extra: Record<string, unknown>) 
   );
 
 it('delivers copies of the attachments and the skills with the first turn and a later send', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
   const image = attach(f, 'screen shot.png', 'png bytes', 'image/png');
   expect(image).toEqual({ id: image.id, name: 'screen shot.png', mime: 'image/png', size: 9 });
   const skills = [{ name: 'review', path: '/skills/review/SKILL.md' }];
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Look at the screenshot',
@@ -99,10 +99,10 @@ it('delivers copies of the attachments and the skills with the first turn and a 
 });
 
 it('stores an upload named like its mime record in another case under a plain file name', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const upload = attach(f, 'META.JSON', 'hello', 'text/plain');
   expect(upload).toMatchObject({ name: 'file', mime: 'text/plain', size: 5 });
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Read the upload',
@@ -115,7 +115,7 @@ it('stores an upload named like its mime record in another case under a plain fi
 });
 
 it('replaces links the session planted for attachment copies instead of writing through them', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const temporary = await temporaryDirectory(f, session.workspace_id!);
   const outside = path.join(f.root, 'outside-folder'),
@@ -144,29 +144,32 @@ it('replaces links the session planted for attachment copies instead of writing 
 });
 
 it('refuses an attachment id that is unknown or belongs to another project', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const otherRoot = path.join(f.root, 'project/other');
   mkdirSync(otherRoot, { recursive: true });
   writeFileSync(path.join(otherRoot, 'readme.txt'), 'other\n');
-  const other = f.call<Project>('project.open', { name: 'Other project', roots: [otherRoot] });
+  const other = await f.call<Project>('project.open', {
+    name: 'Other project',
+    roots: [otherRoot],
+  });
   const foreign = attach(f, 'secret.txt', 'secret', 'text/plain', other.id);
   for (const attachment of ['missing', foreign.id, `../${other.id}/${foreign.id}`])
     expect(() => sendWith(f, session, { attachments: [attachment] }), attachment).toThrow(
       expect.objectContaining({ code: 'not_found' }),
     );
-  expect(() =>
+  await expect(
     f.call('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'Look at it',
       attachments: [foreign.id],
     }),
-  ).toThrow(expect.objectContaining({ code: 'not_found' }));
+  ).rejects.toThrow(expect.objectContaining({ code: 'not_found' }));
 });
 
-it('refuses attachments for a session without a worktree', () => {
-  const f = workbenchFixture();
+it('refuses attachments for a session without a worktree', async () => {
+  const f = await workbenchFixture();
   const attachment = attach(f, 'notes.txt', 'notes', 'text/plain');
   const plain = f.store.insert<Session>('sessions', {
     id: 'plain-conversation',
@@ -182,7 +185,7 @@ it('refuses attachments for a session without a worktree', () => {
 });
 
 it('ranks file name matches, then path matches, then ordered characters, shorter paths first', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const files = [
     'src/app.ts',
     'src/apple/x.ts',

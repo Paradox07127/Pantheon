@@ -12,8 +12,8 @@ afterEach(async () => {
 const count = 200;
 
 /** A lead plan of `count` tasks, each with one open task session, and a counter of reads of the sessions' task field. */
-function history() {
-  const f = fixture();
+async function history() {
+  const f = await fixture();
   cleanups.push(() => f.close());
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const plan = {
@@ -43,8 +43,8 @@ function history() {
   return { f, ctx, plan, sessions, counted, reads: () => reads };
 }
 
-it('reads each session a bounded number of times for device loads however many tasks the plans have', () => {
-  const { ctx, plan, sessions, counted, reads } = history();
+it('reads each session a bounded number of times for device loads however many tasks the plans have', async () => {
+  const { ctx, plan, sessions, counted, reads } = await history();
   const loads = deviceLoads(ctx, {
     plans: [plan],
     busy: new Set(),
@@ -54,8 +54,8 @@ it('reads each session a bounded number of times for device loads however many t
   expect(reads()).toBeLessThan(count * 20);
 });
 
-it('reads no session for the dispatch queue of a project with no requested task', () => {
-  const { f, ctx, plan, sessions, counted, reads } = history();
+it('reads no session for the dispatch queue of a project with no requested task', async () => {
+  const { f, ctx, plan, sessions, counted, reads } = await history();
   f.store.insert<BoardPlan>('board_plans', plan);
   for (const session of sessions) f.store.insert<Session>('sessions', session);
   const list = ctx.store.list.bind(ctx.store);

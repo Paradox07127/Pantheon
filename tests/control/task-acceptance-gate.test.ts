@@ -5,12 +5,12 @@ import type { BoardPlan, Project, Session, SessionTurn, Workspace } from '@panth
 import { insideSandbox, awaitWorkspaceReady, eventually } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const leadId = 'lead-session-of-plan';
 
-function mergeFixture() {
-  const f = workbenchFixture();
+async function mergeFixture() {
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   return f;
@@ -53,7 +53,7 @@ function setAcceptance(f: Fixture, acceptance: string[]) {
 /** A task session whose first turn has ended, with its ready worktree. */
 async function taskSession(f: Fixture) {
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-  const created = f.create();
+  const created = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, created.workspace_id!);
   await eventually(
     () =>
@@ -96,7 +96,7 @@ const removed = (f: Fixture, workspaceId: string) =>
 it.skipIf(insideSandbox)(
   'blocks a merge on a failing task acceptance without project gates and lands once the plan is fixed',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     setAcceptance(f, ['test -f MUST_EXIST']);
     const { session, workspace, sourceHead } = await taskSession(f);
     const head = commit(workspace.path, 'answer.txt', 'accepted\n');
@@ -134,7 +134,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'does not merge on the old acceptance when the plan changes it while the gate runs',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const release = path.join(f.root, 'release-gate');
     setAcceptance(f, [`while [ ! -f '${release}' ]; do sleep 0.05; done`]);
     const { session, workspace, sourceHead } = await taskSession(f);
@@ -171,7 +171,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'runs the project gate, then the task acceptance, then the before-merge command steps',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     setAcceptance(f, ['true']);
     const { session, workspace } = await taskSession(f);
     f.call('workflow.definition.set', {
@@ -199,7 +199,7 @@ it.skipIf(insideSandbox)(
       { ...bound, task: { ...bound.task!, definition_version: 1 } },
       bound.revision,
     );
-    f.call<Project>(
+    await f.call<Project>(
       'project.gate.set',
       {
         project_id: f.project.id,
@@ -224,10 +224,10 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)('runs the task acceptance on what the project gate built', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setAcceptance(f, ['test -f built.txt']);
   const { session, workspace } = await taskSession(f);
-  f.call<Project>(
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -254,7 +254,7 @@ it.skipIf(insideSandbox)('runs the task acceptance on what the project gate buil
 it.skipIf(insideSandbox)(
   'merges automatically when the project gate is empty but the task has acceptance',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     setAcceptance(f, ['test -f answer.txt']);
     const { session, workspace } = await taskSession(f);
     f.call<Project>(

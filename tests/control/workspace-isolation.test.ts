@@ -86,7 +86,7 @@ async function worktreeFixture() {
   controls.push(control);
   const call = <T>(type: CommandType, input: Record<string, unknown>) =>
     control.execute(user, command(user.id, type, input)) as T;
-  const project = call<Project>('project.open', {
+  const project = await call<Project>('project.open', {
     name: 'Worktree project',
     roots: [source],
   });
@@ -173,8 +173,8 @@ it('protects control state, original repositories, other workspaces and configur
     otherWorkspaces: [path.join(alias, 'other')],
     backupDir: path.join(alias, 'backups'),
   };
-  const entries = protectionList(input);
-  expect(entries).toEqual(protectionList(input));
+  const entries = await protectionList(input);
+  expect(entries).toEqual(await protectionList(input));
   expect(entries.map(({ path: target, deny }) => ({ path: target, deny }))).toEqual(
     expect.arrayContaining([
       ...readWrite.map((name) => ({ path: path.join(real, name), deny: 'read_write' })),
@@ -193,7 +193,7 @@ it('protects configuration paths before they are created', async () => {
   const root = tempRoot();
   for (const name of ['data', 'desktop', 'backups', 'home', 'codex'])
     mkdirSync(path.join(root, name));
-  const entries = protectionList({
+  const entries = await protectionList({
     dataDir: path.join(root, 'data'),
     desktopUserDataDir: path.join(root, 'desktop'),
     backupDir: path.join(root, 'backups'),
@@ -271,8 +271,12 @@ it('blocks planted fsmonitor and hooks while plain git proves the probes execute
   // An inherited redirect must not change which repository Pantheon examines.
   vi.stubEnv('GIT_DIR', path.join(f.root, 'nonexistent-git'));
   try {
-    expect(runGit(worktree.path, ['status', '--porcelain']).exit_code).toBe(0);
-    expect(runGit(worktree.path, ['checkout', '--detach', 'HEAD']).exit_code).toBe(0);
+    expect(
+      (await runGit(worktree.path, ['status', '--porcelain'], undefined, true)).exit_code,
+    ).toBe(0);
+    expect(
+      (await runGit(worktree.path, ['checkout', '--detach', 'HEAD'], undefined, true)).exit_code,
+    ).toBe(0);
   } finally {
     vi.unstubAllEnvs();
   }
@@ -349,7 +353,7 @@ it('removes a reserved worktree when the session start that made it rolls back',
   vi.spyOn(control, 'failpoint').mockImplementation((name) => {
     if (name === 'before_transaction_commit') throw new Error('commit refused');
   });
-  expect(() =>
+  await expect(
     control.execute(
       user,
       command(user.id, 'session.create', {
@@ -358,7 +362,7 @@ it('removes a reserved worktree when the session start that made it rolls back',
         input: 'Start the work',
       }),
     ),
-  ).toThrow('commit refused');
+  ).rejects.toThrow('commit refused');
   expect(f.store.list('workspaces')).toEqual([]);
   const [folder] = readdirSync(f.workspaceRoot);
   expect(readdirSync(path.join(f.workspaceRoot, folder!))).toEqual([]);
@@ -398,7 +402,7 @@ it('keeps the control loop available during provisioning and records owned proce
     ).toBeGreaterThan(0);
     const separate = path.join(f.root, 'independent');
     mkdirSync(separate);
-    const independent = f.call<Project>('project.open', {
+    const independent = await f.call<Project>('project.open', {
       name: 'Responsive control',
       roots: [separate],
     });
@@ -551,7 +555,7 @@ it('protects a symlinked configuration entry under its own name and its target',
   mkdirSync(input.home);
   mkdirSync(sharedHome);
   symlinkSync(sharedHome, path.join(input.home, '.claude'));
-  const listPaths = protectionList({ ...input, workspacePath: undefined }).map(
+  const listPaths = (await protectionList({ ...input, workspacePath: undefined })).map(
     (entry) => entry.path,
   );
   expect(listPaths).toEqual(expect.arrayContaining([path.join(input.home, '.claude'), sharedHome]));
@@ -604,9 +608,9 @@ it('protects symlinked planner and reviewer entries under their own names and th
 
 /** Starts a session without a task and a task session of it, each in its own worktree. */
 async function leadAndTaskSessions() {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
-  const worker = boundTaskSession(f, lead.id, 'export');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  const worker = await boundTaskSession(f, lead.id, 'export');
   const { writerTempDirectory } = await import('../../packages/control/dist/workspace-removal.js');
   const workspaces = await Promise.all(
     [lead, worker].map(async (session) => {

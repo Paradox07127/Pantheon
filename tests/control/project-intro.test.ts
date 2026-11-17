@@ -17,7 +17,7 @@ afterEach(async () => {
 const DAY = 86400000;
 const now = Date.parse('2026-11-13T12:00:00Z');
 async function setup() {
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   cleanups.push(() => f.close());
   const write = (name: string, contents: string | Buffer) => {
     const file = path.join(f.projectRoot, name);

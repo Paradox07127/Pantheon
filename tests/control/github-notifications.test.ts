@@ -38,7 +38,7 @@ function notification(fields: Record<string, unknown> = {}) {
 }
 
 /** A project on github.com/acme/reports and a GitHub that answers taylor from the replies map. */
-function githubFixture(mode: 'approve' | 'auto' | null = 'approve') {
+async function githubFixture(mode: 'approve' | 'auto' | null = 'approve') {
   const clock = createVirtualClock(1700000000000),
     requests: { path: string; headers: Record<string, string> }[] = [],
     replies = new Map<string, GithubResponse>();
@@ -50,7 +50,10 @@ function githubFixture(mode: 'approve' | 'auto' | null = 'approve') {
       return { status: 304, headers: { 'x-poll-interval': '60' }, body: null };
     return reply;
   };
-  const f = fixture({ now: clock.now, controlOptions: { externalSources: [githubSource(get)] } }),
+  const f = await fixture({
+      now: clock.now,
+      controlOptions: { externalSources: [githubSource(get)] },
+    }),
     ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   execFileSync('git', ['init', '-q'], { cwd: f.projectRoot });
   execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:acme/reports.git'], {
@@ -95,7 +98,7 @@ function githubFixture(mode: 'approve' | 'auto' | null = 'approve') {
 }
 
 it('reports an issue the user assigned to themself as a pending event of the project', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     await f.poll();
     expect(f.stored()).toMatchObject([
@@ -124,7 +127,7 @@ it('reports an issue the user assigned to themself as a pending event of the pro
 });
 
 it('asks again with the entity tag once the poll interval passed, and a 304 answer stores nothing', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     await f.poll();
     const asked = f.requests.length;
@@ -142,7 +145,7 @@ it('asks again with the entity tag once the poll interval passed, and a 304 answ
 });
 
 it('reads the issue of a notification once', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     await f.poll();
     const asked = f.requests.length;
@@ -156,7 +159,7 @@ it('reads the issue of a notification once', async () => {
 });
 
 it('asks GitHub nothing while no project takes external events', async () => {
-  const f = githubFixture(null);
+  const f = await githubFixture(null);
   try {
     await f.poll();
     expect(f.requests).toEqual([]);
@@ -166,7 +169,7 @@ it('asks GitHub nothing while no project takes external events', async () => {
 });
 
 it('skips a notification about a repository no project has', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     f.list([notification({ repository: { full_name: 'acme/other', private: false } })]);
     await f.poll();
@@ -207,7 +210,7 @@ it.each([
     state: 'dropped',
   },
 ] as const)('a mention by $who is $state', async ({ author, permission, trust, state }) => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     f.list([
       notification({
@@ -238,7 +241,7 @@ it.each([
 });
 
 it('keeps the text of the issue and of each comment with who wrote it', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     f.issue(person('sam'), [
       { user: person('robin'), body: 'Same here.' },
@@ -258,7 +261,7 @@ it('keeps the text of the issue and of each comment with who wrote it', async ()
 });
 
 it('reports a review request under the pull request number', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     f.list([
       notification({
@@ -309,7 +312,7 @@ it('reports a review request under the pull request number', async () => {
 });
 
 it('lets only the user set how a project takes external events, and stores off as its own value', async () => {
-  const f = githubFixture('auto');
+  const f = await githubFixture('auto');
   try {
     const project = () => f.store.must<Project>('projects', f.project.id);
     expect(project().external_events).toBe('auto');
@@ -333,7 +336,7 @@ it('lets only the user set how a project takes external events, and stores off a
 });
 
 it('reads the account again after gh answers for another one', async () => {
-  const f = githubFixture('auto');
+  const f = await githubFixture('auto');
   try {
     await f.poll();
     f.replies.set('user', ok(person('robin')));
@@ -382,7 +385,7 @@ it('reads the account again after gh answers for another one', async () => {
 const next = (url: string) => ({ link: `<${url}>; rel="next", <${url}>; rel="last"` });
 
 it('follows the next page of the notification list', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     f.replies.set(
       LIST,
@@ -401,7 +404,7 @@ it('follows the next page of the notification list', async () => {
 });
 
 it('follows the next pages of the comments and of the issue events', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     f.replies.set(
       `${API}/issues/12/comments?per_page=100`,
@@ -442,7 +445,7 @@ it('follows the next pages of the comments and of the issue events', async () =>
 });
 
 it('reads the whole notification list again once another repository takes external events', async () => {
-  const f = githubFixture();
+  const f = await githubFixture();
   try {
     const otherRoot = path.join(f.root, 'other');
     mkdirSync(otherRoot);
@@ -450,7 +453,7 @@ it('reads the whole notification list again once another repository takes extern
     execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:acme/other.git'], {
       cwd: otherRoot,
     });
-    const other = f.call<Project>('project.open', { name: 'other', roots: [otherRoot] }),
+    const other = await f.call<Project>('project.open', { name: 'other', roots: [otherRoot] }),
       OTHER = 'https://api.github.com/repos/acme/other';
     f.list([
       notification({

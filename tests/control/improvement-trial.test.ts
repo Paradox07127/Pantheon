@@ -9,7 +9,7 @@ import type {
 } from '@pantheon/domain';
 import { fixture, user } from '../helpers.js';
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 const fixtures: Fixture[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
@@ -17,9 +17,9 @@ afterEach(async () => {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function setup(improvementMode?: WorkflowPolicy['improvement_mode']) {
+async function setup(improvementMode?: WorkflowPolicy['improvement_mode']) {
   const clock = { now: 1_000_000 };
-  const f = fixture({ now: () => clock.now });
+  const f = await fixture({ now: () => clock.now });
   fixtures.push(f);
   if (improvementMode)
     f.call(
@@ -74,7 +74,8 @@ const idle = { lead_wakes: 2, lead_wakes_without_decision: 2 };
 const lessIdle = { lead_wakes: 2, lead_wakes_without_decision: 1 };
 
 /** Ten idle measured tasks, then a tick that starts the daemon's acceptance_wake trial. */
-async function onTrial(harness = setup()) {
+async function onTrial(given?: Awaited<ReturnType<typeof setup>>) {
+  const harness = given ?? (await setup());
   for (let i = 0; i < 10; i++) harness.retro(measured(1000, 10_000, idle));
   await harness.f.control.tick();
   harness.clock.now += 1_000;
@@ -84,7 +85,7 @@ async function onTrial(harness = setup()) {
 }
 
 it('starts the trial of a daemon proposal for a signal in auto mode and changes the policy', async () => {
-  const { f, retro, improvements, policy } = setup();
+  const { f, retro, improvements, policy } = await setup();
   const id = retro({ lead_wakes: 10, lead_wakes_without_decision: 8 });
   await f.control.tick();
   expect(improvements()).toMatchObject([
@@ -106,7 +107,7 @@ it('starts the trial of a daemon proposal for a signal in auto mode and changes 
 });
 
 it('holds a daemon proposal as a candidate in confirm mode without changing the policy', async () => {
-  const { f, retro, improvements, policy } = setup('confirm');
+  const { f, retro, improvements, policy } = await setup('confirm');
   retro({ lead_wakes: 10, lead_wakes_without_decision: 8 });
   await f.control.tick();
   expect(improvements().map((row) => [row.source, row.status])).toEqual([['daemon', 'candidate']]);
@@ -116,14 +117,14 @@ it('holds a daemon proposal as a candidate in confirm mode without changing the 
 });
 
 it('makes no daemon proposal while improvements are off', async () => {
-  const { f, retro, improvements } = setup('off');
+  const { f, retro, improvements } = await setup('off');
   retro({ lead_wakes: 10, lead_wakes_without_decision: 8 });
   await f.control.tick();
   expect(improvements()).toEqual([]);
 });
 
 it('makes no second proposal for a parameter whose trial is running', async () => {
-  const { f, clock, retro, improvements } = setup();
+  const { f, clock, retro, improvements } = await setup();
   f.store.insert<Improvement>('improvements', {
     id: 'running',
     revision: 1,
@@ -148,7 +149,7 @@ it('makes no second proposal for a parameter whose trial is running', async () =
 });
 
 it('makes no proposal of a change reverted within 14 days and makes it again after', async () => {
-  const { f, clock, retro, improvements } = setup();
+  const { f, clock, retro, improvements } = await setup();
   f.store.insert<Improvement>('improvements', {
     id: 'reverted',
     revision: 1,
@@ -223,7 +224,7 @@ const failedAttempt = (fields: Partial<Retrospective> = {}): Partial<Retrospecti
 });
 
 it('reverts a trial whose tasks were delivered less often although each delivered task cost less', async () => {
-  const harness = setup();
+  const harness = await setup();
   for (let i = 0; i < 10; i++) harness.retro(measured(1000, 10_000, idle));
   for (let i = 0; i < 4; i++)
     harness.retro(measured(1000, 10_000, { ...idle, gate_passed_on_attempt: 2 }));
@@ -262,7 +263,7 @@ it('leaves failed tasks the user stopped out of the trial sample', async () => {
 });
 
 it('counts the dispatch wait of failed tasks without an execution time in a parallelism trial', async () => {
-  const { f, clock, retro, improvements } = setup();
+  const { f, clock, retro, improvements } = await setup();
   for (let i = 0; i < 6; i++) retro(measured(1000, 10_000));
   for (let i = 0; i < 4; i++) retro(failedAttempt({ stage_ms: { dispatch_wait: 100 } }));
   f.store.insert<Improvement>('improvements', {
@@ -397,7 +398,7 @@ it('reverts a trial that saw nine tasks in 14 days and tells the evidence was we
 });
 
 it('reverts a trial with four more tasks that failed their first gate run than tasks that passed it', async () => {
-  const { f, clock, retro, improvements, policy } = setup();
+  const { f, clock, retro, improvements, policy } = await setup();
   const failed = { gate_passed_on_attempt: 2, gate_failures: ['code' as const] };
   // The newest earlier tasks failed, so the first-pass share of the trial is no lower.
   for (let i = 0; i < 10; i++) retro(measured(1000, 10_000, { ...idle, ...(i >= 3 && failed) }));
@@ -411,7 +412,7 @@ it('reverts a trial with four more tasks that failed their first gate run than t
 });
 
 it('reverts an experience trial whose findings per task did not fall to half', async () => {
-  const { f, clock, retro, improvements, statusEvents } = setup();
+  const { f, clock, retro, improvements, statusEvents } = await setup();
   const codes = (list: (string | undefined)[]) => {
     for (const code of list)
       retro(measured(1000, 10_000, code ? { turn_failure_codes: [code] } : {}));
@@ -447,7 +448,7 @@ it('reverts an experience trial whose findings per task did not fall to half', a
 });
 
 it('holds a trial without ten earlier tasks to compare for the user', async () => {
-  const { f, clock, retro, improvements, policy } = setup();
+  const { f, clock, retro, improvements, policy } = await setup();
   retro(measured(1000, 10_000, { lead_wakes: 10, lead_wakes_without_decision: 8 }));
   await f.control.tick();
   clock.now += 1_000;
@@ -458,7 +459,7 @@ it('holds a trial without ten earlier tasks to compare for the user', async () =
 });
 
 it('tells of a trial held without earlier tasks once with a status event and keeps its start', async () => {
-  const { f, clock, retro, improvements, statusEvents } = setup();
+  const { f, clock, retro, improvements, statusEvents } = await setup();
   retro(measured(1000, 10_000, { lead_wakes: 10, lead_wakes_without_decision: 8 }));
   await f.control.tick();
   const [trial] = improvements();
@@ -499,7 +500,7 @@ it('keeps the reason a trial was reverted for when the user changed its value me
 });
 
 it('proposes nothing for a signal of a pinned parameter but still counts it against an experience trial', async () => {
-  const { f, clock, retro, improvements } = setup();
+  const { f, clock, retro, improvements } = await setup();
   f.call('workflow.policy.set', { project_id: f.project.id, pinned: ['acceptance_wake'] }, null);
   for (let i = 0; i < 10; i++) retro(measured(1000, 10_000, idle));
   await f.control.tick();
@@ -530,8 +531,8 @@ it('proposes nothing for a signal of a pinned parameter but still counts it agai
   ]);
 });
 
-it('returns the signals from the query and lists them for a lead but no other role', () => {
-  const { f, retro } = setup();
+it('returns the signals from the query and lists them for a lead but no other role', async () => {
+  const { f, retro } = await setup();
   const id = retro({ lead_wakes: 10, lead_wakes_without_decision: 8 });
   expect(f.control.improvementSignals(user, f.project.id)).toEqual([
     {
@@ -605,7 +606,7 @@ it('lists the evaluator task sample and named comparison values with units', asy
 });
 
 it('reports no baseline without fabricating zero comparison values', async () => {
-  const { f, clock, retro } = setup();
+  const { f, clock, retro } = await setup();
   f.store.insert<Improvement>('improvements', {
     id: 'without-baseline',
     revision: 1,

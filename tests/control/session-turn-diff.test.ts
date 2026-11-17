@@ -5,14 +5,14 @@ import type { Session, Workspace } from '@pantheon/domain';
 import { settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
 
 /** Two turns: a committed file written after the first starts, an untracked one after the second. */
 async function twoTurns() {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const work = f.store.must<Workspace>('workspaces', session.workspace_id!).path;
   writeFileSync(path.join(work, 'header.txt'), 'header\n');

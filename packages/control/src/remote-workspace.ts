@@ -315,7 +315,7 @@ async function excludesOnDevice(workspace: Workspace, repo: string): Promise<str
     await localGit(workspace.path, ['rev-parse', '--git-path', 'info/exclude']),
   );
   // In one file the last matching rule wins: the repository's rules follow the global ones they override.
-  const rules = [globalExcludesFile(), own]
+  const rules = [await globalExcludesFile(), own]
     .filter((file) => file !== undefined && existsSync(file))
     .map((file) => readFileSync(file!, 'utf8'))
     .join('\n');
@@ -402,7 +402,7 @@ async function localSnapshot(workspace: Workspace, parent: string): Promise<stri
   const env = { GIT_INDEX_FILE: path.join(directory, 'index') };
   try {
     await localGit(workspace.path, ['read-tree', 'HEAD'], env);
-    await localGit(workspace.path, [...globalExcludes(), 'add', '-A'], env);
+    await localGit(workspace.path, [...(await globalExcludes()), 'add', '-A'], env);
     const tree = await localGit(workspace.path, ['write-tree'], env);
     return await localGit(workspace.path, [
       'commit-tree',

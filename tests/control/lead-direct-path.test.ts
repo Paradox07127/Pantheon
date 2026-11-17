@@ -18,12 +18,12 @@ import { improvementSignals } from '../../packages/control/dist/improvement-sign
 import { eventually, gateFolder, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 type PlanMilestone = { id: string; title: string; criteria: string[]; tasks: string[] };
 
-function mergeFixture() {
-  const f = workbenchFixture();
+async function mergeFixture() {
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   return f;
@@ -99,8 +99,8 @@ async function recordOf(f: Fixture, leadId: string, taskId: string) {
   return find()!;
 }
 
-function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
-  f.call<Project>(
+async function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
+  await f.call<Project>(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     project(f).revision,
@@ -140,7 +140,7 @@ async function settle(f: Fixture, sessionId: string) {
 }
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[], milestones: PlanMilestone[] = []) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead.id);
   updatePlan(f, lead.id, tasks, milestones);
   return lead;
@@ -201,7 +201,7 @@ async function endTurn(f: Fixture, leadId: string) {
 
 /** A lead working on direct task a in its own worktree, with a passing gate and auto-merge on. */
 async function leadOnTask(f: Fixture, tasks = [task('a'), task('b')]) {
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   const lead = await leadWithPlan(f, tasks);
   start(f, lead.id, 'a');
@@ -211,7 +211,7 @@ async function leadOnTask(f: Fixture, tasks = [task('a'), task('b')]) {
 it.skipIf(insideSandbox)(
   'merges the reported direct task after the lead turn and keeps the lead session open',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     const head = commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
@@ -258,7 +258,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'wakes the lead after the merge and merges its next direct task on its own',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
@@ -286,7 +286,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'does not wake the lead about the merge that finished its plan and tells it with its next message',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f, [task('a')]);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
@@ -315,8 +315,8 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'wakes the lead about the merge that finished its plan while its milestone waits for acceptance',
   async () => {
-    const f = mergeFixture();
-    setGate(f, passing);
+    const f = await mergeFixture();
+    await setGate(f, passing);
     setAutoMerge(f, true);
     const lead = await leadWithPlan(
       f,
@@ -339,10 +339,10 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'keeps the lead open when the gate fails and hands the failure back up to the limit',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     setHandbackLimit(f, 2);
     const { lead, worktree } = await leadOnTask(f);
-    setGate(f, failing);
+    await setGate(f, failing);
     const source = git(f.source, 'rev-parse', 'main');
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
@@ -375,7 +375,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('does not land a direct task that changes files outside its scope', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { lead, worktree } = await leadOnTask(f);
   const source = git(f.source, 'rev-parse', 'main');
   commit(worktree, 'answer.txt', 'outside\n');
@@ -395,7 +395,7 @@ it('does not land a direct task that changes files outside its scope', async () 
 it.skipIf(insideSandbox)(
   'waits for the user to merge a direct task when auto-merge is off, and keeps the lead open',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     setAutoMerge(f, false);
     const source = git(f.source, 'rev-parse', 'main');
@@ -419,7 +419,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('does not merge commits made after the report and asks the lead to report again', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { lead, worktree } = await leadOnTask(f);
   const source = git(f.source, 'rev-parse', 'main');
   commit(worktree, 'src/a.ts', 'export const a = 1;\n');
@@ -446,7 +446,7 @@ it('does not merge commits made after the report and asks the lead to report aga
 });
 
 it('does not merge a worktree with uncommitted files and tells the lead', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { lead, worktree } = await leadOnTask(f);
   const source = git(f.source, 'rev-parse', 'main');
   commit(worktree, 'src/a.ts', 'export const a = 1;\n');
@@ -469,9 +469,9 @@ it.each([
 ])(
   'does not land a direct task %s while it merges',
   async (_, tasks) => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
-    setGate(f, slow);
+    await setGate(f, slow);
     const source = git(f.source, 'rev-parse', 'main');
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
@@ -496,7 +496,7 @@ it.each([
 it.skipIf(insideSandbox)(
   'merges a direct task the lead claimed again after it rewrote the goal',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f, [task('a')]);
     updatePlan(f, lead.id, [task('a', { goal: 'Finish task a another way' })]);
     start(f, lead.id, 'a');
@@ -516,7 +516,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'refuses to roll back to a turn before the merge and keeps the turns after it on the timeline',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
@@ -548,7 +548,7 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)('refuses to start a direct task again once it merged', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { lead, worktree } = await leadOnTask(f);
   commit(worktree, 'src/a.ts', 'export const a = 1;\n');
   await report(f, lead.id);
@@ -564,7 +564,7 @@ it.skipIf(insideSandbox)('refuses to start a direct task again once it merged', 
 it.skipIf(insideSandbox)(
   'shows a merged direct task as under way again while the session the user started on it runs',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
@@ -583,7 +583,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'records the merged direct task with its path, the lead session, its gate run and the lead usage',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     Object.assign(f.adapter, { traceEvents: true });
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
@@ -619,7 +619,7 @@ const setDirectBudget = (f: Fixture, input_tokens: number) =>
 it.skipIf(insideSandbox)(
   "uses the lead's usage for the budget ratio of a direct task",
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     Object.assign(f.adapter, { traceEvents: true });
     setDirectBudget(f, 10);
     const { lead, worktree } = await leadOnTask(f);
@@ -638,7 +638,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'finds the cell over budget once three of its five latest direct tasks spent more than their budget, and proposes no change',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     Object.assign(f.adapter, { traceEvents: true });
     const ids = ['a', 'b', 'c', 'd', 'e'];
     const { lead, worktree } = await leadOnTask(
@@ -671,7 +671,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'times the work of a direct task up to its own report when another task reports first',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     f.store.event('task.reported', planOf(f, lead.id), f.project.id, {
       at: f.store.now(),
@@ -700,11 +700,11 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'records the second gate run and the hand-back of a direct task whose gate failed once',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     const gate = gateFolder(f.root),
       fixed = path.join(gate.dir, 'fixed');
-    setGate(f, failsUntilFixed(gate, fixed));
+    await setGate(f, failsUntilFixed(gate, fixed));
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
     await report(f, lead.id);
     f.call('session.send', { session_id: lead.id, input: 'Go on' }, current(f, lead.id).revision);
@@ -729,8 +729,8 @@ it.skipIf(insideSandbox)(
 );
 
 it('counts the direct task the lead works on as active in its milestone', async () => {
-  const f = mergeFixture();
-  setGate(f, passing);
+  const f = await mergeFixture();
+  await setGate(f, passing);
   const lead = await leadWithPlan(
     f,
     [task('a', { milestone: 'export' }), task('b')],
@@ -744,9 +744,9 @@ it('counts the direct task the lead works on as active in its milestone', async 
 });
 
 it('lets go of the claim of a direct task given a new contract while it merges', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const { lead, worktree } = await leadOnTask(f);
-  setGate(f, slow);
+  await setGate(f, slow);
   commit(worktree, 'src/a.ts', 'export const a = 1;\n');
   await report(f, lead.id);
   f.call('session.send', { session_id: lead.id, input: 'Go on' }, current(f, lead.id).revision);
@@ -771,13 +771,13 @@ it('lets go of the claim of a direct task given a new contract while it merges',
 }, 30000);
 
 it('sends a direct task gate failure to the user without a hand-back when the limit is zero', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   setHandbackLimit(f, 0);
-  setGate(f, passing);
+  await setGate(f, passing);
   setAutoMerge(f, true);
   const lead = await leadWithPlan(f, [task('export')]);
   start(f, lead.id, 'export');
-  setGate(f, failing);
+  await setGate(f, failing);
   commit(worktreeOf(f, lead).path, 'src/export.ts', 'export const download = true;\n');
   await report(f, lead.id);
   await endTurn(f, lead.id);

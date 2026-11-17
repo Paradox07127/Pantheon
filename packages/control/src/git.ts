@@ -1,4 +1,4 @@
-import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { nativeEnvironment } from '@pantheon/adapters';
@@ -30,31 +30,18 @@ export interface GitExecutionOptions {
 export function runGit(
   cwd: string,
   args: string[],
-  input?: Buffer,
-  asynchronous?: false,
-  options?: GitExecutionOptions,
-): GitResult;
-export function runGit(
-  cwd: string,
-  args: string[],
   input: Buffer | undefined,
-  asynchronous: true,
-  options?: GitExecutionOptions,
-): Promise<GitResult>;
-export function runGit(
-  cwd: string,
-  args: string[],
-  input?: Buffer,
-  asynchronous = false,
+  // Every call runs git asynchronously; the literal keeps callers explicit about it.
+  _asynchronous: true,
   execution: GitExecutionOptions = {},
-): GitResult | Promise<GitResult> {
+): Promise<GitResult> {
   // An in-place session can write beside the protected .git/config; a commondir there would point
   // git at configuration it wrote. A main checkout never has one, so git keeps to this .git.
   const metadata = execution.env?.GIT_DIR === undefined ? ownMetadata(cwd) : undefined;
   if (metadata && existsSync(path.join(metadata, 'commondir'))) {
     const error = `sandbox_path_replaced: The checkout's .git has a commondir file: ${metadata}`;
     const refused = { exit_code: null, stdout: Buffer.alloc(0), stderr: Buffer.from(error), error };
-    return asynchronous ? Promise.resolve(refused) : refused;
+    return Promise.resolve(refused);
   }
   const linked = execution.env?.GIT_DIR === undefined ? driveLinkedWorktree(cwd) : undefined;
   const config = [
@@ -108,7 +95,7 @@ export function runGit(
     command: string[],
     data?: Buffer,
     overrides: string[] = [],
-  ): GitResult | Promise<GitResult> => {
+  ): Promise<GitResult> => {
     const options = {
       cwd,
       // -c splits at the first '=', so a driver name containing '=' needs the environment form.
@@ -134,7 +121,7 @@ export function runGit(
       timeout: execution.timeout_ms ?? 120000,
       killSignal: 'SIGKILL' as const,
     };
-    if (asynchronous && execution.on_spawn)
+    if (execution.on_spawn)
       return new Promise((resolve) => {
         execution.before_spawn?.();
         const child = spawn('git', [...config, ...command], {
@@ -191,42 +178,29 @@ export function runGit(
           kill(String(error));
         }
       });
-    if (asynchronous)
-      return new Promise((resolve) => {
-        execution.before_spawn?.();
-        const child = execFile(
-          'git',
-          [...config, ...command],
-          {
-            ...options,
-            encoding: 'buffer',
-            maxBuffer: execution.max_buffer ?? 64 * 1024 * 1024,
-          },
-          (error, stdout, stderr) => {
-            resolve({
-              exit_code: error ? (typeof error.code === 'number' ? error.code : null) : 0,
-              stdout,
-              stderr,
-              error: error ? String(error) : undefined,
-            });
-          },
-        );
-        child.stdin?.on('error', () => {});
-        child.stdin?.end(data);
-        execution.on_spawn?.(child);
-      });
-    const result = spawnSync('git', [...config, ...command], {
-      ...options,
-      maxBuffer: execution.max_buffer ?? 64 * 1024 * 1024,
-      stdio: [data ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-      input: data,
+    return new Promise((resolve) => {
+      execution.before_spawn?.();
+      const child = execFile(
+        'git',
+        [...config, ...command],
+        {
+          ...options,
+          encoding: 'buffer',
+          maxBuffer: execution.max_buffer ?? 64 * 1024 * 1024,
+        },
+        (error, stdout, stderr) => {
+          resolve({
+            exit_code: error ? (typeof error.code === 'number' ? error.code : null) : 0,
+            stdout,
+            stderr,
+            error: error ? String(error) : undefined,
+          });
+        },
+      );
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(data);
+      execution.on_spawn?.(child);
     });
-    return {
-      exit_code: result.error ? null : result.status,
-      stdout: result.stdout ?? Buffer.alloc(0),
-      stderr: result.stderr ?? Buffer.alloc(0),
-      error: result.error ? String(result.error) : undefined,
-    };
   };
   const command = [...args];
   // --literal-pathspecs is a global option, so it precedes the subcommand.
@@ -253,13 +227,11 @@ export function runGit(
   // Attributes can select arbitrary drivers, including from .git/info/attributes.
   // Read names only (including included config), then neutralize every filter and merge driver.
   const query = () =>
-    andThen(
-      execute(['config', '--null', '--name-only', '--get-regexp', DRIVER_PATTERN]),
-      (result) =>
-        // A missing match is status 1. Any other failure must prevent the operation.
-        result.exit_code !== 0 && result.exit_code !== 1
-          ? result
-          : run([...new Set(result.stdout.toString().split('\0').filter(Boolean))]),
+    execute(['config', '--null', '--name-only', '--get-regexp', DRIVER_PATTERN]).then((result) =>
+      // A missing match is status 1. Any other failure must prevent the operation.
+      result.exit_code !== 0 && result.exit_code !== 1
+        ? result
+        : run([...new Set(result.stdout.toString().split('\0').filter(Boolean))]),
     );
   // Caller environment can point git at other config, which the cache does not track.
   const cached = Object.keys(execution.env ?? {}).some(
@@ -273,27 +245,23 @@ export function runGit(
   if (!cached) return query();
   if ('overrides' in cached) return run(cached.overrides);
   const probe = (miss: ConfigMiss, learned = () => {}) =>
-    andThen(
-      execute([
-        'rev-parse',
-        '--path-format=absolute',
-        '--git-dir',
-        '--git-common-dir',
-        '--show-toplevel',
-      ]),
-      (located) => {
-        if (located.exit_code !== 0 || !miss.located(located.stdout.toString())) {
-          learned();
-          return query();
-        }
-        return andThen(execute(['config', '--null', '--show-origin', '--list']), (listed) => {
-          const overrides = listed.exit_code === 0 ? miss.listed(listed.stdout) : undefined;
-          learned();
-          return overrides ? run(overrides) : query();
-        });
-      },
-    );
-  if (!asynchronous) return probe(cached);
+    execute([
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-dir',
+      '--git-common-dir',
+      '--show-toplevel',
+    ]).then((located) => {
+      if (located.exit_code !== 0 || !miss.located(located.stdout.toString())) {
+        learned();
+        return query();
+      }
+      return execute(['config', '--null', '--show-origin', '--list']).then((listed) => {
+        const overrides = listed.exit_code === 0 ? miss.listed(listed.stdout) : undefined;
+        learned();
+        return overrides ? run(overrides) : query();
+      });
+    });
   // Parallel calls that miss on the same repository wait for one probe instead of each running it.
   const pending = learning.get(cached.key);
   if (pending)
@@ -309,7 +277,7 @@ export function runGit(
     if (learning.get(cached.key) === learned) learning.delete(cached.key);
     finish();
   };
-  const result = Promise.resolve(probe(cached, done));
+  const result = probe(cached, done);
   result.then(done, done);
   return result;
 }
@@ -370,10 +338,6 @@ function driveLinkedWorktree(cwd: string): Record<string, string> | undefined {
   } catch {
     return undefined;
   }
-}
-
-function andThen<T, U>(value: T | Promise<T>, next: (value: T) => U | Promise<U>): U | Promise<U> {
-  return value instanceof Promise ? value.then(next) : next(value);
 }
 
 // Waits before each new attempt; another git, such as an editor's status refresh, holds it briefly.

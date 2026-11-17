@@ -5,7 +5,7 @@ import { workbenchFixture } from './workbench-fixture.js';
 
 const oldIdentity = { pid: 4000001, start_time_us: 1700000000123456 };
 
-const eventKinds = (f: ReturnType<typeof workbenchFixture>, sessionId: string) =>
+const eventKinds = (f: Awaited<ReturnType<typeof workbenchFixture>>, sessionId: string) =>
   (
     f.store.db.prepare('SELECT kind FROM events WHERE aggregate_id=?').all(sessionId) as {
       kind: string;
@@ -13,7 +13,7 @@ const eventKinds = (f: ReturnType<typeof workbenchFixture>, sessionId: string) =
   ).map((row) => row.kind);
 
 /** Delivers the next turn without a fixture process, so it stays running with a recorded identity. */
-function holdNextTurn(f: ReturnType<typeof workbenchFixture>) {
+function holdNextTurn(f: Awaited<ReturnType<typeof workbenchFixture>>) {
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
     handle.process_identity = oldIdentity;
     return { turn_id: turn.turn_id, status: 'delivered' };
@@ -21,8 +21,8 @@ function holdNextTurn(f: ReturnType<typeof workbenchFixture>) {
 }
 
 it('starts the first turn after a restart that happened before the worktree was ready', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await f.restart();
   expect(f.store.must<Session>('sessions', session.id).state).toBe('running');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
@@ -35,10 +35,10 @@ it('starts the first turn after a restart that happened before the worktree was 
 });
 
 it('fails the interrupted turn and resumes the native session on the next message', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   holdNextTurn(f);
   const resume = vi.spyOn(f.adapter, 'resume');
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.store.must<Session>('sessions', session.id).process_identity !== undefined,
@@ -68,9 +68,9 @@ it('fails the interrupted turn and resumes the native session on the next messag
 });
 
 it('keeps an interrupted worktree session reconciling while the old process may still run', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   holdNextTurn(f);
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.store.must<Session>('sessions', session.id).process_identity !== undefined,

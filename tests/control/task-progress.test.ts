@@ -9,7 +9,7 @@ import {
 import { awaitWorkspaceReady, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const MINUTE = 60 * 1000,
   HOUR = 60 * MINUTE,
@@ -80,7 +80,7 @@ const planAt = (f: Fixture, sequence: number, at: number) =>
   f.store.db.prepare('UPDATE events SET created_at=? WHERE sequence=?').run(at, sequence);
 
 async function openTask(f: Fixture, leadId: string, taskId: string, openedAt: number) {
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: `Work on ${taskId}`,
@@ -106,8 +106,8 @@ function end(f: Fixture, sessionId: string, outcome: 'merged' | 'discarded', at:
 }
 
 it('counts a task once however many sessions it has and leaves out tasks removed from the plan', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the work');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the work');
   const now = Date.now(),
     yesterday = daysBack(now, 1),
     midnight = new Date(now).setHours(0, 0, 0, 0),
@@ -156,8 +156,8 @@ it('counts a task once however many sessions it has and leaves out tasks removed
 });
 
 it('takes cycle quantiles by nearest rank and counts done tasks outside the range in totals', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the work');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the work');
   writePlan(f, lead.id, [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'old' }, { id: 'open' }]);
   const now = Date.now(),
     mergedAt = now - HOUR;
@@ -193,9 +193,9 @@ it('takes cycle quantiles by nearest rank and counts done tasks outside the rang
   });
 });
 
-it('leaves scope unknown on days before the plan history that is kept', () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the work');
+it('leaves scope unknown on days before the plan history that is kept', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the work');
   const now = Date.now();
   const first = writePlan(f, lead.id, [{ id: 'a' }]);
   planAt(f, first.sequence, daysBack(now, 3));
@@ -213,8 +213,8 @@ it('leaves scope unknown on days before the plan history that is kept', () => {
 });
 
 it('marks a task blocked while an upstream task is not done and reports its newest progress', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the work');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the work');
   const plan = writePlan(f, lead.id, [{ id: 'a' }, { id: 'b', depends_on: ['a'] }]);
   const planned = (
     f.store.db.prepare('SELECT created_at FROM events WHERE sequence=?').get(plan.sequence) as {

@@ -5,10 +5,10 @@ import { workbenchFixture } from './workbench-fixture.js';
 const APP_MIME = 'text/html;profile=mcp-app';
 
 async function liveSession(contents?: unknown[]) {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const readMcpResource = vi.fn(async () => ({ contents }));
   if (contents) Object.assign(f.adapter, { readMcpResource });
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.control.handles.size > 0,

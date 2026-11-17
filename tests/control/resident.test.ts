@@ -3,7 +3,7 @@ import { credentialRole, type BoardPlan, type Principal, type Session } from '@p
 import { eventually, settle, user } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -91,7 +91,7 @@ async function requested(f: Fixture) {
 }
 
 it('gives a resident session a lead credential and refuses its reports', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const assistant = await requested(f);
   expect(assistant.workspace_id).toBeUndefined();
   expect(credentialRole(assistant)).toBe('lead');
@@ -108,8 +108,8 @@ it('gives a resident session a lead credential and refuses its reports', async (
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
 });
 
-it('returns the open resident session of the kind instead of opening another', () => {
-  const f = workbenchFixture();
+it('returns the open resident session of the kind instead of opening another', async () => {
+  const f = await workbenchFixture();
   const assistant = open(f);
   expect(open(f).id).toBe(assistant.id);
   const triage = open(f, 'triage');
@@ -123,10 +123,10 @@ it('returns the open resident session of the kind instead of opening another', (
 });
 
 it('opens a new resident that takes over the plan, the unread notes and the task sessions of a closed one', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const assistant = await requested(f);
   writePlan(f, assistant.id);
-  const worker = boundTaskSession(f, assistant.id, 'a');
+  const worker = await boundTaskSession(f, assistant.id, 'a');
   await settle(f, worker);
   // The wake is queued, but the session closes before it is delivered.
   requirement(f, worker.id, 'The export needs a CSV header');
@@ -153,7 +153,7 @@ it('opens a new resident that takes over the plan, the unread notes and the task
 });
 
 it('dispatches the direct task of a resident to a task session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const assistant = await requested(f);
   writePlan(f, assistant.id);
 
@@ -178,12 +178,12 @@ it('dispatches the direct task of a resident to a task session', async () => {
 });
 
 it('gathers twelve worker notes into at most two wakes of a resident without a wake limit', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   let skew = 0;
   vi.spyOn(f.store, 'now').mockImplementation(() => Date.now() + skew);
   const assistant = await requested(f);
   writePlan(f, assistant.id);
-  const worker = boundTaskSession(f, assistant.id, 'a');
+  const worker = await boundTaskSession(f, assistant.id, 'a');
   await settle(f, worker);
 
   for (let index = 0; index < 12; index++) {
@@ -211,10 +211,10 @@ it('gathers twelve worker notes into at most two wakes of a resident without a w
 });
 
 it('lists a resident with its kind and a task session with its plan task and lane', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const assistant = await requested(f);
   writePlan(f, assistant.id, [task('a', 'core'), task('b', 'docs')]);
-  const worker = boundTaskSession(f, assistant.id, 'b');
+  const worker = await boundTaskSession(f, assistant.id, 'b');
   await settle(f, worker);
 
   const listed = f.list();

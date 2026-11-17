@@ -21,7 +21,7 @@ import type {
   SessionTurn,
 } from '@pantheon/domain';
 import { eventually, user } from '../helpers.js';
-import { gitFolder, type ControlContext } from '../../packages/control/dist/context.js';
+import { gitFolderAsync, type ControlContext } from '../../packages/control/dist/context.js';
 import { finishWriteAudit, startWriteAudit } from '../../packages/control/dist/non-writer-audit.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -45,10 +45,10 @@ function slowGit() {
 }
 
 async function auditingSession(kind: 'plan' | 'text' | 'review' | 'read-only' = 'plan') {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   let parent: Session | undefined;
   if (kind === 'review') {
-    parent = f.create();
+    parent = await f.create();
     await eventually(
       () => f.turns(parent!.id)[0]?.state === 'completed',
       () => f.control.tick(),
@@ -113,7 +113,7 @@ async function auditingSession(kind: 'plan' | 'text' | 'review' | 'read-only' = 
     });
     f.store.enqueue('session.turn', { turn_id: turn.id });
   } else {
-    session = f.call<Session>('session.create', {
+    session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: 'fixture',
       input: 'Plan the change',
@@ -391,12 +391,12 @@ it('records a clean audit for reads and ignores untracked files in the cwd', asy
 });
 
 it('snapshots before runtime startup and skips writer turns after plan mode ends', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   f.start.mockImplementationOnce(async (spec, emit) => {
     writeFileSync(path.join(spec.cwd, 'answer.txt'), 'startup write\n');
     return f.adapter.start(spec, emit);
   });
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: 'fixture',
     input: 'Explain',
@@ -483,14 +483,14 @@ it('audits a reconciled session closed by session.resolve while other work goes 
   );
 });
 
-it('asks git once per root until its .git entry changes', () => {
+it('asks git once per root until its .git entry changes', async () => {
   const calls = slowGit();
   const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-git-folder-'));
   onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   const lookups = () => calls().filter((call) => call.endsWith(' rev-parse --show-toplevel'));
-  expect([gitFolder(root), gitFolder(root)]).toEqual([false, false]);
+  expect([await gitFolderAsync(root), await gitFolderAsync(root)]).toEqual([false, false]);
   expect(lookups()).toHaveLength(1);
   git(root, 'init', '--quiet');
-  expect(gitFolder(root)).toBe(true);
+  expect(await gitFolderAsync(root)).toBe(true);
   expect(lookups()).toHaveLength(2);
 });

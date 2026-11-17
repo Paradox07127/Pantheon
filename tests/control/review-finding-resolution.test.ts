@@ -77,10 +77,10 @@ class ReviewerAdapter extends FixtureAdapter {
 
 /** A workbench session that committed src/slug.js, with two reviewer runtimes ready to review it. */
 async function sessionReviewFixture() {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   const reviewers = [new ReviewerAdapter('reviewer-one'), new ReviewerAdapter('reviewer-two')];
   for (const adapter of reviewers) w.control.adapters.set(adapter.name, adapter);
-  const session = w.create();
+  const session = await w.create();
   const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
   await eventually(
     () =>
@@ -352,10 +352,10 @@ it('serves review metrics at the project.review.metrics query', async () => {
     intervalMs: 60000,
   });
   try {
-    const project = daemon.control.execute(
+    const project = (await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name: 'Metrics query', roots: [work] }, null),
-    ) as Project;
+    )) as Project;
     daemon.store.insert<Review>('reviews', {
       id: 'query-review',
       revision: 1,

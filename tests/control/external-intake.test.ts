@@ -39,8 +39,8 @@ const task = (fields: Partial<PlanTask> = {}): PlanTask => ({
 });
 
 /** A project that takes external events in the given mode, and events that already settled. */
-function intakeFixture(mode: 'approve' | 'auto') {
-  const f = workbenchFixture({ externalSources: [{ id: 'stub', poll: async () => MINUTE }] }),
+async function intakeFixture(mode: 'approve' | 'auto') {
+  const f = await workbenchFixture({ externalSources: [{ id: 'stub', poll: async () => MINUTE }] }),
     ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   dispatchEveryTier(f);
   const setMode = (next: 'off' | 'approve' | 'auto') =>
@@ -146,7 +146,7 @@ function intakeFixture(mode: 'approve' | 'auto') {
 }
 
 it('hands a request to the triage session and holds it for approval when the project takes events in approve mode', async () => {
-  const f = intakeFixture('approve');
+  const f = await intakeFixture('approve');
   f.report();
   const lead = await f.opened();
   expect(lead).toMatchObject({ resident: { kind: 'triage' }, title: 'Triage' });
@@ -169,7 +169,7 @@ it('hands a request to the triage session and holds it for approval when the pro
 });
 
 it('holds nothing for an issue the user alone wrote in auto mode', async () => {
-  const f = intakeFixture('auto');
+  const f = await intakeFixture('auto');
   f.report();
   const lead = await f.opened();
   expect(f.holds(lead.id)).toEqual({});
@@ -180,13 +180,13 @@ it.each([
   { what: 'someone else wrote part of the text', fields: { texts: [OWN, THEIRS] } },
   { what: 'someone else caused the event', fields: { actor: 'robin', actor_trust: 'write' } },
 ] as const)('waits for approval in auto mode when $what', async ({ fields }) => {
-  const f = intakeFixture('auto');
+  const f = await intakeFixture('auto');
   f.report({ ...fields, texts: fields.texts ? [...fields.texts] : [OWN] });
   expect(f.holds((await f.opened()).id)).toHaveProperty([SUBJECT]);
 });
 
 it('opens nothing for a project that stopped taking external events', async () => {
-  const f = intakeFixture('approve');
+  const f = await intakeFixture('approve');
   f.report();
   f.setMode('off');
   await f.control.tick();
@@ -195,7 +195,7 @@ it('opens nothing for a project that stopped taking external events', async () =
 });
 
 it('opens no task of a held subject until the user approves', async () => {
-  const f = intakeFixture('approve');
+  const f = await intakeFixture('approve');
   f.report();
   const lead = await f.opened();
   f.writePlan(lead.id, [
@@ -228,7 +228,7 @@ it('opens no task of a held subject until the user approves', async () => {
 });
 
 it('sends later events about the same subject to the triage session that has it', async () => {
-  const f = intakeFixture('auto');
+  const f = await intakeFixture('auto');
   f.report();
   const lead = await f.opened();
   f.report({ kind: 'mention', actor: 'robin', actor_trust: 'write', texts: [OWN, THEIRS] });
@@ -242,7 +242,7 @@ it('sends later events about the same subject to the triage session that has it'
 });
 
 it('holds only the tasks of the held subject, so the triage session still starts and messages its other tasks', async () => {
-  const f = intakeFixture('approve');
+  const f = await intakeFixture('approve');
   f.report();
   const lead = await f.opened();
   f.writePlan(lead.id, [
@@ -270,7 +270,7 @@ it('holds only the tasks of the held subject, so the triage session still starts
 });
 
 it("takes the user's own text of an event as a task source and other people's text only as an external source", async () => {
-  const f = intakeFixture('approve');
+  const f = await intakeFixture('approve');
   f.report({ texts: [OWN, THEIRS] });
   const lead = await f.opened();
   expect(() =>
@@ -288,7 +288,7 @@ it("takes the user's own text of an event as a task source and other people's te
 });
 
 it('shows the user how the project takes events, each source and the events newest first', async () => {
-  const f = intakeFixture('approve');
+  const f = await intakeFixture('approve');
   f.report({ kind: 'issue_assigned' });
   f.report({ kind: 'mention', actor: 'spam-bot', actor_trust: 'bot' });
   const read = f.control.externalRead(user, f.project.id);
@@ -307,7 +307,7 @@ it('shows the user how the project takes events, each source and the events newe
 });
 
 it('marks the events failed with the reason when no triage session can open, and the tick goes on', async () => {
-  const f = intakeFixture('auto');
+  const f = await intakeFixture('auto');
   const capabilities = f.adapter.report.capabilities,
     readIsolation = capabilities.read_isolation!;
   capabilities.read_isolation = { status: 'unsupported', evidence: 'Not here' };

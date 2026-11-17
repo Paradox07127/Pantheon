@@ -23,16 +23,16 @@ const spec = (): SessionSpec => ({
 });
 
 it('disables workflows for lead task sessions while preserving lead and user settings', async () => {
-  const f = workbenchFixture();
-  const lead = f.create();
-  const task = boundTaskSession(f, lead.id, 'implement-export');
+  const f = await workbenchFixture();
+  const lead = await f.create();
+  const task = await boundTaskSession(f, lead.id, 'implement-export');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await awaitWorkspaceReady(f.control, task.workspace_id!);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const taskOptions = buildClaudeOptions(workbenchSessionSpec(ctx, task), base);
   expect(taskOptions.settings).toMatchObject({ disableWorkflows: true });
   expect(taskOptions.settings).toHaveProperty('permissions.deny');
-  for (const session of [lead, f.create()]) {
+  for (const session of [lead, await f.create()]) {
     await awaitWorkspaceReady(f.control, session.workspace_id!);
     const options = buildClaudeOptions(workbenchSessionSpec(ctx, session), base);
     expect(options.settings).not.toHaveProperty('disableWorkflows');

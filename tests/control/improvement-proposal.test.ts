@@ -9,7 +9,7 @@ import {
 } from '@pantheon/domain';
 import { fixture, user } from '../helpers.js';
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 const fixtures: Fixture[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
@@ -17,8 +17,8 @@ afterEach(async () => {
 
 const retrospectiveIds = ['retrospective-1', 'retrospective-2'];
 
-function opened() {
-  const f = fixture();
+async function opened() {
+  const f = await fixture();
   fixtures.push(f);
   const session = (id: string, task?: Session['task']) =>
     f.store.insert<Session>('sessions', {
@@ -99,8 +99,8 @@ function refused(run: () => unknown): DomainError {
 
 const fewerParallel = { type: 'policy_change', param: 'max_parallel', to: 2 };
 
-it('starts the trial of a lead proposal at once in auto mode and changes the policy', () => {
-  const f = opened();
+it('starts the trial of a lead proposal at once in auto mode and changes the policy', async () => {
+  const f = await opened();
   const improvement = propose(f, fewerParallel);
   expect(improvement).toMatchObject({
     status: 'trial',
@@ -126,8 +126,8 @@ it('starts the trial of a lead proposal at once in auto mode and changes the pol
   ]);
 });
 
-it('holds a proposal as a candidate in confirm mode until the user confirms it', () => {
-  const f = opened();
+it('holds a proposal as a candidate in confirm mode until the user confirms it', async () => {
+  const f = await opened();
   setPolicy(f, { improvement_mode: 'confirm' });
   const improvement = propose(f, fewerParallel);
   expect(improvement.status).toBe('candidate');
@@ -137,8 +137,8 @@ it('holds a proposal as a candidate in confirm mode until the user confirms it',
   expect(stored(f, improvement).trial_started_at).toBeTypeOf('number');
 });
 
-it('restores the former value when the user reverts a trial', () => {
-  const f = opened();
+it('restores the former value when the user reverts a trial', async () => {
+  const f = await opened();
   const improvement = propose(f, fewerParallel);
   const reverted = decide(f, improvement, 'revert');
   expect(reverted.status).toBe('reverted');
@@ -146,8 +146,8 @@ it('restores the former value when the user reverts a trial', () => {
   expect(policyOf(f)).toMatchObject({ max_parallel: 3, policy_version: 2 });
 });
 
-it('keeps a value the user changed since the trial started when the trial is reverted', () => {
-  const f = opened();
+it('keeps a value the user changed since the trial started when the trial is reverted', async () => {
+  const f = await opened();
   const improvement = propose(f, fewerParallel);
   setPolicy(f, { max_parallel: 1 });
   const reverted = decide(f, improvement, 'revert');
@@ -156,8 +156,8 @@ it('keeps a value the user changed since the trial started when the trial is rev
   expect(policyOf(f)).toMatchObject({ max_parallel: 1, policy_version: 2 });
 });
 
-it('pins the parameter of a trial, makes it active and refuses later proposals for it', () => {
-  const f = opened();
+it('pins the parameter of a trial, makes it active and refuses later proposals for it', async () => {
+  const f = await opened();
   const improvement = propose(f, fewerParallel);
   const pinned = decide(f, improvement, 'pin');
   expect(pinned.status).toBe('active');
@@ -166,41 +166,41 @@ it('pins the parameter of a trial, makes it active and refuses later proposals f
   expect(refused(() => propose(f, { ...fewerParallel, to: 1 })).code).toBe('permission_denied');
 });
 
-it('refuses proposals while improvements are off', () => {
-  const f = opened();
+it('refuses proposals while improvements are off', async () => {
+  const f = await opened();
   setPolicy(f, { improvement_mode: 'off' });
   expect(refused(() => propose(f, fewerParallel)).code).toBe('permission_denied');
   expect(f.store.list('improvements')).toEqual([]);
 });
 
-it('refuses a proposal that rests on a retrospective that does not exist', () => {
-  const f = opened();
+it('refuses a proposal that rests on a retrospective that does not exist', async () => {
+  const f = await opened();
   const error = refused(() => propose(f, fewerParallel, undefined, ['retrospective-1', 'ghost']));
   expect(error.code).toBe('invalid_input');
   expect(error.message).toContain('ghost');
 });
 
-it('refuses a second proposal for a parameter whose trial is running', () => {
-  const f = opened();
+it('refuses a second proposal for a parameter whose trial is running', async () => {
+  const f = await opened();
   propose(f, fewerParallel);
   expect(refused(() => propose(f, { ...fewerParallel, to: 1 })).code).toBe('invalid_state');
 });
 
-it('refuses a value outside the allowed range and a value equal to the current one', () => {
-  const f = opened();
+it('refuses a value outside the allowed range and a value equal to the current one', async () => {
+  const f = await opened();
   expect(refused(() => propose(f, { ...fewerParallel, to: 9 })).code).toBe('invalid_input');
   expect(refused(() => propose(f, { ...fewerParallel, to: 3 })).code).toBe('invalid_input');
 });
 
-it('starts the trial of a handback limit proposal at once in auto mode', () => {
-  const f = opened();
+it('starts the trial of a handback limit proposal at once in auto mode', async () => {
+  const f = await opened();
   const handback = propose(f, { type: 'policy_change', param: 'handback_limit', to: 4 });
   expect(handback.status).toBe('trial');
   expect(policyOf(f)).toMatchObject({ handback_limit: 4, policy_version: 1 });
 });
 
-it('starts the trial of a lead experience at once in auto mode and holds it for the user in confirm mode', () => {
-  const f = opened();
+it('starts the trial of a lead experience at once in auto mode and holds it for the user in confirm mode', async () => {
+  const f = await opened();
   const change = {
     type: 'experience',
     domain: 'backend-logic',
@@ -218,8 +218,8 @@ it('starts the trial of a lead experience at once in auto mode and holds it for 
   expect(stored(f, held).trial_started_at).toBeUndefined();
 });
 
-it('lets only a lead propose and only the user decide', () => {
-  const f = opened();
+it('lets only a lead propose and only the user decide', async () => {
+  const f = await opened();
   expect(refused(() => propose(f, fewerParallel, user)).code).toBe('permission_denied');
   expect(refused(() => propose(f, fewerParallel, principalOf(f, 'worker', 'worker'))).code).toBe(
     'permission_denied',
@@ -232,8 +232,8 @@ it('lets only a lead propose and only the user decide', () => {
   expect(stored(f, improvement).status).toBe('candidate');
 });
 
-it('changes only the named tier of the path', () => {
-  const f = opened();
+it('changes only the named tier of the path', async () => {
+  const f = await opened();
   const improvement = propose(f, {
     type: 'policy_change',
     param: 'path',
@@ -244,8 +244,8 @@ it('changes only the named tier of the path', () => {
   expect(policyOf(f).path).toEqual({ t1: 'direct', t2: 'direct', t3: 'dispatch' });
 });
 
-it('refuses a proposal that makes parallel a tier path, when proposed and when applied', () => {
-  const f = opened();
+it('refuses a proposal that makes parallel a tier path, when proposed and when applied', async () => {
+  const f = await opened();
   const toParallel = { type: 'policy_change', param: 'path', tier: 't2', to: 'parallel' };
   expect(refused(() => propose(f, toParallel)).code).toBe('invalid_input');
   expect(policyOf(f).path.t2).toBe('dispatch');
@@ -261,16 +261,16 @@ it('refuses a proposal that makes parallel a tier path, when proposed and when a
   expect(policyOf(f).path.t2).toBe('dispatch');
 });
 
-it('refuses a decision that does not fit the status', () => {
-  const f = opened();
+it('refuses a decision that does not fit the status', async () => {
+  const f = await opened();
   const improvement = propose(f, fewerParallel);
   expect(refused(() => decide(f, improvement, 'confirm')).code).toBe('invalid_state');
   expect(refused(() => decide(f, improvement, 'reject')).code).toBe('invalid_state');
 });
 
-it('lists improvements newest first and by status', () => {
+it('lists improvements newest first and by status', async () => {
   let now = 1_000;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   fixtures.push(f);
   f.store.insert<Session>('sessions', {
     id: 'lead',
@@ -310,8 +310,8 @@ it('lists improvements newest first and by status', () => {
 it.each([
   ['runtime_quota_threshold', 80],
   ['budget', { t2: { dispatch: { input_tokens: 500000, wall_ms: 200000 } } }],
-])('trials and pins a %s proposal and refuses another change while pinned', (param, to) => {
-  const f = opened();
+])('trials and pins a %s proposal and refuses another change while pinned', async (param, to) => {
+  const f = await opened();
   const previous = policyOf(f)[param as 'runtime_quota_threshold' | 'budget'];
   const improvement = propose(f, { type: 'policy_change', param, to });
   expect(stored(f, improvement)).toMatchObject({
@@ -326,8 +326,8 @@ it.each([
   );
 });
 
-it('stores a trimmed rejection reason and note beside the status reason', () => {
-  const f = opened();
+it('stores a trimmed rejection reason and note beside the status reason', async () => {
+  const f = await opened();
   setPolicy(f, { improvement_mode: 'confirm' });
   const improvement = propose(f, { type: 'experience', procedure: 'Read the schema first' });
   f.call('improvement.decide', {
@@ -348,8 +348,8 @@ it('stores a trimmed rejection reason and note beside the status reason', () => 
   expect(stored(f, improvement)).toMatchObject({ reject_reason: 'duplicate' });
 });
 
-it('keeps disabling hand-backs out of proposals and restores the user setting after a trial', () => {
-  const f = opened();
+it('keeps disabling hand-backs out of proposals and restores the user setting after a trial', async () => {
+  const f = await opened();
   expect(
     refused(() => propose(f, { type: 'policy_change', param: 'handback_limit', to: 0 })).code,
   ).toBe('invalid_input');

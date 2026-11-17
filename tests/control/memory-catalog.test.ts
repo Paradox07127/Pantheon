@@ -6,8 +6,8 @@ import path from 'node:path';
 import { Store } from '@pantheon/store';
 import { backfillMemoryIndex, indexMemory } from '../../packages/control/dist/memory-catalog.js';
 
-function catalogFixture() {
-  const f = workbenchFixture();
+async function catalogFixture() {
+  const f = await workbenchFixture();
   const save = (key: string, text: string, extra: Record<string, unknown> = {}, commit = true) => {
     const draft = f.call<any>('memory.propose', {
       project_id: f.project.id,
@@ -24,11 +24,11 @@ function catalogFixture() {
 }
 
 /** A new Store on the fixture's database, as a daemon that starts on an older database opens it. */
-const openedAgain = (f: ReturnType<typeof catalogFixture>) =>
+const openedAgain = (f: Awaited<ReturnType<typeof catalogFixture>>) =>
   new Store(path.join(f.root, 'state/control.sqlite'));
 
-it('pages a metadata-only directory and reads one selected version on demand', () => {
-  const f = catalogFixture();
+it('pages a metadata-only directory and reads one selected version on demand', async () => {
+  const f = await catalogFixture();
   for (let i = 0; i < 5; i++)
     f.save('note-' + i, 'Long body '.repeat(500), { title: 'Record ' + i, tags: ['manual'] });
   const valid = vi.spyOn(f.control.files, 'valid');
@@ -43,8 +43,8 @@ it('pages a metadata-only directory and reads one selected version on demand', (
   expect(valid).toHaveBeenCalledTimes(1);
 });
 
-it('searches short Chinese text and exact metadata without opening artifact bodies', () => {
-  const f = catalogFixture();
+it('searches short Chinese text and exact metadata without opening artifact bodies', async () => {
+  const f = await catalogFixture();
   const wanted = f.save('storage-rule', '项目数据库使用本地 SQLite，旧版本保留供审计。', {
     title: '数据存储',
     summary: '本地数据库与审计',
@@ -64,8 +64,8 @@ it('searches short Chinese text and exact metadata without opening artifact bodi
   ).toEqual([]);
 });
 
-it('uses one current-state gate for directory, graph, reverse dependencies and historical access', () => {
-  const f = catalogFixture();
+it('uses one current-state gate for directory, graph, reverse dependencies and historical access', async () => {
+  const f = await catalogFixture();
   const a = f.save('storage', 'Original decision', { kind: 'decision' });
   const dependent = f.save('analysis', 'Derived note', { dependencies: [a.id] });
   const replacement = f.save('storage', 'Replacement decision', { kind: 'decision' });
@@ -89,7 +89,7 @@ it('uses one current-state gate for directory, graph, reverse dependencies and h
   expect(history.nodes.some((n: any) => n.id === dependent.id && n.state === 'archived')).toBe(
     true,
   );
-  const s = f.create();
+  const s = await f.create();
   const p = {
     id: 'agent',
     role: 'lead' as const,
@@ -107,8 +107,8 @@ it('uses one current-state gate for directory, graph, reverse dependencies and h
   ).toThrow();
 });
 
-it('bounds the graph and keeps shared tags as optional tag nodes, not dependency edges', () => {
-  const f = catalogFixture();
+it('bounds the graph and keeps shared tags as optional tag nodes, not dependency edges', async () => {
+  const f = await catalogFixture();
   const a = f.save('root', 'Root note', { tags: ['shared'] });
   for (let i = 0; i < 12; i++)
     f.save('child-' + i, 'Related note', { dependencies: [a.id], tags: ['shared'] });
@@ -137,8 +137,8 @@ it('bounds the graph and keeps shared tags as optional tag nodes, not dependency
   expect(tags.items[0].reasons).toContain('shared_tag:shared');
 });
 
-it('rejects stale pagination after replacement and never mixes directory generations', () => {
-  const f = catalogFixture();
+it('rejects stale pagination after replacement and never mixes directory generations', async () => {
+  const f = await catalogFixture();
   const first = f.save('versioned', 'before');
   f.save('second', 'other');
   const page = f.directory({ limit: 1 });
@@ -152,7 +152,7 @@ it('rejects stale pagination after replacement and never mixes directory generat
 it('backfills legacy archived text in bounded batches even behind corrupt bodies', async () => {
   const { unlinkSync } = await import('node:fs');
   const { join } = await import('node:path');
-  const f = catalogFixture();
+  const f = await catalogFixture();
   for (let i = 0; i < 17; i++) {
     const r = f.save('corrupt-' + i, 'unique corrupt text ' + i);
     f.call('memory.archive', { memory_id: r.id }, r.revision);
@@ -179,8 +179,8 @@ it('backfills legacy archived text in bounded batches even behind corrupt bodies
   expect(f.call<any>('memory.search', { project_id: f.project.id, q: '数据库' }).items).toEqual([]);
 });
 
-it('skips idle index passes and finds missing rows by lookup however many versions exist', () => {
-  const f = catalogFixture();
+it('skips idle index passes and finds missing rows by lookup however many versions exist', async () => {
+  const f = await catalogFixture();
   const seed = f.store.must<any>('memory_records', f.save('seed', 'Seed body').id);
   const ctx = (f.control as any).ctx;
   f.store.transaction(() => {
@@ -202,8 +202,8 @@ it('skips idle index passes and finds missing rows by lookup however many versio
   expect(performance.now() - started).toBeLessThan(150);
 });
 
-it('rekeys search rows that do not share their record rowid without rereading bodies', () => {
-  const f = catalogFixture();
+it('rekeys search rows that do not share their record rowid without rereading bodies', async () => {
+  const f = await catalogFixture();
   const saved = ['alpha', 'beta', 'gamma'].map((key) => f.save(key, key + ' recorded text'));
   const db = f.store.db;
   const rows = db.prepare('SELECT id, body FROM memory_search ORDER BY rowid').all();
@@ -239,8 +239,8 @@ it('rekeys search rows that do not share their record rowid without rereading bo
   expect(f.directory({ state: 'all' }).index_pending).toBe(0);
 });
 
-it('keeps the search rows of other memories when a memory is written before older rows are rekeyed', () => {
-  const f = catalogFixture();
+it('keeps the search rows of other memories when a memory is written before older rows are rekeyed', async () => {
+  const f = await catalogFixture();
   const [bravo, charlie] = [
     f.save('second', 'Bravo recorded text'),
     f.save('third', 'Charlie recorded text'),
@@ -276,7 +276,7 @@ it('keeps the search rows of other memories when a memory is written before olde
 it('preserves authoritative file references and reports changed or unavailable originals', async () => {
   const { writeFileSync, symlinkSync } = await import('node:fs');
   const { join } = await import('node:path');
-  const f = catalogFixture();
+  const f = await catalogFixture();
   const r = f.save('manual', 'Reviewed manual excerpt', {
     references: [
       { kind: 'file', uri: 'answer.txt' },
@@ -304,8 +304,8 @@ it('preserves authoritative file references and reports changed or unavailable o
   ).toThrowError(expect.objectContaining({ code: 'invalid_input' }));
 });
 
-it('follows reverse dependencies and restoration identity while keeping tags noncausal', () => {
-  const f = catalogFixture();
+it('follows reverse dependencies and restoration identity while keeping tags noncausal', async () => {
+  const f = await catalogFixture();
   const root = f.save('root', 'Independent source', { tags: ['shared'] });
   const child = f.save('child', 'Dependent result', { dependencies: [root.id] });
   const unrelated = f.save('unrelated', 'Same topic only', { tags: ['shared'] });
@@ -346,7 +346,7 @@ it('follows reverse dependencies and restoration identity while keeping tags non
 
 it('rechecks related-read retries and refuses to erase dependency evidence during restoration', async () => {
   const { command } = await import('@pantheon/protocol');
-  const f = catalogFixture();
+  const f = await catalogFixture();
   const root = f.save('root', 'Source');
   const child = f.save('child', 'Derived conclusion', { dependencies: [root.id] });
   const request = command(user.id, 'memory.related', {
@@ -368,10 +368,10 @@ it('rechecks related-read retries and refuses to erase dependency evidence durin
   );
 });
 
-it('uses existing source-session identity only within the same project without opening artifacts', () => {
-  const f = catalogFixture();
+it('uses existing source-session identity only within the same project without opening artifacts', async () => {
+  const f = await catalogFixture();
   const r = f.save('analysis', 'Observed outcome');
-  const s = f.create();
+  const s = await f.create();
   f.store.update('sessions', { ...s, runtime_review: { memory_id: r.id } } as any, s.revision);
   f.store.insert('sessions', {
     ...s,
@@ -386,8 +386,8 @@ it('uses existing source-session identity only within the same project without o
   expect(valid).not.toHaveBeenCalled();
 });
 
-it('keeps a connected neighborhood when dense graphs hit edge and byte limits', () => {
-  const f = catalogFixture();
+it('keeps a connected neighborhood when dense graphs hit edge and byte limits', async () => {
+  const f = await catalogFixture();
   const ids: string[] = [];
   for (let i = 0; i < 41; i++)
     ids.push(
@@ -418,8 +418,8 @@ it('keeps a connected neighborhood when dense graphs hit edge and byte limits', 
   ).toThrow();
 });
 
-it('graphs all filtered project records and counts nodes before truncation', () => {
-  const f = catalogFixture();
+it('graphs all filtered project records and counts nodes before truncation', async () => {
+  const f = await catalogFixture();
   for (let i = 0; i < 85; i++)
     f.save('project-note-' + i, 'Project evidence', { tags: ['project'] });
   f.save('unmatched', 'Other evidence', { kind: 'decision' });
@@ -445,9 +445,9 @@ it('graphs all filtered project records and counts nodes before truncation', () 
   });
 });
 
-it('projects graph summaries, task titles and full source URIs without mixing node fields', () => {
-  const f = catalogFixture();
-  const lead = f.create();
+it('projects graph summaries, task titles and full source URIs without mixing node fields', async () => {
+  const f = await catalogFixture();
+  const lead = await f.create();
   f.store.insert('board_plans', {
     id: lead.id,
     revision: 1,
@@ -492,8 +492,8 @@ it('projects graph summaries, task titles and full source URIs without mixing no
   ]);
 });
 
-it('filters the graph by several memory and source kinds before it cuts', () => {
-  const f = catalogFixture();
+it('filters the graph by several memory and source kinds before it cuts', async () => {
+  const f = await catalogFixture();
   for (let i = 0; i < 6; i++) f.save('early-note-' + i, 'Filler');
   const report = f.save('graph-report', 'Report', {
     kind: 'report',
@@ -501,7 +501,7 @@ it('filters the graph by several memory and source kinds before it cuts', () => 
   });
   const decision = f.save('graph-decision', 'Decision', { kind: 'decision' });
   for (let i = 0; i < 6; i++) f.save('late-note-' + i, 'Filler');
-  const s = f.create();
+  const s = await f.create();
   f.store.update('sessions', { ...s, runtime_review: { memory_id: report.id } } as any, s.revision);
   const graph = f.control.memoryGraph(user, {
     project_id: f.project.id,
@@ -515,13 +515,13 @@ it('filters the graph by several memory and source kinds before it cuts', () => 
   expect(graph).toMatchObject({ total: 3, truncated: false });
 });
 
-it('reads a referenced report of a runtime analysis as active until a later decision', () => {
-  const f = catalogFixture();
+it('reads a referenced report of a runtime analysis as active until a later decision', async () => {
+  const f = await catalogFixture();
   const report = f.save('analysis-report', 'Report', {
     kind: 'report',
     references: [{ kind: 'url', uri: 'https://example.com/report' }],
   });
-  const s = f.create();
+  const s = await f.create();
   f.store.update('sessions', { ...s, runtime_review: { memory_id: report.id } } as any, s.revision);
   const state = () =>
     f.directory().records.find((r: MemorySummary) => r.id === report.id)?.state ?? 'not listed';
@@ -535,8 +535,8 @@ it('reads a referenced report of a runtime analysis as active until a later deci
   });
 });
 
-it('draws the sources of every memory under a source-only kind filter, without the memories', () => {
-  const f = catalogFixture();
+it('draws the sources of every memory under a source-only kind filter, without the memories', async () => {
+  const f = await catalogFixture();
   const report = f.save('source-report', 'Report', {
     kind: 'report',
     references: [{ kind: 'url', uri: 'https://example.com/report' }],
@@ -561,8 +561,8 @@ it('draws the sources of every memory under a source-only kind filter, without t
   expect(reports.nodes.map((n) => n.id)).toEqual([report.id]);
 });
 
-it('draws no tag nodes under a source-only kind filter, which draws no memory to link them to', () => {
-  const f = catalogFixture();
+it('draws no tag nodes under a source-only kind filter, which draws no memory to link them to', async () => {
+  const f = await catalogFixture();
   f.save('tagged-report', 'Report', {
     kind: 'report',
     tags: ['retry'],
@@ -583,8 +583,8 @@ it('draws no tag nodes under a source-only kind filter, which draws no memory to
   expect(reports.nodes.map((n) => n.kind).sort()).toEqual(['report', 'tag']);
 });
 
-it('keeps the focused memory in a graph that is cut', () => {
-  const f = catalogFixture();
+it('keeps the focused memory in a graph that is cut', async () => {
+  const f = await catalogFixture();
   for (let i = 0; i < 8; i++) f.save('cut-note-' + i, 'Filler');
   const input = { project_id: f.project.id, max_nodes: 3 };
   const cut = f.control.memoryGraph(user, input);
@@ -599,9 +599,9 @@ it('keeps the focused memory in a graph that is cut', () => {
   expect(f.control.memoryGraph(user, { ...input, keep: 'gone-memory' }).nodes).toHaveLength(3);
 });
 
-it('carries the lead session and generation on graph task nodes', () => {
-  const f = catalogFixture();
-  const leads = [f.create(), f.create()];
+it('carries the lead session and generation on graph task nodes', async () => {
+  const f = await catalogFixture();
+  const leads = [await f.create(), await f.create()];
   for (const lead of leads)
     f.store.insert('board_plans', {
       id: lead.id,
@@ -626,8 +626,8 @@ it('carries the lead session and generation on graph task nodes', () => {
   );
 });
 
-it('returns recent lifecycle events newest first without record text or other projects', () => {
-  const f = catalogFixture();
+it('returns recent lifecycle events newest first without record text or other projects', async () => {
+  const f = await catalogFixture();
   const r = f.save('recent-note', 'Private record body', { title: 'Recent title' });
   f.call('memory.archive', { memory_id: r.id }, r.revision);
   const restored = f.call<any>(
@@ -667,8 +667,8 @@ it('returns recent lifecycle events newest first without record text or other pr
 
 it.each(['superseded', 'retracted', 'expired', 'stale'] as const)(
   'reports the record kind and %s archive reason in recent rows',
-  (reason) => {
-    const f = catalogFixture();
+  async (reason) => {
+    const f = await catalogFixture();
     const basis = f.save('basis', 'Source');
     const record = f.save('recent', 'Evidence', {
       kind: 'report',
@@ -690,10 +690,10 @@ it.each(['superseded', 'retracted', 'expired', 'stale'] as const)(
   },
 );
 
-it('includes the proposing session in directory, search and related summaries', () => {
-  const f = catalogFixture();
+it('includes the proposing session in directory, search and related summaries', async () => {
+  const f = await catalogFixture();
   const basis = f.save('basis', 'Source');
-  const session = f.create();
+  const session = await f.create();
   const principal = {
     id: 'agent',
     role: 'lead' as const,
@@ -727,10 +727,10 @@ it('includes the proposing session in directory, search and related summaries', 
     expect(summary.author_session_id).toBe(session.id);
 });
 
-it('numbers committed versions by commit order within the exact key and task scope', () => {
-  const f = catalogFixture();
-  const lead = f.create();
-  const otherLead = f.create();
+it('numbers committed versions by commit order within the exact key and task scope', async () => {
+  const f = await catalogFixture();
+  const lead = await f.create();
+  const otherLead = await f.create();
   for (const session of [lead, otherLead])
     f.store.insert('board_plans', {
       id: session.id,
@@ -774,8 +774,8 @@ it('numbers committed versions by commit order within the exact key and task sco
   ]);
 });
 
-it('exposes archive metadata and the invalid basis before and after maintenance', () => {
-  const f = catalogFixture();
+it('exposes archive metadata and the invalid basis before and after maintenance', async () => {
+  const f = await catalogFixture();
   const basis = f.save('basis', 'Source');
   const dependent = f.save('dependent', 'Derived', { dependencies: [basis.id] });
   const expiring = f.save('temporary', 'Temporary', { expires_at: Date.now() + 60000 });
@@ -823,8 +823,8 @@ it('exposes archive metadata and the invalid basis before and after maintenance'
     expect(summary).not.toHaveProperty(field);
 });
 
-it('includes committed versions on items and graph records while leaving drafts unnumbered', () => {
-  const f = catalogFixture();
+it('includes committed versions on items and graph records while leaving drafts unnumbered', async () => {
+  const f = await catalogFixture();
   const first = f.save('versioned', 'First version');
   const second = f.save('versioned', 'Second version');
   const draft = f.save('versioned', 'Uncommitted version', {}, false);
@@ -842,8 +842,8 @@ it('includes committed versions on items and graph records while leaving drafts 
   expect(graph.nodes.find((n) => n.id === draft.id)).not.toHaveProperty('version');
 });
 
-it('resolves archived summary replacement versions and basis titles while the records exist', () => {
-  const f = catalogFixture();
+it('resolves archived summary replacement versions and basis titles while the records exist', async () => {
+  const f = await catalogFixture();
   const basis = f.save('basis', 'Original source', { title: 'Reviewed source' });
   const dependent = f.save('dependent', 'Derived note', { dependencies: [basis.id] });
   const replacement = f.save('basis', 'Replacement source');
@@ -899,8 +899,8 @@ it('resolves archived summary replacement versions and basis titles while the re
   ).not.toHaveProperty('basis_title');
 });
 
-it('matches every selected tag and counts tags using all other filters before pagination', () => {
-  const f = catalogFixture();
+it('matches every selected tag and counts tags using all other filters before pagination', async () => {
+  const f = await catalogFixture();
   const first = f.save('first', 'Selected evidence', { tags: ['storage', 'local'] });
   f.save('second', 'Selected evidence', { tags: ['storage'] });
   f.save('third', 'Selected evidence', { tags: ['local'] });
@@ -922,9 +922,9 @@ it('matches every selected tag and counts tags using all other filters before pa
   expect(f.directory({ tag: 'storage' }).total).toBe(2);
 });
 
-it('filters project records apart from task records in directory, search and graph', () => {
-  const f = catalogFixture();
-  const lead = f.create();
+it('filters project records apart from task records in directory, search and graph', async () => {
+  const f = await catalogFixture();
+  const lead = await f.create();
   f.store.insert('board_plans', {
     id: lead.id,
     revision: 1,

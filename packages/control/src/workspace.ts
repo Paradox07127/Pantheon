@@ -9,12 +9,11 @@ import {
   resolvedPath,
   projectAccess,
   checkedPath,
-  gitFolder,
   insert,
   type ControlContext,
 } from './context.js';
 import { runGit } from './git.js';
-import { assertManagedLocation, protectionList } from './protection.js';
+import { assertManagedLocation, protectionListWithoutWorkspace } from './protection.js';
 import { workspaceReady } from './provisioning.js';
 
 export function assertWorkspaceAvailable(workspace: Workspace): void {
@@ -36,17 +35,18 @@ export type WorkspaceRegistration = {
   id?: string;
 };
 
-/** The caller owns the transaction and has checked project access. */
+/** The caller owns the transaction, has checked project access and read gitFolderAsync of the source. */
 export function registerWorkspace(
   ctx: ControlContext,
   input: WorkspaceRegistration,
   cause: string,
+  sourceGit: boolean,
 ): Workspace {
   const project = ctx.store.must<Project>('projects', input.project_id),
     workspaceId = input.id ?? id();
   const source = checkedPath(ctx, project, input.source);
   requireThat(
-    project.roots.includes(source) && gitFolder(source),
+    project.roots.includes(source) && sourceGit,
     'scope_violation',
     'A worktree source must be a project folder that is itself a git checkout',
   );
@@ -217,7 +217,10 @@ export function workspaceReadAccess(
       'Worktree path is outside managed root',
     );
     if (ctx.protectionPaths) {
-      const protectedEntries = protectionList({ ...ctx.protectionPaths, otherWorkspaces: [] });
+      const protectedEntries = protectionListWithoutWorkspace({
+        ...ctx.protectionPaths,
+        otherWorkspaces: [],
+      });
       requireThat(
         !protectedEntries.some(
           (entry) =>

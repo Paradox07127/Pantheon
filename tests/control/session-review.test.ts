@@ -48,10 +48,10 @@ class ReviewerAdapter extends FixtureAdapter {
 }
 
 it('reviews a workbench session from its diff and lists the findings for that session', async () => {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   const reviewer = new ReviewerAdapter('session-reviewer');
   w.control.adapters.set(reviewer.name, reviewer);
-  const session = w.create();
+  const session = await w.create();
   const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
   await eventually(
     () =>
@@ -116,10 +116,10 @@ it('reviews a workbench session from its diff and lists the findings for that se
 
 /** A workbench session with a committed change and a running review by two reviewer runtimes. */
 async function runningSessionReview() {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   const reviewers = [new ReviewerAdapter('reviewer-one'), new ReviewerAdapter('reviewer-two')];
   for (const adapter of reviewers) w.control.adapters.set(adapter.name, adapter);
-  const session = w.create();
+  const session = await w.create();
   const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
   await eventually(
     () =>
@@ -193,12 +193,12 @@ it.each(['completed', 'failed'] as const)(
 );
 
 it('keeps the review folders another project left on disk out of a reviewer session', async () => {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   const reviewer = new ReviewerAdapter('session-reviewer');
   w.control.adapters.set(reviewer.name, reviewer);
   const elsewhere = path.join(w.root, 'managed', 'removed-project', 'reviews', 'old-review');
   mkdirSync(elsewhere, { recursive: true });
-  const session = w.create();
+  const session = await w.create();
   const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
   await eventually(
     () =>
@@ -221,7 +221,7 @@ it('keeps the review folders another project left on disk out of a reviewer sess
 });
 
 it('keeps the review folders of other projects out of a planner session', async () => {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   const elsewhere = path.join(w.root, 'managed', 'removed-project', 'reviews');
   mkdirSync(elsewhere, { recursive: true });
   // A baseline, the planner session here, skips a project with fewer than three files.
@@ -277,13 +277,13 @@ it('waits for every reviewer after one fails and completes with the findings of 
   expect(directories.some((directory) => existsSync(directory))).toBe(false);
 });
 
-it('leaves the directories behind a reviews symlink alone when removing orphans at startup', () => {
-  const w = workbenchFixture();
+it('leaves the directories behind a reviews symlink alone when removing orphans at startup', async () => {
+  const w = await workbenchFixture();
   const project = path.join(w.root, 'managed', w.project.id),
     kept = path.join(project, 'elsewhere', 'kept');
   mkdirSync(kept, { recursive: true });
   symlinkSync(path.join(project, 'elsewhere'), path.join(project, 'reviews'));
-  w.control.recover();
+  await w.control.recover();
   expect(existsSync(kept)).toBe(true);
   expect(w.store.events().some((event) => event.kind === 'review.orphans_removed')).toBe(false);
 });

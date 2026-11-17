@@ -5,7 +5,7 @@ import { startRuntimeOtel } from '../../apps/daemon/dist/runtime-otel.js';
 import { eventually, fixture } from '../helpers.js';
 
 it('tails lifecycle events to a local OTLP collector and omits tool contents', async () => {
-  const f = fixture();
+  const f = await fixture();
   let request: { url?: string; body: string } | undefined;
   const collector = createServer(async (req, res) => {
     let body = '';

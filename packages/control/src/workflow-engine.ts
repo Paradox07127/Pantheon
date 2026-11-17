@@ -32,7 +32,7 @@ import { causeTurn } from './progress.js';
 import { unsnooze } from './session.js';
 import { runValidationCommand } from './validation-executor.js';
 import { reviewInstruction, reviewerRuntime, startReview } from './review.js';
-import { sessionRange, sessionRangeAsync } from './landing-diff.js';
+import { sessionRangeAsync } from './landing-diff.js';
 import { runGit } from './git.js';
 import { workflowResults } from './workflow-results.js';
 import { checkGates, gateFailed } from './landing.js';
@@ -177,9 +177,181 @@ export function taskWorkflow(
 /** The id of the review a review loop task gets before its merge when its definition has no blocking one. */
 export const REVIEW_LOOP_STEP_ID = 'review-loop';
 
+/** Changed paths, or why reading them failed, by condition key. */
+export type ConditionAnswers = ReadonlyMap<string, string[] | Error>;
+
+/** The last read of a condition key; reading is the read in flight. */
+interface ConditionRead {
+  paths?: string[];
+  error?: Error;
+  /** The session revision the read started at; a view reads again once the session moves. */
+  revision?: number;
+  /** The decision phase the read landed before. */
+  phase?: number;
+  /** A view showed this answer, so a new one tells clients to read again. */
+  shown?: boolean;
+  reading?: Promise<string[]>;
+}
+
+const conditionReads = new WeakMap<
+  ControlContext,
+  { phase: number; reads: Map<string, ConditionRead> }
+>();
+
+function conditionState(ctx: ControlContext) {
+  let state = conditionReads.get(ctx);
+  if (!state) conditionReads.set(ctx, (state = { phase: 0, reads: new Map() }));
+  return state;
+}
+
+// Only the slot after the merge reads another range, from the task's landed merges.
+const conditionKey = (sessionId: string, slot?: Slot, taskId?: string) =>
+  JSON.stringify(
+    slot === 'after_merge' ? [sessionId, slot, taskId ?? null] : [sessionId, null, null],
+  );
+
+/** Reads the key's changed paths unless a read is in flight; the answer lands in the cache. */
+function readCondition(
+  ctx: ControlContext,
+  sessionId: string,
+  slot?: Slot,
+  taskId?: string,
+): Promise<string[]> {
+  const state = conditionState(ctx),
+    key = conditionKey(sessionId, slot, taskId),
+    known = state.reads.get(key);
+  if (known?.reading) return known.reading;
+  const revision = ctx.store.get<Session>('sessions', sessionId)?.revision;
+  const land = (answer: Pick<ConditionRead, 'paths' | 'error'>) => {
+    const before = state.reads.get(key);
+    state.reads.set(key, { ...answer, revision, phase: state.phase });
+    if (ctx.closing) return;
+    if (before?.shown && JSON.stringify(before.paths) !== JSON.stringify(answer.paths)) {
+      const session = ctx.store.get<Session>('sessions', sessionId);
+      // Clients read the gate commands again only after an event.
+      if (session)
+        ctx.store.event(
+          'workspace.repository_changed',
+          ctx.store.must<Project>('projects', session.project_id),
+          session.project_id,
+          {},
+        );
+    }
+    ctx.changed();
+  };
+  // Started after the caller's synchronous work, which then runs no Git.
+  const reading = Promise.resolve()
+    .then(() => changedPaths(ctx, sessionId, slot, taskId))
+    .then(
+      (paths) => {
+        land({ paths });
+        return paths;
+      },
+      (error: unknown) => {
+        land({ error: error instanceof Error ? error : new Error(String(error)) });
+        throw error;
+      },
+    );
+  const work: Promise<void> = reading
+    .then(
+      () => {},
+      () => {},
+    )
+    .finally(() => ctx.completions.delete(work));
+  ctx.completions.add(work);
+  state.reads.set(key, { ...known, reading });
+  return reading;
+}
+
+/** Starts the key's read in the background; a failed read is the answer a decision gets. */
+function requestCondition(ctx: ControlContext, sessionId: string, slot?: Slot, taskId?: string) {
+  readCondition(ctx, sessionId, slot, taskId).catch((error: unknown) => {
+    if (!(error instanceof DomainError)) ctx.diagnostic(error);
+  });
+}
+
+/** Reads the changed paths of the session's conditions afresh, or joins the read in flight. */
+export async function readConditions(
+  ctx: ControlContext,
+  sessionId: string,
+  slot?: Slot,
+  taskId?: string,
+): Promise<ConditionAnswers> {
+  return new Map([
+    [conditionKey(sessionId, slot, taskId), await readCondition(ctx, sessionId, slot, taskId)],
+  ]);
+}
+
+const hasCondition = (step: WorkflowStep) =>
+  !!step.when ||
+  (step.kind.type === 'parallel'
+    ? step.kind.steps.some((each) => !!each.when)
+    : step.kind.type === 'loop' && !!step.kind.step.when);
+
+/** The answers a merge of the session decides its steps before the merge on; Git runs only for a condition. */
+export async function readMergeConditions(
+  ctx: ControlContext,
+  sessionId: string,
+): Promise<ConditionAnswers> {
+  const session = ctx.store.must<Session>('sessions', sessionId);
+  if (!(session.task ?? session.direct_task)) return new Map();
+  const workflow = sessionWorkflow(ctx, session);
+  // A trial's definition may apply before the task is enrolled.
+  const conditional = [
+    workflow.definition,
+    storedDefinition(ctx, session.project_id, workflow.id)?.definition,
+  ].some((definition) => definition?.slots.before_merge.some(hasCondition));
+  return conditional ? readConditions(ctx, sessionId) : new Map();
+}
+
+/** The answers that landed since the last decision phase, which the scheduler's decisions use. */
+export function decidedConditions(ctx: ControlContext): ConditionAnswers {
+  const state = conditionState(ctx),
+    answers = new Map<string, string[] | Error>();
+  for (const [key, read] of state.reads) {
+    const answer = read.phase === state.phase ? (read.error ?? read.paths) : undefined;
+    if (answer) answers.set(key, answer);
+  }
+  return answers;
+}
+
+/** Ends a decision phase; the next decides on answers read after it. */
+export function conditionsDecided(ctx: ControlContext): void {
+  conditionState(ctx).phase += 1;
+}
+
+/** The condition reads in flight, which decisions requested; undefined when none is. */
+export function conditionsRead(ctx: ControlContext): Promise<unknown> | undefined {
+  const reading = [...conditionState(ctx).reads.values()].flatMap((read) =>
+    read.reading ? [read.reading] : [],
+  );
+  return reading.length ? Promise.allSettled(reading) : undefined;
+}
+
+/** The last answer a view shows; reads again in the background when there is none or the session moved. */
+function shownPaths(
+  ctx: ControlContext,
+  sessionId: string,
+  slot?: Slot,
+  taskId?: string,
+): string[] | undefined {
+  const reads = conditionState(ctx).reads,
+    key = conditionKey(sessionId, slot, taskId),
+    known = reads.get(key);
+  if (
+    !known?.reading &&
+    (known?.revision === undefined ||
+      known.revision !== ctx.store.get<Session>('sessions', sessionId)?.revision)
+  )
+    requestCondition(ctx, sessionId, slot, taskId);
+  reads.get(key)!.shown = true;
+  return known?.paths;
+}
+
 /**
- * Conditions inspect Git's diff, never an agent's account of which files changed. Callers that
- * check several steps at once pass changed, which keeps each session's paths for the others.
+ * Conditions inspect Git's diff, never an agent's account of which files changed. A decision
+ * passes the answers it read and gets undefined for a key they lack, whose read it requests;
+ * without answers a view gets the last answer, undefined before the first.
  */
 export function workflowCondition(
   ctx: ControlContext,
@@ -187,24 +359,28 @@ export function workflowCondition(
   sessionId?: string,
   slot?: Slot,
   taskId?: string,
-  changed?: Map<string, string[]>,
-): boolean {
+  answers?: ConditionAnswers,
+): boolean | undefined {
   if (!step.when) return true;
   if (!sessionId) return false;
-  // Within one check the session, slot and task fix the workspace, base and head the paths come from.
-  const key = JSON.stringify([sessionId, slot ?? null, taskId ?? null]);
-  const paths = changed?.get(key) ?? changedPaths(ctx, sessionId, slot, taskId);
-  changed?.set(key, paths);
+  const paths = answers
+    ? answers.get(conditionKey(sessionId, slot, taskId))
+    : shownPaths(ctx, sessionId, slot, taskId);
+  if (paths instanceof Error) throw paths;
+  if (!paths) {
+    if (answers) requestCondition(ctx, sessionId, slot, taskId);
+    return undefined;
+  }
   return paths.some((file) => step.when!.changed_paths.some((glob) => matchesGlob(file, glob)));
 }
 
 /** The paths the session's range changes, as a step condition for slot and task reads them. */
-function changedPaths(
+async function changedPaths(
   ctx: ControlContext,
   sessionId: string,
   slot?: Slot,
   taskId?: string,
-): string[] {
+): Promise<string[]> {
   const session = ctx.store.must<Session>('sessions', sessionId);
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   // A direct task's merge leaves its lead open; its plan keeps the landed range.
@@ -213,27 +389,29 @@ function changedPaths(
       ? currentDirectMerge(ctx.store.get<BoardPlan>('board_plans', sessionId), taskId)
       : undefined;
   const merged = session.outcome === 'merged' || !!direct;
+  const parts =
+    slot === 'after_merge' && session.task?.parallel_index !== undefined
+      ? taskSessions(ctx, session.task.lead_session_id, session.task.id)
+      : undefined;
   const range = direct
     ? { source: workspace.source!, from_sha: direct.from_sha, to_sha: direct.to_sha }
-    : sessionRange(ctx, session);
+    : await sessionRangeAsync(ctx, session);
   if (!merged) {
     // --git-path prints at once and --verify prints its commit last.
-    const read = runGit(workspace.source!, [
-      'rev-parse',
-      '--path-format=absolute',
-      '--git-path',
-      'objects',
-      '--verify',
-      'HEAD^{commit}',
-    ]);
+    const read = await runGit(
+      workspace.source!,
+      ['rev-parse', '--path-format=absolute', '--git-path', 'objects', '--verify', 'HEAD^{commit}'],
+      undefined,
+      true,
+    );
     requireThat(read.exit_code === 0, 'git_failed', read.stderr.toString().trim());
     const [objects, sourceHead] = read.stdout.toString().trim().split('\n');
     // Not diff --merge-base, which fails on a history with more than one merge base.
-    const base = runGit(
+    const base = await runGit(
       workspace.path,
       ['merge-base', range.to_sha, sourceHead!],
       undefined,
-      false,
+      true,
       {
         env: { GIT_ALTERNATE_OBJECT_DIRECTORIES: objects! },
       },
@@ -241,22 +419,20 @@ function changedPaths(
     requireThat(base.exit_code === 0, 'git_failed', base.stderr.toString().trim());
     range.from_sha = base.stdout.toString().trim();
   }
-  const ranges =
-    slot === 'after_merge' && session.task?.parallel_index !== undefined
-      ? taskSessions(ctx, session.task.lead_session_id, session.task.id).map((part) =>
-          sessionRange(ctx, part),
-        )
-      : [range];
-  return ranges.flatMap((changed) => {
-    const result = runGit(merged ? changed.source : workspace.path, [
-      'diff',
-      '--name-only',
-      '--no-renames',
-      '-z',
-      changed.from_sha,
-      changed.to_sha,
-      '--',
-    ]);
+  const ranges = parts
+    ? await Promise.all(parts.map((part) => sessionRangeAsync(ctx, part)))
+    : [range];
+  const results = await Promise.all(
+    ranges.map((changed) =>
+      runGit(
+        merged ? changed.source : workspace.path,
+        ['diff', '--name-only', '--no-renames', '-z', changed.from_sha, changed.to_sha, '--'],
+        undefined,
+        true,
+      ),
+    ),
+  );
+  return results.flatMap((result) => {
     requireThat(result.exit_code === 0, 'git_failed', result.stderr.toString().trim());
     return result.stdout.toString().split('\0').filter(Boolean);
   });
@@ -347,14 +523,46 @@ function applicableSteps(
   return [review, ...steps];
 }
 
-/** The stored runs of this slot, in definition order. Only entry points that start work create them. */
+/** The stored runs of this slot, in definition order; none while a condition waits for its answer. */
 export function startSlot(
   ctx: ControlContext,
   plan: BoardPlan,
   task: PlanTask,
   slot: Slot,
   sessionId?: string,
+  answers: ConditionAnswers = decidedConditions(ctx),
 ): StepRun[] {
+  return openSlot(ctx, plan, task, slot, sessionId, answers) ?? [];
+}
+
+/** startSlot, undefined while a new run's condition has no answer; it then writes nothing. */
+function openSlot(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  task: PlanTask,
+  slot: Slot,
+  sessionId: string | undefined,
+  answers: ConditionAnswers,
+): StepRun[] | undefined {
+  const existing = ctx.store
+    .list<StepRun>('workflow_step_runs')
+    .filter(
+      (r) =>
+        r.lead_session_id === plan.id &&
+        r.task_id === task.id &&
+        r.generation === taskGeneration(plan, task.id) &&
+        r.slot === slot &&
+        (slot !== 'before_merge' || !sessionId || r.session_id === sessionId) &&
+        !r.parent_run_id,
+    );
+  if (
+    applicableSteps(ctx, plan, task, slot).some(
+      (step) =>
+        !existing.some((r) => r.step.id === step.id) &&
+        workflowCondition(ctx, step, sessionId, slot, task.id, answers) === undefined,
+    )
+  )
+    return;
   const row = storedDefinition(ctx, plan.project_id, taskWorkflow(ctx, plan, task.id).id);
   if (row && trialEligible(ctx, row, plan, task, slot)) {
     const trial = row.trial!,
@@ -369,17 +577,6 @@ export function startSlot(
       row.revision,
     );
   }
-  const existing = ctx.store
-    .list<StepRun>('workflow_step_runs')
-    .filter(
-      (r) =>
-        r.lead_session_id === plan.id &&
-        r.task_id === task.id &&
-        r.generation === taskGeneration(plan, task.id) &&
-        r.slot === slot &&
-        (slot !== 'before_merge' || !sessionId || r.session_id === sessionId) &&
-        !r.parent_run_id,
-    );
   const version = taskWorkflow(ctx, plan, task.id).definition_version;
   return applicableSteps(ctx, plan, task, slot).map((step) => {
     const old = existing.find((r) => r.step.id === step.id);
@@ -404,7 +601,7 @@ export function startSlot(
       slot,
       step_id: step.id,
     });
-    if (!workflowCondition(ctx, step, sessionId, slot, task.id))
+    if (!workflowCondition(ctx, step, sessionId, slot, task.id, answers))
       return changeRun(ctx, run, 'skipped', 'condition');
     return run;
   });
@@ -805,7 +1002,7 @@ function childRuns(ctx: ControlContext): Map<string, StepRun[]> {
 }
 
 /** Settles a running prompt or review, and reruns a slot whose findings turn has completed. */
-function followRun(ctx: ControlContext, run: StepRun): void {
+function followRun(ctx: ControlContext, run: StepRun, answers: ConditionAnswers): void {
   const turn = run.turn_id ? ctx.store.get<SessionTurn>('session_turns', run.turn_id) : undefined;
   if (run.state === 'running' && run.step.kind.type === 'prompt' && turn) {
     if (turn.state === 'completed') {
@@ -822,21 +1019,21 @@ function followRun(ctx: ControlContext, run: StepRun): void {
   if (run.state === 'failed' && run.review_id && run.slot === 'before_merge' && turn) {
     if (turn.state !== 'completed') return;
     const plan = ctx.store.must<BoardPlan>('board_plans', run.lead_session_id),
-      children = childRuns(ctx);
-    for (const other of liveRuns(ctx, plan, run.task_id, 'before_merge'))
-      if (other.step.kind.type !== 'command' && other.session_id === run.session_id) {
-        for (const child of children.get(other.id) ?? [])
-          if (child.state !== 'retired') changeRun(ctx, child, 'retired');
-        const { turn_id: _, review_id: __, reason: ___, finished_at: ____, ...rest } = other;
-        const applies = workflowCondition(
-          ctx,
-          other.step,
-          other.session_id,
-          'before_merge',
-          other.task_id,
-        );
-        changeRun(ctx, rest, applies ? 'pending' : 'skipped', applies ? undefined : 'condition');
-      }
+      children = childRuns(ctx),
+      others = liveRuns(ctx, plan, run.task_id, 'before_merge').filter(
+        (other) => other.step.kind.type !== 'command' && other.session_id === run.session_id,
+      );
+    const applies = (other: StepRun) =>
+      workflowCondition(ctx, other.step, other.session_id, 'before_merge', other.task_id, answers);
+    // The slot runs again once every condition has its answer.
+    if (others.some((other) => applies(other) === undefined)) return;
+    for (const other of others) {
+      for (const child of children.get(other.id) ?? [])
+        if (child.state !== 'retired') changeRun(ctx, child, 'retired');
+      const { turn_id: _, review_id: __, reason: ___, finished_at: ____, ...rest } = other;
+      const again = applies(other);
+      changeRun(ctx, rest, again ? 'pending' : 'skipped', again ? undefined : 'condition');
+    }
     resumeMerge(ctx, run);
   }
 }
@@ -939,18 +1136,30 @@ function runCommandStep(ctx: ControlContext, pending: StepRun): void {
 }
 
 /** Starts a leaf or advances its persisted parallel/loop children. */
-function advanceRun(ctx: ControlContext, pending: StepRun): void {
+function advanceRun(ctx: ControlContext, pending: StepRun, answers: ConditionAnswers): void {
   const run = ctx.store.must<StepRun>('workflow_step_runs', pending.id);
   const kind = run.step.kind;
   if (kind.type === 'parallel' || kind.type === 'loop') {
     if (!['pending', 'running'].includes(run.state)) return;
-    if (run.state === 'pending') changeRun(ctx, run, 'running');
     const task = ctx.store
       .must<BoardPlan>('board_plans', run.lead_session_id)
       .tasks.find((t) => t.id === run.task_id)!;
     let children = ctx.store
       .list<StepRun>('workflow_step_runs')
       .filter((child) => child.parent_run_id === run.id && child.state !== 'retired');
+    // A child is created once its condition has an answer.
+    const undecided = (step: WorkflowLeafStep) =>
+      appliesTo(step, task) &&
+      workflowCondition(ctx, step, run.session_id, run.slot, run.task_id, answers) === undefined;
+    if (
+      kind.type === 'parallel'
+        ? kind.steps.some(
+            (step) => !children.some((child) => child.step.id === step.id) && undecided(step),
+          )
+        : !children.length && undecided(kind.step)
+    )
+      return;
+    if (run.state === 'pending') changeRun(ctx, run, 'running');
     const create = (step: WorkflowLeafStep, iteration: number) => {
       const old = ctx.store
         .list<StepRun>('workflow_step_runs')
@@ -988,7 +1197,7 @@ function advanceRun(ctx: ControlContext, pending: StepRun): void {
         iteration,
       });
       if (!appliesTo(step, task)) return changeRun(ctx, child, 'skipped', 'applies_to');
-      return workflowCondition(ctx, step, run.session_id, run.slot, run.task_id)
+      return workflowCondition(ctx, step, run.session_id, run.slot, run.task_id, answers)
         ? child
         : changeRun(ctx, child, 'skipped', 'condition');
     };
@@ -998,8 +1207,8 @@ function advanceRun(ctx: ControlContext, pending: StepRun): void {
       );
     else if (!children.length) children = [create(kind.step, 1)];
     for (const child of children) {
-      followRun(ctx, child);
-      advanceRun(ctx, ctx.store.must<StepRun>('workflow_step_runs', child.id));
+      followRun(ctx, child, answers);
+      advanceRun(ctx, ctx.store.must<StepRun>('workflow_step_runs', child.id), answers);
     }
     children = children.map((child) => ctx.store.must<StepRun>('workflow_step_runs', child.id));
     // Review findings went to the task session; followRun reruns the group after that turn.
@@ -1026,8 +1235,9 @@ function advanceRun(ctx: ControlContext, pending: StepRun): void {
       if (last.state === 'passed' || last.state === 'skipped')
         changeRun(ctx, current, last.state, last.reason);
       else if (last.state === 'failed' || last.state === 'rejected') {
-        if (children.length < kind.max) advanceRun(ctx, create(kind.step, children.length + 1));
-        else failStep(ctx, current, last.reason ?? last.step.title);
+        if (children.length >= kind.max) failStep(ctx, current, last.reason ?? last.step.title);
+        else if (!undecided(kind.step))
+          advanceRun(ctx, create(kind.step, children.length + 1), answers);
       }
     }
     return;
@@ -1065,6 +1275,7 @@ export function recordWorkflowGates(
   session: Session,
   kind: 'gate_started' | 'gate_step_checked' | 'gate_checked',
   payload: Record<string, unknown>,
+  answers: ConditionAnswers,
 ): void {
   const binding = session.task ?? session.direct_task;
   if (!binding) return;
@@ -1098,7 +1309,8 @@ export function recordWorkflowGates(
         // Like a top-level prompt, a started prompt keeps its turn; rerunning it would queue another.
         if (child.step.kind.type !== 'prompt' || !['running', 'passed'].includes(child.state))
           changeRun(ctx, child, 'retired');
-      const applies = workflowCondition(ctx, group.step, session.id);
+      const applies =
+        workflowCondition(ctx, group.step, session.id, undefined, undefined, answers) !== false;
       changeRun(
         ctx,
         { ...group, finished_at: undefined, reason: undefined },
@@ -1134,8 +1346,15 @@ export function recordWorkflowGates(
   }
 }
 
-/** Called only after landing has passed all gates, immediately before moving the source branch. */
-export function waitBeforeMerge(ctx: ControlContext, session: Session): boolean {
+/**
+ * Called only after landing has passed all gates, immediately before moving the source branch;
+ * a condition without an answer holds the merge too.
+ */
+export function waitBeforeMerge(
+  ctx: ControlContext,
+  session: Session,
+  answers: ConditionAnswers,
+): boolean {
   const binding = session.task ?? session.direct_task;
   if (!binding) return false;
   const plan = ctx.store.must<BoardPlan>(
@@ -1143,7 +1362,8 @@ export function waitBeforeMerge(ctx: ControlContext, session: Session): boolean 
     session.task?.lead_session_id ?? session.id,
   );
   const task = plan.tasks.find((t) => t.id === binding.id)!;
-  const runs = startSlot(ctx, plan, task, 'before_merge', session.id);
+  const runs = openSlot(ctx, plan, task, 'before_merge', session.id, answers);
+  if (!runs) return true;
   const next = runs.find((r) => !['passed', 'skipped'].includes(r.state));
   if (!next) return false;
   if (next.state === 'pending' && next.step.kind.type === 'approval')
@@ -1167,6 +1387,7 @@ export function recoverWorkflowSteps(ctx: ControlContext): void {
 const SLOTS: Slot[] = ['before_dispatch', 'before_merge', 'after_merge'];
 
 export function advanceSteps(ctx: ControlContext): void {
+  const answers = decidedConditions(ctx);
   for (const row of ctx.store.list<StoredWorkflowDefinition>('workflow_definitions')) {
     if (!row.trial) continue;
     const trial = row.trial;
@@ -1234,7 +1455,7 @@ export function advanceSteps(ctx: ControlContext): void {
       ) {
         const sessionId = afterMergeSession(ctx, plan, task);
         if (sessionId) {
-          startSlot(ctx, plan, task, 'after_merge', sessionId);
+          startSlot(ctx, plan, task, 'after_merge', sessionId, answers);
           read = undefined;
         }
       }
@@ -1242,8 +1463,8 @@ export function advanceSteps(ctx: ControlContext): void {
         for (const run of liveRuns(ctx, plan, task.id, slot, current().runs)) {
           // A group's children are followed here too, since advanceRun waits for a held merge.
           for (const child of children.get(run.id) ?? [])
-            followRun(ctx, ctx.store.must<StepRun>('workflow_step_runs', child.id));
-          followRun(ctx, ctx.store.must<StepRun>('workflow_step_runs', run.id));
+            followRun(ctx, ctx.store.must<StepRun>('workflow_step_runs', child.id), answers);
+          followRun(ctx, ctx.store.must<StepRun>('workflow_step_runs', run.id), answers);
           read = undefined;
         }
         const live = liveRuns(ctx, plan, task.id, slot, current().runs);
@@ -1266,13 +1487,13 @@ export function advanceSteps(ctx: ControlContext): void {
             continue;
           // Direct commands before the merge are run by landing; composite children use the same verifier.
           if (slot === 'before_merge' && next.step.kind.type === 'command') continue;
-          advanceRun(ctx, next);
+          advanceRun(ctx, next, answers);
           read = undefined;
         }
       }
     }
   for (const session of ctx.store.list<Session>('sessions')) {
-    if (!heldForSteps(session) || waitBeforeMerge(ctx, session)) continue;
+    if (!heldForSteps(session) || waitBeforeMerge(ctx, session, answers)) continue;
     admitAfterSteps(ctx, session);
   }
 }
@@ -1296,11 +1517,11 @@ function admitAfterSteps(ctx: ControlContext, held: Session): void {
   const work: Promise<void> = Promise.resolve()
     .then(async () => {
       if (!committed() || ctx.closing) return;
-      const reads = await readMergeStates(workspace);
+      const reads = await readMergeStates(ctx, held.id, workspace);
       if (ctx.closing) return;
       ctx.store.transaction(() => {
         const session = ctx.store.must<Session>('sessions', held.id);
-        if (!heldForSteps(session) || waitBeforeMerge(ctx, session)) return;
+        if (!heldForSteps(session) || waitBeforeMerge(ctx, session, reads.conditions)) return;
         try {
           admitMerge(
             ctx,

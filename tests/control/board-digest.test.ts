@@ -6,8 +6,8 @@ import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 async function timeline(change = true) {
-  const f = workbenchFixture();
-  const session = f.create('Measure session time');
+  const f = await workbenchFixture();
+  const session = await f.create('Measure session time');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   if (change) {
     const worktree = f.store.must<Workspace>('workspaces', session.workspace_id!).path;

@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 it('lists ACP capabilities and unknown login alongside every native preflight field', async () => {
-  const f = fixture();
+  const f = await fixture();
   cleanups.push(f.close);
   const grok = new AcpAdapter({ name: 'grok', profile: acpProfiles.grok!, version: '1.0.77' });
   const native = {
@@ -83,7 +83,7 @@ it('finds a runtime installed after the start only when the status is checked ag
     path.join(directory, 'config.json'),
     JSON.stringify({ version: 1, runtimes: { agy: { enabled: false } } }),
   );
-  const f = fixture({ controlOptions: { userConfigDir: directory, createRuntimeAdapter } });
+  const f = await fixture({ controlOptions: { userConfigDir: directory, createRuntimeAdapter } });
   cleanups.push(async () => {
     await f.close();
     rmSync(directory, { recursive: true, force: true });
@@ -106,7 +106,7 @@ it('persists runtime patches, swaps or removes adapters, and refuses unknown nam
   const replacement = Object.assign(new FixtureAdapter(), { name: 'grok' });
   const createRuntimeAdapter = vi.fn(async (): Promise<HarnessAdapter | undefined> => replacement);
   const directory = mkdtempSync(path.join(process.cwd(), 'node_modules/.cache/runtime-config-'));
-  const f = fixture({ controlOptions: { userConfigDir: directory, createRuntimeAdapter } });
+  const f = await fixture({ controlOptions: { userConfigDir: directory, createRuntimeAdapter } });
   cleanups.push(async () => {
     await f.close();
     rmSync(directory, { recursive: true, force: true });
@@ -161,10 +161,10 @@ it('persists runtime patches, swaps or removes adapters, and refuses unknown nam
 });
 
 it('keeps a running session on its starting adapter after replacement and disabling', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const original = f.adapter;
   const interrupt = vi.spyOn(original, 'interrupt');
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: 'fixture',
     input: 'fixture-script\n[{"hang":true}]',

@@ -19,8 +19,8 @@ import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 it('creates a worktree session whose first turn starts as a writer once the worktree is ready', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   expect(session).toMatchObject({ state: 'running', permission_mode: 'ask', turn_count: 1 });
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   expect(workspace).toMatchObject({ kind: 'linked_worktree', source: f.source });
@@ -65,8 +65,8 @@ it('creates a worktree session whose first turn starts as a writer once the work
 });
 
 it('keeps a turn within the timer range', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await awaitWorkspaceReady(
     f.control,
     f.store.must<Workspace>('workspaces', session.workspace_id!),
@@ -80,8 +80,8 @@ it('keeps a turn within the timer range', async () => {
   expect(spec.budget.wall_time_ms).toBeLessThanOrEqual(2 ** 31 - 1);
 });
 it('runs a second message after the first turn ends', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'completed',
@@ -101,9 +101,9 @@ it('runs a second message after the first turn ends', async () => {
 });
 
 it('lists workbench sessions with their state, title and unanswered permission requests', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const input = '  Make the answer file say hello and commit the change with a clear message  ';
-  const session = f.create(input);
+  const session = await f.create(input);
   expect(f.list()).toMatchObject([
     {
       id: session.id,
@@ -144,9 +144,9 @@ it('lists workbench sessions with their state, title and unanswered permission r
   expect(f.list()[0]).toMatchObject({ state: 'waiting', waiting: 1 });
 });
 
-it('renames a workbench session, trims its title and publishes the new title', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('renames a workbench session, trims its title and publishes the new title', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const renamed = f.call<Session>(
     'session.rename',
     { session_id: session.id, title: '  新的会话标题  ' },
@@ -170,20 +170,20 @@ it('renames a workbench session, trims its title and publishes the new title', (
   ]);
 });
 
-it('titles a session from the first non-empty line of its first message', () => {
-  const f = workbenchFixture();
-  expect(f.create('\n   \n  Fix the importer  \nIt drops the last row').title).toBe(
+it('titles a session from the first non-empty line of its first message', async () => {
+  const f = await workbenchFixture();
+  expect((await f.create('\n   \n  Fix the importer  \nIt drops the last row')).title).toBe(
     'Fix the importer',
   );
-  expect(f.create(`${'字'.repeat(50)}\nsecond line`).title).toBe(`${'字'.repeat(39)}…`);
-  expect(f.create('字'.repeat(40)).title).toBe('字'.repeat(40));
+  expect((await f.create(`${'字'.repeat(50)}\nsecond line`)).title).toBe(`${'字'.repeat(39)}…`);
+  expect((await f.create('字'.repeat(40))).title).toBe('字'.repeat(40));
   // The 39th and 40th units are one emoji, so the cut falls before it.
-  expect(f.create(`${'a'.repeat(38)}😀 and more`).title).toBe(`${'a'.repeat(38)}…`);
+  expect((await f.create(`${'a'.repeat(38)}😀 and more`)).title).toBe(`${'a'.repeat(38)}…`);
 });
 
-it.each(['', ' \n\t '])('rejects an empty title after trimming: %j', (title) => {
-  const f = workbenchFixture();
-  const session = f.create();
+it.each(['', ' \n\t '])('rejects an empty title after trimming: %j', async (title) => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   // The daemon translates schema errors to invalid_input.
   expect(() =>
     f.call('session.rename', { session_id: session.id, title }, session.revision),
@@ -192,9 +192,9 @@ it.each(['', ' \n\t '])('rejects an empty title after trimming: %j', (title) => 
   expect(f.store.kindEvents(f.project.id, ['session.renamed'])).toEqual([]);
 });
 
-it('accepts titles of one or eighty characters and rejects longer titles', () => {
-  const f = workbenchFixture();
-  let session = f.create();
+it('accepts titles of one or eighty characters and rejects longer titles', async () => {
+  const f = await workbenchFixture();
+  let session = await f.create();
   for (const title of ['字', '字'.repeat(80)]) {
     session = f.call<Session>(
       'session.rename',
@@ -209,15 +209,15 @@ it('accepts titles of one or eighty characters and rejects longer titles', () =>
   expect(f.store.must<Session>('sessions', session.id)).toEqual(session);
 });
 
-it('refuses to rename a session in another project', () => {
-  const f = workbenchFixture();
+it('refuses to rename a session in another project', async () => {
+  const f = await workbenchFixture();
   const otherRoot = path.join(f.root, 'other-project');
   mkdirSync(otherRoot);
-  const other = f.call<Project>('project.open', {
+  const other = await f.call<Project>('project.open', {
     name: 'Other project',
     roots: [otherRoot],
   });
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: other.id,
     runtime: f.adapter.name,
     input: 'Work in the other project',
@@ -231,9 +231,9 @@ it('refuses to rename a session in another project', () => {
   expect(f.store.must<Session>('sessions', session.id)).toEqual(session);
 });
 
-it.each(['merged', 'discarded'] as const)('renames a %s workbench session', (outcome) => {
-  const f = workbenchFixture();
-  const created = f.create();
+it.each(['merged', 'discarded'] as const)('renames a %s workbench session', async (outcome) => {
+  const f = await workbenchFixture();
+  const created = await f.create();
   const ended = f.store.update<Session>(
     'sessions',
     { ...created, state: 'closed', outcome },
@@ -248,9 +248,9 @@ it.each(['merged', 'discarded'] as const)('renames a %s workbench session', (out
   expect(f.list()[0]).toMatchObject({ state: outcome, title: 'Archived conversation' });
 });
 
-it('refuses session renames by non-users and renames of sessions without a worktree', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('refuses session renames by non-users and renames of sessions without a worktree', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const planner: Principal = { id: 'planner', role: 'planner', project_id: f.project.id };
   expect(() =>
     f.call(
@@ -275,9 +275,9 @@ it('refuses session renames by non-users and renames of sessions without a workt
   expect(f.store.must<Session>('sessions', conversation.id)).toEqual(conversation);
 });
 
-it('refuses a stale revision when renaming a session', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('refuses a stale revision when renaming a session', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   expect(() =>
     f.call('session.rename', { session_id: session.id, title: 'New title' }, session.revision - 1),
   ).toThrow(expect.objectContaining({ code: 'revision_conflict' }));
@@ -285,8 +285,8 @@ it('refuses a stale revision when renaming a session', () => {
 });
 
 it('fails the session without starting the runtime when the worktree cannot be prepared', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   renameSync(f.source, `${f.source}-moved`);
   await eventually(
     () =>
@@ -303,8 +303,8 @@ it('fails the session without starting the runtime when the worktree cannot be p
 });
 
 it('starts the native session in the permission mode the session was created with', async () => {
-  const f = workbenchFixture();
-  const session = f.call<Session>('session.create', {
+  const f = await workbenchFixture();
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     permission_mode: 'plan',
@@ -319,8 +319,8 @@ it('starts the native session in the permission mode the session was created wit
 });
 
 it('gives the native session of an unset permission mode the ask mode', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.start.mock.calls.length > 0,
@@ -330,10 +330,10 @@ it('gives the native session of an unset permission mode the ask mode', async ()
 });
 
 it('changes the permission mode of a session and of its live native session', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const setPermissionMode = vi.fn(async () => ({ ok: true }));
   Object.assign(f.adapter, { setPermissionMode });
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'running',
@@ -362,10 +362,10 @@ it('changes the permission mode of a session and of its live native session', as
 });
 
 it('refuses a permission mode the runtime cannot apply to a running turn', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const adapter: HarnessAdapter = f.adapter;
   expect(adapter.setPermissionMode).toBeUndefined();
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'running',
@@ -382,9 +382,9 @@ it('refuses a permission mode the runtime cannot apply to a running turn', async
 });
 
 it('reopens an idle native session without a mode setter in the new permission mode', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const resume = vi.spyOn(f.adapter, 'resume');
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -417,7 +417,7 @@ it('reopens an idle native session without a mode setter in the new permission m
 });
 
 it('applies a permission mode changed while the native session starts', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const setPermissionMode = vi.fn(async () => ({ ok: true }));
   Object.assign(f.adapter, { setPermissionMode });
   const launch = Promise.withResolvers<void>();
@@ -425,7 +425,7 @@ it('applies a permission mode changed while the native session starts', async ()
     await launch.promise;
     return FixtureAdapter.prototype.start.call(f.adapter, spec, sink);
   });
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const ticking = f.control.tick();
   await eventually(() => f.start.mock.calls.length > 0);
@@ -445,10 +445,10 @@ it('applies a permission mode changed while the native session starts', async ()
 });
 
 it('restores the previous permission mode when the runtime refuses the new one', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const setPermissionMode = vi.fn(async () => ({ ok: false, reason: 'native refused' }));
   Object.assign(f.adapter, { setPermissionMode });
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'running',
@@ -473,10 +473,10 @@ it('restores the previous permission mode when the runtime refuses the new one',
 });
 
 it('leaves the native mode alone when the permission mode command rolls back', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const setPermissionMode = vi.fn(async () => ({ ok: true }));
   Object.assign(f.adapter, { setPermissionMode });
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'running',
@@ -500,8 +500,8 @@ it('leaves the native mode alone when the permission mode command rolls back', a
 });
 
 it('runs no gate of a gate command that rolls back', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -509,7 +509,7 @@ it('runs no gate of a gate command that rolls back', async () => {
       f.store.must<Session>('sessions', session.id).state === 'open',
     () => f.control.tick(),
   );
-  f.call<Project>(
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -540,19 +540,19 @@ it('runs no gate of a gate command that rolls back', async () => {
   ).toEqual([]);
 });
 
-it('changes only the stored mode of a session without a native session', () => {
-  const f = workbenchFixture();
+it('changes only the stored mode of a session without a native session', async () => {
+  const f = await workbenchFixture();
   const setPermissionMode = vi.fn(async () => ({ ok: true }));
   Object.assign(f.adapter, { setPermissionMode });
-  const session = f.create();
+  const session = await f.create();
   f.call('session.setPermissionMode', { session_id: session.id, permission_mode: 'plan' }, 1);
   expect(f.store.must<Session>('sessions', session.id).permission_mode).toBe('plan');
   expect(setPermissionMode).not.toHaveBeenCalled();
 });
 
-it('refuses to change the permission mode of an ended session', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('refuses to change the permission mode of an ended session', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const discarded = f.call<Session>(
     'session.discard',
     { session_id: session.id },
@@ -569,8 +569,8 @@ it('refuses to change the permission mode of an ended session', () => {
   expect(f.store.must<Session>('sessions', session.id).permission_mode).toBe('ask');
 });
 
-it('refuses a non-user principal and a daemon without a managed workspace root', () => {
-  const f = workbenchFixture();
+it('refuses a non-user principal and a daemon without a managed workspace root', async () => {
+  const f = await workbenchFixture();
   const planner: Principal = {
     id: 'planner',
     role: 'planner',
@@ -579,7 +579,7 @@ it('refuses a non-user principal and a daemon without a managed workspace root',
   expect(() => f.create('Do work', planner)).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
-  const unmanaged = workbenchFixture({ managedWorkspaces: false });
+  const unmanaged = await workbenchFixture({ managedWorkspaces: false });
   expect(() => unmanaged.create()).toThrow(
     expect.objectContaining({
       code: 'invalid_workspace',
@@ -590,9 +590,9 @@ it('refuses a non-user principal and a daemon without a managed workspace root',
   expect(unmanaged.store.list<Workspace>('workspaces')).toEqual([]);
 });
 
-it('binds a session created from a board task', () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+it('binds a session created from a board task', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   const plan = (id: string, projectId: string): BoardPlan => ({
     id,
     revision: 1,
@@ -625,13 +625,13 @@ it('binds a session created from a board task', () => {
     generations: { api: { generation: 2, contract: 'changed' } },
   });
   const create = (task_id: string) =>
-    f.call<Session>('session.create', {
+    f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'Build it',
       task_id,
     });
-  const worker = create(`${lead.id}:api`);
+  const worker = await create(`${lead.id}:api`);
   expect(worker.task).toEqual({
     lead_session_id: lead.id,
     id: 'api',
@@ -644,7 +644,7 @@ it('binds a session created from a board task', () => {
   );
   const otherRoot = path.join(f.root, 'other');
   mkdirSync(otherRoot);
-  const other = f.call<Project>('project.open', { name: 'Other', roots: [otherRoot] });
+  const other = await f.call<Project>('project.open', { name: 'Other', roots: [otherRoot] });
   f.store.insert('board_plans', plan('other-lead', other.id));
   expect(() => create('other-lead:api')).toThrow(
     expect.objectContaining({ code: 'scope_violation' }),
@@ -660,7 +660,7 @@ afterEach(async () => {
 it('gives a task session the user quote, scope and acceptance commands of its task', async () => {
   const adapter = new FixtureAdapter();
   const starts = vi.spyOn(adapter, 'start');
-  const f = fixture({
+  const f = await fixture({
     adapter,
     managedWorkspaces: true,
     controlOptions: {
@@ -677,7 +677,7 @@ it('gives a task session the user quote, scope and acceptance commands of its ta
   git(f.projectRoot, 'add', '.');
   git(f.projectRoot, 'commit', '--quiet', '-m', 'Initial files');
   const opened = async (input: Record<string, unknown>) => {
-    const session = f.call<Session>('session.create', {
+    const session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: adapter.name,
       ...input,
@@ -744,14 +744,14 @@ it.each([
   ['claude', 'AskUserQuestion', 'request_user_input'],
   ['codex', 'request_user_input', 'AskUserQuestion'],
 ])('tells a %s session to ask the user with its question tool', async (runtime, tool, other) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   f.control.adapters.delete(f.adapter.name);
   f.adapter.name = runtime;
   const real = runtime === 'claude' ? new ClaudeAdapter() : new CodexAdapter();
   Object.assign(f.adapter, { questionTool: real.questionTool });
   f.control.adapters.set(runtime, f.adapter);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const instructions = workbenchSessionSpec(
     ctx,
@@ -762,8 +762,8 @@ it.each([
 });
 
 /** A workbench fixture whose adapter is registered under the runtime name with the given declarations. */
-function declaredRuntime(runtime: string, declared: Partial<HarnessAdapter>) {
-  const f = workbenchFixture();
+async function declaredRuntime(runtime: string, declared: Partial<HarnessAdapter>) {
+  const f = await workbenchFixture();
   f.control.adapters.delete(f.adapter.name);
   f.adapter.name = runtime;
   Object.assign(f.adapter, declared);
@@ -772,8 +772,8 @@ function declaredRuntime(runtime: string, declared: Partial<HarnessAdapter>) {
 }
 
 it('asks with the question tool and lets the runtime title the session as its adapter declares', async () => {
-  const f = declaredRuntime('agy', { questionTool: 'ask_human', generatesTitles: true });
-  const session = f.create();
+  const f = await declaredRuntime('agy', { questionTool: 'ask_human', generatesTitles: true });
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const spec = workbenchSessionSpec(f.ctx, f.store.must<Session>('sessions', session.id));
   expect(spec.control_instructions).toContain('ask with the ask_human tool');
@@ -781,15 +781,15 @@ it('asks with the question tool and lets the runtime title the session as its ad
 });
 
 it('gives a runtime whose adapter declares neither no question tool and no title of its own', async () => {
-  const f = declaredRuntime('claude', {});
-  const session = f.create();
+  const f = await declaredRuntime('claude', {});
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   const spec = workbenchSessionSpec(f.ctx, f.store.must<Session>('sessions', session.id));
   expect(spec.control_instructions).not.toContain('When the user must decide or answer something');
   expect(spec).not.toHaveProperty('auto_title');
 });
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 /** Marks the session's newest turn running from now, as when the runtime started it. */
 function runLatestTurn(f: Fixture, sessionId: string) {
@@ -911,8 +911,8 @@ it.each<{
     },
   },
 ])('lists a session $name, with waiting_kind matching its wait', async ({ setup }) => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>

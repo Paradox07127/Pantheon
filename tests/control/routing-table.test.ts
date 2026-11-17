@@ -50,11 +50,11 @@ const leaderboards = {
   ],
 };
 
-function setup(withLeaderboards: boolean, runtimes = ['claude', 'codex']) {
+async function setup(withLeaderboards: boolean, runtimes = ['claude', 'codex']) {
   const configDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-routing-'));
   if (withLeaderboards)
     writeFileSync(path.join(configDir, 'leaderboards.json'), JSON.stringify(leaderboards));
-  const f = fixture({ controlOptions: { userConfigDir: configDir } });
+  const f = await fixture({ controlOptions: { userConfigDir: configDir } });
   for (const name of runtimes) {
     const adapter = new FixtureAdapter();
     adapter.name = name;
@@ -88,8 +88,8 @@ function setup(withLeaderboards: boolean, runtimes = ['claude', 'codex']) {
 const pOf = (cell: RoutingCell | undefined, model: string) =>
   cell?.candidates.find((candidate) => candidate.model === model)?.p;
 
-it('gives each candidate its prior mean when there is no local history', () => {
-  const { cell } = setup(true);
+it('gives each candidate its prior mean when there is no local history', async () => {
+  const { cell } = await setup(true);
 
   const backend = cell('backend-logic', 't1');
   expect(pOf(backend, codex.model)).toBeCloseTo(0.6);
@@ -115,8 +115,8 @@ it('gives each candidate its prior mean when there is no local history', () => {
   });
 });
 
-it('moves the first choice to the candidate that passes its gates locally as its runs grow', () => {
-  const { retro, cell } = setup(true);
+it('moves the first choice to the candidate that passes its gates locally as its runs grow', async () => {
+  const { retro, cell } = await setup(true);
   expect(cell('backend-logic', 't2')?.first).toEqual(codex);
 
   const kind = { domain: 'backend-logic', tier: 't2' } as const;
@@ -147,8 +147,8 @@ it('moves the first choice to the candidate that passes its gates locally as its
   });
 });
 
-it('counts a failed task without a gate run among the runs of its candidate unless the user stopped it', () => {
-  const { retro, cell } = setup(true);
+it('counts a failed task without a gate run among the runs of its candidate unless the user stopped it', async () => {
+  const { retro, cell } = await setup(true);
   const kind = { domain: 'backend-logic', tier: 't2' } as const;
   for (let i = 0; i < 2; i++) retro({ ...codex, measured_kind: kind, gate_passed_on_attempt: 1 });
   retro({ ...codex, planned_kind: kind, outcome: 'failed' });
@@ -160,23 +160,23 @@ it('counts a failed task without a gate run among the runs of its candidate unle
   ).toMatchObject({ n: 4, s: 2 });
 });
 
-it('picks only candidates on registered runtimes', () => {
-  const { cell } = setup(true, ['claude']);
+it('picks only candidates on registered runtimes', async () => {
+  const { cell } = await setup(true, ['claude']);
   const backend = cell('backend-logic', 't1');
   expect(backend!.candidates.map((c) => c.runtime)).toEqual(['claude']);
   expect(backend).toMatchObject({ first: claude });
   expect(backend).not.toHaveProperty('alternate');
 });
 
-it('picks no candidate on a runtime whose binary was not found', () => {
-  const { f, cell } = setup(true);
+it('picks no candidate on a runtime whose binary was not found', async () => {
+  const { f, cell } = await setup(true);
   const codexAdapter = f.control.adapters.get('codex')!;
   codexAdapter.report = { ...codexAdapter.report, version: 'unprobed' };
   expect(cell('backend-logic', 't1')).toMatchObject({ first: claude });
 });
 
-it('returns no cell whose candidates are all on unavailable runtimes', () => {
-  const { retro, table } = setup(false, ['claude']);
+it('returns no cell whose candidates are all on unavailable runtimes', async () => {
+  const { retro, table } = await setup(false, ['claude']);
   retro({
     ...codex,
     planned_kind: { domain: 'docs-chore', tier: 't1' },
@@ -185,16 +185,16 @@ it('returns no cell whose candidates are all on unavailable runtimes', () => {
   expect(table().cells).toEqual([]);
 });
 
-it('leaves board rows without an alias out of the candidates', () => {
-  const { table } = setup(true);
+it('leaves board rows without an alias out of the candidates', async () => {
+  const { table } = await setup(true);
   const models = table().cells.flatMap((entry) => entry.candidates.map((c) => c.model));
   expect(new Set(models)).toEqual(
     new Set([codex.model, claude.model, arenaHigh.model, arenaLow.model]),
   );
 });
 
-it('builds the table from local history alone when there is no leaderboards file', () => {
-  const { retro, table } = setup(false);
+it('builds the table from local history alone when there is no leaderboards file', async () => {
+  const { retro, table } = await setup(false);
   const kind = { domain: 'docs-chore', tier: 't1' } as const;
   for (let i = 0; i < 4; i++) retro({ ...claude, planned_kind: kind, gate_passed_on_attempt: 1 });
   retro({ ...codex, planned_kind: kind, gate_failures: ['code'] });
@@ -207,7 +207,7 @@ it('builds the table from local history alone when there is no leaderboards file
   expect(pOf(cells[0], codex.model)).toBeCloseTo((10 * base) / 11);
 });
 
-function useSingleModel(f: ReturnType<typeof fixture>, on = true) {
+function useSingleModel(f: Awaited<ReturnType<typeof fixture>>, on = true) {
   const project = f.store.must<Project>('projects', f.project.id);
   f.store.update<Project>(
     'projects',
@@ -225,8 +225,8 @@ function useSingleModel(f: ReturnType<typeof fixture>, on = true) {
   );
 }
 
-it("gives every cell the project's default runtime, model and effort when it uses one model", () => {
-  const { f, retro, table } = setup(true);
+it("gives every cell the project's default runtime, model and effort when it uses one model", async () => {
+  const { f, retro, table } = await setup(true);
   const kind = { domain: 'backend-logic', tier: 't2' } as const;
   for (let i = 0; i < 30; i++) {
     retro({ ...codex, measured_kind: kind, gate_passed_on_attempt: 1 });
@@ -250,8 +250,8 @@ it("gives every cell the project's default runtime, model and effort when it use
   ).toMatchObject([{ ...claude, n: 30, s: 0 }]);
 });
 
-it('keeps the defaults in every cell when a user choice predates single-model mode', () => {
-  const { f, cell } = setup(true);
+it('keeps the defaults in every cell when a user choice predates single-model mode', async () => {
+  const { f, cell } = await setup(true);
   const kind = { domain: 'backend-logic', tier: 't2' } as const;
   const project = f.call<Project>(
     'routing.set',
@@ -269,8 +269,8 @@ it('keeps the defaults in every cell when a user choice predates single-model mo
   expect(pinned).not.toHaveProperty('alternate');
 });
 
-it('routes as without one model when the default runtime binary was not found', () => {
-  const { f, table } = setup(true);
+it('routes as without one model when the default runtime binary was not found', async () => {
+  const { f, table } = await setup(true);
   const claudeAdapter = f.control.adapters.get('claude')!;
   claudeAdapter.report = { ...claudeAdapter.report, version: 'unprobed' };
   useSingleModel(f, false);
@@ -279,8 +279,8 @@ it('routes as without one model when the default runtime binary was not found', 
   expect(table()).toEqual(without);
 });
 
-it('returns no cell that has neither local history nor a board', () => {
-  const { retro, table } = setup(true);
+it('returns no cell that has neither local history nor a board', async () => {
+  const { retro, table } = await setup(true);
   retro({ ...claude, outcome: 'removed', planned_kind: { domain: 'review', tier: 't1' } });
   retro({ ...claude, planned_kind: { domain: 'docs-chore', tier: 't2' } });
 
@@ -288,8 +288,8 @@ it('returns no cell that has neither local history nor a board', () => {
   expect(domains).toEqual(new Set(['frontend-ui', 'backend-logic', 'script-infra']));
 });
 
-it('sets and clears user choices independently and returns observed candidate success rates', () => {
-  const { f, retro, cell } = setup(true);
+it('sets and clears user choices independently and returns observed candidate success rates', async () => {
+  const { f, retro, cell } = await setup(true);
   const kind = { domain: 'backend-logic', tier: 't2' } as const;
   retro({ ...codex, measured_kind: kind, gate_passed_on_attempt: 1 });
   retro({ ...codex, measured_kind: kind, gate_passed_on_attempt: 2 });
@@ -334,8 +334,8 @@ it('sets and clears user choices independently and returns observed candidate su
   expect(cell(kind.domain, kind.tier)).toEqual(initial);
 });
 
-it('refuses a user routing choice for a cell the table does not contain', () => {
-  const { f } = setup(false);
+it('refuses a user routing choice for a cell the table does not contain', async () => {
+  const { f } = await setup(false);
   expect(() =>
     f.call(
       'routing.set',
@@ -351,8 +351,8 @@ it('refuses a user routing choice for a cell the table does not contain', () => 
   ).toThrowError(expect.objectContaining({ code: 'not_found' }));
 });
 
-it('refuses a user routing choice on an unregistered runtime or a model of another family', () => {
-  const { f } = setup(true);
+it('refuses a user routing choice on an unregistered runtime or a model of another family', async () => {
+  const { f } = await setup(true);
   for (const choice of [
     { runtime: 'nosuch', model: codex.model },
     { runtime: 'claude', model: codex.model },
@@ -366,8 +366,8 @@ it('refuses a user routing choice on an unregistered runtime or a model of anoth
     ).toThrowError(expect.objectContaining({ code: 'invalid_input' }));
 });
 
-it('routes past a user choice whose runtime binary was not found', () => {
-  const { f, cell } = setup(true);
+it('routes past a user choice whose runtime binary was not found', async () => {
+  const { f, cell } = await setup(true);
   f.call(
     'routing.set',
     {

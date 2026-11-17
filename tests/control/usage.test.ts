@@ -21,7 +21,7 @@ async function conversation() {
   const adapter = new FixtureAdapter();
   const start = vi.spyOn(adapter, 'start');
   const send = deliverOnly(adapter);
-  const f = fixture({ adapter });
+  const f = await fixture({ adapter });
   cleanup.push(() => f.close());
   const session = f.store.insert<Session>('sessions', {
     id: 'usage-conversation',
@@ -39,9 +39,9 @@ async function conversation() {
 
 /** A worktree session whose first turn is running. */
 async function worktreeSession() {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = deliverOnly(f.adapter);
-  const session = f.create('Do the work');
+  const session = await f.create('Do the work');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => send.mock.calls.length === 1,

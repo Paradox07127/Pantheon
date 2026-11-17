@@ -19,8 +19,8 @@ import type { ControlContext } from '../../packages/control/src/context.js';
 import { NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
 
 /** A Control with a folder that stands for the gate candidate a verifier runs in. */
-function candidateFixture(options?: Parameters<typeof fixture>[0]) {
-  const f = fixture(options);
+async function candidateFixture(options?: Parameters<typeof fixture>[0]) {
+  const f = await fixture(options);
   const candidate = path.join(f.root, 'candidate');
   mkdirSync(candidate);
   return { ...f, candidate };
@@ -35,7 +35,7 @@ const denied = JSON.stringify(
 it.skipIf(!isolated || insideSandbox)(
   'isolates verifier file writes, sentinel reads and symlinks and allows only loopback network',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const sentinel = path.join(f.root, 'outside');
       writeFileSync(sentinel, 'outside value');
@@ -90,7 +90,7 @@ it.skipIf(!isolated || insideSandbox)(
 it.skipIf(!isolated || insideSandbox)(
   'lets native processes that a verifier starts run git',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       // A verifier that starts a native agent passes it only the allowlisted variables.
       const script = `const { spawnSync } = require('node:child_process');
@@ -122,7 +122,7 @@ it.skipIf(!isolated || insideSandbox).each([
   // Gate commands run through the shell, which finds npm on PATH.
   { argv: ['/bin/sh', '-c', 'npm --version'] },
 ])('lets a package manager installed as a script read its own package: $argv', async ({ argv }) => {
-  const f = candidateFixture();
+  const f = await candidateFixture();
   try {
     const result = await runValidationCommand({
       ctx: (f.control as unknown as { ctx: ControlContext }).ctx,
@@ -141,7 +141,7 @@ it.skipIf(!isolated || insideSandbox).each([
 });
 
 it.skipIf(!isolated)('rejects writable hardlinks before starting a verifier', async () => {
-  const f = candidateFixture();
+  const f = await candidateFixture();
   try {
     const outside = path.join(f.root, 'outside');
     writeFileSync(outside, 'sentinel');
@@ -165,7 +165,7 @@ it.skipIf(!isolated)('rejects writable hardlinks before starting a verifier', as
 it.skipIf(!isolated || insideSandbox)(
   'runs in a root that is not a disposable clone when its installed packages are hardlinked',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const stored = path.join(f.root, 'package-store/index.js');
       mkdirSync(path.dirname(stored));
@@ -191,7 +191,7 @@ it.skipIf(!isolated || insideSandbox)(
 it.skipIf(!isolated || insideSandbox)(
   'records bounded stop evidence when a verifier exceeds its timeout',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const result = await runValidationCommand({
         ctx: (f.control as unknown as { ctx: ControlContext }).ctx,
@@ -213,7 +213,7 @@ it.skipIf(!isolated || insideSandbox)(
 );
 
 it('fails closed without launching commands on an unsupported platform', async () => {
-  const f = candidateFixture();
+  const f = await candidateFixture();
   const realProcess = process;
   try {
     vi.stubGlobal('process', { ...realProcess, platform: 'win32' });
@@ -239,7 +239,7 @@ it('fails closed without launching commands on an unsupported platform', async (
 it.skipIf(!isolated || insideSandbox)(
   "reads the candidate's agent configuration files but cannot change them",
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const { mkdirSync } = await import('node:fs');
       mkdirSync(path.join(f.candidate, '.claude/agents'), { recursive: true });
@@ -272,7 +272,7 @@ it.skipIf(!isolated || insideSandbox)(
 it.runIf(process.platform === 'linux')(
   'keeps verifier writes outside the candidate off the host on Linux',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const sentinel = path.join(f.root, 'outside');
       writeFileSync(sentinel, 'outside value');
@@ -324,7 +324,7 @@ it.runIf(process.platform === 'linux')(
       }`,
     );
     chmodSync(script, 0o755);
-    const f = candidateFixture({
+    const f = await candidateFixture({
       controlOptions: {
         protectionPaths: {
           home,
@@ -358,7 +358,7 @@ it.runIf(process.platform === 'linux')(
 it.runIf(process.platform === 'linux')(
   "mounts the candidate's .git read-only and lets git status run on Linux",
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       execFileSync('git', ['init', '-q'], { cwd: f.candidate });
       writeFileSync(path.join(f.candidate, 'answer.txt'), '42\n');
@@ -399,7 +399,7 @@ it.runIf(process.platform === 'linux')(
 it.runIf(process.platform === 'linux')(
   'removes a protected file the command created in the candidate and fails the run on Linux',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       execFileSync('git', ['init', '-q'], { cwd: f.candidate });
       const result = await runValidationCommand({
@@ -423,7 +423,7 @@ it.runIf(process.platform === 'linux')(
 it.runIf(process.platform === 'linux')(
   'fails the run but keeps a protected file that appears in a root that is not a disposable clone on Linux',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       execFileSync('git', ['init', '-q'], { cwd: f.candidate });
       const settings = path.join(f.candidate, '.claude/settings.local.json');
@@ -451,7 +451,7 @@ it.runIf(process.platform === 'linux')(
 it.runIf(process.platform === 'linux')(
   'keeps a command from creating agent configuration in a root that is not a disposable clone on Linux',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       execFileSync('git', ['init', '-q'], { cwd: f.candidate });
       const result = await runValidationCommand({
@@ -479,7 +479,7 @@ it.runIf(process.platform === 'linux')(
 it.runIf(process.platform === 'linux')(
   'shares the folders standing in for missing agent configuration between parallel runs in one root on Linux',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       execFileSync('git', ['init', '-q'], { cwd: f.candidate });
       const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
@@ -510,7 +510,7 @@ it.runIf(process.platform === 'linux')(
 it.runIf(process.platform === 'linux')(
   'leaves a missing protected file absent while the command runs on Linux',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       execFileSync('git', ['init', '-q'], { cwd: f.candidate });
       const result = await runValidationCommand({
@@ -533,7 +533,7 @@ it.runIf(process.platform === 'linux')(
 it.skipIf(!isolated || insideSandbox)(
   'skips a folder on PATH named like the command and runs the executable after it',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const shadow = path.join(f.root, 'shadow'),
         tools = path.join(f.root, 'tools');
@@ -561,7 +561,7 @@ it.skipIf(!isolated || insideSandbox)(
 it.skipIf(!isolated || insideSandbox)(
   'settles a timed-out verifier whose descendant in its own session keeps the output open',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const script = `require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], { detached: true, stdio: 'inherit' }).unref();
       setTimeout(() => {}, 30000);`;
@@ -584,7 +584,7 @@ it.skipIf(!isolated || insideSandbox)(
 it.skipIf(!isolated || insideSandbox)(
   'lets a command in a linked worktree read the git metadata it points to',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const source = path.join(f.root, 'linked-source');
       const worktree = path.join(f.root, 'linked-worktree');
@@ -626,7 +626,7 @@ it.skipIf(!isolated || insideSandbox)(
 it.runIf(process.platform === 'linux')(
   'allows a loopback server inside the sandbox and no outside network on Linux',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
       const remote = await runValidationCommand({
@@ -668,7 +668,7 @@ it.runIf(process.platform === 'linux')(
 it.runIf(process.platform === 'linux')(
   'runs tools that a gate command finds on PATH outside the system folders on Linux',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       // A Node install under HOME: bin holds the binary and a link into lib/node_modules.
       const prefix = path.join(f.root, 'toolchain');
@@ -720,7 +720,7 @@ it.runIf(process.platform === 'linux')(
 it.skipIf(!isolated || insideSandbox)(
   'collects test counts from verifier stdout and stderr',
   async () => {
-    const f = candidateFixture();
+    const f = await candidateFixture();
     try {
       const result = await runValidationCommand({
         ctx: (f.control as unknown as { ctx: ControlContext }).ctx,

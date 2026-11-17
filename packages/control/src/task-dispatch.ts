@@ -39,7 +39,9 @@ import {
 import {
   checkPermissionMode,
   openWorktreeSession,
+  readSessionOpening,
   stopWorktreeSession,
+  type SessionOpening,
 } from './workbench-session.js';
 import { appendNote, recordNote } from './lead-inbox.js';
 import { interruptSession, stopBackground } from './session.js';
@@ -602,6 +604,31 @@ function tellStuckUpstream(ctx: ControlContext, planId: string, task: PlanTask):
 // Only transitions are written. On restart the first observation reestablishes the wait reason.
 const dispatchObservations = new WeakMap<ControlContext, Map<string, string>>();
 
+// The git answers of each project with requested tasks, read before the tick's transaction.
+const dispatchOpenings = new WeakMap<ControlContext, Map<string, SessionOpening>>();
+
+/** Reads, without blocking, the start point of each project with a task to dispatch now; undefined when none has. */
+export function readDispatchOpenings(ctx: ControlContext): Promise<void> | undefined {
+  // Ticks run every 50 ms, so a task that still waits reads no git.
+  const projects = new Set(
+    ctx.store
+      .list<BoardPlan>('board_plans')
+      .filter((plan) => Object.keys(plan.dispatch ?? {}).length)
+      .map((plan) => plan.project_id)
+      .filter((projectId) => dispatchQueue(ctx, projectId).some((entry) => !entry.wait)),
+  );
+  dispatchOpenings.delete(ctx);
+  if (!projects.size) return;
+  return Promise.all(
+    [...projects].map(
+      async (projectId) =>
+        [projectId, await readSessionOpening(ctx, { project_id: projectId })] as const,
+    ),
+  ).then((openings) => {
+    dispatchOpenings.set(ctx, new Map(openings));
+  });
+}
+
 /** Opens the sessions of requested tasks that wait for nothing; a task that has a session loses its request. */
 export function dispatchTasks(ctx: ControlContext): void {
   stopRemovedTasks(ctx);
@@ -634,6 +661,9 @@ export function dispatchTasks(ctx: ControlContext): void {
       }
       if (wait === 'upstream') tellStuckUpstream(ctx, plan.id, task);
       if (wait) continue;
+      // A project that had no requested task when the tick read the start points waits for the next tick.
+      const opening = dispatchOpenings.get(ctx)?.get(projectId);
+      if (!opening) continue;
       const earlier = earlierSessions(ctx, plan, task.id).at(-1);
       let sessions: Session[];
       try {
@@ -656,6 +686,7 @@ export function dispatchTasks(ctx: ControlContext): void {
               device_id: task.device,
             },
             '',
+            opening,
             undefined,
             { role: ownEntry(plan.dispatch, task.id)!.permission_mode ? 'user' : 'lead' },
           );
@@ -777,14 +808,13 @@ export function userTaskChoice(
 }
 
 /**
- * Opens the session the user asks for on a board task, by the checks dispatch makes but the places;
- * the lead hears of it. A task whose sessions all merged takes another, for work that follows up.
+ * The checks dispatch makes but the places, for the session the user asks for on a board task, and
+ * the input it opens with. A task whose sessions all merged takes another, for work that follows up.
  */
-export function openUserTaskSession(
+export function userTaskInput(
   ctx: ControlContext,
   input: ReturnType<(typeof inputSchemas)['session.create']['parse']>,
-  cause: string,
-): Session {
+): ReturnType<(typeof inputSchemas)['session.create']['parse']> {
   const { plan, task } = boardTask(ctx, input.project_id, input.task_id!);
   const unfinished = taskSessions(ctx, plan.id, task.id).filter((session) => !session.outcome),
     lead = ctx.store.get<Session>('sessions', plan.id);
@@ -852,11 +882,18 @@ export function openUserTaskSession(
     'invalid_state',
     `Device ${deviceId} has too little ${short.join(', ')} free for task ${task.id}; open it after the tasks using it end`,
   );
-  const session = openWorktreeSession(
-    ctx,
-    { ...input, ...choice, device_id: input.device_id ?? task.device },
-    cause,
-  );
+  return { ...input, ...choice, device_id: input.device_id ?? task.device };
+}
+
+/** Opens the session the user asks for on a board task, after userTaskInput's checks; the lead hears of it. */
+export function openUserTaskSession(
+  ctx: ControlContext,
+  input: ReturnType<(typeof inputSchemas)['session.create']['parse']>,
+  cause: string,
+  opening: SessionOpening,
+): Session {
+  const { plan, task } = boardTask(ctx, input.project_id, input.task_id!);
+  const session = openWorktreeSession(ctx, userTaskInput(ctx, input), cause, opening);
   const current = ctx.store.must<BoardPlan>('board_plans', plan.id);
   // Else dispatch would open another session for the request.
   const next = ownEntry(current.dispatch, task.id)

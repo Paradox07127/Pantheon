@@ -9,10 +9,10 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-function setup() {
-  const f = fixture({ adapter: new FixtureAdapter(100), managedWorkspaces: true });
+async function setup() {
+  const f = await fixture({ adapter: new FixtureAdapter(100), managedWorkspaces: true });
   cleanups.push(() => f.close());
   return f;
 }
@@ -78,8 +78,8 @@ const wakes = (f: Fixture, lead: Principal) =>
     .list<SessionTurn>('session_turns')
     .filter((turn) => turn.session_id === lead.session_id && turn.origin === 'tracker').length;
 
-it('gives a task the kind of the scope an edit sets, as a whole plan with that scope does', () => {
-  const f = setup();
+it('gives a task the kind of the scope an edit sets, as a whole plan with that scope does', async () => {
+  const f = await setup();
   const whole = leadOf(f);
   writePlan(f, whole, [task('a', ['src/auth.ts'])]);
   expect(kindOf(f, whole, 'a')).toEqual({ domain: 'backend-logic', tier: 't3' });
@@ -103,8 +103,8 @@ it('gives a task the kind of the scope an edit sets, as a whole plan with that s
 
 it.each(['accept', 'reject'] as const)(
   'wakes the lead when the user chooses to %s its proposal',
-  (decision) => {
-    const f = setup();
+  async (decision) => {
+    const f = await setup();
     const lead = leadOf(f);
     writePlan(f, lead);
     const { proposal_id } = f.call<{ proposal_id: string }>(
@@ -134,8 +134,8 @@ it.each(['accept', 'reject'] as const)(
   },
 );
 
-it("clears a task's model and effort that a set_task patch sets to null", () => {
-  const f = setup();
+it("clears a task's model and effort that a set_task patch sets to null", async () => {
+  const f = await setup();
   const lead = leadOf(f);
   const routed = {
     ...task('a', ['src/a.ts']),

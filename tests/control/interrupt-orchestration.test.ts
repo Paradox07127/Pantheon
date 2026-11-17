@@ -3,7 +3,7 @@ import type { BoardPlan, Principal, Session, SessionTurn, Workspace } from '@pan
 import { awaitWorkspaceReady, eventually, settle } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const script = (steps: unknown[]) => `fixture-script\n${JSON.stringify(steps)}`;
 const HANG = script([{ say: 'Working' }, { hang: true }]);
@@ -40,10 +40,10 @@ const openedNote = (session: Session) => ({
 
 /** Plain turns outlast each test, so only script turns end on their own. */
 async function planned() {
-  const f = workbenchFixture({ delay: 30000 });
+  const f = await workbenchFixture({ delay: 30000 });
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
-  const lead = f.create(script([{ say: 'Plan the export feature' }]));
+  const lead = await f.create(script([{ say: 'Plan the export feature' }]));
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -72,7 +72,7 @@ async function planned() {
     principal(f, lead.id, 'lead'),
   );
   const openTask = (input: string) =>
-    f.call<Session>('session.create', {
+    f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input,
@@ -109,7 +109,7 @@ async function planned() {
 
 it('keeps a queued lead message when the user interrupts a task session', async () => {
   const { f, openTask, send, interrupt, fromLead } = await planned();
-  const worker = openTask(HANG);
+  const worker = await openTask(HANG);
   const first = await running(f, worker);
   const leadMessage = fromLead('Keep the CSV header as it is');
   const userMessage = send(worker, 'Also add a footer');
@@ -132,7 +132,7 @@ it('keeps a queued lead message when the user interrupts a task session', async 
 
 it('keeps the queued tracker digest when the user interrupts the lead', async () => {
   const { f, lead, openTask, send, interrupt } = await planned();
-  const worker = openTask(script([{ say: 'Started' }]));
+  const worker = await openTask(script([{ say: 'Started' }]));
   await settle(f, worker);
   await settle(f, lead);
   send(lead, HANG);
@@ -159,7 +159,7 @@ it('keeps the queued tracker digest when the user interrupts the lead', async ()
 
 it("tells the lead that the user interrupted its task's turn", async () => {
   const { f, lead, openTask, interrupt } = await planned();
-  const worker = openTask(HANG);
+  const worker = await openTask(HANG);
   const first = await running(f, worker);
   const leadTurns = f.turns(lead.id).length;
 
@@ -186,7 +186,7 @@ it("tells the lead that the user interrupted its task's turn", async () => {
 
 it("lets the lead interrupt a running task turn and keep the session's commits", async () => {
   const { f, lead, openTask, fromLead, interruptTask } = await planned();
-  const worker = openTask(
+  const worker = await openTask(
     script([
       { write: { path: 'src/export/serve.txt', text: 'serve\n' } },
       { commit: 'Serve exports' },
@@ -219,7 +219,7 @@ it("lets the lead interrupt a running task turn and keep the session's commits",
 
 it('rejects a task interrupt when no turn runs', async () => {
   const { f, openTask, interruptTask } = await planned();
-  const worker = openTask(script([{ say: 'Done' }]));
+  const worker = await openTask(script([{ say: 'Done' }]));
   await settle(f, worker);
   expect(() => interruptTask()).toThrow(expect.objectContaining({ code: 'resource_busy' }));
 });

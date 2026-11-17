@@ -7,7 +7,7 @@ import * as gitCommands from '../../packages/control/dist/git.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const DAY = 24 * 60 * 60 * 1000;
 afterEach(() => vi.useRealTimers());
 const task = (
@@ -28,8 +28,8 @@ const task = (
 });
 
 async function setup(tasks: BoardPlan['tasks']) {
-  const f = workbenchFixture();
-  const lead = f.create('Build exports');
+  const f = await workbenchFixture();
+  const lead = await f.create('Build exports');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () => f.turns(lead.id)[0]?.state === 'completed',

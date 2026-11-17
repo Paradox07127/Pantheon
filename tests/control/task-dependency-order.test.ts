@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
 import type { BoardPlan, LeadNote, Principal, Session } from '@pantheon/domain';
-import { eventually, settle, user } from '../helpers.js';
+import { countingGit, eventually, gitRunsOf, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadOf = (f: Fixture, leadId: string): Principal => ({
@@ -55,7 +55,7 @@ const startTasks = (f: Fixture, leadId: string, taskIds: string[]) =>
   f.call('task.start', { project_id: f.project.id, task_ids: taskIds }, null, leadOf(f, leadId));
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, tasks);
   return lead;
@@ -70,7 +70,7 @@ const notesOn = (f: Fixture, leadId: string, taskId: string) =>
     .filter((note) => note.task_id === taskId);
 
 it('tells the lead when a downstream task waits on an upstream task that was never started', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['b']);
   await f.control.tick();
@@ -87,8 +87,28 @@ it('tells the lead when a downstream task waits on an upstream task that was nev
   ]);
 });
 
+it('reads no start point while the only started task waits on its upstream task', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
+  startTasks(f, lead.id, ['b']);
+  await f.control.tick();
+  const counter = countingGit();
+  try {
+    for (let tick = 0; tick < 5; tick++) await f.control.tick();
+    // The start point read: the commit and the checked-out branch in one run.
+    expect(
+      gitRunsOf(counter.runs(), 'rev-parse').filter((args) =>
+        args.includes('--symbolic-full-name'),
+      ),
+    ).toEqual([]);
+  } finally {
+    counter.restore();
+  }
+  expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
+});
+
 it('tells the lead again when a task started anew waits on an upstream task that was never started', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['b']);
   await f.control.tick();
@@ -109,7 +129,7 @@ it('tells the lead again when a task started anew waits on an upstream task that
 });
 
 it('tells the lead and lists needs-you when the upstream session closed without an outcome', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a', 'b']);
   await f.control.tick();
@@ -128,7 +148,7 @@ it('tells the lead and lists needs-you when the upstream session closed without 
 });
 
 it('tells the lead once when the upstream session of a queued task was discarded', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a', 'b']);
   await f.control.tick();
@@ -161,7 +181,7 @@ const waitingOnUpstream = (f: Fixture) =>
     .items.filter((item) => item.reason === 'task_upstream_stuck');
 
 it('tells the lead and lists needs-you while the merge of an upstream session stays blocked', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [mergedTask, reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a', 'b']);
   await f.control.tick();
@@ -199,7 +219,7 @@ it('tells the lead and lists needs-you while the merge of an upstream session st
 });
 
 it('tells the lead and lists needs-you when the lead stopped the upstream task of a queued task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a', 'b']);
   await f.control.tick();
@@ -235,7 +255,7 @@ it('tells the lead and lists needs-you when the lead stopped the upstream task o
 });
 
 it('stops the session of a task that left the plan and tells the lead', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b')]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();

@@ -21,11 +21,11 @@ async function setup(existing = false) {
     stderr: '',
     exit_code: 0,
   }));
-  const f = workbenchFixture({ localCommand: run });
+  const f = await workbenchFixture({ localCommand: run });
   const origin = path.join(f.root, 'origin.git');
   git(f.source, 'init', '--bare', '--quiet', origin);
   git(f.source, 'remote', 'add', 'origin', origin);
-  const session = f.create('Fix the total');
+  const session = await f.create('Fix the total');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.store.must<Session>('sessions', session.id).state === 'open',

@@ -10,9 +10,9 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-function setup() {
+async function setup() {
   let now = 1000;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   cleanups.push(() => f.close());
   const record = (at: number, kind: string, owner: Entity, payload: unknown, cause = '') => {
     now = at;
@@ -59,7 +59,7 @@ function setup() {
 }
 
 it('replays only the selected edit input without a worktree', async () => {
-  const f = setup(),
+  const f = await setup(),
     owner = f.session('writer'),
     turn = f.turn(owner);
   f.tool(owner, turn.id, 'first-edit', 'Edit', {
@@ -102,7 +102,7 @@ it('replays only the selected edit input without a worktree', async () => {
 });
 
 it('returns no files for a read and added content for a whole-file write', async () => {
-  const f = setup(),
+  const f = await setup(),
     owner = f.session('writer'),
     turn = f.turn(owner);
   f.tool(owner, turn.id, 'read', 'Read', { file_path: 'file.txt' });
@@ -119,7 +119,7 @@ it('returns no files for a read and added content for a whole-file write', async
 });
 
 it('replays patch tool files and multiple edits of the same file', async () => {
-  const f = setup(),
+  const f = await setup(),
     owner = f.session('writer'),
     turn = f.turn(owner);
   f.tool(owner, turn.id, 'patch', 'functions.apply_patch', {
@@ -152,7 +152,7 @@ it('replays patch tool files and multiple edits of the same file', async () => {
 });
 
 it('caps total diff bytes and never presents capped tool input as a complete patch', async () => {
-  const f = setup(),
+  const f = await setup(),
     owner = f.session('writer'),
     turn = f.turn(owner);
   f.tool(owner, turn.id, 'big-patch', 'fileChange', {
@@ -179,7 +179,7 @@ it('caps total diff bytes and never presents capped tool input as a complete pat
 });
 
 it('takes context and gate snapshots at span start across turns without borrowing future data', async () => {
-  const f = setup(),
+  const f = await setup(),
     owner = f.session('writer'),
     other = f.session('other'),
     turn = f.turn(owner);
@@ -227,7 +227,7 @@ it('takes context and gate snapshots at span start across turns without borrowin
 });
 
 it('counts directed lead messages and worker reports in the inclusive project range', async () => {
-  const f = setup(),
+  const f = await setup(),
     lead = f.session('lead'),
     worker = f.session('worker', { task: { lead_session_id: lead.id, id: 'export' } });
   f.turn(worker, 'lead-message', { origin: 'lead' });
@@ -258,7 +258,7 @@ it('counts directed lead messages and worker reports in the inclusive project ra
 });
 
 it('keeps notes in flight until their receiving turn is delivered, even outside the requested range', async () => {
-  const f = setup(),
+  const f = await setup(),
     lead = f.session('lead'),
     worker = f.session('worker', { task: { lead_session_id: lead.id, id: 'export' } });
   const queued = f.turn(worker, 'lead-message', { origin: 'lead' });
@@ -303,7 +303,7 @@ it('keeps notes in flight until their receiving turn is delivered, even outside 
 });
 
 it('reconstructs model changes from records before the requested range and omits effort-only changes', async () => {
-  const f = setup(),
+  const f = await setup(),
     owner = f.session('writer', { requested_model: 'initial' });
   f.record(1200, 'session.model_changed', owner, { model: 'middle' });
   f.record(1500, 'session.model_changed', owner, { model: 'final' });
@@ -319,7 +319,7 @@ it('reconstructs model changes from records before the requested range and omits
 });
 
 it('reads full native edit inputs and subagent spans, named by their task, from the trace cache', async () => {
-  const f = setup(),
+  const f = await setup(),
     home = path.join(f.root, 'claude');
   const nativeId = 'aa24c772-a37b-478a-b12c-80cf63471cd1';
   const directory = path.join(home, 'projects', 'project');
@@ -408,7 +408,7 @@ it('reads full native edit inputs and subagent spans, named by their task, from 
 });
 
 it('replays Codex custom patch input and recorded native file changes', async () => {
-  const f = setup(),
+  const f = await setup(),
     home = path.join(f.root, 'codex'),
     nativeId = '04c1e684-7384-44ed-8cbe-2463cfc34b72';
   const directory = path.join(home, 'sessions', '2026', '11', '13');
@@ -491,7 +491,7 @@ it.each([
   ['--- a/old.ts\n+++ b/new.ts\n@@ -1 +1 @@\n-old\n+new\n', 'diff --git a/old.ts b/new.ts\n'],
   ['diff --git a/old.ts b/new.ts\n--- a/old.ts\n+++ b/new.ts\n@@ -1 +1 @@\n-old\n+new\n', ''],
 ])('keeps runtime patch headers after the file header: %s', async (patch, prefix) => {
-  const f = setup(),
+  const f = await setup(),
     owner = f.session('writer'),
     turn = f.turn(owner);
   f.tool(owner, turn.id, 'runtime-change', 'file_change', {

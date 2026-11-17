@@ -3,7 +3,7 @@ import type { Session, SessionTurn, Workspace } from '@pantheon/domain';
 import { fixture, user } from '../helpers.js';
 
 it('lists the goal, last turn, context and compactions as the turns and their events record them', async () => {
-  const f = fixture({ now: () => 1_800_000_000_000 });
+  const f = await fixture({ now: () => 1_800_000_000_000 });
   try {
     const project = f.project.id;
     const workspace = f.store.insert<Workspace>('workspaces', {

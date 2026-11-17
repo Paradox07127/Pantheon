@@ -21,6 +21,7 @@ import { returnNotes } from './lead-inbox.js';
 import { finishRollback, restoreCheckpoint } from './checkpoint.js';
 import { recoverQueuedHandoff, unsnooze } from './session.js';
 import { recoverWorkflowSteps } from './workflow-engine.js';
+import { reconciledStates } from './non-writer-audit.js';
 
 const CONTINUE_TEXT =
   '[Pantheon] A daemon restart interrupted your last turn. Before you redo anything, check whether your last actions took effect (files, git status, git log, commands that were running). Then continue your work.';
@@ -91,7 +92,19 @@ function inPlaceUnstarted(ctx: ControlContext, session: Session): boolean {
   );
 }
 
-export function recover(ctx: ControlContext): void {
+/** Reviewer sessions settleReview may close as reconciled; one without a status baseline reads no git. */
+function closableReviewers(ctx: ControlContext): string[] {
+  return ctx.store
+    .list<Review>('reviews')
+    .flatMap((review) => review.session_ids)
+    .filter((id) => {
+      const session = ctx.store.get<Session>('sessions', id);
+      return session !== undefined && session.state !== 'closed';
+    });
+}
+
+export async function recover(ctx: ControlContext): Promise<void> {
+  const reconciled = await reconciledStates(ctx, closableReviewers(ctx));
   rollbackTransaction(ctx, () => {
     recoverChildProcesses(ctx);
     recoverGateRuns(ctx);
@@ -264,6 +277,7 @@ export function recover(ctx: ControlContext): void {
         ctx,
         review.id,
         !review.session_ids.length || !review.session_ids.every((id) => unstartedSessions.has(id)),
+        reconciled,
       );
     recoverReviewDirectories(ctx);
   });

@@ -7,14 +7,14 @@ import type { ControlContext } from '../../packages/control/src/context.js';
 import { awaitWorkspaceReady, eventually, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const events = (f: Fixture, id: string, kind: string) =>
   f.store.kindEvents(f.project.id, [kind]).filter((event) => event.aggregate_id === id);
 
 async function prepared() {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => current(f, session.id).state === 'open',
@@ -27,8 +27,8 @@ async function prepared() {
   return { f, session, workspace, head, sourceHead: git(f.source, 'rev-parse', 'HEAD') };
 }
 
-function configureGate(f: Fixture) {
-  f.call<Project>(
+async function configureGate(f: Fixture) {
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -144,7 +144,7 @@ it.skipIf(process.platform !== 'darwin' || insideSandbox)(
   'stops a registered gate and leaves no successful result after cancellation',
   async () => {
     const { f, session, workspace, head, sourceHead } = await prepared();
-    configureGate(f);
+    await configureGate(f);
     const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
     vi.spyOn(ctx, 'readProcess').mockImplementation(readProcessIdentity);
     await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
@@ -179,7 +179,7 @@ it.skipIf(process.platform !== 'darwin' || insideSandbox)(
   'cancels a merge during its gate and never fast-forwards the source',
   async () => {
     const { f, session, workspace, sourceHead } = await prepared();
-    configureGate(f);
+    await configureGate(f);
     vi.spyOn(
       (f.control as unknown as { ctx: ControlContext }).ctx,
       'readProcess',

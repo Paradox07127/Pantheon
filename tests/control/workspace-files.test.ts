@@ -18,7 +18,7 @@ import { awaitWorkspaceReady, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 it('lists directories before files by name, excluding ignored entries and git metadata', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   for (const name of ['zebra', 'alpha', 'ignored']) mkdirSync(path.join(f.source, name));
   writeFileSync(path.join(f.source, '.gitignore'), 'ignored/\nsecret.txt\n');
   writeFileSync(path.join(f.source, 'secret.txt'), 'hidden');
@@ -44,7 +44,7 @@ it('lists directories before files by name, excluding ignored entries and git me
 });
 
 it('lists a link to a folder inside the workspace as a folder that opens', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   mkdirSync(path.join(f.source, 'docs'));
   writeFileSync(path.join(f.source, 'docs', 'a.md'), 'a');
   symlinkSync('docs', path.join(f.source, 'current'));
@@ -59,7 +59,7 @@ it('lists a link to a folder inside the workspace as a folder that opens', async
 });
 
 it('returns at most one thousand sorted directory entries and reports truncation', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   mkdirSync(path.join(f.source, 'many'));
   for (let index = 0; index < 1001; index++)
     writeFileSync(path.join(f.source, 'many', `${String(index).padStart(4, '0')}.txt`), '');
@@ -69,8 +69,8 @@ it('returns at most one thousand sorted directory entries and reports truncation
   expect(listed.truncated).toBe(true);
 });
 
-it('reads text, empty and binary files and truncates UTF-8 at a character boundary', () => {
-  const f = workbenchFixture();
+it('reads text, empty and binary files and truncates UTF-8 at a character boundary', async () => {
+  const f = await workbenchFixture();
   const read = (file: string) => f.control.filesRead(user, f.project.id, undefined, file);
   expect(read('answer.txt')).toEqual({
     path: 'answer.txt',
@@ -107,8 +107,8 @@ it('reads text, empty and binary files and truncates UTF-8 at a character bounda
   expect(read('late-nul.txt')).toHaveProperty('text');
 });
 
-it('reads images and PDFs whole as base64 with their type, and past the preview limit only their size', () => {
-  const f = workbenchFixture();
+it('reads images and PDFs whole as base64 with their type, and past the preview limit only their size', async () => {
+  const f = await workbenchFixture();
   const read = (file: string) => f.control.filesRead(user, f.project.id, undefined, file);
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
   writeFileSync(path.join(f.source, 'chart.png'), png);
@@ -143,8 +143,8 @@ it('reads images and PDFs whole as base64 with their type, and past the preview 
 });
 
 it('uses the session worktree for all queries and enforces project access and ownership', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   writeFileSync(path.join(f.source, 'source-only.ts'), 'function sourceOnly() {}');
   writeFileSync(path.join(workspace.path, 'local.ts'), 'function localSymbol() {}');
@@ -161,7 +161,7 @@ it('uses the session worktree for all queries and enforces project access and ow
   });
   const otherRoot = path.join(f.root, 'other');
   mkdirSync(otherRoot);
-  const other = f.call<Project>('project.open', { name: 'Other', roots: [otherRoot] });
+  const other = await f.call<Project>('project.open', { name: 'Other', roots: [otherRoot] });
   const queries = [
     (project: string, sessionId: string | undefined, principal = user) =>
       f.control.filesList(principal, project, sessionId, undefined),
@@ -192,7 +192,7 @@ it('uses the session worktree for all queries and enforces project access and ow
 });
 
 it('rejects parent traversal, absolute paths and symlinks escaping the workspace', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const outside = path.join(f.root, 'outside');
   mkdirSync(outside);
   writeFileSync(path.join(outside, 'secret.ts'), 'function secretSymbol() {}');
@@ -217,7 +217,7 @@ it('rejects parent traversal, absolute paths and symlinks escaping the workspace
 });
 
 it('refuses a named pipe without waiting for a writer', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const pipe = path.join(f.source, 'agent.fifo');
   execFileSync('mkfifo', [pipe]);
   // Opens the pipe for writing later, so a read that waits for a writer still returns.
@@ -237,7 +237,7 @@ it('refuses a named pipe without waiting for a writer', async () => {
 });
 
 it('searches declarations across supported languages, including untracked files, with a fifty symbol limit', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const sources = {
     'types.ts':
       'export function findThing() {}\nexport class FindClass {}\nexport interface FindInterface {}\nexport type FindType = string;\nconst FindValue = "not a declaration";',
@@ -288,7 +288,7 @@ it('searches declarations across supported languages, including untracked files,
 });
 
 it('skips a source file too large to search', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   writeFileSync(path.join(f.source, 'small.ts'), 'function findSmall() {}');
   writeFileSync(
     path.join(f.source, 'generated.ts'),
@@ -300,9 +300,9 @@ it('skips a source file too large to search', async () => {
 });
 
 it('records a returned image by the hash of its stored bytes and reads it back only for its own session', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
-  const other = f.create('Draw something else');
+  const f = await workbenchFixture();
+  const session = await f.create();
+  const other = await f.create('Draw something else');
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
   const hash = createHash('sha256').update(png).digest('hex');

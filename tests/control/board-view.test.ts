@@ -22,7 +22,7 @@ import type {
 import { awaitWorkspaceReady, eventually, gateFolder, insideSandbox, user } from '../helpers.js';
 import { boundTaskSession, git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -35,7 +35,7 @@ const dayKey = (at: number) => {
 
 /** A session whose first turn has ended, with the usage and model given. */
 async function idleSession(f: Fixture, input: string, usage: Usage, model: string | null) {
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     model: model ?? undefined,
@@ -72,29 +72,32 @@ const mergedAt = (f: Fixture, sessionId: string) =>
     )
     .get(sessionId) as { created_at: number; payload: string };
 
-it.each([30, 'all'] as const)('fills every local day of the %s range from its start', (days) => {
-  const f = workbenchFixture();
-  const now = new Date(2027, 2, 16, 12).getTime(),
-    created = new Date(2027, 2, 1, 15).getTime();
-  vi.spyOn(f.store, 'now').mockReturnValue(now);
-  f.store.db
-    .prepare('UPDATE events SET created_at=? WHERE aggregate_id=?')
-    .run(created, f.project.id);
-  const board = f.control.boardView(user, f.project.id, days);
-  const length = days === 'all' ? 16 : 30,
-    first = new Date(2027, 2, 17 - length).getTime();
-  expect(board.since).toBe(first);
-  const dates = Array.from({ length }, (_, offset) =>
-    dayKey(new Date(2027, 2, 17 - length + offset).getTime()),
-  );
-  expect(board.burnup.map((point) => point.day)).toEqual(dates);
-  expect(board.task_progress.daily.map((point) => point.day)).toEqual(dates);
-  if (days === 'all') expect(board.counts).not.toHaveProperty('previous');
-  expect(board.counts).not.toHaveProperty('cache_read_share');
-});
+it.each([30, 'all'] as const)(
+  'fills every local day of the %s range from its start',
+  async (days) => {
+    const f = await workbenchFixture();
+    const now = new Date(2027, 2, 16, 12).getTime(),
+      created = new Date(2027, 2, 1, 15).getTime();
+    vi.spyOn(f.store, 'now').mockReturnValue(now);
+    f.store.db
+      .prepare('UPDATE events SET created_at=? WHERE aggregate_id=?')
+      .run(created, f.project.id);
+    const board = f.control.boardView(user, f.project.id, days);
+    const length = days === 'all' ? 16 : 30,
+      first = new Date(2027, 2, 17 - length).getTime();
+    expect(board.since).toBe(first);
+    const dates = Array.from({ length }, (_, offset) =>
+      dayKey(new Date(2027, 2, 17 - length + offset).getTime()),
+    );
+    expect(board.burnup.map((point) => point.day)).toEqual(dates);
+    expect(board.task_progress.daily.map((point) => point.day)).toEqual(dates);
+    if (days === 'all') expect(board.counts).not.toHaveProperty('previous');
+    expect(board.counts).not.toHaveProperty('cache_read_share');
+  },
+);
 
 it('moves metrics to a past range while keeping present tasks and dispatch state', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const rows = [];
   for (const [input_tokens, cached_input_tokens, cost_usd] of [
     [100, 80, 1],
@@ -112,7 +115,7 @@ it('moves metrics to a past range while keeping present tasks and dispatch state
     );
   const lead = await firstTurnEnded(
     f,
-    leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]),
+    await leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]),
   );
   const now = new Date(2027, 2, 16, 12).getTime();
   vi.spyOn(f.store, 'now').mockReturnValue(now);
@@ -190,7 +193,7 @@ it('moves metrics to a past range while keeping present tasks and dispatch state
 });
 
 it('omits cache share without reported cache input and includes reported zero cache reads', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { turn } = await idleSession(
     f,
     'Measure cache input',
@@ -224,8 +227,8 @@ it('omits cache share without reported cache input and includes reported zero ca
   expect(counts()).not.toHaveProperty('cache_read_share');
 });
 
-it('counts first gate passes of the tasks whose newest retrospective is in each range', () => {
-  const f = workbenchFixture();
+it('counts first gate passes of the tasks whose newest retrospective is in each range', async () => {
+  const f = await workbenchFixture();
   vi.spyOn(f.store, 'now').mockReturnValue(new Date(2027, 2, 16, 12).getTime());
   const record = (task_id: string, day: number, gate_passed_on_attempt?: number) =>
     f.store.insert<Retrospective>('retrospectives', {
@@ -258,7 +261,7 @@ it('counts first gate passes of the tasks whose newest retrospective is in each 
 });
 
 it('counts the sessions that compacted their context within the range', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const recent = await idleSession(
       f,
       'Compact recently',
@@ -288,7 +291,7 @@ it('counts the sessions that compacted their context within the range', async ()
 });
 
 it('keeps the rows that ended in a past range and leaves them out of the present one', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const standalone = await idleSession(
       f,
       'Merge in the past week',
@@ -304,7 +307,7 @@ it('keeps the rows that ended in a past range and leaves them out of the present
     worker = await idleSession(f, 'Build exports', { input_tokens: 1, output_tokens: 1 }, null);
   const lead = await firstTurnEnded(
     f,
-    leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]),
+    await leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]),
   );
   vi.spyOn(f.store, 'now').mockReturnValue(new Date(2027, 2, 16, 12).getTime());
   for (const [row, day] of [
@@ -357,8 +360,8 @@ it('keeps the rows that ended in a past range and leaves them out of the present
   expect(past.counts).toMatchObject({ running: 0, failed: 0, merged: 2 });
 });
 
-it('refuses an all-time end day and an end day after today', () => {
-  const f = workbenchFixture();
+it('refuses an all-time end day and an end day after today', async () => {
+  const f = await workbenchFixture();
   vi.spyOn(f.store, 'now').mockReturnValue(new Date(2027, 2, 16, 12).getTime());
   for (const [days, until] of [
     ['all', '2027-03-13'],
@@ -372,7 +375,7 @@ it('refuses an all-time end day and an end day after today', () => {
 it.each([1, 3, 7, 14, 30])(
   'counts usage in the equally long period before a %i-day range',
   async (days) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const sessions = [];
     for (const cost of [undefined, 0, 0.25, 9, 10])
       sessions.push(
@@ -427,7 +430,7 @@ it.each([1, 3, 7, 14, 30])(
 );
 
 it('computes the board from merged, ready and discarded workbench sessions', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
@@ -609,7 +612,7 @@ it('computes the board from merged, ready and discarded workbench sessions', asy
 });
 
 it.each(['model-a', null])('keeps usage by turn model after switching from %s', async (model) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   Object.assign(f.adapter, { setModel: async () => ({ ok: true }) });
   const { session, turn: first } = await idleSession(
     f,
@@ -654,7 +657,7 @@ it.each(['model-a', null])('keeps usage by turn model after switching from %s', 
 });
 
 it('attributes turns recorded without a model to the current session model', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(
     f,
     'Explain the answer file',
@@ -678,7 +681,7 @@ it('attributes turns recorded without a model to the current session model', asy
 });
 
 it('links each merge to the newest ready change story of its session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
@@ -728,10 +731,10 @@ it('links each merge to the newest ready change story of its session', async () 
   ]);
 });
 
-it('fills milestones from the project facts and risks from the written project board', () => {
-  const f = workbenchFixture();
-  const merged = f.create('Merge the first half'),
-    open = f.create('Write the second half');
+it('fills milestones from the project facts and risks from the written project board', async () => {
+  const f = await workbenchFixture();
+  const merged = await f.create('Merge the first half'),
+    open = await f.create('Write the second half');
   const ended = current(f, merged.id);
   f.store.update<Session>(
     'sessions',
@@ -787,9 +790,9 @@ it('fills milestones from the project facts and risks from the written project b
   ]);
 });
 
-it('marks milestone criteria accepted only while their acceptance holds', () => {
-  const f = workbenchFixture();
-  const merged = f.create('Merge the export');
+it('marks milestone criteria accepted only while their acceptance holds', async () => {
+  const f = await workbenchFixture();
+  const merged = await f.create('Merge the export');
   const ended = current(f, merged.id);
   f.store.update<Session>(
     'sessions',
@@ -831,9 +834,9 @@ it('marks milestone criteria accepted only while their acceptance holds', () => 
   ]);
 });
 
-it('marks every criterion accepted when the acceptance covers the whole milestone', () => {
-  const f = workbenchFixture();
-  const merged = f.create('Merge the export');
+it('marks every criterion accepted when the acceptance covers the whole milestone', async () => {
+  const f = await workbenchFixture();
+  const merged = await f.create('Merge the export');
   const ended = current(f, merged.id);
   f.store.update<Session>(
     'sessions',
@@ -858,8 +861,8 @@ it('marks every criterion accepted when the acceptance covers the whole mileston
 });
 
 it('computes tasks, edges and milestones from lead plans and their sessions', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   f.call(
     'board.plan.update',
     {
@@ -913,13 +916,13 @@ it('computes tasks, edges and milestones from lead plans and their sessions', as
     },
   );
   const fromTask = (taskId: string) =>
-    f.call<Session>('session.create', {
+    f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'Build it',
       task_id: `${lead.id}:${taskId}`,
     });
-  const a = fromTask('a');
+  const a = await fromTask('a');
   await awaitWorkspaceReady(f.control, a.workspace_id!);
   const done = current(f, a.id);
   f.store.update<Session>(
@@ -928,8 +931,8 @@ it('computes tasks, edges and milestones from lead plans and their sessions', as
     done.revision,
   );
   // b depends on a, so the board opens it once a merged.
-  const b = fromTask('b'),
-    other = f.create('Fix an unrelated typo');
+  const b = await fromTask('b'),
+    other = await f.create('Fix an unrelated typo');
   await awaitWorkspaceReady(f.control, b.workspace_id!);
 
   const board = f.control.boardView(user, f.project.id, 1);
@@ -973,8 +976,8 @@ it('computes tasks, edges and milestones from lead plans and their sessions', as
 });
 
 it('counts a task done and its dependents unblocked only once every live session of it merged', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   f.call(
     'board.plan.update',
     {
@@ -1018,7 +1021,7 @@ it('counts a task done and its dependents unblocked only once every live session
     },
   );
   const fromA = () =>
-    f.call<Session>('session.create', {
+    f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'Build it',
@@ -1028,11 +1031,11 @@ it('counts a task done and its dependents unblocked only once every live session
     const stored = current(f, session.id);
     f.store.update<Session>('sessions', { ...stored, ...fields }, stored.revision);
   };
-  const merged = fromA();
+  const merged = await fromA();
   await awaitWorkspaceReady(f.control, merged.workspace_id!);
   mark(merged, { state: 'closed', outcome: 'merged' });
   // A merged task takes a follow-up session from the board.
-  const running = fromA();
+  const running = await fromA();
   await awaitWorkspaceReady(f.control, running.workspace_id!);
   mark(running, { state: 'running' });
 
@@ -1043,9 +1046,9 @@ it('counts a task done and its dependents unblocked only once every live session
   expect(task('b').blocked_since).not.toBeNull();
 });
 
-it('dates a blocked task from the first stored plan version that held its dependency', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+it('dates a blocked task from the first stored plan version that held its dependency', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'a', title: 'Serve exports', depends_on: [] },
     { id: 'b', title: 'Ship exports', depends_on: ['a'] },
   ]);
@@ -1058,9 +1061,9 @@ it('dates a blocked task from the first stored plan version that held its depend
   expect(b.blocked_since).toBe(1000);
 });
 
-it('lists the valid findings of the project reviews, unresolved ones first', () => {
-  const f = workbenchFixture();
-  const session = f.create('Review the answer change');
+it('lists the valid findings of the project reviews, unresolved ones first', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create('Review the answer change');
   const finding = (
     id: string,
     location: string,
@@ -1154,9 +1157,9 @@ it('lists the valid findings of the project reviews, unresolved ones first', () 
   ]);
 });
 
-it('lists the findings of a plan review under the lead whose plan it reviewed', () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the release');
+it('lists the findings of a plan review under the lead whose plan it reviewed', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the release');
   f.store.insert<Review>('reviews', {
     id: 'plan-review',
     revision: 1,
@@ -1192,10 +1195,10 @@ it('lists the findings of a plan review under the lead whose plan it reviewed', 
 });
 
 it.skipIf(insideSandbox)("shows an unmerged session's newest gate run in its checks", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   // The gate fails in a worktree that holds fail.txt.
   const fails = "process.exit(require('node:fs').existsSync('fail.txt') ? 1 : 0)";
-  f.call<Project>(
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -1230,7 +1233,7 @@ it.skipIf(insideSandbox)("shows an unmerged session's newest gate run in its che
 });
 
 it("measures a running task's progress from no earlier than its current turn's start", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, turn } = await idleSession(
     f,
     'Write the slow file',
@@ -1244,8 +1247,11 @@ it("measures a running task's progress from no earlier than its current turn's s
 });
 
 /** A lead whose plan holds the tasks given, each in one lane and its own directory. */
-function leadWithPlan(f: Fixture, tasks: { id: string; title: string; depends_on: string[] }[]) {
-  const lead = f.create('Plan the export feature');
+async function leadWithPlan(
+  f: Fixture,
+  tasks: { id: string; title: string; depends_on: string[] }[],
+) {
+  const lead = await f.create('Plan the export feature');
   f.call(
     'board.plan.update',
     {
@@ -1278,10 +1284,10 @@ function leadWithPlan(f: Fixture, tasks: { id: string; title: string; depends_on
 }
 
 /** A session opened from a plan task whose first turn has ended. */
-function idleTaskSession(f: Fixture, leadId: string, taskId: string) {
+async function idleTaskSession(f: Fixture, leadId: string, taskId: string) {
   return firstTurnEnded(
     f,
-    f.call<Session>('session.create', {
+    await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'Build it',
@@ -1312,8 +1318,8 @@ function failLatestTurn(f: Fixture, sessionId: string, error: string) {
 }
 
 it('counts a task whose session ended its turn without changes as idle, not waiting, on its card, in the totals and in the counts', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
 
   const board = f.control.boardView(user, f.project.id, 1);
@@ -1327,10 +1333,10 @@ it('counts a task whose session ended its turn without changes as idle, not wait
 });
 
 it("carries its session's recap on a plan task row and on a row of a session without a task", async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const bound = await idleTaskSession(f, lead.id, 'a');
-  const own = await firstTurnEnded(f, f.create('Fix an unrelated typo'));
+  const own = await firstTurnEnded(f, await f.create('Fix an unrelated typo'));
   const row = (id: string) =>
     f.control.boardView(user, f.project.id, 1).tasks.find((each) => each.id === id)!;
   expect(row(`${lead.id}:a`)).not.toHaveProperty('recap');
@@ -1352,8 +1358,8 @@ it("carries its session's recap on a plan task row and on a row of a session wit
 });
 
 it('marks a task failed with the error text while its newest turn has failed', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
   const other = await idleSession(
     f,
@@ -1380,14 +1386,14 @@ it('marks a task failed with the error text while its newest turn has failed', a
 });
 
 it('lists unfinished upstream tasks and a blocked merge as blockers', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'a', title: 'Serve exports', depends_on: [] },
     { id: 'b', title: 'Write the export format', depends_on: [] },
     { id: 'c', title: 'Add a download button', depends_on: ['a', 'b'] },
   ]);
   // The board opens no session for c before a and b are done.
-  const session = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'c'));
+  const session = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'c'));
   const stored = current(f, session.id);
   f.store.update<Session>(
     'sessions',
@@ -1476,8 +1482,8 @@ const activityOf = (f: Fixture, taskId: string) =>
   f.control.boardView(user, f.project.id, 1).tasks.find((each) => each.id === taskId)?.activity;
 
 it('tells for each plan task whether it is queued, in a tool call, waiting, merging or ended with a failed turn', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'tool', title: 'Run the tests', depends_on: [] },
     { id: 'approval', title: 'Edit the parser', depends_on: [] },
     { id: 'question', title: 'Ask about the format', depends_on: [] },
@@ -1578,12 +1584,12 @@ it('tells for each plan task whether it is queued, in a tool call, waiting, merg
 });
 
 it.skipIf(insideSandbox)('tells a task is in its gate while the gate runs', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   // The gate sandbox lets the step read its gate folder, where the release marker goes; the step also ends on its own after 8 s.
   const gate = gateFolder(f.root),
     release = path.join(gate.dir, 'release-gate');
   const waits = `const fs=require('node:fs');const end=Date.now()+8000;const t=setInterval(()=>{if(fs.existsSync(${JSON.stringify(release)})||Date.now()>end)clearInterval(t)},20)`;
-  f.call<Project>(
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -1592,7 +1598,7 @@ it.skipIf(insideSandbox)('tells a task is in its gate while the gate runs', asyn
     },
     f.store.must<Project>('projects', f.project.id).revision,
   );
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
   await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
   const gateStarted = () => f.store.kindEvents(f.project.id, ['session.gate_started']).at(-1);
@@ -1612,8 +1618,8 @@ it.skipIf(insideSandbox)('tells a task is in its gate while the gate runs', asyn
 });
 
 it('reports a running turn quiet after two minutes without progress and stalled once the tracker alerted it', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
   const { turn, at } = runLatestTurn(f, session.id);
   const clock = vi.spyOn(f.store, 'now');
@@ -1635,8 +1641,8 @@ it('reports a running turn quiet after two minutes without progress and stalled 
 });
 
 it('counts every session of a task in its attempts and lists the problems handed back to the newest', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const first = await idleTaskSession(f, lead.id, 'a');
   const stored = current(f, first.id);
   f.store.update<Session>(
@@ -1657,8 +1663,8 @@ it('counts every session of a task in its attempts and lists the problems handed
 });
 
 it('lists each lead that wrote a plan with its state, unread notes and request', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   await eventually(
     () =>
       current(f, lead.id).state === 'open' &&
@@ -1702,8 +1708,8 @@ it('lists each lead that wrote a plan with its state, unread notes and request',
 });
 
 it('shows a lead as failed while its latest turn failed and no turn followed', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   await eventually(
     () =>
       current(f, lead.id).state === 'open' &&
@@ -1748,8 +1754,8 @@ it.each<[string, (f: Fixture, leadId: string) => void]>([
     },
   ],
 ])('shows a lead as %s from its listed state', async (state, setup) => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   await eventually(
     () =>
       current(f, lead.id).state === 'open' &&
@@ -1761,8 +1767,8 @@ it.each<[string, (f: Fixture, leadId: string) => void]>([
 });
 
 it('keeps a lead shown as failed after a steer delivered into its failed turn', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   await eventually(
     () =>
       current(f, lead.id).state === 'open' &&
@@ -1784,8 +1790,8 @@ it('keeps a lead shown as failed after a steer delivered into its failed turn', 
 });
 
 it('marks a task failed with the error text when its turn fails after a steer was delivered into it', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
   const { turn } = runLatestTurn(f, session.id);
   f.store.insert<SessionTurn>('session_turns', {
@@ -1816,8 +1822,8 @@ it('marks a task failed with the error text when its turn fails after a steer wa
 });
 
 it('keeps a running session on its task card while a changed contract has yet to reach it', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
   runLatestTurn(f, session.id);
   const plan = f.store.must<BoardPlan>('board_plans', lead.id);
@@ -1849,8 +1855,8 @@ it('keeps a running session on its task card while a changed contract has yet to
 });
 
 it('ties each request for the user to its task and puts the ones that unblock the most tasks first', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'a', title: 'Serve exports', depends_on: [] },
     { id: 'b', title: 'Add a download button', depends_on: ['a'] },
     { id: 'c', title: 'Document the export', depends_on: ['a'] },
@@ -1873,8 +1879,8 @@ it('ties each request for the user to its task and puts the ones that unblock th
 });
 
 it('leaves a request of a removed task worker off the new task that reuses its id', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'a', title: 'Serve exports', depends_on: [] },
     { id: 'b', title: 'Add a download button', depends_on: ['a'] },
   ]);
@@ -1895,9 +1901,9 @@ it('leaves a request of a removed task worker off the new task that reuses its i
   expect(item.unblocks).toBe(0);
 });
 
-it('ties a dispatch failure and a lead request on its direct task to their tasks', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+it('ties a dispatch failure and a lead request on its direct task to their tasks', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'a', title: 'Serve exports', depends_on: [] },
     { id: 'd', title: 'Fix the parser', depends_on: [] },
     { id: 'b', title: 'Add a download button', depends_on: ['a', 'd'] },
@@ -1929,7 +1935,7 @@ it('ties a dispatch failure and a lead request on its direct task to their tasks
 });
 
 it('keeps the usage of turns that ran before a runtime change on the runtime they ran on', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, turn } = await idleSession(
     f,
     'Explain the answer file',
@@ -1967,7 +1973,7 @@ it('keeps the usage of turns that ran before a runtime change on the runtime the
 });
 
 it('does not count a turn cancelled before it ran as one that reported no token counts', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(
     f,
     'Explain the answer file',
@@ -1993,7 +1999,7 @@ it('does not count a turn cancelled before it ran as one that reported no token 
 });
 
 it('counts the sessions with an ended turn in the range that reported no token counts', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   await idleSession(
     f,
     'Explain the answer file',
@@ -2032,8 +2038,8 @@ it('counts the sessions with an ended turn in the range that reported no token c
 });
 
 it('leaves the merges of a removed task out of the trend and cycles of a new task reusing its id', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'a', title: 'Serve exports', depends_on: [] },
     { id: 'b', title: 'Add a download button', depends_on: [] },
   ]);
@@ -2073,8 +2079,8 @@ it('leaves the merges of a removed task out of the trend and cycles of a new tas
 });
 
 it('leaves a task merged in an earlier generation out of the daily trend once a goal change starts the next', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
   const stored = current(f, session.id);
   const merged = f.store.update<Session>(
@@ -2111,7 +2117,7 @@ async function mergedYesterdayThenReplanned(
   f: Fixture,
   tasks: (plan: BoardPlan) => BoardPlan['tasks'][],
 ) {
-  const lead = leadWithPlan(f, [
+  const lead = await leadWithPlan(f, [
     { id: 'a', title: 'Serve exports', depends_on: [] },
     { id: 'b', title: 'Add a download button', depends_on: [] },
   ]);
@@ -2146,7 +2152,7 @@ async function mergedYesterdayThenReplanned(
 }
 
 it('keeps a task merged on an earlier day done in that day of the trend after the lead removes it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   await mergedYesterdayThenReplanned(f, (plan) => [plan.tasks.filter((task) => task.id !== 'a')]);
 
   const daily = f.control.boardView(user, f.project.id, 7).task_progress.daily;
@@ -2158,7 +2164,7 @@ it('keeps a task merged on an earlier day done in that day of the trend after th
 });
 
 it('counts the merge of a removed task on its own day but not for a new task reusing its id', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await mergedYesterdayThenReplanned(f, (plan) => [
     plan.tasks.filter((task) => task.id !== 'a'),
     plan.tasks.map((task) => (task.id === 'a' ? { ...task, goal: 'Export as CSV' } : task)),
@@ -2174,8 +2180,8 @@ it('counts the merge of a removed task on its own day but not for a new task reu
 });
 
 it('counts an accepted report task in the daily trend and the cycle times', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'a', title: 'Survey the exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Survey the exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
   shift(f, session.id, 60 * 60 * 1000);
   const plan = f.store.must<BoardPlan>('board_plans', lead.id);
@@ -2192,7 +2198,7 @@ it('counts an accepted report task in the daily trend and the cycle times', asyn
 });
 
 it('times a steer queued after the running turn ended from when it was queued', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, turn } = await idleSession(
     f,
     'Explain the answer file',
@@ -2215,9 +2221,9 @@ it('times a steer queued after the running turn ended from when it was queued', 
   });
 });
 
-it('exposes plan priority, kind, routing reason and array order on task rows', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+it('exposes plan priority, kind, routing reason and array order on task rows', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'exports', title: 'Export data', depends_on: [] },
     { id: 'download', title: 'Download data', depends_on: [] },
   ]);
@@ -2240,9 +2246,9 @@ it('exposes plan priority, kind, routing reason and array order on task rows', (
     });
 });
 
-it('gives each plan task row the flow path it takes in effect and other rows none', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+it('gives each plan task row the flow path it takes in effect and other rows none', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'own', title: 'Own path', depends_on: [] },
     { id: 'tier', title: 'Tier path', depends_on: [] },
     { id: 'report', title: 'Report task', depends_on: [] },
@@ -2257,7 +2263,7 @@ it('gives each plan task row the flow path it takes in effect and other rows non
   patchPlan(f, lead.id, {
     tasks: plan.tasks.map((task) => ({ ...task, kind: t1, ...fields[task.id] })),
   });
-  f.create('Tidy the readme');
+  await f.create('Tidy the readme');
   const rows = f.control.boardView(user, f.project.id, 1).tasks;
   const pathOf = (taskId: string) => rows.find((row) => row.id === `${lead.id}:${taskId}`)?.path;
   expect(pathOf('own')).toBe('review_loop');
@@ -2269,13 +2275,13 @@ it('gives each plan task row the flow path it takes in effect and other rows non
   for (const row of others) expect(row).not.toHaveProperty('path');
 });
 
-it('returns the full project history including removed tasks and days with no work', () => {
-  const f = workbenchFixture();
+it('returns the full project history including removed tasks and days with no work', async () => {
+  const f = await workbenchFixture();
   const first = new Date(2026, 9, 1, 10).getTime();
   let now = first;
   vi.spyOn(f.store, 'now').mockImplementation(() => now);
   f.store.db.prepare('UPDATE events SET created_at=? WHERE project_id=?').run(first, f.project.id);
-  const lead = leadWithPlan(f, [
+  const lead = await leadWithPlan(f, [
     { id: 'exports', title: 'Export data', depends_on: [] },
     { id: 'obsolete', title: 'Old approach', depends_on: [] },
   ]);
@@ -2407,9 +2413,9 @@ it('returns the full project history including removed tasks and days with no wo
   );
 });
 
-it('gives a merged history task its own session, commit and changed lines, and an unstarted one none', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+it('gives a merged history task its own session, commit and changed lines, and an unstarted one none', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'exports', title: 'Export data', depends_on: [] },
     { id: 'imports', title: 'Import data', depends_on: [] },
   ]);
@@ -2447,9 +2453,9 @@ it('gives a merged history task its own session, commit and changed lines, and a
   ]);
 });
 
-it('keeps accepted report and direct task completion times and milestone history', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+it('keeps accepted report and direct task completion times and milestone history', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'report', title: 'Research exports', depends_on: [] },
     { id: 'direct', title: 'Implement exports', depends_on: [] },
   ]);
@@ -2493,9 +2499,9 @@ it('keeps accepted report and direct task completion times and milestone history
   ]);
 });
 
-it('caps history task rows without truncating daily totals', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
+it('caps history task rows without truncating daily totals', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
   const original = f.store.must<BoardPlan>('board_plans', lead.id);
   f.store.transaction(() => {
     for (let index = 0; index < 2001; index++) {
@@ -2510,9 +2516,9 @@ it('caps history task rows without truncating daily totals', () => {
   expect(history.days.reduce((sum, day) => sum + day.decisions, 0)).toBe(2002);
 });
 
-it('carries history dependencies, task type and the newest retained session runtime and model', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+it('carries history dependencies, task type and the newest retained session runtime and model', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'exports', title: 'Export data', depends_on: [] },
     { id: 'download', title: 'Download data', depends_on: ['exports'] },
   ]);
@@ -2565,9 +2571,9 @@ it('carries history dependencies, task type and the newest retained session runt
   );
 });
 
-it('caps history decisions even when the task list fits and keeps complete daily counts', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
+it('caps history decisions even when the task list fits and keeps complete daily counts', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
   f.store.transaction(() => {
     for (let index = 0; index < 2000; index++)
       f.store.event('task.start_requested', lead, f.project.id, { task_ids: ['exports'] });
@@ -2579,9 +2585,9 @@ it('caps history decisions even when the task list fits and keeps complete daily
   expect(history.days.reduce((sum, day) => sum + day.decisions, 0)).toBe(2001);
 });
 
-it('divides history handbacks by gate, external review, user review rejection and other causes', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
+it('divides history handbacks by gate, external review, user review rejection and other causes', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
   const worker = f.store.insert<Session>('sessions', {
     id: 'export-worker',
     revision: 1,
@@ -2661,9 +2667,9 @@ it('divides history handbacks by gate, external review, user review rejection an
   );
 });
 
-it('records the first passing gate attempt for first, retried and never passing tasks', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(
+it('records the first passing gate attempt for first, retried and never passing tasks', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(
     f,
     ['first', 'retry', 'never'].map((id) => ({ id, title: id, depends_on: [] })),
   );
@@ -2690,9 +2696,9 @@ it('records the first passing gate attempt for first, retried and never passing 
   expect(never).not.toHaveProperty('gate_passed_on_attempt');
 });
 
-it('counts the gate attempts of the current task generation only', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'exports', title: 'Export', depends_on: [] }]);
+it('counts the gate attempts of the current task generation only', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export', depends_on: [] }]);
   const gates = (generation: number, exitCodes: number[]) => {
     const worker = f.store.insert<Session>('sessions', {
       id: `exports-worker-${generation}`,
@@ -2749,13 +2755,13 @@ it('counts the gate attempts of the current task generation only', () => {
   expect(row).toHaveProperty('gate_passed_on_attempt', 3);
 });
 
-it('counts failed task attempts and opened user requests over two history days and locates decisions', () => {
-  const f = workbenchFixture();
+it('counts failed task attempts and opened user requests over two history days and locates decisions', async () => {
+  const f = await workbenchFixture();
   const first = new Date(2026, 9, 1, 10).getTime();
   let now = first;
   vi.spyOn(f.store, 'now').mockImplementation(() => now);
   f.store.db.prepare('UPDATE events SET created_at=? WHERE project_id=?').run(first, f.project.id);
-  const lead = leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
+  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
   const worker = f.store.insert<Session>('sessions', {
     id: 'export-worker',
     revision: 1,
@@ -2851,12 +2857,12 @@ it('counts failed task attempts and opened user requests over two history days a
 });
 
 it('projects current context, acceptance items, successors and the latest gate run on plan tasks', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'export', title: 'Build exports', depends_on: [] },
     { id: 'download', title: 'Download exports', depends_on: ['export'] },
   ]);
-  const session = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const session = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const turn = f.turns(session.id).at(-1)!;
   f.store.update<SessionTurn>(
     'session_turns',
@@ -2916,9 +2922,9 @@ it('projects current context, acceptance items, successors and the latest gate r
 });
 
 it('shows the gate steps a run checked so far, and keeps them once the run is cancelled', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
-  const session = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
+  const session = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const steps = () =>
     f.control
       .boardView(user, f.project.id, 1)
@@ -2939,9 +2945,9 @@ it('shows the gate steps a run checked so far, and keeps them once the run is ca
 });
 
 it('projects external review rounds and verdict without treating a failed reviewer as a pass', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
-  const session = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
+  const session = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const row = () =>
     f.control
       .boardView(user, f.project.id, 1)
@@ -2974,9 +2980,9 @@ it('projects external review rounds and verdict without treating a failed review
 });
 
 it('counts the open findings of the newest external review round by whether they block', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
-  const session = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
+  const session = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const row = () =>
     f.control
       .boardView(user, f.project.id, 1)
@@ -3024,11 +3030,11 @@ it('counts the open findings of the newest external review round by whether they
 });
 
 it('records edit notes on started lead turns and contract receipts on every affected session', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
   await firstTurnEnded(f, lead);
-  const worker = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
-  const other = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const worker = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
+  const other = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const plan = () => f.store.must<BoardPlan>('board_plans', lead.id);
   const edit = f.call<{ edit_id: string }>('board.plan.edit', {
     project_id: f.project.id,
@@ -3087,8 +3093,8 @@ it('records edit notes on started lead turns and contract receipts on every affe
 });
 
 it('weighs iteration scope by its daily plan and completed estimates across local days', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'api', title: 'API', depends_on: [] },
     { id: 'docs', title: 'Docs', depends_on: [] },
   ]);
@@ -3165,9 +3171,9 @@ it('weighs iteration scope by its daily plan and completed estimates across loca
   });
 });
 
-it('shows only the last year of days of an iteration stored with a mistyped start year', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'api', title: 'API', depends_on: [] }]);
+it('shows only the last year of days of an iteration stored with a mistyped start year', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'api', title: 'API', depends_on: [] }]);
   const today = dayKey(f.store.now());
   patchPlan(f, lead.id, {
     iterations: [{ id: 'typo', title: 'Typo', starts_on: '1900-01-01', ends_on: today }],
@@ -3178,8 +3184,8 @@ it('shows only the last year of days of an iteration stored with a mistyped star
 });
 
 it('reports collaboration messages for today and the used and queued dispatch slots', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'api', title: 'API', depends_on: [] },
     { id: 'docs', title: 'Docs', depends_on: [] },
   ]);
@@ -3215,9 +3221,9 @@ it('reports collaboration messages for today and the used and queued dispatch sl
   ]);
 });
 
-it('projects the latest reported lead context and omits context until reported', () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, []);
+it('projects the latest reported lead context and omits context until reported', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, []);
   const row = () =>
     f.control.boardView(user, f.project.id, 1).leads!.find((row) => row.session_id === lead.id)!;
   expect(row()).not.toHaveProperty('context');
@@ -3239,8 +3245,8 @@ it('projects the latest reported lead context and omits context until reported',
 });
 
 it('keeps explicit task metadata in the plan and board without deriving missing values', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [
     { id: 'export', title: 'Export data', depends_on: [] },
     { id: 'import', title: 'Import data', depends_on: [] },
   ]);
@@ -3272,7 +3278,7 @@ it('keeps explicit task metadata in the plan and board without deriving missing 
   expect(legacy.scope).toEqual(['src/import']);
   expect(legacy).not.toHaveProperty('task_type');
   expect(legacy).not.toHaveProperty('token_budget');
-  const standalone = await firstTurnEnded(f, f.create('Unplanned work'));
+  const standalone = await firstTurnEnded(f, await f.create('Unplanned work'));
   expect(
     f.control.boardView(user, f.project.id, 3).tasks.find((row) => row.id === standalone.id)?.scope,
   ).toEqual([]);
@@ -3287,11 +3293,11 @@ it('keeps explicit task metadata in the plan and board without deriving missing 
 });
 
 it('counts subagent calls only from the newest attempt that is not discarded', async () => {
-  const f = workbenchFixture({ adoptable: true });
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Export data', depends_on: [] }]);
-  const first = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
-  const second = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
-  const discarded = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const f = await workbenchFixture({ adoptable: true });
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Export data', depends_on: [] }]);
+  const first = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
+  const second = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
+  const discarded = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const ended = current(f, discarded.id);
   f.store.update<Session>(
     'sessions',
@@ -3326,14 +3332,14 @@ it.each([
 ])(
   'compares failed gate step sets across attempts: $previous then $newest, $skipped skipped',
   async ({ previous, newest, skipped, repeated }) => {
-    const f = workbenchFixture();
-    const lead = leadWithPlan(f, [{ id: 'export', title: 'Export data', depends_on: [] }]);
+    const f = await workbenchFixture();
+    const lead = await leadWithPlan(f, [{ id: 'export', title: 'Export data', depends_on: [] }]);
     const row = () =>
       f.control
         .boardView(user, f.project.id, 1)
         .tasks.find((row) => row.id === `${lead.id}:export`)!;
     for (const [index, names] of [previous, newest].entries()) {
-      const session = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+      const session = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
       const currentSession = current(f, session.id);
       f.store.update<Session>(
         'sessions',
@@ -3364,14 +3370,14 @@ it.each([
 ])(
   'compares turn error codes across attempts: $previous then $newest',
   async ({ previous, newest, repeated }) => {
-    const f = workbenchFixture();
-    const lead = leadWithPlan(f, [{ id: 'export', title: 'Export data', depends_on: [] }]);
+    const f = await workbenchFixture();
+    const lead = await leadWithPlan(f, [{ id: 'export', title: 'Export data', depends_on: [] }]);
     const row = () =>
       f.control
         .boardView(user, f.project.id, 1)
         .tasks.find((row) => row.id === `${lead.id}:export`)!;
     for (const [index, error_code] of [previous, newest].entries()) {
-      const session = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+      const session = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
       failLatestTurn(f, session.id, index ? 'Different error text' : 'First error text');
       f.store.event('agent.turn.completed', current(f, session.id), f.project.id, {
         turn_id: f.turns(session.id).at(-1)!.id,
@@ -3380,7 +3386,7 @@ it.each([
       if (index === 0) expect(row().activity).not.toHaveProperty('repeated_failure');
     }
     expect(row().activity?.repeated_failure).toBe(repeated);
-    await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+    await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
     expect(row().activity).not.toHaveProperty('repeated_failure');
   },
 );
@@ -3388,8 +3394,8 @@ it.each([
 it.each(['single', 'multiple', 'two', 'approval'] as const)(
   'offers answer labels only for a single-select question: %s',
   async (kind) => {
-    const f = workbenchFixture();
-    const session = await firstTurnEnded(f, f.create('Choose an export format'));
+    const f = await workbenchFixture();
+    const session = await firstTurnEnded(f, await f.create('Choose an export format'));
     const question = {
       question: 'Which format?',
       header: 'Format',
@@ -3415,9 +3421,9 @@ it.each(['single', 'multiple', 'two', 'approval'] as const)(
 );
 
 it('uses existing session diff data for attempt sizes and omits missing diff sizes', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Export data', depends_on: [] }]);
-  const first = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Export data', depends_on: [] }]);
+  const first = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const firstSession = current(f, first.id);
   f.store.update<Session>(
     'sessions',
@@ -3429,10 +3435,10 @@ it('uses existing session diff data for attempt sizes and omits missing diff siz
     additions: 12,
     deletions: 3,
   });
-  const second = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const second = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const secondWorkspace = f.store.must<Workspace>('workspaces', second.workspace_id!);
   writeFileSync(path.join(secondWorkspace.path, 'answer.txt'), 'replacement\nextra\n');
-  const missing = await firstTurnEnded(f, boundTaskSession(f, lead.id, 'export'));
+  const missing = await firstTurnEnded(f, await boundTaskSession(f, lead.id, 'export'));
   const missingSession = current(f, missing.id);
   f.store.update<Session>(
     'sessions',
@@ -3468,8 +3474,8 @@ function collaborationEvent(
 }
 
 it('counts today’s subagent calls, review rounds and gate runs without changing message counts', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Export', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Export', depends_on: [] }]);
   await firstTurnEnded(f, lead);
   const worker = await idleTaskSession(f, lead.id, 'export');
   const now = new Date(2027, 2, 16, 12).getTime();
@@ -3528,8 +3534,8 @@ it('counts today’s subagent calls, review rounds and gate runs without changin
 });
 
 it('shows moving lines even without today’s counts and clears them when work ends', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Export', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Export', depends_on: [] }]);
   await firstTurnEnded(f, lead);
   const worker = await idleTaskSession(f, lead.id, 'export');
   const now = new Date(2027, 2, 16, 12).getTime();
@@ -3600,8 +3606,8 @@ it('shows moving lines even without today’s counts and clears them when work e
 });
 
 it('orders today’s handbacks and model changes and leaves out yesterday and unchanged models', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Export', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Export', depends_on: [] }]);
   await firstTurnEnded(f, lead);
   const worker = await idleTaskSession(f, lead.id, 'export');
   const now = new Date(2027, 2, 16, 12).getTime();
@@ -3629,8 +3635,8 @@ it('orders today’s handbacks and model changes and leaves out yesterday and un
 });
 
 it('keeps only the newest two hundred collaboration events in time order', async () => {
-  const f = workbenchFixture();
-  const lead = leadWithPlan(f, [{ id: 'export', title: 'Export', depends_on: [] }]);
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Export', depends_on: [] }]);
   await firstTurnEnded(f, lead);
   const worker = await idleTaskSession(f, lead.id, 'export');
   const now = new Date(2027, 2, 16, 12).getTime();

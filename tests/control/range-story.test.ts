@@ -10,10 +10,10 @@ const HOUR = 60 * 60 * 1000;
 
 /** A workbench session whose commit has been merged into the source and whose worktree is removed. */
 async function mergedSession() {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   git(w.source, 'config', 'user.name', 'Source User');
   git(w.source, 'config', 'user.email', 'source@example.invalid');
-  const session = w.create();
+  const session = await w.create();
   const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
   await eventually(
     () =>
@@ -42,7 +42,10 @@ async function mergedSession() {
   return { w, session: w.store.must<Session>('sessions', session.id), startStory };
 }
 
-function storyPrincipal(w: ReturnType<typeof workbenchFixture>, story: RangeStory): Principal {
+function storyPrincipal(
+  w: Awaited<ReturnType<typeof workbenchFixture>>,
+  story: RangeStory,
+): Principal {
   return {
     id: `session:${story.session_id}`,
     role: 'planner',
@@ -99,7 +102,7 @@ it('leaves out the change story of another range of the merged session', async (
 });
 
 it('refuses a range without merges or commits', async () => {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   const now = w.store.now();
   await expect(async () =>
     w.call('range_story.start', {
@@ -121,7 +124,7 @@ it.each([
 ])(
   'explains the main-line commits of a range without merges ($extra extra commits)',
   async ({ extra, listed, omitted }) => {
-    const w = workbenchFixture();
+    const w = await workbenchFixture();
     writeFileSync(path.join(w.source, 'answer.txt'), 'described\n');
     git(w.source, 'commit', '--quiet', '-am', 'Describe the answer file');
     for (let index = 1; index <= extra; index++)

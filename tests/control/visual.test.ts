@@ -6,9 +6,9 @@ import { user } from '../helpers.js';
 import { agentEvent } from '../../packages/control/src/agent.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
 
-function drawings() {
-  const f = workbenchFixture();
-  const session = f.create('Draw a chart');
+async function drawings() {
+  const f = await workbenchFixture();
+  const session = await f.create('Draw a chart');
   const principal: Principal = {
     id: `session:${session.id}`,
     role: 'lead',
@@ -27,8 +27,8 @@ function drawings() {
   return { ...f, session, principal, call, draw };
 }
 
-it('records drawing progress in the session stream without creating a visual', () => {
-  const f = drawings();
+it('records drawing progress in the session stream without creating a visual', async () => {
+  const f = await drawings();
   const event = {
     key: 'drawing-progress',
     provider_sequence: 1,
@@ -87,8 +87,8 @@ it.each([
       sort: { key: 'value', direction: 'desc' },
     },
   ],
-])('stores and reads a %s visual and appends its session event', (kind, spec) => {
-  const f = drawings();
+])('stores and reads a %s visual and appends its session event', async (kind, spec) => {
+  const f = await drawings();
   const result = f.draw({ kind, spec });
   expect(result).toEqual({ visual_id: expect.any(String), revision: 1 });
   const visual = f.call<Visual>('visual.read', { visual_id: result.visual_id });
@@ -137,8 +137,8 @@ it.each([
   ['mermaid', null, /spec/],
 ])(
   'keeps an invalid %s spec and its field error while refusing the command',
-  (kind, spec, message) => {
-    const f = drawings();
+  async (kind, spec, message) => {
+    const f = await drawings();
     expect(() => f.draw({ kind, spec })).toThrow(message);
     const visuals = f.call<{ visuals: Visual[] }>('visual.list', {
       project_id: f.project.id,
@@ -152,25 +152,28 @@ it.each([
   },
 );
 
-it.each(['S', 'M', 'L'])('stores source and display height %s independently of the pin', (size) => {
-  const f = drawings();
-  const first = f.draw({ source: 'data/results.csv', size, pin: 'M' });
-  const read = () => f.call<Visual>('visual.read', { visual_id: first.visual_id });
-  expect(read()).toMatchObject({
-    source: 'data/results.csv',
-    size,
-    pin: { size: 'M', position: 0 },
-  });
-  f.draw({ replaces: first.visual_id, source: 'SELECT value FROM results', size: 'L' });
-  expect(read()).toMatchObject({ source: 'SELECT value FROM results', size: 'L', revision: 2 });
-  f.draw({ replaces: first.visual_id });
-  expect(read()).not.toHaveProperty('source');
-  expect(read()).not.toHaveProperty('size');
-  expect(read().pin).toEqual({ size: 'M', position: 0 });
-});
+it.each(['S', 'M', 'L'])(
+  'stores source and display height %s independently of the pin',
+  async (size) => {
+    const f = await drawings();
+    const first = f.draw({ source: 'data/results.csv', size, pin: 'M' });
+    const read = () => f.call<Visual>('visual.read', { visual_id: first.visual_id });
+    expect(read()).toMatchObject({
+      source: 'data/results.csv',
+      size,
+      pin: { size: 'M', position: 0 },
+    });
+    f.draw({ replaces: first.visual_id, source: 'SELECT value FROM results', size: 'L' });
+    expect(read()).toMatchObject({ source: 'SELECT value FROM results', size: 'L', revision: 2 });
+    f.draw({ replaces: first.visual_id });
+    expect(read()).not.toHaveProperty('source');
+    expect(read()).not.toHaveProperty('size');
+    expect(read().pin).toEqual({ size: 'M', position: 0 });
+  },
+);
 
-it('keeps raw failed specs, caps stored issues and clears them on a successful replacement', () => {
-  const f = drawings();
+it('keeps raw failed specs, caps stored issues and clears them on a successful replacement', async () => {
+  const f = await drawings();
   const spec = {
     nodes: [{ id: 'a', label: 'A' }],
     edges: Array.from({ length: 25 }, () => ({ from: 'a', to: 'missing' })),
@@ -211,8 +214,8 @@ it('keeps raw failed specs, caps stored issues and clears them on a successful r
   });
 });
 
-it('replays the same validation error without drawing again on a failed command retry', () => {
-  const f = drawings();
+it('replays the same validation error without drawing again on a failed command retry', async () => {
+  const f = await drawings();
   const input = {
     title: 'Chart',
     kind: 'graph',
@@ -251,15 +254,15 @@ it.each([
   { source: 'first\nsecond' },
   { source: 'first\rsecond' },
   { size: 'XL' },
-])('keeps nothing when the draw envelope is invalid: %j', (input) => {
-  const f = drawings();
+])('keeps nothing when the draw envelope is invalid: %j', async (input) => {
+  const f = await drawings();
   expect(() => f.draw({ spec: { source: '' }, ...input })).toThrow();
   expect(f.call('visual.list', { project_id: f.project.id })).toEqual({ visuals: [] });
   expect(f.store.events().filter((event) => event.kind === 'visual.drawn')).toEqual([]);
 });
 
-it('redraws in place while keeping the pin and refuses a different session', () => {
-  const f = drawings();
+it('redraws in place while keeping the pin and refuses a different session', async () => {
+  const f = await drawings();
   const first = f.draw({ pin: 'M' });
   const before = f.call<Visual>('visual.read', { visual_id: first.visual_id });
   const redraw = f.draw({
@@ -277,7 +280,7 @@ it('redraws in place while keeping the pin and refuses a different session', () 
     spec: { html: '<html>Updated</html>' },
     updated_at: expect.any(Number),
   });
-  const other = f.create('Other session');
+  const other = await f.create('Other session');
   expect(() =>
     f.draw(
       { replaces: first.visual_id, kind: 'mermaid', spec: { source: '' } },
@@ -288,8 +291,8 @@ it('redraws in place while keeping the pin and refuses a different session', () 
   expect(f.call<Visual>('visual.read', { visual_id: first.visual_id })).not.toHaveProperty('error');
 });
 
-it('pins, resizes, unpins and arranges exactly the pinned project set', () => {
-  const f = drawings();
+it('pins, resizes, unpins and arranges exactly the pinned project set', async () => {
+  const f = await drawings();
   const first = f.draw({});
   const second = f.draw({ pin: 'S' });
   const third = f.draw({});
@@ -328,8 +331,8 @@ it('pins, resizes, unpins and arranges exactly the pinned project set', () => {
   ).toEqual([third.visual_id, second.visual_id, first.visual_id]);
 });
 
-it('records which visuals a pin, an arrangement and an unpin changed', () => {
-  const f = drawings();
+it('records which visuals a pin, an arrangement and an unpin changed', async () => {
+  const f = await drawings();
   const first = f.draw({});
   const second = f.draw({});
   f.call('visual.pin', { visual_id: first.visual_id, size: 'M' });
@@ -352,8 +355,8 @@ it('records which visuals a pin, an arrangement and an unpin changed', () => {
   ]);
 });
 
-it('stores a pin width, keeps an omitted width and applies an explicit new width', () => {
-  const f = drawings();
+it('stores a pin width, keeps an omitted width and applies an explicit new width', async () => {
+  const f = await drawings();
   const first = f.draw({});
   const read = () => f.call<Visual>('visual.read', { visual_id: first.visual_id });
   expect(
@@ -367,8 +370,8 @@ it('stores a pin width, keeps an omitted width and applies an explicit new width
   expect(read().revision).toBe(1);
 });
 
-it('keeps pin size, width and position on replacement and width on arrangement', () => {
-  const f = drawings();
+it('keeps pin size, width and position on replacement and width on arrangement', async () => {
+  const f = await drawings();
   const first = f.draw({ pin: 'S' });
   const second = f.draw({});
   f.call('visual.pin', { visual_id: second.visual_id, size: 'L', width: 6 });
@@ -400,8 +403,8 @@ it('keeps pin size, width and position on replacement and width on arrangement',
   });
 });
 
-it('lists at most 200 newest visuals and filters by session and project', () => {
-  const f = drawings();
+it('lists at most 200 newest visuals and filters by session and project', async () => {
+  const f = await drawings();
   const ids = Array.from({ length: 202 }, () => f.draw({}).visual_id);
   expect(
     f
@@ -416,8 +419,8 @@ it('lists at most 200 newest visuals and filters by session and project', () => 
   ).toMatchObject({ visuals: expect.any(Array) });
 });
 
-it('removes unpinned visuals with their session and detaches pinned visuals', () => {
-  const f = drawings();
+it('removes unpinned visuals with their session and detaches pinned visuals', async () => {
+  const f = await drawings();
   const unpinned = f.draw({});
   const pinned = f.draw({ pin: 'L' });
   const current = f.store.must<Session>('sessions', f.session.id);
@@ -436,8 +439,8 @@ it('removes unpinned visuals with their session and detaches pinned visuals', ()
   });
 });
 
-it('requires a session credential to draw and user authority for board commands', () => {
-  const f = drawings();
+it('requires a session credential to draw and user authority for board commands', async () => {
+  const f = await drawings();
   expect(() => f.draw({}, user)).toThrow(/session/i);
   const visual = f.draw({});
   for (const [type, input] of [

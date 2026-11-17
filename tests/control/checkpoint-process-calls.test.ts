@@ -25,7 +25,7 @@ import { removeWorkspace } from '../../packages/control/dist/workspace-removal.j
 import { awaitWorkspaceReady, registerWorkspace, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const contextOf = (f: Fixture) => (f.control as unknown as { ctx: ControlContext }).ctx;
 const worktree = (f: Fixture, session: Session) =>
@@ -107,8 +107,8 @@ function freshTree(work: string): string {
 
 /** A session whose worktree holds staged, changed, deleted, untracked, ignored and force-added ignored files. */
 async function changedWorktree() {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const work = worktree(f, session);
   writeFileSync(path.join(work, '.gitignore'), '*.log\n');
@@ -163,8 +163,8 @@ it('freezes a fork as the tree a fresh index gives, starting add from the stat d
 });
 
 it('looks up turn checkpoints with one ref listing and stages the worktree from its index', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   f.call(
     'session.send',
@@ -191,8 +191,8 @@ it('looks up turn checkpoints with one ref listing and stages the worktree from 
 
 it('reads the global excludes setting again only after a global git config file changes', async () => {
   const first = await recordGit(async () => {
-    expect(globalExcludesFile()).toBeUndefined();
-    expect(globalExcludesFile()).toBeUndefined();
+    expect(await globalExcludesFile()).toBeUndefined();
+    expect(await globalExcludesFile()).toBeUndefined();
   });
   expect(count(first, 'config --global')).toBe(1);
 
@@ -200,22 +200,22 @@ it('reads the global excludes setting again only after a global git config file 
   writeFileSync(custom, '.env\n');
   writeFileSync(path.join(home, '.gitconfig'), `[core]\n\texcludesFile = ${custom}\n`);
   const changed = await recordGit(async () => {
-    expect(globalExcludesFile()).toBe(custom);
-    expect(globalExcludesFile()).toBe(custom);
+    expect(await globalExcludesFile()).toBe(custom);
+    expect(await globalExcludesFile()).toBe(custom);
   });
   expect(count(changed, 'config --global')).toBe(1);
 
   mkdirSync(path.join(home, '.config/git'), { recursive: true });
   writeFileSync(path.join(home, '.config/git/config'), '');
   const added = await recordGit(async () => {
-    expect(globalExcludesFile()).toBe(custom);
+    expect(await globalExcludesFile()).toBe(custom);
   });
   expect(count(added, 'config --global')).toBe(1);
 });
 
 it('deletes checkpoint refs with one listing and one batched update while timers keep firing', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   const head = git(f.source, 'rev-parse', 'HEAD');
@@ -250,7 +250,7 @@ it('deletes checkpoint refs with one listing and one batched update while timers
 
 /** A ready worktree with no session, which a queued removal job deletes. */
 async function unownedWorktree() {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const workspace = registerWorkspace(f.control, {
     project_id: f.project.id,
     kind: 'linked_worktree',
@@ -295,8 +295,8 @@ it('runs one git worktree remove while a second removal of the same worktree is 
 });
 
 it('captures a file rewritten within the second its index was written, at the same size', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const work = worktree(f, session);
   const file = path.join(work, 'racy.txt');

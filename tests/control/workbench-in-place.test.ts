@@ -11,7 +11,7 @@ import {
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-const contextOf = (f: ReturnType<typeof workbenchFixture>) =>
+const contextOf = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   (f.control as unknown as { ctx: ControlContext }).ctx;
 
 const refusal = (run: () => unknown) => {
@@ -23,11 +23,11 @@ const refusal = (run: () => unknown) => {
   throw new Error('Expected a refusal');
 };
 
-const removals = (f: ReturnType<typeof workbenchFixture>) =>
+const removals = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   f.store.pending().filter((job) => job.kind === 'workspace.remove');
 
 it('lists an adopted session as idle with its kind and the uncommitted changes of its folder, never as ready', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const session = await f.adopt();
   // The list reuses a folder read for two seconds; an edit outside a turn shows after that.
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -63,7 +63,7 @@ it('lists an adopted session as idle with its kind and the uncommitted changes o
 });
 
 it('reads the uncommitted changes of the folder as the diff of an adopted session', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const session = await f.adopt();
   writeFileSync(path.join(f.source, 'answer.txt'), 'base\nmore\n');
   writeFileSync(path.join(f.source, 'notes.txt'), 'one\ntwo\n');
@@ -84,7 +84,7 @@ it('reads the uncommitted changes of the folder as the diff of an adopted sessio
 });
 
 it('refuses merge, gate runs, merge admission, preflight and a backend change for an adopted session', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const session = await f.adopt();
   const current = () => f.store.must<Session>('sessions', session.id);
   const noGate = /no merge gate/;
@@ -116,7 +116,7 @@ it('refuses merge, gate runs, merge admission, preflight and a backend change fo
 });
 
 it('refuses to discard an adopted session and queues no removal of its folder', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const session = await f.adopt();
   expect(
     refusal(() => f.call('session.discard', { session_id: session.id }, session.revision)),
@@ -126,7 +126,7 @@ it('refuses to discard an adopted session and queues no removal of its folder', 
 });
 
 it('deletes an adopted session without touching its folder or native record and returns its trace to the external lane', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   const nativeId = randomUUID();
   const session = await f.adopt({ native_id: nativeId });
   const trace = contextOf(f).trace!;
@@ -153,16 +153,16 @@ it('deletes an adopted session without touching its folder or native record and 
 });
 
 it('builds the spec of a worktree session in a project that holds an adopted session', async () => {
-  const f = workbenchFixture({ adoptable: true });
+  const f = await workbenchFixture({ adoptable: true });
   await f.adopt();
-  const created = f.create();
+  const created = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, created.workspace_id!);
   const spec = workbenchSessionSpec(contextOf(f), f.store.must<Session>('sessions', created.id));
   expect(spec.cwd).toBe(workspace.path);
 });
 
-it('starts a session opened without a model on the project default model and effort of its runtime', () => {
-  const f = workbenchFixture();
+it('starts a session opened without a model on the project default model and effort of its runtime', async () => {
+  const f = await workbenchFixture();
   // A default model must belong to the default runtime, so the fixture models get a family.
   writeFileSync(
     path.join(f.root, 'config.json'),
@@ -182,14 +182,18 @@ it('starts a session opened without a model on the project default model and eff
     project.revision,
   );
   const open = (input: Record<string, unknown>) =>
-    f.call<Session>('session.create', { project_id: project.id, input: 'Go on', ...input });
-  for (const opened of [open({}), open({ runtime: f.adapter.name })])
+    f.call<Promise<Session>>('session.create', {
+      project_id: project.id,
+      input: 'Go on',
+      ...input,
+    });
+  for (const opened of [await open({}), await open({ runtime: f.adapter.name })])
     expect(opened).toMatchObject({
       runtime: f.adapter.name,
       requested_model: 'fixture-large',
       requested_effort: 'high',
     });
-  const chosen = open({ runtime: f.adapter.name, model: 'fixture-small' });
+  const chosen = await open({ runtime: f.adapter.name, model: 'fixture-small' });
   expect(chosen.requested_model).toBe('fixture-small');
   expect(chosen.requested_effort).toBeUndefined();
 });

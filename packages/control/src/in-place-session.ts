@@ -80,7 +80,10 @@ export function assertInPlaceSessionFree(ctx: ControlContext, session: Session):
 }
 
 /** The spec of a session that continues the user's native session in the user's own folder. */
-export function inPlaceSessionSpec(ctx: ControlContext, session: Session): SessionSpec {
+export async function inPlaceSessionSpec(
+  ctx: ControlContext,
+  session: Session,
+): Promise<SessionSpec> {
   assertSandbox(ctx);
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!),
     project = ctx.store.must<Project>('projects', session.project_id);
@@ -89,7 +92,7 @@ export function inPlaceSessionSpec(ctx: ControlContext, session: Session): Sessi
   assertInPlaceSessionFree(ctx, session);
   const temporary = writerTempDirectory(workspace.id);
   mkdirSync(temporary, { recursive: true, mode: 0o700 });
-  const sandbox = inPlaceSandbox({
+  const sandbox = await inPlaceSandbox({
     ...ctx.protectionPaths,
     projectRoot: workspace.source!,
     tempDir: temporary,

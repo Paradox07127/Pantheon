@@ -3,7 +3,7 @@ import type { BoardPlan, Principal, Session } from '@pantheon/domain';
 import { settle, user } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadOf = (f: Fixture, leadId: string): Principal => ({
@@ -41,9 +41,9 @@ const rowOf = (f: Fixture, leadId: string, taskId: string) =>
   f.control.boardView(user, f.project.id, 1).tasks.find((row) => row.id === `${leadId}:${taskId}`)!;
 
 it('keeps a task waiting while a part of a parallel task holds a path outside the parent scope', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   dispatchEveryTier(f);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',

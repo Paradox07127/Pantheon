@@ -4,7 +4,7 @@ import { queuedTurn } from '../../packages/control/dist/session.js';
 import { awaitWorkspaceReady, eventually, settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const CONTINUE_TEXT =
   '[Pantheon] A daemon restart interrupted your last turn. Before you redo anything, check whether your last actions took effect (files, git status, git log, commands that were running). Then continue your work.';
@@ -51,7 +51,7 @@ function writePlan(f: Fixture, leadId: string) {
 }
 
 const startTask = (f: Fixture, leadId: string, taskId: string) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -81,7 +81,7 @@ async function heldRunning(f: Fixture, session: Session) {
 }
 
 async function leadWithPlan(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   return lead;
@@ -91,13 +91,13 @@ async function leadWithPlan(f: Fixture) {
 async function interruptedTask(f: Fixture) {
   const lead = await leadWithPlan(f);
   holdNextTurn(f);
-  const worker = startTask(f, lead.id, 'a');
+  const worker = await startTask(f, lead.id, 'a');
   await heldRunning(f, worker);
   return { lead, worker };
 }
 
 it('gives an interrupted task session one turn that tells it to check and continue', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { worker } = await interruptedTask(f);
   await f.restart(() => undefined);
   const turns = f.turns(worker.id);
@@ -110,9 +110,9 @@ it('gives an interrupted task session one turn that tells it to check and contin
 });
 
 it('leaves an interrupted session a person drives failed and waiting for the next message', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   holdNextTurn(f);
-  const session = f.create();
+  const session = await f.create();
   await heldRunning(f, session);
   await f.restart(() => undefined);
   expect(current(f, session.id).state).toBe('open');
@@ -122,8 +122,8 @@ it('leaves an interrupted session a person drives failed and waiting for the nex
 });
 
 it('delivers a message queued behind an exited process after a restart instead of reconciling', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   // The adapter dropped the identity of its process once the process group was empty.
   const exited = current(f, session.id);
@@ -144,12 +144,12 @@ it('delivers a message queued behind an exited process after a restart instead o
 });
 
 it('hands an interrupted lead the board updates its never-started turn carried', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   holdNextTurn(f);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await heldRunning(f, lead);
   writePlan(f, lead.id);
-  const worker = startTask(f, lead.id, 'a');
+  const worker = await startTask(f, lead.id, 'a');
   await settle(f, worker);
   f.call(
     'task.report',
@@ -169,7 +169,7 @@ it('hands an interrupted lead the board updates its never-started turn carried',
 });
 
 it('carries the attachments and skills of a never-started turn into the continuation', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { worker } = await interruptedTask(f);
   const attachments = [
     { id: 'screen-shot', name: 'screen shot.png', mime: 'image/png', path: '/tmp/screen shot.png' },
@@ -188,7 +188,7 @@ it('carries the attachments and skills of a never-started turn into the continua
 });
 
 it('continues an interrupted session at most three times within five minutes', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { worker } = await interruptedTask(f);
   for (let restart = 0; restart < 4; restart++) {
     if (restart > 0) {
@@ -203,12 +203,12 @@ it('continues an interrupted session at most three times within five minutes', a
 });
 
 it('keeps the board updates of a never-started turn for the lead when the restart does not continue it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   holdNextTurn(f);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await heldRunning(f, lead);
   writePlan(f, lead.id);
-  const worker = startTask(f, lead.id, 'a');
+  const worker = await startTask(f, lead.id, 'a');
   await settle(f, worker);
   for (let restart = 0; restart < 3; restart++) {
     await f.restart(() => undefined);
@@ -239,7 +239,7 @@ it('keeps the board updates of a never-started turn for the lead when the restar
 });
 
 it('does not tell the lead a turn failed when the restart continues the task session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await interruptedTask(f);
   await f.restart(() => undefined);
   expect(continuations(f, worker.id)).toHaveLength(1);

@@ -6,7 +6,7 @@ import type { BoardPlan, Project, Session, Workspace } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 async function settle(f: Fixture, session: Session) {
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
@@ -16,9 +16,9 @@ async function settle(f: Fixture, session: Session) {
 }
 
 it('creates an in-place session in the project folder without provisioning a worktree', async () => {
-  const f = workbenchFixture({ managedWorkspaces: false });
+  const f = await workbenchFixture({ managedWorkspaces: false });
   const before = git(f.source, 'worktree', 'list', '--porcelain');
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     workspace: 'in_place',
@@ -42,25 +42,25 @@ it('creates an in-place session in the project folder without provisioning a wor
 });
 
 it('starts worktrees at the selected branch or the current head of the selected session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'branch', 'feature');
   const base = git(f.source, 'rev-parse', 'feature');
   writeFileSync(path.join(f.source, 'answer.txt'), 'main moved\n');
   git(f.source, 'commit', '--quiet', '-am', 'Move main');
   const create = (from: object) =>
-    f.call<Session>('session.create', {
+    f.call<Promise<Session>>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       input: 'Work from this',
       from,
     });
-  const first = create({ branch: 'feature' });
+  const first = await create({ branch: 'feature' });
   await settle(f, first);
   const work = f.store.must<Workspace>('workspaces', first.workspace_id!).path;
   expect(git(work, 'rev-parse', 'HEAD')).toBe(base);
   writeFileSync(path.join(work, 'answer.txt'), 'session moved\n');
   git(work, 'commit', '--quiet', '-am', 'Move session');
-  const second = create({ session_id: first.id });
+  const second = await create({ session_id: first.id });
   await settle(f, second);
   expect(
     git(f.store.must<Workspace>('workspaces', second.workspace_id!).path, 'rev-parse', 'HEAD'),
@@ -68,8 +68,8 @@ it('starts worktrees at the selected branch or the current head of the selected 
 });
 
 it('previews the project and selected start points without changing files or records', async () => {
-  const f = workbenchFixture();
-  const source = f.create();
+  const f = await workbenchFixture();
+  const source = await f.create();
   await settle(f, source);
   const work = f.store.must<Workspace>('workspaces', source.workspace_id!).path;
   writeFileSync(path.join(work, 'answer.txt'), 'selected head\n');
@@ -105,7 +105,7 @@ it('previews the project and selected start points without changing files or rec
 });
 
 it('reports project commit time, changed paths and upstream distance only when an upstream exists', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const committedAt = Number(git(f.source, 'log', '-1', '--format=%ct')) * 1000;
   const head = await f.control.projectHead(user, f.project.id);
   expect(head).toMatchObject({ committed_at: committedAt, uncommitted: 0 });
@@ -124,8 +124,8 @@ it('reports project commit time, changed paths and upstream distance only when a
 });
 
 it('lists branch and divergence against the source branch and omits git facts without a worktree', async () => {
-  const f = workbenchFixture({ adoptable: true });
-  const session = f.create();
+  const f = await workbenchFixture({ adoptable: true });
+  const session = await f.create();
   await settle(f, session);
   const work = f.store.must<Workspace>('workspaces', session.workspace_id!).path;
   git(work, 'checkout', '--quiet', '-b', 'session-work');
@@ -158,9 +158,9 @@ it('lists branch and divergence against the source branch and omits git facts wi
 });
 
 it('lists a bounded first-input goal and device and uses the task goal for task sessions', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const text = 'Build the report. '.repeat(20);
-  const lead = f.create(text);
+  const lead = await f.create(text);
   await settle(f, lead);
   const queued = f.store
     .kindEvents(f.project.id, ['turn.queued'])
@@ -202,7 +202,7 @@ it('lists a bounded first-input goal and device and uses the task goal for task 
     updated_at: f.store.now(),
   };
   f.store.insert('board_plans', plan);
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     task_id: `${lead.id}:export`,
@@ -217,14 +217,14 @@ it('lists a bounded first-input goal and device and uses the task goal for task 
 });
 
 it('counts results of the latest gate run and resets the counts for a running run', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   const commands = [
     { name: 'Build', argv: ['node', '-e', '0'] },
     { name: 'Test', argv: ['node', '-e', '1'] },
   ];
-  f.call(
+  await f.call(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     f.store.must<Project>('projects', f.project.id).revision,
@@ -255,11 +255,11 @@ it('counts results of the latest gate run and resets the counts for a running ru
 });
 
 it('counts the commands a failed run never reached as not run once the run ends', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   const commands = ['Test', 'Build', 'Lint'].map((name) => ({ name, argv: ['node', '-e', '0'] }));
-  f.call(
+  await f.call(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     f.store.must<Project>('projects', f.project.id).revision,
@@ -274,8 +274,8 @@ it('counts the commands a failed run never reached as not run once the run ends'
 });
 
 it('forks onto a requested runtime, model and effort and starts that runtime', async () => {
-  const f = workbenchFixture();
-  const source = f.call<Session>('session.create', {
+  const f = await workbenchFixture();
+  const source = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     model: 'source-model',
@@ -316,12 +316,12 @@ it('forks onto a requested runtime, model and effort and starts that runtime', a
 });
 
 it('delivers summaries of referenced sessions with the message while keeping the user input intact', async () => {
-  const f = workbenchFixture();
-  const source = f.create('Explain the report format');
+  const f = await workbenchFixture();
+  const source = await f.create('Explain the report format');
   await settle(f, source);
   const send = vi.spyOn(f.adapter, 'send');
   const refs = [{ kind: 'session', id: source.id }];
-  const target = f.call<Session>('session.create', {
+  const target = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Use that explanation',
@@ -341,12 +341,12 @@ it('delivers summaries of referenced sessions with the message while keeping the
 });
 
 it('refuses a reference or start point from another project', async () => {
-  const f = workbenchFixture();
-  const target = f.create();
+  const f = await workbenchFixture();
+  const target = await f.create();
   await settle(f, target);
   const root = path.join(f.root, 'other');
   mkdirSync(root);
-  const other = f.call<Project>('project.open', { name: 'Other', roots: [root] });
+  const other = await f.call<Project>('project.open', { name: 'Other', roots: [root] });
   const foreign = f.store.insert<Session>('sessions', {
     ...target,
     id: 'foreign-session',
@@ -378,8 +378,8 @@ it('refuses a reference or start point from another project', async () => {
   ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
 });
 
-it('archives and deletes a finished runtime analysis', () => {
-  const f = workbenchFixture();
+it('archives and deletes a finished runtime analysis', async () => {
+  const f = await workbenchFixture();
   const finished = (id: string, report?: object, state: Session['state'] = 'closed') =>
     f.store.insert<Session>('sessions', {
       id,
@@ -413,7 +413,7 @@ it('archives and deletes a finished runtime analysis', () => {
 });
 
 it('uses the first user follow-up as the goal of an analysis session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const now = f.store.now();
   const { session_id } = f.call<{ session_id: string }>('trace.reflect', {
     project_id: f.project.id,

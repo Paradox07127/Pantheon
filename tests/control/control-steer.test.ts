@@ -27,7 +27,7 @@ function commitProjectRoot(root: string) {
   git(root, 'commit', '--quiet', '-m', 'Initial files');
 }
 
-function steeringFixture(support = false) {
+async function steeringFixture(support = false) {
   let sink: AgentEventSink,
     active: UserTurn | undefined,
     sequence = 0;
@@ -101,11 +101,11 @@ function steeringFixture(support = false) {
     close,
     cancel,
   };
-  const f = fixture({ adapter, managedWorkspaces: true });
+  const f = await fixture({ adapter, managedWorkspaces: true });
   commitProjectRoot(f.projectRoot);
   /** Creates a session with its first send and prepares the worktree without starting that turn. */
   const open = async (text = 'send') => {
-    const session = f.call<Session>('session.create', {
+    const session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: adapter.name,
       input: text,
@@ -148,7 +148,7 @@ function steeringFixture(support = false) {
 
 describe('session input delivery', () => {
   it('injects steering with the receipt row id and completes its execution with delivery', async () => {
-    const s = steeringFixture(true);
+    const s = await steeringFixture(true);
     try {
       const { session, first } = await s.open();
       expect(first).toMatchObject({ kind: 'send', delivery: 'pending', state: 'queued' });
@@ -175,7 +175,7 @@ describe('session input delivery', () => {
   });
 
   it('queues steering without support and sends it on the same live session after completion', async () => {
-    const s = steeringFixture();
+    const s = await steeringFixture();
     try {
       const { session, first } = await s.open();
       await s.f.control.tick();
@@ -211,7 +211,7 @@ describe('session input delivery', () => {
   it.each([false, true])(
     'sends idle steering as a new turn with steer support=%s',
     async (support) => {
-      const s = steeringFixture(support);
+      const s = await steeringFixture(support);
       try {
         const { session, first } = await s.open();
         await s.f.control.tick();
@@ -242,7 +242,7 @@ describe('session input delivery', () => {
   it.each(['send', 'steer'] as const)(
     'records an unsupported %s as failed with the adapter reason',
     async (kind) => {
-      const s = steeringFixture(true);
+      const s = await steeringFixture(true);
       try {
         const refuse = async (
           _handle: SessionHandle,
@@ -278,7 +278,7 @@ describe('session input delivery', () => {
   );
 
   it('waits for the adapter receipt even when completion arrives before send returns', async () => {
-    const s = steeringFixture();
+    const s = await steeringFixture();
     let release!: () => void;
     try {
       const { first: turn } = await s.open(),
@@ -308,7 +308,7 @@ describe('session input delivery', () => {
   });
 
   it('keeps an adapter-queued steer visible until a later send delivers it', async () => {
-    const s = steeringFixture(true);
+    const s = await steeringFixture(true);
     try {
       const { session } = await s.open();
       await s.f.control.tick();
@@ -334,7 +334,7 @@ describe('session input delivery', () => {
   });
 
   it('waits for an injected steer receipt before closing the current session', async () => {
-    const s = steeringFixture(true);
+    const s = await steeringFixture(true);
     let release!: () => void;
     try {
       const { session } = await s.open();
@@ -364,7 +364,7 @@ describe('session input delivery', () => {
   });
 
   it('keeps a steer cancelled by an interrupt cancelled when its queued receipt arrives later', async () => {
-    const s = steeringFixture(true);
+    const s = await steeringFixture(true);
     let release!: () => void;
     try {
       s.adapter.interrupt = async () => {
@@ -404,7 +404,7 @@ describe('session input delivery', () => {
   });
 
   it('holds a steer during a compaction and sends it afterwards as a read-only turn of a lead with an unfinished plan', async () => {
-    const s = steeringFixture(true);
+    const s = await steeringFixture(true);
     try {
       const { session, first } = await s.open();
       await s.f.control.tick();
@@ -457,7 +457,7 @@ describe('session input delivery', () => {
   });
 
   it('acknowledges the memory of a delivered turn when a steer prepared later stays queued', async () => {
-    const s = steeringFixture(true);
+    const s = await steeringFixture(true);
     let release!: () => void;
     try {
       const draft = s.f.call<{ id: string; revision: number }>('memory.propose', {
@@ -506,7 +506,7 @@ describe('session input delivery', () => {
   });
 
   it('deduplicates a steering command and atomically rolls back its row, event and outbox', async () => {
-    const s = steeringFixture();
+    const s = await steeringFixture();
     try {
       const { session } = await s.open(),
         c = command(

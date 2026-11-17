@@ -53,9 +53,9 @@ function writeFiles(repository: string, files: Record<string, string | null>) {
 
 /** A workbench session whose first turn has ended, with its ready worktree. */
 async function idleSession(base: Record<string, string> = {}) {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   if (Object.keys(base).length) writeFiles(w.source, base);
-  const session = w.create();
+  const session = await w.create();
   const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
   await eventually(
     () =>
@@ -81,7 +81,10 @@ const card = (title: string, hunks: string[], extra: Record<string, unknown> = {
   ...extra,
 });
 
-function storyPrincipal(w: ReturnType<typeof workbenchFixture>, story: ChangeStory): Principal {
+function storyPrincipal(
+  w: Awaited<ReturnType<typeof workbenchFixture>>,
+  story: ChangeStory,
+): Principal {
   return {
     id: `session:${story.session_id}`,
     role: 'planner',
@@ -387,13 +390,13 @@ it('reads the diff of a card it reverts while other work goes on', async () => {
 });
 
 it('reads the source HEAD once before it gates a landing and once before it merges', async () => {
-  const w = workbenchFixture();
-  w.call(
+  const w = await workbenchFixture();
+  await w.call(
     'project.gate.set',
     { project_id: w.project.id, root: w.source, commands: [{ name: 'Check', argv: ['true'] }] },
     w.store.must<Project>('projects', w.project.id).revision,
   );
-  const session = w.create();
+  const session = await w.create();
   const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
   await eventually(
     () => w.turns(session.id).every((turn) => turn.state === 'completed'),
@@ -420,7 +423,7 @@ it('reads the source HEAD once before it gates a landing and once before it merg
 });
 
 it('checks the verification files of a task landing with one diff and one object lookup', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   writeFiles(f.source, {
     'tests/a.test.ts': "it('a', () => {\n  expect(a).toBe(1);\n});\n",
     'tests/b.test.ts': "it('b', () => {});\n",
@@ -429,7 +432,7 @@ it('checks the verification files of a task landing with one diff and one object
     'tests/ü.test.ts': "it('u', () => {});\n",
     'checks/one.mjs': 'process.exit(1);\n',
   });
-  const lead = f.create('Maintain the checks');
+  const lead = await f.create('Maintain the checks');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
@@ -461,7 +464,7 @@ it('checks the verification files of a task landing with one diff and one object
     notified: {},
     updated_at: f.store.now(),
   });
-  const worker = f.create();
+  const worker = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => f.turns(worker.id).every((turn) => turn.state === 'completed'),
@@ -619,7 +622,7 @@ it('shares one status run per repository between the list, needs-you, preflight 
 });
 
 it('reads the project status again after a commit through repo.commit', async () => {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   git(w.source, 'config', 'user.name', 'Source User');
   git(w.source, 'config', 'user.email', 'source@example.invalid');
   writeFileSync(path.join(w.source, 'answer.txt'), 'committed\n');

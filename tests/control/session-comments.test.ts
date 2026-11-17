@@ -5,10 +5,10 @@ import type { Principal, Session, SessionComment, Workspace } from '@pantheon/do
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -31,7 +31,7 @@ function add(f: Fixture, sessionId: string, extra = {}) {
 }
 
 it('stores all comment fields and lists by path, line and creation time within one session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const other = await idleSession(f);
   vi.spyOn(f.store, 'now').mockReturnValue(100);
@@ -64,7 +64,7 @@ it('stores all comment fields and lists by path, line and creation time within o
 });
 
 it("keeps the commented line's text and the turn whose diff it was made on", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const turnId = f.turns(session.id)[0]!.id;
   const onTurn = add(f, session.id, { line_text: '  return readToken();', turn_id: turnId });
@@ -76,7 +76,7 @@ it("keeps the commented line's text and the turn whose diff it was made on", asy
 });
 
 it('resolves open comments to sent and kept and omits the count once none remain open', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'changed\n');
@@ -103,7 +103,7 @@ it('resolves open comments to sent and kept and omits the count once none remain
 });
 
 it('deletes a comment from storage and the open count, and refuses a stale revision', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const comment = add(f, session.id);
   expect((await f.control.sessionPreflight(user, session.id)).open_comments).toBe(1);
@@ -122,7 +122,7 @@ it('deletes a comment from storage and the open count, and refuses a stale revis
 });
 
 it.each(['lead', 'worker'] as const)('refuses comment mutations by a %s session', async (role) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   if (role === 'worker')
     f.store.update<Session>(
@@ -160,7 +160,7 @@ it.each(['lead', 'worker'] as const)('refuses comment mutations by a %s session'
 it.each(['merged', 'discarded', 'closed'] as const)(
   'refuses all comment mutations after the session is %s',
   async (outcome) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const session = await idleSession(f);
     const comment = add(f, session.id);
     f.store.update<Session>(
@@ -184,7 +184,7 @@ it.each(['merged', 'discarded', 'closed'] as const)(
 );
 
 it('records exactly one session event for each comment addition, resolution and deletion', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const before = f.store.cursor();
   const comment = add(f, session.id);

@@ -16,7 +16,7 @@ it('starts the Pantheon MCP server from the CLI entry the control was given', as
   const entry = '/Applications/Pantheon.app/Contents/Resources/cli/index.js';
   const adapter = new FixtureAdapter();
   const starts = vi.spyOn(adapter, 'start');
-  const f = fixture({
+  const f = await fixture({
     adapter,
     managedWorkspaces: true,
     controlOptions: {
@@ -33,7 +33,7 @@ it('starts the Pantheon MCP server from the CLI entry the control was given', as
   git(f.projectRoot, 'init', '--quiet', '--initial-branch=main');
   git(f.projectRoot, 'add', '.');
   git(f.projectRoot, 'commit', '--quiet', '-m', 'Initial files');
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: adapter.name,
     input: 'Write a sentence',

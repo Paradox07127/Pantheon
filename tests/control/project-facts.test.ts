@@ -5,11 +5,14 @@ import { id } from '@pantheon/domain';
 import type { Milestone, Project, ProjectRead, Session, SessionTurn } from '@pantheon/domain';
 import { fixture, registerWorkspace, user } from '../helpers.js';
 
-function read(f: ReturnType<typeof fixture>): ProjectRead {
+function read(f: Awaited<ReturnType<typeof fixture>>): ProjectRead {
   return f.call<ProjectRead>('project.read', { project_id: f.project.id });
 }
 /** A workbench session row of the project with its own worktree, without a running process. */
-function workbenchSession(f: ReturnType<typeof fixture>, projectId = f.project.id): Session {
+function workbenchSession(
+  f: Awaited<ReturnType<typeof fixture>>,
+  projectId = f.project.id,
+): Session {
   const workspace = registerWorkspace(f.control, {
     project_id: projectId,
     kind: 'linked_worktree',
@@ -26,11 +29,15 @@ function workbenchSession(f: ReturnType<typeof fixture>, projectId = f.project.i
     turn_count: 0,
   });
 }
-function end(f: ReturnType<typeof fixture>, session: Session, outcome: 'merged' | 'discarded') {
+function end(
+  f: Awaited<ReturnType<typeof fixture>>,
+  session: Session,
+  outcome: 'merged' | 'discarded',
+) {
   const current = f.store.must<Session>('sessions', session.id);
   f.store.update<Session>('sessions', { ...current, state: 'closed', outcome }, current.revision);
 }
-function milestoneInput(f: ReturnType<typeof fixture>, sessions: Session[]) {
+function milestoneInput(f: Awaited<ReturnType<typeof fixture>>, sessions: Session[]) {
   return {
     project_id: f.project.id,
     title: 'Ship export',
@@ -38,13 +45,13 @@ function milestoneInput(f: ReturnType<typeof fixture>, sessions: Session[]) {
     criteria: ['Export works'],
   };
 }
-function otherProject(f: ReturnType<typeof fixture>): Project {
+async function otherProject(f: Awaited<ReturnType<typeof fixture>>): Promise<Project> {
   const root = path.join(f.root, 'other');
   mkdirSync(root);
-  return f.call<Project>('project.open', { name: 'Other', roots: [root] });
+  return await f.call<Project>('project.open', { name: 'Other', roots: [root] });
 }
 /** A planner session's credential, as the daemon issues it. */
-function planner(f: ReturnType<typeof fixture>) {
+function planner(f: Awaited<ReturnType<typeof fixture>>) {
   const session = f.store.insert<Session>('sessions', {
     id: 'planner-session',
     revision: 1,
@@ -65,11 +72,11 @@ function planner(f: ReturnType<typeof fixture>) {
 
 describe('project facts and commitments', () => {
   it('filters project facts by project and rejects a planner of another project', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
       const root = path.join(f.root, 'other');
       mkdirSync(root);
-      const other = f.call<Project>('project.open', { name: 'Other', roots: [root] });
+      const other = await f.call<Project>('project.open', { name: 'Other', roots: [root] });
       f.call('project.brief.set', {
         project_id: other.id,
         goal: 'Other only',
@@ -85,7 +92,7 @@ describe('project facts and commitments', () => {
     }
   });
   it('moves a milestone with its required sessions being merged, accepted or discarded', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
       const first = workbenchSession(f),
         second = workbenchSession(f),
@@ -125,7 +132,7 @@ describe('project facts and commitments', () => {
     }
   });
   it('lists a ready milestone the user created in needs-you without a session, only for its live project', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
       const session = workbenchSession(f);
       const milestone = f.call<Milestone>('milestone.create', milestoneInput(f, [session]));
@@ -141,7 +148,7 @@ describe('project facts and commitments', () => {
         }),
       ]);
       expect(ready()[0]).not.toHaveProperty('session_id');
-      expect(ready(otherProject(f).id)).toEqual([]);
+      expect(ready((await otherProject(f)).id)).toEqual([]);
       const project = f.store.must<Project>('projects', f.project.id);
       f.store.update<Project>('projects', { ...project, removed_at: 1 }, project.revision);
       expect(ready()).toEqual([]);
@@ -150,12 +157,12 @@ describe('project facts and commitments', () => {
     }
   });
   it('accepts only unique evidence references to merged required sessions', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
       const first = workbenchSession(f),
         second = workbenchSession(f),
         unrelated = workbenchSession(f),
-        foreign = workbenchSession(f, otherProject(f).id);
+        foreign = workbenchSession(f, (await otherProject(f)).id);
       const milestone = f.call<Milestone>('milestone.create', milestoneInput(f, [first, second]));
       for (const session of [first, second, unrelated, foreign]) end(f, session, 'merged');
       const versions = f.store.list('project_fact_versions');
@@ -199,7 +206,7 @@ describe('project facts and commitments', () => {
   it.each(['open', 'discarded'] as const)(
     'rejects evidence for a required session whose outcome is %s',
     async (outcome) => {
-      const f = fixture({ managedWorkspaces: true });
+      const f = await fixture({ managedWorkspaces: true });
       try {
         const session = workbenchSession(f);
         const milestone = f.call<Milestone>('milestone.create', milestoneInput(f, [session]));
@@ -218,7 +225,7 @@ describe('project facts and commitments', () => {
     },
   );
   it('derives a lead milestone from the sessions of its tasks', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
       const lead = workbenchSession(f);
       f.store.insert<SessionTurn>('session_turns', {
@@ -321,9 +328,9 @@ describe('project facts and commitments', () => {
     }
   });
   it('rejects milestones bound to sessions outside the project', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
-      const foreign = workbenchSession(f, otherProject(f).id);
+      const foreign = workbenchSession(f, (await otherProject(f)).id);
       const missing = { ...foreign, id: 'missing-session' };
       for (const session of [foreign, missing]) {
         expect(() => f.call('milestone.create', milestoneInput(f, [session])), session.id).toThrow(
@@ -347,7 +354,7 @@ describe('accepting a milestone criterion by criterion', () => {
     throw new Error('expected a refusal');
   };
   it('refuses until every criterion is checked, then stores the checked indices', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
       const session = workbenchSession(f);
       const milestone = f.call<Milestone>('milestone.create', {
@@ -392,7 +399,7 @@ describe('accepting a milestone criterion by criterion', () => {
     }
   });
   it('accepts a milestone without criteria as before', async () => {
-    const f = fixture({ managedWorkspaces: true });
+    const f = await fixture({ managedWorkspaces: true });
     try {
       const session = workbenchSession(f);
       end(f, session, 'merged');

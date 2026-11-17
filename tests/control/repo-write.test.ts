@@ -24,8 +24,8 @@ import { user } from '../helpers.js';
 const LINES = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`);
 
 /** The fixture checkout with a twenty-line file committed beside answer.txt. */
-function checkout() {
-  const f = workbenchFixture();
+async function checkout() {
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   writeFileSync(path.join(root, 'lines.txt'), `${LINES.join('\n')}\n`);
   writeFileSync(path.join(root, 'gone.txt'), 'soon gone\n');
@@ -39,7 +39,7 @@ function checkout() {
 }
 
 it('lists modified, deleted and untracked files against HEAD with untracked files as new-file diffs', async () => {
-  const { f, root, write } = checkout();
+  const { f, root, write } = await checkout();
   write('answer.txt', 'base\nmore\n');
   git(root, 'rm', '--quiet', 'gone.txt');
   write('fresh.txt', 'one\ntwo\n');
@@ -59,7 +59,7 @@ it('lists modified, deleted and untracked files against HEAD with untracked file
 });
 
 it('discards tracked and untracked files back to HEAD and undoes the discard', async () => {
-  const { f, root, read, write, send } = checkout();
+  const { f, root, read, write, send } = await checkout();
   write('answer.txt', 'base\nstaged\n');
   git(root, 'add', 'answer.txt');
   write('answer.txt', 'base\nstaged\nunstaged\n');
@@ -80,7 +80,7 @@ it('discards tracked and untracked files back to HEAD and undoes the discard', a
 });
 
 it('discards through the checkout’s own filters, as git does for the user', async () => {
-  const { root, read, write, send } = checkout();
+  const { root, read, write, send } = await checkout();
   git(root, 'config', 'filter.upper.smudge', 'tr a-z A-Z');
   git(root, 'config', 'filter.upper.clean', 'cat');
   write('.gitattributes', 'shout.txt filter=upper\n');
@@ -93,7 +93,7 @@ it('discards through the checkout’s own filters, as git does for the user', as
 });
 
 it('undoes a discard back to the staged version in the index and the edit in the worktree', async () => {
-  const { root, read, write, send } = checkout();
+  const { root, read, write, send } = await checkout();
   write('answer.txt', 'base\nstaged\n');
   git(root, 'add', 'answer.txt');
   write('answer.txt', 'base\nedited\n');
@@ -105,7 +105,7 @@ it('undoes a discard back to the staged version in the index and the edit in the
 });
 
 it('commits and discards a rename by its old and its new path', async () => {
-  const { root, read, send } = checkout();
+  const { root, read, send } = await checkout();
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
   git(root, 'mv', 'gone.txt', 'moved.txt');
@@ -124,7 +124,7 @@ it('commits and discards a rename by its old and its new path', async () => {
 });
 
 it('does not list a file that the checkout’s clean filter makes equal to HEAD', async () => {
-  const { f, root, write } = checkout();
+  const { f, root, write } = await checkout();
   git(root, 'config', 'filter.lower.smudge', 'tr a-z A-Z');
   git(root, 'config', 'filter.lower.clean', 'tr A-Z a-z');
   write('.gitattributes', 'shout.txt filter=lower\n');
@@ -139,7 +139,7 @@ it('does not list a file that the checkout’s clean filter makes equal to HEAD'
 });
 
 it('builds a plain patch whatever diff output the checkout configures', async () => {
-  const { f, root, write } = checkout();
+  const { f, root, write } = await checkout();
   git(root, 'config', 'color.ui', 'always');
   git(root, 'config', 'diff.noprefix', 'true');
   git(root, 'config', 'diff.mnemonicPrefix', 'true');
@@ -150,7 +150,7 @@ it('builds a plain patch whatever diff output the checkout configures', async ()
 });
 
 it('refuses an undo after ten minutes', async () => {
-  const { f, write, send } = checkout();
+  const { f, write, send } = await checkout();
   write('answer.txt', 'changed\n');
   const { undo_id } = await send<{ undo_id: string }>('repo.discard', { paths: ['answer.txt'] });
   const now = Date.now();
@@ -161,7 +161,7 @@ it('refuses an undo after ten minutes', async () => {
 });
 
 it('discards only the lines a patch selects and leaves a patch that does not apply unapplied', async () => {
-  const { f, read, write, send } = checkout();
+  const { f, read, write, send } = await checkout();
   const changed = LINES.map((line, index) =>
     index === 1 ? 'second changed' : index === 16 ? 'seventeenth changed' : line,
   );
@@ -187,7 +187,7 @@ it('discards only the lines a patch selects and leaves a patch that does not app
 });
 
 it('refuses to discard lines of a file with staged changes', async () => {
-  const { f, root, read, write, send } = checkout();
+  const { f, root, read, write, send } = await checkout();
   const staged = LINES.map((line, index) => (index === 1 ? 'second staged' : line));
   write('lines.txt', `${staged.join('\n')}\n`);
   git(root, 'add', 'lines.txt');
@@ -203,7 +203,7 @@ it('refuses to discard lines of a file with staged changes', async () => {
 });
 
 it('commits only the given paths as the repository user and leaves other staged files staged', async () => {
-  const { root, write, send } = checkout();
+  const { root, write, send } = await checkout();
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
   write('answer.txt', 'base\ncommitted\n');
@@ -222,7 +222,7 @@ it('commits only the given paths as the repository user and leaves other staged 
 });
 
 it('runs the repository pre-commit hook and reports its output when it fails', async () => {
-  const { root, write, send } = checkout();
+  const { root, write, send } = await checkout();
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
   const hook = path.join(root, '.git/hooks/pre-commit');
@@ -240,7 +240,7 @@ it('runs the repository pre-commit hook and reports its output when it fails', a
 });
 
 it('leaves the index as it was when the pre-commit hook refuses the commit', async () => {
-  const { root, write, send } = checkout();
+  const { root, write, send } = await checkout();
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
   const hook = path.join(root, '.git/hooks/pre-commit');
@@ -257,7 +257,7 @@ it('leaves the index as it was when the pre-commit hook refuses the commit', asy
 });
 
 it('refuses every repository write from a principal other than the user and paths that leave the folder', async () => {
-  const { f, write, send } = checkout();
+  const { f, write, send } = await checkout();
   write('answer.txt', 'changed\n');
   const writer: Principal = { id: 'writer', role: 'writer', project_id: f.project.id };
   const inputs: [CommandType, Record<string, unknown>][] = [
@@ -281,8 +281,8 @@ it('refuses every repository write from a principal other than the user and path
 });
 
 /** The fixture checkout as the repository owner, with a bare remote named origin. */
-function published() {
-  const c = checkout();
+async function published() {
+  const c = await checkout();
   git(c.root, 'config', 'user.name', 'Repository Owner');
   git(c.root, 'config', 'user.email', 'owner@example.invalid');
   const remote = path.join(c.f.root, 'remote.git');
@@ -317,7 +317,7 @@ function published() {
 }
 
 it('pushes the branch to its upstream and records the change', async () => {
-  const { f, root, remote, send, commit } = published();
+  const { f, root, remote, send, commit } = await published();
   git(root, 'push', '--quiet', '--set-upstream', 'origin', 'main');
   const sha = commit('answer.txt', 'base\npushed\n', 'Push me');
   const before = f.store.kindEvents(f.project.id, ['workspace.repository_changed']).length;
@@ -329,20 +329,20 @@ it('pushes the branch to its upstream and records the change', async () => {
 });
 
 it('pushes a branch without an upstream to origin and makes it the upstream', async () => {
-  const { root, remote, send } = published();
+  const { root, remote, send } = await published();
   await send('repo.push', {});
   expect(git(remote, 'rev-parse', 'refs/heads/main')).toBe(git(root, 'rev-parse', 'HEAD'));
   expect(git(root, 'rev-parse', '--abbrev-ref', '@{u}')).toBe('origin/main');
 });
 
 it('refuses to push a branch without an upstream when there is no origin remote', async () => {
-  const { root, send } = published();
+  const { root, send } = await published();
   git(root, 'remote', 'rename', 'origin', 'backup');
   await expect(send('repo.push', {})).rejects.toMatchObject({ code: 'no_remote' });
 });
 
 it('reports a push the remote rejects as not a fast-forward and never forces it', async () => {
-  const { root, remote, send, commit, theirs } = published();
+  const { root, remote, send, commit, theirs } = await published();
   git(root, 'push', '--quiet', '--set-upstream', 'origin', 'main');
   const their = theirs();
   commit('answer.txt', 'base\nmine\n', 'Mine');
@@ -354,7 +354,7 @@ it('reports a push the remote rejects as not a fast-forward and never forces it'
 });
 
 it('pushes over ssh in batch mode without a terminal prompt', async () => {
-  const { f, root, send } = published();
+  const { f, root, send } = await published();
   const bin = path.join(f.root, 'bin'),
     seen = path.join(f.root, 'ssh-seen.txt');
   mkdirSync(bin);
@@ -378,7 +378,7 @@ it('pushes over ssh in batch mode without a terminal prompt', async () => {
 });
 
 it('gives the branch and how far HEAD is ahead of and behind its upstream', async () => {
-  const { f, root, commit, theirs } = published();
+  const { f, root, commit, theirs } = await published();
   const diff = () => f.control.repoWorkingDiff(user, f.project.id);
   expect(await diff()).toMatchObject({ branch: 'main', upstream: null });
   git(root, 'push', '--quiet', '--set-upstream', 'origin', 'main');
@@ -395,7 +395,7 @@ it('gives the branch and how far HEAD is ahead of and behind its upstream', asyn
 });
 
 it('reverts one commit in a new commit on the branch', async () => {
-  const { root, read, send, commit } = published();
+  const { root, read, send, commit } = await published();
   const sha = commit('answer.txt', 'base\nreverted\n', 'Change the answer');
   const reverted = await send<{ sha: string }>('repo.revert', { sha });
   expect(git(root, 'rev-parse', 'HEAD')).toBe(reverted.sha);
@@ -405,7 +405,7 @@ it('reverts one commit in a new commit on the branch', async () => {
 });
 
 /** Two commits landed by a recorded merge of a titled session. */
-function sessionMerge(r: ReturnType<typeof published>) {
+function sessionMerge(r: Awaited<ReturnType<typeof published>>) {
   const from = git(r.root, 'rev-parse', 'HEAD');
   r.commit('answer.txt', 'base\nfirst\n', 'First session change');
   const to = r.commit('fresh.txt', 'fresh\n', 'Second session change');
@@ -423,7 +423,7 @@ function sessionMerge(r: ReturnType<typeof published>) {
 }
 
 it('reverts the whole range of a session merge in one commit named after the session', async () => {
-  const r = published();
+  const r = await published();
   const { from, to } = sessionMerge(r);
   await r.send('repo.revert', { sha: to });
   expect(git(r.root, 'rev-parse', 'HEAD^')).toBe(to);
@@ -436,7 +436,7 @@ it('reverts the whole range of a session merge in one commit named after the ses
 });
 
 it('tells how many commits the session merge that ended at a commit landed', async () => {
-  const r = published();
+  const r = await published();
   const { from, to } = sessionMerge(r);
   const after = (sha: string) =>
     r.f.control.repoCommitAfter(user, { project_id: r.f.project.id, sha });
@@ -445,7 +445,7 @@ it('tells how many commits the session merge that ended at a commit landed', asy
 });
 
 it('refuses to revert in a checkout with uncommitted changes to tracked files', async () => {
-  const { root, write, send, commit } = published();
+  const { root, write, send, commit } = await published();
   const sha = commit('answer.txt', 'base\nreverted\n', 'Change the answer');
   write('untracked.txt', 'left alone\n');
   const reverted = await send<{ sha: string }>('repo.revert', { sha });
@@ -458,7 +458,7 @@ it('refuses to revert in a checkout with uncommitted changes to tracked files', 
 });
 
 it('gives up a revert that conflicts and names the conflicting files', async () => {
-  const { root, read, send, commit } = published();
+  const { root, read, send, commit } = await published();
   const sha = commit('answer.txt', 'base\nfirst\n', 'First');
   const head = commit('answer.txt', 'base\nsecond\n', 'Second');
   await expect(send('repo.revert', { sha })).rejects.toMatchObject({
@@ -472,7 +472,7 @@ it('gives up a revert that conflicts and names the conflicting files', async () 
 });
 
 it('logs the author email and the message body of each commit', async () => {
-  const { f, root, write } = published();
+  const { f, root, write } = await published();
   write('answer.txt', 'base\nbody\n');
   git(
     root,
@@ -499,7 +499,7 @@ it('logs the author email and the message body of each commit', async () => {
 });
 
 it('refuses an undo when a folder of the file was replaced by a symlink and leaves its target alone', async () => {
-  const { f, root, read, write, send } = checkout();
+  const { f, root, read, write, send } = await checkout();
   mkdirSync(path.join(root, 'src'));
   write('src/config', 'base config\n');
   git(root, 'add', 'src/config');
@@ -524,7 +524,7 @@ it.each([
 ])(
   'refuses an undo that would overwrite work saved in %s after the discard',
   async (_kind, file) => {
-    const { read, write, send } = checkout();
+    const { read, write, send } = await checkout();
     write(file, 'discarded\n');
     const { undo_id } = await send<{ undo_id: string }>('repo.discard', { paths: [file] });
     write(file, 'new work after discard\n');
@@ -536,7 +536,7 @@ it.each([
 );
 
 it('commits and discards a file whose name starts with -', async () => {
-  const { root, read, write, send } = checkout();
+  const { root, read, write, send } = await checkout();
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
   write('-draft.txt', 'draft\n');
@@ -548,7 +548,7 @@ it('commits and discards a file whose name starts with -', async () => {
 });
 
 it('keeps an undo that failed so that it can be tried again', async () => {
-  const { root, read, write, send } = checkout();
+  const { root, read, write, send } = await checkout();
   write('answer.txt', 'base\nstaged\n');
   git(root, 'add', 'answer.txt');
   write('answer.txt', 'base\nstaged\nunstaged\n');
@@ -565,7 +565,7 @@ it('keeps an undo that failed so that it can be tried again', async () => {
 });
 
 it('puts back the files a discard already changed when it stops partway', async () => {
-  const { root, read, write, send } = checkout();
+  const { root, read, write, send } = await checkout();
   git(root, 'config', 'filter.broken.clean', 'cat');
   git(root, 'config', 'filter.broken.smudge', 'false');
   git(root, 'config', 'filter.broken.required', 'true');
@@ -581,7 +581,7 @@ it('puts back the files a discard already changed when it stops partway', async 
 });
 
 it('leaves a conflicted file’s stages as they were when the commit is refused during a merge', async () => {
-  const { root, write, send } = checkout();
+  const { root, write, send } = await checkout();
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
   git(root, 'switch', '--quiet', '-c', 'other');
@@ -600,7 +600,7 @@ it('leaves a conflicted file’s stages as they were when the commit is refused 
 });
 
 it('undoes a discarded patch of a file whose name holds a tab', async () => {
-  const { f, root, read, write, send } = checkout();
+  const { f, root, read, write, send } = await checkout();
   const name = 'tab\tname.txt';
   write(name, 'one\ntwo\nthree\n');
   git(root, 'add', name);
@@ -614,7 +614,7 @@ it('undoes a discarded patch of a file whose name holds a tab', async () => {
 });
 
 it('lists many untracked files with a fixed number of git runs', async () => {
-  const { f, root, write } = checkout();
+  const { f, root, write } = await checkout();
   mkdirSync(path.join(root, 'data'));
   for (let index = 0; index < 40; index++) write(`data/${index}.txt`, `row ${index}\n`);
   const bin = path.join(f.root, 'counting-git'),
@@ -644,7 +644,7 @@ it('lists many untracked files with a fixed number of git runs', async () => {
 });
 
 it('reports a discarded patch that the user’s git exits on before reading it', async () => {
-  const { root, send } = checkout();
+  const { root, send } = await checkout();
   appendFileSync(path.join(root, '.git/config'), '[broken\n');
   const patch = `diff --git a/answer.txt b/answer.txt\n${'+filler line\n'.repeat(2 ** 18)}`;
   await expect(send('repo.discard_patch', { patch })).rejects.toMatchObject({
@@ -653,7 +653,7 @@ it('reports a discarded patch that the user’s git exits on before reading it',
 });
 
 it('keeps intents to add and the assumed-unchanged and skip-worktree marks through a discard, its undo and a discard git refuses', async () => {
-  const { root, read, write, send } = checkout();
+  const { root, read, write, send } = await checkout();
   write('intended.txt', 'intended\n');
   git(root, 'add', '--intent-to-add', 'intended.txt');
   git(root, 'update-index', '--assume-unchanged', 'answer.txt');
@@ -674,7 +674,7 @@ it('keeps intents to add and the assumed-unchanged and skip-worktree marks throu
 });
 
 it('keeps an intent to add when the pre-commit hook refuses the commit', async () => {
-  const { root, write, send } = checkout();
+  const { root, write, send } = await checkout();
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
   const hook = path.join(root, '.git/hooks/pre-commit');
@@ -690,7 +690,7 @@ it('keeps an intent to add when the pre-commit hook refuses the commit', async (
 });
 
 it('keeps what a discard saved in a backup folder and removes it when the undo expires', async () => {
-  const { f, write, send } = checkout();
+  const { f, write, send } = await checkout();
   const directory = path.join(f.root, 'state/discard-backups');
   write('answer.txt', 'saved aside\n');
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -710,7 +710,7 @@ it('keeps what a discard saved in a backup folder and removes it when the undo e
 });
 
 it('keeps the backup an undo restores from when the undo expires partway through it', async () => {
-  const { f, write, read, send } = checkout();
+  const { f, write, read, send } = await checkout();
   const directory = path.join(f.root, 'state/discard-backups');
   write('answer.txt', 'answer edited\n');
   write('gone.txt', 'gone edited\n');
@@ -746,7 +746,7 @@ it('keeps the backup an undo restores from when the undo expires partway through
 });
 
 it('starts a discard sent while a commit runs its pre-commit hook once the commit is done', async () => {
-  const { root, read, write, send } = checkout();
+  const { root, read, write, send } = await checkout();
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
   const started = path.join(root, '.git/hook-started');

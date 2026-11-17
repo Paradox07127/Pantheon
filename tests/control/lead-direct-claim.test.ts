@@ -13,7 +13,7 @@ import type {
 import { countingGit, eventually, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -59,7 +59,7 @@ const eventsOf = (f: Fixture, aggregateId: string, kind: string) =>
   ).map((row) => JSON.parse(row.payload) as Record<string, unknown>);
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -140,7 +140,7 @@ async function delivered(f: Fixture, send: { mock: { calls: unknown[][] } }, ses
 }
 
 it('lets a lead claim a direct task itself, without a task session, and write in its turns', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
   const lead = await leadWithPlan(f, [task('a')]);
 
@@ -159,7 +159,7 @@ it('lets a lead claim a direct task itself, without a task session, and write in
 });
 
 it('gives a lead the task memory and experience of the direct task it works on', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   start(f, lead.id, ['a']);
   const scope = { lead_session_id: lead.id, id: 'a', generation: 1 };
@@ -204,7 +204,7 @@ it('gives a lead the task memory and experience of the direct task it works on',
 });
 
 it('dispatches a task whose path is dispatch, and a task without a kind', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     dispatched('a'),
     task('r', { kind: undefined, done_when: 'report', scope: [], acceptance: [] }),
@@ -220,7 +220,7 @@ it('dispatches a task whose path is dispatch, and a task without a kind', async 
 });
 
 it('dispatches a report task even when its tier takes the direct path', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('r', { done_when: 'report', scope: [], acceptance: [] }),
   ]);
@@ -234,7 +234,7 @@ it('dispatches a report task even when its tier takes the direct path', async ()
 });
 
 it('queues a writable turn after the read-only turn in which the lead claims a direct task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   lockedTurns(f);
   const send = vi.spyOn(f.adapter, 'send');
   const lead = await leadWithPlan(f, [task('a')]);
@@ -257,10 +257,10 @@ it('queues a writable turn after the read-only turn in which the lead claims a d
 });
 
 it('queues no extra turn when the lead claims a direct task in a turn that started writable', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   lockedTurns(f);
   const send = vi.spyOn(f.adapter, 'send');
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   const turn = await runningTurn(f, lead);
   f.call(
@@ -286,7 +286,7 @@ it('queues no extra turn when the lead claims a direct task in a turn that start
 });
 
 it('refuses a direct task started with others, and a second one while the lead works on one', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b'), dispatched('c')]);
 
   expect(() => start(f, lead.id, ['a', 'c'])).toThrow(
@@ -305,7 +305,7 @@ it('refuses a direct task started with others, and a second one while the lead w
 });
 
 it('keeps the scope of a direct task and of running task sessions apart', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     dispatched('running', { scope: ['src/shared'] }),
     task('inside', { scope: ['src/shared/inside.ts'] }),
@@ -332,7 +332,7 @@ it('keeps the scope of a direct task and of running task sessions apart', async 
 });
 
 it('records the worktree head when the lead reports its direct task done', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), dispatched('b')]);
   expect(() => report(f, lead.id, 'lead')).toThrow(
     expect.objectContaining({ code: 'invalid_state' }),
@@ -376,7 +376,7 @@ it.each([
 ])(
   'tells the lead who merges its reported direct task when auto-merge is %s',
   async (autoMerge, next) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const lead = await leadWithPlan(f, [task('a')]);
     const project = f.store.must<Project>('projects', f.project.id);
     f.store.update('projects', { ...project, auto_merge: autoMerge }, project.revision);
@@ -390,7 +390,7 @@ it.each([
 );
 
 it('refuses the done report of a direct task when the worktree head cannot be read', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   start(f, lead.id, ['a']);
   const worktree = f.store.must<Workspace>('workspaces', lead.workspace_id!).path;
@@ -404,7 +404,7 @@ it('refuses the done report of a direct task when the worktree head cannot be re
 });
 
 it('reads the worktree head of a direct task report while other work goes on', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   start(f, lead.id, ['a']);
   const worktree = f.store.must<Workspace>('workspaces', lead.workspace_id!).path;
@@ -422,7 +422,7 @@ it('reads the worktree head of a direct task report while other work goes on', a
 });
 
 it('releases the direct task the lead stops, and makes its turns read-only again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
   const lead = await leadWithPlan(f, [task('a')]);
   start(f, lead.id, ['a']);
@@ -440,7 +440,7 @@ it('releases the direct task the lead stops, and makes its turns read-only again
 });
 
 it('releases the direct task the user stops on the board', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   start(f, lead.id, ['a']);
 
@@ -455,7 +455,7 @@ it('releases the direct task the user stops on the board', async () => {
 });
 
 it('dispatches a direct task the user starts', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
 
   expect(
@@ -468,7 +468,7 @@ it('dispatches a direct task the user starts', async () => {
 });
 
 it('refuses a direct task whose upstream task is not done', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [dispatched('a'), task('b', { depends_on: ['a'] })]);
 
   expect(() => start(f, lead.id, ['b'])).toThrow(
@@ -478,7 +478,7 @@ it('refuses a direct task whose upstream task is not done', async () => {
 });
 
 it('releases the direct task the lead takes out of its plan', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   start(f, lead.id, ['a']);
 
@@ -503,7 +503,7 @@ it('releases the direct task the lead takes out of its plan', async () => {
 });
 
 it('releases the direct task whose goal the lead rewrites and lets the lead claim it again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   start(f, lead.id, ['a']);
 
@@ -530,7 +530,7 @@ it('releases the direct task whose goal the lead rewrites and lets the lead clai
 });
 
 it('does not call a queued task stuck while the lead works on the direct task it waits for', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), dispatched('b', { depends_on: ['a'] })]);
 
   start(f, lead.id, ['a']);

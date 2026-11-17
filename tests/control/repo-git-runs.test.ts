@@ -101,7 +101,7 @@ function wholeHistory(cwd: string) {
 }
 
 it('reads at most four worktrees at once', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   for (let index = 0; index < 10; index++)
     git(f.source, 'worktree', 'add', '--quiet', '--detach', path.join(f.root, `tree-${index}`));
   const recorded = recordedGit();
@@ -114,7 +114,7 @@ it('reads at most four worktrees at once', async () => {
 });
 
 it('reads only the new commits of a HEAD that moved forward, and the whole history otherwise', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const now = Date.now();
   commitAt(f.source, 'one.txt', 'one\n', now - 5 * WEEK);
   const old = commitAt(f.source, 'two.txt', 'two\n', now - 3 * WEEK);
@@ -141,7 +141,7 @@ it('reads only the new commits of a HEAD that moved forward, and the whole histo
 });
 
 it('traces every range a commit added in one log run', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lines = Array.from({ length: 12 }, (_, index) => `line ${index}`);
   const write = (change: (copy: string[]) => void) => {
     const copy = [...lines];
@@ -164,8 +164,8 @@ it('traces every range a commit added in one log run', async () => {
 });
 
 /** The fixture checkout with tracked files of each kind, and changes to all of them. */
-function changedCheckout() {
-  const f = workbenchFixture();
+async function changedCheckout() {
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   const write = (file: string, content: string | Buffer) =>
     writeFileSync(path.join(root, file), content);
@@ -185,7 +185,7 @@ function changedCheckout() {
 }
 
 it('reads the changes against HEAD in one diff run, as the separate runs listed them', async () => {
-  const { f, root } = changedCheckout();
+  const { f, root } = await changedCheckout();
   const recorded = recordedGit();
   recorded.clear();
   const diff = await f.control.repoWorkingDiff(user, f.project.id);
@@ -213,7 +213,7 @@ it('reads the changes against HEAD in one diff run, as the separate runs listed 
 it.each([2, 5])(
   'lists the files and no patch when the tracked patch takes %i MiB',
   async (size) => {
-    const { f, write } = changedCheckout();
+    const { f, write } = await changedCheckout();
     write('answer.txt', `${'x'.repeat(1023)}\n`.repeat(size * 1024));
     const diff = await f.control.repoWorkingDiff(user, f.project.id);
     expect(diff).toMatchObject({ truncated: true, patch: null });
@@ -228,7 +228,7 @@ it.each([2, 5])(
 );
 
 it('commits in the user’s repository without starting its automatic maintenance', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');
@@ -248,7 +248,7 @@ it('commits in the user’s repository without starting its automatic maintenanc
 });
 
 it('commits once another git gives up the index lock it held', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   git(root, 'config', 'user.name', 'Repository Owner');
   git(root, 'config', 'user.email', 'owner@example.invalid');

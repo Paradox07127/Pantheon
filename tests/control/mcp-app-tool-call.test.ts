@@ -12,13 +12,13 @@ const listed: Record<string, { visibility?: string[] }> = {
 };
 
 async function liveSession(supported = true) {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const callMcpTool = vi.fn(async () => RESULT);
   const findMcpTool = vi.fn(async (_handle: unknown, _server: string, tool: string) =>
     Object.hasOwn(listed, tool) ? listed[tool] : undefined,
   );
   if (supported) Object.assign(f.adapter, { callMcpTool, findMcpTool });
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.control.handles.size > 0,

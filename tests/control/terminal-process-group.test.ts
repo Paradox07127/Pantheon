@@ -17,7 +17,7 @@ it('uses the fallback login shell and kills its process group on close and daemo
     onData: pty.onData.bind(pty),
     onExit: pty.onExit.bind(pty),
   });
-  const f = fixture();
+  const f = await fixture();
   try {
     expect(native.spawn).not.toHaveBeenCalled();
     const { terminal_id } = await f.call<Promise<{ terminal_id: string }>>('terminal.open', {

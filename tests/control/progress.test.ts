@@ -22,7 +22,7 @@ import {
 import { settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const MINUTE = 60_000;
@@ -115,10 +115,10 @@ const writePlan = (f: Fixture, lead: Session, tasks: PlanTask[]) =>
 
 /** A lead with a plan of the tasks given and an idle session of the first. */
 async function leadAndWorker(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead, tasks);
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -185,7 +185,7 @@ const activityOf = (f: Fixture, taskId: string) =>
   f.control.boardView(user, f.project.id, 1).tasks.find((each) => each.id === taskId)?.activity;
 
 it('finds the verified progress of a task in a merge, a new commit passing its gate and an accepted done report', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadAndWorker(f, [
     task('a'),
     task('r', { done_when: 'report', scope: [], acceptance: [] }),
@@ -204,7 +204,7 @@ it('finds the verified progress of a task in a merge, a new commit passing its g
   });
   expect(verifiedProgress(ctx, a)?.sequence).toBe(merged.sequence);
 
-  const reporter = f.call<Session>('session.create', {
+  const reporter = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Report on it',
@@ -226,7 +226,7 @@ it('finds the verified progress of a task in a merge, a new commit passing its g
 });
 
 it('counts ten round trips between a lead and a task session, and ends the chain when the lead accepts the task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadAndWorker(f, [
     task('a', { done_when: 'report', scope: [], acceptance: [] }),
   ]);
@@ -254,7 +254,7 @@ it('counts ten round trips between a lead and a task session, and ends the chain
 });
 
 it('starts a new chain when a task session merges', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadAndWorker(f, [task('a')]);
   await roundTrips(f, lead, worker, 3);
   expect(f.turns(lead.id).at(-1)!.causal_depth).toBe(3);
@@ -276,7 +276,7 @@ it('starts a new chain when a task session merges', async () => {
 });
 
 it('leaves the causal depth off the turns a person sends', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadAndWorker(f, [task('a')]);
   await roundTrips(f, lead, worker, 2);
   const sent = f.call<SessionTurn>(
@@ -291,7 +291,7 @@ it('leaves the causal depth off the turns a person sends', async () => {
 });
 
 it('counts a gate pass as verified progress only under the acceptance the task has now', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadAndWorker(f, [task('a')]);
   await roundTrips(f, lead, worker, 2);
   const ctx = contextOf(f),
@@ -306,7 +306,7 @@ it('counts a gate pass as verified progress only under the acceptance the task h
 });
 
 it('wakes the lead one deeper than the turn a note came from, not the newest turn of its session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadAndWorker(f, [task('a')]);
   await roundTrips(f, lead, worker, 8);
   expect(f.turns(worker.id).at(-1)!.causal_depth).toBe(8);
@@ -325,16 +325,18 @@ it('wakes the lead one deeper than the turn a note came from, not the newest tur
 });
 
 it('opens a task that waited for a place one deeper than the lead turn that asked for it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead } = await leadAndWorker(f, [task('a'), task('b'), task('c'), task('d')]);
-  const others = ['b', 'c'].map((id) =>
-    f.call<Session>('session.create', {
-      project_id: f.project.id,
-      runtime: f.adapter.name,
-      input: 'Build it',
-      task_id: `${lead.id}:${id}`,
-    }),
-  );
+  const others: Session[] = [];
+  for (const id of ['b', 'c'])
+    others.push(
+      await f.call<Session>('session.create', {
+        project_id: f.project.id,
+        runtime: f.adapter.name,
+        input: 'Build it',
+        task_id: `${lead.id}:${id}`,
+      }),
+    );
   for (const other of others) await settle(f, other);
   deepen(f, f.turns(lead.id).at(-1)!.id, 8);
   f.call(

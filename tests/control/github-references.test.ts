@@ -4,7 +4,7 @@ import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 import type { LocalCommand } from '../../packages/control/src/local-command.js';
 
-function setup() {
+async function setup() {
   let missing = false;
   const body = 'x'.repeat(4000) + 'body beyond the limit';
   const run: LocalCommand = vi.fn(async (_file, args) => {
@@ -44,7 +44,7 @@ function setup() {
           exit_code: 0,
         };
   });
-  const f = workbenchFixture({ localCommand: run });
+  const f = await workbenchFixture({ localCommand: run });
   git(f.source, 'remote', 'add', 'origin', 'git@github.com:owner/project.git');
   return {
     ...f,
@@ -56,7 +56,7 @@ function setup() {
 }
 
 it('reads GitHub references once at create and send time and delivers their context before the message', async () => {
-  const f = setup();
+  const f = await setup();
   const send = vi.spyOn(f.adapter, 'send');
   const refs = [
     { kind: 'pr', number: 12 },
@@ -102,8 +102,8 @@ it('reads GitHub references once at create and send time and delivers their cont
 });
 
 it('rejects a missing reference before creating a session or a later turn', async () => {
-  const f = setup();
-  const session = f.create();
+  const f = await setup();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.store.must<Session>('sessions', session.id).state === 'open',

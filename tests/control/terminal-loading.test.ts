@@ -8,7 +8,7 @@ vi.mock('../../packages/control/node_modules/node-pty/lib/index.js', () => {
 });
 
 it('starts without loading node-pty and reports its load failure only when opening a terminal', async () => {
-  const f = fixture();
+  const f = await fixture();
   try {
     expect(load).not.toHaveBeenCalled();
     await expect(

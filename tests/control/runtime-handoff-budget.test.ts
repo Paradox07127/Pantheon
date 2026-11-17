@@ -5,7 +5,7 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -32,8 +32,8 @@ const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessio
 
 /** A settled lead with a one-task plan and the settled session of that task. */
 async function leadWithTask(task: PlanTask = planTask()) {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -50,7 +50,7 @@ async function leadWithTask(task: PlanTask = planTask()) {
     null,
     sessionOf(f, lead.id, 'lead'),
   );
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build the export endpoint',
@@ -125,8 +125,8 @@ it('keeps the whole current contract at the start when the history exceeds the b
 });
 
 it('keeps small history entries that come after one too large to fit', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Start the export');
+  const f = await workbenchFixture();
+  const lead = await f.create('Start the export');
   await settle(f, lead);
   storeTurn(f, lead, 'Middle input', 'Small early note');
   storeTurn(f, lead, 'Paste the log', 'z'.repeat(20000));

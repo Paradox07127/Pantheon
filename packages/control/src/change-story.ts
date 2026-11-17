@@ -33,6 +33,7 @@ import { rangeDiffWithSyncBounds, sessionRangeAsync } from './landing-diff.js';
 import { cardPatch, checkStory } from './change-story-check.js';
 import { renderStoryBrief } from './change-story-brief.js';
 import { storyContext } from './change-story-evidence.js';
+import { readMergeConditions } from './workflow-engine.js';
 
 export const STORY_WALL_TIME_MS = 30 * 60 * 1000;
 const BRIEF_BOUND = 400000;
@@ -50,9 +51,12 @@ async function storyTarget(
 ) {
   const session = ctx.store.must<Session>('sessions', input.session_id);
   projectAccess(ctx, p, session.project_id, action);
-  const range = await sessionRangeAsync(ctx, session);
+  const [range, conditions] = await Promise.all([
+    sessionRangeAsync(ctx, session),
+    readMergeConditions(ctx, session.id),
+  ]);
   requireThat(range.from_sha !== range.to_sha, 'invalid_state', 'No committed changes to explain');
-  const context = storyContext(ctx, session, range.to_sha);
+  const context = storyContext(ctx, session, range.to_sha, conditions);
   return {
     project_id: session.project_id,
     range,

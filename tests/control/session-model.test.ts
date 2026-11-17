@@ -3,10 +3,10 @@ import type { HarnessAdapter, Session, SessionHandle, SessionSpec } from '@panth
 import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const createWith = (f: Fixture, model: string, effort: string) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     model,
@@ -21,7 +21,7 @@ const modelEvents = (f: Fixture) =>
     .map((event) => [event.kind, event.payload]);
 
 async function runningSession(f: Fixture): Promise<Session> {
-  const session = createWith(f, 'fixture', 'low');
+  const session = await createWith(f, 'fixture', 'low');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'running',
@@ -31,8 +31,8 @@ async function runningSession(f: Fixture): Promise<Session> {
 }
 
 it('starts a session with the requested effort and lists it', async () => {
-  const f = workbenchFixture();
-  const session = createWith(f, 'fixture', 'high');
+  const f = await workbenchFixture();
+  const session = await createWith(f, 'fixture', 'high');
   expect(session).toMatchObject({ requested_model: 'fixture', requested_effort: 'high' });
   expect(f.list()[0]).toMatchObject({ model: 'fixture', effort: 'high' });
   await awaitWorkspaceReady(f.control, session.workspace_id!);
@@ -47,8 +47,8 @@ it('starts a session with the requested effort and lists it', async () => {
 });
 
 it('stores a new model of a session without a live native session', async () => {
-  const f = workbenchFixture();
-  const session = createWith(f, 'fixture', 'low');
+  const f = await workbenchFixture();
+  const session = await createWith(f, 'fixture', 'low');
   const reported = f.store.update(
     'sessions',
     { ...f.store.must<Session>('sessions', session.id), reported_model: 'fixture-reported' },
@@ -69,8 +69,8 @@ it('stores a new model of a session without a live native session', async () => 
 });
 
 it('records the model a queued turn runs on when the model changed before it started', async () => {
-  const f = workbenchFixture();
-  const session = createWith(f, 'fixture', 'low');
+  const f = await workbenchFixture();
+  const session = await createWith(f, 'fixture', 'low');
   expect(f.turns(session.id)[0]!.model).toBe('fixture');
   f.call(
     'session.setModel',
@@ -87,7 +87,7 @@ it('records the model a queued turn runs on when the model changed before it sta
 });
 
 it('changes the model of a live native session through the runtime', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const setModel = vi.fn(async () => ({ ok: true }));
   Object.assign(f.adapter, { setModel });
   const session = await runningSession(f);
@@ -105,7 +105,7 @@ it('changes the model of a live native session through the runtime', async () =>
 });
 
 it('applies a model chosen while the native session was starting', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   // Like the native adapters, the handle carries the requested model from the spec and setModel on.
   const setModel = vi.fn(async (handle: SessionHandle, model: string, effort?: string) => {
     Object.assign(handle, { requested_model: model, requested_effort: effort });
@@ -122,7 +122,7 @@ it('applies a model chosen while the native session was starting', async () => {
       requested_effort: spec.effort,
     });
   });
-  const session = createWith(f, 'fixture', 'low');
+  const session = await createWith(f, 'fixture', 'low');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   // The tick that launches the session waits for the held start.
   const launch = f.control.tick();
@@ -148,7 +148,7 @@ it('applies a model chosen while the native session was starting', async () => {
 });
 
 it('restores the previous model when the runtime refuses the new one', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const setModel = vi.fn(async () => ({ ok: false, reason: 'native refused' }));
   Object.assign(f.adapter, { setModel });
   const session = await runningSession(f);
@@ -169,7 +169,7 @@ it('restores the previous model when the runtime refuses the new one', async () 
 });
 
 it('refuses a model the runtime cannot apply to a running turn', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const adapter: HarnessAdapter = f.adapter;
   expect(adapter.setModel).toBeUndefined();
   const session = await runningSession(f);
@@ -187,7 +187,7 @@ it('refuses a model the runtime cannot apply to a running turn', async () => {
 });
 
 it('lists the models of a runtime', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   expect(await f.control.runtimeModels(user, f.project.id, f.adapter.name)).toEqual([
     {
       id: 'fixture',
@@ -201,7 +201,7 @@ it('lists the models of a runtime', async () => {
 });
 
 it('reads the branch and commit at the project HEAD', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const sha = git(f.source, 'rev-parse', 'HEAD');
   expect(await f.control.projectHead(user, f.project.id)).toEqual({
     branch: 'main',

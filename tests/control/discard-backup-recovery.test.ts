@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import { workbenchFixture } from './workbench-fixture.js';
 
 it('removes the backups of discards whose undo a daemon crash lost when the next daemon recovers', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   const directory = path.join(f.root, 'state/discard-backups');
   writeFileSync(path.join(root, 'answer.txt'), 'saved aside\n');
@@ -17,7 +17,7 @@ it('removes the backups of discards whose undo a daemon crash lost when the next
 });
 
 it('refuses an undo whose backup the recovery removed and keeps the file edited since', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   writeFileSync(path.join(root, 'answer.txt'), 'saved aside\n');
   const { undo_id } = await f.call<{ undo_id: string }>('repo.discard', {

@@ -7,24 +7,27 @@ import { openWorktreeSession } from '../../packages/control/src/workbench-sessio
 import type { ControlContext } from '../../packages/control/src/context.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-const current = (f: ReturnType<typeof workbenchFixture>, id: string) =>
+const current = (f: Awaited<ReturnType<typeof workbenchFixture>>, id: string) =>
   f.store.must<Session>('sessions', id);
-const context = (f: ReturnType<typeof workbenchFixture>) =>
+const context = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   (f.control as unknown as { ctx: ControlContext }).ctx;
 const lead: Principal = { id: 'lead', role: 'lead' };
 
-it.each([['codex', 'auto']] as const)('refuses %s creation with %s', (runtime, permission_mode) => {
-  const f = workbenchFixture();
-  f.control.adapters.set(runtime, f.adapter);
-  expect(() =>
-    f.call('session.create', {
-      project_id: f.project.id,
-      runtime,
-      permission_mode,
-      input: 'Work',
-    }),
-  ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
-});
+it.each([['codex', 'auto']] as const)(
+  'refuses %s creation with %s',
+  async (runtime, permission_mode) => {
+    const f = await workbenchFixture();
+    f.control.adapters.set(runtime, f.adapter);
+    expect(() =>
+      f.call('session.create', {
+        project_id: f.project.id,
+        runtime,
+        permission_mode,
+        input: 'Work',
+      }),
+    ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
+  },
+);
 
 it.each([
   ['claude', 'auto', null],
@@ -33,17 +36,17 @@ it.each([
   ['dsh', 'full_access', 'auto'],
 ] as const)(
   'lets the user create and select %s %s and refuses non-user choices',
-  (runtime, permission_mode, refused) => {
-    const f = workbenchFixture();
+  async (runtime, permission_mode, refused) => {
+    const f = await workbenchFixture();
     f.control.adapters.set(runtime, f.adapter);
     const input = { project_id: f.project.id, runtime, permission_mode, input: 'Work' };
     expect(() => f.call('session.create', input, null, lead)).toThrow(
       expect.objectContaining({ code: 'unsupported_capability' }),
     );
-    expect(() => openWorktreeSession(context(f), input, '', undefined, lead)).toThrow(
-      expect.objectContaining({ code: 'unsupported_capability' }),
-    );
-    const session = f.call<Session>('session.create', input);
+    expect(() =>
+      openWorktreeSession(context(f), input, '', { git: true }, undefined, lead),
+    ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
+    const session = await f.call<Session>('session.create', input);
     expect(session.permission_mode).toBe(permission_mode);
     expect(() =>
       f.call(
@@ -72,7 +75,7 @@ it.each([
 );
 
 it('creates, changes and clears fast mode while projecting runtime state', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const modes = ['plan', 'ask', 'auto_edit'] as const;
   vi.spyOn(f.adapter, 'models').mockResolvedValue([
     {
@@ -174,9 +177,9 @@ it('creates, changes and clears fast mode while projecting runtime state', async
   ).rejects.toMatchObject({ code: 'unsupported_capability' });
 });
 
-it('refuses fast mode from a session principal', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('refuses fast mode from a session principal', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   expect(() =>
     f.control.execute(
       lead,
@@ -199,11 +202,11 @@ it('refuses fast mode from a session principal', () => {
 });
 
 it('turns ultracode on and off in a Claude session and passes it to the native session', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   f.control.adapters.set('claude', f.adapter);
   const setUltracode = vi.fn(async () => ({ ok: true }));
   Object.assign(f.adapter, { setUltracode });
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: 'claude',
     ultracode: true,
@@ -239,8 +242,8 @@ it('turns ultracode on and off in a Claude session and passes it to the native s
   );
 });
 
-it('refuses ultracode outside a Claude session', () => {
-  const f = workbenchFixture();
+it('refuses ultracode outside a Claude session', async () => {
+  const f = await workbenchFixture();
   expect(() =>
     f.call('session.create', {
       project_id: f.project.id,
@@ -249,7 +252,7 @@ it('refuses ultracode outside a Claude session', () => {
       input: 'Work',
     }),
   ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
-  const session = f.create();
+  const session = await f.create();
   expect(f.list().find((row) => row.id === session.id)).not.toHaveProperty('ultracode');
   expect(() =>
     f.call(

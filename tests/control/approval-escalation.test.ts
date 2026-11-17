@@ -3,7 +3,7 @@ import type { Approval, BoardPlan, LeadNote, Principal, Session } from '@pantheo
 import { eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const MINUTE = 60_000;
@@ -39,7 +39,7 @@ const notes = (f: Fixture, leadId: string, kind: LeadNote['kind']) =>
     .filter((note) => note.kind === kind);
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -60,7 +60,7 @@ async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
 }
 
 const openTask = (f: Fixture, leadId: string, taskId: string) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -98,10 +98,10 @@ const requestItem = (f: Fixture, id: string) =>
     .items.find((item) => item.source.table === 'approvals' && item.source.id === id)!;
 
 it('reminds the user and the lead again when a permission request stays unanswered past the escalation window', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   f.store.insert('approvals', permissionRequest(f, 'unanswered-request', worker.id));
@@ -136,10 +136,10 @@ it('reminds the user and the lead again when a permission request stays unanswer
 });
 
 it('sends no reminder for a question relayed to the lead board', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
   f.store.insert('approvals', {
     ...permissionRequest(f, 'relayed-question', worker.id),
@@ -176,7 +176,7 @@ it('sends no reminder for a question relayed to the lead board', async () => {
 });
 
 it('lists a lead session that waits for its own permission request with a next step', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   f.store.insert('approvals', permissionRequest(f, 'lead-request', lead.id));
 
@@ -188,9 +188,10 @@ it('lists a lead session that waits for its own permission request with a next s
 });
 
 it('tells the lead which queued tasks wait for a place held by a session that waits for approval', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b'), task('c'), task('d')]);
-  const workers = ['a', 'b', 'c'].map((id) => openTask(f, lead.id, id));
+  const workers: Session[] = [];
+  for (const id of ['a', 'b', 'c']) workers.push(await openTask(f, lead.id, id));
   for (const worker of workers) await settle(f, worker);
   f.call(
     'task.start',

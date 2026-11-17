@@ -8,9 +8,9 @@ import { eventually, registerWorkspace, user } from '../helpers.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { requestApproval } from '../../packages/control/dist/approvals.js';
 
-it('answers later approvals in another session of the project, names the rule, lists and removes it', () => {
-  const f = workbenchFixture();
-  const first = f.create('First session');
+it('answers later approvals in another session of the project, names the rule, lists and removes it', async () => {
+  const f = await workbenchFixture();
+  const first = await f.create('First session');
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const request = (session: Session, request_id: string) => {
     f.store.transaction(() =>
@@ -37,7 +37,7 @@ it('answers later approvals in another session of the project, names the rule, l
     { approval_id: approval.id, decision: 'approve_project' },
     approval.revision,
   );
-  const second = f.create('Second session');
+  const second = await f.create('Second session');
   const automatic = request(second, 'later-request');
   expect(automatic).toMatchObject({ state: 'approved', answered_by_rule: 'Bash(pnpm test)' });
   expect(f.store.kindEvents(f.project.id, ['approval.approved']).at(-1)?.payload).toMatchObject({
@@ -71,9 +71,9 @@ it('answers later approvals in another session of the project, names the rule, l
   expect(request(second, 'after-removal').state).toBe('pending');
 });
 
-it('lists project rules newest first, including rules added during the same clock tick', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('lists project rules newest first, including rules added during the same clock tick', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const entries = [
     { rule: 'WebFetch', session_id: session.id, added_at: 1 },
     { rule: 'Bash(pnpm test)', session_id: session.id, added_at: 2 },
@@ -91,9 +91,9 @@ it('lists project rules newest first, including rules added during the same cloc
   ]);
 });
 
-it('does not offer project rules for requests without reusable rules or in plan mode', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('does not offer project rules for requests without reusable rules or in plan mode', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   for (const patch of [
     { project_rule_supported: false },
@@ -139,7 +139,7 @@ it('does not offer project rules for requests without reusable rules or in plan 
 });
 
 it('lists local branches by commit time with a checked-out mark and a cap of 200', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const older = git(f.source, 'rev-parse', 'HEAD');
   const tree = git(f.source, 'rev-parse', 'HEAD^{tree}');
   const newer = execFileSync(
@@ -178,7 +178,7 @@ it('lists local branches by commit time with a checked-out mark and a cap of 200
 });
 
 it('copies selected files and folders and finishes preparation before the first turn', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   writeFileSync(path.join(f.source, '.env'), 'TOKEN=local\n');
   mkdirSync(path.join(f.source, 'local-config'));
   writeFileSync(path.join(f.source, 'local-config/settings'), 'local');
@@ -209,7 +209,7 @@ it('copies selected files and folders and finishes preparation before the first 
     expect(readFileSync(path.join(workspace.path, 'prepared'), 'utf8')).toBe('TOKEN=local\nlocal');
     return { turn_id: turn.turn_id, status: 'delivered' };
   });
-  const session = f.create();
+  const session = await f.create();
   await eventually(
     () => send.mock.calls.length > 0,
     () => f.control.tick(),
@@ -219,8 +219,8 @@ it('copies selected files and folders and finishes preparation before the first 
   ).toBe('running');
 });
 
-it('refuses escaping preparation paths when saved, including a symlink outside the root', () => {
-  const f = workbenchFixture();
+it('refuses escaping preparation paths when saved, including a symlink outside the root', async () => {
+  const f = await workbenchFixture();
   symlinkSync(f.root, path.join(f.source, 'outside'));
   for (const entry of ['../outside', '/absolute', 'nested/../../outside', 'outside/state']) {
     expect(() =>
@@ -234,7 +234,7 @@ it('refuses escaping preparation paths when saved, including a symlink outside t
 });
 
 it('keeps a worktree and exposes preparation failure and its last output without starting the turn', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
   f.call(
     'project.worktree.set',
@@ -252,7 +252,7 @@ it('keeps a worktree and exposes preparation failure and its last output without
     },
     f.project.revision,
   );
-  const session = f.create();
+  const session = await f.create();
   await eventually(
     () => f.store.must<Session>('sessions', session.id).state === 'closed',
     () => f.control.tick(),
@@ -278,7 +278,7 @@ it('keeps a worktree and exposes preparation failure and its last output without
 });
 
 it('times out preparation and keeps its output with the failed environment', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
   f.call(
     'project.worktree.set',
@@ -296,7 +296,7 @@ it('times out preparation and keeps its output with the failed environment', asy
     },
     f.project.revision,
   );
-  const session = f.create();
+  const session = await f.create();
   await eventually(
     () => f.store.must<Session>('sessions', session.id).state === 'closed',
     () => f.control.tick(),
@@ -313,7 +313,7 @@ it('times out preparation and keeps its output with the failed environment', asy
 });
 
 it('keeps the failed environment when a selected folder cannot replace a tracked file', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const send = vi.spyOn(f.adapter, 'send');
   writeFileSync(path.join(f.source, 'local-config'), 'tracked file');
   git(f.source, 'add', 'local-config');
@@ -326,7 +326,7 @@ it('keeps the failed environment when a selected folder cannot replace a tracked
     { project_id: f.project.id, copy_paths: ['local-config'] },
     f.project.revision,
   );
-  const session = f.create();
+  const session = await f.create();
   await eventually(
     () => f.store.must<Session>('sessions', session.id).state === 'closed',
     () => f.control.tick(),
@@ -339,10 +339,10 @@ it('keeps the failed environment when a selected folder cannot replace a tracked
 });
 
 it('counts only archived session worktrees on disk, caches their size, and prunes without deleting branches', async () => {
-  const f = workbenchFixture();
-  const archived = f.create('Archived session');
-  const active = f.create('Keep this session');
-  const missing = f.create('Missing worktree');
+  const f = await workbenchFixture();
+  const archived = await f.create('Archived session');
+  const active = await f.create('Keep this session');
+  const missing = await f.create('Missing worktree');
   const { startWorkspaceProvisioning } =
     await import('../../packages/control/dist/provisioning.js');
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
@@ -402,8 +402,8 @@ it('counts only archived session worktrees on disk, caches their size, and prune
 });
 
 it('keeps commits made on an archived detached worktree reachable after pruning it', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Unmerged session');
+  const f = await workbenchFixture();
+  const session = await f.create('Unmerged session');
   const { startWorkspaceProvisioning } =
     await import('../../packages/control/dist/provisioning.js');
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;

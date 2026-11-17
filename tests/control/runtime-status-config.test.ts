@@ -10,12 +10,12 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-function setup(runtimes: Record<string, unknown>) {
+async function setup(runtimes: Record<string, unknown>) {
   const directory = mkdtempSync(path.join(process.cwd(), 'node_modules/.cache/status-config-'));
   writeFileSync(path.join(directory, 'config.json'), JSON.stringify({ version: 1, runtimes }));
   const adapter = Object.assign(new FixtureAdapter(), { name: 'grok' });
   const createRuntimeAdapter = vi.fn(async () => adapter);
-  const f = fixture({ controlOptions: { userConfigDir: directory, createRuntimeAdapter } });
+  const f = await fixture({ controlOptions: { userConfigDir: directory, createRuntimeAdapter } });
   cleanups.push(async () => {
     await f.close();
     rmSync(directory, { recursive: true, force: true });
@@ -24,7 +24,7 @@ function setup(runtimes: Record<string, unknown>) {
 }
 
 it('lists registered, configured and ACP runtimes once, including disabled configuration', async () => {
-  const f = setup({
+  const f = await setup({
     claude: { enabled: false, binary: '/configured/claude', args: ['--verbose'] },
     codex: { binary: '/missing/codex', args: [] },
   });
@@ -51,7 +51,7 @@ it('lists registered, configured and ACP runtimes once, including disabled confi
 });
 
 it('keeps saved paths and arguments in status through disabling and re-enabling an adapter', async () => {
-  const f = setup({ grok: { binary: '/configured/grok', args: ['agent', 'stdio'] } });
+  const f = await setup({ grok: { binary: '/configured/grok', args: ['agent', 'stdio'] } });
   f.control.adapters.set('grok', f.adapter);
   await f.control.runtimeStatus(user, true);
   const set = (enabled: boolean) =>

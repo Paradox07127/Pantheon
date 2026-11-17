@@ -345,7 +345,7 @@ export async function startDaemon(options: DaemonOptions) {
         },
       },
     ));
-    control.recover();
+    await control.recover();
     const allowedOrigins = new Set(options.allowedOrigins ?? []);
     const app = new Hono<{ Variables: { principal: Principal } }>();
     const originAllowed = (origin: string | null | undefined): boolean =>

@@ -19,7 +19,7 @@ import {
 } from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
   id: `session:${sessionId}`,
@@ -118,11 +118,11 @@ function permissionRequest(f: Fixture, id: string, sessionId: string): Approval 
 }
 
 it('tells the lead once when a task session merges', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
   expect(told(f, lead.id)).toEqual([]);
 
@@ -140,11 +140,11 @@ it('tells the lead once when a task session merges', async () => {
 });
 
 it('does not hand back or wake the lead for a merge the user cancelled', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
   const before = f.turns(worker.id).length;
   patch(f, worker.id, { merge: { state: 'blocked', reason: 'cancelled' } });
@@ -160,11 +160,11 @@ it('does not hand back or wake the lead for a merge the user cancelled', async (
 });
 
 it('brings an archived idle lead back when a task session merge wakes it', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
   f.call('session.archive', { session_id: lead.id }, current(f, lead.id).revision);
   expect(current(f, lead.id).archived_at).toBeDefined();
@@ -185,11 +185,11 @@ it('brings an archived idle lead back when a task session merge wakes it', async
 });
 
 it('queues the message after the running turn instead of steering', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
   slowTurns(f);
   const running = f.call<SessionTurn>(
@@ -223,12 +223,12 @@ it('queues the message after the running turn instead of steering', async () => 
 });
 
 it('tells the lead when a task session fails or waits, and again after it waits a second time', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const waiting = boundTaskSession(f, lead.id, 'a'),
-    failing = boundTaskSession(f, lead.id, 'b');
+  const waiting = await boundTaskSession(f, lead.id, 'a'),
+    failing = await boundTaskSession(f, lead.id, 'b');
   await settle(f, waiting);
   await settle(f, failing);
 
@@ -263,11 +263,11 @@ it('tells the lead when a task session fails or waits, and again after it waits 
 });
 
 it('tells the lead with its next message that a wait it was told of ended', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   f.store.insert('approvals', permissionRequest(f, 'answered-request', worker.id));
@@ -290,11 +290,11 @@ it('tells the lead with its next message that a wait it was told of ended', asyn
 });
 
 it("delivers worker reports with the lead's next message", async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   const report = (principal: Principal, text = 'The export format may change') =>
     f.call('task.report', { project_id: f.project.id, kind: 'risk', text }, null, principal);
 
@@ -331,11 +331,11 @@ it("delivers worker reports with the lead's next message", async () => {
 });
 
 it('hands worker reports to the lead with a steer as well', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   f.call(
     'task.report',
     { project_id: f.project.id, kind: 'risk', text: 'The export format may change' },
@@ -361,11 +361,11 @@ const reportAs = (f: Fixture, workerId: string, kind: string, text: string) =>
   );
 
 it('wakes an idle lead at once with a requirement report', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
 
   reportAs(f, worker.id, 'requirement', 'The user asked for CSV but the goal says JSON');
   const turns = told(f, lead.id);
@@ -376,11 +376,11 @@ it('wakes an idle lead at once with a requirement report', async () => {
 });
 
 it('leaves a risk report for the lead to read with its next message', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
 
   reportAs(f, worker.id, 'risk', 'The export format may change');
   await f.control.tick();
@@ -389,11 +389,11 @@ it('leaves a risk report for the lead to read with its next message', async () =
 });
 
 it('delivers a requirement report once the lead takes input again after a refused wake', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
 
   patch(f, lead.id, { state: 'reconciling' });
   reportAs(f, worker.id, 'requirement', 'Task a must change files outside its scope');
@@ -406,11 +406,11 @@ it('delivers a requirement report once the lead takes input again after a refuse
 });
 
 it('tells the lead once it can take input again after a refused wake', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   const advance = skewedClock(f);
@@ -428,11 +428,11 @@ it('tells the lead once it can take input again after a refused wake', async () 
 });
 
 it('tells the lead when the merge of a task session is blocked, with the reason', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   patch(f, worker.id, { merge: { state: 'blocked', reason: 'local_changes' } });
@@ -456,11 +456,11 @@ function failLatestTurn(f: Fixture, sessionId: string, error: string) {
 }
 
 it('tells the lead when the latest turn of a task session fails, and again after a later one fails', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   failLatestTurn(f, worker.id, 'provider overloaded');
@@ -499,11 +499,11 @@ it('tells the lead when the latest turn of a task session fails, and again after
 });
 
 it('tells the lead of a failed task turn that a steer was delivered into', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   failLatestTurn(f, worker.id, 'provider overloaded');
@@ -522,11 +522,11 @@ it('tells the lead of a failed task turn that a steer was delivered into', async
 });
 
 it('reports a closed task session as ended even when its latest turn failed', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   failLatestTurn(f, worker.id, 'provider overloaded');
@@ -551,8 +551,8 @@ const inOutbox = (f: Fixture, turnId: string) =>
   ).some((row) => row.payload.includes(turnId));
 
 it('asks an idle lead to rewrite its plan once, however often the board is synced', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
 
@@ -569,11 +569,11 @@ it('asks an idle lead to rewrite its plan once, however often the board is synce
 });
 
 it('hands a lead that syncs the board the brief a user sync sends it, without queueing a turn', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   const turns = f.store.list<SessionTurn>('session_turns').length;
 
   const { brief } = await f.call<{ brief: string }>(
@@ -591,8 +591,11 @@ it('hands a lead that syncs the board the brief a user sync sends it, without qu
 });
 
 it('reads the recent commits once for all the leads a sync briefs, while other work goes on', async () => {
-  const f = workbenchFixture();
-  const leads = [f.create('Plan the export feature'), f.create('Plan the export feature')];
+  const f = await workbenchFixture();
+  const leads = [
+    await f.create('Plan the export feature'),
+    await f.create('Plan the export feature'),
+  ];
   for (const lead of leads) {
     await settle(f, lead);
     writePlan(f, lead.id);
@@ -610,8 +613,8 @@ it('reads the recent commits once for all the leads a sync briefs, while other w
 });
 
 it('queues the sync after the running turn of a lead', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   slowTurns(f);
@@ -635,8 +638,8 @@ it('queues the sync after the running turn of a lead', async () => {
 });
 
 it('opens a new lead to sync the board when no lead takes input', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   patch(f, lead.id, { state: 'closed' });
@@ -657,8 +660,8 @@ it('opens a new lead to sync the board when no lead takes input', async () => {
 });
 
 it('does not sync a lead again while its sync turn runs', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   slowTurns(f);
@@ -672,11 +675,11 @@ it('does not sync a lead again while its sync turn runs', async () => {
 });
 
 it('lets the lead opened by a sync take over the plan of an ended lead', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   patch(f, lead.id, { state: 'closed', outcome: 'discarded' });
 
   const [successor] = (await sync(f)).session_ids;
@@ -720,11 +723,11 @@ const quoting = (f: Fixture, leadId: string, quote: string) => () =>
   );
 
 it("refuses a worker report delivered with the user's message as a source quote", async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   reportAs(f, worker.id, 'risk', 'The export format may change');
   f.call<SessionTurn>(
     'session.send',
@@ -739,8 +742,8 @@ it("refuses a worker report delivered with the user's message as a source quote"
 });
 
 it('refuses the instructions a sync opens a lead with as a source quote', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   patch(f, lead.id, { state: 'closed' });
@@ -760,11 +763,11 @@ const sendTo = (f: Fixture, sessionId: string, input: string) =>
   );
 
 it('tells a task session the contract its lead changed, with its next message, once', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [
@@ -784,11 +787,11 @@ it('tells a task session the contract its lead changed, with its next message, o
 });
 
 it('tells a task session the lead changed when its task is done', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [{ ...planTasks[0]!, done_when: 'report' }, planTasks[1]!]);
@@ -800,11 +803,11 @@ it('tells a task session the lead changed when its task is done', async () => {
 });
 
 it('does not tell a task session of a plan resent with its task unchanged', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [planTasks[0]!, { ...planTasks[1]!, goal: 'Users can click it twice' }]);
@@ -814,10 +817,10 @@ it('does not tell a task session of a plan resent with its task unchanged', asyn
 
 /** A task session opened on the plan's model for task a, idle after its first turn. */
 async function modelTask(f: Fixture, model: string, effort?: 'low' | 'high') {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, [{ ...planTasks[0]!, model, ...(effort ? { effort } : {}) }]);
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     model,
@@ -830,7 +833,7 @@ async function modelTask(f: Fixture, model: string, effort?: 'low' | 'high') {
 }
 
 it('moves an idle task session to the model its lead changed and sends it a turn on it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await modelTask(f, 'fixture');
 
   writePlan(f, lead.id, [{ ...planTasks[0]!, model: 'fixture-next' }]);
@@ -844,7 +847,7 @@ it('moves an idle task session to the model its lead changed and sends it a turn
 });
 
 it('moves an idle task session to the effort its lead changed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await modelTask(f, 'fixture', 'low');
 
   writePlan(f, lead.id, [{ ...planTasks[0]!, model: 'fixture', effort: 'high' }]);
@@ -856,7 +859,7 @@ it('moves an idle task session to the effort its lead changed', async () => {
 });
 
 it('does not tell a task session its lead changed only the runtime of its task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const second = new FixtureAdapter();
   second.name = 'second';
   f.control.adapters.set(second.name, second);
@@ -885,16 +888,16 @@ const fromTracker = (f: Fixture, sessionId: string) =>
   f.turns(sessionId).filter((turn) => turn.origin === 'tracker');
 
 async function leadWithWorker(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
   return { lead, worker };
 }
 
 it('hands a failed gate back again when its output changed, without telling the lead', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithWorker(f);
 
   gateFails(f, worker.id, 'expected 1, received 2');
@@ -915,7 +918,7 @@ it.each([
   ['hands failed gates back three times, then tells the lead of the fourth', undefined, 3],
   ['hands a failed gate back as often as the workflow policy allows, then tells the lead', 2, 2],
 ])('%s', async (_, limit, handbacks) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   if (limit !== undefined) setPolicy(f, { handback_limit: limit });
   const { lead, worker } = await leadWithWorker(f);
   const outputs = ['first failure', 'second failure', 'third failure', 'fourth failure'];
@@ -937,7 +940,7 @@ it.each([
 });
 
 it('tells the lead instead of handing back a failed gate whose last lines did not change', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithWorker(f);
   const tail = Array.from({ length: 20 }, (_, index) => `gate line ${index + 1}`).join('\n');
 
@@ -954,12 +957,12 @@ it('tells the lead instead of handing back a failed gate whose last lines did no
 });
 
 it('hands a turn without commits back once, then tells the lead when the next one has none either', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   const project = () => f.store.must<Project>('projects', f.project.id);
-  f.call(
+  await f.call(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -969,7 +972,7 @@ it('hands a turn without commits back once, then tells the lead when the next on
     project().revision,
   );
   f.call('project.autoMerge.set', { project_id: f.project.id, enabled: true }, project().revision);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await eventually(
     () => told(f, lead.id).length > 0,
     () => f.control.tick(),
@@ -985,7 +988,7 @@ it('hands a turn without commits back once, then tells the lead when the next on
 });
 
 it('hands a blocked merge back with the contract its lead changed in the meantime', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithWorker(f);
 
   writePlan(f, lead.id, [{ ...planTasks[0]!, goal: 'Exports download as CSV' }, planTasks[1]!]);
@@ -1003,7 +1006,7 @@ it('hands a blocked merge back with the contract its lead changed in the meantim
 });
 
 it('hands a merge blocked on agent configuration or on merge commits back to the session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithWorker(f);
   const blockMerge = (merge: Session['merge']) => {
     const session = current(f, worker.id);
@@ -1028,7 +1031,7 @@ it('hands a merge blocked on agent configuration or on merge commits back to the
 });
 
 it('moves an idle task session back to the default model when its lead drops the model of its task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await modelTask(f, 'fixture-large', 'high');
 
   writePlan(f, lead.id, [planTasks[0]!]);
@@ -1045,11 +1048,11 @@ it('moves an idle task session back to the default model when its lead drops the
 });
 
 it('moves an idle task session to the effort its lead gives a task without a model', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, [planTasks[0]!]);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [{ ...planTasks[0]!, effort: 'high' }]);
@@ -1063,7 +1066,7 @@ it('moves an idle task session to the effort its lead gives a task without a mod
 });
 
 it('writes the lead no notes of a session left from a removed task whose id a new task reuses', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithWorker(f);
   writePlan(f, lead.id, [{ ...planTasks[1]!, depends_on: [] }]);
   writePlan(f, lead.id);
@@ -1089,13 +1092,13 @@ function setPolicy(f: Fixture, input: Record<string, unknown>) {
 const independent = [planTasks[0]!, { ...planTasks[1]!, depends_on: [] }];
 
 it('waits the merge window before waking the lead while another task session runs', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, independent);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
-  const other = f.call<Session>('session.create', {
+  const other = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: script({ hang: true }),
@@ -1118,9 +1121,9 @@ it('waits the merge window before waking the lead while another task session run
 });
 
 it('wakes the lead for merges in a milestone only once every task of the milestone has ended', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   setPolicy(f, { acceptance_wake: 'milestone' });
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(
     f,
@@ -1128,9 +1131,9 @@ it('wakes the lead for merges in a milestone only once every task of the milesto
     independent.map((task) => ({ ...task, milestone: 'export' })),
     [{ id: 'export', title: 'Export works', criteria: ['Exports download'], tasks: ['a', 'b'] }],
   );
-  const first = boundTaskSession(f, lead.id, 'a');
+  const first = await boundTaskSession(f, lead.id, 'a');
   await settle(f, first);
-  const second = boundTaskSession(f, lead.id, 'b');
+  const second = await boundTaskSession(f, lead.id, 'b');
   await settle(f, second);
 
   const advance = skewedClock(f);
@@ -1150,9 +1153,9 @@ it('wakes the lead for merges in a milestone only once every task of the milesto
 });
 
 it('wakes the lead for a merge in a milestone whose other tasks it has not started', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   setPolicy(f, { acceptance_wake: 'milestone' });
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(
     f,
@@ -1160,7 +1163,7 @@ it('wakes the lead for a merge in a milestone whose other tasks it has not start
     independent.map((task) => ({ ...task, milestone: 'export' })),
     [{ id: 'export', title: 'Export works', criteria: ['Exports download'], tasks: ['a', 'b'] }],
   );
-  const first = boundTaskSession(f, lead.id, 'a');
+  const first = await boundTaskSession(f, lead.id, 'a');
   await settle(f, first);
 
   patch(f, first.id, { state: 'closed', outcome: 'merged' });
@@ -1169,7 +1172,7 @@ it('wakes the lead for a merge in a milestone whose other tasks it has not start
 });
 
 it('tells the lead that a turn stopped at its wall-clock limit kept its changes and goes on with the next message', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithWorker(f);
   failLatestTurn(f, worker.id, 'Turn deadline exceeded');
   f.store.event('agent.turn.completed', current(f, worker.id), f.project.id, {
@@ -1189,9 +1192,9 @@ it('tells the lead that a turn stopped at its wall-clock limit kept its changes 
 });
 
 it('keeps a second task queued for a place while the workflow policy allows one task session, and starts it once it allows more', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   setPolicy(f, { max_parallel: 1, path: { t1: 'dispatch' } });
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(
     f,
@@ -1221,8 +1224,8 @@ it('keeps a second task queued for a place while the workflow policy allows one 
 });
 
 it('wakes the lead once for an effective user contract edit', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
   f.call(
@@ -1243,11 +1246,11 @@ it('wakes the lead once for an effective user contract edit', async () => {
 });
 
 it('hands an unfinished task back to the lead at the user request and holds automatic repairs', async () => {
-  const f = workbenchFixture(),
-    lead = f.create('Plan the export feature');
+  const f = await workbenchFixture(),
+    lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = boundTaskSession(f, lead.id, 'a');
+  const worker = await boundTaskSession(f, lead.id, 'a');
   await settle(f, worker);
   gateFails(f, worker.id, 'The implementation needs another approach');
   const before = f.turns(worker.id).length;
@@ -1286,7 +1289,7 @@ it('hands an unfinished task back to the lead at the user request and holds auto
 });
 
 it('sends the first gate failure to the lead when hand-backs are disabled', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   setPolicy(f, { handback_limit: 0 });
   const { lead, worker } = await leadWithWorker(f);
   gateFails(f, worker.id, 'The export test failed');
@@ -1296,7 +1299,7 @@ it('sends the first gate failure to the lead when hand-backs are disabled', asyn
 });
 
 it('stops gate hand-backs immediately and lists the failure for the user', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   f.call('workflow.policy.set', { project_id: f.project.id, gate_on_fail: 'stop' });
   const { worker } = await leadWithWorker(f);
   gateFails(f, worker.id, 'The export test failed');

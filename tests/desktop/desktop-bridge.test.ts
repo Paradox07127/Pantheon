@@ -420,13 +420,13 @@ it('refuses an invalid query method without calling the daemon', async () => {
 
 it('relays event frames from a cursor and ends with one closed frame', async () => {
   const { root, daemon, bridge } = await liveDaemon();
-  daemon.control.execute(user, openProject(root));
+  await daemon.control.execute(user, openProject(root));
   mkdirSync(path.join(root, 'second'));
   const second = command(user.id, 'project.open', {
     name: 'second',
     roots: [path.join(root, 'second')],
   });
-  daemon.control.execute(user, second);
+  await daemon.control.execute(user, second);
   const frames: EventFrame[] = [];
   const end = bridge.subscribe({ cursor: 1 }, (frame) => frames.push(frame));
   await eventually(() => frames.some((f) => f.type === 'event'));

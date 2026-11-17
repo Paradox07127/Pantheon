@@ -7,6 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -82,7 +83,7 @@ export function gateFolder(root: string): { dir: string; argv: (source: string) 
 }
 
 export const user: Principal = { id: 'local-user', role: 'user' };
-export function fixture(
+export async function fixture(
   options: {
     adapter?: HarnessAdapter;
     failpoint?: (name: string) => void;
@@ -116,7 +117,7 @@ export function fixture(
     revision: number | null = null,
     principal = user,
   ): T => control.execute(principal, command(principal.id, type, input, revision)) as T;
-  const project = call<Project>('project.open', { name: 'fixture', roots: [projectRoot] });
+  const project = await call<Project>('project.open', { name: 'fixture', roots: [projectRoot] });
   return {
     root,
     projectRoot,
@@ -138,7 +139,27 @@ export function fixture(
 /** Registers a workspace in its own transaction, through the function session.create uses. */
 export function registerWorkspace(control: Control, input: WorkspaceRegistration): Workspace {
   const ctx = (control as unknown as { ctx: ControlContext }).ctx;
-  return ctx.store.transaction(() => registerInControl(ctx, input, crypto.randomUUID()));
+  const git = gitTopLevel(input.source);
+  return ctx.store.transaction(() => registerInControl(ctx, input, crypto.randomUUID(), git));
+}
+/** gitFolderAsync's answer read with a plain git, so a fixture registers without awaiting. */
+function gitTopLevel(root: string): boolean {
+  let real: string;
+  try {
+    real = realpathSync(root);
+  } catch {
+    return false;
+  }
+  const located = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd: real,
+    env: {
+      ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+    },
+    encoding: 'utf8',
+  });
+  return located.status === 0 && realpathSync(located.stdout.trim()) === real;
 }
 export async function eventually(
   fn: () => boolean,
@@ -189,7 +210,10 @@ export async function settle(
 }
 
 /** Inserts an open session row on a newly registered linked worktree of the fixture's project. */
-export function insertSession(f: ReturnType<typeof fixture>, extra: Partial<Session> = {}) {
+export function insertSession(
+  f: Awaited<ReturnType<typeof fixture>>,
+  extra: Partial<Session> = {},
+) {
   const workspace = registerWorkspace(f.control, {
     project_id: f.project.id,
     kind: 'linked_worktree',

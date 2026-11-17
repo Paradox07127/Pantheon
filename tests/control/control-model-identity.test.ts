@@ -21,8 +21,8 @@ function commitProjectRoot(root: string) {
   git(root, 'commit', '--quiet', '-m', 'Initial files');
 }
 
-function setup() {
-  const f = fixture({ managedWorkspaces: true });
+async function setup() {
+  const f = await fixture({ managedWorkspaces: true });
   cleanups.push(() => f.close());
   commitProjectRoot(f.projectRoot);
   vi.spyOn(f.adapter, 'send').mockImplementation(async (_handle, turn) => ({
@@ -35,8 +35,8 @@ function setup() {
   return { ...f, startSpy: start, resumeSpy: resume, ctx };
 }
 
-function open(f: ReturnType<typeof setup>) {
-  const session = f.call<Session>('session.create', {
+async function open(f: Awaited<ReturnType<typeof setup>>) {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     model: 'requested-model',
@@ -49,8 +49,8 @@ function open(f: ReturnType<typeof setup>) {
 it.each(['start', 'resume'] as const)(
   'persists session configuration and passes it on %s',
   async (method) => {
-    const f = setup();
-    let session = open(f);
+    const f = await setup();
+    let session = await open(f);
     expect(session).toMatchObject({
       requested_model: 'requested-model',
       profile_version: 3,
@@ -81,9 +81,9 @@ it.each(['start', 'resume'] as const)(
   },
 );
 
-it('persists vendor reports from handles and startup events and clears stale reports', () => {
-  const f = setup();
-  const session = open(f);
+it('persists vendor reports from handles and startup events and clears stale reports', async () => {
+  const f = await setup();
+  const session = await open(f);
   const handle: SessionHandle = {
     platform_session_id: session.id,
     native_session_id: 'native-model-session',
@@ -116,13 +116,13 @@ it('persists vendor reports from handles and startup events and clears stale rep
   }
 });
 
-function firstTurn(f: ReturnType<typeof setup>, session: Session) {
+function firstTurn(f: Awaited<ReturnType<typeof setup>>, session: Session) {
   return f.store.list<SessionTurn>('session_turns').find((turn) => turn.session_id === session.id)!;
 }
 
-it('records the model the runtime reported on the turn its startup event belongs to', () => {
-  const f = setup();
-  const session = open(f);
+it('records the model the runtime reported on the turn its startup event belongs to', async () => {
+  const f = await setup();
+  const session = await open(f);
   const turn = firstTurn(f, session);
   agentEvent(f.ctx, session.id, {
     key: 'init-turn',
@@ -137,9 +137,9 @@ it('records the model the runtime reported on the turn its startup event belongs
   );
 });
 
-it('records a context compaction of a turn as a session event', () => {
-  const f = setup();
-  const session = open(f);
+it('records a context compaction of a turn as a session event', async () => {
+  const f = await setup();
+  const session = await open(f);
   const turn = firstTurn(f, session);
   agentEvent(f.ctx, session.id, {
     key: 'compaction',

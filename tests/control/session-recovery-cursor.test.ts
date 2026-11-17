@@ -7,7 +7,7 @@ import { awaitWorkspaceReady, eventually, fixture } from '../helpers.js';
 import { git } from './workbench-fixture.js';
 
 it('restores the cursor of a reconciling session from its newest keyed agent event', async () => {
-  const f = fixture();
+  const f = await fixture();
   try {
     const session = f.store.insert<Session>('sessions', {
       id: 'reconciling-conversation',
@@ -27,7 +27,7 @@ it('restores the cursor of a reconciling session from its newest keyed agent eve
       native_session_id: 'native-other',
       reason: 'Native id belongs to another session',
     });
-    f.control.recover();
+    await f.control.recover();
     expect(f.store.must<Session>('sessions', session.id)).toMatchObject({
       last_cursor: '7',
       event_namespace: 'native',
@@ -50,7 +50,7 @@ it('records a refused native session id once per id however often the handle rep
     turn_id: turn.turn_id,
     status: 'delivered',
   }));
-  const f = fixture({ adapter, managedWorkspaces: true });
+  const f = await fixture({ adapter, managedWorkspaces: true });
   try {
     git(f.projectRoot, 'init', '--quiet', '--initial-branch=main');
     writeFileSync(path.join(f.projectRoot, 'README.md'), 'fixture\n');
@@ -67,7 +67,7 @@ it('records a refused native session id once per id however often the handle rep
         turn_count: 0,
         native_id: id,
       });
-    const session = f.call<Session>('session.create', {
+    const session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: adapter.name,
       input: 'Report a borrowed native id',

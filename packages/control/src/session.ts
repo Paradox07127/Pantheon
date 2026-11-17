@@ -1625,7 +1625,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
     }
     const spec: SessionSpec = session.workspace_id
       ? ctx.store.must<Workspace>('workspaces', session.workspace_id).kind === 'in_place'
-        ? inPlaceSessionSpec(ctx, session)
+        ? await inPlaceSessionSpec(ctx, session)
         : workbenchSessionSpec(ctx, session)
       : managedSessionSpec(ctx, {
           platform_session_id: session.id,

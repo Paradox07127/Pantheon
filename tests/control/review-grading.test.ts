@@ -18,11 +18,11 @@ const finding = {
 };
 
 async function reviewFixture() {
-  const f = workbenchFixture({ delay: 0 });
+  const f = await workbenchFixture({ delay: 0 });
   const reviewer = new FixtureAdapter(0);
   reviewer.name = 'independent-reviewer';
   f.control.adapters.set(reviewer.name, reviewer);
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.store.must<Session>('sessions', session.id).state === 'open',

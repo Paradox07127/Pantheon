@@ -100,7 +100,7 @@ async function dependencyFixture() {
   controls.push(control);
   const call = <T>(type: CommandType, input: Record<string, unknown>) =>
     control.execute(user, command(user.id, type, input)) as T;
-  const project = call<Project>('project.open', {
+  const project = await call<Project>('project.open', {
     name: 'Dependency project',
     roots: [source],
   });

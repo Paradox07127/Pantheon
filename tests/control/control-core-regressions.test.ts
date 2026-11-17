@@ -29,21 +29,21 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 const context = (control: Control) => (control as unknown as { ctx: ControlContext }).ctx;
-function setup() {
-  const f = fixture({ now: () => 1700000000000, managedWorkspaces: true });
+async function setup() {
+  const f = await fixture({ now: () => 1700000000000, managedWorkspaces: true });
   cleanups.push(() => f.close());
   // Worktree sessions clone a git root; the fixture's own project root is a plain folder.
   const root = path.join(f.root, 'sessions');
   mkdirSync(root);
-  const sessionProject = f.call<Project>('project.open', {
+  const sessionProject = await f.call<Project>('project.open', {
     name: 'Worktree sessions',
     roots: [root],
   });
   return { ...f, sessionProject };
 }
 /** A worktree session and its queued first turn, which starts once the worktree is ready. */
-function conversation(f: ReturnType<typeof setup>) {
-  const session = f.call<Session>('session.create', {
+async function conversation(f: Awaited<ReturnType<typeof setup>>) {
+  const session = await f.call<Session>('session.create', {
     project_id: f.sessionProject.id,
     runtime: f.adapter.name,
     input: 'Work',
@@ -53,7 +53,7 @@ function conversation(f: ReturnType<typeof setup>) {
     .find((item) => item.session_id === session.id)!;
   return { session, turn };
 }
-function hold(f: ReturnType<typeof setup>) {
+function hold(f: Awaited<ReturnType<typeof setup>>) {
   let sink: AgentEventSink;
   const original = f.adapter.start.bind(f.adapter);
   const start = vi.spyOn(f.adapter, 'start').mockImplementation(async (spec, emit) => {
@@ -66,9 +66,9 @@ function hold(f: ReturnType<typeof setup>) {
   return { start, send, emit: (event: Parameters<AgentEventSink>[0]) => sink(event) };
 }
 
-it('records session startup at the updated aggregate revision', () => {
-  const f = setup(),
-    { session } = conversation(f);
+it('records session startup at the updated aggregate revision', async () => {
+  const f = await setup(),
+    { session } = await conversation(f);
   agentEvent(context(f.control), session.id, {
     key: 'native-start',
     provider_sequence: 1,
@@ -80,9 +80,9 @@ it('records session startup at the updated aggregate revision', () => {
   );
 });
 
-it('closes an unconfirmed session when it exits', () => {
-  const f = setup(),
-    { session, turn } = conversation(f),
+it('closes an unconfirmed session when it exits', async () => {
+  const f = await setup(),
+    { session, turn } = await conversation(f),
     ctx = context(f.control);
   const current = f.store.must<Session>('sessions', session.id);
   f.store.update('sessions', { ...current, stop_pending: true }, current.revision);
@@ -109,8 +109,8 @@ it('closes an unconfirmed session when it exits', () => {
 });
 
 it('preserves startup diagnostics emitted before the adapter returns', async () => {
-  const f = setup(),
-    { session } = conversation(f),
+  const f = await setup(),
+    { session } = await conversation(f),
     original = f.adapter.start.bind(f.adapter);
   vi.spyOn(f.adapter, 'start').mockImplementation(async (spec, sink) => {
     sink({
@@ -141,9 +141,9 @@ it('preserves startup diagnostics emitted before the adapter returns', async () 
 });
 
 it('records a native message delta only once when it is delivered twice', async () => {
-  const f = setup(),
+  const f = await setup(),
     h = hold(f),
-    { session, turn } = conversation(f);
+    { session, turn } = await conversation(f);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => h.send.mock.calls.length > 0,
@@ -172,8 +172,8 @@ it('records a native message delta only once when it is delivered twice', async 
 });
 
 it('clears a failed turn error before the next successful queued turn', async () => {
-  const f = setup(),
-    { turn, session } = conversation(f),
+  const f = await setup(),
+    { turn, session } = await conversation(f),
     ctx = context(f.control);
   const next = f.store.insert<SessionTurn>('session_turns', {
     ...turn,
@@ -248,9 +248,9 @@ it.skipIf(process.platform === 'win32')(
   },
 );
 
-it('enriches a pid-only writer identity while the handle is live', () => {
-  const f = setup(),
-    { session } = conversation(f),
+it('enriches a pid-only writer identity while the handle is live', async () => {
+  const f = await setup(),
+    { session } = await conversation(f),
     ctx = context(f.control);
   const identity = { pid: 41001, start_time_us: 1700000000000000 };
   const read = vi.spyOn(ctx, 'readProcess').mockReturnValue(identity);
@@ -268,8 +268,8 @@ it('enriches a pid-only writer identity while the handle is live', () => {
 });
 
 it('delivers no input to a worktree session discarded while its process starts', async () => {
-  const f = setup(),
-    { session, turn } = conversation(f),
+  const f = await setup(),
+    { session, turn } = await conversation(f),
     original = f.adapter.start.bind(f.adapter);
   let release: (() => void) | undefined;
   vi.spyOn(f.adapter, 'start').mockImplementation(async (spec, emit) => {
@@ -304,8 +304,8 @@ it('delivers no input to a worktree session discarded while its process starts',
 });
 
 it('reconciles a session whose start failed without a confirmed stop, then reopens it once the process is gone', async () => {
-  const f = setup(),
-    { session, turn } = conversation(f),
+  const f = await setup(),
+    { session, turn } = await conversation(f),
     ctx = context(f.control);
   const pid = 2 ** 22 + 11;
   vi.spyOn(ctx, 'readProcess').mockReturnValue(undefined);

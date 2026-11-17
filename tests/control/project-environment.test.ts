@@ -12,7 +12,11 @@ import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import type { Project, Session, SessionSpec, Workspace } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
-import { gitFolder, rootOf, type ControlContext } from '../../packages/control/dist/context.js';
+import {
+  gitFolderAsync,
+  rootOf,
+  type ControlContext,
+} from '../../packages/control/dist/context.js';
 import { managedSessionSpec } from '../../packages/control/dist/native-session.js';
 import { ClaudeAdapter } from '../../packages/adapters/src/claude.js';
 import { workbenchFixture } from './workbench-fixture.js';
@@ -22,8 +26,8 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-function setup() {
-  const f = fixture({ managedWorkspaces: true });
+async function setup() {
+  const f = await fixture({ managedWorkspaces: true });
   cleanups.push(() => f.close());
   const extra = path.join(f.root, 'shared-library'),
     other = path.join(f.root, 'second-project'),
@@ -46,7 +50,7 @@ function setup() {
 }
 
 /** A linked worktree of the project's folder, registered as session.create registers one. */
-function worktree(f: ReturnType<typeof setup>) {
+function worktree(f: Awaited<ReturnType<typeof setup>>) {
   return registerWorkspace(f.control, {
     project_id: f.project.id,
     kind: 'linked_worktree',
@@ -56,7 +60,7 @@ function worktree(f: ReturnType<typeof setup>) {
 }
 
 /** A conversation without a worktree, stored as the dispatcher reads it. */
-function conversation(f: ReturnType<typeof setup>, state: Session['state'] = 'open') {
+function conversation(f: Awaited<ReturnType<typeof setup>>, state: Session['state'] = 'open') {
   return f.store.insert<Session>('sessions', {
     id: `conversation-${state}`,
     revision: 1,
@@ -68,9 +72,9 @@ function conversation(f: ReturnType<typeof setup>, state: Session['state'] = 'op
   });
 }
 
-it('opens a project with several roots and environment variables and keeps values out of events', () => {
-  const f = setup();
-  const project = f.call<Project>('project.open', {
+it('opens a project with several roots and environment variables and keeps values out of events', async () => {
+  const f = await setup();
+  const project = await f.call<Project>('project.open', {
     name: 'With environment',
     roots: [f.other, f.extra],
     env: { PROJECT_MARKER: 'secret-value' },
@@ -92,8 +96,8 @@ it('opens a project with several roots and environment variables and keeps value
   expect(inputSchemas['project.open'].safeParse({ name: 'n', root: '/r' }).success).toBe(false);
 });
 
-it('rejects nested, repeated or non-directory roots within one project', () => {
-  const f = setup();
+it('rejects nested, repeated or non-directory roots within one project', async () => {
+  const f = await setup();
   const nested = path.join(f.other, 'nested'),
     file = path.join(f.root, 'plain-file');
   mkdirSync(nested);
@@ -113,16 +117,22 @@ it('rejects nested, repeated or non-directory roots within one project', () => {
   expect(f.store.list<Project>('projects')).toHaveLength(1);
 });
 
-it('returns the project with the same set of roots in any order', () => {
-  const f = setup();
-  const project = f.call<Project>('project.open', { name: 'Pair', roots: [f.other, f.extra] });
-  const again = f.call<Project>('project.open', { name: 'Other name', roots: [f.extra, f.other] });
+it('returns the project with the same set of roots in any order', async () => {
+  const f = await setup();
+  const project = await f.call<Project>('project.open', {
+    name: 'Pair',
+    roots: [f.other, f.extra],
+  });
+  const again = await f.call<Project>('project.open', {
+    name: 'Other name',
+    roots: [f.extra, f.other],
+  });
   expect(again).toEqual(project);
   expect(f.store.list<Project>('projects')).toHaveLength(2);
 });
 
-it('rejects roots that equal, contain or lie inside a root of another project and names it', () => {
-  const f = setup();
+it('rejects roots that equal, contain or lie inside a root of another project and names it', async () => {
+  const f = await setup();
   const named = expect.objectContaining({
     code: 'scope_violation',
     message: expect.stringContaining('"fixture"'),
@@ -135,7 +145,7 @@ it('rejects roots that equal, contain or lie inside a root of another project an
   expect(() => f.call('project.open', { name: 'Inside', roots: [inside] })).toThrow(named);
   const inner = path.join(f.extra, 'inner');
   mkdirSync(inner);
-  f.call('project.open', { name: 'Inner', roots: [inner] });
+  await f.call('project.open', { name: 'Inner', roots: [inner] });
   expect(() => f.call('project.open', { name: 'Containing', roots: [f.extra] })).toThrow(
     expect.objectContaining({
       code: 'scope_violation',
@@ -149,7 +159,7 @@ it('rejects roots that equal, contain or lie inside a root of another project an
       message: expect.stringContaining('overlap removed project "fixture"'),
     }),
   );
-  const second = f.call<Project>('project.open', { name: 'Second', roots: [f.other] });
+  const second = await f.call<Project>('project.open', { name: 'Second', roots: [f.other] });
   expect(() =>
     f.call(
       'project.environment.set',
@@ -160,9 +170,9 @@ it('rejects roots that equal, contain or lie inside a root of another project an
   expect(f.store.list<Project>('projects')).toHaveLength(3);
 });
 
-it('replaces the project roots and environment and records only variable names', () => {
-  const f = setup();
-  const next = f.call<Project>(
+it('replaces the project roots and environment and records only variable names', async () => {
+  const f = await setup();
+  const next = await f.call<Project>(
     'project.environment.set',
     {
       project_id: f.project.id,
@@ -189,7 +199,7 @@ it('replaces the project roots and environment and records only variable names',
     },
   ]);
   expect(JSON.stringify(f.store.events())).not.toContain('hidden-value');
-  const cleared = f.call<Project>(
+  const cleared = await f.call<Project>(
     'project.environment.set',
     { project_id: f.project.id, name: 'Renamed', roots: [f.projectRoot], env: {} },
     next.revision,
@@ -205,16 +215,16 @@ it('replaces the project roots and environment and records only variable names',
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
 });
 
-it('sets a gate per git root, refuses other roots and drops the gate of a removed root', () => {
-  const f = setup();
-  const project = f.call<Project>('project.open', {
+it('sets a gate per git root, refuses other roots and drops the gate of a removed root', async () => {
+  const f = await setup();
+  const project = await f.call<Project>('project.open', {
     name: 'Mixed',
     roots: [f.repository, f.extra],
   });
   // Stands for a plain folder opened before project.open made every root a git repository.
   rmSync(path.join(f.extra, '.git'), { recursive: true });
   const commands = [{ name: 'test', argv: ['pnpm', 'test'] }];
-  const gated = f.call<Project>(
+  const gated = await f.call<Project>(
     'project.gate.set',
     { project_id: project.id, root: f.repository, commands },
     project.revision,
@@ -223,24 +233,24 @@ it('sets a gate per git root, refuses other roots and drops the gate of a remove
   expect(f.events('project.gate_set')).toMatchObject([
     { payload: { root: f.repository, commands } },
   ]);
-  expect(() =>
+  await expect(
     f.call('project.gate.set', { project_id: project.id, root: f.extra, commands }, gated.revision),
-  ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
+  ).rejects.toThrow(expect.objectContaining({ code: 'invalid_input' }));
   expect(() =>
     f.call('project.gate.set', { project_id: project.id, root: f.other, commands }, gated.revision),
   ).toThrow(expect.objectContaining({ code: 'scope_violation' }));
-  const cleared = f.call<Project>(
+  const cleared = await f.call<Project>(
     'project.gate.set',
     { project_id: project.id, root: f.repository, commands: [] },
     gated.revision,
   );
   expect(cleared).not.toHaveProperty('gates');
-  const again = f.call<Project>(
+  const again = await f.call<Project>(
     'project.gate.set',
     { project_id: project.id, root: f.repository, commands },
     cleared.revision,
   );
-  const moved = f.call<Project>(
+  const moved = await f.call<Project>(
     'project.environment.set',
     { project_id: project.id, name: 'Mixed', roots: [f.extra], env: {} },
     again.revision,
@@ -248,8 +258,8 @@ it('sets a gate per git root, refuses other roots and drops the gate of a remove
   expect(moved).not.toHaveProperty('gates');
 });
 
-it('refuses to drop a folder that a session still holds unmerged work from', () => {
-  const f = setup();
+it('refuses to drop a folder that a session still holds unmerged work from', async () => {
+  const f = await setup();
   const session = f.store.insert<Session>('sessions', {
     id: 'unmerged-work',
     revision: 1,
@@ -275,11 +285,11 @@ it('refuses to drop a folder that a session still holds unmerged work from', () 
     { ...session, state: 'closed', outcome: 'discarded' },
     session.revision,
   );
-  expect(drop().roots).toEqual([f.extra]);
+  expect((await drop()).roots).toEqual([f.extra]);
 });
 
-it('reads every root configuration: the gate of each root and merged extensions', () => {
-  const f = setup();
+it('reads every root configuration: the gate of each root and merged extensions', async () => {
+  const f = await setup();
   const write = (root: string, name: string, value: unknown) => {
     mkdirSync(path.join(root, '.pantheon'), { recursive: true });
     writeFileSync(path.join(root, '.pantheon', name), JSON.stringify(value));
@@ -302,7 +312,7 @@ it('reads every root configuration: the gate of each root and merged extensions'
     gate: gate('repository'),
     extensions: { claude: overrides('beta', false) },
   });
-  const project = f.call<Project>('project.open', {
+  const project = await f.call<Project>('project.open', {
     name: 'Configured',
     roots: [f.extra, f.repository],
   });
@@ -315,8 +325,8 @@ it('reads every root configuration: the gate of each root and merged extensions'
   });
 });
 
-it('opens a user-level item for the project when any root opens it', () => {
-  const f = setup();
+it('opens a user-level item for the project when any root opens it', async () => {
+  const f = await setup();
   const write = (root: string, extensions: unknown) => {
     mkdirSync(path.join(root, '.pantheon'), { recursive: true });
     writeFileSync(
@@ -335,7 +345,7 @@ it('opens a user-level item for the project when any root opens it', () => {
   write(f.repository, {
     claude: { ...closed, enabled_user_mcp_servers: ['beta'], enabled_user_skills: ['review'] },
   });
-  const project = f.call<Project>('project.open', {
+  const project = await f.call<Project>('project.open', {
     name: 'Opened',
     roots: [f.extra, f.repository],
   });
@@ -348,8 +358,8 @@ it('opens a user-level item for the project when any root opens it', () => {
   });
 });
 
-it('finds the one root holding all paths and tells git roots from other folders', () => {
-  const f = setup();
+it('finds the one root holding all paths and tells git roots from other folders', async () => {
+  const f = await setup();
   const project = { roots: [f.repository, f.extra] } as Project;
   const inner = path.join(f.repository, 'inner');
   mkdirSync(inner);
@@ -358,13 +368,13 @@ it('finds the one root holding all paths and tells git roots from other folders'
   expect(rootOf(project, [inner, f.extra])).toBeUndefined();
   expect(rootOf(project, [f.other])).toBeUndefined();
   expect(rootOf(project, [])).toBeUndefined();
-  expect(gitFolder(f.repository)).toBe(true);
-  expect(gitFolder(inner)).toBe(false);
-  expect(gitFolder(f.extra)).toBe(false);
+  expect(await gitFolderAsync(f.repository)).toBe(true);
+  expect(await gitFolderAsync(inner)).toBe(false);
+  expect(await gitFolderAsync(f.extra)).toBe(false);
 });
 
-it('refuses to remove a project while one of its sessions is running', () => {
-  const f = setup();
+it('refuses to remove a project while one of its sessions is running', async () => {
+  const f = await setup();
   conversation(f, 'running');
   expect(() => f.call('project.remove', { project_id: f.project.id }, f.project.revision)).toThrow(
     expect.objectContaining({ code: 'resource_busy' }),
@@ -372,8 +382,8 @@ it('refuses to remove a project while one of its sessions is running', () => {
   expect(f.store.must<Project>('projects', f.project.id)).not.toHaveProperty('removed_at');
 });
 
-it('removes a project and restores the same project with its history when the folder is opened again', () => {
-  const f = setup();
+it('removes a project and restores the same project with its history when the folder is opened again', async () => {
+  const f = await setup();
   const workspace = worktree(f);
   const removed = f.call<Project>(
     'project.remove',
@@ -382,7 +392,7 @@ it('removes a project and restores the same project with its history when the fo
   );
   expect(removed.removed_at).toEqual(expect.any(Number));
   expect(f.events('project.removed')).toMatchObject([{ aggregate_id: f.project.id }]);
-  const restored = f.call<Project>('project.open', { name: 'Again', roots: [f.projectRoot] });
+  const restored = await f.call<Project>('project.open', { name: 'Again', roots: [f.projectRoot] });
   expect(restored.id).toBe(f.project.id);
   expect(restored).not.toHaveProperty('removed_at');
   expect(restored.name).toBe(f.project.name);
@@ -390,9 +400,9 @@ it('removes a project and restores the same project with its history when the fo
   expect(f.store.must<Workspace>('workspaces', workspace.id).project_id).toBe(f.project.id);
 });
 
-it('keeps writers to their workspace and gives every session the project variables', () => {
-  const f = setup();
-  f.call(
+it('keeps writers to their workspace and gives every session the project variables', async () => {
+  const f = await setup();
+  await f.call(
     'project.environment.set',
     {
       project_id: f.project.id,
@@ -431,9 +441,9 @@ it('keeps writers to their workspace and gives every session the project variabl
   expect(planner.env).toEqual({ PROJECT_MARKER: 'from-project' });
 });
 
-it('keeps the session temporary directory over the project one while adding project variables', () => {
-  const f = setup();
-  f.call(
+it('keeps the session temporary directory over the project one while adding project variables', async () => {
+  const f = await setup();
+  await f.call(
     'project.environment.set',
     {
       project_id: f.project.id,
@@ -516,8 +526,8 @@ function git(cwd: string, ...args: string[]) {
 }
 
 it.skipIf(insideSandbox)('runs gate commands with the project variables', async () => {
-  const f = workbenchFixture();
-  const project = f.call<Project>(
+  const f = await workbenchFixture();
+  const project = await f.call<Project>(
     'project.environment.set',
     {
       project_id: f.project.id,
@@ -527,7 +537,7 @@ it.skipIf(insideSandbox)('runs gate commands with the project variables', async 
     },
     f.project.revision,
   );
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -545,7 +555,7 @@ it.skipIf(insideSandbox)('runs gate commands with the project variables', async 
       ],
     },
   ];
-  f.call<Project>(
+  await f.call<Project>(
     'project.gate.set',
     { project_id: project.id, root: f.source, commands: gate },
     project.revision,

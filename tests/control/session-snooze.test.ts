@@ -5,7 +5,7 @@ import type { Approval, Principal, Session, SessionTurn, Workspace } from '@pant
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const script = (...steps: object[]) => `fixture-script\n${JSON.stringify(steps)}`;
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
@@ -28,7 +28,7 @@ const unsnoozed = (f: Fixture, sessionId: string) =>
     .map((event) => event.payload);
 
 async function idleSession(f: Fixture, input?: string) {
-  const session = f.create(input);
+  const session = await f.create(input);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -40,7 +40,7 @@ async function idleSession(f: Fixture, input?: string) {
 }
 
 it('snoozes and unsnoozes a session for the user only', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   expect(() => snooze(f, session.id, true, planner(f))).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
@@ -58,9 +58,9 @@ it('snoozes and unsnoozes a session for the user only', async () => {
   ).toEqual(expect.arrayContaining(['session.snoozed', 'session.unsnoozed']));
 });
 
-it('refuses to snooze an archived session', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('refuses to snooze an archived session', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const ended = f.store.update<Session>(
     'sessions',
     { ...current(f, session.id), state: 'closed', outcome: 'discarded' },
@@ -72,7 +72,7 @@ it('refuses to snooze an archived session', () => {
 });
 
 it('clears the snooze when the user archives the session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   snooze(f, session.id);
   const archived = f.call<Session>(
@@ -86,8 +86,8 @@ it('clears the snooze when the user archives the session', async () => {
 });
 
 it('brings a snoozed session back when its turn ends', async () => {
-  const f = workbenchFixture();
-  const session = f.create(script({ wait: 500 }, { say: 'Done' }));
+  const f = await workbenchFixture();
+  const session = await f.create(script({ wait: 500 }, { say: 'Done' }));
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]?.state === 'running',
@@ -103,8 +103,8 @@ it('brings a snoozed session back when its turn ends', async () => {
 });
 
 it('brings a snoozed session back when it asks the user for permission', async () => {
-  const f = workbenchFixture();
-  const session = f.create(
+  const f = await workbenchFixture();
+  const session = await f.create(
     script({ wait: 300 }, { ask: { tool: 'Bash', input: { command: 'pnpm test' } } }),
   );
   await awaitWorkspaceReady(f.control, session.workspace_id!);
@@ -126,7 +126,7 @@ it('brings a snoozed session back when it asks the user for permission', async (
 });
 
 it('brings a snoozed session back when its merge is blocked', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const session = await idleSession(f);
@@ -150,7 +150,7 @@ it('brings a snoozed session back when its merge is blocked', async () => {
 });
 
 it('brings a snoozed session back when it ends', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   snooze(f, session.id);
   f.call('session.discard', { session_id: session.id }, current(f, session.id).revision);
@@ -163,7 +163,7 @@ it('brings a snoozed session back when it ends', async () => {
 });
 
 it('brings a snoozed session back when a daemon restart fails its held input of unknown delivery', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const first = f.call<SessionTurn>(
     'session.send',
@@ -190,7 +190,7 @@ it('brings a snoozed session back when a daemon restart fails its held input of 
 });
 
 it('brings a snoozed session back when a daemon restart fails the turn ahead of its held input', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const running = f.call<SessionTurn>(
     'session.send',
@@ -228,7 +228,7 @@ it('brings a snoozed session back when a daemon restart fails the turn ahead of 
 });
 
 it('brings a snoozed session back when a daemon restart fails its turn and nothing continues it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const running = f.call<SessionTurn>(
     'session.send',
@@ -258,7 +258,7 @@ it('brings a snoozed session back when a daemon restart fails its turn and nothi
 });
 
 it('brings a snoozed session back when the user sends it a message', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   snooze(f, session.id);
   f.call(

@@ -83,7 +83,7 @@ async function worktreeFixture() {
     input: Record<string, unknown>,
     revision: number | null = null,
   ) => control.execute(user, command(user.id, type, input, revision)) as T;
-  const project = call<Project>('project.open', {
+  const project = await call<Project>('project.open', {
     name: 'Worktree project',
     roots: [source],
   });
@@ -135,7 +135,7 @@ it('names worktree folders after the project and the work, then the start of the
   );
   for (const name of [undefined, '修复登录'])
     expect(f.register(name).path).toMatch(new RegExp(`^${projectFolder}/[0-9a-f]{8}$`));
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: [...f.control.adapters.keys()][0],
     input: '\nRename the Export button\nThen tidy up',

@@ -7,7 +7,7 @@ import { git, workbenchFixture } from './workbench-fixture.js';
 import { user } from '../helpers.js';
 
 it('splits a commit into hunks whatever color the checkout configures', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   git(root, 'config', 'color.ui', 'always');
   writeFileSync(path.join(root, 'answer.txt'), 'base\nsecond\n');
@@ -30,7 +30,7 @@ function commitFiles(root: string, files: Record<string, string>) {
 const marks = (diff: LandingDiff) => diff.hunks.map((hunk) => [hunk.file, hunk.noise]);
 
 it('marks only indentation and blank lines as whitespace, not a split line or space inside one', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   commitFiles(root, {
     'layout.js': 'function g() {\nreturn 1;\n}\n',
@@ -53,7 +53,7 @@ it('marks only indentation and blank lines as whitespace, not a split line or sp
 });
 
 it('marks build output as generated only beside a change to other files', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   commitFiles(root, { 'dist/index.js': 'run(1);\n', 'src/index.js': 'run(1);\n' });
   const alone = commitFiles(root, { 'dist/index.js': 'run(2);\n' });
@@ -68,7 +68,7 @@ it('marks build output as generated only beside a change to other files', async 
 });
 
 it('asks the story to tell a moved block that may run differently in a card', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const root = f.project.roots[0]!;
   const calls = 'sendEmail(user);\nchargeCard(user);\nlogAudit(user);\n';
   commitFiles(root, { 'a.js': `start();\n${calls}end();\n` });

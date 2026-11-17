@@ -39,9 +39,9 @@ function context(control: Control): ControlContext {
   };
 }
 
-function timerFixture() {
+async function timerFixture() {
   const clock = createVirtualClock(1700000000000),
-    f = fixture({ now: clock.now });
+    f = await fixture({ now: clock.now });
   return {
     ...f,
     clock,
@@ -59,7 +59,7 @@ function timerFixture() {
 afterEach(() => timerHandlers.clear());
 
 it('fires every due timer once with its handler writes and a revisioned event', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     const handler = vi.fn((ctx: ControlContext, timer: Timer) => {
       const project = ctx.store.must<Project>('projects', timer.subject_id);
@@ -102,7 +102,7 @@ it('fires every due timer once with its handler writes and a revisioned event', 
 });
 
 it('leaves a timer pending until the injected clock reaches its deadline', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     const handler = vi.fn();
     timerHandlers.set(f.input.kind, handler);
@@ -121,7 +121,7 @@ it('leaves a timer pending until the injected clock reaches its deadline', async
 });
 
 it('keeps the original timer unchanged when its stable key is scheduled again', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     timerHandlers.set(f.input.kind, () => {});
     const timer = scheduleTimer(f.ctx, f.input),
@@ -145,7 +145,7 @@ it('keeps the original timer unchanged when its stable key is scheduled again', 
 });
 
 it('cancels pending timers and leaves missing or terminal timers unchanged', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     const handler = vi.fn();
     timerHandlers.set(f.input.kind, handler);
@@ -175,7 +175,7 @@ it('cancels pending timers and leaves missing or terminal timers unchanged', asy
 });
 
 it('rolls back handler writes, events and outbox on failure and retries the pending timer', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     let fail = true;
     timerHandlers.set(f.input.kind, (ctx, timer) => {
@@ -212,7 +212,7 @@ it('rolls back handler writes, events and outbox on failure and retries the pend
 });
 
 it('keeps firing other timers when one timer handler throws', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     timerHandlers.set('broken-reminder', () => {
       throw new Error('Reminder failed');
@@ -230,7 +230,7 @@ it('keeps firing other timers when one timer handler throws', async () => {
 });
 
 it('allows scheduling and cancellation inside the caller transaction', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     expect(() =>
       f.store.transaction(() => {
@@ -255,7 +255,7 @@ it('allows scheduling and cancellation inside the caller transaction', async () 
 });
 
 it('rechecks pending state when an earlier handler cancels another due timer', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     const handler = vi.fn((ctx: ControlContext) => cancelTimer(ctx, 'later-reminder'));
     timerHandlers.set(f.input.kind, handler);
@@ -272,7 +272,7 @@ it('rechecks pending state when an earlier handler cancels another due timer', a
 });
 
 it('keeps unknown kinds pending until a handler is registered', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     const timer = scheduleTimer(f.ctx, f.input);
     f.clock.advance(1000);
@@ -291,7 +291,7 @@ it('keeps unknown kinds pending until a handler is registered', async () => {
 });
 
 it('fires timers on control ticks without duplicating them on overlapping ticks', async () => {
-  const f = timerFixture();
+  const f = await timerFixture();
   try {
     const handler = vi.fn();
     timerHandlers.set(f.input.kind, handler);

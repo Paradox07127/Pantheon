@@ -14,11 +14,11 @@ import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 it('refuses to land into a source whose .git/commondir points git at configuration a session wrote', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>

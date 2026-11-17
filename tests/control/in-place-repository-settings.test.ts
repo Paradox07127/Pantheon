@@ -63,15 +63,15 @@ function repository() {
       projectRoot,
       tempDir,
     });
-  const denied = (projectRoot: string, target: string) =>
-    sandbox(projectRoot).protected_entries.find((entry) => entry.path === target)?.deny;
+  const denied = async (projectRoot: string, target: string) =>
+    (await sandbox(projectRoot)).protected_entries.find((entry) => entry.path === target)?.deny;
   return { base, folder, denied, sandbox };
 }
 
-it('keeps an in-place session from writing the per-worktree git configuration', () => {
+it('keeps an in-place session from writing the per-worktree git configuration', async () => {
   const { folder, denied } = repository();
   git(folder, 'config', 'extensions.worktreeConfig', 'true');
-  expect(denied(folder, path.join(folder, '.git/config.worktree'))).toBe('write');
+  expect(await denied(folder, path.join(folder, '.git/config.worktree'))).toBe('write');
 });
 
 const MARKER = '[fixture]\n\tmarker = included\n';
@@ -159,17 +159,18 @@ it.each<[string, (folder: string, home: string) => void, string[], boolean]>([
   ],
 ])(
   'keeps an in-place session from writing project files the git configuration reads: %s',
-  (_name, setup, names, gitReadsMarker) => {
+  async (_name, setup, names, gitReadsMarker) => {
     const { base, folder, denied } = repository();
     mkdirSync(path.join(base, 'home'));
     setup(folder, path.join(base, 'home'));
     if (gitReadsMarker) expect(git(folder, 'config', 'fixture.marker')).toBe('included');
-    for (const name of names) expect(denied(folder, path.join(folder, name)), name).toBe('write');
-    expect(denied(folder, folder)).toBeUndefined();
+    for (const name of names)
+      expect(await denied(folder, path.join(folder, name)), name).toBe('write');
+    expect(await denied(folder, folder)).toBeUndefined();
   },
 );
 
-it('keeps an in-place session in a linked worktree from writing its pointer and the git metadata it points to', () => {
+it('keeps an in-place session in a linked worktree from writing its pointer and the git metadata it points to', async () => {
   const { base, folder, denied } = repository();
   const linked = path.join(base, 'linked');
   git(folder, 'worktree', 'add', '--quiet', '-b', 'side', linked);
@@ -180,10 +181,10 @@ it('keeps an in-place session in a linked worktree from writing its pointer and 
     path.join(folder, '.git/config'),
     path.join(folder, '.git/hooks'),
   ])
-    expect(denied(linked, target)).toBe('write');
+    expect(await denied(linked, target)).toBe('write');
 });
 
-it('finds the metadata of a linked worktree whose pointer goes up after a symlinked folder', () => {
+it('finds the metadata of a linked worktree whose pointer goes up after a symlinked folder', async () => {
   const { base, folder, denied } = repository();
   const linked = path.join(base, 'linked');
   git(folder, 'worktree', 'add', '--quiet', '-b', 'side', linked);
@@ -195,15 +196,15 @@ it('finds the metadata of a linked worktree whose pointer goes up after a symlin
     path.join(folder, '.git'),
   );
   for (const target of [path.join(folder, '.git/config'), path.join(folder, '.git/hooks')])
-    expect(denied(linked, target)).toBe('write');
+    expect(await denied(linked, target)).toBe('write');
 });
 
-it('lets an in-place session in a linked worktree commit through its own metadata but not write other worktrees', () => {
+it('lets an in-place session in a linked worktree commit through its own metadata but not write other worktrees', async () => {
   const { base, folder, sandbox: sandboxOf } = repository();
   const linked = path.join(base, 'linked');
   git(folder, 'worktree', 'add', '--quiet', '-b', 'side', linked);
   git(folder, 'worktree', 'add', '--quiet', '-b', 'other', path.join(base, 'other'));
-  const sandbox = sandboxOf(linked);
+  const sandbox = await sandboxOf(linked);
   const writable = (target: string) =>
     sandbox.writable_roots.some((root) => !path.relative(root, target).startsWith('..')) &&
     !sandbox.protected_entries.some((entry) => !path.relative(entry.path, target).startsWith('..'));
@@ -232,23 +233,25 @@ it('lets an in-place session in a linked worktree commit through its own metadat
 
 it.each(['.git/config', '.git/hooks/pre-commit'])(
   'refuses an in-place session while a project file is a hard link to the protected %s',
-  (name) => {
+  async (name) => {
     const { folder, sandbox } = repository();
     const target = path.join(folder, name);
     if (!existsSync(target)) writeFileSync(target, '#!/bin/sh\n');
     linkSync(target, path.join(folder, 'alias.txt'));
-    expect(() => sandbox(folder)).toThrow(expect.objectContaining({ code: 'scope_violation' }));
+    await expect(sandbox(folder)).rejects.toThrow(
+      expect.objectContaining({ code: 'scope_violation' }),
+    );
   },
 );
 
-it('keeps an in-place session on macOS from creating a commondir that would redirect the repository metadata', () => {
+it('keeps an in-place session on macOS from creating a commondir that would redirect the repository metadata', async () => {
   const { folder, denied } = repository();
-  expect(denied(folder, path.join(folder, '.git/commondir'))).toBe(
+  expect(await denied(folder, path.join(folder, '.git/commondir'))).toBe(
     process.platform === 'darwin' ? 'write' : undefined,
   );
 });
 
-it('runs no signature program from repository configuration when git checks a signature', () => {
+it('runs no signature program from repository configuration when git checks a signature', async () => {
   const { base, folder } = repository();
   git(folder, 'config', 'gpg.ssh.allowedSignersFile', path.join(base, 'allowed-signers'));
   writeFileSync(path.join(base, 'allowed-signers'), '');
@@ -277,7 +280,7 @@ it('runs no signature program from repository configuration when git checks a si
     expect(existsSync(marker), key).toBe(true);
     rmSync(marker);
     git(folder, 'config', key, program);
-    runGit(folder, ['verify-commit', signed(armor)]);
+    await runGit(folder, ['verify-commit', signed(armor)], undefined, true);
     git(folder, 'config', '--unset', key);
     expect(existsSync(marker), key).toBe(false);
   }

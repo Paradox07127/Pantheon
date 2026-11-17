@@ -11,15 +11,15 @@ import { user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 it('buckets the tool calls the adapter reported for the session in the last hour', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const base = 1_700_000_000_000;
   let clock = base;
   vi.spyOn(f.store, 'now').mockImplementation(() => clock);
 
-  const session = f.create('Task 1');
+  const session = await f.create('Task 1');
   const turn = f.turns(session.id)[0]!;
-  const otherSession = f.create('Task 2');
+  const otherSession = await f.create('Task 2');
   let sequence = 0;
   const completed = (sessionId: string, minutesAgo: number) => {
     clock = base - minutesAgo * 60 * 1000;
@@ -57,8 +57,8 @@ it('buckets the tool calls the adapter reported for the session in the last hour
 });
 
 it('refuses a principal of another project', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Task 1');
+  const f = await workbenchFixture();
+  const session = await f.create('Task 1');
   const foreign: Principal = {
     id: 'session:foreign',
     role: 'planner',
@@ -84,10 +84,10 @@ it('serves session activity at GET /v1/session.activity', async () => {
     now: () => clock,
   });
   try {
-    const project = daemon.control.execute(
+    const project = (await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name: 'Activity project', roots: [work] }, null),
-    ) as Project;
+    )) as Project;
     const session = daemon.store.insert<Session>('sessions', {
       id: 'activity-session',
       revision: 1,

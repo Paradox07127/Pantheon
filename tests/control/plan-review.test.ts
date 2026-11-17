@@ -21,7 +21,7 @@ import type { ControlContext } from '../../packages/control/src/context.js';
 import { eventually, settle, user } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 class HeldReviewer extends FixtureAdapter {
@@ -103,11 +103,11 @@ const sessionsOf = (f: Fixture, leadId: string, taskId: string) =>
     .filter((session) => session.task?.lead_session_id === leadId && session.task.id === taskId);
 
 async function planFixture(withReviewer = true) {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   dispatchEveryTier(f);
   const reviewer = new HeldReviewer();
   if (withReviewer) f.control.adapters.set(reviewer.name, reviewer);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   const ready = (index = 0) =>
     eventually(

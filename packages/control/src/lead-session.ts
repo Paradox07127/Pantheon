@@ -6,9 +6,9 @@ import {
   type SessionTurn,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
-import { gitFolder, projectAccess, type ControlContext } from './context.js';
+import { projectAccess, type ControlContext } from './context.js';
 import { sessionDefaults } from './user-config.js';
-import { openWorktreeSession } from './workbench-session.js';
+import { openWorktreeSession, type SessionOpening } from './workbench-session.js';
 
 /** Opens a lead session with the project's session defaults; undefined when the project has no git root. */
 export function startLead(
@@ -19,9 +19,11 @@ export function startLead(
   input: string,
   cause: string,
   origin: 'sync' | 'baseline' | 'external',
+  /** Read with readSessionOpening before the transaction. */
+  opening: SessionOpening,
 ): Session | undefined {
   const project = ctx.store.must<Project>('projects', projectId);
-  if (!gitFolder(project.roots[0]!)) return;
+  if (!opening.git) return;
   const defaults = sessionDefaults(ctx, project);
   const runtime =
     defaults?.runtime ??
@@ -43,6 +45,7 @@ export function startLead(
       input,
     }),
     cause,
+    opening,
     undefined,
     p,
     title,

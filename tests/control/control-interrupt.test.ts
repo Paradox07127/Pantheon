@@ -3,13 +3,13 @@ import type { Session, SessionTurn } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-function interruptFixture(delay = 30000) {
+async function interruptFixture(delay = 30000) {
   // By default turns outlast the test unless they are interrupted.
-  const f = workbenchFixture({ delay });
+  const f = await workbenchFixture({ delay });
   const session = (id: string) => f.store.must<Session>('sessions', id);
   /** Creates a session and waits until its first turn runs. */
   const open = async () => {
-    const created = f.create('Long work');
+    const created = await f.create('Long work');
     await awaitWorkspaceReady(f.control, created.workspace_id!);
     const first = f.turns(created.id)[0]!;
     await eventually(
@@ -37,7 +37,7 @@ function interruptFixture(delay = 30000) {
 
 describe('session interrupt', () => {
   it('ends the running turn, cancels queued input and keeps the session for the next send', async () => {
-    const s = interruptFixture();
+    const s = await interruptFixture();
     const { opened, first } = await s.open();
     await eventually(() => s.row(first).state === 'running');
     const queued = s.input(opened.id, 'steer', 'Queued correction');
@@ -61,7 +61,7 @@ describe('session interrupt', () => {
   });
 
   it('keeps queued input when the runtime refuses the interrupt', async () => {
-    const s = interruptFixture();
+    const s = await interruptFixture();
     const { opened, first } = await s.open();
     await eventually(() => s.row(first).state === 'running');
     const queued = s.input(opened.id, 'steer', 'Queued correction');
@@ -75,7 +75,7 @@ describe('session interrupt', () => {
   });
 
   it('refuses a session without a running turn', async () => {
-    const s = interruptFixture(0);
+    const s = await interruptFixture(0);
     const { opened, first } = await s.open();
     await eventually(
       () => s.row(first).state === 'completed' && s.session(opened.id).state === 'open',

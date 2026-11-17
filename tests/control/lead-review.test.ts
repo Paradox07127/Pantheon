@@ -46,7 +46,7 @@ class HeldReviewer extends FixtureAdapter {
 }
 
 async function reviewFixture() {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const idle = async (session: Session) => {
     const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
     await eventually(
@@ -57,7 +57,7 @@ async function reviewFixture() {
     );
     return workspace;
   };
-  const lead = f.create('Plan and review the answer');
+  const lead = await f.create('Plan and review the answer');
   await idle(lead);
   const plan: BoardPlan = {
     id: lead.id,
@@ -86,7 +86,7 @@ async function reviewFixture() {
     updated_at: f.store.now(),
   };
   f.store.insert('board_plans', plan);
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Implement the answer',
@@ -178,7 +178,7 @@ it('refuses workers, another lead, old task generations, writer runtimes and dup
   expect(() => f.call('review.request', input, null, workerPrincipal)).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
-  const other = f.create('Another lead');
+  const other = await f.create('Another lead');
   expect(() =>
     f.call('review.request', input, null, {
       ...principal,
@@ -367,7 +367,7 @@ it('projects partial reviewer failure and its evidence to session and board read
     { ...ended, state: 'closed', outcome: 'discarded' },
     ended.revision,
   );
-  const retry = f.call<Session>('session.create', {
+  const retry = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Retry the answer',

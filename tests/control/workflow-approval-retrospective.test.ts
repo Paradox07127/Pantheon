@@ -10,7 +10,7 @@ import type {
 import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const MINUTE = 60_000;
@@ -57,7 +57,7 @@ const settled = (f: Fixture, id: string) =>
   );
 
 it('times the wait for a workflow approval as its own stage, outside the budget ratio', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   let skew = 0;
   vi.spyOn(f.store, 'now').mockImplementation(() => Date.now() + skew);
   f.call(
@@ -84,7 +84,7 @@ it('times the wait for a workflow approval as its own stage, outside the budget 
       review: { max_rounds: 3 },
     },
   });
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await settled(f, lead.id);
   writePlan(f, lead.id, [
@@ -113,7 +113,7 @@ it('times the wait for a workflow approval as its own stage, outside the budget 
 });
 
 it('times concurrent approval leaves of a parallel step by their union', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   let skew = 0;
   vi.spyOn(f.store, 'now').mockImplementation(() => Date.now() + skew);
   f.call('workflow.definition.set', {
@@ -141,7 +141,7 @@ it('times concurrent approval leaves of a parallel step by their union', async (
       review: { max_rounds: 3 },
     },
   });
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await settled(f, lead.id);
   writePlan(f, lead.id, [task('a'), task('b')]);

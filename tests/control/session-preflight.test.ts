@@ -12,10 +12,10 @@ import {
 } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -33,8 +33,8 @@ function commit(repository: string, name: string, contents: string) {
   return git(repository, 'rev-parse', 'HEAD');
 }
 
-function setGate(f: Fixture) {
-  f.call<Project>(
+async function setGate(f: Fixture) {
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -71,7 +71,7 @@ function gateChecked(
 }
 
 it('blocks a session with no new commits', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   expect(await f.control.sessionPreflight(user, session.id)).toEqual({
     target_branch: 'main',
@@ -88,7 +88,7 @@ it('blocks a session with no new commits', async () => {
 });
 
 it('blocks uncommitted worktree changes and counts only committed changes', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   writeFileSync(path.join(workspace.path, 'untracked.txt'), 'uncommitted\n');
@@ -103,7 +103,7 @@ it('blocks uncommitted worktree changes and counts only committed changes', asyn
 });
 
 it('blocks edited tracked files in the source folder but not untracked ones', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   writeFileSync(path.join(f.source, 'source-only.txt'), 'untracked source file\n');
@@ -124,7 +124,7 @@ it('blocks edited tracked files in the source folder but not untracked ones', as
 });
 
 it('blocks a detached source repository and reports no target branch', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   git(f.source, 'checkout', '--quiet', '--detach', 'HEAD');
@@ -139,7 +139,7 @@ it('blocks a detached source repository and reports no target branch', async () 
 });
 
 it('blocks a source repository that checked out another branch than the session started from', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   git(f.source, 'checkout', '--quiet', '-b', 'release');
@@ -157,7 +157,7 @@ it('blocks a source repository that checked out another branch than the session 
 });
 
 it('refuses to queue a merge into a dirty or detached source repository', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   const merge = () =>
@@ -175,9 +175,9 @@ it('refuses to queue a merge into a dirty or detached source repository', async 
 });
 
 it('allows a clean session whose configured gates have never run', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   commit(workspace.path, 'answer.txt', 'unchecked\n');
   expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     gate: { configured_total: 2, last: 'none' },
@@ -187,9 +187,9 @@ it('allows a clean session whose configured gates have never run', async () => {
 });
 
 it('allows a clean session with a gate checked on an older commit', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   const checked = commit(workspace.path, 'answer.txt', 'checked\n');
   gateChecked(f, session, checked, [{ exit_code: 0, timed_out: false }]);
   commit(workspace.path, 'answer.txt', 'newer\n');
@@ -202,10 +202,10 @@ it('allows a clean session with a gate checked on an older commit', async () => 
 });
 
 it('previews a clean session with a passed gate without changing repositories or session state', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'checkout', '--quiet', '-b', 'destination');
   const { session, workspace } = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   const first = commit(workspace.path, 'answer.txt', 'first\n');
   gateChecked(f, session, first, [{ exit_code: 1, timed_out: false }]);
   commit(workspace.path, 'answer.txt', 'second\n');
@@ -245,9 +245,9 @@ it.each([
   { exit_code: null, timed_out: false },
   { exit_code: 0, timed_out: true },
 ])('allows a clean session with a failed gate result %j', async (result) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   const head = commit(workspace.path, 'answer.txt', 'committed\n');
   // Only the first command ran; configured_total still counts both commands.
   gateChecked(f, session, head, [result]);
@@ -260,9 +260,9 @@ it.each([
 it.skipIf(insideSandbox)(
   'reports a passed gate as stale once its commands change on the same head',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { session, workspace } = await idleSession(f);
-    setGate(f);
+    await setGate(f);
     commit(workspace.path, 'answer.txt', 'checked\n');
     await f.call('session.gates.run', { session_id: session.id }, session.revision);
     await eventually(
@@ -273,7 +273,7 @@ it.skipIf(insideSandbox)(
     expect((await f.control.sessionPreflight(user, session.id)).gate.last).toBe('passed');
     expect(f.list().find((listed) => listed.id === session.id)?.gate?.state).toBe('passed');
 
-    f.call<Project>(
+    await f.call<Project>(
       'project.gate.set',
       {
         project_id: f.project.id,
@@ -295,7 +295,7 @@ it.each<Partial<Session>>([
   { stop_pending: true },
   { merge: { state: 'running' } },
 ])('reports a busy session before other merge blocks for %j', async (fields) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   f.store.update<Session>('sessions', { ...session, ...fields }, session.revision);
   expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
@@ -305,9 +305,9 @@ it.each<Partial<Session>>([
 });
 
 it('blocks a session while its gates are running', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   await f.call('session.gates.run', { session_id: session.id }, session.revision);
   expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     can_merge: false,
@@ -316,7 +316,7 @@ it('blocks a session while its gates are running', async () => {
 });
 
 it.each(['closed', 'reconciling'] as const)('blocks a session that is %s', async (state) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   f.store.update<Session>('sessions', { ...session, state }, session.revision);
   expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
@@ -326,7 +326,7 @@ it.each(['closed', 'reconciling'] as const)('blocks a session that is %s', async
 });
 
 it('requires project read access and rejects a session without a worktree', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = f.store.insert<Session>('sessions', {
     id: 'baseline-session',
     revision: 1,
@@ -347,7 +347,7 @@ it('requires project read access and rejects a session without a worktree', asyn
 });
 
 it('previews conflicting commits without changing either checkout or merge eligibility', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'session change\n');
   const target = commit(f.source, 'answer.txt', 'target change\n');
@@ -364,7 +364,7 @@ it('previews conflicting commits without changing either checkout or merge eligi
 });
 
 it('reports unknown conflicts when merge-tree does not support write-tree', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   const run = gitCommands.runGit;
   vi.spyOn(gitCommands, 'runGit').mockImplementation(((...args: Parameters<typeof run>) => {

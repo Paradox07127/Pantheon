@@ -16,12 +16,12 @@ import { releaseIdleConversation } from '../../packages/control/dist/session.js'
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
 
 async function idleSession(f: Fixture): Promise<Session> {
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'completed' && current(f, session.id).state === 'open',
@@ -31,7 +31,7 @@ async function idleSession(f: Fixture): Promise<Session> {
 }
 
 it('refuses to copy attachments through a temporary directory the session replaced with a link', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const { writerTempDirectory } = await import('../../packages/control/dist/workspace-removal.js');
   const temporary = writerTempDirectory(session.workspace_id!);
@@ -60,7 +60,7 @@ it('refuses to copy attachments through a temporary directory the session replac
 });
 
 it('refuses a setting the runtime cannot apply live while an input waits for its idle process', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   expect(
     [...f.control.handles.values()].some((handle) => handle.platform_session_id === session.id),
@@ -87,7 +87,7 @@ it('refuses a setting the runtime cannot apply live while an input waits for its
 });
 
 it('fails the queued input of a session discarded before its released process starts again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   releaseIdleConversation(ctx, session);
@@ -112,7 +112,7 @@ it('fails the queued input of a session discarded before its released process st
 });
 
 it('shows a session in the user folder ready after its turn instead of starting', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const folder = realpathSync(f.source);
   const workspace = f.store.insert<Workspace>('workspaces', {
     id: randomUUID(),
@@ -152,7 +152,7 @@ it('shows a session in the user folder ready after its turn instead of starting'
 });
 
 it('deletes the diff comments of a deleted session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   f.call<SessionComment>('session.comment.add', {
     session_id: session.id,
@@ -174,18 +174,21 @@ it('deletes the diff comments of a deleted session', async () => {
   ).toEqual([]);
 });
 
-it('refuses a worktree session in a project folder that is a linked worktree of another checkout', () => {
-  const f = workbenchFixture();
+it('refuses a worktree session in a project folder that is a linked worktree of another checkout', async () => {
+  const f = await workbenchFixture();
   const linked = path.join(f.root, 'project/linked');
   git(f.source, 'worktree', 'add', '--quiet', '-b', 'linked-branch', linked);
-  const project = f.call<Project>('project.open', { name: 'Linked project', roots: [linked] });
-  expect(() =>
+  const project = await f.call<Project>('project.open', {
+    name: 'Linked project',
+    roots: [linked],
+  });
+  await expect(
     f.call('session.create', {
       project_id: project.id,
       runtime: f.adapter.name,
       input: 'Change the answer',
     }),
-  ).toThrow(expect.objectContaining({ code: 'source_metadata_unsupported' }));
+  ).rejects.toThrow(expect.objectContaining({ code: 'source_metadata_unsupported' }));
   expect(
     f.store.list<Workspace>('workspaces').filter((each) => each.project_id === project.id),
   ).toEqual([]);

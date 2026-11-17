@@ -5,7 +5,7 @@ import { appendNote, takeInbox } from '../../packages/control/dist/lead-inbox.js
 import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const contextOf = (f: Fixture) => (f.control as unknown as { ctx: ControlContext }).ctx;
 
@@ -54,7 +54,7 @@ const inbox = (f: Fixture, leadId: string) =>
   f.store.must<BoardPlan>('board_plans', leadId).inbox.map((note) => note.text);
 
 it('gives the lead back the notes of a turn whose session never started before the restart', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = f.store.insert<Session>('sessions', {
     id: 'never-started-reviewer',
     revision: 1,
@@ -77,12 +77,12 @@ it('gives the lead back the notes of a turn whose session never started before t
 });
 
 it('gives the lead back the notes of an undelivered turn when a restart finishes its discard', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
     handle.process_identity = { pid: 4000001, start_time_us: 1700000000123456 };
     return { turn_id: turn.turn_id, status: 'delivered' };
   });
-  const created = f.create();
+  const created = await f.create();
   await awaitWorkspaceReady(f.control, created.workspace_id!);
   await eventually(
     () => f.store.must<Session>('sessions', created.id).process_identity !== undefined,
@@ -103,8 +103,8 @@ it('gives the lead back the notes of an undelivered turn when a restart finishes
 });
 
 it('gives the lead back the notes of an undelivered turn when a restart interrupts its discard', async () => {
-  const f = workbenchFixture();
-  const created = f.create();
+  const f = await workbenchFixture();
+  const created = await f.create();
   await awaitWorkspaceReady(f.control, created.workspace_id!);
   await eventually(
     () =>

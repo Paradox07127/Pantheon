@@ -116,12 +116,12 @@ it('reads git configuration again only after a configuration file changes', asyn
     otherWorkspaces: [],
   };
   const included = path.join(workspace, 'shared.inc');
-  const first = protectionList(input);
+  const first = await protectionList(input);
   expect(first.some((entry) => entry.path === included)).toBe(false);
-  expect(await gitRuns(() => expect(protectionList(input)).toEqual(first))).toEqual([]);
+  expect(await gitRuns(async () => expect(await protectionList(input)).toEqual(first))).toEqual([]);
 
   writeFileSync(path.join(home, '.gitconfig'), `[include]\n\tpath = ${included}\n`);
-  expect(protectionList(input)).toContainEqual({
+  expect(await protectionList(input)).toContainEqual({
     path: included,
     deny: 'write',
     reason: 'Workspace git configuration',

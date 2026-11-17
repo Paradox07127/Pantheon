@@ -10,7 +10,7 @@ import type {
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -65,7 +65,7 @@ const close = (f: Fixture, sessionId: string, outcome: Session['outcome']) =>
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
   dispatchEveryTier(f);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -141,7 +141,7 @@ async function overspent(f: Fixture) {
 }
 
 it('dispatches and lists no budget item without a project budget, however much was spent', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   spend(f, lead.id, { input_tokens: 10_000_000 });
   startTasks(f, lead.id, ['a']);
@@ -152,7 +152,7 @@ it('dispatches and lists no budget item without a project budget, however much w
 });
 
 it('opens no task session, keeps the lead asleep and lists the project once its ended turns spend the budget', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await overspent(f);
   expect(sessionsOf(f, lead.id, 'b')).toEqual([]);
   expect(blockersOf(f, lead.id, 'b')).toContain('Queued: project over budget');
@@ -186,7 +186,7 @@ it('opens no task session, keeps the lead asleep and lists the project once its 
 });
 
 it('takes the user message to an over-budget lead', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead } = await overspent(f);
   await settle(f, current(f, lead.id));
   const turns = f.turns(lead.id).length;
@@ -199,7 +199,7 @@ it('takes the user message to an over-budget lead', async () => {
 });
 
 it('dispatches again and wakes the lead once when the budget rises above what was spent', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await overspent(f);
   f.call(
     'task.report',
@@ -224,7 +224,7 @@ it('dispatches again and wakes the lead once when the budget rises above what wa
 });
 
 it('lets a turn that goes over the budget while it runs end as usual, and counts it once it ended', async () => {
-  const f = workbenchFixture({ delay: 1500 });
+  const f = await workbenchFixture({ delay: 1500 });
   const lead = await leadWithPlan(f, [task('a'), task('b'), task('c')]);
   const advance = skewedClock(f);
   advance(1000);
@@ -256,7 +256,7 @@ it('lets a turn that goes over the budget while it runs end as usual, and counts
 });
 
 it('counts neither the turns that ended before the budget was set nor those that reported no tokens', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   const advance = skewedClock(f);
   spend(f, lead.id, { input_tokens: 5000 });
@@ -279,9 +279,9 @@ it('counts neither the turns that ended before the budget was set nor those that
 });
 
 it('tells each lead and unfinished task session to wrap up once when the project goes over its budget', async () => {
-  const f = workbenchFixture({ delay: 1500 });
+  const f = await workbenchFixture({ delay: 1500 });
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
-  const own = f.create('Look at the answer file');
+  const own = await f.create('Look at the answer file');
   await settle(f, own);
   const advance = skewedClock(f);
   advance(1000);
@@ -333,7 +333,7 @@ it('tells each lead and unfinished task session to wrap up once when the project
 });
 
 it('tells the sessions to wrap up again when the project goes over a raised budget', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await overspent(f);
   await settle(f, current(f, worker.id));
   expect(wrapUps(f, lead.id)).toHaveLength(1);
@@ -354,7 +354,7 @@ it('tells the sessions to wrap up again when the project goes over a raised budg
 });
 
 it('tells no session to wrap up without a budget or under it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   spend(f, lead.id, { input_tokens: 10_000_000 });
   startTasks(f, lead.id, ['a']);
@@ -382,7 +382,7 @@ it('tells no session to wrap up without a budget or under it', async () => {
 });
 
 it('tells no merged or discarded task session to wrap up', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b'), task('c')]);
   const advance = skewedClock(f);
   advance(1000);
@@ -407,7 +407,7 @@ it('tells no merged or discarded task session to wrap up', async () => {
 });
 
 it('holds the hand-back of a blocked merge while the project is over budget, and sends it once the budget rises', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { worker } = await overspent(f);
   await settle(f, current(f, worker.id));
   const repairs = () => f.turns(worker.id).filter((turn) => turn.origin === 'tracker');

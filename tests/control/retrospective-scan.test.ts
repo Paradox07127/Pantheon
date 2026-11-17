@@ -6,15 +6,15 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { recordRetrospectives } from '../../packages/control/dist/retrospective.js';
 import { fixture } from '../helpers.js';
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 const fixtures: Fixture[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
 });
 
 /** A lead plan of one task with one open task session. */
-function oneTask() {
-  const f = fixture();
+async function oneTask() {
+  const f = await fixture();
   fixtures.push(f);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const session = (id: string, extra: Partial<Session> = {}) =>
@@ -69,8 +69,8 @@ const mergedData = (session: Session) =>
     outcome: 'merged',
   });
 
-it('records a task that this connection finished after a scan found nothing to record', () => {
-  const { f, worker, scan, recorded } = oneTask();
+it('records a task that this connection finished after a scan found nothing to record', async () => {
+  const { f, worker, scan, recorded } = await oneTask();
   scan();
   scan();
   expect(recorded()).toEqual([]);
@@ -79,8 +79,8 @@ it('records a task that this connection finished after a scan found nothing to r
   expect(recorded()).toEqual(['merged']);
 });
 
-it('records a task that another connection finished after a scan found nothing to record', () => {
-  const { f, worker, scan, recorded } = oneTask();
+it('records a task that another connection finished after a scan found nothing to record', async () => {
+  const { f, worker, scan, recorded } = await oneTask();
   scan();
   expect(recorded()).toEqual([]);
   const other = new DatabaseSync(path.join(f.root, 'state/control.sqlite'));
@@ -93,7 +93,7 @@ it('records a task that another connection finished after a scan found nothing t
 });
 
 it('scans again after the tick that scanned rolled back a change made before the scan', async () => {
-  const { f, ctx, worker, recorded } = oneTask();
+  const { f, ctx, worker, recorded } = await oneTask();
   f.store.update<Session>('sessions', { ...worker, state: 'closed', outcome: 'merged' }, 1);
   const { db } = ctx.store,
     prepare = db.prepare.bind(db),

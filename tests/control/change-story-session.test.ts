@@ -29,12 +29,12 @@ const card = (title: string, hunks: string[], extra: Record<string, unknown> = {
 
 /** A workbench session whose first turn has ended, with its ready worktree and the source HEAD it started from. */
 async function idleWorkbenchSession(base: (source: string) => void = () => {}) {
-  const w = workbenchFixture();
+  const w = await workbenchFixture();
   git(w.source, 'config', 'user.name', 'Source User');
   git(w.source, 'config', 'user.email', 'source@example.invalid');
   base(w.source);
   const sourceHead = git(w.source, 'rev-parse', 'HEAD');
-  const session = w.create();
+  const session = await w.create();
   const workspace = await awaitWorkspaceReady(w.control, session.workspace_id!);
   await eventually(
     () =>
@@ -117,7 +117,7 @@ it('refuses to explain a workbench session without committed changes', async () 
 });
 
 function attachStoryTask(
-  w: ReturnType<typeof workbenchFixture>,
+  w: Awaited<ReturnType<typeof workbenchFixture>>,
   sessionId: string,
   acceptance: string[],
 ) {
@@ -163,7 +163,7 @@ it('freezes task acceptance and exact commit/configuration command evidence for 
   const head = commitAnswer(workspace.path, 'explained\n');
   const acceptance = ['test -f answer.txt'];
   attachStoryTask(w, session.id, acceptance);
-  w.call(
+  await w.call(
     'project.gate.set',
     {
       project_id: w.project.id,
@@ -336,7 +336,7 @@ it('marks command evidence from another commit or configuration stale and never 
   const { w, session, workspace, startStory } = await idleWorkbenchSession(smallBase);
   const head = commitSmallChange(workspace.path);
   const command = { name: 'Test notes', argv: ['pnpm', 'test', 'notes.test.ts'] };
-  w.call(
+  await w.call(
     'project.gate.set',
     { project_id: w.project.id, root: w.source, commands: [command] },
     w.store.must<Project>('projects', w.project.id).revision,
@@ -398,7 +398,7 @@ it('allows fresh command evidence to produce a new interpretation of the same co
   const head = commitAnswer(workspace.path, 'explained\n');
   const first = await startStory();
   const command = { name: 'Check', argv: ['node', 'check.js'] };
-  w.call(
+  await w.call(
     'project.gate.set',
     { project_id: w.project.id, root: w.source, commands: [command] },
     w.store.must<Project>('projects', w.project.id).revision,
@@ -456,7 +456,10 @@ const smallSubmission = {
 };
 
 /** The principal of the session bound to a story. */
-function storyPrincipal(w: ReturnType<typeof workbenchFixture>, story: ChangeStory): Principal {
+function storyPrincipal(
+  w: Awaited<ReturnType<typeof workbenchFixture>>,
+  story: ChangeStory,
+): Principal {
   return {
     id: `session:${story.session_id}`,
     role: 'planner',
@@ -467,7 +470,7 @@ function storyPrincipal(w: ReturnType<typeof workbenchFixture>, story: ChangeSto
 }
 
 function submitStory(
-  w: ReturnType<typeof workbenchFixture>,
+  w: Awaited<ReturnType<typeof workbenchFixture>>,
   story: ChangeStory,
   submission: unknown,
   by: Principal = storyPrincipal(w, story),
@@ -480,7 +483,7 @@ function submitStory(
   );
 }
 
-const storySessions = (w: ReturnType<typeof workbenchFixture>) =>
+const storySessions = (w: Awaited<ReturnType<typeof workbenchFixture>>) =>
   w.store.list<Session>('sessions').filter((s) => s.change_story);
 
 it('keeps a change story session that never started queued across a restart and starts it on the next tick', async () => {
@@ -494,7 +497,7 @@ it('keeps a change story session that never started queued across a restart and 
       .map((job) => (JSON.parse(job.payload) as { turn_id: string }).turn_id);
   const [turn] = w.turns(story.session_id!);
   expect(turnJob()).toEqual([turn!.id]);
-  w.control.recover();
+  await w.control.recover();
   expect(w.store.must<Session>('sessions', story.session_id!).state).toBe('running');
   expect(turnJob()).toEqual([turn!.id]);
   await eventually(

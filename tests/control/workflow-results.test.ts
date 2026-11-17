@@ -5,12 +5,12 @@ import { fixture, user } from '../helpers.js';
 
 const now = new Date(2027, 2, 16, 12).getTime();
 const at = (daysAgo: number) => new Date(2027, 2, 16 - daysAgo, 12).getTime();
-const fixtures: ReturnType<typeof fixture>[] = [];
+const fixtures: Awaited<ReturnType<typeof fixture>>[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
 });
-const opened = () => {
-  const f = fixture({ now: () => now });
+const opened = async () => {
+  const f = await fixture({ now: () => now });
   fixtures.push(f);
   const definition: WorkflowDefinition = {
     slots: {
@@ -24,11 +24,11 @@ const opened = () => {
   f.call('workflow.definition.set', { project_id: f.project.id, definition, base_version: 0 });
   return f;
 };
-const view = (f: ReturnType<typeof opened>): WorkflowDefinitionView =>
+const view = (f: Awaited<ReturnType<typeof opened>>): WorkflowDefinitionView =>
   f.control.workflowDefinition(user, f.project.id);
 
 function run(
-  f: ReturnType<typeof opened>,
+  f: Awaited<ReturnType<typeof opened>>,
   task_id: string,
   daysAgo: number,
   state: StepRun['state'],
@@ -51,8 +51,8 @@ function run(
   });
 }
 
-it('counts each task’s first step attempt once and omits unfinished or unused steps', () => {
-  const f = opened();
+it('counts each task’s first step attempt once and omits unfinished or unused steps', async () => {
+  const f = await opened();
   run(f, 'clean', 2, 'passed');
   run(f, 'approved', 1, 'passed');
   const repaired = run(f, 'repaired', 1, 'failed');
@@ -70,11 +70,11 @@ it('counts each task’s first step attempt once and omits unfinished or unused 
   expect(result.step_results).not.toHaveProperty('unused');
   expect(result.fixed_steps.every((step) => step.result === undefined)).toBe(true);
   expect(result.definition.slots.before_dispatch[0]).not.toHaveProperty('result');
-  expect(view(opened())).not.toHaveProperty('step_results');
+  expect(view(await opened())).not.toHaveProperty('step_results');
 });
 
-it('counts the earliest run of a task only, and no run of a step that the definition does not list', () => {
-  const f = opened();
+it('counts the earliest run of a task only, and no run of a step that the definition does not list', async () => {
+  const f = await opened();
   const first = run(f, 'retried', 3, 'failed');
   f.store.insert<StepRun>('workflow_step_runs', {
     ...first,
@@ -95,8 +95,8 @@ it('counts the earliest run of a task only, and no run of a step that the defini
   expect(result).not.toHaveProperty('removed');
 });
 
-it("does not count a skipped step as an attempt, and counts the task's first run that executed", () => {
-  const f = opened();
+it("does not count a skipped step as an attempt, and counts the task's first run that executed", async () => {
+  const f = await opened();
   const skipped = run(f, 'conditional', 3, 'skipped');
   f.store.event('workflow.step_changed', skipped, f.project.id, { state: 'skipped' });
   const retired = f.store.update(
@@ -118,8 +118,8 @@ it("does not count a skipped step as an attempt, and counts the task's first run
   expect(view(f).step_results?.approval).toMatchObject({ tasks: 1, passed: 1 });
 });
 
-it('counts a step whose condition first skipped it and then applied once it ran', () => {
-  const f = opened();
+it('counts a step whose condition first skipped it and then applied once it ran', async () => {
+  const f = await opened();
   const first = run(f, 'reapplied', 2, 'skipped');
   f.store.event('workflow.step_changed', first, f.project.id, { state: 'skipped' });
   let next = first;
@@ -130,8 +130,8 @@ it('counts a step whose condition first skipped it and then applied once it ran'
   expect(view(f).step_results?.approval).toMatchObject({ tasks: 1, passed: 1 });
 });
 
-it("counts only a workflow's own runs, and runs without a workflow id for the original one", () => {
-  const f = opened();
+it("counts only a workflow's own runs, and runs without a workflow id for the original one", async () => {
+  const f = await opened();
   const copy = f.call<{ id: string }>('workflow.definition.save_as', {
     project_id: f.project.id,
     name: 'Copy',
@@ -148,8 +148,8 @@ it("counts only a workflow's own runs, and runs without a workflow id for the or
   expect(view(f).step_results?.approval).toMatchObject({ tasks: 1, passed: 1 });
 });
 
-it('buckets completed first attempts into six local five-day windows, oldest first', () => {
-  const f = opened();
+it('buckets completed first attempts into six local five-day windows, oldest first', async () => {
+  const f = await opened();
   run(f, 'oldest', 29, 'passed');
   run(f, 'next', 24, 'passed');
   run(f, 'rejected', 20, 'rejected');
@@ -171,8 +171,8 @@ it('buckets completed first attempts into six local five-day windows, oldest fir
   expect(result!.buckets.reduce((sum, bucket) => sum + bucket.passed, 0)).toBe(result!.passed);
 });
 
-it('uses the board gate first-pass rule and newest task retrospective for the same thirty days', () => {
-  const f = opened();
+it('uses the board gate first-pass rule and newest task retrospective for the same thirty days', async () => {
+  const f = await opened();
   const record = (task_id: string, daysAgo: number, gate_passed_on_attempt?: number) =>
     f.store.insert<Retrospective>('retrospectives', {
       id: `retrospective-${task_id}-${daysAgo}`,
@@ -204,8 +204,8 @@ it('uses the board gate first-pass rule and newest task retrospective for the sa
   ]);
 });
 
-it('counts first review rounds without an upheld change request and preserves failures after a later clean round', () => {
-  const f = opened();
+it('counts first review rounds without an upheld change request and preserves failures after a later clean round', async () => {
+  const f = await opened();
   const record = (
     task_id: string,
     round: number,

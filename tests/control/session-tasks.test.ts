@@ -3,7 +3,7 @@ import type { AgentEvent, BackgroundTask, Session, SessionTask } from '@pantheon
 import { settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 /** An agent event as a runtime emits it; the test numbers them in order. */
 type Emitted = AgentEvent extends infer E
   ? E extends unknown
@@ -37,8 +37,8 @@ const listed = (key: string, tasks: BackgroundTask[]): Emitted => ({
 });
 
 async function openSession() {
-  const f = workbenchFixture();
-  const session = f.create('Look around the repository');
+  const f = await workbenchFixture();
+  const session = await f.create('Look around the repository');
   await settle(f, session);
   return { f, session };
 }

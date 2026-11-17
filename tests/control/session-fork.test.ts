@@ -6,7 +6,7 @@ import type { Session, SessionTurn, Workspace } from '@pantheon/domain';
 import { eventually, settle, user } from '../helpers.js';
 import { dispatchEveryTier, git, gitRuns, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const current = (f: Fixture, session: Session) => f.store.must<Session>('sessions', session.id);
 const workspace = (f: Fixture, session: Session) =>
   f.store.must<Workspace>('workspaces', session.workspace_id!);
@@ -28,8 +28,8 @@ const fork = (f: Fixture, session: Session, before_turn_id?: string, extras = {}
   });
 
 it('forks checkpoint files, index and HEAD while leaving a running source and its turns unchanged', async () => {
-  const f = workbenchFixture();
-  const source = f.create('Start the export');
+  const f = await workbenchFixture();
+  const source = await f.create('Start the export');
   await settle(f, source);
   const work = workspace(f, source).path;
   writeFileSync(path.join(work, 'answer.txt'), 'committed\n');
@@ -70,8 +70,8 @@ it('forks checkpoint files, index and HEAD while leaving a running source and it
 });
 
 it('delivers only the record before the chosen turn together with attachments and skills', async () => {
-  const f = workbenchFixture();
-  const source = f.create('Start the export');
+  const f = await workbenchFixture();
+  const source = await f.create('Start the export');
   await settle(f, source);
   const second = await send(f, source, 'Add a header');
   await send(f, source, 'Add a footer');
@@ -99,8 +99,8 @@ it('delivers only the record before the chosen turn together with attachments an
 });
 
 it("freezes current uncommitted and untracked files without the source worktree's ignored files, copies the project dependencies and leaves the source index alone", async () => {
-  const f = workbenchFixture();
-  const source = f.create('Start the export');
+  const f = await workbenchFixture();
+  const source = await f.create('Start the export');
   await settle(f, source);
   const work = workspace(f, source).path;
   writeFileSync(path.join(work, '.gitignore'), '*.log\nnode_modules/\n');
@@ -131,8 +131,8 @@ it("freezes current uncommitted and untracked files without the source worktree'
 });
 
 it('forks a running source from the end of its last completed turn and leaves the running turn going', async () => {
-  const f = workbenchFixture();
-  const source = f.create('Start the export');
+  const f = await workbenchFixture();
+  const source = await f.create('Start the export');
   await settle(f, source);
   const work = workspace(f, source).path;
   await send(f, source, 'Add a header');
@@ -166,8 +166,8 @@ it('forks a running source from the end of its last completed turn and leaves th
 });
 
 it('reads the checkpoints of every later turn of a running source with one git run', async () => {
-  const f = workbenchFixture();
-  const source = f.create('Start the export');
+  const f = await workbenchFixture();
+  const source = await f.create('Start the export');
   await settle(f, source);
   const work = workspace(f, source).path;
   const second = await send(f, source, 'Add a footer');
@@ -210,8 +210,8 @@ it('reads the checkpoints of every later turn of a running source with one git r
 });
 
 it('refuses to fork a running source whose running turn took no checkpoint', async () => {
-  const f = workbenchFixture();
-  const source = f.create('Start the export');
+  const f = await workbenchFixture();
+  const source = await f.create('Start the export');
   await settle(f, source);
   const work = workspace(f, source).path;
   await send(f, source, 'Add a header');
@@ -236,8 +236,8 @@ it('refuses to fork a running source whose running turn took no checkpoint', asy
 });
 
 it('refuses a current-state fork while the first source turn is running', async () => {
-  const f = workbenchFixture({ delay: 1000 });
-  const source = f.create();
+  const f = await workbenchFixture({ delay: 1000 });
+  const source = await f.create();
   await eventually(
     () => f.turns(source.id)[0]?.state === 'running',
     () => f.control.tick(),
@@ -253,8 +253,8 @@ it('refuses a current-state fork while the first source turn is running', async 
 it.each(['stop_pending', 'rollback_pending', 'merge'] as const)(
   'refuses a current-state fork with %s',
   async (field) => {
-    const f = workbenchFixture();
-    const source = f.create();
+    const f = await workbenchFixture();
+    const source = await f.create();
     await settle(f, source);
     const changes = {
       stop_pending: true,
@@ -268,9 +268,9 @@ it.each(['stop_pending', 'rollback_pending', 'merge'] as const)(
 );
 
 it('refuses sessions without a git worktree, foreign turns, missing checkpoints and non-user callers', async () => {
-  const f = workbenchFixture();
-  const source = f.create();
-  const other = f.create();
+  const f = await workbenchFixture();
+  const source = await f.create();
+  const other = await f.create();
   await settle(f, source);
   await settle(f, other);
   await expect(fork(f, source, f.turns(other.id)[0]!.id)).rejects.toThrow(
@@ -314,8 +314,8 @@ it('refuses sessions without a git worktree, foreign turns, missing checkpoints 
 });
 
 it('inherits session settings and merge destination and projects fork provenance onto the list and board', async () => {
-  const f = workbenchFixture();
-  const source = f.call<Session>('session.create', {
+  const f = await workbenchFixture();
+  const source = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     model: 'fixture-model',
@@ -353,13 +353,13 @@ it('inherits session settings and merge destination and projects fork provenance
 });
 
 it("starts a fork on another runtime on that runtime's defaults and in ask mode when the source mode is not available there", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   for (const name of ['claude', 'codex']) {
     const adapter = new FixtureAdapter();
     adapter.name = name;
     f.control.adapters.set(name, adapter);
   }
-  const source = f.call<Session>('session.create', {
+  const source = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: 'claude',
     model: 'claude-model',
@@ -382,8 +382,8 @@ it("starts a fork on another runtime on that runtime's defaults and in ask mode 
 });
 
 it('keeps the fork snapshot and handoff independent when the source is deleted before provisioning', async () => {
-  const f = workbenchFixture();
-  const source = f.create('Start export');
+  const f = await workbenchFixture();
+  const source = await f.create('Start export');
   await settle(f, source);
   const second = await send(f, source, 'Add header');
   const branch = await fork(f, source, second.id);
@@ -410,8 +410,8 @@ it('keeps the fork snapshot and handoff independent when the source is deleted b
 });
 
 it('leaves rolled back turns out of the whole-record handoff', async () => {
-  const f = workbenchFixture();
-  const source = f.create('Start export');
+  const f = await workbenchFixture();
+  const source = await f.create('Start export');
   await settle(f, source);
   const second = await send(f, source, 'Discard this header');
   await f.call(
@@ -427,9 +427,9 @@ it('leaves rolled back turns out of the whole-record handoff', async () => {
 });
 
 it('opens a standalone session when forking a task session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   dispatchEveryTier(f);
-  const lead = f.create('Plan export');
+  const lead = await f.create('Plan export');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -463,7 +463,7 @@ it('opens a standalone session when forking a task session', async () => {
       expires_at: f.store.now() + 60_000,
     },
   );
-  const source = f.call<Session>('session.create', {
+  const source = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     task_id: `${lead.id}:export`,

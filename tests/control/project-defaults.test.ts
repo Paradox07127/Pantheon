@@ -35,9 +35,9 @@ function configDirectory() {
   return dir;
 }
 
-function defaultsFixture() {
+async function defaultsFixture() {
   const dir = configDirectory();
-  const f = fixture({ managedWorkspaces: true, controlOptions: { userConfigDir: dir } });
+  const f = await fixture({ managedWorkspaces: true, controlOptions: { userConfigDir: dir } });
   cleanups.push(f.close);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const current = () => f.store.must<Project>('projects', f.project.id);
@@ -54,7 +54,7 @@ function defaultsFixture() {
 }
 
 it('follows the global values where a project has none of its own', async () => {
-  const f = defaultsFixture();
+  const f = await defaultsFixture();
   f.setGlobal('workflow_policy', { max_parallel: 2, gate_on_fail: 'stop' });
   f.setGlobal('session_defaults', {
     runtime: 'fixture',
@@ -85,8 +85,8 @@ it('follows the global values where a project has none of its own', async () => 
   });
 });
 
-it('reads the project value over the global one, also when it equals the built-in default', () => {
-  const f = defaultsFixture();
+it('reads the project value over the global one, also when it equals the built-in default', async () => {
+  const f = await defaultsFixture();
   f.setGlobal('workflow_policy', { max_parallel: 2 });
   f.setGlobal('usage_targets', { fixture: 500, claude: 900 });
   f.setGlobal('external_events', 'approve');
@@ -121,7 +121,7 @@ it('reads the project value over the global one, also when it equals the built-i
 });
 
 it('returns a project to the global value once its own value is cleared', async () => {
-  const f = defaultsFixture();
+  const f = await defaultsFixture();
   f.setGlobal('workflow_policy', { max_parallel: 2, task_size_hint: 6 });
   f.setGlobal('session_defaults', { runtime: 'fixture', permission_mode: 'plan' });
   f.setGlobal('external_events', 'auto');
@@ -201,8 +201,8 @@ it('returns a project to the global value once its own value is cleared', async 
   expect(f.policy().defaults.max_parallel).toBe(3);
 });
 
-it('clears one workflow setting of a project and keeps its other own settings', () => {
-  const f = defaultsFixture();
+it('clears one workflow setting of a project and keeps its other own settings', async () => {
+  const f = await defaultsFixture();
   f.setGlobal('workflow_policy', { max_parallel: 2, task_size_hint: 6 });
   f.call('workflow.policy.set', { project_id: f.project.id, max_parallel: 1, task_size_hint: 3 });
   f.call(
@@ -221,8 +221,8 @@ it('clears one workflow setting of a project and keeps its other own settings', 
   ).toThrowError(expect.objectContaining({ code: 'invalid_input' }));
 });
 
-it('records a change of the global workflow settings and reads the hand-back limit a task started under from it', () => {
-  const f = defaultsFixture();
+it('records a change of the global workflow settings and reads the hand-back limit a task started under from it', async () => {
+  const f = await defaultsFixture();
   const retro = (id: string, started_at: number) =>
     f.store.insert<Retrospective>('retrospectives', {
       id,
@@ -249,8 +249,8 @@ it('records a change of the global workflow settings and reads the hand-back lim
   ).toEqual([{ signal: 'handback_loop', retrospective_ids: ['started-before'] }]);
 });
 
-it('refuses global values that are invalid alone or under a project value, and non-user callers', () => {
-  const f = defaultsFixture();
+it('refuses global values that are invalid alone or under a project value, and non-user callers', async () => {
+  const f = await defaultsFixture();
   f.call('workflow.policy.set', { project_id: f.project.id, max_parallel: 2 });
   expect(() => f.setGlobal('workflow_policy', { max_parallel: 5 })).toThrowError(
     expect.objectContaining({ code: 'invalid_input' }),
@@ -272,11 +272,11 @@ it('refuses global values that are invalid alone or under a project value, and n
   );
 });
 
-it('lists each global value, built-in default and the projects that set their own', () => {
-  const f = defaultsFixture();
+it('lists each global value, built-in default and the projects that set their own', async () => {
+  const f = await defaultsFixture();
   const otherRoot = path.join(f.root, 'other');
   mkdirSync(otherRoot);
-  const other = f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
+  const other = await f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
   f.setGlobal('auto_merge', true);
   f.call('project.autoMerge.set', { project_id: other.id, enabled: false }, other.revision);
   f.call('workflow.policy.set', { project_id: other.id, max_parallel: 2 });
@@ -326,11 +326,11 @@ it('lists each global value, built-in default and the projects that set their ow
   expect(read.permission_rules).toEqual([]);
 });
 
-it('keeps a policy stored before global values as the project value, and absent fields follow the global ones', () => {
-  const f = defaultsFixture();
+it('keeps a policy stored before global values as the project value, and absent fields follow the global ones', async () => {
+  const f = await defaultsFixture();
   const otherRoot = path.join(f.root, 'other');
   mkdirSync(otherRoot);
-  const other = f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
+  const other = await f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
   // A policy as a set wrote it before global values: every setting stored, none marked as its own.
   f.store.transaction(() =>
     f.store.insert<WorkflowPolicy>('workflow_policies', {
@@ -370,15 +370,15 @@ it('keeps a policy stored before global values as the project value, and absent 
   expect(listed[0]!.value).not.toHaveProperty('gate_runner');
 });
 
-it('answers matching requests in every project by the global rules besides the project ones', () => {
-  const f = workbenchFixture();
+it('answers matching requests in every project by the global rules besides the project ones', async () => {
+  const f = await workbenchFixture();
   const dir = configDirectory();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   (ctx as { userConfigDir?: string }).userConfigDir = dir;
-  const session = f.create();
+  const session = await f.create();
   const otherRoot = path.join(f.root, 'other');
   mkdirSync(otherRoot);
-  const other = f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
+  const other = await f.call<Project>('project.open', { name: 'other', roots: [otherRoot] });
   const request = (target: Session, request_id: string, rule: string) => {
     const event: Extract<AgentEvent, { kind: 'permission.requested' }> = {
       key: request_id,

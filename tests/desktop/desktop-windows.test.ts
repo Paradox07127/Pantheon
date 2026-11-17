@@ -950,7 +950,7 @@ describe('window registry', () => {
       [main, project].every((window) => frames(window).some((f) => f.type === 'subscribed')),
     );
     project.close();
-    daemon.control.execute(
+    await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name: 'desktop', roots: [path.join(root, 'project')] }),
     );

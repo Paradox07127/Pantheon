@@ -13,7 +13,7 @@ import type {
 import { eventually, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadOf = (f: Fixture, sessionId: string): Principal => ({
@@ -77,10 +77,10 @@ async function landDirect(f: Fixture, leadId: string, taskId: string, worktree: 
 it.skipIf(insideSandbox)(
   'counts each direct merge of one lead and binds it to its task card',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     git(f.source, 'config', 'user.name', 'Source User');
     git(f.source, 'config', 'user.email', 'source@example.invalid');
-    f.call<Project>(
+    await f.call<Project>(
       'project.gate.set',
       {
         project_id: f.project.id,
@@ -94,7 +94,7 @@ it.skipIf(insideSandbox)(
       { project_id: f.project.id, enabled: true },
       project(f).revision,
     );
-    const lead = f.create('Plan the export feature');
+    const lead = await f.create('Plan the export feature');
     await settle(f, lead.id);
     f.call(
       'board.plan.update',
@@ -137,7 +137,7 @@ it.skipIf(insideSandbox)(
 
 /** A lead with a plan of tasks a and b under a passing gate and auto merge, and its worktree. */
 async function planTwoTasks(f: Fixture) {
-  f.call<Project>(
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -151,7 +151,7 @@ async function planTwoTasks(f: Fixture) {
     { project_id: f.project.id, enabled: true },
     project(f).revision,
   );
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead.id);
   f.call(
     'board.plan.update',
@@ -177,7 +177,7 @@ async function planTwoTasks(f: Fixture) {
 it.skipIf(insideSandbox)(
   'fills a landed task card with only what the lead used from its claim to its merge',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { lead, worktree } = await planTwoTasks(f);
     await landDirect(f, lead.id, 'a', worktree);
     const claimedA = current(f, lead.id);
@@ -206,7 +206,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('fills a held claim card with only what the lead used since the claim', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worktree } = await planTwoTasks(f);
   const [before] = f.turns(lead.id);
   f.store.update<SessionTurn>(
@@ -240,7 +240,7 @@ it('fills a held claim card with only what the lead used since the claim', async
 it.skipIf(insideSandbox)(
   'links each direct merge to the change story of its own commits',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { lead, worktree } = await planTwoTasks(f);
     await landDirect(f, lead.id, 'a', worktree);
     await landDirect(f, lead.id, 'b', worktree);
@@ -270,7 +270,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'links the only merge of a session to its story written before a rebase moved the range',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { lead, worktree } = await planTwoTasks(f);
     await landDirect(f, lead.id, 'a', worktree);
     f.store.insert('change_stories', {
@@ -295,7 +295,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'counts the burnup scope in tasks, as it counts the done ones',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { lead, worktree } = await planTwoTasks(f);
     await landDirect(f, lead.id, 'a', worktree);
     await landDirect(f, lead.id, 'b', worktree);

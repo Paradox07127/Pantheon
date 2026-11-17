@@ -12,12 +12,12 @@ import type {
 import { awaitWorkspaceReady, eventually, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const LEAD = 'lead-of-gated-task';
 
-function mergeFixture() {
-  const f = workbenchFixture();
+async function mergeFixture() {
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   return f;
@@ -26,7 +26,7 @@ function mergeFixture() {
 /** An idle session on a board task, so the daemon merges it after its next turn. */
 async function idleTaskSession(f: Fixture) {
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -96,11 +96,11 @@ const payloads = (f: Fixture, aggregateId: string, kind: string) =>
   ).map((row) => JSON.parse(row.payload) as Record<string, unknown>);
 
 /** Merges the session through the gate after its next turn. */
-function gateAndMergeAutomatically(
+async function gateAndMergeAutomatically(
   f: Fixture,
   commands: { name: string; argv: string[]; timeout_ms?: number }[],
 ) {
-  f.call(
+  await f.call(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     project(f).revision,
@@ -162,10 +162,10 @@ const send = (f: Fixture, sessionId: string, input = 'Keep going') =>
 it.skipIf(insideSandbox)(
   'reruns a gate that timed out once on the same commit before blocking the merge',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace, sourceHead } = await idleTaskSession(f);
     handedBackEnough(f, session.id, 'gate_failed');
-    gateAndMergeAutomatically(f, [hangsFirst('hangs')]);
+    await gateAndMergeAutomatically(f, [hangsFirst('hangs')]);
     commit(workspace.path, 'answer.txt', 'gated\n');
     send(f, session.id);
     await eventually(
@@ -188,9 +188,9 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'merges when a flaky gate passes on its automatic rerun',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleTaskSession(f);
-    gateAndMergeAutomatically(f, [hangsFirst('passes')]);
+    await gateAndMergeAutomatically(f, [hangsFirst('passes')]);
     const head = commit(workspace.path, 'answer.txt', 'flaky gate\n');
     send(f, session.id);
     await eventually(
@@ -207,9 +207,9 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'does not hand an environment gate failure back to the task session',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleTaskSession(f);
-    gateAndMergeAutomatically(f, [hangsFirst('hangs')]);
+    await gateAndMergeAutomatically(f, [hangsFirst('hangs')]);
     commit(workspace.path, 'answer.txt', 'environment\n');
     const turn = send(f, session.id);
     await eventually(
@@ -236,10 +236,10 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'lists a gate that could not start in needs-you as an environment failure',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleTaskSession(f);
     handedBackEnough(f, session.id, 'gate_failed');
-    gateAndMergeAutomatically(f, [unstartable]);
+    await gateAndMergeAutomatically(f, [unstartable]);
     commit(workspace.path, 'answer.txt', 'unstartable\n');
     send(f, session.id);
     await eventually(
@@ -265,9 +265,9 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'still hands a gate that exited non-zero back to the task session',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { session, workspace } = await idleTaskSession(f);
-    gateAndMergeAutomatically(f, [failing]);
+    await gateAndMergeAutomatically(f, [failing]);
     commit(workspace.path, 'answer.txt', 'broken\n');
     send(f, session.id);
     await eventually(

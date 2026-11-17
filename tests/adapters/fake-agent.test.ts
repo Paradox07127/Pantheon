@@ -655,8 +655,8 @@ it('drives a conversation turn through Control', async () => {
   const call = <T>(type: 'project.open' | 'session.create', input: Record<string, unknown>) =>
     control.execute(user, command(user.id, type, input, null)) as T;
   try {
-    const project = call<Project>('project.open', { name: 'fake agent', roots: [source] });
-    const session = call<Session>('session.create', {
+    const project = await call<Project>('project.open', { name: 'fake agent', roots: [source] });
+    const session = await call<Session>('session.create', {
       project_id: project.id,
       runtime: adapter.name,
       input: 'Find the notes',

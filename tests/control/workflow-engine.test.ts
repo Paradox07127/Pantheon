@@ -19,7 +19,7 @@ import * as validation from '../../packages/control/dist/validation-executor.js'
 import { eventually, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const empty = (): WorkflowDefinition => ({
   slots: { before_dispatch: [], before_merge: [], after_merge: [] },
   plan_review: { tiers: ['t3'] },
@@ -64,10 +64,10 @@ const decide = (f: Fixture, run: StepRun, decision = 'approve', reason?: string)
   f.call('workflow.step.decide', { step_run_id: run.id, decision, reason });
 
 async function setup(definition = empty(), direct = false) {
-  const f = workbenchFixture({ delay: 1 });
+  const f = await workbenchFixture({ delay: 1 });
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
-  const lead = f.create('Plan the export');
+  const lead = await f.create('Plan the export');
   await settle(f, lead);
   define(f, definition);
   f.store.insert<BoardPlan>('board_plans', {

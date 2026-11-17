@@ -3,15 +3,15 @@ import type { Session, SessionTurn } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const row = (f: Fixture, turn: SessionTurn) => f.store.must<SessionTurn>('session_turns', turn.id);
 const compact = (f: Fixture, id: string, instructions?: string) =>
   f.call<SessionTurn>('session.compact', { session_id: id, instructions }, current(f, id).revision);
 
 it('records manual compaction as a maintenance turn, counts it once and retains a timed trace turn', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Initial work');
+  const f = await workbenchFixture();
+  const session = await f.create('Initial work');
   await settle(f, session);
   const send = vi.spyOn(f.adapter, 'send');
   const turn = compact(f, session.id, 'Keep the plan');
@@ -46,8 +46,8 @@ it('records manual compaction as a maintenance turn, counts it once and retains 
 });
 
 it('refuses compaction for queued and running turns and follows the existing message rules while compacting', async () => {
-  const f = workbenchFixture({ delay: 200 });
-  const session = f.create();
+  const f = await workbenchFixture({ delay: 200 });
+  const session = await f.create();
   expect(() => compact(f, session.id)).toThrow(expect.objectContaining({ code: 'resource_busy' }));
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
@@ -86,8 +86,8 @@ it.each([
   { stop_requested: { reason: 'Discard', at: 1, by: 'user' as const } },
   { merge: { state: 'running' as const } },
 ])('refuses compaction when the session cannot accept a maintenance turn: %j', async (change) => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   const before = current(f, session.id);
   f.store.update('sessions', { ...before, ...change }, before.revision);
@@ -96,8 +96,8 @@ it.each([
 });
 
 it('refuses non-user callers and runtimes without manual compaction', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   expect(() =>
     f.call('session.compact', { session_id: session.id }, current(f, session.id).revision, {
@@ -116,8 +116,8 @@ it('refuses non-user callers and runtimes without manual compaction', async () =
 });
 
 it('refuses instructions for a runtime that takes none, before creating a compaction turn', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   f.adapter.report.capabilities.compaction_instructions = {
     status: 'unsupported',
@@ -131,8 +131,8 @@ it('refuses instructions for a runtime that takes none, before creating a compac
 });
 
 it('records a failed compaction as a failed turn and accepts a later message', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   const send = f.adapter.send.bind(f.adapter);
   vi.spyOn(f.adapter, 'send').mockImplementationOnce((handle, turn) =>
@@ -161,8 +161,10 @@ it('records a failed compaction as a failed turn and accepts a later message', a
 });
 
 it('refuses compaction while a turn waits for permission', async () => {
-  const f = workbenchFixture();
-  const session = f.create('fixture-script\n[{"ask":{"tool":"Bash","input":{"command":"pwd"}}}]');
+  const f = await workbenchFixture();
+  const session = await f.create(
+    'fixture-script\n[{"ask":{"tool":"Bash","input":{"command":"pwd"}}}]',
+  );
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.list().find((s) => s.id === session.id)?.state === 'waiting',
@@ -173,8 +175,8 @@ it('refuses compaction while a turn waits for permission', async () => {
 });
 
 it('refuses a stale session revision', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   expect(() =>
     f.call('session.compact', { session_id: session.id }, current(f, session.id).revision - 1),
@@ -183,8 +185,8 @@ it('refuses a stale session revision', async () => {
 });
 
 it('refuses compaction while an open session holds a queued turn', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   const [first] = f.turns(session.id);
   f.store.insert<SessionTurn>('session_turns', {
@@ -198,8 +200,8 @@ it('refuses compaction while an open session holds a queued turn', async () => {
 });
 
 it('fails the compaction turn when the runtime refuses it and accepts a later one', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await settle(f, session);
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (_, turn) => ({
     turn_id: turn.turn_id,

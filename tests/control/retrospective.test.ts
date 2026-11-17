@@ -16,7 +16,7 @@ import type {
 import { awaitWorkspaceReady, eventually, insideSandbox, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -61,7 +61,7 @@ function writePlan(f: Fixture, leadId: string, tasks: PlanTask[]) {
 }
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, tasks);
   return lead;
@@ -83,9 +83,9 @@ async function startedTask(f: Fixture, leadId: string, taskId: string) {
   return worker;
 }
 
-function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
+async function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
   const project = f.store.must<Project>('projects', f.project.id);
-  f.call<Project>(
+  await f.call<Project>(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     project.revision,
@@ -124,8 +124,8 @@ const recorded = (f: Fixture) => f.store.list<Retrospective>('retrospectives');
 const recordedEvents = (f: Fixture) =>
   f.store.events(0, undefined, 100000).filter((event) => event.kind === 'retrospective.recorded');
 
-const mergeFixture = () => {
-  const f = workbenchFixture();
+const mergeFixture = async () => {
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   return f;
@@ -183,13 +183,13 @@ const trackerTurns = (f: Fixture, leadId: string) =>
 it.skipIf(insideSandbox)(
   'records one retrospective of a task whose session passed the gate and merged on its own',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const lead = await leadWithPlan(f, [
       task('a', { kind: { domain: 'script-infra', tier: 't2' } }),
     ]);
     const worker = await startedTask(f, lead.id, 'a');
     setUsage(f, worker.id, { input_tokens: 120, cached_input_tokens: 20, output_tokens: 30 });
-    setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
+    await setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
     commit(f, worker, 'export.txt');
     message(f, lead.id, 'a', 'Commit your work');
     await eventually(
@@ -272,10 +272,10 @@ it.skipIf(insideSandbox).each([
       ]),
   },
 ])('$name', async ({ gate, check }) => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const worker = await startedTask(f, lead.id, 'a');
-  setGate(f, gate);
+  await setGate(f, gate);
   commit(f, worker, 'export.txt');
   message(f, lead.id, 'a', 'Commit your work');
   await eventually(
@@ -295,10 +295,10 @@ it.skipIf(insideSandbox).each([
 });
 
 it.skipIf(insideSandbox)('records the kind measured from the merged diff', async () => {
-  const f = mergeFixture();
+  const f = await mergeFixture();
   const lead = await leadWithPlan(f, [task('a', { kind: { domain: 'docs-chore', tier: 't2' } })]);
   const worker = await startedTask(f, lead.id, 'a');
-  setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
+  await setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
   commit(f, worker, 'export.txt');
   message(f, lead.id, 'a', 'Commit your work');
   await eventually(
@@ -318,7 +318,7 @@ it.skipIf(insideSandbox)('records the kind measured from the merged diff', async
 });
 
 it('records a task the lead removed from its plan as removed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   writePlan(f, lead.id, [task('a')]);
   await f.control.tick();
@@ -336,7 +336,7 @@ it('records a task the lead removed from its plan as removed', async () => {
 });
 
 it('lists the retrospectives of one task at the retrospective.list query', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b'), task('c')]);
   writePlan(f, lead.id, [task('c')]);
   await f.control.tick();
@@ -351,7 +351,7 @@ it('lists the retrospectives of one task at the retrospective.list query', async
 it.skipIf(insideSandbox)(
   'replaces the failed record of a stopped task once the task is started again and merges',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const lead = await leadWithPlan(f, [task('a')]);
     const stopped = await startedTask(f, lead.id, 'a');
     f.call(
@@ -376,7 +376,7 @@ it.skipIf(insideSandbox)(
       .list<Session>('sessions')
       .find((session) => session.task?.id === 'a' && session.id !== stopped.id)!;
     await settle(f, worker);
-    setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
+    await setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
     commit(f, worker, 'export.txt');
     message(f, lead.id, 'a', 'Commit your work');
     await eventually(
@@ -406,7 +406,7 @@ const failedRecord = async (f: Fixture) => {
 };
 
 it('records that the lead stopped a task it stopped with the stop command', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   await startedTask(f, lead.id, 'a');
   f.call(
@@ -420,7 +420,7 @@ it('records that the lead stopped a task it stopped with the stop command', asyn
 });
 
 it('records that the user stopped a task whose session the user discarded', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const worker = await startedTask(f, lead.id, 'a');
   f.call('session.discard', { session_id: worker.id }, current(f, worker.id).revision);
@@ -429,7 +429,7 @@ it('records that the user stopped a task whose session the user discarded', asyn
 });
 
 it('records no stopper of a task whose session closed on its own without merging', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const worker = await startedTask(f, lead.id, 'a');
   const open = current(f, worker.id);
@@ -441,7 +441,7 @@ it('records no stopper of a task whose session closed on its own without merging
 });
 
 it('records how long a failed task ran, up to the end of its last turn', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const lead = await leadWithPlan(f, [task('a')]);
   const worker = await startedTask(f, lead.id, 'a');
@@ -455,7 +455,7 @@ it('records how long a failed task ran, up to the end of its last turn', async (
 });
 
 it('rewrites the failed record when the task fails again in the same generation', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const discarded = await startedTask(f, lead.id, 'a');
   f.call('session.discard', { session_id: discarded.id }, current(f, discarded.id).revision);
@@ -482,7 +482,7 @@ it('rewrites the failed record when the task fails again in the same generation'
 });
 
 it('records the dispatch path, and the policy version and experiences in force when the task session opened', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   const setPolicy = (handback_limit: number) =>
     f.call(
@@ -554,7 +554,7 @@ const wallOf = (row: Retrospective) =>
   Object.values(row.stage_ms ?? {}).reduce((sum, ms) => sum + ms, 0);
 
 it("records the budget ratio of a dispatched task over its tier's input token budget", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   setBudget(f, { input_tokens: 100, wall_ms: 3_600_000 });
 
   const row = await spentTask(f, 't1');
@@ -564,7 +564,7 @@ it("records the budget ratio of a dispatched task over its tier's input token bu
 });
 
 it('records the wall-clock ratio of a task within its budget when it is the larger one', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   setBudget(f, { input_tokens: 1_000_000_000, wall_ms: 3_600_000 });
 
   const row = await spentTask(f, 't1');
@@ -574,7 +574,7 @@ it('records the wall-clock ratio of a task within its budget when it is the larg
 });
 
 it('leaves the budget ratio absent for a tier without a budget', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
 
   const row = await spentTask(f, 't2');
   expect(row).toMatchObject({ path: 'dispatch', task_usage: { input_tokens: 120 } });
@@ -584,7 +584,7 @@ it('leaves the budget ratio absent for a tier without a budget', async () => {
 it.skipIf(insideSandbox)(
   'counts the merges of the task session refused for files outside its scope',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const lead = await leadWithPlan(f, [task('a'), task('b')]);
     const worker = await startedTask(f, lead.id, 'a');
     const workspace = f.store.must<Workspace>('workspaces', worker.workspace_id!);
@@ -605,7 +605,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('counts one stall and one loop of a turn, not the reminders that follow them', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   const advance = skewedClock(f);
   (f.adapter as { delay: number }).delay = 60000;
@@ -647,7 +647,7 @@ it('counts one stall and one loop of a turn, not the reminders that follow them'
 });
 
 it('sums the time each permission request of the task session waited for its answer', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('a', {
       goal: script({ ask: { tool: 'Bash', input: { command: 'pnpm test' } } }, { hang: true }),
@@ -703,7 +703,7 @@ const wakeEnded = (f: Fixture, leadId: string) =>
   );
 
 it('counts a wake of the lead for the task that ended without a decision, with its usage', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await wokenLead(f);
   await wakeEnded(f, lead.id);
   const [wake] = trackerTurns(f, lead.id);
@@ -722,7 +722,7 @@ it('counts a wake of the lead for the task that ended without a decision, with i
 });
 
 it('does not count a wake in which the lead messaged the task as one without a decision', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await wokenLead(f, 3000);
   expect(trackerTurns(f, lead.id)[0]!.state).toBe('running');
   message(f, lead.id, 'a', 'Clear the build cache and try again');
@@ -737,11 +737,11 @@ const fastTasks = (f: Fixture) => ((f.adapter as { delay: number }).delay = 200)
 it.skipIf(insideSandbox)(
   'records a merged task after the wake about the merge ended, with the decision the lead made in it',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const lead = await leadWithPlan(f, [task('a'), task('b')]);
     fastTasks(f);
     const worker = await startedTask(f, lead.id, 'a');
-    setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
+    await setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
     commit(f, worker, 'export.txt');
     message(f, lead.id, 'a', 'Commit your work');
     await eventually(
@@ -773,7 +773,7 @@ it.skipIf(insideSandbox)(
 );
 
 it('counts a wake that carried notes about two tasks for one of them', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const failing = { goal: script({ wait: 1500 }, { fail: 'The build broke' }) };
   const lead = await leadWithPlan(f, [task('a', failing), task('b', failing), task('c')]);
   f.call(

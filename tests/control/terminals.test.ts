@@ -5,14 +5,14 @@ import type { TerminalSpawn } from '@pantheon/control';
 import { fixture, user } from '../helpers.js';
 import { FakePty } from '../fixtures/fake-pty.js';
 
-function terminalFixture() {
+async function terminalFixture() {
   const ptys: FakePty[] = [];
   const spawn = vi.fn<TerminalSpawn>(() => {
     const pty = new FakePty();
     ptys.push(pty);
     return pty;
   });
-  const f = fixture({ controlOptions: { terminalSpawn: spawn } });
+  const f = await fixture({ controlOptions: { terminalSpawn: spawn } });
   const open = async (session_id?: string) =>
     (
       await f.call<Promise<{ terminal_id: string }>>('terminal.open', {
@@ -47,7 +47,7 @@ function terminalFixture() {
 }
 
 it('opens a login shell in the project or session workspace and forwards writes and sizes', async () => {
-  const f = terminalFixture();
+  const f = await terminalFixture();
   try {
     const terminal_id = await f.open();
     expect(f.spawn).toHaveBeenCalledWith(
@@ -76,7 +76,7 @@ it('opens a login shell in the project or session workspace and forwards writes 
 });
 
 it('refuses the ninth live terminal and frees a slot after shell exit', async () => {
-  const f = terminalFixture();
+  const f = await terminalFixture();
   try {
     await Promise.all(Array.from({ length: 8 }, () => f.open()));
     await expect(f.open()).rejects.toMatchObject({ code: 'resource_busy' });
@@ -90,7 +90,7 @@ it('refuses the ninth live terminal and frees a slot after shell exit', async ()
 });
 
 it('replays the last 256 KiB as bytes before live output and a single exit frame', async () => {
-  const f = terminalFixture();
+  const f = await terminalFixture();
   try {
     const terminal_id = await f.open();
     const cursor = f.store.cursor();
@@ -117,7 +117,7 @@ it('replays the last 256 KiB as bytes before live output and a single exit frame
 it.each(['closed', 'merged', 'discarded'] as const)(
   'closes a session terminal when its session becomes %s',
   async (ending) => {
-    const f = terminalFixture();
+    const f = await terminalFixture();
     try {
       const session = f.session();
       await f.open(session.id);
@@ -143,7 +143,7 @@ it.each(['closed', 'merged', 'discarded'] as const)(
 
 it('closes terminals after thirty minutes without sockets, restarting the clock on final detach', async () => {
   vi.useFakeTimers();
-  const f = terminalFixture();
+  const f = await terminalFixture();
   try {
     const unopened = await f.open();
     const connected = await f.open();
@@ -168,7 +168,7 @@ it('closes terminals after thirty minutes without sockets, restarting the clock 
 });
 
 it('kills every live terminal on daemon shutdown', async () => {
-  const f = terminalFixture();
+  const f = await terminalFixture();
   try {
     await f.open();
     await f.open();
@@ -181,7 +181,7 @@ it('kills every live terminal on daemon shutdown', async () => {
 });
 
 it('requires the user and null revisions and refuses a session from another project', async () => {
-  const f = terminalFixture();
+  const f = await terminalFixture();
   try {
     const terminal_id = await f.open();
     for (const [type, input] of [
@@ -210,7 +210,7 @@ it.each([
   ['whose preparation failed', { provisioning: { state: 'failed', base_ref: 'HEAD' } }],
   ['already removed', { removed_at: 1 }],
 ] as const)('refuses a session terminal in a worktree %s', async (_, workspaceFields) => {
-  const f = terminalFixture();
+  const f = await terminalFixture();
   try {
     const session = f.session({ kind: 'linked_worktree', ...workspaceFields });
     await expect(f.open(session.id)).rejects.toMatchObject({ code: 'invalid_state' });
@@ -221,7 +221,7 @@ it.each([
 });
 
 it('deduplicates concurrent terminal opens and repeated input commands', async () => {
-  const f = terminalFixture();
+  const f = await terminalFixture();
   try {
     const sent = command(user.id, 'terminal.open', {
       project_id: f.project.id,

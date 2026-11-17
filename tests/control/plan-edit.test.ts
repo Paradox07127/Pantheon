@@ -17,7 +17,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 function failure(fn: () => unknown): { code?: string; message?: string } {
   try {
@@ -28,8 +28,8 @@ function failure(fn: () => unknown): { code?: string; message?: string } {
   throw new Error('Expected the command to fail');
 }
 
-function setup() {
-  const f = fixture({ adapter: new FixtureAdapter(100), managedWorkspaces: true });
+async function setup() {
+  const f = await fixture({ adapter: new FixtureAdapter(100), managedWorkspaces: true });
   cleanups.push(() => f.close());
   return f;
 }
@@ -137,8 +137,8 @@ const setModel = (taskId = 'api') => ({
   patch: { model: 'claude-opus-4-5' },
 });
 
-it('lets the lead set one field of a task by id', () => {
-  const f = setup();
+it('lets the lead set one field of a task by id', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const before = planOf(f, lead);
@@ -148,8 +148,8 @@ it('lets the lead set one field of a task by id', () => {
   expect(after.headline).toBe(before.headline);
 });
 
-it('refuses a lead edit that adds a task closing a dependency cycle', () => {
-  const f = setup();
+it('refuses a lead edit that adds a task closing a dependency cycle', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const before = planOf(f, lead);
@@ -164,8 +164,8 @@ it('refuses a lead edit that adds a task closing a dependency cycle', () => {
   expect(planOf(f, lead).tasks).toEqual(before.tasks);
 });
 
-it('applies a user edit of a task without a session and tells the lead it is in effect', () => {
-  const f = setup();
+it('applies a user edit of a task without a session and tells the lead it is in effect', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const result = edit(f, user, lead, [setModel()]);
@@ -177,8 +177,8 @@ it('applies a user edit of a task without a session and tells the lead it is in 
   expect(planOf(f, lead).pending_edits).toEqual([]);
 });
 
-it('holds a user edit of the model of a task with a running session for the lead', () => {
-  const f = setup();
+it('holds a user edit of the model of a task with a running session for the lead', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -199,8 +199,8 @@ it('holds a user edit of the model of a task with a running session for the lead
   });
 });
 
-it('applies or rejects a held user edit when the lead resolves it', () => {
-  const f = setup();
+it('applies or rejects a held user edit when the lead resolves it', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -236,7 +236,7 @@ it('applies or rejects a held user edit when the lead resolves it', () => {
 });
 
 it('wakes the idle lead for a held edit and leaves record edits for its next message', async () => {
-  const f = setup();
+  const f = await setup();
   // Real worktrees, so a tick reports no failed provisioning that would wake the lead itself.
   git(f.projectRoot, 'init', '--quiet', '--initial-branch=main');
   git(f.projectRoot, 'commit', '--quiet', '--allow-empty', '-m', 'Initial commit');
@@ -257,8 +257,8 @@ it('wakes the idle lead for a held edit and leaves record edits for its next mes
   expect(wakes()).toBe(1);
 });
 
-it('applies a user edit of the title of a task with a running session', () => {
-  const f = setup();
+it('applies a user edit of the title of a task with a running session', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -268,8 +268,8 @@ it('applies a user edit of the title of a task with a running session', () => {
   expect(userEdits(f, lead)[0]!.edit?.applied).toBe(true);
 });
 
-it('takes a removed task out of the dependencies of the tasks after it', () => {
-  const f = setup();
+it('takes a removed task out of the dependencies of the tasks after it', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   expect(edit(f, user, lead, [{ type: 'remove_task', task_id: 'api' }])).toMatchObject({
@@ -278,8 +278,8 @@ it('takes a removed task out of the dependencies of the tasks after it', () => {
   expect(planOf(f, lead).tasks.map((task) => [task.id, task.depends_on])).toEqual([['ui', []]]);
 });
 
-it('holds a whole user edit when one of its ops waits for the lead', () => {
-  const f = setup();
+it('holds a whole user edit when one of its ops waits for the lead', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -317,8 +317,8 @@ it.each([
         merge: { state: 'blocked', reason: 'workflow_approval' },
       }),
   ],
-])('holds a user goal edit of a task %s for the lead', (_name, unfinished) => {
-  const f = setup();
+])('holds a user goal edit of a task %s for the lead', async (_name, unfinished) => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   unfinished(f, lead);
@@ -329,8 +329,8 @@ it.each([
   expect(taskOf(f, lead, 'api')?.goal).toBe(TASKS[0]!.goal);
 });
 
-it('holds only the tasks of the held ops when an order lock goes with them', () => {
-  const f = setup();
+it('holds only the tasks of the held ops when an order lock goes with them', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'ui');
@@ -341,8 +341,8 @@ it('holds only the tasks of the held ops when an order lock goes with them', () 
   });
 });
 
-it('keeps the refused lead wake on the plan across a user edit', () => {
-  const f = setup();
+it('keeps the refused lead wake on the plan across a user edit', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const plan = planOf(f, lead);
@@ -352,8 +352,8 @@ it('keeps the refused lead wake on the plan across a user edit', () => {
   expect(planOf(f, lead).wake_failed).toEqual(wakeFailed);
 });
 
-it('refuses a user edit that leaves the plan more tasks than a whole plan may hold', () => {
-  const f = setup();
+it('refuses a user edit that leaves the plan more tasks than a whole plan may hold', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   const tasks = Array.from({ length: 64 }, (_, index) => ({ ...TASKS[0]!, id: `task-${index}` }));
   f.call(
@@ -378,8 +378,8 @@ it('refuses a user edit that leaves the plan more tasks than a whole plan may ho
   expect(planOf(f, lead).tasks).toHaveLength(64);
 });
 
-it('refuses a user edit that waits for a lead whose session has closed', () => {
-  const f = setup();
+it('refuses a user edit that waits for a lead whose session has closed', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -390,8 +390,8 @@ it('refuses a user edit that waits for a lead whose session has closed', () => {
   expect(planOf(f, lead)).toEqual(before);
 });
 
-it('refuses a user edit that resolves a held edit or names no lead', () => {
-  const f = setup();
+it('refuses a user edit that resolves a held edit or names no lead', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -415,8 +415,8 @@ it('refuses a user edit that resolves a held edit or names no lead', () => {
   ).toBe('invalid_input');
 });
 
-it('refuses a user edit that puts a task without parts on the parallel path', () => {
-  const f = setup();
+it('refuses a user edit that puts a task without parts on the parallel path', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const before = planOf(f, lead);
@@ -428,8 +428,8 @@ it('refuses a user edit that puts a task without parts on the parallel path', ()
   expect(planOf(f, lead)).toEqual(before);
 });
 
-it('takes the source of a task the user adds as the user own words', () => {
-  const f = setup();
+it('takes the source of a task the user adds as the user own words', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const docs = {
@@ -458,8 +458,8 @@ it.each([
   { scope: ['packages/download'] },
   { acceptance: ['pnpm build'] },
   { done_when: 'report' },
-])('edits a task contract and starts its next generation: %j', (patch) => {
-  const f = setup();
+])('edits a task contract and starts its next generation: %j', async (patch) => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const before = planOf(f, lead).generations!.api!.generation;
@@ -473,8 +473,8 @@ it.each([
   { scope: ['packages/download'] },
   { acceptance: ['pnpm build'] },
   { done_when: 'report' },
-])('holds a contract patch on unfinished work until the lead applies it: %j', (patch) => {
-  const f = setup();
+])('holds a contract patch on unfinished work until the lead applies it: %j', async (patch) => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -487,8 +487,8 @@ it.each([
   expect(planOf(f, lead).generations!.api!.generation).toBe(2);
 });
 
-it('validates the merged task when changing completion mode or clearing its contract', () => {
-  const f = setup();
+it('validates the merged task when changing completion mode or clearing its contract', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   for (const patch of [{ scope: [] }, { acceptance: [] }]) {
@@ -516,8 +516,8 @@ it('validates the merged task when changing completion mode or clearing its cont
   expect(error.message).toContain('done when merged needs');
 });
 
-it('moves unfinished tasks before another task and to the end without changing contracts', () => {
-  const f = setup();
+it('moves unfinished tasks before another task and to the end without changing contracts', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'ui');
@@ -534,8 +534,8 @@ it('moves unfinished tasks before another task and to the end without changing c
   expect(userEdits(f, lead).every((note) => note.edit?.wake === false)).toBe(true);
 });
 
-it('updates milestone membership at once for unfinished work and removes it with null', () => {
-  const f = setup();
+it('updates milestone membership at once for unfinished work and removes it with null', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const plan = planOf(f, lead);
@@ -595,8 +595,8 @@ it.each([
       },
     ],
   ),
-])('records that an effective planning edit wakes the lead: %j', (...ops) => {
-  const f = setup();
+])('records that an effective planning edit wakes the lead: %j', async (...ops) => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   edit(f, user, lead, ops);
@@ -615,8 +615,8 @@ function dispatchedTierPlan(f: Fixture, lead: Principal) {
 
 const setPath = (path: string | null) => ({ type: 'set_task', task_id: 'api', patch: { path } });
 
-it("sets a task's path from a user edit with the user as its reason and clears both with null", () => {
-  const f = setup();
+it("sets a task's path from a user edit with the user as its reason and clears both with null", async () => {
+  const f = await setup();
   const lead = leadOf(f);
   dispatchedTierPlan(f, lead);
   expect(edit(f, user, lead, [setPath('review_loop')]).applied).toBe(true);
@@ -631,8 +631,8 @@ it("sets a task's path from a user edit with the user as its reason and clears b
   expect(taskOf(f, lead, 'api')).not.toHaveProperty('flow_reason');
 });
 
-it("holds a user's path edit of a task with a running session until the lead applies it", () => {
-  const f = setup();
+it("holds a user's path edit of a task with a running session until the lead applies it", async () => {
+  const f = await setup();
   const lead = leadOf(f);
   dispatchedTierPlan(f, lead);
   running(f, lead, 'api');
@@ -650,8 +650,8 @@ it("holds a user's path edit of a task with a running session until the lead app
   });
 });
 
-it("still refuses the lead's path edit that leaves its tier's path without flow_reason", () => {
-  const f = setup();
+it("still refuses the lead's path edit that leaves its tier's path without flow_reason", async () => {
+  const f = await setup();
   const lead = leadOf(f);
   dispatchedTierPlan(f, lead);
   const error = failure(() => edit(f, lead, lead, [setPath('review_loop')]));
@@ -660,8 +660,8 @@ it("still refuses the lead's path edit that leaves its tier's path without flow_
   expect(taskOf(f, lead, 'api')?.path).toBeUndefined();
 });
 
-it('does not mark record changes or unchanged contract values as waking edits', () => {
-  const f = setup();
+it('does not mark record changes or unchanged contract values as waking edits', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   for (const patch of [
@@ -679,7 +679,7 @@ it('does not mark record changes or unchanged contract values as waking edits', 
 });
 
 it('applies iteration and estimate record edits immediately without waking the lead', async () => {
-  const f = setup(),
+  const f = await setup(),
     lead = leadOf(f);
   writePlan(f, lead);
   running(f, lead, 'api');
@@ -713,7 +713,7 @@ it('applies iteration and estimate record edits immediately without waking the l
 });
 
 it('sets a milestone title and due day at once without waking the lead or a new generation', async () => {
-  const f = setup(),
+  const f = await setup(),
     lead = leadOf(f);
   writePlan(f, lead);
   const plan = planOf(f, lead);
@@ -778,8 +778,8 @@ it('sets a milestone title and due day at once without waking the lead or a new 
   ).toBe('invalid_input');
 });
 
-it('stores iterations from the lead plan tool and includes them in plan reads', () => {
-  const f = setup(),
+it('stores iterations from the lead plan tool and includes them in plan reads', async () => {
+  const f = await setup(),
     lead = leadOf(f);
   const iterations = [
     { id: 'spring', title: 'Spring', starts_on: '2027-03-13', ends_on: '2027-03-16' },

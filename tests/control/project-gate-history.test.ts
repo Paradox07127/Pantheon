@@ -3,10 +3,10 @@ import type { LandingItem, Project, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 async function idleSession(f: Fixture, input = 'Check the project') {
-  const session = f.create(input);
+  const session = await f.create(input);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -35,7 +35,7 @@ function recordGateRun(
 }
 
 it('merges session runs newest first with listed titles and one project event read', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const first = await idleSession(f, 'Check the first session'),
     second = await idleSession(f, 'Check the second session');
   const at = Date.parse('2026-01-01T12:00:00Z');
@@ -80,7 +80,7 @@ it('merges session runs newest first with listed titles and one project event re
 });
 
 it('applies the limit across sessions and defaults to thirty runs', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const first = await idleSession(f),
     second = await idleSession(f);
   const at = Date.parse('2026-01-01T12:00:00Z');
@@ -98,7 +98,7 @@ it('applies the limit across sessions and defaults to thirty runs', async () => 
 });
 
 it('skips a session without a worktree before applying the limit', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const readOnly = f.store.insert<Session>('sessions', {
     id: 'read-only-session',
@@ -118,7 +118,7 @@ it('skips a session without a worktree before applying the limit', async () => {
 });
 
 it('leaves out the runs of a deleted session whose events remain', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const kept = await idleSession(f, 'Check the kept session'),
     deleted = await idleSession(f, 'Check the deleted session');
   const at = Date.parse('2026-01-01T12:00:00Z');
@@ -140,9 +140,9 @@ it('leaves out the runs of a deleted session whose events remain', async () => {
 });
 
 it('lists commands after a failure as skipped just like the session query', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  f.call<Project>(
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -195,8 +195,8 @@ it('lists commands after a failure as skipped just like the session query', asyn
   ]);
 });
 
-it('refuses access to another project principal', () => {
-  const f = workbenchFixture();
+it('refuses access to another project principal', async () => {
+  const f = await workbenchFixture();
   const otherProject = f.store.insert<Project>('projects', { ...f.project, id: 'other-project' });
   const session = f.store.insert<Session>('sessions', {
     id: 'other-session',
@@ -220,7 +220,7 @@ it('refuses access to another project principal', () => {
 });
 
 it('filters by the inclusive run start before limiting and orders by start newest first', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const first = await idleSession(f),
     second = await idleSession(f);
   const at = new Date(2027, 2, 10, 12).getTime();
@@ -244,7 +244,7 @@ it('filters by the inclusive run start before limiting and orders by start newes
 });
 
 it('allows more than a hundred runs only when a start is supplied', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const at = new Date(2027, 2, 10, 12).getTime();
   for (let index = 0; index < 101; index++) recordGateRun(f, session, at + index * 100);

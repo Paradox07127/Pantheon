@@ -323,8 +323,8 @@ describe('codex adapter against a fake app-server', () => {
 });
 
 it('records agent events under the unified kinds', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await eventually(
     () => f.turns(session.id).every((t: SessionTurn) => t.state === 'completed'),
     () => f.control.tick(),

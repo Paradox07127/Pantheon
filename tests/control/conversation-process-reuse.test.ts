@@ -113,16 +113,16 @@ function commitProjectRoot(root: string) {
   git(root, 'commit', '--quiet', '-m', 'Initial files');
 }
 
-function setup(now: () => number, reportedModel?: string) {
+async function setup(now: () => number, reportedModel?: string) {
   const stub = conversationAdapter(reportedModel),
-    f = fixture({ adapter: stub.adapter, now, managedWorkspaces: true });
+    f = await fixture({ adapter: stub.adapter, now, managedWorkspaces: true });
   commitProjectRoot(f.projectRoot);
   return { stub, f };
 }
 
 /** Creates a session and prepares its worktree; the first turn starts on the next tick. */
-async function open(f: ReturnType<typeof fixture>) {
-  const session = f.call<Session>('session.create', {
+async function open(f: Awaited<ReturnType<typeof fixture>>) {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Start the conversation',
@@ -138,7 +138,7 @@ async function open(f: ReturnType<typeof fixture>) {
   return { session, first };
 }
 
-function send(f: ReturnType<typeof fixture>, session: Session) {
+function send(f: Awaited<ReturnType<typeof fixture>>, session: Session) {
   return f.call<SessionTurn>(
     'session.send',
     { session_id: session.id, input: 'Continue the conversation' },
@@ -148,7 +148,7 @@ function send(f: ReturnType<typeof fixture>, session: Session) {
 
 /** Runs one user turn to completion and returns its live handle; without a turn it sends one. */
 async function converse(
-  f: ReturnType<typeof fixture>,
+  f: Awaited<ReturnType<typeof fixture>>,
   stub: ReturnType<typeof conversationAdapter>,
   session: Session,
   queued?: SessionTurn,
@@ -161,12 +161,12 @@ async function converse(
   return { turn, handle };
 }
 
-function processOf(f: ReturnType<typeof fixture>, session: Session) {
+function processOf(f: Awaited<ReturnType<typeof fixture>>, session: Session) {
   return f.store.must<Session>('sessions', session.id).process_identity;
 }
 
 it('reuses the native process for the next user turn', async () => {
-  const { stub, f } = setup(() => 100000);
+  const { stub, f } = await setup(() => 100000);
   try {
     const { session, first } = await open(f);
     await converse(f, stub, session, first);
@@ -183,7 +183,7 @@ it('reuses the native process for the next user turn', async () => {
 });
 
 it('records the model the session reported at its start on a later turn of the same process', async () => {
-  const { stub, f } = setup(() => 100000, 'reported-model-1');
+  const { stub, f } = await setup(() => 100000, 'reported-model-1');
   try {
     const { session, first } = await open(f);
     await converse(f, stub, session, first);
@@ -199,7 +199,7 @@ it('records the model the session reported at its start on a later turn of the s
 
 it('closes an idle conversation process after ten minutes and resumes on the next input', async () => {
   let now = 100000;
-  const { stub, f } = setup(() => now);
+  const { stub, f } = await setup(() => now);
   try {
     const { session, first } = await open(f);
     const { handle } = await converse(f, stub, session, first);
@@ -222,7 +222,7 @@ it('closes an idle conversation process after ten minutes and resumes on the nex
 });
 
 it('closes the process after a failed turn', async () => {
-  const { stub, f } = setup(() => 100000);
+  const { stub, f } = await setup(() => 100000);
   try {
     const { session, first: turn } = await open(f);
     await f.control.tick();
@@ -239,7 +239,7 @@ it('closes the process after a failed turn', async () => {
 });
 
 it('stops an idle conversation process at shutdown', async () => {
-  const { stub, f } = setup(() => 100000);
+  const { stub, f } = await setup(() => 100000);
   try {
     const { session, first } = await open(f);
     const { handle } = await converse(f, stub, session, first);
@@ -254,7 +254,7 @@ it('stops an idle conversation process at shutdown', async () => {
 
 it('publishes an event for the session change when an idle process closes', async () => {
   let now = 100000;
-  const { stub, f } = setup(() => now);
+  const { stub, f } = await setup(() => now);
   try {
     const { session, first } = await open(f);
     await converse(f, stub, session, first);
@@ -273,7 +273,7 @@ it('publishes an event for the session change when an idle process closes', asyn
 });
 
 it('removes a project whose conversation process is idle and closes that process', async () => {
-  const { stub, f } = setup(() => 100000);
+  const { stub, f } = await setup(() => 100000);
   try {
     const { session, first } = await open(f);
     const { handle } = await converse(f, stub, session, first);
@@ -290,12 +290,12 @@ it('removes a project whose conversation process is idle and closes that process
 });
 
 it('starts the conversation process again after the project environment changes', async () => {
-  const { stub, f } = setup(() => 100000);
+  const { stub, f } = await setup(() => 100000);
   try {
     const { session, first } = await open(f);
     await converse(f, stub, session, first);
     const project = f.store.must<Project>('projects', f.project.id);
-    f.call(
+    await f.call(
       'project.environment.set',
       {
         project_id: project.id,

@@ -24,21 +24,21 @@ const result = (exit_code: number | null = 0, timedOut = false): validation.Vali
   },
 });
 async function setup(commands: object[]) {
-  const f = workbenchFixture({ delay: 1 });
-  const session = f.create();
+  const f = await workbenchFixture({ delay: 1 });
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id).every((t) => t.state === 'completed'),
     () => f.control.tick(),
   );
-  f.call(
+  await f.call(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     f.store.must<Project>('projects', f.project.id).revision,
   );
   return { f, session, workspace: f.store.must<Workspace>('workspaces', session.workspace_id!) };
 }
-const run = (f: ReturnType<typeof workbenchFixture>, session: Session) =>
+const run = (f: Awaited<ReturnType<typeof workbenchFixture>>, session: Session) =>
   f.call(
     'session.gates.run',
     { session_id: session.id },

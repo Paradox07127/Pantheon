@@ -10,7 +10,7 @@ import type {
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const MINUTE = 60_000;
@@ -68,7 +68,7 @@ const devServer = (f: Fixture): BackgroundTask => ({
 });
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -91,7 +91,7 @@ async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
 /** A task session whose first turn runs for longer than the test. */
 async function runningWorker(f: Fixture, leadId: string) {
   (f.adapter as { delay: number }).delay = 60000;
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -115,7 +115,7 @@ function stopsOf(f: Fixture) {
 }
 
 it('tells the lead once when a background task of a task session runs for thirty minutes', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const worker = await runningWorker(f, lead.id);
@@ -135,10 +135,10 @@ it('tells the lead once when a background task of a task session runs for thirty
 });
 
 it('lists a long background task of a user session in needs-you and stops it through the runtime', async () => {
-  const f = workbenchFixture({ delay: 60000 });
+  const f = await workbenchFixture({ delay: 60000 });
   const advance = skewedClock(f);
   const stops = stopsOf(f);
-  const session = f.create('Start the dev server');
+  const session = await f.create('Start the dev server');
   await eventually(
     () => f.turns(session.id)[0]?.state === 'running',
     () => f.control.tick(),
@@ -166,7 +166,7 @@ it('lists a long background task of a user session in needs-you and stops it thr
 });
 
 it('stops a background task of a task in the calling lead plan and refuses one of another lead', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const other = await leadWithPlan(f, [task('a')]);
   const stops = stopsOf(f);
@@ -187,7 +187,7 @@ it('stops a background task of a task in the calling lead plan and refuses one o
 });
 
 it('does not call a turn stalled while background tasks keep it open', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   const worker = await runningWorker(f, lead.id);

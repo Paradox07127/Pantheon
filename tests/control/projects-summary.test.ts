@@ -5,8 +5,8 @@ import type { Approval, Principal, Project, Session, Workspace } from '@pantheon
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-async function idleSession(f: ReturnType<typeof workbenchFixture>, input?: string) {
-  const session = f.create(input);
+async function idleSession(f: Awaited<ReturnType<typeof workbenchFixture>>, input?: string) {
+  const session = await f.create(input);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -18,7 +18,7 @@ async function idleSession(f: ReturnType<typeof workbenchFixture>, input?: strin
 }
 
 const patch = (
-  f: ReturnType<typeof workbenchFixture>,
+  f: Awaited<ReturnType<typeof workbenchFixture>>,
   sessionId: string,
   fields: Partial<Session>,
 ) => {
@@ -26,12 +26,12 @@ const patch = (
   return f.store.update<Session>('sessions', { ...session, ...fields }, session.revision);
 };
 
-const countsOf = (f: ReturnType<typeof workbenchFixture>) =>
+const countsOf = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   f.control.projectsSummary(user).projects.find((project) => project.project_id === f.project.id)
     ?.counts;
 
 it('counts a merging session and a reconciling session as running', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const merging = await idleSession(f),
     reconciling = await idleSession(f);
   patch(f, merging.id, { merge: { state: 'running' } });
@@ -41,7 +41,7 @@ it('counts a merging session and a reconciling session as running', async () => 
 });
 
 it('leaves archived sessions out of the counts and removed projects out of the summary', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   patch(f, session.id, { state: 'closed' });
   expect(countsOf(f)).toEqual({ running: 0, waiting: 0, ready: 0, failed: 1, queued: 0 });
@@ -53,18 +53,18 @@ it('leaves archived sessions out of the counts and removed projects out of the s
 });
 
 it('summarizes two projects and limits a planner to its own project', async () => {
-  const f = workbenchFixture();
-  const first = f.create('Run the first session'),
-    second = f.create('Run the second session'),
-    waiting = f.create('Wait for permission'),
-    ready = f.create('Prepare a change'),
-    failed = f.create('Fail the session');
+  const f = await workbenchFixture();
+  const first = await f.create('Run the first session'),
+    second = await f.create('Run the second session'),
+    waiting = await f.create('Wait for permission'),
+    ready = await f.create('Prepare a change'),
+    failed = await f.create('Fail the session');
   const otherProject = f.store.insert<Project>('projects', {
     ...f.project,
     id: 'other-project',
     name: 'Other project',
   });
-  const otherWaiting = f.call<Session>('session.create', {
+  const otherWaiting = await f.call<Session>('session.create', {
     project_id: otherProject.id,
     runtime: f.adapter.name,
     input: 'Wait for the other project permission',
@@ -151,7 +151,7 @@ it('summarizes two projects and limits a planner to its own project', async () =
 });
 
 it('reads each worktree once per summary', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   writeFileSync(path.join(workspace.path, 'note.txt'), 'uncommitted\n');
@@ -167,7 +167,7 @@ it('reads each worktree once per summary', async () => {
 });
 
 it('counts merged sessions since local midnight using the board clock', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const now = new Date(2027, 2, 16, 12).getTime();
   vi.spyOn(f.store, 'now').mockReturnValue(now);
@@ -195,7 +195,7 @@ it('counts merged sessions since local midnight using the board clock', async ()
 });
 
 it('summarizes queued plan tasks and the running and failed tasks of the open milestone', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await idleSession(f, 'Ship exports');
   const principal: Principal = {
     id: `session:${lead.id}`,
@@ -259,7 +259,7 @@ it('summarizes queued plan tasks and the running and failed tasks of the open mi
 });
 
 it('counts milestone sessions when the milestone has no plan tasks', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const merged = await idleSession(f),
     running = await idleSession(f),
     failed = await idleSession(f);

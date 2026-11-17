@@ -134,10 +134,10 @@ it('stores an uploaded attachment up to 20 MiB and searches the project files', 
   const projectRoot = path.join(directory(), 'project');
   mkdirSync(projectRoot);
   writeFileSync(path.join(projectRoot, 'answer.txt'), 'base\n');
-  const project = daemon.control.execute(
+  const project = (await daemon.control.execute(
     { id: USER_PRINCIPAL_ID, role: 'user' },
     command(USER_PRINCIPAL_ID, 'project.open', { name: 'Upload project', roots: [projectRoot] }),
-  ) as Project;
+  )) as Project;
   const headers = { authorization: `Bearer ${daemon.token}` };
   const upload = (bytes: number, type?: string): Promise<Response> =>
     mock.fetch(
@@ -186,10 +186,10 @@ it('routes workspace listing, file reading and symbol search through validated q
   const projectRoot = path.join(directory(), 'project');
   mkdirSync(projectRoot);
   writeFileSync(path.join(projectRoot, 'answer.ts'), 'export function answer() {}\n');
-  const project = daemon.control.execute(
+  const project = (await daemon.control.execute(
     { id: USER_PRINCIPAL_ID, role: 'user' },
     command(USER_PRINCIPAL_ID, 'project.open', { name: 'Files project', roots: [projectRoot] }),
-  ) as Project;
+  )) as Project;
   const query = (method: string, params = {}) =>
     mock.fetch(
       new Request(

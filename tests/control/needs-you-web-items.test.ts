@@ -12,7 +12,7 @@ import type {
 } from '@pantheon/domain';
 import { fixture, insertSession, user } from '../helpers.js';
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 const fixtures: Fixture[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
@@ -20,8 +20,8 @@ afterEach(async () => {
 
 const REQUEST = 'Ship the export API this week.';
 
-function opened() {
-  const f = fixture({ managedWorkspaces: true });
+async function opened() {
+  const f = await fixture({ managedWorkspaces: true });
   fixtures.push(f);
   return f;
 }
@@ -82,8 +82,8 @@ function leadWithMilestone(f: Fixture) {
   return f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
 }
 
-it('gives a question item its questions and options', () => {
-  const f = opened();
+it('gives a question item its questions and options', async () => {
+  const f = await opened();
   insertSession(f, { id: 'asker', turn_count: 1 });
   const questions: ApprovalQuestion[] = [
     {
@@ -122,8 +122,8 @@ it('gives a question item its questions and options', () => {
   expect(items(f).find((item) => item.source.id === 'ask')?.questions).toEqual(questions);
 });
 
-it('lists a task session question relayed to its lead board once, as the board question', () => {
-  const f = opened();
+it('lists a task session question relayed to its lead board once, as the board question', async () => {
+  const f = await opened();
   leadWithMilestone(f);
   insertSession(f, { id: 'asker', turn_count: 1 });
   const questions: ApprovalQuestion[] = [
@@ -179,8 +179,8 @@ it('lists a task session question relayed to its lead board once, as the board q
   ).toEqual([['lead.question', 'relayed']]);
 });
 
-it('lists a lead milestone ready for acceptance until the user accepts it', () => {
-  const f = opened();
+it('lists a lead milestone ready for acceptance until the user accepts it', async () => {
+  const f = await opened();
   const milestone = leadWithMilestone(f);
   const milestoneItems = () => items(f).filter((item) => item.source.table === 'milestones');
   expect(milestoneItems()).toEqual([]);
@@ -242,8 +242,8 @@ const propose = (f: Fixture, change: Record<string, unknown>) =>
 const improvementItems = (f: Fixture) =>
   items(f).filter((item) => item.source.table === 'improvements');
 
-it('lists an improvement that waits for the user until the user confirms it', () => {
-  const f = opened();
+it('lists an improvement that waits for the user until the user confirms it', async () => {
+  const f = await opened();
   withRetrospectives(f);
   const row = f.store.get<WorkflowPolicy>('workflow_policies', f.project.id);
   f.call(
@@ -270,8 +270,8 @@ it('lists an improvement that waits for the user until the user confirms it', ()
   expect(improvementItems(f)).toEqual([]);
 });
 
-it('lists no item for the improvements auto mode tries at once', () => {
-  const f = opened();
+it('lists no item for the improvements auto mode tries at once', async () => {
+  const f = await opened();
   withRetrospectives(f);
   expect(propose(f, { type: 'policy_change', param: 'max_parallel', to: 2 }).status).toBe('trial');
   expect(propose(f, { type: 'policy_change', param: 'handback_limit', to: 4 }).status).toBe(

@@ -6,10 +6,10 @@ import type { Project, Session } from '@pantheon/domain';
 import { insideSandbox, awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -39,8 +39,8 @@ const payloads = (f: Fixture, sessionId: string, kind: string) =>
       .all(sessionId, kind) as { payload: string }[]
   ).map((row) => JSON.parse(row.payload) as Record<string, unknown>);
 
-function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
-  f.call<Project>(
+async function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
+  await f.call<Project>(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands },
     f.store.must<Project>('projects', f.project.id).revision,
@@ -50,10 +50,10 @@ function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
 it.skipIf(insideSandbox)(
   'runs the project gate on the worktree head without merging and reports the result',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { session, workspace } = await idleSession(f);
     const sourceHead = git(f.source, 'rev-parse', 'HEAD');
-    setGate(f, [
+    await setGate(f, [
       { name: 'Prints ok', argv: [process.execPath, '-e', "process.stdout.write('ok')"] },
     ]);
     const head = commit(workspace.path, 'answer.txt', 'checked\n');
@@ -102,9 +102,9 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)('keeps the output tail of a failing gate command', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
-  setGate(f, [
+  await setGate(f, [
     {
       name: 'Always fails',
       argv: [process.execPath, '-e', "process.stderr.write('gate broke'); process.exit(3)"],
@@ -124,7 +124,7 @@ it.skipIf(insideSandbox)('keeps the output tail of a failing gate command', asyn
 });
 
 it('refuses to run gates when no gate or acceptance commands are configured', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
   expect(f.control.sessionGates(user, session.id)).toEqual({
     configured: false,
@@ -141,9 +141,11 @@ it('refuses to run gates when no gate or acceptance commands are configured', as
 });
 
 it('refuses to run the gates while the session merges', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
-  setGate(f, [{ name: 'Prints ok', argv: [process.execPath, '-e', "process.stdout.write('ok')"] }]);
+  await setGate(f, [
+    { name: 'Prints ok', argv: [process.execPath, '-e', "process.stdout.write('ok')"] },
+  ]);
   f.store.transaction(() => {
     const open = current(f, session.id);
     f.store.update('sessions', { ...open, merge: { state: 'running' as const } }, open.revision);
@@ -152,9 +154,11 @@ it('refuses to run the gates while the session merges', async () => {
 });
 
 it('refuses to run the gates of an ended session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session } = await idleSession(f);
-  setGate(f, [{ name: 'Prints ok', argv: [process.execPath, '-e', "process.stdout.write('ok')"] }]);
+  await setGate(f, [
+    { name: 'Prints ok', argv: [process.execPath, '-e', "process.stdout.write('ok')"] },
+  ]);
   f.call<Session>('session.discard', { session_id: session.id }, current(f, session.id).revision);
   await eventually(
     () => current(f, session.id).outcome === 'discarded',
@@ -187,10 +191,10 @@ function validationResult(): validation.ValidationResult {
 }
 
 it('repeats failed and skipped steps while carrying passed results and their test counts', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   const commands = ['Passed', 'Failed', 'Skipped'].map((name) => ({ name, argv: ['check', name] }));
-  setGate(f, commands);
+  await setGate(f, commands);
   f.call('workflow.policy.set', { project_id: f.project.id, gate_runner: 'session' });
   const head = commit(workspace.path, 'answer.txt', 'checked\n');
   const tests = { passed: 41, failed: 0, skipped: 2 };
@@ -246,10 +250,10 @@ it('repeats failed and skipped steps while carrying passed results and their tes
 });
 
 it('reruns the passed steps before a failed one as setup in a fresh candidate clone', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   const commands = ['Build', 'Test'].map((name) => ({ name, argv: ['check', name] }));
-  setGate(f, commands);
+  await setGate(f, commands);
   const head = commit(workspace.path, 'answer.txt', 'checked\n');
   f.store.event('session.gate_started', session, session.project_id, { commands });
   f.store.event('session.gate_checked', session, session.project_id, {
@@ -289,10 +293,10 @@ it('reruns the passed steps before a failed one as setup in a fresh candidate cl
 it.each(['no previous run', 'no failures', 'head moved', 'dirty worktree'])(
   'refuses only_failed with %s',
   async (reason) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const { session, workspace } = await idleSession(f);
     const commands = [{ name: 'Check', argv: ['check'] }];
-    setGate(f, commands);
+    await setGate(f, commands);
     if (reason !== 'no previous run') {
       f.store.event('session.gate_checked', session, session.project_id, {
         commit: git(workspace.path, 'rev-parse', 'HEAD'),
@@ -322,9 +326,9 @@ it.each(['no previous run', 'no failures', 'head moved', 'dirty worktree'])(
 );
 
 it('keeps test counts on the gate failure returned with a blocked merge', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
-  setGate(f, [{ name: 'Tests', argv: ['check'] }]);
+  await setGate(f, [{ name: 'Tests', argv: ['check'] }]);
   commit(workspace.path, 'answer.txt', 'checked\n');
   const tests = { passed: 41, failed: 3, skipped: 2 };
   vi.spyOn(validation, 'runValidationCommand').mockResolvedValue({

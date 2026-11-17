@@ -14,7 +14,7 @@ import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { reviewerRuntime, startReview } from '../../packages/control/dist/review.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -87,7 +87,7 @@ function patch(f: Fixture, sessionId: string, fields: Partial<Session>) {
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[], milestones: PlanMilestone[] = []) {
   dispatchEveryTier(f);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, tasks, milestones);
   return lead;
@@ -182,7 +182,7 @@ const dispatchNotes = (f: Fixture, leadId: string) =>
   f.turns(leadId).filter((turn) => turn.input.includes(': dispatch_failed: ')).length;
 
 it('tells the lead and the user once when the session of a started task cannot open', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   startTasks(f, lead.id, ['a']);
   setTaskRuntime(f, lead.id, 'a', 'missing-runtime');
@@ -224,7 +224,7 @@ it('tells the lead and the user once when the session of a started task cannot o
 });
 
 it('retries a task whose session cannot open only after its backoff, and clears the failure once it opens', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const advance = skewedClock(f);
   startTasks(f, lead.id, ['a']);
@@ -256,7 +256,7 @@ it('retries a task whose session cannot open only after its backoff, and clears 
 });
 
 it('opens a session for a started task with the runtime, model and effort the plan chose', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const second = new FixtureAdapter();
   second.name = 'second';
   f.control.adapters.set(second.name, second);
@@ -293,7 +293,7 @@ it('opens a session for a started task with the runtime, model and effort the pl
 });
 
 it('queues a task until its upstream task merges', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a', 'b']);
   await f.control.tick();
@@ -313,7 +313,7 @@ it('queues a task until its upstream task merges', async () => {
 });
 
 it('opens only one of two tasks whose scopes overlap by path segment', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('folder', { scope: ['src/a'] }),
     task('file', { scope: ['src/a/b.ts'] }),
@@ -328,7 +328,7 @@ it('opens only one of two tasks whose scopes overlap by path segment', async () 
 });
 
 it('runs at most three task sessions in a project and queues the rest', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b'), task('c'), task('d')]);
   startTasks(f, lead.id, ['a', 'b', 'c', 'd']);
   await f.control.tick();
@@ -340,7 +340,7 @@ it('runs at most three task sessions in a project and queues the rest', async ()
 });
 
 it('refuses task.start from other roles, for tasks outside the plan and for tasks with a session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   const other = await leadWithPlan(f, [task('c')]);
   expect(() => startTasks(f, lead.id, ['a'], user)).toThrow(
@@ -349,7 +349,7 @@ it('refuses task.start from other roles, for tasks outside the plan and for task
   expect(() => startTasks(f, lead.id, ['c'])).toThrow(
     expect.objectContaining({ code: 'not_found' }),
   );
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -366,10 +366,10 @@ it('refuses task.start from other roles, for tasks outside the plan and for task
 });
 
 it('drops the request of a queued task the user opened a session for', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   startTasks(f, lead.id, ['b']);
-  const opened = f.call<Session>('session.create', {
+  const opened = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Task b\n\nFinish task b',
@@ -381,7 +381,7 @@ it('drops the request of a queued task the user opened a session for', async () 
 });
 
 it('keeps the requests of tasks that stay in a rewritten plan', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('a'),
     task('b', { depends_on: ['a'] }),
@@ -393,7 +393,7 @@ it('keeps the requests of tasks that stay in a rewritten plan', async () => {
 });
 
 it('keeps a task named like an object prototype property apart from the accepted tasks', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r'), task('constructor')]);
   await acceptReport(f, lead.id, 'r');
   const planned = (f.control.projectRead(user, f.project.id) as ProjectRead).plans
@@ -410,7 +410,7 @@ it('keeps a task named like an object prototype property apart from the accepted
 });
 
 it('accepts a milestone of report tasks on the accepted tasks as evidence', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(
     f,
     [reportTask('r', { milestone: 'm1' }), reportTask('q')],
@@ -434,7 +434,7 @@ it('accepts a milestone of report tasks on the accepted tasks as evidence', asyn
 });
 
 it('frees the place and scope of accepted report tasks for the next task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     reportTask('r1', { scope: ['src/r1'] }),
     reportTask('r2'),
@@ -450,7 +450,7 @@ it('frees the place and scope of accepted report tasks for the next task', async
 });
 
 it('gives a task that reuses a removed task id none of its merged sessions', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -473,7 +473,7 @@ it('gives a task that reuses a removed task id none of its merged sessions', asy
 });
 
 it('refuses a done report from before the goal of the report task changed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r')]);
   startTasks(f, lead.id, ['r']);
   await f.control.tick();
@@ -508,7 +508,7 @@ it('refuses a done report from before the goal of the report task changed', asyn
 });
 
 it('reopens an accepted task and its accepted milestone when the task contract changes', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const milestones = [{ id: 'm1', title: 'Format chosen', criteria: ['A format'], tasks: ['r'] }];
   const lead = await leadWithPlan(f, [reportTask('r', { milestone: 'm1' })], milestones);
   await acceptReport(f, lead.id, 'r');
@@ -558,7 +558,7 @@ it('reopens an accepted task and its accepted milestone when the task contract c
 });
 
 it('keeps the generation of a task whose title or lane is all that changed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r')]);
   await acceptReport(f, lead.id, 'r');
   expect(planOf(f, lead.id).generations).toEqual({
@@ -588,7 +588,7 @@ it('keeps the generation of a task whose title or lane is all that changed', asy
 });
 
 it('stops a queued task by dropping its start request, which leaves it todo', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['b']);
   expect(stopTask(f, lead.id, 'b')).toEqual({
@@ -605,7 +605,7 @@ it('stops a queued task by dropping its start request, which leaves it todo', as
 });
 
 it('discards a stopped task session only once its process stopped, then frees its place and lets the task start again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(
     f,
     ['a', 'b', 'c', 'd'].map((id) => reportTask(id)),
@@ -659,7 +659,7 @@ it('discards a stopped task session only once its process stopped, then frees it
 });
 
 it('finishes a lead stop that a daemon restart interrupted before the process confirmed it stopped', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   // The task's turn stays running with a recorded process, as a turn the crash interrupted.
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
@@ -693,7 +693,7 @@ it('finishes a lead stop that a daemon restart interrupted before the process co
 });
 
 it('tells the lead when the user discards a task session, but not when the lead stops one', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     reportTask('a'),
     reportTask('b', { depends_on: ['a'] }),
@@ -731,7 +731,7 @@ it('tells the lead when the user discards a task session, but not when the lead 
 });
 
 it('tells the lead that a task it accepted stays done when the user discards its session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   await acceptReport(f, lead.id, 'a');
   const [worker] = sessionsOf(f, lead.id, 'a');
@@ -750,7 +750,7 @@ it('tells the lead that a task it accepted stays done when the user discards its
 });
 
 it('refuses task.stop from other roles, for tasks outside the plan and for tasks with nothing to stop', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b')]);
   startTasks(f, lead.id, ['a']);
   expect(() => stopTask(f, lead.id, 'a', user)).toThrow(
@@ -771,7 +771,7 @@ it('refuses task.stop from other roles, for tasks outside the plan and for tasks
 });
 
 it('leaves the session and its process as they were when the stop command rolls back', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -796,7 +796,7 @@ it('leaves the session and its process as they were when the stop command rolls 
 });
 
 it('keeps the stop of a session a restart left reconciling until its old process is confirmed gone', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   const identity = { pid: 4000001, start_time_us: 1700000000123456 };
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
@@ -835,7 +835,7 @@ it('keeps the stop of a session a restart left reconciling until its old process
 });
 
 it('stops a task session whose process is still starting once the process has started', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   let started!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -869,7 +869,7 @@ it('stops a task session whose process is still starting once the process has st
 });
 
 it('discards a stopped task session once a retried close confirms its process stopped', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -903,7 +903,7 @@ it('discards a stopped task session once a retried close confirms its process st
 });
 
 it('takes back the acceptance of a report task the lead stops', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r')]);
   await acceptReport(f, lead.id, 'r');
   expect(statusOf(f, lead.id, 'r')).toBe('done');
@@ -918,7 +918,7 @@ it('takes back the acceptance of a report task the lead stops', async () => {
 });
 
 it('refuses to accept a report task on the done report of a session the lead stopped', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r')]);
   startTasks(f, lead.id, ['r']);
   await f.control.tick();
@@ -952,7 +952,7 @@ it('refuses to accept a report task on the done report of a session the lead sto
 });
 
 it('refuses a done report sent before the changed contract reached the session, which still holds the task', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r')]);
   startTasks(f, lead.id, ['r']);
   await f.control.tick();
@@ -990,7 +990,7 @@ it('refuses a done report sent before the changed contract reached the session, 
 });
 
 it('does not hold the scope of a task id the lead removed and reused against other tasks', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a', { scope: ['src/a'] })]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -1008,7 +1008,7 @@ it('does not hold the scope of a task id the lead removed and reused against oth
 });
 
 it('stops the session left from a removed task when the lead stops the task that reuses its id', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -1027,7 +1027,7 @@ it('stops the session left from a removed task when the lead stops the task that
 });
 
 it('holds the place and scope of an accepted report task while its session has a turn to run', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     reportTask('r', { scope: ['src/r'] }),
     task('d', { scope: ['src/r/d.ts'] }),
@@ -1048,7 +1048,7 @@ it('holds the place and scope of an accepted report task while its session has a
 });
 
 it('refuses a lead message to a report task it accepted', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r')]);
   await acceptReport(f, lead.id, 'r');
   const [worker] = sessionsOf(f, lead.id, 'r');
@@ -1065,7 +1065,7 @@ it('refuses a lead message to a report task it accepted', async () => {
 });
 
 it('refuses to remove a project while a started task waits to open its session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['b']);
   await f.control.tick();
@@ -1083,7 +1083,7 @@ it('refuses to remove a project while a started task waits to open its session',
 });
 
 it('refuses a user revision of a lead milestone, whose sessions follow its tasks', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(
     f,
     [task('a', { milestone: 'm1' })],
@@ -1106,7 +1106,7 @@ it('refuses a user revision of a lead milestone, whose sessions follow its tasks
 });
 
 it('waits for a free place before telling an accepted report task that its lead renamed it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r'), task('b'), task('c'), task('d')]);
   await acceptReport(f, lead.id, 'r');
   const [worker] = sessionsOf(f, lead.id, 'r');
@@ -1134,7 +1134,7 @@ it('waits for a free place before telling an accepted report task that its lead 
 });
 
 it('holds every path for a running task session until its changed contract reaches it', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const lead = await leadWithPlan(f, [task('a', { scope: ['src/a'] })]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -1159,7 +1159,7 @@ it('holds every path for a running task session until its changed contract reach
 });
 
 it('keeps the downstream tasks of a report task whose session merged until the lead accepts its report', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('r'), task('d', { depends_on: ['r'] })]);
   startTasks(f, lead.id, ['r', 'd']);
   await f.control.tick();
@@ -1193,7 +1193,7 @@ it('keeps the downstream tasks of a report task whose session merged until the l
 });
 
 it('opens a high priority task first when one place is left', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     reportTask('a'),
     reportTask('b'),
@@ -1217,7 +1217,7 @@ const userOn = (f: Fixture, leadId: string, command: 'task.start' | 'task.stop',
   );
 
 it('lets the user stop a running task at once, telling its lead, and only with the lead named', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -1249,7 +1249,7 @@ it('lets the user stop a running task at once, telling its lead, and only with t
 });
 
 it('lets the user start a task with no unfinished session, through the same queue', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a'), reportTask('b', { depends_on: ['a'] })]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -1270,7 +1270,7 @@ it('lets the user start a task with no unfinished session, through the same queu
 });
 
 it('tells a task session that opens again how the earlier session of the task ended', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   startTasks(f, lead.id, ['a']);
   await f.control.tick();
@@ -1290,7 +1290,7 @@ it('tells a task session that opens again how the earlier session of the task en
 });
 
 it('reserves runtime capacity across the queue and admits a different runtime', async () => {
-  const f = workbenchFixture(),
+  const f = await workbenchFixture(),
     second = new FixtureAdapter();
   second.name = 'second';
   f.control.adapters.set(second.name, second);
@@ -1323,7 +1323,7 @@ it('reserves runtime capacity across the queue and admits a different runtime', 
 });
 
 it('pauses dispatch and direct claims while running task sessions continue', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     reportTask('active'),
     reportTask('queued'),
@@ -1361,7 +1361,7 @@ it.each(
     ['dispatch', 'composer'].map((entry) => ({ source, entry })),
   ),
 )('routes the $entry task using the $source choice', async ({ source, entry }) => {
-  const f = workbenchFixture({ delay: 10 });
+  const f = await workbenchFixture({ delay: 10 });
   for (const name of ['claude', 'codex']) {
     const adapter = new FixtureAdapter(10);
     adapter.name = name;
@@ -1405,7 +1405,7 @@ it.each(
     startTasks(f, lead.id, ['explain-export']);
     await f.control.tick();
   } else
-    f.call('session.create', {
+    await f.call('session.create', {
       project_id: f.project.id,
       task_id: `${lead.id}:explain-export`,
       input: 'Explain the export',
@@ -1425,7 +1425,7 @@ it.each(
 it.each(['admission', 'quota'] as const)(
   'uses the writer fallback at the existing %s check',
   async (unavailable) => {
-    const f = workbenchFixture({ delay: 10 });
+    const f = await workbenchFixture({ delay: 10 });
     const backup = new FixtureAdapter(10);
     backup.name = 'claude';
     f.control.adapters.set(backup.name, backup);
@@ -1462,7 +1462,7 @@ it.each(['admission', 'quota'] as const)(
 it.each(['runtime_capacity', 'runtime_limited'] as const)(
   'waits with %s when the writer fallback that admission would take is limited',
   async (wait) => {
-    const f = workbenchFixture({ delay: 10 });
+    const f = await workbenchFixture({ delay: 10 });
     const backup = new FixtureAdapter(10);
     backup.name = 'claude';
     f.control.adapters.set(backup.name, backup);
@@ -1502,7 +1502,7 @@ it.each(['runtime_capacity', 'runtime_limited'] as const)(
 );
 
 it('keeps the runtime the user names for a task session when it is over the quota threshold', async () => {
-  const f = workbenchFixture({ delay: 10 });
+  const f = await workbenchFixture({ delay: 10 });
   const backup = new FixtureAdapter(10);
   backup.name = 'claude';
   f.control.adapters.set(backup.name, backup);
@@ -1521,7 +1521,7 @@ it('keeps the runtime the user names for a task session when it is over the quot
   ctx.runtimeStatus.set('fixture', {
     quota: { windows: [{ window: 'five_hour', used_percent: 100 }], seen_at: f.store.now() },
   });
-  f.call('session.create', {
+  await f.call('session.create', {
     project_id: f.project.id,
     task_id: `${lead.id}:explain-export`,
     runtime: 'fixture',
@@ -1533,7 +1533,7 @@ it('keeps the runtime the user names for a task session when it is over the quot
 it.each(['runtime', 'model'] as const)(
   'opens a task session the user gives another %s with a model of that runtime',
   async (given) => {
-    const f = workbenchFixture({ delay: 10 });
+    const f = await workbenchFixture({ delay: 10 });
     for (const name of ['claude', 'codex']) {
       const adapter = new FixtureAdapter(10);
       adapter.name = name;
@@ -1552,7 +1552,7 @@ it.each(['runtime', 'model'] as const)(
           : {},
       ),
     ]);
-    f.call('session.create', {
+    await f.call('session.create', {
       project_id: f.project.id,
       task_id: `${lead.id}:explain-export`,
       ...(given === 'runtime' ? { runtime: 'codex' } : { model: 'gpt-5-codex' }),
@@ -1567,7 +1567,7 @@ it.each(['runtime', 'model'] as const)(
 it.each(['absent', 'reviewer', 'fallback'] as const)(
   'selects the %s reviewer and starts it on its selected model',
   async (source) => {
-    const f = workbenchFixture({ delay: 10 });
+    const f = await workbenchFixture({ delay: 10 });
     for (const name of ['claude', 'codex']) {
       const adapter = new FixtureAdapter(10);
       adapter.name = name;
@@ -1627,7 +1627,7 @@ it.each([
   ['claude', 'auto'],
   ['codex', 'full_access'],
 ] as const)('refuses a lead dispatch inheriting %s %s', async (runtime, permission_mode) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   f.control.adapters.set(runtime, f.adapter);
   const lead = await leadWithPlan(f, [task('export', { runtime })]);
   const project = f.store.must<Project>('projects', f.project.id);
@@ -1646,7 +1646,7 @@ it.each([
   ['claude', 'auto'],
   ['codex', 'full_access'],
 ] as const)('dispatches the %s %s mode selected by the user', async (runtime, permission_mode) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   f.control.adapters.set(runtime, f.adapter);
   const lead = await leadWithPlan(f, [task('export', { runtime })]);
   const project = f.store.must<Project>('projects', f.project.id);
@@ -1674,7 +1674,7 @@ it.each([
 ] as const)(
   'refuses %s %s defaults added after a lead queued dispatch',
   async (runtime, permission_mode) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     f.control.adapters.set(runtime, f.adapter);
     const lead = await leadWithPlan(f, [task('export', { runtime })]);
     startTasks(f, lead.id, ['export']);

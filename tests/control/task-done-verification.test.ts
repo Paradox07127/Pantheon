@@ -5,7 +5,7 @@ import type { BoardPlan, LeadNote, Principal, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, countingGit, gitRunsOf, settle } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -40,7 +40,7 @@ const notes = (f: Fixture, leadId: string, kind: LeadNote['kind']) =>
 
 /** A lead with a plan of task a and a settled session of that task. */
 async function taskSession(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -57,7 +57,7 @@ async function taskSession(f: Fixture) {
     null,
     sessionOf(f, lead.id, 'lead'),
   );
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -77,7 +77,7 @@ const reportDone = (f: Fixture, worker: Session) =>
   );
 
 it('tells the lead when a merge task reports done without commits while auto-merge is off', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await taskSession(f);
 
   await reportDone(f, worker);
@@ -91,7 +91,7 @@ it('tells the lead when a merge task reports done without commits while auto-mer
 });
 
 it('tells the lead when a task reports done while its worktree has uncommitted files', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker, worktree } = await taskSession(f);
   mkdirSync(path.join(worktree, 'src/a'), { recursive: true });
   writeFileSync(path.join(worktree, 'src/a/export.ts'), 'export const format = "csv";\n');
@@ -108,7 +108,7 @@ it('tells the lead when a task reports done while its worktree has uncommitted f
 });
 
 it('checks the worktree of a done report while other work goes on, with one status and one count', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { worker, worktree } = await taskSession(f);
   const counter = countingGit();
   onTestFinished(counter.restore);

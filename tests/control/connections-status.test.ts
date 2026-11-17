@@ -20,16 +20,16 @@ const hosts = {
     },
   ],
 };
-function setup(replies: Record<string, LocalCommandResult> = {}) {
+async function setup(replies: Record<string, LocalCommandResult> = {}) {
   const run: LocalCommand = vi.fn(async (file) => replies[file] ?? missing);
-  const f = fixture({ controlOptions: { localCommand: run, externalSources: [] } });
+  const f = await fixture({ controlOptions: { localCommand: run, externalSources: [] } });
   cleanups.push(() => f.close());
   return { ...f, run, replies };
 }
 const ok = (stdout: string): LocalCommandResult => ({ stdout, stderr: '', exit_code: 0 });
 
 it('distinguishes missing tools and falls back only when hf is missing', async () => {
-  const f = setup();
+  const f = await setup();
   expect(await f.control.connectionsStatus(user)).toEqual({
     github: absent,
     huggingface: absent,
@@ -41,7 +41,7 @@ it('distinguishes missing tools and falls back only when hf is missing', async (
 });
 
 it('distinguishes timeouts and installed tools without a signed-in account', async () => {
-  const f = setup({
+  const f = await setup({
     gh: { stdout: '', stderr: '', exit_code: null, timed_out: true },
     hf: ok('Not logged in'),
     wrangler: ok('You are not authenticated. Please run `wrangler login`.'),
@@ -55,7 +55,7 @@ it('distinguishes timeouts and installed tools without a signed-in account', asy
 });
 
 it('reads the accounts and scopes and caches for sixty seconds or until refresh', async () => {
-  const f = setup({
+  const f = await setup({
     gh: ok(JSON.stringify({ hosts })),
     hf: ok('user: researcher\norgs: lab'),
     wrangler: ok(
@@ -96,14 +96,14 @@ it('reads the accounts and scopes and caches for sixty seconds or until refresh'
 });
 
 it('reads the bare account from the user=name line hf auth whoami prints', async () => {
-  const f = setup({ hf: ok('user=researcher orgs=lab\n') });
+  const f = await setup({ hf: ok('user=researcher orgs=lab\n') });
   expect(await f.control.connectionsStatus(user)).toMatchObject({
     huggingface: { state: 'signed_in', account: 'researcher' },
   });
 });
 
 it('reads a legacy Hugging Face login and reports other tool timeouts', async () => {
-  const f = setup({
+  const f = await setup({
     'huggingface-cli': ok('legacy-user\norgs: lab'),
     wrangler: { stdout: '', stderr: '', exit_code: null, timed_out: true },
   });

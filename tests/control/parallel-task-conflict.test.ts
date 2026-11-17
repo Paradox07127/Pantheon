@@ -13,11 +13,11 @@ import type {
 import { awaitWorkspaceReady, eventually, insideSandbox, settle, user } from '../helpers.js';
 import { boundTaskSession, git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
-function mergeFixture() {
-  const f = workbenchFixture();
+async function mergeFixture() {
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   return f;
@@ -67,7 +67,7 @@ async function parallelTasks(f: Fixture) {
   writeFileSync(path.join(f.source, 'shared.txt'), 'base\n');
   git(f.source, 'add', 'shared.txt');
   git(f.source, 'commit', '--quiet', '-m', 'Add the shared file');
-  const lead = f.create('Plan the shared file changes');
+  const lead = await f.create('Plan the shared file changes');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -85,14 +85,14 @@ async function parallelTasks(f: Fixture) {
     leadPrincipal(f, lead.id),
   );
   f.call('project.autoMerge.set', { project_id: f.project.id, enabled: true }, project(f).revision);
-  const a = f.call<Session>('session.create', {
+  const a = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: script('a'),
     task_id: `${lead.id}:a`,
   });
   // The scopes overlap, so the board opens no second session while the first works; bind it before its turn runs.
-  const b = boundTaskSession(f, lead.id, 'b', script('b'));
+  const b = await boundTaskSession(f, lead.id, 'b', script('b'));
   await eventually(
     () =>
       [a!, b!].some((session) => current(f, session.id).outcome === 'merged') &&
@@ -107,7 +107,7 @@ async function parallelTasks(f: Fixture) {
 it.skipIf(insideSandbox)(
   'hands a rebase conflict between two parallel task sessions back to the later one with the conflicting file',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, earlier, later } = await parallelTasks(f);
     const earlierId = earlier.task!.id;
     expect(fromTracker(f, earlier.id)).toEqual([]);
@@ -135,7 +135,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'names the earlier task that merged the conflicting file to the later session and, once its hand-backs end, to the lead',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { lead, earlier, later } = await parallelTasks(f);
     const earlierId = earlier.task!.id,
       named = `task ${earlierId} "Task ${earlierId}"`;
@@ -159,7 +159,7 @@ it.skipIf(insideSandbox)(
 it.skipIf(insideSandbox)(
   'lands the later task once its session resolves the conflict, keeping both changes in the source',
   async () => {
-    const f = mergeFixture();
+    const f = await mergeFixture();
     const { earlier, later, laterId } = await parallelTasks(f);
     const earlierId = earlier.task!.id;
     await eventually(
@@ -194,8 +194,8 @@ it.skipIf(insideSandbox)(
 );
 
 it('aborts a failed rebase that left no conflicted files instead of leaving the worktree mid-rebase', async () => {
-  const f = mergeFixture();
-  const session = f.create();
+  const f = await mergeFixture();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => idle(f, session.id),

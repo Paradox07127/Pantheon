@@ -3,7 +3,7 @@ import type { BoardPlan, LeadNote, Principal, Session, SessionTurn } from '@pant
 import { eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const MINUTE = 60_000;
 /** Characters of one digest, as the inbox sets it. */
@@ -55,10 +55,10 @@ const told = (f: Fixture, leadId: string) =>
 
 /** A settled lead with a one-task plan and the settled session of that task. */
 async function leadWithTask(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -114,7 +114,7 @@ async function wakeTenTimes(f: Fixture, lead: Session, worker: Session) {
 }
 
 it('delivers the notes a digest leaves out with the next wake', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   const notes = manyNotes(worker.id);
   setInbox(f, lead.id, notes);
@@ -140,7 +140,7 @@ it('delivers the notes a digest leaves out with the next wake', async () => {
 });
 
 it('keeps one budget when wakes are folded into the queued lead turn', async () => {
-  const f = workbenchFixture({ delay: 1500 });
+  const f = await workbenchFixture({ delay: 1500 });
   const { lead, worker } = await leadWithTask(f);
   const running = f.call<SessionTurn>(
     'session.send',
@@ -175,7 +175,7 @@ it('keeps one budget when wakes are folded into the queued lead turn', async () 
 });
 
 it('caps tracker notes in the inbox and keeps the overflow readable by id', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   const report = (index: number) =>
     f.call(
@@ -225,7 +225,7 @@ it('caps tracker notes in the inbox and keeps the overflow readable by id', asyn
 });
 
 it('stops waking the lead and lists it in needs-you after too many wakes in a short window', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   await wakeTenTimes(f, lead, worker);
 
@@ -257,7 +257,7 @@ it('stops waking the lead and lists it in needs-you after too many wakes in a sh
 });
 
 it('wakes the lead again once the wake window has passed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const advance = skewedClock(f);
   const { lead, worker } = await leadWithTask(f);
   await wakeTenTimes(f, lead, worker);
@@ -284,7 +284,7 @@ it('wakes the lead again once the wake window has passed', async () => {
 });
 
 it('delivers the lead update without reading or injecting trace evidence', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   const sent = vi.spyOn(f.adapter, 'send');
   const traceRead = vi.spyOn(f.store, 'windowEvents').mockImplementation(() => {

@@ -18,11 +18,14 @@ const control = new Control(
   },
   { ...scenario.controlOptions, readProcess: () => undefined },
 );
-control.recover();
+await control.recover();
 await control.reconcile();
 for (const step of scenario.commands) {
   const revision = step.revision_of ? store.must('sessions', step.revision_of).revision : null;
-  control.execute(step.principal, command(step.principal.id, step.type, step.input, revision));
+  await control.execute(
+    step.principal,
+    command(step.principal.id, step.type, step.input, revision),
+  );
 }
 // A kill point the child checks between ticks: a delivered turn runs under a recorded process.
 const runningWithProcess = () =>

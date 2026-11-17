@@ -23,7 +23,7 @@ vi.mock('node:fs', async (original) => ({ ...(await original<typeof import('node
 
 const denied = expect.objectContaining({ code: 'permission_denied' });
 
-function workerOf(f: ReturnType<typeof workbenchFixture>, session: Session): Principal {
+function workerOf(f: Awaited<ReturnType<typeof workbenchFixture>>, session: Session): Principal {
   return {
     id: 'task-worker-credential',
     role: 'worker',
@@ -34,9 +34,9 @@ function workerOf(f: ReturnType<typeof workbenchFixture>, session: Session): Pri
 }
 
 it('lets a task worker read only its own worktree, never another session or the project root', async () => {
-  const f = workbenchFixture();
-  const own = boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
-  const other = f.create('Draw something else');
+  const f = await workbenchFixture();
+  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const other = await f.create('Draw something else');
   const ownWorkspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
   const otherWorkspace = await awaitWorkspaceReady(f.control, other.workspace_id!);
   writeFileSync(path.join(ownWorkspace.path, 'mine.ts'), 'function mineSymbol() {}');
@@ -52,10 +52,10 @@ it('lets a task worker read only its own worktree, never another session or the 
   );
 });
 
-it('lets a task worker see only the images its own session tool calls returned', () => {
-  const f = workbenchFixture();
-  const own = boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
-  const other = f.create('Draw something else');
+it('lets a task worker see only the images its own session tool calls returned', async () => {
+  const f = await workbenchFixture();
+  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const other = await f.create('Draw something else');
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 4, 5, 6]);
   const hash = createHash('sha256').update(png).digest('hex');
@@ -76,8 +76,8 @@ it('lets a task worker see only the images its own session tool calls returned',
 });
 
 it('refuses a session read of data its sandbox protects inside its own worktree', async () => {
-  const f = workbenchFixture();
-  const own = boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const f = await workbenchFixture();
+  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
   const workspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
   f.protectionPaths.backupDir = path.join(workspace.path, 'backups');
   mkdirSync(f.protectionPaths.backupDir);
@@ -91,8 +91,8 @@ it('refuses a session read of data its sandbox protects inside its own worktree'
 });
 
 it('refuses a worktree whose registered folder was replaced by a symlink to another folder', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   const outside = path.join(f.root, 'outside');
   mkdirSync(outside);
@@ -104,8 +104,8 @@ it('refuses a worktree whose registered folder was replaced by a symlink to anot
   );
 });
 
-it('refuses to open a checked path whose parent became a symlink out of the workspace', () => {
-  const f = workbenchFixture();
+it('refuses to open a checked path whose parent became a symlink out of the workspace', async () => {
+  const f = await workbenchFixture();
   const root = realpathSync(f.source);
   mkdirSync(path.join(root, 'notes'));
   writeFileSync(path.join(root, 'notes', 'plan.txt'), 'inside');
@@ -129,7 +129,7 @@ it('refuses to open a checked path whose parent became a symlink out of the work
 });
 
 it('skips a listed file deleted before its size is read', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   writeFileSync(path.join(f.source, 'vanishing.txt'), 'soon gone');
   const lstat = fs.lstatSync;
   vi.spyOn(fs, 'lstatSync').mockImplementation(((target: fs.PathLike, options?: never) => {
@@ -143,16 +143,16 @@ it('skips a listed file deleted before its size is read', async () => {
 });
 
 it('refuses a session the repository working diff, which runs git outside its sandbox', async () => {
-  const f = workbenchFixture();
-  const own = boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const f = await workbenchFixture();
+  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
   await awaitWorkspaceReady(f.control, own.workspace_id!);
   await expect(f.control.repoWorkingDiff(workerOf(f, own), f.project.id)).rejects.toThrow(denied);
   expect((await f.control.repoWorkingDiff(user, f.project.id)).files).toBeDefined();
 });
 
 it('refuses a session the repository reads, which span the project’s worktrees', async () => {
-  const f = workbenchFixture();
-  const own = boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const f = await workbenchFixture();
+  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
   const workspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
   const worker = workerOf(f, own);
   const project_id = f.project.id;
@@ -169,9 +169,9 @@ it('refuses a session the repository reads, which span the project’s worktrees
 });
 
 it('lets a task worker search only its own worktree for file names', async () => {
-  const f = workbenchFixture();
-  const own = boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
-  const other = f.create('Draw something else');
+  const f = await workbenchFixture();
+  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const other = await f.create('Draw something else');
   await awaitWorkspaceReady(f.control, own.workspace_id!);
   const otherWorkspace = await awaitWorkspaceReady(f.control, other.workspace_id!);
   writeFileSync(path.join(otherWorkspace.path, 'theirs.ts'), 'export {};');
@@ -188,8 +188,8 @@ it('lets a task worker search only its own worktree for file names', async () =>
 });
 
 it('refuses a protected file reached by swapping a checked folder for a link while it opens', async () => {
-  const f = workbenchFixture();
-  const own = boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
+  const f = await workbenchFixture();
+  const own = await boundTaskSession(f, 'lead-of-the-task', 'task-under-test');
   const workspace = await awaitWorkspaceReady(f.control, own.workspace_id!);
   f.protectionPaths.backupDir = path.join(workspace.path, 'backups');
   mkdirSync(f.protectionPaths.backupDir);

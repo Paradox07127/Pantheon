@@ -29,7 +29,7 @@ async function countingGit<T>(run: () => Promise<T>): Promise<{ result: T; runs:
 }
 
 it('names the sessions of a log page over 500 recorded merges with a few git runs', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const parent = git(f.source, 'rev-parse', 'HEAD'),
     start = Math.floor(Date.now() / 1000) - 1000;
   execFileSync('git', ['fast-import', '--quiet'], {
@@ -66,7 +66,7 @@ it('names the sessions of a log page over 500 recorded merges with a few git run
 });
 
 it('names the newest merge landing each commit across a side branch, past merges of missing commits', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const sessions = Array.from({ length: 3 }, () =>
     f.store.insert<Session>('sessions', {
       id: id(),
@@ -106,7 +106,7 @@ it('names the newest merge landing each commit across a side branch, past merges
 });
 
 it('blames the lines of the preview of a file larger than the preview', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   // 120 000 short lines, as a lockfile has.
   writeFileSync(
     path.join(f.source, 'lock.txt'),
@@ -125,7 +125,7 @@ it('blames the lines of the preview of a file larger than the preview', async ()
 });
 
 it('diffs a root commit of a SHA-256 repository against its empty tree', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   rmSync(path.join(f.source, '.git'), { recursive: true, force: true });
   git(f.source, 'init', '--quiet', '--object-format=sha256', '--initial-branch=main');
   git(f.source, 'add', 'answer.txt');
@@ -141,7 +141,7 @@ it('diffs a root commit of a SHA-256 repository against its empty tree', async (
 });
 
 it('blames a file whose name holds two dots', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   writeFileSync(path.join(f.source, 'release..notes.md'), 'notes\n');
   git(f.source, 'add', 'release..notes.md');
   git(f.source, 'commit', '--quiet', '-m', 'Add the release notes');
@@ -157,7 +157,7 @@ it('blames a file whose name holds two dots', async () => {
 });
 
 it('blames a file whose name starts with -', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   writeFileSync(path.join(f.source, '-draft.txt'), 'draft\n');
   git(f.source, 'add', '--', '-draft.txt');
   git(f.source, 'commit', '--quiet', '-m', 'Add the draft');
@@ -170,7 +170,7 @@ it('blames a file whose name starts with -', async () => {
 });
 
 it('lists the worktrees when a locked outside worktree’s folder is gone', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const outside = path.join(f.root, 'outside');
   git(f.source, 'worktree', 'add', '--quiet', '--detach', outside);
   git(f.source, 'worktree', 'lock', outside);
@@ -180,7 +180,7 @@ it('lists the worktrees when a locked outside worktree’s folder is gone', asyn
 });
 
 it('reads commits whose subject and files whose name hold the byte 0x01', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const odd = 'odd\x01name.txt';
   writeFileSync(path.join(f.source, 'answer.txt'), 'changed\n');
   writeFileSync(path.join(f.source, odd), 'odd\n');
@@ -205,7 +205,7 @@ it('reads commits whose subject and files whose name hold the byte 0x01', async 
 });
 
 it('logs signed commits as plain commits when the repository shows signatures', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const raw = git(f.source, 'cat-file', 'commit', 'HEAD');
   const signed = execFileSync('git', ['hash-object', '-t', 'commit', '-w', '--stdin'], {
     cwd: f.source,

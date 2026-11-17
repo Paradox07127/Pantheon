@@ -15,7 +15,7 @@ import { eventually, fixture, user } from '../helpers.js';
 it('pairs lifecycle timestamps, distinguishes tool timing sources and gives reflection bounded read-only evidence', async () => {
   let now = 1_800_000_000_000;
   const from = now;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   try {
     const project = f.project.id;
     const workspace = f.store.insert<Workspace>('workspaces', {
@@ -231,7 +231,7 @@ it('pairs lifecycle timestamps, distinguishes tool timing sources and gives refl
 it('distinguishes runtime delivery from the user decision and native-only coverage', async () => {
   let now = 1_800_000_000_000;
   const from = now;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   try {
     const id = f.project.id;
     const ev = (kind: string, approval: string, data = {}) =>
@@ -282,7 +282,7 @@ it('distinguishes runtime delivery from the user decision and native-only covera
 it('ends queue and preparation waits at the terminal event of a turn that never ran', async () => {
   let now = 1_800_000_000_000;
   const from = now;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   try {
     const project = f.project.id;
     const turn = (id: string) =>
@@ -322,7 +322,7 @@ it('ends queue and preparation waits at the terminal event of a turn that never 
 it('reports a decided approval the runtime has not acknowledged as an ongoing delivery', async () => {
   let now = 1_800_000_000_000;
   const from = now;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   try {
     const project = f.project.id;
     const approval = (id: string) =>
@@ -382,7 +382,7 @@ it('reports a decided approval the runtime has not acknowledged as an ongoing de
 it('starts a new dispatch wait when a stopped request is requested again', async () => {
   let now = 1_800_000_000_000;
   const from = now;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   try {
     const project = f.project.id;
     const lead = { id: 'dispatch-lead', revision: 1 };
@@ -411,7 +411,7 @@ it('starts a new dispatch wait when a stopped request is requested again', async
 });
 
 it('starts a fresh read-only runtime and accepts a follow-up without opening the project context', async () => {
-  const f = fixture();
+  const f = await fixture();
   try {
     const start = vi.spyOn(f.adapter, 'start'),
       send = vi.spyOn(f.adapter, 'send');
@@ -465,7 +465,7 @@ it('starts a fresh read-only runtime and accepts a follow-up without opening the
 it('publishes the slow threshold and chronological daemon and native evidence', async () => {
   let now = 1_800_000_000_000;
   const from = now;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   try {
     const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
     const owner = { id: 'evidence-session', revision: 1 };
@@ -531,7 +531,7 @@ it('publishes the slow threshold and chronological daemon and native evidence', 
 it('times a tool call from its approval to its result and keeps the failure of a turn', async () => {
   let now = 1_800_000_000_000;
   const from = now;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   try {
     const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
     const project = f.project.id;

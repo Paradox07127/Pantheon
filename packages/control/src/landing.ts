@@ -26,7 +26,7 @@ import { segments } from './task-dispatch.js';
 import { retiredBinding, taskGeneration, sessionPlanTask } from './board-plan.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { onDevice } from './remote-workspace.js';
-import { sessionWorkflow, workflowCondition } from './workflow-engine.js';
+import { sessionWorkflow, workflowCondition, type ConditionAnswers } from './workflow-engine.js';
 import { forgetWorktreeReads } from './workbench-session.js';
 import { headerPath } from './landing-diff.js';
 
@@ -85,13 +85,15 @@ function taskOfSession(ctx: ControlContext, session: Session) {
 
 /**
  * The gate of the project folder a clone delivers into, then the acceptance of the session's
- * board task, which may need what the gate built, then its before-merge command steps.
+ * board task, which may need what the gate built, then its before-merge command steps; answers
+ * decide their conditions as beforeMergeCommands says.
  */
 export function gateCommands(
   ctx: ControlContext,
   project: Project,
   workspace: Workspace,
   session: Session,
+  answers?: ConditionAnswers,
 ): GateCommands | undefined {
   const folder = workspace.source ? rootOf(project, [workspace.source]) : undefined;
   const configured = folder
@@ -99,7 +101,7 @@ export function gateCommands(
     : undefined;
   const task = taskOfSession(ctx, session);
   const acceptance = task?.acceptance ?? [];
-  const steps = task ? beforeMergeCommands(ctx, session, task) : [];
+  const steps = task ? beforeMergeCommands(ctx, session, task, answers) : [];
   if (!acceptance.length && !steps.length) return configured;
   return [
     ...(configured ?? []),
@@ -108,18 +110,21 @@ export function gateCommands(
   ];
 }
 
-/** The before-merge command steps the session's workflow runs for task, as gate commands. */
+/**
+ * The before-merge command steps the session's workflow runs for task, as gate commands; a
+ * condition answers lack, or a view has not read yet, counts as applying.
+ */
 export function beforeMergeCommands(
   ctx: ControlContext,
   session: Session,
   task: BoardPlan['tasks'][number],
+  answers?: ConditionAnswers,
 ): GateCommands {
-  const changed = new Map<string, string[]>();
   return sessionWorkflow(ctx, session)
     .definition.slots.before_merge.filter(
       (step) =>
         step.kind.type === 'command' &&
-        workflowCondition(ctx, step, session.id, undefined, undefined, changed) &&
+        workflowCondition(ctx, step, session.id, undefined, undefined, answers) !== false &&
         (!step.applies_to?.tiers ||
           (task.kind && step.applies_to.tiers.includes(task.kind.tier))) &&
         (!step.applies_to?.domains ||

@@ -37,7 +37,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-it('collects stray artifact files on recover() while retaining event and nested row references', () => {
+it('collects stray artifact files on recover() while retaining event and nested row references', async () => {
   const f = fixture();
   const historical = f.files.put(Buffer.from('Gate check log'));
   const nested = f.files.put(Buffer.from('Nested command log'));
@@ -49,7 +49,7 @@ it('collects stray artifact files on recover() while retaining event and nested 
   f.store.event('session.gate_checked', entity, '', { evidence: [{ log_uri: historical.uri }] });
   for (let index = 0; index < 300; index++) f.store.event('history.padding', entity, '', { index });
   f.store.insert('project_fact_versions', { ...entity, evidence: { refs: [nested.uri] } });
-  f.open().recover();
+  await f.open().recover();
   expect(readdirSync(f.files.directory).sort()).toEqual(
     [historical.hash, nested.hash, 'notes.txt'].sort(),
   );
@@ -61,16 +61,16 @@ it('collects stray artifact files on recover() while retaining event and nested 
     count: 2,
     names: expect.arrayContaining([orphan.hash, temporary]),
   });
-  f.open().recover();
+  await f.open().recover();
   expect(f.store.events(0, undefined, 1000).filter((e) => e.kind === 'storage.collected')).toEqual(
     collected,
   );
 });
 
-it('caps collected artifact names while recording the full removal count', () => {
+it('caps collected artifact names while recording the full removal count', async () => {
   const f = fixture();
   for (let index = 0; index < 105; index++) f.files.put(Buffer.from(`orphan ${index}`));
-  f.control.recover();
+  await f.control.recover();
   const payload = f.store.events().find((e) => e.kind === 'storage.collected')?.payload as any;
   expect(payload?.count).toBe(105);
   expect(payload.names).toHaveLength(100);

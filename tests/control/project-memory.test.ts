@@ -2,8 +2,8 @@ import { expect, it, vi } from 'vitest';
 import { workbenchFixture } from './workbench-fixture.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 
-it('replaces decisions atomically, hides archived ids and dependent reports, and restores only as a proposal', () => {
-  const f = workbenchFixture();
+it('replaces decisions atomically, hides archived ids and dependent reports, and restores only as a proposal', async () => {
+  const f = await workbenchFixture();
   const propose = (key: string, text: string, dependencies: string[] = []) =>
     f.call<any>('memory.propose', {
       project_id: f.project.id,
@@ -34,7 +34,7 @@ it('replaces decisions atomically, hides archived ids and dependent reports, and
 });
 
 it('delivers current scoped memory to the actual adapter on every send', async () => {
-  const f = workbenchFixture({ delay: 10 });
+  const f = await workbenchFixture({ delay: 10 });
   const send = vi.spyOn(f.adapter, 'send');
   const draft = f.call<any>('memory.propose', {
     project_id: f.project.id,
@@ -43,7 +43,7 @@ it('delivers current scoped memory to the actual adapter on every send', async (
     text: 'Use precise terminology',
   });
   f.call('memory.commit', { memory_id: draft.id }, draft.revision);
-  const session = f.create();
+  const session = await f.create();
   await f.control.tick();
   await eventually(
     () => send.mock.calls.length > 0,
@@ -58,7 +58,7 @@ it('delivers current scoped memory to the actual adapter on every send', async (
 
 it('never replays a cached current-read receipt after a decision is replaced', async () => {
   const { command } = await import('@pantheon/protocol');
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const draft = f.call<any>('memory.propose', {
     project_id: f.project.id,
     key: 'db',
@@ -72,8 +72,8 @@ it('never replays a cached current-read receipt after a decision is replaced', a
   expect(() => f.control.execute(user, read)).toThrow();
 });
 
-it('rejects stale proposals and concurrent commits without overwriting the current choice', () => {
-  const f = workbenchFixture();
+it('rejects stale proposals and concurrent commits without overwriting the current choice', async () => {
+  const f = await workbenchFixture();
   const propose = (text: string) =>
     f.call<any>('memory.propose', { project_id: f.project.id, key: 'db', kind: 'decision', text });
   const a = propose('first'),
@@ -90,7 +90,7 @@ it('rejects stale proposals and concurrent commits without overwriting the curre
 it('expires memory at read time without relying on a scheduler and retains immutable history', async () => {
   const { fixture } = await import('../helpers.js');
   let now = 1000;
-  const f = fixture({ now: () => now });
+  const f = await fixture({ now: () => now });
   try {
     const r = f.call<any>('memory.propose', {
       project_id: f.project.id,
@@ -123,9 +123,9 @@ it('expires memory at read time without relying on a scheduler and retains immut
   }
 });
 
-it('keeps proposals untrusted, excludes them from context, and prevents cross-project or task reads', () => {
-  const f = workbenchFixture();
-  const s = f.create();
+it('keeps proposals untrusted, excludes them from context, and prevents cross-project or task reads', async () => {
+  const f = await workbenchFixture();
+  const s = await f.create();
   const p = {
     id: 'agent',
     role: 'lead' as const,
@@ -156,7 +156,7 @@ it('keeps proposals untrusted, excludes them from context, and prevents cross-pr
 });
 
 it('maintains current documents, rejects late jobs, and does not advance the source epoch when publishing', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const save = (text: string) => {
     const r = f.call<any>('memory.propose', {
       project_id: f.project.id,
@@ -191,7 +191,7 @@ it('maintains current documents, rejects late jobs, and does not advance the sou
 });
 
 it('does not mistake a delayed delivery receipt for acknowledgement of a newer decision', async () => {
-  const f = workbenchFixture({ delay: 10 });
+  const f = await workbenchFixture({ delay: 10 });
   const save = (text: string) => {
     const r = f.call<any>('memory.propose', {
       project_id: f.project.id,
@@ -207,7 +207,7 @@ it('does not mistake a delayed delivery receipt for acknowledgement of a newer d
     save('changed during send');
     return actual(handle, input);
   });
-  const s = f.create();
+  const s = await f.create();
   await eventually(
     () => !!f.store.must<any>('sessions', s.id).memory_delivery?.delivered_signature,
     () => f.control.tick(),
@@ -216,9 +216,9 @@ it('does not mistake a delayed delivery receipt for acknowledgement of a newer d
   expect(read.sessions.find((x) => x.id === s.id)?.delivered).toBe(false);
 });
 
-it('keeps task exceptions separate and expires them when the contract generation changes', () => {
-  const f = workbenchFixture();
-  const lead = f.create();
+it('keeps task exceptions separate and expires them when the contract generation changes', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create();
   f.store.insert('board_plans', {
     id: lead.id,
     revision: 1,
@@ -285,8 +285,8 @@ it('keeps task exceptions separate and expires them when the contract generation
 });
 
 it('scopes task memory by lead, task and generation, not by the worker session details', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   const as = (session: string, role: 'lead' | 'worker') => ({
     id: `session:${session}`,
@@ -321,7 +321,7 @@ it('scopes task memory by lead, task and generation, not by the worker session d
     null,
     as(lead.id, 'lead'),
   );
-  const worker = f.call<any>('session.create', {
+  const worker = await f.call<any>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     task_id: `${lead.id}:export`,
@@ -358,8 +358,8 @@ it('scopes task memory by lead, task and generation, not by the worker session d
   });
 });
 
-it('reads improvement status directly and excludes reverted experience immediately', () => {
-  const f = workbenchFixture();
+it('reads improvement status directly and excludes reverted experience immediately', async () => {
+  const f = await workbenchFixture();
   const r = f.store.insert('improvements', {
     id: 'experience',
     revision: 1,
@@ -377,7 +377,7 @@ it('reads improvement status directly and excludes reverted experience immediate
 });
 
 it('rolls back an interrupted commit and reclaims an abandoned maintenance lease after restart', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const r = f.call<any>('memory.propose', {
     project_id: f.project.id,
     key: 'db',
@@ -403,9 +403,9 @@ it('rolls back an interrupted commit and reclaims an abandoned maintenance lease
   expect(f.control.memoryDocument(user, f.project.id).text).toContain('durable choice');
 });
 
-it('blocks stale control-plane acceptance until the agent reads the current context', () => {
-  const f = workbenchFixture();
-  const s = f.create();
+it('blocks stale control-plane acceptance until the agent reads the current context', async () => {
+  const f = await workbenchFixture();
+  const s = await f.create();
   const p = {
     id: 'lead',
     role: 'lead' as const,
@@ -441,8 +441,8 @@ it('blocks stale control-plane acceptance until the agent reads the current cont
   }
 });
 
-it('rejects a decision commit over budget with the largest records and rolls back replacements', () => {
-  const f = workbenchFixture();
+it('rejects a decision commit over budget with the largest records and rolls back replacements', async () => {
+  const f = await workbenchFixture();
   const save = (key: string, text: string, kind = 'decision') => {
     const draft = f.call<any>('memory.propose', {
       project_id: f.project.id,
@@ -494,8 +494,8 @@ it('rejects a decision commit over budget with the largest records and rolls bac
   expect(f.store.events(0, f.project.id)).toEqual(events);
 });
 
-it('commits decisions within budget and measures replacements without their superseded versions', () => {
-  const f = workbenchFixture();
+it('commits decisions within budget and measures replacements without their superseded versions', async () => {
+  const f = await workbenchFixture();
   for (const text of ['Original '.repeat(700), 'Replacement '.repeat(700)]) {
     const draft = f.call<any>('memory.propose', {
       project_id: f.project.id,
@@ -515,7 +515,7 @@ it('bounds maintenance retries and supports an explicit local retry without mode
   const { fixture } = await import('../helpers.js');
   let now = 1000,
     fail = true;
-  const f = fixture({
+  const f = await fixture({
     now: () => now,
     failpoint: (name) => {
       if (fail && name === 'memory_before_projection') throw new Error('storage unavailable');
@@ -543,8 +543,8 @@ it('bounds maintenance retries and supports an explicit local retry without mode
   }
 });
 
-it('rejects a replacement that would archive its own dependency', () => {
-  const f = workbenchFixture();
+it('rejects a replacement that would archive its own dependency', async () => {
+  const f = await workbenchFixture();
   const a = f.call<any>('memory.propose', {
     project_id: f.project.id,
     key: 'report',
@@ -565,8 +565,8 @@ it('rejects a replacement that would archive its own dependency', () => {
   expect(f.call<any>('memory.get', { memory_id: a.id }).text).toBe('Original analysis');
 });
 
-it('bounds multilingual search excerpts and preserves the complete current body for targeted get', () => {
-  const f = workbenchFixture();
+it('bounds multilingual search excerpts and preserves the complete current body for targeted get', async () => {
+  const f = await workbenchFixture();
   const text = '需要复查的研究报告'.repeat(500);
   const r = f.call<any>('memory.propose', {
     project_id: f.project.id,
@@ -582,8 +582,8 @@ it('bounds multilingual search excerpts and preserves the complete current body 
   expect(f.call<any>('memory.get', { memory_id: r.id }).text).toBe(text);
 });
 
-it('never replaces a decision by confirming a report with the same key and does not invalidate context when rejecting a draft', () => {
-  const f = workbenchFixture();
+it('never replaces a decision by confirming a report with the same key and does not invalidate context when rejecting a draft', async () => {
+  const f = await workbenchFixture();
   const a = f.call<any>('memory.propose', {
     project_id: f.project.id,
     key: 'database',
@@ -609,7 +609,7 @@ it('never replaces a decision by confirming a report with the same key and does 
 });
 
 it('delivers an empty replacement packet when the last improvement experience is revoked', async () => {
-  const f = workbenchFixture({ delay: 10 });
+  const f = await workbenchFixture({ delay: 10 });
   const send = vi.spyOn(f.adapter, 'send');
   f.store.insert('improvements', {
     id: 'learned-procedure',
@@ -620,7 +620,7 @@ it('delivers an empty replacement packet when the last improvement experience is
     change: { type: 'experience', procedure: 'Distinct revoked procedure' },
     proposed_at: Date.now(),
   } as any);
-  const session = f.create();
+  const session = await f.create();
   await eventually(
     () =>
       f.store.must<any>('sessions', session.id).state === 'open' && send.mock.calls.length === 1,
@@ -645,7 +645,7 @@ it('delivers an empty replacement packet when the last improvement experience is
 });
 
 it('exposes delivery capability, stale packages and the records delivered for a turn', async () => {
-  const f = workbenchFixture({ delay: 10 });
+  const f = await workbenchFixture({ delay: 10 });
   const draft = f.call<any>('memory.propose', {
     project_id: f.project.id,
     key: 'delivery-note',
@@ -654,7 +654,7 @@ it('exposes delivery capability, stale packages and the records delivered for a 
     text: 'Delivered evidence',
   });
   const active = f.call<any>('memory.commit', { memory_id: draft.id }, draft.revision);
-  const s = f.create();
+  const s = await f.create();
   expect(
     f.control.memoryRead(user, f.project.id).sessions.find((x) => x.id === s.id),
   ).toMatchObject({
@@ -713,8 +713,8 @@ it('exposes delivery capability, stale packages and the records delivered for a 
   ).toBe(false);
 });
 
-it('reads memory counts for a session in turn order using the latest delivery of each turn', () => {
-  const f = workbenchFixture();
+it('reads memory counts for a session in turn order using the latest delivery of each turn', async () => {
+  const f = await workbenchFixture();
   const draft = f.call<any>('memory.propose', {
     project_id: f.project.id,
     key: 'delivered-note',
@@ -729,8 +729,8 @@ it('reads memory counts for a session in turn order using the latest delivery of
     text: 'Other evidence',
   });
   const other = f.call<any>('memory.commit', { memory_id: otherDraft.id }, otherDraft.revision);
-  const session = f.create();
-  const otherSession = f.create();
+  const session = await f.create();
+  const otherSession = await f.create();
   expect(f.control.memorySessionTurns(user, session.id)).toEqual({ turns: [] });
   f.store.event('memory.delivered', session, f.project.id, {
     turn_id: 'first-turn',
@@ -765,9 +765,9 @@ it('reads memory counts for a session in turn order using the latest delivery of
   expect(f.control.memoryTurn(user, session.id, 'empty-turn').items).toEqual([]);
 });
 
-it('refuses session memory counts for the principals refused by the single-turn read', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('refuses session memory counts for the principals refused by the single-turn read', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const principal = {
     id: 'agent',
     role: 'lead' as const,
@@ -783,8 +783,8 @@ it('refuses session memory counts for the principals refused by the single-turn 
   );
 });
 
-it('reports serialized record bytes and the full context budget even when decisions overflow', () => {
-  const f = workbenchFixture();
+it('reports serialized record bytes and the full context budget even when decisions overflow', async () => {
+  const f = await workbenchFixture();
   const items: any[] = [];
   for (let i = 0; i < 3; i++) {
     const draft = f.call<any>('memory.propose', {

@@ -3,12 +3,12 @@ import type { Project, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, insideSandbox, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -19,8 +19,8 @@ async function idleSession(f: Fixture) {
   return session;
 }
 
-function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
-  f.call<Project>(
+async function setGate(f: Fixture, commands: { name: string; argv: string[] }[]) {
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -54,9 +54,9 @@ function recordGateRun(
 }
 
 it('returns three gate runs newest first with the right commits and durations', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f, [{ name: 'Verify', argv: ['node', '-e', '0'] }]);
+  await setGate(f, [{ name: 'Verify', argv: ['node', '-e', '0'] }]);
 
   const e1 = recordGateRun(f, session.id, '1'.repeat(40), [
     { name: 'Verify', argv: ['node', '-e', '0'], exit_code: 0, duration_ms: 100, timed_out: false },
@@ -120,9 +120,9 @@ it.each([
     ],
   },
 ])('$name', async ({ gate, ran, results }) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f, gate.map(pnpm));
+  await setGate(f, gate.map(pnpm));
 
   recordGateRun(f, session.id, 'a'.repeat(40), ran);
 
@@ -132,9 +132,9 @@ it.each([
 });
 
 it('limits the returned gate run history', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f, [{ name: 'check', argv: ['true'] }]);
+  await setGate(f, [{ name: 'check', argv: ['true'] }]);
 
   recordGateRun(f, session.id, '1'.repeat(40), [
     { name: 'check', argv: ['true'], exit_code: 0, duration_ms: 50, timed_out: false },
@@ -152,9 +152,9 @@ it('limits the returned gate run history', async () => {
 });
 
 it('refuses access to another project principal', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f, [{ name: 'check', argv: ['true'] }]);
+  await setGate(f, [{ name: 'check', argv: ['true'] }]);
 
   const otherPrincipal = {
     id: 'other-agent',
@@ -167,9 +167,9 @@ it('refuses access to another project principal', async () => {
 });
 
 it('reads started_at from the gate_started event when recorded', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f, [{ name: 'check', argv: ['true'] }]);
+  await setGate(f, [{ name: 'check', argv: ['true'] }]);
 
   const startEvent = f.store.event('session.gate_started', session, session.project_id, {
     workspace_id: session.workspace_id,
@@ -199,7 +199,7 @@ it('reads started_at from the gate_started event when recorded', async () => {
 });
 
 it('reads skipped commands from the current configuration when configuration changed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   // Run recorded with build (ok) and test (fail)
   recordGateRun(f, session.id, 'd'.repeat(40), [
@@ -208,7 +208,7 @@ it('reads skipped commands from the current configuration when configuration cha
   ]);
 
   // Gate configuration is updated after the run with an added lint command
-  setGate(f, [
+  await setGate(f, [
     { name: 'build', argv: ['pnpm', 'build'] },
     { name: 'test', argv: ['pnpm', 'test'] },
     { name: 'lint', argv: ['pnpm', 'lint'] },
@@ -226,9 +226,9 @@ it('reads skipped commands from the current configuration when configuration cha
 it.skipIf(insideSandbox)(
   'lists the skipped commands the run had after its gate commands change',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const session = await idleSession(f);
-    setGate(f, [
+    await setGate(f, [
       { name: 'Fails', argv: [process.execPath, '-e', 'process.exit(1)'] },
       { name: 'Never ran', argv: [process.execPath, '-e', 'process.exit(0)'] },
     ]);
@@ -238,7 +238,7 @@ it.skipIf(insideSandbox)(
       () => f.control.tick(),
       10000,
     );
-    setGate(f, [
+    await setGate(f, [
       { name: 'Fails', argv: [process.execPath, '-e', 'process.exit(1)'] },
       { name: 'Added later', argv: ['pnpm', 'lint'] },
       { name: 'Also added later', argv: ['pnpm', 'test'] },

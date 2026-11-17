@@ -21,12 +21,12 @@ function commitProjectRoot(root: string) {
   git(root, 'commit', '--quiet', '-m', 'Initial files');
 }
 
-function setup() {
-  const f = fixture({ managedWorkspaces: true });
+async function setup() {
+  const f = await fixture({ managedWorkspaces: true });
   cleanups.push(() => f.close());
   commitProjectRoot(f.projectRoot);
   // The first turn waits for the worktree, so the session is not launched yet.
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: '{"facts":{"opaque":true}}',
@@ -47,8 +47,8 @@ function setup() {
   return { ...f, session, ctx, spec };
 }
 
-it('selects a protected managed store before launch and reuses it without changing the session revision', () => {
-  const f = setup();
+it('selects a protected managed store before launch and reuses it without changing the session revision', async () => {
+  const f = await setup();
   f.spec.sandbox = { writable_roots: [], protected_entries: [] };
   const first = managedSessionSpec(f.ctx, f.spec);
   const selected = f.store.must<Session>('sessions', f.session.id);
@@ -68,15 +68,15 @@ it('selects a protected managed store before launch and reuses it without changi
   );
 });
 
-it('keeps a tool-free session tool-free while selecting its isolated history', () => {
-  const f = setup();
+it('keeps a tool-free session tool-free while selecting its isolated history', async () => {
+  const f = await setup();
   const spec = managedSessionSpec(f.ctx, f.spec);
   expect(spec.native_state_dir).toContain('/native-sessions/');
   expect(spec).not.toHaveProperty('sandbox');
 });
 
-it('never relocates a legacy native ID implicitly during resume', () => {
-  const f = setup();
+it('never relocates a legacy native ID implicitly during resume', async () => {
+  const f = await setup();
   f.store.update('sessions', { ...f.session, native_id: 'old-global-native' }, f.session.revision);
   const resumed = managedSessionSpec(f.ctx, f.spec);
   expect(resumed.native_state_dir).toBeUndefined();
@@ -87,7 +87,7 @@ it('never relocates a legacy native ID implicitly during resume', () => {
 });
 
 it('passes the managed store and readable title through actual control startup before an adapter receives input', async () => {
-  const f = setup();
+  const f = await setup();
   const start = f.adapter.start.bind(f.adapter);
   const seen: SessionSpec[] = [];
   vi.spyOn(f.adapter, 'start').mockImplementation(async (spec, sink) => {

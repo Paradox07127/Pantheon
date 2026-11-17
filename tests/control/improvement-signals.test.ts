@@ -5,7 +5,7 @@ import { improvementSignals } from '../../packages/control/dist/improvement-sign
 import { DEFAULT_WORKFLOW_POLICY } from '../../packages/control/dist/workflow-policy.js';
 import { fixture } from '../helpers.js';
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 const fixtures: Fixture[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
@@ -14,8 +14,8 @@ afterEach(async () => {
 const backend = { domain: 'backend-logic', tier: 't2' } as const;
 const docs = { domain: 'docs-chore', tier: 't1' } as const;
 
-function setup() {
-  const f = fixture();
+async function setup() {
+  const f = await fixture();
   fixtures.push(f);
   let rows = 0;
   /** Inserts a merged retrospective of a new task, newer than every earlier one; returns its id. */
@@ -63,8 +63,8 @@ const dispatched = (leadInput: number, taskInput: number, fields: Partial<Retros
   ...fields,
 });
 
-it('finds dispatch overhead when the lead takes most input tokens of five first-pass dispatched tasks of a cell', () => {
-  const { retro, signals } = setup();
+it('finds dispatch overhead when the lead takes most input tokens of five first-pass dispatched tasks of a cell', async () => {
+  const { retro, signals } = await setup();
   retro(dispatched(100, 900));
   const ids = times(5, () => retro(dispatched(700, 300)));
 
@@ -78,19 +78,19 @@ it('finds dispatch overhead when the lead takes most input tokens of five first-
   ]);
 });
 
-it('finds no dispatch overhead at a lead share of exactly 60 percent or with a gate that failed first', () => {
-  const { retro, signals } = setup();
+it('finds no dispatch overhead at a lead share of exactly 60 percent or with a gate that failed first', async () => {
+  const { retro, signals } = await setup();
   times(5, () => retro(dispatched(600, 400)));
   expect(signals('dispatch_overhead')).toEqual([]);
 
-  const other = setup();
+  const other = await setup();
   times(4, () => other.retro(dispatched(700, 300)));
   other.retro(dispatched(700, 300, { gate_passed_on_attempt: 2, gate_failures: ['code'] }));
   expect(other.signals('dispatch_overhead')).toEqual([]);
 });
 
-it('withholds the suggestion of a signal whose parameter the user pinned', () => {
-  const { retro, policy, signals } = setup();
+it('withholds the suggestion of a signal whose parameter the user pinned', async () => {
+  const { retro, policy, signals } = await setup();
   policy({ pinned: ['path'] });
   times(5, () => retro(dispatched(700, 300)));
 
@@ -107,8 +107,8 @@ const direct = (firstPass: boolean) => ({
     : { gate_passed_on_attempt: 2, gate_failures: ['code' as const] }),
 });
 
-it('finds direct rework when two of the five latest direct tasks of a cell failed their first gate run', () => {
-  const { retro, signals } = setup();
+it('finds direct rework when two of the five latest direct tasks of a cell failed their first gate run', async () => {
+  const { retro, signals } = await setup();
   const ids = [true, false, true, false, true].map((firstPass) => retro(direct(firstPass)));
 
   expect(signals('direct_rework')).toEqual([
@@ -121,16 +121,16 @@ it('finds direct rework when two of the five latest direct tasks of a cell faile
   ]);
 });
 
-it('finds no direct rework when one of the five latest direct tasks failed its first gate run', () => {
-  const { retro, signals } = setup();
+it('finds no direct rework when one of the five latest direct tasks failed its first gate run', async () => {
+  const { retro, signals } = await setup();
   retro(direct(false));
   [true, false, true, true, true].forEach((firstPass) => retro(direct(firstPass)));
 
   expect(signals('direct_rework')).toEqual([]);
 });
 
-it('finds idle wakeups when most of the latest ten lead wakes ended without a decision', () => {
-  const { retro, signals } = setup();
+it('finds idle wakeups when most of the latest ten lead wakes ended without a decision', async () => {
+  const { retro, signals } = await setup();
   retro({ lead_wakes: 6, lead_wakes_without_decision: 0 });
   const ids = [
     retro({ lead_wakes: 4, lead_wakes_without_decision: 3 }),
@@ -147,8 +147,8 @@ it('finds idle wakeups when most of the latest ten lead wakes ended without a de
   ]);
 });
 
-it('finds no idle wakeups when exactly half of the latest ten lead wakes ended without a decision', () => {
-  const { retro, signals } = setup();
+it('finds no idle wakeups when exactly half of the latest ten lead wakes ended without a decision', async () => {
+  const { retro, signals } = await setup();
   retro({ lead_wakes: 10, lead_wakes_without_decision: 10 });
   retro({ lead_wakes: 5, lead_wakes_without_decision: 2 });
   retro({ lead_wakes: 5, lead_wakes_without_decision: 3 });
@@ -156,15 +156,15 @@ it('finds no idle wakeups when exactly half of the latest ten lead wakes ended w
   expect(signals('idle_wakeups')).toEqual([]);
 });
 
-it('finds no idle wakeups in direct tasks, whose wakes milestone acceptance does not hold back', () => {
-  const { retro, signals } = setup();
+it('finds no idle wakeups in direct tasks, whose wakes milestone acceptance does not hold back', async () => {
+  const { retro, signals } = await setup();
   times(10, () => retro({ path: 'direct', lead_wakes: 1, lead_wakes_without_decision: 1 }));
 
   expect(signals('idle_wakeups')).toEqual([]);
 });
 
-it('finds idle wakeups in dispatched tasks and leaves a newer direct task out of them', () => {
-  const { retro, signals } = setup();
+it('finds idle wakeups in dispatched tasks and leaves a newer direct task out of them', async () => {
+  const { retro, signals } = await setup();
   const ids = [
     retro(dispatched(100, 900, { lead_wakes: 4, lead_wakes_without_decision: 3 })),
     retro(dispatched(100, 900, { lead_wakes: 4, lead_wakes_without_decision: 2 })),
@@ -186,8 +186,8 @@ const waited = (dispatchWait: number, fields: Partial<Retrospective> = {}) => ({
   ...fields,
 });
 
-it('finds a queue wait when the latest five tasks waited for dispatch over half as long as they ran', () => {
-  const { retro, policy, signals } = setup();
+it('finds a queue wait when the latest five tasks waited for dispatch over half as long as they ran', async () => {
+  const { retro, policy, signals } = await setup();
   policy({ max_parallel: 2, max_parallel_limit: 4 });
   const ids = times(5, () => retro(waited(600)));
 
@@ -200,8 +200,8 @@ it('finds a queue wait when the latest five tasks waited for dispatch over half 
   ]);
 });
 
-it('finds no queue wait after a rebase conflict among the latest five tasks', () => {
-  const { retro, policy, signals } = setup();
+it('finds no queue wait after a rebase conflict among the latest five tasks', async () => {
+  const { retro, policy, signals } = await setup();
   policy({ max_parallel: 2, max_parallel_limit: 4 });
   times(4, () => retro(waited(600)));
   retro(waited(600, { handbacks: [{ reason: 'rebase_conflict' }] }));
@@ -209,8 +209,8 @@ it('finds no queue wait after a rebase conflict among the latest five tasks', ()
   expect(signals('queue_wait')).toEqual([]);
 });
 
-it('finds no queue wait while max_parallel is at the user limit', () => {
-  const { retro, signals } = setup();
+it('finds no queue wait while max_parallel is at the user limit', async () => {
+  const { retro, signals } = await setup();
   times(5, () => retro(waited(600)));
 
   expect(signals('queue_wait')).toEqual([]);
@@ -220,8 +220,8 @@ const conflicted = (conflict: boolean) => ({
   handbacks: conflict ? [{ reason: 'rebase_conflict' }] : [],
 });
 
-it('finds merge conflicts when two of the latest five tasks were handed back a rebase conflict', () => {
-  const { retro, signals } = setup();
+it('finds merge conflicts when two of the latest five tasks were handed back a rebase conflict', async () => {
+  const { retro, signals } = await setup();
   const ids = [true, false, false, true, false].map((conflict) => retro(conflicted(conflict)));
 
   expect(signals('merge_conflicts')).toEqual([
@@ -233,16 +233,16 @@ it('finds merge conflicts when two of the latest five tasks were handed back a r
   ]);
 });
 
-it('finds no merge conflicts when one of the latest five tasks was handed back a rebase conflict', () => {
-  const { retro, signals } = setup();
+it('finds no merge conflicts when one of the latest five tasks was handed back a rebase conflict', async () => {
+  const { retro, signals } = await setup();
   retro(conflicted(true));
   [true, false, false, false, false].forEach((conflict) => retro(conflicted(conflict)));
 
   expect(signals('merge_conflicts')).toEqual([]);
 });
 
-it('finds a cell over budget when three of its five latest tasks spent more than their budget', () => {
-  const { retro, signals } = setup();
+it('finds a cell over budget when three of its five latest tasks spent more than their budget', async () => {
+  const { retro, signals } = await setup();
   const ids = [1.2, 0.8, 1.5, 0.9, 1.1].map((ratio) =>
     retro({ measured_kind: backend, budget_ratio: ratio }),
   );
@@ -252,8 +252,8 @@ it('finds a cell over budget when three of its five latest tasks spent more than
   ]);
 });
 
-it('finds no cell over budget when one of three tasks spent exactly its budget', () => {
-  const { retro, signals } = setup();
+it('finds no cell over budget when one of three tasks spent exactly its budget', async () => {
+  const { retro, signals } = await setup();
   [1.2, 0.8, 1.5, 0.9, 1].forEach((ratio) =>
     retro({ measured_kind: backend, budget_ratio: ratio }),
   );
@@ -261,8 +261,8 @@ it('finds no cell over budget when one of three tasks spent exactly its budget',
   expect(signals('over_budget')).toEqual([]);
 });
 
-it('finds a repeated gate failure when one check failed in two different tasks', () => {
-  const { retro, signals } = setup();
+it('finds a repeated gate failure when one check failed in two different tasks', async () => {
+  const { retro, signals } = await setup();
   const first = retro({ gate_failures: ['code'], gate_failed_checks: ['Typecheck'] });
   retro({ gate_failures: ['code'], gate_failed_checks: ['Lint'] });
   const second = retro({ gate_failures: ['code'], gate_failed_checks: ['Typecheck'] });
@@ -272,16 +272,16 @@ it('finds a repeated gate failure when one check failed in two different tasks',
   ]);
 });
 
-it('finds no repeated gate failure when one check failed in two generations of the same task', () => {
-  const { retro, signals } = setup();
+it('finds no repeated gate failure when one check failed in two generations of the same task', async () => {
+  const { retro, signals } = await setup();
   retro({ task_id: 'export', gate_failures: ['code'], gate_failed_checks: ['Typecheck'] });
   retro({ task_id: 'export', gate_failures: ['code'], gate_failed_checks: ['Typecheck'] });
 
   expect(signals('repeat_gate_failure')).toEqual([]);
 });
 
-it('finds a repeated turn failure when one error code failed turns of two different tasks', () => {
-  const { retro, signals } = setup();
+it('finds a repeated turn failure when one error code failed turns of two different tasks', async () => {
+  const { retro, signals } = await setup();
   const first = retro({ turn_failure_codes: ['modelNotFound'] });
   const second = retro({ turn_failure_codes: ['modelNotFound', 'rateLimited'] });
 
@@ -290,16 +290,16 @@ it('finds a repeated turn failure when one error code failed turns of two differ
   ]);
 });
 
-it('finds no repeated turn failure in a task that failed twice or in a task that was removed', () => {
-  const { retro, signals } = setup();
+it('finds no repeated turn failure in a task that failed twice or in a task that was removed', async () => {
+  const { retro, signals } = await setup();
   retro({ turn_failure_codes: ['modelNotFound', 'modelNotFound'] });
   retro({ outcome: 'removed', turn_failure_codes: ['modelNotFound'] });
 
   expect(signals('repeat_turn_failure')).toEqual([]);
 });
 
-it('finds a repeated turn failure in failed tasks the user did not stop', () => {
-  const { retro, signals } = setup();
+it('finds a repeated turn failure in failed tasks the user did not stop', async () => {
+  const { retro, signals } = await setup();
   const first = retro({ outcome: 'failed', turn_failure_codes: ['modelNotFound'] });
   const second = retro({
     outcome: 'failed',
@@ -312,23 +312,23 @@ it('finds a repeated turn failure in failed tasks the user did not stop', () => 
   ]);
 });
 
-it('finds no repeated turn failure in failed tasks the user stopped', () => {
-  const { retro, signals } = setup();
+it('finds no repeated turn failure in failed tasks the user stopped', async () => {
+  const { retro, signals } = await setup();
   for (let i = 0; i < 2; i++)
     retro({ outcome: 'failed', stopped_by: 'user', turn_failure_codes: ['modelNotFound'] });
 
   expect(signals('repeat_turn_failure')).toEqual([]);
 });
 
-it('finds a hand-back loop when one reason was handed back as often as the hand-back limit', () => {
-  const { retro, signals } = setup();
+it('finds a hand-back loop when one reason was handed back as often as the hand-back limit', async () => {
+  const { retro, signals } = await setup();
   const id = retro({ handbacks: times(3, () => ({ reason: 'gate_failed' })) });
 
   expect(signals('handback_loop')).toEqual([{ signal: 'handback_loop', retrospective_ids: [id] }]);
 });
 
-it('finds no hand-back loop when no single reason reached the hand-back limit', () => {
-  const { retro, signals } = setup();
+it('finds no hand-back loop when no single reason reached the hand-back limit', async () => {
+  const { retro, signals } = await setup();
   retro({
     handbacks: [{ reason: 'gate_failed' }, { reason: 'out_of_scope' }, { reason: 'gate_failed' }],
   });
@@ -365,8 +365,8 @@ function commandDecision(
   f.store.db.prepare('UPDATE events SET created_at=? WHERE event_id=?').run(at, event.event_id);
 }
 
-it('finds an always-approved command at five user approvals with its complete command text', () => {
-  const { f, signals } = setup();
+it('finds an always-approved command at five user approvals with its complete command text', async () => {
+  const { f, signals } = await setup();
   times(4, (index) => commandDecision(f, index));
   expect(signals('always_approved_command')).toEqual([]);
   commandDecision(f, 4);
@@ -379,13 +379,13 @@ it('finds an always-approved command at five user approvals with its complete co
   ]);
 });
 
-it('excludes always-approved commands with a refusal, an existing project rule, an answer by a rule or old approvals', () => {
-  const refused = setup();
+it('excludes always-approved commands with a refusal, an existing project rule, an answer by a rule or old approvals', async () => {
+  const refused = await setup();
   times(5, (index) => commandDecision(refused.f, index));
   commandDecision(refused.f, 5, 'rejected');
   expect(refused.signals('always_approved_command')).toEqual([]);
 
-  const covered = setup();
+  const covered = await setup();
   times(5, (index) => commandDecision(covered.f, index));
   covered.f.store.update(
     'projects',
@@ -403,12 +403,12 @@ it('excludes always-approved commands with a refusal, an existing project rule, 
   );
   expect(covered.signals('always_approved_command')).toEqual([]);
 
-  const byRule = setup();
+  const byRule = await setup();
   times(4, (index) => commandDecision(byRule.f, index));
   commandDecision(byRule.f, 4, 'approved', undefined, undefined, true);
   expect(byRule.signals('always_approved_command')).toEqual([]);
 
-  const old = setup();
+  const old = await setup();
   times(4, (index) => commandDecision(old.f, index));
   commandDecision(old.f, 4, 'approved', old.f.store.now() - 7 * 24 * 60 * 60 * 1000 - 1);
   expect(old.signals('always_approved_command')).toEqual([]);
@@ -441,8 +441,8 @@ function gateFailure(
   f.store.db.prepare('UPDATE events SET created_at=? WHERE event_id=?').run(at, event.event_id);
 }
 
-it('finds a late gate failure at three runs with the median time spent on passing predecessors', () => {
-  const { f, signals } = setup();
+it('finds a late gate failure at three runs with the median time spent on passing predecessors', async () => {
+  const { f, signals } = await setup();
   gateFailure(f, 0, [10, 20, 5]);
   gateFailure(f, 1, [20, 30, 5]);
   expect(signals('late_gate_failure')).toEqual([]);
@@ -456,24 +456,24 @@ it('finds a late gate failure at three runs with the median time spent on passin
   ]);
 });
 
-it('excludes first-command gate failures, failed or carried predecessors and old gate runs', () => {
-  const first = setup();
+it('excludes first-command gate failures, failed or carried predecessors and old gate runs', async () => {
+  const first = await setup();
   times(3, (index) => gateFailure(first.f, index, [10]));
   expect(first.signals('late_gate_failure')).toEqual([]);
-  const earlier = setup();
+  const earlier = await setup();
   times(3, (index) => gateFailure(earlier.f, index, [10, 20, 5], 0));
   expect(earlier.signals('late_gate_failure')).toEqual([]);
-  const carried = setup();
+  const carried = await setup();
   times(3, (index) => gateFailure(carried.f, index, [10, 20, 5], 2, true));
   expect(carried.signals('late_gate_failure')).toEqual([]);
-  const old = setup();
+  const old = await setup();
   times(2, (index) => gateFailure(old.f, index, [10, 20, 5]));
   gateFailure(old.f, 2, [10, 20, 5], 2, false, old.f.store.now() - 7 * 24 * 60 * 60 * 1000 - 1);
   expect(old.signals('late_gate_failure')).toEqual([]);
 });
 
-it('offers the rule and source session only when the newest approval supports a project rule', () => {
-  const { f, signals } = setup();
+it('offers the rule and source session only when the newest approval supports a project rule', async () => {
+  const { f, signals } = await setup();
   const now = f.store.now();
   times(4, (index) => commandDecision(f, index, 'approved', now - 2000, undefined, false, true));
   commandDecision(f, 4, 'approved', now - 1000, undefined, false, true, 'newest-session');
@@ -494,8 +494,8 @@ it('offers the rule and source session only when the newest approval supports a 
   });
 });
 
-it('finds no hand-back loop while disabled and preserves the limit of earlier policy versions', () => {
-  const { f, retro, policy, signals } = setup();
+it('finds no hand-back loop while disabled and preserves the limit of earlier policy versions', async () => {
+  const { f, retro, policy, signals } = await setup();
   const current = policy({ handback_limit: 0, policy_version: 2 });
   f.store.event('workflow.policy_changed', current, f.project.id, {
     param: 'handback_limit',

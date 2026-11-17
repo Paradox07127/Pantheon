@@ -39,8 +39,8 @@ const task = (fields: Partial<PlanTask> = {}): PlanTask => ({
 });
 
 /** A project that takes external events in the given mode, on a clock the test can move on. */
-function triageFixture(mode: 'approve' | 'auto') {
-  const f = workbenchFixture({ externalSources: [{ id: 'stub', poll: async () => MINUTE }] }),
+async function triageFixture(mode: 'approve' | 'auto') {
+  const f = await workbenchFixture({ externalSources: [{ id: 'stub', poll: async () => MINUTE }] }),
     ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   let skew = 0;
   vi.spyOn(f.store, 'now').mockImplementation(() => Date.now() + skew);
@@ -139,7 +139,7 @@ function triageFixture(mode: 'approve' | 'auto') {
 }
 
 it('hands an issue to the project triage session as a note that wakes it, opening no lead', async () => {
-  const f = triageFixture('auto');
+  const f = await triageFixture('auto');
   f.report();
   const triage = await f.handOn();
   expect(f.triages()).toHaveLength(1);
@@ -159,7 +159,7 @@ it('hands an issue to the project triage session as a note that wakes it, openin
 });
 
 it('sends a later batch about the same issue to the same triage session without the text it already sent', async () => {
-  const f = triageFixture('auto');
+  const f = await triageFixture('auto');
   f.report();
   const triage = await f.handOn();
   f.later(MINUTE);
@@ -174,7 +174,7 @@ it('sends a later batch about the same issue to the same triage session without 
 });
 
 it('holds the tasks of a request the user has not approved and starts them once the user approves', async () => {
-  const f = triageFixture('approve');
+  const f = await triageFixture('approve');
   f.report();
   const triage = await f.handOn();
   expect(f.needs()).toMatchObject([

@@ -16,7 +16,7 @@ import { continueSession } from '../../packages/control/dist/continuation.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
 const patch = (f: Fixture, sessionId: string, fields: Partial<Session>) => {
@@ -25,7 +25,7 @@ const patch = (f: Fixture, sessionId: string, fields: Partial<Session>) => {
 };
 
 async function idleSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -36,8 +36,8 @@ async function idleSession(f: Fixture) {
   return current(f, session.id);
 }
 
-function setGate(f: Fixture) {
-  f.call<Project>(
+async function setGate(f: Fixture) {
+  await f.call<Project>(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -76,7 +76,7 @@ function blockMerge(f: Fixture, sessionId: string) {
 }
 
 it('does not turn a user-cancelled merge into an attention request', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const cancelled = patch(f, session.id, { merge: { state: 'blocked', reason: 'cancelled' } });
   f.store.event('session.merge_cancelled', cancelled, session.project_id, cancelled.merge);
@@ -88,7 +88,7 @@ it('does not turn a user-cancelled merge into an attention request', async () =>
 it.each(['closed', 'failed', 'cancelled'] as const)(
   'lists a failed worktree session after %s with the failure time',
   async (failure) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const session = await idleSession(f);
     if (failure !== 'closed') {
       const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
@@ -117,9 +117,9 @@ it.each(['closed', 'failed', 'cancelled'] as const)(
 );
 
 it('lists the latest failed gate with its event time and clears it after a passing gate', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   gateChecked(f, session.id, 0);
   const event = gateChecked(f, session.id, 1);
   expect(f.control.needsYou(user, f.project.id).items).toEqual([
@@ -138,7 +138,7 @@ it('lists the latest failed gate with its event time and clears it after a passi
 });
 
 it('lists a blocked merge with its event time and the merge handler retry preconditions', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const event = blockMerge(f, session.id);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
@@ -180,9 +180,9 @@ it('lists a blocked merge with its event time and the merge handler retry precon
 });
 
 it('lists a session once, preferring failure to a failed gate and a failed gate to a blocked merge', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   const gate = gateChecked(f, session.id, 1);
   blockMerge(f, session.id);
   expect(f.control.needsYou(user).items).toMatchObject([
@@ -198,9 +198,9 @@ it('lists a session once, preferring failure to a failed gate and a failed gate 
 it.each(['archived', 'merged', 'discarded'] as const)(
   'leaves out %s sessions even when they have failures and a blocked merge',
   async (state) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const session = await idleSession(f);
-    setGate(f);
+    await setGate(f);
     gateChecked(f, session.id, 1);
     blockMerge(f, session.id);
     patch(f, session.id, {
@@ -214,12 +214,12 @@ it.each(['archived', 'merged', 'discarded'] as const)(
 );
 
 it('leaves all new session items out for a planner', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const failed = await idleSession(f),
     gated = await idleSession(f),
     blocked = await idleSession(f);
   patch(f, failed.id, { state: 'closed' });
-  setGate(f);
+  await setGate(f);
   gateChecked(f, gated.id, 1);
   blockMerge(f, blocked.id);
   const planner: Principal = { id: 'planner', role: 'planner', project_id: f.project.id };
@@ -228,7 +228,7 @@ it('leaves all new session items out for a planner', async () => {
 });
 
 it('covers two projects without project_id and isolates an explicit project', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   patch(f, session.id, { state: 'closed' });
   const project = f.store.insert<Project>('projects', { ...f.project, id: 'second-project' });
@@ -248,8 +248,8 @@ it('covers two projects without project_id and isolates an explicit project', as
   ]);
 });
 
-it('lists a failed baseline assessment with its failure time, as the session list marks it failed', () => {
-  const f = workbenchFixture();
+it('lists a failed baseline assessment with its failure time, as the session list marks it failed', async () => {
+  const f = await workbenchFixture();
   const baseline = f.store.insert<ProjectBaseline>('project_baselines', {
     id: 'failed-baseline',
     revision: 1,
@@ -287,8 +287,8 @@ it('lists a failed baseline assessment with its failure time, as the session lis
   ]);
 });
 
-it('lists a runtime analysis that closed without a report in a project with no other session', () => {
-  const f = workbenchFixture();
+it('lists a runtime analysis that closed without a report in a project with no other session', async () => {
+  const f = await workbenchFixture();
   const session = f.store.insert<Session>('sessions', {
     id: 'analysis-failed',
     revision: 1,
@@ -315,7 +315,7 @@ it('lists a runtime analysis that closed without a report in a project with no o
 });
 
 it('leaves out the failed sessions of a removed project', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   patch(f, session.id, { state: 'closed' });
   expect(f.control.needsYou(user).items).toHaveLength(1);
@@ -333,7 +333,7 @@ const leadOf = (f: Fixture, sessionId: string): Principal => ({
 });
 
 async function leadWithPlan(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () =>
@@ -393,7 +393,7 @@ function skewedClock(f: Fixture) {
 const planOf = (f: Fixture, leadId: string) => f.store.must<BoardPlan>('board_plans', leadId);
 
 it('lists a failed lead turn until the lead gets another turn, and queues none itself', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f);
   const failed = failLatestTurn(f, lead.id, 'provider overloaded');
   const turns = f.turns(lead.id).length;
@@ -421,7 +421,7 @@ it('lists a failed lead turn until the lead gets another turn, and queues none i
 });
 
 it('keeps a failed lead turn listed after a steer delivered into it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f);
   const failed = failLatestTurn(f, lead.id, 'provider overloaded');
   f.store.insert<SessionTurn>('session_turns', {
@@ -439,7 +439,7 @@ it('keeps a failed lead turn listed after a steer delivered into it', async () =
 });
 
 it('lists a stop whose process is not confirmed stopped after two minutes', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const advance = skewedClock(f);
   const stopping = patch(f, session.id, {
@@ -464,7 +464,7 @@ it('lists a stop whose process is not confirmed stopped after two minutes', asyn
 });
 
 it('lists a stop as soon as its discard failed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const stopping = patch(f, session.id, {
     stop_requested: { reason: 'Discarded by the user', by: 'user', at: f.store.now() },
@@ -479,7 +479,7 @@ it('lists a stop as soon as its discard failed', async () => {
 });
 
 it('keeps a wake the closed lead refused on its plan and lists it until a later wake succeeds', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f);
   patch(f, lead.id, { state: 'closed' });
   const plan = planOf(f, lead.id);
@@ -528,7 +528,7 @@ it('keeps a wake the closed lead refused on its plan and lists it until a later 
 });
 
 it('leaves the blocked merges and failed gates of a task session to its lead, except a change to protected paths', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f);
   const worker = await idleSession(f),
     own = await idleSession(f);
@@ -544,7 +544,7 @@ it('leaves the blocked merges and failed gates of a task session to its lead, ex
       .needsYou(user, f.project.id)
       .items.filter((item) => item.source.id === sessionId)
       .map((item) => item.kind);
-  setGate(f);
+  await setGate(f);
   gateChecked(f, worker.id, 1, ['pnpm test']);
   expect(listed(worker.id)).toEqual([]);
   gateChecked(f, worker.id, 0, ['pnpm test']);
@@ -560,7 +560,7 @@ it('leaves the blocked merges and failed gates of a task session to its lead, ex
 });
 
 it('lists a merge blocked because the task of the session was removed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const blocked = patch(f, session.id, {
     task: { lead_session_id: 'lead-of-removed-task', id: 'api' },
@@ -582,7 +582,7 @@ it('lists a merge blocked because the task of the session was removed', async ()
 });
 
 it('lists a merge that has run for over 30 minutes without a gate process', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const advance = skewedClock(f);
   const merging = patch(f, session.id, { merge: { state: 'running' } });
@@ -606,7 +606,7 @@ it('lists a merge that has run for over 30 minutes without a gate process', asyn
 });
 
 it('counts a stuck merge from its latest gate event, not from its start', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const advance = skewedClock(f);
   const merging = patch(f, session.id, { merge: { state: 'running' } });
@@ -625,7 +625,7 @@ it('counts a stuck merge from its latest gate event, not from its start', async 
 });
 
 it('records one event when a merge becomes stuck, and another after it progresses and sticks again', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const advance = skewedClock(f);
   const merging = patch(f, session.id, { merge: { state: 'running' } });
@@ -650,7 +650,7 @@ it('records one event when a merge becomes stuck, and another after it progresse
 });
 
 it('records why a continuation is skipped and lists a session past the continuation limit', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const lead = await leadWithPlan(f);
   for (const id of ['first', 'second', 'third'])
@@ -689,8 +689,8 @@ it('records why a continuation is skipped and lists a session past the continuat
 });
 
 it('lists a session whose worktree provisioning a restart left reconciling without a process to check', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   // The daemon stopped after provisioning began and before it recorded the Git process.
   f.store.update<Workspace>(
@@ -723,9 +723,9 @@ it('lists a session whose worktree provisioning a restart left reconciling witho
 });
 
 it('does not report a stale failed gate after another turn ends', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
-  setGate(f);
+  await setGate(f);
   gateChecked(f, session.id, 1);
   f.store.event('turn.completed', f.turns(session.id)[0]!, f.project.id, {});
   expect(f.list().find((row) => row.id === session.id)?.gate?.state).toBe('stale');

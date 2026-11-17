@@ -16,7 +16,7 @@ it.skipIf(!existsSync('/bin/bash') || !ptyUsable)(
   'kills background jobs of the shell when the terminal closes',
   async () => {
     vi.stubEnv('SHELL', '/bin/bash');
-    const f = fixture();
+    const f = await fixture();
     try {
       const { terminal_id } = await f.call<Promise<{ terminal_id: string }>>('terminal.open', {
         project_id: f.project.id,

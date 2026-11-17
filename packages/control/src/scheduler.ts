@@ -6,6 +6,7 @@ import { isRuntimeHeld } from './runtime-status.js';
 import { fireDueTimers } from './timers.js';
 import { tickExternalSources } from './external-sources.js';
 import { tickExternalIntake } from './external-events.js';
+import { conditionsDecided, conditionsRead } from './workflow-engine.js';
 import {
   deliverPermissionAnswer,
   recordAnswerDelivery,
@@ -19,6 +20,7 @@ import { tickChangeStories } from './change-story.js';
 import { tickRangeStories } from './range-story.js';
 import { tickProjectBaselines } from './baseline.js';
 import { tickTaskTracking } from './task-tracking.js';
+import { readDispatchOpenings } from './task-dispatch.js';
 import { forgetRetrospectiveScan, recordRetrospectives } from './retrospective.js';
 import { evaluateTrials, proposeFromSignals } from './improvements.js';
 
@@ -29,10 +31,17 @@ export async function tick(ctx: ControlContext): Promise<void> {
     await stopConversations(ctx);
     // The tracker and the merge jobs see the merges turns that ended have admitted.
     await autoMergesRead(ctx);
+    // The step decisions below use the condition answers that earlier decisions requested.
+    const reading = conditionsRead(ctx);
+    if (reading) await reading;
     ctx.store.transaction(() => tickProjectBaselines(ctx));
     ctx.store.transaction(() => tickChangeStories(ctx));
     ctx.store.transaction(() => tickRangeStories(ctx));
     tickExternalIntake(ctx);
+    // The dispatch in the tracker's transaction opens sessions from these start points; awaited
+    // only when there is git to read, so a tick with nothing to read does not yield here.
+    const openings = readDispatchOpenings(ctx);
+    if (openings) await openings;
     try {
       rollbackTransaction(ctx, () => {
         tickTaskTracking(ctx);
@@ -43,6 +52,8 @@ export async function tick(ctx: ControlContext): Promise<void> {
     } catch (error) {
       forgetRetrospectiveScan(ctx);
       throw error;
+    } finally {
+      conditionsDecided(ctx);
     }
     for (const out of ctx.store.pending()) {
       // Shutdown began while an earlier job awaited; the rest stay pending for the next daemon.

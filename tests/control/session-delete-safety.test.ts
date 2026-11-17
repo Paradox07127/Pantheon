@@ -14,7 +14,7 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { eventually, settle, user } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
 const contextOf = (f: Fixture) => (f.control as unknown as { ctx: ControlContext }).ctx;
@@ -78,7 +78,7 @@ function holdClose(f: Fixture) {
 }
 
 async function runningSession(f: Fixture) {
-  const session = f.create();
+  const session = await f.create();
   await provisioned(f, session);
   await eventually(
     () => f.turns(session.id)[0]?.state === 'running',
@@ -88,9 +88,9 @@ async function runningSession(f: Fixture) {
 }
 
 it('refuses to delete a session whose native process is still starting', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const release = holdStart(f);
-  const session = f.create();
+  const session = await f.create();
   await provisioned(f, session);
   const ticking = f.control.tick();
   await eventually(() => f.start.mock.calls.length > 0);
@@ -101,10 +101,10 @@ it('refuses to delete a session whose native process is still starting', async (
   expect(current(f, session.id).outcome).toBeUndefined();
 });
 
-it('refuses to delete a reconciling or stop-pending session without a native handle', () => {
-  const f = workbenchFixture();
-  const reconciling = f.create('Reconciling work'),
-    stopping = f.create('Stopping work');
+it('refuses to delete a reconciling or stop-pending session without a native handle', async () => {
+  const f = await workbenchFixture();
+  const reconciling = await f.create('Reconciling work'),
+    stopping = await f.create('Stopping work');
   for (const [session, fields] of [
     [reconciling, { state: 'reconciling' as const }],
     [stopping, { state: 'open' as const, stop_pending: true }],
@@ -121,7 +121,7 @@ it('refuses to delete a reconciling or stop-pending session without a native han
 });
 
 it('keeps a session a milestone came to require while its native process was closing', async () => {
-  const f = workbenchFixture({ delay: 4000 });
+  const f = await workbenchFixture({ delay: 4000 });
   const session = await runningSession(f);
 
   remove(f, session.id);
@@ -142,7 +142,7 @@ it('keeps a session a milestone came to require while its native process was clo
 });
 
 it('leaves a session whose delete was refused after its native process closed as it was', async () => {
-  const f = workbenchFixture({ delay: 4000 });
+  const f = await workbenchFixture({ delay: 4000 });
   const session = await runningSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
 
@@ -181,7 +181,7 @@ it('leaves a session whose delete was refused after its native process closed as
 });
 
 it('keeps the files and the session of a delete whose command rolled back', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const upload = f.control.addAttachment(
     user,
     f.project.id,
@@ -189,7 +189,7 @@ it('keeps the files and the session of a delete whose command rolled back', asyn
     'text/plain',
     new TextEncoder().encode('notes'),
   );
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Read the notes',
@@ -217,7 +217,7 @@ it('keeps the files and the session of a delete whose command rolled back', asyn
 });
 
 it('does not finish a delete of a running session whose command rolled back', async () => {
-  const f = workbenchFixture({ delay: 4000 });
+  const f = await workbenchFixture({ delay: 4000 });
   const ctx = contextOf(f);
   const session = await runningSession(f);
   const before = new Set(ctx.completions);
@@ -231,7 +231,7 @@ it('does not finish a delete of a running session whose command rolled back', as
 });
 
 it('keeps the files of a delete whose transaction failed after its native process closed', async () => {
-  const f = workbenchFixture({ delay: 4000 });
+  const f = await workbenchFixture({ delay: 4000 });
   const ctx = contextOf(f);
   const upload = f.control.addAttachment(
     user,
@@ -240,7 +240,7 @@ it('keeps the files of a delete whose transaction failed after its native proces
     'text/plain',
     new TextEncoder().encode('notes'),
   );
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Read the notes',
@@ -279,7 +279,7 @@ it('keeps the files of a delete whose transaction failed after its native proces
 it('does not reject a failed model or mode change once the session row is gone', async () => {
   const { applyModel, applyPermissionMode } =
     await import('../../packages/control/dist/workbench-session.js');
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const ctx = contextOf(f);
   const handle = { platform_session_id: 'deleted-session' } as SessionHandle;
   const refusing = {
@@ -295,8 +295,8 @@ it('does not reject a failed model or mode change once the session row is gone',
 });
 
 it('records the delete of a session with a live process on its row and refuses new input', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await provisioned(f, session);
   await eventually(
     () =>
@@ -321,8 +321,8 @@ it('records the delete of a session with a live process on its row and refuses n
 });
 
 it('removes a deleted session once a retried close confirms its process stopped', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await provisioned(f, session);
   await eventually(
     () =>
@@ -352,8 +352,8 @@ it('removes a deleted session once a retried close confirms its process stopped'
 });
 
 it('keeps a session a milestone came to require before a retried close confirmed its delete', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await provisioned(f, session);
   await eventually(
     () =>
@@ -405,8 +405,8 @@ it('keeps a session a milestone came to require before a retried close confirmed
 });
 
 it('removes a session deleted before a restart once recovery discards it', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   await provisioned(f, session);
   await eventually(
     () => f.turns(session.id)[0]?.state === 'completed' && current(f, session.id).state === 'open',
@@ -427,7 +427,7 @@ it('removes a session deleted before a restart once recovery discards it', async
 });
 
 it('keeps the files of a delete recovery finished in a transaction that failed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const upload = f.control.addAttachment(
     user,
     f.project.id,
@@ -435,7 +435,7 @@ it('keeps the files of a delete recovery finished in a transaction that failed',
     'text/plain',
     new TextEncoder().encode('notes'),
   );
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Read the notes',
@@ -473,9 +473,9 @@ it('keeps the files of a delete recovery finished in a transaction that failed',
 });
 
 it('discards without deleting a task session its lead stopped with the reason a delete records', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   dispatchEveryTier(f);
-  const lead = f.create('Plan the export');
+  const lead = await f.create('Plan the export');
   await settle(f, lead);
   const leadPrincipal: Principal = {
     id: `session:${lead.id}`,
@@ -535,8 +535,8 @@ it('discards without deleting a task session its lead stopped with the reason a 
   expect(kinds(f, worker.id)).not.toContain('session.deleted');
 });
 
-it('keeps native history another session reaches through an alias or a descendant', () => {
-  const f = workbenchFixture();
+it('keeps native history another session reaches through an alias or a descendant', async () => {
+  const f = await workbenchFixture();
   const root = path.join(f.root, 'state/native-sessions'),
     shared = path.join(root, 'shared'),
     parent = path.join(root, 'parent'),
@@ -546,10 +546,10 @@ it('keeps native history another session reaches through an alias or a descendan
     writeFileSync(path.join(directory, 'history.jsonl'), '{}\n');
   }
   symlinkSync(shared, path.join(root, 'alias'));
-  const first = f.create('First'),
-    second = f.create('Second'),
-    third = f.create('Third'),
-    fourth = f.create('Fourth');
+  const first = await f.create('First'),
+    second = await f.create('Second'),
+    third = await f.create('Third'),
+    fourth = await f.create('Fourth');
   end(f, first.id, { outcome: 'discarded', native_state_dir: shared });
   end(f, second.id, { outcome: 'discarded', native_state_dir: path.join(root, 'alias') });
   end(f, third.id, { outcome: 'discarded', native_state_dir: parent });
@@ -562,8 +562,8 @@ it('keeps native history another session reaches through an alias or a descendan
 });
 
 it('removes the worktree of a session deleted while it was still provisioning', async () => {
-  const f = workbenchFixture();
-  const session = f.create();
+  const f = await workbenchFixture();
+  const session = await f.create();
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
 
   remove(f, session.id);
@@ -574,9 +574,9 @@ it('removes the worktree of a session deleted while it was still provisioning', 
   expect(existsSync(workspace.path)).toBe(false);
 });
 
-it('refuses to delete a lead that owns a board plan', () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export');
+it('refuses to delete a lead that owns a board plan', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export');
   const leadPrincipal: Principal = {
     id: `session:${lead.id}`,
     role: 'lead',
@@ -618,10 +618,10 @@ it('refuses to delete a lead that owns a board plan', () => {
 });
 
 it('does not dispatch the turn of a session deleted while the scheduler awaited another start', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const release = holdStart(f);
-  const first = f.create('First work'),
-    second = f.create('Second work');
+  const first = await f.create('First work'),
+    second = await f.create('Second work');
   await provisioned(f, first, second);
   const turnOf = new Map([first, second].map((session) => [f.turns(session.id)[0]!.id, session]));
   const order = f.store

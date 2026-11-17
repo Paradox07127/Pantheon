@@ -12,7 +12,7 @@ import { git, workbenchFixture } from './workbench-fixture.js';
 const HANDOFF_LINE =
   '[Pantheon] You continue work that a fixture session did in this worktree. Its record follows, cut to fit; entries left out are marked. Check the files and git log for anything it does not show.';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
 const worktree = (f: Fixture, session: Session) =>
@@ -61,8 +61,8 @@ const checkpointRef = (session: Session, turnId: string) =>
   `refs/pantheon/checkpoints/${session.workspace_id}/${session.id}/${turnId}`;
 
 it('stores a checkpoint ref before each turn and leaves the real index and HEAD alone', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const work = worktree(f, session);
   writeFileSync(path.join(work, 'staged.txt'), 'staged\n');
@@ -91,8 +91,8 @@ it('stores a checkpoint ref before each turn and leaves the real index and HEAD 
 
 /** Two turns: the first commits files, the second deletes, writes and commits more. */
 async function twoTurns() {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const work = worktree(f, session);
   writeFileSync(path.join(work, '.gitignore'), '*.log\n');
@@ -348,8 +348,8 @@ it('neither captures nor deletes files that the global git ignore rules ignore',
     process.env.XDG_CONFIG_HOME = home;
     mkdirSync(path.join(home, 'git'));
     writeFileSync(path.join(home, 'git/ignore'), '.env\n');
-    const f = workbenchFixture();
-    const session = f.create('Start the export');
+    const f = await workbenchFixture();
+    const session = await f.create('Start the export');
     await settle(f, session);
     const work = worktree(f, session);
     const first = await send(f, session, 'Add a header row');
@@ -411,8 +411,8 @@ it('refuses to roll back a worktree whose HEAD points at the source branch and l
 });
 
 it('records a checkpoint failure instead of a checkpoint when the worktree HEAD is on a branch', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const work = worktree(f, session);
   git(work, 'switch', '--quiet', '-c', 'export-work');
@@ -429,8 +429,8 @@ it('records a checkpoint failure instead of a checkpoint when the worktree HEAD 
 });
 
 it('runs the turn and records the failure when the checkpoint cannot be stored', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const work = worktree(f, session);
   writeFileSync(
@@ -451,8 +451,8 @@ it('runs the turn and records the failure when the checkpoint cannot be stored',
 });
 
 it('lists the newest turn a rollback restores, past failed checkpoints and never before a merge', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const listed = () => f.list().find((row) => row.id === session.id)!;
   const [first] = f.turns(session.id);
@@ -473,8 +473,8 @@ it('lists the newest turn a rollback restores, past failed checkpoints and never
 });
 
 it('lists a steer that ran as its own turn as the turn a rollback restores', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const listed = () => f.list().find((row) => row.id === session.id)!;
   f.call(
@@ -490,8 +490,8 @@ it('lists a steer that ran as its own turn as the turn a rollback restores', asy
 });
 
 it('lists no turn to roll back to for a discarded session', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Start the export');
+  const f = await workbenchFixture();
+  const session = await f.create('Start the export');
   await settle(f, session);
   const listed = () => f.list().find((row) => row.id === session.id)!;
   expect(listed().checkpoint_turn_id).toBe(f.turns(session.id)[0]!.id);
@@ -511,10 +511,10 @@ it.each([
     'session.delete',
   ],
 ] as const)('%s', async (_, command) => {
-  const f = workbenchFixture();
-  const kept = f.create('Keep this session');
+  const f = await workbenchFixture();
+  const kept = await f.create('Keep this session');
   await settle(f, kept);
-  const session = f.create('Start the export');
+  const session = await f.create('Start the export');
   await settle(f, session);
   await send(f, session, 'Add a header row');
   expect(checkpoints(f, session.id)).toHaveLength(2);

@@ -5,7 +5,7 @@ import { workbenchFixture } from './workbench-fixture.js';
 import { taskReportGeneration } from '../../packages/control/dist/session.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -61,7 +61,7 @@ const messageTask = (
   );
 
 const openTask = (f: Fixture, leadId: string, taskId: string) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -77,16 +77,16 @@ function patch(f: Fixture, sessionId: string, fields: Partial<Session>) {
 }
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, tasks);
   return lead;
 }
 
 it('starts a turn from the lead on an idle task session', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   const turn = messageTask(f, lead.id, 'a', 'Keep the CSV header as it is');
@@ -109,9 +109,9 @@ it('starts a turn from the lead on an idle task session', async () => {
 });
 
 it('queues the message of the lead after the running turn without steering it', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => f.turns(worker.id).some((turn) => turn.state === 'running'),
@@ -128,9 +128,9 @@ it('queues the message of the lead after the running turn without steering it', 
 });
 
 it("counts the lead's message queued behind the running turn among the session's turns", async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => f.turns(worker.id).some((turn) => turn.state === 'running'),
@@ -143,11 +143,11 @@ it("counts the lead's message queued behind the running turn among the session's
 });
 
 it("refuses messages from other roles, for another lead's tasks and to closed or missing sessions", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   const other = await leadWithPlan(f, [task('c')]);
-  const worker = openTask(f, lead.id, 'a');
-  openTask(f, other.id, 'c');
+  const worker = await openTask(f, lead.id, 'a');
+  await openTask(f, other.id, 'c');
   await settle(f, worker);
 
   expect(() => messageTask(f, lead.id, 'a', 'Go on', user)).toThrow(
@@ -170,9 +170,9 @@ it("refuses messages from other roles, for another lead's tasks and to closed or
 });
 
 it("refuses the lead's message to a task session as a source quote", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
   messageTask(f, lead.id, 'a', 'Ship the export as CSV');
 
@@ -182,9 +182,9 @@ it("refuses the lead's message to a task session as a source quote", async () =>
 });
 
 it('tells an idle task session the contract its lead changed on the next tick, once', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [task('a', { acceptance: ['pnpm exec vitest run tests/export.test.ts'] })]);
@@ -202,9 +202,9 @@ it('tells an idle task session the contract its lead changed on the next tick, o
 });
 
 it("carries the changed contract in the lead's message that comes before the tick", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [task('a', { acceptance: ['pnpm exec vitest run tests/export.test.ts'] })]);
@@ -222,9 +222,9 @@ it("carries the changed contract in the lead's message that comes before the tic
 });
 
 it("tells a task session the changed contract with the user's message once its turn starts", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [task('a', { goal: 'Export as JSON instead' })]);
@@ -250,9 +250,9 @@ it("tells a task session the changed contract with the user's message once its t
 });
 
 it("keeps the changed contract when a restart fails the user's message before its turn starts", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [task('a', { goal: 'Export as JSON instead' })]);
@@ -282,9 +282,9 @@ it("keeps the changed contract when a restart fails the user's message before it
 });
 
 it("keeps the changed contract when a restart fails the lead's queued message before delivery", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   writePlan(f, lead.id, [task('a', { goal: 'Export as JSON instead' })]);
@@ -312,9 +312,9 @@ it("keeps the changed contract when a restart fails the lead's queued message be
 it.each(['start', 'resume'] as const)(
   'keeps a changed contract pending when the native %s fails before input delivery',
   async (launch) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const lead = await leadWithPlan(f, [task('a')]);
-    const worker = openTask(f, lead.id, 'a');
+    const worker = await openTask(f, lead.id, 'a');
     await settle(f, worker);
     await f.restart();
     if (launch === 'start') patch(f, worker.id, { native_id: undefined });
@@ -352,9 +352,9 @@ it.each(['start', 'resume'] as const)(
 it.each(['refuses', 'throws'] as const)(
   'keeps a changed contract pending when input delivery %s it',
   async (failure) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const lead = await leadWithPlan(f, [task('a')]);
-    const worker = openTask(f, lead.id, 'a');
+    const worker = await openTask(f, lead.id, 'a');
     await settle(f, worker);
     const send = vi.spyOn(f.adapter, 'send');
     if (failure === 'throws') send.mockRejectedValueOnce(new Error('Transport closed'));
@@ -390,9 +390,9 @@ it.each([
 ])(
   'keeps contract generation $generation pending when an older delivery receipt arrives',
   async ({ goal, generation }) => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const lead = await leadWithPlan(f, [task('a')]);
-    const worker = openTask(f, lead.id, 'a');
+    const worker = await openTask(f, lead.id, 'a');
     await settle(f, worker);
     const send = f.adapter.send.bind(f.adapter);
     vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
@@ -418,9 +418,9 @@ it.each([
 );
 
 it('confirms the new contract generation only with its delivery receipt and keeps early reports attributed', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a', { done_when: 'report' })]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
   let release!: () => void;
   const receipt = new Promise<void>((resolve) => (release = resolve));
@@ -464,9 +464,9 @@ it('confirms the new contract generation only with its delivery receipt and keep
 });
 
 it("refuses the lead's tools while its session is being discarded", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await settle(f, worker);
 
   patch(f, lead.id, {
@@ -479,9 +479,9 @@ it("refuses the lead's tools while its session is being discarded", async () => 
 });
 
 it('leaves the changed contract of a running task session for its next message', async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const lead = await leadWithPlan(f, [task('a')]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => f.turns(worker.id).some((turn) => turn.state === 'running'),
@@ -495,9 +495,9 @@ it('leaves the changed contract of a running task session for its next message',
 });
 
 it("keeps a running task session on its old contract when the lead's message waits behind its turn", async () => {
-  const f = workbenchFixture({ delay: 400 });
+  const f = await workbenchFixture({ delay: 400 });
   const lead = await leadWithPlan(f, [task('a', { done_when: 'report' })]);
-  const worker = openTask(f, lead.id, 'a');
+  const worker = await openTask(f, lead.id, 'a');
   await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => f.turns(worker.id).some((turn) => turn.state === 'running'),

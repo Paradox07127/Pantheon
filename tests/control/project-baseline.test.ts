@@ -80,7 +80,7 @@ const direction = (question: string) => ({
   kind: 'direction' as const,
 });
 
-function setup({
+async function setup({
   userConfig,
   ...options
 }: { managedWorkspaces?: boolean; userConfig?: boolean } = {}) {
@@ -88,7 +88,7 @@ function setup({
   const userConfigDir = userConfig
     ? mkdtempSync(path.join(os.tmpdir(), 'pantheon-baseline-config-'))
     : undefined;
-  const f = fixture({
+  const f = await fixture({
     now: () => now,
     ...options,
     ...(userConfigDir && { controlOptions: { userConfigDir } }),
@@ -218,7 +218,7 @@ function setup({
 }
 
 it('records an empty project without opening a session', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     expect(f.control.projectBaselineRead(user, f.project.id)).toBeNull();
     const baseline = await f.startBaseline();
@@ -232,7 +232,7 @@ it('records an empty project without opening a session', async () => {
 });
 
 it('opens one read-only baseline session with only the read and submit tools', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const baseline = await f.startBaseline();
@@ -271,7 +271,7 @@ it('opens one read-only baseline session with only the read and submit tools', a
 });
 
 it('lets the baseline session draw explanatory charts but keeps them out of its messages', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const baseline = await f.startBaseline();
@@ -294,7 +294,7 @@ it('lets the baseline session draw explanatory charts but keeps them out of its 
 });
 
 it('tells the baseline session where each folder keeps its code', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     mkdirSync(path.join(f.projectRoot, 'src/parser'));
@@ -314,7 +314,7 @@ it('tells the baseline session where each folder keeps its code', async () => {
 });
 
 it('keeps each workstream its modules inside a project folder, its known dependencies and its risks', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -365,7 +365,7 @@ it('keeps each workstream its modules inside a project folder, its known depende
 });
 
 it('lists the baseline session for the user, waits on its newest review, and leaves it off the board', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -394,9 +394,9 @@ it('lists the baseline session for the user, waits on its newest review, and lea
   }
 });
 
-it('lists a board task session with the lead session it was opened from', () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+it('lists a board task session with the lead session it was opened from', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   f.call(
     'board.plan.update',
     {
@@ -429,7 +429,7 @@ it('lists a board task session with the lead session it was opened from', () => 
       expires_at: f.store.now() + 60000,
     },
   );
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -441,7 +441,7 @@ it('lists a board task session with the lead session it was opened from', () => 
 });
 
 it('refuses a second baseline while one is running', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     await f.startBaseline();
@@ -456,7 +456,7 @@ it('refuses a second baseline while one is running', async () => {
 it.each(['submitted', 'confirmed', 'failed'] as const)(
   'discards an ended %s baseline session without losing its assessment',
   async (state) => {
-    const f = setup();
+    const f = await setup();
     try {
       const head = f.populate();
       let baseline = await f.startBaseline();
@@ -525,7 +525,7 @@ it.each(['submitted', 'confirmed', 'failed'] as const)(
 it.each(['control', 'CLI'] as const)(
   'discards an ended baseline with a legacy worktree through %s',
   async (entry) => {
-    const f = setup({ managedWorkspaces: true });
+    const f = await setup({ managedWorkspaces: true });
     try {
       // This fixture starts fresh children and has no process identities to recover.
       Object.assign(f.ctx, { readProcess: () => undefined });
@@ -624,7 +624,7 @@ it.each(['control', 'CLI'] as const)(
 it.each(['queued', 'running', 'reconciling', 'stopping', 'process', 'handle', 'merging'] as const)(
   'refuses baseline discard while execution is still %s',
   async (blocker) => {
-    const f = setup();
+    const f = await setup();
     try {
       const head = f.populate();
       const baseline = await f.handIn(f.startBaseline(), head);
@@ -674,7 +674,7 @@ it.each(['queued', 'running', 'reconciling', 'stopping', 'process', 'handle', 'm
 );
 
 it('settles a baseline that ended without a result before deleting its session', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const baseline = await f.startBaseline();
@@ -700,13 +700,13 @@ it('settles a baseline that ended without a result before deleting its session',
 });
 
 it('keeps a baseline session that never started queued across a restart and starts it on the next tick', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const baseline = await f.startBaseline();
     const turnJobs = () =>
       f.store.db.prepare("SELECT state FROM outbox WHERE kind='session.turn'").all();
-    f.control.recover();
+    await f.control.recover();
     expect(f.store.must<Session>('sessions', baseline.session_id!).state).toBe('running');
     expect(turnJobs()).toEqual([{ state: 'pending' }]);
     await eventually(
@@ -722,13 +722,13 @@ it('keeps a baseline session that never started queued across a restart and star
 });
 
 it('closes a baseline session left reconciling before it ever started and then settles the baseline', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const baseline = await f.startBaseline();
     const session = f.store.must<Session>('sessions', baseline.session_id!);
     f.store.update<Session>('sessions', { ...session, state: 'reconciling' }, session.revision);
-    f.control.recover();
+    await f.control.recover();
     expect(f.store.must<Session>('sessions', session.id).state).toBe('closed');
     expect(
       f.store.list<SessionTurn>('session_turns').find((t) => t.session_id === session.id),
@@ -741,7 +741,7 @@ it('closes a baseline session left reconciling before it ever started and then s
 });
 
 it('denies the baseline session a board update', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const baseline = await f.startBaseline();
@@ -769,7 +769,7 @@ it('denies the baseline session a board update', async () => {
 });
 
 it('stores a facts snapshot and hands the session a short seed without checklist or doc text', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     mkdirSync(path.join(f.projectRoot, 'docs'));
@@ -821,7 +821,7 @@ it('stores a facts snapshot and hands the session a short seed without checklist
 });
 
 it('gives the baseline session a skill that names no local layout and lists ignored files', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const prompt = purposeSessionInstructions(
@@ -837,7 +837,7 @@ it('gives the baseline session a skill that names no local layout and lists igno
 });
 
 it('seeds a new baseline with the previous confirmed workstreams, task lists and new commits', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const baseline = await f.handIn(f.startBaseline(), head);
@@ -870,7 +870,7 @@ it.each([
 ])(
   '%s an item of an ignored checklist by whether the folder lists it as a task list',
   async (_, taskLists, open, dropped) => {
-    const f = setup();
+    const f = await setup();
     try {
       const head = f.populate();
       writeFileSync(path.join(f.projectRoot, '.gitignore'), 'plans/\n');
@@ -902,7 +902,7 @@ it.each([
 );
 
 it('refuses the final submission until every folder is handed in, naming the missing ones', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -932,7 +932,7 @@ it('refuses the final submission until every folder is handed in, naming the mis
 });
 
 it('keeps sourced conclusions, resolves checklist references and drops the rest', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -1037,7 +1037,7 @@ const nextTasks = () => [
 ];
 
 it('keeps sourced next tasks of known workstreams and drops dependencies on dropped tasks', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -1055,7 +1055,7 @@ it('keeps sourced next tasks of known workstreams and drops dependencies on drop
 });
 
 it('hands the next tasks with scope, acceptance and dependencies to the planning lead', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -1081,7 +1081,7 @@ it('hands the next tasks with scope, acceptance and dependencies to the planning
 });
 
 it('counts each workstream against the newest facts after the checklist changes', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const empty = await f.control.projectFactsRead(user, f.project.id);
@@ -1141,7 +1141,7 @@ it('counts each workstream against the newest facts after the checklist changes'
 });
 
 it('stores every item of a cited checklist section and drops unknown sections', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -1183,7 +1183,7 @@ it('stores every item of a cited checklist section and drops unknown sections', 
 });
 
 it('counts checklist items with the same text apart', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     writeFileSync(
@@ -1219,7 +1219,7 @@ it('counts checklist items with the same text apart', async () => {
 });
 
 it('keeps only the newest thirty facts snapshots of a project', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const first = await f.startBaseline();
@@ -1237,7 +1237,7 @@ it('keeps only the newest thirty facts snapshots of a project', async () => {
 });
 
 it('fails a baseline whose window expired and then allows a new one', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const baseline = await f.startBaseline();
@@ -1254,7 +1254,7 @@ it('fails a baseline whose window expired and then allows a new one', async () =
 });
 
 it('writes the confirmed goal, gate and project configuration and lets the user assess again', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const configDir = path.join(f.projectRoot, '.pantheon');
@@ -1318,7 +1318,7 @@ it.each<[string, (outside: string) => [string, string][]]>([
     (outside) => [['.pantheon/.gitignore', path.join(outside, 'planted-ignore')]],
   ],
 ])('refuses to confirm when %s is a symbolic link out of the project', async (_, links) => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const outside = path.join(path.dirname(f.projectRoot), 'outside');
@@ -1344,7 +1344,7 @@ it.each<[string, (outside: string) => [string, string][]]>([
 });
 
 it('runs the baseline on the project default runtime', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     f.call(
@@ -1366,7 +1366,7 @@ it.each([
     { runtime: 'codex', requested_model: 'gpt-5-mini', requested_effort: 'low' },
   ],
 ])('opens the baseline session on %s', async (_, choice, expected) => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const baseline = await f.call<ProjectBaseline>('project.baseline.start', {
@@ -1386,7 +1386,7 @@ it.each([
 });
 
 it('runs the baseline on the first installed runtime when the other is not installed', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     f.adapters[0]!.report = { ...f.adapters[0]!.report, version: 'unprobed' };
@@ -1397,7 +1397,7 @@ it('runs the baseline on the first installed runtime when the other is not insta
 });
 
 it('runs the baseline on the first runtime whose report verifies isolated reading', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     f.populate();
     const { capabilities } = f.adapters[0]!.report;
@@ -1429,7 +1429,7 @@ it.each<[string, (report: FixtureAdapter['report']) => FixtureAdapter['report']]
 ])(
   'refuses the project default asked for by name and otherwise runs the first fitting runtime when the default %s',
   async (_, change) => {
-    const f = setup();
+    const f = await setup();
     try {
       f.populate();
       f.call(
@@ -1449,7 +1449,7 @@ it.each<[string, (report: FixtureAdapter['report']) => FixtureAdapter['report']]
 );
 
 it('leaves no project configuration behind when opening the planning lead fails', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const baseline = await f.handIn(f.startBaseline(), head);
@@ -1476,7 +1476,7 @@ it('leaves no project configuration behind when opening the planning lead fails'
 });
 
 it('opens a lead session with the baseline result only when confirmed with plan_board', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const leads = () =>
@@ -1519,7 +1519,7 @@ it('opens a lead session with the baseline result only when confirmed with plan_
 });
 
 it("names the planning lead's worktree folder after its title, not its first message", async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const baseline = await f.handIn(f.startBaseline(), head);
@@ -1537,9 +1537,9 @@ it("names the planning lead's worktree folder after its title, not its first mes
 });
 
 /** A workbench lead session and a baseline it started; confirming it with plan_board returns its receipt. */
-async function leadBaseline(f: ReturnType<typeof setup>) {
+async function leadBaseline(f: Awaited<ReturnType<typeof setup>>) {
   const head = f.populate();
-  const lead = f.call<Session>('session.create', {
+  const lead = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: 'claude',
     input: 'Plan the importer',
@@ -1562,7 +1562,7 @@ async function leadBaseline(f: ReturnType<typeof setup>) {
 }
 
 it('hands the confirmed baseline a lead started back to that lead', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const { lead, started, confirm } = await leadBaseline(f);
     expect(started).toMatchObject({ state: 'running', lead_session_id: lead.id });
@@ -1585,7 +1585,7 @@ it('hands the confirmed baseline a lead started back to that lead', async () => 
 });
 
 it('opens a new lead for a baseline whose lead has closed', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const { lead, confirm } = await leadBaseline(f);
     const closed = f.store.must<Session>('sessions', lead.id);
@@ -1606,10 +1606,10 @@ it('opens a new lead for a baseline whose lead has closed', async () => {
 });
 
 it('refuses a baseline started by a worker session', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     f.populate();
-    const session = f.call<Session>('session.create', {
+    const session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: 'claude',
       input: 'Build the importer',
@@ -1626,7 +1626,7 @@ it('refuses a baseline started by a worker session', async () => {
 });
 
 it('lets the lead opened on confirm quote the baseline message as a task source', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const baseline = await f.handIn(f.startBaseline(), head);
@@ -1669,7 +1669,7 @@ it('lets the lead opened on confirm quote the baseline message as a task source'
 });
 
 it('opens the lead with the brief and answers the user confirmed, not the proposed goal', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const baseline = await f.handIn(f.startBaseline(), head);
@@ -1733,7 +1733,7 @@ it('opens the lead with the brief and answers the user confirmed, not the propos
 });
 
 it('keeps the user answers in the first plan message and cuts long workstreams instead', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -1781,7 +1781,7 @@ it('keeps the user answers in the first plan message and cuts long workstreams i
 });
 
 it('opens the lead with the goals and non-goals of the confirmed brief', async () => {
-  const f = setup({ managedWorkspaces: true });
+  const f = await setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
     const baseline = await f.handIn(f.startBaseline(), head);
@@ -1821,7 +1821,7 @@ const slides = {
   name: 'slides@market',
   reason: 'The library ships no presentations',
 };
-const withInventory = (f: ReturnType<typeof setup>) =>
+const withInventory = (f: Awaited<ReturnType<typeof setup>>) =>
   Object.assign(f.adapters[0]!, {
     inventory: async () => ({
       runtime: 'claude',
@@ -1832,20 +1832,20 @@ const withInventory = (f: ReturnType<typeof setup>) =>
       hooks: [],
     }),
   });
-const setExtensions = (f: ReturnType<typeof setup>, value: typeof overrides) =>
+const setExtensions = (f: Awaited<ReturnType<typeof setup>>, value: typeof overrides) =>
   f.call<Project>(
     'project.extensions.set',
     { project_id: f.project.id, runtime: 'claude', overrides: value },
     f.store.must<Project>('projects', f.project.id).revision,
   );
-const extensionEvents = (f: ReturnType<typeof setup>, before: number) =>
+const extensionEvents = (f: Awaited<ReturnType<typeof setup>>, before: number) =>
   f.store
     .events(before)
     .filter((event) => event.kind === 'project.extensions_set')
     .map((event) => event.payload);
 
 it('turns off suggested extensions on hand-in and keeps closed only the confirmed ones', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     withInventory(f);
     setExtensions(f, overrides);
@@ -1898,7 +1898,7 @@ it('turns off suggested extensions on hand-in and keeps closed only the confirme
 });
 
 it('keeps off an extension the user had turned off when its suggestion is unchecked', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     withInventory(f);
     const closed = { ...overrides, disabled_mcp_servers: ['tracker', 'browser'] };
@@ -1922,7 +1922,7 @@ it('keeps off an extension the user had turned off when its suggestion is unchec
 });
 
 it('does not turn off again an extension the user turned back on', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     withInventory(f);
     const head = f.populate();
@@ -1959,7 +1959,7 @@ it('does not turn off again an extension the user turned back on', async () => {
 });
 
 it('baselines every folder and writes each git folder its own configuration', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const plain = f.project.roots[0]!;
     const repository = (name: string) => {
@@ -1976,7 +1976,7 @@ it('baselines every folder and writes each git folder its own configuration', as
     };
     const api = repository('api'),
       web = repository('web');
-    f.call(
+    await f.call(
       'project.environment.set',
       { project_id: f.project.id, name: f.project.name, roots: [plain, api, web], env: {} },
       f.store.must<Project>('projects', f.project.id).revision,
@@ -2110,7 +2110,7 @@ it('baselines every folder and writes each git folder its own configuration', as
 });
 
 it('puts back the configuration of earlier folders when a later folder refuses its write', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const repository = (name: string) => {
       const root = path.join(f.root, name);
@@ -2132,7 +2132,7 @@ it('puts back the configuration of earlier folders when a later folder refuses i
     const outside = path.join(f.root, 'outside');
     mkdirSync(outside);
     symlinkSync(outside, path.join(web, '.pantheon'));
-    f.call(
+    await f.call(
       'project.environment.set',
       { project_id: f.project.id, name: f.project.name, roots: [api, web], env: {} },
       f.store.must<Project>('projects', f.project.id).revision,
@@ -2168,7 +2168,7 @@ it('puts back the configuration of earlier folders when a later folder refuses i
 });
 
 it('opens a project with the goal, gate and extensions from its configuration', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const root = path.join(f.root, 'configured');
     mkdirSync(path.join(root, '.pantheon'), { recursive: true });
@@ -2184,7 +2184,7 @@ it('opens a project with the goal, gate and extensions from its configuration', 
       path.join(root, '.pantheon/config.local.json'),
       JSON.stringify({ version: 1, budget: { max_sessions: 7 } }),
     );
-    const project = f.call<Project>('project.open', { name: 'configured', roots: [root] });
+    const project = await f.call<Project>('project.open', { name: 'configured', roots: [root] });
     expect(project).toMatchObject({
       gates: { [realpathSync(root)]: gate },
       extension_overrides: { claude: overrides },
@@ -2195,7 +2195,7 @@ it('opens a project with the goal, gate and extensions from its configuration', 
     const invalid = path.join(f.root, 'future');
     mkdirSync(path.join(invalid, '.pantheon'), { recursive: true });
     writeFileSync(path.join(invalid, '.pantheon/config.json'), JSON.stringify({ version: 2 }));
-    expect(() => f.call('project.open', { name: 'future', roots: [invalid] })).toThrow(
+    await expect(f.call('project.open', { name: 'future', roots: [invalid] })).rejects.toThrow(
       expect.objectContaining({
         code: 'invalid_project',
         message: expect.stringContaining(path.join('.pantheon', 'config.json')),
@@ -2208,7 +2208,7 @@ it('opens a project with the goal, gate and extensions from its configuration', 
 });
 
 it('lets the local configuration override the committed one, or stand alone', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const gate = (name: string) => [{ name, argv: ['true'] }];
     const configured = (name: string, files: Record<string, unknown>) => {
@@ -2223,15 +2223,17 @@ it('lets the local configuration override the committed one, or stand alone', as
       'config.json': { version: 1, gate: gate('committed') },
       'config.local.json': { gate: gate('local') },
     });
-    expect(f.call<Project>('project.open', { name: 'both', roots: [both] }).gates).toEqual({
+    expect((await f.call<Project>('project.open', { name: 'both', roots: [both] })).gates).toEqual({
       [realpathSync(both)]: gate('local'),
     });
     const local = configured('local', { 'config.local.json': { gate: gate('local') } });
-    expect(f.call<Project>('project.open', { name: 'local', roots: [local] }).gates).toEqual({
+    expect(
+      (await f.call<Project>('project.open', { name: 'local', roots: [local] })).gates,
+    ).toEqual({
       [realpathSync(local)]: gate('local'),
     });
     const invalid = configured('invalid', { 'config.local.json': { gate: 'true' } });
-    expect(() => f.call('project.open', { name: 'invalid', roots: [invalid] })).toThrow(
+    await expect(f.call('project.open', { name: 'invalid', roots: [invalid] })).rejects.toThrow(
       expect.objectContaining({
         code: 'invalid_project',
         message: expect.stringContaining(path.join('.pantheon', 'config.local.json')),
@@ -2243,7 +2245,7 @@ it('lets the local configuration override the committed one, or stand alone', as
 });
 
 it('opens the baseline session without local extensions', async () => {
-  const f = setup();
+  const f = await setup();
   const starts = f.adapters.map((adapter) => vi.spyOn(adapter, 'start'));
   try {
     f.populate();
@@ -2275,7 +2277,7 @@ const license = {
   multiSelect: false,
 };
 const continueBaseline = (
-  f: ReturnType<typeof setup>,
+  f: Awaited<ReturnType<typeof setup>>,
   baseline: ProjectBaseline,
   answers: unknown[],
 ) =>
@@ -2286,7 +2288,7 @@ const continueBaseline = (
   );
 
 it('continues the baseline conversation for the next round and takes the revised assessment', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const submitted = await f.handIn(f.startBaseline(), head);
@@ -2323,7 +2325,7 @@ it('continues the baseline conversation for the next round and takes the revised
 });
 
 it('asks no question in the last round and continues no further', async () => {
-  const f = setup({ userConfig: true });
+  const f = await setup({ userConfig: true });
   try {
     f.call('app.settings.set', { baseline_rounds: 2 });
     const head = f.populate();
@@ -2353,7 +2355,7 @@ it('asks no question in the last round and continues no further', async () => {
 });
 
 it('refuses answers to questions the round did not ask', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const submitted = await f.handIn(f.startBaseline(), head);
@@ -2385,7 +2387,7 @@ it.each<[string, (question: ReturnType<typeof direction>) => unknown[]]>([
     ],
   ],
 ])('refuses a first round with %s', async (_, questions) => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -2408,7 +2410,7 @@ it.each<[string, (question: ReturnType<typeof direction>) => unknown[]]>([
 });
 
 it('takes the assessment only after the baseline session hands in the introduction', async () => {
-  const f = setup();
+  const f = await setup();
   try {
     const head = f.populate();
     const baseline = await f.startBaseline();
@@ -2429,7 +2431,7 @@ it('takes the assessment only after the baseline session hands in the introducti
 it.each([true, false])(
   'hands every round, the findings and the contradictions to the planning lead (visuals pinned: %s)',
   async (visuals) => {
-    const f = setup({ managedWorkspaces: true, userConfig: true });
+    const f = await setup({ managedWorkspaces: true, userConfig: true });
     try {
       f.call('app.settings.set', { baseline_visuals: visuals });
       const head = f.populate();
@@ -2505,7 +2507,7 @@ it.each([true, false])(
 it.each([true, false])(
   'explains the last thirty days of commits as a range story on confirm (setting on: %s)',
   async (on) => {
-    const f = setup({ userConfig: true });
+    const f = await setup({ userConfig: true });
     try {
       f.call('app.settings.set', { baseline_range_story: on });
       f.populate();

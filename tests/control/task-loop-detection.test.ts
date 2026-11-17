@@ -3,7 +3,7 @@ import type { BoardPlan, LeadNote, Principal, Session, SessionTurn } from '@pant
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
@@ -42,7 +42,7 @@ const itemsOf = (f: Fixture, sessionId: string) =>
     .items.filter((item) => item.source.table === 'sessions' && item.source.id === sessionId);
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -63,7 +63,7 @@ async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
 }
 
 const openTask = (f: Fixture, leadId: string, taskId: string, input = 'Build it') =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input,
@@ -78,7 +78,7 @@ const hang = { hang: true };
 
 /** Runs a scripted worker for task a and waits for the lead's first looping note. */
 async function loopingWorker(f: Fixture, leadId: string, steps: unknown[]) {
-  const worker = openTask(f, leadId, 'a', script([...steps, hang]));
+  const worker = await openTask(f, leadId, 'a', script([...steps, hang]));
   await eventually(
     () => notes(f, leadId, 'looping').length > 0,
     () => f.control.tick(),
@@ -109,14 +109,14 @@ it.each([
     'The running turn of the session alternates between two failing tool calls. Its last 6 calls took turns between Bash with the input {"command":"pnpm build"} and Bash with the input {"command":"pnpm test"}, each failing.',
   ],
 ])('%s', async (_, steps, text) => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const [note] = await loopingWorker(f, lead.id, steps);
   expect(note!.text).toBe(text);
 });
 
 it('compares repeated calls without their free-text fields', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
 
   const [note] = await loopingWorker(f, lead.id, [
@@ -130,7 +130,7 @@ it('compares repeated calls without their free-text fields', async () => {
 /** A task session whose first turn runs for longer than the test. */
 async function runningWorker(f: Fixture, leadId: string) {
   (f.adapter as { delay: number }).delay = 60000;
-  const worker = openTask(f, leadId, 'a');
+  const worker = await openTask(f, leadId, 'a');
   await awaitWorkspaceReady(f.control, worker.workspace_id!);
   await eventually(
     () => f.turns(worker.id)[0]?.state === 'running',
@@ -147,7 +147,7 @@ function failedCall(f: Fixture, worker: Session, turn: SessionTurn, id: string) 
 }
 
 it('tells the lead again and lists needs-you when a turn keeps looping after the first alert', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const { worker, turn } = await runningWorker(f, lead.id);
   let calls = 0;
@@ -181,7 +181,7 @@ it('tells the lead again and lists needs-you when a turn keeps looping after the
 });
 
 it('tells the user when a lead turn repeats a failing tool call', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const test = failing({ command: 'pnpm test' });
   f.call(
@@ -206,7 +206,7 @@ it('tells the user when a lead turn repeats a failing tool call', async () => {
 
 /** Runs each script as one turn of the session of a report task a, one turn after another. */
 async function turnsOfWorker(f: Fixture, leadId: string, turns: unknown[][]) {
-  const worker = openTask(f, leadId, 'a', script(turns[0]!));
+  const worker = await openTask(f, leadId, 'a', script(turns[0]!));
   await settle(f, worker);
   for (const steps of turns.slice(1)) {
     f.call(
@@ -225,7 +225,7 @@ const healthOf = (f: Fixture, leadId: string) =>
     ?.activity?.health;
 
 it('tells the lead once when a task session fails the same call in three turns in a row', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a', { done_when: 'report' })]);
   const read = { trace: { tool: 'Read', input: { file_path: 'src/a/export.ts' } } },
     test = failing({ command: 'pnpm test', description: 'Run the tests' });
@@ -250,7 +250,7 @@ it('tells the lead once when a task session fails the same call in three turns i
 });
 
 it('does not tell the lead when consecutive turns of a task session fail different calls', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a', { done_when: 'report' })]);
 
   await turnsOfWorker(f, lead.id, [
@@ -263,7 +263,7 @@ it('does not tell the lead when consecutive turns of a task session fail differe
 });
 
 it('does not tell the lead when consecutive turns of a task session repeat a successful call', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a', { done_when: 'report' })]);
   const test = { trace: { tool: 'Bash', input: { command: 'pnpm test' } } };
 

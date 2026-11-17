@@ -6,8 +6,8 @@ import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 async function settled() {
-  const f = workbenchFixture();
-  const session = f.create('First');
+  const f = await workbenchFixture();
+  const session = await f.create('First');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.store.must<Session>('sessions', session.id).state === 'open',
@@ -97,7 +97,11 @@ it.each(['conversation', 'both'])(
   },
 );
 
-async function closed(f: ReturnType<typeof workbenchFixture>, sessionId: string, count: number) {
+async function closed(
+  f: Awaited<ReturnType<typeof workbenchFixture>>,
+  sessionId: string,
+  count: number,
+) {
   await eventually(
     () =>
       f.store
@@ -235,12 +239,12 @@ it('stores connector overrides with session revision checks and applies them on 
 });
 
 it('persists retry and compaction start events on the running turn and projects the reported threshold', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   vi.spyOn(f.adapter, 'send').mockImplementation(async (_, turn) => ({
     turn_id: turn.turn_id,
     status: 'delivered',
   }));
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.delivery === 'delivered',
@@ -304,12 +308,12 @@ it('forks before a reported span using native history without a text handoff', a
 });
 
 it('queues a steer after connector changes and launches it with the new list after the current turn', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (_, turn) => ({
     turn_id: turn.turn_id,
     status: 'delivered',
   }));
-  const session = f.create();
+  const session = await f.create();
   const current = () => f.store.must<Session>('sessions', session.id);
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
@@ -350,12 +354,12 @@ it('queues a steer after connector changes and launches it with the new list aft
 });
 
 it('drops a compaction threshold when the runtime reports a new model', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   vi.spyOn(f.adapter, 'send').mockImplementation(async (_, turn) => ({
     turn_id: turn.turn_id,
     status: 'delivered',
   }));
-  const session = f.create();
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.delivery === 'delivered',

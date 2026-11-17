@@ -29,10 +29,10 @@ it('connects the runtime analysis MCP with only the two evidence-bound tools', a
   const client = new Client({ name: 'trace-analysis-test', version: '1' });
   let server: Awaited<ReturnType<typeof createMcpServer>> | undefined;
   try {
-    const project = daemon.control.execute(
+    const project = (await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name: 'Analysis project', roots: [work] }),
-    ) as Project;
+    )) as Project;
     const to = daemon.store.now();
     const analysis = daemon.control.execute(
       user,
@@ -113,10 +113,10 @@ it('serves the trace queries over HTTP and keeps the trace cache in the data dir
     },
   });
   try {
-    const project = daemon.control.execute(
+    const project = (await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name: 'Trace project', roots: [work] }),
-    ) as Project;
+    )) as Project;
     const session = daemon.store.insert<Session>('sessions', {
       id: 'trace-session',
       revision: 1,

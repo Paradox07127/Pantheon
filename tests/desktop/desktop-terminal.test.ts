@@ -38,10 +38,10 @@ async function terminalBridge(pty: FakePty) {
     await daemon.close();
     rmSync(root, { recursive: true, force: true });
   });
-  const project = daemon.control.execute(
+  const project = (await daemon.control.execute(
     user,
     command(user.id, 'project.open', { name: 'terminal', roots: [path.join(root, 'project')] }),
-  ) as Project;
+  )) as Project;
   const { terminal_id } = (await daemon.control.execute(
     user,
     command(user.id, 'terminal.open', { project_id: project.id, cols: 80, rows: 24 }),

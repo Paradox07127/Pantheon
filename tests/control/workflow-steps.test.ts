@@ -23,7 +23,7 @@ import { REVIEW_LOOP_STEP_ID } from '../../packages/control/dist/workflow-engine
 import { eventually, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const empty = (): WorkflowDefinition => ({
   slots: { before_dispatch: [], before_merge: [], after_merge: [] },
   plan_review: { tiers: ['t3'] },
@@ -47,10 +47,10 @@ async function setup(
   skills: ExtensionInventory['skills'] = [],
   fields: Partial<BoardPlan['tasks'][number]> = {},
 ) {
-  const f = workbenchFixture({ delay: 1 });
+  const f = await workbenchFixture({ delay: 1 });
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
-  const lead = f.create('Plan the export');
+  const lead = await f.create('Plan the export');
   await settle(f, lead);
   if (skills.length)
     (f.adapter as FixtureAdapter & { inventory?: () => Promise<ExtensionInventory> }).inventory =

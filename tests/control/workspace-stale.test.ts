@@ -7,8 +7,8 @@ import { eventually } from '../helpers.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 
 it('keeps an archived worktree whose unheld commits could not be recorded under an archive ref', async () => {
-  const f = workbenchFixture();
-  const session = f.create('Unmerged session');
+  const f = await workbenchFixture();
+  const session = await f.create('Unmerged session');
   const { startWorkspaceProvisioning } =
     await import('../../packages/control/dist/provisioning.js');
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;

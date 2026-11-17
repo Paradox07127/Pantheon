@@ -22,8 +22,8 @@ it.each<[string, (read: MockInstance<ControlContext['readProcess']>) => unknown,
     (read) => read.mockReturnValueOnce({ pid, start_time_us: started }).mockReturnValue(undefined),
     true,
   ],
-])('%s', (_name, reads, killed) => {
-  const f = workbenchFixture();
+])('%s', async (_name, reads, killed) => {
+  const f = await workbenchFixture();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   f.store.remember('gate-process:session-deleted:workspace', '', {
     pid,
@@ -40,8 +40,8 @@ it.each<[string, (read: MockInstance<ControlContext['readProcess']>) => unknown,
   ).toEqual([]);
 });
 
-it('rechecks the identity before stopping a tracked live process', () => {
-  const f = workbenchFixture();
+it('rechecks the identity before stopping a tracked live process', async () => {
+  const f = await workbenchFixture();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const read = vi.spyOn(ctx, 'readProcess').mockReturnValue({ pid, start_time_us: started });
   const child = Object.assign(new EventEmitter(), { pid }) as unknown as ChildProcess;

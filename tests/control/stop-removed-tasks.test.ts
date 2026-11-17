@@ -3,7 +3,7 @@ import type { BoardPlan, Principal, Session } from '@pantheon/domain';
 import { settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadOf = (f: Fixture, leadId: string): Principal => ({
@@ -45,8 +45,8 @@ function writePlan(f: Fixture, leadId: string, tasks: PlanTask[]) {
 }
 
 it('stops each removed task against the plan its earlier stop wrote', async () => {
-  const f = workbenchFixture();
-  const lead = f.create('Plan the export feature');
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id, [reportTask('a'), reportTask('b'), reportTask('c')]);
   f.call(

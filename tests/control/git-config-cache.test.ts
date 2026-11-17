@@ -65,15 +65,15 @@ function setup() {
 }
 
 // Repeated calls give a cache every chance to fill before the configuration changes.
-function warm(cwd: string) {
+async function warm(cwd: string) {
   for (let index = 0; index < 3; index++)
-    expect(runGit(cwd, ['status', '--porcelain']).exit_code).toBe(0);
+    expect((await runGit(cwd, ['status', '--porcelain'], undefined, true)).exit_code).toBe(0);
 }
 
-function expectNeutralized(cwd: string, marker: string, env?: NodeJS.ProcessEnv) {
+async function expectNeutralized(cwd: string, marker: string, env?: NodeJS.ProcessEnv) {
   elapsed += 1000;
   writeFileSync(path.join(cwd, 'filtered.txt'), 'hardened\n');
-  const result = runGit(cwd, ['add', '--', 'filtered.txt'], undefined, false, { env });
+  const result = await runGit(cwd, ['add', '--', 'filtered.txt'], undefined, true, { env });
   expect(result.exit_code).toBe(0);
   expect(existsSync(marker)).toBe(false);
   // Plain git reaches the same driver, so the change did make it live.
@@ -82,46 +82,48 @@ function expectNeutralized(cwd: string, marker: string, env?: NodeJS.ProcessEnv)
   expect(existsSync(marker)).toBe(true);
 }
 
-it('neutralizes a filter that runGit itself wrote to the repository config', () => {
+it('neutralizes a filter that runGit itself wrote to the repository config', async () => {
   const { repo, marker, script } = setup();
-  warm(repo);
-  expect(runGit(repo, ['config', 'filter.fixture.clean', script]).exit_code).toBe(0);
-  expectNeutralized(repo, marker);
+  await warm(repo);
+  expect(
+    (await runGit(repo, ['config', 'filter.fixture.clean', script], undefined, true)).exit_code,
+  ).toBe(0);
+  await expectNeutralized(repo, marker);
 });
 
-it('neutralizes a filter appended to the repository config file directly', () => {
+it('neutralizes a filter appended to the repository config file directly', async () => {
   const { repo, marker, script } = setup();
-  warm(repo);
+  await warm(repo);
   appendFileSync(path.join(repo, '.git', 'config'), `[filter "fixture"]\n\tclean = ${script}\n`);
-  expectNeutralized(repo, marker);
+  await expectNeutralized(repo, marker);
 });
 
-it('neutralizes a filter written into the config file in place with its size and times kept', () => {
+it('neutralizes a filter written into the config file in place with its size and times kept', async () => {
   const { repo, marker, script } = setup();
   const config = path.join(repo, '.git', 'config');
   appendFileSync(config, `[filter "fixture"]\n\tclxan = ${script}\n`);
   utimesSync(config, 1_000_000_000, 1_000_000_000);
-  warm(repo);
+  await warm(repo);
   writeFileSync(config, readFileSync(config, 'utf8').replace('clxan', 'clean'));
   utimesSync(config, 1_000_000_000, 1_000_000_000);
-  expectNeutralized(repo, marker);
+  await expectNeutralized(repo, marker);
 });
 
-it('neutralizes a filter added to the config.worktree of the worktree in use', () => {
+it('neutralizes a filter added to the config.worktree of the worktree in use', async () => {
   const { root, repo, marker, script } = setup();
   plainGit(repo, ['config', 'extensions.worktreeConfig', 'true']);
   const linked = path.join(root, 'linked');
   plainGit(repo, ['worktree', 'add', '--quiet', '-b', 'linked', linked]);
-  warm(linked);
+  await warm(linked);
   plainGit(linked, ['config', '--worktree', 'filter.fixture.clean', script]);
-  expectNeutralized(linked, marker);
+  await expectNeutralized(linked, marker);
 });
 
 it.each([
   { state: 'missing', description: 'did not exist at the first call' },
   { state: 'existing', description: 'existed at the first call' },
   { state: 'nested', description: 'another included file names and did not exist at first' },
-])('neutralizes a filter that appears in an included file that $description', ({ state }) => {
+])('neutralizes a filter that appears in an included file that $description', async ({ state }) => {
   const { repo, marker, script } = setup();
   plainGit(repo, ['config', 'include.path', 'included.cfg']);
   let included = path.join(repo, '.git', 'included.cfg');
@@ -130,43 +132,45 @@ it.each([
     writeFileSync(included, '[include]\n\tpath = nested.cfg\n');
     included = path.join(repo, '.git', 'nested.cfg');
   }
-  warm(repo);
+  await warm(repo);
   writeFileSync(included, `[filter "fixture"]\n\tclean = ${script}\n`);
-  expectNeutralized(repo, marker);
+  await expectNeutralized(repo, marker);
 });
 
-it('neutralizes a filter included for a branch after switching to that branch', () => {
+it('neutralizes a filter included for a branch after switching to that branch', async () => {
   const { repo, marker, drivers } = setup();
   plainGit(repo, ['config', 'includeIf.onbranch:feature.path', drivers]);
-  warm(repo);
-  expect(runGit(repo, ['checkout', '--quiet', '-b', 'feature']).exit_code).toBe(0);
-  expectNeutralized(repo, marker);
+  await warm(repo);
+  expect(
+    (await runGit(repo, ['checkout', '--quiet', '-b', 'feature'], undefined, true)).exit_code,
+  ).toBe(0);
+  await expectNeutralized(repo, marker);
 });
 
-it('neutralizes a filter included only for another worktree of the same repository', () => {
+it('neutralizes a filter included only for another worktree of the same repository', async () => {
   const { root, repo, marker, drivers } = setup();
   const linked = path.join(root, 'linked');
   plainGit(repo, ['worktree', 'add', '--quiet', '-b', 'linked', linked]);
   plainGit(repo, ['config', 'includeIf.gitdir:**/worktrees/linked.path', drivers]);
-  warm(repo);
-  expectNeutralized(linked, marker);
+  await warm(repo);
+  await expectNeutralized(linked, marker);
 });
 
-it('neutralizes a filter from another repository selected through GIT_DIR', () => {
+it('neutralizes a filter from another repository selected through GIT_DIR', async () => {
   const first = setup();
   const other = setup();
   plainGit(other.repo, ['config', 'filter.fixture.clean', other.script]);
-  warm(first.repo);
-  expectNeutralized(first.repo, other.marker, { GIT_DIR: path.join(other.repo, '.git') });
+  await warm(first.repo);
+  await expectNeutralized(first.repo, other.marker, { GIT_DIR: path.join(other.repo, '.git') });
 });
 
-it('neutralizes a filter from a global config selected through GIT_CONFIG_GLOBAL', () => {
+it('neutralizes a filter from a global config selected through GIT_CONFIG_GLOBAL', async () => {
   const { repo, marker, drivers } = setup();
-  warm(repo);
-  expectNeutralized(repo, marker, { GIT_CONFIG_GLOBAL: drivers });
+  await warm(repo);
+  await expectNeutralized(repo, marker, { GIT_CONFIG_GLOBAL: drivers });
 });
 
-it('neutralizes a filter of a nested repository that becomes discoverable when its objects directory opens', () => {
+it('neutralizes a filter of a nested repository that becomes discoverable when its objects directory opens', async () => {
   const { repo, marker, script } = setup();
   const inner = path.join(repo, 'inner');
   plainGit(repo, ['init', '--bare', '--quiet', inner]);
@@ -175,7 +179,7 @@ it('neutralizes a filter of a nested repository that becomes discoverable when i
   plainGit(inner, ['config', 'filter.fixture.clean', script]);
   // Git skips a candidate directory whose objects directory it cannot enter.
   chmodSync(path.join(inner, 'objects'), 0o000);
-  warm(inner);
+  await warm(inner);
   chmodSync(path.join(inner, 'objects'), 0o700);
-  expectNeutralized(inner, marker);
+  await expectNeutralized(inner, marker);
 });

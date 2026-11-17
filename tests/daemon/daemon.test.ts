@@ -222,13 +222,13 @@ it('answers a command of another protocol version with 409 protocol_mismatch', a
 it('keeps a session credential in its project and drops it when revoked', async () => {
   const f = await serverFixture();
   try {
-    const p = f.daemon.control.execute(
+    const p = (await f.daemon.control.execute(
       user,
       command(user.id, 'project.open', {
         name: 'http',
         roots: [path.join(f.root, 'project')],
       }),
-    ) as Project;
+    )) as Project;
     const session = f.daemon.store.insert<Session>('sessions', {
       id: 'board-reader',
       revision: 1,
@@ -261,7 +261,7 @@ it('streams durable events after authentication and replays from a cursor', asyn
     const incoming: unknown[] = [];
     ws.addEventListener('message', (e) => incoming.push(JSON.parse(String(e.data))));
     ws.send(JSON.stringify({ token: f.daemon.token, cursor: 0 }));
-    f.daemon.control.execute(
+    await f.daemon.control.execute(
       user,
       command(user.id, 'project.open', {
         name: 'ws',
@@ -332,13 +332,13 @@ it('drops an unauthenticated event socket that sends a malformed frame and keeps
 it('closes an event subscription once its session credential is revoked', async () => {
   const f = await serverFixture();
   try {
-    const p = f.daemon.control.execute(
+    const p = (await f.daemon.control.execute(
       user,
       command(user.id, 'project.open', {
         name: 'revoked-subscription',
         roots: [path.join(f.root, 'project')],
       }),
-    ) as Project;
+    )) as Project;
     const session = f.daemon.store.insert<Session>('sessions', {
       id: 'subscribed-reader',
       revision: 1,
@@ -535,7 +535,7 @@ it('starts the production entry with the real clock and no-op failpoints', async
   try {
     await import('../../apps/daemon/src/main.js');
     expect(start).toHaveBeenCalledTimes(1);
-    expect(() =>
+    await expect(
       daemon!.control.execute(
         user,
         command(user.id, 'project.open', {
@@ -543,7 +543,7 @@ it('starts the production entry with the real clock and no-op failpoints', async
           roots: [path.join(root, 'project')],
         }),
       ),
-    ).not.toThrow();
+    ).resolves.toBeDefined();
     expect(start.mock.calls[0]![0]).not.toHaveProperty('failpoint');
     expect(start.mock.calls[0]![0]).not.toHaveProperty('now');
     expect(daemon!.store.now).toBe(Date.now);
@@ -801,13 +801,13 @@ it('checks runtimes after startup and on its interval, serves runtime.status and
 it('serves project permission rules, local branches and stale workspace settings through HTTP', async () => {
   const f = await serverFixture();
   try {
-    const project = f.daemon.control.execute(
+    const project = (await f.daemon.control.execute(
       user,
       command(user.id, 'project.open', {
         name: 'Workbench settings',
         roots: [path.join(f.root, 'project')],
       }),
-    ) as Project;
+    )) as Project;
     const get = (method: string, extra = '') =>
       fetch(`${f.daemon.url}/v1/${method}?project_id=${project.id}${extra}`, {
         headers: f.headers,

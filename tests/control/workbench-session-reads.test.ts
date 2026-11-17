@@ -7,7 +7,7 @@ import type { Session, Workspace } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 async function idleSession(f: Fixture) {
-  const session = f.create('Check the project');
+  const session = await f.create('Check the project');
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () =>
@@ -27,7 +27,7 @@ async function idleSession(f: Fixture) {
 }
 
 it('counts the lines of a large untracked file without holding the event loop', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   const lines = 32 * 1024 * 1024;
@@ -55,7 +55,7 @@ it('counts the lines of a large untracked file without holding the event loop', 
 });
 
 it('counts no lines of an untracked path that is a named pipe', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   execFileSync('mkfifo', [path.join(workspace.path, 'pipe')]);
@@ -88,7 +88,7 @@ it('counts no lines of an untracked path that is a named pipe', async () => {
 
 /** An idle session with an uncommitted file, whose asynchronous Git reads each take three seconds of the clock. */
 async function slowReads() {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   writeFileSync(path.join(workspace.path, 'note.txt'), 'uncommitted\n');
@@ -139,7 +139,7 @@ it('joins a prefetch still running past the reuse window instead of reading agai
 
 /** An idle session whose worktree a prefetch read, with the results of asynchronous Git reads held from here until release. */
 async function heldReads() {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -197,7 +197,7 @@ it('answers a prefetch only after the reads of a session with new activity', asy
 });
 
 it('reads the worktrees ahead after a restart before any list', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   writeFileSync(path.join(workspace.path, 'note.txt'), 'uncommitted\n');
@@ -212,7 +212,7 @@ it('reads the worktrees ahead after a restart before any list', async () => {
 });
 
 it('reads the worktree again once a merge rebased it onto a source that moved', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
   const session = await idleSession(f);
@@ -255,7 +255,7 @@ it('reads the worktree again once a merge rebased it onto a source that moved', 
 });
 
 it('expands only the runs a project gate history with a start returns', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const session = await idleSession(f);
   const at = Date.parse('2026-01-01T12:00:00Z');
   const now = vi.spyOn(f.store, 'now');
@@ -278,7 +278,7 @@ it('expands only the runs a project gate history with a start returns', async ()
 it.skipIf(process.getuid?.() === 0)(
   'keeps a native history folder it cannot remove without an uncaught error',
   async () => {
-    const f = workbenchFixture();
+    const f = await workbenchFixture();
     const session = await idleSession(f);
     const history = path.join(f.root, 'state/native-sessions', f.project.id, 'fixture'),
       locked = path.join(history, 'locked');

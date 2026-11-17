@@ -78,11 +78,11 @@ it.skipIf(insideSandbox)(
     const counter = await gateCounter();
     try {
       const setup = bench.start();
-      const project = setup.call<Project>('project.open', {
+      const project = await setup.call<Project>('project.open', {
         name: 'Crash project',
         roots: [bench.source],
       });
-      setup.call(
+      await setup.call(
         'project.gate.set',
         {
           project_id: project.id,
@@ -91,7 +91,7 @@ it.skipIf(insideSandbox)(
         },
         project.revision,
       );
-      const created = setup.call<Session>('session.create', {
+      const created = await setup.call<Session>('session.create', {
         project_id: project.id,
         runtime: 'fixture',
         input: 'Add two files',
@@ -144,11 +144,11 @@ it.skipIf(insideSandbox)(
 it('finishes a rollback whose daemon was killed after the files were restored and before the record committed', async () => {
   const bench = crashBench();
   const setup = bench.start();
-  const project = setup.call<Project>('project.open', {
+  const project = await setup.call<Project>('project.open', {
     name: 'Crash project',
     roots: [bench.source],
   });
-  const created = setup.call<Session>('session.create', {
+  const created = await setup.call<Session>('session.create', {
     project_id: project.id,
     runtime: 'fixture',
     input: 'Start the export',

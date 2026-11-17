@@ -124,7 +124,7 @@ it('validates cancellation commands without granting session or revision overrid
 });
 
 it('rejects a defined but unimplemented command with unsupported_command and keeps no receipt', async () => {
-  const f = fixture();
+  const f = await fixture();
   try {
     for (const [type, input] of unimplemented) {
       const sent = command(user.id, type, input);

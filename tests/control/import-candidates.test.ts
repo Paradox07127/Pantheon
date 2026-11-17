@@ -28,7 +28,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-function historyFixture() {
+async function historyFixture() {
   const homes = mkdtempSync(path.join(os.tmpdir(), 'import-candidates-'));
   cleanups.push(() => rmSync(homes, { recursive: true, force: true }));
   const claudeHome = path.join(homes, 'claude'),
@@ -40,7 +40,7 @@ function historyFixture() {
     codexHomes: [codexHome],
   });
   cleanups.push(() => trace.close());
-  const f = fixture({
+  const f = await fixture({
     controlOptions: {
       trace,
       protectionPaths: {
@@ -102,7 +102,7 @@ function historyFixture() {
 
 describe('import candidates', () => {
   it('keeps a repository inside an outer checkout that has no history of its own', async () => {
-    const fx = historyFixture();
+    const fx = await historyFixture();
     const outer = fx.repo(path.join(fx.homes, 'outer'));
     const gamma = fx.repo(path.join(outer, 'work/gamma'));
     for (let n = 0; n < 3; n += 1) fx.claude(gamma, fx.now - HOUR_MS);
@@ -118,7 +118,7 @@ describe('import candidates', () => {
   });
 
   it('preselects active repositories with enough sessions and says why others are excluded', async () => {
-    const fx = historyFixture();
+    const fx = await historyFixture();
     const real = (dir: string) => realpathSync(dir);
     const alpha = fx.repo(path.join(fx.homes, 'alpha'), 'git@github.com:acme/alpha-app.git');
     mkdirSync(path.join(alpha, 'src'));
@@ -198,7 +198,7 @@ describe('import candidates', () => {
   });
 
   it('excludes folders in temporary directories', async () => {
-    const fx = historyFixture();
+    const fx = await historyFixture();
     const alpha = fx.repo(path.join(fx.homes, 'alpha'), 'git@github.com:acme/alpha.git');
     for (let n = 0; n < 3; n += 1) fx.claude(alpha, fx.now - HOUR_MS);
     const result = await fx.indexed(() => fx.f.control.importCandidates(user));
@@ -208,7 +208,7 @@ describe('import candidates', () => {
   });
 
   it('lists the native sessions of a project that are not in Pantheon yet, without those of a repository inside it', async () => {
-    const fx = historyFixture();
+    const fx = await historyFixture();
     const id = randomUUID();
     fx.claude(fx.f.projectRoot, fx.now - HOUR_MS, id);
     const inner = fx.repo(path.join(fx.f.projectRoot, 'inner'), 'git@github.com:acme/inner.git');
@@ -229,7 +229,7 @@ describe('import candidates', () => {
   });
 
   it('asks git about at most four session folders at a time', async () => {
-    const fx = historyFixture();
+    const fx = await historyFixture();
     const folders = Array.from({ length: 8 }, (_, n) => {
       const folder = path.join(fx.f.projectRoot, `area-${n}`);
       mkdirSync(folder);

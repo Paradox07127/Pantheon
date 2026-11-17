@@ -36,10 +36,10 @@ it('routes runtime, MCP and GitHub requests and streams runtime loss to a projec
   const headers = { Authorization: `Bearer ${daemon.token}`, 'Content-Type': 'application/json' };
   const ws = new WebSocket(daemon.url.replace('http:', 'ws:') + '/v1/events/ws');
   try {
-    const project = daemon.control.execute(
+    const project = (await daemon.control.execute(
       user,
       command(user.id, 'project.open', { name: 'Connections', roots: [projectRoot] }),
-    ) as Project;
+    )) as Project;
     const session = daemon.store.insert<Session>('sessions', {
       id: 'runtime-conversation',
       revision: 1,

@@ -14,7 +14,7 @@ import * as validation from '../../packages/control/dist/validation-executor.js'
 import { eventually, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -59,10 +59,10 @@ function validationResult(exit_code = 0): validation.ValidationResult {
 
 /** A task worker on an auto-merging project, whose acceptance is the only gate command. */
 async function taskWorker(definition: WorkflowDefinition) {
-  const f = workbenchFixture({ delay: 1 });
+  const f = await workbenchFixture({ delay: 1 });
   git(f.source, 'config', 'user.name', 'Source User');
   git(f.source, 'config', 'user.email', 'source@example.invalid');
-  const lead = f.create('Plan the export');
+  const lead = await f.create('Plan the export');
   await settle(f, lead);
   f.call('workflow.definition.set', {
     project_id: f.project.id,
@@ -160,7 +160,7 @@ it('runs the gate again when the project environment changed while the merge wai
     10000,
   );
   const project = f.store.must<Project>('projects', f.project.id);
-  f.call(
+  await f.call(
     'project.environment.set',
     {
       project_id: project.id,

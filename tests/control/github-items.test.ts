@@ -19,7 +19,7 @@ const auth = {
     ],
   },
 };
-function setup(remote = 'git@github.com:owner/project.git') {
+async function setup(remote = 'git@github.com:owner/project.git') {
   let items: unknown = [],
     detail: unknown = {},
     threads: unknown = {};
@@ -33,7 +33,7 @@ function setup(remote = 'git@github.com:owner/project.git') {
           exit_code: 0,
         },
   );
-  const f = fixture({ controlOptions: { localCommand: run, externalSources: [] } });
+  const f = await fixture({ controlOptions: { localCommand: run, externalSources: [] } });
   cleanups.push(() => f.close());
   execFileSync('git', ['init', '-q'], { cwd: f.projectRoot });
   if (remote) execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: f.projectRoot });
@@ -55,7 +55,7 @@ function setup(remote = 'git@github.com:owner/project.git') {
   };
 }
 /** A session whose worktree is on pt/feature, and one without a worktree that opened pull request 7. */
-function pullSessions(f: ReturnType<typeof setup>) {
+function pullSessions(f: Awaited<ReturnType<typeof setup>>) {
   git(f.projectRoot, 'commit', '--quiet', '--allow-empty', '-m', 'Start');
   const tree = path.join(f.root, 'feature-tree');
   git(f.projectRoot, 'worktree', 'add', '--quiet', '-b', 'pt/feature', tree);
@@ -98,7 +98,7 @@ const item = (number: number, updatedAt: string, extra = {}) => ({
 });
 
 it('lists open pull requests by latest update and summarizes their checks', async () => {
-  const f = setup();
+  const f = await setup();
   f.setItems([
     item(1, '2026-11-12T00:00:00Z', {
       statusCheckRollup: [{ conclusion: 'SUCCESS', status: 'COMPLETED' }],
@@ -142,7 +142,7 @@ it('lists open pull requests by latest update and summarizes their checks', asyn
 });
 
 it('keeps issue and pull request caches separate and expires them after sixty seconds', async () => {
-  const f = setup();
+  const f = await setup();
   let now = Date.now();
   vi.spyOn(f.store, 'now').mockImplementation(() => now);
   f.setItems([item(1, '2026-11-14T00:00:00Z')]);
@@ -158,13 +158,13 @@ it('keeps issue and pull request caches separate and expires them after sixty se
 
 it('returns no repository without an eligible origin and accepts the signed-in enterprise host', async () => {
   for (const remote of ['', 'https://gitlab.com/owner/project.git']) {
-    const f = setup(remote);
+    const f = await setup(remote);
     expect(await f.control.githubItems(user, f.project.id, 'issue')).toEqual({
       repo: null,
       items: [],
     });
   }
-  const f = setup('ssh://git@github.company/owner/project.git');
+  const f = await setup('ssh://git@github.company/owner/project.git');
   f.setAuth({
     stdout: JSON.stringify({
       hosts: {
@@ -187,7 +187,7 @@ it.each(['missing', 'timeout', 'signed_out'] as const)(
       missing: state === 'missing',
       timed_out: state === 'timeout',
     });
-    const f = fixture({ controlOptions: { localCommand: run, externalSources: [] } });
+    const f = await fixture({ controlOptions: { localCommand: run, externalSources: [] } });
     cleanups.push(() => f.close());
     execFileSync('git', ['init', '-q'], { cwd: f.projectRoot });
     execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/owner/project.git'], {
@@ -200,13 +200,13 @@ it.each(['missing', 'timeout', 'signed_out'] as const)(
 );
 
 it('rejects malformed GitHub output at the JSON boundary', async () => {
-  const f = setup();
+  const f = await setup();
   f.setItems([{ number: 'not a number' }]);
   await expect(f.control.githubItems(user, f.project.id, 'pr')).rejects.toThrow();
 });
 
 it('caps the list at thirty and omits absent authors and unconfigured checks', async () => {
-  const f = setup();
+  const f = await setup();
   f.setItems(
     Array.from({ length: 35 }, (_, index) =>
       item(index + 1, '2026-11-14T00:00:00Z', { author: null, statusCheckRollup: [] }),
@@ -219,7 +219,7 @@ it('caps the list at thirty and omits absent authors and unconfigured checks', a
 });
 
 it('adds check counts, the review decision, the head branch and the session to each pull request', async () => {
-  const f = setup();
+  const f = await setup();
   const { onBranch, opener } = pullSessions(f);
   f.setItems([
     item(7, '2026-11-14T00:00:00Z', {
@@ -270,7 +270,7 @@ it('adds check counts, the review decision, the head branch and the session to e
 });
 
 it('reads one pull request with mapped checks, unresolved review threads first and the session on its branch', async () => {
-  const f = setup();
+  const f = await setup();
   const { onBranch } = pullSessions(f);
   const url = 'https://github.com/owner/project/pull/8';
   f.setDetail({
@@ -394,7 +394,7 @@ it('reads one pull request with mapped checks, unresolved review threads first a
 });
 
 it('refuses the pull request detail without a GitHub repository', async () => {
-  const f = setup('');
+  const f = await setup('');
   await expect(f.control.githubPullDetail(user, f.project.id, 8)).rejects.toMatchObject({
     code: 'invalid_input',
   });

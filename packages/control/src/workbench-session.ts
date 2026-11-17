@@ -3,10 +3,12 @@ import { onDevice } from './remote-workspace.js';
 import { deviceHasLabel } from './devices.js';
 import { githubReference } from './github.js';
 import {
+  readMergeConditions,
   recordWorkflowGates,
   startSlot,
   taskWorkflow,
   waitBeforeMerge,
+  type ConditionAnswers,
 } from './workflow-engine.js';
 import {
   closeSync,
@@ -77,6 +79,7 @@ import {
 } from '@pantheon/protocol';
 import { defaultDesktopUserDataDirectory } from '@pantheon/protocol/paths';
 import {
+  gitFolderAsync,
   inside,
   insert,
   projectAccess,
@@ -142,7 +145,7 @@ import {
   stopTurn,
   unsnooze,
 } from './session.js';
-import { openUserTaskSession, userTaskChoice, overlaps } from './task-dispatch.js';
+import { openUserTaskSession, userTaskChoice, userTaskInput, overlaps } from './task-dispatch.js';
 import { kindOfPaths } from './task-kind.js';
 import {
   autoMerge,
@@ -428,6 +431,17 @@ export function addAttachment(
   return { id: attachmentId, name: fileName, mime, size: bytes.byteLength };
 }
 
+/** The session a reference names, refused when it belongs to another project. */
+function referencedSession(ctx: ControlContext, projectId: string, sessionId: string): Session {
+  const referenced = ctx.store.must<Session>('sessions', sessionId);
+  requireThat(
+    referenced.project_id === projectId,
+    'invalid_input',
+    'Referenced session belongs to another project',
+  );
+  return referenced;
+}
+
 /**
  * The attachments and skills a new turn carries. Attachments are copied into the session's
  * temporary directory: its sandbox denies reads of the data directory, and the temporary
@@ -440,12 +454,7 @@ export function turnExtras(
 ): Pick<SessionTurn, 'attachments' | 'skills' | 'refs' | 'reference_context'> {
   const summaries = input.refs?.map((ref) => {
     if (ref.kind !== 'session') return githubReference(ctx, session.project_id, ref);
-    const referenced = ctx.store.must<Session>('sessions', ref.id);
-    requireThat(
-      referenced.project_id === session.project_id,
-      'invalid_input',
-      'Referenced session belongs to another project',
-    );
+    const referenced = referencedSession(ctx, session.project_id, ref.id);
     const summary = buildHandoff(ctx, referenced).split('\n\n').slice(1).join('\n\n');
     return `[Pantheon] Referenced session ${referenced.id}:\n${summary}`;
   });
@@ -2350,7 +2359,12 @@ function gateOperationActive(session: Session): boolean {
 }
 
 /** The session's landing owner; recovery reaps gate processes recorded under its key. */
-function sessionOwner(ctx: ControlContext, session: Session, gateRunId?: string): LandingOwner {
+function sessionOwner(
+  ctx: ControlContext,
+  session: Session,
+  conditions: ConditionAnswers,
+  gateRunId?: string,
+): LandingOwner {
   return {
     key: `session-${session.id}`,
     session_id: session.id,
@@ -2369,7 +2383,7 @@ function sessionOwner(ctx: ControlContext, session: Session, gateRunId?: string)
       const current = ctx.store.must<Session>('sessions', session.id);
       if (gateRunId && (current.gate_run?.id !== gateRunId || current.gate_run.state !== 'running'))
         return;
-      recordWorkflowGates(ctx, current, kind, payload);
+      recordWorkflowGates(ctx, current, kind, payload, conditions);
       ctx.store.event(
         `session.${kind}`,
         ctx.store.must<Session>('sessions', session.id),
@@ -3158,10 +3172,17 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
     });
     return;
   }
+  const conditions = await readMergeConditions(ctx, session.id);
   const gateNow = () =>
-    gateCommands(ctx, ctx.store.must<Project>('projects', session.project_id), workspace, bound());
+    gateCommands(
+      ctx,
+      ctx.store.must<Project>('projects', session.project_id),
+      workspace,
+      bound(),
+      conditions,
+    );
   const commands = gateNow(),
-    sessionGate = sessionOwner(ctx, session),
+    sessionGate = sessionOwner(ctx, session, conditions),
     owner: LandingOwner = direct
       ? {
           ...sessionGate,
@@ -3209,7 +3230,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
             progress: { saved, save: saveProgress },
             beforeLand: () =>
               ctx.store.transaction(() => {
-                if (!waitBeforeMerge(ctx, bound())) return true;
+                if (!waitBeforeMerge(ctx, bound(), conditions)) return true;
                 // Read after the wait, which may bring the snoozed session back.
                 const current = bound();
                 ctx.store.update(
@@ -3387,21 +3408,31 @@ function sourceStateOf(status: GitResult): SourceState | null {
   return current && { branch: current.branch, clean: current.uncommitted === 0 };
 }
 
-/** Reads of the repository states a merge admits on; undefined when the state is not known. */
+/**
+ * Reads of the repository states a merge admits on, undefined when the state is not known, and
+ * the answers its steps' conditions start on.
+ */
 interface MergeReads {
   worktree: (workspace: Workspace) => WorktreeState | undefined;
   source: (workspace: Workspace) => SourceState | undefined;
+  conditions: ConditionAnswers;
 }
 
-/** Reads both repository states a merge of the workspace admits on, at once and asynchronously. */
-export async function readMergeStates(workspace: Workspace): Promise<MergeReads> {
+/** Reads both repository states a merge of the session's workspace admits on, and its conditions, at once and asynchronously. */
+export async function readMergeStates(
+  ctx: ControlContext,
+  sessionId: string,
+  workspace: Workspace,
+): Promise<MergeReads> {
   const source = workspace.source ?? workspace.path;
   // Admission reads both afresh; later display reads share these runs.
-  const [worktree, sourceState] = await Promise.all([
+  const [worktree, sourceState, conditions] = await Promise.all([
     readStatus(workspace.path, BRANCH_STATUS, workspace.id, Infinity).then(worktreeStateOf),
     readStatus(source, SOURCE_STATUS, workspace.id, Infinity).then(sourceStateOf),
+    readMergeConditions(ctx, sessionId),
   ]);
   return {
+    conditions,
     worktree: () => {
       requireThat(worktree, 'workspace_read_failed', 'Worktree status could not be read');
       return worktree;
@@ -3418,7 +3449,11 @@ export async function readMergeStates(workspace: Workspace): Promise<MergeReads>
 }
 
 /** Knows no repository state, so admission stops where it would read one. */
-const unreadMergeReads: MergeReads = { worktree: () => undefined, source: () => undefined };
+const unreadMergeReads: MergeReads = {
+  worktree: () => undefined,
+  source: () => undefined,
+  conditions: new Map(),
+};
 
 const MERGE_READ_MS = 2000;
 
@@ -3434,6 +3469,7 @@ const worktreeMergeReads = new Map<string, MergeStateRead<WorktreeState>>(),
   sourceMergeReads = new Map<string, MergeStateRead<SourceState>>();
 
 const cachedMergeReads: MergeReads = {
+  conditions: new Map(),
   worktree: (workspace) => worktreeMergeReads.get(workspace.id)?.state ?? undefined,
   source: (workspace) =>
     sourceMergeReads.get(workspace.source ?? workspace.path)?.state ?? undefined,
@@ -3515,7 +3551,7 @@ const MERGE_STATE_UNKNOWN = {
 function mergeBlockedReason(
   ctx: ControlContext,
   session: Session,
-  read: MergeReads,
+  read: Pick<MergeReads, 'worktree' | 'source'>,
 ): { code: string; message: string } | undefined {
   if (ctx.store.must<Workspace>('workspaces', session.workspace_id!).kind === 'in_place')
     return { code: 'invalid_state', message: NO_MERGE_GATE };
@@ -3602,7 +3638,7 @@ export function admitMerge(
       session.task?.lead_session_id ?? session.id,
     );
     const task = plan?.tasks.find((t) => t.id === binding.id);
-    if (plan && task) startSlot(ctx, plan, task, 'before_merge', session.id);
+    if (plan && task) startSlot(ctx, plan, task, 'before_merge', session.id, reads.conditions);
   }
   const next = ctx.store.update(
     'sessions',
@@ -3631,8 +3667,13 @@ export function admitMerge(
   return next;
 }
 
-/** session.gates.run's checks before git. */
-function gateRunRequest(ctx: ControlContext, p: Principal, c: Command) {
+/** session.gates.run's checks before git; conditions decide the before-merge command steps. */
+function gateRunRequest(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  conditions: ConditionAnswers,
+) {
   requireThat(p.role === 'user', 'permission_denied', 'Only user can run the session gates');
   const cause = c.command_id,
     input = inputSchemas['session.gates.run'].parse(c.input),
@@ -3653,6 +3694,7 @@ function gateRunRequest(ctx: ControlContext, p: Principal, c: Command) {
     ctx.store.must<Project>('projects', session.project_id),
     workspace,
     session,
+    conditions,
   );
   requireThat(configured?.length, 'invalid_state', 'No gate or acceptance commands are configured');
   const inWorktree = workflowPolicy(ctx, session.project_id).gate_runner === 'session';
@@ -3681,14 +3723,19 @@ type GateRunHead = { head: string; clean?: boolean } | null;
 
 /** Reads HEAD outside the transaction; a retry reads it with the status that tells it is clean. */
 function prepareGateRun(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
-  const { input, workspace } = gateRunRequest(ctx, p, c);
+  // Before the conditions are read, each conditional command step counts.
+  const { input, session, workspace } = gateRunRequest(ctx, p, c, new Map());
   const read: Promise<GateRunHead> = input.only_failed
     ? runGit(workspace.path, BRANCH_STATUS, undefined, true).then(worktreeStateOf)
     : runGit(workspace.path, HEAD_COMMIT, undefined, true).then((result) => {
         const head = headOf(result);
         return head === null ? null : { head };
       });
-  return read.then((worktree) => (ctx, p, c) => runSessionGates(ctx, p, c, worktree));
+  return Promise.all([read, readMergeConditions(ctx, session.id)]).then(
+    ([worktree, conditions]) =>
+      (ctx, p, c) =>
+        runSessionGates(ctx, p, c, worktree, conditions),
+  );
 }
 
 function runSessionGates(
@@ -3696,8 +3743,14 @@ function runSessionGates(
   p: Principal,
   c: Command,
   worktree: GateRunHead,
+  conditions: ConditionAnswers,
 ): Session {
-  const { cause, input, session, workspace, configured, running } = gateRunRequest(ctx, p, c);
+  const { cause, input, session, workspace, configured, running } = gateRunRequest(
+    ctx,
+    p,
+    c,
+    conditions,
+  );
   requireThat(worktree, 'workspace_read_failed', 'Worktree HEAD could not be read');
   let commands = configured;
   let previous: NonNullable<LandingItem['gate_results']> = [];
@@ -3754,7 +3807,7 @@ function runSessionGates(
       committed()
         ? checkGates(
             ctx,
-            sessionOwner(ctx, next, runId),
+            sessionOwner(ctx, next, conditions, runId),
             workspace,
             workspace.source ?? workspace.path,
             commands,
@@ -3816,9 +3869,11 @@ function prepareMerge(ctx: ControlContext, p: Principal, c: Command): Promise<Ha
   const blocked = mergeBlockedReason(ctx, session, unreadMergeReads);
   if (blocked && blocked !== MERGE_STATE_UNKNOWN)
     throw new DomainError(blocked.code, blocked.message);
-  return readMergeStates(ctx.store.must<Workspace>('workspaces', session.workspace_id!)).then(
-    (reads) => (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads),
-  );
+  return readMergeStates(
+    ctx,
+    session.id,
+    ctx.store.must<Workspace>('workspaces', session.workspace_id!),
+  ).then((reads) => (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads));
 }
 
 /**
@@ -3900,11 +3955,12 @@ function leadTaskMerge(
  */
 export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string, turnId: string): void {
   if (ctx.closing) return;
-  const candidate = autoMergeCandidate(ctx, sessionId, turnId);
+  // Before the conditions are read, each conditional command step counts.
+  const candidate = autoMergeCandidate(ctx, sessionId, turnId, new Map());
   if (!candidate) return;
   let reading = autoMergeReads.get(ctx);
   if (!reading) autoMergeReads.set(ctx, (reading = new Set()));
-  const work: Promise<void> = readMergeStates(candidate.workspace)
+  const work: Promise<void> = readMergeStates(ctx, sessionId, candidate.workspace)
     .then((reads) => {
       if (ctx.closing) return;
       mergeAfterTurn(ctx, sessionId, turnId, reads);
@@ -3932,6 +3988,7 @@ function autoMergeCandidate(
   ctx: ControlContext,
   sessionId: string,
   turnId: string,
+  conditions: ConditionAnswers,
 ): { session: Session; workspace: Workspace; reportedHead?: string } | undefined {
   const session = ctx.store.must<Session>('sessions', sessionId),
     plan = ctx.store.get<BoardPlan>('board_plans', session.id),
@@ -3961,7 +4018,11 @@ function autoMergeCandidate(
   }
   const project = ctx.store.must<Project>('projects', session.project_id),
     workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
-  if (!autoMerge(ctx, project) || !gateCommands(ctx, project, workspace, session)?.length) return;
+  if (
+    !autoMerge(ctx, project) ||
+    !gateCommands(ctx, project, workspace, session, conditions)?.length
+  )
+    return;
   return { session, workspace, ...(reported ? { reportedHead: direct!.reported_head! } : {}) };
 }
 
@@ -3974,7 +4035,7 @@ function mergeAfterTurn(
 ): void {
   try {
     ctx.store.transaction(() => {
-      const candidate = autoMergeCandidate(ctx, sessionId, turnId);
+      const candidate = autoMergeCandidate(ctx, sessionId, turnId, reads.conditions);
       if (!candidate) return;
       const { session, workspace, reportedHead } = candidate;
       // Commits after the report may belong to the lead's next task, so it reports again first.
@@ -4084,14 +4145,42 @@ function sessionStartOf(
   };
 }
 
-function sessionStart(
+/** The git answers opening a worktree session takes, read before its transaction. */
+export type SessionOpening = {
+  /** Whether the project's first root is itself the top level of a git checkout. */
+  git: boolean;
+  /** The runs of sessionStartRuns; a fork and a session in the project folder read none. */
+  start?: GitResult[];
+};
+
+/** Reads what openWorktreeSession takes from git; refuses at once a start the store refuses. */
+export function readSessionOpening(
   ctx: ControlContext,
   input: SessionStartInput,
-): SessionCreatePreview & { source_branch?: string } {
-  return sessionStartOf(
-    input,
-    sessionStartRuns(ctx, input).map(([cwd, args]) => runGit(cwd, args)),
+): Promise<SessionOpening> {
+  const root = ctx.store.must<Project>('projects', input.project_id).roots[0]!;
+  const runs = input.workspace === 'in_place' ? undefined : sessionStartRuns(ctx, input);
+  // A folder that is not a checkout has no start point to read; ticks may ask again every 50 ms.
+  return gitFolderAsync(root).then(async (git) =>
+    git && runs
+      ? {
+          git,
+          start: await Promise.all(runs.map(([cwd, args]) => runGit(cwd, args, undefined, true))),
+        }
+      : { git },
   );
+}
+
+/** The start point read before the transaction, once the store has checked its source again. */
+function checkedStart(
+  ctx: ControlContext,
+  input: SessionStartInput,
+  results: GitResult[] | undefined,
+) {
+  sessionStartRuns(ctx, input);
+  // A folder that is not a checkout reads no start point.
+  requireThat(results, 'invalid_input', 'Session start point could not be read');
+  return sessionStartOf(input, results);
 }
 
 export async function sessionCreatePreview(
@@ -4214,33 +4303,20 @@ function derivedTitle(text: string): string {
   return `${text.slice(0, end)}…`;
 }
 
-/** Opens a session in a new worktree of the project's first root and queues its first turn. */
-export function openWorktreeSession(
+/** openWorktreeSession's checks in the store alone. */
+function checkWorktreeSession(
   ctx: ControlContext,
   input: ReturnType<(typeof inputSchemas)['session.create']['parse']>,
-  cause: string,
-  fork?: {
-    source: Session;
-    workspace: Workspace;
-    /** The fork's checkpoint ref, written already under the ids the workspace and session get. */
-    ref: string;
-    workspace_id: string;
-    session_id: string;
-    before_turn_id?: string;
-    before_span_id?: string;
-    native_fork?: Session['native_fork'];
-  },
+  forkSource?: Session,
   principal: Pick<Principal, 'role' | 'session_id'> = { role: 'user' },
-  /** The title the worktree folder is named after, in place of the first message. */
-  name?: string,
-): Session {
+) {
   requireThat(
     input.workspace === 'in_place' || ctx.workspaceRoot !== undefined,
     'invalid_workspace',
     'A managed workspace root is required for worktree sessions',
   );
   const project = ctx.store.must<Project>('projects', input.project_id);
-  const { runtime: runtimeName, model, effort } = worktreeSessionChoice(ctx, input, !!fork);
+  const { runtime: runtimeName, model, effort } = worktreeSessionChoice(ctx, input, !!forkSource);
   checkPermissionMode(runtimeName, input.permission_mode, principal);
   if (input.fast) {
     requireThat(
@@ -4264,7 +4340,7 @@ export function openWorktreeSession(
     'Only the user can turn on ultracode, in a Claude session outside a board task',
   );
   if (input.backend !== undefined) backendProfile(ctx, runtimeName, input.backend);
-  const deviceId = input.device_id ?? fork?.source.device_id ?? 'local';
+  const deviceId = input.device_id ?? forkSource?.device_id ?? 'local';
   const board = input.task_id ? boardTask(ctx, project.id, input.task_id) : undefined;
   // The user folder has no checkpoint to push to a device and no merge to complete a task.
   requireThat(
@@ -4303,8 +4379,39 @@ export function openWorktreeSession(
       `A session on device ${deviceId} cannot use a backend, whose key would reach the device command line`,
     );
   }
+  return { project, runtimeName, model, effort, deviceId, board };
+}
+
+/** Opens a session in a new worktree of the project's first root and queues its first turn. */
+export function openWorktreeSession(
+  ctx: ControlContext,
+  input: ReturnType<(typeof inputSchemas)['session.create']['parse']>,
+  cause: string,
+  opening: SessionOpening,
+  fork?: {
+    source: Session;
+    workspace: Workspace;
+    /** The fork's checkpoint ref, written already under the ids the workspace and session get. */
+    ref: string;
+    workspace_id: string;
+    session_id: string;
+    before_turn_id?: string;
+    before_span_id?: string;
+    native_fork?: Session['native_fork'];
+  },
+  principal: Pick<Principal, 'role' | 'session_id'> = { role: 'user' },
+  /** The title the worktree folder is named after, in place of the first message. */
+  name?: string,
+): Session {
+  const { project, runtimeName, model, effort, deviceId, board } = checkWorktreeSession(
+    ctx,
+    input,
+    fork?.source,
+    principal,
+  );
   // A fork starts from its checkpoint and keeps the source's branch, so it reads no start point.
-  const start = input.workspace === 'in_place' || fork ? undefined : sessionStart(ctx, input);
+  const start =
+    input.workspace === 'in_place' || fork ? undefined : checkedStart(ctx, input, opening.start);
   const registered =
     input.workspace === 'in_place'
       ? registerInPlaceWorkspace(ctx, { project_id: project.id, cwd: project.roots[0]! }, cause)
@@ -4322,6 +4429,7 @@ export function openWorktreeSession(
             ...(fork ? { id: fork.workspace_id } : {}),
           },
           cause,
+          opening.git,
         );
   let workspace = start?.source_branch
     ? ctx.store.update(
@@ -4598,6 +4706,7 @@ function prepareFork(ctx: ControlContext, p: Principal, c: Command): Promise<Han
   const ref = checkpointRef({ id: ids.workspace_id }, ids.session_id, 'fork');
   return (async () => {
     const refs = listed ? await checkpointCommits(request) : new Map<string, string>();
+    const git = await gitFolderAsync(request.workspace.source!);
     const point = forkPoint(ctx, request, refs);
     await forkCheckpoint(request.workspace, ref, point.checkpoint);
     return (ctx: ControlContext, p: Principal, c: Command) => {
@@ -4619,7 +4728,7 @@ function prepareFork(ctx: ControlContext, p: Principal, c: Command): Promise<Han
         'conflict',
         'The source session moved while its files were frozen; fork it again',
       );
-      return forkSession(ctx, c, current, again.before_turn_id, { ref, ...ids });
+      return forkSession(ctx, c, current, again.before_turn_id, { ref, ...ids }, git);
     };
   })();
 }
@@ -4630,6 +4739,7 @@ function forkSession(
   { input, source, workspace, native_fork }: ForkRequest,
   beforeTurnId: string | undefined,
   frozen: { ref: string; workspace_id: string; session_id: string },
+  git: boolean,
 ): Session {
   const moved = input.runtime !== undefined && input.runtime !== source.runtime;
   const session = openWorktreeSession(
@@ -4651,6 +4761,7 @@ function forkSession(
       refs: input.refs,
     },
     c.command_id,
+    { git },
     {
       source,
       workspace,
@@ -4676,7 +4787,10 @@ function forkSession(
 
 /** The session commands whose git runs before their transaction, through prepareSessionCommand. */
 export const isPreparedSessionCommand = (type: string): boolean =>
-  type === 'session.merge' || type === 'session.fork' || type === 'session.gates.run';
+  type === 'session.create' ||
+  type === 'session.merge' ||
+  type === 'session.fork' ||
+  type === 'session.gates.run';
 
 /**
  * Refuses at once what the store refuses, then reads or writes the command's git outside the
@@ -4687,8 +4801,34 @@ export function prepareSessionCommand(
   p: Principal,
   c: Command,
 ): Promise<Handler> {
+  if (c.type === 'session.create') return prepareCreate(ctx, p, c);
   if (c.type === 'session.merge') return prepareMerge(ctx, p, c);
   return c.type === 'session.fork' ? prepareFork(ctx, p, c) : prepareGateRun(ctx, p, c);
+}
+
+function createInput(ctx: ControlContext, p: Principal, c: Command) {
+  requireThat(p.role === 'user', 'permission_denied', 'Only user can create a session');
+  const input = inputSchemas['session.create'].parse(c.input);
+  projectAccess(ctx, p, input.project_id, c.type);
+  revision(ctx, c);
+  return input;
+}
+
+/** Refuses at once what the store refuses, then reads the start point; the handler checks again. */
+function prepareCreate(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  const input = createInput(ctx, p, c),
+    opened = input.task_id ? userTaskInput(ctx, input) : input;
+  checkWorktreeSession(ctx, opened, undefined, input.task_id ? undefined : p);
+  for (const ref of input.refs ?? [])
+    if (ref.kind === 'session') referencedSession(ctx, input.project_id, ref.id);
+  return readSessionOpening(ctx, opened).then(
+    (opening) => (ctx: ControlContext, p: Principal, c: Command) => {
+      const input = createInput(ctx, p, c);
+      return input.task_id
+        ? openUserTaskSession(ctx, input, c.command_id, opening)
+        : openWorktreeSession(ctx, input, c.command_id, opening, undefined, p);
+    },
+  );
 }
 
 function commentSession(ctx: ControlContext, sessionId: string): Session {
@@ -4752,16 +4892,6 @@ export const workbenchSessionHandlers: Handlers = {
     ctx.store.remove('session_comments', comment.id, comment.revision);
     ctx.store.event('session.comment_deleted', session, session.project_id, comment, c.command_id);
     return comment;
-  },
-  'session.create': (ctx, p, c) => {
-    requireThat(p.role === 'user', 'permission_denied', 'Only user can create a session');
-    const cause = c.command_id,
-      input = inputSchemas['session.create'].parse(c.input);
-    projectAccess(ctx, p, input.project_id, c.type);
-    revision(ctx, c);
-    return input.task_id
-      ? openUserTaskSession(ctx, input, cause)
-      : openWorktreeSession(ctx, input, cause, undefined, p);
   },
   'session.rename': (ctx, p, c) => {
     requireThat(p.role === 'user', 'permission_denied', 'Only user can rename a session');

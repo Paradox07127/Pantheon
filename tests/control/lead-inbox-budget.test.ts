@@ -3,7 +3,7 @@ import type { BoardPlan, LeadNote, Principal, Session, SessionTurn } from '@pant
 import { settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 
 const sessionOf = (f: Fixture, sessionId: string, role: 'lead' | 'worker'): Principal => ({
   id: `session:${sessionId}`,
@@ -47,10 +47,10 @@ const planOf = (f: Fixture, leadId: string) => f.store.must<BoardPlan>('board_pl
 
 /** A settled lead with a one-task plan and the settled session of that task, its inbox emptied of the note on that session. */
 async function leadWithTask(f: Fixture) {
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   writePlan(f, lead.id);
-  const worker = f.call<Session>('session.create', {
+  const worker = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Build it',
@@ -101,7 +101,7 @@ function setInbox(f: Fixture, leadId: string, inbox: LeadNote[]) {
 }
 
 it('lists the notes past the digest budget by id only and says how to read them', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   for (let index = 0; index < 30; index++)
     report(f, worker.id, `Risk ${String(index).padStart(2, '0')} ${'x'.repeat(380)}`);
@@ -121,7 +121,7 @@ it('lists the notes past the digest budget by id only and says how to read them'
 });
 
 it('cuts a long note in the digest and names the id that reads it whole', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   const text = `Start ${'y'.repeat(1200)} end`;
   setInbox(f, lead.id, [
@@ -135,7 +135,7 @@ it('cuts a long note in the digest and names the id that reads it whole', async 
 });
 
 it('still lists a stored note that has no id', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   setInbox(f, lead.id, [
     { at: 1, session_id: worker.id, task_id: 'a', kind: 'risk', text: 'An old note' },
@@ -145,7 +145,7 @@ it('still lists a stored note that has no id', async () => {
 });
 
 it('reads a note back by id after the inbox is taken, for the lead that owns it only', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   report(f, worker.id, 'The export format may change');
   const [note] = planOf(f, lead.id).inbox;
@@ -160,7 +160,7 @@ it('reads a note back by id after the inbox is taken, for the lead that owns it 
   expect(planOf(f, lead.id).inbox).toEqual([]);
   expect(readNote(f, lead.id, note!.id!).text).toBe('The export format may change');
 
-  const other = f.create('Plan the import feature');
+  const other = await f.create('Plan the import feature');
   await settle(f, other);
   writePlan(f, other.id);
   expect(() => readNote(f, other.id, note!.id!)).toThrow(
@@ -177,7 +177,7 @@ it('reads a note back by id after the inbox is taken, for the lead that owns it 
 });
 
 it("leaves the lead a note without waking it when the user writes to a task session, and not for the lead's own message", async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   const leadTurns = f.turns(lead.id).length;
 
@@ -218,7 +218,7 @@ it("leaves the lead a note without waking it when the user writes to a task sess
 });
 
 it('keeps the whole digest within its budget, with one closing line for the notes it leaves out', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { lead, worker } = await leadWithTask(f);
   setInbox(f, lead.id, [
     { at: 1, session_id: worker.id, task_id: 'a', kind: 'risk', text: `Old ${'o'.repeat(500)}` },

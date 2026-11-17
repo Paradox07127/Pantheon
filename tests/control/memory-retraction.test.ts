@@ -2,12 +2,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { MemoryRecord } from '@pantheon/domain';
 import { fixture, user } from '../helpers.js';
 
-const fixtures: ReturnType<typeof fixture>[] = [];
+const fixtures: Awaited<ReturnType<typeof fixture>>[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
 });
-function setup() {
-  const f = fixture();
+async function setup() {
+  const f = await fixture();
   fixtures.push(f);
   const save = (key: string, dependencies: string[] = [], commit = true) => {
     const draft = f.call<MemoryRecord>('memory.propose', {
@@ -35,7 +35,7 @@ function setup() {
 }
 
 it('returns the whole retraction cascade and restores original records across a control restart', async () => {
-  const { f, root, child, grandchild, retract, undo } = setup();
+  const { f, root, child, grandchild, retract, undo } = await setup();
   const unrelated = f.call<MemoryRecord>('memory.propose', {
     project_id: f.project.id,
     key: 'unrelated',
@@ -76,16 +76,16 @@ it('returns the whole retraction cascade and restores original records across a 
   expect(() => undo()).toThrowError(expect.objectContaining({ code: 'memory_not_retracted' }));
 });
 
-it('restores a retracted draft as a draft', () => {
-  const { f, save } = setup();
+it('restores a retracted draft as a draft', async () => {
+  const { f, save } = await setup();
   const draft = save('draft', [], false);
   const archived = f.call<MemoryRecord>('memory.archive', { memory_id: draft.id }, draft.revision);
   f.call('memory.undo_retraction', { memory_id: draft.id }, archived.revision);
   expect(f.store.must<MemoryRecord>('memory_records', draft.id)).toMatchObject({ state: 'draft' });
 });
 
-it('refuses undo after a newer committed version even if that version was archived', () => {
-  const { f, save, root, retract, undo } = setup();
+it('refuses undo after a newer committed version even if that version was archived', async () => {
+  const { f, save, root, retract, undo } = await setup();
   retract();
   const replacement = save(root.key);
   f.call('memory.archive', { memory_id: replacement.id }, replacement.revision);
@@ -95,8 +95,8 @@ it('refuses undo after a newer committed version even if that version was archiv
   expect(f.store.must<MemoryRecord>('memory_records', root.id).state).toBe('archived');
 });
 
-it('refuses an undo that would push confirmed decisions past the context budget', () => {
-  const { f } = setup();
+it('refuses an undo that would push confirmed decisions past the context budget', async () => {
+  const { f } = await setup();
   const decide = (key: string) => {
     const draft = f.call<MemoryRecord>('memory.propose', {
       project_id: f.project.id,
@@ -118,15 +118,15 @@ it('refuses an undo that would push confirmed decisions past the context budget'
 
 it.each(['expired', 'superseded', 'stale'] as const)(
   'refuses undo of a record archived as %s',
-  (reason) => {
-    const { f, root, undo } = setup();
+  async (reason) => {
+    const { f, root, undo } = await setup();
     f.store.update('memory_records', { ...root, state: 'archived', reason }, root.revision);
     expect(() => undo()).toThrowError(expect.objectContaining({ code: 'memory_not_retracted' }));
   },
 );
 
-it('leaves edited and newly superseded dependents alone and reports each reason', () => {
-  const { f, save, root, child, grandchild, retract, undo } = setup();
+it('leaves edited and newly superseded dependents alone and reports each reason', async () => {
+  const { f, save, root, child, grandchild, retract, undo } = await setup();
   retract();
   const archived = f.store.must<MemoryRecord>('memory_records', child.id);
   const edited = f.store.update(
@@ -148,8 +148,8 @@ it('leaves edited and newly superseded dependents alone and reports each reason'
 
 it.each(['archive', 'undo'] as const)(
   'rolls back a failure in the middle of memory %s including journal events and jobs',
-  (operation) => {
-    const { f, retract, undo } = setup();
+  async (operation) => {
+    const { f, retract, undo } = await setup();
     if (operation === 'undo') retract();
     const records = f.store.list('memory_records');
     const events = f.store.events(0, f.project.id);

@@ -3,13 +3,13 @@ import type { Improvement, Session } from '@pantheon/domain';
 import { prepareMemoryDelivery, finishMemoryDelivery } from '../../packages/control/dist/memory.js';
 import { fixture, user } from '../helpers.js';
 
-const fixtures: ReturnType<typeof fixture>[] = [];
+const fixtures: Awaited<ReturnType<typeof fixture>>[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) await f.close();
 });
 
-it('lists scoped sessions using instruction matching and acknowledged experience delivery', () => {
-  const f = fixture();
+it('lists scoped sessions using instruction matching and acknowledged experience delivery', async () => {
+  const f = await fixture();
   fixtures.push(f);
   const improvement = f.store.insert<Improvement>('improvements', {
     id: 'scoped-rule',

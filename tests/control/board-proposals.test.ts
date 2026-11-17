@@ -9,7 +9,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 function failure(fn: () => unknown): { code?: string; message?: string } {
   try {
@@ -21,9 +21,9 @@ function failure(fn: () => unknown): { code?: string; message?: string } {
 }
 
 /** A fixture whose clock moves only when the test moves it. */
-function setup() {
+async function setup() {
   const clock = { now: 1_700_000_000_000 };
-  const f = fixture({
+  const f = await fixture({
     adapter: new FixtureAdapter(100),
     managedWorkspaces: true,
     now: () => clock.now,
@@ -185,8 +185,8 @@ const needs = (f: Fixture) =>
     .needsYou(user, f.project.id)
     .items.filter((item) => item.kind === 'board.plan.proposal');
 
-it('holds a lead proposal without changing tasks and lists it in both plan views and needs-you', () => {
-  const { f, clock } = setup();
+it('holds a lead proposal without changing tasks and lists it in both plan views and needs-you', async () => {
+  const { f, clock } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const before = planOf(f, lead);
@@ -217,8 +217,8 @@ it('holds a lead proposal without changing tasks and lists it in both plan views
   ]);
 });
 
-it('refuses users and other sessions proposing or withdrawing a lead proposal', () => {
-  const { f } = setup();
+it('refuses users and other sessions proposing or withdrawing a lead proposal', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const other = leadOf(f),
@@ -233,8 +233,8 @@ it('refuses users and other sessions proposing or withdrawing a lead proposal', 
   expect(planOf(f, lead).pending_proposals![0]!.status).toBe('pending');
 });
 
-it('validates proposal ops and the base version before storing anything', () => {
-  const { f } = setup();
+it('validates proposal ops and the base version before storing anything', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   for (const [ops, code] of [
@@ -251,8 +251,8 @@ it('validates proposal ops and the base version before storing anything', () => 
   expect(planOf(f, lead).pending_proposals ?? []).toEqual([]);
 });
 
-it('refuses the ninth pending proposal and frees a place when one is withdrawn', () => {
-  const { f } = setup();
+it('refuses the ninth pending proposal and frees a place when one is withdrawn', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const ids = Array.from({ length: 8 }, () => propose(f, lead));
@@ -261,8 +261,8 @@ it('refuses the ninth pending proposal and frees a place when one is withdrawn',
   expect(() => propose(f, lead)).not.toThrow();
 });
 
-it('withdraws only pending proposals and keeps the resolved record in the lead view', () => {
-  const { f, clock } = setup();
+it('withdraws only pending proposals and keeps the resolved record in the lead view', async () => {
+  const { f, clock } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const proposalId = propose(f, lead);
@@ -282,8 +282,8 @@ it('withdraws only pending proposals and keeps the resolved record in the lead v
   expect(failure(() => decide(f, lead, proposalId, 'accept')).code).toBe('not_found');
 });
 
-it('accepts with lead edit events, version and task contract notifications and tells the lead', () => {
-  const { f } = setup();
+it('accepts with lead edit events, version and task contract notifications and tells the lead', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const worker = insertSession(f, {
@@ -310,8 +310,8 @@ it('accepts with lead edit events, version and task contract notifications and t
   expect(failure(() => decide(f, lead, proposalId, 'accept')).code).toBe('not_found');
 });
 
-it('accepts changed ops in place of the proposal and includes their summary in the note', () => {
-  const { f } = setup();
+it('accepts changed ops in place of the proposal and includes their summary in the note', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const proposalId = propose(f, lead);
@@ -320,8 +320,8 @@ it('accepts changed ops in place of the proposal and includes their summary in t
   expect(woken(f, lead)).toContain('set title Streaming exports of task api');
 });
 
-it("applies a user-adjusted acceptance under the user's edit rules", () => {
-  const { f } = setup();
+it("applies a user-adjusted acceptance under the user's edit rules", async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const docs = { ...TASKS[0], id: 'docs', source: ['Also document the export format'] };
@@ -348,8 +348,8 @@ it("applies a user-adjusted acceptance under the user's edit rules", () => {
   expect(planOf(f, lead).tasks[0]!.model).toBe('m2');
 });
 
-it('leaves a proposal pending when later plan changes make its ops invalid', () => {
-  const { f } = setup();
+it('leaves a proposal pending when later plan changes make its ops invalid', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const proposalId = propose(f, lead);
@@ -360,8 +360,8 @@ it('leaves a proposal pending when later plan changes make its ops invalid', () 
   expect(needs(f)).toHaveLength(1);
 });
 
-it('accepts a proposal against the current plan when its ops still apply', () => {
-  const { f } = setup();
+it('accepts a proposal against the current plan when its ops still apply', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const proposalId = propose(f, lead);
@@ -370,8 +370,8 @@ it('accepts a proposal against the current plan when its ops still apply', () =>
   expect(planOf(f, lead).tasks.map((task) => task.title)).toEqual(['Export API', 'Downloads']);
 });
 
-it('rejects without changing the plan and delivers the user reason to the lead', () => {
-  const { f } = setup();
+it('rejects without changing the plan and delivers the user reason to the lead', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const before = planOf(f, lead),
@@ -390,8 +390,8 @@ it('rejects without changing the plan and delivers the user reason to the lead',
   expect(failure(() => decide(f, lead, proposalId, 'reject')).code).toBe('not_found');
 });
 
-it('refuses session decisions and rejects ops accompanying a rejection', () => {
-  const { f } = setup();
+it('refuses session decisions and rejects ops accompanying a rejection', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const proposalId = propose(f, lead);
@@ -404,8 +404,8 @@ it('refuses session decisions and rejects ops accompanying a rejection', () => {
   expect(planOf(f, lead).pending_proposals![0]!.status).toBe('pending');
 });
 
-it('shows proposed dependencies once, removes them on rejection and makes them plain on acceptance', () => {
-  const { f } = setup();
+it('shows proposed dependencies once, removes them on rejection and makes them plain on acceptance', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   const edges = () => {
@@ -426,8 +426,8 @@ it('shows proposed dependencies once, removes them on rejection and makes them p
   expect(edges()).toEqual({ plan: [edge], proposed: [] });
 });
 
-it('does not draw dependencies for tasks only a proposal adds and lists only existing touched tasks', () => {
-  const { f } = setup();
+it('does not draw dependencies for tasks only a proposal adds and lists only existing touched tasks', async () => {
+  const { f } = await setup();
   const lead = leadOf(f);
   writePlan(f, lead);
   propose(f, lead, [

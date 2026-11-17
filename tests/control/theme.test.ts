@@ -56,14 +56,17 @@ const builtIns: Record<string, ThemeInput> = {
   ),
 };
 
-function themes() {
+async function themes() {
   const configDir = mkdtempSync(path.join(tmpdir(), 'pantheon-theme-config-'));
-  const f = fixture({ managedWorkspaces: true, controlOptions: { userConfigDir: configDir } });
+  const f = await fixture({
+    managedWorkspaces: true,
+    controlOptions: { userConfigDir: configDir },
+  });
   cleanups.push(async () => {
     await f.close();
     rmSync(configDir, { recursive: true, force: true });
   });
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Make the app look like paper',
@@ -92,15 +95,15 @@ function themes() {
   return { ...f, configDir, session, lead, call, set, active, applied, rows };
 }
 
-it('keeps the applied theme with the themes it saved, not in the shared user configuration', () => {
-  const f = themes();
+it('keeps the applied theme with the themes it saved, not in the shared user configuration', async () => {
+  const f = await themes();
   f.set(paper);
   expect(f.active()).toBe('paper');
   expect(existsSync(path.join(f.configDir, 'config.json'))).toBe(false);
 });
 
-it('saves and applies a theme a session sets and returns its warnings', () => {
-  const f = themes();
+it('saves and applies a theme a session sets and returns its warnings', async () => {
+  const f = await themes();
   const receipt = f.set(paper);
   expect(receipt).toEqual({ theme_id: 'paper', warnings: deriveTheme(paper).warnings });
   expect(f.rows()).toBe(1);
@@ -108,8 +111,8 @@ it('saves and applies a theme a session sets and returns its warnings', () => {
   expect(f.applied()).toEqual([{ theme_id: 'paper', by_session_id: f.session.id }]);
 });
 
-it('refuses a theme whose contrast is too low and lists every blocking line', () => {
-  const f = themes();
+it('refuses a theme whose contrast is too low and lists every blocking line', async () => {
+  const f = await themes();
   f.set(paper);
   const { blocking } = deriveTheme(faint);
   expect(blocking.length).toBeGreaterThan(1);
@@ -125,16 +128,16 @@ it('refuses a theme whose contrast is too low and lists every blocking line', ()
   expect(f.applied()).toHaveLength(1);
 });
 
-it('refuses a backdrop that carries a script', () => {
-  const f = themes();
+it('refuses a backdrop that carries a script', async () => {
+  const f = await themes();
   expect(() =>
     f.set({ ...paper, backdrop: { svg: '<svg><script>alert(1)</script></svg>' } }),
   ).toThrow('backdrop contains <script');
   expect(f.rows()).toBe(0);
 });
 
-it('names the theme it replaced, and applying that one again undoes the change', () => {
-  const f = themes();
+it('names the theme it replaced, and applying that one again undoes the change', async () => {
+  const f = await themes();
   f.set(paper);
   f.set(night);
   expect(f.applied().at(-1)).toEqual({
@@ -147,8 +150,8 @@ it('names the theme it replaced, and applying that one again undoes the change',
   expect(f.applied().at(-1)).toEqual({ theme_id: 'paper', previous_theme_id: 'night' });
 });
 
-it('goes back to the default theme and lets only the user apply or delete', () => {
-  const f = themes();
+it('goes back to the default theme and lets only the user apply or delete', async () => {
+  const f = await themes();
   f.set(paper);
   f.call('theme.apply', { theme_id: null });
   expect(f.active()).toBeNull();
@@ -165,8 +168,8 @@ it('goes back to the default theme and lets only the user apply or delete', () =
   expect(f.rows()).toBe(1);
 });
 
-it('deleting the applied theme goes back to the default', () => {
-  const f = themes();
+it('deleting the applied theme goes back to the default', async () => {
+  const f = await themes();
   f.set(paper);
   f.call('theme.delete', { theme_id: 'paper' });
   expect(f.rows()).toBe(0);
@@ -174,8 +177,8 @@ it('deleting the applied theme goes back to the default', () => {
   expect(f.applied().at(-1)).toEqual({ theme_id: null, previous_theme_id: 'paper' });
 });
 
-it('lists the saved themes with swatches and reads one with its CSS', () => {
-  const f = themes();
+it('lists the saved themes with swatches and reads one with its CSS', async () => {
+  const f = await themes();
   f.set(paper);
   const glass = { blur: 12, tint: '#ffffff', opacity: 0.5 };
   const svg =
@@ -223,8 +226,8 @@ it('lists the saved themes with swatches and reads one with its CSS', () => {
   });
 });
 
-it('lists the four built-in themes before the saved ones, each with contrast enough to apply', () => {
-  const f = themes();
+it('lists the four built-in themes before the saved ones, each with contrast enough to apply', async () => {
+  const f = await themes();
   f.set(paper);
   expect(f.control.themeList(user).themes.map((theme) => [theme.id, theme.built_in])).toEqual([
     ['builtin-travertine', true],
@@ -245,8 +248,8 @@ it('lists the four built-in themes before the saved ones, each with contrast eno
   }
 });
 
-it('applies a built-in theme by its id and moves on from it like a saved one', () => {
-  const f = themes();
+it('applies a built-in theme by its id and moves on from it like a saved one', async () => {
+  const f = await themes();
   f.set(paper);
   f.call('theme.apply', { theme_id: 'builtin-dusk' });
   expect(f.active()).toBe('builtin-dusk');
@@ -260,8 +263,8 @@ it('applies a built-in theme by its id and moves on from it like a saved one', (
   expect(f.rows()).toBe(1);
 });
 
-it('refuses to delete a built-in theme', () => {
-  const f = themes();
+it('refuses to delete a built-in theme', async () => {
+  const f = await themes();
   f.call('theme.apply', { theme_id: 'builtin-lapis' });
   expect(() => f.call('theme.delete', { theme_id: 'builtin-lapis' })).toThrowError(
     expect.objectContaining({
@@ -273,8 +276,8 @@ it('refuses to delete a built-in theme', () => {
   expect(f.control.themeGet(user, 'builtin-lapis').label).toBe('Lapis');
 });
 
-it('never gives a saved theme the id of a built-in one', () => {
-  const f = themes();
+it('never gives a saved theme the id of a built-in one', async () => {
+  const f = await themes();
   const ids = ['Dusk', 'Builtin Dusk', 'Builtin', 'Builtin'].map(
     (label) => f.set({ ...paper, label }).theme_id,
   );

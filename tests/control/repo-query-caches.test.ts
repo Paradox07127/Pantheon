@@ -9,7 +9,7 @@ import { user } from '../helpers.js';
 const DAY = 24 * 60 * 60 * 1000;
 
 /** A session whose worktree is on the branch feature, made from main's tip. */
-function sessionWorktree(f: ReturnType<typeof workbenchFixture>) {
+function sessionWorktree(f: Awaited<ReturnType<typeof workbenchFixture>>) {
   const tree = path.join(f.root, 'session-tree');
   git(f.source, 'worktree', 'add', '--quiet', '-b', 'feature', tree);
   const workspace = f.store.insert<Workspace>('workspaces', {
@@ -42,7 +42,7 @@ function commitFile(cwd: string, file: string, content: string, message: string)
 }
 
 it('reads the timeline, blame and history of a HEAD with 120 000 commits', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const parent = git(f.source, 'rev-parse', 'HEAD'),
     start = Math.floor((Date.now() - 3 * 365 * DAY) / 1000);
   const commits = Array.from(
@@ -71,7 +71,7 @@ it('reads the timeline, blame and history of a HEAD with 120 000 commits', async
 });
 
 it('counts a session worktree ahead again after it commits', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { tree } = sessionWorktree(f);
   const ahead = async () =>
     (await f.control.repoWorktrees(user, f.project.id)).find(
@@ -84,7 +84,7 @@ it('counts a session worktree ahead again after it commits', async () => {
 });
 
 it('blames the commit HEAD moved to and the lines a session worktree changed since', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { tree, session } = sessionWorktree(f);
   const input = { project_id: f.project.id, path: 'answer.txt' };
   const first = git(f.source, 'rev-parse', 'HEAD');
@@ -105,7 +105,7 @@ it('blames the commit HEAD moved to and the lines a session worktree changed sin
 });
 
 it('names the session of a merge recorded after the log was first read', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const { tree, session } = sessionWorktree(f);
   const first = git(f.source, 'rev-parse', 'HEAD');
   const second = commitFile(f.source, 'answer.txt', 'base\nsecond\n', 'Second answer line');

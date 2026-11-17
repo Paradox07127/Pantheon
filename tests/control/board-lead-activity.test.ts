@@ -10,7 +10,7 @@ import type {
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadPrincipal = (f: Fixture, sessionId: string): Principal => ({
@@ -43,7 +43,7 @@ const leadRow = (f: Fixture, leadId: string) =>
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
   dispatchEveryTier(f);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await settle(f, lead);
   f.call(
     'board.plan.update',
@@ -67,7 +67,7 @@ const send = (f: Fixture, sessionId: string, input: string) =>
   f.call('session.send', { session_id: sessionId, input }, current(f, sessionId).revision);
 
 it('shows an idle lead, then one whose turn runs, as its activity', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   expect(leadRow(f, lead.id).activity).toMatchObject({
     phase: 'idle',
@@ -83,7 +83,7 @@ it('shows an idle lead, then one whose turn runs, as its activity', async () => 
 });
 
 it('shows a lead whose turn waits for an approval as waiting for it', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   send(f, lead.id, script({ ask: { tool: 'Bash', input: { command: 'pnpm test' } } }));
   await eventually(
@@ -104,7 +104,7 @@ it('shows a lead whose turn waits for an approval as waiting for it', async () =
 });
 
 it('gives a task retrospective its record id', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   const row = f.store.insert<Retrospective>('retrospectives', {
     id: 'retrospective-a',
@@ -125,7 +125,7 @@ it('gives a task retrospective its record id', async () => {
 });
 
 it('counts the task places in use against the limit dispatch uses', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('a', { goal: script({ hang: true }) }),
     task('b', { goal: script({ hang: true }) }),

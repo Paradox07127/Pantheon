@@ -3,12 +3,12 @@ import type { Principal, Session, SessionTurn } from '@pantheon/domain';
 import { settle } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 
 async function setup() {
-  const f = workbenchFixture();
-  const session = f.create('Plot the data');
+  const f = await workbenchFixture();
+  const session = await f.create('Plot the data');
   await settle(f, session);
   const send = vi.spyOn(f.adapter, 'send');
   const next = async (input: string, app?: { server: string }) => {

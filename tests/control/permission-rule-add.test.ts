@@ -6,9 +6,9 @@ import { improvementSignals } from '../../packages/control/dist/improvement-sign
 import { user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
-it('adds a rule from a finding once, lists it, suppresses the finding and answers later requests', () => {
-  const f = workbenchFixture();
-  const session = f.create();
+it('adds a rule from a finding once, lists it, suppresses the finding and answers later requests', async () => {
+  const f = await workbenchFixture();
+  const session = await f.create();
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const request = (request_id: string) => {
     const event: Extract<AgentEvent, { kind: 'permission.requested' }> = {
@@ -78,9 +78,9 @@ it('adds a rule from a finding once, lists it, suppresses the finding and answer
 
 it.each(['lead', 'worker'] as const)(
   'refuses a %s session adding a project permission rule',
-  (role) => {
-    const f = workbenchFixture();
-    const session = f.create();
+  async (role) => {
+    const f = await workbenchFixture();
+    const session = await f.create();
     const principal: Principal = {
       id: `session:${session.id}`,
       role,

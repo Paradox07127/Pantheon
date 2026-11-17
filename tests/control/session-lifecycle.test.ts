@@ -88,7 +88,7 @@ function controlledAdapter() {
 }
 
 let opened = 0;
-function open(f: ReturnType<typeof fixture>) {
+function open(f: Awaited<ReturnType<typeof fixture>>) {
   return f.store.insert<Session>('sessions', {
     id: `conversation-${++opened}`,
     revision: 1,
@@ -101,7 +101,7 @@ function open(f: ReturnType<typeof fixture>) {
 }
 
 function send(
-  f: ReturnType<typeof fixture>,
+  f: Awaited<ReturnType<typeof fixture>>,
   session: Session,
   input = 'Continue the conversation',
   type: 'session.send' | 'session.steer' = 'session.send',
@@ -113,11 +113,11 @@ function send(
   );
 }
 
-const contextOf = (f: ReturnType<typeof fixture>) =>
+const contextOf = (f: Awaited<ReturnType<typeof fixture>>) =>
   (f.control as unknown as { ctx: ControlContext }).ctx;
 
 /** A lead session with a plan whose inbox holds one worker report. */
-function leadWithReport(f: ReturnType<typeof fixture>) {
+function leadWithReport(f: Awaited<ReturnType<typeof fixture>>) {
   const lead = open(f),
     ctx = contextOf(f);
   const plan = f.store.insert<BoardPlan>('board_plans', {
@@ -147,12 +147,12 @@ function leadWithReport(f: ReturnType<typeof fixture>) {
   return lead;
 }
 
-const inbox = (f: ReturnType<typeof fixture>, leadId: string) =>
+const inbox = (f: Awaited<ReturnType<typeof fixture>>, leadId: string) =>
   f.store.must<BoardPlan>('board_plans', leadId).inbox.map((note) => note.text);
 
 it('starts no queued session and keeps their inputs pending once shutdown begins', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter });
+    f = await fixture({ adapter: stub.adapter });
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -191,7 +191,7 @@ it('starts no queued session and keeps their inputs pending once shutdown begins
 
 it('gives the lead back the notes of a message the runtime refused', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter });
+    f = await fixture({ adapter: stub.adapter });
   stub.send.mockImplementation(async (_handle, turn) => ({
     turn_id: turn.turn_id,
     status: 'unsupported',
@@ -212,7 +212,7 @@ it('gives the lead back the notes of a message the runtime refused', async () =>
 
 it('gives the lead back the notes of a message whose process never started', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter });
+    f = await fixture({ adapter: stub.adapter });
   stub.start.mockRejectedValue(new Error('Runtime failed to start'));
   try {
     const lead = leadWithReport(f);
@@ -230,7 +230,7 @@ it('gives the lead back the notes of a message whose process never started', asy
 
 it('keeps the interface context for the turn a queued steer becomes', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter });
+    f = await fixture({ adapter: stub.adapter });
   try {
     const session = open(f),
       first = send(f, session);
@@ -255,7 +255,7 @@ it('keeps the interface context for the turn a queued steer becomes', async () =
 
 it('closes the session tool relay once the process is confirmed stopped', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter });
+    f = await fixture({ adapter: stub.adapter });
   try {
     const session = open(f),
       turn = send(f, session);
@@ -273,7 +273,7 @@ it('closes the session tool relay once the process is confirmed stopped', async 
 
 it('keeps the native conversation of a rolled-back first turn cleared when usage arrives as the idle process closes', async () => {
   const stub = controlledAdapter(),
-    f = fixture({ adapter: stub.adapter });
+    f = await fixture({ adapter: stub.adapter });
   stub.adapter.close = async (handle, deadline) => {
     stub.start.mock.calls.find(
       ([spec]) => spec.platform_session_id === handle.platform_session_id,

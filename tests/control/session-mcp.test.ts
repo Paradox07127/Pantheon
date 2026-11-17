@@ -56,7 +56,7 @@ async function sessionFixture(role: 'reviewer' | 'planner') {
     turn_id: turn.turn_id,
     status: 'delivered',
   }));
-  const f = fixture({
+  const f = await fixture({
     adapter,
     now: () => now,
     managedWorkspaces: true,
@@ -76,7 +76,7 @@ async function sessionFixture(role: 'reviewer' | 'planner') {
     const writer = new FixtureAdapter();
     writer.name = 'session-writer';
     f.control.adapters.set(writer.name, writer);
-    const written = f.call<Session>('session.create', {
+    const written = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: writer.name,
       input: 'Write a verifiable sentence',
@@ -544,7 +544,7 @@ it.each(['reviewer', 'planner'] as const)(
 it('starts planner sessions without inherited extensions and writers with the project overrides', async () => {
   const planner = await sessionFixture('planner');
   expect(planner.spec.extensions).toEqual({ mode: 'none' });
-  const written = planner.call<Session>('session.create', {
+  const written = await planner.call<Session>('session.create', {
     project_id: planner.project.id,
     runtime: planner.adapter.name,
     input: 'Write with the project overrides',
@@ -563,7 +563,7 @@ it('starts planner sessions without inherited extensions and writers with the pr
 it('mounts a lead credential on a workbench session and a worker credential on a session opened from its task', async () => {
   const f = await sessionFixture('planner');
   const opened = async (input: Record<string, unknown>) => {
-    const session = f.call<Session>('session.create', {
+    const session = await f.call<Session>('session.create', {
       project_id: f.project.id,
       runtime: f.adapter.name,
       ...input,
@@ -716,7 +716,7 @@ it('mounts a lead credential on a workbench session and a worker credential on a
 
 it('tells a lead to plan a small change as one direct task before it changes the repository', async () => {
   const f = await sessionFixture('planner');
-  const lead = f.call<Session>('session.create', {
+  const lead = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Add an optional phone field to createContact',
@@ -743,7 +743,7 @@ it('tells a lead to plan a small change as one direct task before it changes the
 
 it('lets a lead stop a task of its plan through stop_task, without a project id', async () => {
   const f = await sessionFixture('planner');
-  const lead = f.call<Session>('session.create', {
+  const lead = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Plan the export feature',
@@ -801,7 +801,7 @@ it('lets a lead stop a task of its plan through stop_task, without a project id'
 
 it('hands a lead that calls sync_board its plan and the recent commits of the project', async () => {
   const f = await sessionFixture('planner');
-  const lead = f.call<Session>('session.create', {
+  const lead = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Plan the export feature',
@@ -849,7 +849,7 @@ it('hands a lead that calls sync_board its plan and the recent commits of the pr
 it('refuses a credential role that does not match the session', async () => {
   const f = await sessionFixture('planner');
   const planner = f.store.must<Session>('sessions', f.spec.platform_session_id);
-  const workbench = f.call<Session>('session.create', {
+  const workbench = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: 'Write a sentence',

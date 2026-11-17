@@ -1,6 +1,7 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { promisify } from 'node:util';
 import {
   id,
   requireThat,
@@ -18,6 +19,7 @@ import {
   pantheonConfigSchema,
   pantheonLocalConfigSchema,
   PROJECT_SETTING_KEYS,
+  type Command,
   type ProjectBranch,
   type ProjectDefaultsRead,
   type ProjectSettingKey,
@@ -28,11 +30,13 @@ import {
   inside,
   projectAccess,
   revision,
-  gitFolder,
+  gitFolderAsync,
   resolvedPath,
   userOnly,
   type ControlContext,
+  type Handler,
   type Handlers,
+  type Preparers,
 } from './context.js';
 import { runGit } from './git.js';
 import { projectFactHandlers } from './project-facts.js';
@@ -102,37 +106,53 @@ function projectRoots(ctx: ControlContext, targets: string[]): string[] {
   return roots;
 }
 
+const execFileAsync = promisify(execFile);
+
 /** Writers work in linked worktrees, so each root becomes a git repository with a first commit made as the user. */
-function requireGitRoots(ctx: ControlContext, roots: string[]): void {
-  const git = (root: string, args: string[]) =>
-    execFileSync('git', args, { cwd: root, stdio: 'pipe', encoding: 'utf8', timeout: 120000 });
+async function requireGitRoots(ctx: ControlContext, roots: string[]): Promise<void> {
   const autoInit = autoGitInit(ctx.userConfigDir);
   for (const root of roots) {
-    const hasHead = () =>
-      runGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD']).exit_code === 0;
-    if (!autoInit && (!gitFolder(root) || !hasHead()))
-      throw new DomainError('git_required', `${root} is not a git repository`);
-    if (!gitFolder(root)) {
-      // A repository of its own would hide files the outer repository already tracks.
-      const tracked = runGit(root, ['ls-files', '-z', '--', '.']);
-      requireThat(
-        tracked.exit_code !== 0 || tracked.stdout.length === 0,
-        'invalid_project',
-        `${root} holds files tracked by the git repository ${runGit(root, ['rev-parse', '--show-toplevel']).stdout.toString().trim()}; add that repository as the project folder`,
-      );
-      git(root, ['init', '--quiet']);
+    // Two opens of one empty folder would each run init and make a first commit.
+    let pending = gitRootChecks.get(root);
+    if (!pending) {
+      pending = requireGitRoot(root, autoInit).finally(() => gitRootChecks.delete(root));
+      gitRootChecks.set(root, pending);
     }
-    if (hasHead()) continue;
-    try {
-      git(root, ['add', '--all']);
-      git(root, ['commit', '--quiet', '--allow-empty', '-m', 'Initial commit']);
-    } catch (error) {
-      const { stderr, message } = error as { stderr?: string; message: string };
+    await pending;
+  }
+}
+
+/** The root checks and first commits running now, by root. */
+const gitRootChecks = new Map<string, Promise<void>>();
+
+async function requireGitRoot(root: string, autoInit: boolean): Promise<void> {
+  const git = (args: string[]) =>
+    execFileAsync('git', args, { cwd: root, encoding: 'utf8', timeout: 120000 });
+  const read = (args: string[]) => runGit(root, args, undefined, true);
+  const hasHead = async () =>
+    (await read(['rev-parse', '--verify', '--quiet', 'HEAD'])).exit_code === 0;
+  if (!autoInit && (!(await gitFolderAsync(root)) || !(await hasHead())))
+    throw new DomainError('git_required', `${root} is not a git repository`);
+  if (!(await gitFolderAsync(root))) {
+    // A repository of its own would hide files the outer repository already tracks.
+    const tracked = await read(['ls-files', '-z', '--', '.']);
+    if (tracked.exit_code === 0 && tracked.stdout.length > 0)
       throw new DomainError(
         'invalid_project',
-        `Cannot make the first commit in ${root}: ${stderr?.trim() || message}`,
+        `${root} holds files tracked by the git repository ${(await read(['rev-parse', '--show-toplevel'])).stdout.toString().trim()}; add that repository as the project folder`,
       );
-    }
+    await git(['init', '--quiet']);
+  }
+  if (await hasHead()) return;
+  try {
+    await git(['add', '--all']);
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'Initial commit']);
+  } catch (error) {
+    const { stderr, message } = error as { stderr?: string; message: string };
+    throw new DomainError(
+      'invalid_project',
+      `Cannot make the first commit in ${root}: ${stderr?.trim() || message}`,
+    );
   }
 }
 
@@ -152,7 +172,7 @@ function disjointFromOthers(ctx: ControlContext, roots: string[], self?: string)
 }
 
 /** Project-level settings from every root's `.pantheon/` files, in root order. */
-function rootConfig(roots: string[]) {
+async function rootConfig(roots: string[]) {
   const gates: NonNullable<Project['gates']> = {};
   let extensions: Project['extension_overrides'];
   let brief: ReturnType<typeof pantheonConfigSchema.parse>['brief'];
@@ -166,7 +186,7 @@ function rootConfig(roots: string[]) {
       pantheonLocalConfigSchema,
     );
     const config = committed || local ? { ...committed, ...local } : undefined;
-    if (config?.gate?.length && gitFolder(root)) gates[root] = config.gate;
+    if (config?.gate?.length && (await gitFolderAsync(root))) gates[root] = config.gate;
     for (const [runtime, overrides] of Object.entries(config?.extensions ?? {})) {
       const merged = extensions?.[runtime];
       extensions = {
@@ -334,54 +354,188 @@ export async function projectBranches(
     });
 }
 
-export const projectHandlers: Handlers = {
+type Opening = {
+  input: ReturnType<(typeof inputSchemas)['project.open']['parse']>;
+  roots: string[];
+};
+
+const sameRoots = (ctx: ControlContext, roots: string[]): Project | undefined =>
+  ctx.store
+    .list<Project>('projects')
+    .find((x) => x.roots.length === roots.length && x.roots.every((r) => roots.includes(r)));
+
+/** Restores or returns the project on these roots, or records a new one with the roots' config. */
+function openProject(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  { input, roots }: Opening,
+  config?: Awaited<ReturnType<typeof rootConfig>>,
+): Project {
+  const cause = c.command_id;
+  const existing = sameRoots(ctx, roots);
+  if (existing?.removed_at !== undefined) {
+    const { removed_at, ...kept } = existing;
+    const restored = ctx.store.update('projects', kept, existing.revision);
+    ctx.store.event('project.restored', restored, restored.id, { removed_at }, cause);
+    return restored;
+  }
+  if (existing) return existing;
+  disjointFromOthers(ctx, roots);
+  // The project seen before git ran no longer has these roots.
+  requireThat(config, 'conflict', 'Projects changed while this one opened; open it again');
+  const project: Project = {
+    id: id(),
+    revision: 1,
+    name: input.name,
+    roots,
+    ...(Object.keys(config.gates).length ? { gates: config.gates } : {}),
+    ...(config.extensions ? { extension_overrides: config.extensions } : {}),
+    ...(input.env ? { env: input.env } : {}),
+  };
+  ctx.store.insert('projects', project);
+  const { env, ...payload } = project;
+  // Environment values stay out of the event log.
+  ctx.store.event(
+    'project.opened',
+    project,
+    project.id,
+    env ? { ...payload, env_keys: Object.keys(env) } : payload,
+    cause,
+  );
+  if (config.brief)
+    projectFactHandlers['project.brief.set']!(ctx, p, {
+      ...c,
+      type: 'project.brief.set',
+      input: { project_id: project.id, ...config.brief },
+      expected_revision: null,
+    });
+  return project;
+}
+
+function gateTarget(ctx: ControlContext, p: Principal, c: Command) {
+  requireThat(p.role === 'user', 'permission_denied', 'Only user can set the project gate');
+  const { project_id, commands, ...input } = inputSchemas['project.gate.set'].parse(c.input),
+    project = ctx.store.must<Project>('projects', project_id),
+    root = resolvedPath(input.root);
+  revision(ctx, c, project);
+  requireThat(project.roots.includes(root), 'scope_violation', 'Gate root is not a project root');
+  return { project, root, commands };
+}
+
+/** Sets one root's gate; gitRoots holds the project roots read as git folders before the transaction. */
+export function setProjectGate(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  gitRoots: ReadonlySet<string>,
+): Project {
+  const { project, root, commands } = gateTarget(ctx, p, c);
+  requireThat(gitRoots.has(root), 'invalid_input', 'Gate root is not a git folder');
+  const { [root]: _previous, ...others } = project.gates ?? {};
+  const gates = commands.length ? { ...others, [root]: commands } : others;
+  const { gates: _gates, ...rest } = project;
+  const next = ctx.store.update(
+    'projects',
+    Object.keys(gates).length ? { ...rest, gates } : rest,
+    project.revision,
+  );
+  ctx.store.event('project.gate_set', next, project.id, { root, commands }, c.command_id);
+  return next;
+}
+
+function environmentTarget(ctx: ControlContext, p: Principal, c: Command) {
+  requireThat(p.role === 'user', 'permission_denied', 'Only user can set the project environment');
+  const input = inputSchemas['project.environment.set'].parse(c.input),
+    project = ctx.store.must<Project>('projects', input.project_id);
+  revision(ctx, c, project);
+  return { input, project };
+}
+
+/** Refuses folder changes that would strand a session's work or overlap another project. */
+function checkEnvironmentRoots(ctx: ControlContext, project: Project, roots: string[]): void {
+  // A session's work lands in the folder its worktree came from, with that folder's gate.
+  const held = ctx.store.list<Session>('sessions').flatMap((session) => {
+    if (session.project_id !== project.id || !session.workspace_id || session.outcome) return [];
+    const source = ctx.store.get<Workspace>('workspaces', session.workspace_id)?.source;
+    return source && project.roots.includes(source) && !roots.includes(source)
+      ? [`${session.id} (${source})`]
+      : [];
+  });
+  requireThat(
+    !held.length,
+    'root_in_use',
+    `Merge or discard the work of these sessions before removing their folders: ${held.join(', ')}`,
+  );
+  disjointFromOthers(ctx, roots, project.id);
+}
+
+function setEnvironment(ctx: ControlContext, p: Principal, c: Command, roots: string[]): Project {
+  const { input, project } = environmentTarget(ctx, p, c);
+  checkEnvironmentRoots(ctx, project, roots);
+  const { gates: previous, ...rest } = project;
+  const gates = Object.fromEntries(
+    Object.entries(previous ?? {}).filter(([root]) => roots.includes(root)),
+  );
+  const next = ctx.store.update(
+    'projects',
+    {
+      ...rest,
+      name: input.name,
+      roots,
+      env: input.env,
+      ...(Object.keys(gates).length ? { gates } : {}),
+    },
+    project.revision,
+  );
+  ctx.store.event(
+    'project.environment_set',
+    next,
+    project.id,
+    { name: input.name, roots, env_keys: Object.keys(input.env) },
+    c.command_id,
+  );
+  // An idle process keeps the environment and folders it started with.
+  releaseIdleConversations(ctx, project.id);
+  return next;
+}
+
+/** Their git runs before the transaction; the checks ahead of it still throw synchronously. */
+export const projectPreparers: Preparers = {
   'project.open': (ctx, p, c) => {
-    const cause = c.command_id;
     requireThat(p.role === 'user', 'permission_denied', 'Only user can authorize a project');
     revision(ctx, c);
     const input = inputSchemas['project.open'].parse(c.input),
-      roots = projectRoots(ctx, input.roots);
-    const existing = ctx.store
-      .list<Project>('projects')
-      .find((x) => x.roots.length === roots.length && x.roots.every((r) => roots.includes(r)));
-    if (existing?.removed_at !== undefined) {
-      const { removed_at, ...kept } = existing;
-      const restored = ctx.store.update('projects', kept, existing.revision);
-      ctx.store.event('project.restored', restored, restored.id, { removed_at }, cause);
-      return restored;
-    }
-    if (existing) return existing;
-    disjointFromOthers(ctx, roots);
-    requireGitRoots(ctx, roots);
-    const config = rootConfig(roots);
-    const project: Project = {
-      id: id(),
-      revision: 1,
-      name: input.name,
-      roots,
-      ...(Object.keys(config.gates).length ? { gates: config.gates } : {}),
-      ...(config.extensions ? { extension_overrides: config.extensions } : {}),
-      ...(input.env ? { env: input.env } : {}),
-    };
-    ctx.store.insert('projects', project);
-    const { env, ...payload } = project;
-    // Environment values stay out of the event log.
-    ctx.store.event(
-      'project.opened',
-      project,
-      project.id,
-      env ? { ...payload, env_keys: Object.keys(env) } : payload,
-      cause,
-    );
-    if (config.brief)
-      projectFactHandlers['project.brief.set']!(ctx, p, {
-        ...c,
-        type: 'project.brief.set',
-        input: { project_id: project.id, ...config.brief },
-        expected_revision: null,
-      });
-    return project;
+      opening = { input, roots: projectRoots(ctx, input.roots) };
+    if (sameRoots(ctx, opening.roots)) return (ctx, p, c) => openProject(ctx, p, c, opening);
+    disjointFromOthers(ctx, opening.roots);
+    return requireGitRoots(ctx, opening.roots)
+      .then(() => rootConfig(opening.roots))
+      .then(
+        (config): Handler =>
+          (ctx, p, c) =>
+            openProject(ctx, p, c, opening, config),
+      );
   },
+  'project.gate.set': (ctx, p, c) => {
+    const { root } = gateTarget(ctx, p, c);
+    return gitFolderAsync(root).then(
+      (git): Handler =>
+        (ctx, p, c) =>
+          setProjectGate(ctx, p, c, new Set(git ? [root] : [])),
+    );
+  },
+  'project.environment.set': (ctx, p, c) => {
+    const { input, project } = environmentTarget(ctx, p, c);
+    const roots = projectRoots(ctx, input.roots);
+    checkEnvironmentRoots(ctx, project, roots);
+    return requireGitRoots(ctx, roots).then(
+      (): Handler => (ctx, p, c) => setEnvironment(ctx, p, c, roots),
+    );
+  },
+};
+
+export const projectHandlers: Handlers = {
   'project.worktree.set': (ctx, p, c) => {
     requireThat(p.role === 'user', 'permission_denied', 'Only user can set worktree preparation');
     const { project_id, ...worktree } = c.input as ReturnType<
@@ -399,25 +553,6 @@ export const projectHandlers: Handlers = {
         );
     const next = ctx.store.update<Project>('projects', { ...project, worktree }, project.revision);
     ctx.store.event('project.worktree_set', next, project.id, worktree, c.command_id);
-    return next;
-  },
-  'project.gate.set': (ctx, p, c) => {
-    requireThat(p.role === 'user', 'permission_denied', 'Only user can set the project gate');
-    const { project_id, commands, ...input } = inputSchemas['project.gate.set'].parse(c.input),
-      project = ctx.store.must<Project>('projects', project_id),
-      root = resolvedPath(input.root);
-    revision(ctx, c, project);
-    requireThat(project.roots.includes(root), 'scope_violation', 'Gate root is not a project root');
-    requireThat(gitFolder(root), 'invalid_input', 'Gate root is not a git folder');
-    const { [root]: _previous, ...others } = project.gates ?? {};
-    const gates = commands.length ? { ...others, [root]: commands } : others;
-    const { gates: _gates, ...rest } = project;
-    const next = ctx.store.update(
-      'projects',
-      Object.keys(gates).length ? { ...rest, gates } : rest,
-      project.revision,
-    );
-    ctx.store.event('project.gate_set', next, project.id, { root, commands }, c.command_id);
     return next;
   },
   'project.sessionDefaults.set': (ctx, p, c) => {
@@ -559,57 +694,6 @@ export const projectHandlers: Handlers = {
     const { [key]: _previous, ...rest } = project;
     const next = ctx.store.update('projects', rest, project.revision);
     ctx.store.event('project.override_cleared', next, project.id, { key }, c.command_id);
-    return next;
-  },
-  'project.environment.set': (ctx, p, c) => {
-    requireThat(
-      p.role === 'user',
-      'permission_denied',
-      'Only user can set the project environment',
-    );
-    const input = inputSchemas['project.environment.set'].parse(c.input),
-      project = ctx.store.must<Project>('projects', input.project_id);
-    revision(ctx, c, project);
-    const roots = projectRoots(ctx, input.roots);
-    // A session's work lands in the folder its worktree came from, with that folder's gate.
-    const held = ctx.store.list<Session>('sessions').flatMap((session) => {
-      if (session.project_id !== project.id || !session.workspace_id || session.outcome) return [];
-      const source = ctx.store.get<Workspace>('workspaces', session.workspace_id)?.source;
-      return source && project.roots.includes(source) && !roots.includes(source)
-        ? [`${session.id} (${source})`]
-        : [];
-    });
-    requireThat(
-      !held.length,
-      'root_in_use',
-      `Merge or discard the work of these sessions before removing their folders: ${held.join(', ')}`,
-    );
-    disjointFromOthers(ctx, roots, project.id);
-    requireGitRoots(ctx, roots);
-    const { gates: previous, ...rest } = project;
-    const gates = Object.fromEntries(
-      Object.entries(previous ?? {}).filter(([root]) => roots.includes(root)),
-    );
-    const next = ctx.store.update(
-      'projects',
-      {
-        ...rest,
-        name: input.name,
-        roots,
-        env: input.env,
-        ...(Object.keys(gates).length ? { gates } : {}),
-      },
-      project.revision,
-    );
-    ctx.store.event(
-      'project.environment_set',
-      next,
-      project.id,
-      { name: input.name, roots, env_keys: Object.keys(input.env) },
-      c.command_id,
-    );
-    // An idle process keeps the environment and folders it started with.
-    releaseIdleConversations(ctx, project.id);
     return next;
   },
   'project.remove': (ctx, p, c) => {

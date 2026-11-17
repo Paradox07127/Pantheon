@@ -125,12 +125,18 @@ export function withReconciledState(
   );
 }
 
-/** currentState for recovery, whose one transaction runs at daemon start before any client is served. */
-export function currentStateAtStart(roots: string[]): WrittenState {
-  return worktreeState(
-    roots,
-    roots.map((root) => runGit(root, STATUS)),
+/** The tracked state of each session's reconciledWriteRoots, read before the transaction that closes them. */
+export async function reconciledStates(
+  ctx: ControlContext,
+  sessionIds: string[],
+): Promise<Map<string, WrittenState>> {
+  const read = await Promise.all(
+    sessionIds.map(async (id) => {
+      const roots = reconciledWriteRoots(ctx, id);
+      return roots.length ? ([[id, await currentState(roots)]] as const) : [];
+    }),
   );
+  return new Map(read.flat());
 }
 
 /** finishWriteAudit inside the caller's transaction, against the state of reconciledWriteRoots read before it. */

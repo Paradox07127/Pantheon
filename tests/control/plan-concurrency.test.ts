@@ -9,7 +9,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-type Fixture = ReturnType<typeof fixture>;
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 function failure(fn: () => unknown): { code?: string; message?: string } {
   try {
@@ -20,8 +20,8 @@ function failure(fn: () => unknown): { code?: string; message?: string } {
   throw new Error('Expected the command to fail');
 }
 
-function setup() {
-  const f = fixture({ adapter: new FixtureAdapter(100), managedWorkspaces: true });
+async function setup() {
+  const f = await fixture({ adapter: new FixtureAdapter(100), managedWorkspaces: true });
   cleanups.push(() => f.close());
   return f;
 }
@@ -108,8 +108,8 @@ const edit = (f: Fixture, principal: Principal, lead: Principal, baseVersion: nu
 const planOf = (f: Fixture, lead: Principal) =>
   f.store.must<BoardPlan>('board_plans', lead.session_id!);
 
-it('refuses a plan write based on an older version and names the current one', () => {
-  const f = setup();
+it('refuses a plan write based on an older version and names the current one', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   update(f, lead, 0);
   update(f, lead, 1, plan('Export ships next week'));
@@ -126,8 +126,8 @@ it('refuses a plan write based on an older version and names the current one', (
   expect(planOf(f, lead).headline).toBe('Export ships next week');
 });
 
-it('raises the plan version only when the plan content changes', () => {
-  const f = setup();
+it('raises the plan version only when the plan content changes', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   expect(update(f, lead, 0).plan_version).toBe(1);
   expect(update(f, lead, 1).plan_version).toBe(1);
@@ -146,8 +146,8 @@ it('raises the plan version only when the plan content changes', () => {
   expect(read.plans.find((view) => view.lead_session_id === lead.session_id)?.plan_version).toBe(3);
 });
 
-it('refuses a user edit based on the plan before the lead rewrote it', () => {
-  const f = setup();
+it('refuses a user edit based on the plan before the lead rewrote it', async () => {
+  const f = await setup();
   const lead = leadOf(f);
   update(f, lead, 0);
   const seen = planOf(f, lead).plan_version;

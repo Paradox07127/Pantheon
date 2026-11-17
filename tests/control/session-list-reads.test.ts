@@ -10,7 +10,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const settled = (f: ReturnType<typeof workbenchFixture>, sessionId: string) =>
+const settled = (f: Awaited<ReturnType<typeof workbenchFixture>>, sessionId: string) =>
   eventually(
     () =>
       f.turns(sessionId).every((turn) => turn.state === 'completed') &&
@@ -20,8 +20,8 @@ const settled = (f: ReturnType<typeof workbenchFixture>, sessionId: string) =>
 
 /** An idle session with an uncommitted file, and a count of the Git calls in its worktree. */
 async function idleWorktree(adoptable = false) {
-  const f = workbenchFixture({ adoptable });
-  const session = f.create();
+  const f = await workbenchFixture({ adoptable });
+  const session = await f.create();
   await awaitWorkspaceReady(f.control, session.workspace_id!);
   await settled(f, session.id);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
@@ -48,8 +48,8 @@ async function idleWorktree(adoptable = false) {
 async function sessionsOfEachRead() {
   const listed = await idleWorktree(true);
   const { f } = listed;
-  const committed = f.create(),
-    checked = f.create();
+  const committed = await f.create(),
+    checked = await f.create();
   for (const session of [committed, checked]) {
     await awaitWorkspaceReady(f.control, session.workspace_id!);
     await settled(f, session.id);
@@ -58,7 +58,7 @@ async function sessionsOfEachRead() {
   writeFileSync(path.join(committedPath, 'note.txt'), 'committed\n');
   git(committedPath, 'add', '.');
   git(committedPath, 'commit', '--quiet', '-m', 'Add the note');
-  f.call(
+  await f.call(
     'project.gate.set',
     {
       project_id: f.project.id,
@@ -246,8 +246,11 @@ it('prefetches the workspaces of every project in the summary when no project is
   writeFileSync(path.join(otherSource, 'answer.txt'), 'other\n');
   git(otherSource, 'add', '.');
   git(otherSource, 'commit', '--quiet', '-m', 'Initial files');
-  const other = f.call<Project>('project.open', { name: 'Other project', roots: [otherSource] });
-  const otherSession = f.call<Session>('session.create', {
+  const other = await f.call<Project>('project.open', {
+    name: 'Other project',
+    roots: [otherSource],
+  });
+  const otherSession = await f.call<Session>('session.create', {
     project_id: other.id,
     runtime: f.adapter.name,
     input: 'Read the answer file',

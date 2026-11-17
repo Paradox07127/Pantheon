@@ -12,7 +12,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-function defaultsFixture(managedWorkspaces = false) {
+async function defaultsFixture(managedWorkspaces = false) {
   const configRoot = mkdtempSync(path.join(os.tmpdir(), 'pantheon-defaults-config-'));
   cleanups.push(async () => rmSync(configRoot, { recursive: true, force: true }));
   mkdirSync(path.join(configRoot, '.pantheon'));
@@ -20,7 +20,7 @@ function defaultsFixture(managedWorkspaces = false) {
     path.join(configRoot, '.pantheon/config.json'),
     JSON.stringify({ version: 1, model_families: { 'fixture-': 'fixture' } }),
   );
-  const f = fixture({
+  const f = await fixture({
     managedWorkspaces,
     controlOptions: { userConfigDir: path.join(configRoot, '.pantheon') },
   });
@@ -36,8 +36,8 @@ function defaultsFixture(managedWorkspaces = false) {
   return { ...f, current, events };
 }
 
-it('stores the default runtime and permission mode on the project at its revision', () => {
-  const f = defaultsFixture(),
+it('stores the default runtime and permission mode on the project at its revision', async () => {
+  const f = await defaultsFixture(),
     before = f.current();
   const next = f.call<Project>(
     'project.sessionDefaults.set',
@@ -59,8 +59,8 @@ it('stores the default runtime and permission mode on the project at its revisio
   ).toThrowError(expect.objectContaining({ code: 'revision_conflict' }));
 });
 
-it('refuses an unknown runtime, an unknown permission mode and a non-user principal', () => {
-  const f = defaultsFixture(),
+it('refuses an unknown runtime, an unknown permission mode and a non-user principal', async () => {
+  const f = await defaultsFixture(),
     before = f.current();
   expect(() =>
     f.call(
@@ -93,8 +93,8 @@ it('refuses an unknown runtime, an unknown permission mode and a non-user princi
   expect(f.events()).toEqual([]);
 });
 
-it('stores a default model and effort that belong to the default runtime', () => {
-  const f = defaultsFixture(),
+it('stores a default model and effort that belong to the default runtime', async () => {
+  const f = await defaultsFixture(),
     before = f.current();
   const defaults = {
     runtime: 'fixture',
@@ -121,8 +121,8 @@ it('stores a default model and effort that belong to the default runtime', () =>
   expect(f.events()).toEqual([defaults]);
 });
 
-it('stores single_model only with a default model and drops it when turned off', () => {
-  const f = defaultsFixture(),
+it('stores single_model only with a default model and drops it when turned off', async () => {
+  const f = await defaultsFixture(),
     before = f.current();
   const base = { project_id: before.id, runtime: 'fixture', permission_mode: 'ask' } as const;
   const refused = (() => {
@@ -162,7 +162,7 @@ it('stores single_model only with a default model and drops it when turned off',
 });
 
 it('opens the lead session of a board sync on the default model and effort', async () => {
-  const f = defaultsFixture(true),
+  const f = await defaultsFixture(true),
     before = f.current();
   f.call(
     'project.sessionDefaults.set',
@@ -186,8 +186,8 @@ it('opens the lead session of a board sync on the default model and effort', asy
   });
 });
 
-it('removes project defaults and opens a new session with composer values afterward', () => {
-  const f = defaultsFixture(true);
+it('removes project defaults and opens a new session with composer values afterward', async () => {
+  const f = await defaultsFixture(true);
   const stored = f.call<Project>(
     'project.sessionDefaults.set',
     {
@@ -215,7 +215,7 @@ it('removes project defaults and opens a new session with composer values afterw
   expect((f.control.projectRead(user, f.project.id) as ProjectRead).project).not.toHaveProperty(
     'session_defaults',
   );
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: 'fixture',
     input: 'Read the project',
@@ -226,8 +226,8 @@ it('removes project defaults and opens a new session with composer values afterw
   expect(session.requested_effort).toBeUndefined();
 });
 
-it('stores writer and reviewer choices and a fallback for each role', () => {
-  const f = defaultsFixture();
+it('stores writer and reviewer choices and a fallback for each role', async () => {
+  const f = await defaultsFixture();
   const choice = { runtime: 'fixture', model: 'fixture-small', effort: 'low' } as const;
   const fallbacks = { lead: choice, writer: choice, reviewer: choice };
   const next = f.call<Project>(
@@ -248,8 +248,8 @@ it('stores writer and reviewer choices and a fallback for each role', () => {
   ).toEqual(next.session_defaults);
 });
 
-it('sets, returns and clears runtime token targets without changing other targets', () => {
-  const f = defaultsFixture();
+it('sets, returns and clears runtime token targets without changing other targets', async () => {
+  const f = await defaultsFixture();
   let project = f.call<Project>(
     'project.usageTargets.set',
     { project_id: f.project.id, targets: { claude: 10000, codex: 0 } },
@@ -273,8 +273,8 @@ it('sets, returns and clears runtime token targets without changing other target
   expect(project).not.toHaveProperty('usage_targets');
 });
 
-it('opens a main session on its fallback when the default runtime fails admission', () => {
-  const f = defaultsFixture(true);
+it('opens a main session on its fallback when the default runtime fails admission', async () => {
+  const f = await defaultsFixture(true);
   const backup = new FixtureAdapter();
   backup.name = 'claude';
   f.control.adapters.set(backup.name, backup);
@@ -290,7 +290,7 @@ it('opens a main session on its fallback when the default runtime fails admissio
     f.project.revision,
   );
   f.control.adapters.delete('fixture');
-  const session = f.call<Session>('session.create', {
+  const session = await f.call<Session>('session.create', {
     project_id: f.project.id,
     input: 'Read the project',
   });

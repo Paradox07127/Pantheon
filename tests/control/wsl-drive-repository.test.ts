@@ -30,8 +30,8 @@ afterEach(() => {
 afterAll(() => rmSync(mountRoot, { recursive: true, force: true }));
 
 /** A fixture with a second project whose repository lies on drive D below the mount root. */
-function driveProject(name: string) {
-  const f = workbenchFixture();
+async function driveProject(name: string) {
+  const f = await workbenchFixture();
   const root = path.join(mountRoot, 'd', name);
   mkdirSync(root, { recursive: true });
   git(root, 'init', '--quiet', '--initial-branch=main');
@@ -40,7 +40,7 @@ function driveProject(name: string) {
   writeFileSync(path.join(root, 'notes.txt'), 'first\nsecond\n');
   git(root, 'add', '.');
   git(root, 'commit', '--quiet', '-m', 'Initial notes');
-  const project = f.call<Project>('project.open', { name: `Drive ${name}`, roots: [root] });
+  const project = await f.call<Project>('project.open', { name: `Drive ${name}`, roots: [root] });
   return { f, root, project };
 }
 
@@ -50,7 +50,7 @@ it.each([
 ])(
   'commits a CRLF file on a drive with LF line endings only under WSL (wsl $wsl)',
   async ({ wsl, stored }) => {
-    const { f, root, project } = driveProject(`commit-${wsl}`);
+    const { f, root, project } = await driveProject(`commit-${wsl}`);
     writeFileSync(path.join(root, 'notes.txt'), 'first\r\nsecond\r\nthird\r\n');
     if (wsl) process.env.WSL_DISTRO_NAME = 'Fixture';
     await f.call<Promise<unknown>>('repo.commit', {
@@ -71,7 +71,7 @@ it.each([
 it.each([{ wsl: true }, { wsl: false }])(
   'locks a session worktree of a drive repository only under WSL and still removes it (wsl $wsl)',
   async ({ wsl }) => {
-    const { f, root, project } = driveProject(`worktree-${wsl}`);
+    const { f, root, project } = await driveProject(`worktree-${wsl}`);
     if (wsl) process.env.WSL_DISTRO_NAME = 'Fixture';
     const registered = registerWorkspace(f.control, {
       project_id: project.id,

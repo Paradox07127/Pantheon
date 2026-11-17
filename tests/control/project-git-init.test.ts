@@ -8,7 +8,7 @@ import { Control } from '@pantheon/control';
 import type { Project } from '@pantheon/domain';
 import { command, type CommandType } from '@pantheon/protocol';
 import { ArtifactFiles, Store } from '@pantheon/store';
-import { user } from '../helpers.js';
+import { countingGit, user } from '../helpers.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -53,7 +53,22 @@ function folders(root: string) {
   return { plain, uncommitted, committed };
 }
 
-it('makes a plain project folder a git repository whose first commit holds its files', () => {
+it('makes one first commit when the same plain folder is opened twice at once', async () => {
+  const f = setup(),
+    { plain } = folders(f.root);
+  const open = () => f.call<Promise<Project>>('project.open', { name: 'Notes', roots: [plain] });
+  // A slow first commit lets the second open check HEAD while the first is still committing.
+  const counter = countingGit();
+  counter.slowOn('commit --quiet --allow-empty');
+  try {
+    await Promise.allSettled([open(), open()]);
+  } finally {
+    counter.restore();
+  }
+  expect(git(plain, 'rev-list', '--count', 'HEAD')).toBe('1');
+});
+
+it('makes a plain project folder a git repository whose first commit holds its files', async () => {
   const f = setup(),
     folder = path.join(f.root, 'notes'),
     empty = path.join(f.root, 'empty');
@@ -61,7 +76,7 @@ it('makes a plain project folder a git repository whose first commit holds its f
   mkdirSync(empty);
   writeFileSync(path.join(folder, 'notes.txt'), 'plain notes\n');
   writeFileSync(path.join(folder, 'drafts/plan.md'), '# Plan\n');
-  const project = f.call<Project>('project.open', {
+  const project = await f.call<Project>('project.open', {
     name: 'Notes',
     roots: [folder, empty],
   });
@@ -76,7 +91,7 @@ it('makes a plain project folder a git repository whose first commit holds its f
   expect(git(project.roots[1]!, 'rev-list', '--count', 'HEAD')).toBe('1');
 });
 
-it('refuses a folder whose files another repository tracks and gives an untracked folder its own repository', () => {
+it('refuses a folder whose files another repository tracks and gives an untracked folder its own repository', async () => {
   const f = setup(),
     outer = path.join(f.root, 'outer'),
     tracked = path.join(outer, 'tracked'),
@@ -88,19 +103,19 @@ it('refuses a folder whose files another repository tracks and gives an untracke
   git(outer, 'init', '--quiet');
   git(outer, 'add', '--all');
   git(outer, '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Outer files');
-  expect(() => f.call('project.open', { name: 'Tracked', roots: [tracked] })).toThrowError(
+  await expect(f.call('project.open', { name: 'Tracked', roots: [tracked] })).rejects.toThrowError(
     expect.objectContaining({
       code: 'invalid_project',
       message: expect.stringContaining('add that repository as the project folder'),
     }),
   );
   expect(git(tracked, 'rev-parse', '--show-toplevel')).toBe(outer);
-  const project = f.call<Project>('project.open', { name: 'Ignored', roots: [ignored] });
+  const project = await f.call<Project>('project.open', { name: 'Ignored', roots: [ignored] });
   expect(git(project.roots[0]!, 'rev-parse', '--show-toplevel')).toBe(ignored);
   expect(git(outer, 'status', '--porcelain')).toBe('');
 });
 
-it('refuses a plain folder and a repository without commits once git init is turned off', () => {
+it('refuses a plain folder and a repository without commits once git init is turned off', async () => {
   const f = setup(),
     { plain, uncommitted, committed } = folders(f.root);
   expect(f.call('app.settings.set', { auto_git_init: false })).toEqual({
@@ -120,7 +135,7 @@ it('refuses a plain folder and a repository without commits once git init is tur
     baseline_range_story: true,
   });
   for (const root of [plain, uncommitted])
-    expect(() => f.call('project.open', { name: 'Refused', roots: [root] })).toThrowError(
+    await expect(f.call('project.open', { name: 'Refused', roots: [root] })).rejects.toThrowError(
       expect.objectContaining({
         code: 'git_required',
         message: `${root} is not a git repository`,
@@ -128,10 +143,10 @@ it('refuses a plain folder and a repository without commits once git init is tur
     );
   expect(() => git(plain, 'rev-parse', '--git-dir')).toThrow();
   expect(() => git(uncommitted, 'rev-parse', '--verify', 'HEAD')).toThrow();
-  const project = f.call<Project>('project.open', { name: 'Committed', roots: [committed] });
+  const project = await f.call<Project>('project.open', { name: 'Committed', roots: [committed] });
   expect(git(committed, 'rev-list', '--count', 'HEAD')).toBe('1');
   for (const root of [plain, uncommitted])
-    expect(() =>
+    await expect(
       f.control.execute(
         user,
         command(
@@ -141,11 +156,11 @@ it('refuses a plain folder and a repository without commits once git init is tur
           project.revision,
         ),
       ),
-    ).toThrowError(expect.objectContaining({ code: 'git_required' }));
+    ).rejects.toThrowError(expect.objectContaining({ code: 'git_required' }));
   expect(f.store.must<Project>('projects', project.id).roots).toEqual([committed]);
 });
 
-it('runs git init again on the next project.open after the setting is turned back on', () => {
+it('runs git init again on the next project.open after the setting is turned back on', async () => {
   const f = setup(),
     { plain } = folders(f.root);
   expect(f.control.appSettings(user)).toEqual({
@@ -157,11 +172,11 @@ it('runs git init again on the next project.open after the setting is turned bac
     baseline_range_story: true,
   });
   f.call('app.settings.set', { auto_git_init: false });
-  expect(() => f.call('project.open', { name: 'Plain', roots: [plain] })).toThrowError(
+  await expect(f.call('project.open', { name: 'Plain', roots: [plain] })).rejects.toThrowError(
     expect.objectContaining({ code: 'git_required' }),
   );
   f.call('app.settings.set', { auto_git_init: true });
-  const project = f.call<Project>('project.open', { name: 'Plain', roots: [plain] });
+  const project = await f.call<Project>('project.open', { name: 'Plain', roots: [plain] });
   expect(git(project.roots[0]!, 'ls-files')).toBe('notes.txt');
   expect(
     f.store.db

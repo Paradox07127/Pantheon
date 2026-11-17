@@ -3,7 +3,7 @@ import type { BoardPlan, LeadNote, Principal, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually } from '../helpers.js';
 import { dispatchEveryTier, workbenchFixture } from './workbench-fixture.js';
 
-type Fixture = ReturnType<typeof workbenchFixture>;
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
 type PlanTask = BoardPlan['tasks'][number];
 
 const leadOf = (f: Fixture, sessionId: string): Principal => ({
@@ -33,7 +33,7 @@ const userEdits = (f: Fixture, leadId: string): LeadNote[] =>
 
 async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
   dispatchEveryTier(f);
-  const lead = f.create('Plan the export feature');
+  const lead = await f.create('Plan the export feature');
   await awaitWorkspaceReady(f.control, lead.workspace_id!);
   await eventually(
     () =>
@@ -60,8 +60,9 @@ async function leadWithPlan(f: Fixture, tasks: PlanTask[]) {
 }
 
 /** The session the user opens from the board task. */
+// A refusal the store makes is thrown at once; the opened session comes in a promise.
 const openTask = (f: Fixture, leadId: string, taskId: string) =>
-  f.call<Session>('session.create', {
+  f.call<Promise<Session>>('session.create', {
     project_id: f.project.id,
     runtime: f.adapter.name,
     input: `Work on task ${taskId}`,
@@ -78,16 +79,16 @@ function refusal(fn: () => unknown): { code?: string; message?: string } {
 }
 
 it('refuses the user a second session for a task that has one', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const first = openTask(f, lead.id, 'a');
+  const first = await openTask(f, lead.id, 'a');
   const error = refusal(() => openTask(f, lead.id, 'a'));
   expect(error.code).toBe('invalid_state');
   expect(error.message).toContain(first.id);
 });
 
 it('refuses the user a session for the direct task its lead works on', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [
     task('a', { path: 'direct', flow_reason: 'The lead changes one line itself' }),
   ]);
@@ -99,23 +100,23 @@ it('refuses the user a session for the direct task its lead works on', async () 
 });
 
 it('opens a follow-up session for a task whose session merged', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
-  const first = openTask(f, lead.id, 'a');
+  const first = await openTask(f, lead.id, 'a');
   f.store.update<Session>(
     'sessions',
     { ...current(f, first.id), state: 'closed', outcome: 'merged' },
     current(f, first.id).revision,
   );
 
-  const second = openTask(f, lead.id, 'a');
+  const second = await openTask(f, lead.id, 'a');
 
   expect(second.id).not.toBe(first.id);
   expect(current(f, second.id).task).toMatchObject({ lead_session_id: lead.id, id: 'a' });
 });
 
 it('refuses the user a session for a task whose upstream task is not done', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('b', { depends_on: ['a'] })]);
   const error = refusal(() => openTask(f, lead.id, 'b'));
   expect(error.code).toBe('invalid_state');
@@ -123,21 +124,21 @@ it('refuses the user a session for a task whose upstream task is not done', asyn
 });
 
 it('refuses the user a session for a task whose scope overlaps a task under way', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a'), task('c', { scope: ['src/a/export'] })]);
-  openTask(f, lead.id, 'a');
+  await openTask(f, lead.id, 'a');
   const error = refusal(() => openTask(f, lead.id, 'c'));
   expect(error.code).toBe('invalid_state');
   expect(error.message).toContain('overlaps tasks a');
 });
 
 it('binds the session the user opens to the task, drops its start request and tells the lead', async () => {
-  const f = workbenchFixture();
+  const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [task('a')]);
   f.call('task.start', { project_id: f.project.id, task_ids: ['a'] }, null, leadOf(f, lead.id));
   expect(Object.keys(planOf(f, lead.id).dispatch ?? {})).toEqual(['a']);
   const before = userEdits(f, lead.id).length;
-  const session = openTask(f, lead.id, 'a');
+  const session = await openTask(f, lead.id, 'a');
   expect(current(f, session.id).task).toMatchObject({ lead_session_id: lead.id, id: 'a' });
   expect(planOf(f, lead.id).dispatch ?? {}).toEqual({});
   const notes = userEdits(f, lead.id);

@@ -93,20 +93,22 @@ function countGitRuns() {
   return () => readFileSync(log, 'utf8').split('\n').filter(Boolean).length;
 }
 
-const value = (cwd: string, key: string) =>
-  runGit(cwd, ['config', '--get', key]).stdout.toString().trim();
+const value = async (cwd: string, key: string) =>
+  (await runGit(cwd, ['config', '--get', key], undefined, true)).stdout.toString().trim();
 
-it('turns off automatic maintenance and garbage collection in every repository', () => {
+it('turns off automatic maintenance and garbage collection in every repository', async () => {
   const root = repository(fresh('pantheon-git-maintenance-'));
-  expect(value(root, 'maintenance.auto')).toBe('false');
-  expect(value(root, 'gc.auto')).toBe('0');
+  expect(await value(root, 'maintenance.auto')).toBe('false');
+  expect(await value(root, 'gc.auto')).toBe('0');
 });
 
-it('bounds synchronous output by the caller limit', () => {
+it('bounds output by the caller limit', async () => {
   const root = repository(fresh('pantheon-git-bound-'));
-  const result = runGit(root, ['log', '--format=%H%n%s'], undefined, false, { max_buffer: 16 });
+  const result = await runGit(root, ['log', '--format=%H%n%s'], undefined, true, {
+    max_buffer: 16,
+  });
   expect(result.exit_code).toBeNull();
-  expect(result.error).toContain('ENOBUFS');
+  expect(result.error).toContain('maxBuffer length exceeded');
 });
 
 it.each([
@@ -115,7 +117,7 @@ it.each([
   { key: 'GIT_DIR', runs: 2 },
 ])(
   'reuses the cached driver config under $key only when it keeps git on the same config',
-  ({ key, runs }) => {
+  async ({ key, runs }) => {
     const root = repository(fresh('pantheon-git-cache-'));
     const values: Record<string, string> = {
       GIT_INDEX_FILE: path.join(root, '.git', 'index'),
@@ -124,9 +126,9 @@ it.each([
     };
     const counted = countGitRuns();
     const env = { [key]: values[key]! };
-    expect(runGit(root, ['rev-parse', 'HEAD'], undefined, false, { env }).exit_code).toBe(0);
+    expect((await runGit(root, ['rev-parse', 'HEAD'], undefined, true, { env })).exit_code).toBe(0);
     const before = counted();
-    expect(runGit(root, ['rev-parse', 'HEAD'], undefined, false, { env }).exit_code).toBe(0);
+    expect((await runGit(root, ['rev-parse', 'HEAD'], undefined, true, { env })).exit_code).toBe(0);
     expect(counted() - before).toBe(runs);
   },
 );
@@ -175,7 +177,7 @@ it('neutralizes the filter for every parallel call in a repository whose config 
   expect(fs.existsSync(marker)).toBe(true);
 });
 
-it('reads the repository config again only after the recheck interval', () => {
+it('reads the repository config again only after the recheck interval', async () => {
   const root = repository(fresh('pantheon-git-recheck-'));
   const config = path.join(root, '.git', 'config');
   let elapsed = 0;
@@ -184,12 +186,12 @@ it('reads the repository config again only after the recheck interval', () => {
   const reads = () =>
     vi.mocked(fs.readFileSync).mock.calls.filter(([file]) => file === config).length;
   try {
-    expect(runGit(root, ['status', '--porcelain']).exit_code).toBe(0);
+    expect((await runGit(root, ['status', '--porcelain'], undefined, true)).exit_code).toBe(0);
     const before = reads();
-    expect(runGit(root, ['status', '--porcelain']).exit_code).toBe(0);
+    expect((await runGit(root, ['status', '--porcelain'], undefined, true)).exit_code).toBe(0);
     expect(reads() - before).toBe(0);
     elapsed += 1000;
-    expect(runGit(root, ['status', '--porcelain']).exit_code).toBe(0);
+    expect((await runGit(root, ['status', '--porcelain'], undefined, true)).exit_code).toBe(0);
     expect(reads() - before).toBe(1);
   } finally {
     now.mockRestore();
@@ -223,16 +225,16 @@ it.each([
   { wsl: false, onDrive: true, autocrlf: 'false', checkStat: '' },
 ])(
   'reads line endings and stat data the Windows way only on a WSL drive (wsl $wsl, drive $onDrive)',
-  ({ wsl, onDrive, autocrlf, checkStat }) => {
+  async ({ wsl, onDrive, autocrlf, checkStat }) => {
     const root = onDrive
       ? path.join(mountRoot, 'c', `project-${wsl}`)
       : fresh('pantheon-git-linux-disk-');
     if (onDrive) roots.push(root);
     repository(root);
     if (wsl) process.env.WSL_DISTRO_NAME = 'Fixture';
-    expect(value(root, 'core.autocrlf')).toBe(autocrlf);
-    expect(value(root, 'core.checkStat')).toBe(checkStat);
-    expect(value(root, 'core.trustctime')).toBe(checkStat ? 'false' : '');
+    expect(await value(root, 'core.autocrlf')).toBe(autocrlf);
+    expect(await value(root, 'core.checkStat')).toBe(checkStat);
+    expect(await value(root, 'core.trustctime')).toBe(checkStat ? 'false' : '');
   },
 );
 
@@ -242,7 +244,7 @@ it.each([
     gitdir: 'D:\\coding warehouse\\project\\.git\\worktrees\\linked',
     commondir: 'D:\\coding warehouse\\project\\.git',
   },
-])('opens a worktree a Windows tool made at $gitdir', ({ gitdir, commondir }) => {
+])('opens a worktree a Windows tool made at $gitdir', async ({ gitdir, commondir }) => {
   const drive = fresh('pantheon-windows-drive-');
   symlinkSync(drive, path.join(mountRoot, 'd'));
   roots.push(path.join(mountRoot, 'd'));
@@ -254,11 +256,13 @@ it.each([
   plainGit(project, ['config', 'fixture.origin', 'common']);
   process.env.WSL_DISTRO_NAME = 'Fixture';
   const counted = countGitRuns();
-  const located = runGit(linked, ['rev-parse', '--show-toplevel']);
+  const located = await runGit(linked, ['rev-parse', '--show-toplevel'], undefined, true);
   expect(located.stderr.toString()).toBe('');
   expect(located.stdout.toString()).toBe(`${linked}\n`);
-  expect(value(linked, 'fixture.origin')).toBe('common');
+  expect(await value(linked, 'fixture.origin')).toBe('common');
   const before = counted();
-  expect(runGit(linked, ['rev-parse', '--show-toplevel']).exit_code).toBe(0);
+  expect((await runGit(linked, ['rev-parse', '--show-toplevel'], undefined, true)).exit_code).toBe(
+    0,
+  );
   expect(counted() - before).toBe(1);
 });

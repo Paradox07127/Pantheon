@@ -12,8 +12,8 @@ afterEach(async () => {
 const DAY = 86400000;
 const now = Date.parse('2026-11-13T12:00:00Z');
 
-function setup() {
-  const f = fixture({ now: () => now });
+async function setup() {
+  const f = await fixture({ now: () => now });
   cleanups.push(() => f.close());
   const runs = countingGit();
   cleanups.push(() => runs.restore());
@@ -81,7 +81,7 @@ function setup() {
 }
 
 it('collects the baseline facts without blocking and reads HEAD only with them', async () => {
-  const f = setup();
+  const f = await setup();
   f.runs.slowOn('ls-files -z -t');
   let baseline: ProjectBaseline | undefined;
   expect(await f.ticksDuring(async () => (baseline = await f.startBaseline()))).toBeGreaterThan(0);
@@ -92,7 +92,7 @@ it('collects the baseline facts without blocking and reads HEAD only with them',
 });
 
 it('refreshes the facts and tells an empty project without blocking', async () => {
-  const f = setup();
+  const f = await setup();
   f.runs.slowOn('ls-files -z -t');
   expect(
     await f.ticksDuring(() => f.call('project.facts.refresh', { project_id: f.project.id })),
@@ -108,7 +108,7 @@ it('refreshes the facts and tells an empty project without blocking', async () =
 });
 
 it('checks every commit a submitted folder cites with one git run', async () => {
-  const f = setup();
+  const f = await setup();
   const head = f.populate();
   const baseline = await f.startBaseline();
   f.runs.reset();
@@ -136,7 +136,7 @@ it('checks every commit a submitted folder cites with one git run', async () => 
 });
 
 it('measures the introduction with one history read per folder, counting modules as rev-list does', async () => {
-  const f = setup();
+  const f = await setup();
   f.populate();
   f.commit('Old module change', 40, { 'src/a/index.ts': 'export const a = 2;\n' });
   f.commit('Main module change', 20, { 'src/a/index.ts': 'export const a = 3;\n' });
@@ -196,7 +196,7 @@ it('measures the introduction with one history read per folder, counting modules
 });
 
 it('reads how far the introduction is behind without blocking', async () => {
-  const f = setup();
+  const f = await setup();
   f.populate();
   const baseline = await f.startBaseline();
   await f.call(
@@ -217,7 +217,7 @@ it('reads how far the introduction is behind without blocking', async () => {
 });
 
 it('reads the main-line commits of a range story with one git run per folder without blocking', async () => {
-  const f = setup();
+  const f = await setup();
   f.populate();
   f.commit('Recent change', 0, { 'README.md': '# Notes\n\nRecent.\n' });
   f.runs.reset();
