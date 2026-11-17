@@ -1158,7 +1158,7 @@ export const boardPlanInputSchema = z.strictObject({
   base_version: baseVersion,
   headline: planTitle,
   lanes: z
-    .array(z.strictObject({ id: planId, title: planTitle }))
+    .array(z.strictObject({ id: planId, title: planTitle, fanout_reason: boardText.optional() }))
     .min(1)
     .max(16),
   iterations: planIterations.default([]),

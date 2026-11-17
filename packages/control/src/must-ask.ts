@@ -106,8 +106,12 @@ export function mustAsk(
   projectId: string,
   subject: Approval | CharterPower,
 ): boolean {
-  if (projectOverBudget(ctx, projectId)) return true;
-  if (typeof subject === 'string') return POWER_KINDS[subject] !== undefined;
+  if (typeof subject === 'string')
+    return (
+      POWER_KINDS[subject] !== undefined ||
+      // Over budget, new work waits for the user; prompts of sessions already running do not.
+      (subject === 'plan_change' && projectOverBudget(ctx, projectId))
+    );
   return (
     shellCommands(subject).some(destructiveGit) ||
     leavesSandbox(ctx, projectId, subject) ||

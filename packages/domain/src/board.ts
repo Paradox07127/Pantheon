@@ -98,7 +98,12 @@ export interface LeadQuestion {
 export interface BoardPlan extends Entity {
   project_id: string;
   headline: string;
-  lanes: { id: string; title: string }[];
+  lanes: {
+    id: string;
+    title: string;
+    /** Why tasks of the lane run at the same time, in one sentence from the lead; absent when it gave none. */
+    fanout_reason?: string;
+  }[];
   iterations?: { id: string; title: string; starts_on: string; ends_on: string }[];
   /** Task ids whose relative order the user locked, in plan order. */
   order_lock?: string[];

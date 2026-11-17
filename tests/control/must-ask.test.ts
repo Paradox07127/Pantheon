@@ -123,12 +123,13 @@ it('asks the user before an agent is created or external work starts, whatever t
   ]);
 });
 
-it('asks the user about every decision once the project spent its budget', async () => {
+it('asks the user before a plan change once the project spent its budget, and about nothing else', async () => {
   const { f, session, ask } = await worker();
   let skew = 0;
   vi.spyOn(f.store, 'now').mockImplementation(() => Date.now() + skew);
   setPolicy(f, { project_budget: { input_tokens: 100 } });
   expect(ask('Bash', 'git status')).toBe(false);
+  expect(mustAsk(ctxOf(f), f.project.id, 'plan_change')).toBe(false);
   skew += 1000;
   const turn = f.store.insert<SessionTurn>('session_turns', {
     id: id(),
@@ -142,6 +143,7 @@ it('asks the user about every decision once the project spent its budget', async
     usage: { input_tokens: 150, output_tokens: 0 },
   } as SessionTurn);
   f.store.event('turn.completed', turn, f.project.id, {});
-  expect(ask('Bash', 'git status')).toBe(true);
-  expect(mustAsk(ctxOf(f), f.project.id, 'accept_milestone')).toBe(true);
+  expect(mustAsk(ctxOf(f), f.project.id, 'plan_change')).toBe(true);
+  expect(ask('Bash', 'git status')).toBe(false);
+  expect(mustAsk(ctxOf(f), f.project.id, 'accept_milestone')).toBe(false);
 });

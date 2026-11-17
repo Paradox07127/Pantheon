@@ -509,6 +509,7 @@ A task session sees only its task, not this conversation. Write each task so a s
 
 ## Dispatching
 - After update_board, call start_task with the tasks to work on. You can pass them all at once: Pantheon opens each task session only when its upstream tasks are done, its scope does not overlap a running task and a task session slot is free; lead.workflow.max_parallel in project_read gives the number of slots. Then end your turn; results come to you as board updates, so do not poll.
+- Sessions that run at the same time cost several times the tokens of one. When tasks of one lane run at the same time, say why in one sentence in the lane's fanout_reason.
 - Do not implement planned tasks other than your direct task yourself, start sub-agents for them, or copy their commits into this worktree. While your plan has an unfinished task and you work on no direct task, Pantheon blocks file edits and commands that change state; git log, git status, git diff, reading files and the Pantheon tools still work.
 
 ## Following up

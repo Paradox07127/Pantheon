@@ -137,6 +137,31 @@ const setModel = (taskId = 'api') => ({
   patch: { model: 'claude-opus-4-5' },
 });
 
+it('keeps the reason a lead gives for running the tasks of a lane at the same time', async () => {
+  const f = await setup(),
+    lead = leadOf(f);
+  const lanes = [
+    { id: 'core', title: 'Core', fanout_reason: 'The API and the button share no file.' },
+    { id: 'docs', title: 'Docs' },
+  ];
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes,
+      tasks: TASKS,
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    lead,
+  );
+  expect(planOf(f, lead).lanes).toEqual(lanes);
+});
+
 it('lets the lead set one field of a task by id', async () => {
   const f = await setup();
   const lead = leadOf(f);
