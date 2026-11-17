@@ -88,12 +88,17 @@ export interface LeadQuestion {
   assumption: string;
   /** Only these tasks wait for the answer before starting. */
   blocks: string[];
-  answer?: { text: string; at: number };
+  answer?: {
+    text: string;
+    at: number;
+    /** The lead's earlier answer the user replaced. */
+    overruled?: { text: string; at: number };
+  };
   /** The worker question this card relays. */
   source?: { session_id: string; approval_id: string };
   /** The relayed question's original questions. */
   questions?: ApprovalQuestion[];
-  /** Who answered a relayed worker question; absent when the user did. */
+  /** Who answered a relayed worker question; absent when the user answered before the lead. */
   answered_by?: 'user' | 'lead';
   /**
    * What the lead's answer rests on: words of the asking task's source, a plan assumption's text, a

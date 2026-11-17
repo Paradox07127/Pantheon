@@ -24,7 +24,7 @@ import {
   unsnooze,
   withoutNativeConversation,
 } from './session.js';
-import { wakeLead } from './task-tracking.js';
+import { queueStepTurn, wakeLead } from './task-tracking.js';
 import { taskRuntime } from './task-dispatch.js';
 import { changeModel } from './workbench-session.js';
 import { causeTurn, chainDepth } from './progress.js';
@@ -351,14 +351,21 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       `How to handle: ${FAILED_HANDLING[kind] ?? FAILED_HANDLING.failed} Do not do the task yourself.`,
     ];
   else if (TASK_WAITING.includes(kind)) {
-    const question = plan.questions?.find((entry) => entry.id === note.question_id);
+    const question = plan.questions?.find((entry) => entry.id === note.question_id),
+      overruled = kind === 'answer' ? question?.answer?.overruled : undefined;
     lines = [
       startTag(onTask),
-      kind === 'answer' && question
-        ? `What happened: the user answered your question: "${question.question}" Answer: "${note.answer}". You had assumed: "${question.assumption}".`
-        : `What happened: ${note.task_id ? `Task ${taskRef}: ` : ''}${text}${reason}`,
+      overruled
+        ? `What happened: the user overruled your answer to "${question!.question}": you answered "${overruled.text}", the user says "${note.answer}".`
+        : kind === 'answer' && question
+          ? `What happened: the user answered your question: "${question.question}" Answer: "${note.answer}". You had assumed: "${question.assumption}".`
+          : `What happened: ${note.task_id ? `Task ${taskRef}: ` : ''}${text}${reason}`,
       since,
-      `How to handle: ${WAITING_HANDLING[kind]}`,
+      `How to handle: ${
+        overruled
+          ? `the user's answer replaces yours; fix anything in the plan built on yours${note.turn_id ? '. Pantheon sent the task session the new answer.' : ', and tell the task session what changes.'}`
+          : WAITING_HANDLING[kind]
+      }`,
     ];
   } else if (kind === 'worker_question')
     lines = [
@@ -710,6 +717,68 @@ export const leadInboxHandlers: Handlers = {
     );
     wakeLead(ctx, noted, c.command_id);
     return answered;
+  },
+  'lead.question.overrule': (ctx, p, c) => {
+    const input = inputSchemas['lead.question.overrule'].parse(c.input);
+    userOnly(p);
+    projectAccess(ctx, p, input.project_id, c.type);
+    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
+    requireThat(
+      plan && plan.project_id === input.project_id,
+      'not_found',
+      `Not found: board plan ${input.lead_session_id}`,
+    );
+    const question = plan.questions?.find((question) => question.id === input.question_id);
+    requireThat(question, 'not_found', `Not found: question ${input.question_id}`);
+    requireThat(
+      question.answered_by === 'lead' && question.answer && question.source,
+      'invalid_state',
+      'Only an answer the lead gave a task session can be overruled',
+    );
+    const leadAnswer = question.answer,
+      at = ctx.store.now(),
+      overruled: LeadQuestion = {
+        ...question,
+        answered_by: 'user',
+        answer: { text: input.answer, at, overruled: { text: leadAnswer.text, at: leadAnswer.at } },
+      };
+    const next = ctx.store.update(
+      'board_plans',
+      {
+        ...plan,
+        questions: plan.questions!.map((entry) => (entry.id === question.id ? overruled : entry)),
+      },
+      plan.revision,
+    );
+    ctx.store.event('lead.question_overruled', next, plan.project_id, overruled, c.command_id);
+    const asking = ctx.store.get<Session>('sessions', question.source.session_id);
+    const told =
+      asking && !asking.outcome
+        ? queueStepTurn(
+            ctx,
+            asking,
+            asking.task!.id,
+            `[Pantheon] The user changed the answer to your question "${question.question}": "${leadAnswer.text}" is now "${input.answer}". Redo what depended on the old answer.`,
+          )
+        : undefined;
+    // The task session's turn may have taken a contract change off the plan.
+    const noted = appendNote(
+      ctx,
+      ctx.store.must<BoardPlan>('board_plans', plan.id),
+      {
+        at,
+        session_id: question.source.session_id,
+        task_id: asking?.task?.id ?? '',
+        kind: 'answer',
+        question_id: question.id,
+        answer: input.answer,
+        text: `Question: ${question.question}\nYour answer: ${leadAnswer.text}\nThe user's answer: ${input.answer}`,
+        ...(told ? { turn_id: told.id } : {}),
+      },
+      c.command_id,
+    );
+    wakeLead(ctx, noted, c.command_id);
+    return overruled;
   },
   'lead.worker_question.answer': (ctx, p, c) => {
     const input = inputSchemas['lead.worker_question.answer'].parse(c.input);

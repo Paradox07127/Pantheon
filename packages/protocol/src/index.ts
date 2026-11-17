@@ -2169,6 +2169,13 @@ export const inputSchemas = {
     /** A relayed worker question only: question text to the answer, as approval.respond takes it. */
     answers: z.record(str, str).optional(),
   }),
+  /** The user only; replaces the answer a lead gave a task session's question and tells the lead and that session. */
+  'lead.question.overrule': z.strictObject({
+    project_id: str,
+    lead_session_id: str.describe('The lead whose plan holds the question.'),
+    question_id: str.describe("A task session's question its lead answered."),
+    answer: str.describe("The user's answer, which replaces the lead's."),
+  }),
   /** The calling lead's answer to a task session's question on its own plan; the first answer wins. */
   'lead.worker_question.answer': z.strictObject({
     project_id: str,
