@@ -291,6 +291,11 @@ describe('session events', () => {
       ['agent.turn.started'],
       ['agent.turn.completed'],
     ],
+    [
+      'hides the progress a subagent or background task reports, which the monitor panel shows',
+      ['agent.task.progress'],
+      ['agent.task.started', 'agent.task.ended'],
+    ],
   ])('%s', (_, quiet, shown) => {
     const of = (type: string) =>
       type.startsWith('agent.')

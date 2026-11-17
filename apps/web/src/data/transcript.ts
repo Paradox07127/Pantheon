@@ -420,7 +420,9 @@ export function isQuietEvent(event: DaemonEvent): boolean {
     event.kind === 'agent.fast_mode.changed' ||
     event.kind === 'agent.title.generated' ||
     // ACP agents report the turn start; the turn header shows it already.
-    event.kind === 'agent.turn.started'
+    event.kind === 'agent.turn.started' ||
+    // Comes every few seconds per running task; the monitor panel shows it.
+    event.kind === 'agent.task.progress'
   )
     return true;
   if (event.kind !== 'agent.native') return false;
