@@ -10,6 +10,7 @@ import * as daemonCrashRecovery from './daemon-crash-recovery.mjs';
 import * as documentTaskHumanAcceptance from './document-task-human-acceptance.mjs';
 import * as eventResumeBackpressure from './event-resume-backpressure.mjs';
 import * as firstRunImport from './first-run-import.mjs';
+import * as folderSessionLanding from './folder-session-landing.mjs';
 import * as gateVersionBinding from './gate-version-binding.mjs';
 import * as nativeRuntimeAdmission from './native-runtime-admission.mjs';
 import * as nativeSessionRecovery from './native-session-recovery.mjs';
@@ -53,6 +54,7 @@ for (const scenario of [
   appDailyLoop,
   firstRunImport,
   residentAssistant,
+  folderSessionLanding,
 ]) {
   if (scenarios.has(scenario.title)) throw new Error(`Duplicate scenario title: ${scenario.title}`);
   scenarios.set(scenario.title, scenario);

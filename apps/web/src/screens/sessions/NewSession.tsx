@@ -199,7 +199,7 @@ export function NewSession(props: {
   const projectName = projects.find((p) => p.id === props.projectId)?.name ?? null;
   const projectFolder = projects.find((p) => p.id === props.projectId)?.roots?.[0];
   const head = useProjectHead(props.projectId).read;
-  const workspace = useDrafts((s) => s.drafts[key]?.workspace) ?? 'worktree';
+  const pickedWorkspace = useDrafts((s) => s.drafts[key]?.workspace);
   const setWorkspace = (next: Workspace) =>
     useDrafts.getState().update(key, () => ({ workspace: next }));
   const refs = useDrafts((s) => s.drafts[key]?.refs) ?? NO_SESSIONS;
@@ -207,6 +207,10 @@ export function NewSession(props: {
   const start = useDrafts((s) => s.drafts[key]?.from) ?? null;
   const setStart = (next: From | null) =>
     useDrafts.getState().update(key, () => ({ from: next ?? undefined }));
+  // Without a choice the daemon picks the project folder, or a worktree while a session writes there.
+  const holder = props.recent.find((s) => s.holds_folder) ?? null;
+  const workspace: Workspace =
+    pickedWorkspace ?? (start !== null || holder ? 'worktree' : 'in_place');
   const from: From | undefined = workspace === 'worktree' && start !== null ? start : undefined;
   const [branchRead, setBranchRead] = useState<BranchRead | null>(null);
   const [branchFilter, setBranchFilter] = useState('');
@@ -214,13 +218,13 @@ export function NewSession(props: {
     const onKey = (e: KeyboardEvent) => {
       if (!sameKeys(pressedKeys(e) ?? '', WORKSPACE_KEYS)) return;
       e.preventDefault();
-      useDrafts.getState().update(key, (d) => ({
-        workspace: d.workspace === 'in_place' ? 'worktree' : 'in_place',
+      useDrafts.getState().update(key, () => ({
+        workspace: workspace === 'in_place' ? 'worktree' : 'in_place',
       }));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [key]);
+  }, [key, workspace]);
   const githubRefs = useDrafts((s) => s.drafts[key]?.github) ?? NO_GITHUB;
   const connections = useConnectionsStatus().read;
   const githubState = connections.state === 'ready' ? connections.github.state : null;
@@ -405,7 +409,7 @@ export function NewSession(props: {
         ...(runtimeTraits(chosen).turnSkills && sent.length ? { skills: sent } : {}),
         ...(fastOn ? { fast: true } : {}),
         ...(ultracodeOn ? { ultracode: true } : {}),
-        workspace,
+        workspace: pickedWorkspace ?? (from ? 'worktree' : 'auto'),
         ...(from ? { from } : {}),
         ...refsInput(refs, githubRefs),
         ...(purpose ? { purpose } : {}),
@@ -426,7 +430,7 @@ export function NewSession(props: {
       skills: sent.map((skill) => skill.name).filter((name) => !named.includes(name)),
       refs: refs.map((r) => r.id),
       github: githubRefs.map(githubRefKey),
-      workspace,
+      ...(pickedWorkspace ? { workspace: pickedWorkspace } : {}),
       ...(start ? { from: start } : {}),
       ...(choice ? { model: choice } : {}),
       ...(mode ? { mode } : {}),
@@ -727,6 +731,7 @@ export function NewSession(props: {
               </span>
               {workspace === 'worktree' && startMenu}
             </div>
+
             {head && (
               <div className="cr-list">
                 <div className="cr-head">
@@ -962,6 +967,17 @@ export function NewSession(props: {
         </div>
       )}
       {status.state === 'failed' && <span className="tr-why">{status.text}</span>}
+      {holder && pickedWorkspace === undefined && start === null && (
+        <span className="tr-why">
+          {t(
+            {
+              id: 'sessions.newWorkspace.folderHeld',
+              defaultMessage: '{title} is writing in the project folder',
+            },
+            { title: sessionRow(holder).title },
+          )}
+        </span>
+      )}
       {(error ?? attachments.error) && (
         <span className="tr-err" role="alert">
           {error ?? attachments.error}

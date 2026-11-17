@@ -106,9 +106,9 @@ it.each([
   [
     'an ordinary session in the project folder gets none of the app tools',
     { workspace: 'in_place' },
-    'planner',
+    'writer',
     () =>
-      (Object.values(sessionTools.planner) as string[])
+      (Object.values(sessionTools.writer) as string[])
         .filter((action) => !appActions.includes(action))
         .sort(),
   ],

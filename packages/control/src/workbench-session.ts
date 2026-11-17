@@ -116,6 +116,7 @@ import {
 } from './board-plan.js';
 import { checkedSource, numstatFiles, PATCH_BOUND, sourceGit, TIME_BOUND } from './source-git.js';
 import { runGit, type GitResult } from './git.js';
+import { userGit } from './repo-write.js';
 import { mergePreview } from './merge-preview.js';
 import { repositoryInsights } from './repository-insights.js';
 import {
@@ -819,15 +820,16 @@ export function prefetchedPaths(
   };
 }
 
-/** A folder session's checked folder, read against its HEAD; undefined when the folder cannot be read. */
+/** A folder session's checked folder, read against base; undefined when the folder cannot be read. */
 function folderSource(
   ctx: ControlContext,
   p: Principal,
   workspace: Workspace,
+  base: string,
 ): { directory: string; base: string } | undefined {
   try {
     // The scope check runs for every principal; only the Git read is reused.
-    return { directory: checkedSource(ctx, p, workspace.project_id, workspace.path), base: 'HEAD' };
+    return { directory: checkedSource(ctx, p, workspace.project_id, workspace.path), base };
   } catch (error) {
     if (error instanceof DomainError) return undefined;
     throw error;
@@ -1123,9 +1125,9 @@ function listedSessions(
         state,
         activity,
         workspace,
-        // A folder session has no merge gate.
+        // An adopted folder session has no merge gate.
         commands:
-          workspace.kind === 'in_place'
+          workspace.kind === 'in_place' && !session.in_place
             ? undefined
             : gateCommands(ctx, project, workspace, session),
         ...(readChanges && workspaceReady(workspace) && workspace.removed_at === undefined
@@ -1143,18 +1145,25 @@ interface ListedGit {
   head: string | undefined;
 }
 
+/** The commit the session's changes count from: the project folder's HEAD when a folder session opened. */
+const sessionBase = (session: Session, workspace: Workspace) =>
+  workspace.kind === 'in_place' ? session.in_place?.base_sha : workspace.base_sha;
+
 /** The worktree facts a listed session's state reads; null when its state reads none. */
 function stateWorktree(
+  session: Session,
   workspace: Workspace,
   state: WorkbenchSession['state'],
   facts: SessionGitFacts | null | undefined,
 ): ListedGit['worktree'] {
   // Ready means mergeable work: commits on the base and nothing uncommitted, whatever files they change.
-  return workspace.kind !== 'in_place' && state === 'idle' ? (facts ?? null) : null;
+  return (workspace.kind !== 'in_place' || sessionBase(session, workspace)) && state === 'idle'
+    ? (facts ?? null)
+    : null;
 }
 
-const listsReady = (workspace: Workspace, worktree: ListedGit['worktree']) =>
-  !!worktree?.clean && worktree.head !== workspace.base_sha;
+const listsReady = (session: Session, workspace: Workspace, worktree: ListedGit['worktree']) =>
+  !!worktree?.clean && worktree.head !== sessionBase(session, workspace);
 
 /**
  * Whether the session lists as ready by the newest cached Git reads of its workspace, as a list
@@ -1166,31 +1175,37 @@ export function cachedReady(
   workspace: Workspace,
   waiting: boolean,
 ): boolean | undefined {
-  if (!workspaceReady(workspace) || workspace.kind === 'in_place') return false;
+  if (
+    !workspaceReady(workspace) ||
+    (workspace.kind === 'in_place' && !sessionBase(session, workspace))
+  )
+    return false;
   const cached = worktreeReads.get(workspace.id);
   if (!cached) return undefined;
   const { facts } = knownReads(cached);
   // A failed read (null) says no more than a missing one.
   if (facts == null) return undefined;
   return listsReady(
+    session,
     workspace,
-    stateWorktree(workspace, listedState(ctx, session, waiting ? 1 : 0, undefined), facts),
+    stateWorktree(session, workspace, listedState(ctx, session, waiting ? 1 : 0, undefined), facts),
   );
 }
 
 /** What the list shows of the worktree from the cached reads, or the next read the cache lacks. */
 function listedGit(ctx: ControlContext, p: Principal, listed: ListedRead): ListedGit | GitStep {
-  const { workspace, cached } = listed,
-    inPlace = workspace.kind === 'in_place';
+  const { session, workspace, cached } = listed,
+    base = sessionBase(session, workspace);
   const source = ['starting', 'failed', 'merged', 'discarded'].includes(listed.state)
     ? undefined
-    : inPlace
-      ? folderSource(ctx, p, workspace)
-      : { directory: workspace.path, base: workspace.base_sha! };
-  if (!inPlace && cached.facts === undefined) return { read: 'facts' };
+    : workspace.kind === 'in_place'
+      ? folderSource(ctx, p, workspace, base ?? 'HEAD')
+      : { directory: workspace.path, base: base! };
+  if ((workspace.kind !== 'in_place' || base) && cached.facts === undefined)
+    return { read: 'facts' };
   if (source && cached.changes === undefined) return { read: 'changes', ...source };
   const changes = source ? cached.changes! : null;
-  const worktree = stateWorktree(workspace, listed.state, cached.facts);
+  const worktree = stateWorktree(session, workspace, listed.state, cached.facts);
   // A commit or rollback outside a turn also moves HEAD off the commit the run checked.
   // Facts read before an empty commit would hide it, so a worktree without changed files reads HEAD too.
   const readsHead =
@@ -1392,6 +1407,7 @@ export function sessionList(
     return plans.get(leadId);
   };
   const restorable = restorableTurns(ctx, projectId);
+  const writer = folderWriter(ctx, ctx.store.must<Project>('projects', projectId));
   return listed.map((each): WorkbenchSession => {
     const { session, requests, state, activity, workspace, commands, cached } = each;
     const latestTurn = latestSends.get(session.id);
@@ -1560,12 +1576,24 @@ export function sessionList(
       effort: session.requested_effort ?? null,
       permission_mode: session.permission_mode ?? 'ask',
       workspace_id: workspace.id,
-      state: listsReady(workspace, worktree) ? 'ready' : state,
+      state: listsReady(session, workspace, worktree) ? 'ready' : state,
       waiting,
       changes,
       merge: session.merge ? publicMerge(session.merge) : null,
       ...facts,
       workspace_kind: workspace.kind,
+      ...(session.in_place ? { lands: true as const } : {}),
+      ...(writer?.id === session.id ? { holds_folder: true as const } : {}),
+      ...(session.worktree_reason
+        ? {
+            worktree_reason: {
+              holder_session_id: session.worktree_reason.holder_session_id,
+              holder_title:
+                ctx.store.get<Session>('sessions', session.worktree_reason.holder_session_id)
+                  ?.title ?? '',
+            },
+          }
+        : {}),
       ...(gitFacts
         ? { branch: gitFacts.branch, ahead: gitFacts.ahead, behind: gitFacts.behind }
         : {}),
@@ -1712,7 +1740,9 @@ export async function readSessionDiff(
       'Session diff failed or exceeded its time bound',
     );
   };
-  const base = inPlace ? 'HEAD' : workspace?.base_sha;
+  // A session the user opened in the folder counts from the HEAD it opened on, so commits stay in it.
+  const folderBase = session.in_place?.base_sha,
+    base = inPlace ? (folderBase ?? 'HEAD') : workspace?.base_sha;
   if (!base) throw new DomainError('diff_base_missing', 'Worktree has no base commit');
   const approvals = ctx.store
     .list<Approval>('approvals')
@@ -1734,7 +1764,12 @@ export async function readSessionDiff(
       ({ head, ...diff }) => {
         read.at = Date.now();
         delete read.reading;
-        return { session_id: session.id, base_sha: inPlace ? head : base, head_sha: head, ...diff };
+        return {
+          session_id: session.id,
+          base_sha: inPlace ? (folderBase ?? head) : base,
+          head_sha: head,
+          ...diff,
+        };
       },
       (error: unknown) => {
         if (sessionDiffs.get(key) === read) sessionDiffs.delete(key);
@@ -1879,6 +1914,31 @@ function refuseInPlace(ctx: ControlContext, session: Session, message: string): 
     'invalid_state',
     message,
   );
+}
+
+/** Refuses a session adopted in the user's own folder; one the user opened there gates, lands and discards. */
+function refuseAdopted(ctx: ControlContext, session: Session, message: string): void {
+  if (!session.in_place) refuseInPlace(ctx, session, message);
+}
+
+/**
+ * The session writing in the project's first folder, adopted or opened there, until it has an
+ * outcome, closes or is archived; a diagnosis of the running app only reads it.
+ */
+export function folderWriter(ctx: ControlContext, project: Project): Session | undefined {
+  return ctx.store.list<Session>('sessions').find((session) => {
+    if (
+      session.project_id !== project.id ||
+      !session.workspace_id ||
+      session.outcome ||
+      session.state === 'closed' ||
+      session.archived_at ||
+      session.app_debug
+    )
+      return false;
+    const workspace = ctx.store.get<Workspace>('workspaces', session.workspace_id);
+    return workspace?.kind === 'in_place' && workspace.source === project.roots[0];
+  });
 }
 
 const DISCARDED_TEXT =
@@ -2841,9 +2901,10 @@ export async function sessionPreflight(
   const started = ctx.store.must<Session>('sessions', sessionId);
   projectAccess(ctx, p, started.project_id, 'project.read');
   requireThat(started.workspace_id, 'invalid_state', 'Session has no worktree');
-  refuseInPlace(ctx, started, NO_MERGE_GATE);
+  refuseAdopted(ctx, started, NO_MERGE_GATE);
   const workspace = ctx.store.must<Workspace>('workspaces', started.workspace_id),
-    source = workspace.source ?? workspace.path;
+    source = workspace.source ?? workspace.path,
+    base = sessionBase(started, workspace);
   const [worktreeStatus, sourceStatus] = await Promise.all([
     readStatus(workspace.path, BRANCH_STATUS, workspace.id),
     readStatus(source, SOURCE_STATUS, workspace.id),
@@ -2854,19 +2915,10 @@ export async function sessionPreflight(
   requireThat(sourceState, 'workspace_read_failed', 'Source repository status could not be read');
   const { branch: targetBranch, clean: sourceClean } = sourceState;
   const [commits, files, merge] = await Promise.all([
-    runGit(
-      workspace.path,
-      ['rev-list', '--count', `${workspace.base_sha}..${worktree.head}`],
-      undefined,
-      true,
-    ),
-    runGit(
-      workspace.path,
-      ['diff', '--name-only', '-z', workspace.base_sha!, worktree.head],
-      undefined,
-      true,
-    ),
-    targetBranch !== null
+    runGit(workspace.path, ['rev-list', '--count', `${base}..${worktree.head}`], undefined, true),
+    runGit(workspace.path, ['diff', '--name-only', '-z', base!, worktree.head], undefined, true),
+    // A session in the project folder lands on the branch it works on, so nothing can conflict.
+    targetBranch !== null && !started.in_place
       ? mergePreview(source, `refs/heads/${targetBranch}`, worktree.head)
       : undefined,
   ]);
@@ -2893,7 +2945,7 @@ export async function sessionPreflight(
           results: NonNullable<LandingItem['gate_results']>;
         }
       | undefined;
-  let conflicts: SessionPreflight['conflicts'] = { state: 'unknown' };
+  let conflicts: SessionPreflight['conflicts'] = { state: started.in_place ? 'none' : 'unknown' };
   if (merge && merge.exit_code !== 129) {
     requireThat(
       merge.exit_code === 0 || merge.exit_code === 1,
@@ -3527,7 +3579,12 @@ export function prefetchMergeReads(
     )
     .flatMap((session) => {
       const workspace = ctx.store.get<Workspace>('workspaces', session.workspace_id!);
-      if (!workspace || workspace.kind === 'in_place' || !workspaceReady(workspace)) return [];
+      if (
+        !workspace ||
+        (workspace.kind === 'in_place' && !session.in_place) ||
+        !workspaceReady(workspace)
+      )
+        return [];
       const source = workspace.source ?? workspace.path;
       return [
         refreshMergeState(worktreeMergeReads, workspace.id, async () =>
@@ -3566,7 +3623,8 @@ function mergeBlockedReason(
   session: Session,
   read: Pick<MergeReads, 'worktree' | 'source'>,
 ): { code: string; message: string } | undefined {
-  if (ctx.store.must<Workspace>('workspaces', session.workspace_id!).kind === 'in_place')
+  const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
+  if (workspace.kind === 'in_place' && !session.in_place)
     return { code: 'invalid_state', message: NO_MERGE_GATE };
   if (
     session.state === 'running' ||
@@ -3578,11 +3636,11 @@ function mergeBlockedReason(
   if (session.state !== 'open') return { code: 'invalid_state', message: 'Session is not open' };
   if (session.stop_requested)
     return { code: 'invalid_state', message: 'Session is being discarded' };
-  const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   if (!workspaceReady(workspace))
     return { code: 'invalid_state', message: 'Worktree is not ready' };
   const worktree = read.worktree(workspace);
   if (!worktree) return MERGE_STATE_UNKNOWN;
+  if (session.in_place) return landBlockedReason(ctx, session, workspace, worktree);
   const { clean, head } = worktree;
   // The session agent commits its own work; Pantheon never commits for it.
   if (!clean)
@@ -3608,6 +3666,43 @@ function mergeBlockedReason(
     return {
       code: 'source_dirty',
       message: 'Commit or discard the edited tracked files in the source repository first',
+    };
+}
+
+/**
+ * Why a session opened in the project folder cannot land: landing commits uncommitted files first,
+ * and a clean folder lands only commits past its base the gates passed on.
+ */
+function landBlockedReason(
+  ctx: ControlContext,
+  session: Session,
+  workspace: Workspace,
+  { clean, head }: WorktreeState,
+): { code: string; message: string } | undefined {
+  if (!clean) return;
+  if (head === session.in_place!.base_sha)
+    return { code: 'no_changes', message: 'The session has no commits to land' };
+  const commands = gateCommands(
+    ctx,
+    ctx.store.must<Project>('projects', session.project_id),
+    workspace,
+    session,
+  );
+  if (!commands?.length) return;
+  const checked = ctx.store
+    .kindEvents(session.project_id, ['session.gate_checked'])
+    .findLast((event) => event.aggregate_id === session.id)?.payload as
+    | { commit: string; check_spec_hash: string; results: NonNullable<LandingItem['gate_results']> }
+    | undefined;
+  if (
+    !checked ||
+    checked.commit !== head ||
+    checked.check_spec_hash !== hash(commands) ||
+    checked.results.some(gateFailed)
+  )
+    return {
+      code: 'gate_required',
+      message: 'Run the gates on the current commit and let them pass first',
     };
 }
 
@@ -3697,7 +3792,7 @@ function gateRunRequest(
     'invalid_state',
     'Only an unfinished worktree session can run its gates',
   );
-  refuseInPlace(ctx, session, NO_MERGE_GATE);
+  refuseAdopted(ctx, session, NO_MERGE_GATE);
   revision(ctx, c, session);
   requireThat(session.merge?.state !== 'running', 'invalid_state', 'Session is being merged');
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
@@ -3867,7 +3962,7 @@ function mergeRequest(ctx: ControlContext, p: Principal, c: Command): MergeReque
     'invalid_state',
     'Only an unfinished worktree session can be merged',
   );
-  refuseInPlace(ctx, session, NO_MERGE_GATE);
+  refuseAdopted(ctx, session, NO_MERGE_GATE);
   revision(ctx, c, session);
   return {
     session,
@@ -3882,11 +3977,96 @@ function prepareMerge(ctx: ControlContext, p: Principal, c: Command): Promise<Ha
   const blocked = mergeBlockedReason(ctx, session, unreadMergeReads);
   if (blocked && blocked !== MERGE_STATE_UNKNOWN)
     throw new DomainError(blocked.code, blocked.message);
-  return readMergeStates(
-    ctx,
-    session.id,
-    ctx.store.must<Workspace>('workspaces', session.workspace_id!),
-  ).then((reads) => (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads));
+  const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
+  if (session.in_place) return prepareLand(ctx, session, workspace);
+  return readMergeStates(ctx, session.id, workspace).then(
+    (reads) => (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads),
+  );
+}
+
+/**
+ * Lands a session opened in the project folder on its current branch without moving it: commits
+ * the uncommitted files under the session title first, which moves HEAD off the commit the gates
+ * passed on, so that land stops until the gates pass on the new commit.
+ */
+async function prepareLand(
+  ctx: ControlContext,
+  session: Session,
+  workspace: Workspace,
+): Promise<Handler> {
+  const reads = await readMergeStates(ctx, session.id, workspace);
+  requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
+  let worktree = reads.worktree(workspace)!;
+  const committed = !worktree.clean;
+  if (committed) {
+    for (const args of [
+      ['add', '--all'],
+      ['commit', '--quiet', '-m', session.title || 'Pantheon session'],
+    ]) {
+      const result = await userGit(workspace.path, args);
+      requireThat(result.ok, 'commit_failed', result.output || `git ${args[0]} failed`);
+    }
+    forgetWorktreeReads(workspace.id);
+    const state = worktreeStateOf(await runGit(workspace.path, BRANCH_STATUS, undefined, true));
+    requireThat(state, 'workspace_read_failed', 'Worktree status could not be read');
+    worktree = state;
+  }
+  const base = session.in_place!.base_sha!,
+    numstat = await runGit(
+      workspace.path,
+      ['diff', '--numstat', '-z', base, worktree.head],
+      undefined,
+      true,
+    ),
+    files = numstat.exit_code === 0 ? numstatFiles(numstat.stdout) : [];
+  return (ctx, p, c) => {
+    const { session } = mergeRequest(ctx, p, c);
+    if (committed) {
+      const next = ctx.store.update(
+        'sessions',
+        { ...session, merge: { state: 'blocked' as const, reason: 'gate_required' } },
+        session.revision,
+      );
+      ctx.store.event('session.merge_blocked', next, next.project_id, next.merge, c.command_id);
+      unsnooze(ctx, session.id, 'merge_blocked', c.command_id);
+      return next;
+    }
+    requireMergeReady(ctx, session, { ...reads, worktree: () => worktree });
+    const next = ctx.store.update(
+      'sessions',
+      { ...session, state: 'closed' as const, outcome: 'merged' as const, merge: undefined },
+      session.revision,
+    );
+    ctx.store.event(
+      'session.merged',
+      next,
+      next.project_id,
+      {
+        branch: reads.source(workspace)!.branch,
+        source: workspace.source,
+        from_sha: base,
+        to_sha: worktree.head,
+        files: files.length,
+        additions: files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
+        deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
+        in_place: true,
+      },
+      c.command_id,
+    );
+    unsnooze(ctx, session.id, 'session_ended', c.command_id);
+    if (readUserConfig(ctx.userConfigDir).auto_archive_merged)
+      archiveSession(ctx, session.id, c.command_id);
+    forgetWorktreeReads(workspace.id);
+    // The idle native process closes once the session is recorded closed.
+    const recorded = afterCommit(ctx);
+    const closing: Promise<void> = Promise.resolve()
+      .then(async () => {
+        if (recorded()) await closeNativeProcesses(ctx, session.id);
+      })
+      .finally(() => ctx.completions.delete(closing));
+    ctx.completions.add(closing);
+    return next;
+  };
 }
 
 /**
@@ -4096,7 +4276,7 @@ function mergeAfterTurn(
 
 type SessionStartInput = {
   project_id: string;
-  workspace?: 'worktree' | 'in_place';
+  workspace?: 'worktree' | 'in_place' | 'auto';
   from?: { branch: string } | { session_id: string };
 };
 
@@ -4162,7 +4342,7 @@ function sessionStartOf(
 export type SessionOpening = {
   /** Whether the project's first root is itself the top level of a git checkout. */
   git: boolean;
-  /** The runs of sessionStartRuns; a fork and a session in the project folder read none. */
+  /** The runs of sessionStartRuns; a fork reads none. */
   start?: GitResult[];
 };
 
@@ -4172,10 +4352,10 @@ export function readSessionOpening(
   input: SessionStartInput,
 ): Promise<SessionOpening> {
   const root = ctx.store.must<Project>('projects', input.project_id).roots[0]!;
-  const runs = input.workspace === 'in_place' ? undefined : sessionStartRuns(ctx, input);
+  const runs = sessionStartRuns(ctx, input);
   // A folder that is not a checkout has no start point to read; ticks may ask again every 50 ms.
   return gitFolderAsync(root).then(async (git) =>
-    git && runs
+    git
       ? {
           git,
           start: await Promise.all(runs.map(([cwd, args]) => runGit(cwd, args, undefined, true))),
@@ -4362,6 +4542,15 @@ function checkWorktreeSession(
     'invalid_input',
     'A session in the project folder runs on this machine and only for a report task',
   );
+  const holder =
+    input.workspace === 'in_place' && input.purpose !== 'app_debug'
+      ? folderWriter(ctx, project)
+      : undefined;
+  requireThat(
+    !holder,
+    'resource_busy',
+    `Session ${holder?.id} (${holder?.title ?? ''}) is writing in the project folder`,
+  );
   if (deviceId !== 'local') {
     requireThat(
       Object.hasOwn(readUserConfig(ctx.userConfigDir).devices ?? {}, deviceId),
@@ -4415,6 +4604,7 @@ export function openWorktreeSession(
   principal: Pick<Principal, 'role' | 'session_id'> = { role: 'user' },
   /** The title the worktree folder is named after, in place of the first message. */
   name?: string,
+  worktreeReason?: Session['worktree_reason'],
 ): Session {
   const { project, runtimeName, model, effort, deviceId, board } = checkWorktreeSession(
     ctx,
@@ -4425,6 +4615,11 @@ export function openWorktreeSession(
   // A fork starts from its checkpoint and keeps the source's branch, so it reads no start point.
   const start =
     input.workspace === 'in_place' || fork ? undefined : checkedStart(ctx, input, opening.start);
+  // The project folder's HEAD, which a session the user opens there counts its changes from.
+  const folderHead =
+    input.workspace === 'in_place' && opening.start?.[0]?.exit_code === 0
+      ? opening.start[0].stdout.toString().split('\n')[0]!.trim()
+      : undefined;
   const registered =
     input.workspace === 'in_place'
       ? registerInPlaceWorkspace(ctx, { project_id: project.id, cwd: project.roots[0]! }, cause)
@@ -4494,6 +4689,10 @@ export function openWorktreeSession(
       state: 'running',
       turn_count: 1,
       workspace_id: workspace.id,
+      ...(input.workspace === 'in_place' && !diagnosis && !board
+        ? { in_place: folderHead ? { base_sha: folderHead } : {} }
+        : {}),
+      ...(worktreeReason ? { worktree_reason: worktreeReason } : {}),
       permission_mode: diagnosis ? 'plan' : input.permission_mode,
       ...(input.fast ? { fast: true as const } : {}),
       ...(input.ultracode ? { ultracode: true as const } : {}),
@@ -4824,22 +5023,44 @@ function createInput(ctx: ControlContext, p: Principal, c: Command) {
   const input = inputSchemas['session.create'].parse(c.input);
   projectAccess(ctx, p, input.project_id, c.type);
   revision(ctx, c);
-  return input;
+  return folderChoice(ctx, input);
+}
+
+/**
+ * Where a session opened with workspace auto works: the project folder while no session writes
+ * there, else a worktree that names the writer; a start point or a board task gets a worktree.
+ */
+function folderChoice(
+  ctx: ControlContext,
+  input: ReturnType<(typeof inputSchemas)['session.create']['parse']>,
+): {
+  input: ReturnType<(typeof inputSchemas)['session.create']['parse']>;
+  reason?: Session['worktree_reason'];
+} {
+  if (input.workspace !== 'auto') return { input };
+  if (input.from || input.task_id) return { input: { ...input, workspace: 'worktree' } };
+  const holder = folderWriter(ctx, ctx.store.must<Project>('projects', input.project_id));
+  return holder
+    ? {
+        input: { ...input, workspace: 'worktree' },
+        reason: { holder_session_id: holder.id },
+      }
+    : { input: { ...input, workspace: 'in_place' } };
 }
 
 /** Refuses at once what the store refuses, then reads the start point; the handler checks again. */
 function prepareCreate(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
-  const input = createInput(ctx, p, c),
+  const { input } = createInput(ctx, p, c),
     opened = input.task_id ? userTaskInput(ctx, input) : input;
   checkWorktreeSession(ctx, opened, undefined, input.task_id ? undefined : p);
   for (const ref of input.refs ?? [])
     if (ref.kind === 'session') referencedSession(ctx, input.project_id, ref.id);
   return readSessionOpening(ctx, opened).then(
     (opening) => (ctx: ControlContext, p: Principal, c: Command) => {
-      const input = createInput(ctx, p, c);
+      const { input, reason } = createInput(ctx, p, c);
       return input.task_id
         ? openUserTaskSession(ctx, input, c.command_id, opening)
-        : openWorktreeSession(ctx, input, c.command_id, opening, undefined, p);
+        : openWorktreeSession(ctx, input, c.command_id, opening, undefined, p, undefined, reason);
     },
   );
 }
@@ -4937,7 +5158,7 @@ export const workbenchSessionHandlers: Handlers = {
       'invalid_state',
       'Only a worktree or baseline session without an outcome can be discarded',
     );
-    refuseInPlace(ctx, session, 'A session in the user folder cannot be discarded; delete it');
+    refuseAdopted(ctx, session, 'A session in the user folder cannot be discarded; delete it');
     revision(ctx, c, session);
     if (session.baseline) return discardBaselineSession(ctx, session, cause);
     return stopWorktreeSession(

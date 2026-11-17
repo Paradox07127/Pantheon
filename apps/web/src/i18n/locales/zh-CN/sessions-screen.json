@@ -19,6 +19,7 @@
   "sessions.screen.mergeBlocked": "合并被挡",
   "sessions.screen.unread": "未读",
   "sessions.screen.baselineDiscard": "删除这个摸底会话的记录和 worktree（如有），保留摸底结果。不能恢复。",
+  "sessions.screen.folderDiscard": "关闭这个会话。它的文件留在项目目录里。",
   "sessions.screen.sessionActions": "会话操作",
   "sessions.screen.rolledBack": "已回滚",
   "sessions.screen.handoff": "交接记录",

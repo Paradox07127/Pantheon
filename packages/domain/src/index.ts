@@ -580,6 +580,13 @@ export interface Session extends Entity {
   stop_requested?: { reason: string; at: number; by: 'user' | 'lead' };
   /** The linked worktree a workbench session writes in. */
   workspace_id?: string;
+  /**
+   * A session the user opened in the project folder, not one adopted there; base_sha is the
+   * folder's HEAD when it opened, absent outside a Git checkout.
+   */
+  in_place?: { base_sha?: string };
+  /** Why the session opened a worktree though the user chose none: the session writing the project folder. */
+  worktree_reason?: { holder_session_id: string };
   permission_mode?: PermissionMode;
   enabled_user_connectors?: string[];
   auto_compact_at_tokens?: number;
@@ -744,7 +751,8 @@ export interface AgentMessage extends Entity {
 }
 /**
  * The Pantheon MCP role a session's credential carries; a session in the user's own folder is never
- * a lead, and one opened from a report task there is a worker so it can report.
+ * a lead, one the user opened there writes, and one opened from a report task there is a worker so
+ * it can report.
  */
 export function credentialRole(
   session: Pick<
@@ -757,11 +765,13 @@ export function credentialRole(
     | 'workspace_id'
     | 'task'
     | 'resident'
+    | 'in_place'
   >,
   workspaceKind?: Workspace['kind'],
 ): Role {
   if (session.review_id) return 'reviewer';
   if (session.resident) return 'lead';
+  if (workspaceKind === 'in_place' && session.in_place && !session.task) return 'writer';
   if (
     session.baseline ||
     session.change_story ||

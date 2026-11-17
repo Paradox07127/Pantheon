@@ -278,7 +278,7 @@ function rangeStart(ctx: ControlContext, session: Session): DiffRange | Workspac
   requireThat(session.workspace_id, 'invalid_state', 'Session has no worktree');
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
   requireThat(
-    workspace.kind === 'linked_worktree',
+    workspace.kind === 'linked_worktree' || session.in_place?.base_sha,
     'invalid_state',
     'Session works in the user folder and has no committed range',
   );
@@ -291,6 +291,7 @@ function rangeStart(ctx: ControlContext, session: Session): DiffRange | Workspac
       throw new DomainError('landing_unavailable', 'Session merge recorded no commits');
     return { source: workspace.source!, from_sha: merged.from_sha, to_sha: merged.to_sha };
   }
+  if (workspace.kind === 'in_place') return { ...workspace, base_sha: session.in_place!.base_sha };
   if (!workspace.base_sha)
     throw new DomainError('diff_base_missing', 'Worktree has no base commit');
   return workspace;

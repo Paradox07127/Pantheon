@@ -2000,6 +2000,71 @@
         "observations.json"
       ],
       "status": "not_run"
+    },
+    {
+      "id": "A040",
+      "title": "新会话默认在项目目录改，门禁通过后落地，目录被占时开工作树(fixture)",
+      "gate": "G2",
+      "mode": "integration",
+      "timeout_ms": 300000,
+      "setup": [
+        "fixture daemon 跑本仓库代码，只登记 fixture 适配器；没有真实模型",
+        "临时 git 仓库在 main 上，项目门禁一条必过命令，会话默认 runtime 为 fixture"
+      ],
+      "steps": [
+        "用户像新建页什么都不选那样 session.create(workspace auto),fixture 在项目目录写一个文件并提交",
+        "用户跑 session.gates.run,门禁通过后 session.merge 落地",
+        "再开一个不选工作区的会话占住项目目录，然后再开一个，核对它进了工作树并写明原因"
+      ],
+      "assertions": [
+        {
+          "path": "first.workspace_kind",
+          "op": "eq",
+          "expected": "in_place"
+        },
+        {
+          "path": "first.branch",
+          "op": "eq",
+          "expected": "main"
+        },
+        {
+          "path": "land.outcome",
+          "op": "eq",
+          "expected": "merged"
+        },
+        {
+          "path": "land.new_commits",
+          "op": "eq",
+          "expected": 1
+        },
+        {
+          "path": "land.branch",
+          "op": "eq",
+          "expected": "main"
+        },
+        {
+          "path": "busy.second_kind",
+          "op": "eq",
+          "expected": "in_place"
+        },
+        {
+          "path": "busy.third_kind",
+          "op": "eq",
+          "expected": "linked_worktree"
+        },
+        {
+          "path": "busy.reason_names_second",
+          "op": "eq",
+          "expected": true
+        }
+      ],
+      "evidence": [
+        "receipts.json",
+        "board.json",
+        "git-log.txt",
+        "observations.json"
+      ],
+      "status": "not_run"
     }
   ]
 }

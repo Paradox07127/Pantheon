@@ -423,7 +423,7 @@ interface UserGitResult {
 }
 
 /** Git as the user runs it: their environment, configuration, identity, filters and hooks. */
-function userGit(
+export function userGit(
   root: string,
   args: string[],
   input?: Buffer,

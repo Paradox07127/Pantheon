@@ -243,6 +243,15 @@ export const sessionTools = {
     ...browserTools,
     ...appDebugTools,
   },
+  // A session the user opened in the project folder: it writes there and reads like a planner.
+  writer: {
+    ...memoryTools,
+    project_read: 'project.read',
+    draw: 'visual.draw',
+    theme: 'theme.set',
+    ...browserTools,
+    ...appDebugTools,
+  },
   lead: {
     ...memoryTools,
     project_read: 'project.read',
@@ -711,7 +720,11 @@ const baselineExtensions = z
   .max(64);
 const sessionFrom = z.union([z.strictObject({ branch: str }), z.strictObject({ session_id: str })]);
 const sessionWorkspace = {
-  workspace: z.enum(['worktree', 'in_place']).optional(),
+  /**
+   * Absent is a worktree. auto: the project folder while no session writes there, else a worktree
+   * that records the writer; a start point or a board task always gets a worktree.
+   */
+  workspace: z.enum(['worktree', 'in_place', 'auto']).optional(),
   from: sessionFrom.optional(),
 };
 const validSessionWorkspace = (input: { workspace?: string; from?: unknown }) =>
@@ -2606,6 +2619,12 @@ export interface WorkbenchSession {
   /** null for a baseline session, which reads the project without a worktree. */
   workspace_id: string | null;
   workspace_kind: 'linked_worktree' | 'in_place';
+  /** A session the user opened in the project folder: it runs its gates there and lands on the current branch. */
+  lands?: true;
+  /** The session writes in the project folder, so a new session without a choice gets a worktree. */
+  holds_folder?: true;
+  /** Why the session got a worktree though the user chose none. */
+  worktree_reason?: { holder_session_id: string; holder_title: string };
   /**
    * ready: idle with no uncommitted changes and commits past the worktree's base commit;
    * merging: its merge is running;

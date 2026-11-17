@@ -7,6 +7,7 @@
   "sessions.newWorkspace.where": "在哪里改",
   "sessions.newWorkspace.worktree": "新工作树",
   "sessions.newWorkspace.inPlace": "当前目录",
+  "sessions.newWorkspace.folderHeld": "{title} 正在项目目录里改",
   "sessions.newWorkspace.ahead": "领先上游 {count}",
   "sessions.newWorkspace.uncommitted": "{count, plural, other {# 个没提交的改动}}",
   "sessions.newWorkspace.uncommittedLeft": "新工作树里看不到它们",

@@ -4,6 +4,7 @@ export {
   readSessionView,
   groupWorkbenchSessions,
   liveWorktree,
+  liveGated,
   sessionMenu,
   worktreeReason,
   sidebarGroups,

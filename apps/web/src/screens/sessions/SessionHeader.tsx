@@ -78,6 +78,7 @@ import { DiscardDialog } from './parts';
 import { liveWorktree } from './session-groups';
 import {
   baselineDiscard,
+  discardDescription,
   discardKind,
   fail,
   FIT_MENU,
@@ -535,12 +536,13 @@ export function SessionHeader({
           onDiscarded={onDiscarded}
         />
       )}
-      {discard === 'worktree' && listed && (
+      {(discard === 'worktree' || discard === 'folder') && listed && (
         <DiscardDialog
           open={discarding}
           title={title}
           sessionId={listed.id}
           revision={session?.revision ?? null}
+          {...discardDescription(discard)}
           listed={listed}
           onClose={() => setDiscarding(false)}
           onDiscarded={onDiscarded}

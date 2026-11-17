@@ -201,6 +201,12 @@ it('heads the page with one neutral question that names neither the project nor 
 
 it('names the project, the folder and the start point on one chip that opens their controls', async () => {
   const { h } = await mount();
+  // A session starts in the project folder unless the user picks a worktree.
+  expect(text(find(h.value, labelled('会话在哪开始')))).toContain(
+    zh('sessions.newWorkspace.inPlace'),
+  );
+  find(h.value, labelled(zh('sessions.newWorkspace.where'))).props.onValueChange('worktree');
+  h.render();
   const chip = find(h.value, labelled('会话在哪开始'));
   expect(text(chip)).toContain('Pantheon');
   expect(text(chip)).toContain(zh('sessions.newWorkspace.worktree'));

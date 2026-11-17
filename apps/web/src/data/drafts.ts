@@ -59,7 +59,7 @@ export interface Draft extends DraftMessage {
   /** The files and code symbols a session's message refers to, as chips on its box; absent is none. */
   mentions?: readonly FeedbackItem[];
   uploading: number;
-  /** The new-session composer's chosen workspace; absent is a worktree. */
+  /** The new-session composer's chosen workspace; absent is the project folder while no session writes there. */
   workspace?: DraftWorkspace;
   /** The new-session composer's chosen start point; absent is the project's checkout. */
   from?: DraftStart;

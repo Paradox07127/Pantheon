@@ -267,6 +267,10 @@ export const baselineRow = (s: WorkbenchSession): boolean =>
 export const liveWorktree = (s: WorkbenchSession): boolean =>
   s.workspace_id !== null && s.workspace_kind !== 'in_place' && !ENDED_STATES.has(s.state);
 
+/** A live worktree session, or one the user opened in the project folder, which lands there. */
+export const liveGated = (s: WorkbenchSession): boolean =>
+  liveWorktree(s) || (!!s.lands && !ENDED_STATES.has(s.state));
+
 /** The session's menu in groups; empty groups are left out. */
 export function sessionMenu(
   s: WorkbenchSession,
@@ -372,7 +376,7 @@ export function sessionMenu(
             } as const,
           ]
         : []),
-      ...(liveWorktree(s)
+      ...(liveGated(s)
         ? [
             {
               label: t({ id: 'sessions.model.menu.runChecks', defaultMessage: 'Run checks' }),
@@ -396,12 +400,17 @@ export function sessionMenu(
               ),
             } as const,
             {
-              label: merge?.target
-                ? t(
-                    { id: 'sessions.model.menu.mergeInto', defaultMessage: 'Merge into {target}…' },
-                    { target: merge.target },
-                  )
-                : t({ id: 'sessions.model.menu.merge', defaultMessage: 'Merge…' }),
+              label: s.lands
+                ? t({ id: 'sessions.model.menu.land', defaultMessage: 'Land…' })
+                : merge?.target
+                  ? t(
+                      {
+                        id: 'sessions.model.menu.mergeInto',
+                        defaultMessage: 'Merge into {target}…',
+                      },
+                      { target: merge.target },
+                    )
+                  : t({ id: 'sessions.model.menu.merge', defaultMessage: 'Merge…' }),
               command: 'session.merge',
               input: { session_id },
               ...optional(

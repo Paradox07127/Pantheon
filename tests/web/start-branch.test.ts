@@ -54,6 +54,12 @@ async function mount(projectId = 'project-a') {
     }),
   );
   await h.flush();
+  // The start point belongs to a worktree, which the user picks over the project folder.
+  find(
+    h.value,
+    (n) => n.props['aria-label'] === zh('sessions.newWorkspace.where'),
+  ).props.onValueChange('worktree');
+  h.render();
   return h;
 }
 const labelled = (label: string) => (n: ReactElement<any>) => n.props['aria-label'] === label;

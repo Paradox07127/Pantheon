@@ -572,12 +572,17 @@ export function needsYou(
                   allowed: false,
                   disabled_reason: 'termination_unconfirmed',
                 },
-                ...(session.workspace_id && !session.baseline && workspace?.kind !== 'in_place'
+                ...(session.workspace_id &&
+                !session.baseline &&
+                (workspace?.kind !== 'in_place' || session.in_place)
                   ? [{ command: 'session.discard', allowed: true }]
                   : []),
               ]),
         );
-      else if (kind === 'session.merge_blocked' && workspace?.kind !== 'in_place') {
+      else if (
+        kind === 'session.merge_blocked' &&
+        (workspace?.kind !== 'in_place' || session.in_place)
+      ) {
         let disabledReason: string | undefined;
         try {
           projectAccess(ctx, principal, session.project_id, 'session.merge');

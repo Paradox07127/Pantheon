@@ -61,7 +61,7 @@ import { markdownFileName, sessionMarkdown } from './export-markdown';
 import {
   endedText,
   isSessionApproval,
-  liveWorktree,
+  liveGated,
   sessionMenu,
   sessionRow,
   type SessionMenuEntry,
@@ -209,7 +209,7 @@ function iconOf(item: SessionMenuItem, Icon: LucideIcon = ICONS[item.command]) {
 export function discardKind(
   session: Session | null,
   listed: WorkbenchSession | null,
-): 'baseline' | 'worktree' | null {
+): 'baseline' | 'worktree' | 'folder' | null {
   if (
     session?.baseline &&
     !session.outcome &&
@@ -219,9 +219,9 @@ export function discardKind(
     !session.process_identity
   )
     return 'baseline';
-  return listed?.workspace_id && listed.workspace_kind !== 'in_place' && !endedText(listed)
-    ? 'worktree'
-    : null;
+  if (!listed?.workspace_id || endedText(listed)) return null;
+  if (listed.workspace_kind !== 'in_place') return 'worktree';
+  return listed.lands ? 'folder' : null;
 }
 
 export const baselineDiscard = () =>
@@ -230,6 +230,20 @@ export const baselineDiscard = () =>
     defaultMessage:
       "Deletes this baseline session's record and its worktree, if any, and keeps the baseline results. This can't be undone.",
   });
+
+export const folderDiscard = () =>
+  t({
+    id: 'sessions.screen.folderDiscard',
+    defaultMessage: 'Closes the session. Its files stay in the project folder.',
+  });
+
+/** What the discard confirmation says beyond the default, by discardKind. */
+export const discardDescription = (kind: ReturnType<typeof discardKind>) =>
+  kind === 'baseline'
+    ? { description: baselineDiscard() }
+    : kind === 'folder'
+      ? { description: folderDiscard() }
+      : {};
 
 const done = (): BridgeResult<null> => ({ ok: true, value: null });
 
@@ -330,7 +344,7 @@ export function useSessionMenu(
             .then((result) => result.ok || setError(failureText(result.error)))
       : null;
   const preflightRead = useSessionPreflight(
-    (open || dialog === 'merge') && liveWorktree(session) ? session.id : null,
+    (open || dialog === 'merge') && liveGated(session) ? session.id : null,
   );
   const preflight = preflightRead.data;
   const discard = discardKind(known, session);
@@ -526,6 +540,7 @@ export function useSessionMenu(
           preflight={preflight}
           error={preflightRead.error}
           source={title}
+          lands={!!session.lands}
           onClose={close}
         />
       )}
@@ -538,7 +553,7 @@ export function useSessionMenu(
           title={title}
           sessionId={session.id}
           revision={revision}
-          {...(discard === 'baseline' ? { description: baselineDiscard() } : {})}
+          {...discardDescription(discard)}
           listed={session}
           onClose={close}
           onDiscarded={followShown}

@@ -113,7 +113,9 @@ export async function inPlaceSessionSpec(
     account_ref: session.account_ref,
     role: 'writer',
     control_instructions: [
-      `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
+      session.in_place
+        ? `You are working in the project folder at ${workspace.path}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.`
+        : `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
       ...(session.task ? [workerInstructions(ctx, session.task, questionTool)] : []),
       ...(questionTool
         ? [

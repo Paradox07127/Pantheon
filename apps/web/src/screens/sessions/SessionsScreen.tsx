@@ -48,8 +48,8 @@ import { appDisplay, useAppDisplay } from './app-display';
 import { APP_DOCK_WIDTH, AppDock, AppFullscreen, reloadApp } from './AppPanels';
 import { NEW, NewSession } from './NewSession';
 import {
-  baselineDiscard,
   createdHere,
+  discardDescription,
   discardKind,
   FIT_MENU,
   noSplitRoom,
@@ -760,7 +760,7 @@ function SplitHead(props: {
           title={title}
           sessionId={listed.id}
           revision={known?.revision ?? null}
-          {...(discard === 'baseline' ? { description: baselineDiscard() } : {})}
+          {...discardDescription(discard)}
           listed={listed}
           onClose={() => setDiscarding(false)}
           onDiscarded={props.onDiscarded}

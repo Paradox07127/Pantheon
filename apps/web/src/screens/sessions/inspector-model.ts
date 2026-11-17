@@ -229,7 +229,7 @@ export const hasBrowser = (): boolean =>
 export const inspectorTabs = (session: WorkbenchSession | null): readonly Panel[] =>
   (session?.workspace_id === null
     ? NO_WORKTREE_PANELS
-    : session?.workspace_kind === 'in_place'
+    : session?.workspace_kind === 'in_place' && !session.lands
       ? IN_PLACE_PANELS
       : PANELS
   ).filter((panel) => panel !== 'browser' || hasBrowser());

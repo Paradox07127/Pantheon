@@ -1126,12 +1126,14 @@ export function MergeBar(props: {
   const target = preflight ? preflight.target_branch : props.branch;
   const label = props.merging
     ? mergingText()
-    : target
-      ? t(
-          { id: 'sessions.panel.merge.mergeInto', defaultMessage: 'Merge into {target}…' },
-          { target },
-        )
-      : t({ id: 'sessions.panel.merge.merge', defaultMessage: 'Merge…' });
+    : props.listed?.lands
+      ? t({ id: 'sessions.panel.merge.land', defaultMessage: 'Land…' })
+      : target
+        ? t(
+            { id: 'sessions.panel.merge.mergeInto', defaultMessage: 'Merge into {target}…' },
+            { target },
+          )
+        : t({ id: 'sessions.panel.merge.merge', defaultMessage: 'Merge…' });
   const reasonId = `merge-blocked-${props.sessionId}`;
   const openSource = t({
     id: 'sessions.panel.merge.openSource',
@@ -1394,6 +1396,7 @@ export function MergeBar(props: {
                 preflight={preflight}
                 error={props.preflightError}
                 source={props.source}
+                lands={!!props.listed?.lands}
                 onClose={() => setConfirm(false)}
               />
             )}
@@ -1451,6 +1454,8 @@ export function MergeDialog(props: {
   error?: string | null;
   /** The worktree being merged. */
   source: string;
+  /** The session lands on the project folder's branch instead of merging a worktree. */
+  lands?: boolean;
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -1515,10 +1520,21 @@ export function MergeDialog(props: {
         <Dialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <Dialog.Title className="pj-dt">
-              {t(
-                { id: 'sessions.panel.mergeDialog.title', defaultMessage: 'Merge into {target}' },
-                { target },
-              )}
+              {props.lands
+                ? t(
+                    {
+                      id: 'sessions.panel.mergeDialog.landTitle',
+                      defaultMessage: 'Land on {target}',
+                    },
+                    { target },
+                  )
+                : t(
+                    {
+                      id: 'sessions.panel.mergeDialog.title',
+                      defaultMessage: 'Merge into {target}',
+                    },
+                    { target },
+                  )}
             </Dialog.Title>
           </div>
           <div className="pj-rm-body">
@@ -1537,7 +1553,7 @@ export function MergeDialog(props: {
               <dt>{t({ id: 'sessions.panel.mergeDialog.gates', defaultMessage: 'Gates' })}</dt>
               {value(LAST_GATE[preflight.gate.last])}
             </dl>
-            {preflight.gate.configured_total > 0 && (
+            {preflight.gate.configured_total > 0 && !props.lands && (
               <Dialog.Description className="ss-mgd">
                 {t({
                   id: 'sessions.panel.mergeDialog.gatesRerun',
@@ -1577,7 +1593,9 @@ export function MergeDialog(props: {
               aria-busy={busy || loading || undefined}
               onClick={() => void merge()}
             >
-              {t({ id: 'sessions.panel.mergeDialog.merge', defaultMessage: 'Merge' })}
+              {props.lands
+                ? t({ id: 'sessions.panel.mergeDialog.land', defaultMessage: 'Land' })
+                : t({ id: 'sessions.panel.mergeDialog.merge', defaultMessage: 'Merge' })}
             </button>
           </div>
         </Dialog.Popup>

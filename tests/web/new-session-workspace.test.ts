@@ -22,6 +22,7 @@ vi.mock('@/data/board', () => ({
   }),
 }));
 import { NewSession } from '@/screens/sessions/SessionsScreen';
+import { sessionMenu } from '@/screens/sessions/model';
 import { useDrafts } from '@/data/drafts';
 
 const running = {
@@ -47,6 +48,7 @@ let command: ReturnType<typeof vi.fn>;
 let query: ReturnType<typeof vi.fn>;
 let head: Record<string, unknown>;
 let keydown: ((e: unknown) => void) | null;
+const held = zh('sessions.newWorkspace.folderHeld').replace('{title}', 'Signature check');
 
 async function mount(recent: readonly WorkbenchSession[] = [running]) {
   const h = mountHook(() =>
@@ -137,6 +139,7 @@ afterEach(() => {
 
 it('hides the start point and sends no start once the session changes the current folder', async () => {
   const h = await mount();
+  pick(h, 'worktree');
   expect(has(h, zh('sessions.newWorkspace.start'))).toBe(true);
   pick(h, 'in_place');
   expect(has(h, zh('sessions.newWorkspace.start'))).toBe(false);
@@ -147,15 +150,16 @@ it('hides the start point and sends no start once the session changes the curren
 
 it('switches between a new worktree and the current folder with its keys', async () => {
   const h = await mount();
-  expect(find(h.value, labelled(zh('sessions.newWorkspace.where'))).props.value).toBe('worktree');
+  expect(find(h.value, labelled(zh('sessions.newWorkspace.where'))).props.value).toBe('in_place');
   const press = { key: 'W', ctrlKey: true, shiftKey: true, metaKey: false, altKey: false };
   keydown!({ ...press, preventDefault() {} });
   h.render();
-  expect(find(h.value, labelled(zh('sessions.newWorkspace.where'))).props.value).toBe('in_place');
+  expect(find(h.value, labelled(zh('sessions.newWorkspace.where'))).props.value).toBe('worktree');
 });
 
 it('names the project, the folder and the start point on the chip as they change', async () => {
   const h = await mount();
+  pick(h, 'worktree');
   expect(chip(h)).toBe('Pantheon新工作树main');
   pick(h, 'in_place');
   expect(chip(h)).toBe('Pantheon当前目录main');
@@ -170,6 +174,7 @@ it('shows how far the branch is ahead and the uncommitted changes only when ther
 
   head = { ...head, ahead_upstream: 2, uncommitted: 4 };
   h = await mount();
+  pick(h, 'worktree');
   expect(status()).toBe('mainabcdef1Fix the board领先上游 2');
   expect(text(find(h.value, classed('cr-dirty')))).toBe('4 个没提交的改动新工作树里看不到它们');
   pick(h, 'in_place');
@@ -200,7 +205,7 @@ it('sends neither the reference nor its start once the reference is removed', as
   find(h.value, labelled('移除 Signature check')).props.onClick();
   h.render();
   expect(has(h, 'Signature check')).toBe(false);
-  expect(text(find(h.value, labelled(zh('sessions.newWorkspace.start'))))).toBe('从 main');
+  expect(chip(h)).toBe('Pantheon当前目录main');
   const input = await send(h);
   expect('refs' in input).toBe(false);
   expect('from' in input).toBe(false);
@@ -264,4 +269,36 @@ it('starts from a session only once it is referenced, not when the references ar
 it('checks the spelling of the first message', async () => {
   const h = await mount();
   expect(find(h.value, labelled(zh('sessions.composer.firstMessage'))).props.spellCheck).toBe(true);
+});
+
+it('starts in the current folder without a choice and lets the daemon pick the workspace', async () => {
+  const h = await mount();
+  expect(chip(h)).toBe('Pantheon当前目录main');
+  expect(nodes(h.value).some((n) => text(n) === held)).toBe(false);
+  expect((await send(h)).workspace).toBe('auto');
+});
+
+it('shows a worktree and names the session writing in the folder when the list has one', async () => {
+  const holder = {
+    ...running,
+    state: 'idle',
+    workspace_kind: 'in_place',
+    holds_folder: true,
+  } as WorkbenchSession;
+  const h = await mount([holder]);
+  expect(chip(h)).toBe('Pantheon新工作树main');
+  expect(nodes(h.value).some((n) => classed('tr-why')(n) && text(n) === held)).toBe(true);
+  expect((await send(h)).workspace).toBe('auto');
+});
+
+it('names the merge of a session in the project folder Land, and every other one Merge', () => {
+  const label = (s: WorkbenchSession) =>
+    sessionMenu(s)
+      .flat()
+      .find((entry) => 'command' in entry && entry.command === 'session.merge')?.label;
+  const idle = { ...running, state: 'idle' } as WorkbenchSession;
+  expect(label({ ...idle, workspace_kind: 'in_place', lands: true })).toBe(
+    zh('sessions.model.menu.land'),
+  );
+  expect(label(idle)).toBe(zh('sessions.model.menu.merge'));
 });
