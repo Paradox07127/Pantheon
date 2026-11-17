@@ -346,6 +346,54 @@ describe('repository timeline lanes', () => {
     expect(reads.sendProjectCommand).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['no zoom is picked opens on the newest story', null, NOW - 30 * DAY, true],
+    ['a picked zoom opens on that zoom', 'fortnight', NOW - 14 * DAY, false],
+  ])('with a saved month story, %s', (_name, zoom, from, told) => {
+    if (zoom) stored.set('pantheon.repo.timeline-zoom.lanes-story-open', zoom);
+    const story = (id: string, from: number, to: number, created: number, line: string) => ({
+      id,
+      project_id: 'lanes-story-open',
+      from,
+      to,
+      state: 'ready',
+      session_id: 'story-session',
+      created_at: new Date(created).toISOString(),
+      lines: [line],
+      source: 'commits',
+    });
+    reads.state.stories = reads.landed([
+      story('story-old', NOW - 60 * DAY, NOW - 50 * DAY, NOW - 10 * DAY, 'An older range.'),
+      story('story-month', NOW - 30 * DAY, NOW, NOW - 60_000, 'The month before the baseline.'),
+    ]);
+    const host = lanesOf('lanes-story-open');
+    expect(lastRange()).toEqual(['lanes-story-open', from, NOW, 'workstream']);
+    expect(text(host.value).includes('The month before the baseline.')).toBe(told);
+  });
+
+  it('opens on a story list that lands after the timeline', () => {
+    reads.state.stories = { ...reads.landed(null), loading: true } as never;
+    const host = lanesOf('lanes-story-late');
+    expect(lastRange()).toEqual(['lanes-story-late', NOW - 14 * DAY, NOW, 'workstream']);
+    reads.state.stories = reads.landed([
+      {
+        id: 'story-month',
+        project_id: 'lanes-story-late',
+        from: NOW - 30 * DAY,
+        to: NOW,
+        state: 'ready',
+        session_id: 'story-session',
+        created_at: new Date(NOW - 60_000).toISOString(),
+        lines: ['The month before the baseline.'],
+        source: 'commits',
+      },
+    ]);
+    host.render();
+    host.render();
+    expect(lastRange()).toEqual(['lanes-story-late', NOW - 30 * DAY, NOW, 'workstream']);
+    expect(text(host.value)).toContain('The month before the baseline.');
+  });
+
   it('holds Interpret again while its request is out', async () => {
     reads.state.stories = reads.landed([
       {

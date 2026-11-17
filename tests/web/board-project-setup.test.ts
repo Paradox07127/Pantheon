@@ -72,6 +72,7 @@ vi.mock('@/data/workbench-sessions', async (actual) => ({
 }));
 import { BoardScreen, BoardView } from '@/screens/board/BoardScreen';
 import { ProjectSetup, ScratchStart } from '@/screens/board/ProjectSetup';
+import { PublishBar } from '@/screens/board/PublishBar';
 import { BaselinePopover, ReviewBaseline } from '@/screens/projects/BaselineBlocks';
 import { TaskGraph } from '@/screens/projects/TaskGraph';
 import { InsightsScreen, InsightsView } from '@/screens/insights/InsightsScreen';
@@ -286,7 +287,9 @@ describe('project setup states', () => {
       'puts the review of a handed-back baseline in the page',
       setupOf('submitted', { baseline: baseline('submitted') }),
       (tree: ReactNode) => {
-        expect(typed(tree, ReviewBaseline)!.props.baseline).toMatchObject({ id: 'baseline-a' });
+        const review = typed(tree, ReviewBaseline)!;
+        expect(review.props.baseline).toMatchObject({ id: 'baseline-a' });
+        expect(review.props.onOpenSession).toBe(onOpenSession);
       },
     ],
     [
@@ -352,7 +355,7 @@ describe('project setup states', () => {
 });
 
 describe('project setup on the pages', () => {
-  const view = (setup: ReturnType<typeof setupRead>, model: BoardModel) =>
+  const view = (setup: ReturnType<typeof setupRead>, model: BoardModel, extra = {}) =>
     mount(() =>
       BoardView({
         model,
@@ -368,6 +371,7 @@ describe('project setup on the pages', () => {
         onOpenStory: noop,
         onOpenTrace: noop,
         setup,
+        ...extra,
       }),
     ).value;
   const shown = (tree: ReactNode) =>
@@ -379,6 +383,23 @@ describe('project setup on the pages', () => {
     expect(text(tree)).not.toContain('开一个会话');
     expect(nodes(tree).some((n) => (n.type as { name?: string }).name === 'MainView')).toBe(false);
   });
+
+  it.each([
+    ['none', setupOf('none'), false],
+    ['running', setupOf('running', { baseline: baseline('running') }), false],
+    ['ready', setupOf('ready'), true],
+  ])(
+    'in the %s state, draws the lead input and the time range only on a set-up board',
+    (_name, setup, drawn) => {
+      const tree = view(setup, board(), {
+        actions: { milestones: [], sessions: [], run: async () => null },
+      });
+      expect(!!typed(tree, PublishBar)).toBe(drawn);
+      expect(nodes(tree).some((n) => n.props['aria-label'] === zh('board.headline.range'))).toBe(
+        drawn,
+      );
+    },
+  );
 
   it('keeps the setup over the planning lead until its plan lands on the board', () => {
     const planning = setupOf('planning', { plan });

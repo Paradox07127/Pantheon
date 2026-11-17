@@ -256,12 +256,15 @@ export function ReviewBaseline({
   baseline,
   onConfirmed,
   dialog,
+  onOpenSession,
 }: {
   baseline: ProjectBaseline;
   /** Called with the confirmed baseline, which names the lead session it opened. */
   onConfirmed?: (confirmed: unknown) => void;
   /** In the add-project dialog: Confirm sits in its footer, and a lone folder is not named again under its header. */
   dialog?: boolean;
+  /** Opens the baseline's conversation; unset where the card already sits in it. */
+  onOpenSession?: (sessionId: string) => void;
 }) {
   const [draft, setDraft] = useState(() => baselineDraft(baseline));
   const send = useSend();
@@ -322,6 +325,15 @@ export function ReviewBaseline({
           <RuntimeGlyph runtime={baseline.runtime} size={14} />
           {runtimeName(baseline.runtime)}
         </span>
+      )}
+      {onOpenSession && baseline.session_id && (
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => onOpenSession(baseline.session_id!)}
+        >
+          {t({ id: 'projects.baseline.viewConversation', defaultMessage: 'View conversation' })}
+        </button>
       )}
     </div>
   );

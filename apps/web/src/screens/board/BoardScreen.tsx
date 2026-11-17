@@ -821,6 +821,8 @@ export function BoardView(props: BoardViewProps) {
   );
   // The setup says a failed start in its own panel.
   const startError = !setupPanel && baseline?.error;
+  // In place of the body the setup keeps only the view switch and the More menu in the bar.
+  const setupOnly = !!setupPanel && page !== 'canvas';
   return (
     <>
       <TopBar title={SCREEN_NAMES.board}>
@@ -856,7 +858,7 @@ export function BoardView(props: BoardViewProps) {
               />
             )}
             <div className="tb-end">
-              {(page === 'now' || page === 'canvas') && (
+              {(page === 'now' || page === 'canvas') && !setupOnly && (
                 <RadioGroup<BoardRange>
                   className="tb-seg"
                   aria-label={t({ id: 'board.headline.range', defaultMessage: 'Time range' })}
@@ -870,9 +872,12 @@ export function BoardView(props: BoardViewProps) {
                   ))}
                 </RadioGroup>
               )}
-              {page === 'now' && projectId && shown && !empty && hasPlanTasks(shown) && (
-                <FlowGroupControl projectId={projectId} />
-              )}
+              {page === 'now' &&
+                !setupOnly &&
+                projectId &&
+                shown &&
+                !empty &&
+                hasPlanTasks(shown) && <FlowGroupControl projectId={projectId} />}
               {page === 'history' && projectId && model && (
                 <span className="bd-slot" ref={setHistoryBar} />
               )}
@@ -887,10 +892,12 @@ export function BoardView(props: BoardViewProps) {
               {page === 'canvas' && projectId && model && (
                 <span className="cv-bar" ref={setCanvasBar} />
               )}
-              {page === 'now' && projectId && model && actions && !editing && (
+              {page === 'now' && !setupOnly && projectId && model && actions && !editing && (
                 <EditButton projectId={projectId} disabled={!scoped} count={unsent} />
               )}
-              {projectId && actions && <NewTask model={model} disabled={!scoped} onNew={newTask} />}
+              {!setupOnly && projectId && actions && (
+                <NewTask model={model} disabled={!scoped} onNew={newTask} />
+              )}
               <BoardDevices />
               <Menu.Root>
                 <Menu.Trigger
@@ -963,7 +970,7 @@ export function BoardView(props: BoardViewProps) {
         {drawn ? (
           <div className="bd-split">
             <div className="bd-split-main">
-              {scoped && (
+              {scoped && !setupOnly && (
                 <div className="bd-pub">
                   <PublishBar
                     projectId={scoped.projectId}

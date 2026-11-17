@@ -194,7 +194,7 @@ export function RepoLanes({
   const [end, setEnd] = useState(() => Date.now());
   // The span set by fitting the whole history; null while the zoom sets it.
   const [fitted, setFitted] = useState<number | null>(null);
-  // Until a zoom is picked, the first read fits a young history's range to its commits.
+  // Until a zoom is picked, the first reads open on the newest story, or fit a young history's range to its commits.
   const [opened, setOpened] = useState(false);
   const span = fitted ?? ZOOMS[zoom].span;
   const from = end - span;
@@ -210,10 +210,19 @@ export function RepoLanes({
     sending: boolean;
   } | null>(null);
   const read = timeline.read;
-  if (read && !opened) {
+  if (read && (stories.read || stories.error) && !opened) {
     setOpened(true);
-    const opening = chosen === null ? openingSpan(read.extent, end) : null;
-    if (opening !== null) setFitted(opening);
+    const newest = stories.read?.reduce<RangeStory | null>(
+      (best, s) => (!best || Date.parse(s.created_at) > Date.parse(best.created_at) ? s : best),
+      null,
+    );
+    if (chosen === null && newest) {
+      setFitted(newest.to - newest.from);
+      setEnd(newest.to);
+    } else {
+      const opening = chosen === null ? openingSpan(read.extent, end) : null;
+      if (opening !== null) setFitted(opening);
+    }
   }
   const domain = overviewDomain(read?.overview ?? [], from, end, Math.max(now, end));
   const brushEnd = drag

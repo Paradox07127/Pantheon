@@ -90,3 +90,13 @@ it('draws a Vega-Lite block of the introduction body in the main flow', () => {
   expect(flow).toContain('How a video becomes the wallpaper.');
   expect(flow).toContain(`role="group" aria-label="${zh('visual.kind.vegaLite')}"`);
 });
+
+it('offers the baseline conversation only where the card is not already in it', () => {
+  const withSession = { ...baseline, session_id: 'baseline-session' };
+  const onBoard = renderToStaticMarkup(
+    createElement(ReviewBaseline, { baseline: withSession, onOpenSession: () => {} }),
+  );
+  expect(onBoard).toContain(zh('projects.baseline.viewConversation'));
+  const inThread = renderToStaticMarkup(createElement(ReviewBaseline, { baseline: withSession }));
+  expect(inThread).not.toContain(zh('projects.baseline.viewConversation'));
+});

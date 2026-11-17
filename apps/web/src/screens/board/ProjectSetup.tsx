@@ -147,7 +147,7 @@ export function ProjectSetup({
         className="pst pst-rv"
         aria-label={t({ id: 'board.setup.review', defaultMessage: 'Baseline review' })}
       >
-        <ReviewBaseline key={baseline.id} baseline={baseline} />
+        <ReviewBaseline key={baseline.id} baseline={baseline} onOpenSession={onOpenSession} />
       </section>
     );
   if (state === 'planning' && setup.plan) {

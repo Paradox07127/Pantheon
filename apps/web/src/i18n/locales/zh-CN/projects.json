@@ -90,6 +90,7 @@
   "projects.baseline.dropped": "{count, plural, other {丢弃 # 条无出处结论}}",
   "projects.baseline.questions": "待确认问题",
   "projects.baseline.interview": "摸底访谈",
+  "projects.baseline.viewConversation": "查看会话",
   "projects.baseline.round": "第 {round} 轮，共 {limit} 轮",
   "projects.baseline.roundsBar": "第 {round} 轮，共 {limit} 轮，已答 {answered} 轮",
   "projects.baseline.askMore": "继续追问",

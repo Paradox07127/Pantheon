@@ -152,6 +152,22 @@ it('sends a question left to the model with the recommended label, and joins pic
   ]);
 });
 
+it('opens the baseline conversation from the interview header', () => {
+  const onOpenSession = vi.fn();
+  const h = mount(() =>
+    ReviewBaseline({
+      baseline: { ...baseline([store]), session_id: 'baseline-session' },
+      onOpenSession,
+    }),
+  );
+  const open = find(
+    h.value,
+    (n) => n.type === 'button' && text(n) === zh('projects.baseline.viewConversation'),
+  );
+  open.props.onClick();
+  expect(onOpenSession).toHaveBeenCalledWith('baseline-session');
+});
+
 it('sends an empty answer for a question left to the model without a recommendation', () => {
   const h = mount(() => ReviewBaseline({ baseline: baseline([store]) }));
   const c = card(h);
