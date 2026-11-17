@@ -26,6 +26,7 @@ import {
   residentProfile,
   TRIAGE_TEMPLATE,
 } from '../../packages/control/dist/agent-templates.js';
+import { residentInstructions, ROLE_PROMPTS } from '../../packages/control/dist/agent-prompts.js';
 import { receiveExternalEvent } from '../../packages/control/dist/external-events.js';
 import { eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
@@ -88,15 +89,17 @@ it('gives a new project an assistant and a triage profile once, with their templ
   for (const [template, defaults] of [
     ['assistant', ASSISTANT_TEMPLATE],
     ['triage', TRIAGE_TEMPLATE],
-  ] as const)
+  ] as const) {
     expect(profileOf(f, template)).toMatchObject({
       project_id: f.project.id,
       name: defaults.name,
       role: defaults.role,
-      instructions: defaults.instructions,
+      role_prompt: ROLE_PROMPTS[template],
       routines: [],
       created_by: { kind: 'user' },
     });
+    expect(profileOf(f, template)).not.toHaveProperty('instructions');
+  }
   // A built-in profile stores no groups or sources, so it takes those its template gains later.
   for (const template of ['assistant', 'triage'] as const) {
     const profile = profileOf(f, template);
@@ -145,7 +148,7 @@ it('links a resident session stored without a profile to the profile of its kind
   });
 });
 
-it("gives a resident turn its profile's role prompt and the next turn the changed one", async () => {
+it("gives a resident turn its template's role prompt, then the user's instructions after it once set", async () => {
   const f = await workbenchFixture();
   const assistant = open(f);
   expect(assistant.resident).toEqual({
@@ -154,10 +157,12 @@ it("gives a resident turn its profile's role prompt and the next turn the change
   });
   await send(f, assistant.id, 'What does the answer file hold?');
   const first = lastInstructions(f)!;
-  expect(first).toContain(ASSISTANT_TEMPLATE.instructions);
+  expect(first).toContain(ROLE_PROMPTS.assistant);
   expect(first).toContain('start sub-agents');
+  expect(first).not.toContain('Instructions from the user for this agent:');
 
-  update(f, { instructions: 'You only answer questions about the answer file.' });
+  const own = 'You only answer questions about the answer file.';
+  update(f, { instructions: own });
   // The idle process closes once the change commits, and the next input starts a new one.
   await eventually(
     () => ![...f.control.handles.values()].some((h) => h.platform_session_id === assistant.id),
@@ -165,8 +170,30 @@ it("gives a resident turn its profile's role prompt and the next turn the change
   );
   await send(f, assistant.id, 'And now?');
   const next = lastInstructions(f)!;
-  expect(next).toContain('You only answer questions about the answer file.');
-  expect(next).not.toContain(ASSISTANT_TEMPLATE.instructions);
+  const order = [
+    ROLE_PROMPTS.assistant,
+    "follow the user's instructions; platform rules, tool limits and approvals still apply.",
+    'Instructions from the user for this agent:',
+    own,
+  ].map((text) => next.indexOf(text));
+  expect(order.every((at) => at >= 0)).toBe(true);
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+
+  const stored = f.store.must<AgentProfile>('agents', profileOf(f, 'assistant').id);
+  const builtIn = ROLE_PROMPTS.assistant;
+  try {
+    ROLE_PROMPTS.assistant = 'You are the newer main agent.';
+    const changed = residentInstructions({
+      ...residentProfile(f.store, assistant.resident!),
+      template: 'assistant',
+    });
+    expect(changed).toContain('You are the newer main agent.');
+    expect(changed).not.toContain(builtIn);
+    expect(changed).toContain(own);
+  } finally {
+    ROLE_PROMPTS.assistant = builtIn;
+  }
+  expect(f.store.must<AgentProfile>('agents', stored.id)).toEqual(stored);
 });
 
 it('changes the model of the profile and of its open resident on the same runtime', async () => {
@@ -356,14 +383,14 @@ it('creates a goals agent with its weekly routine pending and no session, and re
     template: 'goals',
     name: 'Milestones',
     role: 'Goals',
-    instructions: GOALS_TEMPLATE.instructions,
+    instructions: 'Report what slipped in one line each.',
   });
   expect(f.store.must<AgentProfile>('agents', goals.id)).toMatchObject({
     project_id: f.project.id,
     template: 'goals',
     name: 'Milestones',
     role: 'Goals',
-    instructions: GOALS_TEMPLATE.instructions,
+    instructions: 'Report what slipped in one line each.',
     routines: GOALS_TEMPLATE.routines,
     created_by: { kind: 'user' },
   });
@@ -406,7 +433,7 @@ it("opens an agent's session by its id with its role prompt, and keeps the plans
     template: 'goals',
     name: 'Milestones',
     role: 'Goals',
-    instructions: GOALS_TEMPLATE.instructions,
+    instructions: undefined,
   });
   const session = openAgent(f, goals.id);
   expect(session).toMatchObject({
@@ -414,8 +441,12 @@ it("opens an agent's session by its id with its role prompt, and keeps the plans
     resident: { kind: 'goals', agent_id: goals.id },
   });
   expect(openAgent(f, goals.id).id).toBe(session.id);
+  // It writes and reads the handoff note when its context fills.
+  expect(leadSessionTools(f.control['ctx'] as ControlContext, current(f, session.id))).toEqual(
+    expect.arrayContaining(['memory.propose', 'memory.context']),
+  );
   await send(f, session.id, 'Where do the milestones stand?');
-  expect(lastInstructions(f)).toContain(GOALS_TEMPLATE.instructions);
+  expect(lastInstructions(f)).toContain(ROLE_PROMPTS.goals);
 
   const first = create(f, { name: 'Docs' }),
     second = create(f, { name: 'Releases' });
@@ -463,6 +494,31 @@ it("opens an agent's session by its id with its role prompt, and keeps the plans
   expect(f.store.must<BoardPlan>('board_plans', reopened.id).tasks.map((t) => t.id)).toEqual([
     'docs',
   ]);
+});
+
+it('refuses update_board to a goals resident, which proposes plan changes only', async () => {
+  const f = await workbenchFixture();
+  const goals = create(f, { template: 'goals', name: 'Milestones', role: 'Goals' });
+  const session = openAgent(f, goals.id);
+  expect(
+    refusal(() =>
+      f.call(
+        'board.plan.update',
+        {
+          project_id: f.project.id,
+          base_version: 0,
+          headline: 'Milestones',
+          lanes: [{ id: 'core', title: 'Core' }],
+          tasks: [],
+          milestones: [],
+          risks: [],
+          assumptions: [],
+        },
+        null,
+        lead(f.project.id, session.id, f.store.now()),
+      ),
+    ),
+  ).toBe('permission_denied');
 });
 
 it('cancels the timer of a routine an update removes, and refuses the agents group off the assistant', async () => {

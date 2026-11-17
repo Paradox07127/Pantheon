@@ -176,6 +176,46 @@ export const migrations: readonly Migration[] = [
       );
     },
   },
+  {
+    // A template's role prompt lives in code; instructions now hold only the user's own, which only
+    // a custom agent had. No profile chooses the app_debug group any more.
+    version: 6,
+    up(db) {
+      type Fields = { template?: string; instructions?: string; tools?: string[] };
+      const strip = (fields: Fields | undefined, template: string | undefined) => {
+        if (!fields) return;
+        if (template !== 'custom') delete fields.instructions;
+        if (fields.tools) fields.tools = fields.tools.filter((group) => group !== 'app_debug');
+      };
+      const rows = (table: string) =>
+        db.prepare(`SELECT id, data FROM ${table}`).all() as { id: string; data: string }[];
+      const templates = new Map<string, string | undefined>();
+      for (const row of rows('agents')) {
+        const agent = JSON.parse(row.data) as Fields;
+        templates.set(row.id, agent.template);
+        strip(agent, agent.template);
+        db.prepare('UPDATE agents SET data=? WHERE id=?').run(JSON.stringify(agent), row.id);
+      }
+      for (const row of rows('agent_proposals')) {
+        const proposal = JSON.parse(row.data) as {
+          state: string;
+          agent_id?: string;
+          fields: Fields;
+          edited_fields?: Fields;
+        };
+        if (proposal.state !== 'pending') continue;
+        const template = proposal.agent_id
+          ? templates.get(proposal.agent_id)
+          : proposal.fields.template;
+        strip(proposal.fields, template);
+        strip(proposal.edited_fields, template);
+        db.prepare('UPDATE agent_proposals SET data=? WHERE id=?').run(
+          JSON.stringify(proposal),
+          row.id,
+        );
+      }
+    },
+  },
 ];
 function fsyncPath(name: string): void {
   const fd = openSync(name, 'r');

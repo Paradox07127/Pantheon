@@ -1,6 +1,5 @@
 import { expect, it } from 'vitest';
 import type { AgentProfile, AgentProposal, LeadNote, Principal, Session } from '@pantheon/domain';
-import { IDEAS_TEMPLATE } from '../../packages/control/dist/agent-templates.js';
 import { user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -18,7 +17,7 @@ const IDEAS = {
   template: 'ideas',
   name: 'Ideas',
   role: 'Ideas',
-  instructions: IDEAS_TEMPLATE.instructions,
+  instructions: 'Group the ideas by the screen they change.',
   brief: 'The user keeps dropping loose ideas into the main conversation.',
 };
 
@@ -120,7 +119,7 @@ it('creates the proposed agent under the name the user edited, declines another,
   expect(agent).toMatchObject({
     template: 'ideas',
     role: 'Ideas',
-    instructions: IDEAS_TEMPLATE.instructions,
+    instructions: IDEAS.instructions,
     brief: IDEAS.brief,
     created_by: { kind: 'agent', session_id: assistant.id },
   });

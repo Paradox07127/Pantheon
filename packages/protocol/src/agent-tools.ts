@@ -39,7 +39,6 @@ export const AGENT_TOOL_GROUPS = [
   'dispatch',
   'memory',
   'browser',
-  'app_debug',
   'app',
   'sessions',
   'github',
@@ -80,7 +79,6 @@ const createFields = {
   template: z.enum(AGENT_TEMPLATE_NAMES),
   name: z.string().min(1).max(80),
   role: z.string().min(1).max(24),
-  instructions: z.string().min(1).max(20000),
 };
 
 export const agentInputSchemas = {
@@ -103,6 +101,8 @@ export const agentInputSchemas = {
     ...changeFields,
     template: z.enum(AGENT_TEMPLATE_NAMES).optional(),
   }),
+  /** Guide, the text of the named guide, or GuideList, the name and use of each guide, for a name it does not know. Lead sessions only. */
+  'agent.guide': z.strictObject({ name: z.string().min(1).max(80) }),
   /** AgentList; the project's agents with their role, tools and routines. Resident leads with the agents group only. */
   'agent.agents': z.strictObject({ project_id: str }),
   /** AgentProposal; the user only. create applies the proposal with fields over it, decline turns it down; the proposing agent is told either way. */

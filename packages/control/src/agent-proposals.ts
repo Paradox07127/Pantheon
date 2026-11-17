@@ -22,12 +22,6 @@ import {
 } from './context.js';
 import { createAgent, updateAgent } from './resident.js';
 
-/** The platform lines of a resident whose profile has the agents group. */
-export const AGENT_TOOL_LINES = [
-  'When the user asks for a standing helper, or a kind of request keeps coming back, call propose_agent with a template, a role prompt that says what the agent owns and when it speaks, its tool groups and its routines. The user approves it on a card.',
-  'Call list_agents before proposing, so you do not duplicate an agent. To change an agent, call propose_agent with its agent_id and only the fields that change.',
-];
-
 export interface AgentListItem {
   id: string;
   name: string;

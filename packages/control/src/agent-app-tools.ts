@@ -1,10 +1,4 @@
-import {
-  requireThat,
-  type AgentToolGroup,
-  type Principal,
-  type Session,
-  type SessionTurn,
-} from '@pantheon/domain';
+import { requireThat, type Principal, type Session, type SessionTurn } from '@pantheon/domain';
 import { inputSchemas, type WorkbenchSession } from '@pantheon/protocol';
 import { appHelp } from './app-help.js';
 import { projectAccess, sessionPrincipal, type ControlContext, type Preparers } from './context.js';
@@ -33,25 +27,6 @@ export interface AgentSessionRead {
   turns: { turn_id: string; state: SessionTurn['state']; input: string; output: string }[];
   /** The oldest of the requested turns left out to keep the answer within its size. */
   cut_turns: number;
-}
-
-/** The lines a resident's platform prompt gains for its profile's app, sessions and github groups. */
-export function appToolInstructions(groups: readonly AgentToolGroup[]): string[] {
-  return [
-    ...(groups.includes('app')
-      ? [
-          'Call app_help when you are unsure what Pantheon can do or which tool does it; when only the user can do it, tell them where in the app.',
-        ]
-      : []),
-    ...(groups.includes('sessions')
-      ? ['Call session_read on a session before you tell the user about it.']
-      : []),
-    ...(groups.includes('github')
-      ? [
-          'Read the issue or pull request with github_items or github_pr before you plan work on it.',
-        ]
-      : []),
-  ];
 }
 
 /** Refuses all but a resident lead of the project whose profile has the action's tool. */

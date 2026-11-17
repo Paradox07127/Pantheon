@@ -164,7 +164,7 @@ export function createFields(draft: AgentDraft): Record<string, unknown> {
   return {
     name: draft.name.trim(),
     role: draft.role.trim(),
-    instructions: draft.instructions.trim(),
+    ...(draft.instructions.trim() && { instructions: draft.instructions.trim() }),
     ...(draft.brief.trim() && { brief: draft.brief.trim() }),
     ...(draft.tools && { tools: draft.tools }),
     ...(draft.listens && { listens: draft.listens }),
@@ -582,8 +582,12 @@ export function agentFieldRows(props: {
 
 const CREATED: readonly CreatedTemplate[] = ['ideas', 'goals', 'custom'];
 const EMPTY = draftOf({});
-const ready = (draft: AgentDraft | null) =>
-  !!draft && !!draft.name.trim() && !!draft.role.trim() && !!draft.instructions.trim();
+// A custom agent has no built-in role prompt, so it needs the user's.
+const ready = (draft: AgentDraft | null, template: CreatedTemplate) =>
+  !!draft &&
+  !!draft.name.trim() &&
+  !!draft.role.trim() &&
+  (template !== 'custom' || !!draft.instructions.trim());
 
 /** The form that creates an agent from a template, over the window. */
 export function NewAgentDialog({
@@ -617,7 +621,7 @@ export function NewAgentDialog({
   };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!draft || !ready(draft) || busy) return;
+    if (!draft || !ready(draft, template) || busy) return;
     setBusy(true);
     setError(null);
     const result = await runCommand(
@@ -681,7 +685,7 @@ export function NewAgentDialog({
               <button
                 type="submit"
                 className="btn pri"
-                disabled={!ready(draft) || busy}
+                disabled={!ready(draft, template) || busy}
                 aria-busy={busy || undefined}
               >
                 {t({ id: 'sessions.agents.create', defaultMessage: 'Create' })}

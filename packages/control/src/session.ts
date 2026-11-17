@@ -97,6 +97,7 @@ import { activeRuntimeReview, RUNTIME_REVIEW_CONTRACT } from './runtime-review.j
 import { projectOverBudget } from './workflow-policy.js';
 import { queueTurn } from './task-tracking.js';
 import { backgroundTasks } from './progress.js';
+import { residentInstructions } from './agent-prompts.js';
 import { residentProfile } from './agent-templates.js';
 import { afterResidentTurn } from './resident.js';
 import {
@@ -105,7 +106,6 @@ import {
   applyFastMode,
   applyUltracode,
   autoMergeAfterTurn,
-  residentInstructions,
   turnExtras,
   WORKBENCH_TURN_MS,
   workbenchSessionSpec,
@@ -1644,7 +1644,10 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           control_instructions: session.runtime_review
             ? RUNTIME_REVIEW_CONTRACT
             : session.resident
-              ? residentInstructions(residentProfile(ctx.store, session.resident))
+              ? residentInstructions({
+                  ...residentProfile(ctx.store, session.resident),
+                  template: session.resident.kind,
+                })
               : purposeSessionInstructions(session, {
                   rounds: readAppSettings(ctx).baseline_rounds,
                   visuals: readAppSettings(ctx).baseline_visuals,

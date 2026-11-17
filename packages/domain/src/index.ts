@@ -714,7 +714,6 @@ export type AgentToolGroup =
   | 'dispatch'
   | 'memory'
   | 'browser'
-  | 'app_debug'
   | 'app'
   | 'sessions'
   | 'github'
@@ -738,8 +737,8 @@ export interface AgentProfile extends Entity {
   name: string;
   /** A label of two to four characters. */
   role: string;
-  /** The role prompt each of its turns gets after the platform rules. */
-  instructions: string;
+  /** The user's own instructions for this agent; its turns get them after its template's built-in role prompt. */
+  instructions?: string;
   /** Why it was created. */
   brief?: string;
   runtime?: string;
@@ -768,7 +767,8 @@ export interface AgentFields {
   template: AgentProfile['template'];
   name: string;
   role: string;
-  instructions: string;
+  /** Required for a custom agent, which has no built-in role. */
+  instructions?: string;
   brief?: string;
   tools?: AgentToolGroup[];
   listens?: NonNullable<AgentProfile['listens']>;

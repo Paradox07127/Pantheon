@@ -130,12 +130,34 @@ it('queues one quiet handoff turn when a resident turn ends at 80% of the auto-c
     () => f.control.tick(),
   );
   const [flush] = flushTurns(f, below.id);
+  expect(flush!.input).toContain('Call guide with name "handoff"');
   expect(flush!.input).toContain('memory_propose');
   expect(flush!.input).toContain(`handoff/${profile.id}`);
   expect(flush!.input).toContain(`Handoff from ${below.title}`);
   await rotated(f, profile, below);
   expect(flushTurns(f, below.id)).toHaveLength(1);
   expect(f.store.kindEvents(f.project.id, ['agent_message.created'])).toEqual([]);
+});
+
+it('gives a resident the handoff guide by name, and the list of guides for a name it does not know', async () => {
+  const f = await workbenchFixture();
+  const resident = open(f);
+  const guide = await f.call<Promise<{ name: string; text: string }>>(
+    'agent.guide',
+    { name: 'handoff' },
+    null,
+    as(f, resident.id, 'lead'),
+  );
+  expect(guide.name).toBe('handoff');
+  expect(guide.text).toContain("Write in it the user's open requests");
+  expect(guide.text).toContain('memory_propose');
+  const index = await f.call<Promise<{ guides: { name: string; when: string }[] }>>(
+    'agent.guide',
+    { name: 'merging' },
+    null,
+    as(f, resident.id, 'lead'),
+  );
+  expect(index.guides.map((each) => each.name)).toEqual(['handoff']);
 });
 
 it('measures a runtime without an auto-compaction point against its context window', async () => {

@@ -17,7 +17,7 @@ import type {
 } from '@pantheon/domain';
 import { command } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import { ALWAYS_ON_LINES } from '../../packages/control/dist/agent-always-on.js';
+import { ALWAYS_ON_LINES } from '../../packages/control/dist/agent-prompts.js';
 import { eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 

@@ -358,3 +358,71 @@ it('keeps workflow names unique per project, allows one default and lets child s
     store.insert('workflow_step_runs', { ...child, id: 'second', iteration: 2 }),
   ).not.toThrow();
 });
+
+it('drops the stored role prompts of template agents and the app_debug group, keeping a custom agent its instructions', () => {
+  const file = databaseFile();
+  const previous = open(
+    file,
+    migrations.filter((migration) => migration.version <= 5),
+  );
+  const agent = { revision: 1, project_id: 'project', routines: [] };
+  previous.insert('agents', {
+    ...agent,
+    id: 'assistant',
+    template: 'assistant',
+    instructions: 'The role prompt the template had when the agent was made.',
+    tools: ['board', 'dispatch', 'app_debug', 'memory'],
+  });
+  previous.insert('agents', {
+    ...agent,
+    id: 'custom',
+    template: 'custom',
+    instructions: 'You keep the changelog current.',
+  });
+  const proposal = { revision: 1, project_id: 'project', session_id: 'assistant-session', at: 1 };
+  previous.insert('agent_proposals', {
+    ...proposal,
+    id: 'new-ideas',
+    state: 'pending',
+    fields: { template: 'ideas', name: 'Ideas', instructions: 'Copied role prompt' },
+  });
+  previous.insert('agent_proposals', {
+    ...proposal,
+    id: 'change-assistant',
+    agent_id: 'assistant',
+    state: 'pending',
+    fields: { instructions: 'Copied role prompt', tools: ['board', 'app_debug'] },
+  });
+  previous.insert('agent_proposals', {
+    ...proposal,
+    id: 'change-custom',
+    agent_id: 'custom',
+    state: 'pending',
+    fields: { instructions: 'You keep the release notes current.' },
+  });
+  close(previous);
+
+  const store = open(file);
+  expect(store.must('agents', 'assistant')).toEqual({
+    ...agent,
+    id: 'assistant',
+    template: 'assistant',
+    tools: ['board', 'dispatch', 'memory'],
+  });
+  expect(store.must('agents', 'custom')).toMatchObject({
+    instructions: 'You keep the changelog current.',
+  });
+  expect(store.must('agent_proposals', 'new-ideas')).toMatchObject({
+    fields: { template: 'ideas', name: 'Ideas' },
+  });
+  expect(store.must('agent_proposals', 'new-ideas')).not.toHaveProperty('fields.instructions');
+  expect(store.must('agent_proposals', 'change-assistant')).toMatchObject({
+    fields: { tools: ['board'] },
+  });
+  expect(store.must('agent_proposals', 'change-assistant')).not.toHaveProperty(
+    'fields.instructions',
+  );
+  expect(store.must('agent_proposals', 'change-custom')).toMatchObject({
+    fields: { instructions: 'You keep the release notes current.' },
+  });
+});

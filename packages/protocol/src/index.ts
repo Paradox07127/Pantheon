@@ -276,6 +276,7 @@ export const sessionTools = {
     ...alwaysOnTools,
     ...appTools,
     ...agentTools,
+    guide: 'agent.guide',
   },
   worker: {
     ...memoryTools,
@@ -329,15 +330,24 @@ export const leadToolEffects = {
   ...alwaysOnToolEffects,
   ...appToolEffects,
   ...agentToolEffects,
+  guide: 'read',
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
 
-const inGroup = <T extends object>(tools: T, group: AgentToolGroup) =>
+/** A group of lead tools: an agent profile's group, or the app_debug tools only app debug sessions get. */
+export type LeadToolGroup = AgentToolGroup | 'app_debug';
+const inGroup = <T extends object>(tools: T, group: LeadToolGroup) =>
   Object.fromEntries(Object.keys(tools).map((name) => [name, group])) as Record<
     keyof T,
-    AgentToolGroup
+    LeadToolGroup
   >;
-/** The agent profile tool group of each lead tool; a resident gets the tools of its profile's groups. */
-export const leadToolGroups: Record<keyof typeof sessionTools.lead, AgentToolGroup> = {
+/**
+ * The group of each lead tool; a resident gets the tools of its profile's groups. Every lead gets
+ * guide, whatever its groups.
+ */
+export const leadToolGroups: Record<
+  Exclude<keyof typeof sessionTools.lead, 'guide'>,
+  LeadToolGroup
+> = {
   ...inGroup(memoryTools, 'memory'),
   ...inGroup(browserTools, 'browser'),
   ...inGroup(appDebugTools, 'app_debug'),
@@ -2135,7 +2145,7 @@ export const querySchemas = {
   'project.intro.read': z.strictObject({ project_id: str }),
   'project.facts.read': z.strictObject({ project_id: str }),
   'project.read': z.strictObject({ project_id: str }),
-  /** The user only; returns the project's AgentProfile records. */
+  /** The user only; returns the project's AgentProfile records, each with role_prompt, the built-in role prompt of its template. */
   'agent.list': z.strictObject({ project_id: str }),
   /** The user only; returns the stored AgentProposal, with the fields the user edited once decided. */
   'agent.proposal': z.strictObject({ proposal_id: str }),

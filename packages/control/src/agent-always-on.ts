@@ -23,15 +23,6 @@ const ROUTINE = 'agent-routine';
 const ROUTINE_LIMIT = 10;
 const MINUTE_MS = 60_000;
 
-/** The platform lines of a resident whose profile has the always_on group. */
-export const ALWAYS_ON_LINES = [
-  'Pantheon also wakes you on its own: for a follow_up you set, for a routine, and for board updates and outside events.',
-  'follow_up wakes you with your note after_minutes from now or at a time. After you dispatch work, set a follow_up for when you expect its result.',
-  'routine_set adds or replaces a prompt you run every_minutes or daily at a local time, optionally only within active_hours; routine_cancel removes one. Set follow-ups and routines for yourself without asking the user.',
-  'tell_user leaves the user a message and notifies them; give it urgency high only when they must act soon.',
-  'On a turn Pantheon woke you for, speak to the user only with tell_user or ask_user. When such a turn has nothing for the user, end it with one short line and do not call tell_user.',
-];
-
 /** The calling resident session and its agent profile; any other caller is refused. */
 export function callingResident(
   ctx: ControlContext,

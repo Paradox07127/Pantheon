@@ -159,6 +159,8 @@ const descriptions: Record<ToolCommand, string> = {
     "List the open pull requests (kind pr) or issues (kind issue) of the project's GitHub repository, newest update first, at most 30.",
   'agent.github_pr':
     'Read one pull request of the GitHub repository by number, with its checks and review threads.',
+  'agent.guide':
+    'Read one Pantheon guide by name: the steps for a task that comes up rarely, such as writing a handoff note. Your instructions list the guides with when to read each; an unknown name returns that list.',
   'agent.agents':
     "List this project's agents: id, name, template, role, tool groups, routines, and archived_at for an archived one.",
   'agent.propose':
@@ -269,6 +271,7 @@ const boundRevision = (type: CommandType) =>
   type === 'agent.routine.cancel' ||
   type === 'agent.propose' ||
   type === 'agent.agents' ||
+  type === 'agent.guide' ||
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
   type === 'app.logs' ||

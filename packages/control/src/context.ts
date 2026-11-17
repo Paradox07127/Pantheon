@@ -4,7 +4,6 @@ import { constants, lstatSync, readdirSync, readlinkSync, realpathSync, statSync
 import {
   credentialRole,
   requireThat,
-  type AgentToolGroup,
   type Principal,
   type RuntimeModel,
   type Entity,
@@ -23,6 +22,7 @@ import {
   leadToolEffects,
   leadToolGroups,
   type CommandType,
+  type LeadToolGroup,
   type Command,
   type DeviceStatus,
   type RuntimeStatus,
@@ -33,6 +33,7 @@ import { runGit, type GitResult } from './git.js';
 import { introInstructions } from './project-intro-brief.js';
 import { baselineSkill } from './baseline-skill.js';
 import { residentProfile } from './agent-templates.js';
+import { BOARD_READ_ONLY_TEMPLATES } from './agent-prompts.js';
 import type { TraceIndex } from './trace-index.js';
 
 export interface ControlContext {
@@ -311,7 +312,7 @@ export function purposeSessionTools(
 }
 
 /** Tool groups whose commands serve resident sessions only. */
-const RESIDENT_GROUPS: readonly AgentToolGroup[] = [
+const RESIDENT_GROUPS: readonly LeadToolGroup[] = [
   'always_on',
   'app',
   'sessions',
@@ -319,23 +320,35 @@ const RESIDENT_GROUPS: readonly AgentToolGroup[] = [
   'agents',
 ];
 
+/** The board tools that write the plan, which a resident of a read-only board template does not get. */
+const PLAN_WRITES = [
+  'board.plan.update',
+  'board.plan.edit',
+  'board.sync',
+  'milestone.accept',
+  'project.baseline.start',
+];
+
 /**
  * The actions of a lead session's tools: a resident's are those of its agent profile's groups,
  * another lead's every group but the resident ones; undefined for every other session.
  */
 export function leadSessionTools(ctx: ControlContext, session: Session): string[] | undefined {
-  const groups = session.resident
+  const groups: readonly LeadToolGroup[] | undefined = session.resident
     ? residentProfile(ctx.store, session.resident).tools
     : credentialRole(session, sessionWorkspaceKind(ctx, session)) === 'lead'
-      ? (Object.values(leadToolGroups) as AgentToolGroup[]).filter(
-          (group) => !RESIDENT_GROUPS.includes(group),
-        )
+      ? Object.values(leadToolGroups).filter((group) => !RESIDENT_GROUPS.includes(group))
       : undefined;
   if (!groups) return undefined;
-  return Object.entries(sessionTools.lead)
-    .filter(([name]) => groups.includes(leadToolGroups[name as keyof typeof leadToolGroups]))
-    .map(([, action]): string => action)
-    .filter((action) => session.app_debug || !appDebugActions.includes(action));
+  const readOnly = session.resident && BOARD_READ_ONLY_TEMPLATES.includes(session.resident.kind);
+  return [
+    ...Object.entries(sessionTools.lead)
+      .filter(([name]) => groups.includes(leadToolGroups[name as keyof typeof leadToolGroups]))
+      .map(([, action]): string => action)
+      .filter((action) => session.app_debug || !appDebugActions.includes(action))
+      .filter((action) => !readOnly || !PLAN_WRITES.includes(action)),
+    sessionTools.lead.guide,
+  ];
 }
 
 export function purposeSessionInstructions(

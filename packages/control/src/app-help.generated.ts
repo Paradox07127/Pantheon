@@ -50,6 +50,12 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'github_pr',
       },
       {
+        type: 'agent.guide',
+        about:
+          'Guide, the text of the named guide, or GuideList, the name and use of each guide, for a name it does not know. Lead sessions only.',
+        tool: 'guide',
+      },
+      {
         type: 'agent.proposal.resolve',
         about:
           'AgentProposal; the user only. create applies the proposal with fields over it, decline turns it down; the proposing agent is told either way.',

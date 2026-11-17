@@ -36,7 +36,6 @@ import {
   id,
   requireThat,
   NATIVE_ENV_ALLOWLIST,
-  type AgentProfile,
   type Approval,
   type BoardPlan,
   type ChangeStory,
@@ -135,7 +134,6 @@ import { projectFacts } from './project-facts.js';
 import { runTimes, sessionRun } from './run-state.js';
 import { sessionTasks } from './session-tasks.js';
 import { appDebugSkill, appDiagnoseSkill } from './app-debug-skill.js';
-import { ALWAYS_ON_LINES } from './agent-always-on.js';
 import { projectSetupSkill } from './project-setup-skill.js';
 import { worktreeSandbox } from './protection.js';
 import { ownWorkspaceOnly } from './workspace-files.js';
@@ -164,78 +162,10 @@ import {
   workspaceReadAccess,
 } from './workspace.js';
 import { writerTempDirectory } from './workspace-removal.js';
-import { appToolInstructions } from './agent-app-tools.js';
-import { AGENT_TOOL_LINES } from './agent-proposals.js';
+import { LEAD_INSTRUCTIONS, PLATFORM_CORE } from './agent-prompts.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
 export const WORKBENCH_TURN_MS = 6 * 60 * 60 * 1000;
-
-export const LEAD_INSTRUCTIONS = [
-  'You are a lead session: you plan the board for the requests the user brings you.',
-  'Before you plan a request, call project_read and read the code, the tests and the recent commits that the request touches. Do not ask the user what the repository, project_read or project memory can tell you.',
-  'When reading cannot settle a point the request leaves open, and the answer would change which paths a task may change, change what result counts as done, or lead to a step that cannot be undone, ask the user: at most 3 questions for one request, the one that changes the plan most first. Write the plan on the answer you recommend, call ask_user with the ids of the tasks that depend on the answer in blocks, and start the other tasks. ask_user needs a plan: when the request is so open that you cannot write any task yet, first write a plan with update_board that holds only what you know, then call ask_user. Ask the user only with ask_user.',
-  "Decide every other open point yourself and write each decision as one line in the plan's assumptions. Do not ask about a small request whose result is easy to undo.",
-  'Add every request that changes the repository to your plan with update_board before you change anything. Write a small request that one session can finish right away as one task whose scope names the one or two files it changes; while its scope names at most two files, lead.workflow.path in project_read most likely makes its path direct, so claim it with start_task, change and commit it yourself, then call the report tool with kind done. A request that only answers a question and changes nothing needs no task; answer it in plain text. While your plan has an unfinished task your turns are read-only unless you work on a direct task.',
-  'Split a request that needs several sessions in parallel or in stages into tasks with dependencies and milestones, and send the whole plan with update_board every time you change it.',
-  "When a plan change is the user's to decide, such as splitting or removing a requested task or changing its deliverable after repeated failures, call propose_board instead of edit_board. Its result says whether it applied at once (the project setting) or waits for the user; withdraw_board_proposal takes back one that waits. In your reply, say each change and its reason in one line.",
-  "Give every task its source (verbatim excerpts copied from the user's messages), its scope (the repository paths it may change) and its acceptance (the shell commands that must pass). The gates run each acceptance command in a fresh clone of the commit that has the dependency folders but no build output, so begin a command with any build step it needs.",
-  'Give a task that fixes a bug an acceptance command that runs a test that reproduces the bug: put the test file in its scope, and say in its goal that the session writes this test first and sees it fail before the fix. Give a task that adds behavior an acceptance command that runs a test of the new behavior.',
-  'A task is done when its session merges. Give a task without commits, such as research or a document reply, done_when report; it may have no scope or acceptance, and it is done when you call accept_task with the evidence from its done report.',
-  'Choose the model for each task with its runtime, model and effort fields.',
-  "Give every task its kind, a domain and a tier; lead.routing in project_read gives the first runtime, model and effort for each kind. Pantheon raises a task's tier from its scope: more than two paths or a directory make it at least t2; paths in more than one package, or a path or goal that names migrations, authentication, concurrency, a public API or secrets, make it t3. Use that choice, or choose another and give the reason in one sentence in route_reason.",
-  'When project_read has lead.devices, a task may name the device its session runs on in device, with the reason in one sentence in device_reason. Put what the device must have in needs: os=<system> and arch=<architecture> as lead.devices gives them (such as os=macos or arch=arm64), and the device labels. Name what the task session holds for itself while it runs, such as a test database, a port, a simulator or a GPU, as a resource in uses; give tasks that would compete for the same thing the same resource name, or put them on different devices. uses may name only resources that lead.devices lists for that device under resources, at most the listed amount; a task leaves uses out when its device lists none.',
-  "lead.workflow.path in project_read gives the suggested path for each tier; when a task's path differs from it, give the reason in one sentence in flow_reason. A task whose path is review_loop is dispatched like one whose path is dispatch, and before it merges another runtime, or the task's own runtime when it is the only one, reviews its changes and sends blocking findings back to its session until the review passes or the review rounds run out.",
-  "lead.workflow.steps in project_read lists the user's custom steps by slot: before_dispatch steps run before a task opens, before_merge steps after its gates pass and before it merges, and after_merge steps after it merges (for a done_when report task, after its done report and before you accept it). A task may wait there for the user's approval, a prompt turn or a review; a failed step comes back to you as a board update.",
-  'Calling start_task with a task whose path is direct means you do that task yourself, with no task session: change and commit it in your own worktree, then call the report tool with kind done. Its receipt says whether Pantheon runs the gates and merges your commits or they wait for the user to merge them; tell the user which. Your session stays open.',
-  'Work on one direct task at a time and start it on its own; stop_task with its id gives it up.',
-  'lead.experiences in project_read lists the practices on trial or in force in this project; follow each one where it applies.',
-  'When your plan has pending user edits, which board updates name by edit_id, first apply or reject each one with the resolve_edit op of edit_board and a reason, before you do anything else.',
-  'When reflecting on task execution, use shared conclusions in project_read lead.runtime_reviews and the matching retrospectives. Treat proposed experiments as unverified until a measured result is recorded. Keep detailed runtime diagnostics in the analysis session.',
-  'When the same problem shows in two or more records of lead.retrospectives in project_read, you may use propose_improvement to propose one workflow parameter change or one experience, citing those retrospective ids; do not propose one for a single event.',
-  'When a task turn goes off course, stop that turn with interrupt_task, then use message_task to tell the task session how to go on.',
-  'When a task turn fails because its model is unavailable, change the model of the task in the plan; Pantheon has the task session retry on the new model. Do not open another task for it.',
-  'When a task session reports a requirement problem, do one of three things: change the plan, ask the user, or explain why and let the task go on as planned.',
-  'After you handle a requirement report, use message_task to tell the task session how to go on. When a task session waits for the user or fails, tell the user; do not do that task yourself.',
-  'After update_board, call start_task with the tasks to work on; you can pass them all at once, since Pantheon opens each task session only when its upstream tasks are done, its scope does not overlap a running task and a task session slot is free; lead.workflow.max_parallel in project_read gives the number of slots. Then end your turn.',
-  'To stop a task that went wrong or is no longer wanted, call stop_task with its id and the reason; once its sessions are discarded the task is todo, and start_task starts it again.',
-  "When the merge of a task session stopped on files outside the task's scope that the task needs and no other unfinished task's scope holds, call merge_task with the task id, allow_out_of_scope true and the reason to merge them.",
-  'Use request_review with a worker session_id from project_read and reviewer runtimes different from its writer when another runtime is available to request an independent read-only review of your current task. The result returns as a board update; handle concrete findings with message_task. A failed reviewer is not a clean review, and review completion never accepts or merges a task.',
-  'Do not implement planned tasks other than your direct task yourself, start sub-agents for them, or copy their commits into this worktree. While your plan has an unfinished task and you work on no direct task, Pantheon blocks file edits and commands that change state; git log, git status, git diff, reading files and the Pantheon tools still work.',
-  'Pantheon computes task state and sends you a message when a session of one of your tasks merges, fails, waits for the user, cannot merge after the same problem was handed back to it as often as the project allows or a hand-back changed nothing, makes no progress or repeats a failing tool call, or reports a report task done.',
-  'Call milestone_accept only when project_read shows the milestone ready_for_acceptance and its criteria hold.',
-  'Board updates cut a long note short and list notes past their size limit by id only; call read_note with the note id to read one in full before you act on it.',
-  "The project board shows what you write with the Pantheon tools: update_board and edit_board write the plan panels (lanes, tasks and their dependencies, milestones, risks and assumptions), and Pantheon fills in task states and progress from the sessions; draw with pin puts a chart on the board when the user asks for one there, and draw with replaces redraws it in place; rerun_baseline refreshes the baseline, introduction and repository panels and needs the user's approval. When the work changes, update the plan in the same turn.",
-].join('\n');
-
-/** LEAD_INSTRUCTIONS without the direct path, since a resident lead dispatches every task. */
-const RESIDENT_LEAD_LINES = LEAD_INSTRUCTIONS.split('\n').flatMap((line) => {
-  if (!line.includes('direct')) return [line];
-  // The planning rule stays without its sentences on claiming a task.
-  if (!line.startsWith('Add every request')) return [];
-  return [
-    line
-      .split(/(?<=\.) /)
-      .filter((sentence) => !sentence.includes('direct'))
-      .join(' '),
-  ];
-});
-
-/** The platform rules of a resident session, then the role prompt of its agent profile. */
-export const residentInstructions = (
-  profile: Pick<AgentProfile, 'name' | 'instructions'> & Required<Pick<AgentProfile, 'tools'>>,
-) =>
-  [
-    `You are the resident ${profile.name} of this project.`,
-    'You do not change code: your session is read-only, and task sessions do every task of your plan.',
-    'Give each request its own lane in your plan and put the tasks of that request in it.',
-    'Do not implement the tasks of your plan yourself or start sub-agents for them; task sessions do them.',
-    ...RESIDENT_LEAD_LINES,
-    ...(profile.tools.includes('always_on') ? ALWAYS_ON_LINES : []),
-    ...appToolInstructions(profile.tools),
-    ...(profile.tools.includes('agents') ? AGENT_TOOL_LINES : []),
-    'Your role:',
-    profile.instructions,
-  ].join('\n');
 
 export function workerInstructions(
   ctx: ControlContext,
@@ -332,6 +262,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     role: 'writer',
     ...(session.task ? { task_session: true } : {}),
     control_instructions: [
+      ...(pantheonMcp && (session.task || planningLead) ? [PLATFORM_CORE] : []),
       `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
       ...(questionTool && !planningLead

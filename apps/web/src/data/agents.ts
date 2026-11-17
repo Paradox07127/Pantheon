@@ -16,7 +16,6 @@ export interface AgentTemplateDefaults {
   template: CreatedTemplate;
   name: string;
   role: string;
-  instructions: string;
   tools: AgentToolGroup[];
   listens: EventSource[];
   routines: AgentRoutine[];
@@ -55,7 +54,6 @@ export const OFFERED_TOOLS: readonly AgentToolGroup[] = [
   'dispatch',
   'memory',
   'browser',
-  'app_debug',
   'app',
   'sessions',
   'github',

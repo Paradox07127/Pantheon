@@ -7,6 +7,7 @@ import {
   type Session,
 } from '@pantheon/domain';
 import { runtime } from './admission.js';
+import { ROLE_PROMPTS } from './agent-prompts.js';
 import { AGENT_TEMPLATES, BUILT_IN_TEMPLATES, type AgentTemplate } from './agent-templates.js';
 import { projectAccess, userOnly, type ControlContext } from './context.js';
 
@@ -30,7 +31,6 @@ export function ensureAgents(ctx: ControlContext, projectId: string): AgentProfi
       template,
       name: defaults.name,
       role: defaults.role,
-      instructions: defaults.instructions,
       routines: [],
       created_by: { kind: 'user' },
       created_at: ctx.store.now(),
@@ -48,10 +48,16 @@ export function ensureAgents(ctx: ControlContext, projectId: string): AgentProfi
   return profiles;
 }
 
-export function agentList(ctx: ControlContext, p: Principal, projectId: string): AgentProfile[] {
+/** An agent profile as agent.list returns it, with the built-in role prompt of its template. */
+export type AgentListed = AgentProfile & { role_prompt: string };
+
+export function agentList(ctx: ControlContext, p: Principal, projectId: string): AgentListed[] {
   userOnly(p);
   projectAccess(ctx, p, projectId, 'agent.list');
-  return ctx.store.list<AgentProfile>('agents').filter((agent) => agent.project_id === projectId);
+  return ctx.store
+    .list<AgentProfile>('agents')
+    .filter((agent) => agent.project_id === projectId)
+    .map((agent) => ({ ...agent, role_prompt: ROLE_PROMPTS[agent.template] }));
 }
 
 /** The defaults of a template agent.create starts a new agent from. */
@@ -91,9 +97,15 @@ export function checkAgentFields(
       `The project has its ${template} agent already`,
     );
     requireThat(
-      fields.name !== undefined && fields.role !== undefined && fields.instructions !== undefined,
+      fields.name !== undefined && fields.role !== undefined,
       'invalid_input',
-      'Give the name, role and instructions of the new agent',
+      'Give the name and role of the new agent',
+    );
+    // A custom agent has no built-in role prompt.
+    requireThat(
+      template !== 'custom' || fields.instructions !== undefined,
+      'invalid_input',
+      'Give the instructions of the new custom agent',
     );
   } else requireThat(fields.template === undefined, 'invalid_input', 'The template stays');
   if (fields.name !== undefined)

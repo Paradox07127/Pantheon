@@ -7,10 +7,8 @@ import type { ControlContext } from '../../packages/control/src/context.js';
 import { purposeSessionInstructions } from '../../packages/control/src/context.js';
 import { MEMORY_INSTRUCTIONS } from '../../packages/control/src/memory.js';
 import { projectSetupSkill } from '../../packages/control/src/project-setup-skill.js';
-import {
-  LEAD_INSTRUCTIONS,
-  workerInstructions,
-} from '../../packages/control/src/workbench-session.js';
+import { LEAD_INSTRUCTIONS } from '../../packages/control/src/agent-prompts.js';
+import { workerInstructions } from '../../packages/control/src/workbench-session.js';
 
 const known = new Set([
   ...Object.values(sessionTools).flatMap((tools) => Object.keys(tools)),

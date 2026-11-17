@@ -615,6 +615,7 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'browser_open',
     'browser_read',
     'browser_screenshot',
+    'guide',
   ]);
   const plan = {
     base_version: 0,

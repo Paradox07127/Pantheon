@@ -27,7 +27,8 @@ import { assertNativeSessionFree } from './native-liveness.js';
 import { managedSessionSpec } from './native-session.js';
 import { inPlaceSandbox } from './protection.js';
 import { registerInPlaceWorkspace } from './workspace.js';
-import { checkPermissionMode, LEAD_INSTRUCTIONS, workerInstructions } from './workbench-session.js';
+import { LEAD_INSTRUCTIONS, PLATFORM_CORE } from './agent-prompts.js';
+import { checkPermissionMode, workerInstructions } from './workbench-session.js';
 import { writerTempDirectory } from './workspace-removal.js';
 
 const IN_PLACE_TURN_MS = 6 * 60 * 60 * 1000;
@@ -116,6 +117,7 @@ export async function inPlaceSessionSpec(
     account_ref: session.account_ref,
     role: 'writer',
     control_instructions: [
+      ...(session.task || planningLead ? [PLATFORM_CORE] : []),
       session.in_place
         ? `You are working in the project folder at ${workspace.path}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.`
         : `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,

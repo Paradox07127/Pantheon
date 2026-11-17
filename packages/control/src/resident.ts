@@ -209,9 +209,7 @@ function contextFull(session: Session): boolean {
 const handoffText = (session: Session, profile: AgentProfile) =>
   [
     'Your context is nearly full: after this turn a new session of this agent takes over, without this conversation.',
-    `Call memory_propose with kind note, key "${handoffKey(profile)}", tags ["handoff"] and title "Handoff from ${session.title ?? profile.name}". Write in it the user's open requests and the promises you have not kept yet, what the user asked for and decided in this conversation, the user's preferences and corrections, and where the work stands. Use this key each time, so the newest handoff replaces the old one.`,
-    'Write each lasting decision or preference of the user that is not in project memory yet as its own memory_propose note.',
-    'Do nothing else, and end the turn.',
+    `Call guide with name "handoff" and follow it: write the handoff note with memory_propose under the key "${handoffKey(profile)}" and the title "Handoff from ${session.title ?? profile.name}".`,
   ].join('\n');
 
 /**
