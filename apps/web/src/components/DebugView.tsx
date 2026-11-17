@@ -180,6 +180,12 @@ function DebugLayer() {
   const pick = async () => {
     if (!hover) return;
     const { pick } = hover;
+    const same = items.find((item) => item.pick.element === pick.element);
+    if (same) {
+      setChosen(same.pick);
+      setInspecting(true);
+      return;
+    }
     const image = await capture(root.current!, pick.rect);
     setItems((list) => [...list, { pick, note: '', image }]);
     setChosen(pick);
@@ -194,8 +200,7 @@ function DebugLayer() {
     hit.current!.focus();
   };
   const send = async () => {
-    await sendDebugItems(items);
-    leave();
+    if (await sendDebugItems(items)) leave();
   };
   const setNote = (pick: DebugPick, note: string) =>
     setItems((list) => list.map((item) => (item.pick === pick ? { ...item, note } : item)));
@@ -523,7 +528,18 @@ function Detail({ item, batch }: { item: DebugItem; batch: boolean }) {
         {pick.source && (
           <div className="dbv-row">
             <FileCode className="dbv-ic" aria-hidden="true" />
-            <span className="dbv-src">{pick.source}</span>
+            <span className="dbv-src">
+              {pick.source.split('/').map((part, i) => (
+                <Fragment key={i}>
+                  {i > 0 && (
+                    <>
+                      /<wbr />
+                    </>
+                  )}
+                  {part}
+                </Fragment>
+              ))}
+            </span>
             <button
               type="button"
               className="ib"

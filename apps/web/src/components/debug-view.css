@@ -364,7 +364,7 @@
   min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   user-select: text;
 }
 .dbv-stack {

@@ -19,7 +19,7 @@ const { list, needs } = vi.hoisted(() => ({
 }));
 vi.mock('@/data/debug-view', async (actual) => ({
   ...(await actual<object>()),
-  sendDebugItems: vi.fn(async () => {}),
+  sendDebugItems: vi.fn(async () => true),
 }));
 // The board's regions, marked on their components' roots as on the real screen.
 vi.mock('@/screens/board/BoardScreen', async (actual) => {
@@ -290,6 +290,24 @@ it('takes one item off the list with its remove button', async () => {
   await click(byLabel(zhf('components.debugView.remove', { name }))[0]!);
   expect(byLabel(zhf('components.debugView.remove', { name }))).toEqual([]);
   expect(button(inspector()!, zh('components.debugView.send'))).toBeDefined();
+  expect(inspector()!.textContent).toContain(PUBLISH_SRC);
+});
+
+it('keeps a region picked twice as one item', async () => {
+  await hover('board.publish-bar');
+  await click(hit());
+  expect(button(inspector()!, zh('components.debugView.send'))).toBeDefined();
+  expect(
+    byLabel(
+      zhf('components.debugView.remove', { name: zh('components.debugView.region.publishBar') }),
+    ),
+  ).toEqual([]);
+});
+
+it('stays open with its items when the send fails', async () => {
+  vi.mocked(sendDebugItems).mockResolvedValueOnce(false);
+  await click(button(inspector()!, zh('components.debugView.send'))!);
+  expect(toolbar()).toBeDefined();
   expect(inspector()!.textContent).toContain(PUBLISH_SRC);
 });
 

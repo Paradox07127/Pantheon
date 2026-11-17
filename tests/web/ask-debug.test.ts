@@ -130,7 +130,11 @@ describe('asking the debug agent', () => {
     mock.target = target;
     listed = sessions;
     recordAppError({ source: 'console', message: 'render loop warning' });
-    await askDebugAgent({ title: 'Push failed', detail: 'at PushButton (push.tsx:9)' });
+    const delivered = await askDebugAgent({
+      title: 'Push failed',
+      detail: 'at PushButton (push.tsx:9)',
+    });
+    expect(delivered).toBe(expected.copied || expected.kind !== 'failure');
     const writeText = vi.mocked(navigator.clipboard.writeText);
     expect(writeText.mock.calls.length > 0).toBe(expected.copied);
     const commands = sent();
@@ -143,6 +147,8 @@ describe('asking the debug agent', () => {
     expect(prompt).toContain('Push failed');
     expect(prompt).toContain('at PushButton (push.tsx:9)');
     expect(prompt).toContain('render loop warning');
+    // The debug view sends picks through here too, so the prompt does not call the report an error.
+    expect(prompt).not.toMatch(/this error|the error/);
     expect(vi.mocked(toast).mock.calls.at(-1)![0].kind ?? 'result').toBe(expected.kind);
   });
 
@@ -193,7 +199,9 @@ describe('asking the debug agent', () => {
       ok: false,
       error: { code: 'too_large', message: 'Too large' },
     });
-    await askDebugAgent({ title: 'Debug view: 1 item', images: ['data:image/png;base64,AQID'] });
+    expect(
+      await askDebugAgent({ title: 'Debug view: 1 item', images: ['data:image/png;base64,AQID'] }),
+    ).toBe(false);
     expect(sent()).toEqual([]);
     expect(vi.mocked(toast).mock.calls.at(-1)![0]).toMatchObject({
       kind: 'failure',
@@ -221,7 +229,7 @@ describe('asking the debug agent', () => {
 
   it('shows a failed send without offering to ask again', async () => {
     bridge.command.mockResolvedValueOnce({ ok: false, error: { code: 'busy', message: 'Busy' } });
-    await askDebugAgent({ title: 'Push failed' });
+    expect(await askDebugAgent({ title: 'Push failed' })).toBe(false);
     expect(vi.mocked(toast).mock.calls.at(-1)![0]).toMatchObject({
       kind: 'failure',
       askAgent: false,

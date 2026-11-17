@@ -206,9 +206,9 @@ function itemText(item: DebugItem, index: number): string {
 }
 
 /** Sends the items to the debug session as one message with the images attached; same routing and fallbacks as askDebugAgent. */
-export async function sendDebugItems(items: readonly DebugItem[]): Promise<void> {
+export async function sendDebugItems(items: readonly DebugItem[]): Promise<boolean> {
   // Sent to the model, so it stays in one language.
-  await askDebugAgent({
+  return askDebugAgent({
     title: `Debug view: ${items.length} ${items.length === 1 ? 'item' : 'items'}`,
     detail: items.map(itemText).join('\n\n'),
     images: items

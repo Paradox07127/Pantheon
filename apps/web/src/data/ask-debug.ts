@@ -37,7 +37,7 @@ async function debugPrompt(title: string, detail: string | undefined): Promise<s
     .map((entry) => JSON.stringify(entry));
   // Sent to the model, so it stays in one language.
   return [
-    `The user asked about this error in the running Pantheon app:\n\n${title}`,
+    `The user asked about this in the running Pantheon app:\n\n${title}`,
     detail ? `Detail:\n\n${detail}` : '',
     [
       `Screen: ${screen}`,
@@ -47,7 +47,7 @@ async function debugPrompt(title: string, detail: string | undefined): Promise<s
       `Daemon log folder: ${logs ?? 'unknown'}`,
     ].join('\n'),
     recent.length ? `Recent problems the app recorded, oldest first:\n\n${recent.join('\n')}` : '',
-    'Reproduce the error in the running app first; after fixing it, reproduce it again to confirm it is gone.',
+    'Reproduce the problem in the running app first; after fixing it, reproduce it again to confirm it is gone.',
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -73,6 +73,7 @@ async function debugSession(projectId: string): Promise<Session | null> {
 /**
  * Sends the error, with what the app knows around it, to the Pantheon repository's debug session,
  * opening one when there is none; copies the report where no debug session can reach this app.
+ * False when the upload or the send failed, so the report is neither sent nor copied.
  */
 export async function askDebugAgent({
   title,
@@ -83,7 +84,7 @@ export async function askDebugAgent({
   detail?: string;
   /** PNG data URLs, attached to the message; dropped when the report is copied. */
   images?: readonly string[];
-}): Promise<void> {
+}): Promise<boolean> {
   const prompt = await debugPrompt(title, detail);
   const target = window.pantheon ? await debugTarget() : null;
   if (!target) {
@@ -91,7 +92,7 @@ export async function askDebugAgent({
     toast({
       title: t({ id: 'data.askDebug.copied', defaultMessage: 'Copied the error report' }),
     });
-    return;
+    return true;
   }
   const project = useBoard.getState().board?.projects.find((p) => p.roots[0] === target.repo_root);
   if (!project) {
@@ -105,7 +106,7 @@ export async function askDebugAgent({
       kind: 'failure',
       askAgent: false,
     });
-    return;
+    return true;
   }
   const attachments: string[] = [];
   for (const [index, image] of (images ?? []).entries()) {
@@ -120,7 +121,7 @@ export async function askDebugAgent({
     );
     if (!uploaded.ok) {
       toast({ title: failureText(uploaded.error), kind: 'failure', askAgent: false });
-      return;
+      return false;
     }
     attachments.push(uploaded.value.id);
   }
@@ -160,7 +161,7 @@ export async function askDebugAgent({
       );
   if (!result.ok) {
     toast({ title: failureText(result.error), kind: 'failure', askAgent: false });
-    return;
+    return false;
   }
   const id = session?.id ?? (result.value as { id?: unknown } | null)?.id;
   toast({
@@ -174,4 +175,5 @@ export async function askDebugAgent({
         }
       : {}),
   });
+  return true;
 }
