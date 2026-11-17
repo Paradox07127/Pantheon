@@ -570,6 +570,7 @@ export async function startDaemon(options: DaemonOptions) {
         return timed('projects.summary', () => control.projectsSummary(p, 'cached'));
       },
       'project.brief': (p, i) => control.projectBrief(p, i.project_id, i.since),
+      'project.decisions': (p, i) => control.decisionsForUser(p, i.project_id, i.since),
       'extensions.inventory': (p, i) =>
         withRuntimeDeadline(
           control.extensionsInventory(p, i.project_id, i.runtime),

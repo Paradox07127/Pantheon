@@ -728,6 +728,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.branches` | `project_id`: string<br>`root?`: string |
 | `project.brief` | `project_id`: string<br>`since?`: integer |
 | `project.collab` | `project_id`: string<br>`since`: number<br>`until`: number |
+| `project.decisions` | `project_id`: string<br>`since?`: integer |
 | `project.defaults` | — |
 | `project.facts.read` | `project_id`: string |
 | `project.gates.history` | `project_id`: string<br>`since?`: number<br>`limit?`: integer |

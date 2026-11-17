@@ -2728,6 +2728,11 @@ export const querySchemas = {
     project_id: str,
     since: z.coerce.number().int().min(0).optional(),
   }),
+  /** DecisionsForUser; what a lead or a stored rule decided without the user from since on, Unix milliseconds, newest first. */
+  'project.decisions': z.strictObject({
+    project_id: str,
+    since: z.coerce.number().int().min(0).optional(),
+  }),
   'session.reviews': z.strictObject({ session_id: str }),
   'change_story.list': z.strictObject({ project_id: str }),
   'change_story.diff': z.strictObject({ story_id: str }),
@@ -3112,6 +3117,43 @@ export type ProjectBriefItem =
 export interface ProjectBrief {
   since: number;
   items: ProjectBriefItem[];
+}
+/** One thing decided without the user; at is Unix milliseconds. */
+export type DecisionForUser =
+  /** A worker prompt approved on the lead's behalf; decided_by is session:<lead id>, session_id the worker's. */
+  | {
+      kind: 'prompt_approved';
+      at: number;
+      approval_id: string;
+      session_id?: string;
+      decided_by: string;
+      tool?: string;
+      input_summary?: string;
+    }
+  /** A prompt answered by the stored permission rule. */
+  | {
+      kind: 'prompt_by_rule';
+      at: number;
+      approval_id: string;
+      session_id?: string;
+      rule: string;
+      tool?: string;
+      input_summary?: string;
+    }
+  /** A power the lead used on its own; subject is the id of the plan, milestone or session it acted on, session_id the lead's. */
+  | {
+      kind: 'power_used';
+      at: number;
+      power: Extract<
+        CharterPower,
+        'plan_change' | 'accept_milestone' | 'merge_out_of_scope' | 'create_agent'
+      >;
+      subject: string;
+      session_id: string;
+    };
+/** GET /v1/project.decisions. */
+export interface DecisionsForUser {
+  items: DecisionForUser[];
 }
 /** GET /v1/session.search; metadata first, then messages, newest first in each group. */
 export interface SessionSearchResult {

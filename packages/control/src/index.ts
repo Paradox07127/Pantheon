@@ -153,6 +153,7 @@ import { recoverWorkspaceProvisioning, stopWorkspaceProvisioning } from './provi
 import { needsYou } from './needs-you.js';
 import { projectsSummary, summaryProjects } from './projects-summary.js';
 import { projectBrief } from './project-brief.js';
+import { decisionsForUser } from './decisions-for-user.js';
 import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
 import { agentProposal } from './agent-proposals.js';
@@ -976,6 +977,9 @@ export class Control extends EventEmitter {
   }
   projectBrief(principal: Principal, projectId: string, since?: number) {
     return projectBrief(this.ctx, principal, projectId, since);
+  }
+  decisionsForUser(principal: Principal, projectId: string, since?: number) {
+    return decisionsForUser(this.ctx, principal, projectId, since);
   }
   async extensionsInventory(
     principal: Principal,
