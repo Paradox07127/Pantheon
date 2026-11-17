@@ -9,7 +9,7 @@ import {
   sessionTools,
   type CommandType,
 } from '@pantheon/protocol';
-import { appDiagnoseSkill } from '../../packages/control/src/app-debug-skill.js';
+import { appDebugSkill, appDiagnoseSkill } from '../../packages/control/src/app-debug-skill.js';
 import {
   purposeSessionTools,
   sessionAction,
@@ -212,6 +212,22 @@ it('has the diagnosis guide keep the project as it is and end with an issue draf
     'log lines',
   ])
     expect(appDiagnoseSkill).toContain(part);
+});
+
+it.each([
+  ['debug', appDebugSkill],
+  ['diagnosis', appDiagnoseSkill],
+])("has the %s guide open on the debug view and the user's own words", (_, guide) => {
+  expect(guide).toContain('from the debug view');
+  expect(guide).toContain('do what they ask');
+  expect(guide).not.toContain('clicked');
+});
+
+it('has the debug guide make a requested change rather than hunt for errors', () => {
+  expect(appDebugSkill).not.toContain('Reproduce first');
+  expect(appDebugSkill).toContain('When they ask for a change');
+  expect(appDebugSkill).toContain('Do not look for unrelated errors');
+  expect(appDebugSkill).toContain('## Fix');
 });
 
 it('reads the last lines of the daemon log, only the matching ones with grep, none without a log', async () => {

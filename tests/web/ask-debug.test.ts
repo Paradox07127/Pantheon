@@ -183,9 +183,15 @@ describe('asking the debug agent', () => {
     useCurrentProject.setState({ projectId: current });
     listed = sessions;
     recordAppError({ source: 'console', message: 'render loop warning' });
+    const error = recordAppError({
+      source: 'command',
+      command: 'branch.publish',
+      message: 'Push failed',
+    });
     const delivered = await askDebugAgent({
       title: 'Push failed',
       detail: 'at PushButton (push.tsx:9)',
+      error,
     });
     expect(delivered).toBe(expected.copied || expected.kind !== 'failure');
     const writeText = vi.mocked(navigator.clipboard.writeText);
@@ -203,6 +209,7 @@ describe('asking the debug agent', () => {
     expect(prompt).toContain('Push failed');
     expect(prompt).toContain('at PushButton (push.tsx:9)');
     expect(prompt).toContain('render loop warning');
+    expect(prompt).toContain('Reproduce the problem in the running app first');
     // The debug view sends picks through here too, so the prompt does not call the report an error.
     expect(prompt).not.toMatch(/this error|the error/);
     expect(vi.mocked(toast).mock.calls.at(-1)![0].kind ?? 'result').toBe(expected.kind);
@@ -328,6 +335,26 @@ describe('asking the debug agent', () => {
     expect(prompt.indexOf(section)).toBeLessThan(prompt.indexOf('Recent problems'));
     expect(recent).toContain('render loop warning');
     expect(recent).not.toContain(`"id":${error.id},`);
+  });
+
+  it("starts with the debug view's request and leaves out the recent problems and the repro step", async () => {
+    mock.target = null;
+    recordAppError({ source: 'console', message: 'render loop warning' });
+    const parts = 'Parts of the window the user picked (screenshots attached in the same order):';
+    await askDebugAgent({
+      title: 'Debug view: 1 item',
+      request: 'make the bar taller',
+      detail: `${parts}\n\n1. board.progress`,
+    });
+    const prompt = vi.mocked(navigator.clipboard.writeText).mock.calls[0]![0];
+    expect(prompt).toMatch(
+      /^The user's request:\n\nmake the bar taller\n\nParts of the window the user picked .*\n\n1\. board\.progress\n\nScreen: /,
+    );
+    expect(prompt).not.toContain('Debug view: 1 item');
+    expect(prompt).not.toContain('Recent problems');
+    expect(prompt).not.toContain('render loop warning');
+    expect(prompt).not.toContain('Reproduce');
+    expect(prompt).not.toContain('Daemon log folder');
   });
 
   it('opens the session it sent to from the toast', async () => {

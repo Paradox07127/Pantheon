@@ -10,6 +10,9 @@ class LaidOutElement extends FakeElement {
   get parentElement(): LaidOutElement | null {
     return this.parentNode instanceof LaidOutElement ? this.parentNode : null;
   }
+  get children(): LaidOutElement[] {
+    return this.childNodes.filter((c) => c instanceof LaidOutElement);
+  }
   get innerText() {
     return this.textContent;
   }
@@ -18,7 +21,26 @@ class LaidOutElement extends FakeElement {
   }
 }
 
-const doc = new FakeDocument(LaidOutElement);
+const everything = (el: LaidOutElement): LaidOutElement[] => [
+  el,
+  ...el.children.flatMap(everything),
+];
+/** querySelectorAll for the selectors a pick builds: a region mark or body, then `tag:nth-of-type(n)` steps. */
+function select(selector: string): LaidOutElement[] {
+  const [base, ...steps] = selector.split(' > ');
+  const region = /^\[data-debug-region="(.+)"\]$/.exec(base!)?.[1];
+  let found = everything(doc.body as LaidOutElement).filter((el) =>
+    region ? el.getAttribute('data-debug-region') === region : el.tagName === base!.toUpperCase(),
+  );
+  for (const step of steps) {
+    const [, tag, n] = /^(\w+):nth-of-type\((\d+)\)$/.exec(step)!;
+    found = found.flatMap(
+      (el) => el.children.filter((c) => c.tagName === tag!.toUpperCase())[Number(n) - 1] ?? [],
+    );
+  }
+  return found;
+}
+const doc = Object.assign(new FakeDocument(LaidOutElement), { querySelectorAll: select });
 const win = {
   document: doc,
   HTMLIFrameElement: class {},
@@ -126,7 +148,7 @@ it.each([
     expect(pick.stack[0]).toBe(nearest);
     expect(pick.props).toContain('"merged": 3');
     expect(pick.props).toContain('"onPick": "[function]"');
-    expect(pick.styles).toMatchObject({ display: 'flex', gap: '0px' });
+    expect(select(pick.selector!)).toEqual([pick.element]);
   },
 );
 
@@ -143,18 +165,48 @@ it('drills in from the region to the component to the element', async () => {
   expect(drillIn(element, button as never)).toBe(element);
 });
 
-it('sends the items as one report with the images in item order', async () => {
+it('sends the request and the items, each with what names and finds it, as one report', async () => {
   const { pickAt, sendDebugItems } = await import('@/data/debug-view');
-  await sendDebugItems([
-    { pick: pickAt(button as never, 'component'), note: 'bar is cut off', image: 'data:a' },
-    { pick: pickAt(button as never, 'element'), note: '', image: null },
-    { pick: pickAt(button as never, 'region'), note: 'wrong count', image: 'data:c' },
-  ]);
+  await sendDebugItems(
+    [
+      { pick: pickAt(button as never, 'component'), note: 'bar is cut off', image: 'data:a' },
+      { pick: pickAt(button as never, 'element'), note: '', image: null },
+      { pick: pickAt(button as never, 'region'), note: 'wrong count', image: 'data:c' },
+    ],
+    'make the bar show the whole count',
+  );
   const asked = vi.mocked(askDebugAgent).mock.calls.at(-1)![0];
   expect(asked.title).toBe('Debug view: 3 items');
+  expect(asked.request).toBe('make the bar show the whole count');
   expect(asked.images).toEqual(['data:a', 'data:c']);
-  expect(asked.detail).toContain('board.progress > MilestoneProgress > button.btn-ink');
-  expect(asked.detail).toContain(`Source: ${COMPONENT_SRC}`);
-  expect(asked.detail).toContain('Note: bar is cut off');
-  expect(asked.detail).toContain('```json\n{\n  "counts"');
+  const props = '{"counts": {"merged": 3},"onPick": "[function]"}';
+  expect(asked.detail!.split('\n\n')).toEqual([
+    'Parts of the window the user picked (screenshots attached in the same order):',
+    [
+      '1. board.progress > MilestoneProgress — MilestoneProgress',
+      `   Source: ${COMPONENT_SRC}`,
+      '   Selector: [data-debug-region="board.progress"] > div:nth-of-type(1)',
+      '   Note: bar is cut off',
+      '   Stack: MilestoneProgress < MilestoneCard',
+      '   Text: "x"',
+      `   Props: ${props}`,
+    ].join('\n'),
+    [
+      '2. board.progress > MilestoneProgress > button.btn-ink — MilestoneProgress',
+      '   Selector: [data-debug-region="board.progress"] > div:nth-of-type(1) > button:nth-of-type(1)',
+      '   Stack: MilestoneProgress < MilestoneCard',
+      '   Text: "x"',
+      `   Props: ${props}`,
+    ].join('\n'),
+    [
+      '3. board.progress — MilestoneCard',
+      `   Source: ${REGION_SRC}`,
+      '   Selector: [data-debug-region="board.progress"]',
+      '   Note: wrong count',
+      '   Stack: MilestoneCard',
+      '   Text: "x"',
+    ].join('\n'),
+  ]);
+  expect(asked.detail).not.toMatch(/Styles|Rect/);
+  expect(asked).not.toHaveProperty('error');
 });

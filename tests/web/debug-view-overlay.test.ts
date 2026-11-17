@@ -11,6 +11,7 @@ const { seen } = vi.hoisted(() => ({
       items: { id: string; run: () => void }[];
       onOpenChange: (open: boolean) => void;
     }[],
+    appClicks: 0,
   },
 }));
 const { list, needs } = vi.hoisted(() => ({
@@ -46,6 +47,7 @@ vi.mock('@/screens/board/BoardScreen', async (actual) => {
         null,
         createElement(PublishBar, { branch: 'main' }),
         createElement(MilestoneCard, { title: 'Release 0.9' }),
+        createElement('button', { onClick: () => seen.appClicks++ }, 'Merge'),
       ),
   };
 });
@@ -114,16 +116,22 @@ const doc = Object.defineProperty(new FakeDocument(LaidOutElement), 'activeEleme
   elementsFromPoint: (x: number, y: number) => FakeElement[];
   querySelectorAll: (selector: string) => FakeElement[];
 };
-type Listener = (e: unknown) => void;
-let keyListeners: Listener[] = [];
+type Listener = (e: never) => void;
+type Options = boolean | { capture?: boolean } | undefined;
+const captures = (options: Options) =>
+  typeof options === 'boolean' ? options : !!options?.capture;
+let listeners: { type: string; fn: Listener; capture: boolean }[] = [];
 const win = {
   document: doc,
   HTMLIFrameElement: class {},
   innerWidth: 1440,
   matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
-  addEventListener: (type: string, fn: Listener) => type === 'keydown' && keyListeners.push(fn),
-  removeEventListener: (type: string, fn: Listener) => {
-    if (type === 'keydown') keyListeners = keyListeners.filter((l) => l !== fn);
+  addEventListener: (type: string, fn: Listener, options?: Options) =>
+    listeners.push({ type, fn, capture: captures(options) }),
+  removeEventListener: (type: string, fn: Listener, options?: Options) => {
+    listeners = listeners.filter(
+      (l) => !(l.type === type && l.fn === fn && l.capture === captures(options)),
+    );
   },
 };
 doc.defaultView = win;
@@ -148,6 +156,9 @@ const handlers = (el: FakeElement) => {
 };
 
 const toolbar = () => byRole('toolbar');
+const description = () => byLabel(zh('components.debugView.request'))[0]!;
+const describe = (text: string) =>
+  act(() => handlers(description()).onChange!({ target: { value: text } }));
 const inspector = () => byLabel(zh('components.debugView.inspector'))[0];
 const hit = () => byRole('application')!;
 const hover = (name: string) =>
@@ -157,29 +168,46 @@ const hover = (name: string) =>
   });
 // A macrotask, so the async work a handler starts has run.
 const settle = () => new Promise((done) => setTimeout(done, 0));
-const click = (el: FakeElement) =>
-  act(async () => {
-    handlers(el).onClick!();
+const REACT_PROPS: Record<string, string> = { click: 'onClick', keydown: 'onKeyDown' };
+/** Runs an event as the browser does: the window's capture listeners, the target's React handler, then the window's other listeners. */
+const dispatch = async (type: string, target: FakeElement, init: object = {}) => {
+  let stopped = false;
+  let immediate = false;
+  const e = {
+    type,
+    target,
+    key: '',
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    repeat: false,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopPropagation() {
+      stopped = true;
+    },
+    stopImmediatePropagation() {
+      stopped = immediate = true;
+    },
+    ...init,
+  };
+  const run = (capture: boolean) => {
+    for (const l of [...listeners])
+      if (!immediate && l.type === type && l.capture === capture) l.fn(e as never);
+  };
+  await act(async () => {
+    run(true);
+    if (!stopped) handlers(target)?.[REACT_PROPS[type]!]?.(e);
+    if (!stopped) run(false);
     await settle();
   });
-const press = (key: string, target: FakeElement = hit()) =>
-  act(async () => {
-    const e = {
-      key,
-      target,
-      metaKey: false,
-      ctrlKey: false,
-      shiftKey: false,
-      altKey: false,
-      repeat: false,
-      defaultPrevented: false,
-      preventDefault() {
-        this.defaultPrevented = true;
-      },
-    };
-    for (const listener of [...keyListeners]) listener(e);
-    await settle();
-  });
+  return e;
+};
+const click = (el: FakeElement) => dispatch('click', el);
+const press = (key: string, target: FakeElement = hit()) => dispatch('keydown', target, { key });
 
 async function openFromPalette() {
   await act(() => seen.palette.at(-1)!.onOpenChange(true));
@@ -263,17 +291,29 @@ it('picks the region on a click and shows its source location in the inspector',
   expect(inspector()!.textContent).toContain(zh('components.debugView.region.milestone'));
 });
 
-it('sends the pick with its note, then leaves and gives focus back', async () => {
+it('sends only once the request is written', async () => {
+  const send = () => button(inspector()!, zh('components.debugView.send'))!;
+  expect(send().hasAttribute('disabled')).toBe(true);
+  await describe('  \n ');
+  expect(send().hasAttribute('disabled')).toBe(true);
+  await describe('show the merged count');
+  expect(send().hasAttribute('disabled')).toBe(false);
+});
+
+it('sends the pick with its note and the request, then leaves and gives focus back', async () => {
   const note = byLabel(zh('components.debugView.note'))[0]!;
   await act(() => handlers(note).onChange!({ target: { value: 'the count is off' } }));
   await click(button(inspector()!, zh('components.debugView.send'))!);
-  expect(vi.mocked(sendDebugItems)).toHaveBeenCalledWith([
-    {
-      pick: expect.objectContaining({ region: 'board.milestone', source: MILESTONE_SRC }),
-      note: 'the count is off',
-      image: null,
-    },
-  ]);
+  expect(vi.mocked(sendDebugItems)).toHaveBeenCalledWith(
+    [
+      {
+        pick: expect.objectContaining({ region: 'board.milestone', source: MILESTONE_SRC }),
+        note: 'the count is off',
+        image: null,
+      },
+    ],
+    'show the merged count',
+  );
   expect(toolbar()).toBeUndefined();
   expect(focus.at).toBe(before);
 });
@@ -311,11 +351,13 @@ it('keeps a region picked twice as one item', async () => {
   ).toEqual([]);
 });
 
-it('stays open with its items when the send fails', async () => {
+it('stays open with its items and the request when the send fails', async () => {
   vi.mocked(sendDebugItems).mockResolvedValueOnce(false);
+  await describe('the bar hides the branch');
   await click(button(inspector()!, zh('components.debugView.send'))!);
   expect(toolbar()).toBeDefined();
   expect(inspector()!.textContent).toContain(PUBLISH_SRC);
+  expect(handlers(description()).value as unknown).toBe('the bar hides the branch');
 });
 
 it('closes the inspector on Esc, then leaves the debug view on the next', async () => {
@@ -324,4 +366,42 @@ it('closes the inspector on Esc, then leaves the debug view on the next', async 
   expect(toolbar()).toBeDefined();
   await press('Escape');
   expect(toolbar()).toBeUndefined();
+});
+
+it('keeps clicks and keys from the app while open and gives them back after', async () => {
+  const keys: string[] = [];
+  // Registered like the app's own window key handlers, before the view opens.
+  win.addEventListener('keydown', (e: { key: string }) => keys.push(e.key));
+  const merge = button(container, 'Merge')!;
+  await click(merge);
+  await press('j', doc.body);
+  expect([seen.appClicks, keys]).toEqual([1, ['j']]);
+
+  await openFromPalette();
+  await click(merge);
+  await press('j');
+  await press('j', doc.body);
+  expect([seen.appClicks, keys]).toEqual([1, ['j']]);
+
+  await hover('board.milestone');
+  await click(hit());
+  await press('Escape');
+  expect(inspector()).toBeUndefined();
+  // With no request yet, the toolbar's Send asks for one.
+  const sends = vi.mocked(sendDebugItems).mock.calls.length;
+  await click(button(toolbar()!, zh('components.debugView.send'))!);
+  expect(vi.mocked(sendDebugItems).mock.calls.length).toBe(sends);
+  expect(focus.at).toBe(description());
+  expect((await press('a', description())).defaultPrevented).toBe(false);
+  await describe('a');
+  expect(button(inspector()!, zh('components.debugView.send'))!.hasAttribute('disabled')).toBe(
+    false,
+  );
+
+  await press('Escape', description());
+  await press('Escape');
+  expect(toolbar()).toBeUndefined();
+  await click(merge);
+  await press('j', doc.body);
+  expect([seen.appClicks, keys]).toEqual([2, ['j', 'a', 'j']]);
 });

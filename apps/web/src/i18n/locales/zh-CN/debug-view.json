@@ -38,5 +38,5 @@
   "components.debugView.screenshotOf": "{name} 的裁剪截图",
   "components.debugView.props": "输入数据",
   "components.debugView.copyProps": "复制输入数据",
-  "components.debugView.styles": "计算样式"
+  "components.debugView.request": "你想改什么或修什么？"
 }

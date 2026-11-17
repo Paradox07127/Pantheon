@@ -20,9 +20,10 @@ export const canMessage = (session: Session): boolean =>
   composeState(session)[messageCommand(session.state) === 'session.steer' ? 'steer' : 'send']
     .enabled;
 
-/** The report a debug session gets: the error, where the user was, and the app's recent problems. */
+/** The report a debug session gets: the user's request or the problem, where the user was, and for a problem the app's recent errors. */
 async function debugPrompt(
   title: string,
+  request: string | undefined,
   detail: string | undefined,
   error: AppError | undefined,
 ): Promise<string> {
@@ -36,25 +37,30 @@ async function debugPrompt(
     ?.appInfo()
     .then((info) => info.version)
     .catch(() => null);
-  const logs = await bridge?.logsDir().catch(() => null);
-  const recent = appErrors()
-    .filter((entry) => entry.id !== error?.id)
-    .slice(-20)
-    .map((entry) => JSON.stringify(entry));
+  // A debug-view request may be about the look, so it goes without the app's errors.
+  const recent = !request
+    ? appErrors()
+        .filter((entry) => entry.id !== error?.id)
+        .slice(-20)
+        .map((entry) => JSON.stringify(entry))
+    : [];
   // Sent to the model, so it stays in one language.
   return [
-    `The user asked about this in the running Pantheon app:\n\n${title}`,
+    request
+      ? `The user's request:\n\n${request}`
+      : `The user asked about this in the running Pantheon app:\n\n${title}`,
     error ? `The error:\n\n\`\`\`json\n${JSON.stringify(error, null, 2)}\n\`\`\`` : '',
-    detail ? `Detail:\n\n${detail}` : '',
+    detail && !request ? `Detail:\n\n${detail}` : detail,
     [
       `Screen: ${screen}`,
       `Project id: ${projectId ?? 'none'}`,
       `Session id: ${sessionId ?? 'none'}`,
       `App version: ${version ?? 'unknown'}`,
-      `Daemon log folder: ${logs ?? 'unknown'}`,
     ].join('\n'),
     recent.length ? `Recent problems the app recorded, oldest first:\n\n${recent.join('\n')}` : '',
-    'Reproduce the problem in the running app first; after fixing it, reproduce it again to confirm it is gone.',
+    !request
+      ? 'Reproduce the problem in the running app first; after fixing it, reproduce it again to confirm it is gone.'
+      : '',
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -85,18 +91,21 @@ async function debugSession(projectId: string): Promise<Session | null> {
  */
 export async function askDebugAgent({
   title,
+  request,
   detail,
   images,
   error,
 }: {
   title: string;
+  /** The user's own words; the report starts with them instead of the title. */
+  request?: string;
   detail?: string;
   /** The recorded entry the report is about, set apart from the recent ones. */
   error?: AppError;
   /** PNG data URLs, attached to the message; dropped when the report is copied. */
   images?: readonly string[];
 }): Promise<boolean> {
-  const prompt = await debugPrompt(title, detail, error);
+  const prompt = await debugPrompt(title, request, detail, error);
   const board = useBoard.getState().board;
   const target = window.pantheon ? await debugTarget() : null;
   const repo = target && board?.projects.find((p) => p.roots[0] === target.repo_root);

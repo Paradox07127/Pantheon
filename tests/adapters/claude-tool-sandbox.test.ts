@@ -1267,6 +1267,39 @@ describe('Claude workbench permission modes', () => {
     expect(f.requestPermission.mock.calls.map(([tool]) => tool)).toEqual(['mcp__x__tool']);
   });
 
+  it.each(['auto_edit', 'plan'] as const)(
+    'allows the read tools of the chrome_devtools server Pantheon passes in without asking in %s mode',
+    async (mode) => {
+      const f = modeOptions(mode);
+      const devtools = (tool: string, source: string) =>
+        f.options.canUseTool!(tool, {}, {
+          signal: new AbortController().signal,
+          toolUseID: tool,
+          requestId: tool,
+          mcpServer: { name: 'chrome_devtools', source },
+        } as Parameters<NonNullable<typeof f.options.canUseTool>>[2]);
+      expect(await devtools('mcp__chrome_devtools__take_screenshot', 'dynamic')).toEqual({
+        behavior: 'allow',
+        updatedInput: {},
+      });
+      expect(f.requestPermission).not.toHaveBeenCalled();
+      const script = await devtools('mcp__chrome_devtools__evaluate_script', 'dynamic');
+      const configured = await devtools('mcp__chrome_devtools__take_screenshot', 'user');
+      if (mode === 'plan') {
+        expect(script).toEqual({ behavior: 'deny', message: PLAN_DENIAL });
+        expect(configured).toEqual({ behavior: 'deny', message: PLAN_DENIAL });
+        expect(f.requestPermission).not.toHaveBeenCalled();
+      } else {
+        expect(script).toEqual(asked);
+        expect(configured).toEqual(asked);
+        expect(f.requestPermission.mock.calls.map(([tool]) => tool)).toEqual([
+          'mcp__chrome_devtools__evaluate_script',
+          'mcp__chrome_devtools__take_screenshot',
+        ]);
+      }
+    },
+  );
+
   it('denies changes in plan mode and asks before leaving it', async () => {
     const f = modeOptions('plan');
     expect(await f.call('Read', { file_path: 'file' })).toMatchObject({ behavior: 'allow' });

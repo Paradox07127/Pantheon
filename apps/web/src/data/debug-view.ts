@@ -15,8 +15,8 @@ export interface DebugPick {
   stack: string[];
   /** The props of the element's nearest component as pretty JSON, at most 4000 characters; null when the element has no React fiber. */
   props: string | null;
-  /** These computed styles: display, position, width, height, margin, padding, color, background-color, font-size, gap. */
-  styles: Record<string, string>;
+  /** A CSS selector that matches only the element, for the debug agent's app_dom; null when none was found. */
+  selector: string | null;
   rect: { x: number; y: number; width: number; height: number };
   /** The first 200 characters of innerText. */
   text: string;
@@ -28,21 +28,13 @@ export interface DebugItem {
   image: string | null;
 }
 
-const STYLES = [
-  'display',
-  'position',
-  'width',
-  'height',
-  'margin',
-  'padding',
-  'color',
-  'background-color',
-  'font-size',
-  'gap',
-];
 const PROPS_MAX = 4000;
 const STACK_MAX = 6;
 const IMAGES_MAX = 10;
+// What one item of the message carries at most.
+const SENT_PROPS_MAX = 1000;
+const SENT_STACK_MAX = 3;
+const SENT_TEXT_MAX = 100;
 
 /** The part of a React fiber this file reads. */
 interface Fiber {
@@ -146,11 +138,28 @@ function plain(value: unknown, depth: number, parents: readonly object[]): unkno
 const propsJson = (props: unknown): string =>
   (JSON.stringify(plain(props, 0, []), null, 2) ?? 'null').slice(0, PROPS_MAX);
 
+const regionSelector = (name: string) => `[data-debug-region="${name}"]`;
+
+/** The nearest region (or body) and `tag:nth-of-type(n)` steps down to the element, when that names only the element. */
+function selectorOf(element: Element): string | null {
+  const region = regionOf(element);
+  const top = region ?? document.body;
+  const steps: string[] = [];
+  for (let at = element; at !== top && at.parentElement; at = at.parentElement) {
+    const tag = at.tagName;
+    const n = [...at.parentElement.children].filter((c) => c.tagName === tag).indexOf(at);
+    steps.unshift(`${tag.toLowerCase()}:nth-of-type(${n + 1})`);
+  }
+  const base = region ? regionSelector(region.getAttribute('data-debug-region')!) : 'body';
+  const selector = [base, ...steps].join(' > ');
+  const found = document.querySelectorAll(selector);
+  return found.length === 1 && found[0] === element ? selector : null;
+}
+
 function pickOf(element: Element, level: DebugLevel): DebugPick {
   const region = regionOf(element);
   const named = components(element);
   const box = element.getBoundingClientRect();
-  const computed = getComputedStyle(element);
   return {
     element,
     level,
@@ -166,7 +175,10 @@ function pickOf(element: Element, level: DebugLevel): DebugPick {
       .filter((name, i, all) => all[i - 1] !== name)
       .slice(0, STACK_MAX),
     props: named[0] ? propsJson(named[0].fiber.memoizedProps) : null,
-    styles: Object.fromEntries(STYLES.map((name) => [name, computed.getPropertyValue(name)])),
+    selector:
+      level === 'region'
+        ? regionSelector(region!.getAttribute('data-debug-region')!)
+        : selectorOf(element),
     rect: { x: box.x, y: box.y, width: box.width, height: box.height },
     // SVG elements have no innerText.
     text: ((element as HTMLElement).innerText ?? element.textContent ?? '').slice(0, 200),
@@ -189,28 +201,36 @@ export function drillIn(pick: DebugPick, target: Element): DebugPick {
 
 function itemText(item: DebugItem, index: number): string {
   const { pick } = item;
-  const { x, y, width, height } = pick.rect;
+  const stack = pick.stack.slice(0, SENT_STACK_MAX);
+  const text = pick.text.slice(0, SENT_TEXT_MAX);
   return [
-    `## Item ${index + 1}: ${pick.path.join(' > ')}`,
-    `Source: ${pick.source ?? 'unknown'}`,
-    `Level: ${pick.level}`,
-    `Note: ${item.note || 'none'}`,
-    `Component stack: ${pick.stack.join(' < ') || 'none'}`,
-    `Rect: x ${x}, y ${y}, width ${width}, height ${height}`,
-    `Styles: ${Object.entries(pick.styles)
-      .map(([name, value]) => `${name}: ${value}`)
-      .join('; ')}`,
-    `Text: ${JSON.stringify(pick.text)}`,
-    pick.props ? `Props:\n\n\`\`\`json\n${pick.props}\n\`\`\`` : 'Props: none',
-  ].join('\n');
+    `${index + 1}. ${pick.path.join(' > ')}${stack[0] ? ` — ${stack[0]}` : ''}`,
+    pick.source ? `Source: ${pick.source}` : '',
+    pick.selector ? `Selector: ${pick.selector}` : '',
+    item.note ? `Note: ${item.note}` : '',
+    stack.length ? `Stack: ${stack.join(' < ')}` : '',
+    text ? `Text: ${JSON.stringify(text)}` : '',
+    // Pretty JSON has line breaks only between its tokens.
+    pick.level !== 'region' && pick.props
+      ? `Props: ${pick.props.replace(/\n\s*/g, '').slice(0, SENT_PROPS_MAX)}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n   ');
 }
 
-/** Sends the items to the debug session as one message with the images attached; same routing and fallbacks as askDebugAgent. */
-export async function sendDebugItems(items: readonly DebugItem[]): Promise<boolean> {
+/** Sends the user's request and the items to the debug session as one message with the images attached; same routing and fallbacks as askDebugAgent. */
+export async function sendDebugItems(
+  items: readonly DebugItem[],
+  request: string,
+): Promise<boolean> {
   // Sent to the model, so it stays in one language.
   return askDebugAgent({
     title: `Debug view: ${items.length} ${items.length === 1 ? 'item' : 'items'}`,
-    detail: items.map(itemText).join('\n\n'),
+    request,
+    detail: `Parts of the window the user picked (screenshots attached in the same order):\n\n${items
+      .map(itemText)
+      .join('\n\n')}`,
     images: items
       .map((item) => item.image)
       .filter((image): image is string => image !== null)

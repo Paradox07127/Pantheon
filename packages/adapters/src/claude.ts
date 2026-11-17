@@ -102,6 +102,22 @@ const READ_ONLY_TOOLS = new Set([
   'KillShell',
 ]);
 
+/** Tools of the chrome_devtools server Pantheon passes in that only read the renderer. */
+const DEVTOOLS_READ_TOOLS = new Set(
+  [
+    'list_pages',
+    'select_page',
+    'take_screenshot',
+    'take_snapshot',
+    'list_console_messages',
+    'get_console_message',
+    'list_network_requests',
+    'get_network_request',
+    'get_css_styles',
+    'wait_for',
+  ].map((name) => `mcp__chrome_devtools__${name}`),
+);
+
 const READ_ONLY_DENIAL =
   'Your plan has unfinished tasks, so this lead turn is read-only: read files, run git log, git status or git diff, act through the Pantheon tools, and leave changes to the task sessions.';
 const READ_ONLY_PROGRAMS = new Set([
@@ -654,6 +670,12 @@ export function buildClaudeOptions(
       if (settled) return settled;
       const readOnlyCommand =
         tool === 'Bash' && typeof input.command === 'string' && readOnlyBash(input.command, spec);
+      if (
+        options.mcpServer?.source === 'dynamic' &&
+        options.mcpServer.name === 'chrome_devtools' &&
+        DEVTOOLS_READ_TOOLS.has(tool)
+      )
+        return { behavior: 'allow', updatedInput: input };
       const mode = permissionMode();
       // Allowed rules stay dormant until the session leaves plan mode.
       if (

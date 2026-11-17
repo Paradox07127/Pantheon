@@ -124,6 +124,19 @@ const typing = (target: EventTarget | null) => {
 
 const copy = (text: string) => void navigator.clipboard.writeText(text);
 
+/** What the view stops from reaching the app beneath it. */
+const FROZEN = [
+  'pointerdown',
+  'pointerup',
+  'mousedown',
+  'mouseup',
+  'click',
+  'dblclick',
+  'contextmenu',
+  'keydown',
+  'keyup',
+] as const;
+
 /** A PNG of the rect with the layer hidden, or null without the desktop bridge. */
 async function capture(layer: HTMLElement, rect: Rect): Promise<string | null> {
   const bridge = window.pantheon;
@@ -167,6 +180,9 @@ function DebugLayer() {
   const [items, setItems] = useState<DebugItem[]>([]);
   const [chosen, setChosen] = useState<DebugPick | null>(null);
   const [inspecting, setInspecting] = useState(false);
+  const [request, setRequest] = useState('');
+  // Set when the toolbar's Send opens the inspector to ask for the request.
+  const [describing, setDescribing] = useState(false);
   const shown = items.find((item) => item.pick === chosen) ?? items.at(-1);
   const inspected = inspecting ? shown : undefined;
 
@@ -180,6 +196,7 @@ function DebugLayer() {
   const pick = async () => {
     if (!hover) return;
     const { pick } = hover;
+    setDescribing(false);
     const same = items.find((item) => item.pick.element === pick.element);
     if (same) {
       setChosen(same.pick);
@@ -200,7 +217,14 @@ function DebugLayer() {
     hit.current!.focus();
   };
   const send = async () => {
-    if (await sendDebugItems(items)) leave();
+    if (await sendDebugItems(items, request.trim())) leave();
+  };
+  const sendFromBar = () => {
+    if (request.trim()) void send();
+    else {
+      setDescribing(true);
+      setInspecting(true);
+    }
   };
   const setNote = (pick: DebugPick, note: string) =>
     setItems((list) => list.map((item) => (item.pick === pick ? { ...item, note } : item)));
@@ -231,10 +255,25 @@ function DebugLayer() {
       void pick();
     }
   };
+  // Runs first on the window: the view handles its keys and picks here, and stops the rest short of the app.
+  const onFrozen = useRef<(e: Event) => void>(null);
+  onFrozen.current = (e) => {
+    if (e.type === 'keydown') onKey.current!(e as KeyboardEvent);
+    if (e.type === 'click' && e.target === hit.current) void pick();
+    const own = e.target !== hit.current && root.current!.contains(e.target as Node);
+    if (own && !e.defaultPrevented) return;
+    // Tab moves on from the page into the toolbar and the inspector.
+    const key = e as KeyboardEvent;
+    if (e.target === hit.current && key.key === 'Tab' && !key.shiftKey) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
   useEffect(() => {
-    const listener = (e: KeyboardEvent) => onKey.current!(e);
-    window.addEventListener('keydown', listener);
-    return () => window.removeEventListener('keydown', listener);
+    const listener = (e: Event) => onFrozen.current!(e);
+    for (const type of FROZEN) window.addEventListener(type, listener, true);
+    return () => {
+      for (const type of FROZEN) window.removeEventListener(type, listener, true);
+    };
   }, []);
 
   const onMove = (e: PointerEvent) => {
@@ -260,7 +299,6 @@ function DebugLayer() {
         tabIndex={-1}
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}
-        onClick={() => void pick()}
       />
       {regions.map((rect, i) => (
         <span key={i} className="dbv-out" style={placed(rect)} aria-hidden="true" />
@@ -334,7 +372,7 @@ function DebugLayer() {
             type="button"
             className="btn pri"
             disabled={items.length === 0}
-            onClick={() => void send()}
+            onClick={sendFromBar}
           >
             {sendLabel}
           </button>
@@ -359,6 +397,9 @@ function DebugLayer() {
           items={items}
           shown={inspected}
           sendLabel={sendLabel}
+          request={request}
+          describing={describing}
+          onRequest={setRequest}
           onChoose={setChosen}
           onNote={setNote}
           onRemove={remove}
@@ -380,6 +421,9 @@ function Inspector(props: {
   items: readonly DebugItem[];
   shown: DebugItem;
   sendLabel: string;
+  request: string;
+  describing: boolean;
+  onRequest: (request: string) => void;
   onChoose: (pick: DebugPick) => void;
   onNote: (pick: DebugPick, note: string) => void;
   onRemove: (pick: DebugPick) => void;
@@ -391,6 +435,10 @@ function Inspector(props: {
   const batch = items.length > 1;
   const { pick } = shown;
   const name = nameOf(pick);
+  const requestLabel = t({
+    id: 'components.debugView.request',
+    defaultMessage: 'What do you want changed or fixed?',
+  });
   return (
     <aside
       className="dbv-ins"
@@ -489,11 +537,25 @@ function Inspector(props: {
             onChange={(e) => props.onNote(pick, e.target.value)}
           />
         )}
+        <textarea
+          className="dbv-note"
+          rows={3}
+          aria-label={requestLabel}
+          placeholder={requestLabel}
+          autoFocus={props.describing}
+          value={props.request}
+          onChange={(e) => props.onRequest(e.target.value)}
+        />
         <div className="dbv-send">
           <span className="dbv-to">
             {t({ id: 'components.debugView.target', defaultMessage: 'Debug session' })}
           </span>
-          <button type="button" className="btn pri" onClick={props.onSend}>
+          <button
+            type="button"
+            className="btn pri"
+            disabled={!props.request.trim()}
+            onClick={props.onSend}
+          >
             {batch
               ? t(
                   {
@@ -514,7 +576,6 @@ function Inspector(props: {
 function Detail({ item, batch }: { item: DebugItem; batch: boolean }) {
   const { pick } = item;
   const name = nameOf(pick);
-  const styles = Object.entries(pick.styles);
   return (
     <>
       <section className="dbv-sec">
@@ -604,21 +665,6 @@ function Detail({ item, batch }: { item: DebugItem; batch: boolean }) {
           </div>
         </details>
       )}
-      <details className="dbv-sec" open={!batch}>
-        <summary>
-          <ChevronRight className="dbv-chev" aria-hidden="true" />
-          {t({ id: 'components.debugView.styles', defaultMessage: 'Computed styles' })}
-          <span className="dbv-ct">{styles.length}</span>
-        </summary>
-        <dl className="dbv-kv">
-          {styles.map(([property, value]) => (
-            <Fragment key={property}>
-              <dt>{property}</dt>
-              <dd>{value}</dd>
-            </Fragment>
-          ))}
-        </dl>
-      </details>
     </>
   );
 }

@@ -2,13 +2,22 @@
 .dbv {
   position: fixed;
   inset: 0;
-  z-index: 36;
+  /* Above every layer of the app, its menus and toasts included. */
+  z-index: 70;
   pointer-events: none;
 }
-/* Below the title bar, which keeps dragging the window and its controls. */
+/* While the view is open the page stays hit-testable under hover menus, and its animations hold still. */
+:root:has(.dbv),
+:root:has(.dbv) body {
+  pointer-events: auto !important;
+}
+:root:has(.dbv) body *:not(.dbv, .dbv *) {
+  animation-play-state: paused !important;
+}
+/* Over the title bar too; the window still drags from it. */
 .dbv-hit {
   position: absolute;
-  inset: var(--titlebar) 0 0;
+  inset: 0;
   pointer-events: auto;
   outline: none;
 }
@@ -404,21 +413,6 @@
   position: absolute;
   top: var(--sp-1);
   right: var(--sp-1);
-}
-.dbv-kv {
-  display: grid;
-  grid-template-columns: 136px minmax(0, 1fr);
-  gap: var(--sp-1) var(--sp-2);
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-}
-.dbv-kv dt {
-  color: var(--mu);
-}
-.dbv-kv dd {
-  margin: 0;
-  overflow-wrap: anywhere;
 }
 .dbv-if {
   flex: none;
