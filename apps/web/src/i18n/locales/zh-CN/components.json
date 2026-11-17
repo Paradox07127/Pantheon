@@ -105,7 +105,6 @@
   "components.requestCard.countercondition": "不适用：{condition}",
   "components.requestCard.outOfScopeFiles": "{who} 越界的文件",
   "components.requestCard.conflictFiles": "{who} 冲突的文件",
-  "components.requestCard.unblocks": "解锁 {count, plural, other {#}} 个任务",
   "components.requestCard.waited": "已等 {duration}",
   "components.requestCard.escalated": "已升级",
   "components.requestCard.interrupt": "打断",

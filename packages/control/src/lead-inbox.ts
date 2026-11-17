@@ -734,7 +734,7 @@ export function takeInbox(
   ctx: ControlContext,
   leadId: string,
   budget = DIGEST_BUDGET,
-): { text: string; note_ids: string[] } | undefined {
+): { text: string; note_ids: string[]; notes: LeadNote[] } | undefined {
   const plan = ctx.store.get<BoardPlan>('board_plans', leadId);
   if (!plan?.inbox.length) return;
   const { text, left } = inboxDigest(ctx, plan, plan.inbox, budget);
@@ -744,9 +744,11 @@ export function takeInbox(
     { ...plan, inbox: left, last_told: toldStates(ctx, plan) },
     plan.revision,
   );
+  const notes = plan.inbox.filter((note) => !left.includes(note));
   return {
     text,
-    note_ids: plan.inbox.flatMap((note) => (note.id && !left.includes(note) ? [note.id] : [])),
+    note_ids: notes.flatMap((note) => (note.id ? [note.id] : [])),
+    notes,
   };
 }
 

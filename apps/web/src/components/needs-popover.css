@@ -31,6 +31,19 @@
   color: var(--mu);
   font-variant-numeric: tabular-nums;
 }
+.np-l {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.np-x {
+  margin: 0;
+  padding: 12px 8px;
+  font-size: var(--fs-md);
+  text-wrap: balance;
+}
 .np-r {
   position: relative;
   display: grid;
@@ -43,8 +56,21 @@
   transition: background-color var(--dur-1) var(--ease-std);
 }
 .np-r:hover,
-.np-r:focus-within {
+.np-r:focus-within,
+.np-r[data-on] {
   background: var(--sel);
+}
+.np-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.np-c {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 .np-ic {
   display: flex;
@@ -99,12 +125,6 @@
   z-index: 1;
   display: flex;
   gap: 4px;
-  opacity: 0;
-  transition: opacity var(--dur-1) var(--ease-std);
-}
-.np-r:hover .np-a,
-.np-r:focus-within .np-a {
-  opacity: 1;
 }
 .np-e {
   display: flex;

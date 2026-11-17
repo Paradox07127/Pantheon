@@ -919,6 +919,8 @@ export interface SessionTurn extends Entity {
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   /** Inbox notes carried by this turn, including notes folded into its digest. */
   lead_note_ids?: string[];
+  /** Set only on a turn Pantheon queued to deliver notes: their kinds and routine ids; absent on a user turn. */
+  wake?: { causes: LeadNote['kind'][]; routine_ids?: string[] };
   /** The MCP server whose interface sent this input. */
   app?: { server: string };
   /** Latest reported usage totals for this turn, in tokens and USD. */

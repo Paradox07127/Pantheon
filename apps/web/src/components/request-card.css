@@ -75,11 +75,20 @@
   border-radius: var(--r-sm);
   overflow-wrap: anywhere;
 }
-.rq-arr {
-  width: 12px;
-  height: 12px;
+.rq-kind {
   flex: none;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.rq-blk {
+  flex: none;
+  margin-left: auto;
   color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rq-blk + .rq-age {
+  margin-left: 0;
 }
 .rq-next {
   margin: 0;

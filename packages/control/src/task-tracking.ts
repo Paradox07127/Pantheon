@@ -1235,6 +1235,7 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
         input: foldDigest(waiting.input, digest.text),
         lead_note_ids: [...(waiting.lead_note_ids ?? []), ...digest.note_ids],
         causal_depth: Math.max(waiting.causal_depth ?? 0, depth),
+        wake: wakeOf(digest.notes, waiting.wake),
       },
       waiting.revision,
     );
@@ -1243,7 +1244,20 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
   queueTurn(ctx, lead, digest.text, 'tracker', cause, {
     causal_depth: depth,
     lead_note_ids: digest.note_ids,
+    wake: wakeOf(digest.notes, undefined),
   });
+}
+
+/** The kinds and routine ids of the turn's earlier notes and of the notes it now delivers, each once in order. */
+function wakeOf(notes: LeadNote[], earlier: SessionTurn['wake']): NonNullable<SessionTurn['wake']> {
+  const causes = [...new Set([...(earlier?.causes ?? []), ...notes.map((note) => note.kind)])],
+    routineIds = [
+      ...new Set([
+        ...(earlier?.routine_ids ?? []),
+        ...notes.flatMap((note) => (note.routine_id ? [note.routine_id] : [])),
+      ]),
+    ];
+  return routineIds.length ? { causes, routine_ids: routineIds } : { causes };
 }
 
 /**
@@ -1279,6 +1293,7 @@ export function queueTurn(
     | 'handoff'
     | 'causal_depth'
     | 'lead_note_ids'
+    | 'wake'
   >,
 ): SessionTurn {
   const turn: SessionTurn = { ...queuedTurn(session, input, 'send', extras), origin };

@@ -5,6 +5,7 @@ import type { BoardModel } from '@pantheon/protocol';
 import { RequestCard, type RequestCardProps } from '../../components/RequestCard';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
+import { nextKey } from '../../data/attention';
 import { useBoard } from '../../data/board';
 import { needsKey } from '../../data/notice-tiers';
 import { useImprovements, type Improvement } from '../../data/workflow-policy';
@@ -196,6 +197,25 @@ export function NeedsStrip({
     card?.querySelector('button')?.focus();
     useShell.setState({ askedNeed: null });
   }, [asked, shown]);
+  // The row the user is on: the first until they settle one, then the one after it.
+  const [current, setCurrent] = useState<string | null>(null);
+  const on = needs?.some((item) => needKey(item) === current)
+    ? current
+    : needs?.[0] && needKey(needs[0]);
+  const advancing = useRef(false);
+  const advance = (acted: string) => {
+    advancing.current = true;
+    setCurrent(nextKey(needs?.map(needKey) ?? [], acted));
+  };
+  useEffect(() => {
+    if (!advancing.current) return;
+    const at = needs?.findIndex((item) => needKey(item) === current) ?? -1;
+    if (at >= FOLDED && !all) return setAll(true);
+    advancing.current = false;
+    const card = list.current?.children[at] as HTMLElement | undefined;
+    card?.scrollIntoView({ block: 'nearest' });
+    (card?.querySelector<HTMLElement>('.pri') ?? card?.querySelector('button'))?.focus();
+  }, [current, shown]);
   return (
     <Fold open={listed.length > 0}>
       <section
@@ -212,6 +232,8 @@ export function NeedsStrip({
                 run={run}
                 onOpenSession={onOpenSession}
                 stale={stale}
+                selected={needKey(item) === on}
+                onActed={() => advance(needKey(item))}
                 {...needContext(item, model, sessions, stored, improvements ?? null)}
               />
             </li>

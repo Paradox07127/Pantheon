@@ -155,7 +155,13 @@ describe('needs-you list', () => {
       (n) => n.type === 'button' && text(n) === zh('projects.needs.allow'),
     );
     expect(allows).toHaveLength(1);
-    expect(button(h.value, zh('projects.needs.deny'))).toBeTruthy();
+    // Deny is the request's secondary action, in its row menu.
+    expect(
+      find(
+        h.value,
+        (n) => n.type !== 'button' && !!n.props.onClick && text(n) === zh('projects.needs.deny'),
+      ),
+    ).toBeTruthy();
     await allows[0]!.props.onClick();
     expect(runCommand).toHaveBeenCalledWith(
       'approval.respond',

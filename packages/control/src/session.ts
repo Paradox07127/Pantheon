@@ -434,6 +434,7 @@ export function queuedTurn(
     | 'handoff'
     | 'causal_depth'
     | 'lead_note_ids'
+    | 'wake'
     | 'app'
   > = {},
 ): SessionTurn {

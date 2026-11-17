@@ -1,7 +1,8 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { ArrowRight, FlaskConical, Gauge, Lightbulb, Pencil } from 'lucide-react';
+import { FlaskConical, Gauge, Lightbulb, Pencil } from 'lucide-react';
 import type { ApprovalQuestion, Improvement } from '@pantheon/domain';
+import { blocksText, decisionText, primaryAction } from '../data/attention';
 import {
   ageText,
   blockedReasonText,
@@ -75,6 +76,8 @@ export interface RequestCardProps {
   /** Shows the card in full elsewhere; the title of a compact card then picks it. */
   onSelect?: () => void;
   selected?: boolean;
+  /** Called once a command the card sent was taken, so a list can move on to its next item. */
+  onActed?: () => void;
 }
 
 // The waiting dot stays with approvals and questions; every other kind has its mark from elsewhere.
@@ -122,6 +125,7 @@ export function RequestCard({
   stale,
   onSelect,
   selected,
+  onActed,
 }: RequestCardProps) {
   const asked = item.kind === 'lead.question' ? item.question : undefined;
   const relayed = asked?.source;
@@ -146,6 +150,10 @@ export function RequestCard({
   const full = size === 'full';
   const sessionId = needSession(item);
   const actions = needActions(item, session, lead);
+  // A list row marks only its one primary action, and only while the user is on the row.
+  const primary = full ? undefined : primaryAction(actions, item.primary);
+  const marked = (action: NeedAction) =>
+    full ? PRIMARY.has(action.key) : action === primary && !!selected;
 
   const reasonOf = (action: NeedAction): string | null => {
     const sends = action.key === 'accept' || needCommand(item, action.key, { session, lead });
@@ -184,6 +192,7 @@ export function RequestCard({
     setBusy(true);
     setError(null);
     const failure = await run(command.type, command.input, command.revision);
+    if (!failure) onActed?.();
     // An accepted answer or decision keeps the buttons off until the item leaves.
     if (
       !failure &&
@@ -205,7 +214,7 @@ export function RequestCard({
       <button
         key={action.key}
         type="button"
-        className={PRIMARY.has(action.key) ? 'btn pri' : 'btn'}
+        className={marked(action) ? 'btn pri' : 'btn'}
         aria-label={`${action.label} ${who}`}
         aria-disabled={off || undefined}
         aria-busy={held || undefined}
@@ -324,9 +333,12 @@ export function RequestCard({
     </p>
   );
 
+  const kind = full ? null : decisionText(item.decision);
+  const blocks = full ? null : blocksText(item.blocks ?? item.unblocks);
   const head = (
     <div className="rq-hd">
       {MARK[item.kind]}
+      {kind && <span className="rq-kind">{kind}</span>}
       {full ? (
         <h3 className="rq-who" title={who}>
           {who}
@@ -347,6 +359,7 @@ export function RequestCard({
           {who}
         </b>
       )}
+      {blocks && <span className="rq-blk">{blocks}</span>}
       <span className="rq-age">{ageText(item.created_at, now)}</span>
     </div>
   );
@@ -530,20 +543,6 @@ export function RequestCard({
           </span>
         ) : (
           <span title={what}>{what}</span>
-        )}
-        {(item.unblocks ?? 0) > 0 && (
-          <>
-            <ArrowRight className="rq-arr" aria-hidden="true" />
-            <span>
-              {t(
-                {
-                  id: 'components.requestCard.unblocks',
-                  defaultMessage: 'Unblocks {count, plural, one {# task} other {# tasks}}',
-                },
-                { count: item.unblocks },
-              )}
-            </span>
-          </>
         )}
       </div>
       {assumption}

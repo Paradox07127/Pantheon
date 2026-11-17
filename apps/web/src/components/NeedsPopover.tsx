@@ -1,7 +1,18 @@
-import { useState, type KeyboardEvent, type ReactElement, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+  type ReactNode,
+  type Ref,
+} from 'react';
+import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
+import { Ellipsis } from 'lucide-react';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { templateName } from '../data/agents';
+import { blocksText, decisionText, nextKey, primaryAction } from '../data/attention';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { ageText, failureText, reasonText, useNow, type NeedsYouItem } from '../data/needs-you';
@@ -10,13 +21,21 @@ import { needsKey } from '../data/notice-tiers';
 import { sessionTitle } from '../data/transcript';
 import { t } from '../i18n';
 import { listText } from '../lib/list-text';
+import {
+  needActions,
+  needCommand,
+  type NeedAction,
+  type NeedItem,
+} from '../screens/board/frame-model';
 import { durationText } from '../screens/board/panels-model';
+import { openSettingsPage } from '../screens/settings/settings-jump';
 import { runningSince, useProjectSessions } from '../shell/TrayPopover';
 import { useShell } from '../store';
 import { DiffCounts } from './DiffCounts';
 import { ProjectMonogram } from './ProjectMonogram';
 import { RuntimeGlyph } from './RuntimeGlyph';
 import { GateMark, MergeBlockedGlyph, StateGlyph } from './SessionStateIcon';
+import { Tip } from './Tip';
 import './needs-popover.css';
 
 interface ListRow {
@@ -32,10 +51,14 @@ interface ListRow {
   blocks?: number;
   icon: ReactNode;
   title: string;
+  /** The tasks the row blocks, as text beside its title. */
+  count?: string | null;
   detail?: ReactNode;
   actions?: ReactNode;
   end?: ReactNode;
   dim?: boolean;
+  /** The row the user is on. */
+  on?: boolean;
 }
 
 const STEPS: Readonly<Record<string, 1 | -1>> = { ArrowDown: 1, j: 1, ArrowUp: -1, k: -1 };
@@ -59,6 +82,15 @@ function openRow(row: ListRow) {
 }
 
 /** The rows by project; projects and their rows in the order of their first row: most blocks, then oldest. */
+function byProject(rows: readonly ListRow[]): Map<string, ListRow[]> {
+  const groups = new Map<string, ListRow[]>();
+  for (const row of [...rows].sort(
+    (a, b) => (b.blocks ?? 0) - (a.blocks ?? 0) || a.since - b.since,
+  ))
+    groups.set(row.projectId, [...(groups.get(row.projectId) ?? []), row]);
+  return groups;
+}
+
 function listPopover(props: {
   trigger: ReactElement;
   open: boolean;
@@ -66,18 +98,18 @@ function listPopover(props: {
   label: string;
   rows: readonly ListRow[];
   projects: readonly { id: string; name: string }[];
+  opener?: Ref<HTMLButtonElement>;
+  /** Shown in place of the rows when there are none. */
+  empty?: string;
 }) {
-  const groups = new Map<string, ListRow[]>();
-  for (const row of [...props.rows].sort(
-    (a, b) => (b.blocks ?? 0) - (a.blocks ?? 0) || a.since - b.since,
-  ))
-    groups.set(row.projectId, [...(groups.get(row.projectId) ?? []), row]);
+  const groups = byProject(props.rows);
   return (
     <Popover.Root open={props.open} onOpenChange={props.setOpen}>
-      <Popover.Trigger render={props.trigger} />
+      <Popover.Trigger ref={props.opener} render={props.trigger} />
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="start" sideOffset={4} style={{ zIndex: 40 }}>
           <Popover.Popup className="pop np" aria-label={props.label} onKeyDown={moveFocus}>
+            {groups.size === 0 && props.empty && <p className="np-x">{props.empty}</p>}
             {[...groups].map(([projectId, rows]) => {
               const name = props.projects.find((p) => p.id === projectId)?.name ?? '';
               return (
@@ -87,24 +119,34 @@ function listPopover(props: {
                     <b>{name}</b>
                     <span className="np-n">{rows.length}</span>
                   </div>
-                  {rows.map((row) => (
-                    <div key={row.key} className="np-r" data-dim={row.dim || undefined}>
-                      <span className="np-ic">{row.icon}</span>
-                      <button
-                        type="button"
-                        className="np-open"
-                        onClick={() => {
-                          props.setOpen(false);
-                          openRow(row);
-                        }}
+                  <ul className="np-l">
+                    {rows.map((row) => (
+                      <li
+                        key={row.key}
+                        className="np-r"
+                        data-dim={row.dim || undefined}
+                        data-on={row.on || undefined}
                       >
-                        <span className="np-t">{row.title}</span>
-                        {row.detail && <span className="np-d">{row.detail}</span>}
-                      </button>
-                      <span className="np-a">{row.actions}</span>
-                      <span className="np-e">{row.end}</span>
-                    </div>
-                  ))}
+                        <span className="np-ic">{row.icon}</span>
+                        <button
+                          type="button"
+                          className="np-open"
+                          onClick={() => {
+                            props.setOpen(false);
+                            openRow(row);
+                          }}
+                        >
+                          <span className="np-h">
+                            <span className="np-t">{row.title}</span>
+                            {row.count && <span className="np-c">{row.count}</span>}
+                          </span>
+                          {row.detail && <span className="np-d">{row.detail}</span>}
+                        </button>
+                        <span className="np-e">{row.end}</span>
+                        <span className="np-a">{row.actions}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               );
             })}
@@ -151,6 +193,24 @@ const answerable = (item: NeedsYouItem) =>
 
 const ANSWERING = '';
 const NO_PROJECTS: readonly never[] = [];
+const NO_KEYS: ReadonlySet<string> = new Set();
+
+/** Allow and deny for a request answered here; else the item's own buttons. */
+function itemActions(item: NeedsYouItem): NeedAction[] {
+  if (!answerable(item)) return needActions(item as NeedItem);
+  return [
+    {
+      key: 'approve',
+      label: t({ id: 'projects.needs.allow', defaultMessage: 'Allow' }),
+      reason: null,
+    },
+    {
+      key: 'reject',
+      label: t({ id: 'projects.needs.deny', defaultMessage: 'Deny' }),
+      reason: null,
+    },
+  ];
+}
 
 /** What needs you across the projects, by project, the most tasks blocked first, then the longest wait. */
 export function NeedsPopover({
@@ -163,106 +223,182 @@ export function NeedsPopover({
   const board = useBoard((s) => s.board);
   const now = useNow(30_000);
   const [open, setOpen] = useState(false);
-  // By approval id: ANSWERING while the answer is out, else why it failed.
+  // By row: ANSWERING while the command is out, else why it failed.
   const [answers, setAnswers] = useState<Readonly<Record<string, string>>>({});
-  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
+  // The rows settled since the daemon last listed the items; its next list shows what still waits.
+  const [settled, setSettled] = useState<{
+    of: readonly NeedsYouItem[];
+    keys: ReadonlySet<string>;
+  }>({ of: items, keys: NO_KEYS });
+  const done = settled.of === items ? settled.keys : NO_KEYS;
+  const [current, setCurrent] = useState<string | null>(null);
+  const opener = useRef<HTMLButtonElement>(null);
+  const primaries = useRef(new Map<string, HTMLElement>());
+  const focusing = useRef(false);
+  useEffect(() => {
+    if (!focusing.current) return;
+    focusing.current = false;
+    (current === null ? opener.current : primaries.current.get(current))?.focus();
+  });
 
-  async function answer(item: NeedsYouItem, decision: 'approve' | 'reject') {
-    const id = item.source.id;
-    setAnswers((all) => ({ ...all, [id]: ANSWERING }));
-    const result = await runCommand(
-      'approval.respond',
-      { approval_id: id, decision },
-      item.source.revision,
+  async function act(row: ListRow, item: NeedsYouItem, action: NeedAction, order: string[]) {
+    if (action.reason !== null || answers[row.key] === ANSWERING) return;
+    // A reply needs the answers its card asks for.
+    const command = action.key === 'reply' ? null : needCommand(item as NeedItem, action.key);
+    if (!command) {
+      setOpen(false);
+      if (action.key === 'budget') openSettingsPage(item.project_id, 'projects');
+      else if (action.key === 'board' || action.key === 'accept')
+        useShell.getState().openProjectBoard(item.project_id);
+      else openRow(row);
+      return;
+    }
+    setAnswers((all) => ({ ...all, [row.key]: ANSWERING }));
+    const result = await runCommand(command.type, command.input, command.revision);
+    setAnswers(({ [row.key]: _, ...rest }) =>
+      result.ok ? rest : { ...rest, [row.key]: failureText(result.error) },
     );
-    setAnswers(({ [id]: _, ...rest }) =>
-      result.ok ? rest : { ...rest, [id]: failureText(result.error) },
-    );
-    if (result.ok) setAnswered((all) => new Set(all).add(id));
+    if (!result.ok) return;
+    focusing.current = true;
+    setCurrent(nextKey(order, row.key));
+    setSettled((was) => ({
+      of: items,
+      keys: new Set(was.of === items ? was.keys : NO_KEYS).add(row.key),
+    }));
   }
 
-  const rows = items
-    .filter((item) => !answered.has(item.source.id))
-    .map((item): ListRow => {
-      const sessionId = itemSession(item);
-      const session = sessionId ? board?.sessions.find((s) => s.id === sessionId) : undefined;
-      const reason = reasonText(item.reason);
-      const failed = answers[item.source.id];
-      // A lead's question is answered on its card, which the lead's thread does not show.
-      const card = item.kind === 'lead.question' ? needsKey(item) : null;
-      // An agent proposal is decided on its card in the proposing conversation.
-      const proposal = item.kind === 'agent.proposal' ? item.agent_proposal : undefined;
-      return {
-        key: `${item.source.table}:${item.source.id}:${item.reason}`,
-        projectId: item.project_id,
-        sessionId,
-        ...(card && { open: () => useShell.getState().openProjectNeed(item.project_id, card) }),
-        ...(proposal &&
-          sessionId && {
-            open: () => {
-              focusRequest(proposal.id);
-              useShell.getState().openProjectSession(item.project_id, sessionId);
-            },
-          }),
-        since: item.created_at,
-        blocks: item.blocks,
-        icon: needsGlyph(item),
-        title: session && board ? sessionTitle(session, board) : reason,
-        detail: failed ? (
-          <span role="alert">{failed}</span>
-        ) : proposal ? (
-          listText(
-            proposal.agent_id
-              ? t(
-                  { id: 'projects.needs.changeAgent', defaultMessage: 'Change agent: {name}' },
-                  { name: proposal.name },
-                )
-              : t(
-                  { id: 'projects.needs.newAgent', defaultMessage: 'New agent: {name}' },
-                  { name: proposal.name },
-                ),
-            templateName(proposal.template),
-          )
-        ) : session ? (
-          reason
-        ) : undefined,
-        actions: answerable(item) && (
-          <>
-            <button
-              type="button"
-              className="btn sm pri"
-              disabled={failed === ANSWERING}
-              onClick={() => void answer(item, 'approve')}
-            >
-              {t({ id: 'projects.needs.allow', defaultMessage: 'Allow' })}
-            </button>
-            <button
-              type="button"
-              className="btn sm"
-              disabled={failed === ANSWERING}
-              onClick={() => void answer(item, 'reject')}
-            >
-              {t({ id: 'projects.needs.deny', defaultMessage: 'Deny' })}
-            </button>
-          </>
-        ),
-        end: ageText(item.created_at, now),
-      };
-    });
+  const listed = items.map((item) => {
+    const sessionId = itemSession(item);
+    const session = sessionId ? board?.sessions.find((s) => s.id === sessionId) : undefined;
+    const reason = reasonText(item.reason);
+    const key = `${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}`;
+    const failed = answers[key];
+    // A lead's question is answered on its card, which the lead's thread does not show.
+    const card = item.kind === 'lead.question' ? needsKey(item) : null;
+    // An agent proposal is decided on its card in the proposing conversation.
+    const proposal = item.kind === 'agent.proposal' ? item.agent_proposal : undefined;
+    const kind = decisionText(item.decision);
+    const named = session && board ? sessionTitle(session, board) : undefined;
+    const row: ListRow = {
+      key,
+      projectId: item.project_id,
+      sessionId,
+      ...(card && { open: () => useShell.getState().openProjectNeed(item.project_id, card) }),
+      ...(proposal &&
+        sessionId && {
+          open: () => {
+            focusRequest(proposal.id);
+            useShell.getState().openProjectSession(item.project_id, sessionId);
+          },
+        }),
+      since: item.created_at,
+      blocks: item.blocks,
+      icon: needsGlyph(item),
+      title: kind ?? named ?? reason,
+      count: blocksText(item.blocks),
+      detail: failed ? (
+        <span role="alert">{failed}</span>
+      ) : proposal ? (
+        listText(
+          proposal.agent_id
+            ? t(
+                { id: 'projects.needs.changeAgent', defaultMessage: 'Change agent: {name}' },
+                { name: proposal.name },
+              )
+            : t(
+                { id: 'projects.needs.newAgent', defaultMessage: 'New agent: {name}' },
+                { name: proposal.name },
+              ),
+          templateName(proposal.template),
+        )
+      ) : kind ? (
+        (item.question?.question ?? named ?? reason)
+      ) : named ? (
+        reason
+      ) : undefined,
+      end: ageText(item.created_at, now),
+      on: key === current,
+    };
+    return { item, row };
+  });
+  const shown = listed.filter(({ row }) => !done.has(row.key));
+  const order = [...byProject(shown.map(({ row }) => row)).values()].flat().map((row) => row.key);
 
+  const rows = shown.map(({ item, row }): ListRow => {
+    const actions = itemActions(item);
+    const lead = primaryAction(actions, item.primary);
+    const rest = actions.filter((action) => action !== lead);
+    const busy = answers[row.key] === ANSWERING;
+    const primary = lead && (
+      <button
+        type="button"
+        className="btn sm"
+        ref={(el) => {
+          if (el) primaries.current.set(row.key, el);
+          else primaries.current.delete(row.key);
+        }}
+        aria-disabled={busy || lead.reason !== null || undefined}
+        onClick={() => void act(row, item, lead, order)}
+      >
+        {lead.label}
+      </button>
+    );
+    return {
+      ...row,
+      actions: (
+        <>
+          {primary && lead?.reason ? <Tip content={lead.reason}>{primary}</Tip> : primary}
+          {rest.length > 0 && (
+            <Menu.Root>
+              <Menu.Trigger
+                className="ib"
+                aria-label={t(
+                  { id: 'components.needsPopover.more', defaultMessage: 'More actions: {name}' },
+                  { name: row.title },
+                )}
+              >
+                <Ellipsis aria-hidden="true" />
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Positioner side="bottom" align="end" sideOffset={4} style={{ zIndex: 40 }}>
+                  <Menu.Popup className="wmenu pop">
+                    {rest.map((action) => (
+                      <Menu.Item
+                        key={action.key}
+                        disabled={busy || action.reason !== null}
+                        onClick={() => void act(row, item, action, order)}
+                      >
+                        {action.label}
+                      </Menu.Item>
+                    ))}
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
+          )}
+        </>
+      ),
+    };
+  });
+
+  const empty = t({ id: 'components.needsPopover.empty', defaultMessage: 'Nothing needs you.' });
   return listPopover({
     trigger,
     open,
     setOpen,
     rows,
     projects: board?.projects ?? NO_PROJECTS,
-    label: t(
-      {
-        id: 'projects.needs.label',
-        defaultMessage: '{count, plural, one {# thing needs you} other {# things need you}}',
-      },
-      { count: rows.length },
-    ),
+    opener,
+    empty,
+    label: rows.length
+      ? t(
+          {
+            id: 'projects.needs.label',
+            defaultMessage: '{count, plural, one {# thing needs you} other {# things need you}}',
+          },
+          { count: rows.length },
+        )
+      : empty,
   });
 }
 

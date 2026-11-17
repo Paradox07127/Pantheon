@@ -1,0 +1,14 @@
+{
+  "components.needsPopover.empty": "没有需要你的事。",
+  "components.needsPopover.more": "更多操作：{name}",
+  "data.attention.blocks": "{count, plural, other {阻塞 # 个任务}}",
+  "data.attention.decision.agentProposal": "新智能体",
+  "data.attention.decision.budget": "预算",
+  "data.attention.decision.external": "外部请求",
+  "data.attention.decision.improvement": "改进",
+  "data.attention.decision.milestoneAccept": "待验收的里程碑",
+  "data.attention.decision.permission": "权限",
+  "data.attention.decision.planChange": "计划变更",
+  "data.attention.decision.question": "问题",
+  "data.attention.decision.repeatedFailure": "失败两次"
+}
