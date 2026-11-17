@@ -771,14 +771,14 @@ export function credentialRole(
 ): Role {
   if (session.review_id) return 'reviewer';
   if (session.resident) return 'lead';
-  if (workspaceKind === 'in_place' && session.in_place && !session.task) return 'writer';
   if (
     session.baseline ||
     session.change_story ||
     session.range_story ||
     session.intro ||
     !session.workspace_id ||
-    (workspaceKind === 'in_place' && !session.task)
+    // An imported session reads like a planner; a new one in the project folder is a lead or worker.
+    (workspaceKind === 'in_place' && !session.task && !session.in_place)
   )
     return 'planner';
   return session.task ? 'worker' : 'lead';

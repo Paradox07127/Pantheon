@@ -270,10 +270,10 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `app.dom` | `selector?`: string | app_dom (planner), app_dom (writer), app_dom (lead), app_dom (worker) |
-| `app.errors` | — | app_errors (planner), app_errors (writer), app_errors (lead), app_errors (worker) |
-| `app.logs` | `lines?`: integer<br>`grep?`: string | app_logs (planner), app_logs (writer), app_logs (lead), app_logs (worker) |
-| `app.screenshot` | — | app_screenshot (planner), app_screenshot (writer), app_screenshot (lead), app_screenshot (worker) |
+| `app.dom` | `selector?`: string | app_dom (planner), app_dom (lead), app_dom (worker) |
+| `app.errors` | — | app_errors (planner), app_errors (lead), app_errors (worker) |
+| `app.logs` | `lines?`: integer<br>`grep?`: string | app_logs (planner), app_logs (lead), app_logs (worker) |
+| `app.screenshot` | — | app_screenshot (planner), app_screenshot (lead), app_screenshot (worker) |
 | `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean<br>`baseline_range_story?`: boolean |  |
 
 ### approval
@@ -298,10 +298,10 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `browser.open` | `url`: string | browser_open (planner), browser_open (writer), browser_open (lead), browser_open (worker) |
-| `browser.read` | — | browser_read (planner), browser_read (writer), browser_read (lead), browser_read (worker) |
+| `browser.open` | `url`: string | browser_open (planner), browser_open (lead), browser_open (worker) |
+| `browser.read` | — | browser_read (planner), browser_read (lead), browser_read (worker) |
 | `browser.result` | `request_id`: string<br>`page?`: object<br>`errors?`: object[]<br>`dom?`: object<br>`error?`: object |  |
-| `browser.screenshot` | — | browser_screenshot (planner), browser_screenshot (writer), browser_screenshot (lead), browser_screenshot (worker) |
+| `browser.screenshot` | — | browser_screenshot (planner), browser_screenshot (lead), browser_screenshot (worker) |
 
 ### change_story
 
@@ -358,14 +358,14 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `memory.archive` | `memory_id`: string |  |
 | `memory.commit` | `memory_id`: string |  |
-| `memory.context` | `project_id`: string<br>`max_bytes?`: integer | memory_context (reviewer), memory_context (planner), memory_context (writer), memory_context (lead), memory_context (worker) |
-| `memory.get` | `memory_id`: string | memory_get (reviewer), memory_get (planner), memory_get (writer), memory_get (lead), memory_get (worker) |
+| `memory.context` | `project_id`: string<br>`max_bytes?`: integer | memory_context (reviewer), memory_context (planner), memory_context (lead), memory_context (worker) |
+| `memory.get` | `memory_id`: string | memory_get (reviewer), memory_get (planner), memory_get (lead), memory_get (worker) |
 | `memory.history` | `project_id`: string<br>`key?`: string<br>`limit?`: integer |  |
 | `memory.maintain` | `project_id`: string |  |
-| `memory.propose` | `project_id`: string<br>`key`: string<br>`kind`: "decision" \| "report" \| "note"<br>`title?`: string<br>`summary?`: string<br>`tags?`: string[]<br>`references?`: object[]<br>`text`: string<br>`dependencies?`: string[]<br>`task?`: object<br>`expires_at?`: integer<br>`based_on?`: string | memory_propose (reviewer), memory_propose (planner), memory_propose (writer), memory_propose (lead), memory_propose (worker) |
-| `memory.related` | `project_id`: string<br>`memory_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean<br>`q?`: string<br>`relation?`: "all" \| "dependency" \| "dependent" \| "version" \| "tag"<br>`depth?`: integer<br>`limit?`: integer | memory_related (reviewer), memory_related (planner), memory_related (writer), memory_related (lead), memory_related (worker) |
+| `memory.propose` | `project_id`: string<br>`key`: string<br>`kind`: "decision" \| "report" \| "note"<br>`title?`: string<br>`summary?`: string<br>`tags?`: string[]<br>`references?`: object[]<br>`text`: string<br>`dependencies?`: string[]<br>`task?`: object<br>`expires_at?`: integer<br>`based_on?`: string | memory_propose (reviewer), memory_propose (planner), memory_propose (lead), memory_propose (worker) |
+| `memory.related` | `project_id`: string<br>`memory_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean<br>`q?`: string<br>`relation?`: "all" \| "dependency" \| "dependent" \| "version" \| "tag"<br>`depth?`: integer<br>`limit?`: integer | memory_related (reviewer), memory_related (planner), memory_related (lead), memory_related (worker) |
 | `memory.restore` | `memory_id`: string |  |
-| `memory.search` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean<br>`q?`: string<br>`limit?`: integer | memory_search (reviewer), memory_search (planner), memory_search (writer), memory_search (lead), memory_search (worker) |
+| `memory.search` | `project_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean<br>`q?`: string<br>`limit?`: integer | memory_search (reviewer), memory_search (planner), memory_search (lead), memory_search (worker) |
 | `memory.undo_retraction` | `memory_id`: string |  |
 
 ### milestone
@@ -467,7 +467,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.read` | `project_id`: string | project_read (planner), project_read (writer), project_read (lead), project_read (worker) |
+| `project.read` | `project_id`: string | project_read (planner), project_read (lead), project_read (worker) |
 
 ### project.remove
 
@@ -582,8 +582,8 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `style.clear` | — |  |
 | `style.enable` | `enabled`: boolean |  |
-| `style.read` | — | style_read (planner), style_read (writer), style_read (lead), style_read (worker) |
-| `style.set` | `css`: string | style_set (planner), style_set (writer), style_set (lead), style_set (worker) |
+| `style.read` | — | style_read (planner), style_read (lead), style_read (worker) |
+| `style.set` | `css`: string | style_set (planner), style_set (lead), style_set (worker) |
 
 ### task
 
@@ -613,7 +613,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `theme.apply` | `theme_id`: string \| null |  |
 | `theme.delete` | `theme_id`: string |  |
-| `theme.set` | `label`: string<br>`light?`: object<br>`dark?`: object<br>`roles?`: object<br>`backdrop?`: object | theme (planner), theme (writer), theme (lead), theme (worker) |
+| `theme.set` | `label`: string<br>`light?`: object<br>`dark?`: object<br>`roles?`: object<br>`backdrop?`: object | theme (planner), theme (lead), theme (worker) |
 
 ### trace
 
@@ -631,7 +631,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `visual.arrange` | `project_id`: string<br>`order`: string[] |  |
-| `visual.draw` | `title`: string<br>`kind`: "vega-lite" \| "kline" \| "mermaid" \| "graph" \| "html" \| "table"<br>`spec`: object<br>`source?`: string<br>`size?`: "S" \| "M" \| "L"<br>`replaces?`: string<br>`pin?`: "S" \| "M" \| "L" | draw (planner), draw (writer), draw (lead), draw (worker) |
+| `visual.draw` | `title`: string<br>`kind`: "vega-lite" \| "kline" \| "mermaid" \| "graph" \| "html" \| "table"<br>`spec`: object<br>`source?`: string<br>`size?`: "S" \| "M" \| "L"<br>`replaces?`: string<br>`pin?`: "S" \| "M" \| "L" | draw (planner), draw (lead), draw (worker) |
 | `visual.list` | `project_id`: string<br>`pinned?`: boolean<br>`session_id?`: string |  |
 | `visual.pin` | `visual_id`: string<br>`size`: "S" \| "M" \| "L"<br>`width?`: 4 \| 6 \| 8 \| 12 |  |
 | `visual.read` | `visual_id`: string |  |

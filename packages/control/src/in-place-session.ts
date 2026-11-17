@@ -27,7 +27,7 @@ import { assertNativeSessionFree } from './native-liveness.js';
 import { managedSessionSpec } from './native-session.js';
 import { inPlaceSandbox } from './protection.js';
 import { registerInPlaceWorkspace } from './workspace.js';
-import { checkPermissionMode, workerInstructions } from './workbench-session.js';
+import { checkPermissionMode, LEAD_INSTRUCTIONS, workerInstructions } from './workbench-session.js';
 import { writerTempDirectory } from './workspace-removal.js';
 
 const IN_PLACE_TURN_MS = 6 * 60 * 60 * 1000;
@@ -103,6 +103,9 @@ export async function inPlaceSessionSpec(
   });
   const questionTool = sessionAdapter(ctx, session)?.questionTool;
   const saved = project.extension_overrides?.[session.runtime];
+  const pantheonMcp = sessionMcp(ctx, session, credentialRole(session, workspace.kind));
+  // A new folder session without a task leads like a worktree session the user opened.
+  const planningLead = pantheonMcp && session.in_place && !session.task && !session.app_debug;
   return managedSessionSpec(ctx, {
     platform_session_id: session.id,
     project_id: project.id,
@@ -117,7 +120,9 @@ export async function inPlaceSessionSpec(
         ? `You are working in the project folder at ${workspace.path}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.`
         : `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
       ...(session.task ? [workerInstructions(ctx, session.task, questionTool)] : []),
-      ...(questionTool
+      // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
+      ...(planningLead ? [LEAD_INSTRUCTIONS] : []),
+      ...(questionTool && !planningLead
         ? [
             `When the user must decide or answer something, ask with the ${questionTool} tool instead of asking in plain text. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own.`,
           ]
@@ -133,7 +138,7 @@ export async function inPlaceSessionSpec(
     env_allowlist: NATIVE_ENV_ALLOWLIST,
     skills: [],
     mcp_servers: [],
-    pantheon_mcp: sessionMcp(ctx, session, credentialRole(session, workspace.kind)),
+    pantheon_mcp: pantheonMcp,
     extensions: {
       mode: 'inherit',
       // User-level MCP servers, skills and account connectors stay off until the project opens them.

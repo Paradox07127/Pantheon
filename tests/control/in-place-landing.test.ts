@@ -1,7 +1,13 @@
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { credentialRole, type Project, type Session, type Workspace } from '@pantheon/domain';
+import {
+  credentialRole,
+  type Project,
+  type Session,
+  type SessionSpec,
+  type Workspace,
+} from '@pantheon/domain';
 import * as validation from '../../packages/control/dist/validation-executor.js';
 import { eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
@@ -101,10 +107,19 @@ it('records the folder HEAD a new folder session opens on and keeps its commit i
   });
 });
 
-it('gives a new folder session a writer credential', async () => {
+it('gives a new folder session the lead credential a worktree session the user opened has', async () => {
   const f = await workbenchFixture();
+  Object.assign(f.control['ctx'], {
+    issueSessionCredential: () => ({
+      token_file: path.join(f.root, 'token'),
+      daemon_url: 'http://127.0.0.1:1',
+    }),
+  });
   const session = await folderSession(f, 'Look around');
-  expect(credentialRole(session, 'in_place')).toBe('writer');
+  expect(credentialRole(session, 'in_place')).toBe('lead');
+  const spec = f.start.mock.calls.at(-1)![0] as SessionSpec;
+  expect(spec.control_instructions).toContain('You are a lead session');
+  expect(spec.control_instructions).toContain('Commit your changes there');
 });
 
 it('runs the gates of a new folder session and lands it on the current branch once they pass', async () => {

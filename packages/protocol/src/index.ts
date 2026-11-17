@@ -243,15 +243,6 @@ export const sessionTools = {
     ...browserTools,
     ...appDebugTools,
   },
-  // A session the user opened in the project folder: it writes there and reads like a planner.
-  writer: {
-    ...memoryTools,
-    project_read: 'project.read',
-    draw: 'visual.draw',
-    theme: 'theme.set',
-    ...browserTools,
-    ...appDebugTools,
-  },
   lead: {
     ...memoryTools,
     project_read: 'project.read',
