@@ -53,6 +53,7 @@ export interface NeedsYouItem {
     | 'reconciliation_required'
     | 'session_failed'
     | 'non_writer_write_detected'
+    | 'outside_worktree_write_detected'
     | 'gate_failed'
     | 'merge_blocked'
     | 'merge_stuck'
@@ -320,6 +321,11 @@ function knownReason(code: string): string | null {
       return t({
         id: 'data.reason.nonWriterWrite',
         defaultMessage: 'A read-only session wrote files',
+      });
+    case 'outside_worktree_write_detected':
+      return t({
+        id: 'data.reason.outsideWorktreeWrite',
+        defaultMessage: 'A session wrote outside its worktree',
       });
     case 'merge_blocked':
       return t({ id: 'data.reason.mergeBlocked', defaultMessage: 'Merge blocked' });

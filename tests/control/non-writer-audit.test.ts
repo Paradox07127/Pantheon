@@ -44,8 +44,19 @@ function slowGit() {
   return () => (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []);
 }
 
-async function auditingSession(kind: 'plan' | 'text' | 'review' | 'read-only' = 'plan') {
+async function auditingSession(
+  kind: 'plan' | 'text' | 'review' | 'read-only' | 'writer' = 'plan',
+  waived = false,
+) {
   const f = await workbenchFixture();
+  if (waived) {
+    const userConfigDir = mkdtempSync(path.join(f.root, 'config-'));
+    writeFileSync(
+      path.join(userConfigDir, 'config.json'),
+      JSON.stringify({ version: 1, runtimes: { fixture: { unverified_isolation: true } } }),
+    );
+    Object.assign(f.control['ctx'], { userConfigDir });
+  }
   let parent: Session | undefined;
   if (kind === 'review') {
     parent = await f.create();
@@ -157,13 +168,10 @@ async function auditingSession(kind: 'plan' | 'text' | 'review' | 'read-only' = 
       .filter(
         (event) => event.aggregate_id === session.id && event.kind === 'session.write_detected',
       );
-  const alerts = () =>
+  const alerts = (reason = 'non_writer_write_detected') =>
     f.control
       .needsYou(user, f.project.id)
-      .items.filter(
-        (item) =>
-          item.source.id === session.id && String(item.reason) === 'non_writer_write_detected',
-      );
+      .items.filter((item) => item.source.id === session.id && String(item.reason) === reason);
   const finish = async (status: 'completed' | 'failed' | 'interrupted' = 'completed') => {
     emit({
       key: String(++sequence),
@@ -388,6 +396,48 @@ it('records a clean audit for reads and ignores untracked files in the cwd', asy
   ).toHaveLength(1);
   expect(f.events()).toEqual([]);
   expect(f.alerts()).toEqual([]);
+});
+
+it.each([
+  ['calls a write tool on a path outside its worktree', 'tool'],
+  ['creates a new file in the source checkout', 'file'],
+] as const)('flags a writer without verified isolation that %s', async (_, write) => {
+  const f = await auditingSession('writer', true);
+  const outside = path.resolve(f.spec.cwd, '../outside.md');
+  const created = path.join(f.source, 'created.md');
+  if (write === 'tool') f.tool('write', { file_path: '../outside.md' });
+  else writeFileSync(created, 'written into the source checkout\n');
+  await f.finish();
+  expect(f.events()).toEqual([
+    expect.objectContaining({
+      payload: expect.objectContaining({
+        reason: 'outside_worktree_write_detected',
+        ...(write === 'tool' ? { outside_paths: [outside] } : { paths: [created] }),
+      }),
+    }),
+  ]);
+  expect(f.alerts('outside_worktree_write_detected')).toHaveLength(1);
+});
+
+it('does not audit a writer with verified isolation that writes outside its worktree', async () => {
+  const f = await auditingSession('writer');
+  f.tool('write', { file_path: '../outside.md' });
+  await f.finish();
+  expect(f.events()).toEqual([]);
+});
+
+it('records a clean audit for a writer without verified isolation that writes only in its worktree', async () => {
+  const f = await auditingSession('writer', true);
+  mkdirSync(path.join(f.spec.cwd, 'src'));
+  f.tool('write', { file_path: 'src/a.js' });
+  writeFileSync(path.join(f.spec.cwd, 'src/a.js'), 'export const a = 1;\n');
+  await f.finish();
+  expect(f.audits()).toEqual([
+    expect.objectContaining({
+      payload: expect.objectContaining({ paths: [], outside_paths: [] }),
+    }),
+  ]);
+  expect(f.events()).toEqual([]);
 });
 
 it('snapshots before runtime startup and skips writer turns after plan mode ends', async () => {

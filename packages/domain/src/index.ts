@@ -347,6 +347,7 @@ export interface NeedsYouItem {
     | 'reconciliation_required'
     | 'session_failed'
     | 'non_writer_write_detected'
+    | 'outside_worktree_write_detected'
     | 'gate_failed'
     | 'merge_blocked'
     | 'merge_stuck'

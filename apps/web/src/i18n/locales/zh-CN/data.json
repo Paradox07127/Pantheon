@@ -347,6 +347,7 @@
   "data.toolCalls.exitCode": "退出码 {code}",
   "data.toolCalls.lineCount": "{count, plural, other {# 行}}",
   "data.reason.nonWriterWrite": "只读会话写了文件",
+  "data.reason.outsideWorktreeWrite": "会话在工作树外写了文件",
   "data.workflowPolicy.param.runtimeQuotaThreshold": "运行时额度阈值（%）",
   "data.workflowPolicy.param.budget": "任务预算",
   "data.workflowPolicy.param.runtimeParallel": "运行时并发上限",

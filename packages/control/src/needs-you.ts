@@ -118,12 +118,13 @@ function latestEvent(
   ctx: ControlContext,
   aggregateId: string,
   kind: string,
-): { sequence: number; created_at: number } | undefined {
+): { sequence: number; created_at: number; payload: string } | undefined {
   return ctx.store.db
     .prepare(
-      'SELECT sequence, created_at FROM events WHERE aggregate_id=? AND kind=? ORDER BY sequence DESC LIMIT 1',
+      'SELECT sequence, created_at, payload FROM events WHERE aggregate_id=? AND kind=? ORDER BY sequence DESC LIMIT 1',
     )
-    .get(aggregateId, kind) as { sequence: number; created_at: number } | undefined;
+    .get(aggregateId, kind) as
+    { sequence: number; created_at: number; payload: string } | undefined;
 }
 
 /** The latest progress event of the session's running merge, when it is old enough to be stuck. */
@@ -347,6 +348,10 @@ export function needsYou(
     }
     for (const session of sessions) {
       const audit = latestEvent(ctx, session.id, 'session.write_detected');
+      const outsideWorktree =
+        audit &&
+        (JSON.parse(audit.payload) as { reason?: string }).reason ===
+          'outside_worktree_write_detected';
       if (audit)
         items.push({
           source: { table: 'sessions', id: session.id, revision: session.revision },
@@ -354,10 +359,11 @@ export function needsYou(
           project_id: session.project_id,
           status: session.state,
           created_at: audit.created_at,
-          reason: 'non_writer_write_detected',
+          reason: outsideWorktree ? 'outside_worktree_write_detected' : 'non_writer_write_detected',
           actions: [],
-          next_step:
-            'This read-only session changed tracked files, or called a write tool. Review its changes and tool calls, then restore unintended changes.',
+          next_step: outsideWorktree
+            ? 'This session wrote outside its worktree. Review the listed paths, then restore unintended changes.'
+            : 'This read-only session changed tracked files, or called a write tool. Review its changes and tool calls, then restore unintended changes.',
         });
       const row = listed.get(session.id),
         latest = leads.has(session.id)
