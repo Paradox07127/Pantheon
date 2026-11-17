@@ -38,7 +38,14 @@ import {
 } from '@pantheon/protocol';
 import { readProcessIdentity } from '@pantheon/adapters';
 import { Store, ArtifactFiles } from '@pantheon/store';
-import { Control, TraceIndex, type ControlOptions } from '@pantheon/control';
+import {
+  Control,
+  OUTSIDE_PERSONAL_SCOPE,
+  PERSONAL_QUERIES,
+  personalQuery,
+  TraceIndex,
+  type ControlOptions,
+} from '@pantheon/control';
 import { startRuntimeOtel } from './runtime-otel.js';
 import { createRuntimeAdapter } from './runtime-registry.js';
 
@@ -362,6 +369,15 @@ export async function startDaemon(options: DaemonOptions) {
       if (c.req.path === '/health') return next();
       const principal = registry.authenticate(c.req.header('authorization'));
       if (principal.session_id) control.sessionPrincipal(principal);
+      // A personal principal reaches the command route and its listed queries, no other route.
+      if (principal.role === 'personal')
+        requireThat(
+          (c.req.method === 'POST' && c.req.path === '/v1/commands') ||
+            (c.req.method === 'GET' &&
+              PERSONAL_QUERIES.some((query) => c.req.path === `/v1/${query}`)),
+          'permission_denied',
+          OUTSIDE_PERSONAL_SCOPE,
+        );
       c.set('principal', principal);
       return next();
     });
@@ -463,6 +479,8 @@ export async function startDaemon(options: DaemonOptions) {
     };
     // The answer waits for the reads at most LIST_READ_WAIT_MS; reads that land later emit an event.
     const prefetch = async (p: Principal, projectId?: string): Promise<void> => {
+      // A personal principal starts no worktree prefetch; repository insights its lists read may still run Git.
+      if (p.role === 'personal') return;
       let deadline: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         control
@@ -625,6 +643,7 @@ export async function startDaemon(options: DaemonOptions) {
       const method = c.req.param('method');
       if (!Object.hasOwn(querySchemas, method)) return c.notFound();
       const query = method as QueryMethod;
+      personalQuery(c.get('principal'), query);
       const params: Record<string, string | string[]> = c.req.query();
       if (query === 'memory.read' || query === 'memory.graph') {
         const tags = c.req.queries('tag');
@@ -669,6 +688,7 @@ export async function startDaemon(options: DaemonOptions) {
             if (detach) throw new Error('Already subscribed');
             const input = JSON.parse(String(bytes)) as { token: string };
             const principal = registry.authenticate(`Bearer ${input.token}`);
+            requireThat(principal.role !== 'personal', 'permission_denied', OUTSIDE_PERSONAL_SCOPE);
             credential = input.token;
             detach = control.terminalSubscribe(principal, terminalId, (frame) => {
               if (client.readyState !== WebSocket.OPEN) return;
@@ -738,6 +758,7 @@ export async function startDaemon(options: DaemonOptions) {
             browser?: boolean;
           };
           principal = registry.authenticate(`Bearer ${input.token}`);
+          requireThat(principal.role !== 'personal', 'permission_denied', OUTSIDE_PERSONAL_SCOPE);
           credential = input.token;
           project = input.project_id;
           cursor = input.cursor ?? 0;

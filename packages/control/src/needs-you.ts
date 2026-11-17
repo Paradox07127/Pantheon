@@ -291,10 +291,10 @@ export function needsYou(
   projectId?: string,
 ): { items: NeedsYouItem[] } {
   requireThat(
-    (principal.role === 'user' || principal.role === 'planner') &&
+    (principal.role === 'user' || principal.role === 'planner' || principal.role === 'personal') &&
       (!principal.expires_at || principal.expires_at > ctx.store.now()),
     'permission_denied',
-    'User or planner principal required',
+    'User, planner or personal principal required',
   );
   if (principal.role === 'planner') {
     projectId ??= principal.project_id;
@@ -320,7 +320,7 @@ export function needsYou(
     );
   const planOf = new Map(plans.map((plan) => [plan.id, plan]));
   items.push(...pendingApprovalItems(ctx, scope));
-  if (principal.role === 'user') {
+  if (principal.role === 'user' || principal.role === 'personal') {
     items.push(...settledApprovalItems(ctx, scope));
     const sessions = ctx.store
       .list<Session>('sessions')
@@ -343,9 +343,18 @@ export function needsYou(
     );
   }
   const blocked = blockedTasks(ctx, planOf);
+  // Tool input can hold secrets, and a rule or a background command can be a whole command line.
+  const shown =
+    principal.role === 'personal'
+      ? items.map(({ binding, background, ...item }) => {
+          if (!binding) return item;
+          const { input_summary, rule, ...kept } = binding;
+          return { ...item, binding: kept };
+        })
+      : items;
   // Most tasks blocked first, then the longest waiting.
   return {
-    items: items
+    items: shown
       .map((item) => ({ ...item, blocks: blocked(item) }))
       .sort(
         (a, b) =>

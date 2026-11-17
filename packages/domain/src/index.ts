@@ -51,7 +51,7 @@ export class DomainError extends Error {
 export function requireThat(condition: unknown, code: string, message: string): asserts condition {
   if (!condition) throw new DomainError(code, message);
 }
-export type Role = 'user' | 'planner' | 'writer' | 'reviewer' | 'lead' | 'worker';
+export type Role = 'user' | 'planner' | 'writer' | 'reviewer' | 'lead' | 'worker' | 'personal';
 export interface Principal {
   id: string;
   role: Role;

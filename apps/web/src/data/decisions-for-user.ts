@@ -157,7 +157,7 @@ export function decisionRow(item: DecisionForUser): DecisionRow {
       item.kind === 'prompt_by_rule'
         ? t({ id: 'trace.approved.by.rule', defaultMessage: 'Stored rule' })
         : lead,
-    rule: item.kind === 'prompt_by_rule' ? item.rule : null,
+    rule: item.kind === 'prompt_by_rule' ? (item.rule ?? null) : null,
     sessionId: item.session_id ?? null,
     answer: null,
   };

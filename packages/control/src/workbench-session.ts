@@ -1068,8 +1068,9 @@ function listedSessions(
   p: Principal,
   projectId: string,
   readChanges: boolean,
+  action = 'project.read',
 ): ListedSession[] {
-  projectAccess(ctx, p, projectId, 'project.read');
+  projectAccess(ctx, p, projectId, action);
   const approvals = ctx.store
     .list<Approval>('approvals')
     .filter((approval) => approval.project_id === projectId);
@@ -1283,15 +1284,17 @@ export function prefetchWorktreeReads(
 
 /**
  * Runs no Git: true and 'cached' show the reads prefetchWorktreeReads cached, and a read not cached
- * yet as unknown; false skips the worktree reads, so ready sessions list as idle.
+ * yet as unknown; false skips the worktree reads, so ready sessions list as idle. action is the
+ * method the access check names.
  */
 export function sessionList(
   ctx: ControlContext,
   p: Principal,
   projectId: string,
   readChanges: boolean | 'cached' = true,
+  action = 'project.read',
 ): WorkbenchSession[] {
-  const listed = listedSessions(ctx, p, projectId, readChanges !== false);
+  const listed = listedSessions(ctx, p, projectId, readChanges !== false, action);
   const predictions = repositoryInsights(ctx, projectId).predictions;
   // Free text is read as JSON and parsed here: ->> would not keep a lone surrogate.
   type ListedTurn = Pick<SessionTurn, 'id' | 'session_id' | 'kind' | 'state'> & {

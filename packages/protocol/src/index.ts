@@ -3169,7 +3169,8 @@ export type DecisionForUser =
       at: number;
       approval_id: string;
       session_id?: string;
-      rule: string;
+      /** Absent for a personal principal: a stored rule can be a whole command line. */
+      rule?: string;
       tool?: string;
       input_summary?: string;
     }

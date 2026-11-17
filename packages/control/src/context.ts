@@ -35,6 +35,7 @@ import { baselineSkill } from './baseline-skill.js';
 import { residentProfile } from './agent-templates.js';
 import { BOARD_READ_ONLY_TEMPLATES } from './agent-prompts.js';
 import type { TraceIndex } from './trace-index.js';
+import { OUTSIDE_PERSONAL_SCOPE, PERSONAL_COMMANDS, PERSONAL_QUERIES } from './personal-scope.js';
 
 export interface ControlContext {
   readonly store: Store;
@@ -209,6 +210,15 @@ export function projectAccess(
     'Principal expired',
   );
   if (principal.role === 'user') return;
+  // The entry gates hold a personal principal to its lists; this check repeats them for every project.
+  if (principal.role === 'personal') {
+    requireThat(
+      [...PERSONAL_QUERIES, ...PERSONAL_COMMANDS].some((method) => method === action),
+      'permission_denied',
+      OUTSIDE_PERSONAL_SCOPE,
+    );
+    return;
+  }
   requireThat(
     principal.session_id && principal.project_id === project,
     'permission_denied',

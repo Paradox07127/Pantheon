@@ -93,12 +93,20 @@ export function decisionsForUser(
       approval_id: event.aggregate_id,
       session_id: approval?.session_id,
       tool: approval?.tool,
-      input_summary: approval?.input_summary,
+      // Tool input can hold secrets.
+      ...(principal.role === 'personal' ? {} : { input_summary: approval?.input_summary }),
     };
     if (answered.decider === 'lead' && !answeredRequests.has(event.aggregate_id))
       return [{ kind: 'prompt_approved', ...prompt, decided_by: answered.decided_by! }];
     if (answered.answered_by_rule)
-      return [{ kind: 'prompt_by_rule', ...prompt, rule: answered.answered_by_rule }];
+      return [
+        {
+          kind: 'prompt_by_rule',
+          ...prompt,
+          // A stored rule can be a whole command line.
+          ...(principal.role === 'personal' ? {} : { rule: answered.answered_by_rule }),
+        },
+      ];
     return [];
   });
   return { items: items.reverse() };

@@ -47,7 +47,9 @@ export function sessionItems(
           .map((s) => s.project_id),
       ),
     ].flatMap((id) =>
-      sessionList(ctx, principal, id, false).map((session) => [session.id, session] as const),
+      sessionList(ctx, principal, id, false, 'needs_you.list').map(
+        (session) => [session.id, session] as const,
+      ),
     ),
   );
   const leads = new Set(plans.map((plan) => plan.id)),
@@ -298,7 +300,11 @@ export function sessionItems(
       // Without a stored process identity session.resolve can never confirm the old process ended.
       actions.push(
         ...(session.process_identity
-          ? [{ command: 'session.resolve', allowed: true }]
+          ? [
+              action('session.resolve', () =>
+                projectAccess(ctx, principal, session.project_id, 'session.resolve'),
+              ),
+            ]
           : [
               {
                 command: 'session.resolve',
@@ -308,7 +314,11 @@ export function sessionItems(
               ...(session.workspace_id &&
               !session.baseline &&
               (workspace?.kind !== 'in_place' || session.in_place)
-                ? [{ command: 'session.discard', allowed: true }]
+                ? [
+                    action('session.discard', () =>
+                      projectAccess(ctx, principal, session.project_id, 'session.discard'),
+                    ),
+                  ]
                 : []),
             ]),
       );

@@ -21,7 +21,9 @@ export const summaryProjects = (ctx: ControlContext, principal: Principal) =>
     .filter(
       (project) =>
         project.removed_at === undefined &&
-        (principal.role === 'user' || project.id === principal.project_id),
+        (principal.role === 'user' ||
+          principal.role === 'personal' ||
+          project.id === principal.project_id),
     );
 
 /** The all-projects grid's numbers. */
@@ -32,10 +34,12 @@ export function projectsSummary(
 ): { projects: ProjectSummary[] } {
   const projects = summaryProjects(ctx, principal);
   const items = needsYou(ctx, principal).items;
+  // A session principal reads through its project_read tool, any other under this query's name.
+  const action = principal.session_id ? 'project.read' : 'projects.summary';
   return {
     projects: projects.map((project) => {
-      projectAccess(ctx, principal, project.id, 'project.read');
-      const sessions = sessionList(ctx, principal, project.id, readChanges);
+      projectAccess(ctx, principal, project.id, action);
+      const sessions = sessionList(ctx, principal, project.id, readChanges, action);
       const counts = { running: 0, waiting: 0, ready: 0, failed: 0, queued: 0 };
       for (const session of sessions) {
         if (session.archived_at) continue;

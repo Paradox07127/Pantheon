@@ -78,6 +78,7 @@ import {
   type ControlContext,
   type Handler,
 } from './context.js';
+import { personalCommand } from './personal-scope.js';
 import { handlers, preparers } from './commands.js';
 import type { VisualDrawReceipt } from './visual.js';
 import { tick } from './scheduler.js';
@@ -218,6 +219,13 @@ export {
   type ProtectionEntry,
 } from './protection.js';
 export { runGit } from './git.js';
+export {
+  PERSONAL_QUERIES,
+  PERSONAL_COMMANDS,
+  OUTSIDE_PERSONAL_SCOPE,
+  personalQuery,
+  personalCommand,
+} from './personal-scope.js';
 export { TraceIndex } from './trace-index.js';
 export { RUNTIME_EVENT_KINDS } from './runtime-findings.js';
 export { runtimeConfig } from './user-config.js';
@@ -425,6 +433,8 @@ export class Control extends EventEmitter {
       'permission_denied',
       'Actor must match authenticated principal',
     );
+    // A personal principal sends only its listed commands; nothing below runs for any other.
+    personalCommand(principal, command);
     requireThat(
       Object.hasOwn(inputSchemas, command.type),
       'unsupported_command',
