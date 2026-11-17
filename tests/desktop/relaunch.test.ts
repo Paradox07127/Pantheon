@@ -1,5 +1,7 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { expect, it } from 'vitest';
-import { activeSessions, isDevProcess, ownsDaemon } from '../../scripts/relaunch.mjs';
+import { activeSessions, isDevProcess, ownsDaemon, stop } from '../../scripts/relaunch.mjs';
 
 const repo = '/work/Pantheon';
 const electron = `${repo}/node_modules/.pnpm/electron@39.2.0/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron`;
@@ -97,4 +99,10 @@ it('counts the sessions a restart would cut off', () => {
       ],
     }),
   ).toBe(4);
+});
+
+it('stops a list in which a process has already exited', async () => {
+  const gone = spawn(process.execPath, ['-e', '']);
+  await once(gone, 'exit');
+  await expect(stop([gone.pid!], 'dev processes')).resolves.toBeUndefined();
 });

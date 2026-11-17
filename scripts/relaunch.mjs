@@ -40,11 +40,21 @@ const alive = (pid) => {
   }
 };
 
-async function stop(pids, what) {
-  for (const pid of pids) process.kill(pid, 'SIGTERM');
+// A listed process may exit on its own before it is signalled.
+const signal = (pid, name) => {
+  try {
+    process.kill(pid, name);
+  } catch (error) {
+    if (error.code !== 'ESRCH') throw error;
+  }
+};
+
+/** Stops the processes: SIGTERM, then SIGKILL for those alive after 10 s. */
+export async function stop(pids, what) {
+  for (const pid of pids) signal(pid, 'SIGTERM');
   for (let waited = 0; waited < 10_000 && pids.some(alive); waited += 100) await sleep(100);
   const left = pids.filter(alive);
-  for (const pid of left) process.kill(pid, 'SIGKILL');
+  for (const pid of left) signal(pid, 'SIGKILL');
   console.log(
     `stopped ${what}: ${pids.join(', ')}${left.length ? ` (killed ${left.join(', ')})` : ''}`,
   );
