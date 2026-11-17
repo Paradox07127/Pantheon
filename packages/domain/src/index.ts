@@ -1086,7 +1086,7 @@ export interface Event {
 export interface Capability {
   status: 'supported' | 'unsupported' | 'unknown';
   evidence: string;
-  /** ACP resume request method, when supplied by a per-agent profile. */
+  /** ACP resume request method the agent declared in initialize. */
   method?: 'resume' | 'load';
 }
 export interface CapabilityReport {

@@ -170,6 +170,63 @@ function rpcErrorText(text: string): string {
 
 // Tool kinds a read-only turn refuses without asking the user.
 const WRITE_KINDS = ['edit', 'delete', 'move', 'execute'];
+const TITLE_KINDS: Record<string, string> = {
+  write: 'edit',
+  edit: 'edit',
+  multiedit: 'edit',
+  multi_edit: 'edit',
+  search_replace: 'edit',
+  apply_patch: 'edit',
+  notebookedit: 'edit',
+  delete: 'delete',
+  remove: 'delete',
+  rm: 'delete',
+  move: 'move',
+  rename: 'move',
+  mv: 'move',
+  read: 'read',
+  read_file: 'read',
+  read_image: 'read',
+  view: 'read',
+  cat: 'read',
+  grep: 'search',
+  glob: 'search',
+  search: 'search',
+  find: 'search',
+  list_dir: 'search',
+  ls: 'search',
+  fetch: 'fetch',
+  web_fetch: 'fetch',
+  webfetch: 'fetch',
+  web_search: 'fetch',
+};
+
+/** The call's declared kind unless it is other or unset; then one inferred from its input or title. */
+function toolKind(call: Partial<ToolCallUpdate>): string | undefined {
+  if (call.kind && call.kind !== 'other') return call.kind;
+  const input = call.rawInput as { command?: unknown; cmd?: unknown } | null | undefined;
+  if (typeof input?.command === 'string' || typeof input?.cmd === 'string') return 'execute';
+  const word = (call.title ?? '')
+    .trim()
+    .toLowerCase()
+    .split(/[\s:(]/)[0]!;
+  return (
+    (Object.hasOwn(TITLE_KINDS, word) ? TITLE_KINDS[word] : undefined) ?? call.kind ?? undefined
+  );
+}
+
+interface AgentCapabilities {
+  loadSession?: boolean;
+  promptCapabilities?: { image?: boolean };
+  sessionCapabilities?: { resume?: unknown; close?: unknown };
+}
+
+/** Resume first: agy's session/load also succeeds for ids that do not exist. */
+function resumeMethod(capabilities: AgentCapabilities | undefined): 'resume' | 'load' | undefined {
+  if (capabilities?.sessionCapabilities?.resume != null) return 'resume';
+  if (capabilities?.loadSession === true) return 'load';
+  return undefined;
+}
 /** How long a send waits for an agent to answer a prompt cancelled at its deadline. */
 const CANCEL_GRACE_MS = 10_000;
 const DECISION_OPTIONS: Record<PermissionDecision, string[]> = {
@@ -414,10 +471,10 @@ export class AcpAdapter implements HarnessAdapter {
         grokInventory(this.binary, this.home, cwd, this.requestTimeoutMs ?? 5000);
     this.report = report(this.name, options.version ?? 'unprobed', false, {
       images: { status: 'unknown', evidence: 'Awaiting ACP initialize promptCapabilities.image' },
+      // Control resumes only a supported runtime, possibly before any handshake; open checks the declaration.
       resume: {
         status: 'supported',
-        method: this.profile.resume,
-        evidence: `The ACP profile resumes through session/${this.profile.resume}`,
+        evidence: 'Awaiting ACP initialize; resume picks session/resume or session/load from it',
       },
       deny_reason: { status: 'unsupported', evidence: 'ACP permission options carry no reason' },
       steer: { status: 'unsupported', evidence: 'The ACP adapter cannot steer a running turn' },
@@ -456,7 +513,7 @@ export class AcpAdapter implements HarnessAdapter {
       },
     );
     try {
-      await rpc.initialize(
+      const initialized = (await rpc.initialize(
         {
           protocolVersion: 1,
           clientCapabilities: {
@@ -467,10 +524,36 @@ export class AcpAdapter implements HarnessAdapter {
         },
         null,
         this.requestTimeoutMs,
-      );
+      )) as { agentCapabilities?: AgentCapabilities };
+      this.declaredResume(initialized.agentCapabilities);
     } finally {
       await rpc.close();
     }
+  }
+  /** Records the resume method initialize declares and returns it. */
+  private declaredResume(
+    capabilities: AgentCapabilities | undefined,
+  ): 'resume' | 'load' | undefined {
+    const method = resumeMethod(capabilities);
+    this.report.capabilities.resume = method
+      ? {
+          status: 'supported',
+          method,
+          evidence: `ACP initialize declares ${method === 'resume' ? 'sessionCapabilities.resume' : 'loadSession'}`,
+        }
+      : {
+          status: 'unsupported',
+          evidence: 'ACP initialize declares neither sessionCapabilities.resume nor loadSession',
+        };
+    return method;
+  }
+  /** Keeps verified evidence; otherwise a session the agent opened is evidence of text execution. */
+  private openedSession(method: string): void {
+    if (this.report.capabilities.text_execution?.status === 'supported') return;
+    this.report.capabilities.text_execution = {
+      status: 'supported',
+      evidence: `ACP initialize and ${method} succeeded with ${this.binary} ${this.report.version} on ${new Date().toISOString()}`,
+    };
   }
   /** The models the agent's config options offer in a probe session opened in cwd. */
   async models(cwd: string): Promise<RuntimeModel[]> {
@@ -494,11 +577,13 @@ export class AcpAdapter implements HarnessAdapter {
         },
         null,
         this.requestTimeoutMs,
-      )) as { agentCapabilities?: { sessionCapabilities?: { close?: unknown } } };
+      )) as { agentCapabilities?: AgentCapabilities };
+      this.declaredResume(initialized.agentCapabilities);
       const created = await rpc.request<{
         sessionId?: string;
         configOptions?: ConfigOption[] | null;
       }>('session/new', { cwd, mcpServers: [] }, this.requestTimeoutMs);
+      if (created?.sessionId) this.openedSession('session/new');
       if (created?.sessionId && initialized.agentCapabilities?.sessionCapabilities?.close)
         await rpc.request('session/close', { sessionId: created.sessionId }, this.requestTimeoutMs);
       return listedModels(created?.configOptions ?? [], this.profile.permissionModes ?? []);
@@ -819,10 +904,7 @@ export class AcpAdapter implements HarnessAdapter {
       };
       for (const [field, value] of Object.entries(params.toolCall ?? {}))
         if (value != null) Object.assign(call, { [field]: value });
-      const kind =
-        call.kind && call.kind !== 'other'
-          ? call.kind
-          : (this.profile.toolKinds?.[call.title ?? ''] ?? call.kind);
+      const kind = toolKind(call);
       const write = WRITE_KINDS.includes(kind ?? '');
       if (current.readOnly && write) {
         answer(chooseOption(options, DECISION_OPTIONS.deny));
@@ -911,17 +993,21 @@ export class AcpAdapter implements HarnessAdapter {
         .finally(() => {
           // The agent composes its configuration before it answers initialize.
           if (patchDir) rmSync(patchDir, { recursive: true, force: true });
-        })) as { agentCapabilities?: { promptCapabilities?: { image?: boolean } } };
+        })) as { agentCapabilities?: AgentCapabilities };
       session.images = initialized.agentCapabilities?.promptCapabilities?.image === true;
       this.report.capabilities.images = {
         status: session.images ? 'supported' : 'unsupported',
         evidence: `ACP initialize promptCapabilities.image is ${session.images}`,
       };
+      const resume = this.declaredResume(initialized.agentCapabilities);
+      if (native_session_id !== undefined && !resume)
+        throw new Error('The ACP agent declares neither session/resume nor loadSession');
+      const method = native_session_id === undefined ? 'session/new' : `session/${resume}`;
       const result = await rpc.request<{
         sessionId?: string;
         configOptions?: ConfigOption[] | null;
       }>(
-        native_session_id === undefined ? 'session/new' : `session/${this.profile.resume}`,
+        method,
         native_session_id === undefined
           ? { cwd: spec.cwd, mcpServers }
           : { sessionId: native_session_id, cwd: spec.cwd, mcpServers },
@@ -930,6 +1016,7 @@ export class AcpAdapter implements HarnessAdapter {
       const id = native_session_id ?? result?.sessionId;
       if (typeof id !== 'string' || !id) throw new Error('ACP agent returned no session id');
       handle.native_session_id = id;
+      this.openedSession(method);
       session.configOptions = result?.configOptions ?? session.configOptions;
       if (spec.model !== undefined || spec.effort !== undefined) {
         const reason = await this.applyModel(session, handle, spec.model, spec.effort);

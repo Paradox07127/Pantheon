@@ -47,8 +47,10 @@ function slowGit() {
 async function auditingSession(
   kind: 'plan' | 'text' | 'review' | 'read-only' | 'writer' = 'plan',
   waived = false,
+  runtime = 'fixture',
 ) {
   const f = await workbenchFixture();
+  if (runtime !== 'fixture') f.control.adapters.set(runtime, f.adapter);
   if (waived) {
     const userConfigDir = mkdtempSync(path.join(f.root, 'config-'));
     writeFileSync(
@@ -126,7 +128,7 @@ async function auditingSession(
   } else {
     session = await f.call<Session>('session.create', {
       project_id: f.project.id,
-      runtime: 'fixture',
+      runtime,
       input: 'Plan the change',
       permission_mode: kind === 'plan' ? 'plan' : 'ask',
     });
@@ -417,6 +419,20 @@ it.each([
     }),
   ]);
   expect(f.alerts('outside_worktree_write_detected')).toHaveLength(1);
+});
+
+it('flags an ACP runtime writer with no configuration that writes outside its worktree', async () => {
+  const f = await auditingSession('writer', false, 'grok');
+  f.tool('write', { file_path: '../outside.md' });
+  await f.finish();
+  expect(f.events()).toEqual([
+    expect.objectContaining({
+      payload: expect.objectContaining({
+        reason: 'outside_worktree_write_detected',
+        outside_paths: [path.resolve(f.spec.cwd, '../outside.md')],
+      }),
+    }),
+  ]);
 });
 
 it('does not audit a writer with verified isolation that writes outside its worktree', async () => {

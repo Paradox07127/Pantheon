@@ -105,13 +105,20 @@ describe('verified capabilities', () => {
     },
   );
 
-  it('admits an ACP runtime as writer and reviewer only once the user allows it without verified isolation', () => {
+  it('admits an ACP runtime as text, writer and reviewer without verified isolation unless the user turns that off', () => {
     const userConfigDir = mkdtempSync(path.join(root, 'config-'));
     const adapter = new AcpAdapter({ name: 'grok', profile: acpProfiles.grok! });
     const ctx = {
       adapters: new Map([['grok', adapter]]),
       userConfigDir,
     } as unknown as ControlContext;
+    expect(adapter.report.capabilities.write_isolation?.status).toBe('unsupported');
+    for (const role of ['text', 'writer', 'reviewer'] as const)
+      expect(runtime(ctx, 'grok', role)).toBe(adapter);
+    writeFileSync(
+      path.join(userConfigDir, 'config.json'),
+      JSON.stringify({ version: 1, runtimes: { grok: { unverified_isolation: false } } }),
+    );
     for (const role of ['writer', 'reviewer'] as const)
       expect(() => runtime(ctx, 'grok', role)).toThrow(
         'grok: required execution isolation is not verified',
@@ -122,9 +129,21 @@ describe('verified capabilities', () => {
     );
     for (const role of ['text', 'writer', 'reviewer'] as const)
       expect(runtime(ctx, 'grok', role)).toBe(adapter);
-    expect(adapter.report.capabilities.write_isolation?.status).toBe('unsupported');
     const absent = { adapters: new Map(), userConfigDir } as unknown as ControlContext;
     expect(() => runtime(absent, 'grok', 'writer')).toThrow('Runtime grok not available');
+  });
+
+  it('keeps rejecting a runtime outside the ACP profiles that has no verified isolation and no configuration', () => {
+    const userConfigDir = mkdtempSync(path.join(root, 'config-'));
+    const adapter = new AcpAdapter({ name: 'custom-acp', profile: acpProfiles.grok! });
+    const ctx = {
+      adapters: new Map([['custom-acp', adapter]]),
+      userConfigDir,
+    } as unknown as ControlContext;
+    for (const role of ['writer', 'reviewer'] as const)
+      expect(() => runtime(ctx, 'custom-acp', role)).toThrow(
+        'custom-acp: required execution isolation is not verified',
+      );
   });
 });
 

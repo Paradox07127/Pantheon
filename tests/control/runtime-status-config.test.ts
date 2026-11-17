@@ -50,6 +50,17 @@ it('lists registered, configured and ACP runtimes once, including disabled confi
   });
 });
 
+it('reports ACP runtimes as allowed without verified isolation unless the configuration turns it off', async () => {
+  const unconfigured = await setup({});
+  const statuses = await unconfigured.control.runtimeStatus(user);
+  expect(statuses.find((s) => s.runtime === 'grok')?.unverified_isolation).toBe(true);
+  expect(statuses.find((s) => s.runtime === 'fixture')?.unverified_isolation).toBe(false);
+  const off = await setup({ grok: { unverified_isolation: false } });
+  expect(
+    (await off.control.runtimeStatus(user)).find((s) => s.runtime === 'grok')?.unverified_isolation,
+  ).toBe(false);
+});
+
 it('keeps saved paths and arguments in status through disabling and re-enabling an adapter', async () => {
   const f = await setup({ grok: { binary: '/configured/grok', args: ['agent', 'stdio'] } });
   f.control.adapters.set('grok', f.adapter);

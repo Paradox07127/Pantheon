@@ -4,8 +4,15 @@ import {
   type HarnessAdapter,
   type RuntimeChoice,
 } from '@pantheon/domain';
+import { acpProfiles } from '@pantheon/adapters';
 import type { ControlContext } from './context.js';
 import { readUserConfig } from './user-config.js';
+
+/** ACP runtimes may run without verified isolation unless the user configured otherwise. */
+export function isolationWaived(ctx: ControlContext, runtime: string): boolean {
+  const configured = readUserConfig(ctx.userConfigDir).runtimes?.[runtime]?.unverified_isolation;
+  return typeof configured === 'boolean' ? configured : Object.hasOwn(acpProfiles, runtime);
+}
 
 export function runtime(
   ctx: ControlContext,
@@ -14,8 +21,7 @@ export function runtime(
 ): HarnessAdapter {
   const adapter = ctx.adapters.get(name);
   requireThat(adapter, 'unsupported_capability', `Runtime ${name} not available`);
-  if (readUserConfig(ctx.userConfigDir).runtimes?.[name]?.unverified_isolation === true)
-    return adapter;
+  if (isolationWaived(ctx, name)) return adapter;
   requireThat(
     adapter.report.capabilities[role === 'writer' ? 'write_isolation' : 'text_execution']
       ?.status === 'supported' &&

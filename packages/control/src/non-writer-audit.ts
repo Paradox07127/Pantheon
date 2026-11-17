@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { AgentEvent, Session, SessionSpec, Workspace } from '@pantheon/domain';
 import { gitFolderAsync, type ControlContext, type Handler } from './context.js';
 import { runGit, type GitResult } from './git.js';
-import { readUserConfig } from './user-config.js';
+import { isolationWaived } from './admission.js';
 
 interface WriteSnapshot {
   turn_id: string;
@@ -84,7 +84,7 @@ export async function startWriteAudit(
   if (!readOnly) {
     const workspace = spec.workspace && ctx.store.get<Workspace>('workspaces', spec.workspace.id);
     if (
-      readUserConfig(ctx.userConfigDir).runtimes?.[spec.runtime]?.unverified_isolation === true &&
+      isolationWaived(ctx, spec.runtime) &&
       workspace?.kind === 'linked_worktree' &&
       workspace.source
     ) {

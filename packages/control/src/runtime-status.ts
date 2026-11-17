@@ -10,6 +10,7 @@ import {
 } from '@pantheon/domain';
 import { acpProfiles } from '@pantheon/adapters';
 import { sessionAdapter, userOnly, type ControlContext } from './context.js';
+import { isolationWaived } from './admission.js';
 import { readUserConfig } from './user-config.js';
 import { stopTurn } from './session.js';
 
@@ -90,6 +91,7 @@ export async function runtimeStatus(
       checked_at: adapter?.report.checked_at ?? new Date(ctx.store.now()).toISOString(),
       ...ctx.runtimeStatus.get(runtime),
       ...config,
+      unverified_isolation: isolationWaived(ctx, runtime),
       enabled,
       capabilities: enabled ? adapter?.report.capabilities : undefined,
       connection: runtimeConnection(ctx, runtime),

@@ -58,7 +58,7 @@ function setup(
     name: 'scripted-acp',
     binary: process.execPath,
     args: [server],
-    profile: { binary: process.execPath, args: [], resume: 'resume', ...profile },
+    profile: { binary: process.execPath, args: [], ...profile },
     ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
   });
   const events: AgentEvent[] = [];
@@ -94,36 +94,34 @@ describe('ACP adapter', () => {
       grok: {
         binary: 'grok',
         args: ['--permission-mode', 'default', 'agent', 'stdio'],
-        resume: 'resume',
       },
-      agy: { binary: 'agy', args: ['acp'], resume: 'resume' },
+      agy: { binary: 'agy', args: ['acp'] },
       dsh: {
         binary: 'dsh',
         args: ['--profile', 'acp'],
-        resume: 'resume',
         permissionModes: ['plan', 'auto_edit', 'full_access'],
       },
-      muse: { binary: 'muse', args: ['acp'], resume: 'resume' },
-      opencode: { binary: 'opencode', args: ['acp'], resume: 'resume' },
-      cursor: { binary: 'cursor-agent', args: ['acp'], resume: 'load' },
-      copilot: { binary: 'copilot', args: ['--acp'], resume: 'load' },
-      gemini: { binary: 'gemini', args: ['--acp'], resume: 'load' },
-      kilo: { binary: 'kilo', args: ['acp'], resume: 'resume' },
-      cline: { binary: 'cline', args: ['--acp'], resume: 'load' },
-      qwen: { binary: 'qwen', args: ['--acp'], resume: 'resume' },
-      kimi: { binary: 'kimi', args: ['acp'], resume: 'resume' },
-      goose: { binary: 'goose', args: ['acp'], resume: 'load' },
-      openhands: { binary: 'openhands', args: ['acp'], resume: 'load' },
-      auggie: { binary: 'auggie', args: ['--acp'], resume: 'load' },
-      kiro: { binary: 'kiro-cli', args: ['acp'], resume: 'load' },
-      junie: { binary: 'junie', args: ['--acp', 'true'], resume: 'resume' },
-      devin: { binary: 'devin', args: ['acp'], resume: 'load' },
-      vibe: { binary: 'vibe-acp', args: [], resume: 'load' },
-      hermes: { binary: 'hermes', args: ['acp'], resume: 'load' },
-      omp: { binary: 'omp', args: ['acp'], resume: 'load' },
-      codebuddy: { binary: 'codebuddy', args: ['--acp'], resume: 'load' },
-      droid: { binary: 'droid', args: ['exec', '--output-format', 'acp-daemon'], resume: 'resume' },
-      qoder: { binary: 'qodercli', args: ['--acp'], resume: 'resume' },
+      muse: { binary: 'muse', args: ['acp'] },
+      opencode: { binary: 'opencode', args: ['acp'] },
+      cursor: { binary: 'cursor-agent', args: ['acp'] },
+      copilot: { binary: 'copilot', args: ['--acp'] },
+      gemini: { binary: 'gemini', args: ['--acp'] },
+      kilo: { binary: 'kilo', args: ['acp'] },
+      cline: { binary: 'cline', args: ['--acp'] },
+      qwen: { binary: 'qwen', args: ['--acp'] },
+      kimi: { binary: 'kimi', args: ['acp'] },
+      goose: { binary: 'goose', args: ['acp'] },
+      openhands: { binary: 'openhands', args: ['acp'] },
+      auggie: { binary: 'auggie', args: ['--acp'] },
+      kiro: { binary: 'kiro-cli', args: ['acp'] },
+      junie: { binary: 'junie', args: ['--acp', 'true'] },
+      devin: { binary: 'devin', args: ['acp'] },
+      vibe: { binary: 'vibe-acp', args: [] },
+      hermes: { binary: 'hermes', args: ['acp'] },
+      omp: { binary: 'omp', args: ['acp'] },
+      codebuddy: { binary: 'codebuddy', args: ['--acp'] },
+      droid: { binary: 'droid', args: ['exec', '--output-format', 'acp-daemon'] },
+      qoder: { binary: 'qodercli', args: ['--acp'] },
     });
     const adapter = new AcpAdapter({
       name: 'grok',
@@ -256,28 +254,95 @@ describe('ACP adapter', () => {
     expect(handleRequest).toHaveBeenCalledTimes(2);
   });
 
-  it('uses the profile load method without trying resume', async () => {
-    const acp = setup({ FAKE_ACP_RESUME_METHOD: 'load' }, undefined, { resume: 'load' });
-    const handle = await acp.start('earlier-session');
-    expect(handle.native_session_id).toBe('earlier-session');
-    expect(acp.frames()[1]).toMatchObject({
-      method: 'session/load',
-      params: { sessionId: 'earlier-session', cwd: acp.spec.cwd, mcpServers: [] },
-    });
-    expect(acp.frames().map((frame) => frame.method)).not.toContain('session/resume');
-  });
+  it.each([
+    ['resume', 'session/resume'],
+    ['load', 'session/load'],
+    ['none', undefined],
+  ] as const)(
+    'resumes through the method the agent declares in initialize: %s',
+    async (declared, method) => {
+      const acp = setup({ FAKE_ACP_RESUME_METHOD: declared });
+      const started = acp.start('earlier-session');
+      const methods = () => acp.frames().map((frame) => frame.method);
+      if (!method) {
+        await expect(started).rejects.toThrow(
+          'The ACP agent declares neither session/resume nor loadSession',
+        );
+        expect(methods()).not.toContain('session/resume');
+        expect(methods()).not.toContain('session/load');
+        expect(acp.adapter.report.capabilities.resume?.status).toBe('unsupported');
+        return;
+      }
+      const handle = await started;
+      expect(handle.native_session_id).toBe('earlier-session');
+      expect(acp.frames()[1]).toMatchObject({
+        method,
+        params: { sessionId: 'earlier-session', cwd: acp.spec.cwd, mcpServers: [] },
+      });
+      expect(methods()).toHaveLength(2);
+      expect(acp.adapter.report.capabilities.resume).toMatchObject({
+        status: 'supported',
+        method: declared,
+      });
+    },
+  );
 
-  it('reports ACP limits and the configured resume method even after a version probe', async () => {
-    const acp = setup({}, undefined, { resume: 'load' });
+  it('reports ACP limits and a resume method awaiting initialize even after a version probe', async () => {
+    const acp = setup();
     await acp.adapter.probe();
     expect(acp.adapter.report.capabilities).toMatchObject({
       images: { status: 'unknown' },
-      resume: { status: 'supported', method: 'load' },
+      resume: { status: 'supported', evidence: expect.stringContaining('Awaiting ACP initialize') },
       deny_reason: { status: 'unsupported' },
       steer: { status: 'unsupported' },
       write_isolation: { status: 'unsupported' },
     });
+    expect(acp.adapter.report.capabilities.resume?.method).toBeUndefined();
   });
+
+  it.each([
+    ['start', {}, true],
+    ['start', { FAKE_ACP_FAIL: 'session' }, false],
+    ['models', {}, true],
+    ['models', { FAKE_ACP_FAIL: 'session' }, false],
+  ] as const)(
+    'marks text execution supported once %s opens an ACP session (%o): %s',
+    async (entry, env, opened) => {
+      const acp = setup(env);
+      // The listing process gets no session env, so node reads it from a file.
+      const envFile = path.join(acp.spec.cwd, 'agent.env');
+      writeFileSync(
+        envFile,
+        Object.entries(env)
+          .map(([name, value]) => `${name}=${value}\n`)
+          .join(''),
+      );
+      const adapter =
+        entry === 'start'
+          ? acp.adapter
+          : new AcpAdapter({
+              name: 'scripted-acp',
+              binary: process.execPath,
+              args: [`--env-file=${envFile}`, server],
+              profile: { binary: process.execPath, args: [] },
+            });
+      const run = entry === 'start' ? acp.start() : adapter.models(acp.spec.cwd);
+      await (opened ? run : run.catch(() => undefined));
+      const textExecution = adapter.report.capabilities.text_execution;
+      if (!opened) {
+        expect(textExecution?.status).not.toBe('supported');
+        return;
+      }
+      expect(textExecution).toEqual({
+        status: 'supported',
+        evidence: expect.stringMatching(
+          new RegExp(
+            `^ACP initialize and session/new succeeded with ${process.execPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} unprobed on \\d{4}-\\d{2}-\\d{2}T`,
+          ),
+        ),
+      });
+    },
+  );
 
   it.each([
     ['grok', true],
@@ -683,8 +748,8 @@ describe('ACP adapter', () => {
     );
   });
 
-  it('fills a request that names only its call from that tool call and refuses it read-only by the profile tool kind', async () => {
-    const acp = setup({}, undefined, { toolKinds: acpProfiles.dsh!.toolKinds });
+  it('fills a request that names only its call from that tool call and refuses it read-only by the inferred tool kind', async () => {
+    const acp = setup();
     const handle = await acp.start();
     await acp.adapter.send(handle, { turn_id: 'asked-turn', input: 'permission-call-id-only' });
     await vi.waitFor(() =>
@@ -718,6 +783,59 @@ describe('ACP adapter', () => {
       { outcome: { outcome: 'selected', optionId: 'opt-reject-once' } },
     ]);
   });
+
+  it.each([
+    ['bash', { command: 'rm -rf build' }, 'other', 'execute'],
+    ['edit', { path: 'a.md' }, 'other', 'edit'],
+    ['write', { path: 'a.md' }, 'other', 'edit'],
+    ['read', { path: 'a.md' }, 'other', 'read'],
+    ['read_image', { path: 'a.png' }, 'other', 'read'],
+    ['glob', { pattern: '*.md' }, 'other', 'search'],
+    ['grep', { pattern: 'todo' }, 'other', 'search'],
+    ['Run tests', { cmd: 'npm test' }, undefined, 'execute'],
+    ['Edit: notes.md', {}, undefined, 'edit'],
+    ['MultiEdit(notes.md)', {}, 'other', 'edit'],
+    ['rm build', {}, undefined, 'delete'],
+    ['Rename a.md', {}, 'other', 'move'],
+    ['web_fetch', { url: 'https://example.com' }, 'other', 'fetch'],
+    ['Read notes.md', { path: 'notes.md' }, 'edit', 'edit'],
+    ['summon', {}, 'other', 'other'],
+  ] as const)(
+    'gives the tool call %s with input %o and declared kind %s the kind %s',
+    async (title, rawInput, declared, expected) => {
+      const acp = setup({
+        FAKE_ACP_TOOL_CALL: JSON.stringify({ title, rawInput, kind: declared }),
+      });
+      const handle = await acp.start();
+      await acp.adapter.send(handle, { turn_id: 'asked-turn', input: 'permission-scripted-call' });
+      await vi.waitFor(() =>
+        expect(acp.events).toContainEqual(
+          expect.objectContaining({ kind: 'permission.requested' }),
+        ),
+      );
+      const requested = acp.events.find((event) => event.kind === 'permission.requested')!;
+      expect(requested).toMatchObject({ detail: { kind: expected } });
+      if (requested.kind !== 'permission.requested') throw new Error('unreachable');
+      await acp.adapter.answerPermission(handle, requested.request_id, 'deny');
+      await vi.waitFor(() => expect(acp.completions()).toHaveLength(1));
+      await acp.adapter.send(handle, {
+        turn_id: 'read-only-turn',
+        input: 'permission-scripted-call',
+        read_only: true,
+      });
+      const write = ['edit', 'delete', 'move', 'execute'].includes(expected);
+      await vi.waitFor(() =>
+        write
+          ? expect(acp.completions()).toHaveLength(2)
+          : expect(
+              acp.events.filter((event) => event.kind === 'permission.requested'),
+            ).toHaveLength(2),
+      );
+      expect(acp.events.filter((event) => event.kind === 'permission.requested')).toHaveLength(
+        write ? 1 : 2,
+      );
+    },
+  );
 
   it.each([
     ['plan', 'read-only'],
@@ -775,7 +893,6 @@ describe('ACP adapter', () => {
       profile: {
         binary: process.execPath,
         args: [],
-        resume: 'resume',
         permissionModes: acpProfiles.dsh!.permissionModes,
       },
     });
@@ -868,6 +985,10 @@ describe('ACP adapter', () => {
     expect(adapter.mcpStatus).toBeUndefined();
     expect(adapter.reconnectMcp).toBeUndefined();
     expect(acp.events).toEqual([]);
+    expect(adapter.report.capabilities.resume).toMatchObject({
+      status: 'supported',
+      method: 'resume',
+    });
   });
 
   it('resumes with session/resume and rejects a session the agent cannot find', async () => {
@@ -957,7 +1078,6 @@ describe('ACP adapter', () => {
       profile: {
         binary: process.execPath,
         args: [],
-        resume: 'resume',
         listArgs: ['--keep-no-record'],
       },
     });

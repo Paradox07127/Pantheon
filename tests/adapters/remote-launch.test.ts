@@ -211,7 +211,7 @@ describe('remote runtime launch', () => {
       name: 'scripted-acp',
       binary: '/missing/acp-agent',
       args: [acpServer],
-      profile: { binary: '/missing/acp-agent', args: [], resume: 'resume' },
+      profile: { binary: '/missing/acp-agent', args: [] },
     });
     const events: AgentEvent[] = [];
     const handle = await adapter.start(spec, (event) => events.push(event));

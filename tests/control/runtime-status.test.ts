@@ -72,6 +72,7 @@ it('shares one running check between callers and lists every registered runtime'
     {
       capabilities: f.checked.report.capabilities,
       runtime: 'checked',
+      unverified_isolation: false,
       enabled: true,
       connection: { connected: true, held_session_count: 0, held_session_ids: [] },
       ...found('2.0.0'),
@@ -116,6 +117,7 @@ it('answers from the last check unless asked to refresh, and stamps each check w
     {
       capabilities: f.checked.report.capabilities,
       runtime: 'checked',
+      unverified_isolation: false,
       enabled: true,
       connection: { connected: true, held_session_count: 0, held_session_ids: [] },
       ...found('2.0.0'),
@@ -152,6 +154,7 @@ it('answers from the last check unless asked to refresh, and stamps each check w
     {
       capabilities: f.checked.report.capabilities,
       runtime: 'checked',
+      unverified_isolation: false,
       enabled: true,
       connection: { connected: true, held_session_count: 0, held_session_ids: [] },
       ...found('2.0.0'),
@@ -188,6 +191,7 @@ it('answers from the last check unless asked to refresh, and stamps each check w
     {
       capabilities: f.checked.report.capabilities,
       runtime: 'checked',
+      unverified_isolation: false,
       enabled: true,
       connection: { connected: true, held_session_count: 0, held_session_ids: [] },
       ...found('2.1.0'),

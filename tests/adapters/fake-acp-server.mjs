@@ -15,6 +15,8 @@ import { createInterface } from 'node:readline';
 
 const log = process.env.FAKE_ACP_LOG;
 const fail = process.env.FAKE_ACP_FAIL;
+// The only resume method (resume, load or none) the agent declares and accepts; unset declares both.
+const resumeMethod = process.env.FAKE_ACP_RESUME_METHOD;
 const initDelay = Number(process.env.FAKE_ACP_INIT_DELAY ?? 0);
 const slowPromptDelay = Number(process.env.FAKE_ACP_SLOW_PROMPT_DELAY ?? 400);
 const replies =
@@ -282,6 +284,16 @@ const scripts = {
     });
     permission(undefined, undefined, undefined, { toolCallId: 'call-bash' });
   },
+  // FAKE_ACP_TOOL_CALL holds the title, kind and rawInput of a call the request names only by id.
+  'permission-scripted-call'() {
+    update({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call-scripted',
+      status: 'pending',
+      ...JSON.parse(process.env.FAKE_ACP_TOOL_CALL),
+    });
+    permission(undefined, undefined, undefined, { toolCallId: 'call-scripted' });
+  },
   'permission-mode-env'() {
     update({
       sessionUpdate: 'agent_message_chunk',
@@ -396,9 +408,12 @@ const handle = (frame) => {
           reply({
             protocolVersion: 1,
             agentCapabilities: {
-              loadSession: true,
+              loadSession: [undefined, 'load'].includes(resumeMethod),
               promptCapabilities: { image: process.env.FAKE_ACP_IMAGES === 'true' },
-              ...(grouped ? { sessionCapabilities: { close: {} } } : {}),
+              sessionCapabilities: {
+                ...([undefined, 'resume'].includes(resumeMethod) ? { resume: {} } : {}),
+                ...(grouped ? { close: {} } : {}),
+              },
             },
             authMethods: [],
           }),
@@ -412,10 +427,7 @@ const handle = (frame) => {
       return reply({ sessionId, configOptions });
     case 'session/load':
     case 'session/resume':
-      if (
-        process.env.FAKE_ACP_RESUME_METHOD &&
-        frame.method !== `session/${process.env.FAKE_ACP_RESUME_METHOD}`
-      )
+      if (resumeMethod && frame.method !== `session/${resumeMethod}`)
         return error('Wrong resume method');
       if (!validMcpServers(frame.params.mcpServers)) return error('Invalid mcpServers');
       if (frame.params.sessionId === 'missing-session')
