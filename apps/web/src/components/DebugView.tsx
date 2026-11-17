@@ -16,6 +16,7 @@ import {
   SquareDashedMousePointer,
   X,
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import {
   drillIn,
@@ -151,7 +152,8 @@ async function capture(layer: HTMLElement, rect: Rect): Promise<string | null> {
 /** The debug view over the window while it is on. */
 export function DebugView() {
   const open = useDebugView((s) => s.open);
-  return open ? <DebugLayer /> : null;
+  // On body: .app is fixed, so a layer inside it stays under the menus portaled to body.
+  return open ? createPortal(<DebugLayer />, document.body) : null;
 }
 
 function tagText(pick: DebugPick) {

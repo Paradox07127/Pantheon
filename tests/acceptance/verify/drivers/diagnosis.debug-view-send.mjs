@@ -36,7 +36,30 @@ check(
 );
 const target = before?.[0];
 
+// A failed command, so the app has a recorded problem the request's message must leave out.
+const LABEL = `verify-theme-${Date.now()}`;
+const { theme_id } = await call('theme.set', {
+  label: LABEL,
+  light: { anchors: { 'surface-0': '#ffffff', 'text-primary': '#111111' } },
+});
+await call('theme.apply', { theme_id: null });
+await reset();
+await page.click({ role: 'button', name: '设置', exact: true });
+await page.click({ role: 'button', name: '外观', exact: true });
+await page.waitFor(
+  `[...document.querySelectorAll('button.ps-thc')].some((b) => b.textContent.includes(${JSON.stringify(LABEL)}))`,
+  'the saved theme card to show',
+);
+await call('theme.delete', { theme_id });
+await page.click({ role: 'button', name: LABEL, exact: false });
+const failed = await poll(async () => (await names('问 agent')).length > 0);
+check('前置：一条命令失败，app 记下了问题（失败 toast 出现）', failed);
+
 const NOTE = `verify-note-${Date.now()}`;
+const REQUEST = `verify-request-${Date.now()}`;
+const turnsOf = async (id) =>
+  (await query('board')).session_turns.filter((t) => t.session_id === id).length;
+const turnsBefore = await turnsOf(target?.id);
 await reset();
 // A point in the sidebar, below the title bar, outside its nested regions (the session list has its own).
 const box = await page.evaluate(`(() => {
@@ -83,7 +106,30 @@ if (!picked) {
 }
 result.noteBoxes = await names('问题描述');
 const inspector = { name: '检查面板', exact: true };
+const toolbar = { role: 'toolbar', name: '调试视图', exact: true };
+const REQUEST_LABEL = '你想改什么或修什么？';
+const insSend = `document.querySelector('.dbv-ins .dbv-send button.pri')`;
+const sendDisabled = await page.evaluate(`${insSend}?.disabled ?? null`);
+check('描述为空时检查面板的 发送 不可用', sendDisabled === true, sendDisabled);
+
+// The toolbar's Send with no request opens the inspector on the request box instead of sending.
+await page.click({ role: 'button', name: '关闭检查面板', exact: true });
+await page.waitFor(`!document.querySelector('.dbv-ins')`, 'the inspector to close');
+await page.click({ role: 'button', name: '发送', exact: true, within: toolbar });
+const focused = await poll(() =>
+  page.evaluate(`document.activeElement?.getAttribute('aria-label') === ${JSON.stringify(REQUEST_LABEL)}
+    && !!document.querySelector('.dbv-ins') || null`),
+);
+check('描述为空时点工具栏 发送：打开检查面板，焦点在描述框', focused, await page.evaluate(
+  `document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName`,
+));
+const notSent = await turnsOf(target?.id);
+check('描述为空时点工具栏 发送 没有发出消息', notSent === turnsBefore, { before: turnsBefore, now: notSent });
+
 await page.fill({ role: 'textbox', name: '问题描述', exact: false, within: inspector }, NOTE);
+await page.fill({ role: 'textbox', name: REQUEST_LABEL, exact: true, within: inspector }, REQUEST);
+const enabled = await page.evaluate(`${insSend}?.disabled === false`);
+check('填了描述后检查面板的 发送 可用', enabled);
 await page.click({ role: 'button', name: '发送', exact: true, within: inspector });
 
 const arrived = await poll(async () => {
@@ -91,6 +137,28 @@ const arrived = await poll(async () => {
   const turns = board.session_turns.filter((t) => JSON.stringify(t).includes(NOTE));
   return turns.length ? turns : null;
 }, 20_000);
+// The message as the daemon stored it.
+const input = arrived?.[0]?.input ?? '';
+result.message = input;
+const lines = input.split('\n').map((line) => line.trim());
+const line = (prefix) => lines.find((l) => l.startsWith(prefix));
+check('消息以 The user\'s request: 加空行加描述开头', input.startsWith(`The user's request:\n\n${REQUEST}`), input.slice(0, 80));
+check('对照组：同一读法对错误的开头判 false', !input.startsWith(`The user's request:\n\n${REQUEST}-absent`) && !input.startsWith('The user asked about this'));
+check('消息里有所选项一行 1. …', lines.some((l) => /^1\. /.test(l)), lines.find((l) => /^1\. /.test(l)));
+// The packaged build carries no data-pt-src (the plugin runs only on the dev server), and the line is left out then.
+const src = await page.evaluate(
+  `document.querySelector('[data-debug-region="app.sidebar"]').getAttribute('data-pt-src')`,
+);
+check('Source 行与区域元素的 data-pt-src 一致（没有就不写这一行）', src ? line('Source: ') === `Source: ${src}` : !line('Source: '), { src, line: line('Source: ') ?? null });
+check('Selector 行是区域选择器', line('Selector: ') === 'Selector: [data-debug-region="app.sidebar"]', line('Selector: '));
+const stack = line('Stack: ');
+check('Stack 行最多 3 项', stack && stack.slice(7).split(' < ').length <= 3, stack);
+check('有 Text 行', line('Text: '), line('Text: '));
+check('Note 行是备注', line('Note: ') === `Note: ${NOTE}`, line('Note: '));
+check('区域选中没有 Props 行', !lines.some((l) => l.startsWith('Props')));
+check('没有 Styles 和 Rect 行', !lines.some((l) => l.startsWith('Styles') || l.startsWith('Rect')));
+check('没有 Recent problems 段', !input.includes('Recent problems'));
+check('没有 Reproduce 行', !input.includes('Reproduce'));
 check(
   '带备注的消息到了一个会话',
   arrived?.length === 1,

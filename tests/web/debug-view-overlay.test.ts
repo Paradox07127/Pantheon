@@ -144,8 +144,8 @@ function all(node: FakeNode, test: (n: FakeElement) => boolean): FakeElement[] {
   return [...here, ...node.childNodes.flatMap((c) => all(c, test))];
 }
 const find = (node: FakeNode, test: (n: FakeElement) => boolean) => all(node, test)[0];
-const byRole = (role: string) => find(container, (n) => n.getAttribute('role') === role);
-const byLabel = (label: string) => all(container, (n) => n.getAttribute('aria-label') === label);
+const byRole = (role: string) => find(doc.body, (n) => n.getAttribute('role') === role);
+const byLabel = (label: string) => all(doc.body, (n) => n.getAttribute('aria-label') === label);
 const button = (within: FakeNode, text: string) =>
   find(within, (n) => n.nodeName === 'BUTTON' && n.textContent === text);
 const region = (name: string) =>

@@ -2,7 +2,7 @@
 .dbv {
   position: fixed;
   inset: 0;
-  /* Above every layer of the app, its menus and toasts included. */
+  /* Above every layer of the app, its menus and toasts included; the layer is portaled to body. */
   z-index: 70;
   pointer-events: none;
 }
