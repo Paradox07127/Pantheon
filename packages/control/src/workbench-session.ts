@@ -18,8 +18,6 @@ import {
   openSync,
   readdirSync,
   readFileSync,
-  readlinkSync,
-  readSync,
   realpathSync,
   rmSync,
   statSync,
@@ -88,6 +86,7 @@ import {
   sessionAdapter,
   userOnly,
   type ControlContext,
+  type Handler,
   type Handlers,
 } from './context.js';
 import { admitWriterChoice } from './admission.js';
@@ -507,39 +506,12 @@ const UNTRACKED_LINES_BOUND = 2000;
 const textLines = (text: string) => text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
 
 /** Lines of an untracked file as Git counts them; a file with a NUL byte is binary and has none. */
-function untrackedLines(file: string): number {
-  const stat = lstatSync(file);
-  // Git diffs a symbolic link as the text of its target.
-  if (stat.isSymbolicLink()) return textLines(readlinkSync(file));
-  if (!stat.isFile()) return 0;
-  // Non-blocking, so a path replaced by a named pipe since lstat opens at once; fstat then refuses it.
-  const descriptor = openSync(
-      file,
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-    ),
-    chunk = Buffer.alloc(64 * 1024);
-  try {
-    if (!fstatSync(descriptor).isFile()) return 0;
-    let lines = 0,
-      last = 0x0a,
-      read: number;
-    while ((read = readSync(descriptor, chunk, 0, chunk.length, null)) > 0) {
-      const bytes = chunk.subarray(0, read);
-      if (bytes.includes(0)) return 0;
-      for (let at = bytes.indexOf(0x0a); at !== -1; at = bytes.indexOf(0x0a, at + 1)) lines++;
-      last = bytes[read - 1]!;
-    }
-    return last === 0x0a ? lines : lines + 1;
-  } finally {
-    closeSync(descriptor);
-  }
-}
-
-/** untrackedLines with asynchronous reads, so a large file does not hold the event loop. */
 async function readUntrackedLines(file: string): Promise<number> {
   const stat = await lstat(file);
+  // Git diffs a symbolic link as the text of its target.
   if (stat.isSymbolicLink()) return textLines(await readlink(file));
   if (!stat.isFile()) return 0;
+  // Non-blocking, so a path replaced by a named pipe since lstat opens at once; fstat then refuses it.
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK),
     chunk = Buffer.alloc(64 * 1024);
   try {
@@ -559,24 +531,10 @@ async function readUntrackedLines(file: string): Promise<number> {
   }
 }
 
-/** Changed files and lines of the directory against the base commit; null when it cannot be read. */
-function worktreeChanges(directory: string, base: string): WorkbenchSession['changes'] {
-  const tracked = runGit(directory, trackedDiff(base, '--numstat', '-z')),
-    untracked = runGit(directory, UNTRACKED);
-  if (tracked.exit_code !== 0 || untracked.exit_code !== 0) return null;
-  const untrackedFiles = untrackedOf(untracked);
-  let untrackedAdditions = 0;
-  try {
-    for (const file of untrackedFiles.slice(0, UNTRACKED_LINES_BOUND))
-      untrackedAdditions += untrackedLines(path.join(directory, file));
-  } catch {
-    // The session removed or replaced a file while it was read.
-    return null;
-  }
-  return changesOf(tracked, untrackedFiles, untrackedAdditions);
-}
-
-/** worktreeChanges read asynchronously, with the changed and untracked paths it read. */
+/**
+ * Changed files and lines of the directory against the base commit, null when it cannot be read,
+ * with the changed and untracked paths it read.
+ */
 async function prefetchedChanges(
   directory: string,
   base: string,
@@ -658,6 +616,77 @@ function sessionGitFacts(status: GitResult, distance?: GitResult): SessionGitFac
 
 const WORKTREE_READ_MS = 2000;
 
+/** A `git status` run; at is when it finished once done, and WORKTREE_READ_MS counts from it. */
+interface StatusRead {
+  directory: string;
+  started: number;
+  at: number;
+  done?: true;
+  result: Promise<GitResult>;
+}
+
+const STATUS_READS = 256;
+
+/** The display reads' `git status` runs, by real directory and arguments. */
+const statusReads = new Map<string, StatusRead>();
+
+/** The real directories each workspace's status was read in, so forgetting it drops their reads. */
+const workspaceStatusDirectories = new Map<string, Set<string>>();
+
+function realDirectory(directory: string): string {
+  try {
+    return realpathSync(directory);
+  } catch {
+    return directory;
+  }
+}
+
+/**
+ * `git status` with args in directory, shared with a run that started at since or later and is in
+ * flight or succeeded under WORKTREE_READ_MS ago; otherwise starts a run later reads share.
+ */
+function readStatus(
+  directory: string,
+  args: string[],
+  workspaceId?: string,
+  since = -Infinity,
+): Promise<GitResult> {
+  const real = realDirectory(directory),
+    key = `${real}\0${args.join('\0')}`,
+    known = statusReads.get(key);
+  if (workspaceId) {
+    const directories = workspaceStatusDirectories.get(workspaceId) ?? new Set();
+    workspaceStatusDirectories.set(workspaceId, directories.add(real));
+  }
+  if (known && known.started >= since && (!known.done || Date.now() - known.at < WORKTREE_READ_MS))
+    return known.result;
+  const read: StatusRead = {
+    directory: real,
+    started: Date.now(),
+    at: Date.now(),
+    result: runGit(directory, args, undefined, true),
+  };
+  const settle = (ok: boolean) => {
+    if (statusReads.get(key) !== read) return;
+    if (!ok) statusReads.delete(key);
+    else Object.assign(read, { at: Date.now(), done: true });
+  };
+  read.result.then(
+    (result) => settle(result.exit_code === 0),
+    () => settle(false),
+  );
+  statusReads.delete(key);
+  statusReads.set(key, read);
+  if (statusReads.size > STATUS_READS) statusReads.delete(statusReads.keys().next().value!);
+  return read.result;
+}
+
+/** Drops the status reads of directory, after Pantheon wrote in it. */
+export function forgetStatusReads(directory: string): void {
+  const real = realDirectory(directory);
+  for (const [key, read] of statusReads) if (read.directory === real) statusReads.delete(key);
+}
+
 interface WorktreeRead {
   /** When the entry was made, or its prefetch last read Git; WORKTREE_READ_MS counts from it. */
   at: number;
@@ -699,9 +728,13 @@ const readsMoved = (read: WorktreeRead) =>
 /** The session list's Git reads of each workspace, by workspace id. */
 const worktreeReads = new Map<string, WorktreeRead>();
 
-/** Drops the workspace's listed Git reads after something other than session activity moved its worktree. */
+/** Drops the workspace's listed Git reads and diff after something other than session activity moved its worktree. */
 export function forgetWorktreeReads(workspaceId: string): void {
   worktreeReads.delete(workspaceId);
+  sessionDiffs.delete(workspaceId);
+  for (const directory of workspaceStatusDirectories.get(workspaceId) ?? [])
+    forgetStatusReads(directory);
+  workspaceStatusDirectories.delete(workspaceId);
 }
 
 /** The workspace's listed Git reads, empty after the session's last activity moved or the reads aged out. */
@@ -1125,35 +1158,6 @@ function listedGit(ctx: ControlContext, p: Principal, listed: ListedRead): Liste
   };
 }
 
-function readListedGit(ctx: ControlContext, p: Principal, listed: ListedRead): ListedGit {
-  const { workspace, cached } = listed;
-  for (;;) {
-    const next = listedGit(ctx, p, listed);
-    if (!('read' in next)) return next;
-    if (next.read === 'changes') cached.changes = worktreeChanges(next.directory, next.base);
-    else if (next.read === 'facts') {
-      cached.facts = sessionGitFacts(
-        runGit(workspace.path, BRANCH_STATUS),
-        workspace.source_branch
-          ? runGit(workspace.path, [
-              'rev-list',
-              '--left-right',
-              '--count',
-              `HEAD...refs/heads/${workspace.source_branch}`,
-              '--',
-            ])
-          : undefined,
-      );
-    }
-    // Only a prefetch caches HEAD; a list without one reads it each time, so a commit outside a turn shows at once.
-    else
-      listed = {
-        ...listed,
-        cached: { ...cached, head: headOf(runGit(workspace.path, HEAD_COMMIT)) },
-      };
-  }
-}
-
 /** What the list shows of the worktree from the cached reads alone; a read not cached shows as unknown. */
 function cachedListedGit(ctx: ControlContext, p: Principal, listed: ListedRead): ListedGit {
   const cached = { ...listed.cached, ...knownReads(listed.cached) };
@@ -1176,7 +1180,8 @@ async function prefetchListedGit(ctx: ControlContext, p: Principal, listed: List
       ));
     else if (next.read === 'facts') {
       cached.facts = sessionGitFacts(
-        await runGit(workspace.path, BRANCH_STATUS, undefined, true),
+        // A read from before the session's last activity may not show what that activity did.
+        await readStatus(workspace.path, BRANCH_STATUS, workspace.id, cached.activity),
         workspace.source_branch
           ? await runGit(
               workspace.path,
@@ -1241,8 +1246,8 @@ export function prefetchWorktreeReads(
 }
 
 /**
- * `readChanges` false skips the per-worktree Git read; ready sessions then list as idle.
- * 'cached' reads no Git: it shows the cached reads, and a read not cached yet as unknown.
+ * Runs no Git: true and 'cached' show the reads prefetchWorktreeReads cached, and a read not cached
+ * yet as unknown; false skips the worktree reads, so ready sessions list as idle.
  */
 export function sessionList(
   ctx: ControlContext,
@@ -1465,9 +1470,7 @@ export function sessionList(
       });
     const { changes, worktree, head } = !cached
       ? { changes: null, worktree: null, head: undefined }
-      : readChanges === 'cached'
-        ? cachedListedGit(ctx, p, { ...each, workspace, cached })
-        : readListedGit(ctx, p, { ...each, workspace, cached });
+      : cachedListedGit(ctx, p, { ...each, workspace, cached });
     const gitFacts = cached && knownReads(cached).facts;
     const checked = activity?.checked;
     const gate:
@@ -1566,7 +1569,33 @@ async function mergedSessionDiff(
     { from_sha?: string; to_sha?: string } | undefined;
   if (!merged?.from_sha || !merged.to_sha)
     throw new DomainError('landing_unavailable', 'Session merge recorded no commits');
-  const range = [...DIFF_OPTIONS, '--find-renames', merged.from_sha, merged.to_sha, '--'];
+  const key = `${session.id}:${merged.from_sha}:${merged.to_sha}`,
+    cached = mergedDiffs.get(key);
+  if (cached) return cached;
+  const read = readMergedDiff(git, failed, session, merged.from_sha, merged.to_sha).catch(
+    (error: unknown) => {
+      if (mergedDiffs.get(key) === read) mergedDiffs.delete(key);
+      throw error;
+    },
+  );
+  mergedDiffs.set(key, read);
+  if (mergedDiffs.size > MERGED_DIFFS) mergedDiffs.delete(mergedDiffs.keys().next().value!);
+  return read;
+}
+
+const MERGED_DIFFS = 64;
+
+/** Merged session diffs by session id and merged range, oldest first; a merged range never moves. */
+const mergedDiffs = new Map<string, Promise<SessionDiff>>();
+
+async function readMergedDiff(
+  git: ReturnType<typeof sourceGit>,
+  failed: () => never,
+  session: Session,
+  from: string,
+  to: string,
+): Promise<SessionDiff> {
+  const range = [...DIFF_OPTIONS, '--find-renames', from, to, '--'];
   const numstat = await git(['diff', '--numstat', '-z', ...range], {
     max_buffer: 4 * PATCH_BOUND,
     timeout_ms: TIME_BOUND,
@@ -1578,8 +1607,8 @@ async function mergedSessionDiff(
   if (patch.exit_code !== 0 && !truncated) failed();
   return {
     session_id: session.id,
-    base_sha: merged.from_sha,
-    head_sha: merged.to_sha,
+    base_sha: from,
+    head_sha: to,
     files: numstatFiles(numstat.stdout).map((file) => ({ ...file, untracked: false })),
     patch: truncated ? null : patch.stdout.toString(),
     truncated,
@@ -1800,7 +1829,7 @@ export function discardSession(
     current.revision,
   );
   ctx.store.event('session.discarded', next, next.project_id, {}, cause);
-  if (next.workspace_id) worktreeReads.delete(next.workspace_id);
+  if (next.workspace_id) forgetWorktreeReads(next.workspace_id);
   // The folder of a folder session is the user's own checkout.
   if (
     remove &&
@@ -2219,7 +2248,7 @@ function deleteSessionRows(
     // A baseline session's discard has already removed its row.
     const row = ctx.store.get<Session>('sessions', each.id);
     if (row) ctx.store.remove('sessions', row.id, row.revision);
-    if (each.workspace_id) worktreeReads.delete(each.workspace_id);
+    if (each.workspace_id) forgetWorktreeReads(each.workspace_id);
   }
   ctx.store.event('session.deleted', session, session.project_id, { title }, cause);
   // Files go last, once every refusal above has passed.
@@ -2739,8 +2768,8 @@ export async function sessionPreflight(
   const workspace = ctx.store.must<Workspace>('workspaces', started.workspace_id),
     source = workspace.source ?? workspace.path;
   const [worktreeStatus, sourceStatus] = await Promise.all([
-    runGit(workspace.path, BRANCH_STATUS, undefined, true),
-    runGit(source, SOURCE_STATUS, undefined, true),
+    readStatus(workspace.path, BRANCH_STATUS, workspace.id),
+    readStatus(source, SOURCE_STATUS, workspace.id),
   ]);
   const worktree = worktreeStateOf(worktreeStatus);
   requireThat(worktree, 'workspace_read_failed', 'Worktree status could not be read');
@@ -2761,7 +2790,7 @@ export async function sessionPreflight(
       true,
     ),
     targetBranch !== null
-      ? mergePreview(source, `refs/heads/${targetBranch}`, worktree.head, true)
+      ? mergePreview(source, `refs/heads/${targetBranch}`, worktree.head)
       : undefined,
   ]);
   requireThat(
@@ -2916,7 +2945,7 @@ function landDirectTask(
     // Else the lead's next merge would pass the check for commits without one.
     const workspace = ctx.store.must<Workspace>('workspaces', item.workspace_id);
     ctx.store.update('workspaces', { ...workspace, base_sha: item.to_sha! }, workspace.revision);
-    worktreeReads.delete(workspace.id);
+    forgetWorktreeReads(workspace.id);
     ctx.store.event('session.merged', next, next.project_id, {
       branch: item.branch,
       source: item.source,
@@ -3214,7 +3243,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       ctx.store.enqueue('workspace.remove', { workspace_id: workspace.id, reason: 'merged' });
       ctx.store.mark(jobId, 'done');
     });
-    worktreeReads.delete(workspace.id);
+    forgetWorktreeReads(workspace.id);
     return;
   }
   const gate = item.gate_results?.find(gateFailed),
@@ -3290,10 +3319,6 @@ type WorktreeState = { clean: boolean; head: string };
 type SourceState = { branch: string | null; clean: boolean };
 
 /** Whether the worktree has no uncommitted or untracked files, and its HEAD; null when Git cannot read them. */
-function worktreeState(workspace: Workspace): WorktreeState | null {
-  return worktreeStateOf(runGit(workspace.path, BRANCH_STATUS));
-}
-
 function worktreeStateOf(status: GitResult): WorktreeState | null {
   const current = branchStatus(status);
   // A branch without commits has no HEAD commit.
@@ -3306,19 +3331,7 @@ const HEAD_COMMIT = ['rev-parse', '--verify', 'HEAD^{commit}'],
 
 const headOf = (head: GitResult) => (head.exit_code === 0 ? head.stdout.toString().trim() : null);
 
-function mergeWorktreeState(workspace: Workspace): WorktreeState {
-  const state = worktreeState(workspace);
-  requireThat(state, 'workspace_read_failed', 'Worktree status could not be read');
-  return state;
-}
-
 /** The source repository's checked-out branch, null when HEAD is detached, and whether its tracked files are unedited. */
-function mergeSourceState(workspace: Workspace): SourceState {
-  const state = sourceStateOf(runGit(workspace.source ?? workspace.path, SOURCE_STATUS));
-  requireThat(state, 'workspace_read_failed', 'Source repository status could not be read');
-  return state;
-}
-
 function sourceStateOf(status: GitResult): SourceState | null {
   const current = branchStatus(status);
   return current && { branch: current.branch, clean: current.uncommitted === 0 };
@@ -3330,7 +3343,32 @@ interface MergeReads {
   source: (workspace: Workspace) => SourceState | undefined;
 }
 
-const gitMergeReads: MergeReads = { worktree: mergeWorktreeState, source: mergeSourceState };
+/** Reads both repository states a merge of the workspace admits on, at once and asynchronously. */
+export async function readMergeStates(workspace: Workspace): Promise<MergeReads> {
+  const source = workspace.source ?? workspace.path;
+  // Admission reads both afresh; later display reads share these runs.
+  const [worktree, sourceState] = await Promise.all([
+    readStatus(workspace.path, BRANCH_STATUS, workspace.id, Infinity).then(worktreeStateOf),
+    readStatus(source, SOURCE_STATUS, workspace.id, Infinity).then(sourceStateOf),
+  ]);
+  return {
+    worktree: () => {
+      requireThat(worktree, 'workspace_read_failed', 'Worktree status could not be read');
+      return worktree;
+    },
+    source: () => {
+      requireThat(
+        sourceState,
+        'workspace_read_failed',
+        'Source repository status could not be read',
+      );
+      return sourceState;
+    },
+  };
+}
+
+/** Knows no repository state, so admission stops where it would read one. */
+const unreadMergeReads: MergeReads = { worktree: () => undefined, source: () => undefined };
 
 const MERGE_READ_MS = 2000;
 
@@ -3394,10 +3432,10 @@ export function prefetchMergeReads(
       const source = workspace.source ?? workspace.path;
       return [
         refreshMergeState(worktreeMergeReads, workspace.id, async () =>
-          worktreeStateOf(await runGit(workspace.path, BRANCH_STATUS, undefined, true)),
+          worktreeStateOf(await readStatus(workspace.path, BRANCH_STATUS, workspace.id)),
         ),
         refreshMergeState(sourceMergeReads, source, async () =>
-          sourceStateOf(await runGit(source, SOURCE_STATUS, undefined, true)),
+          sourceStateOf(await readStatus(source, SOURCE_STATUS, workspace.id)),
         ),
       ];
     });
@@ -3427,7 +3465,7 @@ const MERGE_STATE_UNKNOWN = {
 function mergeBlockedReason(
   ctx: ControlContext,
   session: Session,
-  read: MergeReads = gitMergeReads,
+  read: MergeReads,
 ): { code: string; message: string } | undefined {
   if (ctx.store.must<Workspace>('workspaces', session.workspace_id!).kind === 'in_place')
     return { code: 'invalid_state', message: NO_MERGE_GATE };
@@ -3476,23 +3514,32 @@ function mergeBlockedReason(
 
 /**
  * Preconditions shared by merge admission and the needs-you retry action; cached reads only the
- * repository states prefetchMergeReads last read.
+ * repository states prefetchMergeReads last read, and given reads are states read already.
  */
-export function requireMergeReady(ctx: ControlContext, session: Session, cached = false): void {
-  const blocked = mergeBlockedReason(ctx, session, cached ? cachedMergeReads : gitMergeReads);
+export function requireMergeReady(
+  ctx: ControlContext,
+  session: Session,
+  cached: true | MergeReads = unreadMergeReads,
+): void {
+  const reads = cached === true ? cachedMergeReads : cached;
+  const blocked = mergeBlockedReason(ctx, session, reads);
   if (blocked) throw new DomainError(blocked.code, blocked.message);
 }
 
-/** Queues the merge of an open, clean worktree with commits; without a cause it was started automatically. */
+/**
+ * Queues the merge of an open, clean worktree with commits; without a cause it was started
+ * automatically; reads are the repository states read already.
+ */
 export function admitMerge(
   ctx: ControlContext,
   session: Session,
-  cause?: string,
-  allowOutOfScope?: boolean,
-  reason?: string,
-  allowedFiles?: string[],
+  cause: string | undefined,
+  allowOutOfScope: boolean | undefined,
+  reason: string | undefined,
+  allowedFiles: string[] | undefined,
+  reads: MergeReads,
 ): Session {
-  requireMergeReady(ctx, session);
+  requireMergeReady(ctx, session, reads);
   requireThat(
     workflowPolicy(ctx, session.project_id).gate_runner !== 'session' || !onDevice(session),
     'unsupported_capability',
@@ -3534,6 +3581,196 @@ export function admitMerge(
   return next;
 }
 
+/** session.gates.run's checks before git. */
+function gateRunRequest(ctx: ControlContext, p: Principal, c: Command) {
+  requireThat(p.role === 'user', 'permission_denied', 'Only user can run the session gates');
+  const cause = c.command_id,
+    input = inputSchemas['session.gates.run'].parse(c.input),
+    session = ctx.store.must<Session>('sessions', input.session_id);
+  projectAccess(ctx, p, session.project_id, c.type);
+  requireThat(
+    session.workspace_id && !session.outcome,
+    'invalid_state',
+    'Only an unfinished worktree session can run its gates',
+  );
+  refuseInPlace(ctx, session, NO_MERGE_GATE);
+  revision(ctx, c, session);
+  requireThat(session.merge?.state !== 'running', 'invalid_state', 'Session is being merged');
+  const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
+  requireThat(workspaceReady(workspace), 'invalid_state', 'Worktree is not ready');
+  const configured = gateCommands(
+    ctx,
+    ctx.store.must<Project>('projects', session.project_id),
+    workspace,
+    session,
+  );
+  requireThat(configured?.length, 'invalid_state', 'No gate or acceptance commands are configured');
+  const inWorktree = workflowPolicy(ctx, session.project_id).gate_runner === 'session';
+  requireThat(
+    !inWorktree || !onDevice(session),
+    'unsupported_capability',
+    'Remote session gates cannot return bounded command exit codes',
+  );
+  // A turn's edits in the live worktree would fail the gate command that ran beside them.
+  requireThat(
+    !inWorktree || (session.state !== 'running' && !nativeTurnActive(ctx, session)),
+    'invalid_state',
+    'Run the session gates between turns',
+  );
+  const running = runningGates(ctx);
+  requireThat(
+    !running.has(session.id) && !gateOperationActive(session),
+    'resource_busy',
+    'The session gates are already running',
+  );
+  return { cause, input, session, workspace, configured, running };
+}
+
+/** The worktree HEAD a gate run checks, and for a retry whether the worktree is clean. */
+type GateRunHead = { head: string; clean?: boolean } | null;
+
+/** Reads HEAD outside the transaction; a retry reads it with the status that tells it is clean. */
+function prepareGateRun(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  const { input, workspace } = gateRunRequest(ctx, p, c);
+  const read: Promise<GateRunHead> = input.only_failed
+    ? runGit(workspace.path, BRANCH_STATUS, undefined, true).then(worktreeStateOf)
+    : runGit(workspace.path, HEAD_COMMIT, undefined, true).then((result) => {
+        const head = headOf(result);
+        return head === null ? null : { head };
+      });
+  return read.then((worktree) => (ctx, p, c) => runSessionGates(ctx, p, c, worktree));
+}
+
+function runSessionGates(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  worktree: GateRunHead,
+): Session {
+  const { cause, input, session, workspace, configured, running } = gateRunRequest(ctx, p, c);
+  requireThat(worktree, 'workspace_read_failed', 'Worktree HEAD could not be read');
+  let commands = configured;
+  let previous: NonNullable<LandingItem['gate_results']> = [];
+  if (input.only_failed) {
+    const events = ctx.store
+      .kindEvents(session.project_id, ['session.gate_started', 'session.gate_checked'])
+      .filter((event) => event.aggregate_id === session.id);
+    const checked = events.findLast((event) => event.kind === 'session.gate_checked');
+    requireThat(checked, 'gate_retry_unavailable', 'No previous gate run to retry');
+    const payload = checked.payload as { commit: string; results: typeof previous };
+    requireThat(
+      payload.commit === worktree.head && worktree.clean,
+      'gate_retry_unavailable',
+      'Retrying failed gates requires the same HEAD and a clean worktree',
+    );
+    requireThat(
+      payload.results.some(gateFailed),
+      'gate_retry_unavailable',
+      'The previous gate run has no failed steps',
+    );
+    const previousChecked = events.findLast(
+      (event) => event.kind === 'session.gate_checked' && event.sequence < checked.sequence,
+    );
+    const started = events.findLast(
+      (event) =>
+        event.kind === 'session.gate_started' &&
+        event.sequence < checked.sequence &&
+        event.sequence > (previousChecked?.sequence ?? 0),
+    );
+    commands =
+      (started?.payload as { commands?: typeof commands } | undefined)?.commands ?? commands;
+    previous = payload.results;
+  }
+  const runId = id();
+  const next = ctx.store.update(
+    'sessions',
+    {
+      ...session,
+      gate_run: { id: runId, state: 'running' as const, started_at: ctx.store.now() },
+    },
+    session.revision,
+  );
+  ctx.store.event(
+    'session.gate_run_requested',
+    next,
+    next.project_id,
+    { run_id: runId, commands },
+    cause,
+  );
+  running.add(session.id);
+  const committed = afterCommit(ctx);
+  const completion = Promise.resolve()
+    .then(() =>
+      committed()
+        ? checkGates(
+            ctx,
+            sessionOwner(ctx, next, runId),
+            workspace,
+            workspace.source ?? workspace.path,
+            commands,
+            worktree.head,
+            previous,
+          )
+        : undefined,
+    )
+    .then(() => {
+      if (committed()) finishGateRun(ctx, session.id, runId);
+    })
+    .catch((error: unknown) => {
+      if (committed()) finishGateRun(ctx, session.id, runId, error);
+    })
+    .finally(() => {
+      running.delete(session.id);
+      const turnId = mergesAfterGates(ctx).get(session.id);
+      mergesAfterGates(ctx).delete(session.id);
+      if (turnId && committed() && !ctx.closing) autoMergeAfterTurn(ctx, session.id, turnId);
+      ctx.completions.delete(completion);
+      if (!ctx.closing) ctx.changed();
+    });
+  ctx.completions.add(completion);
+  return next;
+}
+
+/** The session a session.merge queues, checked without git, and the admission that queues it. */
+type MergeRequest = { session: Session; admit: (reads: MergeReads) => Session };
+
+function mergeRequest(ctx: ControlContext, p: Principal, c: Command): MergeRequest {
+  const input = inputSchemas['session.merge'].parse(c.input);
+  if (p.role === 'lead') return leadTaskMerge(ctx, p, input, c.command_id);
+  requireThat(p.role === 'user', 'permission_denied', 'Only user can merge a session');
+  requireThat(
+    input.session_id && !input.task_id && !input.reason,
+    'invalid_request',
+    'Name the session to merge',
+  );
+  const cause = c.command_id,
+    session = ctx.store.must<Session>('sessions', input.session_id);
+  projectAccess(ctx, p, session.project_id, c.type);
+  requireThat(
+    session.workspace_id && !session.outcome,
+    'invalid_state',
+    'Only an unfinished worktree session can be merged',
+  );
+  refuseInPlace(ctx, session, NO_MERGE_GATE);
+  revision(ctx, c, session);
+  return {
+    session,
+    admit: (reads) =>
+      admitMerge(ctx, session, cause, input.allow_out_of_scope, undefined, undefined, reads),
+  };
+}
+
+/** Refuses at once what the store refuses, then reads the repository states outside the transaction. */
+function prepareMerge(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  const { session } = mergeRequest(ctx, p, c);
+  const blocked = mergeBlockedReason(ctx, session, unreadMergeReads);
+  if (blocked && blocked !== MERGE_STATE_UNKNOWN)
+    throw new DomainError(blocked.code, blocked.message);
+  return readMergeStates(ctx.store.must<Workspace>('workspaces', session.workspace_id!)).then(
+    (reads) => (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads),
+  );
+}
+
 /**
  * Merges the session of a task in the lead's own plan whose merge stopped on files outside the
  * task's scope, unless one of them is agent configuration or in the scope of an unfinished task.
@@ -3543,7 +3780,7 @@ function leadTaskMerge(
   p: Principal,
   input: ReturnType<(typeof inputSchemas)['session.merge']['parse']>,
   cause: string,
-): Session {
+): MergeRequest {
   requireThat(
     input.project_id &&
       input.task_id &&
@@ -3600,14 +3837,52 @@ function leadTaskMerge(
     'invalid_state',
     `Files outside the scope of task ${input.task_id} lie in the scope of unfinished task ${holders.join(', ')}; wait until that task is done, change the scopes in your plan, or ask the user`,
   );
-  return admitMerge(ctx, session, cause, false, input.reason, files);
+  return {
+    session,
+    admit: (reads) => admitMerge(ctx, session, cause, false, input.reason, files, reads),
+  };
 }
 
 /**
  * After the turn of a task session, or of a lead that reported its direct task done, completes
- * normally, merges it if its project merges automatically through a gate.
+ * normally, merges it if its project merges automatically through a gate; reads the repository
+ * states asynchronously first.
  */
 export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string, turnId: string): void {
+  if (ctx.closing) return;
+  const candidate = autoMergeCandidate(ctx, sessionId, turnId);
+  if (!candidate) return;
+  let reading = autoMergeReads.get(ctx);
+  if (!reading) autoMergeReads.set(ctx, (reading = new Set()));
+  const work: Promise<void> = readMergeStates(candidate.workspace)
+    .then((reads) => {
+      if (ctx.closing) return;
+      mergeAfterTurn(ctx, sessionId, turnId, reads);
+      ctx.changed();
+    })
+    .catch((error: unknown) => ctx.diagnostic(error))
+    .finally(() => {
+      reading.delete(work);
+      ctx.completions.delete(work);
+    });
+  reading.add(work);
+  ctx.completions.add(work);
+}
+
+// The automatic merges after turns that still read their repository states.
+const autoMergeReads = new WeakMap<ControlContext, Set<Promise<void>>>();
+
+/** Waits for the automatic merges after turns to read their repository states and admit. */
+export async function autoMergesRead(ctx: ControlContext): Promise<void> {
+  await Promise.allSettled([...(autoMergeReads.get(ctx) ?? [])]);
+}
+
+/** The session and worktree autoMergeAfterTurn merges, checked in the store alone; undefined when it does not. */
+function autoMergeCandidate(
+  ctx: ControlContext,
+  sessionId: string,
+  turnId: string,
+): { session: Session; workspace: Workspace; reportedHead?: string } | undefined {
   const session = ctx.store.must<Session>('sessions', sessionId),
     plan = ctx.store.get<BoardPlan>('board_plans', session.id),
     direct = session.direct_task;
@@ -3637,20 +3912,36 @@ export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string, turnI
   const project = ctx.store.must<Project>('projects', session.project_id),
     workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
   if (!autoMerge(ctx, project) || !gateCommands(ctx, project, workspace, session)?.length) return;
-  // Commits after the report may belong to the lead's next task, so it reports again first.
-  const head = reported ? worktreeState(workspace)?.head : undefined;
-  if (head && head !== direct!.reported_head) {
-    ctx.store.event('session.merge_skipped', session, session.project_id, {
-      reason: 'head_moved',
-      turn_id: turnId,
-    });
-    return;
-  }
+  return { session, workspace, ...(reported ? { reportedHead: direct!.reported_head! } : {}) };
+}
+
+/** Checks the session again, as it may have moved while its states were read, and admits its merge. */
+function mergeAfterTurn(
+  ctx: ControlContext,
+  sessionId: string,
+  turnId: string,
+  reads: MergeReads,
+): void {
   try {
-    ctx.store.transaction(() => admitMerge(ctx, session));
+    ctx.store.transaction(() => {
+      const candidate = autoMergeCandidate(ctx, sessionId, turnId);
+      if (!candidate) return;
+      const { session, workspace, reportedHead } = candidate;
+      // Commits after the report may belong to the lead's next task, so it reports again first.
+      const head = reportedHead !== undefined ? reads.worktree(workspace)?.head : undefined;
+      if (head && head !== reportedHead) {
+        ctx.store.event('session.merge_skipped', session, session.project_id, {
+          reason: 'head_moved',
+          turn_id: turnId,
+        });
+        return;
+      }
+      admitMerge(ctx, session, undefined, undefined, undefined, undefined, reads);
+    });
   } catch (error) {
     // A worktree that is not ready, not clean or has no commits stays as it is.
     if (!(error instanceof DomainError)) throw error;
+    const session = ctx.store.must<Session>('sessions', sessionId);
     // The tracker hands these back to a task session to fix.
     if (error.code === 'no_changes' || error.code === 'uncommitted_changes')
       ctx.store.event('session.merge_skipped', session, session.project_id, {
@@ -3679,69 +3970,91 @@ export function autoMergeAfterTurn(ctx: ControlContext, sessionId: string, turnI
   }
 }
 
-function sessionStart(
-  ctx: ControlContext,
-  input: {
-    project_id: string;
-    workspace?: 'worktree' | 'in_place';
-    from?: { branch: string } | { session_id: string };
-  },
-): SessionCreatePreview & { source_branch?: string } {
+type SessionStartInput = {
+  project_id: string;
+  workspace?: 'worktree' | 'in_place';
+  from?: { branch: string } | { session_id: string };
+};
+
+/**
+ * The git runs that read a session's start point: one in the project root, or with a start in
+ * another session's worktree, the root's branch and that worktree's HEAD.
+ */
+function sessionStartRuns(ctx: ControlContext, input: SessionStartInput): [string, string[]][] {
   const project = ctx.store.must<Project>('projects', input.project_id),
     root = project.roots[0]!;
-  const branch = runGit(root, ['symbolic-ref', '--quiet', 'HEAD']);
-  const branchRef = branch.exit_code === 0 ? branch.stdout.toString().trim() : undefined;
-  let directory = root,
-    baseRef = branchRef ?? 'HEAD';
-  if (input.from) {
-    if ('branch' in input.from) baseRef = `refs/heads/${input.from.branch}`;
-    else {
-      const source = ctx.store.must<Session>('sessions', input.from.session_id);
-      requireThat(
-        source.project_id === project.id,
-        'invalid_input',
-        'Source session belongs to another project',
-      );
-      const workspace = source.workspace_id
-        ? ctx.store.must<Workspace>('workspaces', source.workspace_id)
-        : undefined;
-      requireThat(
-        workspace?.kind === 'linked_worktree' && workspaceReady(workspace),
-        'invalid_input',
-        'Source session has no ready worktree',
-      );
-      directory = workspace.path;
-      baseRef = 'HEAD';
-    }
+  if (input.from && 'session_id' in input.from) {
+    const source = ctx.store.must<Session>('sessions', input.from.session_id);
+    requireThat(
+      source.project_id === project.id,
+      'invalid_input',
+      'Source session belongs to another project',
+    );
+    const workspace = source.workspace_id
+      ? ctx.store.must<Workspace>('workspaces', source.workspace_id)
+      : undefined;
+    requireThat(
+      workspace?.kind === 'linked_worktree' && workspaceReady(workspace),
+      'invalid_input',
+      'Source session has no ready worktree',
+    );
+    return [
+      [root, ['symbolic-ref', '--quiet', 'HEAD']],
+      [workspace.path, ['rev-parse', '--verify', '--end-of-options', 'HEAD^{commit}']],
+    ];
   }
-  const head = runGit(
-    directory,
-    input.from && 'branch' in input.from
-      ? ['show-ref', '--verify', '--hash', baseRef]
-      : ['rev-parse', '--verify', '--end-of-options', `${baseRef}^{commit}`],
-  );
-  requireThat(head.exit_code === 0, 'invalid_input', 'Session start point could not be read');
-  const baseSha = head.stdout.toString().trim();
+  const start = input.from ? `refs/heads/${input.from.branch}` : 'HEAD';
+  // Prints the commit, then the checked-out branch or HEAD when detached; `--` keeps the start a revision.
+  return [[root, ['rev-parse', `${start}^{commit}`, '--symbolic-full-name', 'HEAD', '--']]];
+}
+
+function sessionStartOf(
+  input: SessionStartInput,
+  results: GitResult[],
+): SessionCreatePreview & { source_branch?: string } {
+  const [branch, head] = results.length === 2 ? results : [undefined, results[0]!];
+  requireThat(head!.exit_code === 0, 'invalid_input', 'Session start point could not be read');
+  const [baseSha, symbolic] = head!.stdout.toString().trim().split('\n') as [string, string?];
+  const branchRef = branch
+    ? branch.exit_code === 0
+      ? branch.stdout.toString().trim()
+      : undefined
+    : symbolic === 'HEAD'
+      ? undefined
+      : symbolic;
+  let baseRef = branchRef ?? 'HEAD';
+  if (branch) baseRef = baseSha;
+  else if (input.from && 'branch' in input.from) baseRef = `refs/heads/${input.from.branch}`;
   return {
     branch:
       input.workspace === 'in_place' ? (branchRef?.slice('refs/heads/'.length) ?? null) : null,
     base_sha: baseSha,
-    base_ref: directory === root ? baseRef : baseSha,
+    base_ref: baseRef,
     ...(branchRef ? { source_branch: branchRef.slice('refs/heads/'.length) } : {}),
   };
 }
 
-export function sessionCreatePreview(
+function sessionStart(
+  ctx: ControlContext,
+  input: SessionStartInput,
+): SessionCreatePreview & { source_branch?: string } {
+  return sessionStartOf(
+    input,
+    sessionStartRuns(ctx, input).map(([cwd, args]) => runGit(cwd, args)),
+  );
+}
+
+export async function sessionCreatePreview(
   ctx: ControlContext,
   p: Principal,
-  input: {
-    project_id: string;
-    workspace?: 'worktree' | 'in_place';
-    from?: { branch: string } | { session_id: string };
-  },
-): SessionCreatePreview {
+  input: SessionStartInput,
+): Promise<SessionCreatePreview> {
   projectAccess(ctx, p, input.project_id, 'project.read');
-  const { source_branch, ...preview } = sessionStart(ctx, input);
+  const runs = sessionStartRuns(ctx, input);
+  const { source_branch, ...preview } = sessionStartOf(
+    input,
+    await Promise.all(runs.map(([cwd, args]) => runGit(cwd, args, undefined, true))),
+  );
   return preview;
 }
 
@@ -3859,7 +4172,10 @@ export function openWorktreeSession(
   fork?: {
     source: Session;
     workspace: Workspace;
-    checkpoint?: string;
+    /** The fork's checkpoint ref, written already under the ids the workspace and session get. */
+    ref: string;
+    workspace_id: string;
+    session_id: string;
     before_turn_id?: string;
     before_span_id?: string;
     native_fork?: Session['native_fork'];
@@ -3937,7 +4253,8 @@ export function openWorktreeSession(
       `A session on device ${deviceId} cannot use a backend, whose key would reach the device command line`,
     );
   }
-  const start = input.workspace === 'in_place' ? undefined : sessionStart(ctx, input);
+  // A fork starts from its checkpoint and keeps the source's branch, so it reads no start point.
+  const start = input.workspace === 'in_place' || fork ? undefined : sessionStart(ctx, input);
   const registered =
     input.workspace === 'in_place'
       ? registerInPlaceWorkspace(ctx, { project_id: project.id, cwd: project.roots[0]! }, cause)
@@ -3947,11 +4264,12 @@ export function openWorktreeSession(
             project_id: project.id,
             kind: 'linked_worktree',
             source: fork ? fork.workspace.source! : project.roots[0]!,
-            base_ref: input.from ? start!.base_sha : start!.base_ref,
+            base_ref: fork ? `${fork.ref}^` : input.from ? start!.base_sha : start!.base_ref,
             name:
               name ??
               board?.task.title ??
               input.input.split('\n').find((line) => line.trim() !== ''),
+            ...(fork ? { id: fork.workspace_id } : {}),
           },
           cause,
         );
@@ -3962,25 +4280,18 @@ export function openWorktreeSession(
         registered.revision,
       )
     : registered;
-  const sessionId = id();
-  if (fork) {
-    const ref = checkpointRef(workspace, sessionId, 'fork');
-    forkCheckpoint(fork.workspace, ref, fork.checkpoint);
-    ctx.rollback?.push(() => {
-      const removed = runGit(workspace.source!, ['update-ref', '-d', ref]);
-      requireThat(removed.exit_code === 0, 'invalid_workspace', 'Fork checkpoint cleanup failed');
-    });
+  const sessionId = fork?.session_id ?? id();
+  if (fork)
     workspace = ctx.store.update(
       'workspaces',
       {
         ...workspace,
         source_branch: fork.workspace.source_branch,
         base_sha: fork.workspace.base_sha,
-        provisioning: { ...workspace.provisioning!, base_ref: `${ref}^`, checkpoint: ref },
+        provisioning: { ...workspace.provisioning!, checkpoint: fork.ref },
       },
       workspace.revision,
     );
-  }
   const workflow = board && taskWorkflow(ctx, board.plan, board.task.id);
   const session = insert<Session>(
     ctx,
@@ -4081,6 +4392,249 @@ function archiveSession(ctx: ControlContext, sessionId: string, cause?: string):
   return next;
 }
 
+/** session.fork's checks before git. */
+function forkRequest(ctx: ControlContext, p: Principal, c: Command) {
+  requireThat(p.role === 'user', 'permission_denied', 'Only user can fork a session');
+  const input = inputSchemas['session.fork'].parse(c.input),
+    source = ctx.store.must<Session>('sessions', input.session_id);
+  projectAccess(ctx, p, source.project_id, c.type);
+  revision(ctx, c);
+  const workspace = source.workspace_id
+    ? ctx.store.must<Workspace>('workspaces', source.workspace_id)
+    : undefined;
+  requireThat(
+    workspace?.kind === 'linked_worktree',
+    'invalid_state',
+    'Only a git worktree session can be forked',
+  );
+  let native_fork: Session['native_fork'];
+  if (input.before_span_id) {
+    requireThat(
+      (input.runtime ?? source.runtime) === source.runtime &&
+        sessionAdapter(ctx, source)?.report.capabilities.fork_within_turn?.status === 'supported',
+      'unsupported_capability',
+      `${source.runtime} does not support forks within a turn`,
+    );
+    const boundary = ctx.store
+      .kindEvents(source.project_id, ['agent.tool.started'])
+      .filter((event) => event.aggregate_id === source.id)
+      .map((event) => event.payload as AgentEvent)
+      .find(
+        (event) => event.kind === 'tool.started' && event.tool_call_id === input.before_span_id,
+      );
+    const span = ctx.trace
+      ?.lanes(source.project_id)
+      .find(({ lane }) => lane.session_id === source.id)
+      ?.spans.find((span) => span.id === input.before_span_id);
+    requireThat(boundary || span, 'invalid_input', 'Span does not belong to this session');
+    const after = span?.native_history_before ?? boundary?.native_history_before;
+    requireThat(
+      source.native_id && after,
+      'unsupported_capability',
+      'Span has no native history fork point',
+    );
+    native_fork = { session_id: source.native_id, after };
+  }
+  return { input, source, workspace, native_fork };
+}
+
+type ForkRequest = ReturnType<typeof forkRequest>;
+
+/** Whether the fork's start point is one of the source's checkpoints, which git lists. */
+const forkFromCheckpoint = ({ input, source }: ForkRequest) =>
+  input.before_turn_id !== undefined || (source.state === 'running' && !input.before_span_id);
+
+/** The commit of each of the source session's checkpoints by ref, in one read. */
+async function checkpointCommits({ source, workspace }: ForkRequest) {
+  const listed = await runGit(
+    workspace.path,
+    [
+      'for-each-ref',
+      '--format=%(refname) %(objectname)',
+      `${CHECKPOINTS}/${workspace.id}/${source.id}/`,
+    ],
+    undefined,
+    true,
+  );
+  return new Map(
+    listed.stdout
+      .toString()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.split(' ') as [string, string]),
+  );
+}
+
+/**
+ * The checkpoint commit the fork starts from, undefined for the current files, and the source turn
+ * it forks before; refs holds the source's checkpoint commits by ref.
+ */
+function forkPoint(
+  ctx: ControlContext,
+  { input, source, workspace }: ForkRequest,
+  refs: Map<string, string>,
+): { checkpoint?: string; before_turn_id?: string } {
+  let checkpoint: string | undefined;
+  let beforeTurnId = input.before_turn_id;
+  if (input.before_turn_id) {
+    const turn = ctx.store.get<SessionTurn>('session_turns', input.before_turn_id);
+    const found =
+      turn?.session_id === source.id
+        ? refs.get(checkpointRef(workspace, source.id, turn.id))
+        : undefined;
+    requireThat(found, 'invalid_state', 'Turn has no checkpoint');
+    checkpoint = found;
+  } else if (source.state === 'running' && !input.before_span_id) {
+    // The end of the last completed turn is the checkpoint the next turn took before it ran.
+    const turns = ctx.store
+      .list<SessionTurn>('session_turns')
+      .filter((turn) => turn.session_id === source.id && turn.kind === 'send');
+    const at = turns.findLastIndex((turn) => turn.state === 'completed' && !turn.rolled_back);
+    requireThat(
+      at !== -1,
+      'invalid_state',
+      'Source session has no completed turn to fork from yet',
+    );
+    const later = turns.slice(at + 1);
+    beforeTurnId = later[0]?.id;
+    // Without a later checkpoint no turn has run since, so the current files are that end.
+    const uncaptured = new Set(
+      ctx.store
+        .kindEvents(source.project_id, ['session.checkpoint_failed'])
+        .filter((event) => event.aggregate_id === source.id)
+        .map((event) => (event.payload as { turn_id: string }).turn_id),
+    );
+    for (const turn of later) {
+      const found = refs.get(checkpointRef(workspace, source.id, turn.id));
+      // A turn that ran without its checkpoint has changed the current files already.
+      requireThat(
+        found !== undefined || !uncaptured.has(turn.id),
+        'invalid_state',
+        'A later turn of the source session has no checkpoint; fork from an earlier turn',
+      );
+      if (found === undefined) continue;
+      checkpoint = found;
+      break;
+    }
+  } else {
+    requireThat(
+      source.state === 'open' &&
+        !source.stop_pending &&
+        !source.rollback_pending &&
+        source.merge?.state !== 'running',
+      'invalid_state',
+      'Source session must be idle to fork its current files',
+    );
+  }
+  return { checkpoint, before_turn_id: beforeTurnId };
+}
+
+/**
+ * Lists the source's checkpoints and freezes the fork's files under its ref outside the
+ * transaction, under the ids the fork's workspace and session then get.
+ */
+function prepareFork(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  const request = forkRequest(ctx, p, c);
+  const listed = forkFromCheckpoint(request);
+  // The current files need no checkpoint list, so their fork is refused at once.
+  if (!listed) forkPoint(ctx, request, new Map());
+  const ids = { workspace_id: id(), session_id: id() };
+  const ref = checkpointRef({ id: ids.workspace_id }, ids.session_id, 'fork');
+  return (async () => {
+    const refs = listed ? await checkpointCommits(request) : new Map<string, string>();
+    const point = forkPoint(ctx, request, refs);
+    await forkCheckpoint(request.workspace, ref, point.checkpoint);
+    return (ctx: ControlContext, p: Principal, c: Command) => {
+      ctx.rollback?.push(() => {
+        const removal: Promise<void> = runGit(
+          request.workspace.path,
+          ['update-ref', '-d', ref],
+          undefined,
+          true,
+        )
+          .then(() => undefined)
+          .finally(() => ctx.completions.delete(removal));
+        ctx.completions.add(removal);
+      });
+      const current = forkRequest(ctx, p, c);
+      const again = forkPoint(ctx, current, refs);
+      requireThat(
+        again.checkpoint === point.checkpoint && again.before_turn_id === point.before_turn_id,
+        'conflict',
+        'The source session moved while its files were frozen; fork it again',
+      );
+      return forkSession(ctx, c, current, again.before_turn_id, { ref, ...ids });
+    };
+  })();
+}
+
+function forkSession(
+  ctx: ControlContext,
+  c: Command,
+  { input, source, workspace, native_fork }: ForkRequest,
+  beforeTurnId: string | undefined,
+  frozen: { ref: string; workspace_id: string; session_id: string },
+): Session {
+  const moved = input.runtime !== undefined && input.runtime !== source.runtime;
+  const session = openWorktreeSession(
+    ctx,
+    {
+      project_id: source.project_id,
+      runtime: input.runtime ?? source.runtime,
+      backend: moved ? undefined : source.backend_id,
+      // Another runtime starts on its own defaults; an elevated mode does not carry over.
+      model: input.model ?? (moved ? undefined : source.requested_model),
+      effort: input.effort ?? (moved ? undefined : source.requested_effort),
+      permission_mode:
+        moved && ['auto', 'full_access'].includes(source.permission_mode ?? '')
+          ? 'ask'
+          : (source.permission_mode ?? 'ask'),
+      input: input.input,
+      attachments: input.attachments,
+      skills: input.skills,
+      refs: input.refs,
+    },
+    c.command_id,
+    {
+      source,
+      workspace,
+      ...frozen,
+      before_turn_id: beforeTurnId,
+      before_span_id: input.before_span_id,
+      native_fork,
+    },
+  );
+  ctx.store.event(
+    'session.forked',
+    session,
+    session.project_id,
+    {
+      source_session_id: source.id,
+      before_turn_id: beforeTurnId,
+      ...(input.before_span_id ? { before_span_id: input.before_span_id } : {}),
+    },
+    c.command_id,
+  );
+  return session;
+}
+
+/** The session commands whose git runs before their transaction, through prepareSessionCommand. */
+export const isPreparedSessionCommand = (type: string): boolean =>
+  type === 'session.merge' || type === 'session.fork' || type === 'session.gates.run';
+
+/**
+ * Refuses at once what the store refuses, then reads or writes the command's git outside the
+ * transaction; the returned handler checks again and records the command.
+ */
+export function prepareSessionCommand(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+): Promise<Handler> {
+  if (c.type === 'session.merge') return prepareMerge(ctx, p, c);
+  return c.type === 'session.fork' ? prepareFork(ctx, p, c) : prepareGateRun(ctx, p, c);
+}
+
 function commentSession(ctx: ControlContext, sessionId: string): Session {
   const session = ctx.store.must<Session>('sessions', sessionId);
   requireThat(session.state !== 'closed' && !session.outcome, 'invalid_state', 'Session has ended');
@@ -4152,156 +4706,6 @@ export const workbenchSessionHandlers: Handlers = {
     return input.task_id
       ? openUserTaskSession(ctx, input, cause)
       : openWorktreeSession(ctx, input, cause, undefined, p);
-  },
-  'session.fork': (ctx, p, c) => {
-    requireThat(p.role === 'user', 'permission_denied', 'Only user can fork a session');
-    const input = inputSchemas['session.fork'].parse(c.input),
-      source = ctx.store.must<Session>('sessions', input.session_id);
-    projectAccess(ctx, p, source.project_id, c.type);
-    revision(ctx, c);
-    const workspace = source.workspace_id
-      ? ctx.store.must<Workspace>('workspaces', source.workspace_id)
-      : undefined;
-    requireThat(
-      workspace?.kind === 'linked_worktree',
-      'invalid_state',
-      'Only a git worktree session can be forked',
-    );
-    let native_fork: Session['native_fork'];
-    if (input.before_span_id) {
-      requireThat(
-        (input.runtime ?? source.runtime) === source.runtime &&
-          sessionAdapter(ctx, source)?.report.capabilities.fork_within_turn?.status === 'supported',
-        'unsupported_capability',
-        `${source.runtime} does not support forks within a turn`,
-      );
-      const boundary = ctx.store
-        .kindEvents(source.project_id, ['agent.tool.started'])
-        .filter((event) => event.aggregate_id === source.id)
-        .map((event) => event.payload as AgentEvent)
-        .find(
-          (event) => event.kind === 'tool.started' && event.tool_call_id === input.before_span_id,
-        );
-      const span = ctx.trace
-        ?.lanes(source.project_id)
-        .find(({ lane }) => lane.session_id === source.id)
-        ?.spans.find((span) => span.id === input.before_span_id);
-      requireThat(boundary || span, 'invalid_input', 'Span does not belong to this session');
-      const after = span?.native_history_before ?? boundary?.native_history_before;
-      requireThat(
-        source.native_id && after,
-        'unsupported_capability',
-        'Span has no native history fork point',
-      );
-      native_fork = { session_id: source.native_id, after };
-    }
-    let checkpoint: string | undefined;
-    let beforeTurnId = input.before_turn_id;
-    // The commit of each of the source session's checkpoints by ref, in one read.
-    const checkpoints = () =>
-      new Map(
-        runGit(workspace.path, [
-          'for-each-ref',
-          '--format=%(refname) %(objectname)',
-          `${CHECKPOINTS}/${workspace.id}/${source.id}/`,
-        ])
-          .stdout.toString()
-          .split('\n')
-          .filter(Boolean)
-          .map((line) => line.split(' ') as [string, string]),
-      );
-    if (input.before_turn_id) {
-      const turn = ctx.store.get<SessionTurn>('session_turns', input.before_turn_id);
-      const found =
-        turn?.session_id === source.id
-          ? checkpoints().get(checkpointRef(workspace, source.id, turn.id))
-          : undefined;
-      requireThat(found, 'invalid_state', 'Turn has no checkpoint');
-      checkpoint = found;
-    } else if (source.state === 'running' && !input.before_span_id) {
-      // The end of the last completed turn is the checkpoint the next turn took before it ran.
-      const turns = ctx.store
-        .list<SessionTurn>('session_turns')
-        .filter((turn) => turn.session_id === source.id && turn.kind === 'send');
-      const at = turns.findLastIndex((turn) => turn.state === 'completed' && !turn.rolled_back);
-      requireThat(
-        at !== -1,
-        'invalid_state',
-        'Source session has no completed turn to fork from yet',
-      );
-      const later = turns.slice(at + 1);
-      beforeTurnId = later[0]?.id;
-      // Without a later checkpoint no turn has run since, so the current files are that end.
-      const uncaptured = new Set(
-        ctx.store
-          .kindEvents(source.project_id, ['session.checkpoint_failed'])
-          .filter((event) => event.aggregate_id === source.id)
-          .map((event) => (event.payload as { turn_id: string }).turn_id),
-      );
-      let refs: Map<string, string> | undefined;
-      for (const turn of later) {
-        const found = (refs ??= checkpoints()).get(checkpointRef(workspace, source.id, turn.id));
-        // A turn that ran without its checkpoint has changed the current files already.
-        requireThat(
-          found !== undefined || !uncaptured.has(turn.id),
-          'invalid_state',
-          'A later turn of the source session has no checkpoint; fork from an earlier turn',
-        );
-        if (found === undefined) continue;
-        checkpoint = found;
-        break;
-      }
-    } else {
-      requireThat(
-        source.state === 'open' &&
-          !source.stop_pending &&
-          !source.rollback_pending &&
-          source.merge?.state !== 'running',
-        'invalid_state',
-        'Source session must be idle to fork its current files',
-      );
-    }
-    const moved = input.runtime !== undefined && input.runtime !== source.runtime;
-    const session = openWorktreeSession(
-      ctx,
-      {
-        project_id: source.project_id,
-        runtime: input.runtime ?? source.runtime,
-        backend: moved ? undefined : source.backend_id,
-        // Another runtime starts on its own defaults; an elevated mode does not carry over.
-        model: input.model ?? (moved ? undefined : source.requested_model),
-        effort: input.effort ?? (moved ? undefined : source.requested_effort),
-        permission_mode:
-          moved && ['auto', 'full_access'].includes(source.permission_mode ?? '')
-            ? 'ask'
-            : (source.permission_mode ?? 'ask'),
-        input: input.input,
-        attachments: input.attachments,
-        skills: input.skills,
-        refs: input.refs,
-      },
-      c.command_id,
-      {
-        source,
-        workspace,
-        checkpoint,
-        before_turn_id: beforeTurnId,
-        before_span_id: input.before_span_id,
-        native_fork,
-      },
-    );
-    ctx.store.event(
-      'session.forked',
-      session,
-      session.project_id,
-      {
-        source_session_id: source.id,
-        before_turn_id: beforeTurnId,
-        ...(input.before_span_id ? { before_span_id: input.before_span_id } : {}),
-      },
-      c.command_id,
-    );
-    return session;
   },
   'session.rename': (ctx, p, c) => {
     requireThat(p.role === 'user', 'permission_denied', 'Only user can rename a session');
@@ -4530,155 +4934,6 @@ export const workbenchSessionHandlers: Handlers = {
       });
     ctx.completions.add(completion);
     return session;
-  },
-  'session.merge': (ctx, p, c) => {
-    const input = inputSchemas['session.merge'].parse(c.input);
-    if (p.role === 'lead') return leadTaskMerge(ctx, p, input, c.command_id);
-    requireThat(p.role === 'user', 'permission_denied', 'Only user can merge a session');
-    requireThat(
-      input.session_id && !input.task_id && !input.reason,
-      'invalid_request',
-      'Name the session to merge',
-    );
-    const cause = c.command_id,
-      session = ctx.store.must<Session>('sessions', input.session_id);
-    projectAccess(ctx, p, session.project_id, c.type);
-    requireThat(
-      session.workspace_id && !session.outcome,
-      'invalid_state',
-      'Only an unfinished worktree session can be merged',
-    );
-    refuseInPlace(ctx, session, NO_MERGE_GATE);
-    revision(ctx, c, session);
-    return admitMerge(ctx, session, cause, input.allow_out_of_scope);
-  },
-  'session.gates.run': (ctx, p, c) => {
-    requireThat(p.role === 'user', 'permission_denied', 'Only user can run the session gates');
-    const cause = c.command_id,
-      input = inputSchemas['session.gates.run'].parse(c.input),
-      session = ctx.store.must<Session>('sessions', input.session_id);
-    projectAccess(ctx, p, session.project_id, c.type);
-    requireThat(
-      session.workspace_id && !session.outcome,
-      'invalid_state',
-      'Only an unfinished worktree session can run its gates',
-    );
-    refuseInPlace(ctx, session, NO_MERGE_GATE);
-    revision(ctx, c, session);
-    requireThat(session.merge?.state !== 'running', 'invalid_state', 'Session is being merged');
-    const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id);
-    requireThat(workspaceReady(workspace), 'invalid_state', 'Worktree is not ready');
-    const configured = gateCommands(
-      ctx,
-      ctx.store.must<Project>('projects', session.project_id),
-      workspace,
-      session,
-    );
-    requireThat(
-      configured?.length,
-      'invalid_state',
-      'No gate or acceptance commands are configured',
-    );
-    const inWorktree = workflowPolicy(ctx, session.project_id).gate_runner === 'session';
-    requireThat(
-      !inWorktree || !onDevice(session),
-      'unsupported_capability',
-      'Remote session gates cannot return bounded command exit codes',
-    );
-    // A turn's edits in the live worktree would fail the gate command that ran beside them.
-    requireThat(
-      !inWorktree || (session.state !== 'running' && !nativeTurnActive(ctx, session)),
-      'invalid_state',
-      'Run the session gates between turns',
-    );
-    let commands = configured;
-    const running = runningGates(ctx);
-    requireThat(
-      !running.has(session.id) && !gateOperationActive(session),
-      'resource_busy',
-      'The session gates are already running',
-    );
-    const head = runGit(workspace.path, ['rev-parse', '--verify', 'HEAD^{commit}']);
-    requireThat(head.exit_code === 0, 'workspace_read_failed', 'Worktree HEAD could not be read');
-    let previous: NonNullable<LandingItem['gate_results']> = [];
-    if (input.only_failed) {
-      const events = ctx.store
-        .kindEvents(session.project_id, ['session.gate_started', 'session.gate_checked'])
-        .filter((event) => event.aggregate_id === session.id);
-      const checked = events.findLast((event) => event.kind === 'session.gate_checked');
-      requireThat(checked, 'gate_retry_unavailable', 'No previous gate run to retry');
-      const payload = checked.payload as { commit: string; results: typeof previous };
-      requireThat(
-        payload.commit === head.stdout.toString().trim() && mergeWorktreeState(workspace).clean,
-        'gate_retry_unavailable',
-        'Retrying failed gates requires the same HEAD and a clean worktree',
-      );
-      requireThat(
-        payload.results.some(gateFailed),
-        'gate_retry_unavailable',
-        'The previous gate run has no failed steps',
-      );
-      const previousChecked = events.findLast(
-        (event) => event.kind === 'session.gate_checked' && event.sequence < checked.sequence,
-      );
-      const started = events.findLast(
-        (event) =>
-          event.kind === 'session.gate_started' &&
-          event.sequence < checked.sequence &&
-          event.sequence > (previousChecked?.sequence ?? 0),
-      );
-      commands =
-        (started?.payload as { commands?: typeof commands } | undefined)?.commands ?? commands;
-      previous = payload.results;
-    }
-    const runId = id();
-    const next = ctx.store.update(
-      'sessions',
-      {
-        ...session,
-        gate_run: { id: runId, state: 'running' as const, started_at: ctx.store.now() },
-      },
-      session.revision,
-    );
-    ctx.store.event(
-      'session.gate_run_requested',
-      next,
-      next.project_id,
-      { run_id: runId, commands },
-      cause,
-    );
-    running.add(session.id);
-    const committed = afterCommit(ctx);
-    const completion = Promise.resolve()
-      .then(() =>
-        committed()
-          ? checkGates(
-              ctx,
-              sessionOwner(ctx, next, runId),
-              workspace,
-              workspace.source ?? workspace.path,
-              commands,
-              head.stdout.toString().trim(),
-              previous,
-            )
-          : undefined,
-      )
-      .then(() => {
-        if (committed()) finishGateRun(ctx, session.id, runId);
-      })
-      .catch((error: unknown) => {
-        if (committed()) finishGateRun(ctx, session.id, runId, error);
-      })
-      .finally(() => {
-        running.delete(session.id);
-        const turnId = mergesAfterGates(ctx).get(session.id);
-        mergesAfterGates(ctx).delete(session.id);
-        if (turnId && committed() && !ctx.closing) autoMergeAfterTurn(ctx, session.id, turnId);
-        ctx.completions.delete(completion);
-        if (!ctx.closing) ctx.changed();
-      });
-    ctx.completions.add(completion);
-    return next;
   },
   'session.gates.cancel': (ctx, p, c) => {
     requireThat(
@@ -5258,7 +5513,7 @@ export async function projectHead(
   projectAccess(ctx, p, projectId, 'project.read');
   const root = ctx.store.must<Project>('projects', projectId).roots[0]!;
   const [status, head] = await Promise.all([
-    runGit(root, BRANCH_STATUS, undefined, true).then(branchStatus),
+    readStatus(root, BRANCH_STATUS).then(branchStatus),
     runGit(root, ['log', '-1', '--format=%H%x00%s%x00%ct'], undefined, true),
   ]);
   requireThat(

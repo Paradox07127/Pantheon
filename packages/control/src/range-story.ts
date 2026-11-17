@@ -9,14 +9,15 @@ import {
   type SessionTurn,
   type StoryResult,
 } from '@pantheon/domain';
-import { inputSchemas } from '@pantheon/protocol';
+import { inputSchemas, type Command } from '@pantheon/protocol';
 import {
-  gitFolder,
+  gitFolderAsync,
   projectAccess,
   revision,
   userOnly,
   type ControlContext,
   type Handlers,
+  type Preparers,
 } from './context.js';
 import { runtime } from './admission.js';
 import { sessionEnded, STORY_WALL_TIME_MS } from './change-story.js';
@@ -67,7 +68,7 @@ function rangeMerges(ctx: ControlContext, projectId: string, from: number, to: n
 }
 
 /** One main-line commit in the range, with what the brief says about it. */
-interface RangeCommit {
+export interface RangeCommit {
   sha: string;
   /** Committer time; the range is matched on it. */
   at: number;
@@ -76,27 +77,50 @@ interface RangeCommit {
   files: number;
 }
 
-/** Main-line (first-parent) commits of HEAD in each git root committed in [from, to), newest first. */
-function rangeCommits(project: Project, from: number, to: number): RangeCommit[] {
+/**
+ * Main-line (first-parent) commits of HEAD in each git root committed in [from, to), newest first;
+ * none when the range has merges, which the story tells instead.
+ */
+export async function rangeCommits(
+  ctx: ControlContext,
+  project: Project,
+  from: number,
+  to: number,
+): Promise<RangeCommit[]> {
+  if (rangeMerges(ctx, project.id, from, to).length > 0) return [];
+  const git = await Promise.all(project.roots.map(gitFolderAsync));
+  const logs = await Promise.all(
+    project.roots
+      .filter((_, index) => git[index])
+      .map(async (root) => {
+        // A HEAD without a commit lists nothing.
+        const log = await runGit(
+          root,
+          [
+            'log',
+            '--first-parent',
+            '--ignore-missing',
+            `--since=@${Math.floor(from / 1000)}`,
+            `--until=@${Math.ceil(to / 1000)}`,
+            '--name-only',
+            '--diff-merges=first-parent',
+            '--format=%x1e%h%x1f%ct%x1f%at%x1f%s',
+            'HEAD',
+            '--',
+          ],
+          undefined,
+          true,
+        );
+        requireThat(
+          log.exit_code === 0,
+          'git_failed',
+          `Cannot read commits in ${root}: ${log.error ?? log.stderr.toString()}`,
+        );
+        return log;
+      }),
+  );
   const commits: RangeCommit[] = [];
-  for (const root of project.roots.filter(gitFolder)) {
-    if (runGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD']).exit_code !== 0) continue;
-    const log = runGit(root, [
-      'log',
-      '--first-parent',
-      `--since=@${Math.floor(from / 1000)}`,
-      `--until=@${Math.ceil(to / 1000)}`,
-      '--name-only',
-      '--diff-merges=first-parent',
-      '--format=%x1e%h%x1f%ct%x1f%at%x1f%s',
-      'HEAD',
-      '--',
-    ]);
-    requireThat(
-      log.exit_code === 0,
-      'git_failed',
-      `Cannot read commits in ${root}: ${log.error ?? log.stderr.toString()}`,
-    );
+  for (const log of logs) {
     for (const entry of log.stdout.toString().split('\x1e').slice(1)) {
       const [header, ...files] = entry.split('\n');
       const [sha, at, authored, subject] = header!.split('\x1f');
@@ -211,16 +235,20 @@ export function rangeStoryList(ctx: ControlContext, p: Principal, projectId: str
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
-/** Starts a story of the range's merges, or of its main-line commits when nothing was merged. */
+/**
+ * Starts a story of the range's merges, or of its main-line commits, read with rangeCommits, when
+ * nothing was merged.
+ */
 export function startRangeStory(
   ctx: ControlContext,
   project: Project,
   from: number,
   to: number,
   cause: string,
+  mainLine: RangeCommit[],
 ): RangeStory {
   const merges = rangeMerges(ctx, project.id, from, to);
-  const commits = merges.length > 0 ? [] : rangeCommits(project, from, to);
+  const commits = merges.length > 0 ? [] : mainLine;
   requireThat(
     merges.length > 0 || commits.length > 0,
     'invalid_input',
@@ -256,15 +284,26 @@ export function startRangeStory(
   return story;
 }
 
-export const rangeStoryHandlers: Handlers = {
-  'range_story.start': (ctx, p, c) => {
-    userOnly(p);
-    const input = inputSchemas['range_story.start'].parse(c.input);
-    revision(ctx, c);
-    projectAccess(ctx, p, input.project_id, c.type);
-    const project = ctx.store.must<Project>('projects', input.project_id);
-    return startRangeStory(ctx, project, input.from, input.to, c.command_id);
+function startTarget(ctx: ControlContext, p: Principal, c: Command) {
+  userOnly(p);
+  const input = inputSchemas['range_story.start'].parse(c.input);
+  revision(ctx, c);
+  projectAccess(ctx, p, input.project_id, c.type);
+  return { input, project: ctx.store.must<Project>('projects', input.project_id) };
+}
+
+export const rangeStoryPreparers: Preparers = {
+  'range_story.start': async (ctx, p, c) => {
+    const { input, project } = startTarget(ctx, p, c);
+    const commits = await rangeCommits(ctx, project, input.from, input.to);
+    return (ctx, p, c) => {
+      const { input, project } = startTarget(ctx, p, c);
+      return startRangeStory(ctx, project, input.from, input.to, c.command_id, commits);
+    };
   },
+};
+
+export const rangeStoryHandlers: Handlers = {
   'range_story.submit': (ctx, p, c) => {
     const input = inputSchemas['range_story.submit'].parse(c.input);
     revision(ctx, c);

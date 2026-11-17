@@ -17,14 +17,14 @@ vi.mock('node:fs', async (original) => {
   return { ...fs, default: fs };
 });
 
-it('measures only the directory entries it returns', () => {
+it('measures only the directory entries it returns', async () => {
   const f = workbenchFixture();
   const many = path.join(f.source, 'many');
   mkdirSync(many);
   for (let index = 0; index < 3000; index++)
     writeFileSync(path.join(many, `${String(index).padStart(4, '0')}.txt`), 'x');
   stats.paths.length = 0;
-  const listed = f.control.filesList(user, f.project.id, undefined, 'many');
+  const listed = await f.control.filesList(user, f.project.id, undefined, 'many');
   expect(listed.entries).toHaveLength(1000);
   expect(listed.entries[999]).toEqual({ name: '0999.txt', kind: 'file', size: 1 });
   expect(listed.truncated).toBe(true);

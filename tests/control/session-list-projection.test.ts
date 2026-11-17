@@ -8,7 +8,7 @@ import {
   type SessionTurn,
   type Workspace,
 } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -264,6 +264,8 @@ it('lists a clean worktree whose commits change no file as ready', async () => {
   const session = await idleSession(f);
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   git(workspace.path, 'commit', '--quiet', '--allow-empty', '-m', 'Empty commit');
+  waitOutStatusReuse();
+  await f.prefetch();
   expect(listed(f, session.id)).toMatchObject({
     state: 'ready',
     changes: { files: 0, additions: 0, deletions: 0 },
@@ -311,7 +313,7 @@ it('shows a gate run that is still checking as running', async () => {
   const f = workbenchFixture();
   const session = await idleSession(f);
   setGate(f);
-  f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
+  await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
   expect(listed(f, session.id).gate).toEqual({
     state: 'running',
     passed: 0,
@@ -359,6 +361,8 @@ it('marks the gate stale once the worktree head left the commit the run checked'
   expect(listed(f, session.id).gate).toMatchObject({ state: 'passed' });
   const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   git(workspace.path, 'commit', '--quiet', '--allow-empty', '-m', 'Commit outside a turn');
+  waitOutStatusReuse();
+  await f.prefetch();
   expect(listed(f, session.id).gate).toEqual({
     state: 'stale',
     passed: 1,

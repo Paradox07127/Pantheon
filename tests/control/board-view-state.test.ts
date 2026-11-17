@@ -204,7 +204,7 @@ it('shows a task whose merge is blocked, or whose session is reconciling, as blo
   const lead = await leadWithPlan(f, [task('a'), task('b')]);
   const blocked = await settledTask(f, lead.id, 'a');
   commit(f, blocked, 'README.md');
-  merge(f, blocked.id);
+  await merge(f, blocked.id);
   await eventually(
     () => current(f, blocked.id).merge?.state === 'blocked',
     () => f.control.tick(),
@@ -214,6 +214,7 @@ it('shows a task whose merge is blocked, or whose session is reconciling, as blo
   expect(rowOf(f, lead.id, 'a').state).toBe('blocked');
 
   const reconciling = await settledTask(f, lead.id, 'b');
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(rowOf(f, lead.id, 'b').state).toBe('needs_attention');
   patch(f, reconciling.id, { state: 'reconciling' });
   expect(rowOf(f, lead.id, 'b').state).toBe('blocked');
@@ -224,6 +225,7 @@ it('shows a task whose turn completed and whose session is ready but not merged 
   const lead = await leadWithPlan(f, [task('a')]);
   const session = await settledTask(f, lead.id, 'a');
   commit(f, session, 'src/a/x.ts');
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(rowOf(f, lead.id, 'a')).toMatchObject({ state: 'awaiting_merge', status: 'ready' });
   expect(
     f.control.boardHistory(user, f.project.id).tasks.find((row) => row.id === `${lead.id}:a`)!
@@ -249,9 +251,11 @@ it('shows a task whose turn ended with no commit, or failed, as needing attentio
     task('b', { goal: script({ fail: 'The build broke' }) }),
   ]);
   await settledTask(f, lead.id, 'a');
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(rowOf(f, lead.id, 'a').state).toBe('needs_attention');
   const failing = await settledTask(f, lead.id, 'b');
   expect(f.turns(failing.id).map((turn) => turn.state)).toEqual(['failed']);
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(rowOf(f, lead.id, 'b').state).toBe('needs_attention');
 });
 
@@ -275,6 +279,7 @@ it('shows a parallel task whose workers all ended with nothing to merge as needi
   const workers = sessionsOf(f, lead.id, 'p');
   expect(workers).toHaveLength(2);
   for (const worker of workers) await settle(f, worker);
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(rowOf(f, lead.id, 'p').state).toBe('needs_attention');
 });
 
@@ -294,7 +299,7 @@ it.skipIf(insideSandbox)(
     const lead = await leadWithPlan(f, [task('a', { acceptance: ['true'] })]);
     const session = await settledTask(f, lead.id, 'a');
     commit(f, session, 'src/a/x.ts');
-    merge(f, session.id);
+    await merge(f, session.id);
     expect(rowOf(f, lead.id, 'a').state).toBe('gating');
     expect(rowOf(f, lead.id, 'a').retrospective).toBeUndefined();
     await eventually(
@@ -397,7 +402,7 @@ it.skipIf(insideSandbox)(
     });
 
     commit(f, lead, 'src/a.ts');
-    f.call(
+    await f.call(
       'task.report',
       { project_id: f.project.id, kind: 'done', text: 'Task a is done' },
       null,
@@ -420,7 +425,7 @@ it.skipIf(insideSandbox)(
     });
 
     writeFileSync(fixed, '');
-    merge(f, lead.id);
+    await merge(f, lead.id);
     await eventually(
       () => planOf(f, lead.id).direct_merged?.a !== undefined,
       () => f.control.tick(),
@@ -435,7 +440,7 @@ it('shows an accepted report task as merged, done by its acceptance', async () =
   const f = workbenchFixture();
   const lead = await leadWithPlan(f, [reportTask('a')]);
   const worker = await settledTask(f, lead.id, 'a');
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'Task a is answered' },
     null,
@@ -462,7 +467,7 @@ it('shows a report task whose session reported done as awaiting acceptance until
       null,
       sessionOf(f, sessionId, 'worker'),
     );
-  reportDone(worker.id, 'Task a is answered');
+  await reportDone(worker.id, 'Task a is answered');
   await settle(f, current(f, lead.id));
   expect(rowOf(f, lead.id, 'a').state).toBe('awaiting_acceptance');
   f.call(
@@ -483,8 +488,9 @@ it('shows a report task whose session reported done as awaiting acceptance until
   expect(rowOf(f, lead.id, 'a')).toMatchObject({ state: 'merged', done_by: 'accepted' });
 
   const merging = await settledTask(f, lead.id, 'b');
-  reportDone(merging.id, 'Task b is done');
+  await reportDone(merging.id, 'Task b is done');
   await settle(f, current(f, lead.id));
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(rowOf(f, lead.id, 'b').state).toBe('needs_attention');
 });
 
@@ -498,7 +504,7 @@ const dayKey = (at: number) => {
 /** Starts the report task, has its worker report done and the lead accept it. */
 async function acceptedReportTask(f: Fixture, leadId: string, taskId: string) {
   const worker = await settledTask(f, leadId, taskId);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: `Task ${taskId} is answered` },
     null,

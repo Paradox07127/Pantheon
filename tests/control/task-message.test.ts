@@ -428,7 +428,7 @@ it('confirms the new contract generation only with its delivery receipt and keep
   const send = f.adapter.send.bind(f.adapter);
   vi.spyOn(f.adapter, 'send').mockImplementationOnce(async (handle, turn) => {
     const accepted = await send(handle, turn);
-    f.call(
+    await f.call(
       'task.report',
       { project_id: f.project.id, kind: 'done', text: 'JSON export is ready' },
       null,
@@ -510,7 +510,7 @@ it("keeps a running task session on its old contract when the lead's message wai
   expect(current(f, worker.id).task?.generation ?? 1).toBe(1);
   expect(planOf(f, lead.id).contract_changed).toEqual([worker.id]);
 
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'CSV export works' },
     null,

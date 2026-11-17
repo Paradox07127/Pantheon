@@ -652,24 +652,36 @@ export async function deviceTurn(
   return { ...turn, attachments };
 }
 
-/** Deletes the device's copy of a removed worktree and the refs its sync left on both sides. */
-export function removeRemoteWorkspace(ctx: ControlContext, workspace: Workspace): void {
+/** The device session that worked in a worktree, if one did. */
+function deviceOwner(ctx: ControlContext, workspace: Workspace): Session | undefined {
   const isOwner = (entry: Session) => entry.workspace_id === workspace.id && onDevice(entry);
   // A deleted session's row may be gone before its worktree is removed; its opening event stays.
-  const session =
+  return (
     ctx.store.list<Session>('sessions').find(isOwner) ??
     ctx.store
       .kindEvents(workspace.project_id, ['session.opened'])
       .map((event) => event.payload as Session)
-      .find(isOwner);
-  if (!session) return;
-  ctx.toolRelays.get(session.id)?.();
-  ctx.toolRelays.delete(session.id);
-  runGit(
+      .find(isOwner)
+  );
+}
+
+/** Deletes the refs a device session's sync left in the source repository; call it outside a transaction. */
+export async function deleteSyncRefs(ctx: ControlContext, workspace: Workspace): Promise<void> {
+  if (!deviceOwner(ctx, workspace)) return;
+  await runGit(
     workspace.source!,
     ['update-ref', '--stdin'],
     Buffer.from(SYNC_REFS.map((name) => `delete ${syncRef(workspace, name)}\n`).join('')),
+    true,
   );
+}
+
+/** Deletes the device's copy of a removed worktree and the refs its sync left there. */
+export function removeRemoteWorkspace(ctx: ControlContext, workspace: Workspace): void {
+  const session = deviceOwner(ctx, workspace);
+  if (!session) return;
+  ctx.toolRelays.get(session.id)?.();
+  ctx.toolRelays.delete(session.id);
   const device = ctx.devices?.get(session.device_id!);
   if (!device?.online) return;
   // Only this machine has no ssh target, and it runs no device session.

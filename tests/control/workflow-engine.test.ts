@@ -248,7 +248,7 @@ it('checks the condition of an after-merge step against the files a direct task 
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'exported\n');
   git(workspace.path, 'add', 'answer.txt');
   git(workspace.path, 'commit', '--quiet', '-m', 'Export the report');
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'The export is done' },
     null,
@@ -545,14 +545,14 @@ it('uses the definition tiers for plan review and the pinned review round limit'
     round: 1,
   });
   define(f, empty());
-  expect(() =>
+  await expect(
     f.call(
       'review.request',
       { session_id: worker.id, runtimes: [reviewer.name] },
       null,
       principal(f, lead.id),
     ),
-  ).toThrowError(
+  ).rejects.toThrowError(
     expect.objectContaining({
       code: 'invalid_state',
       message: expect.stringContaining('at most 1'),
@@ -618,9 +618,9 @@ it('uses the project review limit for sessions outside a plan task', async () =>
     findings: [],
     round: 1,
   });
-  expect(() =>
+  await expect(
     f.call('review.request', { session_id: lead.id, runtimes: [reviewer.name] }),
-  ).toThrowError(
+  ).rejects.toThrowError(
     expect.objectContaining({
       code: 'invalid_state',
       message: expect.stringContaining('at most 1'),

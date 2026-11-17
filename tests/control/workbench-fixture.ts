@@ -155,6 +155,13 @@ export function workbenchFixture(
   const turns = (sessionId: string) =>
     store.list<SessionTurn>('session_turns').filter((turn) => turn.session_id === sessionId);
   const list = () => control.sessionList(user, project.id);
+  /** Reads the worktrees the list shows into its cache, with the reads that only aged out. */
+  const prefetch = async () => {
+    const { completions } = control['ctx'],
+      running = new Set(completions);
+    await control.prefetchWorktreeReads(user, project.id);
+    await Promise.all([...completions].filter((each) => !running.has(each)));
+  };
   /** Opens a new Control on the same database and leaves the old one running, as after a daemon crash. */
   const restart = async (readProcess?: (pid: number) => ProcessIdentity | undefined) => {
     control = new Control(store, files, [...control.adapters.values()], undefined, {
@@ -220,6 +227,7 @@ export function workbenchFixture(
     adopt,
     turns,
     list,
+    prefetch,
   };
 }
 

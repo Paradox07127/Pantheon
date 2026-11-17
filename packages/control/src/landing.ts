@@ -21,7 +21,7 @@ import {
   runValidationCommand,
   type ValidationResult,
 } from './validation-executor.js';
-import { runGit } from './git.js';
+import { retryingIndexLock, runGit } from './git.js';
 import { segments } from './task-dispatch.js';
 import { retiredBinding, taskGeneration, sessionPlanTask } from './board-plan.js';
 import { workflowPolicy } from './workflow-policy.js';
@@ -791,12 +791,17 @@ export async function landWorkspace(
       gate_argv: gateKey(ctx, owner.projectId, commands),
     });
     if (owner.beforeLand && !owner.beforeLand()) return;
-    const merge = await runGit(
-      item.source,
-      ['merge', '--ff-only', '--no-overwrite-ignore', '--no-autostash', '--', target],
-      undefined,
-      true,
-      { env: sourceEnv },
+    const fastForward = [
+      'merge',
+      '--ff-only',
+      '--no-overwrite-ignore',
+      '--no-autostash',
+      '--',
+      target,
+    ];
+    const merge = await retryingIndexLock(
+      () => runGit(item.source, fastForward, undefined, true, { env: sourceEnv }),
+      (result) => (result.exit_code === 0 ? '' : result.stderr.toString()),
     );
     if (merge.exit_code !== 0) {
       if (

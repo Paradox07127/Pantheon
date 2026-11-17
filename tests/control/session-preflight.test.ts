@@ -3,7 +3,13 @@ import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import * as gitCommands from '../../packages/control/dist/git.js';
 import { hash, type Project, type Session } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, insideSandbox, user } from '../helpers.js';
+import {
+  awaitWorkspaceReady,
+  eventually,
+  insideSandbox,
+  user,
+  waitOutStatusReuse,
+} from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -106,6 +112,7 @@ it('blocks edited tracked files in the source folder but not untracked ones', as
     can_merge: true,
   });
   writeFileSync(path.join(f.source, 'answer.txt'), 'edited in the source folder\n');
+  waitOutStatusReuse();
   expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     target_branch: 'main',
     source_root: f.source,
@@ -142,6 +149,7 @@ it('blocks a source repository that checked out another branch than the session 
     blocked_reason: 'target_branch_changed',
   });
   git(f.source, 'checkout', '--quiet', 'main');
+  waitOutStatusReuse();
   expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     target_branch: 'main',
     can_merge: true,
@@ -159,10 +167,10 @@ it('refuses to queue a merge into a dirty or detached source repository', async 
       f.store.must<Session>('sessions', session.id).revision,
     );
   writeFileSync(path.join(f.source, 'answer.txt'), 'edited in the source folder\n');
-  expect(merge).toThrow(expect.objectContaining({ code: 'source_dirty' }));
+  await expect(merge()).rejects.toThrow(expect.objectContaining({ code: 'source_dirty' }));
   git(f.source, 'checkout', '--quiet', '--', 'answer.txt');
   git(f.source, 'checkout', '--quiet', '--detach', 'HEAD');
-  expect(merge).toThrow(expect.objectContaining({ code: 'source_detached' }));
+  await expect(merge()).rejects.toThrow(expect.objectContaining({ code: 'source_detached' }));
   expect(f.store.must<Session>('sessions', session.id).merge).toBeUndefined();
 });
 
@@ -256,7 +264,7 @@ it.skipIf(insideSandbox)(
     const { session, workspace } = await idleSession(f);
     setGate(f);
     commit(workspace.path, 'answer.txt', 'checked\n');
-    f.call('session.gates.run', { session_id: session.id }, session.revision);
+    await f.call('session.gates.run', { session_id: session.id }, session.revision);
     await eventually(
       () => !f.control.sessionGates(user, session.id).running,
       () => f.control.tick(),
@@ -300,7 +308,7 @@ it('blocks a session while its gates are running', async () => {
   const f = workbenchFixture();
   const { session } = await idleSession(f);
   setGate(f);
-  f.call('session.gates.run', { session_id: session.id }, session.revision);
+  await f.call('session.gates.run', { session_id: session.id }, session.revision);
   expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
     can_merge: false,
     blocked_reason: 'resource_busy',

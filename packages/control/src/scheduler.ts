@@ -12,7 +12,7 @@ import {
   type PermissionAnswer,
 } from './approvals.js';
 import { removeWorkspace } from './workspace-removal.js';
-import { mergeSession, rollbackTransaction } from './workbench-session.js';
+import { autoMergesRead, mergeSession, rollbackTransaction } from './workbench-session.js';
 import { removeReviewDirectories } from './review-removal.js';
 import { startWorkspaceProvisioning } from './provisioning.js';
 import { tickChangeStories } from './change-story.js';
@@ -27,6 +27,8 @@ export async function tick(ctx: ControlContext): Promise<void> {
   ctx.busy = true;
   try {
     await stopConversations(ctx);
+    // The tracker and the merge jobs see the merges turns that ended have admitted.
+    await autoMergesRead(ctx);
     ctx.store.transaction(() => tickProjectBaselines(ctx));
     ctx.store.transaction(() => tickChangeStories(ctx));
     ctx.store.transaction(() => tickRangeStories(ctx));

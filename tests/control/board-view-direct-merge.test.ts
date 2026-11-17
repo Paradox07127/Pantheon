@@ -64,7 +64,7 @@ async function landDirect(f: Fixture, leadId: string, taskId: string, worktree: 
   writeFileSync(path.join(worktree, 'src', `${taskId}.ts`), `export const ${taskId} = 1;\n`);
   git(worktree, 'add', '--', `src/${taskId}.ts`);
   git(worktree, 'commit', '--quiet', '-m', `Add ${taskId}`);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'The task is done' },
     null,

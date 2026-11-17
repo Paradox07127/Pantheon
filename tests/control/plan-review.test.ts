@@ -371,7 +371,7 @@ it('leaves a done high-risk task out of the plan review', async () => {
   await f.control.tick();
   const [session] = sessionsOf(f, lead.id, 'risky');
   await settle(f, session!);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'Task risky is answered' },
     null,

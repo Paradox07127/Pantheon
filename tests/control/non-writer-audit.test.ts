@@ -86,7 +86,7 @@ async function auditingSession(kind: 'plan' | 'text' | 'review' | 'read-only' = 
   let session: Session;
   if (kind === 'review') {
     f.control.adapters.set('fixture-reviewer', f.adapter);
-    const review = f.call<Review>('review.request', {
+    const review = await f.call<Review>('review.request', {
       session_id: parent!.id,
       runtimes: ['fixture-reviewer'],
     });
@@ -454,6 +454,33 @@ it('keeps answering other work while the audit waits on git status', async () =>
     await timer;
     expect(order).toEqual(['timer', 'audit']);
   }
+});
+
+it('audits a reconciled session closed by session.resolve while other work goes on', async () => {
+  const f = await auditingSession();
+  await f.finish();
+  const file = path.join(f.spec.cwd, 'answer.txt');
+  writeFileSync(file, 'changed while the daemon was down\n');
+  const session = f.store.must<Session>('sessions', f.session.id);
+  const reconciling = f.store.update(
+    'sessions',
+    { ...session, state: 'reconciling' as const, process_identity: { pid: 2_000_000_000 } },
+    session.revision,
+  );
+  slowGit();
+  let fired = false;
+  const timer = setTimeout(() => (fired = true), 50);
+  onTestFinished(() => clearTimeout(timer));
+  await f.call(
+    'session.resolve',
+    { session_id: session.id, choice: 'close' },
+    reconciling.revision,
+  );
+  expect(fired).toBe(true);
+  expect(f.store.must<Session>('sessions', session.id).state).toBe('closed');
+  expect(f.events().at(-1)).toEqual(
+    expect.objectContaining({ payload: expect.objectContaining({ paths: [file] }) }),
+  );
 });
 
 it('asks git once per root until its .git entry changes', () => {

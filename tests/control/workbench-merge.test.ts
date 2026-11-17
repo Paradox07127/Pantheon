@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import type {
   BoardPlan,
   Principal,
@@ -13,7 +13,7 @@ import type {
 import { readProcessIdentity } from '../../packages/adapters/dist/index.js';
 import { transferPlan } from '../../packages/control/dist/board-plan.js';
 import type { ControlContext } from '../../packages/control/src/context.js';
-import { insideSandbox, awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import { insideSandbox, awaitWorkspaceReady, eventually, heldIndexLock, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -80,7 +80,7 @@ it('fast-forwards the source branch to the session commit and removes the worktr
   const f = mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'merged\n');
-  expect(merge(f, session.id).merge).toEqual({ state: 'running' });
+  expect((await merge(f, session.id)).merge).toEqual({ state: 'running' });
   await eventually(
     () => removed(f, workspace.id),
     () => f.control.tick(),
@@ -104,6 +104,21 @@ it('fast-forwards the source branch to the session commit and removes the worktr
       measured_kind: { domain: 'backend-logic', tier: 't1' },
     },
   ]);
+});
+
+it('fast-forwards the source once another git gives up the index lock it held', async () => {
+  const f = mergeFixture();
+  const { session, workspace } = await idleSession(f);
+  const head = commit(workspace.path, 'answer.txt', 'merged\n');
+  const held = heldIndexLock('merge --ff-only');
+  onTestFinished(held.restore);
+  await merge(f, session.id);
+  await eventually(
+    () => removed(f, workspace.id) || current(f, session.id).merge?.state === 'blocked',
+    () => f.control.tick(),
+  );
+  expect(current(f, session.id).merge).toBeUndefined();
+  expect(git(f.source, 'rev-parse', 'main')).toBe(head);
 });
 
 it('drops and records a queued merge of a session that no longer exists', async () => {
@@ -133,7 +148,7 @@ it('rebases the session onto a newer source commit and keeps the history linear'
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'session.txt', 'session\n');
   const theirs = commit(f.source, 'source.txt', 'source\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await eventually(
     () => removed(f, workspace.id),
     () => f.control.tick(),
@@ -165,7 +180,7 @@ it('rebases without moving another branch that points at the session commit', as
   git(f.source, 'branch', 'kept-at-session', ours);
   git(f.source, 'config', 'rebase.updateRefs', 'true');
   commit(f.source, 'source.txt', 'source\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await eventually(
     () => removed(f, workspace.id),
     () => f.control.tick(),
@@ -181,7 +196,7 @@ it.each(['an untracked file', 'a new commit'])(
     const f = mergeFixture();
     const { session, workspace } = await idleSession(f);
     commit(workspace.path, 'answer.txt', 'merged\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     // The merge finishes without further ticks, so the removal it queues has not run yet.
     await f.control.tick();
     await eventually(() => current(f, session.id).outcome === 'merged');
@@ -209,7 +224,7 @@ it('blocks a gated merge whose commit reaches a dependency folder through a symb
   symlinkSync('elsewhere', path.join(workspace.path, 'packages'));
   git(workspace.path, 'add', '-A');
   git(workspace.path, 'commit', '--quiet', '-m', 'Link packages elsewhere');
-  merge(f, session.id);
+  await merge(f, session.id);
   await eventually(
     () => current(f, session.id).merge?.state === 'blocked',
     () => f.control.tick(),
@@ -227,7 +242,7 @@ it('blocks a conflicting merge, keeps the worktree and clears the block on the n
   const { session, workspace } = await idleSession(f);
   const ours = commit(workspace.path, 'answer.txt', 'session\n');
   const theirs = commit(f.source, 'answer.txt', 'source\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await eventually(
     () => current(f, session.id).merge?.state === 'blocked',
     () => f.control.tick(),
@@ -243,6 +258,7 @@ it('blocks a conflicting merge, keeps the worktree and clears the block on the n
   expect(existsSync(workspace.path)).toBe(true);
   expect(git(workspace.path, 'rev-parse', 'HEAD')).toBe(ours);
   expect(git(workspace.path, 'status', '--porcelain=v1')).toBe('');
+  await f.prefetch();
   expect(f.list()[0]).toMatchObject({
     state: 'ready',
     merge: { state: 'blocked', reason: 'rebase_conflict', conflicts: ['answer.txt'] },
@@ -272,7 +288,7 @@ it.skipIf(insideSandbox)(
       },
     ]);
     commit(workspace.path, 'answer.txt', 'gated\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await eventually(
       () => current(f, session.id).merge?.state === 'blocked',
       () => f.control.tick(),
@@ -308,7 +324,7 @@ it.skipIf(insideSandbox)(
     ]);
     commit(workspace.path, 'answer.txt', 'made before the fix\n');
     const fixed = commit(f.source, 'fix.txt', 'fix\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await settled(f, session.id);
     expect(current(f, session.id).merge?.state).not.toBe('blocked');
     expect(git(f.source, 'rev-parse', 'main~1')).toBe(fixed);
@@ -332,7 +348,7 @@ it.skipIf(insideSandbox)(
       },
     ]);
     commit(workspace.path, 'answer.txt', 'gated outside temporary directories\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await settled(f, session.id);
     expect(current(f, session.id).merge?.state).not.toBe('blocked');
   },
@@ -348,7 +364,7 @@ it('blocks rebasing a session whose commits include a merge, whose own changes a
   git(workspace.path, 'add', '--', 'fix.txt');
   git(workspace.path, 'commit', '--quiet', '-m', 'Merge the source with a fix');
   const theirs = commit(f.source, 'later.txt', 'later\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(current(f, session.id).merge).toMatchObject({
     state: 'blocked',
@@ -375,7 +391,7 @@ it('blocks a session commit that changes agent configuration and never writes it
   git(workspace.path, 'update-index', '--skip-worktree', '--', '.claude/settings.json');
   git(workspace.path, 'commit', '--quiet', '-m', 'Add agent settings');
   const theirs = commit(f.source, 'source.txt', 'source\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(current(f, session.id).merge).toMatchObject({
     state: 'blocked',
@@ -403,7 +419,7 @@ it.skipIf(insideSandbox)(
       { name: 'Prints ok', argv: [process.execPath, '-e', "process.stdout.write('ok')"] },
     ]);
     commit(workspace.path, 'answer.txt', 'gated\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await settled(f, session.id);
     const blocked = current(f, session.id).merge!;
     expect(blocked).toMatchObject({ state: 'blocked', reason: 'gate_failed' });
@@ -424,19 +440,21 @@ it('refuses uncommitted work, no commits, a non-user principal and a discarded s
   expect(() => merge(f, session.id, planner)).toThrow(
     expect.objectContaining({ code: 'permission_denied' }),
   );
-  expect(() => merge(f, session.id)).toThrow(expect.objectContaining({ code: 'no_changes' }));
+  await expect(merge(f, session.id)).rejects.toThrow(
+    expect.objectContaining({ code: 'no_changes' }),
+  );
   writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
-  expect(() => merge(f, session.id)).toThrow(
+  await expect(merge(f, session.id)).rejects.toThrow(
     expect.objectContaining({ code: 'uncommitted_changes' }),
   );
   commit(workspace.path, 'committed.txt', 'kept\n');
-  expect(() => merge(f, session.id)).toThrow(
+  await expect(merge(f, session.id)).rejects.toThrow(
     expect.objectContaining({ code: 'uncommitted_changes' }),
   );
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'edited\n');
   git(workspace.path, 'add', 'untracked.txt');
   git(workspace.path, 'commit', '--quiet', '-m', 'Add the untracked file');
-  expect(() => merge(f, session.id)).toThrow(
+  await expect(merge(f, session.id)).rejects.toThrow(
     expect.objectContaining({ code: 'uncommitted_changes' }),
   );
   expect(current(f, session.id).merge).toBeUndefined();
@@ -475,7 +493,7 @@ it.skipIf(insideSandbox)(
       },
     ]);
     const head = commit(workspace.path, 'answer.txt', 'waited\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await eventually(
       () => payloads(f, session.id, 'session.gate_started').length === 1,
       () => f.control.tick(),
@@ -537,7 +555,7 @@ it.skipIf(insideSandbox)(
       },
     ]);
     const head = commit(workspace.path, 'answer.txt', 'merged after a refused discard\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await eventually(
       () => payloads(f, session.id, 'session.gate_started').length === 1,
       () => f.control.tick(),
@@ -569,7 +587,7 @@ it('refuses to discard a session whose merge moved the source and still closes i
   const head = commit(workspace.path, 'answer.txt', 'merged before the discard\n');
   expect(hasProcess(f, session.id)).toBe(true);
   const release = holdClose(f);
-  merge(f, session.id);
+  await merge(f, session.id);
   try {
     await eventually(
       () => current(f, session.id).merge?.landing?.stage === 'fast_forwarded',
@@ -614,7 +632,7 @@ it('restarts after a crash that left a session gate process record', async () =>
   const f = mergeFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'crashed during the gate\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   // A gate started before the crash; its process has since exited.
   const exited = spawnSync(process.execPath, ['-e', '']).pid!;
   f.store.transaction(() => {
@@ -639,7 +657,7 @@ it('kills a gate process left running whose record holds a whole-second start ti
   const f = mergeFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'gate still running at the crash\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   // Its parent exits at once, as a crashed daemon's would, so launchd reaps it once killed.
   // It leads its own process group, as a gate does; dash ignores set -m without a terminal.
   const pid = Number(
@@ -678,7 +696,7 @@ it('finishes a merge queued before a restart and moves the source once', async (
   const f = mergeFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'restarted\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await f.restart();
   await eventually(
     () => removed(f, workspace.id),
@@ -694,7 +712,7 @@ it('completes a merge rerun after a crash that already moved the source', async 
   const f = mergeFixture();
   const { session, workspace } = await idleSession(f);
   const head = commit(workspace.path, 'answer.txt', 'landed before the crash\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   git(f.source, 'merge', '--quiet', '--ff-only', head);
   await f.restart();
   await eventually(
@@ -719,7 +737,7 @@ it('blocks the merge of a worktree left partway through a rebase and leaves the 
   expect(stopped.status).not.toBe(0);
   const partial = git(workspace.path, 'rev-parse', 'HEAD');
   expect(git(workspace.path, 'status', '--porcelain=v1')).toBe('');
-  merge(f, session.id);
+  await merge(f, session.id);
   await eventually(
     () =>
       current(f, session.id).outcome === 'merged' ||
@@ -752,7 +770,7 @@ it.skipIf(insideSandbox)(
       crashed = true;
       throw new Error('Crashed after the fast-forward');
     };
-    merge(f, session.id);
+    await merge(f, session.id);
     await eventually(
       () => crashed,
       () => f.control.tick(),
@@ -809,8 +827,8 @@ it('merges two sessions asked to merge at once into the same source one after th
     second = await idleSession(f);
   commit(first.workspace.path, 'add.txt', 'add\n');
   commit(second.workspace.path, 'mul.txt', 'mul\n');
-  merge(f, first.session.id);
-  merge(f, second.session.id);
+  await merge(f, first.session.id);
+  await merge(f, second.session.id);
   await eventually(
     () => removed(f, first.workspace.id) && removed(f, second.workspace.id),
     () => f.control.tick(),
@@ -887,7 +905,7 @@ it('blocks a task merge that changes files outside the task scope and lands once
   const { session, workspace, sourceHead } = await taskSession(f, 'api');
   commit(workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
   const head = commit(workspace.path, 'README.md', 'Outside the scope\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(current(f, session.id).merge).toEqual({
     state: 'blocked',
@@ -897,7 +915,7 @@ it('blocks a task merge that changes files outside the task scope and lands once
   expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
 
   setScopes(f, { api: ['src/a', './README.md'] });
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(current(f, session.id).outcome).toBe('merged');
   expect(git(f.source, 'rev-parse', 'main')).toBe(head);
@@ -916,10 +934,10 @@ it.skipIf(insideSandbox).each([
       second = await taskSession(f, 'second');
     commit(first.workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
     commit(second.workspace.path, 'src/b/y.ts', 'export const y = 2;\n');
-    merge(f, first.session.id);
+    await merge(f, first.session.id);
     await settled(f, first.session.id);
     expect(current(f, first.session.id).outcome).toBe('merged');
-    merge(f, second.session.id);
+    await merge(f, second.session.id);
     await settled(f, second.session.id);
     expect(current(f, second.session.id).merge).toBeUndefined();
     expect(current(f, second.session.id).outcome).toBe('merged');
@@ -958,7 +976,7 @@ it.each([
   setScopes(f, { api: scope });
   const { session, workspace, sourceHead } = await taskSession(f, 'api');
   change(workspace.path);
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(current(f, session.id).merge).toEqual({
     state: 'blocked',
@@ -986,7 +1004,7 @@ it.skipIf(insideSandbox)(
     ]);
     commit(workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
     commit(workspace.path, 'README.md', 'In the scope when the gate started\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await eventually(
       () => payloads(f, session.id, 'session.gate_started').length === 1,
       () => f.control.tick(),
@@ -1022,7 +1040,7 @@ it('lands files outside the task scope when the user allows them, and refuses th
     );
   expect(() => allowed(worker)).toThrow(expect.objectContaining({ code: 'permission_denied' }));
   expect(current(f, session.id).merge).toBeUndefined();
-  allowed(user);
+  await allowed(user);
   await settled(f, session.id);
   expect(current(f, session.id).outcome).toBe('merged');
   expect(git(f.source, 'rev-parse', 'main')).toBe(head);
@@ -1062,7 +1080,7 @@ it('blocks the merge of a session left from a removed task whose id a new task r
     plan.revision,
   );
   commit(workspace.path, 'README.md', 'Done for the removed task\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(current(f, session.id).merge).toEqual({ state: 'blocked', reason: 'task_retired' });
   expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
@@ -1073,7 +1091,7 @@ it('checks the task scope of the plan a new lead took over while the merge read 
   setScopes(f, { api: ['src/a'] });
   const { session, workspace, sourceHead } = await taskSession(f, 'api');
   commit(workspace.path, 'README.md', 'Outside the scope\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await f.control.tick();
   // The merge now waits for Git to read the worktree HEAD.
   await new Promise(setImmediate);
@@ -1098,7 +1116,7 @@ it('blocks the merge of a task session whose plan cannot be found', async () => 
   const plan = f.store.must<BoardPlan>('board_plans', leadId);
   f.store.remove('board_plans', plan.id, plan.revision);
   commit(workspace.path, 'README.md', 'Outside the scope\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(current(f, session.id).merge).toEqual({ state: 'blocked', reason: 'task_plan_missing' });
   expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
@@ -1109,7 +1127,7 @@ it('refuses a merge after the source repository checked out another branch than 
   const { session, workspace, sourceHead } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'meant for main\n');
   git(f.source, 'checkout', '--quiet', '-b', 'release');
-  expect(() => merge(f, session.id)).toThrow(
+  await expect(merge(f, session.id)).rejects.toThrow(
     expect.objectContaining({
       code: 'target_branch_changed',
       message: expect.stringMatching(/release.*main/),
@@ -1124,7 +1142,7 @@ it('blocks a queued merge when the source repository checks out another branch b
   const f = mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'meant for main\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   git(f.source, 'checkout', '--quiet', '-b', 'release');
   await eventually(
     () =>
@@ -1148,7 +1166,7 @@ it('merges into the checked-out branch for a worktree recorded without its start
   f.store.update<Workspace>('workspaces', earlier, recorded.revision);
   const head = commit(workspace.path, 'answer.txt', 'lands on release\n');
   git(f.source, 'checkout', '--quiet', '-b', 'release');
-  merge(f, session.id);
+  await merge(f, session.id);
   await eventually(
     () => removed(f, workspace.id),
     () => f.control.tick(),
@@ -1169,7 +1187,7 @@ it.skipIf(insideSandbox)(
       },
     ]);
     const head = commit(workspace.path, 'answer.txt', 'gated by the old gate\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     // An earlier run gated this commit under another gate, then the daemon stopped.
     const running = current(f, session.id);
     f.store.update<Session>(
@@ -1211,7 +1229,7 @@ it.each([true, false])(
     f.call('app.settings.set', { auto_archive_merged: enabled });
     const { session, workspace } = await idleSession(f);
     commit(workspace.path, 'notes.txt', 'landed\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await eventually(
       () => removed(f, workspace.id),
       () => f.control.tick(),

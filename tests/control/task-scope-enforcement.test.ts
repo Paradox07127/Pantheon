@@ -163,7 +163,7 @@ it.skipIf(insideSandbox)(
     const { session, workspace } = await leadTaskSession(f, lead, 'first');
     commit(workspace.path, 'src/first/x.ts', 'export const x = 1;\n');
     commit(workspace.path, 'README.md', 'Names the first module\n');
-    merge(f, session.id);
+    await merge(f, session.id);
     await settled(f, session.id);
     expect(current(f, session.id).merge).toMatchObject({ reason: 'out_of_scope' });
     await eventually(
@@ -173,7 +173,7 @@ it.skipIf(insideSandbox)(
     expect(f.turns(lead.id).find((turn) => turn.origin === 'tracker')!.input).toContain(
       'Reason: out_of_scope. To merge the files anyway, call merge_task with allow_out_of_scope and the reason; or widen the scope of the task with update_board; or stop it with stop_task.',
     );
-    mergeTask(f, lead, 'first', 'The README names the new module');
+    await mergeTask(f, lead, 'first', 'The README names the new module');
     await settled(f, session.id);
     expect(current(f, session.id).outcome).toBe('merged');
     expect(
@@ -190,7 +190,7 @@ it('refuses a lead merge of files outside the task scope that another unfinished
   const lead = await leadWithPlan(f, [task('first'), task('second')]);
   const { session, workspace } = await leadTaskSession(f, lead, 'first');
   commit(workspace.path, 'src/second/y.ts', 'export const y = 2;\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(() => mergeTask(f, lead, 'first', 'The file belongs here')).toThrow(/task second/);
   expect(current(f, session.id).merge).toMatchObject({ state: 'blocked', reason: 'out_of_scope' });
@@ -201,10 +201,10 @@ it('checks files committed after the block against the scope when a lead merges'
   const lead = await leadWithPlan(f, [task('first'), task('second')]);
   const { session, workspace } = await leadTaskSession(f, lead, 'first');
   commit(workspace.path, 'README.md', 'Names the first module\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   commit(workspace.path, 'src/second/y.ts', 'export const y = 2;\n');
-  mergeTask(f, lead, 'first', 'The README names the new module');
+  await mergeTask(f, lead, 'first', 'The README names the new module');
   await settled(f, session.id);
   expect(current(f, session.id).outcome).toBeUndefined();
   expect(current(f, session.id).merge).toMatchObject({
@@ -220,7 +220,7 @@ it('refuses a lead merge of a task in the plan of another lead', async () => {
   const other = await leadWithPlan(f, [task('third')]);
   const { session, workspace } = await leadTaskSession(f, owner, 'first');
   commit(workspace.path, 'README.md', 'Names the first module\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(() => mergeTask(f, other, 'first', 'The README names the module')).toThrow(
     /task first in your plan/,
@@ -234,7 +234,7 @@ it('blocks every file a report task with no scope paths merges', async () => {
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
   const { session, workspace } = await taskSession(f, 'notes');
   commit(workspace.path, 'notes.md', 'Findings\n');
-  merge(f, session.id);
+  await merge(f, session.id);
   await settled(f, session.id);
   expect(current(f, session.id).merge).toEqual({
     state: 'blocked',
@@ -265,10 +265,10 @@ it.skipIf(insideSandbox)(
     commit(first.workspace.path, 'README.md', 'Written by the first task\n');
     commit(second.workspace.path, 'src/second/y.ts', 'export const y = 2;\n');
     commit(second.workspace.path, 'README.md', 'Written by the second task\n');
-    merge(f, first.session.id, true);
+    await merge(f, first.session.id, true);
     await settled(f, first.session.id);
     expect(current(f, first.session.id).outcome).toBe('merged');
-    merge(f, second.session.id);
+    await merge(f, second.session.id);
     await settled(f, second.session.id);
     expect(current(f, second.session.id).merge).toEqual({
       state: 'blocked',

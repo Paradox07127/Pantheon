@@ -62,7 +62,7 @@ it('reviews a workbench session from its diff and lists the findings for that se
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'reviewed answer\n');
   git(workspace.path, 'commit', '--quiet', '-am', 'Update the answer');
 
-  const review = w.call<Review & { review_id: string }>('review.request', {
+  const review = await w.call<Review & { review_id: string }>('review.request', {
     session_id: session.id,
     runtimes: [reviewer.name],
   });
@@ -129,7 +129,7 @@ async function runningSessionReview() {
   );
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'reviewed answer\n');
   git(workspace.path, 'commit', '--quiet', '-am', 'Update the answer');
-  const review = w.call<Review>('review.request', {
+  const review = await w.call<Review>('review.request', {
     session_id: session.id,
     runtimes: reviewers.map((adapter) => adapter.name),
   });
@@ -209,7 +209,7 @@ it('keeps the review folders another project left on disk out of a reviewer sess
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'reviewed answer\n');
   git(workspace.path, 'commit', '--quiet', '-am', 'Update the answer');
 
-  w.call('review.request', { session_id: session.id, runtimes: [reviewer.name] });
+  await w.call('review.request', { session_id: session.id, runtimes: [reviewer.name] });
   await eventually(
     () => reviewer.starts[0] !== undefined,
     () => w.control.tick(),
@@ -230,7 +230,7 @@ it('keeps the review folders of other projects out of a planner session', async 
   git(w.source, 'add', '.');
   git(w.source, 'commit', '--quiet', '-m', 'Add the project files');
 
-  w.call('project.baseline.start', { project_id: w.project.id });
+  await w.call('project.baseline.start', { project_id: w.project.id });
   await eventually(
     () => w.start.mock.calls.some(([spec]) => spec.role === 'planner'),
     () => w.control.tick(),

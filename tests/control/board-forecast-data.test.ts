@@ -241,6 +241,7 @@ it('counts reverted merged ranges on the target branch with one bounded git log'
   const mergedAt = Date.now() - 1000;
   event(f, lead, 'session.merged', mergedAt, { branch: 'main', from_sha: base, to_sha: last });
   git(f.source, 'revert', '--no-edit', first);
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(f.control.boardView(user, f.project.id, 1).counts).toMatchObject({
     merged: 1,
     reverted: 1,
@@ -288,14 +289,15 @@ it('counts reverted merged ranges on the target branch with one bounded git log'
   );
   git(f.source, 'checkout', '--quiet', 'main');
   vi.useFakeTimers({ toFake: ['Date'] });
-  await f.control.prefetchWorktreeReads(user, f.project.id);
   const run = vi.spyOn(gitCommands, 'runGit');
-  const board = f.control.boardView(user, f.project.id, 1);
-  expect(board.counts).toMatchObject({ merged: 2, reverted: 1 });
-  expect(run).toHaveBeenCalledTimes(2);
-  const logs = run.mock.calls.filter(([, args]) => args.includes('log'));
+  await f.control.prefetchWorktreeReads(user, f.project.id);
+  const logs = run.mock.calls.filter(([, args]) => args.includes('--source'));
   expect(logs).toHaveLength(1);
   expect(logs[0]![1]).toContain(`^${base}`);
+  run.mockClear();
+  const board = f.control.boardView(user, f.project.id, 1, undefined, 'cached');
+  expect(board.counts).toMatchObject({ merged: 2, reverted: 1 });
+  expect(run).not.toHaveBeenCalled();
   const prior = new Date(Date.now() - DAY),
     until = `${prior.getFullYear()}-${String(prior.getMonth() + 1).padStart(2, '0')}-${String(prior.getDate()).padStart(2, '0')}`;
   expect(f.control.boardView(user, f.project.id, 1, until).counts.reverted).toBe(0);
@@ -333,6 +335,7 @@ it('counts a revert of a fast-forwarded commit written before the range', async 
     to_sha: last,
   });
   git(f.source, 'revert', '--no-edit', first);
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(f.control.boardView(user, f.project.id, 1).counts).toMatchObject({
     merged: 1,
     reverted: 1,
@@ -383,6 +386,7 @@ it('reads reverts of each merge in the repository of the root it merged into', a
     to_sha: otherLanded,
   });
   git(other, 'revert', '--no-edit', otherLanded);
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   expect(f.control.boardView(user, f.project.id, 1).counts).toMatchObject({
     merged: 2,
     reverted: 1,

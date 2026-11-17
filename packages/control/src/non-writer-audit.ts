@@ -1,7 +1,7 @@
 import { lstatSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentEvent, Session, SessionSpec } from '@pantheon/domain';
-import { gitFolderAsync, type ControlContext } from './context.js';
+import { gitFolderAsync, type ControlContext, type Handler } from './context.js';
 import { runGit, type GitResult } from './git.js';
 
 interface WriteSnapshot {
@@ -32,11 +32,10 @@ function currentSnapshot(ctx: ControlContext, sessionId: string) {
 
 const STATUS = ['status', '--porcelain=v1', '-z', '--untracked-files=no'];
 
+export type WrittenState = Pick<WriteSnapshot, 'status' | 'fingerprints'>;
+
 /** Tracked changes as git reported them per root, plus a stat fingerprint per changed path; no contents are read. */
-function worktreeState(
-  roots: string[],
-  results: GitResult[],
-): Pick<WriteSnapshot, 'status' | 'fingerprints'> {
+function worktreeState(roots: string[], results: GitResult[]): WrittenState {
   const status: Record<string, string> = {};
   const fingerprints: Record<string, string> = {};
   for (const [rootIndex, root] of roots.entries()) {
@@ -105,18 +104,43 @@ export async function finishWriteAudit(ctx: ControlContext, sessionId: string): 
   recordWriteAudit(ctx, sessionId, baseline, current);
 }
 
-/** finishWriteAudit for a caller inside a transaction, so git runs synchronously. */
-export function finishReconciledWriteAudit(ctx: ControlContext, sessionId: string): void {
+/** The roots a reconciled session's audit reads git status in; none without a status baseline. */
+export function reconciledWriteRoots(ctx: ControlContext, sessionId: string): string[] {
+  const snapshot = currentSnapshot(ctx, sessionId)?.snapshot;
+  return !snapshot || 'hashes' in snapshot ? [] : snapshot.roots;
+}
+
+/** The handler of a reconciled close, given the tracked state its audit compares read before the transaction. */
+export function withReconciledState(
+  ctx: ControlContext,
+  sessionId: string,
+  handler: (...args: [...Parameters<Handler>, WrittenState?]) => unknown,
+): Handler | Promise<Handler> {
+  const roots = reconciledWriteRoots(ctx, sessionId);
+  if (!roots.length) return handler;
+  return currentState(roots).then(
+    (state): Handler =>
+      (ctx, p, c) =>
+        handler(ctx, p, c, state),
+  );
+}
+
+/** currentState for recovery, whose one transaction runs at daemon start before any client is served. */
+export function currentStateAtStart(roots: string[]): WrittenState {
+  return worktreeState(
+    roots,
+    roots.map((root) => runGit(root, STATUS)),
+  );
+}
+
+/** finishWriteAudit inside the caller's transaction, against the state of reconciledWriteRoots read before it. */
+export function finishReconciledWriteAudit(
+  ctx: ControlContext,
+  sessionId: string,
+  current: WrittenState | undefined,
+): void {
   const baseline = currentSnapshot(ctx, sessionId);
   if (!baseline) return;
-  const { snapshot } = baseline;
-  const current =
-    'hashes' in snapshot
-      ? undefined
-      : worktreeState(
-          snapshot.roots,
-          snapshot.roots.map((root) => runGit(root, STATUS)),
-        );
   recordWriteAudit(ctx, sessionId, baseline, current);
 }
 
@@ -124,7 +148,7 @@ function recordWriteAudit(
   ctx: ControlContext,
   sessionId: string,
   { sequence, snapshot }: NonNullable<ReturnType<typeof currentSnapshot>>,
-  current: Pick<WriteSnapshot, 'status' | 'fingerprints'> | undefined,
+  current: WrittenState | undefined,
 ): void {
   let paths: string[] = [];
   if (current && !('hashes' in snapshot))

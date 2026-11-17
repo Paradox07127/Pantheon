@@ -34,7 +34,7 @@ async function mergedSession() {
   );
   const now = w.store.now();
   const startStory = () =>
-    w.call<RangeStory>('range_story.start', {
+    w.call<Promise<RangeStory>>('range_story.start', {
       project_id: w.project.id,
       from: now - HOUR,
       to: now + HOUR,
@@ -54,7 +54,7 @@ function storyPrincipal(w: ReturnType<typeof workbenchFixture>, story: RangeStor
 
 it('starts a read-only session whose brief lists the sessions merged in the range', async () => {
   const { w, session, startStory } = await mergedSession();
-  const story = startStory();
+  const story = await startStory();
   expect(story).toMatchObject({
     project_id: w.project.id,
     state: 'running',
@@ -93,21 +93,21 @@ it('leaves out the change story of another range of the merged session', async (
       unmatched_acceptance: [],
     },
   });
-  const brief = w.turns(startStory().session_id!)[0]!.input;
+  const brief = w.turns((await startStory()).session_id!)[0]!.input;
   expect(brief).toContain(`### ${session.title}`);
   expect(brief).not.toContain('Earlier range');
 });
 
-it('refuses a range without merges or commits', () => {
+it('refuses a range without merges or commits', async () => {
   const w = workbenchFixture();
   const now = w.store.now();
-  expect(() =>
+  await expect(async () =>
     w.call('range_story.start', {
       project_id: w.project.id,
       from: now - 48 * HOUR,
       to: now - 24 * HOUR,
     }),
-  ).toThrow(
+  ).rejects.toThrow(
     expect.objectContaining({
       code: 'invalid_input',
       message: expect.stringContaining('No merges or commits in the range'),
@@ -120,14 +120,14 @@ it.each([
   { extra: 300, listed: 'Empty commit 300', omitted: 'the oldest 2 are left out' },
 ])(
   'explains the main-line commits of a range without merges ($extra extra commits)',
-  ({ extra, listed, omitted }) => {
+  async ({ extra, listed, omitted }) => {
     const w = workbenchFixture();
     writeFileSync(path.join(w.source, 'answer.txt'), 'described\n');
     git(w.source, 'commit', '--quiet', '-am', 'Describe the answer file');
     for (let index = 1; index <= extra; index++)
       git(w.source, 'commit', '--quiet', '--allow-empty', '-m', `Empty commit ${index}`);
     const now = w.store.now();
-    const story = w.call<RangeStory>('range_story.start', {
+    const story = await w.call<Promise<RangeStory>>('range_story.start', {
       project_id: w.project.id,
       from: now - HOUR,
       to: now + HOUR,
@@ -142,8 +142,8 @@ it.each([
 
 it('refuses a submission from a session the story did not start', async () => {
   const { w, startStory } = await mergedSession();
-  const story = startStory();
-  const other = startStory();
+  const story = await startStory();
+  const other = await startStory();
   expect(() =>
     w.call(
       'range_story.submit',
@@ -157,7 +157,7 @@ it('refuses a submission from a session the story did not start', async () => {
 
 it('lists the submitted lines once the bound session submits them', async () => {
   const { w, startStory } = await mergedSession();
-  const story = startStory();
+  const story = await startStory();
   const lines = ['The answer file now reads merged.', 'Nothing else changed.'];
   w.call('range_story.submit', { story_id: story.id, lines }, null, storyPrincipal(w, story));
   expect(w.control.rangeStoryList(user, w.project.id)).toEqual([

@@ -29,7 +29,7 @@ import {
 import { runtime } from './admission.js';
 import { runGit, type GitResult } from './git.js';
 import { checkedSource } from './source-git.js';
-import { rangeDiffSync, rangeDiffWithSyncBounds, sessionRangeAsync } from './landing-diff.js';
+import { rangeDiffWithSyncBounds, sessionRangeAsync } from './landing-diff.js';
 import { cardPatch, checkStory } from './change-story-check.js';
 import { renderStoryBrief } from './change-story-brief.js';
 import { storyContext } from './change-story-evidence.js';
@@ -126,10 +126,6 @@ async function shownFiles(
     at += Number(size) + 1;
   }
   return shown;
-}
-
-function storyDiff(ctx: ControlContext, p: Principal, story: ChangeStory): LandingDiff {
-  return rangeDiffSync(ctx, p, story.project_id, story);
 }
 
 /** Reads exactly the commits the interpreter saw, including after the worktree changes or is removed. */
@@ -238,7 +234,9 @@ export async function changeStoryList(
 }
 
 export const isPreparedChangeStory = (type: string): boolean =>
-  type === 'change_story.start' || type === 'change_story.submit';
+  type === 'change_story.start' ||
+  type === 'change_story.submit' ||
+  type === 'change_story.revert_patch';
 
 /**
  * Reads the git a change_story.start or change_story.submit needs before its transaction; the
@@ -249,6 +247,7 @@ export async function prepareChangeStory(
   p: Principal,
   c: Command,
 ): Promise<Handler> {
+  if (c.type === 'change_story.revert_patch') return prepareRevertPatch(ctx, p, c);
   return c.type === 'change_story.start' ? prepareStart(ctx, p, c) : prepareSubmit(ctx, p, c);
 }
 
@@ -351,8 +350,22 @@ async function prepareSubmit(ctx: ControlContext, p: Principal, c: Command): Pro
   };
 }
 
+async function prepareRevertPatch(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  userOnly(p);
+  const story = ctx.store.must<ChangeStory>(
+    'change_stories',
+    inputSchemas['change_story.revert_patch'].parse(c.input).story_id,
+  );
+  projectAccess(ctx, p, story.project_id, c.type);
+  const diff = await rangeDiffWithSyncBounds(ctx, p, story.project_id, story);
+  const revert: (...args: [...Parameters<Handler>, LandingDiff]) => unknown =
+    changeStoryHandlers['change_story.revert_patch']!;
+  return (ctx, p, c) => revert(ctx, p, c, diff);
+}
+
 export const changeStoryHandlers: Handlers = {
-  'change_story.revert_patch': (ctx, p, c) => {
+  // Its diff is read before the transaction, by prepareRevertPatch.
+  'change_story.revert_patch': (ctx, p, c, diff?: LandingDiff) => {
     userOnly(p);
     const input = inputSchemas['change_story.revert_patch'].parse(c.input);
     revision(ctx, c);
@@ -372,11 +385,10 @@ export const changeStoryHandlers: Handlers = {
       'invalid_state',
       `Card ${number} shares hunks with card ${card.shared_with.map((index) => index + 1).join(', ')}; it cannot be reverted alone`,
     );
-    const diff = storyDiff(ctx, p, story);
     const directory = path.join(path.dirname(ctx.files.directory), 'change-story-patches');
     mkdirSync(directory, { recursive: true });
     const file = path.join(directory, `${story.id}-card${number}.patch`);
-    writeFileSync(file, cardPatch(diff, card.hunks));
+    writeFileSync(file, cardPatch(diff!, card.hunks));
     const q = quote(story.source);
     // One chained line: pasted lines run on after a failure. apply --3way stages only the patch.
     return {

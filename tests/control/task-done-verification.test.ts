@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 import type { BoardPlan, LeadNote, Principal, Session } from '@pantheon/domain';
-import { awaitWorkspaceReady, settle } from '../helpers.js';
+import { awaitWorkspaceReady, countingGit, gitRunsOf, settle } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -80,7 +80,7 @@ it('tells the lead when a merge task reports done without commits while auto-mer
   const f = workbenchFixture();
   const { lead, worker } = await taskSession(f);
 
-  reportDone(f, worker);
+  await reportDone(f, worker);
   const [note] = notes(f, lead.id, 'no_changes');
   expect(note).toMatchObject({ session_id: worker.id, task_id: 'a' });
   expect(note!.text).toBe(
@@ -99,10 +99,26 @@ it('tells the lead when a task reports done while its worktree has uncommitted f
   git(worktree, 'commit', '--quiet', '-m', 'Add the export format');
   writeFileSync(path.join(worktree, 'src/a/export.ts'), 'export const format = "json";\n');
 
-  reportDone(f, worker);
+  await reportDone(f, worker);
   const [note] = notes(f, lead.id, 'no_changes');
   expect(note!.text).toBe(
     'The session reported done, but its worktree has uncommitted files, which a merge leaves out. Commits since it started: 1; worktree clean: no.',
   );
   expect(told(f, lead.id)).toHaveLength(1);
+});
+
+it('checks the worktree of a done report while other work goes on, with one status and one count', async () => {
+  const f = workbenchFixture();
+  const { worker, worktree } = await taskSession(f);
+  const counter = countingGit();
+  onTestFinished(counter.restore);
+  counter.slowOn('rev-list --count');
+  let fired = false;
+  const timer = setTimeout(() => (fired = true), 50);
+  onTestFinished(() => clearTimeout(timer));
+  await reportDone(f, worker);
+  expect(fired).toBe(true);
+  const runs = counter.runs().filter((run) => run.startsWith(`${worktree}|`));
+  expect(gitRunsOf(runs, 'status')).toHaveLength(1);
+  expect(gitRunsOf(runs, 'rev-list')).toHaveLength(1);
 });

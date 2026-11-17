@@ -212,7 +212,7 @@ it('finds the verified progress of a task in a merge, a new commit passing its g
   });
   await settle(f, reporter);
   const r = current(f, reporter.id).task!;
-  report(f, reporter, 'done', 'The export format is CSV');
+  await report(f, reporter, 'done', 'The export format is CSV');
   expect(verifiedProgress(ctx, r)).toBeUndefined();
   f.call(
     'task.accept',
@@ -237,7 +237,7 @@ it('counts ten round trips between a lead and a task session, and ends the chain
   expect(depths(f, lead.id)).toEqual([0, 1, 3, 5, 7, 9]);
   expect(activityOf(f, `${lead.id}:a`)?.causal_depth).toBe(10);
 
-  report(f, worker, 'done', 'The delimiter is a comma');
+  await report(f, worker, 'done', 'The delimiter is a comma');
   await settle(f, lead);
   expect(f.turns(lead.id).at(-1)!.causal_depth).toBe(11);
   f.call(

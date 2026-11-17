@@ -76,7 +76,7 @@ import {
   type ControlContext,
   type Handler,
 } from './context.js';
-import { handlers } from './commands.js';
+import { handlers, preparers } from './commands.js';
 import type { VisualDrawReceipt } from './visual.js';
 import { tick } from './scheduler.js';
 import { acceptInput, stopTurn } from './session.js';
@@ -118,6 +118,8 @@ import {
   projectGatesHistory,
   projectHead,
   sessionCreatePreview,
+  isPreparedSessionCommand,
+  prepareSessionCommand,
   prepareSessionModels,
   prefetchMergeReads,
   prefetchWorktreeReads,
@@ -130,7 +132,7 @@ import {
   sessionToolActivity,
 } from './workbench-session.js';
 import { sessionTasks } from './session-tasks.js';
-import { boardView } from './board-view.js';
+import { boardView, prefetchRevertWalks } from './board-view.js';
 import { boardHistory } from './board-history.js';
 import {
   projectHeatmap,
@@ -389,6 +391,7 @@ export class Control extends EventEmitter {
         this.terminals.reapSessions();
         this.emit('events', this.store.cursor());
       },
+      diagnostic: (error) => this.emit('diagnostic', error),
     };
     this.search = new SessionSearch(store);
   }
@@ -516,6 +519,12 @@ export class Control extends EventEmitter {
         throw new DomainError(String(result.error), String(result.message));
       return result;
     };
+    // Their git runs before the transaction, once references and models are read.
+    const applyPrepared = (): unknown =>
+      isPreparedSessionCommand(command.type) &&
+      ![key, commandKey].some((k) => this.store.receipt(k))
+        ? prepareSessionCommand(this.ctx, principal, command).then(apply)
+        : apply();
     if (
       command.type === 'terminal.open' ||
       command.type === 'terminal.write' ||
@@ -577,6 +586,12 @@ export class Control extends EventEmitter {
     if (isPreparedChangeStory(command.type)) {
       if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
       return prepareChangeStory(this.ctx, principal, command).then(apply);
+    }
+    const prepare = preparers[command.type as CommandType];
+    if (prepare) {
+      if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
+      const prepared = prepare(this.ctx, principal, command);
+      return prepared instanceof Promise ? prepared.then(apply) : apply(prepared);
     }
     if (command.type === 'session.reconnect') {
       if ([key, commandKey].some((k) => this.store.receipt(k))) return apply();
@@ -658,7 +673,9 @@ export class Control extends EventEmitter {
               .project_id;
       projectAccess(this.ctx, principal, projectId, command.type);
       return prepareGithubReferences(this.ctx, projectId, refs).then(
-        () => prepareSessionModels(this.ctx, principal, command)?.then(() => apply()) ?? apply(),
+        () =>
+          prepareSessionModels(this.ctx, principal, command)?.then(() => apply()) ??
+          applyPrepared(),
       );
     }
     if (![key, commandKey].some((k) => this.store.receipt(k))) {
@@ -676,7 +693,7 @@ export class Control extends EventEmitter {
           )
         : undefined;
     if (skillsChecked) return skillsChecked.then(() => apply());
-    return apply();
+    return applyPrepared();
   }
   snapshot(principal: Principal, projectId?: string): unknown {
     return snapshot(this.ctx, principal, projectId);
@@ -782,7 +799,7 @@ export class Control extends EventEmitter {
   }
   /**
    * Reads ahead asynchronously the worktrees the session list and the needs-you merge actions read,
-   * of the project or of every summary project.
+   * and the board's revert walks, of the project or of every summary project.
    */
   async prefetchWorktreeReads(principal: Principal, projectId?: string) {
     const projects = projectId
@@ -792,6 +809,7 @@ export class Control extends EventEmitter {
       projects.flatMap((id) => [
         prefetchWorktreeReads(this.ctx, principal, id),
         prefetchMergeReads(this.ctx, principal, id),
+        prefetchRevertWalks(this.ctx, principal, id),
       ]),
     );
   }

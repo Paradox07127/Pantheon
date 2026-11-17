@@ -306,7 +306,7 @@ it.each(['done', 'done_with_concerns'])(
     const { lead } = await planned(f);
     const worker = boundTaskSession(f, lead.id, 'format');
     await settle(f, worker);
-    f.call(
+    await f.call(
       'task.report',
       {
         project_id: f.project.id,

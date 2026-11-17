@@ -128,7 +128,7 @@ it('refuses to open a checked path whose parent became a symlink out of the work
   }).toThrow(expect.objectContaining({ code: 'invalid_input' }));
 });
 
-it('skips a listed file deleted before its size is read', () => {
+it('skips a listed file deleted before its size is read', async () => {
   const f = workbenchFixture();
   writeFileSync(path.join(f.source, 'vanishing.txt'), 'soon gone');
   const lstat = fs.lstatSync;
@@ -137,7 +137,7 @@ it('skips a listed file deleted before its size is read', () => {
       throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
     return lstat(target, options);
   }) as typeof fs.lstatSync);
-  expect(f.control.filesList(user, f.project.id, undefined, undefined).entries).toEqual([
+  expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
     { name: 'answer.txt', kind: 'file', size: 5 },
   ]);
 });

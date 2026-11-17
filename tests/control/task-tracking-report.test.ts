@@ -87,7 +87,7 @@ it('holds the done report of a report task and its acceptance until the after-me
     .find((session) => session.task?.lead_session_id === lead.id)!;
   await settle(f, worker);
   const before = trackerTurns(f, lead.id);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'The export is ready' },
     null,
@@ -132,7 +132,7 @@ async function inPlaceReportSession(f: Fixture, leadId: string) {
 it('lets a report task session in the user folder file its done report for acceptance', async () => {
   const { f, lead } = await reportTask();
   const session = await inPlaceReportSession(f, lead.id);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'The export is ready' },
     null,

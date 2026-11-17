@@ -27,7 +27,7 @@ function git(cwd: string, args: string[], input?: string) {
   }).trim();
 }
 
-it('reads the commits of a repository that shows signatures in its log', () => {
+it('reads the commits of a repository that shows signatures in its log', async () => {
   const base = mkdtempSync(path.join(os.tmpdir(), 'git-log-signature-'));
   roots.push(base);
   const repository = path.join(base, 'repository');
@@ -54,7 +54,7 @@ it('reads the commits of a repository that shows signatures in its log', () => {
   chmodSync(program, 0o755);
   git(repository, ['config', 'log.showSignature', 'true']);
   git(repository, ['config', 'gpg.program', program]);
-  const [facts] = collectFacts([{ path: repository, git: true }]).folders as [FolderFacts];
+  const [facts] = (await collectFacts([{ path: repository, git: true }])).folders as [FolderFacts];
   expect(facts.recent_commits.map((entry) => entry.subject)).toEqual([
     'Signed change',
     'Plain change',

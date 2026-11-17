@@ -17,13 +17,13 @@ import type { ControlContext } from '../../packages/control/dist/context.js';
 import { awaitWorkspaceReady, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
-it('lists directories before files by name, excluding ignored entries and git metadata', () => {
+it('lists directories before files by name, excluding ignored entries and git metadata', async () => {
   const f = workbenchFixture();
   for (const name of ['zebra', 'alpha', 'ignored']) mkdirSync(path.join(f.source, name));
   writeFileSync(path.join(f.source, '.gitignore'), 'ignored/\nsecret.txt\n');
   writeFileSync(path.join(f.source, 'secret.txt'), 'hidden');
   writeFileSync(path.join(f.source, 'alpha', 'notes.txt'), 'notes');
-  const listed = f.control.filesList(user, f.project.id, undefined, undefined);
+  const listed = await f.control.filesList(user, f.project.id, undefined, undefined);
   expect(listed).toEqual({
     entries: [
       { name: 'alpha', kind: 'dir' },
@@ -33,37 +33,37 @@ it('lists directories before files by name, excluding ignored entries and git me
     ],
     truncated: false,
   });
-  expect(f.control.filesList(user, f.project.id, undefined, 'alpha')).toEqual({
+  expect(await f.control.filesList(user, f.project.id, undefined, 'alpha')).toEqual({
     entries: [{ name: 'notes.txt', kind: 'file', size: 5 }],
     truncated: false,
   });
-  expect(f.control.filesList(user, f.project.id, undefined, 'zebra')).toEqual({
+  expect(await f.control.filesList(user, f.project.id, undefined, 'zebra')).toEqual({
     entries: [],
     truncated: false,
   });
 });
 
-it('lists a link to a folder inside the workspace as a folder that opens', () => {
+it('lists a link to a folder inside the workspace as a folder that opens', async () => {
   const f = workbenchFixture();
   mkdirSync(path.join(f.source, 'docs'));
   writeFileSync(path.join(f.source, 'docs', 'a.md'), 'a');
   symlinkSync('docs', path.join(f.source, 'current'));
-  expect(f.control.filesList(user, f.project.id, undefined, undefined).entries).toEqual([
+  expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
     { name: 'current', kind: 'dir' },
     { name: 'docs', kind: 'dir' },
     { name: 'answer.txt', kind: 'file', size: 5 },
   ]);
-  expect(f.control.filesList(user, f.project.id, undefined, 'current').entries).toEqual([
+  expect((await f.control.filesList(user, f.project.id, undefined, 'current')).entries).toEqual([
     { name: 'a.md', kind: 'file', size: 1 },
   ]);
 });
 
-it('returns at most one thousand sorted directory entries and reports truncation', () => {
+it('returns at most one thousand sorted directory entries and reports truncation', async () => {
   const f = workbenchFixture();
   mkdirSync(path.join(f.source, 'many'));
   for (let index = 0; index < 1001; index++)
     writeFileSync(path.join(f.source, 'many', `${String(index).padStart(4, '0')}.txt`), '');
-  const listed = f.control.filesList(user, f.project.id, undefined, 'many');
+  const listed = await f.control.filesList(user, f.project.id, undefined, 'many');
   expect(listed.entries).toHaveLength(1000);
   expect(listed.entries[999]!.name).toBe('0999.txt');
   expect(listed.truncated).toBe(true);
@@ -149,7 +149,9 @@ it('uses the session worktree for all queries and enforces project access and ow
   writeFileSync(path.join(f.source, 'source-only.ts'), 'function sourceOnly() {}');
   writeFileSync(path.join(workspace.path, 'local.ts'), 'function localSymbol() {}');
   expect(
-    f.control.filesList(user, f.project.id, session.id, undefined).entries.map((e) => e.name),
+    (await f.control.filesList(user, f.project.id, session.id, undefined)).entries.map(
+      (e) => e.name,
+    ),
   ).toEqual(['answer.txt', 'local.ts']);
   expect(f.control.filesRead(user, f.project.id, session.id, 'local.ts').text).toContain(
     'localSymbol',

@@ -290,7 +290,7 @@ it('forks before a reported span using native history without a text handoff', a
     name: 'Read',
     native_history_before: 'previous-message',
   });
-  const fork = f.call<Session>('session.fork', {
+  const fork = await f.call<Session>('session.fork', {
     session_id: session.id,
     before_span_id: 'tool-call',
     input: 'Branch',

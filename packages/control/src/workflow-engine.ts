@@ -25,14 +25,14 @@ import { autoMerge } from './user-config.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { currentBinding, currentDirectMerge, taskGeneration, taskSessions } from './board-plan.js';
 import { dispatchQueue, taskPath } from './task-dispatch.js';
-import { admitMerge, afterCommit } from './workbench-session.js';
+import { admitMerge, afterCommit, readMergeStates } from './workbench-session.js';
 import { appendNote, contractLines } from './lead-inbox.js';
 import { doneReported, queueStepTurn, wakeLead } from './task-tracking.js';
 import { causeTurn } from './progress.js';
 import { unsnooze } from './session.js';
 import { runValidationCommand } from './validation-executor.js';
 import { reviewInstruction, reviewerRuntime, startReview } from './review.js';
-import { sessionRange } from './landing-diff.js';
+import { sessionRange, sessionRangeAsync } from './landing-diff.js';
 import { runGit } from './git.js';
 import { workflowResults } from './workflow-results.js';
 import { checkGates, gateFailed } from './landing.js';
@@ -217,21 +217,26 @@ function changedPaths(
     ? { source: workspace.source!, from_sha: direct.from_sha, to_sha: direct.to_sha }
     : sessionRange(ctx, session);
   if (!merged) {
-    const sourceHead = runGit(workspace.source!, ['rev-parse', '--verify', 'HEAD^{commit}']);
-    requireThat(sourceHead.exit_code === 0, 'git_failed', sourceHead.stderr.toString().trim());
-    const objects = runGit(workspace.source!, [
+    // --git-path prints at once and --verify prints its commit last.
+    const read = runGit(workspace.source!, [
       'rev-parse',
       '--path-format=absolute',
       '--git-path',
       'objects',
+      '--verify',
+      'HEAD^{commit}',
     ]);
-    requireThat(objects.exit_code === 0, 'git_failed', objects.stderr.toString().trim());
+    requireThat(read.exit_code === 0, 'git_failed', read.stderr.toString().trim());
+    const [objects, sourceHead] = read.stdout.toString().trim().split('\n');
+    // Not diff --merge-base, which fails on a history with more than one merge base.
     const base = runGit(
       workspace.path,
-      ['merge-base', range.to_sha, sourceHead.stdout.toString().trim()],
+      ['merge-base', range.to_sha, sourceHead!],
       undefined,
       false,
-      { env: { GIT_ALTERNATE_OBJECT_DIRECTORIES: objects.stdout.toString().trim() } },
+      {
+        env: { GIT_ALTERNATE_OBJECT_DIRECTORIES: objects! },
+      },
     );
     requireThat(base.exit_code === 0, 'git_failed', base.stderr.toString().trim());
     range.from_sha = base.stdout.toString().trim();
@@ -657,57 +662,99 @@ function startPrompt(ctx: ControlContext, run: StepRun): void {
   if (turn) changeRun(ctx, { ...run, turn_id: turn.id }, 'running');
 }
 
-/** Reviews the task's committed range on the named runtime, else on the one `reviewerRuntime` picks. */
-function startReviewStep(ctx: ControlContext, run: StepRun): void {
+/** The runtime and round a review step starts on, or why it fails; read from the store alone. */
+function reviewStart(ctx: ControlContext, run: StepRun) {
   const kind = run.step.kind as Extract<WorkflowStep['kind'], { type: 'review' }>,
     session = ctx.store.must<Session>('sessions', run.session_id!),
     plan = ctx.store.must<BoardPlan>('board_plans', run.lead_session_id),
     task = plan.tasks.find((t) => t.id === run.task_id)!;
   const name = kind.runtime ?? reviewerRuntime(ctx, session.project_id, session.runtime);
-  if (!name) return failStep(ctx, run, 'No runtime can run a read-only review');
+  if (!name) return { failure: 'No runtime can run a read-only review' };
   const round =
       ctx.store.list<Review>('reviews').filter((r) => r.session_id === session.id).length + 1,
     maxRounds = taskWorkflow(ctx, plan, task.id).definition.review.max_rounds;
   if (round > maxRounds)
-    return failStep(
-      ctx,
-      run,
-      `Code review limit reached: at most ${maxRounds} rounds per reviewed session`,
-    );
-  try {
-    const range = sessionRange(ctx, session),
-      diff = runGit(range.source, [
-        'diff',
-        '--no-color',
-        '--no-ext-diff',
-        range.from_sha,
-        range.to_sha,
-      ]);
-    requireThat(
-      diff.exit_code === 0,
-      'git_failed',
-      diff.stderr.toString().trim() || 'Git diff failed',
-    );
-    const review = startReview(ctx, run.project_id, [name], {
-      round,
-      cause: '',
-      prompt: `${reviewInstruction}\n\nTask goal:\n${contractLines(task).join('\n')}\n\nChanges:\n${diff.stdout.toString('utf8')}`,
-      artifact: { name: 'changes.diff', content: diff.stdout },
-      session_id: session.id,
-      requester: {
-        lead_session_id: plan.id,
-        task_id: task.id,
-        generation: run.generation,
-        step_run_id: run.id,
-      },
-      range,
-      choice: { model: kind.model, effort: kind.effort },
+    return {
+      failure: `Code review limit reached: at most ${maxRounds} rounds per reviewed session`,
+    };
+  return { kind, session, plan, task, name, round };
+}
+
+// The review steps whose range and diff are being read, by run id.
+const reviewReads = new WeakMap<ControlContext, Set<string>>();
+
+/**
+ * Reviews the task's committed range on the named runtime, else on the one `reviewerRuntime`
+ * picks; reads the range and diff first, then starts the review if the run is still pending.
+ */
+function startReviewStep(ctx: ControlContext, run: StepRun): void {
+  let reading = reviewReads.get(ctx);
+  if (!reading) reviewReads.set(ctx, (reading = new Set()));
+  if (reading.has(run.id)) return;
+  const start = reviewStart(ctx, run);
+  if (start.failure !== undefined) return failStep(ctx, run, start.failure);
+  const committed = afterCommit(ctx);
+  const work: Promise<void> = Promise.resolve()
+    .then(async () => {
+      if (!committed() || ctx.closing) return;
+      const read = await (async () => {
+        const range = await sessionRangeAsync(ctx, start.session),
+          diff = await runGit(
+            range.source,
+            ['diff', '--no-color', '--no-ext-diff', range.from_sha, range.to_sha],
+            undefined,
+            true,
+          );
+        requireThat(
+          diff.exit_code === 0,
+          'git_failed',
+          diff.stderr.toString().trim() || 'Git diff failed',
+        );
+        return { range, diff };
+      })().catch((error: unknown) => {
+        if (!(error instanceof DomainError)) throw error;
+        return error.message;
+      });
+      if (ctx.closing) return;
+      ctx.store.transaction(() => {
+        const current = ctx.store.get<StepRun>('workflow_step_runs', run.id);
+        if (current?.state !== 'pending' || current.revision !== run.revision) return;
+        if (typeof read === 'string') return failStep(ctx, current, read);
+        // Another review of the session may have taken this round meanwhile.
+        const again = reviewStart(ctx, current);
+        if (again.failure !== undefined) return failStep(ctx, current, again.failure);
+        const { kind, session, plan, task, name, round } = again;
+        try {
+          const review = startReview(ctx, current.project_id, [name], {
+            round,
+            cause: '',
+            prompt: `${reviewInstruction}\n\nTask goal:\n${contractLines(task).join('\n')}\n\nChanges:\n${read.diff.stdout.toString('utf8')}`,
+            artifact: { name: 'changes.diff', content: read.diff.stdout },
+            session_id: session.id,
+            requester: {
+              lead_session_id: plan.id,
+              task_id: task.id,
+              generation: current.generation,
+              step_run_id: current.id,
+            },
+            range: read.range,
+            choice: { model: kind.model, effort: kind.effort },
+          });
+          changeRun(ctx, { ...current, review_id: review.id }, 'running');
+        } catch (error) {
+          if (!(error instanceof DomainError)) throw error;
+          failStep(ctx, current, error.message);
+        }
+      });
+    })
+    .catch((error: unknown) => ctx.diagnostic(error))
+    .finally(() => {
+      reading.delete(run.id);
+      ctx.completions.delete(work);
+      if (!ctx.closing) ctx.changed();
     });
-    changeRun(ctx, { ...run, review_id: review.id }, 'running');
-  } catch (error) {
-    if (!(error instanceof DomainError)) throw error;
-    failStep(ctx, run, error.message);
-  }
+  reading.add(run.id);
+  ctx.completions.add(work);
 }
 
 /** Before the merge, blocking findings go to the task session, and the slot runs again after its turn. */
@@ -832,7 +879,8 @@ function runCommandStep(ctx: ControlContext, pending: StepRun): void {
                   timeout_ms: kind.timeout_seconds * 1000,
                 },
               ],
-              sessionRange(ctx, ctx.store.must<Session>('sessions', run.session_id!)).to_sha,
+              (await sessionRangeAsync(ctx, ctx.store.must<Session>('sessions', run.session_id!)))
+                .to_sha,
             )
           : undefined;
       if (ctx.closing || (run.slot === 'before_merge' && !checked)) return;
@@ -1224,34 +1272,68 @@ export function advanceSteps(ctx: ControlContext): void {
       }
     }
   for (const session of ctx.store.list<Session>('sessions')) {
-    if (
-      session.merge?.reason !== 'workflow_approval' ||
-      session.state !== 'open' ||
-      session.outcome ||
-      session.stop_requested
-    )
-      continue;
-    if (waitBeforeMerge(ctx, session)) continue;
-    try {
-      admitMerge(
-        ctx,
-        session,
-        undefined,
-        session.merge.allow_out_of_scope,
-        undefined,
-        session.merge.allowed_files,
-      );
-    } catch (error) {
-      if (!(error instanceof DomainError)) throw error;
-      const next = ctx.store.update(
-        'sessions',
-        { ...session, merge: { ...session.merge, state: 'blocked' as const, reason: error.code } },
-        session.revision,
-      );
-      ctx.store.event('session.merge_blocked', next, next.project_id, next.merge);
-      unsnooze(ctx, next.id, 'merge_blocked');
-    }
+    if (!heldForSteps(session) || waitBeforeMerge(ctx, session)) continue;
+    admitAfterSteps(ctx, session);
   }
+}
+
+// The sessions whose steps before the merge passed and whose repository states are being read.
+const admitReads = new WeakMap<ControlContext, Set<string>>();
+
+const heldForSteps = (session: Session) =>
+  session.merge?.reason === 'workflow_approval' &&
+  session.state === 'open' &&
+  !session.outcome &&
+  !session.stop_requested;
+
+/** Reads the repository states of a session its steps before the merge let through, then admits its merge. */
+function admitAfterSteps(ctx: ControlContext, held: Session): void {
+  let reading = admitReads.get(ctx);
+  if (!reading) admitReads.set(ctx, (reading = new Set()));
+  if (reading.has(held.id)) return;
+  const committed = afterCommit(ctx),
+    workspace = ctx.store.must<Workspace>('workspaces', held.workspace_id!);
+  const work: Promise<void> = Promise.resolve()
+    .then(async () => {
+      if (!committed() || ctx.closing) return;
+      const reads = await readMergeStates(workspace);
+      if (ctx.closing) return;
+      ctx.store.transaction(() => {
+        const session = ctx.store.must<Session>('sessions', held.id);
+        if (!heldForSteps(session) || waitBeforeMerge(ctx, session)) return;
+        try {
+          admitMerge(
+            ctx,
+            session,
+            undefined,
+            session.merge!.allow_out_of_scope,
+            undefined,
+            session.merge!.allowed_files,
+            reads,
+          );
+        } catch (error) {
+          if (!(error instanceof DomainError)) throw error;
+          const next = ctx.store.update(
+            'sessions',
+            {
+              ...session,
+              merge: { ...session.merge!, state: 'blocked' as const, reason: error.code },
+            },
+            session.revision,
+          );
+          ctx.store.event('session.merge_blocked', next, next.project_id, next.merge);
+          unsnooze(ctx, next.id, 'merge_blocked');
+        }
+      });
+    })
+    .catch((error: unknown) => ctx.diagnostic(error))
+    .finally(() => {
+      reading.delete(held.id);
+      ctx.completions.delete(work);
+      if (!ctx.closing) ctx.changed();
+    });
+  reading.add(held.id);
+  ctx.completions.add(work);
 }
 
 /** The fixed path and the values that govern it, for the web step chart. */

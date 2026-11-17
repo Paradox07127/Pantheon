@@ -102,7 +102,7 @@ async function acceptReport(f: Fixture, leadId: string, taskId: string) {
   await f.control.tick();
   const [worker] = sessionsOf(f, leadId, taskId);
   await settle(f, worker!);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: `Task ${taskId} is answered` },
     null,
@@ -493,7 +493,7 @@ it('refuses a done report from before the goal of the report task changed', asyn
       null,
       sessionOf(f, lead.id, 'lead'),
     );
-  report();
+  await report();
   await settle(f, current(f, lead.id));
   writePlan(f, lead.id, [reportTask('r', { goal: 'Answer another question' })]);
   expect(accept).toThrow(expect.objectContaining({ code: 'invalid_state' }));
@@ -501,7 +501,7 @@ it('refuses a done report from before the goal of the report task changed', asyn
   // The next tick tells the idle session of the change.
   await f.control.tick();
   await settle(f, current(f, worker!.id));
-  report();
+  await report();
   await settle(f, current(f, lead.id));
   accept();
   expect(statusOf(f, lead.id, 'r')).toBe('done');
@@ -540,7 +540,7 @@ it('reopens an accepted task and its accepted milestone when the task contract c
   // The next tick tells the idle session of the change.
   await f.control.tick();
   await settle(f, current(f, worker!.id));
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'Task r names the format' },
     null,
@@ -924,7 +924,7 @@ it('refuses to accept a report task on the done report of a session the lead sto
   await f.control.tick();
   const [stopped] = sessionsOf(f, lead.id, 'r');
   await settle(f, stopped!);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'Task r is answered' },
     null,
@@ -973,7 +973,7 @@ it('refuses a done report sent before the changed contract reached the session, 
       sessionOf(f, lead.id, 'lead'),
     );
   writePlan(f, lead.id, [reportTask('r', { goal: 'Answer another question' })]);
-  report();
+  await report();
   expect(() => startTasks(f, lead.id, ['r'])).toThrow(
     expect.objectContaining({ code: 'invalid_state' }),
   );
@@ -983,7 +983,7 @@ it('refuses a done report sent before the changed contract reached the session, 
 
   await settle(f, current(f, worker!.id));
   expect(f.turns(worker!.id).at(-1)!.input).toContain('[Pantheon] The lead changed this task.');
-  report();
+  await report();
   await settle(f, current(f, lead.id));
   accept();
   expect(statusOf(f, lead.id, 'r')).toBe('done');
@@ -1165,7 +1165,7 @@ it('keeps the downstream tasks of a report task whose session merged until the l
   await f.control.tick();
   const [worker] = sessionsOf(f, lead.id, 'r');
   await settle(f, worker!);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'CSV is the format' },
     null,

@@ -55,7 +55,7 @@ it('forks checkpoint files, index and HEAD while leaving a running source and it
   const turnsBefore = f.turns(source.id);
   const status = git(work, 'status', '--porcelain');
   const sourceHead = git(work, 'rev-parse', 'HEAD');
-  const branch = fork(f, source, second.id);
+  const branch = await fork(f, source, second.id);
   await settle(f, branch);
   const branched = workspace(f, branch).path;
   expect(readFileSync(path.join(branched, 'answer.txt'), 'utf8')).toBe('checkpoint\n');
@@ -84,7 +84,7 @@ it('delivers only the record before the chosen turn together with attachments an
   );
   const skills = [{ name: 'review', path: '/skills/review/SKILL.md' }];
   const sent = vi.spyOn(f.adapter, 'send');
-  const branch = fork(f, source, second.id, { attachments: [attachment.id], skills });
+  const branch = await fork(f, source, second.id, { attachments: [attachment.id], skills });
   await settle(f, branch);
   const first = f.turns(branch.id)[0]!;
   expect(first.handoff).toContain('User:\nStart the export');
@@ -115,7 +115,7 @@ it("freezes current uncommitted and untracked files without the source worktree'
   await send(f, source, 'Keep the entire record');
   const head = git(work, 'rev-parse', 'HEAD');
   const staged = git(work, 'diff', '--cached');
-  const branch = fork(f, source);
+  const branch = await fork(f, source);
   writeFileSync(path.join(work, 'answer.txt'), 'changed after fork\n');
   await settle(f, branch);
   const branched = workspace(f, branch).path;
@@ -149,7 +149,7 @@ it('forks a running source from the end of its last completed turn and leaves th
   const running = f.turns(source.id).at(-1)!;
   writeFileSync(path.join(work, 'answer.txt'), 'while running\n');
   const turnsBefore = f.turns(source.id);
-  const branch = fork(f, source);
+  const branch = await fork(f, source);
   await settle(f, branch);
   expect(readFileSync(path.join(workspace(f, branch).path, 'answer.txt'), 'utf8')).toBe(
     'after the header\n',
@@ -200,7 +200,7 @@ it('reads the checkpoints of every later turn of a running source with one git r
     if (ref) git(f.source, 'update-ref', '-d', ref);
   writeFileSync(path.join(work, 'answer.txt'), 'while running\n');
   let branch!: Session;
-  const runs = await gitRuns(() => (branch = fork(f, source)));
+  const runs = await gitRuns(async () => (branch = await fork(f, source)));
   expect(runs.filter((run) => run.includes(prefix))).toHaveLength(1);
   await settle(f, branch);
   // No later turn kept a checkpoint, so the fork takes the current files.
@@ -232,7 +232,7 @@ it('refuses to fork a running source whose running turn took no checkpoint', asy
       .some((event) => (event.payload as { turn_id: string }).turn_id === running.id),
   ).toBe(true);
   writeFileSync(path.join(work, 'answer.txt'), 'half done by the running turn\n');
-  expect(() => fork(f, source)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
+  await expect(fork(f, source)).rejects.toThrow(expect.objectContaining({ code: 'invalid_state' }));
 });
 
 it('refuses a current-state fork while the first source turn is running', async () => {
@@ -242,7 +242,7 @@ it('refuses a current-state fork while the first source turn is running', async 
     () => f.turns(source.id)[0]?.state === 'running',
     () => f.control.tick(),
   );
-  expect(() => fork(f, source)).toThrow(
+  await expect(fork(f, source)).rejects.toThrow(
     expect.objectContaining({
       code: 'invalid_state',
       message: 'Source session has no completed turn to fork from yet',
@@ -273,12 +273,12 @@ it('refuses sessions without a git worktree, foreign turns, missing checkpoints 
   const other = f.create();
   await settle(f, source);
   await settle(f, other);
-  expect(() => fork(f, source, f.turns(other.id)[0]!.id)).toThrow(
+  await expect(fork(f, source, f.turns(other.id)[0]!.id)).rejects.toThrow(
     expect.objectContaining({ code: 'invalid_state', message: 'Turn has no checkpoint' }),
   );
   const turn = f.turns(source.id)[0]!;
   git(f.source, 'update-ref', '-d', checkpoint(source, turn));
-  expect(() => fork(f, source, turn.id)).toThrow(
+  await expect(fork(f, source, turn.id)).rejects.toThrow(
     expect.objectContaining({ code: 'invalid_state', message: 'Turn has no checkpoint' }),
   );
   expect(() =>
@@ -324,7 +324,7 @@ it('inherits session settings and merge destination and projects fork provenance
     input: 'Start export',
   });
   await settle(f, source);
-  const branch = fork(f, source);
+  const branch = await fork(f, source);
   expect(branch).toMatchObject({
     project_id: source.project_id,
     runtime: source.runtime,
@@ -368,12 +368,14 @@ it("starts a fork on another runtime on that runtime's defaults and in ask mode 
     input: 'Start export',
   });
   await settle(f, source);
-  expect(fork(f, source, undefined, { runtime: 'codex', model: 'codex-model' })).toMatchObject({
+  expect(
+    await fork(f, source, undefined, { runtime: 'codex', model: 'codex-model' }),
+  ).toMatchObject({
     runtime: 'codex',
     requested_model: 'codex-model',
     permission_mode: 'ask',
   });
-  const defaults = fork(f, source, undefined, { runtime: 'codex' });
+  const defaults = await fork(f, source, undefined, { runtime: 'codex' });
   expect(defaults).toMatchObject({ runtime: 'codex', permission_mode: 'ask' });
   expect(defaults.requested_model).toBeUndefined();
   expect(defaults.requested_effort).toBeUndefined();
@@ -384,7 +386,7 @@ it('keeps the fork snapshot and handoff independent when the source is deleted b
   const source = f.create('Start export');
   await settle(f, source);
   const second = await send(f, source, 'Add header');
-  const branch = fork(f, source, second.id);
+  const branch = await fork(f, source, second.id);
   f.call('session.delete', { session_id: source.id }, current(f, source).revision);
   await eventually(
     () => workspace(f, source).removed_at !== undefined,
@@ -417,7 +419,7 @@ it('leaves rolled back turns out of the whole-record handoff', async () => {
     { session_id: source.id, turn_id: second.id },
     current(f, source).revision,
   );
-  const branch = fork(f, source);
+  const branch = await fork(f, source);
   await settle(f, branch);
   const handoff = f.turns(branch.id)[0]!.handoff;
   expect(handoff).toContain('Start export');
@@ -468,7 +470,7 @@ it('opens a standalone session when forking a task session', async () => {
     input: 'Build export',
   });
   await settle(f, source);
-  const branch = fork(f, source);
+  const branch = await fork(f, source);
   await settle(f, branch);
   expect(current(f, branch).task).toBeUndefined();
   expect(f.list().find((session) => session.id === branch.id)?.lead).toBeUndefined();

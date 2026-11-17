@@ -161,7 +161,7 @@ it('stores single_model only with a default model and drops it when turned off',
   expect(f.current().session_defaults).not.toHaveProperty('single_model');
 });
 
-it('opens the lead session of a board sync on the default model and effort', () => {
+it('opens the lead session of a board sync on the default model and effort', async () => {
   const f = defaultsFixture(true),
     before = f.current();
   f.call(
@@ -175,7 +175,7 @@ it('opens the lead session of a board sync on the default model and effort', () 
     },
     before.revision,
   );
-  const { session_ids } = f.call<{ session_ids: string[] }>('board.sync', {
+  const { session_ids } = await f.call<{ session_ids: string[] }>('board.sync', {
     project_id: before.id,
   });
   expect(session_ids).toHaveLength(1);

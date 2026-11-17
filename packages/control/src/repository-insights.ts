@@ -185,7 +185,7 @@ async function readRepository(
       );
       if (Number(ahead.trim()) === 0) continue;
       if (!(await mergeBase(source, target, worktree.head))) continue;
-      const merge = await mergePreview(source, target, worktree.head, true);
+      const merge = await mergePreview(source, target, worktree.head);
       // 129: this git has no merge preview.
       if (merge.exit_code === 129) continue;
       requireThat(

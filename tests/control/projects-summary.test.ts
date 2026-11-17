@@ -109,6 +109,7 @@ it('summarizes two projects and limits a planner to its own project', async () =
     .prepare('UPDATE events SET created_at=? WHERE aggregate_id=?')
     .run(lastActivity, first.id);
 
+  await f.control.prefetchWorktreeReads(user);
   const cursor = f.store.cursor();
   const { projects } = f.control.projectsSummary(user);
   expect(projects).toHaveLength(2);
@@ -156,6 +157,7 @@ it('reads each worktree once per summary', async () => {
   writeFileSync(path.join(workspace.path, 'note.txt'), 'uncommitted\n');
   const gitModule = await import('../../packages/control/dist/git.js');
   const runGit = vi.spyOn(gitModule, 'runGit');
+  await f.control.prefetchWorktreeReads(user);
   f.control.projectsSummary(user);
   const diffs = runGit.mock.calls.filter(
     ([cwd, args]) => cwd === workspace.path && args[0] === 'diff',

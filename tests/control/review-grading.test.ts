@@ -56,7 +56,7 @@ it('requires a boolean finding grade and reproduction for blocking findings in t
 
 it('preserves blocking grades on deleted code and shows major and report-only minor findings', async () => {
   const f = await reviewFixture();
-  const review = f.request();
+  const review = await f.request();
   const session = f.store.must<Session>('sessions', review.session_ids[0]!);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   const blocking = recordFinding(ctx, session, {
@@ -96,11 +96,11 @@ it('preserves blocking grades on deleted code and shows major and report-only mi
 
 it('increments review and finding rounds after committed fixes and retains them across restart', async () => {
   const f = await reviewFixture();
-  const first = f.request();
+  const first = await f.request();
   expect(first.round).toBe(1);
   await f.complete(first);
   f.change(2);
-  const second = f.request();
+  const second = await f.request();
   expect(second.round).toBe(2);
   const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
   expect(
@@ -112,18 +112,18 @@ it('increments review and finding rounds after committed fixes and retains them 
   await f.complete(second);
   await f.restart();
   f.change(3);
-  expect(f.request().round).toBe(3);
+  expect((await f.request()).round).toBe(3);
 });
 
 it('refuses a fourth code review with a readable reason and creates no reviewer sessions', async () => {
   const f = await reviewFixture();
   for (let round = 1; round <= 3; round++) {
     if (round > 1) f.change(round);
-    await f.complete(f.request());
+    await f.complete(await f.request());
   }
   f.change(4);
   const sessions = f.store.list<Session>('sessions');
-  expect(f.request).toThrow(/Code review.*3.*round/i);
+  await expect(f.request()).rejects.toThrow(/Code review.*3.*round/i);
   expect(f.store.list<Review>('reviews')).toHaveLength(3);
   expect(f.store.list<Session>('sessions')).toEqual(sessions);
 });

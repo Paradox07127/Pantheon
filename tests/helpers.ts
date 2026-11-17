@@ -13,6 +13,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { onTestFinished, vi } from 'vitest';
 import { Store, ArtifactFiles } from '@pantheon/store';
 import { Control, type ControlOptions } from '@pantheon/control';
 import { FixtureAdapter } from '@pantheon/adapters';
@@ -254,3 +255,51 @@ export const gitRunsOf = (runs: string[], name: string) =>
   runs
     .map((run) => run.split('|').slice(2).join('|'))
     .filter((args) => args.replace(/^--literal-pathspecs /, '').split(' ')[0] === name);
+
+/**
+ * Puts a git first on PATH that, on the first run whose arguments contain ` ${trigger} `, takes the
+ * repository's index lock as another git would and gives it up 300 ms later; restore undoes it.
+ */
+export function heldIndexLock(trigger: string) {
+  const real = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const bin = mkdtempSync(path.join(process.cwd(), 'node_modules/.cache/held-index-lock-')),
+    taken = path.join(bin, 'taken');
+  writeFileSync(
+    path.join(bin, 'git'),
+    [
+      '#!/bin/sh',
+      `case " $* " in *" ${trigger} "*)`,
+      `  if [ ! -e '${taken}' ]; then`,
+      `    : > '${taken}'; lock="\${GIT_DIR:-.git}/index.lock"; : > "$lock"`,
+      `    (sleep 0.3; rm -f "$lock") </dev/null >/dev/null 2>&1 &`,
+      '  fi;;',
+      'esac',
+      `exec '${real}' "$@"`,
+      '',
+    ].join('\n'),
+  );
+  chmodSync(path.join(bin, 'git'), 0o755);
+  const PATH = process.env.PATH;
+  process.env.PATH = `${bin}:${PATH}`;
+  return {
+    restore: () => {
+      process.env.PATH = PATH;
+      rmSync(bin, { recursive: true, force: true });
+    },
+  };
+}
+
+let waited = 0;
+
+/** Moves Date.now on past the 2 s a finished git status is reused for, as waiting that long would. */
+export function waitOutStatusReuse(): void {
+  if (!waited) {
+    const now = Date.now.bind(Date);
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now() + waited);
+    onTestFinished(() => {
+      waited = 0;
+      clock.mockRestore();
+    });
+  }
+  waited += 2001;
+}

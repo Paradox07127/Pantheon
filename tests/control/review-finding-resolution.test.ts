@@ -93,7 +93,7 @@ async function sessionReviewFixture() {
   git(workspace.path, 'add', '.');
   git(workspace.path, 'commit', '--quiet', '-m', 'Add slugify');
   const request = async (runtimes = reviewers.map((a) => a.name)) => {
-    const review = w.call<Review>('review.request', { session_id: session.id, runtimes });
+    const review = await w.call<Review>('review.request', { session_id: session.id, runtimes });
     await eventually(
       () => reviewers.every((adapter) => adapter.starts[0]?.turn !== undefined),
       () => w.control.tick(),

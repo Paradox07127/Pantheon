@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 const DAY = 86400000;
 const now = Date.parse('2026-11-13T12:00:00Z');
-function setup() {
+async function setup() {
   const f = fixture({ now: () => now });
   cleanups.push(() => f.close());
   const write = (name: string, contents: string | Buffer) => {
@@ -56,7 +56,9 @@ function setup() {
   git(['add', '.']);
   git(['commit', '--quiet', '-m', 'Use writer'], 1);
   write('src/untracked.ts', 'not counted\n');
-  const baseline = f.call<ProjectBaseline>('project.baseline.start', { project_id: f.project.id });
+  const baseline = await f.call<Promise<ProjectBaseline>>('project.baseline.start', {
+    project_id: f.project.id,
+  });
   const principal: Principal = {
     id: `session:${baseline.session_id}`,
     role: 'planner',
@@ -78,7 +80,7 @@ function setup() {
     },
     body: '## Usage\nRead a note.',
   };
-  const submit = (patch = {}, by = principal) =>
+  const submit = async (patch = {}, by = principal) =>
     f.call('project.intro.submit', { ...input, ...patch }, null, by);
   const read = () => f.control.projectIntroRead(user, f.project.id);
   const end = () => {
@@ -93,11 +95,15 @@ function setup() {
   return { ...f, write, git, baseline, principal, input, submit, read, end };
 }
 
-it('stores the measured introduction, emits its event and replaces the prior submission', () => {
-  const f = setup();
-  expect(f.read()).toEqual({ intro: null, behind: 0, writing_session_id: f.baseline.session_id });
-  expect(f.submit()).toEqual({ written: true });
-  expect(f.read()).toEqual({
+it('stores the measured introduction, emits its event and replaces the prior submission', async () => {
+  const f = await setup();
+  expect(await f.read()).toEqual({
+    intro: null,
+    behind: 0,
+    writing_session_id: f.baseline.session_id,
+  });
+  expect(await f.submit()).toEqual({ written: true });
+  expect(await f.read()).toEqual({
     intro: {
       ...f.input,
       project_id: f.project.id,
@@ -117,9 +123,9 @@ it('stores the measured introduction, emits its event and replaces the prior sub
   expect(
     f.store.events(0, f.project.id).filter((event) => event.kind === 'project.intro.written'),
   ).toMatchObject([{ payload: { project_id: f.project.id } }]);
-  f.submit({ summary: 'A revised introduction.', body: undefined });
-  expect(f.read().intro?.summary).toBe('A revised introduction.');
-  expect(f.read().intro).not.toHaveProperty('body');
+  await f.submit({ summary: 'A revised introduction.', body: undefined });
+  expect((await f.read()).intro?.summary).toBe('A revised introduction.');
+  expect((await f.read()).intro).not.toHaveProperty('body');
 });
 
 it.each([
@@ -152,31 +158,31 @@ it.each([
   ],
 ])(
   'refuses invalid %s with a field-specific reason and keeps the stored introduction',
-  (field, patch) => {
-    const f = setup();
-    expect(() => f.submit(patch)).toThrow(field);
-    expect(f.read().intro).toBeNull();
+  async (field, patch) => {
+    const f = await setup();
+    await expect(() => f.submit(patch)).rejects.toThrow(field);
+    expect((await f.read()).intro).toBeNull();
   },
 );
 
-it('counts commits since the saved heads and reports a removed commit as unknown', () => {
-  const f = setup();
-  f.submit();
-  expect(f.read().behind).toBe(0);
+it('counts commits since the saved heads and reports a removed commit as unknown', async () => {
+  const f = await setup();
+  await f.submit();
+  expect((await f.read()).behind).toBe(0);
   f.git(['commit', '--allow-empty', '--quiet', '-m', 'First later commit']);
   f.git(['commit', '--allow-empty', '--quiet', '-m', 'Second later commit']);
-  expect(f.read().behind).toBe(2);
+  expect((await f.read()).behind).toBe(2);
   f.git(['checkout', '--orphan', 'replacement']);
   f.git(['commit', '--quiet', '-m', 'Replace history']);
   f.git(['branch', '-D', 'main']);
   f.git(['reflog', 'expire', '--expire=now', '--all']);
   f.git(['gc', '--prune=now']);
-  expect(f.read().behind).toBeNull();
+  expect((await f.read()).behind).toBeNull();
 });
 
 it('starts a read-only introduction session with baseline runtime selection, facts and purpose-scoped memory tools', async () => {
-  const f = setup();
-  f.submit();
+  const f = await setup();
+  await f.submit();
   f.end();
   const baseline = f.store.must<ProjectBaseline>('project_baselines', f.baseline.id);
   f.store.update(
@@ -203,7 +209,7 @@ it('starts a read-only introduction session with baseline runtime selection, fac
     baseline.revision,
   );
   const starts = vi.spyOn(f.adapter, 'resume');
-  const { session_id } = f.call<{ session_id: string }>('project.intro.start', {
+  const { session_id } = await f.call<Promise<{ session_id: string }>>('project.intro.start', {
     project_id: f.project.id,
   });
   const session = f.store.must<Session>('sessions', session_id);
@@ -222,10 +228,10 @@ it('starts a read-only introduction session with baseline runtime selection, fac
     'project.read',
     'project.intro.submit',
   ]);
-  expect(f.read().writing_session_id).toBe(session_id);
-  expect(() => f.call('project.intro.start', { project_id: f.project.id })).toThrow(
-    expect.objectContaining({ code: 'invalid_input' }),
-  );
+  expect((await f.read()).writing_session_id).toBe(session_id);
+  await expect(async () =>
+    f.call('project.intro.start', { project_id: f.project.id }),
+  ).rejects.toThrow(expect.objectContaining({ code: 'invalid_input' }));
   const brief = f.store
     .list<SessionTurn>('session_turns')
     .find((turn) => turn.session_id === session_id)!.input;
@@ -248,13 +254,13 @@ it('starts a read-only introduction session with baseline runtime selection, fac
     role: 'planner',
     extensions: { mode: 'none' },
   });
-  expect(f.submit({}, { ...f.principal, id: `session:${session_id}`, session_id })).toEqual({
+  expect(await f.submit({}, { ...f.principal, id: `session:${session_id}`, session_id })).toEqual({
     written: true,
   });
 });
 
-it('limits submission to assessment and introduction sessions and shares their authoring instructions', () => {
-  const f = setup();
+it('limits submission to assessment and introduction sessions and shares their authoring instructions', async () => {
+  const f = await setup();
   const baseline = f.store.must<Session>('sessions', f.baseline.session_id!);
   expect(purposeSessionTools(baseline)).toContain('project.intro.submit');
   const intro: Session = { ...baseline, baseline: undefined, intro: true };
@@ -280,26 +286,30 @@ it('limits submission to assessment and introduction sessions and shares their a
     ])
       expect(instructions).toContain(text);
   }
-  expect(() => f.submit({}, user)).toThrow(expect.objectContaining({ code: 'permission_denied' }));
+  await expect(() => f.submit({}, user)).rejects.toThrow(
+    expect.objectContaining({ code: 'permission_denied' }),
+  );
   f.store.update('sessions', { ...baseline, baseline: undefined }, baseline.revision);
   for (const role of ['planner', 'lead', 'worker', 'reviewer'] as const)
-    expect(() => f.submit({}, { ...f.principal, role })).toThrow(
+    await expect(() => f.submit({}, { ...f.principal, role })).rejects.toThrow(
       expect.objectContaining({ code: 'permission_denied' }),
     );
 });
 
 it.each(['assessment', 'introduction', 'discarded assessment'])(
   'keeps the introduction when its %s session is deleted and removes it with the project',
-  (purpose) => {
-    const f = setup();
+  async (purpose) => {
+    const f = await setup();
     let sessionId = f.baseline.session_id!;
     if (purpose === 'introduction') {
       f.end();
-      sessionId = f.call<{ session_id: string }>('project.intro.start', {
-        project_id: f.project.id,
-      }).session_id;
+      sessionId = (
+        await f.call<Promise<{ session_id: string }>>('project.intro.start', {
+          project_id: f.project.id,
+        })
+      ).session_id;
     }
-    f.submit({}, { ...f.principal, id: `session:${sessionId}`, session_id: sessionId });
+    await f.submit({}, { ...f.principal, id: `session:${sessionId}`, session_id: sessionId });
     f.end();
     const session = f.store.must<Session>('sessions', sessionId);
     f.call(
@@ -307,8 +317,8 @@ it.each(['assessment', 'introduction', 'discarded assessment'])(
       { session_id: sessionId },
       session.revision,
     );
-    expect(f.read().intro?.session_id).toBeNull();
-    expect(f.read().intro?.summary).toBe(f.input.summary);
+    expect((await f.read()).intro?.session_id).toBeNull();
+    expect((await f.read()).intro?.summary).toBe(f.input.summary);
     f.call(
       'project.remove',
       { project_id: f.project.id },
@@ -318,8 +328,8 @@ it.each(['assessment', 'introduction', 'discarded assessment'])(
   },
 );
 
-it('sums git roots and uses baseline-scanned files for non-git roots, with at most eight language rows', () => {
-  const f = setup();
+it('sums git roots and uses baseline-scanned files for non-git roots, with at most eight language rows', async () => {
+  const f = await setup();
   const extra = path.join(f.root, 'extra');
   mkdirSync(path.join(extra, 'lib'), { recursive: true });
   writeFileSync(path.join(extra, 'lib/tool.py'), 'print(1)\nprint(2)\n');
@@ -333,8 +343,8 @@ it('sums git roots and uses baseline-scanned files for non-git roots, with at mo
     { ...project, roots: [...project.roots, extra, secondGit] },
     project.revision,
   );
-  f.submit({ modules: [{ path: 'lib', role: 'Python tool', entry: 'lib/tool.py' }] });
-  const intro = f.read().intro!;
+  await f.submit({ modules: [{ path: 'lib', role: 'Python tool', entry: 'lib/tool.py' }] });
+  const intro = (await f.read()).intro!;
   expect(intro.modules).toMatchObject([{ lines: 2, commits_30d: 0 }]);
   expect(intro.languages).toEqual([
     { name: 'TypeScript', lines: 8 },
@@ -345,7 +355,7 @@ it('sums git roots and uses baseline-scanned files for non-git roots, with at mo
   expect(intro.heads).toHaveLength(2);
   for (const ext of ['js', 'rs', 'go', 'swift', 'c', 'cpp', 'java', 'css', 'html'])
     writeFileSync(path.join(extra, `extra.${ext}`), 'one\n');
-  f.submit();
-  expect(f.read().intro!.languages).toHaveLength(8);
-  expect(f.read().intro!.languages.find((entry) => entry.name === 'other')?.lines).toBe(5);
+  await f.submit();
+  expect((await f.read()).intro!.languages).toHaveLength(8);
+  expect((await f.read()).intro!.languages.find((entry) => entry.name === 'other')?.lines).toBe(5);
 });

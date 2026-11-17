@@ -29,7 +29,7 @@ import type {
   BoardWaiting,
   WorkbenchSession,
 } from '@pantheon/protocol';
-import type { ControlContext } from './context.js';
+import { projectAccess, type ControlContext } from './context.js';
 import {
   awaitingChange,
   boardTaskId,
@@ -85,11 +85,139 @@ interface WalkedCommit {
   time: number;
   reverts: string[];
 }
-// Each repository's last revert walk, keyed by the walked branch names, their tips and the base.
-const revertWalks = new WeakMap<
-  ControlContext,
-  Map<string, { key: string; commits: WalkedCommit[] }>
->();
+/** A repository's last revert walk, keyed by the walked branch names, their tips and the base. */
+interface RevertWalk {
+  key?: string;
+  // Undefined until a walk completes, and after one failed.
+  commits?: WalkedCommit[];
+  refresh?: Promise<boolean>;
+}
+// By project and repository, as prefetchRevertWalks read them over all of each project's merges.
+const revertWalks = new WeakMap<ControlContext, Map<string, RevertWalk>>();
+
+type MergeEntry = { session_id: string; at: number; payload: MergedPayload };
+
+/** The merges by the repository each landed in: project roots can be separate repositories. */
+function mergeRepositories(ctx: ControlContext, projectId: string, merges: MergeEntry[]) {
+  const repositories = new Map<string, MergeEntry[]>();
+  for (const merge of merges) {
+    const session = ctx.store.get<Session>('sessions', merge.session_id),
+      workspace =
+        session?.workspace_id && ctx.store.get<Workspace>('workspaces', session.workspace_id),
+      source = workspace
+        ? (workspace.source ?? workspace.path)
+        : ctx.store.must<Project>('projects', projectId).roots[0]!;
+    repositories.set(source, [...(repositories.get(source) ?? []), merge]);
+  }
+  return repositories;
+}
+
+const mergedBranches = (merges: MergeEntry[]) => [
+  ...new Set(
+    merges.map((merge) => (merge.payload.branch ? `refs/heads/${merge.payload.branch}` : 'HEAD')),
+  ),
+];
+
+/** Walks the merges' branches back to the oldest merge's start, unless their tips are as `known` walked. */
+async function readRevertWalk(
+  source: string,
+  merges: MergeEntry[],
+  known: RevertWalk | undefined,
+): Promise<RevertWalk> {
+  const branches = mergedBranches(merges);
+  // The oldest merge's start bounds the walk, so commits dated before a range still link up.
+  const oldest = merges.reduce((a, b) => (b.at < a.at ? b : a)).payload,
+    base = oldest.from_sha ?? oldest.to_sha;
+  const resolved = await runGit(
+      source,
+      ['cat-file', '--batch-check'],
+      Buffer.from(branches.map((branch) => `${branch}\n`).join('')),
+      true,
+    ),
+    key =
+      resolved.exit_code === 0
+        ? JSON.stringify([branches, resolved.stdout.toString(), base])
+        : undefined;
+  if (key !== undefined && known?.key === key) return { key, commits: known.commits };
+  const log = await runGit(
+    source,
+    [
+      'log',
+      '--source',
+      '--decorate=full',
+      '--ignore-missing',
+      '--format=%H%x00%P%x00%S%x00%D%x00%ct%x00%B%x00',
+      ...branches,
+      `^${base}`,
+      '--',
+    ],
+    undefined,
+    true,
+  );
+  if (log.exit_code !== 0) return {};
+  const fields = log.stdout.toString().split('\0'),
+    walked: WalkedCommit[] = [];
+  for (let index = 0; index + 5 < fields.length; index += 6)
+    walked.push({
+      sha: fields[index]!.trim(),
+      parents: fields[index + 1]!.split(' ').filter(Boolean),
+      branch: fields[index + 2]!,
+      refs: fields[index + 3]!.split(', '),
+      time: Number(fields[index + 4]),
+      reverts: [...fields[index + 5]!.matchAll(/This reverts commit ([a-f0-9]{40,64})\b/g)].map(
+        (match) => match[1]!,
+      ),
+    });
+  return { key, commits: walked };
+}
+
+/**
+ * Reads asynchronously the revert walks of the repositories the project's merges landed in, which
+ * boardView counts reverts from alone; emits workspace.repository_changed when a walk moved.
+ */
+export function prefetchRevertWalks(
+  ctx: ControlContext,
+  p: Principal,
+  projectId: string,
+): Promise<void> {
+  projectAccess(ctx, p, projectId, 'project.read');
+  const walks = revertWalks.get(ctx) ?? new Map<string, RevertWalk>();
+  revertWalks.set(ctx, walks);
+  const merges = boardEvents(ctx, projectId, ['session.merged']).map((event) => ({
+    session_id: event.aggregate_id,
+    at: event.created_at,
+    payload: event.payload as MergedPayload,
+  }));
+  const reads = [...mergeRepositories(ctx, projectId, merges)].map(([source, sourceMerges]) => {
+    const id = JSON.stringify([projectId, source]),
+      known = walks.get(id);
+    if (known?.refresh) return known.refresh;
+    const refresh = readRevertWalk(source, sourceMerges, known).then((walk) => {
+      walks.set(id, walk);
+      return (
+        walk.commits !== known?.commits &&
+        JSON.stringify(walk.commits) !== JSON.stringify(known?.commits)
+      );
+    });
+    walks.set(id, { ...known, refresh });
+    return refresh;
+  });
+  const work: Promise<void> = Promise.all(reads)
+    .then((moved) => {
+      if (ctx.closing || !moved.includes(true)) return;
+      // Clients read the board again only after an event.
+      ctx.store.event(
+        'workspace.repository_changed',
+        ctx.store.must<Project>('projects', projectId),
+        projectId,
+        {},
+      );
+      ctx.changed();
+    })
+    .finally(() => ctx.completions.delete(work));
+  ctx.completions.add(work);
+  return work;
+}
 
 /** A lead's board state from its listed state; a lead not listed is closed. */
 function leadState(
@@ -904,73 +1032,18 @@ export function boardView(
     Object.assign(range.counts, cacheReadShare(range.input, range.cache));
   }
 
-  // Project roots can be separate repositories, so each merge is read in the one it landed in.
-  const repositories = new Map<string, [string, { at: number; payload: MergedPayload }][]>();
-  for (const entry of mergeList.map((merge): [string, typeof merge] => [merge.session_id, merge])) {
-    if (!inRange(entry[1].at)) continue;
-    const session = stored.get(entry[0]),
-      workspace =
-        session?.workspace_id && ctx.store.get<Workspace>('workspaces', session.workspace_id),
-      source = workspace
-        ? (workspace.source ?? workspace.path)
-        : ctx.store.must<Project>('projects', projectId).roots[0]!;
-    repositories.set(source, [...(repositories.get(source) ?? []), entry]);
-  }
-  for (const [source, rangedMerges] of repositories) {
-    const branches = [
-      ...new Set(
-        rangedMerges.map(([, merge]) =>
-          merge.payload.branch ? `refs/heads/${merge.payload.branch}` : 'HEAD',
-        ),
-      ),
-    ];
-    // The oldest merge's start bounds the walk, so commits dated before the range still link up.
-    const oldest = rangedMerges.reduce((a, b) => (b[1].at < a[1].at ? b : a))[1].payload,
-      base = oldest.from_sha ?? oldest.to_sha;
-    const resolved = runGit(
-        source,
-        ['cat-file', '--batch-check'],
-        Buffer.from(branches.map((branch) => `${branch}\n`).join('')),
-      ),
-      key =
-        resolved.exit_code === 0
-          ? JSON.stringify([branches, resolved.stdout.toString(), base])
-          : undefined,
-      walks = revertWalks.get(ctx) ?? new Map<string, { key: string; commits: WalkedCommit[] }>();
-    revertWalks.set(ctx, walks);
-    let walk = walks.get(source);
-    if (key === undefined || walk?.key !== key) {
-      const log = runGit(source, [
-        'log',
-        '--source',
-        '--decorate=full',
-        '--ignore-missing',
-        '--format=%H%x00%P%x00%S%x00%D%x00%ct%x00%B%x00',
-        ...branches,
-        `^${base}`,
-        '--',
-      ]);
-      // A repository moved or deleted since leaves its merges uncounted rather than failing the board.
-      if (log.exit_code !== 0) continue;
-      const fields = log.stdout.toString().split('\0'),
-        walked: WalkedCommit[] = [];
-      for (let index = 0; index + 5 < fields.length; index += 6)
-        walked.push({
-          sha: fields[index]!.trim(),
-          parents: fields[index + 1]!.split(' ').filter(Boolean),
-          branch: fields[index + 2]!,
-          refs: fields[index + 3]!.split(', '),
-          time: Number(fields[index + 4]),
-          reverts: [...fields[index + 5]!.matchAll(/This reverts commit ([a-f0-9]{40,64})\b/g)].map(
-            (match) => match[1]!,
-          ),
-        });
-      walk = { key: key ?? '', commits: walked };
-      if (key !== undefined) walks.set(source, walk);
-    }
+  for (const [source, rangedMerges] of mergeRepositories(
+    ctx,
+    projectId,
+    mergeList.filter((merge) => inRange(merge.at)),
+  )) {
+    const branches = mergedBranches(rangedMerges);
+    // A walk not read yet, or of a repository moved or deleted since, leaves its merges uncounted.
+    const walk = revertWalks.get(ctx)?.get(JSON.stringify([projectId, source]))?.commits;
+    if (!walk) continue;
     const commits = new Map<string, { parents: string[]; reverts: string[] }>(),
       tips = new Map<string, string>();
-    for (const { sha, parents, branch, refs, time, reverts } of walk.commits) {
+    for (const { sha, parents, branch, refs, time, reverts } of walk) {
       // As git log --until would: a commit dated after the range is left out, its ancestors are not.
       if (time * 1000 > rangeEnd) continue;
       commits.set(sha, { parents, reverts });
@@ -988,7 +1061,7 @@ export function boardView(
       }
       return found;
     };
-    for (const [, merge] of rangedMerges) {
+    for (const merge of rangedMerges) {
       const before = merge.payload.from_sha ? ancestors(merge.payload.from_sha) : new Set<string>(),
         landed = merge.payload.from_sha
           ? ancestors(merge.payload.to_sha)

@@ -214,7 +214,7 @@ it.skipIf(insideSandbox)(
     const f = mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     const head = commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
 
     const turn = await endTurn(f, lead.id);
 
@@ -261,7 +261,7 @@ it.skipIf(insideSandbox)(
     const f = mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
     const first = git(f.source, 'rev-parse', 'main');
 
@@ -271,7 +271,7 @@ it.skipIf(insideSandbox)(
 
     start(f, lead.id, 'b');
     const second = commit(worktree, 'src/b.ts', 'export const b = 2;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
 
     expect(git(f.source, 'rev-parse', 'main')).toBe(second);
@@ -289,7 +289,7 @@ it.skipIf(insideSandbox)(
     const f = mergeFixture();
     const { lead, worktree } = await leadOnTask(f, [task('a')]);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
 
     expect(payloads(f, lead.id, 'session.merged')).toHaveLength(1);
@@ -325,7 +325,7 @@ it.skipIf(insideSandbox)(
     );
     start(f, lead.id, 'a');
     commit(worktreeOf(f, lead).path, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
 
     expect(payloads(f, lead.id, 'session.merged')).toHaveLength(1);
@@ -345,7 +345,7 @@ it.skipIf(insideSandbox)(
     setGate(f, failing);
     const source = git(f.source, 'rev-parse', 'main');
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
 
     await endTurn(f, lead.id);
 
@@ -379,7 +379,7 @@ it('does not land a direct task that changes files outside its scope', async () 
   const { lead, worktree } = await leadOnTask(f);
   const source = git(f.source, 'rev-parse', 'main');
   commit(worktree, 'answer.txt', 'outside\n');
-  report(f, lead.id);
+  await report(f, lead.id);
 
   await endTurn(f, lead.id);
 
@@ -400,12 +400,12 @@ it.skipIf(insideSandbox)(
     setAutoMerge(f, false);
     const source = git(f.source, 'rev-parse', 'main');
     const head = commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
     expect(payloads(f, lead.id, 'session.merge_started')).toEqual([]);
     expect(git(f.source, 'rev-parse', 'main')).toBe(source);
 
-    f.call('session.merge', { session_id: lead.id }, current(f, lead.id).revision);
+    await f.call('session.merge', { session_id: lead.id }, current(f, lead.id).revision);
     await settle(f, lead.id);
 
     expect(git(f.source, 'rev-parse', 'main')).toBe(head);
@@ -423,7 +423,7 @@ it('does not merge commits made after the report and asks the lead to report aga
   const { lead, worktree } = await leadOnTask(f);
   const source = git(f.source, 'rev-parse', 'main');
   commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-  report(f, lead.id);
+  await report(f, lead.id);
   commit(worktree, 'src/a.ts', 'export const a = 2;\n');
 
   const turn = await endTurn(f, lead.id);
@@ -450,7 +450,7 @@ it('does not merge a worktree with uncommitted files and tells the lead', async 
   const { lead, worktree } = await leadOnTask(f);
   const source = git(f.source, 'rev-parse', 'main');
   commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-  report(f, lead.id);
+  await report(f, lead.id);
   writeFileSync(path.join(worktree, 'src/draft.ts'), 'draft\n');
 
   const turn = await endTurn(f, lead.id);
@@ -474,7 +474,7 @@ it.each([
     setGate(f, slow);
     const source = git(f.source, 'rev-parse', 'main');
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     f.call('session.send', { session_id: lead.id, input: 'Go on' }, current(f, lead.id).revision);
     await eventually(
       () => payloads(f, lead.id, 'session.gate_started').length > 0,
@@ -501,7 +501,7 @@ it.skipIf(insideSandbox)(
     updatePlan(f, lead.id, [task('a', { goal: 'Finish task a another way' })]);
     start(f, lead.id, 'a');
     const head = commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
 
     await endTurn(f, lead.id);
 
@@ -519,7 +519,7 @@ it.skipIf(insideSandbox)(
     const f = mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     const before = await endTurn(f, lead.id);
     const after = await endTurn(f, lead.id);
     expect(current(f, lead.id).state).toBe('open');
@@ -551,7 +551,7 @@ it.skipIf(insideSandbox)('refuses to start a direct task again once it merged', 
   const f = mergeFixture();
   const { lead, worktree } = await leadOnTask(f);
   commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-  report(f, lead.id);
+  await report(f, lead.id);
   await endTurn(f, lead.id);
   expect(planOf(f, lead.id).direct_merged?.a).toBeDefined();
 
@@ -567,7 +567,7 @@ it.skipIf(insideSandbox)(
     const f = mergeFixture();
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
     expect(boardTask(f, lead.id, 'a').status).toBe('done');
 
@@ -587,7 +587,7 @@ it.skipIf(insideSandbox)(
     Object.assign(f.adapter, { traceEvents: true });
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
 
     const row = await recordOf(f, lead.id, 'a');
@@ -624,7 +624,7 @@ it.skipIf(insideSandbox)(
     setDirectBudget(f, 10);
     const { lead, worktree } = await leadOnTask(f);
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
 
     const row = await recordOf(f, lead.id, 'a');
@@ -650,7 +650,7 @@ it.skipIf(insideSandbox)(
       setDirectBudget(f, over[index] ? 5 : 1_000_000);
       if (index) start(f, lead.id, id);
       commit(worktree, `src/${id}.ts`, `export const ${id} = 1;\n`);
-      report(f, lead.id);
+      await report(f, lead.id);
       await endTurn(f, lead.id);
       await recordOf(f, lead.id, id);
     }
@@ -683,7 +683,7 @@ it.skipIf(insideSandbox)(
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     await endTurn(f, lead.id);
 
     const row = await recordOf(f, lead.id, 'a');
@@ -706,7 +706,7 @@ it.skipIf(insideSandbox)(
       fixed = path.join(gate.dir, 'fixed');
     setGate(f, failsUntilFixed(gate, fixed));
     commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-    report(f, lead.id);
+    await report(f, lead.id);
     f.call('session.send', { session_id: lead.id, input: 'Go on' }, current(f, lead.id).revision);
     await eventually(
       () => payloads(f, lead.id, 'session.gate_checked').length > 0,
@@ -748,7 +748,7 @@ it('lets go of the claim of a direct task given a new contract while it merges',
   const { lead, worktree } = await leadOnTask(f);
   setGate(f, slow);
   commit(worktree, 'src/a.ts', 'export const a = 1;\n');
-  report(f, lead.id);
+  await report(f, lead.id);
   f.call('session.send', { session_id: lead.id, input: 'Go on' }, current(f, lead.id).revision);
   await eventually(
     () => payloads(f, lead.id, 'session.gate_started').length > 0,
@@ -779,7 +779,7 @@ it('sends a direct task gate failure to the user without a hand-back when the li
   start(f, lead.id, 'export');
   setGate(f, failing);
   commit(worktreeOf(f, lead).path, 'src/export.ts', 'export const download = true;\n');
-  report(f, lead.id);
+  await report(f, lead.id);
   await endTurn(f, lead.id);
   expect(trackerTurns(f, lead.id)).toEqual([]);
   expect(current(f, lead.id).merge).toMatchObject({ state: 'blocked', reason: 'gate_failed' });

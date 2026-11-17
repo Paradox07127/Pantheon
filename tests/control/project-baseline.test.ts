@@ -117,7 +117,7 @@ function setup({
     return git('rev-parse', 'HEAD');
   };
   const startBaseline = () =>
-    f.call<ProjectBaseline>('project.baseline.start', { project_id: f.project.id });
+    f.call<Promise<ProjectBaseline>>('project.baseline.start', { project_id: f.project.id });
   const current = (baseline: ProjectBaseline) =>
     f.store.must<ProjectBaseline>('project_baselines', baseline.id);
   const principal = (session: Session): Principal => ({
@@ -162,7 +162,7 @@ function setup({
   const as = (baseline: ProjectBaseline) =>
     principal(f.store.must<Session>('sessions', baseline.session_id!));
   const submitFolder = (baseline: ProjectBaseline, value: unknown) =>
-    f.call<ProjectBaseline>(
+    f.call<Promise<ProjectBaseline>>(
       'project.baseline.submit_folder',
       { baseline_id: baseline.id, ...(value as object) },
       null,
@@ -176,19 +176,21 @@ function setup({
       as(baseline),
     );
   const submitOnly = (baseline: ProjectBaseline, value: unknown) =>
-    f.call<ProjectBaseline>(
+    f.call<Promise<ProjectBaseline>>(
       'project.baseline.submit',
       { baseline_id: baseline.id, ...(value as object) },
       null,
       as(baseline),
     );
   /** Hands in the introduction first unless this baseline session already did. */
-  const submit = (baseline: ProjectBaseline, value: unknown) => {
-    if (f.store.projectIntro(f.project.id)?.session_id !== baseline.session_id) introduce(baseline);
+  const submit = async (baseline: ProjectBaseline, value: unknown) => {
+    if (f.store.projectIntro(f.project.id)?.session_id !== baseline.session_id)
+      await introduce(baseline);
     return submitOnly(baseline, value);
   };
-  const handIn = (baseline: ProjectBaseline, head: string) => {
-    submitFolder(baseline, folder());
+  const handIn = async (started: ProjectBaseline | Promise<ProjectBaseline>, head: string) => {
+    const baseline = await started;
+    await submitFolder(baseline, folder());
     return submit(baseline, result(head));
   };
   return {
@@ -219,7 +221,7 @@ it('records an empty project without opening a session', async () => {
   const f = setup();
   try {
     expect(f.control.projectBaselineRead(user, f.project.id)).toBeNull();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     expect(baseline).toMatchObject({ project_id: f.project.id, state: 'empty', dropped: 0 });
     expect(baseline.session_id).toBeUndefined();
     expect(f.store.list<Session>('sessions').filter((session) => session.baseline)).toHaveLength(0);
@@ -233,7 +235,7 @@ it('opens one read-only baseline session with only the read and submit tools', a
   const f = setup();
   try {
     f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     expect(baseline).toMatchObject({ state: 'running', runtime: 'claude', dropped: 0 });
     const sessions = f.store.list<Session>('sessions').filter((session) => session.baseline);
     expect(sessions).toHaveLength(1);
@@ -272,7 +274,7 @@ it('lets the baseline session draw explanatory charts but keeps them out of its 
   const f = setup();
   try {
     f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const session = f.store.must<Session>('sessions', baseline.session_id!);
     expect(
       f.call<{ visual_id: string }>(
@@ -299,7 +301,7 @@ it('tells the baseline session where each folder keeps its code', async () => {
     writeFileSync(path.join(f.projectRoot, 'src/parser/csv.ts'), 'export {};\n');
     gitIn(f.projectRoot, 'add', '.');
     gitIn(f.projectRoot, 'commit', '--quiet', '-m', 'Add the CSV parser');
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const turn = f.store
       .list<SessionTurn>('session_turns')
       .find((entry) => entry.session_id === baseline.session_id)!;
@@ -315,8 +317,8 @@ it('keeps each workstream its modules inside a project folder, its known depende
   const f = setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
     const valid = f.result(head);
     const exporter = {
       ...valid.workstreams[0]!,
@@ -327,7 +329,7 @@ it('keeps each workstream its modules inside a project folder, its known depende
       modules: ['src', 'src/index.ts', 'missing', '../outside'],
       risks: ['The JSON format is not settled'],
     };
-    const submitted = f.submit(baseline, {
+    const submitted = await f.submit(baseline, {
       ...valid,
       workstreams: [valid.workstreams[0]!, exporter],
     });
@@ -338,7 +340,7 @@ it('keeps each workstream its modules inside a project folder, its known depende
       risks: ['The JSON format is not settled'],
     });
     expect(submitted.result!.workstreams[0]).not.toHaveProperty('modules');
-    expect(f.control.projectFactsRead(user, f.project.id).workstreams[1]).toMatchObject({
+    expect((await f.control.projectFactsRead(user, f.project.id)).workstreams[1]).toMatchObject({
       id: 'exporter',
       next: ['Parse JSON'],
       blockers: [],
@@ -346,7 +348,7 @@ it('keeps each workstream its modules inside a project folder, its known depende
       depends_on: ['importer'],
       risks: ['The JSON format is not settled'],
     });
-    const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       { baseline_id: submitted.id, answers: [], plan_board: true },
       submitted.revision,
@@ -366,7 +368,7 @@ it('lists the baseline session for the user, waits on its newest review, and lea
   const f = setup();
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const listed = () =>
       f.control.sessionList(user, f.project.id).find((row) => row.id === baseline.session_id);
     expect(listed()).toMatchObject({
@@ -378,11 +380,11 @@ it('lists the baseline session for the user, waits on its newest review, and lea
       changes: null,
       merge: null,
     });
-    f.handIn(baseline, head);
+    await f.handIn(baseline, head);
     const session = f.store.must<Session>('sessions', baseline.session_id!);
     f.store.update<Session>('sessions', { ...session, state: 'open' }, session.revision);
     expect(listed()).toMatchObject({ state: 'waiting', waiting: 0 });
-    f.startBaseline();
+    await f.startBaseline();
     expect(listed()).toMatchObject({ state: 'done' });
     const view = f.control.boardView(user, f.project.id, 14);
     expect(JSON.stringify(view)).not.toContain(baseline.session_id);
@@ -442,8 +444,10 @@ it('refuses a second baseline while one is running', async () => {
   const f = setup();
   try {
     f.populate();
-    f.startBaseline();
-    expect(() => f.startBaseline()).toThrow(expect.objectContaining({ code: 'resource_busy' }));
+    await f.startBaseline();
+    await expect(async () => f.startBaseline()).rejects.toThrow(
+      expect.objectContaining({ code: 'resource_busy' }),
+    );
   } finally {
     await f.close();
   }
@@ -455,10 +459,10 @@ it.each(['submitted', 'confirmed', 'failed'] as const)(
     const f = setup();
     try {
       const head = f.populate();
-      let baseline = f.startBaseline();
-      if (state !== 'failed') baseline = f.handIn(baseline, head);
+      let baseline = await f.startBaseline();
+      if (state !== 'failed') baseline = await f.handIn(baseline, head);
       if (state === 'confirmed')
-        baseline = f.call<ProjectBaseline>(
+        baseline = await f.call<ProjectBaseline>(
           'project.baseline.confirm',
           { baseline_id: baseline.id, answers: [] },
           baseline.revision,
@@ -502,10 +506,12 @@ it.each(['submitted', 'confirmed', 'failed'] as const)(
       if (state === 'submitted') {
         const current = f.current(baseline);
         expect(
-          f.call<ProjectBaseline>(
-            'project.baseline.confirm',
-            { baseline_id: current.id, answers: [] },
-            current.revision,
+          (
+            await f.call<ProjectBaseline>(
+              'project.baseline.confirm',
+              { baseline_id: current.id, answers: [] },
+              current.revision,
+            )
           ).state,
         ).toBe('confirmed');
       }
@@ -524,7 +530,7 @@ it.each(['control', 'CLI'] as const)(
       // This fixture starts fresh children and has no process identities to recover.
       Object.assign(f.ctx, { readProcess: () => undefined });
       const head = f.populate();
-      const baseline = f.handIn(f.startBaseline(), head);
+      const baseline = await f.handIn(f.startBaseline(), head);
       const workspace = await awaitWorkspaceReady(
         f.control,
         registerWorkspace(f.control, {
@@ -621,7 +627,7 @@ it.each(['queued', 'running', 'reconciling', 'stopping', 'process', 'handle', 'm
     const f = setup();
     try {
       const head = f.populate();
-      const baseline = f.handIn(f.startBaseline(), head);
+      const baseline = await f.handIn(f.startBaseline(), head);
       const current = f.store.must<Session>('sessions', baseline.session_id!);
       const session = f.store.update<Session>(
         'sessions',
@@ -671,7 +677,7 @@ it('settles a baseline that ended without a result before deleting its session',
   const f = setup();
   try {
     f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const session = f.store.must<Session>('sessions', baseline.session_id!);
     const turn = f.store
       .list<SessionTurn>('session_turns')
@@ -687,7 +693,7 @@ it('settles a baseline that ended without a result before deleting its session',
     expect(f.current(baseline).session_id).toBeUndefined();
     expect(f.store.pending().some((job) => job.kind === 'session.turn')).toBe(false);
     await f.control.tick();
-    expect(f.startBaseline().state).toBe('running');
+    expect((await f.startBaseline()).state).toBe('running');
   } finally {
     await f.close();
   }
@@ -697,7 +703,7 @@ it('keeps a baseline session that never started queued across a restart and star
   const f = setup();
   try {
     f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const turnJobs = () =>
       f.store.db.prepare("SELECT state FROM outbox WHERE kind='session.turn'").all();
     f.control.recover();
@@ -719,7 +725,7 @@ it('closes a baseline session left reconciling before it ever started and then s
   const f = setup();
   try {
     f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const session = f.store.must<Session>('sessions', baseline.session_id!);
     f.store.update<Session>('sessions', { ...session, state: 'reconciling' }, session.revision);
     f.control.recover();
@@ -738,7 +744,7 @@ it('denies the baseline session a board update', async () => {
   const f = setup();
   try {
     f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const session = f.store.must<Session>('sessions', baseline.session_id!);
     expect(() =>
       f.call(
@@ -768,7 +774,7 @@ it('stores a facts snapshot and hands the session a short seed without checklist
     f.populate();
     mkdirSync(path.join(f.projectRoot, 'docs'));
     writeFileSync(path.join(f.projectRoot, 'docs/guide.md'), '# Guide\n\nRead me.\n');
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const snapshot = f.store.must<BaselineFacts>('baseline_facts', baseline.facts_id);
     expect(snapshot).toMatchObject({ project_id: f.project.id, collected_at: f.store.now() });
     expect(snapshot.facts.folders).toHaveLength(1);
@@ -819,7 +825,7 @@ it('gives the baseline session a skill that names no local layout and lists igno
   try {
     f.populate();
     const prompt = purposeSessionInstructions(
-      f.store.must<Session>('sessions', f.startBaseline().session_id!),
+      f.store.must<Session>('sessions', (await f.startBaseline()).session_id!),
       { rounds: 5, visuals: true },
     )!;
     for (const local of ['.notes', '/Users/', '~/']) expect(prompt).not.toContain(local);
@@ -834,8 +840,8 @@ it('seeds a new baseline with the previous confirmed workstreams, task lists and
   const f = setup();
   try {
     const head = f.populate();
-    const baseline = f.handIn(f.startBaseline(), head);
-    f.call(
+    const baseline = await f.handIn(f.startBaseline(), head);
+    await f.call(
       'project.baseline.confirm',
       { baseline_id: baseline.id, answers: [] },
       baseline.revision,
@@ -845,7 +851,7 @@ it('seeds a new baseline with the previous confirmed workstreams, task lists and
       gitIn(f.projectRoot, 'add', 'src');
       gitIn(f.projectRoot, 'commit', '--quiet', '-m', `Add ${name}`);
     }
-    const next = f.startBaseline();
+    const next = await f.startBaseline();
     const input = f.store
       .list<SessionTurn>('session_turns')
       .find((turn) => turn.session_id === next.session_id)!.input;
@@ -870,13 +876,13 @@ it.each([
       writeFileSync(path.join(f.projectRoot, '.gitignore'), 'plans/\n');
       mkdirSync(path.join(f.projectRoot, 'plans'));
       writeFileSync(path.join(f.projectRoot, 'plans/TODO.md'), '# Plans\n\n- [ ] ship it\n');
-      const baseline = f.startBaseline();
-      f.submitFolder(baseline, {
+      const baseline = await f.startBaseline();
+      await f.submitFolder(baseline, {
         ...f.folder(),
         context: { instructions: ['README.md'], docs: [], task_lists: taskLists },
       });
       const valid = f.result(head);
-      const submitted = f.submit(baseline, {
+      const submitted = await f.submit(baseline, {
         ...valid,
         workstreams: [{ ...valid.workstreams[0]!, items: ['file:plans/TODO.md:3'] }],
       });
@@ -885,7 +891,7 @@ it.each([
       expect(submitted.result!.workstreams[0]!.items).toEqual(
         open ? [{ root, path: 'plans/TODO.md', line: 3, hash: itemHash('ship it') }] : [],
       );
-      expect(f.control.projectFactsRead(user, f.project.id).workstreams[0]).toMatchObject({
+      expect((await f.control.projectFactsRead(user, f.project.id)).workstreams[0]).toMatchObject({
         open,
         missing: 0,
       });
@@ -899,25 +905,25 @@ it('refuses the final submission until every folder is handed in, naming the mis
   const f = setup();
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
-    expect(() => f.submit(baseline, f.result(head))).toThrow(
+    const baseline = await f.startBaseline();
+    await expect(async () => f.submit(baseline, f.result(head))).rejects.toThrow(
       expect.objectContaining({
         code: 'invalid_state',
         message: expect.stringContaining(f.project.roots[0]!),
       }),
     );
-    expect(() => f.submitFolder(baseline, { ...f.folder(), root: f.root })).toThrow(
-      expect.objectContaining({ code: 'invalid_input' }),
-    );
-    expect(f.submitFolder(baseline, f.folder())).toMatchObject({
+    await expect(async () =>
+      f.submitFolder(baseline, { ...f.folder(), root: f.root }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'invalid_input' }));
+    expect(await f.submitFolder(baseline, f.folder())).toMatchObject({
       state: 'running',
       folders: [f.folder()],
     });
     // Handing a folder in again replaces it.
-    const again = f.submitFolder(baseline, { ...f.folder(), stage: 'early' });
+    const again = await f.submitFolder(baseline, { ...f.folder(), stage: 'early' });
     expect(again.folders).toEqual([{ ...f.folder(), stage: 'early' }]);
-    expect(f.submit(baseline, f.result(head))).toMatchObject({ state: 'submitted' });
-    expect(() => f.submitFolder(baseline, f.folder())).toThrow(
+    expect(await f.submit(baseline, f.result(head))).toMatchObject({ state: 'submitted' });
+    await expect(async () => f.submitFolder(baseline, f.folder())).rejects.toThrow(
       expect.objectContaining({ code: 'invalid_state' }),
     );
   } finally {
@@ -929,7 +935,7 @@ it('keeps sourced conclusions, resolves checklist references and drops the rest'
   const f = setup();
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     const folder = {
       ...f.folder(),
       gate: [{ name: 'build', argv: ['pnpm', 'build'], sources: ['file:missing.txt'] }],
@@ -940,7 +946,7 @@ it('keeps sourced conclusions, resolves checklist references and drops the rest'
         },
       },
     };
-    expect(f.submitFolder(baseline, folder)).toMatchObject({ dropped: 2 });
+    expect(await f.submitFolder(baseline, folder)).toMatchObject({ dropped: 2 });
     const valid = f.result(head);
     const stream = valid.workstreams[0]!;
     const result = {
@@ -957,7 +963,7 @@ it('keeps sourced conclusions, resolves checklist references and drops the rest'
         { text: 'Unsourced', refs: ['file:nowhere.md'], severity: 'risk' },
       ],
     };
-    const submitted = f.submit(baseline, result);
+    const submitted = await f.submit(baseline, result);
     expect(submitted).toMatchObject({ state: 'submitted', dropped: 6 });
     expect(submitted.folders).toBeUndefined();
     const root = f.project.roots[0]!;
@@ -1034,9 +1040,9 @@ it('keeps sourced next tasks of known workstreams and drops dependencies on drop
   const f = setup();
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
-    const submitted = f.submit(baseline, { ...f.result(head), tasks: nextTasks() });
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
+    const submitted = await f.submit(baseline, { ...f.result(head), tasks: nextTasks() });
     expect(submitted.dropped).toBe(2);
     const [json, , , docs] = nextTasks();
     expect(submitted.result!.tasks).toEqual([
@@ -1052,10 +1058,10 @@ it('hands the next tasks with scope, acceptance and dependencies to the planning
   const f = setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
-    const submitted = f.submit(baseline, { ...f.result(head), tasks: nextTasks() });
-    const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
+    const submitted = await f.submit(baseline, { ...f.result(head), tasks: nextTasks() });
+    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       { baseline_id: submitted.id, answers: [], plan_board: true },
       submitted.revision,
@@ -1078,10 +1084,10 @@ it('counts each workstream against the newest facts after the checklist changes'
   const f = setup();
   try {
     const head = f.populate();
-    const empty = f.control.projectFactsRead(user, f.project.id);
+    const empty = await f.control.projectFactsRead(user, f.project.id);
     expect(empty).toEqual({ facts: null, collected_at: null, empty: false, workstreams: [] });
-    const baseline = f.handIn(f.startBaseline(), head);
-    const before = f.control.projectFactsRead(user, f.project.id);
+    const baseline = await f.handIn(f.startBaseline(), head);
+    const before = await f.control.projectFactsRead(user, f.project.id);
     expect(before.facts).toEqual(
       f.store.must<BaselineFacts>('baseline_facts', baseline.facts_id).facts,
     );
@@ -1103,17 +1109,19 @@ it('counts each workstream against the newest facts after the checklist changes'
       '# Plan\n\nMoved down.\n\n## Importer\n- [x] Parse CSV\n- [x] Parse JSON\n- [ ] Write the guide\n',
     );
     f.advanceTime(60_000);
-    expect(() =>
+    await expect(async () =>
       f.call(
         'project.facts.refresh',
         { project_id: f.project.id },
         null,
         f.principal(f.store.must<Session>('sessions', baseline.session_id!)),
       ),
-    ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
-    const refreshed = f.call<BaselineFacts>('project.facts.refresh', { project_id: f.project.id });
+    ).rejects.toThrow(expect.objectContaining({ code: 'permission_denied' }));
+    const refreshed = await f.call<BaselineFacts>('project.facts.refresh', {
+      project_id: f.project.id,
+    });
     expect(refreshed).toMatchObject({ project_id: f.project.id, collected_at: f.store.now() });
-    const after = f.control.projectFactsRead(user, f.project.id);
+    const after = await f.control.projectFactsRead(user, f.project.id);
     expect(after.collected_at).toBe(f.store.now());
     expect(after.workstreams).toEqual([
       {
@@ -1136,10 +1144,10 @@ it('stores every item of a cited checklist section and drops unknown sections', 
   const f = setup();
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
     const valid = f.result(head);
-    const submitted = f.submit(baseline, {
+    const submitted = await f.submit(baseline, {
       ...valid,
       workstreams: [
         {
@@ -1157,7 +1165,7 @@ it('stores every item of a cited checklist section and drops unknown sections', 
       { root, path: 'TODO.md', line: 6, hash: itemHash('Write docs') },
     ]);
     expect(submitted.result!.workstreams[0]).not.toHaveProperty('sections');
-    expect(f.control.projectFactsRead(user, f.project.id).workstreams).toEqual([
+    expect((await f.control.projectFactsRead(user, f.project.id)).workstreams).toEqual([
       {
         id: 'importer',
         title: 'Importer',
@@ -1182,10 +1190,10 @@ it('counts checklist items with the same text apart', async () => {
       path.join(f.projectRoot, 'TODO.md'),
       '# Plan\n\n## Importer\n- [x] Run tests\n\n## Exporter\n- [ ] Run tests\n',
     );
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
     const valid = f.result(head);
-    f.submit(baseline, {
+    await f.submit(baseline, {
       ...valid,
       workstreams: [
         { ...valid.workstreams[0]!, id: 'exporter', title: 'Exporter', items: ['file:TODO.md:7'] },
@@ -1198,9 +1206,9 @@ it('counts checklist items with the same text apart', async () => {
       ],
     });
     expect(
-      f.control
-        .projectFactsRead(user, f.project.id)
-        .workstreams.map(({ id, done, open, missing }) => ({ id, done, open, missing })),
+      (await f.control.projectFactsRead(user, f.project.id)).workstreams.map(
+        ({ id, done, open, missing }) => ({ id, done, open, missing }),
+      ),
     ).toEqual([
       { id: 'exporter', done: 0, open: 1, missing: 0 },
       { id: 'both', done: 1, open: 1, missing: 0 },
@@ -1214,15 +1222,15 @@ it('keeps only the newest thirty facts snapshots of a project', async () => {
   const f = setup();
   try {
     f.populate();
-    const first = f.startBaseline();
+    const first = await f.startBaseline();
     for (let i = 0; i < 30; i++) {
       f.advanceTime(1000);
-      f.call('project.facts.refresh', { project_id: f.project.id });
+      await f.call('project.facts.refresh', { project_id: f.project.id });
     }
     const snapshots = f.store.list<BaselineFacts>('baseline_facts');
     expect(snapshots).toHaveLength(30);
     expect(snapshots.map((snapshot) => snapshot.id)).not.toContain(first.facts_id);
-    expect(f.control.projectFactsRead(user, f.project.id).collected_at).toBe(f.store.now());
+    expect((await f.control.projectFactsRead(user, f.project.id)).collected_at).toBe(f.store.now());
   } finally {
     await f.close();
   }
@@ -1232,14 +1240,14 @@ it('fails a baseline whose window expired and then allows a new one', async () =
   const f = setup();
   try {
     f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     f.advanceTime(baseline.deadline! - f.store.now());
     f.tick();
     expect(f.current(baseline)).toMatchObject({
       state: 'failed',
       reason: 'baseline_window_expired',
     });
-    expect(f.startBaseline()).toMatchObject({ state: 'running' });
+    expect(await f.startBaseline()).toMatchObject({ state: 'running' });
   } finally {
     await f.close();
   }
@@ -1255,13 +1263,13 @@ it('writes the confirmed goal, gate and project configuration and lets the user 
       path.join(configDir, 'config.json'),
       JSON.stringify({ version: 1, extensions: { claude: overrides } }),
     );
-    const baseline = f.handIn(f.startBaseline(), head);
+    const baseline = await f.handIn(f.startBaseline(), head);
     const brief = { goal: 'Ship the library', goals: ['Build it'], non_goals: ['Publish it'] };
     const gate = [{ name: 'build', argv: ['pnpm', 'build'] }];
     const answers = [
       { question_id: 'publish', question: 'Is publishing in scope?', answer: 'No', by: 'user' },
     ];
-    const confirmed = f.call<ProjectBaseline>(
+    const confirmed = await f.call<ProjectBaseline>(
       'project.baseline.confirm',
       {
         baseline_id: baseline.id,
@@ -1290,8 +1298,10 @@ it('writes the confirmed goal, gate and project configuration and lets the user 
       extensions: { claude: overrides },
     });
     expect(readFileSync(path.join(configDir, '.gitignore'), 'utf8')).toBe('config.local.json\n');
-    expect(f.startBaseline().state).toBe('running');
-    expect(() => f.startBaseline()).toThrow(expect.objectContaining({ code: 'resource_busy' }));
+    expect((await f.startBaseline()).state).toBe('running');
+    await expect(async () => f.startBaseline()).rejects.toThrow(
+      expect.objectContaining({ code: 'resource_busy' }),
+    );
   } finally {
     await f.close();
   }
@@ -1318,14 +1328,14 @@ it.each<[string, (outside: string) => [string, string][]]>([
       rmSync(path.join(f.projectRoot, link), { recursive: true, force: true });
       symlinkSync(target, path.join(f.projectRoot, link));
     }
-    const baseline = f.handIn(f.startBaseline(), head);
-    expect(() =>
+    const baseline = await f.handIn(f.startBaseline(), head);
+    await expect(async () =>
       f.call(
         'project.baseline.confirm',
         { baseline_id: baseline.id, answers: [] },
         baseline.revision,
       ),
-    ).toThrow(expect.objectContaining({ code: 'config_path_symlink' }));
+    ).rejects.toThrow(expect.objectContaining({ code: 'config_path_symlink' }));
     expect(readdirSync(outside)).toEqual([]);
     expect(f.current(baseline).state).toBe('submitted');
   } finally {
@@ -1342,7 +1352,7 @@ it('runs the baseline on the project default runtime', async () => {
       { project_id: f.project.id, runtime: 'codex', permission_mode: 'ask' },
       f.store.must<Project>('projects', f.project.id).revision,
     );
-    expect(f.startBaseline()).toMatchObject({ state: 'running', runtime: 'codex' });
+    expect(await f.startBaseline()).toMatchObject({ state: 'running', runtime: 'codex' });
   } finally {
     await f.close();
   }
@@ -1359,7 +1369,7 @@ it.each([
   const f = setup();
   try {
     f.populate();
-    const baseline = f.call<ProjectBaseline>('project.baseline.start', {
+    const baseline = await f.call<ProjectBaseline>('project.baseline.start', {
       project_id: f.project.id,
       ...choice,
     });
@@ -1380,7 +1390,7 @@ it('runs the baseline on the first installed runtime when the other is not insta
   try {
     f.populate();
     f.adapters[0]!.report = { ...f.adapters[0]!.report, version: 'unprobed' };
-    expect(f.startBaseline()).toMatchObject({ state: 'running', runtime: 'codex' });
+    expect(await f.startBaseline()).toMatchObject({ state: 'running', runtime: 'codex' });
   } finally {
     await f.close();
   }
@@ -1398,7 +1408,7 @@ it('runs the baseline on the first runtime whose report verifies isolated readin
         read_isolation: { status: 'unknown', evidence: 'Unchecked' },
       },
     };
-    expect(f.startBaseline()).toMatchObject({ state: 'running', runtime: 'codex' });
+    expect(await f.startBaseline()).toMatchObject({ state: 'running', runtime: 'codex' });
   } finally {
     await f.close();
   }
@@ -1428,10 +1438,10 @@ it.each<[string, (report: FixtureAdapter['report']) => FixtureAdapter['report']]
         f.store.must<Project>('projects', f.project.id).revision,
       );
       f.adapters[1]!.report = change(f.adapters[1]!.report);
-      expect(() =>
+      await expect(async () =>
         f.call('project.baseline.start', { project_id: f.project.id, runtime: 'codex' }),
-      ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
-      expect(f.startBaseline()).toMatchObject({ state: 'running', runtime: 'claude' });
+      ).rejects.toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
+      expect(await f.startBaseline()).toMatchObject({ state: 'running', runtime: 'claude' });
     } finally {
       await f.close();
     }
@@ -1442,7 +1452,7 @@ it('leaves no project configuration behind when opening the planning lead fails'
   const f = setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = f.handIn(f.startBaseline(), head);
+    const baseline = await f.handIn(f.startBaseline(), head);
     for (const adapter of f.adapters)
       adapter.report = {
         ...adapter.report,
@@ -1451,13 +1461,13 @@ it('leaves no project configuration behind when opening the planning lead fails'
           write_isolation: { status: 'unknown', evidence: 'Unchecked' },
         },
       };
-    expect(() =>
+    await expect(async () =>
       f.call(
         'project.baseline.confirm',
         { baseline_id: baseline.id, answers: [], plan_board: true },
         baseline.revision,
       ),
-    ).toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
+    ).rejects.toThrow(expect.objectContaining({ code: 'unsupported_capability' }));
     expect(f.current(baseline).state).toBe('submitted');
     expect(existsSync(path.join(f.projectRoot, '.pantheon'))).toBe(false);
   } finally {
@@ -1474,18 +1484,18 @@ it('opens a lead session with the baseline result only when confirmed with plan_
         .list<Session>('sessions')
         .filter((session) => session.workspace_id && !session.baseline && !session.task);
     const confirm = (baseline: ProjectBaseline, extra: Record<string, unknown> = {}) =>
-      f.call<ProjectBaseline & { lead_session_id?: string }>(
+      f.call<Promise<ProjectBaseline & { lead_session_id?: string }>>(
         'project.baseline.confirm',
         { baseline_id: baseline.id, answers: [], ...extra },
         baseline.revision,
       );
 
-    const plain = confirm(f.handIn(f.startBaseline(), head));
+    const plain = await confirm(await f.handIn(f.startBaseline(), head));
     expect(plain.state).toBe('confirmed');
     expect(plain).not.toHaveProperty('lead_session_id');
     expect(leads()).toEqual([]);
 
-    const planned = confirm(f.handIn(f.startBaseline(), head), { plan_board: true });
+    const planned = await confirm(await f.handIn(f.startBaseline(), head), { plan_board: true });
     expect(planned.state).toBe('confirmed');
     const [lead] = leads();
     expect(leads()).toHaveLength(1);
@@ -1512,8 +1522,8 @@ it("names the planning lead's worktree folder after its title, not its first mes
   const f = setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = f.handIn(f.startBaseline(), head);
-    const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+    const baseline = await f.handIn(f.startBaseline(), head);
+    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       { baseline_id: baseline.id, answers: [], plan_board: true },
       baseline.revision,
@@ -1527,22 +1537,22 @@ it("names the planning lead's worktree folder after its title, not its first mes
 });
 
 /** A workbench lead session and a baseline it started; confirming it with plan_board returns its receipt. */
-function leadBaseline(f: ReturnType<typeof setup>) {
+async function leadBaseline(f: ReturnType<typeof setup>) {
   const head = f.populate();
   const lead = f.call<Session>('session.create', {
     project_id: f.project.id,
     runtime: 'claude',
     input: 'Plan the importer',
   });
-  const started = f.call<ProjectBaseline>(
+  const started = await f.call<ProjectBaseline>(
     'project.baseline.start',
     { project_id: f.project.id },
     null,
     { ...f.principal(lead), role: 'lead' },
   );
-  const confirm = () => {
-    const baseline = f.handIn(started, head);
-    return f.call<ProjectBaseline & { lead_session_id?: string }>(
+  const confirm = async () => {
+    const baseline = await f.handIn(started, head);
+    return f.call<Promise<ProjectBaseline & { lead_session_id?: string }>>(
       'project.baseline.confirm',
       { baseline_id: baseline.id, answers: [], plan_board: true },
       baseline.revision,
@@ -1554,11 +1564,11 @@ function leadBaseline(f: ReturnType<typeof setup>) {
 it('hands the confirmed baseline a lead started back to that lead', async () => {
   const f = setup({ managedWorkspaces: true });
   try {
-    const { lead, started, confirm } = leadBaseline(f);
+    const { lead, started, confirm } = await leadBaseline(f);
     expect(started).toMatchObject({ state: 'running', lead_session_id: lead.id });
     const sessions = f.store.list<Session>('sessions').length;
 
-    const planned = confirm();
+    const planned = await confirm();
     expect(planned.lead_session_id).toBe(lead.id);
     expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
     const handed = f.store
@@ -1577,11 +1587,11 @@ it('hands the confirmed baseline a lead started back to that lead', async () => 
 it('opens a new lead for a baseline whose lead has closed', async () => {
   const f = setup({ managedWorkspaces: true });
   try {
-    const { lead, confirm } = leadBaseline(f);
+    const { lead, confirm } = await leadBaseline(f);
     const closed = f.store.must<Session>('sessions', lead.id);
     f.store.update<Session>('sessions', { ...closed, state: 'closed' }, closed.revision);
 
-    const planned = confirm();
+    const planned = await confirm();
     expect(planned.lead_session_id).toBeTruthy();
     expect(planned.lead_session_id).not.toBe(lead.id);
     expect(f.store.must<Session>('sessions', planned.lead_session_id!).title).toBe('Baseline plan');
@@ -1604,12 +1614,12 @@ it('refuses a baseline started by a worker session', async () => {
       runtime: 'claude',
       input: 'Build the importer',
     });
-    expect(() =>
+    await expect(async () =>
       f.call('project.baseline.start', { project_id: f.project.id }, null, {
         ...f.principal(session),
         role: 'worker',
       }),
-    ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
+    ).rejects.toThrow(expect.objectContaining({ code: 'permission_denied' }));
   } finally {
     await f.close();
   }
@@ -1619,8 +1629,8 @@ it('lets the lead opened on confirm quote the baseline message as a task source'
   const f = setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = f.handIn(f.startBaseline(), head);
-    const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+    const baseline = await f.handIn(f.startBaseline(), head);
+    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       { baseline_id: baseline.id, answers: [], plan_board: true },
       baseline.revision,
@@ -1662,8 +1672,8 @@ it('opens the lead with the brief and answers the user confirmed, not the propos
   const f = setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = f.handIn(f.startBaseline(), head);
-    const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+    const baseline = await f.handIn(f.startBaseline(), head);
+    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       {
         baseline_id: baseline.id,
@@ -1726,11 +1736,11 @@ it('keeps the user answers in the first plan message and cuts long workstreams i
   const f = setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
     const proposed = f.result(head);
     const importer = proposed.workstreams[0]!;
-    const submitted = f.submit(baseline, {
+    const submitted = await f.submit(baseline, {
       ...proposed,
       workstreams: Array.from({ length: 12 }, (_, index) => ({
         ...importer,
@@ -1743,7 +1753,7 @@ it('keeps the user answers in the first plan message and cuts long workstreams i
         ),
       })),
     });
-    const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       {
         baseline_id: submitted.id,
@@ -1774,8 +1784,8 @@ it('opens the lead with the goals and non-goals of the confirmed brief', async (
   const f = setup({ managedWorkspaces: true });
   try {
     const head = f.populate();
-    const baseline = f.handIn(f.startBaseline(), head);
-    const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+    const baseline = await f.handIn(f.startBaseline(), head);
+    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
       'project.baseline.confirm',
       {
         baseline_id: baseline.id,
@@ -1840,16 +1850,16 @@ it('turns off suggested extensions on hand-in and keeps closed only the confirme
     withInventory(f);
     setExtensions(f, overrides);
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
-    expect(() =>
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
+    await expect(async () =>
       f.submit(baseline, {
         ...f.result(head),
         extensions: [{ ...browser, runtime: 'codex' }],
       }),
-    ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
+    ).rejects.toThrow(expect.objectContaining({ code: 'invalid_input' }));
     const handedIn = f.store.cursor();
-    const submitted = f.submit(baseline, {
+    const submitted = await f.submit(baseline, {
       ...f.result(head),
       extensions: [browser, slides, browser],
     });
@@ -1869,7 +1879,7 @@ it('turns off suggested extensions on hand-in and keeps closed only the confirme
       { runtime: 'claude', overrides: closed, source: 'baseline', baseline_id: baseline.id },
     ]);
     const before = f.store.cursor();
-    f.call(
+    await f.call(
       'project.baseline.confirm',
       { baseline_id: baseline.id, answers: [], extensions: [browser] },
       submitted.revision,
@@ -1894,11 +1904,11 @@ it('keeps off an extension the user had turned off when its suggestion is unchec
     const closed = { ...overrides, disabled_mcp_servers: ['tracker', 'browser'] };
     setExtensions(f, closed);
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
-    const submitted = f.submit(baseline, { ...f.result(head), extensions: [browser] });
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
+    const submitted = await f.submit(baseline, { ...f.result(head), extensions: [browser] });
     expect(f.store.must<Project>('projects', f.project.id).extension_auto ?? []).toEqual([]);
-    f.call(
+    await f.call(
       'project.baseline.confirm',
       { baseline_id: baseline.id, answers: [], extensions: [] },
       submitted.revision,
@@ -1916,9 +1926,9 @@ it('does not turn off again an extension the user turned back on', async () => {
   try {
     withInventory(f);
     const head = f.populate();
-    const first = f.startBaseline();
-    f.submitFolder(first, f.folder());
-    const submitted = f.submit(first, { ...f.result(head), extensions: [browser] });
+    const first = await f.startBaseline();
+    await f.submitFolder(first, f.folder());
+    const submitted = await f.submit(first, { ...f.result(head), extensions: [browser] });
     expect(
       f.store.must<Project>('projects', f.project.id).extension_overrides?.claude
         ?.disabled_mcp_servers,
@@ -1926,15 +1936,15 @@ it('does not turn off again an extension the user turned back on', async () => {
     expect(setExtensions(f, overrides).extension_auto).toEqual([
       { ...browser, baseline_id: first.id, restored: true },
     ]);
-    f.call(
+    await f.call(
       'project.baseline.confirm',
       { baseline_id: first.id, answers: [], extensions: [] },
       submitted.revision,
     );
-    const second = f.startBaseline();
-    f.submitFolder(second, f.folder());
+    const second = await f.startBaseline();
+    await f.submitFolder(second, f.folder());
     const before = f.store.cursor();
-    f.submit(second, { ...f.result(head), extensions: [browser] });
+    await f.submit(second, { ...f.result(head), extensions: [browser] });
     const project = f.store.must<Project>('projects', f.project.id);
     expect(project.extension_overrides).toEqual({ claude: overrides });
     expect(project.extension_auto).toEqual([{ ...browser, baseline_id: first.id, restored: true }]);
@@ -1973,7 +1983,7 @@ it('baselines every folder and writes each git folder its own configuration', as
     );
     // Stands for a plain folder opened before project folders became git repositories.
     rmSync(path.join(plain, '.git'), { recursive: true });
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     expect(baseline.state).toBe('running');
     const turn = f.store
       .list<SessionTurn>('session_turns')
@@ -1991,21 +2001,21 @@ it('baselines every folder and writes each git folder its own configuration', as
     });
     const question = 'Release both services together?';
     // package.json exists only in the other folders, so it does not resolve here.
-    f.submitFolder(baseline, {
+    await f.submitFolder(baseline, {
       root: plain,
       stage: 'empty',
       context: { instructions: ['package.json'], docs: [], task_lists: [] },
       gate: [],
     });
-    f.submitFolder(baseline, folder(api, 'test'));
-    expect(() => f.submit(baseline, f.result('0000000'))).toThrow(
+    await f.submitFolder(baseline, folder(api, 'test'));
+    await expect(async () => f.submit(baseline, f.result('0000000'))).rejects.toThrow(
       expect.objectContaining({
         code: 'invalid_state',
         message: expect.stringContaining(web),
       }),
     );
-    f.submitFolder(baseline, folder(web, 'lint'));
-    const submitted = f.submit(baseline, {
+    await f.submitFolder(baseline, folder(web, 'lint'));
+    const submitted = await f.submit(baseline, {
       workstreams: [
         {
           id: 'services',
@@ -2039,7 +2049,7 @@ it('baselines every folder and writes each git folder its own configuration', as
     const lintGate = [{ name: 'lint', argv: ['pnpm', 'lint'] }];
     const brief = { goal: 'Ship both', goals: [], non_goals: [] };
     const answers = [{ question_id: 'publish', question, answer: 'Yes', by: 'user' }];
-    expect(() =>
+    await expect(async () =>
       f.call(
         'project.baseline.confirm',
         {
@@ -2052,11 +2062,11 @@ it('baselines every folder and writes each git folder its own configuration', as
         },
         submitted.revision,
       ),
-    ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
+    ).rejects.toThrow(expect.objectContaining({ code: 'invalid_input' }));
     expect(f.store.must<Project>('projects', f.project.id).gates).toBeUndefined();
     expect(existsSync(path.join(api, '.pantheon'))).toBe(false);
 
-    f.call(
+    await f.call(
       'project.baseline.confirm',
       {
         baseline_id: baseline.id,
@@ -2127,17 +2137,17 @@ it('puts back the configuration of earlier folders when a later folder refuses i
       { project_id: f.project.id, name: f.project.name, roots: [api, web], env: {} },
       f.store.must<Project>('projects', f.project.id).revision,
     );
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     for (const root of [api, web])
-      f.submitFolder(baseline, {
+      await f.submitFolder(baseline, {
         root,
         stage: 'active',
         stack: ['TypeScript'],
         context: { instructions: ['README.md'], docs: [], task_lists: [] },
         gate: [],
       });
-    const submitted = f.submit(baseline, f.result('0000000'));
-    expect(() =>
+    const submitted = await f.submit(baseline, f.result('0000000'));
+    await expect(async () =>
       f.call(
         'project.baseline.confirm',
         {
@@ -2147,7 +2157,7 @@ it('puts back the configuration of earlier folders when a later folder refuses i
         },
         submitted.revision,
       ),
-    ).toThrow(expect.objectContaining({ code: 'config_path_symlink' }));
+    ).rejects.toThrow(expect.objectContaining({ code: 'config_path_symlink' }));
     expect(readdirSync(path.join(api, '.pantheon'))).toEqual(['config.json']);
     expect(readFileSync(path.join(api, '.pantheon/config.json'), 'utf8')).toBe(existing);
     expect(readdirSync(outside)).toEqual([]);
@@ -2237,7 +2247,7 @@ it('opens the baseline session without local extensions', async () => {
   const starts = f.adapters.map((adapter) => vi.spyOn(adapter, 'start'));
   try {
     f.populate();
-    const baseline = f.startBaseline();
+    const baseline = await f.startBaseline();
     await f.control.tick();
     const specs = starts.flatMap((start) => start.mock.calls.map((call) => call[0]));
     const baselineSpec = specs.find((spec) => spec.platform_session_id === baseline.session_id);
@@ -2279,7 +2289,7 @@ it('continues the baseline conversation for the next round and takes the revised
   const f = setup();
   try {
     const head = f.populate();
-    const submitted = f.handIn(f.startBaseline(), head);
+    const submitted = await f.handIn(f.startBaseline(), head);
     const before = f.store.events(0).length;
     const answers = [publishAnswer('Yes', 'user')];
     const continued = continueBaseline(f, submitted, answers);
@@ -2304,7 +2314,7 @@ it('continues the baseline conversation for the next round and takes the revised
     expect(turn.input).toContain('Is publishing in scope? Answer: Yes');
     expect(turn.input).toContain('round 2 of at most 5');
     expect(turn.input).toContain('project_baseline_submit');
-    const revised = f.submit(continued, { ...f.result(head), questions: [license] });
+    const revised = await f.submit(continued, { ...f.result(head), questions: [license] });
     expect(revised).toMatchObject({ state: 'submitted', result: { questions: [license] } });
     expect(revised.rounds).toHaveLength(1);
   } finally {
@@ -2317,7 +2327,7 @@ it('asks no question in the last round and continues no further', async () => {
   try {
     f.call('app.settings.set', { baseline_rounds: 2 });
     const head = f.populate();
-    const continued = continueBaseline(f, f.handIn(f.startBaseline(), head), [
+    const continued = continueBaseline(f, await f.handIn(f.startBaseline(), head), [
       publishAnswer('', 'model'),
     ]);
     const turn = f.store
@@ -2327,10 +2337,10 @@ it('asks no question in the last round and continues no further', async () => {
     expect(turn.input).toContain(
       'Is publishing in scope? Answer: left to you; the recommended option is',
     );
-    expect(() => f.submit(continued, { ...f.result(head), questions: [license] })).toThrow(
-      expect.objectContaining({ code: 'invalid_input' }),
-    );
-    const last = f.submit(continued, { ...f.result(head), questions: [] });
+    await expect(async () =>
+      f.submit(continued, { ...f.result(head), questions: [license] }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'invalid_input' }));
+    const last = await f.submit(continued, { ...f.result(head), questions: [] });
     expect(() => continueBaseline(f, last, [])).toThrow(
       expect.objectContaining({
         code: 'invalid_state',
@@ -2346,7 +2356,7 @@ it('refuses answers to questions the round did not ask', async () => {
   const f = setup();
   try {
     const head = f.populate();
-    const submitted = f.handIn(f.startBaseline(), head);
+    const submitted = await f.handIn(f.startBaseline(), head);
     expect(() =>
       continueBaseline(f, submitted, [{ ...publishAnswer('Yes', 'user'), question_id: 'gone' }]),
     ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
@@ -2378,14 +2388,14 @@ it.each<[string, (question: ReturnType<typeof direction>) => unknown[]]>([
   const f = setup();
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
-    expect(() =>
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
+    await expect(async () =>
       f.submit(baseline, {
         ...f.result(head),
         questions: questions(direction('Is publishing in scope?')),
       }),
-    ).toThrow(
+    ).rejects.toThrow(
       expect.objectContaining({
         code: 'invalid_input',
         message: expect.stringContaining('direction'),
@@ -2401,16 +2411,16 @@ it('takes the assessment only after the baseline session hands in the introducti
   const f = setup();
   try {
     const head = f.populate();
-    const baseline = f.startBaseline();
-    f.submitFolder(baseline, f.folder());
-    expect(() => f.submitOnly(baseline, f.result(head))).toThrow(
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
+    await expect(async () => f.submitOnly(baseline, f.result(head))).rejects.toThrow(
       expect.objectContaining({
         code: 'invalid_state',
         message: 'Submit the introduction with project_intro_submit first',
       }),
     );
-    f.introduce(baseline);
-    expect(f.submitOnly(baseline, f.result(head)).state).toBe('submitted');
+    await f.introduce(baseline);
+    expect((await f.submitOnly(baseline, f.result(head))).state).toBe('submitted');
   } finally {
     await f.close();
   }
@@ -2424,7 +2434,7 @@ it.each([true, false])(
       f.call('app.settings.set', { baseline_visuals: visuals });
       const head = f.populate();
       const valid = f.result(head);
-      const baseline = f.startBaseline();
+      const baseline = await f.startBaseline();
       const now = f.store.now();
       const chart = (id: string, session_id: string | null) => ({
         id,
@@ -2439,18 +2449,20 @@ it.each([true, false])(
       });
       f.store.insert('visuals', chart('baseline-chart', baseline.session_id!));
       f.store.insert('visuals', chart('other-chart', null));
-      const continued = continueBaseline(f, f.handIn(baseline, head), [publishAnswer('', 'model')]);
+      const continued = continueBaseline(f, await f.handIn(baseline, head), [
+        publishAnswer('', 'model'),
+      ]);
       const risk = {
         text: 'No test guards the parser',
         refs: [`commit:${head}`],
         severity: 'risk',
       };
-      const revised = f.submit(continued, {
+      const revised = await f.submit(continued, {
         ...valid,
         findings: [...valid.findings, risk],
         questions: [license],
       });
-      const planned = f.call<ProjectBaseline & { lead_session_id?: string }>(
+      const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
         'project.baseline.confirm',
         {
           baseline_id: revised.id,
@@ -2514,8 +2526,8 @@ it.each([true, false])(
         { env: { ...gitEnv, GIT_COMMITTER_DATE: `@${day}`, GIT_AUTHOR_DATE: `@${day}` } },
       );
       const head = gitIn(f.projectRoot, 'rev-parse', 'HEAD');
-      const submitted = f.handIn(f.startBaseline(), head);
-      f.call(
+      const submitted = await f.handIn(f.startBaseline(), head);
+      await f.call(
         'project.baseline.confirm',
         { baseline_id: submitted.id, answers: [] },
         submitted.revision,

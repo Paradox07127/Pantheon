@@ -148,10 +148,10 @@ async function restartedFixture(options: { reviewer?: boolean; identityOnSend?: 
     await eventually(() => f.store.must<Session>('sessions', written.id).state === 'open');
     writeFileSync(path.join(workspace.path, 'README.md'), 'reviewed\n');
     commitWorktree(workspace.path);
-    review = control.execute(
+    review = (await control.execute(
       user,
       command(user.id, 'review.request', { session_id: written.id, runtimes: [reviewer.name] }),
-    ) as Review;
+    )) as Review;
     sessionId = review.session_ids[0]!;
     await eventually(
       () => [...control.handles.values()].some((h) => h.platform_session_id === sessionId),

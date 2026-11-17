@@ -525,13 +525,13 @@ it('runs no gate of a gate command that rolls back', async () => {
       if (name === 'before_transaction_commit') throw new Error('commit failed');
     },
   });
-  expect(() =>
+  await expect(
     f.call(
       'session.gates.run',
       { session_id: session.id },
       f.store.must<Session>('sessions', session.id).revision,
     ),
-  ).toThrow('commit failed');
+  ).rejects.toThrow('commit failed');
   await eventually(() => !f.control.sessionGates(user, session.id).running, undefined, 10000);
   expect(
     f.store

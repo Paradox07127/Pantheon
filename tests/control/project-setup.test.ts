@@ -139,11 +139,11 @@ it('has the setup guide settle requirements a few questions at a time and build 
   expect(projectSetupSkill).toMatch(/board/);
 });
 
-it('reads a project folder with fewer than three files as empty, as the baseline does', () => {
+it('reads a project folder with fewer than three files as empty, as the baseline does', async () => {
   const f = workbenchFixture();
-  expect(f.control.projectFactsRead(user, f.project.id).empty).toBe(true);
+  expect((await f.control.projectFactsRead(user, f.project.id)).empty).toBe(true);
   mkdirSync(path.join(f.source, 'src'));
   writeFileSync(path.join(f.source, 'src/index.ts'), 'export {};\n');
   writeFileSync(path.join(f.source, 'README.md'), '# Tracker\n');
-  expect(f.control.projectFactsRead(user, f.project.id).empty).toBe(false);
+  expect((await f.control.projectFactsRead(user, f.project.id)).empty).toBe(false);
 });

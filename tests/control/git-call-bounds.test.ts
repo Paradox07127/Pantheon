@@ -11,7 +11,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { sourced } from '../../packages/control/dist/baseline.js';
+import { sourcing } from '../../packages/control/dist/baseline.js';
 import { protectionList } from '../../packages/control/dist/protection.js';
 
 const cleanups: (() => void)[] = [];
@@ -53,7 +53,7 @@ function repository() {
 const quoted = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
 
 /** The arguments of every git `run` starts, through a script on PATH that logs them. */
-function gitRuns(run: () => void): string[] {
+async function gitRuns(run: () => unknown): Promise<string[]> {
   const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
   const bin = tempRoot(),
     log = path.join(bin, 'runs.log');
@@ -66,32 +66,39 @@ function gitRuns(run: () => void): string[] {
   const PATH = process.env.PATH;
   process.env.PATH = `${bin}:${PATH}`;
   try {
-    run();
+    await run();
     return readFileSync(log, 'utf8').split('\n').filter(Boolean);
   } finally {
     process.env.PATH = PATH;
   }
 }
 
-it('checks every commit reference of a root with one git run', () => {
+it('checks every commit reference of a root with one git run', async () => {
   const root = repository();
   const head = git(root, 'rev-parse', '--short', 'HEAD').trim();
   let found: boolean[] = [];
-  const runs = gitRuns(() => {
+  const runs = await gitRuns(async () => {
+    const sourced = await sourcing(
+      [root],
+      ['commit:deadbee', 'commit:abcdef1', `commit:${head}`, 'commit:deadbee'],
+    );
     found = [
-      sourced([root], ['commit:deadbee', 'commit:abcdef1', `commit:${head}`]),
-      sourced([root], ['commit:deadbee', 'commit:abcdef1']),
+      sourced(['commit:deadbee', 'commit:abcdef1', `commit:${head}`]),
+      sourced(['commit:deadbee', 'commit:abcdef1']),
     ];
   });
   expect(found).toEqual([true, false]);
   expect(runs.filter((run) => run.includes(' cat-file '))).toEqual([
     expect.stringMatching(/ cat-file --batch-check$/),
-    expect.stringMatching(/ cat-file --batch-check$/),
   ]);
-  expect(gitRuns(() => expect(sourced([root], ['file:README.md'])).toBe(true))).toEqual([]);
+  expect(
+    await gitRuns(async () =>
+      expect((await sourcing([root], ['file:README.md']))(['file:README.md'])).toBe(true),
+    ),
+  ).toEqual([]);
 });
 
-it('reads git configuration again only after a configuration file changes', () => {
+it('reads git configuration again only after a configuration file changes', async () => {
   const root = tempRoot(),
     home = path.join(root, 'home'),
     workspace = path.join(root, 'workspace');
@@ -111,7 +118,7 @@ it('reads git configuration again only after a configuration file changes', () =
   const included = path.join(workspace, 'shared.inc');
   const first = protectionList(input);
   expect(first.some((entry) => entry.path === included)).toBe(false);
-  expect(gitRuns(() => expect(protectionList(input)).toEqual(first))).toEqual([]);
+  expect(await gitRuns(() => expect(protectionList(input)).toEqual(first))).toEqual([]);
 
   writeFileSync(path.join(home, '.gitconfig'), `[include]\n\tpath = ${included}\n`);
   expect(protectionList(input)).toContainEqual({

@@ -440,7 +440,7 @@ it('computes the board from merged, ready and discarded workbench sessions', asy
     'model-merged',
   );
   const mergedHead = commit(merged.workspace.path, 'answer.txt', 'merged\nsecond\n');
-  f.call<Session>(
+  await f.call<Session>(
     'session.merge',
     { session_id: merged.session.id },
     current(f, merged.session.id).revision,
@@ -490,6 +490,7 @@ it('computes the board from merged, ready and discarded workbench sessions', asy
     truncated: false,
   });
 
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   const today = f.control.boardView(user, f.project.id, 1);
   expect(today.tasks.map((task) => [task.id, task.status])).toEqual([
     [merged.session.id, 'done'],
@@ -683,7 +684,7 @@ it('links each merge to the newest ready change story of its session', async () 
   const sourceHead = git(f.source, 'rev-parse', 'HEAD');
   const merged = await idleSession(f, 'Merge a change', { input_tokens: 1, output_tokens: 1 }, 'm');
   const mergedHead = commit(merged.workspace.path, 'answer.txt', 'merged\n');
-  f.call<Session>(
+  await f.call<Session>(
     'session.merge',
     { session_id: merged.session.id },
     current(f, merged.session.id).revision,
@@ -1204,7 +1205,7 @@ it.skipIf(insideSandbox)("shows an unmerged session's newest gate run in its che
     f.store.must<Project>('projects', f.project.id).revision,
   );
   const run = async (sessionId: string) => {
-    f.call('session.gates.run', { session_id: sessionId }, current(f, sessionId).revision);
+    await f.call('session.gates.run', { session_id: sessionId }, current(f, sessionId).revision);
     await eventually(
       () => !f.control.sessionGates(user, sessionId).running,
       () => f.control.tick(),
@@ -1593,7 +1594,7 @@ it.skipIf(insideSandbox)('tells a task is in its gate while the gate runs', asyn
   );
   const lead = leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
   const session = await idleTaskSession(f, lead.id, 'a');
-  f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
+  await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
   const gateStarted = () => f.store.kindEvents(f.project.id, ['session.gate_started']).at(-1);
   await eventually(
     () => f.control.sessionGates(user, session.id).running && !!gateStarted(),
@@ -3438,6 +3439,7 @@ it('uses existing session diff data for attempt sizes and omits missing diff siz
     { ...missingSession, state: 'closed', outcome: 'discarded' },
     missingSession.revision,
   );
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   const row = f.control
     .boardView(user, f.project.id, 1)
     .tasks.find((row) => row.id === `${lead.id}:export`)!;

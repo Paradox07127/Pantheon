@@ -2,7 +2,12 @@ import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_proces
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { nativeEnvironment } from '@pantheon/adapters';
-import { cachedDriverConfig, DRIVER_PATTERN } from './git-config-cache.js';
+import {
+  cachedDriverConfig,
+  type ConfigMiss,
+  DRIVER_PATTERN,
+  RECHECK_INTERVAL_MS,
+} from './git-config-cache.js';
 import { onWslAutomount, wslAutomountRoot, wslDrivePath } from './wsl-mount.js';
 
 export interface GitResult {
@@ -60,7 +65,7 @@ export function runGit(
     '-c',
     'commit.gpgsign=false',
     // Windows git writes the index with stat data drvfs reports differently, and checks out CRLF.
-    ...(onWslAutomount(cwd)
+    ...(onDriveMount(cwd)
       ? ['-c', 'core.autocrlf=input', '-c', 'core.checkStat=minimal', '-c', 'core.trustctime=false']
       : ['-c', 'core.autocrlf=false']),
     // Automatic maintenance can prune worktrees registered under paths this system cannot see.
@@ -267,22 +272,65 @@ export function runGit(
     : cachedDriverConfig(cwd, execution.work_tree);
   if (!cached) return query();
   if ('overrides' in cached) return run(cached.overrides);
-  return andThen(
-    execute([
-      'rev-parse',
-      '--path-format=absolute',
-      '--git-dir',
-      '--git-common-dir',
-      '--show-toplevel',
-    ]),
-    (located) => {
-      if (located.exit_code !== 0 || !cached.located(located.stdout.toString())) return query();
-      return andThen(execute(['config', '--null', '--show-origin', '--list']), (listed) => {
-        const overrides = listed.exit_code === 0 ? cached.listed(listed.stdout) : undefined;
-        return overrides ? run(overrides) : query();
-      });
-    },
-  );
+  const probe = (miss: ConfigMiss, learned = () => {}) =>
+    andThen(
+      execute([
+        'rev-parse',
+        '--path-format=absolute',
+        '--git-dir',
+        '--git-common-dir',
+        '--show-toplevel',
+      ]),
+      (located) => {
+        if (located.exit_code !== 0 || !miss.located(located.stdout.toString())) {
+          learned();
+          return query();
+        }
+        return andThen(execute(['config', '--null', '--show-origin', '--list']), (listed) => {
+          const overrides = listed.exit_code === 0 ? miss.listed(listed.stdout) : undefined;
+          learned();
+          return overrides ? run(overrides) : query();
+        });
+      },
+    );
+  if (!asynchronous) return probe(cached);
+  // Parallel calls that miss on the same repository wait for one probe instead of each running it.
+  const pending = learning.get(cached.key);
+  if (pending)
+    return pending.then(() => {
+      const again = cachedDriverConfig(cwd, execution.work_tree);
+      if (!again) return query();
+      return 'overrides' in again ? run(again.overrides) : probe(again);
+    });
+  let finish!: () => void;
+  const learned = new Promise<void>((resolve) => (finish = resolve));
+  learning.set(cached.key, learned);
+  const done = () => {
+    if (learning.get(cached.key) === learned) learning.delete(cached.key);
+    finish();
+  };
+  const result = Promise.resolve(probe(cached, done));
+  result.then(done, done);
+  return result;
+}
+
+/** The probe each repository's config is being learned by, keyed as the config cache keys it. */
+const learning = new Map<string, Promise<void>>();
+
+const driveMounts = new Map<string, { value: boolean; checked: number }>();
+
+/** onWslAutomount for cwd, asked again once its last answer is older than the recheck interval. */
+function onDriveMount(cwd: string): boolean {
+  const root = wslAutomountRoot();
+  if (root === undefined) return false;
+  const now = performance.now();
+  const previous = driveMounts.get(cwd);
+  if (previous && now - previous.checked < RECHECK_INTERVAL_MS) return previous.value;
+  const value = onWslAutomount(cwd, root);
+  driveMounts.delete(cwd);
+  if (driveMounts.size >= 256) driveMounts.delete(driveMounts.keys().next().value!);
+  driveMounts.set(cwd, { value, checked: now });
+  return value;
 }
 
 /** The checkout's own .git directory in cwd; undefined when git finds its repository elsewhere. */
@@ -326,4 +374,25 @@ function driveLinkedWorktree(cwd: string): Record<string, string> | undefined {
 
 function andThen<T, U>(value: T | Promise<T>, next: (value: T) => U | Promise<U>): U | Promise<U> {
   return value instanceof Promise ? value.then(next) : next(value);
+}
+
+// Waits before each new attempt; another git, such as an editor's status refresh, holds it briefly.
+const INDEX_LOCK_WAITS_MS = [200, 400, 800];
+
+/**
+ * Runs `attempt` again while its git exited because another git held the index lock. That git
+ * refuses before changing anything, so the attempt can run again as it was.
+ */
+export async function retryingIndexLock<T>(
+  attempt: () => Promise<T>,
+  /** The failure text git printed; empty when it succeeded. */
+  output: (result: T) => string,
+): Promise<T> {
+  let result = await attempt();
+  for (const wait of INDEX_LOCK_WAITS_MS) {
+    if (!/index\.lock': File exists/.test(output(result))) break;
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    result = await attempt();
+  }
+  return result;
 }

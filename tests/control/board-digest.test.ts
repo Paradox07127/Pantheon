@@ -33,6 +33,7 @@ async function timeline(change = true) {
     f.store.db
       .prepare('UPDATE events SET created_at=? WHERE aggregate_id=? AND kind=?')
       .run(start + offset, turn.id, kind);
+  await f.control.prefetchWorktreeReads(user, f.project.id);
   const clock = vi.spyOn(f.store, 'now').mockReturnValue(start + 10000);
   const event = (offset: number, kind: string, owner: Entity, payload: unknown = {}) => {
     clock.mockReturnValue(start + offset);

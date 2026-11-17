@@ -71,6 +71,7 @@ it.each(['answer.txt', 'answer.txt\n'])(
     symlinkSync(target, path.join(workspace.path, 'link.txt'));
     const diff = await f.control.sessionDiff(user, session.id);
     expect(diff.files).toEqual([{ path: 'link.txt', additions: 1, deletions: 0, untracked: true }]);
+    await f.prefetch();
     expect(f.list()[0]!.changes).toEqual({ files: 1, additions: 1, deletions: 0 });
   },
 );
@@ -82,12 +83,14 @@ it('lists a session as ready only once it has commits and nothing uncommitted', 
   vi.useFakeTimers({ toFake: ['Date'] });
   onTestFinished(() => void vi.useRealTimers());
   const later = () => vi.setSystemTime(Date.now() + 2000);
+  await f.prefetch();
   expect(f.list()[0]).toMatchObject({
     state: 'idle',
     changes: { files: 0, additions: 0, deletions: 0 },
   });
   writeFileSync(path.join(workspace.path, 'notes.txt'), 'uncommitted only\n');
   later();
+  await f.prefetch();
   expect(f.list()[0]).toMatchObject({
     state: 'idle',
     changes: { files: 1, additions: 1, deletions: 0 },
@@ -95,6 +98,7 @@ it('lists a session as ready only once it has commits and nothing uncommitted', 
   changeWorktree(workspace.path);
   const diff = await f.control.sessionDiff(user, session.id);
   later();
+  await f.prefetch();
   expect(f.list()[0]).toMatchObject({
     state: 'idle',
     changes: {
@@ -106,6 +110,7 @@ it('lists a session as ready only once it has commits and nothing uncommitted', 
   git(workspace.path, 'add', '--all');
   git(workspace.path, 'commit', '--quiet', '-m', 'Commit the rest');
   later();
+  await f.prefetch();
   expect(f.list()[0]).toMatchObject({
     state: 'ready',
     changes: { files: diff.files.length },
@@ -123,6 +128,7 @@ it('counts untracked lines without Git, binary files as none and only the first 
       path.join(workspace.path, 'many', `file-${String(index).padStart(4, '0')}.txt`),
       'first\nsecond\n',
     );
+  await f.prefetch();
   // Lines come from a-last-line.txt, binary.bin and the first 1998 files under many/.
   expect(f.list()[0]!.changes).toEqual({ files: 2003, additions: 2 + 1998 * 2, deletions: 0 });
 }, 120000);
@@ -312,6 +318,7 @@ it('closes the native process of a running session before discarding it', async 
     () => f.turns(session.id)[0]!.state === 'running',
     () => f.control.tick(),
   );
+  await f.prefetch();
   expect(f.list()[0]).toMatchObject({
     state: 'running',
     changes: { files: 0, additions: 0, deletions: 0 },

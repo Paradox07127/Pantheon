@@ -337,7 +337,7 @@ it.skipIf(insideSandbox)(
     setGate(f, passing);
     setAutoMerge(f, true);
     const head = commit(workspace.path, 'answer.txt', 'merged after the gate run\n');
-    f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
+    await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
     autoMergeAfterTurn(
       (f.control as unknown as { ctx: ControlContext }).ctx,
       session.id,

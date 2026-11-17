@@ -76,6 +76,7 @@ it('counts no lines of an untracked path that is a named pipe', async () => {
     f.control.sessionList(user, f.project.id, 'cached').find((each) => each.id === session.id);
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(Date.now() + 2000);
+  await f.prefetch();
   expect(f.list().find((each) => each.id === session.id)?.changes).toMatchObject({
     files: 2,
     additions: 1,
@@ -227,12 +228,18 @@ it('reads the worktree again once a merge rebased it onto a source that moved', 
   // A frozen clock keeps the list's reads inside their reuse window.
   vi.useFakeTimers({ toFake: ['Date'] });
   const row = () => f.list().find((each) => each.id === session.id);
+  await f.prefetch();
   expect(row()).toMatchObject({ ahead: 1, behind: 1 });
   const gitModule = await import('../../packages/control/dist/git.js');
   const original = gitModule.runGit;
   let rebased: ReturnType<typeof row>;
   vi.spyOn(gitModule, 'runGit').mockImplementation((cwd, args, input, asynchronous, options) => {
-    if (args[0] === 'merge' && args[1] === '--ff-only') rebased ??= row();
+    if (args[0] === 'merge' && args[1] === '--ff-only' && rebased === undefined)
+      // The list shows the rebased worktree once a prefetch has read it.
+      return f.prefetch().then(() => {
+        rebased ??= row();
+        return original(cwd, args, input, asynchronous, options);
+      });
     return original(cwd, args, input, asynchronous, options);
   });
   f.call(

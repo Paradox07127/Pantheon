@@ -10,12 +10,13 @@ import {
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
   collectFacts,
   localDate,
   type ChecklistItem,
   type FolderFacts,
+  type ProjectFacts,
 } from '../../packages/control/src/baseline-facts.js';
 
 const now = Date.now();
@@ -154,14 +155,17 @@ function repositoryFixture() {
 
 describe('baseline facts', () => {
   const { repository, plain } = repositoryFixture();
-  const facts = collectFacts(
-    [
-      { path: repository, git: true, task_lists: ['.notes/tasks/x.md'] },
-      { path: plain, git: false },
-    ],
-    now,
-  );
-  const [repo, folder] = facts.folders as [FolderFacts, FolderFacts];
+  let facts: ProjectFacts, repo: FolderFacts, folder: FolderFacts;
+  beforeAll(async () => {
+    facts = await collectFacts(
+      [
+        { path: repository, git: true, task_lists: ['.notes/tasks/x.md'] },
+        { path: plain, git: false },
+      ],
+      now,
+    );
+    [repo, folder] = facts.folders as [FolderFacts, FolderFacts];
+  });
 
   it('reads branch, head, dirty count and upstream distance from git', () => {
     expect(facts.collected_at).toBe(now);
@@ -199,9 +203,10 @@ describe('baseline facts', () => {
     ['reads', ['.notes/tasks/x.md'], ['.notes/tasks/x.md']],
   ])(
     '%s a checklist in an ignored folder by the task lists and counts only tracked files',
-    (_, taskLists, paths) => {
-      const [listed] = collectFacts([{ path: repository, git: true, task_lists: taskLists }], now)
-        .folders as [FolderFacts];
+    async (_, taskLists, paths) => {
+      const [listed] = (
+        await collectFacts([{ path: repository, git: true, task_lists: taskLists }], now)
+      ).folders as [FolderFacts];
       expect(listed.checklists.map((list) => list.path)).toEqual(paths);
       expect(listed.directories).toEqual([
         { path: '.github', files: 1 },
@@ -283,7 +288,7 @@ describe('baseline facts', () => {
 });
 
 describe('checklist identity and time', () => {
-  it('dates a tracked checklist with uncommitted changes by the file, not its last commit', () => {
+  it('dates a tracked checklist with uncommitted changes by the file, not its last commit', async () => {
     const base = mkdtempSync(path.join(os.tmpdir(), 'baseline-facts-'));
     try {
       git(base, ['init', '--quiet', '-b', 'main']);
@@ -291,18 +296,18 @@ describe('checklist identity and time', () => {
       commit(base, 'Add the plan', daysAgo(30));
       appendFileSync(path.join(base, 'TODO.md'), '- [ ] New item written today\n');
       utimesSync(path.join(base, 'TODO.md'), daysAgo(1) / 1000, daysAgo(1) / 1000);
-      const [repository] = collectFacts([{ path: base, git: true }], now).folders;
+      const [repository] = (await collectFacts([{ path: base, git: true }], now)).folders;
       expect(repository!.checklists).toMatchObject([{ path: 'TODO.md', modified_at: daysAgo(1) }]);
     } finally {
       rmSync(base, { recursive: true, force: true });
     }
   });
 
-  it('gives checklist items with the same text their own hash', () => {
+  it('gives checklist items with the same text their own hash', async () => {
     const base = mkdtempSync(path.join(os.tmpdir(), 'baseline-facts-'));
     try {
       write(base, 'TODO.md', '# Plan\n- [x] Run tests\n- [ ] Write docs\n- [ ] Run tests\n');
-      const [folder] = collectFacts([{ path: base, git: false }], now).folders;
+      const [folder] = (await collectFacts([{ path: base, git: false }], now)).folders;
       const [first, other, again] = folder!.checklists[0]!.items;
       expect(first!.text).toBe(again!.text);
       expect(new Set([first!.hash, other!.hash, again!.hash]).size).toBe(3);

@@ -252,7 +252,7 @@ async function mergeCounts(
   const [stat, merge] = await Promise.all([
     git(root, ['diff', '--numstat', base ?? target, head, '--']),
     // Nothing to merge cannot conflict; histories with no common commit are not merged.
-    base && ahead ? mergePreview(root, target, head, true) : undefined,
+    base && ahead ? mergePreview(root, target, head) : undefined,
   ]);
   let additions = 0,
     deletions = 0;
@@ -531,7 +531,7 @@ export async function repoCompare(
   const common = await mergeBase(root, baseSha, headSha);
   const [[behind, ahead], merge, listed] = await Promise.all([
     sides(root, baseSha, headSha),
-    common && mergePreview(root, baseSha, headSha, true),
+    common && mergePreview(root, baseSha, headSha),
     listedWorktrees(root),
   ]);
   const preview = merge && previewed(merge);

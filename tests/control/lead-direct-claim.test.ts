@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import type {
   BoardPlan,
   Principal,
@@ -10,7 +10,7 @@ import type {
   UserTurn,
   Workspace,
 } from '@pantheon/domain';
-import { eventually, settle, user } from '../helpers.js';
+import { countingGit, eventually, settle, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -345,7 +345,7 @@ it('records the worktree head when the lead reports its direct task done', async
   expect(() => report(f, lead.id, 'lead', 'risk')).toThrow(
     expect.objectContaining({ code: 'invalid_input' }),
   );
-  report(f, lead.id, 'lead');
+  await report(f, lead.id, 'lead');
 
   expect(current(f, lead.id).direct_task).toEqual({
     id: 'a',
@@ -385,7 +385,7 @@ it.each([
     writeFileSync(path.join(worktree, 'answer.txt'), 'done\n');
     git(worktree, 'commit', '--quiet', '-am', 'Finish task a');
 
-    expect(report(f, lead.id, 'lead')).toMatchObject({ next: expect.stringContaining(next) });
+    expect(await report(f, lead.id, 'lead')).toMatchObject({ next: expect.stringContaining(next) });
   },
 );
 
@@ -396,9 +396,29 @@ it('refuses the done report of a direct task when the worktree head cannot be re
   const worktree = f.store.must<Workspace>('workspaces', lead.workspace_id!).path;
   git(worktree, 'symbolic-ref', 'HEAD', 'refs/heads/unborn');
 
-  expect(() => report(f, lead.id, 'lead')).toThrow(expect.objectContaining({ code: 'git_failed' }));
+  await expect(report(f, lead.id, 'lead')).rejects.toThrow(
+    expect.objectContaining({ code: 'git_failed' }),
+  );
   expect(current(f, lead.id).direct_task?.reported_head).toBeUndefined();
   expect(eventsOf(f, lead.id, 'task.reported')).toEqual([]);
+});
+
+it('reads the worktree head of a direct task report while other work goes on', async () => {
+  const f = workbenchFixture();
+  const lead = await leadWithPlan(f, [task('a')]);
+  start(f, lead.id, ['a']);
+  const worktree = f.store.must<Workspace>('workspaces', lead.workspace_id!).path;
+  writeFileSync(path.join(worktree, 'answer.txt'), 'done\n');
+  git(worktree, 'commit', '--quiet', '-am', 'Finish task a');
+  const head = git(worktree, 'rev-parse', 'HEAD');
+  const counter = countingGit();
+  onTestFinished(counter.restore);
+  counter.slowOn('rev-parse --verify HEAD^{commit}');
+  let fired = false;
+  const timer = setTimeout(() => (fired = true), 50);
+  onTestFinished(() => clearTimeout(timer));
+  expect(await report(f, lead.id, 'lead')).toMatchObject({ reported_head: head });
+  expect(fired).toBe(true);
 });
 
 it('releases the direct task the lead stops, and makes its turns read-only again', async () => {

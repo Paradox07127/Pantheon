@@ -1,18 +1,18 @@
 import { runtimeReviewHandlers } from './runtime-review.js';
 import { memoryHandlers } from './memory.js';
-import { projectIntroHandlers } from './project-intro.js';
-import { baselineHandlers } from './baseline.js';
+import { projectIntroPreparers } from './project-intro.js';
+import { baselineHandlers, baselinePreparers } from './baseline.js';
 import { changeStoryHandlers } from './change-story.js';
-import { rangeStoryHandlers } from './range-story.js';
-import type { Handlers } from './context.js';
+import { rangeStoryHandlers, rangeStoryPreparers } from './range-story.js';
+import type { Handlers, Preparers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
 import { projectBoardHandlers } from './project-board.js';
 import { projectHandlers } from './project.js';
-import { sessionHandlers } from './session.js';
+import { prepareResolve, sessionHandlers } from './session.js';
 import { workbenchSessionHandlers } from './workbench-session.js';
 import { approvalHandlers } from './approvals.js';
-import { reviewHandlers } from './review.js';
-import { taskTrackingHandlers } from './task-tracking.js';
+import { prepareReviewRequest, reviewHandlers } from './review.js';
+import { prepareBoardSync, prepareTaskReport, taskTrackingHandlers } from './task-tracking.js';
 import { taskDispatchHandlers } from './task-dispatch.js';
 import { leadInboxHandlers } from './lead-inbox.js';
 import { workflowEngineHandlers } from './workflow-engine.js';
@@ -32,7 +32,6 @@ export const handlers: Handlers = {
   ...projectFactHandlers,
   ...projectBoardHandlers,
   ...baselineHandlers,
-  ...projectIntroHandlers,
   ...changeStoryHandlers,
   ...rangeStoryHandlers,
   ...sessionHandlers,
@@ -53,4 +52,14 @@ export const handlers: Handlers = {
   ...externalEventHandlers,
   ...visualHandlers,
   ...themeHandlers,
+};
+
+export const preparers: Preparers = {
+  ...baselinePreparers,
+  ...projectIntroPreparers,
+  ...rangeStoryPreparers,
+  'task.report': prepareTaskReport,
+  'board.sync': prepareBoardSync,
+  'review.request': prepareReviewRequest,
+  'session.resolve': prepareResolve,
 };

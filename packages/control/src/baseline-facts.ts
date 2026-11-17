@@ -222,32 +222,36 @@ export function collectTextCounts(roots: { path: string; git: boolean }[]) {
     '.yml': 'YAML',
     '.toml': 'TOML',
   };
-  return roots.map((root) => {
-    const listed = root.git ? runGit(root.path, ['ls-files', '-z']) : undefined;
-    if (listed && listed.exit_code !== 0)
-      throw new Error(
-        `Cannot count tracked files in ${root.path}: ${listed.error ?? listed.stderr.toString()}`,
-      );
-    const files = listed
-      ? listed.stdout.toString().split('\0').filter(Boolean)
-      : scanFiles(root.path).files;
-    return {
-      root: root.path,
-      files: files.flatMap((relative) => {
-        const file = path.join(root.path, relative);
-        if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) return [];
-        const content = readFileSync(file);
-        if (content.includes(0)) return [];
-        return [
-          {
-            path: relative,
-            lines: textLines(content.toString('utf8')),
-            language: languages[path.extname(relative).toLowerCase()] ?? 'other',
-          },
-        ];
-      }),
-    };
-  });
+  return Promise.all(
+    roots.map(async (root) => {
+      const listed = root.git
+        ? await runGit(root.path, ['ls-files', '-z'], undefined, true)
+        : undefined;
+      if (listed && listed.exit_code !== 0)
+        throw new Error(
+          `Cannot count tracked files in ${root.path}: ${listed.error ?? listed.stderr.toString()}`,
+        );
+      const files = listed
+        ? listed.stdout.toString().split('\0').filter(Boolean)
+        : scanFiles(root.path).files;
+      return {
+        root: root.path,
+        files: files.flatMap((relative) => {
+          const file = path.join(root.path, relative);
+          if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) return [];
+          const content = readFileSync(file);
+          if (content.includes(0)) return [];
+          return [
+            {
+              path: relative,
+              lines: textLines(content.toString('utf8')),
+              language: languages[path.extname(relative).toLowerCase()] ?? 'other',
+            },
+          ];
+        }),
+      };
+    }),
+  );
 }
 
 /** A regular file whose real path stays inside the root. */
@@ -296,19 +300,51 @@ function outline(text: string) {
   return { headings, items };
 }
 
-function collectFolder(
+async function collectFolder(
   root: string,
   git: boolean,
   now: number,
   taskLists: string[] = [],
-): FolderFacts {
-  const output = (args: string[]) => {
-    const result = runGit(root, args);
+): Promise<FolderFacts> {
+  const output = async (args: string[]) => {
+    const result = await runGit(root, args, undefined, true);
     return result.exit_code === 0 ? result.stdout.toString('utf8') : '';
   };
+  const first = new Date(now);
+  first.setHours(0, 0, 0, 0);
+  first.setDate(first.getDate() - 89);
+  const [listing = '', statusText = '', recent = '', history = '', documented = '', changed = ''] =
+    git
+      ? await Promise.all([
+          output(['ls-files', '-z', '-t', '--cached', '--others', '--exclude-standard']),
+          output(['status', '--porcelain=v2', '--branch', '--', '.']),
+          output(['log', '-30', '--format=%H%x1f%ct%x1f%s', '--', '.']),
+          output([
+            'log',
+            `--since=@${Math.floor(first.getTime() / 1000)}`,
+            '--numstat',
+            '--no-renames',
+            '--relative',
+            '--format=%x1e%ct',
+            '--',
+            '.',
+          ]),
+          output([
+            'log',
+            '--name-only',
+            '--no-renames',
+            '--relative',
+            '--format=%x1e%ct',
+            '--',
+            '*.md',
+            '*README*',
+          ]),
+          output(['diff', 'HEAD', '--name-only', '-z', '--relative', '--', '.']),
+        ])
+      : [];
   // Git folders list tracked and unignored files, tagged "? " when untracked; nested repositories end in a slash.
   const listed = git
-    ? output(['ls-files', '-z', '-t', '--cached', '--others', '--exclude-standard'])
+    ? listing
         .split('\0')
         .filter(Boolean)
         .map((entry) => ({ tracked: !entry.startsWith('? '), path: entry.slice(2) }))
@@ -367,35 +403,29 @@ function collectFolder(
   let tracked: Set<string> | undefined;
   if (git) {
     tracked = new Set(listed.filter((entry) => entry.tracked).map((entry) => entry.path));
-    const status = output(['status', '--porcelain=v1', '--branch', '--', '.'])
-      .split('\n')
-      .filter(Boolean);
-    const header =
-      /^## (?:No commits yet on |Initial commit on )?(.+?)(\.\.\.\S+)?( \[.*\])?$/.exec(
-        status[0] ?? '',
-      );
-    if (header) {
-      if (!header[1]!.startsWith('HEAD (no branch)')) facts.branch = header[1];
-      if (header[2]) {
-        facts.ahead = Number(/ahead (\d+)/.exec(header[3] ?? '')?.[1] ?? 0);
-        facts.behind = Number(/behind (\d+)/.exec(header[3] ?? '')?.[1] ?? 0);
-      }
+    const status = statusText.split('\n').filter(Boolean);
+    const header = (key: string) =>
+      status.find((line) => line.startsWith(`# branch.${key} `))?.slice(`# branch.${key} `.length);
+    const branch = header('head');
+    if (branch !== undefined && branch !== '(detached)') facts.branch = branch;
+    if (header('upstream') !== undefined) {
+      const distance = /^\+(\d+) -(\d+)$/.exec(header('ab') ?? '');
+      facts.ahead = Number(distance?.[1] ?? 0);
+      facts.behind = Number(distance?.[2] ?? 0);
     }
-    facts.dirty_files = status.filter((line) => !line.startsWith('## ')).length;
+    facts.dirty_files = status.filter((line) => !line.startsWith('# ')).length;
 
-    facts.recent_commits = output(['log', '-30', '--format=%H%x1f%ct%x1f%s', '--', '.'])
+    facts.recent_commits = recent
       .split('\n')
       .filter(Boolean)
       .map((line) => {
         const [sha, at, subject] = line.split('\x1f');
         return { sha: sha!, subject: subject ?? '', at: Number(at) * 1000 };
       });
-    facts.head = output(['rev-parse', '--verify', '--quiet', 'HEAD']).trim() || undefined;
+    const oid = header('oid');
+    facts.head = oid && oid !== '(initial)' ? oid : undefined;
     facts.last_commit_at = facts.recent_commits[0]?.at;
 
-    const first = new Date(now);
-    first.setHours(0, 0, 0, 0);
-    first.setDate(first.getDate() - 89);
     const perDay = new Map<string, number>();
     for (
       const day = new Date(first);
@@ -404,18 +434,7 @@ function collectFolder(
     )
       facts.commits_per_day.push({ date: localDate(day.getTime()), count: 0 });
     const touched = new Map<string, number>();
-    for (const commit of output([
-      'log',
-      `--since=@${Math.floor(first.getTime() / 1000)}`,
-      '--numstat',
-      '--no-renames',
-      '--relative',
-      '--format=%x1e%ct',
-      '--',
-      '.',
-    ])
-      .split('\x1e')
-      .slice(1)) {
+    for (const commit of history.split('\x1e').slice(1)) {
       const [time, ...changes] = commit.split('\n');
       const at = Number(time) * 1000;
       increment(perDay, localDate(at));
@@ -429,24 +448,12 @@ function collectFolder(
     facts.hotspots = top(touched, 10, (file, commits) => ({ path: file, commits }));
 
     let time = 0;
-    for (const line of output([
-      'log',
-      '--name-only',
-      '--no-renames',
-      '--relative',
-      '--format=%x1e%ct',
-      '--',
-      '*.md',
-      '*README*',
-    ]).split('\n')) {
+    for (const line of documented.split('\n')) {
       if (line.startsWith('\x1e')) time = Number(line.slice(1)) * 1000;
       else if (line && !committed.has(unquote(line))) committed.set(unquote(line), time);
     }
     // A tracked file with uncommitted changes is as new as the file itself.
-    for (const file of output(['diff', 'HEAD', '--name-only', '-z', '--relative', '--', '.']).split(
-      '\0',
-    ))
-      committed.delete(file);
+    for (const file of changed.split('\0')) committed.delete(file);
   }
 
   const types = new Map<string, number>(),
@@ -508,12 +515,14 @@ function collectFolder(
   return facts;
 }
 
-export function collectFacts(
+export async function collectFacts(
   roots: { path: string; git: boolean; task_lists?: string[] }[],
   now = Date.now(),
-): ProjectFacts {
+): Promise<ProjectFacts> {
   return {
     collected_at: now,
-    folders: roots.map((root) => collectFolder(root.path, root.git, now, root.task_lists)),
+    folders: await Promise.all(
+      roots.map((root) => collectFolder(root.path, root.git, now, root.task_lists)),
+    ),
   };
 }

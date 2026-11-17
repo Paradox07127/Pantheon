@@ -32,11 +32,15 @@ import {
 import { runGit } from './git.js';
 import { nativeTurnActive, releaseIdleConversation, withoutNativeConversation } from './session.js';
 import { workspaceReadAccess } from './workspace.js';
+import { forgetStatusReads } from './workbench-session.js';
 
 export const CHECKPOINTS = 'refs/pantheon/checkpoints';
 
-export const checkpointRef = (workspace: Workspace, sessionId: string, turnId: string) =>
-  `${CHECKPOINTS}/${workspace.id}/${sessionId}/${turnId}`;
+export const checkpointRef = (
+  workspace: Pick<Workspace, 'id'>,
+  sessionId: string,
+  turnId: string,
+) => `${CHECKPOINTS}/${workspace.id}/${sessionId}/${turnId}`;
 
 /** The session's git worktree, or undefined when it has none. */
 export function gitWorkspace(ctx: ControlContext, session: Session): Workspace | undefined {
@@ -219,11 +223,15 @@ export function restorableTurns(ctx: ControlContext, projectId: string): Map<str
 }
 
 /** Freezes a fork's files and HEAD under its own ref without changing the source index. */
-export function forkCheckpoint(workspace: Workspace, ref: string, checkpoint?: string): void {
+export async function forkCheckpoint(
+  workspace: Workspace,
+  ref: string,
+  checkpoint?: string,
+): Promise<void> {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'pantheon-checkpoint-'));
   const index = path.join(directory, 'index');
-  const git = (args: string[]): string => {
-    const result = runGit(workspace.path, args, undefined, false, {
+  const git = async (args: string[]): Promise<string> => {
+    const result = await runGit(workspace.path, args, undefined, true, {
       env: { GIT_INDEX_FILE: index },
     });
     requireThat(
@@ -235,15 +243,12 @@ export function forkCheckpoint(workspace: Workspace, ref: string, checkpoint?: s
   };
   try {
     if (!checkpoint) {
-      const head = git(['rev-parse', '--verify', 'HEAD^{commit}']);
-      // Synchronous, as stageWorktree is not: the fork runs inside a command's transaction.
-      copyWorktreeIndex(workspace.path, index);
-      git(['read-tree', '--reset', head]);
-      git([...globalExcludes(), 'add', '-A']);
-      const tree = git(['write-tree']);
-      checkpoint = git(['commit-tree', tree, '-p', head, '-m', 'Pantheon session fork']);
+      const head = await git(['rev-parse', '--verify', 'HEAD^{commit}']);
+      await stageWorktree(workspace.path, index, head, git);
+      const tree = await git(['write-tree']);
+      checkpoint = await git(['commit-tree', tree, '-p', head, '-m', 'Pantheon session fork']);
     }
-    git(['update-ref', ref, checkpoint]);
+    await git(['update-ref', ref, checkpoint]);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -348,6 +353,8 @@ export async function restoreCheckpoint(worktree: string, checkpoint: string): P
     exitCodes: (number | null)[] = [0],
   ): Promise<string> => {
     const result = await runGit(worktree, args, input, true);
+    // Each step may have moved the files or HEAD a cached status shows.
+    forgetStatusReads(worktree);
     requireThat(
       exitCodes.includes(result.exit_code),
       'invalid_workspace',

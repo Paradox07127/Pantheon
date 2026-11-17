@@ -87,12 +87,14 @@ async function sessionsOfEachRead() {
 }
 
 it('reuses the worktree read of an idle session until the session has a new event', async () => {
-  const { f, session, workspace, calls, files } = await idleWorktree();
+  const { f, session, workspace, calls, files, prefetch } = await idleWorktree();
   vi.useFakeTimers({ toFake: ['Date'] });
+  await prefetch();
   const first = files();
   const read = calls();
   expect(read).toBeGreaterThan(0);
   writeFileSync(path.join(workspace.path, 'second.txt'), 'uncommitted\n');
+  await prefetch();
   expect(files()).toBe(first);
   expect(calls()).toBe(read);
 
@@ -103,20 +105,24 @@ it('reuses the worktree read of an idle session until the session has a new even
   );
   await settled(f, session.id);
   const sent = calls();
+  await prefetch();
   expect(files()).toBeGreaterThan(first!);
   expect(calls()).toBeGreaterThan(sent);
 });
 
 it('reads the worktree again two seconds after the last read', async () => {
-  const { workspace, calls, files } = await idleWorktree();
+  const { workspace, calls, files, prefetch, landedPrefetch } = await idleWorktree();
   vi.useFakeTimers({ toFake: ['Date'] });
+  await prefetch();
   const first = files();
   const read = calls();
   writeFileSync(path.join(workspace.path, 'second.txt'), 'uncommitted\n');
   vi.setSystemTime(Date.now() + 1_999);
+  await prefetch();
   expect(files()).toBe(first);
   expect(calls()).toBe(read);
   vi.setSystemTime(Date.now() + 2);
+  await landedPrefetch();
   expect(files()).toBe(first! + 1);
   expect(calls()).toBeGreaterThan(read);
 });
@@ -125,6 +131,7 @@ it('lists the same sessions after a prefetch without a synchronous Git call', as
   const { f, session, committed, checked, folder, syncCalls, landedPrefetch } =
     await sessionsOfEachRead();
   vi.useFakeTimers({ toFake: ['Date'] });
+  await landedPrefetch();
   const read = f.list();
   const row = (id: string) => read.find((each) => each.id === id);
   expect(row(session.id)).toMatchObject({ state: 'idle', changes: { files: 1 } });
@@ -157,7 +164,7 @@ it('runs each Git read of a workspace once for two prefetches at the same time',
 });
 
 it('reads the worktree again after a prefetch once the session has a new event', async () => {
-  const { f, session, workspace, files, syncCalls, prefetch } = await idleWorktree();
+  const { f, session, workspace, files, asyncCalls, prefetch } = await idleWorktree();
   vi.useFakeTimers({ toFake: ['Date'] });
   await prefetch();
   const first = files();
@@ -168,24 +175,27 @@ it('reads the worktree again after a prefetch once the session has a new event',
     f.store.must<Session>('sessions', session.id).revision,
   );
   await settled(f, session.id);
-  const before = syncCalls();
+  const before = asyncCalls().length;
+  await prefetch();
   expect(files()).toBe(first! + 1);
-  expect(syncCalls()).toBeGreaterThan(before);
+  expect(asyncCalls().length).toBeGreaterThan(before);
 });
 
 it('reads the worktree again two seconds after a prefetch', async () => {
-  const { workspace, files, syncCalls, prefetch } = await idleWorktree();
+  const { workspace, files, asyncCalls, prefetch, landedPrefetch } = await idleWorktree();
   vi.useFakeTimers({ toFake: ['Date'] });
   await prefetch();
   const first = files();
-  const before = syncCalls();
+  const before = asyncCalls().length;
   writeFileSync(path.join(workspace.path, 'second.txt'), 'uncommitted\n');
   vi.setSystemTime(Date.now() + 1_999);
+  await prefetch();
   expect(files()).toBe(first);
-  expect(syncCalls()).toBe(before);
+  expect(asyncCalls().length).toBe(before);
   vi.setSystemTime(Date.now() + 2);
+  await landedPrefetch();
   expect(files()).toBe(first! + 1);
-  expect(syncCalls()).toBeGreaterThan(before);
+  expect(asyncCalls().length).toBeGreaterThan(before);
 });
 
 it('lists the Git fields of an unread worktree as unknown without a Git call until a prefetch reads them', async () => {

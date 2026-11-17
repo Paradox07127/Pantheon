@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 import { git, workbenchFixture } from './workbench-fixture.js';
-import { user } from '../helpers.js';
+import { heldIndexLock, user } from '../helpers.js';
 
 const DAY = 24 * 60 * 60 * 1000,
   WEEK = 7 * DAY;
@@ -245,4 +245,20 @@ it('commits in the user’s repository without starting its automatic maintenanc
   expect(git(root, 'log', '-1', '--format=%s')).toBe('Commit through the user’s git');
   expect(recorded.runs(/ commit /).length).toBeGreaterThan(0);
   expect(recorded.trace()).not.toMatch(/maintenance run|gc --auto/);
+});
+
+it('commits once another git gives up the index lock it held', async () => {
+  const f = workbenchFixture();
+  const root = f.project.roots[0]!;
+  git(root, 'config', 'user.name', 'Repository Owner');
+  git(root, 'config', 'user.email', 'owner@example.invalid');
+  writeFileSync(path.join(root, 'answer.txt'), 'base\ncommitted\n');
+  const held = heldIndexLock('commit');
+  onTestFinished(held.restore);
+  await f.call<Promise<unknown>>('repo.commit', {
+    project_id: f.project.id,
+    paths: ['answer.txt'],
+    message: 'Commit after the lock',
+  });
+  expect(git(root, 'log', '-1', '--format=%s')).toBe('Commit after the lock');
 });

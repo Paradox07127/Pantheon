@@ -6,6 +6,8 @@ export const DRIVER_PATTERN =
   '^(filter\\..*\\.(clean|smudge|process|required)|merge\\..*\\.driver)$';
 const driverKey = new RegExp(DRIVER_PATTERN, 's');
 const LIMIT = 256;
+// A repository config changed within this time after a check still neutralizes the old driver list.
+export const RECHECK_INTERVAL_MS = 1000;
 
 interface Entry {
   /** Every path whose change can alter which repository config git reads or what it says. */
@@ -14,10 +16,14 @@ interface Entry {
   state?: Map<string, string>;
   /** Absent: this config is never cached, so every call runs the plain query. */
   overrides?: string[];
+  /** When `state` last matched the files, on the monotonic clock. */
+  checked: number;
 }
 const entries = new Map<string, Entry>();
 
 export interface ConfigMiss {
+  /** Names the entry this miss fills. */
+  key: string;
   /** Takes `git rev-parse --path-format=absolute --git-dir --git-common-dir --show-toplevel`. */
   located(output: string): boolean;
   /** Takes `git config --null --show-origin --list`; undefined means run the plain query. */
@@ -130,14 +136,19 @@ export function cachedDriverConfig(
   if (!start) return undefined;
   const key = `${start}\0${workTree ?? ''}`;
   const previous = entries.get(key);
+  const now = performance.now();
+  const recent = previous !== undefined && now - previous.checked < RECHECK_INTERVAL_MS;
   if (
     previous?.state &&
-    previous.paths.every((file) => {
-      const value = signature(file);
-      return value !== undefined && value === previous.state!.get(file);
-    })
-  )
+    (recent ||
+      previous.paths.every((file) => {
+        const value = signature(file);
+        return value !== undefined && value === previous.state!.get(file);
+      }))
+  ) {
+    if (!recent) previous.checked = now;
     return previous.overrides ? { overrides: previous.overrides } : undefined;
+  }
   const layout = repositoryLayout(start);
   if (!layout) return undefined;
   // Include targets learned last time are read before git runs, so the cache can be filled now.
@@ -146,6 +157,7 @@ export function cachedDriverConfig(
   if (!before) return undefined;
   let toplevel = '';
   return {
+    key,
     located(output) {
       const [gitdir = '', commondir = '', top = '', rest] = output.split('\n');
       toplevel = real(top) ?? '';
@@ -154,7 +166,7 @@ export function cachedDriverConfig(
         toplevel !== '' &&
         real(gitdir) === layout.gitdir &&
         real(commondir) === layout.commondir;
-      if (!known) remember(key, { paths, state: before });
+      if (!known) remember(key, { paths, state: before, checked: now });
       return known;
     },
     listed(output) {
@@ -195,6 +207,7 @@ export function cachedDriverConfig(
       }
       const dependencies = [...new Set([...layout.paths, ...targets])];
       if (!files.every((file) => dependencies.includes(file))) cacheable = false;
+      const checked = performance.now();
       const after = snapshot(dependencies);
       const settled =
         after !== undefined &&
@@ -203,6 +216,7 @@ export function cachedDriverConfig(
         paths: dependencies,
         state: settled ? after : undefined,
         overrides: cacheable ? [...overrides] : undefined,
+        checked,
       });
       return [...overrides];
     },

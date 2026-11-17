@@ -53,7 +53,7 @@ function defaultsFixture() {
   return { ...f, dir, ctx, current, policy, storedPolicy, mergePolicy, externalMode, setGlobal };
 }
 
-it('follows the global values where a project has none of its own', () => {
+it('follows the global values where a project has none of its own', async () => {
   const f = defaultsFixture();
   f.setGlobal('workflow_policy', { max_parallel: 2, gate_on_fail: 'stop' });
   f.setGlobal('session_defaults', {
@@ -74,7 +74,7 @@ it('follows the global values where a project has none of its own', () => {
   expect(usageTargets(f.ctx, f.current())).toEqual({ fixture: 500 });
   expect(f.externalMode()).toBe('approve');
   expect(f.mergePolicy()).toBe(true);
-  const { session_ids } = f.call<{ session_ids: string[] }>('board.sync', {
+  const { session_ids } = await f.call<{ session_ids: string[] }>('board.sync', {
     project_id: f.project.id,
   });
   expect(f.store.must<Session>('sessions', session_ids[0]!)).toMatchObject({
@@ -120,7 +120,7 @@ it('reads the project value over the global one, also when it equals the built-i
   expect(f.policy()).toMatchObject({ max_parallel: 2, acceptance_wake: 'milestone' });
 });
 
-it('returns a project to the global value once its own value is cleared', () => {
+it('returns a project to the global value once its own value is cleared', async () => {
   const f = defaultsFixture();
   f.setGlobal('workflow_policy', { max_parallel: 2, task_size_hint: 6 });
   f.setGlobal('session_defaults', { runtime: 'fixture', permission_mode: 'plan' });
@@ -185,7 +185,7 @@ it('returns a project to the global value once its own value is cleared', () => 
     f.current().revision,
   );
   f.call('project.sessionDefaults.clear', { project_id: f.project.id }, f.current().revision);
-  const { session_ids } = f.call<{ session_ids: string[] }>('board.sync', {
+  const { session_ids } = await f.call<{ session_ids: string[] }>('board.sync', {
     project_id: f.project.id,
   });
   expect(f.store.must<Session>('sessions', session_ids[0]!).permission_mode).toBe('plan');

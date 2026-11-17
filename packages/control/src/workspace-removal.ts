@@ -5,7 +5,7 @@ import type { Session, Workspace } from '@pantheon/domain';
 import { managedRootOf, resolvedPath, type ControlContext } from './context.js';
 import { deleteCheckpoints } from './checkpoint.js';
 import { runGit } from './git.js';
-import { removeRemoteWorkspace } from './remote-workspace.js';
+import { deleteSyncRefs, removeRemoteWorkspace } from './remote-workspace.js';
 import { onWslAutomount } from './wsl-mount.js';
 
 // Kept short: tests create unix sockets under TMPDIR and macOS caps socket paths at 104 bytes.
@@ -92,6 +92,7 @@ async function removeOnce(ctx: ControlContext, workspaceId: string, jobId: strin
   await deleteCheckpoints(workspace);
   rmSync(writerTempDirectory(workspace.id), { recursive: true, force: true });
   ctx.failpoint('after_workspace_delete');
+  await deleteSyncRefs(ctx, workspace);
   ctx.store.transaction(() => {
     // Read again: the row may have changed while git ran.
     const latest = ctx.store.must<Workspace>('workspaces', workspaceId);

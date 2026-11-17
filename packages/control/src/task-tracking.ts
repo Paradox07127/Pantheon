@@ -5,25 +5,27 @@ import {
   type BackgroundTask,
   type BoardPlan,
   type LeadNote,
+  type Principal,
   type Project,
   type Session,
   type SessionTurn,
   type TurnSkill,
   type Workspace,
 } from '@pantheon/domain';
-import { inputSchemas } from '@pantheon/protocol';
+import { inputSchemas, type Command } from '@pantheon/protocol';
 import {
-  gitFolder,
+  gitFolderAsync,
   insert,
   projectAccess,
   userOnly,
   type ControlContext,
+  type Handler,
   type Handlers,
 } from './context.js';
 import { autoMerge } from './user-config.js';
 import { gateCommands } from './landing.js';
 import { relayingQuestion } from './approvals.js';
-import { runGit } from './git.js';
+import { runGit, type GitResult } from './git.js';
 import {
   appendNote,
   blockedReport,
@@ -691,12 +693,13 @@ function placeWaiters(ctx: ControlContext, plan: BoardPlan, session: Session): s
  * Why a done report needs the lead's check: a merge task without commits while auto-merge is off,
  * or a worktree with uncommitted files; undefined otherwise.
  */
-function uncheckedDone(ctx: ControlContext, plan: BoardPlan, session: Session): string | undefined {
-  const workspace = ctx.store.get<Workspace>('workspaces', session.workspace_id!);
-  if (!workspace?.base_sha) return;
-  const status = runGit(workspace.path, ['status', '--porcelain=v1']),
-    count = runGit(workspace.path, ['rev-list', '--count', `${workspace.base_sha}..HEAD`]);
-  if (status.exit_code !== 0 || count.exit_code !== 0) return;
+function uncheckedDone(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  session: Session,
+  [status, count]: GitResult[],
+): string | undefined {
+  if (status?.exit_code !== 0 || count?.exit_code !== 0) return;
   const clean = status.stdout.toString().trim() === '',
     commits = Number(count.stdout.toString().trim());
   const unmerged =
@@ -713,6 +716,7 @@ function reportDirectTask(
   leadId: string,
   report: ReturnType<(typeof inputSchemas)['task.report']['parse']>,
   commandId: string,
+  parsed: GitResult | undefined,
 ): { task_id: string; reported_head: string; next: string } {
   const lead = ctx.store.must<Session>('sessions', leadId),
     claimed = lead.direct_task;
@@ -726,14 +730,12 @@ function reportDirectTask(
     'invalid_input',
     `Report your direct task ${claimed.id} with kind done; tell the user anything else`,
   );
-  const worktree = ctx.store.must<Workspace>('workspaces', lead.workspace_id!).path,
-    parsed = runGit(worktree, ['rev-parse', '--verify', 'HEAD^{commit}']),
-    head = parsed.stdout.toString().trim();
+  const head = parsed?.stdout.toString().trim() ?? '';
   // Without a head the merge after the turn would have nothing to check and skip silently.
   requireThat(
-    parsed.exit_code === 0 && /^([0-9a-f]{40}|[0-9a-f]{64})$/.test(head),
+    parsed?.exit_code === 0 && /^([0-9a-f]{40}|[0-9a-f]{64})$/.test(head),
     'git_failed',
-    `Pantheon could not read the commit your worktree is at, so task ${claimed.id} is not reported: ${parsed.stderr.toString().trim() || parsed.error || 'no commit'}`,
+    `Pantheon could not read the commit your worktree is at, so task ${claimed.id} is not reported: ${parsed?.stderr.toString().trim() || parsed?.error || 'no commit'}`,
   );
   const next = ctx.store.update(
     'sessions',
@@ -1253,7 +1255,11 @@ export function queueTurn(
 }
 
 /** The plan with each task's state and sessions and the recent commits of each git folder. */
-function syncBrief(ctx: ControlContext, projectId: string, plan: BoardPlan | undefined): string {
+function syncBrief(
+  ctx: ControlContext,
+  plan: BoardPlan | undefined,
+  logs: [string, GitResult][],
+): string {
   const lines = [
     'Sync the board with the project as it is now.',
     'Below are your plan with the state and sessions of each task, and the recent commits of each git folder of the project. Rewrite your plan from them and send it with update_board: keep the ids of tasks that still apply, add tasks for work that is under way without one, and remove tasks that are no longer needed.',
@@ -1276,9 +1282,8 @@ function syncBrief(ctx: ControlContext, projectId: string, plan: BoardPlan | und
       );
     }
   } else lines.push('You have no plan yet; read project_read for the plans of other leads.');
-  for (const root of ctx.store.must<Project>('projects', projectId).roots.filter(gitFolder)) {
+  for (const [root, log] of logs) {
     lines.push(`Recent commits in ${root}:`);
-    const log = runGit(root, ['log', '-20', '--format=%h %cs %s']);
     if (log.exit_code !== 0) lines.push('- none');
     else
       for (const line of log.stdout.toString().split('\n').filter(Boolean)) lines.push(`- ${line}`);
@@ -1288,6 +1293,177 @@ function syncBrief(ctx: ControlContext, projectId: string, plan: BoardPlan | und
 
 const TAKEOVER_TEXT =
   'You take over the plan of an earlier lead session that has ended; project_read shows it as yours.';
+
+function boardSync(ctx: ControlContext, p: Principal, c: Command, logs: [string, GitResult][]) {
+  const input = inputSchemas['board.sync'].parse(c.input);
+  projectAccess(ctx, p, input.project_id, c.type);
+  if (p.role === 'lead')
+    return {
+      brief: syncBrief(ctx, ctx.store.get<BoardPlan>('board_plans', p.session_id!), logs),
+    };
+  userOnly(p);
+  const turns = ctx.store.list<SessionTurn>('session_turns');
+  const sessionIds: string[] = [];
+  for (const plan of ctx.store.list<BoardPlan>('board_plans')) {
+    if (plan.project_id !== input.project_id) continue;
+    const lead = ctx.store.get<Session>('sessions', plan.id);
+    if (!lead) continue;
+    const pending = turns.some(
+      (turn) =>
+        turn.session_id === lead.id &&
+        (turn.origin === 'sync' || turn.origin === 'baseline') &&
+        (turn.state === 'queued' || turn.state === 'running'),
+    );
+    if (!pending) {
+      try {
+        acceptInput(ctx, lead, lead.state === 'running' ? 'steer' : 'send');
+      } catch (error) {
+        if (error instanceof DomainError) continue;
+        throw error;
+      }
+      queueTurn(ctx, lead, syncBrief(ctx, plan, logs), 'sync', c.command_id);
+    }
+    sessionIds.push(lead.id);
+  }
+  if (!sessionIds.length) {
+    // The newest plan of an ended lead becomes the new lead's, so its tasks are not planned twice.
+    const ended = ctx.store
+      .list<BoardPlan>('board_plans')
+      .filter(
+        (plan) =>
+          plan.project_id === input.project_id &&
+          ctx.store.get<Session>('sessions', plan.id)?.state === 'closed',
+      )
+      .sort((a, b) => b.updated_at - a.updated_at)[0];
+    const brief = syncBrief(ctx, ended, logs);
+    const text = ended ? `${TAKEOVER_TEXT}\n${brief}` : brief;
+    const lead = startLead(ctx, p, input.project_id, 'Board sync', text, c.command_id, 'sync');
+    if (lead) {
+      if (ended) transferPlan(ctx, ended, lead.id, c.command_id);
+      sessionIds.push(lead.id);
+    }
+  }
+  return { session_ids: sessionIds };
+}
+
+/** Reads the recent commits of the project's git folders once, before board.sync's transaction. */
+export function prepareBoardSync(ctx: ControlContext, p: Principal, c: Command): Promise<Handler> {
+  const input = inputSchemas['board.sync'].parse(c.input);
+  projectAccess(ctx, p, input.project_id, c.type);
+  const roots = ctx.store.must<Project>('projects', input.project_id).roots;
+  return (async () => {
+    const git = await Promise.all(roots.map(gitFolderAsync));
+    const logs = await Promise.all(
+      roots
+        .filter((_, index) => git[index])
+        .map(async (root): Promise<[string, GitResult]> => [
+          root,
+          await runGit(root, ['log', '-20', '--format=%h %cs %s'], undefined, true),
+        ]),
+    );
+    return (ctx: ControlContext, p: Principal, c: Command) => boardSync(ctx, p, c, logs);
+  })();
+}
+
+// Blocked and requirement reports, and the done report of a report task, wake the lead.
+function taskReport(ctx: ControlContext, p: Principal, c: Command, git: GitResult[]) {
+  const input = inputSchemas['task.report'].parse(c.input);
+  requireThat(
+    input.kind !== 'blocked' || input.reason,
+    'invalid_input',
+    'A blocked report requires a reason category',
+  );
+  projectAccess(ctx, p, input.project_id, c.type);
+  if (p.role === 'lead') return reportDirectTask(ctx, p.session_id!, input, c.command_id, git[0]);
+  requireThat(p.role === 'worker', 'permission_denied', 'Worker session required');
+  // A worker credential is only issued to a session opened from a task.
+  const task = ctx.store.must<Session>('sessions', p.session_id!).task!;
+  const plan = ctx.store.get<BoardPlan>('board_plans', task.lead_session_id);
+  requireThat(plan, 'not_found', `Not found: board plan ${task.lead_session_id}`);
+  requireThat(
+    input.kind === 'blocked' || plan.inbox.length < INBOX_LIMIT,
+    'resource_busy',
+    `The lead has ${INBOX_LIMIT} unread notes; report again after it reads them`,
+  );
+  const note: LeadNote = {
+    at: ctx.store.now(),
+    session_id: p.session_id!,
+    task_id: task.id,
+    kind: input.kind,
+    text: input.text,
+    ...(input.kind === 'done' ? { status: input.status ?? ('done' as const) } : {}),
+    ...(input.kind === 'blocked'
+      ? { reason: input.reason, turn_id: causeTurn(ctx, p.session_id!)?.id }
+      : {}),
+    // The generation tells task.accept whether the report predates a contract change.
+    generation: taskReportGeneration(ctx, ctx.store.must<Session>('sessions', p.session_id!)),
+  };
+  let next = appendNote(ctx, plan, note, c.command_id);
+  ctx.store.event('task.reported', next, input.project_id, note, c.command_id);
+  const unchecked =
+    note.kind === 'done'
+      ? uncheckedDone(ctx, plan, ctx.store.must<Session>('sessions', p.session_id!), git)
+      : undefined;
+  if (unchecked)
+    next = appendNote(
+      ctx,
+      next,
+      {
+        at: note.at,
+        session_id: note.session_id,
+        task_id: note.task_id,
+        kind: 'no_changes',
+        text: unchecked,
+      },
+      c.command_id,
+    );
+  if (
+    note.kind !== 'requirement' &&
+    note.kind !== 'blocked' &&
+    // As in wakeDue, a done report waits for the task's after-merge steps.
+    !(reportDone(plan, note) && !afterMergeHolds(ctx, plan, note)) &&
+    !unchecked
+  )
+    return { pending: next.inbox.length };
+  wakeLead(ctx, next, c.command_id);
+  return { pending: ctx.store.must<BoardPlan>('board_plans', next.id).inbox.length };
+}
+
+/**
+ * Reads the worktree a done report checks before task.report's transaction: a lead's HEAD, or a
+ * worker's status and commits since its base.
+ */
+export function prepareTaskReport(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+): Handler | Promise<Handler> {
+  const input = inputSchemas['task.report'].parse(c.input);
+  projectAccess(ctx, p, input.project_id, c.type);
+  const session = p.session_id ? ctx.store.get<Session>('sessions', p.session_id) : undefined,
+    workspace = session?.workspace_id
+      ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
+      : undefined;
+  const reads =
+    input.kind !== 'done' || !workspace
+      ? []
+      : p.role === 'lead'
+        ? session!.direct_task
+          ? [['rev-parse', '--verify', 'HEAD^{commit}']]
+          : []
+        : p.role === 'worker' && workspace.base_sha
+          ? [
+              ['status', '--porcelain=v1'],
+              ['rev-list', '--count', `${workspace.base_sha}..HEAD`],
+            ]
+          : [];
+  if (!reads.length) return (ctx, p, c) => taskReport(ctx, p, c, []);
+  return Promise.all(reads.map((args) => runGit(workspace!.path, args, undefined, true))).then(
+    (git): Handler =>
+      (ctx, p, c) =>
+        taskReport(ctx, p, c, git),
+  );
+}
 
 export const taskTrackingHandlers: Handlers = {
   'task.handback': (ctx, p, c) => {
@@ -1330,124 +1506,6 @@ export const taskTrackingHandlers: Handlers = {
     }
     wakeLead(ctx, ctx.store.must<BoardPlan>('board_plans', plan.id), c.command_id);
     return { session_ids: unfinished.map((session) => session.id) };
-  },
-  'board.sync': (ctx, p, c) => {
-    const input = inputSchemas['board.sync'].parse(c.input);
-    projectAccess(ctx, p, input.project_id, c.type);
-    if (p.role === 'lead')
-      return {
-        brief: syncBrief(
-          ctx,
-          input.project_id,
-          ctx.store.get<BoardPlan>('board_plans', p.session_id!),
-        ),
-      };
-    userOnly(p);
-    const turns = ctx.store.list<SessionTurn>('session_turns');
-    const sessionIds: string[] = [];
-    for (const plan of ctx.store.list<BoardPlan>('board_plans')) {
-      if (plan.project_id !== input.project_id) continue;
-      const lead = ctx.store.get<Session>('sessions', plan.id);
-      if (!lead) continue;
-      const pending = turns.some(
-        (turn) =>
-          turn.session_id === lead.id &&
-          (turn.origin === 'sync' || turn.origin === 'baseline') &&
-          (turn.state === 'queued' || turn.state === 'running'),
-      );
-      if (!pending) {
-        try {
-          acceptInput(ctx, lead, lead.state === 'running' ? 'steer' : 'send');
-        } catch (error) {
-          if (error instanceof DomainError) continue;
-          throw error;
-        }
-        queueTurn(ctx, lead, syncBrief(ctx, input.project_id, plan), 'sync', c.command_id);
-      }
-      sessionIds.push(lead.id);
-    }
-    if (!sessionIds.length) {
-      // The newest plan of an ended lead becomes the new lead's, so its tasks are not planned twice.
-      const ended = ctx.store
-        .list<BoardPlan>('board_plans')
-        .filter(
-          (plan) =>
-            plan.project_id === input.project_id &&
-            ctx.store.get<Session>('sessions', plan.id)?.state === 'closed',
-        )
-        .sort((a, b) => b.updated_at - a.updated_at)[0];
-      const brief = syncBrief(ctx, input.project_id, ended);
-      const text = ended ? `${TAKEOVER_TEXT}\n${brief}` : brief;
-      const lead = startLead(ctx, p, input.project_id, 'Board sync', text, c.command_id, 'sync');
-      if (lead) {
-        if (ended) transferPlan(ctx, ended, lead.id, c.command_id);
-        sessionIds.push(lead.id);
-      }
-    }
-    return { session_ids: sessionIds };
-  },
-  // Blocked and requirement reports, and the done report of a report task, wake the lead.
-  'task.report': (ctx, p, c) => {
-    const input = inputSchemas['task.report'].parse(c.input);
-    requireThat(
-      input.kind !== 'blocked' || input.reason,
-      'invalid_input',
-      'A blocked report requires a reason category',
-    );
-    projectAccess(ctx, p, input.project_id, c.type);
-    if (p.role === 'lead') return reportDirectTask(ctx, p.session_id!, input, c.command_id);
-    requireThat(p.role === 'worker', 'permission_denied', 'Worker session required');
-    // A worker credential is only issued to a session opened from a task.
-    const task = ctx.store.must<Session>('sessions', p.session_id!).task!;
-    const plan = ctx.store.get<BoardPlan>('board_plans', task.lead_session_id);
-    requireThat(plan, 'not_found', `Not found: board plan ${task.lead_session_id}`);
-    requireThat(
-      input.kind === 'blocked' || plan.inbox.length < INBOX_LIMIT,
-      'resource_busy',
-      `The lead has ${INBOX_LIMIT} unread notes; report again after it reads them`,
-    );
-    const note: LeadNote = {
-      at: ctx.store.now(),
-      session_id: p.session_id!,
-      task_id: task.id,
-      kind: input.kind,
-      text: input.text,
-      ...(input.kind === 'done' ? { status: input.status ?? ('done' as const) } : {}),
-      ...(input.kind === 'blocked'
-        ? { reason: input.reason, turn_id: causeTurn(ctx, p.session_id!)?.id }
-        : {}),
-      // The generation tells task.accept whether the report predates a contract change.
-      generation: taskReportGeneration(ctx, ctx.store.must<Session>('sessions', p.session_id!)),
-    };
-    let next = appendNote(ctx, plan, note, c.command_id);
-    ctx.store.event('task.reported', next, input.project_id, note, c.command_id);
-    const unchecked =
-      note.kind === 'done'
-        ? uncheckedDone(ctx, plan, ctx.store.must<Session>('sessions', p.session_id!))
-        : undefined;
-    if (unchecked)
-      next = appendNote(
-        ctx,
-        next,
-        {
-          at: note.at,
-          session_id: note.session_id,
-          task_id: note.task_id,
-          kind: 'no_changes',
-          text: unchecked,
-        },
-        c.command_id,
-      );
-    if (
-      note.kind !== 'requirement' &&
-      note.kind !== 'blocked' &&
-      // As in wakeDue, a done report waits for the task's after-merge steps.
-      !(reportDone(plan, note) && !afterMergeHolds(ctx, plan, note)) &&
-      !unchecked
-    )
-      return { pending: next.inbox.length };
-    wakeLead(ctx, next, c.command_id);
-    return { pending: ctx.store.must<BoardPlan>('board_plans', next.id).inbox.length };
   },
   // Each lead owns its own plan row, so messages take no expected revision.
   'task.message': (ctx, p, c) => {

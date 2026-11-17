@@ -29,9 +29,14 @@ import {
   type BaselineResult,
   type Visual,
 } from '@pantheon/domain';
-import { inputSchemas, pantheonConfigSchema, type ProjectFactsRead } from '@pantheon/protocol';
 import {
-  gitFolder,
+  inputSchemas,
+  pantheonConfigSchema,
+  type Command,
+  type ProjectFactsRead,
+} from '@pantheon/protocol';
+import {
+  gitFolderAsync,
   inside,
   projectAccess,
   resolvedPath,
@@ -39,21 +44,23 @@ import {
   sessionPrincipal,
   userOnly,
   type ControlContext,
+  type Handler,
   type Handlers,
+  type Preparers,
 } from './context.js';
 import { sessionDefaults } from './user-config.js';
 import { DISABLED, projectHandlers, readPantheonFile } from './project.js';
 import { projectFactHandlers } from './project-facts.js';
 import { runtime } from './admission.js';
 import { runGit } from './git.js';
-import { collectFacts } from './baseline-facts.js';
+import { collectFacts, type ProjectFacts } from './baseline-facts.js';
 import { renderScanSeed } from './baseline-brief.js';
 import { startLead } from './lead-session.js';
 import { acceptInput } from './session.js';
 import { queueTurn } from './task-tracking.js';
 import { readAppSettings } from './app-settings.js';
 import { visualHandlers } from './visual.js';
-import { startRangeStory } from './range-story.js';
+import { rangeCommits, startRangeStory, type RangeCommit } from './range-story.js';
 
 export const BASELINE_WALL_TIME_MS = 30 * 60 * 1000;
 const FACTS_KEPT = 30;
@@ -89,8 +96,8 @@ export function baselineSessionOf(ctx: ControlContext, p: Principal, projectId: 
 }
 
 /** No commit, or fewer than 3 files outside dot entries and node_modules. */
-function emptyProject(root: string): boolean {
-  if (runGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD']).exit_code !== 0) return true;
+function emptyProject(root: string, committed: boolean): boolean {
+  if (!committed) return true;
   let files = 0;
   const walk = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -113,28 +120,55 @@ function located(root: string, relative: string): boolean {
   }
 }
 
-/** True when any reference resolves inside any of the roots. */
-export function sourced(roots: string[], refs: string[]): boolean {
-  const commits = refs.flatMap((ref) => /^commit:([0-9a-fA-F]{7,40})$/.exec(ref)?.[1] ?? []);
-  const files = refs.flatMap((ref) => /^file:(.+?)(?::[1-9][0-9]*)?$/.exec(ref)?.[1] ?? []);
-  if (files.some((file) => roots.some((root) => located(root, file)))) return true;
-  if (!commits.length) return false;
-  const input = Buffer.from(commits.map((commit) => `${commit}^{commit}\n`).join(''));
-  return roots.some((root) => {
-    const checked = runGit(root, ['cat-file', '--batch-check'], input);
-    // A missing or ambiguous name prints its input followed by that word instead.
-    return checked.exit_code === 0 && /^[0-9a-f]+ commit \d+$/m.test(checked.stdout.toString());
-  });
+/** Whether HEAD names a commit in the root. */
+async function committed(root: string): Promise<boolean> {
+  const head = await runGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD'], undefined, true);
+  return head.exit_code === 0;
+}
+
+const commitRefs = (refs: string[]) =>
+  refs.flatMap((ref) => /^commit:([0-9a-fA-F]{7,40})$/.exec(ref)?.[1] ?? []);
+
+/**
+ * Resolves every commit among refs with one git run per root. The returned check is true when any
+ * of the references it is given resolves inside any of the roots.
+ */
+export async function sourcing(
+  roots: string[],
+  refs: string[],
+): Promise<(refs: string[]) => boolean> {
+  const named = [...new Set(commitRefs(refs))],
+    found = new Set<string>();
+  const input = Buffer.from(named.map((commit) => `${commit}^{commit}\n`).join(''));
+  if (named.length)
+    await Promise.all(
+      roots.map(async (root) => {
+        const checked = await runGit(root, ['cat-file', '--batch-check'], input, true);
+        if (checked.exit_code !== 0) return;
+        // Each input gets one line; a missing or ambiguous name prints its input followed by that word.
+        checked.stdout
+          .toString()
+          .split('\n')
+          .forEach((line, index) => {
+            if (/^[0-9a-f]+ commit \d+$/.test(line)) found.add(named[index]!);
+          });
+      }),
+    );
+  return (list) => {
+    const files = list.flatMap((ref) => /^file:(.+?)(?::[1-9][0-9]*)?$/.exec(ref)?.[1] ?? []);
+    return (
+      files.some((file) => roots.some((root) => located(root, file))) ||
+      commitRefs(list).some((commit) => found.has(commit))
+    );
+  };
 }
 
 /** Task lists by root default to those of the newest submitted or confirmed baseline. */
-function storeFacts(
+async function projectFacts(
   ctx: ControlContext,
   project: Project,
-  commandId?: string,
   taskLists?: Record<string, string[]>,
-): BaselineFacts {
-  const now = ctx.store.now();
+): Promise<ProjectFacts> {
   const lists =
     taskLists ??
     Object.fromEntries(
@@ -148,15 +182,25 @@ function storeFacts(
           .at(-1)?.result?.folders ?? []
       ).map((folder) => [folder.root, folder.context?.task_lists ?? []]),
     );
+  const git = await Promise.all(project.roots.map(gitFolderAsync));
+  return collectFacts(
+    project.roots.map((root, index) => ({ path: root, git: git[index]!, task_lists: lists[root] })),
+    ctx.store.now(),
+  );
+}
+
+function storeFacts(
+  ctx: ControlContext,
+  project: Project,
+  facts: ProjectFacts,
+  commandId?: string,
+): BaselineFacts {
   const snapshot: BaselineFacts = {
     id: id(),
     revision: 1,
     project_id: project.id,
-    collected_at: now,
-    facts: collectFacts(
-      project.roots.map((root) => ({ path: root, git: gitFolder(root), task_lists: lists[root] })),
-      now,
-    ),
+    collected_at: facts.collected_at,
+    facts,
   };
   ctx.store.insert('baseline_facts', snapshot);
   const stale = ctx.store
@@ -170,15 +214,24 @@ function storeFacts(
 }
 
 /** The confirmed result and the commits each root gained since the snapshot it was judged on. */
-function previousScan(ctx: ControlContext, baseline: ProjectBaseline) {
-  const commits_since: Record<string, number> = {};
-  for (const folder of ctx.store.get<BaselineFacts>('baseline_facts', baseline.facts_id)?.facts
-    .folders ?? []) {
-    if (!folder.head) continue;
-    const count = runGit(folder.root, ['rev-list', '--count', `${folder.head}..HEAD`]);
-    if (count.exit_code === 0) commits_since[folder.root] = Number(count.stdout.toString().trim());
-  }
-  return { result: baseline.result!, commits_since };
+async function previousScan(ctx: ControlContext, baseline: ProjectBaseline) {
+  const counts = await Promise.all(
+    (ctx.store.get<BaselineFacts>('baseline_facts', baseline.facts_id)?.facts.folders ?? []).map(
+      async (folder) => {
+        if (!folder.head) return [];
+        const count = await runGit(
+          folder.root,
+          ['rev-list', '--count', `${folder.head}..HEAD`],
+          undefined,
+          true,
+        );
+        return count.exit_code === 0
+          ? [[folder.root, Number(count.stdout.toString().trim())] as const]
+          : [];
+      },
+    ),
+  );
+  return { result: baseline.result!, commits_since: Object.fromEntries(counts.flat()) };
 }
 
 export function baselineRuntime(ctx: ControlContext, project: Project, requested?: string): string {
@@ -295,12 +348,14 @@ function boundBaseline(ctx: ControlContext, p: Principal, baselineId: string, ac
 }
 
 /** Each workstream's items found again by hash in the newest snapshot of the same root. */
-export function projectFactsRead(
+export async function projectFactsRead(
   ctx: ControlContext,
   p: Principal,
   projectId: string,
-): ProjectFactsRead {
+): Promise<ProjectFactsRead> {
   projectAccess(ctx, p, projectId, 'project.read');
+  const { roots } = ctx.store.must<Project>('projects', projectId);
+  const heads = await Promise.all(roots.map(committed));
   const snapshot = ctx.store
     .list<BaselineFacts>('baseline_facts')
     .filter((entry) => entry.project_id === projectId)
@@ -322,7 +377,7 @@ export function projectFactsRead(
   return {
     facts: snapshot?.facts ?? null,
     collected_at: snapshot?.collected_at ?? null,
-    empty: ctx.store.must<Project>('projects', projectId).roots.every(emptyProject),
+    empty: roots.every((root, index) => emptyProject(root, heads[index]!)),
     workstreams: (baseline?.result?.workstreams ?? []).map((stream) => {
       const found = stream.items.map(find);
       return {
@@ -356,478 +411,584 @@ export function projectBaselineRead(
   );
 }
 
-export const baselineHandlers: Handlers = {
-  'project.baseline.start': (ctx, p, c) => {
-    if (p.role !== 'lead') userOnly(p);
-    const input = inputSchemas['project.baseline.start'].parse(c.input);
-    revision(ctx, c);
-    projectAccess(ctx, p, input.project_id, c.type);
-    requireThat(
-      !ctx.store
-        .list<ProjectBaseline>('project_baselines')
-        .some(
-          (baseline) => baseline.project_id === input.project_id && baseline.state === 'running',
-        ),
-      'resource_busy',
-      'A baseline is already running for this project',
+function startTarget(ctx: ControlContext, p: Principal, c: Command) {
+  if (p.role !== 'lead') userOnly(p);
+  const input = inputSchemas['project.baseline.start'].parse(c.input);
+  revision(ctx, c);
+  projectAccess(ctx, p, input.project_id, c.type);
+  requireThat(
+    !ctx.store
+      .list<ProjectBaseline>('project_baselines')
+      .some((baseline) => baseline.project_id === input.project_id && baseline.state === 'running'),
+    'resource_busy',
+    'A baseline is already running for this project',
+  );
+  return { input, project: ctx.store.must<Project>('projects', input.project_id) };
+}
+
+function submitFolderTarget(ctx: ControlContext, p: Principal, c: Command) {
+  const { baseline_id, ...submitted } = inputSchemas['project.baseline.submit_folder'].parse(
+    c.input,
+  );
+  revision(ctx, c);
+  const { baseline, session } = boundBaseline(ctx, p, baseline_id, c.type);
+  const project = ctx.store.must<Project>('projects', baseline.project_id);
+  requireThat(
+    project.roots.includes(submitted.root),
+    'invalid_input',
+    `root must be one of the project folders: ${project.roots.join(', ')}`,
+  );
+  return { submitted, baseline, session, root: realpathSync(submitted.root) };
+}
+
+function submitTarget(ctx: ControlContext, p: Principal, c: Command) {
+  const { baseline_id, ...submitted } = inputSchemas['project.baseline.submit'].parse(c.input);
+  revision(ctx, c);
+  const { baseline, session } = boundBaseline(ctx, p, baseline_id, c.type);
+  const project = ctx.store.must<Project>('projects', baseline.project_id);
+  const { folders = [] } = baseline;
+  const missing = project.roots.filter((root) => !folders.some((entry) => entry.root === root));
+  requireThat(
+    !missing.length,
+    'invalid_state',
+    `Submit each folder with project_baseline_submit_folder first; missing: ${missing.join(', ')}`,
+  );
+  const intro = ctx.store.projectIntro(project.id);
+  requireThat(
+    intro && (intro.session_id === session.id || intro.written_at >= baseline.created_at),
+    'invalid_state',
+    'Submit the introduction with project_intro_submit first',
+  );
+  const round = (baseline.rounds?.length ?? 0) + 1;
+  const directions = submitted.questions.filter((question) => question.kind === 'direction');
+  requireThat(
+    round > 1 ||
+      !submitted.questions.length ||
+      (directions.length === 1 &&
+        directions[0]!.options.length <= 3 &&
+        directions[0]!.options.every((option) => option.preview)),
+    'invalid_input',
+    'The first round asks exactly one question of kind direction, with 2 to 3 options that each have a preview',
+  );
+  requireThat(
+    round < readAppSettings(ctx).baseline_rounds || !submitted.questions.length,
+    'invalid_input',
+    `Round ${round} is the last round; submit questions as an empty array`,
+  );
+  const runtimes = inventoryRuntimes(ctx);
+  requireThat(
+    (submitted.extensions ?? []).every((entry) => runtimes.includes(entry.runtime)),
+    'invalid_input',
+    `extensions runtime must be one of: ${runtimes.join(', ')}`,
+  );
+  return { submitted, baseline, session, project, folders };
+}
+
+function confirmTarget(ctx: ControlContext, p: Principal, c: Command) {
+  userOnly(p);
+  const input = inputSchemas['project.baseline.confirm'].parse(c.input);
+  const baseline = ctx.store.must<ProjectBaseline>('project_baselines', input.baseline_id);
+  projectAccess(ctx, p, baseline.project_id, c.type);
+  return { input, baseline };
+}
+
+export const baselinePreparers: Preparers = {
+  'project.baseline.start': async (ctx, p, c) => {
+    const target = startTarget(ctx, p, c).project;
+    const facts = await projectFacts(ctx, target);
+    // A git folder's HEAD was read with its facts.
+    const heads = await Promise.all(
+      target.roots.map((root, index) => {
+        const folder = facts.folders[index]!;
+        return folder.git ? folder.head !== undefined : committed(root);
+      }),
     );
-    const project = ctx.store.must<Project>('projects', input.project_id);
+    const empty = target.roots.every((root, index) => emptyProject(root, heads[index]!));
     const confirmed = ctx.store
       .list<ProjectBaseline>('project_baselines')
-      .filter((entry) => entry.project_id === project.id && entry.state === 'confirmed')
+      .filter((entry) => entry.project_id === target.id && entry.state === 'confirmed')
       .at(-1);
-    const facts = storeFacts(ctx, project, c.command_id);
-    const base = {
-      id: id(),
-      revision: 1,
-      project_id: project.id,
-      facts_id: facts.id,
-      dropped: 0,
-      ...(p.role === 'lead' && { lead_session_id: p.session_id }),
-    };
-    if (project.roots.every((root) => emptyProject(root))) {
-      const baseline: ProjectBaseline = { ...base, state: 'empty', created_at: ctx.store.now() };
-      ctx.store.insert('project_baselines', baseline);
-      ctx.store.event('project.baseline_empty', baseline, project.id, {}, c.command_id);
-      return baseline;
-    }
-    const runtimeName = baselineRuntime(ctx, project, input.runtime);
-    const session = createBaselineSession(
+    const previous = !empty && confirmed?.result ? await previousScan(ctx, confirmed) : undefined;
+    return (ctx, p, c) => start(ctx, p, c, facts, empty, previous);
+  },
+  'project.baseline.submit_folder': async (ctx, p, c) => {
+    const { submitted, root } = submitFolderTarget(ctx, p, c);
+    const check = await sourcing(
+      [root],
+      [
+        ...submitted.gate.flatMap((entry) => entry.sources),
+        ...Object.values(submitted.commands ?? {}).flatMap((entry) => entry!.sources),
+      ],
+    );
+    return (ctx, p, c) => submitFolder(ctx, p, c, check);
+  },
+  'project.baseline.submit': async (ctx, p, c) => {
+    const { submitted, project, folders } = submitTarget(ctx, p, c);
+    const facts = await projectFacts(
       ctx,
       project,
-      base.id,
-      runtimeName,
-      renderScanSeed(
-        project,
-        facts.facts.folders,
-        confirmed?.result && previousScan(ctx, confirmed),
-      ),
-      input,
-    );
-    const baseline: ProjectBaseline = {
-      ...base,
-      state: 'running',
-      session_id: session.id,
-      runtime: runtimeName,
-      created_at: ctx.store.now(),
-      deadline: ctx.store.now() + BASELINE_WALL_TIME_MS,
-    };
-    ctx.store.insert('project_baselines', baseline);
-    ctx.store.event(
-      'project.baseline_started',
-      baseline,
-      project.id,
-      { session_id: session.id },
-      c.command_id,
-    );
-    return baseline;
-  },
-  'project.baseline.submit_folder': (ctx, p, c) => {
-    const { baseline_id, ...submitted } = inputSchemas['project.baseline.submit_folder'].parse(
-      c.input,
-    );
-    revision(ctx, c);
-    const { baseline, session } = boundBaseline(ctx, p, baseline_id, c.type);
-    const project = ctx.store.must<Project>('projects', baseline.project_id);
-    requireThat(
-      project.roots.includes(submitted.root),
-      'invalid_input',
-      `root must be one of the project folders: ${project.roots.join(', ')}`,
-    );
-    const root = realpathSync(submitted.root);
-    let dropped = 0;
-    const keep = <T>(items: T[], valid: (item: T) => boolean): T[] => {
-      const kept = items.filter(valid);
-      dropped += items.length - kept.length;
-      return kept;
-    };
-    const { context, commands } = submitted;
-    const folder: BaselineFolder = {
-      ...submitted,
-      ...(context && {
-        context: {
-          instructions: keep(context.instructions, (entry) => located(root, entry)),
-          docs: keep(context.docs, (entry) => located(root, entry)),
-          task_lists: keep(context.task_lists, (entry) => located(root, entry)),
-        },
-      }),
-      gate: keep(submitted.gate, (entry) => sourced([root], entry.sources)),
-      ...(commands && {
-        commands: Object.fromEntries(
-          keep(Object.entries(commands), ([, entry]) => sourced([root], entry!.sources)),
-        ),
-      }),
-    };
-    const folders = (baseline.folders ?? []).filter((entry) => entry.root !== folder.root);
-    const next = ctx.store.update<ProjectBaseline>(
-      'project_baselines',
-      { ...baseline, folders: [...folders, folder], dropped: baseline.dropped + dropped },
-      baseline.revision,
-    );
-    ctx.store.event(
-      'project.baseline_folder_submitted',
-      next,
-      next.project_id,
-      { session_id: session.id, root: folder.root, dropped },
-      c.command_id,
-    );
-    return next;
-  },
-  'project.baseline.submit': (ctx, p, c) => {
-    const { baseline_id, ...submitted } = inputSchemas['project.baseline.submit'].parse(c.input);
-    revision(ctx, c);
-    const { baseline, session } = boundBaseline(ctx, p, baseline_id, c.type);
-    const project = ctx.store.must<Project>('projects', baseline.project_id);
-    const { folders = [], ...rest } = baseline;
-    const missing = project.roots.filter((root) => !folders.some((entry) => entry.root === root));
-    requireThat(
-      !missing.length,
-      'invalid_state',
-      `Submit each folder with project_baseline_submit_folder first; missing: ${missing.join(', ')}`,
-    );
-    const intro = ctx.store.projectIntro(project.id);
-    requireThat(
-      intro && (intro.session_id === session.id || intro.written_at >= baseline.created_at),
-      'invalid_state',
-      'Submit the introduction with project_intro_submit first',
-    );
-    const round = (baseline.rounds?.length ?? 0) + 1;
-    const directions = submitted.questions.filter((question) => question.kind === 'direction');
-    requireThat(
-      round > 1 ||
-        !submitted.questions.length ||
-        (directions.length === 1 &&
-          directions[0]!.options.length <= 3 &&
-          directions[0]!.options.every((option) => option.preview)),
-      'invalid_input',
-      'The first round asks exactly one question of kind direction, with 2 to 3 options that each have a preview',
-    );
-    requireThat(
-      round < readAppSettings(ctx).baseline_rounds || !submitted.questions.length,
-      'invalid_input',
-      `Round ${round} is the last round; submit questions as an empty array`,
-    );
-    const runtimes = inventoryRuntimes(ctx);
-    requireThat(
-      (submitted.extensions ?? []).every((entry) => runtimes.includes(entry.runtime)),
-      'invalid_input',
-      `extensions runtime must be one of: ${runtimes.join(', ')}`,
-    );
-    const roots = project.roots.map((root) => realpathSync(root));
-    const facts = storeFacts(
-      ctx,
-      project,
-      c.command_id,
       Object.fromEntries(folders.map((folder) => [folder.root, folder.context?.task_lists ?? []])),
     );
-    const lists = facts.facts.folders.map((folder) => ({
-      root: folder.root,
-      checklists: folder.checklists,
-    }));
-    let dropped = 0;
-    const keep = <T>(items: T[], valid: (item: T) => boolean): T[] => {
-      const kept = items.filter(valid);
-      dropped += items.length - kept.length;
-      return kept;
-    };
-    const resolve = (ref: string) => {
-      const [, file, line] = /^file:(.+):([1-9][0-9]*)$/.exec(ref)!;
-      return lists.flatMap(({ root, checklists }) =>
-        checklists
-          .filter((list) => list.path === file)
-          .flatMap((list) => list.items.filter((item) => item.line === Number(line)))
-          .map((item) => ({ root, path: file!, line: item.line, hash: item.hash })),
-      );
-    };
-    // One match per root that has the section, so a section found in two folders is ambiguous.
-    const resolveSection = (ref: string) => {
-      const [, file, heading] = /^section:([^#]*)#([^]*)$/.exec(ref)!;
-      return lists.flatMap(({ root, checklists }) =>
-        checklists
-          .filter((list) => list.path === file)
-          .map((list) =>
-            list.items
-              .filter((item) => (item.section ?? '') === heading)
-              .map((item) => ({ root, path: file!, line: item.line, hash: item.hash })),
-          )
-          .filter((items) => items.length),
-      );
-    };
-    const brief = keep(submitted.brief ? [submitted.brief] : [], (entry) =>
-      sourced(roots, entry.sources),
-    )[0];
-    const streams = new Set(submitted.workstreams.map((stream) => stream.id));
-    const tasks = keep(
-      submitted.tasks,
-      (task) => sourced(roots, task.sources) && streams.has(task.workstream),
+    const check = await sourcing(
+      project.roots.map((root) => realpathSync(root)),
+      [
+        ...(submitted.brief?.sources ?? []),
+        ...submitted.tasks.flatMap((task) => task.sources),
+        ...submitted.workstreams.flatMap((stream) => stream.commits),
+        ...submitted.contradictions.flatMap((entry) => entry.refs),
+        ...submitted.findings.flatMap((entry) => entry.refs),
+      ],
     );
-    const taskIds = new Set(tasks.map((task) => task.id));
-    const result: BaselineResult = {
-      folders: project.roots.map((root) => folders.find((entry) => entry.root === root)!),
-      workstreams: submitted.workstreams.map(({ sections, modules, depends_on, ...stream }) => {
-        // A reference that matches nothing, or matches in more than one folder, is dropped.
-        const single = <T>(refs: T[][]) =>
-          keep(refs, (matches) => matches.length === 1).map((matches) => matches[0]!);
-        const items = [
-          ...single(stream.items.map(resolve)),
-          ...single(sections.map(resolveSection)).flat(),
-        ];
-        return {
-          ...stream,
-          ...(modules && {
-            modules: keep(modules, (entry) => roots.some((root) => located(root, entry))),
-          }),
-          ...(depends_on && {
-            depends_on: depends_on.filter((key) => key !== stream.id && streams.has(key)),
-          }),
-          items: items.filter(
-            (item, index) =>
-              items.findIndex((entry) => entry.root === item.root && entry.hash === item.hash) ===
-              index,
-          ),
-          commits: keep(stream.commits, (ref) => sourced(roots, [ref])),
-        };
-      }),
-      contradictions: keep(submitted.contradictions, (entry) => sourced(roots, entry.refs)),
-      findings: keep(submitted.findings, (entry) => sourced(roots, entry.refs)),
-      ...(brief ? { brief } : {}),
-      questions: submitted.questions,
-      ...(submitted.extensions ? { extensions: submitted.extensions } : {}),
-      tasks: tasks.map((task) => ({
-        ...task,
-        depends_on: task.depends_on.filter((dependency) => taskIds.has(dependency)),
-      })),
-    };
-    const next = ctx.store.update<ProjectBaseline>(
-      'project_baselines',
-      {
-        ...rest,
-        facts_id: facts.id,
-        state: 'submitted',
-        result,
-        dropped: baseline.dropped + dropped,
-      },
-      baseline.revision,
-    );
-    ctx.store.event(
-      'project.baseline_submitted',
-      next,
-      next.project_id,
-      { session_id: session.id, dropped: next.dropped },
-      c.command_id,
-    );
-    const auto = [...(project.extension_auto ?? [])];
-    const overrides = { ...project.extension_overrides };
-    const changed = new Set<string>();
-    for (const entry of submitted.extensions ?? []) {
-      const index = auto.findIndex(
-        (item) =>
-          item.runtime === entry.runtime && item.kind === entry.kind && item.name === entry.name,
-      );
-      if (auto[index]?.restored) continue;
-      const current = overrides[entry.runtime] ?? NO_OVERRIDES;
-      const key = DISABLED[entry.kind];
-      // One the user turned off stays the user's, so unchecking the suggestion leaves it off.
-      if (index < 0 && current[key].includes(entry.name)) continue;
-      const record = { ...entry, baseline_id: next.id };
-      if (index < 0) auto.push(record);
-      else auto[index] = record;
-      overrides[entry.runtime] = { ...current, [key]: [...new Set([...current[key], entry.name])] };
-      changed.add(entry.runtime);
-    }
-    if (changed.size) {
-      const updated = ctx.store.update<Project>(
-        'projects',
-        { ...project, extension_overrides: overrides, extension_auto: auto },
-        project.revision,
-      );
-      for (const runtime of changed)
-        ctx.store.event(
-          'project.extensions_set',
-          updated,
-          project.id,
-          { runtime, overrides: overrides[runtime], source: 'baseline', baseline_id: next.id },
-          c.command_id,
-        );
-    }
-    return next;
+    return (ctx, p, c) => submit(ctx, p, c, facts, check);
   },
-  'project.facts.refresh': (ctx, p, c) => {
+  'project.facts.refresh': async (ctx, p, c) => {
     userOnly(p);
     const input = inputSchemas['project.facts.refresh'].parse(c.input);
     revision(ctx, c);
     projectAccess(ctx, p, input.project_id, c.type);
-    const { facts: _, ...receipt } = storeFacts(
-      ctx,
-      ctx.store.must<Project>('projects', input.project_id),
-      c.command_id,
-    );
-    return receipt;
-  },
-  'project.baseline.confirm': (ctx, p, c) => {
-    userOnly(p);
-    const input = inputSchemas['project.baseline.confirm'].parse(c.input);
-    const baseline = ctx.store.must<ProjectBaseline>('project_baselines', input.baseline_id);
-    projectAccess(ctx, p, baseline.project_id, c.type);
-    revision(ctx, c, baseline);
-    requireThat(
-      baseline.state === 'submitted' && baseline.result,
-      'invalid_state',
-      'Baseline must be submitted before confirmation',
-    );
-    const projectId = baseline.project_id;
-    if (input.brief)
-      projectFactHandlers['project.brief.set']!(ctx, p, {
-        ...c,
-        type: 'project.brief.set',
-        input: { project_id: projectId, ...input.brief },
-        expected_revision:
-          ctx.store.get<ProjectBrief>('project_briefs', projectId)?.revision ?? null,
-      });
-    for (const gate of input.gates ?? [])
-      projectHandlers['project.gate.set']!(ctx, p, {
-        ...c,
-        type: 'project.gate.set',
-        input: { project_id: projectId, root: gate.root, commands: gate.commands },
-        expected_revision: ctx.store.must<Project>('projects', projectId).revision,
-      });
-    // Checked extensions stay off; ones this baseline turned off and the user unchecked go back on.
-    const kept = input.extensions ?? [];
-    const unchecked = (ctx.store.must<Project>('projects', projectId).extension_auto ?? []).filter(
-      (entry) =>
-        entry.baseline_id === baseline.id &&
-        !entry.restored &&
-        !kept.some(
-          (item) =>
-            item.runtime === entry.runtime && item.kind === entry.kind && item.name === entry.name,
-        ),
-    );
-    for (const runtime of new Set([...kept, ...unchecked].map((entry) => entry.runtime))) {
-      const project = ctx.store.must<Project>('projects', projectId);
-      const overrides = { ...(project.extension_overrides?.[runtime] ?? NO_OVERRIDES) };
-      for (const entry of unchecked.filter((item) => item.runtime === runtime)) {
-        const key = DISABLED[entry.kind];
-        overrides[key] = overrides[key].filter((name) => name !== entry.name);
-      }
-      for (const entry of kept.filter((item) => item.runtime === runtime)) {
-        const key = DISABLED[entry.kind];
-        overrides[key] = [...new Set([...overrides[key], entry.name])];
-      }
-      projectHandlers['project.extensions.set']!(ctx, p, {
-        ...c,
-        type: 'project.extensions.set',
-        input: { project_id: projectId, runtime, overrides },
-        expected_revision: project.revision,
-      });
-    }
-    const next = ctx.store.update<ProjectBaseline>(
-      'project_baselines',
-      { ...baseline, state: 'confirmed' },
-      baseline.revision,
-    );
-    ctx.store.event('project.baseline_confirmed', next, projectId, {}, c.command_id);
-    const { result } = baseline;
-    const rounds = [
-      ...(baseline.rounds ?? []),
-      { questions: result.questions, answers: input.answers },
-    ];
-    const gates = new Map(input.gates?.map((gate) => [resolvedPath(gate.root), gate.commands]));
-    // Non-git folders are read-only; brief and decisions live with the first git folder.
-    const writable = ctx.store.must<Project>('projects', projectId).roots.filter(gitFolder);
-    for (const root of writable) {
-      const folder = result.folders.find((entry) => entry.root === root);
-      const gate = gates.get(root);
-      const first = root === writable[0];
-      if (!folder && !gate && !first) continue;
-      writeProjectConfig(ctx, root, {
-        ...(folder && { project: { stage: folder.stage, stack: folder.stack } }),
-        ...(folder?.context && { context: folder.context }),
-        ...(gate && { gate }),
-        ...(folder?.commands && {
-          commands: Object.fromEntries(
-            Object.entries(folder.commands).map(([key, entry]) => [key, entry!.argv]),
-          ),
-        }),
-        ...(first && {
-          ...(input.brief && { brief: input.brief }),
-          decisions: rounds
-            .flatMap((round) => round.answers)
-            .map(({ question, answer, by }) => ({
-              question,
-              answer:
-                by === 'user'
-                  ? answer
-                  : answer
-                    ? `${answer} (left to the model)`
-                    : 'Left to the model',
-            })),
-        }),
-      });
-    }
-    if (readAppSettings(ctx).baseline_visuals)
-      for (const visual of ctx.store
-        .list<Visual>('visuals')
-        .filter((entry) => entry.session_id === baseline.session_id && !entry.pin))
-        visualHandlers['visual.pin']!(ctx, p, {
-          ...c,
-          type: 'visual.pin',
-          input: { visual_id: visual.id, size: 'M' },
-        });
-    if (readAppSettings(ctx).baseline_range_story) {
-      const now = ctx.store.now();
-      try {
-        startRangeStory(
-          ctx,
-          ctx.store.must<Project>('projects', projectId),
-          now - RECENT_MS,
-          now,
-          c.command_id,
-        );
-      } catch (error) {
-        // A project with no commits in the window gets no story; the confirm still stands.
-        if (!(error instanceof DomainError) || error.code !== 'invalid_input') throw error;
-      }
-    }
-    if (!input.plan_board) return next;
-    const brief = input.brief ?? result.brief;
-    const starter = baseline.lead_session_id
-      ? ctx.store.get<Session>('sessions', baseline.lead_session_id)
-      : undefined;
-    // A starter lead that no longer takes input leaves the result to a new lead.
-    let takesInput = !!starter;
-    try {
-      if (starter) acceptInput(ctx, starter, starter.state === 'running' ? 'steer' : 'send');
-    } catch (error) {
-      if (!(error instanceof DomainError)) throw error;
-      takesInput = false;
-    }
-    if (starter && takesInput) {
-      queueTurn(
+    const facts = await projectFacts(ctx, ctx.store.must<Project>('projects', input.project_id));
+    return (ctx, p, c) => {
+      userOnly(p);
+      revision(ctx, c);
+      projectAccess(ctx, p, input.project_id, c.type);
+      const { facts: _, ...receipt } = storeFacts(
         ctx,
-        starter,
-        firstPlanMessage(result, brief, rounds, true),
-        'baseline',
+        ctx.store.must<Project>('projects', input.project_id),
+        facts,
         c.command_id,
       );
-      return { ...next, lead_session_id: starter.id };
-    }
-    const lead = startLead(
-      ctx,
-      p,
-      projectId,
-      'Baseline plan',
-      firstPlanMessage(result, brief, rounds),
-      c.command_id,
-      'baseline',
-    );
-    if (!lead) return next;
-    const planned = ctx.store.update<ProjectBaseline>(
-      'project_baselines',
-      { ...next, plan_session_id: lead.id },
-      next.revision,
-    );
-    return { ...planned, lead_session_id: lead.id };
+      return receipt;
+    };
   },
+  'project.baseline.confirm': async (ctx, p, c) => {
+    const project = ctx.store.must<Project>(
+      'projects',
+      confirmTarget(ctx, p, c).baseline.project_id,
+    );
+    // The gate check this confirmation makes reads the answers cached here.
+    const git = await Promise.all(project.roots.map(gitFolderAsync));
+    const gitRoots = new Set(project.roots.filter((_, index) => git[index]));
+    const now = ctx.store.now();
+    const commits = readAppSettings(ctx).baseline_range_story
+      ? await rangeCommits(ctx, project, now - RECENT_MS, now)
+      : [];
+    return (ctx, p, c) => confirm(ctx, p, c, gitRoots, now, commits);
+  },
+};
+
+function start(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  facts: ProjectFacts,
+  empty: boolean,
+  previous: Awaited<ReturnType<typeof previousScan>> | undefined,
+): ProjectBaseline {
+  const { input, project } = startTarget(ctx, p, c);
+  const snapshot = storeFacts(ctx, project, facts, c.command_id);
+  const base = {
+    id: id(),
+    revision: 1,
+    project_id: project.id,
+    facts_id: snapshot.id,
+    dropped: 0,
+    ...(p.role === 'lead' && { lead_session_id: p.session_id }),
+  };
+  if (empty) {
+    const baseline: ProjectBaseline = { ...base, state: 'empty', created_at: ctx.store.now() };
+    ctx.store.insert('project_baselines', baseline);
+    ctx.store.event('project.baseline_empty', baseline, project.id, {}, c.command_id);
+    return baseline;
+  }
+  const runtimeName = baselineRuntime(ctx, project, input.runtime);
+  const session = createBaselineSession(
+    ctx,
+    project,
+    base.id,
+    runtimeName,
+    renderScanSeed(project, snapshot.facts.folders, previous),
+    input,
+  );
+  const baseline: ProjectBaseline = {
+    ...base,
+    state: 'running',
+    session_id: session.id,
+    runtime: runtimeName,
+    created_at: ctx.store.now(),
+    deadline: ctx.store.now() + BASELINE_WALL_TIME_MS,
+  };
+  ctx.store.insert('project_baselines', baseline);
+  ctx.store.event(
+    'project.baseline_started',
+    baseline,
+    project.id,
+    { session_id: session.id },
+    c.command_id,
+  );
+  return baseline;
+}
+
+function submitFolder(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  sourced: (refs: string[]) => boolean,
+): ProjectBaseline {
+  const { submitted, baseline, session, root } = submitFolderTarget(ctx, p, c);
+  let dropped = 0;
+  const keep = <T>(items: T[], valid: (item: T) => boolean): T[] => {
+    const kept = items.filter(valid);
+    dropped += items.length - kept.length;
+    return kept;
+  };
+  const { context, commands } = submitted;
+  const folder: BaselineFolder = {
+    ...submitted,
+    ...(context && {
+      context: {
+        instructions: keep(context.instructions, (entry) => located(root, entry)),
+        docs: keep(context.docs, (entry) => located(root, entry)),
+        task_lists: keep(context.task_lists, (entry) => located(root, entry)),
+      },
+    }),
+    gate: keep(submitted.gate, (entry) => sourced(entry.sources)),
+    ...(commands && {
+      commands: Object.fromEntries(
+        keep(Object.entries(commands), ([, entry]) => sourced(entry!.sources)),
+      ),
+    }),
+  };
+  const folders = (baseline.folders ?? []).filter((entry) => entry.root !== folder.root);
+  const next = ctx.store.update<ProjectBaseline>(
+    'project_baselines',
+    { ...baseline, folders: [...folders, folder], dropped: baseline.dropped + dropped },
+    baseline.revision,
+  );
+  ctx.store.event(
+    'project.baseline_folder_submitted',
+    next,
+    next.project_id,
+    { session_id: session.id, root: folder.root, dropped },
+    c.command_id,
+  );
+  return next;
+}
+
+function submit(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  collected: ProjectFacts,
+  sourced: (refs: string[]) => boolean,
+): ProjectBaseline {
+  const { submitted, baseline, session, project, folders } = submitTarget(ctx, p, c);
+  const { folders: _, ...rest } = baseline;
+  const roots = project.roots.map((root) => realpathSync(root));
+  const facts = storeFacts(ctx, project, collected, c.command_id);
+  const lists = facts.facts.folders.map((folder) => ({
+    root: folder.root,
+    checklists: folder.checklists,
+  }));
+  let dropped = 0;
+  const keep = <T>(items: T[], valid: (item: T) => boolean): T[] => {
+    const kept = items.filter(valid);
+    dropped += items.length - kept.length;
+    return kept;
+  };
+  const resolve = (ref: string) => {
+    const [, file, line] = /^file:(.+):([1-9][0-9]*)$/.exec(ref)!;
+    return lists.flatMap(({ root, checklists }) =>
+      checklists
+        .filter((list) => list.path === file)
+        .flatMap((list) => list.items.filter((item) => item.line === Number(line)))
+        .map((item) => ({ root, path: file!, line: item.line, hash: item.hash })),
+    );
+  };
+  // One match per root that has the section, so a section found in two folders is ambiguous.
+  const resolveSection = (ref: string) => {
+    const [, file, heading] = /^section:([^#]*)#([^]*)$/.exec(ref)!;
+    return lists.flatMap(({ root, checklists }) =>
+      checklists
+        .filter((list) => list.path === file)
+        .map((list) =>
+          list.items
+            .filter((item) => (item.section ?? '') === heading)
+            .map((item) => ({ root, path: file!, line: item.line, hash: item.hash })),
+        )
+        .filter((items) => items.length),
+    );
+  };
+  const brief = keep(submitted.brief ? [submitted.brief] : [], (entry) =>
+    sourced(entry.sources),
+  )[0];
+  const streams = new Set(submitted.workstreams.map((stream) => stream.id));
+  const tasks = keep(
+    submitted.tasks,
+    (task) => sourced(task.sources) && streams.has(task.workstream),
+  );
+  const taskIds = new Set(tasks.map((task) => task.id));
+  const result: BaselineResult = {
+    folders: project.roots.map((root) => folders.find((entry) => entry.root === root)!),
+    workstreams: submitted.workstreams.map(({ sections, modules, depends_on, ...stream }) => {
+      // A reference that matches nothing, or matches in more than one folder, is dropped.
+      const single = <T>(refs: T[][]) =>
+        keep(refs, (matches) => matches.length === 1).map((matches) => matches[0]!);
+      const items = [
+        ...single(stream.items.map(resolve)),
+        ...single(sections.map(resolveSection)).flat(),
+      ];
+      return {
+        ...stream,
+        ...(modules && {
+          modules: keep(modules, (entry) => roots.some((root) => located(root, entry))),
+        }),
+        ...(depends_on && {
+          depends_on: depends_on.filter((key) => key !== stream.id && streams.has(key)),
+        }),
+        items: items.filter(
+          (item, index) =>
+            items.findIndex((entry) => entry.root === item.root && entry.hash === item.hash) ===
+            index,
+        ),
+        commits: keep(stream.commits, (ref) => sourced([ref])),
+      };
+    }),
+    contradictions: keep(submitted.contradictions, (entry) => sourced(entry.refs)),
+    findings: keep(submitted.findings, (entry) => sourced(entry.refs)),
+    ...(brief ? { brief } : {}),
+    questions: submitted.questions,
+    ...(submitted.extensions ? { extensions: submitted.extensions } : {}),
+    tasks: tasks.map((task) => ({
+      ...task,
+      depends_on: task.depends_on.filter((dependency) => taskIds.has(dependency)),
+    })),
+  };
+  const next = ctx.store.update<ProjectBaseline>(
+    'project_baselines',
+    {
+      ...rest,
+      facts_id: facts.id,
+      state: 'submitted',
+      result,
+      dropped: baseline.dropped + dropped,
+    },
+    baseline.revision,
+  );
+  ctx.store.event(
+    'project.baseline_submitted',
+    next,
+    next.project_id,
+    { session_id: session.id, dropped: next.dropped },
+    c.command_id,
+  );
+  const auto = [...(project.extension_auto ?? [])];
+  const overrides = { ...project.extension_overrides };
+  const changed = new Set<string>();
+  for (const entry of submitted.extensions ?? []) {
+    const index = auto.findIndex(
+      (item) =>
+        item.runtime === entry.runtime && item.kind === entry.kind && item.name === entry.name,
+    );
+    if (auto[index]?.restored) continue;
+    const current = overrides[entry.runtime] ?? NO_OVERRIDES;
+    const key = DISABLED[entry.kind];
+    // One the user turned off stays the user's, so unchecking the suggestion leaves it off.
+    if (index < 0 && current[key].includes(entry.name)) continue;
+    const record = { ...entry, baseline_id: next.id };
+    if (index < 0) auto.push(record);
+    else auto[index] = record;
+    overrides[entry.runtime] = { ...current, [key]: [...new Set([...current[key], entry.name])] };
+    changed.add(entry.runtime);
+  }
+  if (changed.size) {
+    const updated = ctx.store.update<Project>(
+      'projects',
+      { ...project, extension_overrides: overrides, extension_auto: auto },
+      project.revision,
+    );
+    for (const runtime of changed)
+      ctx.store.event(
+        'project.extensions_set',
+        updated,
+        project.id,
+        { runtime, overrides: overrides[runtime], source: 'baseline', baseline_id: next.id },
+        c.command_id,
+      );
+  }
+  return next;
+}
+
+function confirm(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  gitRoots: Set<string>,
+  now: number,
+  commits: RangeCommit[],
+): unknown {
+  const { input, baseline } = confirmTarget(ctx, p, c);
+  revision(ctx, c, baseline);
+  requireThat(
+    baseline.state === 'submitted' && baseline.result,
+    'invalid_state',
+    'Baseline must be submitted before confirmation',
+  );
+  const projectId = baseline.project_id;
+  if (input.brief)
+    projectFactHandlers['project.brief.set']!(ctx, p, {
+      ...c,
+      type: 'project.brief.set',
+      input: { project_id: projectId, ...input.brief },
+      expected_revision: ctx.store.get<ProjectBrief>('project_briefs', projectId)?.revision ?? null,
+    });
+  for (const gate of input.gates ?? [])
+    projectHandlers['project.gate.set']!(ctx, p, {
+      ...c,
+      type: 'project.gate.set',
+      input: { project_id: projectId, root: gate.root, commands: gate.commands },
+      expected_revision: ctx.store.must<Project>('projects', projectId).revision,
+    });
+  // Checked extensions stay off; ones this baseline turned off and the user unchecked go back on.
+  const kept = input.extensions ?? [];
+  const unchecked = (ctx.store.must<Project>('projects', projectId).extension_auto ?? []).filter(
+    (entry) =>
+      entry.baseline_id === baseline.id &&
+      !entry.restored &&
+      !kept.some(
+        (item) =>
+          item.runtime === entry.runtime && item.kind === entry.kind && item.name === entry.name,
+      ),
+  );
+  for (const runtime of new Set([...kept, ...unchecked].map((entry) => entry.runtime))) {
+    const project = ctx.store.must<Project>('projects', projectId);
+    const overrides = { ...(project.extension_overrides?.[runtime] ?? NO_OVERRIDES) };
+    for (const entry of unchecked.filter((item) => item.runtime === runtime)) {
+      const key = DISABLED[entry.kind];
+      overrides[key] = overrides[key].filter((name) => name !== entry.name);
+    }
+    for (const entry of kept.filter((item) => item.runtime === runtime)) {
+      const key = DISABLED[entry.kind];
+      overrides[key] = [...new Set([...overrides[key], entry.name])];
+    }
+    projectHandlers['project.extensions.set']!(ctx, p, {
+      ...c,
+      type: 'project.extensions.set',
+      input: { project_id: projectId, runtime, overrides },
+      expected_revision: project.revision,
+    });
+  }
+  const next = ctx.store.update<ProjectBaseline>(
+    'project_baselines',
+    { ...baseline, state: 'confirmed' },
+    baseline.revision,
+  );
+  ctx.store.event('project.baseline_confirmed', next, projectId, {}, c.command_id);
+  const { result } = baseline;
+  const rounds = [
+    ...(baseline.rounds ?? []),
+    { questions: result.questions, answers: input.answers },
+  ];
+  const gates = new Map(input.gates?.map((gate) => [resolvedPath(gate.root), gate.commands]));
+  // Non-git folders are read-only; brief and decisions live with the first git folder.
+  const writable = ctx.store
+    .must<Project>('projects', projectId)
+    .roots.filter((root) => gitRoots.has(root));
+  for (const root of writable) {
+    const folder = result.folders.find((entry) => entry.root === root);
+    const gate = gates.get(root);
+    const first = root === writable[0];
+    if (!folder && !gate && !first) continue;
+    writeProjectConfig(ctx, root, {
+      ...(folder && { project: { stage: folder.stage, stack: folder.stack } }),
+      ...(folder?.context && { context: folder.context }),
+      ...(gate && { gate }),
+      ...(folder?.commands && {
+        commands: Object.fromEntries(
+          Object.entries(folder.commands).map(([key, entry]) => [key, entry!.argv]),
+        ),
+      }),
+      ...(first && {
+        ...(input.brief && { brief: input.brief }),
+        decisions: rounds
+          .flatMap((round) => round.answers)
+          .map(({ question, answer, by }) => ({
+            question,
+            answer:
+              by === 'user'
+                ? answer
+                : answer
+                  ? `${answer} (left to the model)`
+                  : 'Left to the model',
+          })),
+      }),
+    });
+  }
+  if (readAppSettings(ctx).baseline_visuals)
+    for (const visual of ctx.store
+      .list<Visual>('visuals')
+      .filter((entry) => entry.session_id === baseline.session_id && !entry.pin))
+      visualHandlers['visual.pin']!(ctx, p, {
+        ...c,
+        type: 'visual.pin',
+        input: { visual_id: visual.id, size: 'M' },
+      });
+  if (readAppSettings(ctx).baseline_range_story) {
+    try {
+      startRangeStory(
+        ctx,
+        ctx.store.must<Project>('projects', projectId),
+        now - RECENT_MS,
+        now,
+        c.command_id,
+        commits,
+      );
+    } catch (error) {
+      // A project with no commits in the window gets no story; the confirm still stands.
+      if (!(error instanceof DomainError) || error.code !== 'invalid_input') throw error;
+    }
+  }
+  if (!input.plan_board) return next;
+  const brief = input.brief ?? result.brief;
+  const starter = baseline.lead_session_id
+    ? ctx.store.get<Session>('sessions', baseline.lead_session_id)
+    : undefined;
+  // A starter lead that no longer takes input leaves the result to a new lead.
+  let takesInput = !!starter;
+  try {
+    if (starter) acceptInput(ctx, starter, starter.state === 'running' ? 'steer' : 'send');
+  } catch (error) {
+    if (!(error instanceof DomainError)) throw error;
+    takesInput = false;
+  }
+  if (starter && takesInput) {
+    queueTurn(
+      ctx,
+      starter,
+      firstPlanMessage(result, brief, rounds, true),
+      'baseline',
+      c.command_id,
+    );
+    return { ...next, lead_session_id: starter.id };
+  }
+  const lead = startLead(
+    ctx,
+    p,
+    projectId,
+    'Baseline plan',
+    firstPlanMessage(result, brief, rounds),
+    c.command_id,
+    'baseline',
+  );
+  if (!lead) return next;
+  const planned = ctx.store.update<ProjectBaseline>(
+    'project_baselines',
+    { ...next, plan_session_id: lead.id },
+    next.revision,
+  );
+  return { ...planned, lead_session_id: lead.id };
+}
+
+export const baselineHandlers: Handlers = {
   'project.baseline.continue': (ctx, p, c) => {
     userOnly(p);
     const input = inputSchemas['project.baseline.continue'].parse(c.input);

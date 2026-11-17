@@ -117,6 +117,7 @@ it.each(['idle', 'ready'] as const)(
       git(workspace.path, 'add', '.');
       git(workspace.path, 'commit', '--quiet', '-m', 'Change answer');
     }
+    await f.prefetch();
     expect(f.list()[0]).toMatchObject({ state });
     const handle = [...f.control.handles.values()].find(
       (handle) => handle.platform_session_id === session.id,

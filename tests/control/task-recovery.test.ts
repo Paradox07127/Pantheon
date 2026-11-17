@@ -443,7 +443,7 @@ it('makes a report task done when its lead accepts the done report, so its miles
     expect.objectContaining({ code: 'invalid_state' }),
   );
 
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'Use CSV with a header row' },
     null,
@@ -473,7 +473,7 @@ it('refuses to accept a task that is done when merged, even after a done report'
   const lead = await leadWithPlan(f, [task('a')]);
   const worker = openTask(f, lead.id, 'a');
   await settle(f, worker);
-  f.call(
+  await f.call(
     'task.report',
     { project_id: f.project.id, kind: 'done', text: 'I think the export works' },
     null,

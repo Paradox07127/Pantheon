@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import type {
   Approval,
@@ -9,7 +9,14 @@ import type {
   SessionTurn,
   WorkflowPolicy,
 } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
+import {
+  awaitWorkspaceReady,
+  countingGit,
+  eventually,
+  gitRunsOf,
+  settle,
+  user,
+} from '../helpers.js';
 import { boundTaskSession, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -549,7 +556,7 @@ it('asks an idle lead to rewrite its plan once, however often the board is synce
   await settle(f, lead);
   writePlan(f, lead.id);
 
-  expect(sync(f)).toEqual({ session_ids: [lead.id] });
+  expect(await sync(f)).toEqual({ session_ids: [lead.id] });
   const [message] = synced(f, lead.id);
   expect(message).toMatchObject({ state: 'queued', delivery: 'pending' });
   expect(message!.input).toContain('update_board');
@@ -557,7 +564,7 @@ it('asks an idle lead to rewrite its plan once, however often the board is synce
   expect(inOutbox(f, message!.id)).toBe(true);
   expect(current(f, lead.id).state).toBe('running');
 
-  expect(sync(f)).toEqual({ session_ids: [lead.id] });
+  expect(await sync(f)).toEqual({ session_ids: [lead.id] });
   expect(synced(f, lead.id)).toHaveLength(1);
 });
 
@@ -569,7 +576,7 @@ it('hands a lead that syncs the board the brief a user sync sends it, without qu
   const worker = boundTaskSession(f, lead.id, 'a');
   const turns = f.store.list<SessionTurn>('session_turns').length;
 
-  const { brief } = f.call<{ brief: string }>(
+  const { brief } = await f.call<{ brief: string }>(
     'board.sync',
     { project_id: f.project.id },
     null,
@@ -579,8 +586,27 @@ it('hands a lead that syncs the board the brief a user sync sends it, without qu
   expect(brief).toContain(`- a "Serve exports over HTTP": active; sessions: ${worker.id} `);
   expect(brief).toContain('- b "Add a download button": todo; sessions: none');
 
-  expect(sync(f)).toEqual({ session_ids: [lead.id] });
+  expect(await sync(f)).toEqual({ session_ids: [lead.id] });
   expect(synced(f, lead.id).map((turn) => turn.input)).toEqual([brief]);
+});
+
+it('reads the recent commits once for all the leads a sync briefs, while other work goes on', async () => {
+  const f = workbenchFixture();
+  const leads = [f.create('Plan the export feature'), f.create('Plan the export feature')];
+  for (const lead of leads) {
+    await settle(f, lead);
+    writePlan(f, lead.id);
+  }
+  const counter = countingGit();
+  onTestFinished(counter.restore);
+  counter.slowOn('log -20');
+  let fired = false;
+  const timer = setTimeout(() => (fired = true), 50);
+  onTestFinished(() => clearTimeout(timer));
+  expect((await sync(f)).session_ids.sort()).toEqual(leads.map((lead) => lead.id).sort());
+  expect(fired).toBe(true);
+  expect(gitRunsOf(counter.runs(), 'log')).toHaveLength(1);
+  for (const lead of leads) expect(synced(f, lead.id)[0]!.input).toContain('Recent commits in');
 });
 
 it('queues the sync after the running turn of a lead', async () => {
@@ -599,8 +625,8 @@ it('queues the sync after the running turn of a lead', async () => {
     () => f.control.tick(),
   );
 
-  expect(sync(f)).toEqual({ session_ids: [lead.id] });
-  expect(sync(f)).toEqual({ session_ids: [lead.id] });
+  expect(await sync(f)).toEqual({ session_ids: [lead.id] });
+  expect(await sync(f)).toEqual({ session_ids: [lead.id] });
   const messages = synced(f, lead.id);
   expect(messages).toHaveLength(1);
   expect(messages[0]).toMatchObject({ state: 'queued', delivery: 'pending' });
@@ -615,7 +641,7 @@ it('opens a new lead to sync the board when no lead takes input', async () => {
   writePlan(f, lead.id);
   patch(f, lead.id, { state: 'closed' });
 
-  const { session_ids } = sync(f);
+  const { session_ids } = await sync(f);
   expect(session_ids).toHaveLength(1);
   expect(session_ids[0]).not.toBe(lead.id);
   const opened = current(f, session_ids[0]!);
@@ -636,12 +662,12 @@ it('does not sync a lead again while its sync turn runs', async () => {
   await settle(f, lead);
   writePlan(f, lead.id);
   slowTurns(f);
-  sync(f);
+  await sync(f);
   await eventually(
     () => synced(f, lead.id)[0]?.state === 'running',
     () => f.control.tick(),
   );
-  expect(sync(f)).toEqual({ session_ids: [lead.id] });
+  expect(await sync(f)).toEqual({ session_ids: [lead.id] });
   expect(synced(f, lead.id)).toHaveLength(1);
 });
 
@@ -653,7 +679,7 @@ it('lets the lead opened by a sync take over the plan of an ended lead', async (
   const worker = boundTaskSession(f, lead.id, 'a');
   patch(f, lead.id, { state: 'closed', outcome: 'discarded' });
 
-  const [successor] = sync(f).session_ids;
+  const [successor] = (await sync(f)).session_ids;
   expect(f.store.get<BoardPlan>('board_plans', lead.id)).toBeUndefined();
   expect(planOf(f, successor!).tasks.map((task) => task.id)).toEqual(['a', 'b']);
   expect(current(f, worker.id).task).toEqual({
@@ -718,7 +744,7 @@ it('refuses the instructions a sync opens a lead with as a source quote', async 
   await settle(f, lead);
   writePlan(f, lead.id);
   patch(f, lead.id, { state: 'closed' });
-  const [successor] = sync(f).session_ids;
+  const [successor] = (await sync(f)).session_ids;
 
   expect(quoting(f, successor!, 'Sync the board with the project as it is now.')).toThrow(
     expect.objectContaining({ code: 'invalid_input' }),

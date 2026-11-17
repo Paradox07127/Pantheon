@@ -35,6 +35,7 @@ function context(control: Control): ControlContext {
     busy: false,
     closing: false,
     changed: () => {},
+    diagnostic: () => {},
   };
 }
 

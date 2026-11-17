@@ -43,7 +43,7 @@ function configureGate(f: Fixture) {
 
 it('cancels a queued merge without changing the source or discarding its commits', async () => {
   const { f, session, workspace, head, sourceHead } = await prepared();
-  f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
+  await f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
   f.call('session.merge.cancel', { session_id: session.id }, current(f, session.id).revision);
   expect(current(f, session.id).merge?.cancel_requested).toBe(true);
   await eventually(
@@ -55,7 +55,7 @@ it('cancels a queued merge without changing the source or discarding its commits
   expect(git(f.source, 'rev-parse', 'HEAD')).toBe(sourceHead);
   expect(existsSync(workspace.path)).toBe(true);
   expect(events(f, session.id, 'session.merge_cancelled')).toHaveLength(1);
-  f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
+  await f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
   await eventually(
     () => current(f, session.id).outcome === 'merged',
     () => f.control.tick(),
@@ -83,7 +83,7 @@ it('settles a persisted gate cancellation after restart without running the comm
 
 it('records an already fast-forwarded merge as merged even when cancellation survived a crash', async () => {
   const { f, session, workspace, head, sourceHead } = await prepared();
-  f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
+  await f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
   f.store.transaction(() => {
     const row = current(f, session.id);
     f.store.update(
@@ -119,7 +119,7 @@ it('records an already fast-forwarded merge as merged even when cancellation sur
 
 it('requires the user and a current revision to cancel an operation', async () => {
   const { f, session } = await prepared();
-  f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
+  await f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
   const worker: Principal = {
     ...user,
     role: 'worker',
@@ -147,7 +147,7 @@ it.skipIf(process.platform !== 'darwin' || insideSandbox)(
     configureGate(f);
     const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
     vi.spyOn(ctx, 'readProcess').mockImplementation(readProcessIdentity);
-    f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
+    await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
     await eventually(
       () =>
         !!f.store.db
@@ -184,7 +184,7 @@ it.skipIf(process.platform !== 'darwin' || insideSandbox)(
       (f.control as unknown as { ctx: ControlContext }).ctx,
       'readProcess',
     ).mockImplementation(readProcessIdentity);
-    f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
+    await f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
     await eventually(
       () =>
         !!f.store.db

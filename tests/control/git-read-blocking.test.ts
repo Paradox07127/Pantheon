@@ -1,10 +1,17 @@
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, expect, it } from 'vitest';
-import type { Session } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import { afterEach, expect, it, vi } from 'vitest';
+import { RECHECK_INTERVAL_MS } from '../../packages/control/dist/git-config-cache.js';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import {
+  autoMergeAfterTurn,
+  forgetWorktreeReads,
+} from '../../packages/control/dist/workbench-session.js';
+import type { BoardPlan, Project, Review, Session } from '@pantheon/domain';
+import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -92,8 +99,13 @@ it('reads merge preflight while the event loop runs, with one status per reposit
   const f = workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'change.txt');
-  // The first read of each repository also reads its Git configuration.
+  // Past the recheck interval, so the first read sees the commit and reads the Git configuration again.
+  const clock = performance.now.bind(performance);
+  const now = vi.spyOn(performance, 'now').mockImplementation(() => clock() + RECHECK_INTERVAL_MS);
+  restores.push(() => now.mockRestore());
   await f.control.sessionPreflight(user, session.id);
+  // The second preflight would otherwise share the first one's status reads.
+  forgetWorktreeReads(workspace.id);
   const calls = gitWrapper(['status']);
   const fired = timerFired();
   expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
@@ -119,6 +131,7 @@ it('reports a detached source and an unborn worktree branch from the merged stat
     blocked_reason: 'source_detached',
   });
   git(workspace.path, 'checkout', '--quiet', '--orphan', 'empty');
+  waitOutStatusReuse();
   await expect(f.control.sessionPreflight(user, session.id)).rejects.toMatchObject({
     code: 'workspace_read_failed',
   });
@@ -172,4 +185,249 @@ it('searches files while the event loop runs and lists a folder again only when 
     'later.txt',
   ]);
   expect(listings()).toBe(2);
+});
+
+it('lists a folder while the event loop runs, with one ignore check', async () => {
+  const f = workbenchFixture();
+  const calls = gitWrapper(['check-ignore']);
+  const fired = timerFired();
+  expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
+    { name: 'answer.txt', kind: 'file', size: 5 },
+  ]);
+  expect(fired()).toBe(true);
+  expect(calls()).toEqual(['check-ignore']);
+});
+
+it('reads the range and diff of a review request while the event loop runs', async () => {
+  const f = workbenchFixture();
+  const { session, workspace } = await idleSession(f);
+  commit(workspace.path, 'change.txt');
+  const head = git(workspace.path, 'rev-parse', 'HEAD');
+  const calls = gitWrapper(['diff']);
+  const fired = timerFired();
+  const review = await f.call<Review>('review.request', {
+    session_id: session.id,
+    runtimes: [f.adapter.name],
+  });
+  expect(fired()).toBe(true);
+  expect(review.range).toMatchObject({ to_sha: head });
+  expect(calls().filter((call) => call === 'diff')).toHaveLength(1);
+});
+
+it('queues a merge while the event loop runs, reading both repository states at once', async () => {
+  const f = workbenchFixture();
+  const { session, workspace } = await idleSession(f);
+  commit(workspace.path, 'change.txt');
+  gitWrapper(['status']);
+  const fired = timerFired(),
+    started = performance.now();
+  const queued = await f.call<Session | Promise<Session>>(
+    'session.merge',
+    { session_id: session.id },
+    session.revision,
+  );
+  expect(queued.merge?.state).toBe('running');
+  expect(fired()).toBe(true);
+  expect(performance.now() - started).toBeLessThan(1800);
+});
+
+it('starts a gate run while the event loop runs', async () => {
+  const f = workbenchFixture();
+  f.call(
+    'project.gate.set',
+    { project_id: f.project.id, root: f.source, commands: [{ name: 'Check', argv: ['true'] }] },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  const { session } = await idleSession(f);
+  gitWrapper(['rev-parse']);
+  const fired = timerFired();
+  const started = await f.call<Session | Promise<Session>>(
+    'session.gates.run',
+    { session_id: session.id },
+    session.revision,
+  );
+  expect(started.gate_run?.state).toBe('running');
+  expect(fired()).toBe(true);
+  await eventually(
+    () => f.store.must<Session>('sessions', session.id).gate_run?.state !== 'running',
+    () => f.control.tick(),
+  );
+});
+
+it('forks the current files while the event loop runs, without reading the project start point', async () => {
+  const f = workbenchFixture();
+  const { session } = await idleSession(f);
+  const calls = gitWrapper(['write-tree']);
+  const fired = timerFired();
+  const branch = await f.call<Session | Promise<Session>>('session.fork', {
+    session_id: session.id,
+    input: 'Try another way',
+  });
+  expect(branch.forked_from).toEqual({ session_id: session.id });
+  expect(fired()).toBe(true);
+  expect(calls().filter((call) => call === 'symbolic-ref' || call === 'show-ref')).toEqual([]);
+});
+
+it('removes the ref of a fork whose command fails after its files were frozen', async () => {
+  const f = workbenchFixture();
+  const { session } = await idleSession(f);
+  gitWrapper(['update-ref']);
+  const fired = timerFired();
+  await expect(
+    Promise.resolve().then(() =>
+      f.call('session.fork', {
+        session_id: session.id,
+        input: 'Try another way',
+        attachments: [randomUUID()],
+      }),
+    ),
+  ).rejects.toMatchObject({ code: 'not_found' });
+  expect(fired()).toBe(true);
+  const forks = () =>
+    git(f.source, 'for-each-ref', '--format=%(refname)', 'refs/pantheon/checkpoints/')
+      .split('\n')
+      .filter((ref) => ref.endsWith('/fork'));
+  await eventually(() => forks().length === 0);
+});
+
+it('previews a session start point while the event loop runs, with one git run', async () => {
+  const f = workbenchFixture();
+  // The first read of the repository also reads its Git configuration.
+  await f.control.sessionCreatePreview(user, { project_id: f.project.id });
+  const head = git(f.source, 'rev-parse', 'HEAD');
+  const calls = gitWrapper(['rev-parse']);
+  const fired = timerFired();
+  expect(await f.control.sessionCreatePreview(user, { project_id: f.project.id })).toEqual({
+    branch: null,
+    base_sha: head,
+    base_ref: 'refs/heads/main',
+  });
+  expect(fired()).toBe(true);
+  expect(calls()).toEqual(['rev-parse']);
+});
+
+it('lists sessions without running Git', async () => {
+  const f = workbenchFixture();
+  const { workspace } = await idleSession(f);
+  commit(workspace.path, 'change.txt');
+  const calls = gitWrapper([]);
+  const before = calls();
+  expect(f.control.sessionList(user, f.project.id)).toHaveLength(1);
+  expect(calls()).toEqual(before);
+});
+
+it('reads the diff of a merged session once', async () => {
+  const f = workbenchFixture();
+  git(f.source, 'config', 'user.name', 'Source User');
+  git(f.source, 'config', 'user.email', 'source@example.invalid');
+  const { session, workspace } = await idleSession(f);
+  commit(workspace.path, 'change.txt');
+  await f.call<Session | Promise<Session>>(
+    'session.merge',
+    { session_id: session.id },
+    session.revision,
+  );
+  await eventually(
+    () => f.store.must<Session>('sessions', session.id).outcome === 'merged',
+    () => f.control.tick(),
+    10000,
+  );
+  const first = await f.control.sessionDiff(user, session.id);
+  expect(first.files.map((file) => file.path)).toEqual(['change.txt']);
+  const calls = gitWrapper([]);
+  expect(await f.control.sessionDiff(user, session.id)).toEqual(first);
+  expect(calls().filter((call) => call === 'diff')).toEqual([]);
+});
+
+it('reads a session diff again once its worktree reads are forgotten', async () => {
+  const f = workbenchFixture();
+  const { session, workspace } = await idleSession(f);
+  commit(workspace.path, 'change.txt');
+  await f.control.sessionDiff(user, session.id);
+  const calls = gitWrapper([]);
+  const diffs = () => calls().filter((call) => call === 'diff').length;
+  await f.control.sessionDiff(user, session.id);
+  expect(diffs()).toBe(0);
+  forgetWorktreeReads(workspace.id);
+  await f.control.sessionDiff(user, session.id);
+  expect(diffs()).toBeGreaterThan(0);
+});
+
+it('merges a task session after its turn while the event loop runs', async () => {
+  const f = workbenchFixture();
+  git(f.source, 'config', 'user.name', 'Source User');
+  git(f.source, 'config', 'user.email', 'source@example.invalid');
+  f.call(
+    'project.gate.set',
+    {
+      project_id: f.project.id,
+      root: f.source,
+      commands: [{ name: 'Check', argv: [process.execPath, '-e', 'process.exit(0)'] }],
+    },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  f.call(
+    'project.autoMerge.set',
+    { project_id: f.project.id, enabled: true },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  const { session, workspace } = await idleSession(f);
+  f.store.insert<BoardPlan>('board_plans', {
+    id: 'lead-of-merged-task',
+    revision: 1,
+    project_id: f.project.id,
+    headline: 'Merged work',
+    lanes: [{ id: 'core', title: 'Core' }],
+    tasks: [
+      {
+        id: 'merged-task',
+        title: 'Merged task',
+        goal: 'Merge on its own',
+        lane: 'core',
+        depends_on: [],
+        source: [],
+        scope: ['.'],
+        acceptance: [],
+      },
+    ],
+    risks: [],
+    assumptions: [],
+    plan_version: 0,
+    pending_edits: [],
+    inbox: [],
+    notified: {},
+    updated_at: Date.now(),
+  });
+  f.store.update<Session>(
+    'sessions',
+    { ...session, task: { lead_session_id: 'lead-of-merged-task', id: 'merged-task' } },
+    session.revision,
+  );
+  commit(workspace.path, 'change.txt');
+  gitWrapper(['status']);
+  const fired = timerFired();
+  const started = () => f.store.kindEvents(f.project.id, ['session.merge_started']).length > 0;
+  autoMergeAfterTurn(
+    (f.control as unknown as { ctx: ControlContext }).ctx,
+    session.id,
+    f.turns(session.id).at(-1)!.id,
+  );
+  let firedBeforeMerge: boolean | undefined;
+  await eventually(() => {
+    if (!started()) return false;
+    firedBeforeMerge = fired();
+    return true;
+  });
+  expect(firedBeforeMerge).toBe(true);
+});
+
+it('reads the start point of a new session with one git run', async () => {
+  const f = workbenchFixture();
+  await f.control.sessionCreatePreview(user, { project_id: f.project.id });
+  const calls = gitWrapper([]);
+  const session = f.create();
+  expect(
+    calls().filter((call) => ['symbolic-ref', 'show-ref', 'rev-parse'].includes(call)),
+  ).toEqual(['rev-parse']);
+  await awaitWorkspaceReady(f.control, session.workspace_id!);
 });

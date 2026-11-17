@@ -20,6 +20,7 @@ import {
   wslAutomountRoot,
   wslDrivePath,
 } from '../../packages/control/dist/wsl-mount.js';
+import { countingGit, gitRunsOf } from '../helpers.js';
 
 vi.mock('node:fs', async (original) => ({ ...(await original<typeof import('node:fs')>()) }));
 
@@ -129,6 +130,71 @@ it.each([
     expect(counted() - before).toBe(runs);
   },
 );
+
+it('runs one config probe for parallel calls that miss the cold cache of one repository', async () => {
+  const root = repository(fresh('pantheon-git-parallel-probe-'));
+  const git = countingGit();
+  try {
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => runGit(root, ['rev-parse', 'HEAD'], undefined, true)),
+    );
+    expect(results.map((result) => result.exit_code)).toEqual([0, 0, 0, 0]);
+    const runs = git.runs();
+    expect(
+      gitRunsOf(runs, 'rev-parse').filter((run) => run.includes('--path-format=absolute')),
+    ).toHaveLength(1);
+    expect(
+      gitRunsOf(runs, 'config').filter((run) => run.includes('--show-origin --list')),
+    ).toHaveLength(1);
+  } finally {
+    git.restore();
+  }
+});
+
+it('neutralizes the filter for every parallel call in a repository whose config is not cached', async () => {
+  const root = repository(fresh('pantheon-git-parallel-uncached-'));
+  const marker = path.join(root, 'clean-ran');
+  const script = path.join(root, 'clean.sh');
+  writeFileSync(script, `#!/bin/sh\nprintf executed > '${marker}'\ncat\n`);
+  chmodSync(script, 0o700);
+  writeFileSync(path.join(root, '.gitattributes'), 'filtered.txt filter=fixture\n');
+  writeFileSync(path.join(root, 'filtered.txt'), 'filtered\n');
+  const drivers = path.join(root, 'drivers.cfg');
+  writeFileSync(drivers, `[filter "fixture"]\n\tclean = ${script}\n`);
+  // A condition on the branch is not tracked, so this config is never cached.
+  plainGit(root, ['config', 'includeIf.onbranch:main.path', drivers]);
+  const results = await Promise.all(
+    Array.from({ length: 4 }, () =>
+      runGit(root, ['hash-object', '--', 'filtered.txt'], undefined, true),
+    ),
+  );
+  expect(results.map((result) => result.exit_code)).toEqual([0, 0, 0, 0]);
+  expect(fs.existsSync(marker)).toBe(false);
+  // Plain git reaches the same driver, so it is live.
+  plainGit(root, ['hash-object', '--', 'filtered.txt']);
+  expect(fs.existsSync(marker)).toBe(true);
+});
+
+it('reads the repository config again only after the recheck interval', () => {
+  const root = repository(fresh('pantheon-git-recheck-'));
+  const config = path.join(root, '.git', 'config');
+  let elapsed = 0;
+  const clock = performance.now.bind(performance);
+  const now = vi.spyOn(performance, 'now').mockImplementation(() => clock() + elapsed);
+  const reads = () =>
+    vi.mocked(fs.readFileSync).mock.calls.filter(([file]) => file === config).length;
+  try {
+    expect(runGit(root, ['status', '--porcelain']).exit_code).toBe(0);
+    const before = reads();
+    expect(runGit(root, ['status', '--porcelain']).exit_code).toBe(0);
+    expect(reads() - before).toBe(0);
+    elapsed += 1000;
+    expect(runGit(root, ['status', '--porcelain']).exit_code).toBe(0);
+    expect(reads() - before).toBe(1);
+  } finally {
+    now.mockRestore();
+  }
+});
 
 it('reads the automount root of wsl.conf and holds paths on a drive below it', () => {
   expect(automountRootFromConf('')).toBe('/mnt/');

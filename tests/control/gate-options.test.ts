@@ -58,7 +58,7 @@ it('updates the live split after each step and never counts a skipped or disable
     { name: 'optional', argv: ['optional'], skippable: true },
     { name: 'wait', argv: ['wait'] },
   ]);
-  run(f, session);
+  await run(f, session);
   await eventually(
     () => execute.mock.calls.some(([input]) => input.argv[0] === 'wait'),
     () => f.control.tick(),
@@ -93,7 +93,7 @@ it('retries only failed gates once and carries successes', async () => {
     { name: 'last', argv: ['last'] },
   ]);
   f.call('workflow.policy.set', { project_id: f.project.id, gate_on_fail: 'retry' });
-  run(f, session);
+  await run(f, session);
   await eventually(
     () => !f.control.sessionGates(user, session.id).running,
     () => f.control.tick(),
@@ -115,7 +115,7 @@ it('runs local session gates in the session workspace with the configured timeou
     { name: 'check', argv: ['check'], timeout_ms: 1234 },
   ]);
   f.call('workflow.policy.set', { project_id: f.project.id, gate_runner: 'session' });
-  run(f, session);
+  await run(f, session);
   await eventually(
     () => !f.control.sessionGates(user, session.id).running,
     () => f.control.tick(),
@@ -131,12 +131,12 @@ it('marks only the fresh gate clone as a disposable root', async () => {
       () => !f.control.sessionGates(user, session.id).running,
       () => f.control.tick(),
     );
-  run(f, session);
+  await run(f, session);
   await idle();
   expect(execute.mock.calls[0]![0].cwd).not.toBe(workspace.path);
   expect(execute.mock.calls[0]![0].disposable).toBe(true);
   f.call('workflow.policy.set', { project_id: f.project.id, gate_runner: 'session' });
-  run(f, session);
+  await run(f, session);
   await idle();
   expect(execute.mock.calls[1]![0]).toMatchObject({ cwd: workspace.path });
   expect(execute.mock.calls[1]![0].disposable).toBeUndefined();
@@ -175,7 +175,7 @@ it.each(['timeout', 'cannot_start'])(
       { name: 'optional', argv: ['optional'], skippable: true },
       { name: 'last', argv: ['last'] },
     ]);
-    run(f, session);
+    await run(f, session);
     await eventually(
       () => !f.control.sessionGates(user, session.id).running,
       () => f.control.tick(),
@@ -197,7 +197,7 @@ it('shows completed gate counts while a later command is still running', async (
     { name: 'pass', argv: ['pass'] },
     { name: 'wait', argv: ['wait'] },
   ]);
-  run(f, session);
+  await run(f, session);
   await eventually(
     () => execute.mock.calls.length === 2,
     () => f.control.tick(),

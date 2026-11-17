@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import type { HarnessAdapter, Session, SessionHandle, SessionSpec } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -211,6 +211,7 @@ it('reads the branch and commit at the project HEAD', async () => {
     uncommitted: 0,
   });
   git(f.source, 'checkout', '--quiet', '--detach');
+  waitOutStatusReuse();
   expect(await f.control.projectHead(user, f.project.id)).toEqual({
     branch: null,
     sha,

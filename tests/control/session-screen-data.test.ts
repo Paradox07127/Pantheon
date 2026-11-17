@@ -3,7 +3,7 @@ import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import type { BoardPlan, Project, Session, Workspace } from '@pantheon/domain';
-import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = ReturnType<typeof workbenchFixture>;
@@ -85,14 +85,14 @@ it('previews the project and selected start points without changing files or rec
     options: Omit<Parameters<typeof f.control.sessionCreatePreview>[1], 'project_id'> = {},
   ) => f.control.sessionCreatePreview(user, { project_id: f.project.id, ...options });
   const head = git(f.source, 'rev-parse', 'HEAD');
-  expect(preview({ workspace: 'in_place' })).toEqual({
+  expect(await preview({ workspace: 'in_place' })).toEqual({
     branch: 'main',
     base_sha: head,
     base_ref: 'refs/heads/main',
   });
-  expect(preview()).toEqual({ branch: null, base_sha: head, base_ref: 'refs/heads/main' });
-  expect(preview({ from: { branch: 'main' } }).base_sha).toBe(head);
-  expect(preview({ from: { session_id: source.id } }).base_sha).toBe(
+  expect(await preview()).toEqual({ branch: null, base_sha: head, base_ref: 'refs/heads/main' });
+  expect((await preview({ from: { branch: 'main' } })).base_sha).toBe(head);
+  expect((await preview({ from: { session_id: source.id } })).base_sha).toBe(
     git(work, 'rev-parse', 'HEAD'),
   );
   expect({
@@ -116,6 +116,7 @@ it('reports project commit time, changed paths and upstream distance only when a
   git(f.source, 'commit', '--quiet', '-am', 'Move main');
   git(f.source, 'mv', 'answer.txt', 'renamed answer.txt');
   writeFileSync(path.join(f.source, 'new\nfile.txt'), 'untracked\n');
+  waitOutStatusReuse();
   expect(await f.control.projectHead(user, f.project.id)).toMatchObject({
     ahead_upstream: 1,
     uncommitted: 2,
@@ -132,6 +133,8 @@ it('lists branch and divergence against the source branch and omits git facts wi
   git(work, 'commit', '--quiet', '-am', 'Move session');
   writeFileSync(path.join(f.source, 'answer.txt'), 'source change\n');
   git(f.source, 'commit', '--quiet', '-am', 'Move source');
+  waitOutStatusReuse();
+  await f.prefetch();
   expect(f.list().find((row) => row.id === session.id)).toMatchObject({
     branch: 'session-work',
     ahead: 1,
@@ -284,7 +287,7 @@ it('forks onto a requested runtime, model and effort and starts that runtime', a
   other.name = 'other-runtime';
   const start = vi.spyOn(other, 'start');
   f.control.adapters.set(other.name, other);
-  const forked = f.call<Session>('session.fork', {
+  const forked = await f.call<Session>('session.fork', {
     session_id: source.id,
     runtime: other.name,
     model: 'other-model',
@@ -297,7 +300,7 @@ it('forks onto a requested runtime, model and effort and starts that runtime', a
     requested_model: 'other-model',
     requested_effort: 'high',
   });
-  const defaults = f.call<Session>('session.fork', {
+  const defaults = await f.call<Session>('session.fork', {
     session_id: source.id,
     runtime: other.name,
     input: 'Use its default model',

@@ -32,33 +32,34 @@ it('lists an adopted session as idle with its kind and the uncommitted changes o
   // The list reuses a folder read for two seconds; an edit outside a turn shows after that.
   vi.useFakeTimers({ toFake: ['Date'] });
   onTestFinished(() => void vi.useRealTimers());
-  const listed = () => {
+  const listed = async () => {
     vi.setSystemTime(Date.now() + 2000);
+    await f.prefetch();
     return f.list().find((each) => each.id === session.id)!;
   };
-  expect(listed()).toMatchObject({
+  expect(await listed()).toMatchObject({
     state: 'idle',
     workspace_kind: 'in_place',
     changes: { files: 0, additions: 0, deletions: 0 },
   });
-  expect(listed()).not.toHaveProperty('gate');
+  expect(await listed()).not.toHaveProperty('gate');
 
   writeFileSync(path.join(f.source, 'answer.txt'), 'base\nmore\n');
   writeFileSync(path.join(f.source, 'notes.txt'), 'one\ntwo\n');
-  expect(listed()).toMatchObject({
+  expect(await listed()).toMatchObject({
     state: 'idle',
     changes: { files: 2, additions: 3, deletions: 0 },
   });
 
   git(f.source, 'add', '.');
   git(f.source, 'commit', '--quiet', '-m', 'Terminal work');
-  expect(listed()).toMatchObject({
+  expect(await listed()).toMatchObject({
     state: 'idle',
     changes: { files: 0, additions: 0, deletions: 0 },
   });
 
   writeFileSync(path.join(f.source, '.git/HEAD'), 'ref: refs/heads/missing\n');
-  expect(listed()).toMatchObject({ state: 'idle', changes: null });
+  expect(await listed()).toMatchObject({ state: 'idle', changes: null });
 });
 
 it('reads the uncommitted changes of the folder as the diff of an adopted session', async () => {

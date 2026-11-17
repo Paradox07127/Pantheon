@@ -550,7 +550,7 @@ it.skipIf(insideSandbox)('runs gate commands with the project variables', async 
     { project_id: project.id, root: f.source, commands: gate },
     project.revision,
   );
-  f.call<Session>(
+  await f.call<Session>(
     'session.gates.run',
     { session_id: session.id },
     f.store.must<Session>('sessions', session.id).revision,

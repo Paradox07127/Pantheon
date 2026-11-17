@@ -566,7 +566,7 @@ it('writes a patch that reverts only one card of a merged workbench session and 
     () => w.control.tick(),
   );
   const story = await submitStory(w, await startStory(), smallSubmission);
-  const { path: file, commands } = w.call<{ path: string; commands: string[] }>(
+  const { path: file, commands } = await w.call<{ path: string; commands: string[] }>(
     'change_story.revert_patch',
     { story_id: story.id, card: 1 },
   );
@@ -593,7 +593,9 @@ it('writes a patch that reverts only one card of a merged workbench session and 
       card('Greet the world', ['H4'], { acceptance: [] }),
     ],
   });
-  expect(() => other.w.call('change_story.revert_patch', { story_id: shared.id, card: 1 })).toThrow(
+  await expect(
+    other.w.call('change_story.revert_patch', { story_id: shared.id, card: 1 }),
+  ).rejects.toThrow(
     expect.objectContaining({ code: 'invalid_state', message: expect.stringContaining('card 1') }),
   );
 });
@@ -621,10 +623,13 @@ it('gives revert commands that stop on a dirty source checkout and commit only t
     () => w.control.tick(),
   );
   const story = await submitStory(w, await startStory(), smallSubmission);
-  const { commands } = w.call<{ path: string; commands: string[] }>('change_story.revert_patch', {
-    story_id: story.id,
-    card: 1,
-  });
+  const { commands } = await w.call<{ path: string; commands: string[] }>(
+    'change_story.revert_patch',
+    {
+      story_id: story.id,
+      card: 1,
+    },
+  );
   const notes = path.join(w.source, 'notes.txt');
   writeFileSync(notes, 'local edit\n');
   paste(w.source, commands);

@@ -70,6 +70,8 @@ export interface ControlContext {
   busy: boolean;
   closing: boolean;
   changed(): void;
+  /** Reports a failure of background work that no caller awaits. */
+  diagnostic(error: unknown): void;
 }
 const sessionAdapters = new WeakMap<ControlContext, Map<string, HarnessAdapter>>();
 
@@ -90,6 +92,13 @@ export function sessionAdapter(ctx: ControlContext, session: Session): HarnessAd
 // Each handler re-parses its known schema to retain discriminated input types.
 export type Handler = (ctx: ControlContext, principal: Principal, command: Command) => unknown;
 export type Handlers = Partial<Record<CommandType, Handler>>;
+/** Each runs its command's git before the transaction and returns the handler that records it. */
+export type Preparers = Partial<
+  Record<
+    CommandType,
+    (ctx: ControlContext, principal: Principal, command: Command) => Handler | Promise<Handler>
+  >
+>;
 
 export const inside = (root: string, file: string): boolean => {
   const rel = path.relative(root, file);

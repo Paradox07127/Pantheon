@@ -277,7 +277,7 @@ it.skipIf(insideSandbox)(
         },
       ];
     f.installGate(commands);
-    f.merge();
+    await f.merge();
     await f.settle();
     expect(f.events('session.gate_checked')).toMatchObject([
       {
@@ -328,7 +328,7 @@ it.skipIf(insideSandbox)(
         },
       ];
     f.installGate(commands);
-    f.merge();
+    await f.merge();
     await f.settle();
     expect(f.current().merge).toEqual({
       state: 'blocked',
@@ -370,14 +370,14 @@ it.skipIf(insideSandbox)(
         ],
       },
     ]);
-    f.merge();
+    await f.merge();
     await f.settle();
     expect(f.current().merge?.state).toBe('blocked');
     expect(existsSync(path.join(clone.path, 'gate-attempts'))).toBe(false);
     f.installGate([
       { name: 'User corrected gate', argv: [process.execPath, '-e', 'console.log("fixed")'] },
     ]);
-    f.merge();
+    await f.merge();
     await f.settle();
     expect(f.current().outcome).toBe('merged');
     expect(f.events('session.gate_checked')).toHaveLength(2);
@@ -405,7 +405,7 @@ it.skipIf(insideSandbox)(
         timeout_ms: 2000,
       },
     ]);
-    f.merge();
+    await f.merge();
     await f.settle();
     expect(f.current().merge).toMatchObject({ state: 'blocked', reason: 'gate_failed' });
     expect(f.events('session.gate_checked')).toMatchObject([
@@ -430,7 +430,7 @@ it.skipIf(insideSandbox)(
         ],
       },
     ]);
-    f.merge();
+    await f.merge();
     await f.settle();
     expect(f.events('session.gate_checked')).toHaveLength(1);
     expect(f.events('session.gate_checked')[0]!.payload).toMatchObject({
@@ -480,7 +480,7 @@ it.skipIf(insideSandbox)(
       clone = await f.open(),
       waiting = waitingGate(f);
     commit(clone.path);
-    f.merge();
+    await f.merge();
     const ticking = f.control.tick();
     await Promise.race([
       ticking,
@@ -522,7 +522,7 @@ it.skipIf(insideSandbox)(
       clone = await f.open(),
       waiting = waitingGate(f),
       target = commit(clone.path);
-    f.merge();
+    await f.merge();
     await f.control.tick();
     expect(f.current().merge?.state).toBe('running');
     await eventually(() => waiting.steps() === 'first\nwaiting\n');

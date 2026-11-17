@@ -70,7 +70,7 @@ async function sessionFixture(role: 'reviewer' | 'planner') {
   commitProjectRoot(f.projectRoot);
   let review: Review | undefined;
   if (role === 'planner') {
-    f.call<ProjectBaseline>('project.baseline.start', { project_id: f.project.id });
+    await f.call<Promise<ProjectBaseline>>('project.baseline.start', { project_id: f.project.id });
   } else {
     // A session review needs a runtime other than the one that wrote the session.
     const writer = new FixtureAdapter();
@@ -91,7 +91,7 @@ async function sessionFixture(role: 'reviewer' | 'planner') {
     writeFileSync(path.join(workspace.path, 'draft.txt'), 'A verifiable sentence.\n');
     git(workspace.path, 'add', 'draft.txt');
     git(workspace.path, 'commit', '--quiet', '-m', 'Add the draft');
-    review = f.call<Review>('review.request', {
+    review = await f.call<Review>('review.request', {
       session_id: written.id,
       runtimes: [adapter.name],
     });
@@ -109,7 +109,7 @@ async function sessionFixture(role: 'reviewer' | 'planner') {
       if (url.pathname === '/v1/session-principal')
         return Response.json(f.control.sessionPrincipal(principal));
       if (url.pathname === '/v1/commands')
-        return Response.json({ receipt: f.control.execute(principal, await request.json()) });
+        return Response.json({ receipt: await f.control.execute(principal, await request.json()) });
       if (url.pathname === '/v1/extensions.inventory')
         return Response.json(
           await f.control.extensionsInventory(

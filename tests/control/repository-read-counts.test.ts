@@ -1,8 +1,9 @@
-import { readFileSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import type { BoardPlan, ChangeStory, Principal, Project, Session } from '@pantheon/domain';
 import { awaitWorkspaceReady, countingGit, eventually, gitRunsOf, user } from '../helpers.js';
+import { forgetWorktreeReads } from '../../packages/control/dist/workbench-session.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 // Landings here count git runs; a gate command passes without a sandbox.
@@ -361,6 +362,30 @@ it('starts and checks a story with one diff each and one object read, with the r
   expect(gitRunsOf(submitted, 'cat-file')).toHaveLength(1);
 });
 
+it('reads the diff of a card it reverts while other work goes on', async () => {
+  const { w, workspace, startStory } = await idleSession(storyBase);
+  writeFiles(workspace.path, storyChange);
+  const story = await startStory();
+  await w.call(
+    'change_story.submit',
+    { story_id: story.id, ...storySubmission },
+    null,
+    storyPrincipal(w, story),
+  );
+  const runs = counting();
+  runs.slowOn('diff');
+  let fired = false;
+  const timer = setTimeout(() => (fired = true), 50);
+  onTestFinished(() => clearTimeout(timer));
+  const { path: patch } = await w.call<{ path: string } | Promise<{ path: string }>>(
+    'change_story.revert_patch',
+    { story_id: story.id, card: 1 },
+  );
+  expect(fired).toBe(true);
+  expect(readFileSync(patch, 'utf8')).toBe(storyPatch);
+  expect(gitRunsOf(runs.runs(), 'diff')).toHaveLength(1);
+});
+
 it('reads the source HEAD once before it gates a landing and once before it merges', async () => {
   const w = workbenchFixture();
   w.call(
@@ -554,4 +579,86 @@ it('reads the changed paths once for all before-merge steps a story context filt
     'two: Check two',
   ]);
   expect(gitRunsOf(runs.runs(), 'merge-base')).toHaveLength(1);
+});
+
+/** The directory and arguments of each `git status --porcelain=v2` run. */
+const statusReads = (runs: string[]) =>
+  runs
+    .map((run) => run.split('|'))
+    .filter((fields) => fields.slice(2).join('|').includes('status --porcelain=v2'))
+    .map((fields) => `${realpathSync(fields[0]!)} ${fields.slice(2).join('|')}`);
+
+/** An idle session whose merge is blocked, so the needs-you prefetch reads its repositories too. */
+async function blockedSession() {
+  const { w, session: started, workspace } = await idleSession();
+  writeFiles(workspace.path, { 'change.txt': 'change\n' });
+  const session = w.store.must<Session>('sessions', started.id);
+  const blocked = w.store.update<Session>(
+    'sessions',
+    { ...session, merge: { state: 'blocked', reason: 'rebase_conflict' } },
+    session.revision,
+  );
+  w.store.event('session.merge_blocked', blocked, blocked.project_id, blocked.merge);
+  forgetWorktreeReads(workspace.id);
+  return { w, session: blocked, workspace };
+}
+
+it('shares one status run per repository between the list, needs-you, preflight and project HEAD reads', async () => {
+  const { w, session } = await blockedSession();
+  const runs = counting();
+  const [, preflight, head] = await Promise.all([
+    w.control.prefetchWorktreeReads(user, w.project.id),
+    w.control.sessionPreflight(user, session.id),
+    w.control.projectHead(user, w.project.id),
+  ]);
+  expect(preflight).toMatchObject({ commit_count: 1, worktree_clean: true, source_clean: true });
+  expect(head).toMatchObject({ branch: 'main', sha: git(w.source, 'rev-parse', 'HEAD') });
+  const reads = statusReads(runs.runs());
+  expect(reads.length).toBe(new Set(reads).size);
+  expect(reads).toHaveLength(3);
+});
+
+it('reads the project status again after a commit through repo.commit', async () => {
+  const w = workbenchFixture();
+  git(w.source, 'config', 'user.name', 'Source User');
+  git(w.source, 'config', 'user.email', 'source@example.invalid');
+  writeFileSync(path.join(w.source, 'answer.txt'), 'committed\n');
+  const runs = counting();
+  expect(await w.control.projectHead(user, w.project.id)).toMatchObject({ uncommitted: 1 });
+  await w.control.projectHead(user, w.project.id);
+  expect(statusReads(runs.runs())).toHaveLength(1);
+  const { sha } = await w.call<Promise<{ sha: string }>>('repo.commit', {
+    project_id: w.project.id,
+    paths: ['answer.txt'],
+    message: 'Commit the answer',
+  });
+  runs.reset();
+  expect(await w.control.projectHead(user, w.project.id)).toMatchObject({
+    sha,
+    subject: 'Commit the answer',
+    uncommitted: 0,
+  });
+  expect(statusReads(runs.runs())).toHaveLength(1);
+});
+
+it('reads both repository states afresh to admit a merge after a prefetch read them', async () => {
+  const { w, session, workspace } = await idleSession();
+  writeFiles(workspace.path, { 'change.txt': 'change\n' });
+  forgetWorktreeReads(workspace.id);
+  await Promise.all([
+    w.control.prefetchWorktreeReads(user, w.project.id),
+    w.control.sessionPreflight(user, session.id),
+  ]);
+  const runs = counting();
+  const queued = await w.call<Session | Promise<Session>>(
+    'session.merge',
+    { session_id: session.id },
+    w.store.must<Session>('sessions', session.id).revision,
+  );
+  expect(queued.merge?.state).toBe('running');
+  const reads = statusReads(runs.runs());
+  expect(reads.filter((read) => read.startsWith(`${realpathSync(workspace.path)} `))).toHaveLength(
+    1,
+  );
+  expect(reads.filter((read) => read.startsWith(`${realpathSync(w.source)} `))).toHaveLength(1);
 });

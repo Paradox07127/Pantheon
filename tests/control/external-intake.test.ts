@@ -249,7 +249,9 @@ it('lets a held lead only read, use memory and write its plan until the user app
   ).toThrow(denied);
 
   expect(f.control.projectRead(f.as(lead.id), f.project.id)).toBeTruthy();
-  expect(f.call('board.sync', { project_id: f.project.id }, null, f.as(lead.id))).toMatchObject({
+  expect(
+    await f.call('board.sync', { project_id: f.project.id }, null, f.as(lead.id)),
+  ).toMatchObject({
     brief: expect.any(String),
   });
   const packet = f.call<{ signature: string }>(

@@ -31,7 +31,7 @@ import {
   pullRemoteWorkspace,
   remoteSessionSpec,
 } from '../../packages/control/src/remote-workspace.js';
-import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
+import { awaitWorkspaceReady, countingGit, eventually, user } from '../helpers.js';
 import { git } from './workbench-fixture.js';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -546,6 +546,34 @@ it('deletes the sync refs on this machine with one git run', async () => {
   ]);
   expect(local[0]!.match(/delete /g)).toHaveLength(7);
   expect(git(f.source, 'for-each-ref', 'refs/pantheon/sync/')).toBe('');
+});
+
+it('deletes the sync refs on this machine without holding up the daemon', async () => {
+  const f = deviceFixture();
+  const session = f.create(script({ write: { path: 'notes.txt', text: 'thrown away\n' } }));
+  await f.settle(session);
+  const counter = countingGit();
+  cleanups.unshift(async () => counter.restore());
+  counter.slowOn('update-ref --stdin');
+  // The longest the event loop went without running a 20 ms timer.
+  let last = Date.now(),
+    stall = 0;
+  const beat = setInterval(() => {
+    stall = Math.max(stall, Date.now() - last);
+    last = Date.now();
+  }, 20);
+  cleanups.unshift(async () => clearInterval(beat));
+
+  f.control.execute(
+    user,
+    command(user.id, 'session.discard', { session_id: session.id }, f.current(session.id).revision),
+  );
+  await eventually(
+    () => git(f.source, 'for-each-ref', 'refs/pantheon/sync/') === '',
+    () => f.control.tick(),
+    10000,
+  );
+  expect(stall).toBeLessThan(500);
 });
 
 it('deletes the device worktree, temporary files and sync refs when an idle session is deleted', async () => {

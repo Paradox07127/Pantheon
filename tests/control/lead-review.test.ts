@@ -121,7 +121,7 @@ async function reviewFixture() {
 
 it('lets an owning lead request a read-only cross-review and returns evidence-bound findings once', async () => {
   const { f, lead, worker, workspace, reviewer, request, ready } = await reviewFixture();
-  const review = request();
+  const review = await request();
   expect(review.requester).toEqual({ lead_session_id: lead.id, task_id: 'answer', generation: 1 });
   expect(review.range?.to_sha).toBe(git(workspace.path, 'rev-parse', 'HEAD'));
   await ready();
@@ -189,8 +189,8 @@ it('refuses workers, another lead, old task generations, writer runtimes and dup
   expect(() =>
     f.call('review.request', { ...input, runtimes: [f.adapter.name] }, null, principal),
   ).toThrow(expect.objectContaining({ code: 'invalid_input' }));
-  request();
-  expect(request).toThrow(expect.objectContaining({ code: 'resource_busy' }));
+  await request();
+  await expect(request()).rejects.toThrow(expect.objectContaining({ code: 'resource_busy' }));
   const current = f.store.must<BoardPlan>('board_plans', lead.id);
   f.store.update(
     'board_plans',
@@ -203,7 +203,7 @@ it('refuses workers, another lead, old task generations, writer runtimes and dup
 it("accepts a lead's review on the writer's runtime when no other runtime can review", async () => {
   const { f, worker, reviewer, principal } = await reviewFixture();
   f.control.adapters.delete(reviewer.name);
-  const review = f.call<Review>(
+  const review = await f.call<Review>(
     'review.request',
     { session_id: worker.id, runtimes: [f.adapter.name] },
     null,
@@ -229,7 +229,7 @@ it("opens a reviewer on the project's default runtime with its default model and
     },
     project.revision,
   );
-  const review = request();
+  const review = await request();
   const session = f.store.must<Session>('sessions', review.session_ids[0]!);
   expect(session).toMatchObject({ requested_model: 'review-model', requested_effort: 'high' });
   expect(f.turns(session.id)[0]!.model).toBe('review-model');
@@ -252,7 +252,7 @@ it("accepts a lead's review on the default runtime when the project uses one mod
     },
     project.revision,
   );
-  const review = f.call<Review>(
+  const review = await f.call<Review>(
     'review.request',
     { session_id: worker.id, runtimes: [f.adapter.name] },
     null,
@@ -268,7 +268,7 @@ it("accepts a lead's review on the default runtime when the project uses one mod
 
 it('returns failed reviewer execution to the lead without presenting it as a clean review', async () => {
   const { f, lead, reviewer, request, ready } = await reviewFixture();
-  const review = request();
+  const review = await request();
   await ready();
   reviewer.emit({ kind: 'turn.completed', status: 'failed', error: 'Reviewer unavailable' });
   await eventually(
@@ -286,7 +286,7 @@ it('returns failed reviewer execution to the lead without presenting it as a cle
 
 it('settles a restarted review once and keeps its result available to a closed lead', async () => {
   const { f, lead, request, ready } = await reviewFixture();
-  const review = request();
+  const review = await request();
   await ready();
   f.call(
     'session.discard',
@@ -313,7 +313,7 @@ it('projects partial reviewer failure and its evidence to session and board read
   const { f, lead, worker, reviewer, principal } = await reviewFixture();
   const other = new HeldReviewer('unavailable-reviewer');
   f.control.adapters.set(other.name, other);
-  const review = f.call<Review>(
+  const review = await f.call<Review>(
     'review.request',
     { session_id: worker.id, runtimes: [reviewer.name, other.name] },
     null,

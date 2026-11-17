@@ -21,8 +21,9 @@ import {
   type AgentEvent,
   type HarnessAdapter,
   type ProcessIdentity,
+  type Principal,
 } from '@pantheon/domain';
-import { inputSchemas } from '@pantheon/protocol';
+import { inputSchemas, type Command } from '@pantheon/protocol';
 import { checkRuntimeConnection, isRuntimeHeld, updateRuntimeQuota } from './runtime-status.js';
 import {
   revision,
@@ -47,6 +48,8 @@ import {
   finishReconciledWriteAudit,
   finishWriteAudit,
   startWriteAudit,
+  withReconciledState,
+  type WrittenState,
 } from './non-writer-audit.js';
 import { agentEvent, saveSessionHandle, stopSession, turnDelivery } from './agent.js';
 import { loseSessionApprovals } from './approvals.js';
@@ -381,9 +384,14 @@ export function unsnooze(ctx: ControlContext, sessionId: string, reason: string,
   ctx.store.event('session.unsnoozed', next, next.project_id, { reason }, cause);
 }
 
-/** The caller owns the transaction and has confirmed termination. */
-export function closeReconciledSession(ctx: ControlContext, session: Session, cause = ''): Session {
-  finishReconciledWriteAudit(ctx, session.id);
+/** The caller owns the transaction, has confirmed termination and read the audited state before it. */
+export function closeReconciledSession(
+  ctx: ControlContext,
+  session: Session,
+  audited: WrittenState | undefined,
+  cause = '',
+): Session {
+  finishReconciledWriteAudit(ctx, session.id, audited);
   session = ctx.store.must<Session>('sessions', session.id);
   const { queued_handoff, ...rest } = session;
   const next = ctx.store.update(
@@ -654,8 +662,19 @@ export function stopBackground(
   return { session_id: session.id, background_id: backgroundId };
 }
 
+/** session.resolve; a close reads the tracked files its write audit compares before the transaction. */
+export function prepareResolve(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+): Handler | Promise<Handler> {
+  const { session_id, choice } = inputSchemas['session.resolve'].parse(c.input);
+  const resolve = sessionHandlers['session.resolve']!;
+  return choice === 'close' ? withReconciledState(ctx, session_id, resolve) : resolve;
+}
+
 export const sessionHandlers: Handlers = {
-  'session.resolve': (ctx, principal, command) => {
+  'session.resolve': (ctx, principal, command, audited?: WrittenState) => {
     const { session_id, choice } = inputSchemas['session.resolve'].parse(command.input);
     const session = ctx.store.must<Session>('sessions', session_id);
     requireThat(
@@ -673,7 +692,7 @@ export const sessionHandlers: Handlers = {
     );
     confirmTermination(ctx, session);
     if (choice === 'close') {
-      const next = closeReconciledSession(ctx, session, command.command_id);
+      const next = closeReconciledSession(ctx, session, audited, command.command_id);
       if (session.review_id) settleReview(ctx, session.review_id);
       return next;
     }

@@ -30,10 +30,11 @@ import {
   type RepoWorkingDiffFile,
 } from '@pantheon/protocol';
 import { inside, revision, userOnly, type ControlContext, type Handler } from './context.js';
-import { runGit } from './git.js';
+import { retryingIndexLock, runGit } from './git.js';
 import { BOUND, commitOf, git, projectRoot, relativeFile } from './repo.js';
 import { numstatFiles, PATCH_BOUND } from './source-git.js';
 import { onWslAutomount } from './wsl-mount.js';
+import { forgetStatusReads } from './workbench-session.js';
 
 const UNDO_MS = 10 * 60 * 1000;
 const COMMIT_TIMEOUT_MS = 120000;
@@ -429,60 +430,69 @@ function userGit(
   maxBuffer = 4 * PATCH_BOUND,
   env: NodeJS.ProcessEnv = {},
 ): Promise<UserGitResult> {
-  return new Promise((resolve) => {
-    const child = execFile(
-      'git',
-      [
-        // Automatic maintenance after a commit would repack the user's repository while they wait.
-        '-c',
-        'maintenance.auto=false',
-        '-c',
-        'gc.auto=0',
-        // Windows git checks out CRLF and writes stat data drvfs reports differently.
-        ...(onWslAutomount(root)
-          ? [
-              '-c',
-              'core.autocrlf=input',
-              '-c',
-              'core.checkStat=minimal',
-              '-c',
-              'core.trustctime=false',
-            ]
-          : []),
-        LITERAL,
-        ...args,
-      ],
-      {
-        cwd: root,
-        // Signing and hooks may need the user's ssh and gpg agents.
-        env: {
-          ...nativeEnvironment([...NATIVE_ENV_ALLOWLIST, 'SSH_AUTH_SOCK', 'GNUPGHOME', 'GPG_TTY']),
-          ...env,
-        },
-        encoding: 'buffer',
-        timeout: COMMIT_TIMEOUT_MS,
-        killSignal: 'SIGKILL',
-        maxBuffer,
-      },
-      (error, stdout, stderr) =>
-        resolve({
-          ok: !error,
-          code: error ? (error.code ?? null) : 0,
-          stdout,
-          output: [
-            stdout.toString(),
-            stderr.toString(),
-            error && !stderr.length ? error.message : '',
-          ]
-            .filter(Boolean)
-            .join('\n')
-            .trim(),
-        }),
-    );
-    // A git that exits before reading its input breaks the pipe; its exit reports the failure.
-    child.stdin?.on('error', () => {});
-    child.stdin?.end(input);
-  });
+  return retryingIndexLock(
+    () =>
+      new Promise<UserGitResult>((resolve) => {
+        const child = execFile(
+          'git',
+          [
+            // Automatic maintenance after a commit would repack the user's repository while they wait.
+            '-c',
+            'maintenance.auto=false',
+            '-c',
+            'gc.auto=0',
+            // Windows git checks out CRLF and writes stat data drvfs reports differently.
+            ...(onWslAutomount(root)
+              ? [
+                  '-c',
+                  'core.autocrlf=input',
+                  '-c',
+                  'core.checkStat=minimal',
+                  '-c',
+                  'core.trustctime=false',
+                ]
+              : []),
+            LITERAL,
+            ...args,
+          ],
+          {
+            cwd: root,
+            // Signing and hooks may need the user's ssh and gpg agents.
+            env: {
+              ...nativeEnvironment([
+                ...NATIVE_ENV_ALLOWLIST,
+                'SSH_AUTH_SOCK',
+                'GNUPGHOME',
+                'GPG_TTY',
+              ]),
+              ...env,
+            },
+            encoding: 'buffer',
+            timeout: COMMIT_TIMEOUT_MS,
+            killSignal: 'SIGKILL',
+            maxBuffer,
+          },
+          (error, stdout, stderr) =>
+            resolve({
+              ok: !error,
+              code: error ? (error.code ?? null) : 0,
+              stdout,
+              output: [
+                stdout.toString(),
+                stderr.toString(),
+                error && !stderr.length ? error.message : '',
+              ]
+                .filter(Boolean)
+                .join('\n')
+                .trim(),
+            }),
+        );
+        // A git that exits before reading its input breaks the pipe; its exit reports the failure.
+        child.stdin?.on('error', () => {});
+        child.stdin?.end(input);
+      }),
+    (result) => (result.ok ? '' : result.output),
+  );
 }
 
 /** Reads through the user's git, as `git` in repo.ts does through Pantheon's. */
@@ -653,6 +663,9 @@ export async function prepareRepoWrite(
     return await next;
   } finally {
     if (running.get(project_id) === next) running.delete(project_id);
+    // The write moved the checkout the session views read status of.
+    const root = ctx.store.get<Project>('projects', project_id)?.roots[0];
+    if (root) forgetStatusReads(root);
   }
 }
 

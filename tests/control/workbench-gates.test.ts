@@ -63,7 +63,7 @@ it.skipIf(insideSandbox)(
       running: false,
       last: null,
     });
-    runGates(f, session.id);
+    await runGates(f, session.id);
     expect(f.control.sessionGates(user, session.id).running).toBe(true);
     expect(() => runGates(f, session.id)).toThrow(
       expect.objectContaining({ code: 'resource_busy' }),
@@ -111,7 +111,7 @@ it.skipIf(insideSandbox)('keeps the output tail of a failing gate command', asyn
     },
   ]);
   const head = git(workspace.path, 'rev-parse', 'HEAD');
-  runGates(f, session.id);
+  await runGates(f, session.id);
   await eventually(
     () => f.control.sessionGates(user, session.id).last !== null,
     () => f.control.tick(),
@@ -205,7 +205,7 @@ it('repeats failed and skipped steps while carrying passed results and their tes
   const execute = vi
     .spyOn(validation, 'runValidationCommand')
     .mockResolvedValue(validationResult());
-  f.call(
+  await f.call(
     'session.gates.run',
     { session_id: session.id, only_failed: true },
     current(f, session.id).revision,
@@ -262,7 +262,7 @@ it('reruns the passed steps before a failed one as setup in a fresh candidate cl
   const execute = vi
     .spyOn(validation, 'runValidationCommand')
     .mockResolvedValue(validationResult());
-  f.call(
+  await f.call(
     'session.gates.run',
     { session_id: session.id, only_failed: true },
     current(f, session.id).revision,
@@ -310,13 +310,13 @@ it.each(['no previous run', 'no failures', 'head moved', 'dirty worktree'])(
     if (reason === 'head moved') commit(workspace.path, 'answer.txt', 'moved\n');
     if (reason === 'dirty worktree')
       writeFileSync(path.join(workspace.path, 'untracked.txt'), 'dirty');
-    expect(() =>
+    await expect(
       f.call(
         'session.gates.run',
         { session_id: session.id, only_failed: true },
         current(f, session.id).revision,
       ),
-    ).toThrow(expect.objectContaining({ code: 'gate_retry_unavailable' }));
+    ).rejects.toThrow(expect.objectContaining({ code: 'gate_retry_unavailable' }));
     expect(payloads(f, session.id, 'session.gate_run_requested')).toHaveLength(0);
   },
 );
@@ -332,7 +332,7 @@ it('keeps test counts on the gate failure returned with a blocked merge', async 
     exit_code: 1,
     tests,
   });
-  f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
+  await f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
   await eventually(
     () => current(f, session.id).merge?.state === 'blocked',
     () => f.control.tick(),

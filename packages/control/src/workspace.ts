@@ -32,6 +32,8 @@ export type WorkspaceRegistration = {
   base_ref: string;
   /** The session title or task name the worktree folder is named after. */
   name?: string;
+  /** The id, when a ref named after it was written before the workspace is registered. */
+  id?: string;
 };
 
 /** The caller owns the transaction and has checked project access. */
@@ -41,7 +43,7 @@ export function registerWorkspace(
   cause: string,
 ): Workspace {
   const project = ctx.store.must<Project>('projects', input.project_id),
-    workspaceId = id();
+    workspaceId = input.id ?? id();
   const source = checkedPath(ctx, project, input.source);
   requireThat(
     project.roots.includes(source) && gitFolder(source),

@@ -220,28 +220,10 @@ function landingResult(range: DiffRange, listing: string, patch: string | null):
   };
 }
 
-/** The committed change from_sha..to_sha in a project source, split into numbered hunks. */
-export function rangeDiffSync(
-  ctx: ControlContext,
-  principal: Principal,
-  projectId: string,
-  range: DiffRange,
-): LandingDiff {
-  const source = checkedSource(ctx, principal, projectId, range.source);
-  const diff = runGit(source, [...LISTING, ...diffRange(range)]);
-  if (diff.exit_code !== 0) failed();
-  const [listing, patch = Buffer.alloc(0)] = splitListing(diff.stdout);
-  return landingResult(
-    range,
-    listing.toString(),
-    patch.length > PATCH_BOUND ? null : patch.toString(),
-  );
-}
-
 // runGit's synchronous bounds: spawnSync's output buffer and its default time limit.
 const SYNC_BOUND = { max_buffer: 64 * 1024 * 1024, timeout_ms: 120000 };
 
-/** rangeDiffSync's bounds, truncation and failures, without blocking the daemon while git runs. */
+/** rangeDiff with the bounds of a synchronous runGit: output past them fails the read. */
 export async function rangeDiffWithSyncBounds(
   ctx: ControlContext,
   principal: Principal,
@@ -264,7 +246,7 @@ export async function rangeDiffWithSyncBounds(
   );
 }
 
-/** rangeDiffSync without blocking the daemon while git runs. */
+/** The committed change from_sha..to_sha in a project source, split into numbered hunks. */
 export async function rangeDiff(
   ctx: ControlContext,
   principal: Principal,

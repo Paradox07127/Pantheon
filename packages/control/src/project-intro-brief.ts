@@ -13,7 +13,7 @@ export const introInstructions = [
 
 export function renderIntroBrief(
   project: Project,
-  counts: ReturnType<typeof collectTextCounts>,
+  counts: Awaited<ReturnType<typeof collectTextCounts>>,
   baseline: ProjectBaseline | undefined,
   previous: ProjectIntro | undefined,
 ): string {

@@ -163,7 +163,7 @@ export function filesList(
   projectId: string,
   sessionId: string | undefined,
   relative = '',
-): FilesListResult {
+): Promise<FilesListResult> {
   const scope = workspaceRoot(ctx, p, projectId, sessionId),
     root = scope.root;
   const directory = workspacePath(scope, relative);
@@ -173,31 +173,28 @@ export function filesList(
     constants.O_RDONLY | constants.O_DIRECTORY,
     scope.unreadable,
   );
-  try {
-    return listing(root, directory, fd, scope.unreadable);
-  } finally {
-    closeSync(fd);
-  }
+  return listing(root, directory, fd, scope.unreadable).finally(() => closeSync(fd));
 }
 
-function listing(
+async function listing(
   root: string,
   directory: string,
   fd: number,
   unreadable: string[],
-): FilesListResult {
+): Promise<FilesListResult> {
   const children = readdirSync(directory, { withFileTypes: true }).filter(
     (entry) => entry.name !== '.git',
   );
   checkOpened(root, directory, fd, unreadable);
   if (!children.length) return { entries: [], truncated: false };
-  const ignored = runGit(
+  const ignored = await runGit(
     root,
     ['check-ignore', '-z', '--stdin'],
     Buffer.from(
       children.map((entry) => path.relative(root, path.join(directory, entry.name))).join('\0') +
         '\0',
     ),
+    true,
   );
   requireThat(
     ignored.exit_code === 0 || ignored.exit_code === 1,

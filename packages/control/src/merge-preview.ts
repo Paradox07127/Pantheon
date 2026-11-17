@@ -18,19 +18,11 @@ export async function mergeBase(
   return result.stdout.toString().trim();
 }
 
-export function mergePreview(directory: string, target: string, head: string): GitResult;
-export function mergePreview(
-  directory: string,
-  target: string,
-  head: string,
-  asynchronous: true,
-): Promise<GitResult>;
-export function mergePreview(
-  directory: string,
-  target: string,
-  head: string,
-  asynchronous = false,
-): GitResult | Promise<GitResult> {
-  const args = ['merge-tree', '--write-tree', '--name-only', '-z', target, head];
-  return asynchronous ? runGit(directory, args, undefined, true) : runGit(directory, args);
+export function mergePreview(directory: string, target: string, head: string): Promise<GitResult> {
+  return runGit(
+    directory,
+    ['merge-tree', '--write-tree', '--name-only', '-z', target, head],
+    undefined,
+    true,
+  );
 }

@@ -12,10 +12,14 @@ import {
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { runGit } from '@pantheon/control';
 
 const roots: string[] = [];
+// Moved past the interval within which the cache does not check the repository config again.
+let elapsed = 0;
+const clock = performance.now.bind(performance);
+vi.spyOn(performance, 'now').mockImplementation(() => clock() + elapsed);
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -67,6 +71,7 @@ function warm(cwd: string) {
 }
 
 function expectNeutralized(cwd: string, marker: string, env?: NodeJS.ProcessEnv) {
+  elapsed += 1000;
   writeFileSync(path.join(cwd, 'filtered.txt'), 'hardened\n');
   const result = runGit(cwd, ['add', '--', 'filtered.txt'], undefined, false, { env });
   expect(result.exit_code).toBe(0);
