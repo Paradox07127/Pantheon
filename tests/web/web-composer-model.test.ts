@@ -645,6 +645,7 @@ describe('composer backends', () => {
     stub({
       'runtime.models': [model('model-a'), model('model-b')],
       'backend.list': [backend('router', { models: ['router-x'] })],
+      'agent.list': [{ id: 'agent-a', revision: 3 }],
     });
     const h = mount(() =>
       SessionCompose({
@@ -705,6 +706,17 @@ describe('composer backends', () => {
     expect(await change(h, { model: 'model-b' })).toMatchObject({
       type: 'session.setModel',
       input: { session_id: 'session-b', model: 'model-b' },
+    });
+  });
+
+  it("changes a resident's model through its agent profile at the profile's revision", async () => {
+    const h = await composer(
+      listed({ workspace_id: null, resident: { kind: 'assistant', agent_id: 'agent-a' } }),
+    );
+    expect(named(h.value, 'ModelMenu').props.disabled).toBe(false);
+    expect(await change(h, { model: 'model-b' })).toMatchObject({
+      type: 'agent.update',
+      input: { agent_id: 'agent-a', revision: 3, model: 'model-b' },
     });
   });
 

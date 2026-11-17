@@ -55,6 +55,8 @@ export const tables = [
   'external_events',
   'themes',
   'user_styles',
+  'agents',
+  'agent_messages',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -154,6 +156,15 @@ export const migrations: readonly Migration[] = [
       db.exec(
         'CREATE TABLE user_styles (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
       );
+    },
+  },
+  {
+    version: 4,
+    up(db) {
+      for (const table of ['agents', 'agent_messages'])
+        db.exec(
+          `CREATE TABLE ${table} (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;`,
+        );
     },
   },
 ];

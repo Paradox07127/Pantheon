@@ -17,7 +17,7 @@ import {
   TriangleAlert,
   Zap,
 } from 'lucide-react';
-import type { RuntimeStatus, WorkbenchSession } from '@pantheon/protocol';
+import type { AgentProfile, RuntimeStatus, WorkbenchSession } from '@pantheon/protocol';
 import { Equalizer } from '../../components/Equalizer';
 import { runtimeName } from '../../components/RuntimeGlyph';
 import { KeyHint } from '../../components/Shortcuts';
@@ -38,6 +38,7 @@ import { failureText } from '../../data/needs-you';
 import { useBackends } from '../../data/backends';
 import { getLook } from '../../data/layout';
 import { useConnectors, useRuntimeModels, useSkills } from '../../data/runtime-models';
+import { readQuery } from '../../data/workbench-sessions';
 import { offeredRuntimes, supports, useRuntimeStatus } from '../../data/runtime-status';
 import { useSessionDisplay } from '../../data/session-display';
 import type { Session, SessionTurn, TurnView } from '../../data/transcript';
@@ -628,8 +629,34 @@ export function SessionCompose({
     if (!result.ok) setModeError(failureText(result.error));
   }
 
+  /** A resident takes its runtime, model and effort from its agent profile, at the profile's revision. */
+  async function switchAgent(agentId: string, next: ModelChoice) {
+    setSwitching(true);
+    setModeError(null);
+    const listedAgents = await readQuery('agent.list', { project_id: session.project_id });
+    const profile = listedAgents.ok
+      ? (listedAgents.value as AgentProfile[]).find((agent) => agent.id === agentId)
+      : undefined;
+    const result = profile
+      ? await runCommand(
+          'agent.update',
+          {
+            agent_id: agentId,
+            revision: profile.revision,
+            ...(next.runtime !== runtime ? { runtime: next.runtime } : {}),
+            ...(next.model !== null ? { model: next.model } : {}),
+            ...(next.effort ? { effort: next.effort } : {}),
+          },
+          null,
+        ).catch(fail)
+      : listedAgents;
+    setSwitching(false);
+    if (!result.ok) setModeError(failureText(result.error));
+  }
+
   function choose(next: ModelChoice) {
     setForkError(null);
+    if (listed?.resident?.agent_id) return void switchAgent(listed.resident.agent_id, next);
     if (next.runtime !== runtime) return setHandoff(next);
     // Back on the session's runtime: the switch is off and the session keeps its model.
     if (handoff) return setHandoff(null);
@@ -1138,7 +1165,7 @@ export function SessionCompose({
                     }
                   }
                   // session.fork takes no backend.
-                  backends={handoff ? [] : backends}
+                  backends={handoff || listed?.resident ? [] : backends}
                   backendLocked={
                     inPlace
                       ? t({
@@ -1147,7 +1174,12 @@ export function SessionCompose({
                         })
                       : undefined
                   }
-                  disabled={ended !== null || !listed?.workspace_id || switching || forking}
+                  disabled={
+                    ended !== null ||
+                    !(listed?.workspace_id || listed?.resident?.agent_id) ||
+                    switching ||
+                    forking
+                  }
                   onChange={choose}
                   // The fork takes the source's mode, so the target's menu offers none to change.
                   mode={listed?.workspace_id && !handoff ? listed.permission_mode : null}

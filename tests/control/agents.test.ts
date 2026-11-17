@@ -1,0 +1,314 @@
+import { afterEach, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Client } from '../../apps/cli/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
+import { StdioClientTransport } from '../../apps/cli/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import { FixtureAdapter } from '@pantheon/adapters';
+import { startDaemon } from '@pantheon/daemon';
+import type {
+  AgentProfile,
+  BoardPlan,
+  Principal,
+  Project,
+  Session,
+  SessionSpec,
+} from '@pantheon/domain';
+import { command } from '@pantheon/protocol';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import { ensureAgents } from '../../packages/control/dist/agents.js';
+import {
+  AGENT_TEMPLATES,
+  ASSISTANT_TEMPLATE,
+  residentProfile,
+  TRIAGE_TEMPLATE,
+} from '../../packages/control/dist/agent-templates.js';
+import { eventually, user } from '../helpers.js';
+import { workbenchFixture } from './workbench-fixture.js';
+
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
+
+const cleanup: (() => Promise<unknown>)[] = [];
+afterEach(async () => {
+  for (const close of cleanup.reverse().splice(0)) await close();
+});
+
+const lead = (projectId: string, sessionId: string, now: number): Principal => ({
+  id: `session:${sessionId}`,
+  role: 'lead',
+  project_id: projectId,
+  session_id: sessionId,
+  expires_at: now + 60000,
+});
+
+const agents = (f: Fixture) => f.control.agentList(user, f.project.id);
+const profileOf = (f: Fixture, template: AgentProfile['template']) =>
+  agents(f).find((agent) => agent.template === template)!;
+const current = (f: Fixture, sessionId: string) => f.store.must<Session>('sessions', sessionId);
+const open = (f: Fixture) =>
+  f.call<Session>('resident.open', { project_id: f.project.id, kind: 'assistant' });
+const ensure = (f: Fixture) => {
+  const ctx = f.control['ctx'] as ControlContext;
+  ctx.store.transaction(() => ensureAgents(ctx, f.project.id));
+};
+const update = (f: Fixture, fields: Record<string, unknown>) => {
+  const profile = profileOf(f, 'assistant');
+  return f.call<AgentProfile>('agent.update', {
+    agent_id: profile.id,
+    revision: profile.revision,
+    ...fields,
+  });
+};
+
+const settleResident = (f: Fixture, sessionId: string) =>
+  eventually(
+    () =>
+      current(f, sessionId).state === 'open' &&
+      f.turns(sessionId).every((turn) => !['queued', 'running'].includes(turn.state)),
+    () => f.control.tick(),
+  );
+
+async function send(f: Fixture, sessionId: string, input: string) {
+  f.call('session.send', { session_id: sessionId, input }, current(f, sessionId).revision);
+  await settleResident(f, sessionId);
+}
+
+/** The control instructions of the newest native start or resume of the fixture runtime. */
+const lastInstructions = (f: Fixture) =>
+  (f.resume.mock.calls.at(-1)![0] as SessionSpec).control_instructions;
+
+it('gives a new project an assistant and a triage profile once, with their template defaults', async () => {
+  const f = await workbenchFixture();
+  const listed = agents(f);
+  expect(listed.map((agent) => agent.template).sort()).toEqual(['assistant', 'triage']);
+  for (const [template, defaults] of [
+    ['assistant', ASSISTANT_TEMPLATE],
+    ['triage', TRIAGE_TEMPLATE],
+  ] as const)
+    expect(profileOf(f, template)).toMatchObject({
+      project_id: f.project.id,
+      name: defaults.name,
+      role: defaults.role,
+      instructions: defaults.instructions,
+      routines: [],
+      created_by: { kind: 'user' },
+    });
+  // A built-in profile stores no groups or sources, so it takes those its template gains later.
+  for (const template of ['assistant', 'triage'] as const) {
+    const profile = profileOf(f, template);
+    expect(profile).not.toHaveProperty('tools');
+    expect(profile).not.toHaveProperty('listens');
+    expect(residentProfile(f.store, { kind: template, agent_id: profile.id })).toMatchObject({
+      tools: AGENT_TEMPLATES[template].tools,
+      listens: AGENT_TEMPLATES[template].listens,
+    });
+  }
+  expect(
+    residentProfile(f.store, { kind: 'triage', agent_id: profileOf(f, 'triage').id }).listens,
+  ).toEqual(['github']);
+
+  const opening = command(user.id, 'project.open', {
+    name: 'Workbench project',
+    roots: [f.source],
+  });
+  await f.control.execute(user, opening);
+  await f.control.execute(user, opening);
+  ensure(f);
+  ensure(f);
+  expect(
+    agents(f)
+      .map((agent) => agent.id)
+      .sort(),
+  ).toEqual(listed.map((agent) => agent.id).sort());
+});
+
+it('links a resident session stored without a profile to the profile of its kind', async () => {
+  const f = await workbenchFixture();
+  const stored = f.store.insert<Session>('sessions', {
+    id: 'resident-before-profiles',
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    state: 'open',
+    turn_count: 0,
+    title: 'Triage',
+    resident: { kind: 'triage' },
+  });
+  ensure(f);
+  expect(current(f, stored.id).resident).toEqual({
+    kind: 'triage',
+    agent_id: profileOf(f, 'triage').id,
+  });
+});
+
+it("gives a resident turn its profile's role prompt and the next turn the changed one", async () => {
+  const f = await workbenchFixture();
+  const assistant = open(f);
+  expect(assistant.resident).toEqual({
+    kind: 'assistant',
+    agent_id: profileOf(f, 'assistant').id,
+  });
+  await send(f, assistant.id, 'What does the answer file hold?');
+  const first = lastInstructions(f)!;
+  expect(first).toContain(ASSISTANT_TEMPLATE.instructions);
+  expect(first).toContain('start sub-agents');
+
+  update(f, { instructions: 'You only answer questions about the answer file.' });
+  // The idle process closes once the change commits, and the next input starts a new one.
+  await eventually(
+    () => ![...f.control.handles.values()].some((h) => h.platform_session_id === assistant.id),
+    () => f.control.tick(),
+  );
+  await send(f, assistant.id, 'And now?');
+  const next = lastInstructions(f)!;
+  expect(next).toContain('You only answer questions about the answer file.');
+  expect(next).not.toContain(ASSISTANT_TEMPLATE.instructions);
+});
+
+it('changes the model of the profile and of its open resident on the same runtime', async () => {
+  const f = await workbenchFixture();
+  const assistant = open(f);
+  await send(f, assistant.id, 'Hello');
+  const next = update(f, { model: 'fixture-large', effort: 'high' });
+  expect(next).toMatchObject({ model: 'fixture-large', effort: 'high' });
+  expect(current(f, assistant.id)).toMatchObject({
+    state: 'open',
+    requested_model: 'fixture-large',
+    requested_effort: 'high',
+  });
+});
+
+it('moves an idle resident to a new runtime in a new session that owns the plan, and refuses mid-turn', async () => {
+  const f = await workbenchFixture();
+  const other = new FixtureAdapter(0);
+  other.name = 'fixture-other';
+  f.control.adapters.set(other.name, other);
+  const assistant = open(f);
+  await send(f, assistant.id, 'Plan the export feature');
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [
+        {
+          id: 'a',
+          title: 'Task a',
+          goal: 'Finish task a',
+          lane: 'core',
+          depends_on: [],
+          source: ['Plan the export feature'],
+          scope: ['src/a.ts'],
+          acceptance: ['pnpm test'],
+          kind: { domain: 'backend-logic', tier: 't1' },
+        },
+      ],
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    lead(f.project.id, assistant.id, f.store.now()),
+  );
+
+  f.call(
+    'session.send',
+    { session_id: assistant.id, input: 'Go on' },
+    current(f, assistant.id).revision,
+  );
+  expect(() => update(f, { runtime: other.name })).toThrow(
+    expect.objectContaining({ code: 'invalid_state' }),
+  );
+  await settleResident(f, assistant.id);
+
+  const moved = update(f, { runtime: other.name });
+  expect(moved.runtime).toBe(other.name);
+  expect(current(f, assistant.id).state).toBe('closed');
+  const successor = open(f);
+  expect(successor.id).not.toBe(assistant.id);
+  expect(successor.runtime).toBe(other.name);
+  expect(successor.resident).toEqual({ kind: 'assistant', agent_id: moved.id });
+  expect(f.store.must<BoardPlan>('board_plans', successor.id).tasks.map((t) => t.id)).toEqual([
+    'a',
+  ]);
+  expect(f.turns(successor.id)[0]!.input).toContain('take over');
+  await settleResident(f, successor.id);
+  await eventually(
+    () => ![...f.control.handles.values()].some((h) => h.platform_session_id === assistant.id),
+    () => f.control.tick(),
+  );
+  expect(current(f, assistant.id).state).toBe('closed');
+});
+
+/** A daemon with a project whose assistant resident runs with the tools of profile. */
+async function residentTools(tools?: AgentProfile['tools']) {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-agent-tools-'));
+  mkdirSync(path.join(root, 'project'));
+  const daemon = await startDaemon({
+    directory: path.join(root, 'state'),
+    adapters: [],
+    intervalMs: 60_000,
+  });
+  cleanup.push(async () => {
+    await daemon.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+  const project = (await daemon.control.execute(
+    user,
+    command(user.id, 'project.open', { name: 'agents', roots: [path.join(root, 'project')] }),
+  )) as Project;
+  const profile = daemon.control
+    .agentList(user, project.id)
+    .find((agent) => agent.template === 'assistant')!;
+  if (tools) daemon.store.update<AgentProfile>('agents', { ...profile, tools }, profile.revision);
+  const session = daemon.store.insert<Session>('sessions', {
+    id: 'assistant-session',
+    revision: 1,
+    project_id: project.id,
+    runtime: 'fixture',
+    state: 'open',
+    turn_count: 0,
+    resident: { kind: 'assistant', agent_id: profile.id },
+  });
+  const ctx = (daemon.control as unknown as { ctx: ControlContext }).ctx;
+  const credential = ctx.issueSessionCredential!(session.id, 'lead');
+  const client = new Client({ name: 'agent-tools-test', version: '1' });
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(process.cwd(), 'apps/cli/dist/index.js'), 'mcp'],
+      env: {
+        ...(process.env as Record<string, string>),
+        PANTHEON_DAEMON_URL: credential.daemon_url,
+        PANTHEON_SESSION_TOKEN_FILE: credential.token_file,
+      },
+    }),
+  );
+  cleanup.push(() => client.close());
+  const names = (await client.listTools()).tools.map((tool) => tool.name);
+  return { daemon, project, session, names };
+}
+
+it("lists and permits only the lead tools of the resident profile's groups", async () => {
+  const narrow = await residentTools(['board', 'memory']);
+  expect(narrow.names).toContain('update_board');
+  expect(narrow.names).toContain('memory_search');
+  expect(narrow.names).not.toContain('start_task');
+  expect(narrow.names).not.toContain('browser_open');
+  expect(() =>
+    narrow.daemon.control.execute(
+      lead(narrow.project.id, narrow.session.id, Date.now()),
+      command(`session:${narrow.session.id}`, 'task.start', {
+        project_id: narrow.project.id,
+        task_ids: ['a'],
+      }),
+    ),
+  ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
+
+  const assistant = await residentTools();
+  expect(assistant.names).toContain('start_task');
+  expect(assistant.names).toContain('browser_open');
+  expect(assistant.names).not.toContain('app_errors');
+});

@@ -251,6 +251,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 ## 命令(`POST /v1/commands`)
 
+### agent
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `agent.update` | `agent_id`: string<br>`revision`: integer<br>`name?`: string<br>`instructions?`: string<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra" |  |
+
 ### app
 
 | type | input | MCP 工具 |
@@ -644,6 +650,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | method | 参数 |
 |---|---|
+| `agent.list` | `project_id`: string |
 | `app.settings` | — |
 | `backend.list` | — |
 | `board.history` | `project_id`: string |

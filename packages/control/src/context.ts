@@ -20,6 +20,7 @@ import {
   sessionTools,
   coordinationTools,
   leadToolEffects,
+  leadToolGroups,
   type CommandType,
   type Command,
   type DeviceStatus,
@@ -30,6 +31,7 @@ import type { ControlOptions } from './index.js';
 import { runGit, type GitResult } from './git.js';
 import { introInstructions } from './project-intro-brief.js';
 import { baselineSkill } from './baseline-skill.js';
+import { residentProfile } from './agent-templates.js';
 import type { TraceIndex } from './trace-index.js';
 
 export interface ControlContext {
@@ -307,6 +309,16 @@ export function purposeSessionTools(
     ];
 }
 
+/** The actions of a resident's lead tools in its agent profile's groups; undefined for every other session. */
+export function residentTools(ctx: ControlContext, session: Session): string[] | undefined {
+  if (!session.resident) return undefined;
+  const groups = residentProfile(ctx.store, session.resident).tools;
+  return Object.entries(sessionTools.lead)
+    .filter(([name]) => groups.includes(leadToolGroups[name as keyof typeof leadToolGroups]))
+    .map(([, action]): string => action)
+    .filter((action) => session.app_debug || !appDebugActions.includes(action));
+}
+
 export function purposeSessionInstructions(
   session: Session,
   baseline: { rounds: number; visuals: boolean },
@@ -351,7 +363,8 @@ export function sessionAction(ctx: ControlContext, principal: Principal, action:
     'Runtime reflection can read project facts only',
   );
   const tools = sessionTools[principal.role as keyof typeof sessionTools];
-  const purposeTools = purposeSessionTools(session, sessionWorkspaceKind(ctx, session));
+  const purposeTools =
+    purposeSessionTools(session, sessionWorkspaceKind(ctx, session)) ?? residentTools(ctx, session);
   const permitted = purposeTools ? { ...tools, ...coordinationTools } : tools;
   requireThat(
     permitted &&

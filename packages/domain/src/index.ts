@@ -654,7 +654,7 @@ export interface Session extends Entity {
     uses?: Record<string, number>;
   };
   /** A lead the project keeps for one role: it plans and dispatches, never writes or works on a task itself. */
-  resident?: { kind: 'assistant' | 'triage' };
+  resident?: { kind: AgentProfile['template']; agent_id?: string };
   /**
    * The task of its own plan a lead works on itself; reported_head is its worktree's commit when it
    * reported the task done. Not task, which would make the session a worker.
@@ -686,6 +686,61 @@ export interface SessionRecap {
   turn_id?: string;
   at: number;
   model?: string;
+}
+/** A group of lead tools an agent profile turns on as a whole. */
+export type AgentToolGroup =
+  | 'board'
+  | 'dispatch'
+  | 'memory'
+  | 'browser'
+  | 'app_debug'
+  | 'app'
+  | 'sessions'
+  | 'github'
+  | 'always_on'
+  | 'agents';
+/** A prompt an agent runs on its own, every every_ms or daily at at (HH:MM local time). */
+export interface AgentRoutine {
+  id: string;
+  prompt: string;
+  every_ms?: number;
+  at?: string;
+  /** Local HH:MM times the routine may run between. */
+  active_hours?: { from: string; to: string };
+  enabled: boolean;
+}
+/** The lasting record behind a resident session: its role prompt, tools and model. */
+export interface AgentProfile extends Entity {
+  project_id: string;
+  template: 'assistant' | 'triage';
+  name: string;
+  /** A label of two to four characters. */
+  role: string;
+  /** The role prompt each of its turns gets after the platform rules. */
+  instructions: string;
+  /** Why it was created. */
+  brief?: string;
+  runtime?: string;
+  model?: string;
+  effort?: EffortLevel;
+  /** Absent: the groups of its template, which gains groups as tools are added. */
+  tools?: AgentToolGroup[];
+  routines: AgentRoutine[];
+  /** Absent: the event sources of its template. */
+  listens?: ('github' | 'gate_failures' | 'app_errors')[];
+  created_by: { kind: 'user' } | { kind: 'agent'; session_id: string };
+  created_at: number;
+  archived_at?: number;
+}
+/** A message an agent leaves for the user. */
+export interface AgentMessage extends Entity {
+  project_id: string;
+  agent_id: string;
+  session_id: string;
+  text: string;
+  urgency: 'normal' | 'high';
+  at: number;
+  read_at?: number;
 }
 /**
  * The Pantheon MCP role a session's credential carries; a session in the user's own folder is never

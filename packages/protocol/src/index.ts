@@ -9,7 +9,10 @@ import { z } from 'zod';
 import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
 import { rangeStoryInputSchemas } from './range-story.js';
 import { themeInputSchema, type ThemeInput } from './theme.js';
+import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
+import { appInputSchemas, appToolEffects, appTools } from './app-tools.js';
 import type {
+  AgentToolGroup,
   ApprovalQuestion,
   BaselineWorkstream,
   BoardPlan,
@@ -47,6 +50,8 @@ import type {
   WorkflowStep,
 } from '@pantheon/domain';
 export type {
+  AgentProfile,
+  AgentToolGroup,
   ApprovalQuestion,
   EffortLevel,
   Principal,
@@ -264,6 +269,8 @@ export const sessionTools = {
     theme: 'theme.set',
     ...browserTools,
     ...appDebugTools,
+    ...alwaysOnTools,
+    ...appTools,
   },
   worker: {
     ...memoryTools,
@@ -314,7 +321,45 @@ export const leadToolEffects = {
   app_logs: 'read',
   style_read: 'read',
   style_set: 'write',
+  ...alwaysOnToolEffects,
+  ...appToolEffects,
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
+
+const inGroup = <T extends object>(tools: T, group: AgentToolGroup) =>
+  Object.fromEntries(Object.keys(tools).map((name) => [name, group])) as Record<
+    keyof T,
+    AgentToolGroup
+  >;
+/** The agent profile tool group of each lead tool; a resident gets the tools of its profile's groups. */
+export const leadToolGroups: Record<keyof typeof sessionTools.lead, AgentToolGroup> = {
+  ...inGroup(memoryTools, 'memory'),
+  ...inGroup(browserTools, 'browser'),
+  ...inGroup(appDebugTools, 'app_debug'),
+  ...inGroup(alwaysOnTools, 'always_on'),
+  ...inGroup(appTools, 'app'),
+  project_read: 'board',
+  update_board: 'board',
+  edit_board: 'board',
+  propose_board: 'board',
+  withdraw_board_proposal: 'board',
+  milestone_accept: 'board',
+  read_note: 'board',
+  ask_user: 'board',
+  propose_improvement: 'board',
+  sync_board: 'board',
+  rerun_baseline: 'board',
+  draw: 'board',
+  theme: 'board',
+  start_task: 'dispatch',
+  message_task: 'dispatch',
+  accept_task: 'dispatch',
+  stop_task: 'dispatch',
+  report: 'dispatch',
+  interrupt_task: 'dispatch',
+  stop_background: 'dispatch',
+  request_review: 'dispatch',
+  merge_task: 'dispatch',
+};
 
 /** Extra tools exist only for daemon-created, purpose-bound project sessions. */
 export const coordinationTools = {
@@ -1370,6 +1415,8 @@ export const inputSchemas = {
   ...changeStoryInputSchemas,
   ...rangeStoryInputSchemas,
   ...repoWriteInputSchemas,
+  ...alwaysOnInputSchemas,
+  ...appInputSchemas,
   'terminal.open': z.strictObject({
     project_id: z.string(),
     session_id: z.string().optional(),
@@ -1793,6 +1840,16 @@ export const inputSchemas = {
   'external.approve': z.strictObject({ project_id: str, subject_key: str }),
   /** The user only; returns the project's open resident session of the kind, opening one when there is none. */
   'resident.open': z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
+  /** The user only; changes an agent profile at its revision. A new model or effort applies to its open session, a new runtime ends it between turns and opens a successor; returns the AgentProfile. */
+  'agent.update': z.strictObject({
+    agent_id: str,
+    revision: z.number().int().positive(),
+    name: z.string().min(1).max(80).optional(),
+    instructions: z.string().min(1).max(20000).optional(),
+    runtime: str.optional(),
+    model: str.optional(),
+    effort: z.enum(EFFORT_LEVELS).optional(),
+  }),
   'github.pr.create': z.strictObject({
     session_id: str,
     title: str.optional(),
@@ -2071,6 +2128,8 @@ export const querySchemas = {
   'project.intro.read': z.strictObject({ project_id: str }),
   'project.facts.read': z.strictObject({ project_id: str }),
   'project.read': z.strictObject({ project_id: str }),
+  /** The user only; returns the project's AgentProfile records. */
+  'agent.list': z.strictObject({ project_id: str }),
   'project.usage.read': z.strictObject({ project_id: str }),
   'project.review.metrics': z.strictObject({ project_id: str }),
   'extensions.inventory': z.strictObject({ project_id: str, runtime: str }),

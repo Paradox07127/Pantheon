@@ -71,6 +71,7 @@ import {
   sessionPrincipal,
   sessionAction,
   purposeSessionTools,
+  residentTools,
   sessionWorkspaceKind,
   userOnly,
   revision,
@@ -152,6 +153,7 @@ import { recoverWorkspaceProvisioning, stopWorkspaceProvisioning } from './provi
 import { needsYou } from './needs-you.js';
 import { projectsSummary, summaryProjects } from './projects-summary.js';
 import { timerHandlers } from './timers.js';
+import { agentList, ensureAgents } from './agents.js';
 import { continueSession } from './continuation.js';
 import { appendNote } from './lead-inbox.js';
 import type { ProtectionPaths } from './protection.js';
@@ -736,6 +738,9 @@ export class Control extends EventEmitter {
   projectRead(principal: Principal, projectId: string): unknown {
     return projectRead(this.ctx, principal, projectId);
   }
+  agentList(principal: Principal, projectId: string) {
+    return agentList(this.ctx, principal, projectId);
+  }
   projectUsageRead(principal: Principal, projectId: string) {
     return projectUsageRead(this.ctx, principal, projectId);
   }
@@ -925,7 +930,9 @@ export class Control extends EventEmitter {
       baseline_id: session.baseline?.baseline_id,
       story_id: session.change_story?.story_id ?? session.range_story?.story_id,
       ...(session.baseline ? { extension_runtimes: inventoryRuntimes(this.ctx) } : {}),
-      allowed_tool_names: purposeSessionTools(session, sessionWorkspaceKind(this.ctx, session)),
+      allowed_tool_names:
+        purposeSessionTools(session, sessionWorkspaceKind(this.ctx, session)) ??
+        residentTools(this.ctx, session),
       ...(session.app_debug ? { app_debug: true as const } : {}),
     };
   }
@@ -1178,6 +1185,10 @@ export class Control extends EventEmitter {
     return symbolsSearch(this.ctx, principal, projectId, sessionId, q);
   }
   async recover(): Promise<void> {
+    this.store.transaction(() => {
+      for (const project of this.store.list<Project>('projects'))
+        if (project.removed_at === undefined) ensureAgents(this.ctx, project.id);
+    });
     recoverWorkspaceProvisioning(this.ctx);
     recoverDiscardBackups(this.ctx);
     await recover(this.ctx);

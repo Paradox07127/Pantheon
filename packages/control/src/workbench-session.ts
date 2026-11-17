@@ -36,6 +36,7 @@ import {
   id,
   requireThat,
   NATIVE_ENV_ALLOWLIST,
+  type AgentProfile,
   type Approval,
   type BoardPlan,
   type ChangeStory,
@@ -215,22 +216,17 @@ const RESIDENT_LEAD_LINES = LEAD_INSTRUCTIONS.split('\n').flatMap((line) => {
   ];
 });
 
-const residentInstructions = (name: string, ...extra: string[]) =>
+/** The platform rules of a resident session, then the role prompt of its agent profile. */
+export const residentInstructions = (profile: Pick<AgentProfile, 'name' | 'instructions'>) =>
   [
-    `You are the resident ${name} of this project.`,
+    `You are the resident ${profile.name} of this project.`,
     'You do not change code: your session is read-only, and task sessions do every task of your plan.',
     'Give each request its own lane in your plan and put the tasks of that request in it.',
-    ...extra,
+    'Do not implement the tasks of your plan yourself or start sub-agents for them; task sessions do them.',
     ...RESIDENT_LEAD_LINES,
+    'Your role:',
+    profile.instructions,
   ].join('\n');
-
-export const RESIDENT_INSTRUCTIONS: Record<NonNullable<Session['resident']>['kind'], string> = {
-  assistant: residentInstructions('Assistant'),
-  triage: residentInstructions(
-    'Triage',
-    'You take GitHub issues, gate failures and error reports; first check whether your plan already has a task for the same problem, and only then start tasks. Give each task for an external request the subject its note names as external_subject.',
-  ),
-};
 
 export function workerInstructions(
   ctx: ControlContext,

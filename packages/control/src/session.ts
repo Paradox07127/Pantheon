@@ -97,13 +97,14 @@ import { activeRuntimeReview, RUNTIME_REVIEW_CONTRACT } from './runtime-review.j
 import { projectOverBudget } from './workflow-policy.js';
 import { queueTurn } from './task-tracking.js';
 import { backgroundTasks } from './progress.js';
+import { residentProfile } from './agent-templates.js';
 import {
   applyModel,
   applyPermissionMode,
   applyFastMode,
   applyUltracode,
   autoMergeAfterTurn,
-  RESIDENT_INSTRUCTIONS,
+  residentInstructions,
   turnExtras,
   WORKBENCH_TURN_MS,
   workbenchSessionSpec,
@@ -1640,7 +1641,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           control_instructions: session.runtime_review
             ? RUNTIME_REVIEW_CONTRACT
             : session.resident
-              ? RESIDENT_INSTRUCTIONS[session.resident.kind]
+              ? residentInstructions(residentProfile(ctx.store, session.resident))
               : purposeSessionInstructions(session, {
                   rounds: readAppSettings(ctx).baseline_rounds,
                   visuals: readAppSettings(ctx).baseline_visuals,
@@ -1995,13 +1996,14 @@ export async function finishTurn(
       'sessions',
       {
         ...s,
-        state: s.review_id
-          ? ('closed' as const)
-          : held?.blocked || (stopPending && !ctx.handles.has(key))
-            ? ('reconciling' as const)
-            : held
-              ? ('running' as const)
-              : ('open' as const),
+        state:
+          s.review_id || s.state === 'closed'
+            ? ('closed' as const)
+            : held?.blocked || (stopPending && !ctx.handles.has(key))
+              ? ('reconciling' as const)
+              : held
+                ? ('running' as const)
+                : ('open' as const),
         stop_pending: stopPending,
         // A start that failed without a handle leaves only the stop's evidence to reconcile with.
         process_identity:
