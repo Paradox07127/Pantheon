@@ -32,7 +32,7 @@ import { ownEntry, planUnfinished, planViews, retiredBinding } from './board-pla
 import { residentPlan } from './agent-always-on.js';
 import { deviceHasLabel, listDevices } from './devices.js';
 import { history } from './project-facts.js';
-import { INBOX_HEADER, appendNote, opText } from './lead-inbox.js';
+import { INBOX_HEADER, appendNote, noteOtherPlan, opText } from './lead-inbox.js';
 import { reviewPlan } from './review.js';
 import { projectRoutingTable } from './routing-table.js';
 import {
@@ -653,6 +653,7 @@ function storePlan(
     : ctx.store.insert('board_plans', value);
   writeLeadMilestones(ctx, p, leadId, input.project_id, input.milestones, commandId);
   ctx.store.event('board.plan_updated', next, input.project_id, next, commandId);
+  noteOtherPlan(ctx, next, commandId);
   for (const edit of options.userEdits ?? [])
     ctx.store.event(
       'board.user_edit_applied',

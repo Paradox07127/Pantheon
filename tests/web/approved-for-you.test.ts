@@ -19,6 +19,7 @@ vi.mock('@/store', () => ({
 vi.mock('@/data/commands', () => ({
   runCommand: vi.fn(async () => ({ ok: true, value: null })),
 }));
+import { runCommand } from '@/data/commands';
 import { NeedsPopover } from '@/components/NeedsPopover';
 import { ApprovedForYou } from '@/screens/trace/ApprovedForYou';
 import { zh, zhf } from './i18n-setup.js';
@@ -55,6 +56,27 @@ const deleted: DecisionForUser = {
   at: AT - 180_000,
   approval_id: 'approval-gone',
   decided_by: 'session:session-lead',
+};
+const answered: DecisionForUser = {
+  kind: 'question_answered',
+  at: AT - 240_000,
+  lead_session_id: 'session-lead',
+  question_id: 'question-timezone',
+  session_id: 'session-worker',
+  question: 'Which timezone closes a reconciliation day?',
+  answer: 'UTC',
+  citations: [{ kind: 'user_words', ref: 'close days the way the ledger does' }],
+};
+const overruled: DecisionForUser = {
+  kind: 'question_answered',
+  at: AT - 300_000,
+  lead_session_id: 'session-lead',
+  question_id: 'question-names',
+  session_id: 'session-tests',
+  question: 'Keep the old refund status names in the API?',
+  answer: 'Yes, add the new ones alongside',
+  citations: [{ kind: 'assumption', ref: 'The public API stays compatible' }],
+  overruled: { answer: 'Rename them now', at: AT - 200_000 },
 };
 
 let decisions: Record<string, DecisionForUser[]>;
@@ -188,6 +210,78 @@ describe('approved for you', () => {
     const h = await page();
     expect(text(h.value)).toContain(zh('trace.approved.empty'));
     expect(() => table(h.value)).toThrow();
+  });
+
+  describe('a task session question the lead answered', () => {
+    const overruleRoot = (row: ReactElement) => nodes(row).find((n) => !!n.props.onOpenChange);
+    const dialog = (tree: unknown) =>
+      find(
+        tree as ReactElement,
+        (n) => n.props['aria-label'] === zh('trace.approved.overrule.label'),
+      );
+    const button = (tree: ReactElement, name: string) =>
+      find(tree, (n) => n.type === 'button' && text(n) === name);
+    /** Opens the overrule dialog of the lead's answer, types answer into it and sends it. */
+    const overrule = async (answer: string) => {
+      decisions.alpha = [answered];
+      const h = await page();
+      overruleRoot(rowOf(h.value, answered.question))!.props.onOpenChange(true);
+      h.render();
+      find(dialog(h.value), (n) => n.type === 'textarea').props.onChange({
+        target: { value: answer },
+      });
+      h.render();
+      button(dialog(h.value), zh('trace.approved.overrule.send')).props.onClick();
+      await h.flush();
+      return h;
+    };
+
+    it('lists the question with the lead answer and what it cited', async () => {
+      decisions.alpha = [answered];
+      const h = await page();
+      const row = rowOf(h.value, answered.question);
+      for (const word of [
+        'UTC',
+        'close days the way the ledger does',
+        zh('trace.approved.by.lead'),
+        zh('trace.approved.overrule'),
+      ])
+        expect(text(row)).toContain(word);
+      expect(text(link(row)!)).toBe('Refund list page');
+    });
+
+    it('sends the typed answer to overrule the lead', async () => {
+      await overrule("Use the merchant's timezone");
+      expect(runCommand).toHaveBeenCalledWith(
+        'lead.question.overrule',
+        {
+          project_id: 'alpha',
+          lead_session_id: 'session-lead',
+          question_id: 'question-timezone',
+          answer: "Use the merchant's timezone",
+        },
+        null,
+      );
+    });
+
+    it('shows in the dialog why an overrule failed', async () => {
+      vi.mocked(runCommand).mockResolvedValueOnce({
+        ok: false,
+        error: { code: 'invalid_state', message: 'The answer was already overruled' },
+      });
+      const h = await overrule('Rename them now');
+      const alert = find(dialog(h.value), (n) => n.props.role === 'alert');
+      expect(text(alert)).toContain('The answer was already overruled');
+    });
+
+    it('shows the user answer of an overruled one, without an overrule action', async () => {
+      decisions.alpha = [overruled];
+      const h = await page();
+      const row = rowOf(h.value, overruled.question);
+      expect(text(row)).toContain('Rename them now');
+      expect(text(row)).toContain(zh('trace.approved.overruled'));
+      expect(overruleRoot(row)).toBeUndefined();
+    });
   });
 
   it('opens the delivery rules beside the list from the notifications button', async () => {

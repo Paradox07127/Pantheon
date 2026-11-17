@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react';
+import { Popover } from '@base-ui/react/popover';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
-import { Bell, Crown, KeyRound, ScrollText, Workflow, X } from 'lucide-react';
+import { Bell, Crown, KeyRound, MessageSquare, ScrollText, User, Workflow, X } from 'lucide-react';
 import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
 import { TopBar } from '../../components/TopBar';
@@ -12,8 +13,10 @@ import {
   decisionRow,
   useDecisionsForUser,
   type DecisionRange,
+  type DecisionRow,
 } from '../../data/decisions-for-user';
 import { shortId } from '../../data/format';
+import { sendProjectCommand } from '../../data/project-read';
 import { sessionTitle } from '../../data/transcript';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
@@ -57,6 +60,13 @@ function DeliveryRules() {
 export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; tabs: ReactNode }) {
   const [range, setRange] = useState<DecisionRange>('today');
   const [notifying, setNotifying] = useState(false);
+  // The open overrule dialog: its row, the typed answer, and the last failure.
+  const [overruling, setOverruling] = useState<{
+    key: string;
+    text: string;
+    busy: boolean;
+    error: string | null;
+  } | null>(null);
   const read = useDecisionsForUser(projectId, range);
   const board = useBoard((s) => s.board);
   const rows = read.read?.items.map(decisionRow) ?? null;
@@ -65,7 +75,24 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
     const session = board?.sessions.find((s) => s.id === sessionId);
     return session && board ? sessionTitle(session, board) : shortId(sessionId);
   };
+  const overrule = async (row: DecisionRow, answer: string) => {
+    setOverruling((s) => s && { ...s, busy: true, error: null });
+    const result = await sendProjectCommand(
+      'lead.question.overrule',
+      {
+        project_id: projectId,
+        lead_session_id: row.answer!.leadSessionId,
+        question_id: row.answer!.questionId,
+        answer,
+      },
+      null,
+    );
+    setOverruling((s) =>
+      s?.key !== row.key ? s : result.ok ? null : { ...s, busy: false, error: result.error },
+    );
+  };
   const label = t({ id: 'trace.approved.label', defaultMessage: 'Approved for you' });
+  const lead = t({ id: 'trace.approved.by.lead', defaultMessage: 'Lead' });
   const notifications = t({ id: 'trace.approved.notifications', defaultMessage: 'Notifications' });
   return (
     <>
@@ -127,11 +154,14 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                   <span role="columnheader">
                     {t({ id: 'trace.approved.column.when', defaultMessage: 'When' })}
                   </span>
+                  <span role="columnheader" />
                 </div>
                 {rows.map((row) => (
                   <div key={row.key} className="afy-r" role="row">
                     <span role="cell" className="afy-a">
-                      {row.subject === null ? (
+                      {row.answer !== null ? (
+                        <MessageSquare className="ic-sm" aria-hidden="true" />
+                      ) : row.subject === null ? (
                         <KeyRound className="ic-sm" aria-hidden="true" />
                       ) : (
                         <Workflow className="ic-sm" aria-hidden="true" />
@@ -139,6 +169,15 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                       <span className="afy-what">
                         <Clip text={row.action} className={row.code ? 'mono' : undefined} />
                         {row.subject !== null && <Clip text={row.subject} className="mono mu" />}
+                        {row.answer !== null &&
+                          (row.answer.overruled ? (
+                            <span className="afy-ans">
+                              <User className="ic-sm" aria-hidden="true" />
+                              <Clip text={row.answer.text} />
+                            </span>
+                          ) : (
+                            <Clip text={row.answer.text} className="mu" />
+                          ))}
                       </span>
                     </span>
                     <span role="cell" className="afy-by">
@@ -165,6 +204,93 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                     </span>
                     <span role="cell" className="afy-when">
                       {dayText(row.at, now, { time: true })}
+                    </span>
+                    <span role="cell" className="afy-x">
+                      {row.answer?.overruled ? (
+                        <span className="chip afy-ovd">
+                          {t({ id: 'trace.approved.overruled', defaultMessage: 'Overruled' })}
+                        </span>
+                      ) : (
+                        row.answer !== null && (
+                          <Popover.Root
+                            open={overruling?.key === row.key}
+                            onOpenChange={(open) =>
+                              setOverruling(
+                                open ? { key: row.key, text: '', busy: false, error: null } : null,
+                              )
+                            }
+                          >
+                            <Popover.Trigger className="btn ghost sm">
+                              {t({ id: 'trace.approved.overrule', defaultMessage: 'Overrule' })}
+                            </Popover.Trigger>
+                            <Popover.Portal>
+                              <Popover.Positioner
+                                side="bottom"
+                                align="end"
+                                sideOffset={4}
+                                style={{ zIndex: 40 }}
+                              >
+                                <Popover.Popup
+                                  className="pop afy-ov"
+                                  aria-label={t({
+                                    id: 'trace.approved.overrule.label',
+                                    defaultMessage: 'Overrule answer',
+                                  })}
+                                >
+                                  <span className="afy-ov-q">{row.action}</span>
+                                  <span className="afy-ov-l">
+                                    <Crown className="ic-sm" aria-hidden="true" />
+                                    <span className="mu">{lead}</span>
+                                    <span>{row.answer.text}</span>
+                                  </span>
+                                  <label className="afy-ov-f">
+                                    <span className="cap">
+                                      {t({
+                                        id: 'trace.approved.overrule.yours',
+                                        defaultMessage: 'Your answer',
+                                      })}
+                                    </span>
+                                    <textarea
+                                      rows={3}
+                                      value={overruling?.text ?? ''}
+                                      readOnly={overruling?.busy}
+                                      onChange={(e) => {
+                                        const text = e.target.value;
+                                        setOverruling((s) => s && { ...s, text });
+                                      }}
+                                    />
+                                  </label>
+                                  {overruling?.error && (
+                                    <div className="afy-ov-err" role="alert">
+                                      {overruling.error}
+                                    </div>
+                                  )}
+                                  <span className="afy-ov-b">
+                                    <Popover.Close className="btn sm">
+                                      {t({
+                                        id: 'trace.approved.overrule.cancel',
+                                        defaultMessage: 'Cancel',
+                                      })}
+                                    </Popover.Close>
+                                    <button
+                                      type="button"
+                                      className="btn pri sm"
+                                      aria-busy={overruling?.busy || undefined}
+                                      disabled={!overruling?.text.trim() || overruling.busy}
+                                      onClick={() => void overrule(row, overruling!.text.trim())}
+                                    >
+                                      {t({
+                                        id: 'trace.approved.overrule.send',
+                                        defaultMessage: 'Overrule',
+                                      })}
+                                    </button>
+                                  </span>
+                                </Popover.Popup>
+                              </Popover.Positioner>
+                            </Popover.Portal>
+                          </Popover.Root>
+                        )
+                      )}
                     </span>
                   </div>
                 ))}

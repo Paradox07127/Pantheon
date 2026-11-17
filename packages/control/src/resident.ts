@@ -61,7 +61,7 @@ function residentChoice(ctx: ControlContext, project: Project, profile: AgentPro
       : { runtime: name };
 }
 
-const openOf = (ctx: ControlContext, profile: AgentProfile) =>
+export const openOf = (ctx: ControlContext, profile: AgentProfile) =>
   ctx.store
     .list<Session>('sessions')
     .find(

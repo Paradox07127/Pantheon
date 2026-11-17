@@ -20,5 +20,11 @@
   "trace.approved.power.acceptMilestone": "验收了里程碑",
   "trace.approved.power.mergeOutOfScope": "合并了范围外的改动",
   "trace.approved.power.createAgent": "新增了 agent",
+  "trace.approved.overrule": "推翻",
+  "trace.approved.overruled": "已推翻",
+  "trace.approved.overrule.label": "推翻回答",
+  "trace.approved.overrule.yours": "你的回答",
+  "trace.approved.overrule.cancel": "取消",
+  "trace.approved.overrule.send": "推翻",
   "components.needsPopover.approved": "{count, plural, other {替你批准了 # 项}}"
 }

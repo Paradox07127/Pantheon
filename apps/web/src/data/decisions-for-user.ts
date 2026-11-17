@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { DecisionForUser, DecisionsForUser } from '@pantheon/protocol';
 import { t } from '../i18n';
+import { listText } from '../lib/list-text';
 import { useBoard } from './board';
 import { useMidnights } from './needs-you';
 import { useProjectQuery } from './project-read';
@@ -13,7 +14,12 @@ export type DecisionRange = 'today' | 'week' | 'month';
 const RANGE_DAYS: Record<DecisionRange, number> = { today: 1, week: 7, month: 30 };
 
 /** The events that add a row. */
-const DECISION_KINDS: ReadonlySet<string> = new Set(['approval.approved', 'charter.power_used']);
+const DECISION_KINDS: ReadonlySet<string> = new Set([
+  'approval.approved',
+  'charter.power_used',
+  'lead.question_answered',
+  'lead.question_overruled',
+]);
 
 /** Local midnight of the range's first day, in Unix milliseconds. */
 export function rangeSince(range: DecisionRange, now: number): number {
@@ -93,7 +99,7 @@ const powerText = (power: Extract<DecisionForUser, { kind: 'power_used' }>['powe
 export interface DecisionRow {
   key: string;
   at: number;
-  /** What was decided: a prompt's input or tool, or the power used. */
+  /** What was decided: a prompt's input or tool, the power used, or the question answered. */
   action: string;
   /** The action is tool input or a tool name. */
   code: boolean;
@@ -101,9 +107,12 @@ export interface DecisionRow {
   subject: string | null;
   /** The lead, or the stored rule. */
   by: string;
+  /** The stored rule, or what the lead's answer cited. */
   rule: string | null;
   /** The session to open; null once it was deleted. */
   sessionId: string | null;
+  /** A question's answer, the user's once they overruled the lead's, and what an overrule names. */
+  answer: { text: string; overruled: boolean; leadSessionId: string; questionId: string } | null;
 }
 
 export function decisionRow(item: DecisionForUser): DecisionRow {
@@ -118,6 +127,24 @@ export function decisionRow(item: DecisionForUser): DecisionRow {
       by: lead,
       rule: null,
       sessionId: item.session_id,
+      answer: null,
+    };
+  if (item.kind === 'question_answered')
+    return {
+      key: `${item.lead_session_id}:${item.question_id}`,
+      at: item.at,
+      action: item.question,
+      code: false,
+      subject: null,
+      by: lead,
+      rule: listText(...item.citations.map((citation) => citation.ref)),
+      sessionId: item.session_id ?? null,
+      answer: {
+        text: item.overruled?.answer ?? item.answer,
+        overruled: item.overruled !== undefined,
+        leadSessionId: item.lead_session_id,
+        questionId: item.question_id,
+      },
     };
   const input = item.input_summary ?? item.tool;
   return {
@@ -132,5 +159,6 @@ export function decisionRow(item: DecisionForUser): DecisionRow {
         : lead,
     rule: item.kind === 'prompt_by_rule' ? item.rule : null,
     sessionId: item.session_id ?? null,
+    answer: null,
   };
 }

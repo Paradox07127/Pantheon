@@ -14,10 +14,13 @@ import {
 import { inputSchemas } from '@pantheon/protocol';
 import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
 import { runtime } from './admission.js';
+import { residentPlan } from './agent-always-on.js';
+import { ensureAgents } from './agents.js';
 import { answerApproval, settleApproval } from './approvals.js';
 import { charterMode, chartered } from './charter.js';
 import { current, visible } from './memory-access.js';
 import { buildHandoff } from './handoff.js';
+import { openOf } from './resident.js';
 import {
   nativeTurnActive,
   taskReportGeneration,
@@ -150,6 +153,43 @@ export function noteUserMessage(
     },
     cause,
   );
+}
+
+/**
+ * Keeps one note per plan of a lead that is not a resident in the inbox of the project's open
+ * Assistant; it records nothing while the Assistant has no open session, and does not wake it.
+ */
+export function noteOtherPlan(ctx: ControlContext, plan: BoardPlan, cause: string): void {
+  const lead = ctx.store.must<Session>('sessions', plan.id);
+  if (lead.resident) return;
+  const assistant = openOf(
+    ctx,
+    ensureAgents(ctx, plan.project_id).find((agent) => agent.template === 'assistant')!,
+  );
+  if (!assistant) return;
+  const inbox = residentPlan(ctx, assistant),
+    index = inbox.inbox.findIndex(
+      (note) => note.kind === 'other_plan' && note.session_id === plan.id,
+    ),
+    note: LeadNote = {
+      at: ctx.store.now(),
+      session_id: plan.id,
+      task_id: '',
+      kind: 'other_plan',
+      text: `${lead.title ? `${lead.title} (${lead.id})` : `Session ${lead.id}`} planned: ${plan.headline}; lanes: ${plan.lanes.map((lane) => lane.title).join(', ')}`,
+    };
+  if (index < 0) appendNote(ctx, inbox, note, cause);
+  else
+    ctx.store.update<BoardPlan>(
+      'board_plans',
+      {
+        ...inbox,
+        inbox: inbox.inbox.map((entry, position) =>
+          position === index ? recordNote(ctx, inbox, note, cause) : entry,
+        ),
+      },
+      inbox.revision,
+    );
 }
 
 const generationText = (note: LeadNote) =>
@@ -476,6 +516,12 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       startTag(own),
       `What happened: ${text}`,
       "How to handle: the user already decided on the card, so do not tell them the outcome again. Check whether the agent was created or changed. You keep the requests and promises you hold; if the user should go on in the new agent's conversation, tell them its name and the open request in one line. If they declined, do not propose the same agent again unless the user brings it up; if they edited it, the agent works from their version.",
+    ];
+  else if (kind === 'other_plan')
+    lines = [
+      startTag([...own, ['session', note.session_id]]),
+      `What happened: ${text}`,
+      'How to handle: do not plan the same work; when a request of the user matches it, name that plan to them instead.',
     ];
   else
     lines = [

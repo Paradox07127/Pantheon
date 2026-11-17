@@ -363,6 +363,8 @@ export interface LeadNote {
     | 'agent_report'
     /** Permission prompts of one task session approved for the lead since it last read its inbox; does not wake the lead. */
     | 'prompts_approved'
+    /** A lead that is not a resident wrote or changed its plan; one per plan in the Assistant's inbox, and it does not wake the Assistant. */
+    | 'other_plan'
     /** A task session asked a question its lead may answer; wakes the lead. */
     | 'worker_question';
   text: string;

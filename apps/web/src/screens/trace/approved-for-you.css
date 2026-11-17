@@ -11,7 +11,7 @@
   display: grid;
   grid-template-columns:
     minmax(0, 2.4fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1.2fr)
-    96px;
+    96px 96px;
   align-items: center;
   gap: 12px;
   min-height: 44px;
@@ -49,6 +49,17 @@
   min-width: 0;
   color: var(--tx2);
 }
+.afy-ans {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--fs-xs);
+}
+.afy-ans > svg {
+  flex: none;
+  color: var(--mu);
+}
 .afy-ref {
   max-width: 100%;
   padding: 0;
@@ -70,6 +81,68 @@
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.afy-x {
+  justify-self: end;
+}
+.afy-ovd::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.afy-ov {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+.afy-ov-q {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+.afy-ov-l {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.afy-ov-l > svg {
+  flex: none;
+  color: var(--mu);
+}
+.afy-ov-f {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.afy-ov-f textarea {
+  min-height: 64px;
+  padding: 8px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  resize: none;
+}
+.afy-ov-f textarea:is(:hover, :focus) {
+  border-color: var(--bd3);
+}
+.afy-ov-err {
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+.afy-ov-b {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .afy-pnl {
   flex: none;

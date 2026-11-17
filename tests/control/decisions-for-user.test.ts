@@ -188,6 +188,54 @@ async function proposed(planChanges: 'auto' | 'confirm') {
   return { f, match: { power: 'plan_change', subject: plan.id, session_id: 'lead' } };
 }
 
+const formatQuestion = 'Which format should the export use?';
+const citations = [{ kind: 'user_words', ref: 'Plan the export feature' }];
+
+/** A worker's question relayed to its lead's board; answer lets the lead answer it. */
+async function questionFixture() {
+  const { f, lead, worker, prompt } = await workerFixture();
+  const approval = await prompt('question', {
+    tool: 'AskUserQuestion',
+    detail: {
+      questions: [
+        {
+          question: formatQuestion,
+          header: 'Format',
+          options: [
+            { label: 'CSV', description: 'Plain rows' },
+            { label: 'JSON', description: 'Nested records' },
+          ],
+          multiSelect: false,
+        },
+      ],
+    },
+  });
+  const card = f.store
+    .must<BoardPlan>('board_plans', lead.id)
+    .questions!.find((entry) => entry.source?.approval_id === approval.id)!;
+  const answer = () =>
+    f.call(
+      'lead.worker_question.answer',
+      {
+        project_id: f.project.id,
+        question_id: card.id,
+        answers: { [formatQuestion]: 'CSV' },
+        citations,
+      },
+      null,
+      leadOf(f, lead.id),
+    );
+  const match = {
+    lead_session_id: lead.id,
+    question_id: card.id,
+    session_id: worker.id,
+    question: formatQuestion,
+    answer: 'CSV',
+    citations,
+  };
+  return { f, lead, card, answer, match };
+}
+
 type Act = () => Promise<{ f: Caller; match: Record<string, unknown> }>;
 
 it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
@@ -254,6 +302,44 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     'power_used',
   ],
   ['a plan proposal while plan changes need confirming', () => proposed('confirm'), undefined],
+  [
+    'a task session question the lead answered',
+    async () => {
+      const { f, answer, match } = await questionFixture();
+      answer();
+      return { f, match };
+    },
+    'question_answered',
+  ],
+  [
+    'a lead answer the user overruled',
+    async () => {
+      const { f, lead, card, answer, match } = await questionFixture();
+      answer();
+      f.call('lead.question.overrule', {
+        project_id: f.project.id,
+        lead_session_id: lead.id,
+        question_id: card.id,
+        answer: 'JSON',
+      });
+      return { f, match: { ...match, overruled: { answer: 'JSON', at: expect.any(Number) } } };
+    },
+    'question_answered',
+  ],
+  [
+    'a task session question the user answered',
+    async () => {
+      const { f, lead, card } = await questionFixture();
+      f.call('lead.question.answer', {
+        project_id: f.project.id,
+        lead_session_id: lead.id,
+        question_id: card.id,
+        answer: 'CSV',
+      });
+      return { f, match: {} };
+    },
+    undefined,
+  ],
 ])('lists what %s decided', async (_label, act, kind) => {
   const { f, match } = await act();
   const { items } = f.control.decisionsForUser(user, f.project.id);

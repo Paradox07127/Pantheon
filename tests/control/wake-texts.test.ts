@@ -234,6 +234,14 @@ it('renders each kind of note from its template', async () => {
       text: 'Signal issues that changed since your last digest; call signal_read with an id for details:\n- open: gate_failures, Lint, 3 signals, issue s1',
       signal: 'digest',
     },
+    {
+      id: 'n-other-plan',
+      at,
+      session_id: 'direct-lead',
+      task_id: '',
+      kind: 'other_plan',
+      text: 'Fix the parser (direct-lead) planned: Parser fixed; lanes: Core, Docs',
+    },
   ];
   const { text } = inboxDigest(ctx, plan, notes, 20_000);
   for (const expected of [
@@ -246,6 +254,7 @@ it('renders each kind of note from its template', async () => {
     'Since your last turn: first event on this subject.',
     '<note kind="signal" id="n-signal">\nSignal issues that changed since your last digest',
     'How to handle: give each item one outcome: joined to a task, fix task started, told the user, or recorded.',
+    '<note kind="other_plan" id="n-other-plan" session="direct-lead">\nWhat happened: Fix the parser (direct-lead) planned: Parser fixed; lanes: Core, Docs\nHow to handle: do not plan the same work; when a request of the user matches it, name that plan to them instead.\n</note>',
   ])
     expect(text).toContain(expected);
 });

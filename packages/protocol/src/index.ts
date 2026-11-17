@@ -3183,6 +3183,21 @@ export type DecisionForUser =
       >;
       subject: string;
       session_id: string;
+    }
+  /**
+   * A task session's question the lead answered; answer is the lead's, session_id the asking session's
+   * while it exists, overruled the answer the user replaced it with.
+   */
+  | {
+      kind: 'question_answered';
+      at: number;
+      lead_session_id: string;
+      question_id: string;
+      session_id?: string;
+      question: string;
+      answer: string;
+      citations: NonNullable<NonNullable<BoardPlan['questions']>[number]['citations']>;
+      overruled?: { answer: string; at: number };
     };
 /** GET /v1/project.decisions. */
 export interface DecisionsForUser {
