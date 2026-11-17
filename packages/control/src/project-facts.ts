@@ -22,6 +22,7 @@ import { projectRoutingTable } from './routing-table.js';
 import { runtimeReviewHistory } from './runtime-review.js';
 import { RUNTIME_LOOKBACK_MS, runtimeDiagnostics } from './runtime-findings.js';
 import { improvementSignals } from './improvement-signals.js';
+import { charterModes } from './charter.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { workflowDefinition } from './workflow-engine.js';
 import { listDevices } from './devices.js';
@@ -268,6 +269,8 @@ function leadGuidance(ctx: ControlContext, projectId: string, leadSessionId: str
       handback_limit: policy.handback_limit,
       ...(policy.task_size_hint === undefined ? {} : { task_size_hint: policy.task_size_hint }),
       pinned: policy.pinned,
+      plan_changes: policy.plan_changes,
+      charter: charterModes(ctx, projectId),
       steps: Object.fromEntries(
         Object.entries(workflowDefinition(ctx, projectId).definition.slots).map(([slot, steps]) => [
           slot,

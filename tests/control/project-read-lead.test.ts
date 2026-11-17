@@ -134,6 +134,16 @@ it('gives a lead the current workflow policy and the new value after the user ch
     max_parallel: 3,
     handback_limit: 3,
     pinned: [],
+    plan_changes: 'auto',
+    charter: {
+      approve_worker_prompts: 'on',
+      answer_worker_questions: 'on',
+      plan_change: 'on',
+      create_agent: 'ask',
+      accept_milestone: 'on',
+      merge_out_of_scope: 'on',
+      start_external: 'off',
+    },
     steps: { before_dispatch: [], before_merge: [], after_merge: [] },
   });
   f.call<WorkflowPolicy>('workflow.policy.set', { project_id: f.project.id, max_parallel: 2 });

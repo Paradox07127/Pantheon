@@ -41,7 +41,7 @@ import {
   taskGeneration,
   taskState,
 } from './board-plan.js';
-import { latestExecuted, leadTurnFailed, needsYou } from './needs-you.js';
+import { itemTask, latestExecuted, leadTurnFailed, needsYou } from './needs-you.js';
 import { projectFacts } from './project-facts.js';
 import { chainDepth, PROGRESS_KINDS, quiet, verifiedProgressReader } from './progress.js';
 import { runPhase } from './run-state.js';
@@ -2437,46 +2437,14 @@ export function boardView(
     principal.role === 'user' || principal.role === 'planner'
       ? (needItems ?? needsYou(ctx, principal, projectId).items)
       : []
-  )
-    .map((item) => {
-      // The item's own task, else its session's task binding, else its lead's direct task.
-      const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id,
-        session = sessionId ? ctx.store.get<Session>('sessions', sessionId) : undefined,
-        named = item.task_id
-          ? plans.flatMap((plan) =>
-              plan.tasks
-                .filter((task) => boardTaskId(plan.id, task.id) === item.task_id)
-                .map((task) => ({ lead_session_id: plan.id, id: task.id })),
-            )[0]
-          : undefined,
-        direct =
-          session?.direct_task &&
-          session.direct_task.generation ===
-            taskGeneration(planOf.get(session.id), session.direct_task.id)
-            ? { lead_session_id: session.id, id: session.direct_task.id }
-            : undefined,
-        binding = item.task_id ? named : (session?.task ?? direct),
-        plan = binding ? planOf.get(binding.lead_session_id) : undefined;
-      if (
-        !binding ||
-        !plan ||
-        !taskRows.has(boardTaskId(plan.id, binding.id)) ||
-        // A worker of a removed task is not the task that reuses its id.
-        (binding === session?.task &&
-          !currentBinding(plan, session.task) &&
-          !(!session.outcome && awaitingChange(plan, session)))
-      )
-        return { ...item, unblocks: 0 };
-      return {
-        ...item,
-        task_id: boardTaskId(plan.id, binding.id),
-        unblocks: plan.tasks.filter(
-          (task) =>
-            task.depends_on.includes(binding.id) && !taskDone(boardTaskId(plan.id, task.id)),
-        ).length,
-      };
-    })
-    .sort((a, b) => b.unblocks - a.unblocks || a.created_at - b.created_at);
+  ).map((item) => {
+    const bound = itemTask(ctx, item, planOf);
+    return {
+      ...item,
+      ...(bound ? { task_id: boardTaskId(bound.plan.id, bound.taskId) } : {}),
+      unblocks: item.blocks,
+    };
+  });
   const findings: BoardModel['findings'] = ctx.store
     .list<Review>('reviews')
     .filter((review) => review.project_id === projectId)

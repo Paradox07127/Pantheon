@@ -29,6 +29,8 @@ const approval: NeedItem = {
   status: 'pending',
   created_at: NOW - 60_000,
   reason: 'permission_requested',
+  decision: 'permission',
+  blocks: 0,
   actions: [{ command: 'approval.respond', allowed: true }],
   binding: { action: 'Bash', input_summary: 'pnpm test', rule: 'Bash(pnpm test)' },
 };
@@ -58,6 +60,8 @@ const milestoneItem: NeedItem = {
   status: 'ready_for_acceptance',
   created_at: NOW - 30_000,
   reason: 'milestone_ready_for_acceptance',
+  decision: 'milestone_accept',
+  blocks: 0,
   actions: [{ command: 'milestone.accept', allowed: true }],
 };
 
@@ -68,6 +72,8 @@ const proposalItem: NeedItem = {
   status: 'candidate',
   created_at: NOW - 20_000,
   reason: 'improvement_awaiting_decision',
+  decision: 'improvement',
+  blocks: 0,
   actions: [{ command: 'improvement.decide', allowed: true }],
 };
 
@@ -78,6 +84,8 @@ const blockedItem: NeedItem = {
   status: 'open',
   created_at: NOW - 90_000,
   reason: 'merge_blocked',
+  decision: 'other',
+  blocks: 0,
   actions: [{ command: 'session.merge', allowed: true }],
   next_step: 'Resolve the conflict, then merge again',
 };
@@ -337,6 +345,8 @@ describe('request card', () => {
       status: 'pending',
       created_at: NOW - 90_000,
       reason: 'lead_question',
+      decision: 'question',
+      blocks: 0,
       actions: [{ command: 'lead.question.answer', allowed: true }],
       question: {
         id: 'question-1',

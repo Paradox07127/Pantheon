@@ -41,6 +41,14 @@ const WORSE_SHARE = 0.1;
 const FINDINGS_SHARE = 0.5;
 /** How many more harmful than beneficial trial tasks a trial may have and stay, in tasks. */
 const HARM_MARGIN = 3;
+type Verdict = NonNullable<NonNullable<Improvement['trial_evaluation']>['verdict']>;
+/** The verdict of each reason the evaluator ends a trial for. */
+const VERDICT: Record<string, Verdict> = {
+  trial_passed: 'better',
+  not_better: 'worse',
+  insufficient_sample: 'not_enough_evidence',
+  no_baseline: 'not_enough_evidence',
+};
 
 type Status = Improvement['status'];
 type PolicyChange = Extract<Improvement['change'], { type: 'policy_change' }>;
@@ -64,7 +72,11 @@ function setStatus(
       ...(to === 'trial' && improvement.status !== 'trial' && { trial_started_at: now }),
       ...(['active', 'reverted'].includes(to) &&
         improvement.status === 'trial' && {
-          trial_evaluation: trialEvidence(ctx, improvement),
+          trial_evaluation: {
+            ...trialEvidence(ctx, improvement),
+            ...(fields.status_reason &&
+              VERDICT[fields.status_reason] && { verdict: VERDICT[fields.status_reason] }),
+          },
         }),
       ...(['active', 'reverted', 'rejected'].includes(to) && { decided_at: now }),
     },
@@ -332,11 +344,13 @@ function trialEvidence(ctx: ControlContext, improvement: Improvement) {
       const comparison = JSON.parse(String(event.comparison)) as NonNullable<
         Improvement['trial_evaluation']
       >['comparison'];
+      const verdict = improvement.status_reason && VERDICT[improvement.status_reason];
       return {
         comparison,
         no_baseline:
           comparison.baseline.tasks! < TRIAL_TASKS ||
           Object.keys(comparison.trial).some((name) => comparison.baseline[name] === undefined),
+        ...(verdict && { verdict }),
       };
     }
   }
@@ -418,9 +432,7 @@ export function evaluateTrials(ctx: ControlContext): void {
   // A trial's outcome changes only with the retrospectives or when its wait runs out.
   if (
     passed.trials.get(ctx) === mark &&
-    !trials.some(
-      (row) => row.status_reason !== 'no_baseline' && now - row.trial_started_at! >= TRIAL_WAIT_MS,
-    )
+    !trials.some((row) => now - row.trial_started_at! >= TRIAL_WAIT_MS)
   )
     return;
   passed.trials.set(ctx, mark);
@@ -437,7 +449,18 @@ export function evaluateTrials(ctx: ControlContext): void {
       continue;
     }
     if (noBaseline) {
-      if (improvement.status_reason !== 'no_baseline')
+      if (now - started >= TRIAL_WAIT_MS)
+        revert(
+          ctx,
+          improvement,
+          '',
+          {
+            status_reason: 'no_baseline',
+            status_detail: `Weak evidence: no ${TRIAL_TASKS} earlier tasks measured to compare with`,
+          },
+          { comparison },
+        );
+      else if (improvement.status_reason !== 'no_baseline')
         setStatus(ctx, improvement, 'trial', '', { status_reason: 'no_baseline' }, { comparison });
       continue;
     }
@@ -595,7 +618,8 @@ export function improvementList(
     .map((row) => {
       const { trial_evaluation: _, ...item } = row;
       if (row.trial_started_at === undefined) return item;
-      const { comparison, no_baseline: noBaseline } = trialEvidence(ctx, row);
+      const evidence = trialEvidence(ctx, row);
+      const { comparison, no_baseline: noBaseline } = evidence;
       const units: Record<string, string> = {
         first_pass: 'tasks',
         input_tokens: 'tokens',
@@ -612,6 +636,7 @@ export function improvementList(
           tasks_required: TRIAL_TASKS,
           baseline_tasks: comparison.baseline.tasks!,
           ...(noBaseline && { status_reason: 'no_baseline' as const }),
+          ...('verdict' in evidence && evidence.verdict && { verdict: evidence.verdict }),
           metrics: Object.keys(comparison.trial)
             .filter((name) => name !== 'tasks' && name !== 'delivered')
             .map((name) => ({

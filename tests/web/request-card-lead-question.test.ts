@@ -23,6 +23,8 @@ const asked: NeedItem = {
   status: 'pending',
   created_at: NOW - 60_000,
   reason: 'lead_question',
+  decision: 'question',
+  blocks: 0,
   question: {
     id: 'question-1',
     at: NOW - 60_000,
@@ -44,6 +46,8 @@ const blocked: NeedItem = {
   status: 'waiting',
   created_at: NOW - 60_000,
   reason: 'task_blocked',
+  decision: 'other',
+  blocks: 0,
   blocked: {
     at: NOW - 60_000,
     session_id: 'worker-1',

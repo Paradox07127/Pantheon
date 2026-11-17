@@ -28,6 +28,8 @@ interface ListRow {
   open?: () => void;
   /** Unix milliseconds the wait or run began; the oldest comes first. */
   since: number;
+  /** The tasks the row blocks; the most come first, before the oldest. */
+  blocks?: number;
   icon: ReactNode;
   title: string;
   detail?: ReactNode;
@@ -56,7 +58,7 @@ function openRow(row: ListRow) {
   else useShell.getState().openProject(row.projectId);
 }
 
-/** The rows by project; projects and their rows in the order their oldest row began. */
+/** The rows by project; projects and their rows in the order of their first row: most blocks, then oldest. */
 function listPopover(props: {
   trigger: ReactElement;
   open: boolean;
@@ -66,7 +68,9 @@ function listPopover(props: {
   projects: readonly { id: string; name: string }[];
 }) {
   const groups = new Map<string, ListRow[]>();
-  for (const row of [...props.rows].sort((a, b) => a.since - b.since))
+  for (const row of [...props.rows].sort(
+    (a, b) => (b.blocks ?? 0) - (a.blocks ?? 0) || a.since - b.since,
+  ))
     groups.set(row.projectId, [...(groups.get(row.projectId) ?? []), row]);
   return (
     <Popover.Root open={props.open} onOpenChange={props.setOpen}>
@@ -148,7 +152,7 @@ const answerable = (item: NeedsYouItem) =>
 const ANSWERING = '';
 const NO_PROJECTS: readonly never[] = [];
 
-/** What needs you across the projects, by project, the longest wait first. */
+/** What needs you across the projects, by project, the most tasks blocked first, then the longest wait. */
 export function NeedsPopover({
   items,
   trigger,
@@ -201,6 +205,7 @@ export function NeedsPopover({
             },
           }),
         since: item.created_at,
+        blocks: item.blocks,
         icon: needsGlyph(item),
         title: session && board ? sessionTitle(session, board) : reason,
         detail: failed ? (

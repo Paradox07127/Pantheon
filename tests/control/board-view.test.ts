@@ -565,6 +565,7 @@ it('computes the board from merged, ready and discarded workbench sessions', asy
     tokens_by_runtime: { fixture: 370 },
     previous: { tokens: 0, cost_usd: null, merged: 0, median_ms: null },
     cost_usd: 0.25,
+    gate_first_pass: { tasks: 1, passed: 0 },
   });
   const now = Date.now();
   expect(week.usage).toEqual([

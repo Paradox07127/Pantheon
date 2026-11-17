@@ -261,6 +261,8 @@ const need = (extra: Partial<BoardNeed>): BoardNeed => ({
   status: 'pending',
   created_at: NOW - 60_000,
   reason: 'permission_requested',
+  decision: 'permission',
+  blocks: 0,
   actions: [{ command: 'approval.respond', allowed: true }],
   binding: { action: 'Bash', input_summary: 'pnpm test', rule: 'Bash(pnpm test)' },
   unblocks: 0,

@@ -466,6 +466,8 @@ describe('flow node actions', () => {
     status: 'pending',
     created_at: NOW,
     reason: 'lead_question',
+    decision: 'question',
+    blocks: 0,
     actions: [{ command: 'lead.question.answer', allowed: true }],
     question: {
       id: 'question-1',

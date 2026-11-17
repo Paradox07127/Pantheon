@@ -27,6 +27,7 @@ import { appSettingsHandlers } from './app-settings.js';
 import { deviceHandlers } from './devices.js';
 import { externalEventHandlers } from './external-events.js';
 import { residentHandlers } from './resident.js';
+import { frontDoorHandlers } from './front-door.js';
 import { agentAlwaysOnHandlers } from './agent-always-on.js';
 import { agentAppToolPreparers } from './agent-app-tools.js';
 import { agentPromptPreparers } from './agent-prompts.js';
@@ -58,6 +59,7 @@ export const handlers: Handlers = {
   ...deviceHandlers,
   ...externalEventHandlers,
   ...residentHandlers,
+  ...frontDoorHandlers,
   ...agentAlwaysOnHandlers,
   ...agentProposalHandlers,
   ...signalHandlers,

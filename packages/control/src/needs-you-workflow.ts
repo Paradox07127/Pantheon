@@ -3,7 +3,6 @@ import type {
   AgentProposal,
   BoardPlan,
   Improvement,
-  NeedsYouItem,
   Project,
   StepRun,
   StoredWorkflowDefinition,
@@ -11,16 +10,16 @@ import type {
 import { projectAccess, type ControlContext } from './context.js';
 import { taskGeneration } from './board-plan.js';
 import { projectBudgetUse, workflowPolicy } from './workflow-policy.js';
-import { NEXT_STEP, action, type NeedsYouScope } from './needs-you.js';
+import { NEXT_STEP, action, type NeedsYouDraft, type NeedsYouScope } from './needs-you.js';
 
 /** Workflow approval steps waiting for a decision. */
 export function stepRunItems(
   ctx: ControlContext,
   scope: NeedsYouScope,
   planOf: Map<string, BoardPlan>,
-): NeedsYouItem[] {
+): NeedsYouDraft[] {
   const { principal, projectId, removed } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   for (const run of ctx.store.list<StepRun>('workflow_step_runs')) {
     if (
       run.state !== 'waiting' ||
@@ -43,6 +42,8 @@ export function stepRunItems(
       status: 'waiting',
       created_at: run.created_at,
       reason: 'workflow_approval',
+      decision: 'other',
+      primary: 'workflow.step.decide',
       actions: (['approve', 'reject'] as const).map((decision) => ({
         ...action('workflow.step.decide', () =>
           projectAccess(ctx, principal, run.project_id, 'workflow.step.decide'),
@@ -56,9 +57,9 @@ export function stepRunItems(
 }
 
 /** Workflow definition trials that ran all their tasks. */
-export function definitionTrialItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouItem[] {
+export function definitionTrialItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
   const { principal, projectId, removed } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   for (const row of ctx.store.list<StoredWorkflowDefinition>('workflow_definitions')) {
     if (
       !row.trial ||
@@ -74,6 +75,8 @@ export function definitionTrialItems(ctx: ControlContext, scope: NeedsYouScope):
       status: 'waiting',
       created_at: row.trial.started_at,
       reason: 'workflow_definition_trial_completed',
+      decision: 'improvement',
+      primary: 'workflow.definition.trial.decide',
       actions: (['keep', 'revert'] as const).map((decision) => ({
         ...action('workflow.definition.trial.decide', () =>
           projectAccess(ctx, principal, row.project_id, 'workflow.definition.trial.decide'),
@@ -86,9 +89,9 @@ export function definitionTrialItems(ctx: ControlContext, scope: NeedsYouScope):
 }
 
 /** Improvement candidates. */
-export function improvementItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouItem[] {
+export function improvementItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
   const { principal, projectId, removed } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   // A candidate waits for the user: auto mode starts each trial as it proposes the improvement.
   for (const improvement of ctx.store.list<Improvement>('improvements')) {
     if (
@@ -105,6 +108,8 @@ export function improvementItems(ctx: ControlContext, scope: NeedsYouScope): Nee
       status: improvement.status,
       created_at: improvement.proposed_at,
       reason: 'improvement_awaiting_decision',
+      decision: 'improvement',
+      primary: 'improvement.decide',
       actions: [
         action('improvement.decide', () =>
           projectAccess(ctx, principal, improvement.project_id, 'improvement.decide'),
@@ -117,9 +122,9 @@ export function improvementItems(ctx: ControlContext, scope: NeedsYouScope): Nee
 }
 
 /** Pending agent proposals. */
-export function agentProposalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouItem[] {
+export function agentProposalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
   const { principal, listedProject } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   for (const proposal of ctx.store.list<AgentProposal>('agent_proposals')) {
     if (proposal.state !== 'pending' || !listedProject(proposal.project_id)) continue;
     const target = proposal.agent_id
@@ -133,6 +138,8 @@ export function agentProposalItems(ctx: ControlContext, scope: NeedsYouScope): N
       status: proposal.state,
       created_at: proposal.at,
       reason: 'agent_proposal_awaiting_decision',
+      decision: 'agent_proposal',
+      primary: 'agent.proposal.resolve',
       actions: [
         action('agent.proposal.resolve', () =>
           projectAccess(ctx, principal, proposal.project_id, 'agent.proposal.resolve'),
@@ -152,9 +159,9 @@ export function agentProposalItems(ctx: ControlContext, scope: NeedsYouScope): N
 }
 
 /** Projects over their budget. */
-export function projectBudgetItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouItem[] {
+export function projectBudgetItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
   const { principal, projectId, removed } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   for (const project of ctx.store.list<Project>('projects')) {
     if (removed.has(project.id) || (projectId && project.id !== projectId)) continue;
     const use = projectBudgetUse(ctx, project.id);
@@ -170,6 +177,8 @@ export function projectBudgetItems(ctx: ControlContext, scope: NeedsYouScope): N
       status: 'over_budget',
       created_at: use.reached_at,
       reason: 'project_over_budget',
+      decision: 'budget',
+      primary: 'workflow.policy.set',
       actions: [
         action('workflow.policy.set', () =>
           projectAccess(ctx, principal, project.id, 'workflow.policy.set'),

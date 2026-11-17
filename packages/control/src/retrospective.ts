@@ -292,6 +292,51 @@ const MERGE_EVENTS = [
   'agent.turn.completed',
 ];
 
+/** What the merge events tell of the work: its gate runs, scope refusals, merge and failed turns. */
+function mergeFacts(events: EventRow[]) {
+  let mergeStartedAt: number | undefined,
+    mergedAt: number | undefined,
+    gateRuns = 0,
+    gatePassedOn: number | undefined,
+    mergedKind: TaskKind | undefined,
+    scopeViolations = 0,
+    lastTurnEndedAt: number | undefined;
+  const failureCodes = new Map<string, string>(),
+    gateFailures: GateFailureClass[] = [],
+    gateChecks: string[] = [];
+  for (const event of events) {
+    if (event.kind === 'session.merge_started') mergeStartedAt ??= event.created_at;
+    else if (event.kind === 'session.merge_blocked') {
+      if (event.payload.reason === 'out_of_scope') scopeViolations++;
+    } else if (event.kind === 'session.merged') {
+      mergedAt = event.created_at;
+      mergedKind = event.payload.measured_kind as TaskKind | undefined;
+    } else if (event.kind === 'session.gate_checked') {
+      gateRuns++;
+      const failure = gateFailure(event.payload);
+      if (failure) {
+        gateFailures.push(failure.failure_class ?? 'code');
+        gateChecks.push(failure.name);
+      } else gatePassedOn ??= gateRuns;
+    } else {
+      lastTurnEndedAt = event.created_at;
+      if (typeof event.payload.error_code === 'string')
+        failureCodes.set(event.payload.turn_id as string, event.payload.error_code);
+    }
+  }
+  return {
+    mergeStartedAt,
+    mergedAt,
+    gatePassedOn,
+    mergedKind,
+    scopeViolations,
+    lastTurnEndedAt,
+    failureCodes,
+    gateFailures,
+    gateChecks,
+  };
+}
+
 /** The lead's events from its last claim of the direct task's generation to its merge of it; undefined without both. */
 function directEvents(
   ctx: ControlContext,
@@ -420,37 +465,20 @@ function record(
       ? directEvents(ctx, plan.id, taskId, generation)
       : undefined;
   const lead = direct && ctx.store.get<Session>('sessions', plan.id);
-  let mergeStartedAt: number | undefined,
-    mergedAt: number | undefined,
-    gateRuns = 0,
-    gatePassedOn: number | undefined,
-    mergedKind: TaskKind | undefined,
-    scopeViolations = 0,
-    lastTurnEndedAt: number | undefined;
-  const failureCodes = new Map<string, string>(),
-    gateFailures: GateFailureClass[] = [],
-    gateChecks: string[] = [];
-  for (const event of direct?.filter((each) => MERGE_EVENTS.includes(each.kind)) ??
-    eventsOf(ctx, [...ids], MERGE_EVENTS)) {
-    if (event.kind === 'session.merge_started') mergeStartedAt ??= event.created_at;
-    else if (event.kind === 'session.merge_blocked') {
-      if (event.payload.reason === 'out_of_scope') scopeViolations++;
-    } else if (event.kind === 'session.merged') {
-      mergedAt = event.created_at;
-      mergedKind = event.payload.measured_kind as TaskKind | undefined;
-    } else if (event.kind === 'session.gate_checked') {
-      gateRuns++;
-      const failure = gateFailure(event.payload);
-      if (failure) {
-        gateFailures.push(failure.failure_class ?? 'code');
-        gateChecks.push(failure.name);
-      } else gatePassedOn ??= gateRuns;
-    } else {
-      lastTurnEndedAt = event.created_at;
-      if (typeof event.payload.error_code === 'string')
-        failureCodes.set(event.payload.turn_id as string, event.payload.error_code);
-    }
-  }
+  const {
+    mergeStartedAt,
+    mergedAt,
+    gatePassedOn,
+    mergedKind,
+    scopeViolations,
+    lastTurnEndedAt,
+    failureCodes,
+    gateFailures,
+    gateChecks,
+  } = mergeFacts(
+    direct?.filter((each) => MERGE_EVENTS.includes(each.kind)) ??
+      eventsOf(ctx, [...ids], MERGE_EVENTS),
+  );
   const allTurns = ctx.store.list<SessionTurn>('session_turns');
   const turns = allTurns.filter((turn) => ids.has(turn.session_id));
   // A wake yet to end has no decision or usage to count.
@@ -633,6 +661,73 @@ function record(
   });
 }
 
+/** The task id of a row that records a session the user opened outside any plan task. */
+const SESSION_TASK = 'session';
+
+/** Records a session the user opened outside any plan task, once it landed its work. */
+function recordSession(ctx: ControlContext, session: Session): void {
+  const events = eventsOf(ctx, [session.id], ['session.opened', ...MERGE_EVENTS]);
+  const openedAt = events.find((event) => event.kind === 'session.opened')?.created_at;
+  const {
+    mergeStartedAt,
+    mergedAt,
+    gatePassedOn,
+    mergedKind,
+    failureCodes,
+    gateFailures,
+    gateChecks,
+  } = mergeFacts(events.filter((event) => MERGE_EVENTS.includes(event.kind)));
+  const turns = ctx.store
+    .list<SessionTurn>('session_turns')
+    .filter((turn) => turn.session_id === session.id);
+  const span = (from: number | undefined, to: number | undefined) =>
+    from !== undefined && to !== undefined && to >= from ? to - from : undefined;
+  // A folder session lands without a merge start, so its work runs until it landed.
+  const stages: NonNullable<Retrospective['stage_ms']> = {
+    execution: span(openedAt, mergeStartedAt ?? mergedAt),
+    gate_and_merge: span(mergeStartedAt, mergedAt),
+  };
+  const model =
+    turns.findLast((turn) => turn.reported_model)?.reported_model ??
+    session.reported_model ??
+    session.requested_model;
+  const approvalWaitMs = approvalWait(ctx, new Set([session.id]));
+  const row: Retrospective = {
+    id: retrospectiveId(session.id, SESSION_TASK, 1),
+    revision: 1,
+    project_id: session.project_id,
+    lead_session_id: session.id,
+    task_id: SESSION_TASK,
+    session_ids: [session.id],
+    outcome: 'merged',
+    origin: 'session',
+    recorded_at: ctx.store.now(),
+    ...(mergedKind ? { measured_kind: tierAfter(mergedKind, stages.execution) } : {}),
+    runtime: session.runtime,
+    ...(model ? { model } : {}),
+    ...(session.requested_effort ? { effort: session.requested_effort } : {}),
+    ...(gatePassedOn !== undefined ? { gate_passed_on_attempt: gatePassedOn } : {}),
+    ...(gateFailures.length ? { gate_failures: gateFailures, gate_failed_checks: gateChecks } : {}),
+    ...(approvalWaitMs !== undefined ? { approval_wait_ms: approvalWaitMs } : {}),
+    turn_failure_codes: turns
+      .filter((turn) => turn.state === 'failed')
+      .map((turn) => failureCodes.get(turn.id) ?? 'unknown'),
+    task_usage: tokens(turns),
+    stage_ms: Object.fromEntries(
+      Object.entries(stages).filter(([, ms]) => ms !== undefined),
+    ) as Retrospective['stage_ms'],
+    ...(openedAt !== undefined ? { started_at: openedAt } : {}),
+    ...exposure(ctx, session.project_id, [session.id]),
+  };
+  const stored = ctx.store.insert('retrospectives', row);
+  ctx.store.event('retrospective.recorded', stored, row.project_id, {
+    retrospective_id: row.id,
+    project_id: row.project_id,
+    lead_session_id: row.lead_session_id,
+    task_id: row.task_id,
+  });
+}
+
 /**
  * By context, this connection's write count and the count of other connections' commits when the
  * last completed scan began. The scan reads only the database, never the clock, so while both counts
@@ -643,7 +738,10 @@ const scanned = new WeakMap<ControlContext, string>();
 /** Forgets the last scan: a rollback of its transaction undoes writes without lowering the count. */
 export const forgetRetrospectiveScan = (ctx: ControlContext): void => void scanned.delete(ctx);
 
-/** Records each task that merged, was accepted, failed or was removed and has no retrospective yet. */
+/**
+ * Records each task that merged, was accepted, failed or was removed, and each session outside a
+ * task that landed its work, that has no retrospective yet.
+ */
 export function recordRetrospectives(ctx: ControlContext): void {
   const { stamp } = ctx.store.db
     .prepare(
@@ -657,7 +755,6 @@ export function recordRetrospectives(ctx: ControlContext): void {
 
 function recordUnrecorded(ctx: ControlContext): void {
   const plans = ctx.store.list<BoardPlan>('board_plans');
-  if (!plans.length) return;
   const recorded = new Map(
     (
       ctx.store.db
@@ -672,12 +769,18 @@ function recordUnrecorded(ctx: ControlContext): void {
       }[]
     ).map((row) => [row.id, row]),
   );
-  const onTasks = new Map<string, Session[]>();
+  const onTasks = new Map<string, Session[]>(),
+    landed: Session[] = [];
   for (const session of ctx.store.list<Session>('sessions'))
     if (session.workspace_id && session.task) {
       const key = `${session.task.lead_session_id}\0${session.task.id}`;
       onTasks.set(key, [...(onTasks.get(key) ?? []), session]);
-    }
+    } else if (
+      !session.task &&
+      session.outcome === 'merged' &&
+      !recorded.has(retrospectiveId(session.id, SESSION_TASK, 1))
+    )
+      landed.push(session);
   const wakeOpen = ctx.store.db.prepare(
     "SELECT 1 FROM session_turns WHERE data ->> '$.session_id' = ? AND data ->> '$.origin' = 'tracker' AND data ->> '$.state' IN ('queued', 'running') LIMIT 1",
   );
@@ -734,6 +837,7 @@ function recordUnrecorded(ctx: ControlContext): void {
       record(ctx, plan, taskId, generation, 'removed', sessions, undefined);
     }
   }
+  for (const session of landed) recordSession(ctx, session);
 }
 
 /** The project's retrospectives, newest first, of one task when taskId is given. */

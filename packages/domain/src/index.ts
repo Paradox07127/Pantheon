@@ -12,6 +12,8 @@ import type {
   TaskKind,
 } from './board.js';
 import type {
+  CharterMode,
+  CharterPower,
   Improvement,
   ImprovementSignal,
   WorkflowDefinition,
@@ -395,6 +397,22 @@ export interface NeedsYouItem {
     | 'workflow_approval'
     | 'external_approval'
     | 'agent_proposal_awaiting_decision';
+  /** What the user decides. */
+  decision:
+    | 'plan_change'
+    | 'question'
+    | 'milestone_accept'
+    | 'repeated_failure'
+    | 'agent_proposal'
+    | 'permission'
+    | 'budget'
+    | 'improvement'
+    | 'external'
+    | 'other';
+  /** The plan tasks not done that wait on the item; lists put the items blocking the most first. */
+  blocks: number;
+  /** The command of the item's one primary action. */
+  primary?: string;
   actions: {
     command: string;
     allowed: boolean;
@@ -1735,6 +1753,11 @@ export interface Retrospective extends Entity {
   policy_version?: number;
   /** The experiences in force when the task started, by id. */
   experience_ids?: string[];
+  /**
+   * What the row records: a task of a lead's plan, or a session the user opened that landed its
+   * work, whose lead_session_id is the session's own id and task_id 'session'. Absent means plan_task.
+   */
+  origin?: 'plan_task' | 'session';
 }
 export interface ProjectRead {
   memory?: import('./memory.js').MemoryContext;
@@ -1760,7 +1783,10 @@ export interface LeadGuidance {
     | 'handback_limit'
     | 'task_size_hint'
     | 'pinned'
+    | 'plan_changes'
   > & {
+    /** What the lead may do on its own, must ask the user for, or may not do, by power. */
+    charter: Record<CharterPower, CharterMode>;
     /** The custom steps of the project's latest workflow definition, by slot. */
     steps: Record<
       keyof WorkflowDefinition['slots'],

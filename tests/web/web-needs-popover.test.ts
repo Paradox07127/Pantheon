@@ -113,6 +113,22 @@ describe('needs-you list', () => {
     expect(text(groups(h.value)[1])).toContain(reasonText('session_failed'));
   });
 
+  it('puts the item that blocks the most tasks first, before the longer waits', () => {
+    const h = mount(() =>
+      NeedsPopover({
+        items: [{ ...request, blocks: 1 }, { ...failed, blocks: 3 }, milestone],
+        trigger,
+      }),
+    );
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    expect(groups(h.value).map((g) => g.props['aria-label'])).toEqual(['Beta', 'Alpha']);
+    const alpha = text(groups(h.value)[1]);
+    expect(alpha.indexOf('Fix login')).toBeLessThan(
+      alpha.indexOf(reasonText('milestone_ready_for_acceptance')),
+    );
+  });
+
   it.each([
     ['the session of a request', 'Fix login', ['openProjectSession', 'alpha', 'session-login']],
     [

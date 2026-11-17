@@ -233,6 +233,70 @@ it.skipIf(insideSandbox)(
   },
 );
 
+it.skipIf(insideSandbox)(
+  'records one retrospective of a session the user opened in the project folder once it lands',
+  async () => {
+    const f = await mergeFixture();
+    await f.call<Project>(
+      'project.gate.set',
+      {
+        project_id: f.project.id,
+        root: f.source,
+        commands: [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }],
+      },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    const { id } = await f.call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: script({ write: { path: 'notes.txt', text: 'notes\n' } }, { commit: 'Add notes' }),
+      workspace: 'in_place',
+    });
+    await eventually(
+      () => f.turns(id).every((turn) => !['queued', 'running'].includes(turn.state)),
+      () => f.control.tick(),
+    );
+    setUsage(f, id, { input_tokens: 90, output_tokens: 15 });
+    await f.call('session.gates.run', { session_id: id }, current(f, id).revision);
+    await eventually(
+      () => !f.control.sessionGates(user, id).running,
+      () => f.control.tick(),
+    );
+    await f.call('session.merge', { session_id: id }, current(f, id).revision);
+    expect(current(f, id).outcome).toBe('merged');
+    await eventually(
+      () => recorded(f).length > 0,
+      () => f.control.tick(),
+    );
+
+    const [row] = recorded(f);
+    expect(row).toMatchObject({
+      id: `${id}:session:1`,
+      origin: 'session',
+      project_id: f.project.id,
+      lead_session_id: id,
+      task_id: 'session',
+      session_ids: [id],
+      outcome: 'merged',
+      runtime: f.adapter.name,
+      gate_passed_on_attempt: 1,
+      task_usage: { input_tokens: 90, output_tokens: 15 },
+      stage_ms: { execution: expect.any(Number) },
+    });
+    expect(recordedEvents(f).map((event) => event.payload)).toEqual([
+      {
+        retrospective_id: row!.id,
+        project_id: f.project.id,
+        lead_session_id: id,
+        task_id: 'session',
+      },
+    ]);
+
+    for (let i = 0; i < 3; i++) await f.control.tick();
+    expect(recorded(f)).toHaveLength(1);
+  },
+);
+
 const passes = { name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] };
 const needsFix = {
   name: 'Needs the fix',

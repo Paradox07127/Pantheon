@@ -262,6 +262,26 @@ it('leaves failed tasks the user stopped out of the trial sample', async () => {
   });
 });
 
+it("leaves the user's own sessions that landed out of the trial sample", async () => {
+  const { f, retro, improvements, statusEvents, improvement } = await onTrial();
+  for (let i = 0; i < 10; i++) retro(measured(800, 10_500, lessIdle));
+  for (let i = 0; i < 3; i++)
+    retro(
+      measured(5000, 50_000, {
+        origin: 'session',
+        lead_session_id: `session-${i}`,
+        task_id: 'session',
+        gate_passed_on_attempt: 2,
+      }),
+    );
+  await f.control.tick();
+  expect(improvements()).toMatchObject([{ id: improvement.id, status: 'active' }]);
+  expect(statusEvents().at(-1)).toMatchObject({
+    to: 'active',
+    comparison: { trial: { tasks: 10, first_pass: 10, input_tokens: 8000 } },
+  });
+});
+
 it('counts the dispatch wait of failed tasks without an execution time in a parallelism trial', async () => {
   const { f, clock, retro, improvements } = await setup();
   for (let i = 0; i < 6; i++) retro(measured(1000, 10_000));
@@ -475,6 +495,80 @@ it('tells of a trial held without earlier tasks once with a status event and kee
   expect(statusEvents().filter((event) => event.reason === 'no_baseline')).toMatchObject([
     { improvement_id: trial!.id, from: 'trial', to: 'trial', reason: 'no_baseline' },
   ]);
+});
+
+it('reverts a trial of an unmeasured parameter 14 days after it started for want of evidence', async () => {
+  const { f, clock, retro, improvements, policy } = await setup();
+  const from = policy().budget;
+  const cell = { t2: { dispatch: { input_tokens: 500000, wall_ms: 200000 } } };
+  f.call('workflow.policy.set', { project_id: f.project.id, budget: cell }, null);
+  const to = policy().budget;
+  f.store.insert<Improvement>('improvements', {
+    id: 'unmeasured',
+    revision: 1,
+    project_id: f.project.id,
+    source: 'lead',
+    lead_session_id: 'lead',
+    retrospective_ids: [],
+    status: 'trial',
+    change: { type: 'policy_change', param: 'budget', from, to },
+    proposed_at: clock.now,
+    trial_started_at: clock.now,
+  });
+  const started = clock.now;
+  clock.now += 1_000;
+  for (let i = 0; i < 10; i++) retro(measured(800, 10_000));
+  await f.control.tick();
+  expect(improvements()).toMatchObject([{ status: 'trial', status_reason: 'no_baseline' }]);
+  clock.now = started + 14 * DAY_MS - 1;
+  await f.control.tick();
+  expect(improvements()[0]?.status).toBe('trial');
+  clock.now += 1;
+  await f.control.tick();
+  expect(improvements()).toMatchObject([
+    {
+      status: 'reverted',
+      status_reason: 'no_baseline',
+      trial_evaluation: { verdict: 'not_enough_evidence' },
+    },
+  ]);
+  expect(policy().budget).toEqual(from);
+  expect(f.control.improvementList(user, f.project.id)[0]?.trial).toMatchObject({
+    verdict: 'not_enough_evidence',
+    tasks_seen: 10,
+  });
+});
+
+it('ends each trial the evaluator judges with a verdict and the tasks it saw', async () => {
+  const verdictOf = (harness: Awaited<ReturnType<typeof onTrial>>) => ({
+    stored: harness.improvements()[0]?.trial_evaluation?.verdict,
+    listed: harness.f.control.improvementList(user, harness.f.project.id)[0]?.trial,
+  });
+  const kept = await onTrial();
+  for (let i = 0; i < 10; i++) kept.retro(measured(800, 10_500, lessIdle));
+  await kept.f.control.tick();
+  expect(verdictOf(kept)).toMatchObject({
+    stored: 'better',
+    listed: { verdict: 'better', tasks_seen: 10 },
+  });
+
+  const worse = await onTrial();
+  for (let i = 0; i < 10; i++) worse.retro(measured(1200, 12_000, idle));
+  await worse.f.control.tick();
+  expect(worse.improvements()[0]?.status).toBe('reverted');
+  expect(verdictOf(worse)).toMatchObject({
+    stored: 'worse',
+    listed: { verdict: 'worse', tasks_seen: 10 },
+  });
+
+  const short = await onTrial();
+  for (let i = 0; i < 4; i++) short.retro(measured(800, 10_500, lessIdle));
+  short.clock.now = short.improvement.trial_started_at! + 14 * DAY_MS;
+  await short.f.control.tick();
+  expect(verdictOf(short)).toMatchObject({
+    stored: 'not_enough_evidence',
+    listed: { verdict: 'not_enough_evidence', tasks_seen: 4 },
+  });
 });
 
 it('keeps the reason a trial was reverted for when the user changed its value meanwhile', async () => {

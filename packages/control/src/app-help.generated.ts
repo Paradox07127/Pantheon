@@ -449,6 +449,19 @@ export const appHelpGroups: AppHelpGroup[] = [
     ],
   },
   {
+    group: 'request',
+    about:
+      "The user only; sends the user's request to the project's Assistant, or to the target session, steering it while it runs; returns {session_id, turn_id}",
+    commands: [
+      {
+        type: 'request.send',
+        about:
+          "The user only; sends the user's request to the project's Assistant, or to the target session, steering it while it runs; returns {session_id, turn_id}.",
+        tool: 'the user does this in the app',
+      },
+    ],
+  },
+  {
     group: 'resident',
     about:
       'The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none',

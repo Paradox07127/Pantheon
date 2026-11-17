@@ -91,6 +91,17 @@ export interface TaskBudget {
   /** The sum of the task's wall-clock stages, in milliseconds. */
   wall_ms: number;
 }
+/** A power of a coordinating lead that the project's charter governs. */
+export type CharterPower =
+  | 'approve_worker_prompts'
+  | 'answer_worker_questions'
+  | 'plan_change'
+  | 'create_agent'
+  | 'accept_milestone'
+  | 'merge_out_of_scope'
+  | 'start_external';
+/** Whether the lead uses a power on its own, asks the user first, or may not use it. */
+export type CharterMode = 'on' | 'ask' | 'off';
 /** The adjustable parts of one project's workflow; the row id is the project id. */
 export interface WorkflowPolicy extends Entity {
   project_id: string;
@@ -100,6 +111,8 @@ export interface WorkflowPolicy extends Entity {
   improvement_mode: 'auto' | 'confirm' | 'off';
   /** Whether a lead's plan proposal applies at once or waits for the user. */
   plan_changes: 'auto' | 'confirm';
+  /** What the lead may do without asking, by power; plan_change and start_external are not stored here but follow plan_changes and the project's external events. */
+  charter?: Partial<Record<CharterPower, CharterMode>>;
   /** Whether the lead makes a task of each tier itself or dispatches a task session, reviewed or not; an absent tier takes its default. */
   path: Partial<Record<TaskKind['tier'], Exclude<FlowPath, 'parallel'>>>;
   /** Whether the lead wakes after each merge or once every task of a milestone has ended. */
@@ -197,6 +210,8 @@ export interface Improvement extends Entity {
       trial: Record<string, number | undefined>;
     };
     no_baseline: boolean;
+    /** How the evaluator ended the trial; absent when the user ended it. */
+    verdict?: 'better' | 'worse' | 'not_enough_evidence';
   };
   /** Unix epoch milliseconds when it became active, reverted or rejected; absent before. */
   decided_at?: number;

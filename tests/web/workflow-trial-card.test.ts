@@ -19,6 +19,8 @@ const trial: NeedItem = {
   status: 'waiting',
   created_at: NOW - 60 * 60_000,
   reason: 'workflow_definition_trial_completed',
+  decision: 'improvement',
+  blocks: 0,
   actions: [
     { command: 'workflow.definition.trial.decide', allowed: true, decision: 'keep' },
     { command: 'workflow.definition.trial.decide', allowed: true, decision: 'revert' },

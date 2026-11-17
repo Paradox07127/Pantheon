@@ -16,6 +16,8 @@ const blocked: BoardNeed = {
   status: 'open',
   created_at: NOW - 60_000,
   reason: 'merge_blocked',
+  decision: 'other',
+  blocks: 0,
   actions: [{ command: 'session.merge', allowed: true }],
   unblocks: 0,
 };

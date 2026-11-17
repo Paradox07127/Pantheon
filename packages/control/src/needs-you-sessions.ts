@@ -23,6 +23,7 @@ import {
   latestExecuted,
   leadTurnFailed,
   stuckMerge,
+  type NeedsYouDraft,
   type NeedsYouScope,
   type SessionAttention,
 } from './needs-you.js';
@@ -34,9 +35,9 @@ export function sessionItems(
   sessions: Session[],
   plans: BoardPlan[],
   planOf: Map<string, BoardPlan>,
-): NeedsYouItem[] {
+): NeedsYouDraft[] {
   const { principal } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   const listed = new Map(
     [
       ...new Set(
@@ -69,6 +70,7 @@ export function sessionItems(
         status: session.state,
         created_at: audit.created_at,
         reason: outsideWorktree ? 'outside_worktree_write_detected' : 'non_writer_write_detected',
+        decision: 'other',
         actions: [],
         next_step: outsideWorktree
           ? 'This session wrote outside its worktree. Review the listed paths, then restore unintended changes.'
@@ -158,6 +160,8 @@ export function sessionItems(
           status: session.state,
           created_at: background.started_at + BACKGROUND_LONG_MS,
           reason: 'background_task_long',
+          decision: 'other',
+          primary: 'session.background.stop',
           actions: [
             action('session.background.stop', () =>
               projectAccess(ctx, principal, session.project_id, 'session.background.stop'),
@@ -180,6 +184,8 @@ export function sessionItems(
         status: session.state,
         created_at: latestEvent(ctx, running!.id, 'turn.running')?.created_at ?? 0,
         reason: kind,
+        decision: 'other',
+        primary: 'session.interrupt',
         actions: [
           action('session.interrupt', () =>
             projectAccess(ctx, principal, session.project_id, 'session.interrupt'),
@@ -198,6 +204,7 @@ export function sessionItems(
         status: session.state,
         created_at: failed ? (latestEvent(ctx, failed.id, 'turn.failed')?.created_at ?? 0) : 0,
         reason: kind,
+        decision: 'other',
         actions: [],
         resets_at: resetAt,
         next_step: NEXT_STEP[kind],
@@ -230,6 +237,10 @@ export function sessionItems(
                     ? (latestEvent(ctx, session.id, 'session.merge_blocked')?.created_at ?? 0)
                     : limit!.created_at,
         reason: kind,
+        decision: 'other',
+        ...(kind === 'lead_turn_failed' || kind === 'continuation_limit_reached'
+          ? { primary: 'session.send' }
+          : {}),
         // session.resolve answers a reconciling session, not its worktree.
         actions:
           kind === 'merge_stuck' ||
@@ -322,6 +333,12 @@ export function sessionItems(
       status: session.state,
       created_at: event?.created_at ?? 0,
       reason,
+      decision:
+        kind === 'session.gate_failed' &&
+        (ownEntry(taskPlan?.handed_back, session.id)?.length ?? 0) >= 2
+          ? 'repeated_failure'
+          : 'other',
+      ...(actions[0] ? { primary: actions[0].command } : {}),
       actions,
       ...(failureClass ? { failure_class: failureClass } : {}),
     });

@@ -10,6 +10,14 @@ import {
   type SessionTurn,
 } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
+import {
+  awaitingChange,
+  boardTaskId,
+  currentBinding,
+  taskGeneration,
+  taskSessions,
+  taskState,
+} from './board-plan.js';
 import { usageLimitWaiting } from './continuation.js';
 import { pendingApprovalItems, settledApprovalItems } from './needs-you-approvals.js';
 import { sessionItems } from './needs-you-sessions.js';
@@ -201,6 +209,82 @@ export interface NeedsYouScope {
   listedProject: (id: string) => boolean;
 }
 
+/** An item as a builder makes it; needsYou counts the tasks it blocks. */
+export type NeedsYouDraft = Omit<NeedsYouItem, 'blocks'>;
+
+/** The plan task an item is about: its own task, else its session's task, else its lead's direct task. */
+export function itemTask(
+  ctx: ControlContext,
+  item: Pick<NeedsYouItem, 'source' | 'session_id' | 'task_id'>,
+  planOf: Map<string, BoardPlan>,
+): { plan: BoardPlan; taskId: string } | undefined {
+  const sessionId = item.source.table === 'sessions' ? item.source.id : item.session_id,
+    session = sessionId ? ctx.store.get<Session>('sessions', sessionId) : undefined,
+    named = item.task_id
+      ? [...planOf.values()].flatMap((plan) =>
+          plan.tasks
+            .filter((task) => boardTaskId(plan.id, task.id) === item.task_id)
+            .map((task) => ({ lead_session_id: plan.id, id: task.id })),
+        )[0]
+      : undefined,
+    direct =
+      session?.direct_task &&
+      session.direct_task.generation ===
+        taskGeneration(planOf.get(session.id), session.direct_task.id)
+        ? { lead_session_id: session.id, id: session.direct_task.id }
+        : undefined,
+    binding = item.task_id ? named : (session?.task ?? direct),
+    plan = binding ? planOf.get(binding.lead_session_id) : undefined;
+  if (
+    !binding ||
+    !plan ||
+    !plan.tasks.some((task) => task.id === binding.id) ||
+    // A worker of a removed task is not the task that reuses its id.
+    (binding === session?.task &&
+      !currentBinding(plan, session.task) &&
+      !(!session.outcome && awaitingChange(plan, session)))
+  )
+    return;
+  return { plan, taskId: binding.id };
+}
+
+/** Counts the plan tasks not done that wait on an item: those that depend on its task, and those its lead question holds. */
+function blockedTasks(
+  ctx: ControlContext,
+  planOf: Map<string, BoardPlan>,
+): (item: NeedsYouDraft) => number {
+  const sessions = ctx.store.list<Session>('sessions'),
+    done = new Map<string, boolean>();
+  const open = (plan: BoardPlan, taskId: string) => {
+    const key = boardTaskId(plan.id, taskId);
+    if (!done.has(key))
+      done.set(
+        key,
+        taskState(
+          plan,
+          taskId,
+          taskSessions(ctx, plan.id, taskId, sessions, plan),
+          ctx.store.get<Session>('sessions', plan.id),
+        ) === 'done',
+      );
+    return !done.get(key);
+  };
+  return (item) => {
+    const waiting = new Set<string>(),
+      bound = itemTask(ctx, item, planOf),
+      asked = item.question && planOf.get(item.source.id);
+    if (bound)
+      for (const task of bound.plan.tasks)
+        if (task.depends_on.includes(bound.taskId) && open(bound.plan, task.id))
+          waiting.add(boardTaskId(bound.plan.id, task.id));
+    if (asked)
+      for (const task of asked.tasks)
+        if (item.question!.blocks.includes(task.id) && open(asked, task.id))
+          waiting.add(boardTaskId(asked.id, task.id));
+    return waiting.size;
+  };
+}
+
 export function needsYou(
   ctx: ControlContext,
   principal: Principal,
@@ -220,7 +304,7 @@ export function needsYou(
       'Project principal required',
     );
   }
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   const removed = new Set(
     ctx.store
       .list<Project>('projects')
@@ -229,6 +313,12 @@ export function needsYou(
   );
   const listedProject = (id: string) => !removed.has(id) && (!projectId || id === projectId);
   const scope: NeedsYouScope = { principal, projectId, removed, listedProject };
+  const plans = ctx.store
+    .list<BoardPlan>('board_plans')
+    .filter(
+      (plan) => !removed.has(plan.project_id) && (!projectId || plan.project_id === projectId),
+    );
+  const planOf = new Map(plans.map((plan) => [plan.id, plan]));
   items.push(...pendingApprovalItems(ctx, scope));
   if (principal.role === 'user') {
     items.push(...settledApprovalItems(ctx, scope));
@@ -241,12 +331,6 @@ export function needsYou(
           !removed.has(s.project_id) &&
           (!projectId || s.project_id === projectId),
       );
-    const plans = ctx.store
-      .list<BoardPlan>('board_plans')
-      .filter(
-        (plan) => !removed.has(plan.project_id) && (!projectId || plan.project_id === projectId),
-      );
-    const planOf = new Map(plans.map((plan) => [plan.id, plan]));
     items.push(
       ...sessionItems(ctx, scope, sessions, plans, planOf),
       ...planItems(ctx, scope, plans, sessions),
@@ -258,9 +342,16 @@ export function needsYou(
       ...projectBudgetItems(ctx, scope),
     );
   }
+  const blocked = blockedTasks(ctx, planOf);
+  // Most tasks blocked first, then the longest waiting.
   return {
-    items: items.sort(
-      (a, b) => a.created_at - b.created_at || a.source.id.localeCompare(b.source.id),
-    ),
+    items: items
+      .map((item) => ({ ...item, blocks: blocked(item) }))
+      .sort(
+        (a, b) =>
+          b.blocks - a.blocks ||
+          a.created_at - b.created_at ||
+          a.source.id.localeCompare(b.source.id),
+      ),
   };
 }

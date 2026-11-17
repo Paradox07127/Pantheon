@@ -3,7 +3,6 @@ import {
   type BoardPlan,
   type ExternalEvent,
   type Milestone,
-  type NeedsYouItem,
   type Session,
 } from '@pantheon/domain';
 import { projectAccess, type ControlContext } from './context.js';
@@ -12,7 +11,13 @@ import { currentAcceptance, currentDirectMerge } from './board-plan.js';
 import { milestoneView } from './project-facts.js';
 import { blockedReport } from './lead-inbox.js';
 import { stuckUpstream } from './task-dispatch.js';
-import { NEXT_STEP, action, latestEvent, type NeedsYouScope } from './needs-you.js';
+import {
+  NEXT_STEP,
+  action,
+  latestEvent,
+  type NeedsYouDraft,
+  type NeedsYouScope,
+} from './needs-you.js';
 
 /** The plans' proposals, external holds, lead questions, blocked and undispatched tasks and lead wake failures. */
 export function planItems(
@@ -20,9 +25,9 @@ export function planItems(
   scope: NeedsYouScope,
   plans: BoardPlan[],
   sessions: Session[],
-): NeedsYouItem[] {
+): NeedsYouDraft[] {
   const { principal } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   for (const plan of plans) {
     for (const proposal of plan.pending_proposals ?? []) {
       if (proposal.status !== 'pending') continue;
@@ -35,6 +40,8 @@ export function planItems(
         status: 'pending',
         created_at: proposal.created_at,
         reason: 'plan_proposal_awaiting_decision',
+        decision: 'plan_change',
+        primary: 'board.plan.proposal.resolve',
         actions: [
           action('board.plan.proposal.resolve', () =>
             projectAccess(ctx, principal, plan.project_id, 'board.plan.proposal.resolve'),
@@ -58,6 +65,8 @@ export function planItems(
         status: 'pending',
         created_at: hold.at,
         reason: 'external_approval',
+        decision: 'external',
+        primary: 'external.approve',
         actions: [
           action('external.approve', () =>
             requireThat(principal.role === 'user', 'permission_denied', 'Only user'),
@@ -77,6 +86,8 @@ export function planItems(
         status: 'pending',
         created_at: question.at,
         reason: 'lead_question',
+        decision: 'question',
+        primary: 'lead.question.answer',
         question,
         actions: [
           action('lead.question.answer', () =>
@@ -101,6 +112,7 @@ export function planItems(
           status: 'waiting',
           created_at: blocked.at,
           reason: 'task_blocked',
+          decision: 'other',
           blocked,
           actions: [],
         });
@@ -116,6 +128,7 @@ export function planItems(
         status: 'queued',
         created_at: entry.error.at,
         reason: 'task_dispatch_failed',
+        decision: 'other',
         actions: [],
         next_step: NEXT_STEP.task_dispatch_failed,
       });
@@ -137,6 +150,7 @@ export function planItems(
         status: 'queued',
         created_at: entry.requested_at,
         reason: 'task_upstream_stuck',
+        decision: 'other',
         actions: [],
         upstream,
         next_step: NEXT_STEP.task_upstream_stuck,
@@ -153,6 +167,8 @@ export function planItems(
         status: 'closed',
         created_at: plan.wake_failed.at,
         reason: 'lead_closed',
+        decision: 'other',
+        primary: 'board.sync',
         actions: [
           action('board.sync', () => projectAccess(ctx, principal, plan.project_id, 'board.sync')),
         ],
@@ -167,6 +183,8 @@ export function planItems(
         status: lead!.state,
         created_at: plan.wake_failed.at,
         reason: 'lead_wake_limited',
+        decision: 'other',
+        primary: 'session.send',
         actions: [
           action('session.send', () => {
             projectAccess(ctx, principal, plan.project_id, 'session.send');
@@ -184,9 +202,9 @@ export function milestoneItems(
   ctx: ControlContext,
   scope: NeedsYouScope,
   planOf: Map<string, BoardPlan>,
-): NeedsYouItem[] {
+): NeedsYouDraft[] {
   const { principal, listedProject } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   for (const milestone of ctx.store.list<Milestone>('milestones')) {
     // A milestone the user created has no lead.
     const leadId = milestone.owner_session_id;
@@ -219,6 +237,8 @@ export function milestoneItems(
         ),
       ),
       reason: 'milestone_ready_for_acceptance',
+      decision: 'milestone_accept',
+      primary: 'milestone.accept',
       actions: [
         action('milestone.accept', () =>
           projectAccess(ctx, principal, milestone.project_id, 'milestone.accept'),

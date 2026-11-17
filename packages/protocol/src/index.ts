@@ -17,6 +17,8 @@ import type {
   ApprovalQuestion,
   BaselineWorkstream,
   BoardPlan,
+  CharterMode,
+  CharterPower,
   EffortLevel,
   FlowPath,
   Improvement,
@@ -942,6 +944,15 @@ const workflowParam = z.enum([
 const workflowParamComplete: [WorkflowParam] extends [z.infer<typeof workflowParam>]
   ? true
   : false = true;
+const charterMode = z.enum(['on', 'ask', 'off'] as const satisfies readonly CharterMode[]);
+/** The charter entries a policy stores; plan_change and start_external follow their own settings. */
+const charter = z.strictObject({
+  approve_worker_prompts: charterMode.optional(),
+  answer_worker_questions: charterMode.optional(),
+  create_agent: charterMode.optional(),
+  accept_milestone: charterMode.optional(),
+  merge_out_of_scope: charterMode.optional(),
+} satisfies Partial<Record<CharterPower, unknown>>);
 const flowPath = z.enum(flowPaths);
 // A tier's tasks cannot all be parallel: a task takes that path only with lead-defined parts.
 const tierPath = flowPath.exclude(['parallel']);
@@ -989,6 +1000,7 @@ const storedTierBudget = z
 const workflowPolicySettings = z.strictObject({
   improvement_mode: z.enum(['auto', 'confirm', 'off']).optional(),
   plan_changes: z.enum(['auto', 'confirm']).optional(),
+  charter: charter.optional(),
   path: z
     .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
     .optional(),
@@ -1656,6 +1668,8 @@ export const inputSchemas = {
     project_id: str,
     improvement_mode: z.enum(['auto', 'confirm', 'off']).optional(),
     plan_changes: z.enum(['auto', 'confirm']).optional(),
+    /** Merged into the current charter by power. */
+    charter: charter.optional(),
     /** Merged into the current path by tier. */
     path: z
       .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
@@ -1881,6 +1895,18 @@ export const inputSchemas = {
     z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
     z.strictObject({ agent_id: str }),
   ]),
+  /** The user only; sends the user's request to the project's Assistant, or to the target session, steering it while it runs; returns {session_id, turn_id}. */
+  'request.send': z.strictObject({
+    project_id: str,
+    input: str,
+    attachments: turnExtras.attachments,
+    target: z
+      .discriminatedUnion('kind', [
+        z.strictObject({ kind: z.literal('assistant') }),
+        z.strictObject({ kind: z.literal('session'), session_id: str }),
+      ])
+      .optional(),
+  }),
   'github.pr.create': z.strictObject({
     session_id: str,
     title: str.optional(),
@@ -2390,6 +2416,8 @@ export interface ImprovementListItem extends Omit<Improvement, 'trial_evaluation
     tasks_required: number;
     baseline_tasks: number;
     status_reason?: 'no_baseline';
+    /** Absent while the trial runs and when the user ended it. */
+    verdict?: NonNullable<Improvement['trial_evaluation']>['verdict'];
     metrics: {
       name: string;
       unit: string;
@@ -3523,11 +3551,11 @@ export interface BoardModel {
    * the workflow policy's max_parallel. Always set by the daemon.
    */
   task_places?: { used: number; limit: number };
-  /** The project's needs-you items, those unblocking the most tasks first, then the longest waiting. */
+  /** The project's needs-you items in the order of needs_you.list. */
   needs?: (NeedsYouItem & {
     /** The plan task the item's session was opened from. */
     task_id?: string;
-    /** The tasks not done that depend on that task. */
+    /** The item's blocks. */
     unblocks: number;
   })[];
   edges: {

@@ -4,6 +4,8 @@ import {
   FLOW_PATHS,
   requireThat,
   TASK_TIERS,
+  type CharterMode,
+  type CharterPower,
   type Entity,
   type FlowPath,
   type Project,
@@ -29,9 +31,20 @@ type PolicySettings = Omit<
 >;
 type InheritedParam = NonNullable<WorkflowPolicy['overridden']>[number];
 
-export const DEFAULT_WORKFLOW_POLICY: PolicySettings & { runtime_quota_threshold: number } = {
+export const DEFAULT_WORKFLOW_POLICY: PolicySettings & {
+  runtime_quota_threshold: number;
+  charter: Record<Exclude<CharterPower, 'plan_change' | 'start_external'>, CharterMode>;
+} = {
   improvement_mode: 'auto',
   plan_changes: 'auto',
+  // plan_change and start_external follow plan_changes and the project's external events.
+  charter: {
+    approve_worker_prompts: 'on',
+    answer_worker_questions: 'on',
+    create_agent: 'ask',
+    accept_milestone: 'on',
+    merge_out_of_scope: 'on',
+  },
   path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
   acceptance_wake: 'each_merge',
   max_parallel: 3,
@@ -182,6 +195,11 @@ function checkPolicy(policy: WorkflowPolicy): void {
         policy.project_budget.input_tokens > 0),
     'invalid_input',
     'project_budget must be a positive integer of input tokens',
+  );
+  requireThat(
+    policy.charter?.create_agent !== 'on',
+    'invalid_input',
+    'create_agent cannot be on: the user approves each agent the lead creates',
   );
 }
 
@@ -389,9 +407,8 @@ export const workflowPolicyHandlers: Handlers = {
   },
   'workflow.policy.set': (ctx, p, c) => {
     userOnly(p);
-    const { project_id, task_size_hint, path, budget, project_budget, ...input } = inputSchemas[
-      'workflow.policy.set'
-    ].parse(c.input);
+    const { project_id, task_size_hint, path, budget, project_budget, charter, ...input } =
+      inputSchemas['workflow.policy.set'].parse(c.input);
     projectAccess(ctx, p, project_id, c.type);
     ctx.store.must<Project>('projects', project_id);
     const old = ctx.store.get<WorkflowPolicy>('workflow_policies', project_id);
@@ -402,6 +419,7 @@ export const workflowPolicyHandlers: Handlers = {
       ...Object.keys(input),
       ...(path ? ['path'] : []),
       ...(budget ? ['budget'] : []),
+      ...(charter ? ['charter'] : []),
       ...(task_size_hint === undefined ? [] : ['task_size_hint']),
     ] as InheritedParam[];
     // A cleared hint is no longer the project's own, so the global one applies.
@@ -412,6 +430,7 @@ export const workflowPolicyHandlers: Handlers = {
       ...current,
       ...input,
       path: { ...current.path, ...path },
+      ...(charter && { charter: { ...current.charter, ...charter } }),
       budget: structuredClone(current.budget),
     };
     for (const [tier, cells] of Object.entries(budget ?? {}) as [TaskKind['tier'], object][])

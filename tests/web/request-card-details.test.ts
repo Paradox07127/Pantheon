@@ -23,6 +23,8 @@ const escalated: NeedItem = {
   status: 'pending',
   created_at: NOW - 30 * 60_000,
   reason: 'permission_requested',
+  decision: 'permission',
+  blocks: 0,
   actions: [{ command: 'approval.respond', allowed: true }],
   binding: { action: 'Bash', input_summary: 'pnpm test' },
   waited_ms: 25 * 60_000,
@@ -36,6 +38,8 @@ const waiting: NeedItem = {
   status: 'idle',
   created_at: NOW - 60_000,
   reason: 'usage_limit_waiting',
+  decision: 'other',
+  blocks: 0,
   actions: [],
   resets_at: NOW + 2 * 60 * 60_000,
 };
@@ -47,6 +51,8 @@ const gate: NeedItem = {
   status: 'open',
   created_at: NOW - 60_000,
   reason: 'gate_failed',
+  decision: 'other',
+  blocks: 0,
   actions: [],
   failure_class: 'environment',
 };
@@ -58,6 +64,8 @@ const stalled: NeedItem = {
   status: 'running',
   created_at: NOW - 20 * 60_000,
   reason: 'task_turn_stalled',
+  decision: 'other',
+  blocks: 0,
   actions: [{ command: 'session.interrupt', allowed: true }],
 };
 
@@ -70,6 +78,8 @@ const proposed: NeedItem = {
   status: 'pending',
   created_at: NOW - 60_000,
   reason: 'plan_proposal_awaiting_decision',
+  decision: 'plan_change',
+  blocks: 0,
   actions: [{ command: 'board.plan.proposal.resolve', allowed: true }],
 };
 
@@ -91,6 +101,8 @@ const overBudget: NeedItem = {
   status: 'over_budget',
   created_at: NOW - 60_000,
   reason: 'project_over_budget',
+  decision: 'budget',
+  blocks: 0,
   actions: [{ command: 'workflow.policy.set', allowed: true }],
   project_budget: { used_input_tokens: 150, input_tokens: 100 },
 };

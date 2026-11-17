@@ -1,12 +1,18 @@
-import { DomainError, type Approval, type BoardPlan, type NeedsYouItem } from '@pantheon/domain';
+import { DomainError, type Approval, type BoardPlan } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { approvalAccess, approvalBindingCurrent, relayingQuestion } from './approvals.js';
-import { NEXT_STEP, latestEvent, lostRequestOpen, type NeedsYouScope } from './needs-you.js';
+import {
+  NEXT_STEP,
+  latestEvent,
+  lostRequestOpen,
+  type NeedsYouDraft,
+  type NeedsYouScope,
+} from './needs-you.js';
 
 /** Pending permission requests and questions. */
-export function pendingApprovalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouItem[] {
+export function pendingApprovalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
   const { principal, listedProject } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   for (const approval of ctx.store
     .list<Approval>('approvals')
     .filter((a) => a.state === 'pending' && listedProject(a.project_id))) {
@@ -30,6 +36,8 @@ export function pendingApprovalItems(ctx: ControlContext, scope: NeedsYouScope):
       status: approval.state,
       created_at: approval.created_at,
       reason: 'permission_requested',
+      decision: approval.questions?.length ? 'question' : 'permission',
+      primary: 'approval.respond',
       actions: [
         {
           command: 'approval.respond',
@@ -57,9 +65,9 @@ export function pendingApprovalItems(ctx: ControlContext, scope: NeedsYouScope):
 }
 
 /** Answers that were not delivered, and requests voided by a lost session. */
-export function settledApprovalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouItem[] {
+export function settledApprovalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
   const { principal, listedProject } = scope;
-  const items: NeedsYouItem[] = [];
+  const items: NeedsYouDraft[] = [];
   for (const approval of ctx.store
     .list<Approval>('approvals')
     .filter((a) => a.state !== 'pending' && listedProject(a.project_id))) {
@@ -82,6 +90,7 @@ export function settledApprovalItems(ctx: ControlContext, scope: NeedsYouScope):
       status: approval.state,
       created_at: approval.created_at,
       reason: undelivered ? 'answer_undelivered' : 'permission_voided',
+      decision: 'other',
       actions: [],
       binding: {
         action: approval.tool,

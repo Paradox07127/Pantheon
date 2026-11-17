@@ -470,7 +470,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults" \| "usage_targets" \| "external_events" \| "auto_merge"<br>`param?`: "improvement_mode" \| "plan_changes" \| "path" \| "acceptance_wake" \| "max_parallel" \| "max_parallel_limit" \| "runtime_parallel" \| "dispatch_paused" \| "runtime_quota_threshold" \| "gate_on_fail" \| "gate_runner" \| "handback_limit" \| "task_size_hint" \| "budget" \| "pinned" |  |
+| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults" \| "usage_targets" \| "external_events" \| "auto_merge"<br>`param?`: "improvement_mode" \| "plan_changes" \| "charter" \| "path" \| "acceptance_wake" \| "max_parallel" \| "max_parallel_limit" \| "runtime_parallel" \| "dispatch_paused" \| "runtime_quota_threshold" \| "gate_on_fail" \| "gate_runner" \| "handback_limit" \| "task_size_hint" \| "budget" \| "pinned" |  |
 
 ### project.read
 
@@ -520,6 +520,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `repo.discard_undo` | `project_id`: string<br>`undo_id`: string |  |
 | `repo.push` | `project_id`: string |  |
 | `repo.revert` | `project_id`: string<br>`sha`: string |  |
+
+### request
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `request.send` | `project_id`: string<br>`input`: string<br>`attachments?`: string[]<br>`target?`: object \| object |  |
 
 ### resident
 
@@ -663,7 +669,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `workflow.definition.set_default` | `project_id`: string<br>`id`: string |  |
 | `workflow.definition.trial.decide` | `project_id`: string<br>`id?`: string<br>`decision`: "keep" \| "revert" |  |
 | `workflow.policy.reset` | `project_id`: string |  |
-| `workflow.policy.set` | `project_id`: string<br>`improvement_mode?`: "auto" \| "confirm" \| "off"<br>`plan_changes?`: "auto" \| "confirm"<br>`path?`: object<br>`acceptance_wake?`: "each_merge" \| "milestone"<br>`max_parallel?`: integer<br>`max_parallel_limit?`: integer<br>`runtime_parallel?`: object<br>`dispatch_paused?`: boolean<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`handback_limit?`: 0 \| integer<br>`task_size_hint?`: integer \| null<br>`budget?`: object<br>`project_budget?`: object \| null<br>`pinned?`: ("path" \| "acceptance_wake" \| "max_parallel" \| "handback_limit" \| "task_size_hint" \| "runtime_quota_threshold" \| "budget")[] |  |
+| `workflow.policy.set` | `project_id`: string<br>`improvement_mode?`: "auto" \| "confirm" \| "off"<br>`plan_changes?`: "auto" \| "confirm"<br>`charter?`: object<br>`path?`: object<br>`acceptance_wake?`: "each_merge" \| "milestone"<br>`max_parallel?`: integer<br>`max_parallel_limit?`: integer<br>`runtime_parallel?`: object<br>`dispatch_paused?`: boolean<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`handback_limit?`: 0 \| integer<br>`task_size_hint?`: integer \| null<br>`budget?`: object<br>`project_budget?`: object \| null<br>`pinned?`: ("path" \| "acceptance_wake" \| "max_parallel" \| "handback_limit" \| "task_size_hint" \| "runtime_quota_threshold" \| "budget")[] |  |
 | `workflow.step.decide` | `step_run_id`: string<br>`decision`: "approve" \| "reject"<br>`reason?`: string |  |
 
 ### workspace

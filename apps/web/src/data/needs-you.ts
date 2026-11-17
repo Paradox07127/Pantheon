@@ -82,6 +82,22 @@ export interface NeedsYouItem {
     | 'workflow_approval'
     | 'external_approval'
     | 'agent_proposal_awaiting_decision';
+  /** What the user decides. */
+  decision?:
+    | 'plan_change'
+    | 'question'
+    | 'milestone_accept'
+    | 'repeated_failure'
+    | 'agent_proposal'
+    | 'permission'
+    | 'budget'
+    | 'improvement'
+    | 'external'
+    | 'other';
+  /** The plan tasks not done that wait on the item; the daemon lists the items blocking the most first. */
+  blocks?: number;
+  /** The command of the item's one primary action. */
+  primary?: string;
   actions: {
     command: string;
     allowed: boolean;

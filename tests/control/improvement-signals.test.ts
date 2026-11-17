@@ -272,6 +272,20 @@ it('finds a repeated gate failure when one check failed in two different tasks',
   ]);
 });
 
+it("finds no repeated gate failure in the user's own sessions that landed", async () => {
+  const { retro, signals } = await setup();
+  for (const session of ['session-1', 'session-2'])
+    retro({
+      origin: 'session',
+      lead_session_id: session,
+      task_id: 'session',
+      gate_failures: ['code'],
+      gate_failed_checks: ['Typecheck'],
+    });
+
+  expect(signals('repeat_gate_failure')).toEqual([]);
+});
+
 it('finds no repeated gate failure when one check failed in two generations of the same task', async () => {
   const { retro, signals } = await setup();
   retro({ task_id: 'export', gate_failures: ['code'], gate_failed_checks: ['Typecheck'] });

@@ -121,11 +121,15 @@ function handbackLimits(
   };
 }
 
-/** A task the agents carried to an end: merged, accepted, or failed without the user stopping it. */
+/**
+ * A plan task the agents carried to an end: merged, accepted, or failed without the user stopping
+ * it. The user's own sessions are another population, so signals and trials leave them out.
+ */
 export const agentAttempt = (row: Retrospective) =>
-  row.outcome === 'merged' ||
-  row.outcome === 'accepted' ||
-  (row.outcome === 'failed' && row.stopped_by !== 'user');
+  row.origin !== 'session' &&
+  (row.outcome === 'merged' ||
+    row.outcome === 'accepted' ||
+    (row.outcome === 'failed' && row.stopped_by !== 'user'));
 
 /** Fixed signals from agent-attempt retrospectives and project events; `of` limits the retrospective rules. */
 export function improvementSignals(
