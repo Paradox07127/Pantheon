@@ -1,7 +1,7 @@
 <div align="center">
   <img src="apps/desktop/build/icons/256x256.png" alt="Pantheon" width="96">
   <h1>Pantheon</h1>
-  <p>让 Claude Code、Codex 和 ACP agent 并排工作，每个会话一个 git worktree,改完经项目门禁合并。</p>
+  <p>让 Claude Code、Codex 和 ACP agent 并排工作，在项目目录或各自的 git worktree 里改，改完经项目门禁落地。</p>
   <p>
     <a href="https://github.com/Paradox07127/Pantheon/releases"><img alt="状态：预发布测试版" src="https://img.shields.io/badge/status-pre--release-orange"></a>
     <a href="LICENSE"><img alt="许可证:Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
@@ -18,8 +18,10 @@
 > 完整的发布验收尚未通过。
 
 Pantheon 是一个本机运行的原生编码 agent 会话工作台。
-每个会话是一个原生 Claude Code、Codex 或 ACP agent(grok、agy)会话，在自己的 git worktree 里运行。
-工作完成后,Pantheon 经项目门禁把会话的提交合并回源仓库。
+每个会话是一个原生 Claude Code、Codex 或 ACP agent(grok、agy)会话。
+新会话直接在项目目录的当前分支上改。
+目录里已有会话在改、你选了起点、或 lead 和常驻 agent 派出 worker 时，会话开自己的 git worktree。
+工作完成后先跑项目门禁。通过后,Pantheon 把改动提交到当前分支，或把 worktree 的提交合并回源仓库。
 你也可以导入在 Pantheon 之外开始的会话。导入的会话在原目录续接。
 
 <picture>

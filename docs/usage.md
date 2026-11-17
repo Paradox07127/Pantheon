@@ -89,12 +89,12 @@ To prevent this, turn off "Automatic git init" in "Settings" > "Project". Panthe
 
 To start a session, open "Sessions" and click "New session".
 
-| Field             | Choice                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| Runtime, model    | The runtime, the model and the effort of the session.                                    |
-| "Start point"     | The branch that the new worktree starts from.                                            |
-| "Where to change" | "New worktree" creates a new worktree. "Current folder" changes the folder directly.     |
-| First message     | The task. You can attach files and images, and refer to GitHub issues and pull requests. |
+| Field             | Choice                                                                                                                                                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime, model    | The runtime, the model and the effort of the session.                                                                                                                                                                                                                     |
+| "Start point"     | The branch that the new worktree starts from.                                                                                                                                                                                                                             |
+| "Where to change" | "Current folder" changes the project folder on its current branch. "New worktree" creates a new worktree. Without a choice, the session uses the current folder; it uses a new worktree when another session already writes in the folder or when you pick a start point. |
+| First message     | The task. You can attach files and images, and refer to GitHub issues and pull requests.                                                                                                                                                                                  |
 
 Each session has a permission mode: "Manual", "Auto edit", "Plan", "Auto" or "Full access".
 When a runtime asks for permission, a card shows in the conversation and in "Needs you".

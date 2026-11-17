@@ -1,7 +1,7 @@
 <div align="center">
   <img src="apps/desktop/build/icons/256x256.png" alt="Pantheon" width="96">
   <h1>Pantheon</h1>
-  <p>Run Claude Code, Codex and ACP agents side by side, each in its own git worktree, and merge their work through your project gate.</p>
+  <p>Run Claude Code, Codex and ACP agents side by side, in your project folder or in their own git worktrees, and land their work through your project gate.</p>
   <p>
     <a href="https://github.com/Paradox07127/Pantheon/releases"><img alt="Status: pre-release test build" src="https://img.shields.io/badge/status-pre--release-orange"></a>
     <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
@@ -18,8 +18,10 @@
 > The full release acceptance has not passed.
 
 Pantheon is a local workbench for native coding-agent sessions.
-Each session is a native Claude Code, Codex or ACP agent (grok, agy) session, and each session runs in its own git worktree.
-When the work is done, Pantheon merges the commits of the session into the source repository through the project gate.
+Each session is a native Claude Code, Codex or ACP agent (grok, agy) session.
+A new session changes the project folder on its current branch.
+A session gets its own git worktree when another session already writes in the folder, when you pick a start point, or when a lead or a resident agent dispatches it as a worker.
+When the work is done, the project gate runs. Then Pantheon commits the changes on the current branch, or merges the commits of the worktree into the source repository.
 You can also import a session that you started outside Pantheon. An imported session continues in its original folder.
 
 <picture>
