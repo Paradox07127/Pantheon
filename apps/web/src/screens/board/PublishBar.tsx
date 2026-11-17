@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { Paperclip } from 'lucide-react';
+import { Bot, ChevronDown, Paperclip } from 'lucide-react';
 import type { SessionTurn } from '@pantheon/domain';
 import type { BoardModel, BridgeResult, CommandType } from '@pantheon/protocol';
+import { Menu, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../components/Menu';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { Tip } from '../../components/Tip';
+import { useAgents } from '../../data/agents';
 import { useBoard } from '../../data/board';
 import { EMPTY_DRAFT, useDrafts, whenUploaded } from '../../data/drafts';
 import { failureText } from '../../data/needs-you';
+import {
+  ASSISTANT,
+  chooseRequestTarget,
+  choiceKey,
+  useRequestTarget,
+  type RequestChoice,
+} from '../../data/request-target';
 import { useRuntimeStatus } from '../../data/runtime-status';
 import type { DaemonEvent } from '../../data/sync';
 import { t } from '../../i18n';
@@ -16,7 +25,9 @@ import { AttachmentStrip, useAttachments } from '../sessions/parts';
 import {
   requirementSessionInput,
   requirementTarget,
+  requirementTargets,
   type BoardLead,
+  type RequirementTarget,
   type SessionDefaults,
 } from './frame-model';
 import type { SnapshotSession } from './panels-model';
@@ -37,7 +48,7 @@ interface Receipt {
   key: number;
   title: string;
   at: number;
-  /** The lead session the requirement went to. */
+  /** The session the requirement went to. */
   session: string;
   /** The turn the reply named; a created session's turn is its first one. */
   turn: string | null;
@@ -206,8 +217,20 @@ function ReceiptCard({
   );
 }
 
+/** The menu's sections: residents, sessions, then a new lead. */
+const section = (target: RequirementTarget) =>
+  target.choice.kind === 'assistant' || target.choice.kind === 'agent'
+    ? 'resident'
+    : target.choice.kind;
+
+/** A resident's mark, else the runtime the session or the new lead runs on. */
+function TargetIcon({ choice, runtime }: { choice: RequestChoice; runtime: string | undefined }) {
+  if (choice.kind === 'assistant' || choice.kind === 'agent') return <Bot aria-hidden="true" />;
+  return runtime ? <RuntimeGlyph runtime={runtime} /> : null;
+}
+
 /**
- * Lines of input that go to the newest lead, or open a new session that becomes the lead; the
+ * Lines of input that go to the target chosen in its menu, the project's Assistant by default; the
  * last requirement sent leaves its receipt under the bar.
  */
 export function PublishBar({
@@ -257,22 +280,35 @@ export function PublishBar({
     refocus.current = false;
     box.current?.focus();
   }, [busy]);
-  const target = requirementTarget(leads, sessions);
-  const to =
-    target.kind === 'create'
-      ? {
-          runtime: defaultRuntime(runtimes, defaults?.runtime, unavailable),
-          name: t({ id: 'board.lead.publish.newLead', defaultMessage: 'New lead' }),
-        }
-      : {
-          runtime: target.session.runtime,
-          name:
-            leads?.find((l) => l.session_id === target.session.id)?.title ??
-            target.session.title ??
-            target.session.id,
-        };
+  const targets = requirementTargets(leads, sessions, useAgents(projectId));
+  const target = requirementTarget(useRequestTarget(projectId), targets);
+  const creating = target.choice.kind === 'create';
+  const leadRuntime = defaultRuntime(runtimes, defaults?.runtime, unavailable);
+  const runtime = creating ? leadRuntime : target.session?.runtime;
   const input = text.trim();
-  const cannotCreate = target.kind === 'create' && unavailable[to.runtime] !== undefined;
+  const cannotCreate = creating && unavailable[leadRuntime] !== undefined;
+  // A resident with no session that takes input is opened first, as the sidebar opens it.
+  const request = async (ids: string[]): Promise<BridgeResult<unknown>> => {
+    let session = target.session?.id;
+    if (target.choice.kind === 'agent' && !session) {
+      const opened = await run('resident.open', { agent_id: target.choice.agent_id }, null);
+      if (!opened.ok) return opened;
+      const id = (opened.value as { id?: unknown } | null)?.id;
+      if (typeof id === 'string') session = id;
+    }
+    return run(
+      'request.send',
+      {
+        project_id: projectId,
+        input,
+        ...(ids.length ? { attachments: ids } : {}),
+        ...(target.choice.kind !== 'assistant' && session
+          ? { target: { kind: 'session', session_id: session } }
+          : {}),
+      },
+      null,
+    );
+  };
   const send = async () => {
     if (busy || disabled || cannotCreate || !input) return;
     setBusy(true);
@@ -281,33 +317,30 @@ export function PublishBar({
     const ids = (useDrafts.getState().drafts[key] ?? EMPTY_DRAFT).attachments.map((a) => a.id);
     const after = useBoard.getState().cursor;
     const before = new Set((tasks ?? NO_TASKS).map((t) => t.id));
-    const result =
-      target.kind === 'create'
-        ? await run(
-            'session.create',
-            // The lead starts on the runtime the bar shows.
-            requirementSessionInput(projectId, defaults, input, [to.runtime], ids),
-            null,
-          )
-        : await run(
-            target.kind === 'steer' ? 'session.steer' : 'session.send',
-            { session_id: target.session.id, input, ...(ids.length ? { attachments: ids } : {}) },
-            target.session.revision,
-          );
+    const result = creating
+      ? await run(
+          'session.create',
+          // The lead starts on the runtime the bar shows.
+          requirementSessionInput(projectId, defaults, input, [leadRuntime], ids),
+          null,
+        )
+      : await request(ids);
+    if (creating && result.ok) chooseRequestTarget(projectId, ASSISTANT);
     // The bar shows another project's draft by now.
     if (shownProject.current !== projectId) return;
     refocus.current = true;
     setBusy(false);
     if (!result.ok) return setError(failureText(result.error));
     useDrafts.getState().sent(key, { text: '', attachments: ids, skills: [] });
-    const id = (result.value as { id?: unknown } | null)?.id;
-    if (typeof id === 'string')
+    const value = result.value as { id?: unknown; session_id?: unknown; turn_id?: unknown } | null;
+    const session = creating ? value?.id : value?.session_id;
+    if (typeof session === 'string')
       setReceipt({
         key: ++sentCount.current,
         title: input.split('\n')[0]!.trim(),
         at: Date.now(),
-        session: target.kind === 'create' ? id : target.session.id,
-        turn: target.kind === 'create' ? null : id,
+        session,
+        turn: !creating && typeof value?.turn_id === 'string' ? value.turn_id : null,
         after,
         before,
       });
@@ -357,10 +390,51 @@ export function PublishBar({
           >
             <Paperclip aria-hidden="true" />
           </button>
-          <span className="pb-to" title={to.name}>
-            <RuntimeGlyph runtime={to.runtime} />
-            <span>{to.name}</span>
-          </span>
+          <Menu
+            label={t({ id: 'board.lead.publish.targets', defaultMessage: 'Send to' })}
+            align="end"
+            trigger={
+              <button
+                type="button"
+                className="btn ghost pb-to"
+                aria-label={t(
+                  { id: 'board.lead.publish.target', defaultMessage: 'Send to {name}' },
+                  { name: target.name },
+                )}
+                title={target.name}
+              >
+                <TargetIcon choice={target.choice} runtime={runtime} />
+                <span>{target.name}</span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+            }
+          >
+            <MenuRadioGroup
+              value={choiceKey(target.choice)}
+              onChange={(value) => {
+                const next = targets.find((each) => choiceKey(each.choice) === value);
+                if (next) chooseRequestTarget(projectId, next.choice);
+              }}
+            >
+              {targets.map((each, i) => [
+                i > 0 && section(each) !== section(targets[i - 1]!) && (
+                  <MenuSeparator key={`sep:${section(each)}`} />
+                ),
+                <MenuRadioItem
+                  key={choiceKey(each.choice)}
+                  value={choiceKey(each.choice)}
+                  icon={
+                    <TargetIcon
+                      choice={each.choice}
+                      runtime={each.choice.kind === 'create' ? leadRuntime : each.session?.runtime}
+                    />
+                  }
+                >
+                  {each.name}
+                </MenuRadioItem>,
+              ])}
+            </MenuRadioGroup>
+          </Menu>
           <Tip content={keyText('Meta+Enter')}>
             <button
               type="submit"

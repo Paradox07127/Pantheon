@@ -1,11 +1,23 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { BoardSnapshot, NotificationTarget, WorkbenchSession } from '@pantheon/protocol';
+import {
+  ATTENTION_KINDS,
+  DEFAULT_ATTENTION_DELIVERY,
+  deliveryFor,
+  withinHours,
+  type AppSettings,
+  type AttentionDelivery,
+  type AttentionKind,
+  type BoardSnapshot,
+  type NotificationTarget,
+  type WorkbenchSession,
+} from '@pantheon/protocol';
 import { waitingSessions } from '../components/NeedsYou';
 import { needKey } from '../screens/board/frame-model';
 import { pendingPermissions, sessionRow } from '../screens/sessions/model';
-import { t } from '../i18n';
+import { t, type Message } from '../i18n';
 import { listText } from '../lib/list-text';
 import { useShell } from '../store';
+import { useAppSettings, type AppSettingsPatch } from './app-settings';
 import { useBoard } from './board';
 import { focusRequest } from './focus-request';
 import { answeredInStrip, becameReady, needsKey, needsSession, turnEndHold } from './notice-tiers';
@@ -27,7 +39,7 @@ export interface Notice {
   need?: string;
 }
 
-/** The events a notice is about, in the order the settings list them. */
+/** The events a notice is about. */
 export type NoticeEvent =
   | 'approval_requested'
   | 'question_asked'
@@ -37,38 +49,18 @@ export type NoticeEvent =
   | 'turn_failed'
   | 'gate_failed'
   | 'merge_blocked';
-export const NOTICE_EVENTS: readonly NoticeEvent[] = [
-  'approval_requested',
-  'question_asked',
-  'turn_completed',
-  'ready_for_review',
-  'merged',
-  'turn_failed',
-  'gate_failed',
-  'merge_blocked',
-];
 
-/** Whether an event's system notification is sent, and whether it plays its sound. */
-export interface NoticeDelivery {
-  system: boolean;
-  sound: boolean;
-}
-
+/** What this computer keeps: whether notices play their sound, the dock badge and keeping awake. */
 export interface NotificationPrefs {
-  events: Record<NoticeEvent, NoticeDelivery>;
-  /** Whether each event shows an in-app card. */
-  in_app: Record<NoticeEvent, boolean>;
-  /** Not read: no system notification comes while the app is in front. */
-  quiet_hours: boolean;
-  /** Local times as HH:MM; a start later than the end spans midnight. */
-  quiet_start: string;
-  quiet_end: string;
+  sound: boolean;
   badge: boolean;
   /** The desktop app keeps the computer awake while a session runs. */
   keep_awake: boolean;
 }
 
-export const NOTIFICATIONS_KEY = 'pantheon.notifications.v2';
+export const NOTIFICATIONS_KEY = 'pantheon.notifications.v3';
+/** Where an earlier version kept a switch per event; mapped once into the daemon's rules. */
+export const EARLIER_NOTIFICATIONS_KEY = 'pantheon.notifications.v2';
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -79,23 +71,7 @@ export function readQuietTime(typed: string): string | null {
 }
 
 export const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
-  events: {
-    approval_requested: { system: true, sound: true },
-    question_asked: { system: true, sound: true },
-    turn_completed: { system: true, sound: false },
-    ready_for_review: { system: true, sound: false },
-    merged: { system: true, sound: false },
-    turn_failed: { system: true, sound: true },
-    gate_failed: { system: true, sound: true },
-    merge_blocked: { system: true, sound: true },
-  },
-  in_app: Object.fromEntries(NOTICE_EVENTS.map((event) => [event, true])) as Record<
-    NoticeEvent,
-    boolean
-  >,
-  quiet_hours: false,
-  quiet_start: '22:00',
-  quiet_end: '08:00',
+  sound: true,
   badge: true,
   keep_awake: true,
 };
@@ -108,35 +84,12 @@ export function readNotificationPrefs(raw: string | null): NotificationPrefs {
   } catch {
     // The defaults apply.
   }
-  const v = value as {
-    events?: Partial<Record<NoticeEvent, { system?: unknown; sound?: unknown } | null>>;
-    in_app?: Partial<Record<NoticeEvent, unknown>> | null;
-    quiet_hours?: unknown;
-    quiet_start?: unknown;
-    quiet_end?: unknown;
-    badge?: unknown;
-    keep_awake?: unknown;
-  } | null;
+  const v = value as { sound?: unknown; badge?: unknown; keep_awake?: unknown } | null;
   const d = DEFAULT_NOTIFICATIONS;
   const flag = (given: unknown, fallback: boolean) =>
     typeof given === 'boolean' ? given : fallback;
-  const time = (given: unknown, fallback: string) =>
-    typeof given === 'string' && TIME.test(given) ? given : fallback;
-  const choice = (event: NoticeEvent, field: keyof NoticeDelivery): boolean =>
-    flag(v?.events?.[event]?.[field], d.events[event][field]);
   return {
-    events: Object.fromEntries(
-      NOTICE_EVENTS.map((event) => [
-        event,
-        { system: choice(event, 'system'), sound: choice(event, 'sound') },
-      ]),
-    ) as Record<NoticeEvent, NoticeDelivery>,
-    in_app: Object.fromEntries(
-      NOTICE_EVENTS.map((event) => [event, flag(v?.in_app?.[event], d.in_app[event])]),
-    ) as Record<NoticeEvent, boolean>,
-    quiet_hours: flag(v?.quiet_hours, d.quiet_hours),
-    quiet_start: time(v?.quiet_start, d.quiet_start),
-    quiet_end: time(v?.quiet_end, d.quiet_end),
+    sound: flag(v?.sound, d.sound),
     badge: flag(v?.badge, d.badge),
     keep_awake: flag(v?.keep_awake, d.keep_awake),
   };
@@ -144,7 +97,9 @@ export function readNotificationPrefs(raw: string | null): NotificationPrefs {
 
 function loadNotificationPrefs(): NotificationPrefs {
   try {
-    return readNotificationPrefs(localStorage.getItem(NOTIFICATIONS_KEY));
+    return readNotificationPrefs(
+      localStorage.getItem(NOTIFICATIONS_KEY) ?? localStorage.getItem(EARLIER_NOTIFICATIONS_KEY),
+    );
   } catch {
     return DEFAULT_NOTIFICATIONS;
   }
@@ -186,6 +141,148 @@ function useStoredPrefs() {
   }, []);
 }
 
+/** The daemon's rules for how each kind reaches the user, and its quiet hours. */
+export type DeliveryRules = Pick<AppSettings, 'attention_delivery' | 'quiet_hours'>;
+
+// The rules the notices last read; none before the first read.
+let rules: DeliveryRules | null = null;
+
+export const getDeliveryRules = () => rules;
+
+/** Whether a needs-you item or a notice of a kind sends its system notice now; every one does before the rules are read. */
+export const noticeNow = (
+  item: { decision?: AttentionKind; created_at: number },
+  r: DeliveryRules | null = rules,
+  now = Date.now(),
+): boolean =>
+  !r ||
+  deliveryFor(r, { decision: item.decision ?? 'other', created_at: item.created_at }, now) ===
+    'now';
+
+/** Whether a notice about the session sends now: by the rule of its needs-you item, else of other. */
+export const sessionNoticeNow = (
+  sessionId: string,
+  items: readonly NeedsYouItem[] | null,
+  r: DeliveryRules | null = rules,
+): boolean =>
+  noticeNow(
+    items?.find((item) => needsSession(item) === sessionId) ?? {
+      decision: 'other',
+      created_at: Date.now(),
+    },
+    r,
+  );
+
+// Named so the message extractor reads these descriptors as messages.
+const defineMessage = (message: Message): Message => message;
+
+/** Each kind's name, in the order the settings list them. */
+export const DECISION_NAME: Record<AttentionKind, Message> = {
+  plan_change: defineMessage({
+    id: 'settings.notifications.planChange',
+    defaultMessage: 'Plan change',
+  }),
+  question: defineMessage({ id: 'settings.notifications.question', defaultMessage: 'Question' }),
+  repeated_failure: defineMessage({
+    id: 'settings.notifications.repeatedFailure',
+    defaultMessage: 'Failed twice',
+  }),
+  permission: defineMessage({
+    id: 'settings.notifications.permission',
+    defaultMessage: 'Permission request',
+  }),
+  milestone_accept: defineMessage({
+    id: 'settings.notifications.milestoneAccept',
+    defaultMessage: 'Milestone to accept',
+  }),
+  agent_proposal: defineMessage({
+    id: 'settings.notifications.agentProposal',
+    defaultMessage: 'New agent',
+  }),
+  budget: defineMessage({ id: 'settings.notifications.budget', defaultMessage: 'Budget' }),
+  improvement: defineMessage({
+    id: 'settings.notifications.improvement',
+    defaultMessage: 'Improvement',
+  }),
+  external: defineMessage({
+    id: 'settings.notifications.external',
+    defaultMessage: 'External approval',
+  }),
+  other: defineMessage({ id: 'settings.notifications.other', defaultMessage: 'Other' }),
+  merged: defineMessage({ id: 'settings.notifications.merged', defaultMessage: 'Merged' }),
+};
+
+/** Each way a kind of decision can reach the user. */
+export const DELIVERY_NAME: Record<AttentionDelivery, Message> = {
+  now: defineMessage({ id: 'settings.notifications.now', defaultMessage: 'Now' }),
+  brief: defineMessage({ id: 'settings.notifications.brief', defaultMessage: 'Brief only' }),
+  never: defineMessage({ id: 'settings.notifications.never', defaultMessage: 'Never' }),
+};
+
+function readEarlier(raw: string) {
+  try {
+    return JSON.parse(raw) as {
+      events?: Partial<Record<NoticeEvent, { system?: unknown } | null>>;
+      quiet_hours?: unknown;
+      quiet_start?: unknown;
+      quiet_end?: unknown;
+    } | null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The earlier per-event switches as the daemon's rules: a switched-off event waits for the brief;
+ * turn ends and reviews follow other only when both were off.
+ */
+export function earlierRules(raw: string): AppSettingsPatch {
+  const earlier = readEarlier(raw);
+  const on = (event: NoticeEvent) => earlier?.events?.[event]?.system !== false;
+  const rule = (now: boolean): AttentionDelivery => (now ? 'now' : 'brief');
+  const time = (given: unknown, fallback: string) =>
+    typeof given === 'string' && TIME.test(given) ? given : fallback;
+  return {
+    attention_delivery: {
+      permission: rule(on('approval_requested')),
+      question: rule(on('question_asked')),
+      repeated_failure: rule(on('gate_failed') || on('turn_failed')),
+      ...(!on('merged') && { merged: 'brief' as const }),
+      ...(!on('turn_completed') && !on('ready_for_review') && { other: 'brief' as const }),
+    },
+    ...(earlier?.quiet_hours === true && {
+      quiet_hours: {
+        from: time(earlier.quiet_start, '22:00'),
+        to: time(earlier.quiet_end, '08:00'),
+      },
+    }),
+  };
+}
+
+/**
+ * Maps the per-event switches an earlier version stored into the daemon's rules once, while those
+ * are still the defaults, and keeps the rest of them under the current key.
+ */
+function useEarlierPrefs(settings: AppSettings | null, save: (patch: AppSettingsPatch) => void) {
+  useEffect(() => {
+    if (!settings) return;
+    try {
+      const raw = localStorage.getItem(EARLIER_NOTIFICATIONS_KEY);
+      if (raw === null) return;
+      const untouched =
+        !settings.quiet_hours &&
+        ATTENTION_KINDS.every(
+          (kind) => settings.attention_delivery[kind] === DEFAULT_ATTENTION_DELIVERY[kind],
+        );
+      if (untouched) save(earlierRules(raw));
+      setNotificationPrefs({});
+      localStorage.removeItem(EARLIER_NOTIFICATIONS_KEY);
+    } catch {
+      // Storage is out of reach; the daemon's rules stand.
+    }
+  }, [settings]);
+}
+
 const EVENT_KINDS: Record<string, NoticeEvent> = {
   'turn.completed': 'turn_completed',
   'turn.failed': 'turn_failed',
@@ -194,9 +291,12 @@ const EVENT_KINDS: Record<string, NoticeEvent> = {
   'session.merge_blocked': 'merge_blocked',
 };
 
+// A turn end, a review or a merge comes without sound.
+const SILENT: readonly NoticeEvent[] = ['turn_completed', 'ready_for_review', 'merged'];
+
 // Spread into a notice; the system's sound plays unless silent.
 const sound = (event: NoticeEvent, p: NotificationPrefs) =>
-  p.events[event].sound ? {} : { silent: true };
+  p.sound && !SILENT.includes(event) ? {} : { silent: true };
 
 /** The ids of the events already looked at, since the last resync. */
 export interface NoticeCursor {
@@ -318,7 +418,7 @@ function messageNotice(
     agent_name?: string;
   };
   const project = board.projects.find((p) => p.id === event.project_id);
-  if (!project || !message.session_id || !p.events.question_asked.system) return null;
+  if (!project || !message.session_id) return null;
   return {
     title: listText(project.name, message.agent_name),
     body: message.text ?? '',
@@ -327,15 +427,21 @@ function messageNotice(
   };
 }
 
-/** The notice of a turn end, a check run, a merge, a blocked merge or an agent's message; none for an event turned off. */
+/**
+ * The notice of a turn end, a check run, a merge, a blocked merge or an agent's message; none for
+ * a merge whose rule is not now, nor for another event of a session whose needs-you item among
+ * items, or other without one, has a rule that is not now.
+ */
 export function eventNotice(
   event: DaemonEvent,
   board: BoardSnapshot,
   p: NotificationPrefs = getNotificationPrefs(),
+  items: readonly NeedsYouItem[] | null = null,
+  r: DeliveryRules | null = getDeliveryRules(),
 ): Notice | null {
   if (event.kind === 'agent_message.created') return messageNotice(event, board, p);
   const kind = EVENT_KINDS[event.kind];
-  if (!kind || !p.events[kind].system) return null;
+  if (!kind) return null;
   const body = eventBody(event);
   if (body === null) return null;
   const sessionId = TURN_ENDS.includes(event.kind) ? turnSession(event, board) : event.aggregate_id;
@@ -345,6 +451,9 @@ export function eventNotice(
   const turn = board.session_turns.find((t) => t.id === event.aggregate_id);
   if (TURN_ENDS.includes(event.kind) && session?.resident && WAKE_ORIGINS.includes(turn?.origin))
     return null;
+  if (kind === 'merged' && !noticeNow({ decision: 'merged', created_at: Date.now() }, r))
+    return null;
+  if (kind !== 'merged' && !sessionNoticeNow(sessionId, items, r)) return null;
   const notice = {
     title: session ? listText(project.name, sessionTitle(session, board)) : project.name,
     body,
@@ -364,6 +473,7 @@ export function liveNotices(
   cursor: NoticeCursor | null,
   sync: Pick<SyncView, 'board' | 'events' | 'resync'>,
   p: NotificationPrefs = getNotificationPrefs(),
+  items: readonly NeedsYouItem[] | null = null,
 ): { cursor: NoticeCursor; notices: Notice[] } {
   const live = cursor !== null && cursor.resync === sync.resync;
   const notices: Notice[] = [];
@@ -376,7 +486,7 @@ export function liveNotices(
       seen.delete(event.event_id);
       continue;
     }
-    const notice = eventNotice(event, sync.board, p);
+    const notice = eventNotice(event, sync.board, p, items);
     if (notice) notices.push(notice);
   }
   return { cursor: { resync: sync.resync, seen }, notices };
@@ -422,6 +532,7 @@ export function requestNotices(
   items: readonly NeedsYouItem[] | null,
   board: BoardSnapshot | null,
   p: NotificationPrefs = getNotificationPrefs(),
+  r: DeliveryRules | null = getDeliveryRules(),
 ): { seen: ReadonlySet<string> | null; notices: Notice[] } {
   if (!items || !board) return { seen, notices: [] };
   const next = new Set<string>();
@@ -435,7 +546,7 @@ export function requestNotices(
     const question =
       item.kind === 'lead.question' ? item.question?.question : item.questions?.[0]?.question;
     const kind = question !== undefined ? 'question_asked' : 'approval_requested';
-    if (!p.events[kind].system) continue;
+    if (!noticeNow(item, r)) continue;
     const session = heading(board, item.project_id, sessionId);
     notices.push({
       title:
@@ -463,15 +574,18 @@ export function requestNotices(
 }
 
 /**
- * One notice for the sessions of every project that became ready for review, naming the session
- * when it is one; it opens that session, or else the first one's project.
+ * One notice for the sessions of every project that became ready for review and whose rule is
+ * now, naming the session when it is one; it opens that session, or else the first one's project.
  */
 export function reviewNotice(
-  ready: readonly { project_id: string; session: WorkbenchSession }[],
+  became: readonly { project_id: string; session: WorkbenchSession }[],
   board: BoardSnapshot | null,
   p: NotificationPrefs = getNotificationPrefs(),
+  items: readonly NeedsYouItem[] | null = null,
+  r: DeliveryRules | null = getDeliveryRules(),
 ): Notice | null {
-  if (ready.length === 0 || !p.events.ready_for_review.system) return null;
+  const ready = became.filter(({ session }) => sessionNoticeNow(session.id, items, r));
+  if (ready.length === 0) return null;
   const one = ready.length === 1 ? ready[0]!.session : undefined;
   const projects = [...new Set(ready.map((r) => r.project_id))];
   return {
@@ -514,6 +628,7 @@ export function decisionNotices(
   items: readonly NeedsYouItem[] | null,
   board: BoardSnapshot | null,
   p: NotificationPrefs = getNotificationPrefs(),
+  r: DeliveryRules | null = getDeliveryRules(),
 ): { seen: ReadonlySet<string> | null; notices: Notice[] } {
   if (!items || !board) return { seen, notices: [] };
   const decisions = items.filter((item) => DECISIONS.includes(item.kind));
@@ -524,7 +639,7 @@ export function decisionNotices(
     if (next.has(key)) continue;
     next.add(key);
     const project = board.projects.find((p) => p.id === item.project_id);
-    if (!seen || seen.has(key) || !project || !p.events.approval_requested.system) continue;
+    if (!seen || seen.has(key) || !project || !noticeNow(item, r)) continue;
     const title = board.milestones?.find((m) => m.id === item.source.id)?.title;
     notices.push({
       title: project.name,
@@ -546,15 +661,9 @@ export function openNotice(target: NotificationTarget, request?: string): void {
   if (request) focusRequest(request);
 }
 
-/** Whether this computer's clock is inside the quiet hours, when they are on. */
-export function inQuietHours(p: NotificationPrefs = getNotificationPrefs()): boolean {
-  if (!p.quiet_hours) return false;
-  const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
-  const now = new Date();
-  const at = now.getHours() * 60 + now.getMinutes();
-  const start = minutes(p.quiet_start);
-  const end = minutes(p.quiet_end);
-  return start <= end ? at >= start && at < end : at >= start || at < end;
+/** Whether this computer's clock is inside the daemon's quiet hours, when they are set. */
+export function inQuietHours(r: DeliveryRules | null = getDeliveryRules()): boolean {
+  return !!r?.quiet_hours && withinHours(r.quiet_hours, Date.now());
 }
 
 /** Calls then with whether a Pantheon window has focus: the desktop app's answer, or this page's focus without it. */
@@ -573,7 +682,11 @@ const ASKS_KEPT = 100;
 
 /** Sends a system notification while the app is in the background, except during the quiet hours. */
 function send(notice: Notice) {
-  if (inQuietHours()) return;
+  if (!inQuietHours()) notify(notice);
+}
+
+/** Sends a system notification while the app is in the background; a needs-you item's rules weighed the quiet hours. */
+function notify(notice: Notice) {
   withFocus((front) => {
     if (front) return;
     const { request, need, ...shown } = notice;
@@ -629,7 +742,7 @@ function useSessionNotices(
     for (const session of newlyWaiting(previous, sessions)) {
       // A waiting request is noticed from the needs-you list.
       if (session.workspace_id !== null || pendingPermissions(events, session.id).length) continue;
-      if (!p.events.approval_requested.system) continue;
+      if (!noticeNow({ decision: 'permission', created_at: Date.now() })) continue;
       const notice = waitNotice(session, events);
       send({
         title: name ? listText(name, notice.title) : notice.title,
@@ -640,8 +753,7 @@ function useSessionNotices(
       // This notice tells the baseline's turn end.
       hold.ready(session.id);
     }
-    if (p.events.ready_for_review.system)
-      for (const session of becameReady(previous, sessions)) hold.ready(session.id);
+    for (const session of becameReady(previous, sessions)) hold.ready(session.id);
   }, [projectId, sessions]);
 }
 
@@ -702,7 +814,11 @@ function useEverySessionList(): SessionLists {
 }
 
 /** One notice for the sessions of every project that became ready for review since its previous list; none from a project's first list. */
-function useReviewNotices(lists: SessionLists, hold: ReturnType<typeof turnEndHold>) {
+function useReviewNotices(
+  lists: SessionLists,
+  hold: ReturnType<typeof turnEndHold>,
+  items: { current: readonly NeedsYouItem[] | null },
+) {
   const before = useRef(NO_LISTS);
   useEffect(() => {
     const ready = Object.entries(lists).flatMap(([project_id, list]) =>
@@ -712,10 +828,9 @@ function useReviewNotices(lists: SessionLists, hold: ReturnType<typeof turnEndHo
       })),
     );
     before.current = { ...before.current, ...lists };
-    const review = reviewNotice(ready, useBoard.getState().board);
-    if (!review) return;
     for (const { session } of ready) hold.ready(session.id);
-    send(review);
+    const review = reviewNotice(ready, useBoard.getState().board, undefined, items.current);
+    if (review) send(review);
   }, [lists]);
 }
 
@@ -725,7 +840,7 @@ function useRequestNotices(items: readonly NeedsYouItem[] | null) {
   useEffect(() => {
     const next = requestNotices(seen.current, items, useBoard.getState().board);
     seen.current = next.seen;
-    next.notices.forEach(send);
+    next.notices.forEach(notify);
   }, [items]);
 }
 
@@ -735,7 +850,7 @@ function useDecisionNotices(items: readonly NeedsYouItem[] | null) {
   useEffect(() => {
     const next = decisionNotices(seen.current, items, useBoard.getState().board);
     seen.current = next.seen;
-    next.notices.forEach(send);
+    next.notices.forEach(notify);
   }, [items]);
 }
 
@@ -761,10 +876,18 @@ export function useNotices(
   // Reading the preferences here renders the caller again, and so its badge, when they change.
   const p = useNotificationPrefs();
   useStoredPrefs();
+  const { settings, save } = useAppSettings();
+  // Set before the notice effects below read it.
+  useEffect(() => {
+    rules = settings;
+  }, [settings]);
+  useEarlierPrefs(settings, (patch) => void save(patch));
   const hold = useRef(turnEndHold());
   useEffect(() => () => hold.current.stop(), []);
+  const latest = useRef(items);
+  latest.current = items;
   useSessionNotices(projectId, sessions, hold.current);
-  useReviewNotices(useEverySessionList(), hold.current);
+  useReviewNotices(useEverySessionList(), hold.current, latest);
   useRequestNotices(items);
   useDecisionNotices(items);
   useKeepAwake(p.keep_awake);
@@ -773,14 +896,12 @@ export function useNotices(
   const resync = useBoard((s) => s.resync);
   const cursor = useRef<NoticeCursor | null>(null);
   useEffect(() => {
-    const next = liveNotices(cursor.current, { board, events, resync });
+    const next = liveNotices(cursor.current, { board, events, resync }, undefined, latest.current);
     cursor.current = next.cursor;
     for (const notice of next.notices)
       if (turnEnds.has(notice)) hold.current.ended(notice.target.session_id, () => send(notice));
       else send(notice);
   }, [board, events, resync]);
-  const latest = useRef(items);
-  latest.current = items;
   useEffect(
     () =>
       window.pantheon?.onNotificationClick((target) => {

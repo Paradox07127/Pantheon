@@ -1,119 +1,90 @@
 import { useState } from 'react';
+import { Radio } from '@base-ui/react/radio';
+import { RadioGroup } from '@base-ui/react/radio-group';
+import type { AttentionDelivery, AttentionKind } from '@pantheon/protocol';
+import { useAppSettings } from '../../data/app-settings';
 import {
-  NOTICE_EVENTS,
+  DECISION_NAME,
+  DELIVERY_NAME,
   readQuietTime,
   sendTestNotice,
   setNotificationPrefs,
   useNotificationPrefs,
-  type NoticeDelivery,
-  type NoticeEvent,
 } from '../../data/notifications';
 import { toast } from '../../components/Toast';
 import { t } from '../../i18n';
 import { Row, Section } from './ProjectSettingsScreen';
 import './notifications-page.css';
 
-function eventName(event: NoticeEvent): string {
-  switch (event) {
-    case 'approval_requested':
-      return t({
-        id: 'settings.notifications.approvalRequested',
-        defaultMessage: 'Waiting for your approval',
-      });
-    case 'question_asked':
-      return t({
-        id: 'settings.notifications.questionAsked',
-        defaultMessage: 'The agent asked a question',
-      });
-    case 'turn_completed':
-      return t({ id: 'settings.notifications.turnCompleted', defaultMessage: 'Turn finished' });
-    case 'ready_for_review':
-      return t({ id: 'settings.notifications.readyForReview', defaultMessage: 'Ready for review' });
-    case 'merged':
-      return t({ id: 'settings.notifications.merged', defaultMessage: 'Merged' });
-    case 'turn_failed':
-      return t({ id: 'settings.notifications.turnFailed', defaultMessage: 'Turn failed' });
-    case 'gate_failed':
-      return t({
-        id: 'settings.notifications.gateFailed',
-        defaultMessage: 'Gate failed with no retries left',
-      });
-    case 'merge_blocked':
-      return t({ id: 'settings.notifications.mergeBlocked', defaultMessage: 'Merge blocked' });
-  }
-}
+// Every rule key, in the order the names are listed.
+const KINDS = Object.keys(DECISION_NAME) as AttentionKind[];
+const DELIVERIES = Object.keys(DELIVERY_NAME) as AttentionDelivery[];
 
-function eventHint(event: NoticeEvent): string | undefined {
-  switch (event) {
-    case 'approval_requested':
-      return t({
-        id: 'settings.notifications.approvalRequestedHint',
-        defaultMessage: 'A session stopped to wait for you',
-      });
-    case 'ready_for_review':
-      return t({
-        id: 'settings.notifications.readyForReviewHint',
-        defaultMessage: 'Every check passed',
-      });
-    case 'gate_failed':
-      return t({ id: 'settings.notifications.gateFailedHint', defaultMessage: 'Out of retries' });
-    default:
-      return undefined;
-  }
-}
+type QuietField = 'from' | 'to';
+// What a first typed time pairs with.
+const QUIET_PLACEHOLDER = { from: '22:00', to: '08:00' };
 
-const EVENT_SETTING: Record<NoticeEvent, string> = {
-  approval_requested: 'notifications.approvalRequested',
-  question_asked: 'notifications.questionAsked',
-  turn_completed: 'notifications.turnCompleted',
-  ready_for_review: 'notifications.readyForReview',
-  merged: 'notifications.merged',
-  turn_failed: 'notifications.turnFailed',
-  gate_failed: 'notifications.gateFailed',
-  merge_blocked: 'notifications.mergeBlocked',
-};
-
-const cellLabel = (event: string, delivery: string) =>
-  t(
-    { id: 'settings.notifications.cell', defaultMessage: '{event}, {delivery}' },
-    { event, delivery },
+function DeliveryChoice(props: {
+  label: string;
+  value: AttentionDelivery | null;
+  disabled: boolean;
+  title?: string;
+  onChange?: (delivery: AttentionDelivery) => void;
+}) {
+  return (
+    // Null keeps the group controlled with nothing chosen while the settings load.
+    <RadioGroup<AttentionDelivery | null>
+      className="tb-seg"
+      aria-label={props.label}
+      title={props.title}
+      value={props.value}
+      disabled={props.disabled}
+      onValueChange={(delivery) => delivery && props.onChange?.(delivery)}
+    >
+      {DELIVERIES.map((delivery) => (
+        <Radio.Root key={delivery} value={delivery}>
+          {t(DELIVERY_NAME[delivery])}
+        </Radio.Root>
+      ))}
+    </RadioGroup>
   );
+}
 
-type QuietField = 'quiet_start' | 'quiet_end';
-
-/** Which events show in the app, send a system notification and with what sound, and when none are sent. */
+/** How each kind of decision and merges reach the user, the quiet hours, and this computer's sound and badge. */
 export function NotificationsPage() {
   const prefs = useNotificationPrefs();
+  const { settings, save } = useAppSettings();
   // What is typed into a quiet hours time until it leaves the field.
   const [typed, setTyped] = useState<Partial<Record<QuietField, string>>>({});
-  const inApp = t({ id: 'settings.notifications.inApp', defaultMessage: 'In app' });
-  const system = t({ id: 'settings.notifications.system', defaultMessage: 'System notification' });
-  const sound = t({ id: 'settings.notifications.sound', defaultMessage: 'Sound' });
-  const deliver = (event: NoticeEvent, patch: Partial<NoticeDelivery>) =>
-    setNotificationPrefs({
-      events: { ...prefs.events, [event]: { ...prefs.events[event], ...patch } },
-    });
+  const quiet = settings?.quiet_hours;
   const quietHours = t({ id: 'settings.notifications.quietHours', defaultMessage: 'Quiet hours' });
-  // An emptied time turns quiet hours off; a time typed into either turns them on.
+  // An emptied time clears quiet hours; a time typed into either sets them.
   const commitQuiet = (field: QuietField) => {
     const text = typed[field];
     setTyped((now) => ({ ...now, [field]: undefined }));
     if (text === undefined) return;
     const time = readQuietTime(text);
-    if (!text.trim()) setNotificationPrefs({ quiet_hours: false });
-    else if (time) setNotificationPrefs({ [field]: time, quiet_hours: true });
+    if (!text.trim()) {
+      if (quiet) void save({ quiet_hours: null });
+    } else if (time) void save({ quiet_hours: { ...(quiet ?? QUIET_PLACEHOLDER), [field]: time } });
   };
   const quietTime = (field: QuietField, label: string) => (
     <input
       className="inp mono ntf-time"
       aria-label={label}
-      value={typed[field] ?? (prefs.quiet_hours ? prefs[field] : '')}
-      placeholder={prefs[field]}
+      value={typed[field] ?? quiet?.[field] ?? ''}
+      placeholder={QUIET_PLACEHOLDER[field]}
+      disabled={!settings}
       onChange={(e) => setTyped((now) => ({ ...now, [field]: e.target.value }))}
       onBlur={() => commitQuiet(field)}
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
     />
   );
+  const overdue = t({
+    id: 'settings.notifications.overdueQuestion',
+    defaultMessage: 'Question waiting over 4 hours',
+  });
+  const sound = t({ id: 'settings.notifications.sound', defaultMessage: 'Sound' });
   const badge = t({
     id: 'settings.notifications.badge',
     defaultMessage: 'Show the count on the app icon',
@@ -122,92 +93,68 @@ export function NotificationsPage() {
   return (
     <>
       <Section>
-        <table className="ps-ntf ntf-cols">
-          <thead>
-            <tr>
-              <th scope="col">
-                {t({ id: 'settings.notifications.event', defaultMessage: 'Event' })}
-              </th>
-              <th scope="col">{inApp}</th>
-              <th scope="col">{system}</th>
-              <th scope="col">{sound}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {NOTICE_EVENTS.map((event) => {
-              const name = eventName(event);
-              const hint = eventHint(event);
-              const delivery = prefs.events[event];
-              return (
-                <tr key={event} data-setting-id={EVENT_SETTING[event]}>
-                  <th scope="row">
-                    <span className="ps-row-nm">
-                      {name}
-                      {hint !== undefined && <span className="ps-row-hint">{hint}</span>}
-                    </span>
-                  </th>
-                  <td>
-                    <input
-                      type="checkbox"
-                      className="ps-sw"
-                      aria-label={cellLabel(name, inApp)}
-                      checked={prefs.in_app[event]}
-                      onChange={(e) =>
-                        setNotificationPrefs({
-                          in_app: { ...prefs.in_app, [event]: e.target.checked },
-                        })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      className="ps-sw"
-                      aria-label={cellLabel(name, system)}
-                      checked={delivery.system}
-                      onChange={(e) => deliver(event, { system: e.target.checked })}
-                    />
-                  </td>
-                  <td>
-                    {/* The sound is the system notification's own. */}
-                    <input
-                      type="checkbox"
-                      className="ps-sw"
-                      aria-label={cellLabel(name, sound)}
-                      checked={delivery.system && delivery.sound}
-                      disabled={!delivery.system}
-                      onChange={(e) => deliver(event, { sound: e.target.checked })}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="ps-rows" aria-busy={!settings || undefined}>
+          {KINDS.map((kind) => {
+            const name = t(DECISION_NAME[kind]);
+            return (
+              <Row key={kind} label={name} settingId={`notifications.${kind}`}>
+                <DeliveryChoice
+                  label={name}
+                  value={settings?.attention_delivery[kind] ?? null}
+                  disabled={!settings}
+                  onChange={(delivery) => void save({ attention_delivery: { [kind]: delivery } })}
+                />
+              </Row>
+            );
+          })}
+          <Row label={overdue}>
+            <DeliveryChoice
+              label={overdue}
+              value="now"
+              disabled
+              title={t({
+                id: 'settings.notifications.overdueReason',
+                defaultMessage: 'Always notifies: a question this old holds its plan',
+              })}
+            />
+          </Row>
+        </div>
       </Section>
       <Section
         title={t({ id: 'settings.notifications.delivery', defaultMessage: 'Delivery rules' })}
       >
         <div className="ps-rows">
-          <Row
-            label={quietHours}
-            hint={t({
-              id: 'settings.notifications.quietHoursHint',
-              defaultMessage: 'Only marked in the session list',
-            })}
-            settingId="notifications.quietHours"
-          >
+          <Row label={quietHours} settingId="notifications.quietHours">
             {quietTime(
-              'quiet_start',
+              'from',
               t({ id: 'settings.notifications.quietStart', defaultMessage: 'Start' }),
             )}
             <span className="mu">
               {t({ id: 'settings.notifications.quietTo', defaultMessage: 'to' })}
             </span>
-            {quietTime(
-              'quiet_end',
-              t({ id: 'settings.notifications.quietEnd', defaultMessage: 'End' }),
+            {quietTime('to', t({ id: 'settings.notifications.quietEnd', defaultMessage: 'End' }))}
+            {quiet && (
+              <button
+                type="button"
+                className="btn ghost sm"
+                aria-label={t({
+                  id: 'settings.notifications.clearQuietHours',
+                  defaultMessage: 'Clear quiet hours',
+                })}
+                onClick={() => void save({ quiet_hours: null })}
+              >
+                {t({ id: 'settings.notifications.clear', defaultMessage: 'Clear' })}
+              </button>
             )}
+          </Row>
+          <Row label={sound}>
+            <input
+              type="checkbox"
+              className="ps-sw"
+              aria-label={sound}
+              checked={prefs.sound}
+              onChange={(e) => setNotificationPrefs({ sound: e.target.checked })}
+            />
           </Row>
           <Row label={badge} settingId="notifications.badge">
             <input

@@ -1,7 +1,6 @@
 import {
   id,
   requireThat,
-  type AgentMessage,
   type AgentProfile,
   type AgentRoutine,
   type AgentRoutineInput,
@@ -11,12 +10,13 @@ import {
   type Session,
   type Timer,
 } from '@pantheon/domain';
-import { inputSchemas } from '@pantheon/protocol';
+import { inputSchemas, withinHours } from '@pantheon/protocol';
 import { projectAccess, type ControlContext, type Handlers } from './context.js';
 import { appendNote } from './lead-inbox.js';
 import { openAgent } from './resident.js';
 import { wakeLead } from './task-tracking.js';
 import { cancelTimer, scheduleTimer, timerHandlers } from './timers.js';
+import { tellUser } from './user-delivery.js';
 
 const FOLLOW_UP = 'agent-follow-up';
 const ROUTINE = 'agent-routine';
@@ -53,14 +53,6 @@ function nextClock(time: string, after: number): number {
   day.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
   if (day.getTime() <= after) day.setDate(day.getDate() + 1);
   return day.getTime();
-}
-
-export function withinHours(hours: NonNullable<AgentRoutine['active_hours']>, at: number): boolean {
-  const time = new Date(at),
-    minutes = time.getHours() * 60 + time.getMinutes(),
-    from = minutesOf(hours.from),
-    to = minutesOf(hours.to);
-  return from <= to ? minutes >= from && minutes < to : minutes >= from || minutes < to;
 }
 
 /** When the routine runs next after the moment; outside its active hours, at their next start. */
@@ -190,25 +182,7 @@ export const agentAlwaysOnHandlers: Handlers = {
   },
   'agent.tell_user': (ctx, p, c) => {
     const input = inputSchemas['agent.tell_user'].parse(c.input);
-    const { session, profile } = callingResident(ctx, p, input.project_id, c.type);
-    const message = ctx.store.insert<AgentMessage>('agent_messages', {
-      id: id(),
-      revision: 1,
-      project_id: session.project_id,
-      agent_id: profile.id,
-      session_id: session.id,
-      text: input.text,
-      urgency: input.urgency,
-      at: ctx.store.now(),
-    });
-    ctx.store.event(
-      'agent_message.created',
-      message,
-      message.project_id,
-      { ...message, agent_name: profile.name },
-      c.command_id,
-    );
-    return message;
+    return tellUser(ctx, callingResident(ctx, p, input.project_id, c.type), input, c.command_id);
   },
   'agent.routine.set': (ctx, p, c) => {
     const input = inputSchemas['agent.routine.set'].parse(c.input);

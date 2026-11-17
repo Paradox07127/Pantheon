@@ -841,6 +841,8 @@ export interface AgentMessage extends Entity {
   urgency: 'normal' | 'high';
   at: number;
   read_at?: number;
+  /** The main agent the message went to instead of the user. */
+  routed_to?: string;
 }
 /**
  * The Pantheon MCP role a session's credential carries; a session in the user's own folder is never
@@ -1122,6 +1124,8 @@ export interface SignalIssue extends Entity {
   /** State changes, the newest 20. */
   history: { at: number; state: SignalIssue['state']; text: string }[];
   resolved_at?: number;
+  /** default_branch: a check failed on the branch tasks merge into; kept once set. */
+  scope?: 'default_branch';
 }
 /** One place events come from, such as github, as the settings show it. */
 export interface ExternalSourceStatus {

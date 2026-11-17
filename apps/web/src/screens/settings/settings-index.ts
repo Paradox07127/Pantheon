@@ -5,6 +5,7 @@ import {
   PLAN_CHANGES_LABEL,
   WAKE_LABEL,
 } from '../../data/workflow-policy';
+import { DECISION_NAME, DELIVERY_NAME } from '../../data/notifications';
 import { LOCALE_NAMES, t, type Message } from '../../i18n';
 import { revealText } from '../../lib/platform-text';
 import type { InsightsSection } from '../insights/InsightsScreen';
@@ -76,14 +77,10 @@ const themeAndColour = defineMessage({
 const text = defineMessage({ id: 'settings.appearance.text', defaultMessage: 'Text' });
 const layout = defineMessage({ id: 'settings.appearance.layout', defaultMessage: 'Layout' });
 const standard = () => t({ id: 'settings.appearance.standard', defaultMessage: 'Standard' });
-const notificationDeliveries = () => [
-  t({ id: 'settings.notifications.inApp', defaultMessage: 'In app' }),
-  t({ id: 'settings.notifications.system', defaultMessage: 'System notification' }),
-  t({ id: 'settings.notifications.sound', defaultMessage: 'Sound' }),
-];
+const notificationDeliveries = () => Object.values(DELIVERY_NAME).map((name) => t(name));
 const notificationEvents = defineMessage({
   id: 'settings.notifications.events',
-  defaultMessage: 'Events',
+  defaultMessage: 'Decisions',
 });
 const notificationDelivery = defineMessage({
   id: 'settings.notifications.delivery',
@@ -974,91 +971,14 @@ export const SETTINGS_INDEX: SettingRecord[] = [
   page('devices'),
 
   page('notifications'),
-  {
-    id: 'notifications.approvalRequested',
+  ...Object.entries(DECISION_NAME).map(([kind, label]): SettingRecord => ({
+    id: `notifications.${kind}`,
     page: 'notifications',
     section: notificationEvents,
-    label: defineMessage({
-      id: 'settings.notifications.approvalRequested',
-      defaultMessage: 'Waiting for your approval',
-    }),
+    label,
     keywords: notificationKeywords,
     options: notificationDeliveries,
-  },
-  {
-    id: 'notifications.questionAsked',
-    page: 'notifications',
-    section: notificationEvents,
-    label: defineMessage({
-      id: 'settings.notifications.questionAsked',
-      defaultMessage: 'The agent asked a question',
-    }),
-    keywords: notificationKeywords,
-    options: notificationDeliveries,
-  },
-  {
-    id: 'notifications.readyForReview',
-    page: 'notifications',
-    section: notificationEvents,
-    label: defineMessage({
-      id: 'settings.notifications.readyForReview',
-      defaultMessage: 'Ready for review',
-    }),
-    keywords: notificationKeywords,
-    options: notificationDeliveries,
-  },
-  {
-    id: 'notifications.gateFailed',
-    page: 'notifications',
-    section: notificationEvents,
-    label: defineMessage({
-      id: 'settings.notifications.gateFailed',
-      defaultMessage: 'Gate failed with no retries left',
-    }),
-    keywords: notificationKeywords,
-    options: notificationDeliveries,
-  },
-  {
-    id: 'notifications.merged',
-    page: 'notifications',
-    section: notificationEvents,
-    label: defineMessage({ id: 'settings.notifications.merged', defaultMessage: 'Merged' }),
-    keywords: notificationKeywords,
-    options: notificationDeliveries,
-  },
-  {
-    id: 'notifications.turnCompleted',
-    page: 'notifications',
-    section: notificationEvents,
-    label: defineMessage({
-      id: 'settings.notifications.turnCompleted',
-      defaultMessage: 'Turn finished',
-    }),
-    keywords: notificationKeywords,
-    options: notificationDeliveries,
-  },
-  {
-    id: 'notifications.turnFailed',
-    page: 'notifications',
-    section: notificationEvents,
-    label: defineMessage({
-      id: 'settings.notifications.turnFailed',
-      defaultMessage: 'Turn failed',
-    }),
-    keywords: notificationKeywords,
-    options: notificationDeliveries,
-  },
-  {
-    id: 'notifications.mergeBlocked',
-    page: 'notifications',
-    section: notificationEvents,
-    label: defineMessage({
-      id: 'settings.notifications.mergeBlocked',
-      defaultMessage: 'Merge blocked',
-    }),
-    keywords: notificationKeywords,
-    options: notificationDeliveries,
-  },
+  })),
   {
     id: 'notifications.quietHours',
     page: 'notifications',

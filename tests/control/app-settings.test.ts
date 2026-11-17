@@ -34,25 +34,41 @@ const refusal = (run: () => unknown) => {
   return 'accepted';
 };
 
-it('delivers every decision kind now and sets no quiet hours by default', async () => {
+it('holds milestones to accept, agent proposals and merges for the brief, delivers every other kind now and sets no quiet hours by default', async () => {
   const f = await setup();
   const settings = f.call<AppSettings>('app.settings.set', {});
-  expect(settings.attention_delivery).toEqual(
-    Object.fromEntries(NEEDS_YOU_DECISIONS.map((kind) => [kind, 'now'])),
-  );
+  expect(settings.attention_delivery).toEqual({
+    ...Object.fromEntries(NEEDS_YOU_DECISIONS.map((kind) => [kind, 'now'])),
+    milestone_accept: 'brief',
+    agent_proposal: 'brief',
+    merged: 'brief',
+  });
   expect(settings.quiet_hours).toBeUndefined();
+});
+
+it('clears quiet hours set before and keeps them when the input leaves them out', async () => {
+  const f = await setup();
+  f.call('app.settings.set', { quiet_hours: { from: '22:00', to: '07:30' } });
+  f.call('app.settings.set', { session_recap: false });
+  expect(f.call<AppSettings>('app.settings.set', {}).quiet_hours).toEqual({
+    from: '22:00',
+    to: '07:30',
+  });
+  f.call('app.settings.set', { quiet_hours: null });
+  expect(f.call<AppSettings>('app.settings.set', {}).quiet_hours).toBeUndefined();
 });
 
 it('keeps delivery rules and quiet hours across reads, leaving the other kinds as they were', async () => {
   const f = await setup();
   f.call('app.settings.set', {
-    attention_delivery: { question: 'brief', budget: 'never' },
+    attention_delivery: { question: 'brief', budget: 'never', merged: 'now' },
     quiet_hours: { from: '22:00', to: '07:30' },
   });
   const settings = f.call<AppSettings>('app.settings.set', {});
   expect(settings.attention_delivery).toMatchObject({
     question: 'brief',
     budget: 'never',
+    merged: 'now',
     permission: 'now',
   });
   expect(settings.quiet_hours).toEqual({ from: '22:00', to: '07:30' });

@@ -104,7 +104,8 @@ export const appHelpGroups: AppHelpGroup[] = [
       },
       {
         type: 'agent.tell_user',
-        about: 'Leaves the user a message from the calling resident and notifies them.',
+        about:
+          "Leaves the user a message from the calling resident and notifies them; from an agent other than the main agent it goes to the main agent, unless signal_issue_id names a signal issue on the project's urgent list.",
         tool: 'tell_user',
       },
       {

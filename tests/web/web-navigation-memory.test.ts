@@ -63,20 +63,20 @@ it('restores the screen and session each project was left on', () => {
   });
 });
 
-it('lands a project opened for the first time on its sessions', () => {
+it('lands a project opened for the first time on its board', () => {
   shell().openProject('alpha');
   shell().setScreen('trace');
   shell().openProject('beta');
-  expect(here()).toEqual({ project: 'beta', screen: 'sessions', session: null });
+  expect(here()).toEqual({ project: 'beta', screen: 'board', session: null });
 });
 
-it('lands a project stored on the removed inbox screen on its sessions', () => {
+it('lands a project stored on the removed inbox screen on its board', () => {
   storage.setItem(
     PLACES_KEY,
     JSON.stringify({ alpha: { screen: 'activity', sessionId: 'alpha-1', sessionTask: null } }),
   );
   shell().openProject('alpha');
-  expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: 'alpha-1' });
+  expect(here()).toEqual({ project: 'alpha', screen: 'board', session: 'alpha-1' });
 });
 
 it('restores a project left with its settings open on the screen under them', () => {
@@ -84,7 +84,7 @@ it('restores a project left with its settings open on the screen under them', ()
   shell().openSettings('alpha');
   shell().openProject('beta');
   shell().openProject('alpha');
-  expect(shell().screen).toBe('sessions');
+  expect(shell().screen).toBe('board');
 });
 
 it("keeps the current project's place while the app settings show", () => {
@@ -208,7 +208,7 @@ it('switches projects as today when storage fails', () => {
     shell().openProject('beta');
     shell().openProject('alpha');
   }).not.toThrow();
-  expect(here()).toEqual({ project: 'alpha', screen: 'sessions', session: null });
+  expect(here()).toEqual({ project: 'alpha', screen: 'board', session: null });
 });
 
 it("leaves another project's session memory alone while its settings show", () => {

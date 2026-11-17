@@ -82,12 +82,8 @@
 }
 .pb-to {
   grid-area: to;
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-2);
   min-width: 0;
-  color: var(--tx2);
-  font-size: var(--fs-sm);
 }
 .pb-to > span {
   min-width: 0;

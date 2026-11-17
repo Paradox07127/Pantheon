@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import type { BoardSnapshot, NotificationTarget, WorkbenchSession } from '@pantheon/protocol';
+import {
+  DEFAULT_ATTENTION_DELIVERY,
+  type AppSettings,
+  type BoardSnapshot,
+  type NotificationTarget,
+  type WorkbenchSession,
+} from '@pantheon/protocol';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
@@ -14,7 +20,6 @@ import {
   badgeCount,
   DEFAULT_NOTIFICATIONS,
   getNotificationPrefs,
-  NOTICE_EVENTS,
   NOTIFICATIONS_KEY,
   setNotificationPrefs,
   useNotices,
@@ -138,6 +143,8 @@ let props: {
   sessions: readonly WorkbenchSession[] | null;
   items: readonly NeedsYouItem[] | null;
 };
+// What the daemon answers app.settings with.
+let appSettings: Pick<AppSettings, 'attention_delivery' | 'quiet_hours'>;
 // The session list each project's read answers with.
 let lists: Record<string, readonly WorkbenchSession[]>;
 let host: HookHost<null>;
@@ -170,6 +177,7 @@ beforeEach(() => {
   pageFocused = true;
   click = null;
   storage = [];
+  appSettings = { attention_delivery: DEFAULT_ATTENTION_DELIVERY };
   vi.stubGlobal('localStorage', {
     getItem: () => null,
     setItem() {},
@@ -181,9 +189,9 @@ beforeEach(() => {
       appFocused,
       keepAwake: async () => {},
       command: async () => ({ ok: true, value: {} }),
-      query: async (_method: string, params: { project_id: string }) => ({
+      query: async (method: string, params: { project_id: string }) => ({
         ok: true,
-        value: lists[params.project_id] ?? [],
+        value: method === 'app.settings' ? appSettings : (lists[params.project_id] ?? []),
       }),
       onNotificationClick: (listener: (target: NotificationTarget) => void) => {
         click = listener;
@@ -245,7 +253,9 @@ describe('system notifications and in-app cards', () => {
   });
 
   it('shows nothing either way in the quiet hours and still counts the badge', async () => {
-    setNotificationPrefs({ quiet_hours: true, quiet_start: '08:00', quiet_end: '10:00' });
+    appSettings = { ...appSettings, quiet_hours: { from: '08:00', to: '10:00' } };
+    deliver(event('app.settings_set', 'app.settings'));
+    await settle();
     render({ items: [need('approval-1')] });
     deliver(turnFailed());
     await settle();
@@ -331,28 +341,6 @@ describe('system notifications and in-app cards', () => {
     await settle();
     expect(notify).not.toHaveBeenCalled();
     expect(cards.shown()).toEqual(['title of beta-docs']);
-  });
-
-  it('tells a turn that ends ready for review as a turn end while review notices are off', async () => {
-    const off = { system: false, sound: false };
-    setNotificationPrefs({
-      events: { ...DEFAULT_NOTIFICATIONS.events, ready_for_review: off },
-      in_app: { ...DEFAULT_NOTIFICATIONS.in_app, ready_for_review: false },
-    });
-    await settle();
-    lists = { ...lists, beta: [session('beta-login', 'ready'), session('beta-docs', 'running')] };
-    deliver(event('turn.completed', 'turn-login'));
-    render({ sessions: lists.beta });
-    await settle();
-    expect(sent().map((n) => n.body)).toEqual([zh('data.notifications.turnEnded')]);
-    notify.mockClear();
-    appFocused.mockResolvedValue(true);
-    lists = { ...lists, beta: [session('beta-login', 'ready'), session('beta-docs', 'ready')] };
-    deliver(event('turn.completed', 'turn-docs'));
-    render({ sessions: lists.beta });
-    await settle();
-    expect(notify).not.toHaveBeenCalled();
-    expect(cards.shown()).toEqual(['Write docs']);
   });
 
   it('notifies a turn end of the session the sessions screen shows while the app is in the background', async () => {
@@ -466,21 +454,7 @@ describe('the dock badge', () => {
 });
 
 describe('notice events', () => {
-  it('give each of the eight events its own switch', async () => {
-    expect(NOTICE_EVENTS).toEqual([
-      'approval_requested',
-      'question_asked',
-      'turn_completed',
-      'ready_for_review',
-      'merged',
-      'turn_failed',
-      'gate_failed',
-      'merge_blocked',
-    ]);
-    const off = { system: false, sound: false };
-    setNotificationPrefs({
-      events: { ...DEFAULT_NOTIFICATIONS.events, ready_for_review: off, gate_failed: off },
-    });
+  it('send a notice for each event, which has no switch of its own', async () => {
     deliver(
       event('turn.completed', 'turn-docs'),
       turnFailed(),
@@ -495,17 +469,13 @@ describe('notice events', () => {
   });
 
   it('follow the preferences another window stores', async () => {
-    const off = { system: false, sound: false };
-    const stored = {
-      ...DEFAULT_NOTIFICATIONS,
-      events: { ...DEFAULT_NOTIFICATIONS.events, turn_failed: off },
-    };
+    const stored = { ...DEFAULT_NOTIFICATIONS, sound: false };
     expect(storage).toHaveLength(1);
     storage[0]!({ key: NOTIFICATIONS_KEY, newValue: JSON.stringify(stored) });
-    expect(getNotificationPrefs().events.turn_failed).toEqual(off);
+    expect(getNotificationPrefs().sound).toBe(false);
     deliver(turnFailed());
     await settle();
-    expect(notify).not.toHaveBeenCalled();
+    expect(sent().map((n) => n.silent)).toEqual([true]);
   });
 });
 

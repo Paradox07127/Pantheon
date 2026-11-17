@@ -45,6 +45,7 @@ export const DEFAULT_WORKFLOW_POLICY: PolicySettings & {
     accept_milestone: 'on',
     merge_out_of_scope: 'on',
   },
+  urgent_direct: ['main_gate_failed'],
   path: { t1: 'direct', t2: 'dispatch', t3: 'dispatch' },
   acceptance_wake: 'each_merge',
   max_parallel: 3,

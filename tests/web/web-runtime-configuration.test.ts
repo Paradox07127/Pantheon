@@ -118,6 +118,8 @@ it('creates a lead on an enabled writer from status without reading capabilities
       run,
     }),
   );
+  named(h.value, 'MenuRadioGroup').props.onChange('create');
+  h.render();
   find(h.value, (n) => n.type === 'textarea').props.onChange({
     target: { value: 'Ship the importer' },
   });
@@ -145,6 +147,8 @@ it('cannot publish a new lead when every reported runtime is turned off', async 
       run,
     }),
   );
+  named(h.value, 'MenuRadioGroup').props.onChange('create');
+  h.render();
   find(h.value, (n) => n.type === 'textarea').props.onChange({
     target: { value: 'Ship the importer' },
   });

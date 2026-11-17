@@ -247,6 +247,7 @@ export function recordMergedCheck(
       fingerprint: gateFingerprint(result),
       title: `${input.name} failed after a merge: ${errorLine(result)}`,
       sample: input.output,
+      scope: 'default_branch',
     });
     return;
   }

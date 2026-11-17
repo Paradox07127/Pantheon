@@ -418,51 +418,6 @@
   outline: 3px solid var(--focus-ring);
 }
 
-/* The notifications page: one row per event, one column of switches per way it arrives. */
-.ps-ntf {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-md);
-}
-.ps-ntf th,
-.ps-ntf td {
-  padding: 4px 0;
-  font-weight: 400;
-  text-align: center;
-}
-.ps-ntf :is(th, td) + :is(th, td) {
-  width: 96px;
-}
-.ps-ntf th[scope='row'] {
-  text-align: start;
-  color: var(--tx);
-}
-.ps-cg .ps-sec-bd:has(> .ps-ntf) {
-  padding: 0;
-}
-.ps-ntf :is(th, td):first-child {
-  padding-left: 16px;
-}
-.ps-ntf :is(th, td):last-child {
-  padding-right: 16px;
-}
-.ps-ntf thead th {
-  height: 32px;
-  background: var(--sf2);
-  font-size: var(--fs-sm);
-  color: var(--mu);
-}
-.ps-ntf thead th[scope='col']:first-child {
-  text-align: start;
-}
-.ps-ntf tbody tr {
-  height: 44px;
-  border-top: var(--hair) solid var(--bd2);
-}
-.ps-ntf td > .ps-sw {
-  vertical-align: middle;
-}
-
 /* The sample diff under the Diff page's choices. */
 .ps-dpv {
   border: var(--hair) solid var(--bd);

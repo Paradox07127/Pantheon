@@ -22,12 +22,7 @@ import {
   type ResultCard,
   type WatchWord,
 } from '../data/notice-tiers';
-import {
-  getNotificationPrefs,
-  inQuietHours,
-  withFocus,
-  type NoticeCursor,
-} from '../data/notifications';
+import { inQuietHours, withFocus, type NoticeCursor } from '../data/notifications';
 import { shownSessionId } from '../screens/sessions/SessionsScreen';
 import { useShell } from '../store';
 import { closeNotice, noticeNeeds, noticeResult } from './Toast';
@@ -148,7 +143,7 @@ export function NoticeFeed({
   // In the background the system notification tells a result or a failure instead.
   const result = (card: ResultCard) =>
     withFocus((front) => {
-      if (front && getNotificationPrefs().in_app[card.event]) showResult(piles.current, card);
+      if (front) showResult(piles.current, card);
     });
 
   useEffect(() => {
@@ -165,7 +160,7 @@ export function NoticeFeed({
       if (seenNeeds.current.has(key)) continue;
       seenNeeds.current.add(key);
       const card = quiet ? null : needsCard(item, board, view, answer);
-      if (!card || !getNotificationPrefs().in_app[card.event]) continue;
+      if (!card) continue;
       const wait = {
         project: item.project_id,
         session: card.session_id,
@@ -225,8 +220,7 @@ export function NoticeFeed({
     before.current = { projectId, sessions };
     for (const id of stoppedWaiting(previous, sessions))
       for (const [key, wait] of [...openNeeds.current]) if (wait.session === id) close(key);
-    if (getNotificationPrefs().in_app.ready_for_review)
-      for (const ready of becameReady(previous, sessions)) hold.current.ready(ready.id);
+    for (const ready of becameReady(previous, sessions)) hold.current.ready(ready.id);
     if (inQuietHours()) return;
     for (const card of reviewCards(previous, sessions, projectId, watch())) result(card);
   }, [projectId, sessions]);

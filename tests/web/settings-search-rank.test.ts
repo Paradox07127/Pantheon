@@ -110,8 +110,8 @@ describe('settings search in zh-CN', () => {
     });
   });
 
-  it('finds the in-app column of the notifications and what a failed gate does', () => {
-    expect(new Set(searchSettings('应用内').map((h) => h.page))).toContain('notifications');
+  it('finds the brief only choice of the notifications and what a failed gate does', () => {
+    expect(new Set(searchSettings('仅简报').map((h) => h.page))).toContain('notifications');
     // The value every project follows comes before a project's own.
     expect(ids('门禁失败时')[0]).toBe('workflow.gateOnFail');
     expect(ids('门禁失败时')).toContain('gates.handbackLimit');

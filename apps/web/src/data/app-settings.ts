@@ -5,6 +5,12 @@ import { useBoard } from './board';
 import { runCommand } from './commands';
 import { failureText, reasonText } from './needs-you';
 
+/** The settings a save sends: some delivery rules, and null quiet hours to clear them. */
+export type AppSettingsPatch = Partial<Omit<AppSettings, 'attention_delivery' | 'quiet_hours'>> & {
+  attention_delivery?: Partial<AppSettings['attention_delivery']>;
+  quiet_hours?: AppSettings['quiet_hours'] | null;
+};
+
 /**
  * The user's settings across projects, read again after a change from any window, a resync or a
  * failed save, and a write that sends only the fields given.
@@ -37,7 +43,7 @@ export function useAppSettings() {
       });
   }, [changed, resync, failedSaves]);
 
-  const save = async (patch: Partial<AppSettings>) => {
+  const save = async (patch: AppSettingsPatch) => {
     if (sending.current) return;
     sending.current = true;
     setSaving(true);
@@ -45,7 +51,18 @@ export function useAppSettings() {
     sending.current = false;
     setSaving(false);
     setError(result.ok ? null : failureText(result.error));
-    if (result.ok) setSettings((now) => now && { ...now, ...patch });
+    // The daemon merges the delivery rules kind by kind, and null clears the quiet hours.
+    const { attention_delivery, quiet_hours, ...rest } = patch;
+    if (result.ok)
+      setSettings(
+        (now) =>
+          now && {
+            ...now,
+            ...rest,
+            attention_delivery: { ...now.attention_delivery, ...attention_delivery },
+            quiet_hours: quiet_hours === undefined ? now.quiet_hours : (quiet_hours ?? undefined),
+          },
+      );
     else setFailedSaves((n) => n + 1);
   };
 

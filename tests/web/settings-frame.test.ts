@@ -158,10 +158,6 @@ describe('settings frame styles', () => {
     ['.ps-side .ps-page', 'border-radius', 'var(--r-sm)'],
     ['.ps-cg .tk-select', 'border-radius', 'var(--r-sm)'],
     ['.ps-cg .seg', 'border-radius', 'calc(var(--r-sm) + 2px)'],
-    ['.ps-ntf thead th', 'background', 'var(--sf2)'],
-    ['.ps-cg .ps-sec-bd:has(> .ps-ntf)', 'padding', '0'],
-    ['.ps-ntf :is(th, td):first-child', 'padding-left', '16px'],
-    ['.ps-ntf :is(th, td):last-child', 'padding-right', '16px'],
   ])('%s sets %s to %s', (selector, property, value) => {
     expect(rule(selector)).toContain(`${property}: ${value};`);
   });

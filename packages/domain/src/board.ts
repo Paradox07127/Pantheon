@@ -347,6 +347,8 @@ export interface LeadNote {
     | 'routine'
     | 'agent_proposal'
     | 'signal'
+    /** A message another agent of the project left for the user, sent to the main agent instead. */
+    | 'agent_report'
     /** Permission prompts of one task session approved for the lead since it last read its inbox; does not wake the lead. */
     | 'prompts_approved';
   text: string;

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import type { SessionTurn } from '@pantheon/domain';
+import type { AgentProfile, SessionTurn } from '@pantheon/domain';
 import type { AttachmentMeta, BoardModel, BoardTaskStatus } from '@pantheon/protocol';
 import {
   type HookHost,
@@ -21,6 +21,11 @@ import { t } from '../../apps/web/src/i18n/index.js';
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
 import { useBoard } from '../../apps/web/src/data/board.js';
 import { useDrafts } from '../../apps/web/src/data/drafts.js';
+import {
+  ASSISTANT,
+  chooseRequestTarget,
+  type RequestChoice,
+} from '../../apps/web/src/data/request-target.js';
 import { useShell } from '../../apps/web/src/store.js';
 import type { DaemonEvent } from '../../apps/web/src/data/sync.js';
 import {
@@ -42,6 +47,7 @@ import {
   outOfScopeFiles,
   requirementSessionInput,
   requirementTarget,
+  requirementTargets,
   seenOf,
   sinceLast,
   type BoardLead,
@@ -733,32 +739,64 @@ describe('lead panel', () => {
   });
 });
 
+const agent = (id: string, template: AgentProfile['template'], name: string): AgentProfile =>
+  ({
+    id,
+    revision: 1,
+    project_id: 'project-a',
+    template,
+    name,
+    role: 'AG',
+    created_at: 1,
+  }) as AgentProfile;
+
 describe('requirement box target', () => {
-  it('opens a new session without a lead', () => {
-    expect(requirementTarget(undefined, [])).toEqual({ kind: 'create' });
-    expect(requirementTarget([], [session('lead-1', 'open')])).toEqual({ kind: 'create' });
+  const agents = [
+    agent('agent-assistant', 'assistant', 'Assistant'),
+    agent('agent-triage', 'triage', 'Triage'),
+  ];
+  const targetOf = (choice: RequestChoice, sessions: SnapshotSession[]) =>
+    requirementTarget(choice, requirementTargets([lead('lead-new', 'idle', NOW)], sessions, agents))
+      .choice;
+
+  it('targets the Assistant without a stored choice', () => {
+    expect(targetOf(ASSISTANT, [session('lead-new', 'open')])).toEqual(ASSISTANT);
+    expect(requirementTarget(ASSISTANT, requirementTargets(undefined, [], null)).choice).toEqual(
+      ASSISTANT,
+    );
   });
 
-  it('sends to the newest lead when it is open and steers it while it runs', () => {
-    const leads = [lead('lead-old', 'idle', NOW - 10), lead('lead-new', 'idle', NOW)];
-    const open = [session('lead-old', 'open'), session('lead-new', 'open')];
-    expect(requirementTarget(leads, open)).toEqual({ kind: 'send', session: open[1] });
-    const running = [session('lead-old', 'open'), session('lead-new', 'running')];
-    expect(requirementTarget(leads, running)).toEqual({ kind: 'steer', session: running[1] });
+  it('keeps a stored lead, direct session or resident that takes input', () => {
+    const sessions = [
+      session('lead-new', 'running'),
+      session('direct-1', 'open'),
+      session('triage-1', 'open', { resident: { kind: 'triage', agent_id: 'agent-triage' } }),
+    ];
+    for (const choice of [
+      { kind: 'session', session_id: 'lead-new' },
+      { kind: 'session', session_id: 'direct-1' },
+      { kind: 'agent', agent_id: 'agent-triage' },
+    ] as const)
+      expect(targetOf(choice, sessions)).toEqual(choice);
   });
 
-  it('opens a new session when the newest lead cannot take input', () => {
-    const leads = [lead('lead-old', 'idle', NOW - 10), lead('lead-new', 'closed', NOW)];
+  it.each([
+    ['archived', [session('direct-1', 'open', { archived_at: '2026-11-01T00:00:00Z' })]],
+    ['gone', []],
+    ['closed', [session('direct-1', 'closed')]],
+    ['stopping', [session('direct-1', 'open', { stop_pending: true })]],
+  ])('falls back to the Assistant for a stored session that is %s', (_, sessions) => {
+    expect(targetOf({ kind: 'session', session_id: 'direct-1' }, sessions)).toEqual(ASSISTANT);
+  });
+
+  it('falls back to the Assistant for a stored resident that is archived', () => {
+    const archived = { ...agents[1]!, archived_at: 2 };
     expect(
-      requirementTarget(leads, [session('lead-old', 'open'), session('lead-new', 'closed')]),
-    ).toEqual({ kind: 'create' });
-    expect(
-      requirementTarget(leads, [
-        session('lead-old', 'open'),
-        session('lead-new', 'open', { stop_pending: true }),
-      ]),
-    ).toEqual({ kind: 'create' });
-    expect(requirementTarget(leads, [session('lead-old', 'open')])).toEqual({ kind: 'create' });
+      requirementTarget(
+        { kind: 'agent', agent_id: 'agent-triage' },
+        requirementTargets(undefined, [], [agents[0]!, archived]),
+      ).choice,
+    ).toEqual(ASSISTANT);
   });
 });
 
@@ -769,22 +807,26 @@ afterEach(() => {
 
 describe('publish bar', () => {
   const chooseFiles = vi.fn();
+  let agentList: AgentProfile[] = [];
   const stubRuntimes = (runtimes: string[]) =>
     vi.stubGlobal('window', {
       pantheon: {
-        query: async () => ({
+        query: async (method: string) => ({
           ok: true,
-          value: runtimes.map((runtime) => ({
-            runtime,
-            enabled: true,
-            installed: true,
-            auth: { state: 'unknown' },
-            version: null,
-            min_version: null,
-            version_ok: null,
-            checked_at: new Date().toISOString(),
-            capabilities: { write_isolation: { status: 'supported' } },
-          })),
+          value:
+            method === 'agent.list'
+              ? agentList
+              : runtimes.map((runtime) => ({
+                  runtime,
+                  enabled: true,
+                  installed: true,
+                  auth: { state: 'unknown' },
+                  version: null,
+                  min_version: null,
+                  version_ok: null,
+                  checked_at: new Date().toISOString(),
+                  capabilities: { write_isolation: { status: 'supported' } },
+                })),
         }),
         chooseFiles,
       },
@@ -863,14 +905,17 @@ describe('publish bar', () => {
     nodes(receipt(tree))
       .filter((n) => n.type === 'li' && n.props['aria-current'] === 'step')
       .map(text);
+  // The daemon routes a request to the session it names, or to the Assistant's session lead-new.
   const toLead = () => ({
     leads: [lead('lead-new', 'idle', NOW)],
     sessions: [session('lead-new', 'open')],
-    run: (async (_type, input) =>
-      ok({ ...turn('queued'), id: 'turn-sent', input: input.input })) as PublishCommand,
+    run: (async (_type, input) => {
+      const target = input.target as { session_id?: string } | undefined;
+      return ok({ session_id: target?.session_id ?? 'lead-new', turn_id: 'turn-sent' });
+    }) as PublishCommand,
   });
 
-  /** A bar that sent `requirement` to the lead. */
+  /** A bar that sent `requirement` to the Assistant. */
   const sent = async (requirement = 'Ship the importer') => {
     stubRuntimes([]);
     const h = box(toLead);
@@ -879,11 +924,175 @@ describe('publish bar', () => {
     await h.flush();
     return h;
   };
+  /** The button that opens the target menu. */
+  const trigger = (tree: unknown) => named(tree as ReactNode, 'Menu').props.trigger;
+  const choose = (h: HookHost<any>, value: string) => {
+    named(h.value, 'MenuRadioGroup').props.onChange(value);
+    h.render();
+  };
+  const targetLabel = (name: string) => say('board.lead.publish.target', { name });
+  const ASSISTANT_NAME = zh('sessions.agents.template.assistant');
 
   beforeEach(() => {
     chooseFiles.mockReset();
     daemon([]);
     useDrafts.setState({ drafts: {}, answers: {} });
+    agentList = [];
+    const items = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => void items.set(key, value),
+    });
+    for (const id of ['project-a', 'project-b', 'project-agents'])
+      chooseRequestTarget(id, ASSISTANT);
+    items.clear();
+  });
+
+  it('sends to the Assistant when the project has no stored target', async () => {
+    stubRuntimes([]);
+    const run = vi.fn(toLead().run);
+    const h = box(() => ({ ...toLead(), run }));
+    expect(trigger(h.value).props['aria-label']).toBe(targetLabel(ASSISTANT_NAME));
+    type(h, 'Ship the importer');
+    submit(h);
+    await h.flush();
+    expect(run.mock.calls).toEqual([
+      ['request.send', { project_id: 'project-a', input: 'Ship the importer' }, null],
+    ]);
+  });
+
+  it('sends to a chosen direct session and keeps the choice when the bar is built again', async () => {
+    stubRuntimes([]);
+    const run = vi.fn(toLead().run);
+    const props = () => ({
+      ...toLead(),
+      sessions: [
+        session('lead-new', 'open'),
+        session('direct-1', 'open', { title: 'Ledger export spike' }),
+      ],
+      run,
+    });
+    const h = box(props);
+    choose(h, 'session:direct-1');
+    expect(trigger(h.value).props['aria-label']).toBe(targetLabel('Ledger export spike'));
+    type(h, 'Find the flaky test');
+    submit(h);
+    await h.flush();
+    expect(run.mock.calls).toEqual([
+      [
+        'request.send',
+        {
+          project_id: 'project-a',
+          input: 'Find the flaky test',
+          target: { kind: 'session', session_id: 'direct-1' },
+        },
+        null,
+      ],
+    ]);
+    unmountAll();
+    expect(trigger(box(props).value).props['aria-label']).toBe(targetLabel('Ledger export spike'));
+  });
+
+  it('shows the Assistant for a stored session that was archived since', () => {
+    stubRuntimes([]);
+    const props = (archived_at?: string) => () => ({
+      sessions: [session('direct-1', 'open', { title: 'Ledger export spike', archived_at })],
+    });
+    choose(box(props()), 'session:direct-1');
+    unmountAll();
+    const h = box(props('2026-11-01T00:00:00Z'));
+    expect(trigger(h.value).props['aria-label']).toBe(targetLabel(ASSISTANT_NAME));
+  });
+
+  it('lists the Assistant, the other residents, the leads, the direct sessions, then New lead', async () => {
+    stubRuntimes([]);
+    agentList = [
+      agent('agent-triage', 'triage', 'Triage'),
+      agent('agent-assistant', 'assistant', 'Assistant'),
+    ];
+    const h = box(() => ({
+      projectId: 'project-agents',
+      leads: [{ ...lead('lead-new', 'waiting', NOW), title: 'Refunds v2 rollout' }],
+      sessions: [
+        session('assistant-1', 'open', {
+          resident: { kind: 'assistant', agent_id: 'agent-assistant' },
+        }),
+        session('direct-1', 'open', { title: 'Ledger export spike' }),
+        session('lead-new', 'open'),
+        session('worker-1', 'open', { task: { id: 'lead-new:t1' } as SnapshotSession['task'] }),
+        session('direct-2', 'closed', { title: 'Done already' }),
+      ],
+    }));
+    await h.flush();
+    h.render();
+    expect(
+      nodes(named(h.value, 'MenuRadioGroup').props.children)
+        .filter((n) => typeof n.type === 'function' && n.type.name === 'MenuRadioItem')
+        .map(text),
+    ).toEqual([
+      ASSISTANT_NAME,
+      zh('sessions.agents.template.triage'),
+      'Refunds v2 rollout',
+      'Ledger export spike',
+      zh('board.lead.publish.newLead'),
+    ]);
+    expect(named(h.value, 'Menu').props.label).toBe(zh('board.lead.publish.targets'));
+  });
+
+  it('opens a resident that has no session yet and sends to it', async () => {
+    stubRuntimes([]);
+    agentList = [
+      agent('agent-assistant', 'assistant', 'Assistant'),
+      agent('agent-triage', 'triage', 'Triage'),
+    ];
+    const run = vi.fn<PublishCommand>(async (type) =>
+      type === 'resident.open'
+        ? ok({ id: 'triage-1' })
+        : ok({ session_id: 'triage-1', turn_id: 'turn-sent' }),
+    );
+    const h = box(() => ({ projectId: 'project-agents', run }));
+    await h.flush();
+    choose(h, 'agent:agent-triage');
+    type(h, 'Sort the new issues');
+    submit(h);
+    await h.flush();
+    expect(run.mock.calls).toEqual([
+      ['resident.open', { agent_id: 'agent-triage' }, null],
+      [
+        'request.send',
+        {
+          project_id: 'project-agents',
+          input: 'Sort the new issues',
+          target: { kind: 'session', session_id: 'triage-1' },
+        },
+        null,
+      ],
+    ]);
+  });
+
+  it('creates a lead with New lead as before, then targets the Assistant again', async () => {
+    stubRuntimes(['codex']);
+    const run = vi.fn<PublishCommand>(async () => ok({ id: 'lead-created' }));
+    const h = box(() => ({ ...toLead(), run }));
+    await h.flush();
+    choose(h, 'create');
+    expect(trigger(h.value).props['aria-label']).toBe(
+      targetLabel(zh('board.lead.publish.newLead')),
+    );
+    type(h, 'Ship the importer');
+    submit(h);
+    await h.flush();
+    expect(run.mock.calls).toEqual([
+      [
+        'session.create',
+        requirementSessionInput('project-a', undefined, 'Ship the importer', ['codex']),
+        null,
+      ],
+    ]);
+    expect(text(find(receipt(h.value), (n) => n.props.className === 'pb-rc-t'))).toBe(
+      'Ship the importer',
+    );
+    expect(trigger(h.value).props['aria-label']).toBe(targetLabel(ASSISTANT_NAME));
   });
 
   it('takes a requirement of several lines', () => {
@@ -941,8 +1150,8 @@ describe('publish bar', () => {
     await h.flush();
     expect(sent).toEqual([
       [
-        'session.send',
-        { session_id: 'lead-new', input: 'Ship the importer', attachments: ['file-a'] },
+        'request.send',
+        { project_id: 'project-a', input: 'Ship the importer', attachments: ['file-a'] },
       ],
     ]);
     expect(named(h.value, 'AttachmentStrip').props.items).toEqual([]);
@@ -954,9 +1163,10 @@ describe('publish bar', () => {
       leads: [{ ...lead('lead-new', 'idle', NOW), title: 'Plan exports' }],
       sessions: [session('lead-new', 'open', { runtime: 'codex' })],
     }));
-    const to = find(h.value, (n) => n.props.className === 'pb-to');
+    choose(h, 'session:lead-new');
+    const to = trigger(h.value);
     expect(text(to)).toBe('Plan exports');
-    expect(named(to, 'RuntimeGlyph').props.runtime).toBe('codex');
+    expect(named(to, 'TargetIcon').props.runtime).toBe('codex');
   });
 
   it('shows a receipt whose current step follows the turn it sent', async () => {
@@ -1108,6 +1318,7 @@ describe('publish bar', () => {
     };
     const h = box(() => ({ run }));
     await h.flush();
+    choose(h, 'create');
     type(h, 'Ship the importer');
     submit(h);
     await h.flush();

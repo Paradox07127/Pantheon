@@ -101,13 +101,13 @@ it('opens the settings on the settings keys and closes them on the next press', 
   expect(shell().screen).toBe('board');
 });
 
-it('reads a project left on the old settings screen back as its sessions', () => {
+it('reads a project left on the old settings screen back as its board', () => {
   items.set(
     PLACES_KEY,
     JSON.stringify({ alpha: { screen: 'settings', sessionId: 'alpha-1', sessionTask: null } }),
   );
   shell().openProject('alpha');
-  expect(shell()).toMatchObject({ screen: 'sessions', sessionId: 'alpha-1' });
+  expect(shell()).toMatchObject({ screen: 'board', sessionId: 'alpha-1' });
 });
 
 it('moves focus to the settings search on a slash typed outside a text field', () => {

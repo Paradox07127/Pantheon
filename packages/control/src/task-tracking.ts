@@ -174,6 +174,7 @@ const wakingNote = (plan: BoardPlan, note: LeadNote) =>
   note.kind === 'follow_up' ||
   note.kind === 'routine' ||
   note.kind === 'agent_proposal' ||
+  note.kind === 'agent_report' ||
   note.kind === 'signal' ||
   note.kind === 'usage_reset' ||
   note.kind === 'dispatch_failed' ||

@@ -147,13 +147,7 @@ describe('personal settings export and import', () => {
   const change = () => {
     setAppearance({ density: 'compact', reading_width: 960 });
     setLook({ colorblind: true, send_key: 'meta-enter' });
-    setNotificationPrefs({
-      events: {
-        ...DEFAULT_NOTIFICATIONS.events,
-        ready_for_review: { system: false, sound: false },
-      },
-      badge: false,
-    });
+    setNotificationPrefs({ sound: false, badge: false });
     expect(setShortcut('palette', 'Meta+P')).toBeNull();
     setDiffPrefs({ wrap: false, collapse: true });
   };
@@ -245,7 +239,7 @@ describe('personal settings export and import', () => {
   it('writes nothing when one store in the file is invalid', () => {
     change();
     const file = JSON.parse(exportPersonalSettings());
-    file.notifications.events.approval_requested.sound = 'loud';
+    file.notifications.sound = 'loud';
     resetStores();
     stored.clear();
     const before = personalSettings();

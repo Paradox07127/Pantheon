@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkbenchSession } from '@pantheon/protocol';
+import {
+  DEFAULT_ATTENTION_DELIVERY,
+  type AppSettings,
+  type WorkbenchSession,
+} from '@pantheon/protocol';
 import { mount, unmountAll } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({ board: {} as any }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
@@ -52,6 +56,8 @@ const completed = (sequence: number): DaemonEvent => ({
 });
 
 let notify: ReturnType<typeof vi.fn>;
+// The daemon's delivery rules app.settings answers with.
+let rules: Partial<AppSettings['attention_delivery']>;
 let keepAwake: ReturnType<typeof vi.fn>;
 let focused: boolean;
 const notices = (sessions: WorkbenchSession[]) => mount(() => useNotices('project-a', sessions));
@@ -68,6 +74,7 @@ beforeEach(() => {
   notify = vi.fn(async () => {});
   keepAwake = vi.fn(async () => {});
   focused = false;
+  rules = {};
   vi.stubGlobal('window', {
     addEventListener() {},
     removeEventListener() {},
@@ -75,7 +82,13 @@ beforeEach(() => {
       notify,
       keepAwake,
       onNotificationClick: () => () => {},
-      query: async () => ({ ok: true, value: [] }),
+      query: async (method: string) => ({
+        ok: true,
+        value:
+          method === 'app.settings'
+            ? { attention_delivery: { ...DEFAULT_ATTENTION_DELIVERY, ...rules } }
+            : [],
+      }),
     },
   });
   vi.stubGlobal('document', { hasFocus: () => focused });
@@ -99,46 +112,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const withEvents = (events: object) => ({
-  events: { ...DEFAULT_NOTIFICATIONS.events, ...events },
-});
-
 describe('notification preferences', () => {
   it('keep each valid stored field and default the others', () => {
     expect(readNotificationPrefs(null)).toEqual(DEFAULT_NOTIFICATIONS);
     expect(
       readNotificationPrefs(
         JSON.stringify({
-          events: { ready_for_review: { system: false }, merged: { sound: 'loud' } },
+          sound: false,
+          keep_awake: 'no',
           quiet_end: '07:30',
         }),
       ),
-    ).toEqual({
-      ...DEFAULT_NOTIFICATIONS,
-      ...withEvents({ ready_for_review: { system: false, sound: false } }),
-      quiet_end: '07:30',
-    });
+    ).toEqual({ ...DEFAULT_NOTIFICATIONS, sound: false });
   });
 
-  it('sends nothing for an event whose system notification is off', () => {
-    setNotificationPrefs(withEvents({ turn_completed: { system: false, sound: false } }));
+  it('sends a turn end however the sound is set', () => {
+    setNotificationPrefs({ sound: false });
     turnEnd();
-    expect(notify).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ silent: true }));
   });
 
-  it('sends no baseline wait notice with approvals turned off, and one with them on', () => {
+  it('sends no baseline wait notice with permissions set to never, and one set to now', async () => {
     const baseline = { workspace_id: null };
-    let sessions = [listed('session-b', { ...baseline, state: 'running' })];
-    const h = mount(() => useNotices('project-a', sessions));
-    setNotificationPrefs(withEvents({ approval_requested: { system: false, sound: true } }));
-    sessions = [listed('session-b', { ...baseline, state: 'waiting' })];
-    h.render();
+    const wait = async () => {
+      let sessions = [listed('session-b', { ...baseline, state: 'running' })];
+      const h = mount(() => useNotices('project-a', sessions));
+      await h.flush();
+      sessions = [listed('session-b', { ...baseline, state: 'waiting' })];
+      h.render();
+    };
+    rules = { permission: 'never' };
+    await wait();
     expect(notify).not.toHaveBeenCalled();
-    setNotificationPrefs(DEFAULT_NOTIFICATIONS);
-    sessions = [listed('session-b', { ...baseline, state: 'running' })];
-    h.render();
-    sessions = [listed('session-b', { ...baseline, state: 'waiting' })];
-    h.render();
+    rules = {};
+    await wait();
     expect(notify).toHaveBeenCalledTimes(1);
   });
 
@@ -147,11 +154,11 @@ describe('notification preferences', () => {
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ silent: true }));
   });
 
-  it('keeps the sound of a turn end once its sound is on', () => {
-    setNotificationPrefs(withEvents({ turn_completed: { system: true, sound: true } }));
+  it('keeps a turn end silent with the sound on', () => {
+    setNotificationPrefs({ sound: true });
     turnEnd();
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify.mock.calls[0]![0]).not.toHaveProperty('silent');
+    expect(notify.mock.calls[0]![0]).toMatchObject({ silent: true });
   });
 
   it('gives no turn end while the window is in front by default', () => {

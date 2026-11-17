@@ -1,9 +1,11 @@
-import type { ProjectBaseline } from '@pantheon/domain';
+import type { AgentProfile, ProjectBaseline } from '@pantheon/domain';
 import type { BoardModel, BoardSnapshot, BoardTaskStatus, CommandType } from '@pantheon/protocol';
 import type { GlyphName } from '../../components/SessionStateIcon';
+import { agentName, shownAgents, templateName } from '../../data/agents';
 import { shortId } from '../../data/format';
 import { reasonText } from '../../data/needs-you';
 import { proposalTitle } from '../../data/plan-edit';
+import { ASSISTANT, choiceKey, type RequestChoice } from '../../data/request-target';
 import { t } from '../../i18n';
 import { defaultPermissionMode, defaultRuntime, newSessionInput } from '../sessions/model';
 import { tellLead, type SnapshotSession } from './panels-model';
@@ -18,22 +20,81 @@ export type SessionDefaults = BoardSnapshot['projects'][number]['session_default
 
 /* Requirement box */
 
-export type RequirementTarget =
-  { kind: 'send' | 'steer'; session: SnapshotSession } | { kind: 'create' };
+export interface RequirementTarget {
+  choice: RequestChoice;
+  name: string;
+  /** The session it goes to; none for the Assistant, a new lead and a resident with no session that takes input. */
+  session?: SnapshotSession;
+}
 
-/** Where a requirement goes: to the newest lead while it takes input, else into a new session. */
-export function requirementTarget(
+const takesInput = (session: SnapshotSession | undefined): session is SnapshotSession =>
+  !!session && !session.archived_at && tellLead(session).enabled;
+
+/**
+ * Where the requirement bar can send, in menu order: the Assistant, the other residents, the leads
+ * of the current plans, the direct sessions that take input, then a new lead.
+ */
+export function requirementTargets(
   leads: readonly BoardLead[] | undefined,
   sessions: readonly SnapshotSession[],
+  agents: readonly AgentProfile[] | null,
+): RequirementTarget[] {
+  const shown = shownAgents(agents ?? []);
+  const assistant = shown.find((agent) => agent.template === 'assistant');
+  const residents = shown
+    .filter((agent) => agent !== assistant)
+    .map((agent): RequirementTarget => {
+      const session = sessions.find((s) => s.resident?.agent_id === agent.id && takesInput(s));
+      return {
+        choice: { kind: 'agent', agent_id: agent.id },
+        name: agentName(agent),
+        ...(session ? { session } : {}),
+      };
+    });
+  const leadIds = new Set((leads ?? []).map((lead) => lead.session_id));
+  const planLeads = (leads ?? []).flatMap((lead): RequirementTarget[] => {
+    const session = sessions.find((s) => s.id === lead.session_id);
+    return takesInput(session) && !session.resident
+      ? [
+          {
+            choice: { kind: 'session', session_id: session.id },
+            name: lead.title ?? session.title ?? session.id,
+            session,
+          },
+        ]
+      : [];
+  });
+  const direct = sessions
+    .filter((s) => takesInput(s) && !s.resident && !s.task && !leadIds.has(s.id))
+    .map((session): RequirementTarget => ({
+      choice: { kind: 'session', session_id: session.id },
+      name:
+        session.title?.trim() ||
+        t(
+          { id: 'board.session.fallbackTitle', defaultMessage: 'Session {id}' },
+          { id: shortId(session.id) },
+        ),
+      session,
+    }));
+  return [
+    { choice: ASSISTANT, name: assistant ? agentName(assistant) : templateName('assistant') },
+    ...residents,
+    ...planLeads,
+    ...direct,
+    {
+      choice: { kind: 'create' },
+      name: t({ id: 'board.lead.publish.newLead', defaultMessage: 'New lead' }),
+    },
+  ];
+}
+
+/** The target of the stored choice among the targets; the Assistant when it is not among them. */
+export function requirementTarget(
+  choice: RequestChoice,
+  targets: readonly RequirementTarget[],
 ): RequirementTarget {
-  const newest = leads?.reduce<BoardLead | undefined>(
-    (latest, lead) => (!latest || lead.updated_at > latest.updated_at ? lead : latest),
-    undefined,
-  );
-  const session = newest && sessions.find((s) => s.id === newest.session_id);
-  const state = tellLead(session);
-  if (!session || !state.enabled) return { kind: 'create' };
-  return { kind: state.type === 'session.steer' ? 'steer' : 'send', session };
+  const key = choiceKey(choice);
+  return targets.find((target) => choiceKey(target.choice) === key) ?? targets[0]!;
 }
 
 /** The session.create input of a requirement and its attachments under the project's session defaults, among the runtimes offered. */

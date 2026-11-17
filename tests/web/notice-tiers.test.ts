@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { ReactElement } from 'react';
-import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
+import {
+  DEFAULT_ATTENTION_DELIVERY,
+  type BoardSnapshot,
+  type WorkbenchSession,
+} from '@pantheon/protocol';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
@@ -24,7 +28,7 @@ import {
   type NoticeWatch,
 } from '@/data/notice-tiers';
 import { useCurrentProject } from '@/data/current-project';
-import { DEFAULT_NOTIFICATIONS, setNotificationPrefs } from '@/data/notifications';
+import { DEFAULT_NOTIFICATIONS, setNotificationPrefs, useNotices } from '@/data/notifications';
 import type { DaemonEvent } from '@/data/sync';
 import { useShell } from '@/store';
 import { zh } from './i18n-setup.js';
@@ -1007,8 +1011,28 @@ describe('the notice feed', () => {
     expect(mounted.shown()).toEqual(['Ship API', 'Write docs', 'Fix login']);
   });
 
-  it('shows no card in the quiet hours', () => {
-    setNotificationPrefs({ quiet_hours: true, quiet_start: '08:00', quiet_end: '10:00' });
+  it('shows no card in the quiet hours', async () => {
+    const settings = {
+      attention_delivery: DEFAULT_ATTENTION_DELIVERY,
+      quiet_hours: { from: '08:00', to: '10:00' },
+    };
+    vi.stubGlobal('window', {
+      pantheon: {
+        command,
+        notify: async () => {},
+        onNotificationClick: () => () => {},
+        query: async (method: string) => ({
+          ok: true,
+          value: method === 'app.settings' ? settings : [],
+        }),
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    });
+    // The daemon's quiet hours reach the feed through the app-wide notices.
+    const notices = new HookHost(() => useNotices('beta', null, null));
+    notices.render();
+    await notices.flush();
     render({
       sessions: [session('a', 'running')],
       allNeeds: [approval('approval-1', 'beta-login')],
@@ -1016,27 +1040,6 @@ describe('the notice feed', () => {
     useBoard.setState({ events: [event('turn.completed', 'turn-login')] });
     render({ sessions: [session('a', 'ready')] });
     expect(mounted.shown()).toEqual([]);
-  });
-
-  it('shows no card for the events whose in-app choice is off, and the cards of the others', () => {
-    setNotificationPrefs({
-      in_app: {
-        ...DEFAULT_NOTIFICATIONS.in_app,
-        approval_requested: false,
-        ready_for_review: false,
-      },
-    });
-    render({
-      sessions: [session('a', 'running')],
-      allNeeds: [approval('approval-1', 'beta-login')],
-    });
-    render({ sessions: [session('a', 'ready')] });
-    expect(mounted.shown()).toEqual([]);
-    setNotificationPrefs({ in_app: DEFAULT_NOTIFICATIONS.in_app });
-    render({
-      sessions: [session('a', 'ready')],
-      allNeeds: [approval('approval-2', 'beta-login')],
-    });
-    expect(mounted.shown()).toHaveLength(1);
+    notices.unmount();
   });
 });

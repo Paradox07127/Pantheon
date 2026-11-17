@@ -81,6 +81,7 @@ export interface SignalInput {
   /** When the signal happened; now when absent. */
   at?: number;
   priority_hint?: 'crash';
+  scope?: SignalIssue['scope'];
 }
 
 /** The text without control, format and other hidden characters; newline and tab stay when kept. */
@@ -241,6 +242,7 @@ export function recordSignal(ctx: ControlContext, input: SignalInput): SignalIss
       samples,
       recent: rule.escalate_at ? [at] : [],
       ...(cause && { muted_by: cause.id }),
+      ...(input.scope && { scope: input.scope }),
       routed: [],
       history: [{ at: now, state, text: cause ? `Muted by issue ${cause.id}` : 'First signal' }],
     });
@@ -264,6 +266,7 @@ export function recordSignal(ctx: ControlContext, input: SignalInput): SignalIss
     last_seen: Math.max(found.last_seen, at),
     samples: [...found.samples, ...samples].slice(-SAMPLE_LIMIT),
     recent,
+    ...(input.scope && { scope: input.scope }),
   };
   if (found.state === 'resolved') {
     const { resolved_at: _resolved, ...open } = counted;

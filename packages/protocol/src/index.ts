@@ -1208,6 +1208,7 @@ const workflowPolicySettings = z.strictObject({
   plan_changes: z.enum(['auto', 'confirm']).optional(),
   charter: charter.optional(),
   must_ask_extra: z.array(str).optional(),
+  urgent_direct: z.array(z.enum(['main_gate_failed'])).optional(),
   path: z
     .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
     .optional(),
@@ -1258,11 +1259,43 @@ const decisionKinds = {
   external: true,
   other: true,
 } satisfies Record<NeedsYouItem['decision'], true>;
-/** Every `NeedsYouItem.decision`, the keys of the attention delivery rules. */
+/** Every `NeedsYouItem.decision`. */
 export const NEEDS_YOU_DECISIONS = Object.keys(decisionKinds) as NeedsYouItem['decision'][];
+/** A kind the attention delivery rules name: a decision, or a notice that asks for none. */
+export type AttentionKind = NeedsYouItem['decision'] | 'merged';
+/** The keys of the attention delivery rules: the decisions, then the notices that ask for none. */
+export const ATTENTION_KINDS: readonly AttentionKind[] = [...NEEDS_YOU_DECISIONS, 'merged'];
 export type AttentionDelivery = 'now' | 'brief' | 'never';
+const BRIEF_BY_DEFAULT: readonly AttentionKind[] = ['milestone_accept', 'agent_proposal', 'merged'];
+/** How each kind reaches the user until the user chooses: milestones to accept, agent proposals and merges wait for the brief. */
+export const DEFAULT_ATTENTION_DELIVERY = Object.fromEntries(
+  ATTENTION_KINDS.map((kind) => [kind, BRIEF_BY_DEFAULT.includes(kind) ? 'brief' : 'now']),
+) as Record<AttentionKind, AttentionDelivery>;
+/** A question that has waited this long reaches the user now, whatever the rules say. */
+export const OVERDUE_QUESTION_MS = 4 * 3_600_000;
+/** Whether the local time of `at` is inside the HH:MM range, which can cross midnight. */
+export function withinHours(hours: { from: string; to: string }, at: number): boolean {
+  const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+  const time = new Date(at),
+    minutes = time.getHours() * 60 + time.getMinutes(),
+    from = minutesOf(hours.from),
+    to = minutesOf(hours.to);
+  return from <= to ? minutes >= from && minutes < to : minutes >= from || minutes < to;
+}
+/** How the item reaches the user at `now`: an overdue question always now, else quiet hours hold now for the brief. */
+export function deliveryFor(
+  settings: Pick<AppSettings, 'attention_delivery' | 'quiet_hours'>,
+  item: { decision: AttentionKind; created_at: number },
+  now: number,
+): AttentionDelivery {
+  if (item.decision === 'question' && now - item.created_at > OVERDUE_QUESTION_MS) return 'now';
+  const delivery = settings.attention_delivery[item.decision];
+  return delivery === 'now' && settings.quiet_hours && withinHours(settings.quiet_hours, now)
+    ? 'brief'
+    : delivery;
+}
 const attentionDelivery = z.partialRecord(
-  z.enum(NEEDS_YOU_DECISIONS),
+  z.enum(ATTENTION_KINDS),
   z.enum(['now', 'brief', 'never']),
 );
 const quietHours = z.strictObject({
@@ -1280,7 +1313,7 @@ export const userConfigSchema = z
     auto_archive_merged: z.boolean().optional(),
     /** Sessions keep a recap of where they stand; absent is on. */
     session_recap: z.boolean().optional(),
-    /** How each kind of decision reaches the user; an absent kind is now. */
+    /** How each attention kind reaches the user; an absent kind is its default. */
     attention_delivery: attentionDelivery.optional(),
     /** Local HH:MM range, possibly across midnight, in which now waits for the brief. */
     quiet_hours: quietHours.optional(),
@@ -2028,6 +2061,8 @@ export const inputSchemas = {
     charter: charter.optional(),
     /** Permission rules whose prompts always reach the user; replaces the current list. */
     must_ask_extra: z.array(str).optional(),
+    /** The messages of agents other than the main agent that reach the user directly; replaces the current list. */
+    urgent_direct: z.array(z.enum(['main_gate_failed'])).optional(),
     /** Merged into the current path by tier. */
     path: z
       .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
@@ -2578,7 +2613,8 @@ export const inputSchemas = {
     session_recap: z.boolean().optional(),
     /** Merges into the stored rules kind by kind. */
     attention_delivery: attentionDelivery.optional(),
-    quiet_hours: quietHours.optional(),
+    /** Null clears them. */
+    quiet_hours: quietHours.nullable().optional(),
     baseline_rounds: z.number().int().min(1).max(5).optional(),
     baseline_visuals: z.boolean().optional(),
     baseline_range_story: z.boolean().optional(),
@@ -2872,8 +2908,8 @@ export interface AppSettings {
   auto_archive_merged: boolean;
   /** Absent is on. */
   session_recap?: boolean;
-  /** Every decision kind; absent in the config is now. */
-  attention_delivery: Record<NeedsYouItem['decision'], AttentionDelivery>;
+  /** Every attention kind; absent in the config is its default. */
+  attention_delivery: Record<AttentionKind, AttentionDelivery>;
   /** Local HH:MM; inside it now waits for the brief. */
   quiet_hours?: { from: string; to: string };
   baseline_rounds: number;

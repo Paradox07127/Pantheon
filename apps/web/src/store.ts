@@ -103,7 +103,7 @@ function readPlace(projectId: string): ProjectPlace {
   const place = readPlaces()[projectId];
   const sessionId = typeof place?.sessionId === 'string' ? place.sessionId : null;
   return {
-    screen: PROJECT_SCREENS.includes(place?.screen as string) ? place!.screen : 'sessions',
+    screen: PROJECT_SCREENS.includes(place?.screen as string) ? place!.screen : 'board',
     sessionId,
     sessionTask: sessionId === '' && isTask(place?.sessionTask) ? place.sessionTask : null,
   };
@@ -113,7 +113,7 @@ function writePlace(projectId: string, place: ProjectPlace) {
   try {
     localStorage.setItem(PLACES_KEY, JSON.stringify({ ...readPlaces(), [projectId]: place }));
   } catch {
-    // The switch then lands on the sessions screen, as with no memory.
+    // The switch then lands on the board, as with no memory.
   }
 }
 

@@ -271,7 +271,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `agent.sessions` | `state?`: string | session_list (lead) |
 | `agent.signal_read` | `id`: string | signal_read (lead) |
 | `agent.signals` | `state?`: "new" \| "ongoing" \| "escalating" \| "regressed" \| "holding" \| "resolved" \| "muted"<br>`source?`: "gate_failures" \| "flaky_tests" \| "app_errors" \| "session_failures" \| "trace_findings" | signal_list (lead) |
-| `agent.tell_user` | `project_id`: string<br>`text`: string<br>`urgency`: "normal" \| "high" | tell_user (lead) |
+| `agent.tell_user` | `project_id`: string<br>`text`: string<br>`urgency`: "normal" \| "high"<br>`signal_issue_id?`: string | tell_user (lead) |
 | `agent.unarchive` | `agent_id`: string |  |
 | `agent.update` | `agent_id`: string<br>`revision`: integer<br>`name?`: string<br>`role?`: string<br>`instructions?`: string<br>`brief?`: string<br>`tools?`: ("board" \| "dispatch" \| "memory" \| "browser" \| "app" \| "sessions" \| "github" \| "always_on" \| "agents" \| "signals")[]<br>`listens?`: ("github" \| "gate_failures" \| "flaky_tests" \| "app_errors" \| "session_failures" \| "trace_findings")[]<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`routines?`: object[] |  |
 
@@ -283,7 +283,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `app.errors` | — | app_errors (planner), app_errors (lead), app_errors (worker) |
 | `app.logs` | `lines?`: integer<br>`grep?`: string | app_logs (planner), app_logs (lead), app_logs (worker) |
 | `app.screenshot` | — | app_screenshot (planner), app_screenshot (lead), app_screenshot (worker) |
-| `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`attention_delivery?`: object<br>`quiet_hours?`: object<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean<br>`baseline_range_story?`: boolean |  |
+| `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`attention_delivery?`: object<br>`quiet_hours?`: object \| null<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean<br>`baseline_range_story?`: boolean |  |
 
 ### approval
 
@@ -470,7 +470,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults" \| "usage_targets" \| "external_events" \| "auto_merge"<br>`param?`: "improvement_mode" \| "plan_changes" \| "charter" \| "must_ask_extra" \| "path" \| "acceptance_wake" \| "max_parallel" \| "max_parallel_limit" \| "runtime_parallel" \| "dispatch_paused" \| "runtime_quota_threshold" \| "gate_on_fail" \| "gate_runner" \| "handback_limit" \| "task_size_hint" \| "budget" \| "pinned" |  |
+| `project.override.clear` | `project_id`: string<br>`key`: "workflow_policy" \| "session_defaults" \| "usage_targets" \| "external_events" \| "auto_merge"<br>`param?`: "improvement_mode" \| "plan_changes" \| "charter" \| "must_ask_extra" \| "urgent_direct" \| "path" \| "acceptance_wake" \| "max_parallel" \| "max_parallel_limit" \| "runtime_parallel" \| "dispatch_paused" \| "runtime_quota_threshold" \| "gate_on_fail" \| "gate_runner" \| "handback_limit" \| "task_size_hint" \| "budget" \| "pinned" |  |
 
 ### project.read
 
@@ -676,7 +676,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `workflow.definition.set_default` | `project_id`: string<br>`id`: string |  |
 | `workflow.definition.trial.decide` | `project_id`: string<br>`id?`: string<br>`decision`: "keep" \| "revert" |  |
 | `workflow.policy.reset` | `project_id`: string |  |
-| `workflow.policy.set` | `project_id`: string<br>`improvement_mode?`: "auto" \| "confirm" \| "off"<br>`plan_changes?`: "auto" \| "confirm"<br>`charter?`: object<br>`must_ask_extra?`: string[]<br>`path?`: object<br>`acceptance_wake?`: "each_merge" \| "milestone"<br>`max_parallel?`: integer<br>`max_parallel_limit?`: integer<br>`runtime_parallel?`: object<br>`dispatch_paused?`: boolean<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`handback_limit?`: 0 \| integer<br>`task_size_hint?`: integer \| null<br>`budget?`: object<br>`project_budget?`: object \| null<br>`pinned?`: ("path" \| "acceptance_wake" \| "max_parallel" \| "handback_limit" \| "task_size_hint" \| "runtime_quota_threshold" \| "budget")[] |  |
+| `workflow.policy.set` | `project_id`: string<br>`improvement_mode?`: "auto" \| "confirm" \| "off"<br>`plan_changes?`: "auto" \| "confirm"<br>`charter?`: object<br>`must_ask_extra?`: string[]<br>`urgent_direct?`: "main_gate_failed"[]<br>`path?`: object<br>`acceptance_wake?`: "each_merge" \| "milestone"<br>`max_parallel?`: integer<br>`max_parallel_limit?`: integer<br>`runtime_parallel?`: object<br>`dispatch_paused?`: boolean<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`handback_limit?`: 0 \| integer<br>`task_size_hint?`: integer \| null<br>`budget?`: object<br>`project_budget?`: object \| null<br>`pinned?`: ("path" \| "acceptance_wake" \| "max_parallel" \| "handback_limit" \| "task_size_hint" \| "runtime_quota_threshold" \| "budget")[] |  |
 | `workflow.step.decide` | `step_run_id`: string<br>`decision`: "approve" \| "reject"<br>`reason?`: string |  |
 
 ### workspace

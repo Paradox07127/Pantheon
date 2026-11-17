@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BoardSnapshot } from '@pantheon/protocol';
+import {
+  DEFAULT_ATTENTION_DELIVERY,
+  type AppSettings,
+  type BoardSnapshot,
+} from '@pantheon/protocol';
 import { useCurrentProject } from '@/data/current-project';
 import type { NeedsYouItem } from '@/data/needs-you';
 import {
@@ -336,16 +340,24 @@ describe('decision notices', () => {
     milestones: [{ id: 'milestone-1', title: 'Search and redirects' }],
   } as unknown as BoardSnapshot;
 
-  it('follows the approval switch, not the question switch', () => {
+  it("follows the daemon's rule for each item's kind of decision", () => {
     const { seen } = decisionNotices(null, [], withMilestone);
-    const without = (event: 'approval_requested' | 'question_asked') => ({
-      ...DEFAULT_NOTIFICATIONS,
-      events: { ...DEFAULT_NOTIFICATIONS.events, [event]: { system: false, sound: false } },
+    const rules = (delivery: Partial<AppSettings['attention_delivery']>) => ({
+      attention_delivery: { ...DEFAULT_ATTENTION_DELIVERY, ...delivery },
     });
-    const sent = (event: 'approval_requested' | 'question_asked') =>
-      decisionNotices(seen, [milestone, proposal], withMilestone, without(event)).notices;
-    expect(sent('approval_requested')).toEqual([]);
-    expect(sent('question_asked')).toHaveLength(2);
+    const sent = (delivery: Partial<AppSettings['attention_delivery']>) =>
+      decisionNotices(
+        seen,
+        [
+          { ...milestone, decision: 'milestone_accept' },
+          { ...proposal, decision: 'improvement' },
+        ],
+        withMilestone,
+        DEFAULT_NOTIFICATIONS,
+        rules(delivery),
+      ).notices.map((n) => n.title);
+    expect(sent({})).toEqual(['Alpha app']);
+    expect(sent({ milestone_accept: 'now', improvement: 'never' })).toEqual(['Beta app']);
   });
 
   it('notifies a milestone ready for acceptance and a new proposal once each while listed, opening the inbox', () => {

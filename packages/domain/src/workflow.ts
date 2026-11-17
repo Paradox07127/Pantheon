@@ -115,6 +115,8 @@ export interface WorkflowPolicy extends Entity {
   charter?: Partial<Record<CharterPower, CharterMode>>;
   /** Permission rules, in the syntax of Project.permission_rules, whose prompts always reach the user beside the built-in must-ask kinds. */
   must_ask_extra?: string[];
+  /** The messages of agents other than the main agent that reach the user directly: main_gate_failed cites a check that failed on the default branch. */
+  urgent_direct?: 'main_gate_failed'[];
   /** Whether the lead makes a task of each tier itself or dispatches a task session, reviewed or not; an absent tier takes its default. */
   path: Partial<Record<TaskKind['tier'], Exclude<FlowPath, 'parallel'>>>;
   /** Whether the lead wakes after each merge or once every task of a milestone has ended. */

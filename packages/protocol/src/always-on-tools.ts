@@ -76,7 +76,7 @@ export const alwaysOnInputSchemas = {
         '1-2000 characters; the only context you get when you wake: what to check, where, and why.',
       ),
   }),
-  /** Leaves the user a message from the calling resident and notifies them. */
+  /** Leaves the user a message from the calling resident and notifies them; from an agent other than the main agent it goes to the main agent, unless signal_issue_id names a signal issue on the project's urgent list. */
   'agent.tell_user': z.strictObject({
     project_id: projectId,
     text: z
@@ -89,6 +89,13 @@ export const alwaysOnInputSchemas = {
     urgency: z
       .enum(['normal', 'high'])
       .describe('high only when the user must act soon; otherwise normal.'),
+    signal_issue_id: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'The signal issue of a gate failure on main; with it the message reaches the user directly instead of going to the main agent.',
+      ),
   }),
   /** Adds or, by id, replaces a routine of the calling resident; exactly one of every_minutes or at (local HH:MM). */
   'agent.routine.set': z.strictObject({

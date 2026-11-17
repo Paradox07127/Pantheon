@@ -189,6 +189,8 @@
   "board.lead.publish.progress": "进度",
   "board.lead.publish.created": "建出的任务",
   "board.lead.publish.newLead": "新 lead",
+  "board.lead.publish.target": "发送给{name}",
+  "board.lead.publish.targets": "发送给",
   "board.lead.publish.attach": "添加附件",
   "board.lead.publish.send": "发送",
   "board.lead.publish.label": "需求",
