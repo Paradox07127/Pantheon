@@ -1087,6 +1087,51 @@ describe('fixture script turns', () => {
     }
   });
 
+  it('reports the context usage of a usage step when the turn ends, and refuses one without numbers', async () => {
+    const adapter = new FixtureAdapter(),
+      r = recorder();
+    const handle = await adapter.start(spec(repository()), r.sink);
+    try {
+      const events = await runTurn(
+        adapter,
+        handle,
+        r,
+        'usage',
+        script(
+          {
+            usage: {
+              context_tokens: 160000,
+              context_window: 200000,
+              auto_compact_at_tokens: 180000,
+            },
+          },
+          { say: 'done' },
+        ),
+      );
+      expect(events.filter((e) => e.kind === 'usage.updated')).toEqual([
+        expect.objectContaining({
+          context_tokens: 160000,
+          context_window: 200000,
+          auto_compact_at_tokens: 180000,
+        }),
+      ]);
+      expect(events.at(-1)).toMatchObject({ status: 'completed' });
+      const refused = await runTurn(
+        adapter,
+        handle,
+        r,
+        'usage-refused',
+        script({ usage: { context_tokens: 'many', context_window: 200000 } }),
+      );
+      expect(refused.at(-1)).toMatchObject({
+        status: 'failed',
+        error: expect.stringContaining('Unknown fixture script step'),
+      });
+    } finally {
+      await adapter.close(handle, Date.now() + 10000);
+    }
+  });
+
   it('runs the fixed program when no line is the script marker', async () => {
     const adapter = new FixtureAdapter(20),
       r = recorder();

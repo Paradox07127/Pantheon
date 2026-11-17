@@ -36,6 +36,8 @@ interface FixtureTurn {
   error?: string;
   error_code?: string;
   resets_at?: number;
+  /** The context usage a usage step set, reported when the turn ends. */
+  usage?: ScriptUsage;
   finish: (code: number | null) => void;
   /** Set for a script turn: ends its processes and its later steps. */
   stop?: (deadline?: number) => Promise<CancelReceipt>;
@@ -43,6 +45,11 @@ interface FixtureTurn {
   permissions?: Map<string, (decision: PermissionDecision, cancelled?: boolean) => void>;
 }
 type ScriptCall = { tool: string; input: Record<string, unknown> };
+type ScriptUsage = {
+  context_tokens: number;
+  context_window: number;
+  auto_compact_at_tokens?: number;
+};
 type ScriptStep =
   | { say: string }
   | { write: { path: string; text: string } }
@@ -55,7 +62,8 @@ type ScriptStep =
   | { trace: ScriptCall & { ok?: boolean; open?: boolean } }
   | { wait: number }
   | { hang: true }
-  | { compact: 'auto' | 'manual' };
+  | { compact: 'auto' | 'manual' }
+  | { usage: ScriptUsage };
 type ScriptEvent =
   | { kind: 'message.delta'; text: string }
   | { kind: 'tool.started'; tool_call_id: string; name: string; input?: unknown }
@@ -150,6 +158,7 @@ function scriptSteps(input: string): ScriptStep[] | Error | undefined {
     value === undefined || typeof value === type;
   const call = (value: unknown): value is Record<string, unknown> =>
     record(value) && text(value.tool) && record(value.input);
+  const tokens = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0;
   for (const step of steps)
     if (
       !record(step) ||
@@ -179,7 +188,15 @@ function scriptSteps(input: string): ScriptStep[] | Error | undefined {
           step.wait <= 2147483647) ||
         step.hang === true ||
         step.compact === 'auto' ||
-        step.compact === 'manual'
+        step.compact === 'manual' ||
+        (record(step.usage) &&
+          Object.keys(step.usage).every((key) =>
+            ['context_tokens', 'context_window', 'auto_compact_at_tokens'].includes(key),
+          ) &&
+          tokens(step.usage.context_tokens) &&
+          tokens(step.usage.context_window) &&
+          (step.usage.auto_compact_at_tokens === undefined ||
+            tokens(step.usage.auto_compact_at_tokens)))
       )
     )
       return new Error(`Unknown fixture script step: ${JSON.stringify(step)}`);
@@ -268,6 +285,7 @@ export class FixtureAdapter implements HarnessAdapter {
         kind: 'usage.updated',
         cost_source: 'unknown',
         ...(this.traceEvents ? { input_tokens: 10, output_tokens: 5 } : {}),
+        ...current.usage,
       });
       session.emit({
         key: String(++session.sequence),
@@ -728,6 +746,10 @@ export class FixtureAdapter implements HarnessAdapter {
         throw new Error(step.fail.message);
       }
       if ('compact' in step) return emit({ kind: 'context.compacted', trigger: step.compact });
+      if ('usage' in step) {
+        current.usage = step.usage;
+        return;
+      }
       if ('wait' in step) return pause(step.wait);
       if ('hang' in step) return pause();
       if ('ask' in step || 'try' in step || 'trace' in step) {

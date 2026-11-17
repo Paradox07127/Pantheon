@@ -148,6 +148,39 @@ export function taskScope(task?: { lead_session_id: string; id: string; generati
     task && { lead_session_id: task.lead_session_id, id: task.id, generation: task.generation ?? 1 }
   );
 }
+/**
+ * Moves the task memory of a plan, every version and the versions a retraction saved, to the lead
+ * the plan moved to; a retraction's saved revisions count the move, so it can still be undone.
+ */
+export function moveTaskMemory(ctx: ControlContext, project: string, from: string, to: string) {
+  const scoped = (r: { task?: MemoryRecord['task'] }) => r.task?.lead_session_id === from;
+  const moved = <T extends { task?: MemoryRecord['task'] }>(r: T): T =>
+    scoped(r) ? { ...r, task: { ...r.task!, lead_session_id: to } } : r;
+  const all = records(ctx, project);
+  const touched = new Set(
+    all
+      .filter((r) => scoped(r) || r.retraction?.records.some(({ record }) => scoped(record)))
+      .map((r) => r.id),
+  );
+  for (const r of all)
+    if (touched.has(r.id))
+      ctx.store.update<MemoryRecord>(
+        'memory_records',
+        {
+          ...moved(r),
+          ...(r.retraction && {
+            retraction: {
+              ...r.retraction,
+              records: r.retraction.records.map(({ record, archived_revision }) => ({
+                record: moved(record),
+                archived_revision: archived_revision + Number(touched.has(record.id)),
+              })),
+            },
+          }),
+        },
+        r.revision,
+      );
+}
 /** The board task a session works on, or the direct task its lead claimed. */
 export function sessionTaskScope(session?: Session) {
   return taskScope(

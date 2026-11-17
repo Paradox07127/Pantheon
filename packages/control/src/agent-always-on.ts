@@ -109,7 +109,7 @@ export const routineOf = (input: AgentRoutineInput): AgentRoutine => ({
 });
 
 /** The resident's plan; an empty one while it has written none. */
-function residentPlan(ctx: ControlContext, resident: Session): BoardPlan {
+export function residentPlan(ctx: ControlContext, resident: Session): BoardPlan {
   return (
     ctx.store.get<BoardPlan>('board_plans', resident.id) ??
     ctx.store.insert<BoardPlan>('board_plans', {

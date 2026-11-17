@@ -673,6 +673,8 @@ export interface Session extends Entity {
   };
   /** A lead the project keeps for one role: it plans and dispatches, never writes or works on a task itself. */
   resident?: { kind: AgentProfile['template']; agent_id?: string };
+  /** The resident's turn that writes its handoff note, queued at Unix ms at; a new session of its agent takes over once its turns end. */
+  rotation?: { flush_turn_id: string; at: number };
   /**
    * The task of its own plan a lead works on itself; reported_head is its worktree's commit when it
    * reported the task done. Not task, which would make the session a worker.

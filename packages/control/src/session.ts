@@ -98,6 +98,7 @@ import { projectOverBudget } from './workflow-policy.js';
 import { queueTurn } from './task-tracking.js';
 import { backgroundTasks } from './progress.js';
 import { residentProfile } from './agent-templates.js';
+import { afterResidentTurn } from './resident.js';
 import {
   applyModel,
   applyPermissionMode,
@@ -1222,6 +1223,8 @@ export function createTurnQueue(ctx: ControlContext, initial: SessionTurn, resum
         resolveTurn = undefined;
         waitingForInput = true;
         ctx.idleConversations.set(initial.session_id, ctx.store.now());
+        // After the conversation is idle, so a resident that closes releases its process.
+        afterResidentTurn(ctx, initial.session_id, current.id);
         return;
       }
       if (interrupted() || !next || isRuntimeHeld(ctx, session.runtime)) {
@@ -2028,6 +2031,7 @@ export async function finishTurn(
     if (s.review_id) settleReview(ctx, s.review_id);
     if (turns.length) unsnooze(ctx, s.id, 'turn_ended');
   });
+  afterResidentTurn(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id, key);
   if (stop?.receipt?.stopped === true)
     closeToolRelay(ctx, ctx.store.must<SessionTurn>('session_turns', key).session_id);
   ctx.changed();

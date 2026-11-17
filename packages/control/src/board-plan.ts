@@ -7,6 +7,7 @@ import {
   type Session,
 } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
+import { moveTaskMemory } from './memory-access.js';
 import { dispatchQueue } from './task-dispatch.js';
 import { waitingStep } from './workflow-engine.js';
 
@@ -240,5 +241,6 @@ export function transferPlan(
         { ...session, task: { ...session.task, lead_session_id: to } },
         session.revision,
       );
+  moveTaskMemory(ctx, plan.project_id, plan.id, to);
   ctx.store.event('board.plan_transferred', moved, plan.project_id, { from: plan.id }, cause);
 }

@@ -16,9 +16,10 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import { runtime } from './admission.js';
-import { routineOf, scheduleRoutine } from './agent-always-on.js';
+import { residentPlan, routineOf, scheduleRoutine } from './agent-always-on.js';
 import { AGENT_TEMPLATES, BUILT_IN_TEMPLATES } from './agent-templates.js';
 import { checkAgentFields, ensureAgents } from './agents.js';
+import { usageLimitWaiting } from './continuation.js';
 import { transferPlan } from './board-plan.js';
 import {
   projectAccess,
@@ -28,7 +29,7 @@ import {
   type Handlers,
 } from './context.js';
 import { returnNotes } from './lead-inbox.js';
-import { nativeTurnActive, releaseIdleConversation, unsnooze } from './session.js';
+import { acceptInput, nativeTurnActive, releaseIdleConversation, unsnooze } from './session.js';
 import { queueTurn, syncBrief, TAKEOVER_TEXT } from './task-tracking.js';
 import { sessionDefaults } from './user-config.js';
 import { afterCommit, changeModel } from './workbench-session.js';
@@ -88,9 +89,15 @@ export function openResident(
 
 /**
  * The agent's open resident session. Without one it opens a new one, which takes over the plan of
- * the agent's newest closed one, with the notes its undelivered turns had taken.
+ * the agent's newest closed one, with the notes its undelivered turns had taken; after a handoff its
+ * first turn names the closed session and the handoff note.
  */
-export function openAgent(ctx: ControlContext, profile: AgentProfile, cause: string): Session {
+export function openAgent(
+  ctx: ControlContext,
+  profile: AgentProfile,
+  cause: string,
+  handoff = false,
+): Session {
   requireThat(!profile.archived_at, 'invalid_state', 'Unarchive the agent first');
   const projectId = profile.project_id;
   const open = openOf(ctx, profile);
@@ -136,7 +143,16 @@ export function openAgent(ctx: ControlContext, profile: AgentProfile, cause: str
   queueTurn(
     ctx,
     ctx.store.must<Session>('sessions', session.id),
-    `${TAKEOVER_TEXT}\n${syncBrief(ctx, ctx.store.must<BoardPlan>('board_plans', session.id), [])}`,
+    [
+      TAKEOVER_TEXT,
+      ...(handoff
+        ? [
+            `That session, ${ended.id}, ended because its context was nearly full; read it with session_read when you need more of it.`,
+            `It left the handoff note ${handoffKey(profile)} in project memory: read it with memory_get or memory_search before you act on anything.`,
+          ]
+        : []),
+      syncBrief(ctx, ctx.store.must<BoardPlan>('board_plans', session.id), []),
+    ].join('\n'),
     'sync',
     cause,
   );
@@ -165,7 +181,7 @@ function takeOverReferences(ctx: ControlContext, from: string, to: string): void
 function closeResident(
   ctx: ControlContext,
   session: Session,
-  reason: 'agent_runtime_changed' | 'agent_archived',
+  reason: 'agent_runtime_changed' | 'agent_archived' | 'context_full',
   cause: string,
 ): void {
   // The release only closes the process of an open session; its stop leaves a closed one closed.
@@ -177,6 +193,73 @@ function closeResident(
   );
   ctx.store.event('session.closed', next, next.project_id, { reason }, cause);
   unsnooze(ctx, session.id, 'session_ended', cause);
+}
+
+/** A resident's context is full from this share of where its runtime compacts, else of its window. */
+const CONTEXT_FULL_SHARE = 0.8;
+
+const handoffKey = (profile: AgentProfile) => `handoff/${profile.id}`;
+
+function contextFull(session: Session): boolean {
+  const limit = session.auto_compact_at_tokens ?? session.usage?.context_window,
+    used = session.usage?.context_tokens;
+  return !!limit && used !== undefined && used >= CONTEXT_FULL_SHARE * limit;
+}
+
+const handoffText = (session: Session, profile: AgentProfile) =>
+  [
+    'Your context is nearly full: after this turn a new session of this agent takes over, without this conversation.',
+    `Call memory_propose with kind note, key "${handoffKey(profile)}", tags ["handoff"] and title "Handoff from ${session.title ?? profile.name}". Write in it the user's open requests and the promises you have not kept yet, what the user asked for and decided in this conversation, the user's preferences and corrections, and where the work stands. Use this key each time, so the newest handoff replaces the old one.`,
+    'Write each lasting decision or preference of the user that is not in project memory yet as its own memory_propose note.',
+    'Do nothing else, and end the turn.',
+  ].join('\n');
+
+/**
+ * Called when a turn of the session ended. Once a resident has no turn left and its context is
+ * full, it queues the turn that writes the handoff note; once that turn and any queued after it
+ * have ended, the session closes and a new one of its agent takes over.
+ */
+export function afterResidentTurn(ctx: ControlContext, sessionId: string, turnId: string): void {
+  if (ctx.closing) return;
+  const cause = `turn:${turnId}`;
+  try {
+    ctx.store.transaction(() => {
+      const session = ctx.store.must<Session>('sessions', sessionId);
+      if (
+        !session.resident?.agent_id ||
+        session.state !== 'open' ||
+        usageLimitWaiting(ctx, session.id) ||
+        ctx.store
+          .list<SessionTurn>('session_turns')
+          .some(
+            (turn) =>
+              turn.session_id === session.id &&
+              (turn.state === 'queued' || turn.state === 'running'),
+          )
+      )
+        return;
+      const profile = ctx.store.must<AgentProfile>('agents', session.resident.agent_id);
+      if (session.rotation) {
+        // Without a plan the new session would have no takeover turn to name the handoff in.
+        residentPlan(ctx, session);
+        closeResident(ctx, session, 'context_full', cause);
+        openAgent(ctx, profile, cause, true);
+        return;
+      }
+      if (!contextFull(session)) return;
+      acceptInput(ctx, session, 'send');
+      const turn = queueTurn(ctx, session, handoffText(session, profile), 'tracker', cause);
+      const queued = ctx.store.must<Session>('sessions', session.id);
+      ctx.store.update(
+        'sessions',
+        { ...queued, rotation: { flush_turn_id: turn.id, at: ctx.store.now() } },
+        queued.revision,
+      );
+    });
+  } catch (error) {
+    // Left as it is, the session tries again when its next turn ends.
+    if (!(error instanceof DomainError)) throw error;
+  }
 }
 
 /** Creates the agent with its routines; its session opens on its first message or trigger. */
