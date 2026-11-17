@@ -7,6 +7,10 @@ const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got
 const stamp = Date.now();
 const NAME = `verify-filter-${stamp}`;
 const { project_id } = await newProject(NAME);
+// The sidebar keys a resident row by its agent's id.
+const ASSISTANT = (await query('agent.list', { project_id })).find(
+  (a) => a.template === 'assistant',
+).id;
 const board = () => query('board', { project_id });
 const projectRow = async () => (await board()).projects.find((p) => p.id === project_id);
 await call(
@@ -59,7 +63,7 @@ check('前置：session.list 有运行中的 worker', worker, worker?.id);
 const shownRows = () =>
   page.evaluate(`({
     worker: !!document.querySelector('nav.ss-list [data-session="${worker?.id}"]'),
-    resident: !!document.querySelector('nav.ss-list [data-stop="resident:assistant"]'),
+    resident: !!document.querySelector('nav.ss-list [data-stop="resident:${ASSISTANT}"]'),
   })`);
 const menuItems = () =>
   page.evaluate(`(() => {

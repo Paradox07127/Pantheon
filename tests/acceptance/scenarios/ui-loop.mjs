@@ -30,7 +30,6 @@ const git = (cwd, ...args) =>
 const RUN_MS = 8 * 60 * 1000;
 const PROJECT_NAME = 'Workbench loop UI';
 const GATE_ARGV = ['git', 'rev-parse', 'HEAD'];
-const MERGED_TEXT = 'merged: The session merged into its source.';
 const plan = {
   base_version: 0,
   headline: 'Workbench loop through the app',
@@ -517,10 +516,8 @@ export async function run({ workspace, evidenceDir }) {
           (id) => snapshot.sessions.find((row) => row.id === id)?.outcome === 'merged',
         );
         const lead = snapshot.sessions.find((row) => row.id === leadId);
-        const notes = plan.tasks.map((task) => {
-          const sessionTitle = snapshot.sessions.find((row) => row.id === sessions[task.id])?.title;
-          return `${task.title} / ${sessionTitle}: ${MERGED_TEXT}`;
-        });
+        // The merged note's first line names the task's session.
+        const notes = plan.tasks.map((task) => `session ${sessions[task.id]} merged`);
         const tracked = leadTurns
           .filter((turn) => turn.origin === 'tracker')
           .map((turn) => turn.input)

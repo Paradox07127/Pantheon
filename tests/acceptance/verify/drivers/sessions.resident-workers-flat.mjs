@@ -6,6 +6,10 @@ const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got
 const stamp = Date.now();
 const LANE = `Lane ${stamp}`;
 const { project_id } = await newProject(`verify-flat-${stamp}`);
+// The sidebar keys a resident row by its agent's id.
+const ASSISTANT = (await query('agent.list', { project_id })).find(
+  (a) => a.template === 'assistant',
+).id;
 const board = () => query('board', { project_id });
 const projectRow = async () => (await board()).projects.find((p) => p.id === project_id);
 await call(
@@ -71,7 +75,7 @@ const layout = await poll(() =>
     const group = nav?.querySelector('[role=group]');
     const zone = nav?.querySelector('.ss-zh');
     if (!row || !group || !zone) return null;
-    const resident = group.querySelector('[data-stop="resident:assistant"]');
+    const resident = group.querySelector('[data-stop="resident:${ASSISTANT}"]');
     return {
       zone: zone.firstElementChild?.textContent,
       afterZone: !!(zone.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING),
@@ -103,7 +107,7 @@ const review = mine.filter((s) => s.state === 'ready').length;
 const want = `Worker：${running} 个运行中，${review} 个待审查，0 个门禁失败`;
 const name = await poll(async () => {
   const label = await page.evaluate(
-    `document.querySelector('[data-stop="resident:assistant"]')?.getAttribute('aria-label') ?? ''`,
+    `document.querySelector('[data-stop="resident:${ASSISTANT}"]')?.getAttribute('aria-label') ?? ''`,
   );
   return label.includes(want) && label;
 });

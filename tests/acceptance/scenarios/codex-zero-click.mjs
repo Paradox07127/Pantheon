@@ -42,7 +42,6 @@ const LEAD_INPUT = [
   `Plan exactly these two tasks with update_board, copying ids, titles and goals verbatim. Give each task its source, scope and acceptance as update_board asks. Task ${SECOND} depends_on ${FIRST}. Put both in one milestone with id "zero-click" titled "Codex zero-click"; one lane "main". Then call start_task with ${JSON.stringify([FIRST, SECOND])} and end your turn. Do not implement the tasks yourself and do not commit.`,
   ...TASKS.map((task) => `id: ${task.id}\ntitle: ${task.title}\ngoal: ${task.goal}`),
 ].join('\n\n');
-const MERGED_NOTE = 'merged: The session merged into its source.';
 const READY = ['ready_for_acceptance', 'completed'];
 
 const SCENARIO_MS = 80 * MINUTE;
@@ -338,11 +337,7 @@ export async function run({ workspace, evidenceDir }) {
 
     // The lead hears of both merges; every lead turn ends.
     const mergedLines = (input, session) =>
-      input
-        .split('\n')
-        .filter(
-          (line) => line.startsWith('- ') && line.endsWith(` / ${session.title}: ${MERGED_NOTE}`),
-        ).length;
+      input.split('\n').filter((line) => line.includes(`session ${session.id} merged`)).length;
     await timed('notes', () =>
       poll(
         async () => {

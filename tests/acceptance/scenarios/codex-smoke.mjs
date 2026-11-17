@@ -44,7 +44,6 @@ const NUDGE = {
   commit: 'Commit your work in this worktree.',
   dirty: 'Commit or remove the remaining files in this worktree.',
 };
-const MERGED_NOTE = 'merged: The session merged into its source.';
 
 const SCENARIO_MS = 80 * MINUTE;
 const PLAN_MS = 20 * MINUTE;
@@ -399,11 +398,7 @@ export async function run({ workspace, evidenceDir }) {
 
       // The lead hears of both merges; every tracker turn ends.
       const mergedLines = (input, session) =>
-        input
-          .split('\n')
-          .filter(
-            (line) => line.startsWith('- ') && line.endsWith(` / ${session.title}: ${MERGED_NOTE}`),
-          ).length;
+        input.split('\n').filter((line) => line.includes(`session ${session.id} merged`)).length;
       const heard = await timed('notes', () =>
         poll(
           async () => {

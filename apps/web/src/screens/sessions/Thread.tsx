@@ -595,7 +595,12 @@ export function ThreadTurn(props: {
   }, [streaming]);
   // A wake turn of a resident shows its input only once opened.
   const [wakeOpen, setWakeOpen] = useState(false);
-  const wake = listed?.resident && turn.origin ? WAKE[turn.origin] : undefined;
+  const wake =
+    listed?.resident && turn.origin
+      ? turn.wake?.causes.length && turn.wake.causes.every((cause) => cause === 'signal')
+        ? () => t({ id: 'sessions.residents.wake.signals', defaultMessage: 'Signals' })
+        : WAKE[turn.origin]
+      : undefined;
   // A compaction is drawn as a mark, not as a message.
   const compaction = turn.origin === 'compaction';
   // Every origin but lead is Pantheon writing to the session.

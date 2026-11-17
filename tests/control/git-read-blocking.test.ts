@@ -43,7 +43,7 @@ function gitWrapper(slow: string[]) {
   process.env.PATH = `${directory}${path.delimiter}${previous}`;
   restores.push(() => {
     process.env.PATH = previous;
-    rmSync(directory, { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true, maxRetries: 5 });
   });
   // Each runGit call's subcommand, after the -c options runGit puts first; the search index
   // reads branches with a plain git on its own timer.

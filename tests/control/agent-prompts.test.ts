@@ -131,6 +131,12 @@ it('does not tell a new goals session that takes over to rewrite the plan with u
   const f = await workbenchFixture();
   const { session } = await resident(f, 'goals');
   const usage = { context_tokens: 90_000, context_window: 100_000 };
+  await eventually(
+    () =>
+      f.store.must<Session>('sessions', session.id).state === 'open' &&
+      f.turns(session.id).every((turn) => !['queued', 'running'].includes(turn.state)),
+    () => f.control.tick(),
+  );
   f.call(
     'session.send',
     {

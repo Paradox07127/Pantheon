@@ -6,6 +6,10 @@ const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got
 // A project of its own, so its assistant has never been opened.
 const NAME = `verify-res-${Date.now()}`;
 const { project_id } = await newProject(NAME);
+// The sidebar keys a resident row by its agent's id.
+const ASSISTANT = (await query('agent.list', { project_id })).find(
+  (a) => a.template === 'assistant',
+).id;
 const projectRow = async () =>
   (await query('board', { project_id })).projects.find((p) => p.id === project_id);
 await call(
@@ -59,7 +63,7 @@ check(
 const id = first?.[0]?.id;
 const current = await poll(() =>
   page.evaluate(
-    `document.querySelector('.ss-rr[data-stop="resident:assistant"]')?.getAttribute('aria-current') === 'true'`,
+    `document.querySelector('.ss-rr[data-stop="resident:${ASSISTANT}"]')?.getAttribute('aria-current') === 'true'`,
   ),
 );
 check('助理行成为当前行', current);
@@ -94,7 +98,7 @@ check(
   (await residentsOf('triage')).length === 0,
 );
 const rowAfter = await page.evaluate(
-  `document.querySelector('.ss-rr[data-stop="resident:assistant"]')?.getAttribute('aria-label')`,
+  `document.querySelector('.ss-rr[data-stop="resident:${ASSISTANT}"]')?.getAttribute('aria-label')`,
 );
 check('打开后助理行不再是 尚未开始', rowAfter && !rowAfter.includes('尚未开始'), rowAfter);
 result.shot = await page.screenshot(result.id);

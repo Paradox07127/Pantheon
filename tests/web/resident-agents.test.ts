@@ -729,6 +729,15 @@ describe('resident conversation', () => {
     expect(text(h.value)).toContain('Task Runtime filter: gate failed, 2 unit tests');
   });
 
+  it.each([
+    ['only signal notes', ['signal'], 'sessions.residents.wake.signals'],
+    ['a signal and a merge', ['signal', 'merged'], 'sessions.residents.wake.tracker'],
+    ['no recorded causes', [], 'sessions.residents.wake.tracker'],
+  ] as const)('names a woken turn with %s by what woke it', (_, causes, id) => {
+    const h = draw({ origin: 'tracker', wake: { causes: [...causes] } });
+    expect(text(folds(h)[0]!.props.children)).toContain(zh(id));
+  });
+
   it('shows what a woken turn told the user as its reply, outside the folded work', () => {
     const event = (sequence: number, kind: string, payload: object) => ({
       sequence,
