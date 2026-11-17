@@ -153,7 +153,7 @@ import { recoverWorkspaceProvisioning, stopWorkspaceProvisioning } from './provi
 import { needsYou } from './needs-you.js';
 import { projectsSummary, summaryProjects } from './projects-summary.js';
 import { timerHandlers } from './timers.js';
-import { agentList, ensureAgents } from './agents.js';
+import { agentList, agentTemplates, ensureAgents } from './agents.js';
 import { continueSession } from './continuation.js';
 import { appendNote } from './lead-inbox.js';
 import type { ProtectionPaths } from './protection.js';
@@ -740,6 +740,9 @@ export class Control extends EventEmitter {
   }
   agentList(principal: Principal, projectId: string) {
     return agentList(this.ctx, principal, projectId);
+  }
+  agentTemplates(principal: Principal) {
+    return agentTemplates(principal);
   }
   projectUsageRead(principal: Principal, projectId: string) {
     return projectUsageRead(this.ctx, principal, projectId);

@@ -139,7 +139,7 @@ const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => text(v) !== null) : [];
 
 /** The receipt of a Pantheon command in a call's output text, `{"receipt": …}`; else null. */
-function receiptOf(output: unknown): Record<string, unknown> | null {
+export function receiptOf(output: unknown): Record<string, unknown> | null {
   try {
     return record(record(JSON.parse(outputText(output)))?.receipt);
   } catch {
@@ -194,6 +194,12 @@ export function orchestrationLabel(
               { count: i.tasks.length },
             )
           : '',
+        tasks: [],
+      };
+    case 'propose_agent':
+      return {
+        title: t({ id: 'data.toolCalls.action.proposeAgent', defaultMessage: 'Propose agent' }),
+        detail: flat(text(i.name) ?? ''),
         tasks: [],
       };
     case 'milestone_accept':

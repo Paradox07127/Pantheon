@@ -1,12 +1,15 @@
 import { useState, type KeyboardEvent, type ReactElement, type ReactNode } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import type { WorkbenchSession } from '@pantheon/protocol';
+import { templateName } from '../data/agents';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { ageText, failureText, reasonText, useNow, type NeedsYouItem } from '../data/needs-you';
+import { focusRequest } from '../data/focus-request';
 import { needsKey } from '../data/notice-tiers';
 import { sessionTitle } from '../data/transcript';
 import { t } from '../i18n';
+import { listText } from '../lib/list-text';
 import { durationText } from '../screens/board/panels-model';
 import { runningSince, useProjectSessions } from '../shell/TrayPopover';
 import { useShell } from '../store';
@@ -183,15 +186,41 @@ export function NeedsPopover({
       const failed = answers[item.source.id];
       // A lead's question is answered on its card, which the lead's thread does not show.
       const card = item.kind === 'lead.question' ? needsKey(item) : null;
+      // An agent proposal is decided on its card in the proposing conversation.
+      const proposal = item.kind === 'agent.proposal' ? item.agent_proposal : undefined;
       return {
         key: `${item.source.table}:${item.source.id}:${item.reason}`,
         projectId: item.project_id,
         sessionId,
         ...(card && { open: () => useShell.getState().openProjectNeed(item.project_id, card) }),
+        ...(proposal &&
+          sessionId && {
+            open: () => {
+              focusRequest(proposal.id);
+              useShell.getState().openProjectSession(item.project_id, sessionId);
+            },
+          }),
         since: item.created_at,
         icon: needsGlyph(item),
         title: session && board ? sessionTitle(session, board) : reason,
-        detail: failed ? <span role="alert">{failed}</span> : session ? reason : undefined,
+        detail: failed ? (
+          <span role="alert">{failed}</span>
+        ) : proposal ? (
+          listText(
+            proposal.agent_id
+              ? t(
+                  { id: 'projects.needs.changeAgent', defaultMessage: 'Change agent: {name}' },
+                  { name: proposal.name },
+                )
+              : t(
+                  { id: 'projects.needs.newAgent', defaultMessage: 'New agent: {name}' },
+                  { name: proposal.name },
+                ),
+            templateName(proposal.template),
+          )
+        ) : session ? (
+          reason
+        ) : undefined,
         actions: answerable(item) && (
           <>
             <button

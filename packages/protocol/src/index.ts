@@ -2135,6 +2135,8 @@ export const querySchemas = {
   'project.read': z.strictObject({ project_id: str }),
   /** The user only; returns the project's AgentProfile records. */
   'agent.list': z.strictObject({ project_id: str }),
+  /** The user only; returns the defaults of the ideas, goals and custom templates a new agent starts from. */
+  'agent.templates': z.strictObject({}),
   'project.usage.read': z.strictObject({ project_id: str }),
   'project.review.metrics': z.strictObject({ project_id: str }),
   'extensions.inventory': z.strictObject({ project_id: str, runtime: str }),

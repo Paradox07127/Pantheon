@@ -24,7 +24,8 @@ import { NeedsPopover, SessionsPopover } from '@/components/NeedsPopover';
 import { GateMark, StateGlyph } from '@/components/SessionStateIcon';
 import { runCommand } from '@/data/commands';
 import { reasonText } from '@/data/needs-you';
-import { zh } from './i18n-setup.js';
+import { wantedRequest } from '@/data/focus-request';
+import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.now();
 const MINUTE = 60_000;
@@ -165,6 +166,26 @@ describe('needs-you list', () => {
     find(h.value, (n) => !!n.props.onKeyDown).props.onKeyDown(e);
     expect(e.preventDefault).toHaveBeenCalled();
     expect(opens[to]!.focus).toHaveBeenCalled();
+  });
+
+  it('lists an agent proposal by the agent’s name and opens the proposing conversation at its card', () => {
+    const proposal = item({
+      source: { table: 'agent_proposals', id: 'proposal-a', revision: 1 },
+      kind: 'agent.proposal',
+      session_id: 'session-login',
+      reason: 'agent_proposal_awaiting_decision',
+      actions: [{ command: 'agent.proposal.resolve', allowed: true }],
+      agent_proposal: { id: 'proposal-a', name: 'Idea box', template: 'ideas', waited_ms: 0 },
+    });
+    const h = mount(() => NeedsPopover({ items: [proposal], trigger }));
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    const row = text(groups(h.value)[0]);
+    expect(row).toContain(zhf('projects.needs.newAgent', { name: 'Idea box' }));
+    expect(row).toContain(zh('sessions.agents.template.ideas'));
+    button(h.value, 'Fix login').props.onClick();
+    expect(mock.shell.openProjectSession).toHaveBeenCalledWith('alpha', 'session-login');
+    expect(wantedRequest()).toBe('proposal-a');
   });
 });
 

@@ -355,5 +355,6 @@
   "data.askDebug.copied": "已复制错误报告",
   "data.askDebug.noProject": "先把 Pantheon 仓库加成项目，才能问 agent；报告已复制",
   "data.askDebug.sent": "已发给调试会话",
-  "data.askDebug.open": "打开"
+  "data.askDebug.open": "打开",
+  "data.toolCalls.action.proposeAgent": "提议智能体"
 }

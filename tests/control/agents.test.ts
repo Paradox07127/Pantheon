@@ -382,6 +382,22 @@ it('creates a goals agent with its weekly routine pending and no session, and re
   expect(agents(f).filter((agent) => agent.name === 'Milestones')).toHaveLength(1);
 });
 
+it('lists the defaults of the templates a new agent starts from, to the user only', async () => {
+  const f = await workbenchFixture();
+  const listed = f.control.agentTemplates(user);
+  expect(listed.map((each) => each.template)).toEqual(['ideas', 'goals', 'custom']);
+  for (const each of listed) {
+    const { routines = [], ...defaults } = AGENT_TEMPLATES[each.template];
+    expect(each).toEqual({ template: each.template, ...defaults, routines });
+  }
+  expect(listed.find((each) => each.template === 'goals')!.routines).toEqual([
+    expect.objectContaining({ every_ms: 7 * 24 * 60 * 60_000, enabled: true }),
+  ]);
+  expect(refusal(() => f.control.agentTemplates(lead(f.project.id, 'session-a', Date.now())))).toBe(
+    'permission_denied',
+  );
+});
+
 it("opens an agent's session by its id with its role prompt, and keeps the plans of two custom agents apart", async () => {
   const f = await workbenchFixture();
   let now = Date.now();

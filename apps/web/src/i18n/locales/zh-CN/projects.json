@@ -153,5 +153,7 @@
   "projects.add.footClose": "关闭",
   "projects.add.reading": "读取仓库 {duration}",
   "projects.add.another": "换一个文件夹",
-  "projects.add.skipBaseline": "跳过基线"
+  "projects.add.skipBaseline": "跳过基线",
+  "projects.needs.newAgent": "新智能体：{name}",
+  "projects.needs.changeAgent": "修改智能体：{name}"
 }

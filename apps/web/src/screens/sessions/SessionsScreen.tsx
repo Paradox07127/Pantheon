@@ -8,6 +8,7 @@ import { PantheonField } from '../../components/PantheonField';
 import { SessionStateIcon } from '../../components/SessionStateIcon';
 import { Splitter } from '../../components/Splitter';
 import { Tip } from '../../components/Tip';
+import { showAgentProfile, useAgentProfileShown } from '../../data/agents';
 import { useBoard } from '../../data/board';
 import {
   inspectorIsSheet,
@@ -59,6 +60,7 @@ import {
   useSessionMenu,
 } from './shared';
 import { DiscardDialog } from './parts';
+import { AgentProfilePanel } from './AgentForm';
 import { SessionCard, SessionInspector } from './SessionCard';
 import { MoreMenu, PANELS, parentLink, type TerminalToggle } from './SessionHeader';
 import { parentOf } from './session-groups';
@@ -117,6 +119,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
   const [terminalHeight, setTerminalHeight] = useState(storedTerminalHeight);
   const { inspector: opening } = useAppearance();
   const folds = useFolds();
+  const profileOf = useAgentProfileShown();
   // The main area is never wider or taller than the window; measured once mounted.
   const [main, setMain] = useState(() => window.innerWidth);
   const [tall, setTall] = useState(() => window.innerHeight);
@@ -503,17 +506,29 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
       </div>
     );
   }
-  const dockShown = (inspector && !narrow && panels.length > 0) || appDocked || cardDocked;
+  // An agent's profile takes the dock while it shows.
+  const profile = profileOf && projectId && (
+    <AgentProfilePanel
+      key={profileOf}
+      projectId={projectId}
+      agentId={profileOf}
+      onClose={() => showAgentProfile(null)}
+    />
+  );
+  const dockShown =
+    (inspector && !narrow && panels.length > 0) || appDocked || cardDocked || !!profile;
   return (
     <div
       ref={measure}
-      className={`${(panels.length > 0 && !narrow) || appDocked || cardDocked ? 'ss' : 'ss ss-np'}${terminalShown ? ' ss-tm' : ''}`}
+      className={`${dockShown ? 'ss' : 'ss ss-np'}${terminalShown ? ' ss-tm' : ''}`}
       style={
         {
           // The overview's column takes its own width, none while it has nothing to show.
-          '--ss-pw': cardDocked
-            ? 'auto'
-            : `${(narrow ? 0 : docked) + (appDocked ? APP_DOCK_WIDTH : 0)}px`,
+          '--ss-pw': profile
+            ? `${PROFILE_WIDTH}px`
+            : cardDocked
+              ? 'auto'
+              : `${(narrow ? 0 : docked) + (appDocked ? APP_DOCK_WIDTH : 0)}px`,
           ...terminalStyle,
         } as CSSProperties
       }
@@ -624,9 +639,13 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
           data-debug-region="sessions.inspector"
           aria-label={t({ id: 'sessions.header.panels', defaultMessage: 'Panels' })}
         >
-          {!narrow && panels.length > 0 && inspector}
-          {cardDocked && card}
-          {appHost && appDocked && <AppDock sessionId={appHost} call={appDocked} />}
+          {profile || (
+            <>
+              {!narrow && panels.length > 0 && inspector}
+              {cardDocked && card}
+              {appHost && appDocked && <AppDock sessionId={appHost} call={appDocked} />}
+            </>
+          )}
         </aside>
       )}
       {appHost && appFull && current && (
@@ -666,6 +685,8 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
 
 /** The terminal's height in px; the thread above keeps room. */
 const TERMINAL_HEIGHT = { initial: 240, min: 120, room: 200 } as const;
+
+const PROFILE_WIDTH = 400;
 
 /** The listed states of a session that closed, merged or was discarded; its terminal starts in the project. */
 const ENDED: ReadonlySet<WorkbenchSession['state']> = new Set(['merged', 'discarded', 'failed']);

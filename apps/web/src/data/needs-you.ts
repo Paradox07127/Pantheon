@@ -110,6 +110,14 @@ export interface NeedsYouItem {
   failure_class?: GateFailureClass;
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
+  /** The agent a pending proposal creates or changes, and how long it has waited in milliseconds. */
+  agent_proposal?: {
+    id: string;
+    name: string;
+    template: 'assistant' | 'triage' | 'ideas' | 'goals' | 'custom';
+    agent_id?: string;
+    waited_ms: number;
+  };
   binding?: {
     action?: string;
     input_hash?: string;
@@ -199,6 +207,8 @@ export function touchesNeedsYou(kind: string): boolean {
       'board.external_held',
       'board.external_approved',
       'lead.question_answered',
+      'agent_proposal.created',
+      'agent_proposal.resolved',
       'task.reported',
       'task.start_requested',
       'task.stop_requested',

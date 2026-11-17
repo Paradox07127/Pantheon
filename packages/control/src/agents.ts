@@ -7,7 +7,7 @@ import {
   type Session,
 } from '@pantheon/domain';
 import { runtime } from './admission.js';
-import { AGENT_TEMPLATES, BUILT_IN_TEMPLATES } from './agent-templates.js';
+import { AGENT_TEMPLATES, BUILT_IN_TEMPLATES, type AgentTemplate } from './agent-templates.js';
 import { projectAccess, userOnly, type ControlContext } from './context.js';
 
 /**
@@ -52,6 +52,22 @@ export function agentList(ctx: ControlContext, p: Principal, projectId: string):
   userOnly(p);
   projectAccess(ctx, p, projectId, 'agent.list');
   return ctx.store.list<AgentProfile>('agents').filter((agent) => agent.project_id === projectId);
+}
+
+/** The defaults of a template agent.create starts a new agent from. */
+export type AgentTemplateDefaults = Required<AgentTemplate> & {
+  template: (typeof CREATED_TEMPLATES)[number];
+};
+
+const CREATED_TEMPLATES = ['ideas', 'goals', 'custom'] as const;
+
+export function agentTemplates(p: Principal): AgentTemplateDefaults[] {
+  userOnly(p);
+  return CREATED_TEMPLATES.map((template) => ({
+    template,
+    routines: [],
+    ...AGENT_TEMPLATES[template],
+  }));
 }
 
 const ROUTINE_LIMIT = 10;

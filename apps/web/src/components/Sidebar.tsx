@@ -6,6 +6,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
+import { ContextMenu } from '@base-ui/react/context-menu';
 import { Menu } from '@base-ui/react/menu';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import {
@@ -17,6 +18,7 @@ import {
   ChevronRight,
   Columns3,
   GitBranch,
+  IdCard,
   LayoutDashboard,
   LayoutGrid,
   ListFilter,
@@ -26,6 +28,13 @@ import {
   Settings2,
   SquarePen,
 } from 'lucide-react';
+import {
+  agentName,
+  BUILT_IN_NAMES,
+  showAgentProfile,
+  shownAgents,
+  useAgents,
+} from '../data/agents';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { saveLayout, setLayout, SIDEBAR, sidebarDrag, useLayout } from '../data/layout';
@@ -57,12 +66,14 @@ import {
   type SidebarGroupKey,
   type TreeLine,
 } from '../screens/sessions/model';
+import { NewAgentDialog } from '../screens/sessions/AgentForm';
 import { SessionListRow, shownSessionId } from '../screens/sessions/SessionsScreen';
 import { setCreatedHere, useSplitRoom } from '../screens/sessions/shared';
 import { RESIDENTS, workerCountMarks, workerCountsText } from '../screens/sessions/WorkerStrip';
 import { useShell } from '../store';
 import { Clip } from './Clip';
 import { LoadError } from './LoadError';
+import { MenuItem } from './Menu';
 import { compareRuntimes, RuntimeGlyph, runtimeName } from './RuntimeGlyph';
 import { SessionStateIcon, sessionStateLabel, StateGlyph } from './SessionStateIcon';
 import { ProjectMonogram } from './ProjectMonogram';
@@ -607,16 +618,33 @@ export function Sidebar({
   if (!layout.collapsed && peek !== 'shut') setPeek('shut');
   const [view, setView] = useSessionView(currentProjectId);
   const all = list.data ?? [];
-  // Each kind's newest resident lead that is not archived; null until one is opened.
-  const residentOf = (kind: string) =>
+  const agents = useAgents(currentProjectId);
+  const [creating, setCreating] = useState(false);
+  // The project's agents; the built-in ones, opened by kind, until agent.list is read.
+  const zone: { key: string; agentId: string | null; kind: string; name: string }[] = agents
+    ? shownAgents(agents).map((agent) => ({
+        key: agent.id,
+        agentId: agent.id,
+        kind: agent.template,
+        name: agentName(agent),
+      }))
+    : RESIDENTS.map((r) => ({ key: r.kind, agentId: null, kind: r.kind, name: r.name }));
+  // Each agent's newest resident lead that is not archived; null until one is opened.
+  const residentOf = (r: (typeof zone)[number]) =>
     all
-      .filter((s) => s.resident?.kind === kind && !s.archived_at)
+      .filter(
+        (s) =>
+          !s.archived_at &&
+          (r.agentId && s.resident?.agent_id
+            ? s.resident.agent_id === r.agentId
+            : s.resident?.kind === r.kind && BUILT_IN_NAMES[r.kind] !== undefined),
+      )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
   const residents = view.hiddenTypes?.includes('resident')
     ? []
-    : RESIDENTS.map((r) => ({ kind: r.kind, name: r.name, session: residentOf(r.kind) })).filter(
-        (r) => !r.session || keptByView(r.session, view),
-      );
+    : zone
+        .map((r) => ({ ...r, session: residentOf(r) }))
+        .filter((r) => !r.session || keptByView(r.session, view));
   const runtimes = [
     ...new Set([...all.map((s) => s.runtime), ...(view.hiddenRuntimes ?? [])]),
   ].sort(compareRuntimes);
@@ -687,7 +715,7 @@ export function Sidebar({
     session: WorkbenchSession | null;
   }[] = [
     ...residents.map((r) => ({
-      key: `resident:${r.kind}`,
+      key: `resident:${r.key}`,
       group: 'tree' as const,
       shut: false,
       bare: true,
@@ -1001,22 +1029,24 @@ export function Sidebar({
     );
   };
   const openSettingsHere = () => openSettings(currentProjectId);
-  // resident.open returns the open resident of the kind, opening one when there is none.
-  const openResident = (kind: (typeof RESIDENTS)[number]['kind']) => {
+  // resident.open returns the open session of the agent, opening one when there is none.
+  const openResident = (r: (typeof residents)[number]) => {
     if (!currentProjectId) return;
-    void runCommand('resident.open', { project_id: currentProjectId, kind }, null).then(
-      (result) => {
-        if (!result.ok) return toast({ title: failureText(result.error), kind: 'failure' });
-        const id = (result.value as { id?: unknown } | null)?.id;
-        if (typeof id !== 'string') return;
-        setCreatedHere(id);
-        openSession(id);
-      },
-    );
+    void runCommand(
+      'resident.open',
+      r.agentId ? { agent_id: r.agentId } : { project_id: currentProjectId, kind: r.kind },
+      null,
+    ).then((result) => {
+      if (!result.ok) return toast({ title: failureText(result.error), kind: 'failure' });
+      const id = (result.value as { id?: unknown } | null)?.id;
+      if (typeof id !== 'string') return;
+      setCreatedHere(id);
+      openSession(id);
+    });
   };
   const residentRow = (r: (typeof residents)[number]) => {
     const s = r.session;
-    const key = `resident:${r.kind}`;
+    const key = `resident:${r.key}`;
     const counts = workerCounts(s ? all.filter((w) => w.lead === s.id && !w.archived_at) : []);
     const waits = s
       ? (allNeeds.items ?? []).filter(
@@ -1045,7 +1075,7 @@ export function Sidebar({
           ]
         : []),
     ].join(t({ id: 'sessions.screen.separator', defaultMessage: ', ' }));
-    return (
+    const row = (
       <button
         key={key}
         type="button"
@@ -1054,7 +1084,7 @@ export function Sidebar({
         aria-label={name}
         data-stop={key}
         tabIndex={key === tabStop ? 0 : -1}
-        onClick={() => openResident(r.kind)}
+        onClick={() => openResident(r)}
       >
         {s ? (
           <SessionStateIcon session={s} place="list" />
@@ -1070,7 +1100,42 @@ export function Sidebar({
         )}
       </button>
     );
+    const agentId = r.agentId;
+    if (!agentId) return row;
+    return (
+      <ContextMenu.Root key={key}>
+        <ContextMenu.Trigger>{row}</ContextMenu.Trigger>
+        <ContextMenu.Portal>
+          <ContextMenu.Positioner
+            style={{ zIndex: 40 }}
+            collisionAvoidance={{ side: 'flip', fallbackAxisSide: 'none' }}
+          >
+            <ContextMenu.Popup className="mn mn-menu pop">
+              <MenuItem
+                icon={<IdCard aria-hidden="true" />}
+                onClick={() => {
+                  showAgentProfile(agentId);
+                  if (s) openSession(s.id);
+                  else if (screen !== 'sessions') setScreen('sessions');
+                }}
+              >
+                {t({ id: 'components.sidebar.agentProfile', defaultMessage: 'Profile' })}
+              </MenuItem>
+            </ContextMenu.Popup>
+          </ContextMenu.Positioner>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
+    );
   };
+  const newAgentLabel = t({ id: 'components.sidebar.newAgent', defaultMessage: 'New agent' });
+  // Outside the content, so the rail's floating panel closing on the click keeps it.
+  const newAgent = currentProjectId && (
+    <NewAgentDialog
+      projectId={currentProjectId}
+      open={creating}
+      onClose={() => setCreating(false)}
+    />
+  );
   // The open sidebar's content; the rail floats it in a panel too.
   const body = () => (
     <>
@@ -1213,6 +1278,17 @@ export function Sidebar({
                   {waitingCount}
                 </button>
               )}
+              <Tip content={newAgentLabel}>
+                <button
+                  type="button"
+                  className="ib"
+                  aria-label={newAgentLabel}
+                  disabled={!currentProjectId}
+                  onClick={() => setCreating(true)}
+                >
+                  <Plus aria-hidden="true" />
+                </button>
+              </Tip>
               <ViewMenu view={view} runtimes={runtimes} onChange={setView} />
             </div>
             <nav
@@ -1485,6 +1561,7 @@ export function Sidebar({
             {body()}
           </div>
         )}
+        {newAgent}
         <Splitter
           label={t({ id: 'components.sidebar.resize', defaultMessage: 'Resize sidebar' })}
           value={SIDEBAR.rail}
@@ -1519,6 +1596,7 @@ export function Sidebar({
     >
       <div className="sb-top" />
       {body()}
+      {newAgent}
       <Splitter
         label={t({ id: 'components.sidebar.resize', defaultMessage: 'Resize sidebar' })}
         value={layout.width}

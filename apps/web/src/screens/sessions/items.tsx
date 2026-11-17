@@ -41,6 +41,7 @@ import {
   isImageFile,
   isTruncated,
   orchestrationLabel,
+  pantheonTool,
   subagentCall,
   toolGroupLabel,
   toolLabel,
@@ -69,6 +70,7 @@ import {
 } from '../../data/transcript';
 import { t } from '../../i18n';
 import { readQuery } from '../../data/workbench-sessions';
+import { AgentProposalCall } from './AgentProposal';
 import { appModeOf, useAppDisplay } from './app-display';
 import { InlineApp } from './AppPanels';
 import { showUrl } from './BrowserPanel';
@@ -228,6 +230,18 @@ export function Items(props: {
           item={item}
           open={props.verbose}
           enter={enter(item)}
+        />
+      );
+    if (item.kind === 'tool' && pantheonTool(item.name) === 'propose_agent')
+      return (
+        <AgentProposalCall
+          key={`tool-${item.id}`}
+          item={item}
+          state={toolState(item, props.ended)}
+          depth={depth(item)}
+          open={props.verbose}
+          enter={enter(item)}
+          sessionId={props.sessionId}
         />
       );
     if (item.kind === 'tool')

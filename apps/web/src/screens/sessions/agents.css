@@ -1,0 +1,290 @@
+/* The new agent form over the window. */
+.pj-dlg.ag-dlg {
+  width: min(640px, calc(100vw - 96px));
+}
+.ag-dform {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ag-dh {
+  height: var(--bar);
+  padding: 0 var(--sp-3) 0 var(--sp-6);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.ag-db {
+  overflow-y: auto;
+  padding: var(--sp-6);
+}
+/* Labels in the first column, controls in the second; a refusal sits under its control. */
+.ag-form {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-4);
+  min-height: 0;
+}
+.ag-lb {
+  display: flex;
+  align-items: center;
+  min-height: var(--ctl);
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.ag-fc {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.ag-seg {
+  align-self: flex-start;
+}
+.ag-wide {
+  grid-column: 1 / -1;
+}
+.ag-err {
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.ag-ta {
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  resize: vertical;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.ag-ta:is(:hover, :focus) {
+  outline: 0;
+  border-color: var(--bd3);
+}
+.ag-role {
+  width: 200px;
+  max-width: 100%;
+}
+.ag-tg {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-1) var(--sp-4);
+}
+.ag-tg label,
+.ag-ck {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--ctl);
+  min-width: 0;
+}
+.ag-rtn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+}
+.ag-rr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.ag-n {
+  width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+.ag-tm {
+  width: 72px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ag-end {
+  margin-left: auto;
+}
+.ag-add {
+  align-self: flex-start;
+}
+.ag-busy {
+  display: block;
+  height: var(--ctl);
+}
+/* An agent's profile, a column beside the conversation. */
+.ag-insp {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border-left: var(--hair) solid var(--bd2);
+}
+.ag-ih {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--bar);
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+  min-width: 0;
+}
+.ag-ih h2 {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ag-ih svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.ag-ib {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ag-pform {
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+.ag-tv {
+  display: flex;
+  align-items: center;
+  min-height: var(--ctl);
+  font-size: var(--fs-sm);
+}
+.ag-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+}
+.ag-arch {
+  justify-content: flex-start;
+}
+/* An agent proposal in the conversation: one framed card, its parts split by hairlines. */
+.ag-pc {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  background: var(--sf);
+}
+.ag-pc > * + * {
+  border-top: var(--hair) solid var(--bd2);
+}
+.ag-pch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--bar);
+  padding: 0 var(--sp-3);
+  min-width: 0;
+}
+.ag-pch svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.ag-pn {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ag-kv {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+  padding: var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.ag-kv dt {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-sm);
+}
+.ag-kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ag-rl {
+  display: flex;
+  flex-direction: column;
+}
+.ag-mu {
+  color: var(--mu);
+}
+.ag-pp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  min-width: 0;
+}
+.ag-pt {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  user-select: text;
+}
+.ag-pe {
+  padding: var(--sp-2) var(--sp-3);
+}
+.ag-pcf {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--bar);
+  padding: 0 var(--sp-3);
+}
+/* A decided proposal leaves one line in the conversation. */
+.ag-ln {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--row);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.ag-ln svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.ag-lt {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

@@ -20,6 +20,7 @@ it('defines a strict input schema for each unimplemented command and the queries
   }
   expect(Object.keys(querySchemas).sort()).toEqual([
     'agent.list',
+    'agent.templates',
     'app.settings',
     'backend.list',
     'board.history',

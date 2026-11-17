@@ -666,6 +666,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | method | 参数 |
 |---|---|
 | `agent.list` | `project_id`: string |
+| `agent.templates` | — |
 | `app.settings` | — |
 | `backend.list` | — |
 | `board.history` | `project_id`: string |
