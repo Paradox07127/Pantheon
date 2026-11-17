@@ -74,6 +74,14 @@ function mount(props: Partial<Props> & Pick<Props, 'item'>) {
     } as Props),
   );
   h.render();
+  // A list row opens its question card from its one action.
+  if (props.size === 'compact' && props.item.kind === 'lead.question') {
+    find(
+      h.value,
+      (n) => n.type === 'button' && text(n) === zh('board.needs.actions.reply'),
+    ).props.onClick();
+    h.render();
+  }
   return { h, run };
 }
 

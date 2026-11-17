@@ -857,6 +857,24 @@ describe('the notice feed', () => {
     expect(mounted.shown()).toEqual(['Lead']);
   });
 
+  it('gives no card for an approval the needs-you list shows while the chart answers another', () => {
+    useShell.setState({
+      screen: 'board',
+      boardWaits: new Set(['approval-3']),
+      stripWaits: new Set(['approval-1']),
+    });
+    render({
+      allNeeds: [
+        approval('approval-1', 'beta-login'),
+        approval('approval-3', 'beta-docs'),
+        leadQuestion,
+      ],
+    });
+    vi.advanceTimersByTime(BOARD_LIST_HOLD_MS);
+    expect(mounted.shown()).toEqual(['Lead']);
+    useShell.setState({ stripWaits: null });
+  });
+
   it('holds the card of an approval that arrives while the board shows, and gives none when the board lists it within the hold', () => {
     useShell.setState({ screen: 'board', boardWaits: new Set() });
     render({ allNeeds: [approval('approval-1', 'beta-login'), alphaApproval] });

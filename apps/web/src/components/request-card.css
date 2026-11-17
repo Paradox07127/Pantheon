@@ -5,11 +5,54 @@
   flex-direction: column;
   gap: var(--sp-1);
   min-width: 0;
-  padding: var(--sp-2) var(--sp-3);
+  padding: 0 var(--sp-2);
   border-radius: var(--r-sm);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.rq:hover {
+  background: var(--sf2);
 }
 .rq[data-on] {
   background: var(--sel);
+}
+/* Every row lays out on one grid: mark, decision, what and whose, blocked tasks, age, actions. */
+.rq > .rq-hd {
+  display: grid;
+  grid-template-columns: 16px 144px minmax(0, 1fr) 104px 48px 176px;
+  gap: var(--sp-2);
+  min-height: 40px;
+}
+.rq > .rq-hd > :is(.rq-kind, .rq-what) {
+  display: flex;
+  min-width: 0;
+}
+.rq > .rq-hd > .rq-what {
+  color: var(--tx);
+}
+.rq > .rq-hd .rq-who {
+  display: flex;
+  font-weight: 400;
+  color: var(--mu);
+}
+.rq > .rq-hd > :is(.rq-blk, .rq-age) {
+  margin-left: 0;
+}
+.rq > .rq-hd > .rq-age {
+  text-align: right;
+}
+.rq > .rq-hd > .rq-acts {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+/* What a row says beyond its line sits under its what. */
+.rq-sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: 0 0 var(--sp-2) calc(16px + 144px + 2 * var(--sp-2));
+}
+.rq-sub:empty {
+  display: none;
 }
 .rq-hd {
   display: flex;

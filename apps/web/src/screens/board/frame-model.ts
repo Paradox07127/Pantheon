@@ -35,10 +35,13 @@ const takesInput = (session: SnapshotSession | undefined): session is SnapshotSe
  * of the current plans, the direct sessions that take input, then a new lead.
  */
 export function requirementTargets(
+  projectId: string,
   leads: readonly BoardLead[] | undefined,
-  sessions: readonly SnapshotSession[],
+  snapshot: readonly SnapshotSession[],
   agents: readonly AgentProfile[] | null,
 ): RequirementTarget[] {
+  // The snapshot holds every project's sessions.
+  const sessions = snapshot.filter((s) => s.project_id === projectId);
   const shown = shownAgents(agents ?? []);
   const assistant = shown.find((agent) => agent.template === 'assistant');
   const residents = shown

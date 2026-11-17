@@ -130,7 +130,11 @@ export function NoticeFeed({
       state.screen === 'trace' && state.traceTab === 'runs' && state.runsView === 'now'
         ? projectId
         : null,
-    listed: state.screen === 'board' ? state.boardWaits : null,
+    // The board lists a wait on its chart or in its needs-you list.
+    listed:
+      state.screen === 'board' && state.boardWaits
+        ? new Set([...state.boardWaits, ...(state.stripWaits ?? [])])
+        : null,
     focused: document.hasFocus(),
     elsewhere: new Set(elsewhere.current.values()),
   });

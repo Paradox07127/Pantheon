@@ -174,7 +174,7 @@ export function NeedsStrip({
   const [all, setAll] = useState(false);
   const shown = useMemo(() => needs && (all ? needs : needs.slice(0, FOLDED)), [needs, all]);
   useEffect(() => {
-    useShell.setState({ boardWaits: new Set(shown?.flatMap((item) => needsKey(item) ?? [])) });
+    useShell.setState({ stripWaits: new Set(shown?.flatMap((item) => needsKey(item) ?? [])) });
   }, [shown]);
   // The wait a notice card opened: unfolded to, scrolled into view and its first answer focused.
   const asked = useShell((s) => s.askedNeed);
@@ -194,6 +194,7 @@ export function NeedsStrip({
     ? current
     : needs?.[0] && needKey(needs[0]);
   const advancing = useRef(false);
+  const primaries = useRef(new Map<string, HTMLButtonElement>());
   const advance = (acted: string) => {
     advancing.current = true;
     setCurrent(nextKey(needs?.map(needKey) ?? [], acted));
@@ -205,7 +206,7 @@ export function NeedsStrip({
     advancing.current = false;
     const card = list.current?.children[at] as HTMLElement | undefined;
     card?.scrollIntoView({ block: 'nearest' });
-    (card?.querySelector<HTMLElement>('.pri') ?? card?.querySelector('button'))?.focus();
+    (primaries.current.get(current ?? '') ?? card?.querySelector('button'))?.focus();
   }, [current, shown]);
   return (
     <Fold open={listed.length > 0}>
@@ -213,6 +214,11 @@ export function NeedsStrip({
         className="bf-strip"
         aria-label={t({ id: 'board.frame.needs', defaultMessage: 'Needs you' })}
       >
+        <div className="bf-strip-h">
+          <span className="ss-dot waiting" aria-hidden="true" />
+          <b>{t({ id: 'board.frame.needs', defaultMessage: 'Needs you' })}</b>
+          <span className="bf-strip-n">{needs?.length}</span>
+        </div>
         <ul ref={list} className="bf-needs">
           {shown?.map((item) => (
             <li key={needKey(item)} className="bf-need">
@@ -225,6 +231,10 @@ export function NeedsStrip({
                 stale={stale}
                 selected={needKey(item) === on}
                 onActed={() => advance(needKey(item))}
+                primaryRef={(el) => {
+                  if (el) primaries.current.set(needKey(item), el);
+                  else primaries.current.delete(needKey(item));
+                }}
                 {...needContext(item, model, sessions, stored, improvements ?? null)}
               />
             </li>

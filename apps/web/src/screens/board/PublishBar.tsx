@@ -407,7 +407,7 @@ export function PublishBar({
     refocus.current = false;
     box.current?.focus();
   }, [busy]);
-  const targets = requirementTargets(leads, sessions, useAgents(projectId));
+  const targets = requirementTargets(projectId, leads, sessions, useAgents(projectId));
   const target = requirementTarget(useRequestTarget(projectId), targets);
   const creating = target.choice.kind === 'create';
   const leadRuntime = defaultRuntime(runtimes, defaults?.runtime, unavailable);

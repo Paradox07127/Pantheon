@@ -12,13 +12,14 @@ import {
   text,
   unmountAll,
 } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
 import { t } from '../../apps/web/src/i18n/index.js';
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
+import { MenuItem } from '../../apps/web/src/components/Menu.js';
 import { useBoard } from '../../apps/web/src/data/board.js';
 import { useDrafts } from '../../apps/web/src/data/drafts.js';
 import {
@@ -613,14 +614,16 @@ describe('requirement box target', () => {
     agent('agent-triage', 'triage', 'Triage'),
   ];
   const targetOf = (choice: RequestChoice, sessions: SnapshotSession[]) =>
-    requirementTarget(choice, requirementTargets([lead('lead-new', 'idle', NOW)], sessions, agents))
-      .choice;
+    requirementTarget(
+      choice,
+      requirementTargets('project-a', [lead('lead-new', 'idle', NOW)], sessions, agents),
+    ).choice;
 
   it('targets the Assistant without a stored choice', () => {
     expect(targetOf(ASSISTANT, [session('lead-new', 'open')])).toEqual(ASSISTANT);
-    expect(requirementTarget(ASSISTANT, requirementTargets(undefined, [], null)).choice).toEqual(
-      ASSISTANT,
-    );
+    expect(
+      requirementTarget(ASSISTANT, requirementTargets('project-a', undefined, [], null)).choice,
+    ).toEqual(ASSISTANT);
   });
 
   it('keeps a stored lead, direct session or resident that takes input', () => {
@@ -651,7 +654,7 @@ describe('requirement box target', () => {
     expect(
       requirementTarget(
         { kind: 'agent', agent_id: 'agent-triage' },
-        requirementTargets(undefined, [], [agents[0]!, archived]),
+        requirementTargets('project-a', undefined, [], [agents[0]!, archived]),
       ).choice,
     ).toEqual(ASSISTANT);
   });
@@ -878,7 +881,10 @@ describe('publish bar', () => {
         session('lead-new', 'open'),
         session('worker-1', 'open', { task: { id: 'lead-new:t1' } as SnapshotSession['task'] }),
         session('direct-2', 'closed', { title: 'Done already' }),
-      ],
+      ]
+        .map((each) => ({ ...each, project_id: 'project-agents' }))
+        // The snapshot holds every project's sessions.
+        .concat(session('elsewhere-1', 'open', { title: 'Another project spike' })),
     }));
     await h.flush();
     h.render();
@@ -1311,6 +1317,11 @@ describe('needs-you row', () => {
   };
   const button = (tree: unknown, label: string) =>
     find(tree as any, (n) => n.type === 'button' && text(n) === label);
+  /** The entries of the row's "More actions" menu. */
+  const moreItems = (tree: unknown) =>
+    nodes(named(tree as ReactNode, 'Menu').props.children).filter((n) => n.type === MenuItem);
+  const moreItem = (tree: unknown, label: string) =>
+    find(moreItems(tree), (n) => text(n) === label);
 
   it('blocks commands based on stale evidence while keeping session navigation available', async () => {
     const run = vi.fn(async () => null);
@@ -1330,7 +1341,7 @@ describe('needs-you row', () => {
     button(h.value, act('merge')).props.onClick();
     await h.flush();
     expect(run).not.toHaveBeenCalled();
-    button(h.value, OPEN).props.onClick();
+    moreItem(h.value, OPEN).props.onClick();
     expect(open).toHaveBeenCalledWith('worker-1');
   });
 
@@ -1351,11 +1362,135 @@ describe('needs-you row', () => {
     button(h.value, act('merge')).props.onClick();
     await h.flush();
     expect(button(h.value, act('merge')).props['aria-disabled']).toBe(true);
-    expect(button(h.value, OPEN).props['aria-disabled']).toBeUndefined();
-    button(h.value, OPEN).props.onClick();
+    expect(moreItem(h.value, OPEN).props.disabled).toBe(false);
+    moreItem(h.value, OPEN).props.onClick();
     expect(opened).toEqual(['worker-1']);
     reply.resolve(null);
     await h.flush();
+  });
+
+  it('gives each row one action button and puts the rest in its More actions menu', () => {
+    const rows: [BoardNeed, string, string[]][] = [
+      [need({}), act('approve'), [act('approveSession'), act('reject')]],
+      [
+        need({
+          source: { table: 'sessions', id: 'worker-1', revision: 7 },
+          kind: 'session.merge_blocked',
+          reason: 'merge_blocked',
+          actions: [{ command: 'session.merge', allowed: true }],
+        }),
+        act('merge'),
+        [OPEN],
+      ],
+    ];
+    for (const [item, primary, rest] of rows) {
+      const strip = mount(() =>
+        NeedsStrip({
+          model: { ...board([]), needs: [item] },
+          sessions: [],
+          run: async () => null,
+          onOpenSession: () => {},
+        }),
+      );
+      const card = named(strip.value, 'RequestCard');
+      const h = row(
+        item,
+        async () => null,
+        () => {},
+      );
+      expect(
+        nodes(h.value)
+          .filter((n) => n.type === 'button')
+          .map((n) => text(n)),
+      ).toEqual([primary]);
+      const menu = named(h.value, 'Menu');
+      expect(menu.props.trigger.props['aria-label']).toBe(
+        zhf('components.requestCard.more', { name: card.props.who }),
+      );
+      expect(moreItems(h.value).map((n) => text(n))).toEqual(rest);
+    }
+  });
+
+  it('says how many tasks a row blocks, and nothing for a row that blocks none', () => {
+    const blocking = row(
+      need({ blocks: 3 }),
+      async () => null,
+      () => {},
+    );
+    expect(text(blocking.value)).toContain(say('data.attention.blocks', { count: 3 }));
+    const free = row(
+      need({ blocks: 0 }),
+      async () => null,
+      () => {},
+    );
+    // The words before the count, which every count of blocked tasks starts with.
+    const blocks = say('data.attention.blocks', { count: 7 }).split('7')[0]!.trim();
+    expect(text(free.value)).not.toContain(blocks);
+  });
+
+  it("opens a question row's card in place from its one action", () => {
+    const asked = need({
+      source: { table: 'board_plans', id: 'lead-1', revision: 6 },
+      kind: 'lead.question',
+      session_id: 'lead-1',
+      reason: 'lead_question',
+      decision: 'question',
+      actions: [{ command: 'lead.question.answer', allowed: true }],
+      binding: undefined,
+      question: {
+        id: 'question-1',
+        at: NOW,
+        question: 'Which side wins?',
+        options: ['Left', 'Right'],
+        recommended: '',
+        assumption: '',
+        blocks: [],
+      },
+    });
+    const h = row(
+      asked,
+      async () => null,
+      () => {},
+    );
+    const cards = () =>
+      nodes(h.value).filter((n) => typeof n.type === 'function' && n.type.name === 'QuestionCard');
+    const reply = () => button(h.value, act('reply'));
+    expect(cards()).toHaveLength(0);
+    expect(reply().props['aria-expanded']).toBe(false);
+    reply().props.onClick();
+    h.render();
+    expect(reply().props['aria-expanded']).toBe(true);
+    expect(cards()).toHaveLength(1);
+  });
+
+  it("moves the focus to the next row's action once a row's action went through", async () => {
+    const needs = [1, 2].map((n) =>
+      need({ source: { table: 'approvals', id: `approval-${n}`, revision: 1 } }),
+    );
+    const strip = mount(() =>
+      NeedsStrip({
+        model: { ...board([]), needs },
+        sessions: [],
+        run: async () => null,
+        onOpenSession: () => {},
+      }),
+    );
+    find(strip.value, (n) => n.type === 'ul').props.ref.current = {
+      children: needs.map(() => ({ scrollIntoView: () => {}, querySelector: () => null })),
+    };
+    const cards = nodes(strip.value)
+      .filter((n) => typeof n.type === 'function' && n.type.name === 'RequestCard')
+      .map((el) => mount(() => (el.type as (props: unknown) => ReactNode)(el.props)));
+    const targets = cards.map((card) => {
+      const target = { focus: vi.fn() };
+      button(card.value, act('approve')).props.ref?.(target);
+      return target;
+    });
+    button(cards[0]!.value, act('approve')).props.onClick();
+    await cards[0]!.flush();
+    strip.render();
+    expect(targets[1]!.focus).toHaveBeenCalled();
+    expect(targets[0]!.focus).not.toHaveBeenCalled();
   });
 
   it('shows the input of a permission request beside the buttons that allow it', () => {
@@ -1464,7 +1599,7 @@ describe('needs-you strip folding', () => {
 
   it('tells the shell which waits its rows show, so the notice feed leaves only those out', () => {
     const h = fiveNeeds();
-    expect([...useShell.getState().boardWaits!]).toEqual([
+    expect([...useShell.getState().stripWaits!]).toEqual([
       'approval-1',
       'approval-2',
       'approval-3',
@@ -1474,6 +1609,6 @@ describe('needs-you strip folding', () => {
       (n) => n.type === 'button' && text(n) === say('board.frame.needs.more', { count: 2 }),
     ).props.onClick();
     h.render();
-    expect(useShell.getState().boardWaits!.size).toBe(5);
+    expect(useShell.getState().stripWaits!.size).toBe(5);
   });
 });

@@ -1,6 +1,7 @@
-import type { Dispatch, ReactNode, RefObject, SetStateAction } from 'react';
+import type { ComponentProps, Dispatch, ReactNode, RefObject, SetStateAction } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { t } from '../../i18n';
+import { NeedsStrip, useNeedImprovements } from './BoardFrame';
 import { PanelBoundary, type BoardViewProps } from './BoardScreen';
 import { BriefCard } from './BriefCard';
 import { DraftTaskForm, EditMode, OrderLock } from './EditMode';
@@ -12,7 +13,13 @@ import { PlanProposals } from './PlanProposals';
 import { TaskProgressStrip } from './ProgressCharts';
 import { UnsentEdits } from './UnsentEdits';
 
-/** The now view's body: what happened since the user left, milestone and lead, plan proposals, the main view and the summary. */
+/** The needs-you list with the proposals its items point at; the hooks sit here, as the page holds none. */
+function ProjectNeeds(props: Omit<ComponentProps<typeof NeedsStrip>, 'improvements'>) {
+  const improvements = useNeedImprovements(props.model);
+  return <NeedsStrip {...props} improvements={improvements.read} />;
+}
+
+/** The now view's body: what needs the user, what happened since the user left, milestone and lead, plan proposals, the main view and the summary. */
 export function NowPage({
   model,
   shown,
@@ -56,6 +63,17 @@ export function NowPage({
 }) {
   return (
     <>
+      {model && projectId && actions && !!model.needs?.length && (
+        <div className="bd-needs">
+          <ProjectNeeds
+            model={model}
+            sessions={actions.sessions}
+            run={actions.run}
+            onOpenSession={onOpenSession}
+            stale={stale}
+          />
+        </div>
+      )}
       {model && projectId && (
         <BriefCard
           projectId={projectId}

@@ -263,9 +263,9 @@ describe('the board top bar', () => {
     expect(nodes(h.value).some((n) => n.props.className === 'bd-grid')).toBe(false);
   });
 
-  it('leaves the needs-you request cards off the board', () => {
+  it('lists the needs-you items on the now page', () => {
     const tree = mount(() => view()).value;
-    expect(has(tree, 'NeedsStrip')).toBe(false);
+    expect(has(tree, 'ProjectNeeds')).toBe(true);
     expect(nodes(tree).some((n) => n.props.className === 'bd-need')).toBe(false);
   });
 

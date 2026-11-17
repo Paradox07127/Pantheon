@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { FlaskConical, Gauge, Lightbulb, Pencil } from 'lucide-react';
+import { Ellipsis, FlaskConical, Gauge, Lightbulb, Pencil } from 'lucide-react';
 import type { ApprovalQuestion, Improvement } from '@pantheon/domain';
 import { blocksText, decisionText, primaryAction } from '../data/attention';
 import {
@@ -39,6 +39,8 @@ import { useDialogContent } from '../screens/board/TellLead';
 import { ResolveButtons } from '../screens/sessions/parts';
 import { openSettingsPage } from '../screens/settings/settings-jump';
 import { useShell } from '../store';
+import { Clip } from './Clip';
+import { Menu, MenuItem } from './Menu';
 import { QuestionCard } from './QuestionCard';
 import { RuntimeGlyph } from './RuntimeGlyph';
 import { GateMark, MergeBlockedGlyph, StateGlyph } from './SessionStateIcon';
@@ -78,6 +80,8 @@ export interface RequestCardProps {
   selected?: boolean;
   /** Called once a command the card sent was taken, so a list can move on to its next item. */
   onActed?: () => void;
+  /** Gets a list row's one action button, which a list moves the focus to. */
+  primaryRef?: (el: HTMLButtonElement | null) => void;
 }
 
 // The waiting dot stays with approvals and questions; every other kind has its mark from elsewhere.
@@ -126,6 +130,7 @@ export function RequestCard({
   onSelect,
   selected,
   onActed,
+  primaryRef,
 }: RequestCardProps) {
   const asked = item.kind === 'lead.question' ? item.question : undefined;
   const relayed = asked?.source;
@@ -146,6 +151,8 @@ export function RequestCard({
       : []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A list row's question card opens under the row from its one action.
+  const [answering, setAnswering] = useState(false);
   const accepting = useDialogContent<{ stored: SnapshotMilestone }>();
   const full = size === 'full';
   const sessionId = needSession(item);
@@ -206,20 +213,26 @@ export function RequestCard({
     setBusy(false);
     setError(failure);
   };
+  const reply = actions.find((a) => a.key === 'reply');
   const button = (action: NeedAction) => {
-    const reason = reasonOf(action);
-    const held = busy && action.key !== 'open';
+    // Opening the card sends nothing; the card's Send says why it cannot.
+    const opens = !full && action === reply && questions.length > 0;
+    const reason = opens ? null : reasonOf(action);
+    const held = !opens && busy && action.key !== 'open';
     const off = held || reason !== null;
     const el = (
       <button
         key={action.key}
+        ref={action === primary ? primaryRef : undefined}
         type="button"
         className={marked(action) ? 'btn pri' : 'btn'}
         aria-label={`${action.label} ${who}`}
         aria-disabled={off || undefined}
         aria-busy={held || undefined}
+        aria-expanded={opens ? answering : undefined}
         onClick={() => {
-          if (!off) void press(action);
+          if (opens) setAnswering(!answering);
+          else if (!off) void press(action);
         }}
       >
         {action.label}
@@ -234,7 +247,6 @@ export function RequestCard({
     );
   };
 
-  const reply = actions.find((a) => a.key === 'reply');
   const buttons: ReactNode[] = actions.map((action) => button(action));
 
   // A task turn the tracker found stalled or looping; the task's lead plan names it.
@@ -333,99 +345,90 @@ export function RequestCard({
     </p>
   );
 
-  const kind = full ? null : decisionText(item.decision);
-  const blocks = full ? null : blocksText(item.blocks ?? item.unblocks);
+  const age = <span className="rq-age">{ageText(item.created_at, now)}</span>;
   const head = (
     <div className="rq-hd">
       {MARK[item.kind]}
-      {kind && <span className="rq-kind">{kind}</span>}
-      {full ? (
-        <h3 className="rq-who" title={who}>
-          {who}
-        </h3>
-      ) : onSelect ? (
-        <Tip content={who}>
-          <button
-            type="button"
-            className="rq-who rq-pick"
-            aria-current={selected || undefined}
-            onClick={onSelect}
-          >
-            {who}
-          </button>
-        </Tip>
-      ) : (
-        <b className="rq-who" title={who}>
-          {who}
-        </b>
-      )}
-      {blocks && <span className="rq-blk">{blocks}</span>}
-      <span className="rq-age">{ageText(item.created_at, now)}</span>
+      <h3 className="rq-who" title={who}>
+        {who}
+      </h3>
+      {age}
     </div>
   );
 
-  // A question looks the same in a list and beside it; a relayed one names the session that asked.
-  if (reply && questions.length > 0) {
-    const deny = actions.find((a) => a.key === 'reject');
-    const thread = relayed && actions.find((a) => a.key === 'open');
-    const source = relayed ? (
-      <div className="qc-src">
-        {session && <RuntimeGlyph runtime={session.runtime} />}
-        <b className="qc-who" title={who}>
-          {who}
-        </b>
-        {task && task !== who && (
-          <span className="chip qc-task" title={task}>
-            {task}
-          </span>
-        )}
-        <span className="qc-age">
-          {t(
-            { id: 'components.requestCard.waited', defaultMessage: 'Waited {duration}' },
-            { duration: elapsedText(now - item.created_at) },
-          )}
-        </span>
-        {thread && button(thread)}
-      </div>
-    ) : (
-      head
-    );
-    return (
-      <QuestionCard
-        draft={relayed?.approval_id ?? asked?.id ?? item.source.id}
-        questions={questions}
-        label={
-          relayed
-            ? t(
-                {
-                  id: 'components.requestCard.questionFrom',
-                  defaultMessage: 'Question from {who}',
-                },
-                { who },
-              )
-            : who
-        }
-        source={source}
-        note={
-          !relayed && (
-            <>
-              {assumption}
-              {factRow}
-              {next && <p className="rq-next">{next}</p>}
-            </>
-          )
-        }
-        reason={reasonOf(reply)}
-        busy={busy}
-        error={error}
-        onSend={(answers) => void press(reply, answers)}
-        onDeny={deny && (() => void press(deny))}
-        actions={actions
-          .filter((a) => a !== reply && a !== deny && a !== thread)
-          .map((a) => button(a))}
-      />
-    );
-  }
+  // Beside a list a relayed question names the session that asked; in a list its row does.
+  const deny = actions.find((a) => a.key === 'reject');
+  const thread = relayed && actions.find((a) => a.key === 'open');
+  const card = reply && questions.length > 0 && (
+    <QuestionCard
+      draft={relayed?.approval_id ?? asked?.id ?? item.source.id}
+      questions={questions}
+      label={
+        relayed
+          ? t(
+              {
+                id: 'components.requestCard.questionFrom',
+                defaultMessage: 'Question from {who}',
+              },
+              { who },
+            )
+          : who
+      }
+      source={
+        full &&
+        (relayed ? (
+          <div className="qc-src">
+            {session && <RuntimeGlyph runtime={session.runtime} />}
+            <b className="qc-who" title={who}>
+              {who}
+            </b>
+            {task && task !== who && (
+              <span className="chip qc-task" title={task}>
+                {task}
+              </span>
+            )}
+            <span className="qc-age">
+              {t(
+                { id: 'components.requestCard.waited', defaultMessage: 'Waited {duration}' },
+                { duration: elapsedText(now - item.created_at) },
+              )}
+            </span>
+            {thread && button(thread)}
+          </div>
+        ) : (
+          head
+        ))
+      }
+      note={
+        !relayed && (
+          <>
+            {assumption}
+            {factRow}
+            {next && <p className="rq-next">{next}</p>}
+          </>
+        )
+      }
+      reason={reasonOf(reply)}
+      busy={busy}
+      // The row shows a list row's failure.
+      error={full ? error : null}
+      onSend={(answers) => void press(reply, answers)}
+      onDeny={deny && (() => void press(deny))}
+      actions={
+        full &&
+        actions.filter((a) => a !== reply && a !== deny && a !== thread).map((a) => button(a))
+      }
+    />
+  );
+  if (full && card) return card;
+
+  const kind = decisionText(item.decision);
+  const blocks = blocksText(item.blocks ?? item.unblocks);
+  const more = t(
+    { id: 'components.requestCard.more', defaultMessage: 'More actions: {name}' },
+    { name: who },
+  );
+  const rest = actions.filter((action) => action !== primary);
 
   const body = full ? (
     <div className="rqf-body">
@@ -536,40 +539,90 @@ export function RequestCard({
     </div>
   ) : (
     <>
-      <div className="rq-what">
-        {summary ? (
-          <span className="rq-cmd" title={summary}>
-            {summary}
-          </span>
-        ) : (
-          <span title={what}>{what}</span>
-        )}
-      </div>
-      {assumption}
-      {factRow}
-      {next && <p className="rq-next">{next}</p>}
-      {files.length > 0 && (
-        <ul
-          className="rq-files"
-          aria-label={t(
-            {
-              id: 'components.requestCard.outOfScopeFiles',
-              defaultMessage: 'Files {who} changed out of scope',
-            },
-            { who },
+      <div className="rq-hd">
+        {MARK[item.kind]}
+        <span className="rq-kind">{kind && <Clip text={kind} />}</span>
+        <span className="rq-what">
+          {summary ? (
+            <span className="rq-cmd" title={summary}>
+              {summary}
+            </span>
+          ) : (
+            <Clip text={what} />
           )}
-        >
-          {files.map((file) => (
-            <li key={file}>{file}</li>
-          ))}
-        </ul>
-      )}
-      <div className="rq-acts">
-        {interruptControl}
-        {buttons}
+          {onSelect ? (
+            <Tip content={who}>
+              <button
+                type="button"
+                className="rq-who rq-pick"
+                aria-current={selected || undefined}
+                onClick={onSelect}
+              >
+                {who}
+              </button>
+            </Tip>
+          ) : (
+            <b className="rq-who">
+              <Clip text={who} />
+            </b>
+          )}
+        </span>
+        <span className="rq-blk">{blocks}</span>
+        {age}
+        <span className="rq-acts">
+          {primary && button(primary)}
+          {(rest.length > 0 || stuck) && (
+            <Menu
+              label={who}
+              side="bottom"
+              align="end"
+              trigger={
+                <button type="button" className="ib" aria-label={more}>
+                  <Ellipsis aria-hidden="true" />
+                </button>
+              }
+            >
+              {stuck && (
+                <MenuItem disabled={busy || !!stale} onClick={() => void interrupt()}>
+                  {interruptLabel}
+                </MenuItem>
+              )}
+              {rest.map((action) => (
+                <MenuItem
+                  key={action.key}
+                  disabled={(busy && action.key !== 'open') || reasonOf(action) !== null}
+                  onClick={() => void press(action)}
+                >
+                  {action.label}
+                </MenuItem>
+              ))}
+            </Menu>
+          )}
+        </span>
+      </div>
+      <div className="rq-sub">
+        {!card && factRow}
+        {!card && next && <p className="rq-next">{next}</p>}
+        {files.length > 0 && (
+          <ul
+            className="rq-files"
+            aria-label={t(
+              {
+                id: 'components.requestCard.outOfScopeFiles',
+                defaultMessage: 'Files {who} changed out of scope',
+              },
+              { who },
+            )}
+          >
+            {files.map((file) => (
+              <li key={file}>{file}</li>
+            ))}
+          </ul>
+        )}
         {item.kind === 'session.reconciling' && (
           <ResolveButtons item={item as NeedsYouItem} title={who} />
         )}
+        {answering && card}
       </div>
     </>
   );
@@ -580,7 +633,7 @@ export function RequestCard({
       aria-label={who}
       data-on={(selected && !full) || undefined}
     >
-      {head}
+      {full && head}
       {body}
       {error && (
         <span className="tr-err rq-err" role="alert">

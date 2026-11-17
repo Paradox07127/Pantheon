@@ -108,6 +108,7 @@
   "components.requestCard.waited": "已等 {duration}",
   "components.requestCard.escalated": "已升级",
   "components.requestCard.interrupt": "打断",
+  "components.requestCard.more": "更多操作：{name}",
   "components.requestCard.assumption": "在此期间 lead 假定：{assumption}",
   "components.toast.close": "关闭",
   "components.toast.region": "通知",

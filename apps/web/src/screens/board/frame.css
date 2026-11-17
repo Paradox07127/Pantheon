@@ -319,34 +319,38 @@
 .bf-strip {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-2);
   margin-top: 12px;
-  padding: 4px 8px 4px 16px;
+  padding: var(--sp-3) var(--sp-4);
   background: var(--sf);
   border: var(--hair) solid var(--bd);
   border-top-color: var(--bd-top);
   border-radius: var(--r-lg);
 }
 
-/* Needs-you strip */
+/* Needs-you strip: a heading with the count, then one row per item. */
+.bf-strip-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-ctl);
+}
+.bf-strip-n {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
 .bf-needs {
   display: flex;
   flex-direction: column;
-  margin: 0;
+  gap: 2px;
+  margin: 0 calc(-1 * var(--sp-2));
   padding: 0;
   list-style: none;
 }
 .bf-need {
   display: flex;
   flex: none;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  min-height: 40px;
   min-width: 0;
-}
-.bf-need + .bf-need {
-  border-top: var(--hair) solid var(--bd2);
 }
 .bf-more {
   align-self: flex-start;

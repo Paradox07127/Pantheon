@@ -34,7 +34,12 @@ export function Menu({
       <BaseMenu.Trigger render={trigger} />
       <BaseMenu.Portal>
         <BaseMenu.Positioner side={side} align={align} sideOffset={4} style={{ zIndex: 60 }}>
-          <BaseMenu.Popup className="mn mn-menu pop" aria-label={label}>
+          <BaseMenu.Popup
+            className="mn mn-menu pop"
+            aria-label={label}
+            // Base UI sets --available-height on the positioner; a long menu scrolls inside the window.
+            style={{ maxHeight: 'var(--available-height)', overflowY: 'auto' }}
+          >
             {children}
           </BaseMenu.Popup>
         </BaseMenu.Positioner>

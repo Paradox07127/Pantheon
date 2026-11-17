@@ -392,6 +392,34 @@ describe('project board bar', () => {
     expect(strip(canvas)).toBeUndefined();
     expect(names(canvas)).not.toContain('BriefCard');
   });
+
+  it('lists what needs the user under the requirement bar and above the since-you-left card, and nothing when nothing does', () => {
+    const actions = { milestones: [], sessions: [], run: async () => null };
+    const waiting = {
+      source: { table: 'approvals', id: 'approval-1', revision: 1 },
+      kind: 'permission',
+      project_id: 'project-a',
+      session_id: 'worker-1',
+      status: 'pending',
+      created_at: NOW - 60_000,
+      reason: 'permission_requested',
+      actions: [{ command: 'approval.respond', allowed: true }],
+      unblocks: 0,
+    } as unknown as NonNullable<BoardModel['needs']>[number];
+    const view = (needs: NonNullable<BoardModel['needs']>) =>
+      mount(() =>
+        BoardView(viewProps({ model: board({ needs }), projectId: 'project-a', actions })),
+      ).value;
+    const listed = view([waiting]);
+    const parts = names(listed);
+    expect(parts.indexOf('PublishBar')).toBeGreaterThanOrEqual(0);
+    expect(parts.indexOf('PublishBar')).toBeLessThan(parts.indexOf('ProjectNeeds'));
+    expect(parts.indexOf('ProjectNeeds')).toBeLessThan(parts.indexOf('BriefCard'));
+    const strip = named(listed, 'ProjectNeeds');
+    expect(strip.props.model.needs).toEqual([waiting]);
+    expect(strip.props.run).toBe(actions.run);
+    expect(names(view([]))).not.toContain('ProjectNeeds');
+  });
 });
 
 describe('milestone line', () => {

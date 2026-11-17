@@ -247,6 +247,11 @@ describe('request card', () => {
     'answers a single choice in the %s card only once it is picked and sent',
     async (size) => {
       const { h, run } = mount({ item: question, size });
+      // A list row opens its question card from its one action.
+      if (size === 'compact') {
+        button(h.value, zh('board.needs.actions.reply')).props.onClick();
+        h.render();
+      }
       const asking = card(h.value);
       expect(send(asking.value).props['aria-disabled']).toBe(true);
       pick(asking.value, 'Client').props.onClick();
