@@ -14,6 +14,7 @@ import { acceptInput } from './session.js';
 import { ownEntry, retiredBinding } from './board-plan.js';
 import { BACKGROUND_LONG_MS, longBackground } from './progress.js';
 import { workflowPolicy } from './workflow-policy.js';
+import { charterMode } from './charter.js';
 import {
   NEXT_STEP,
   STOP_UNCONFIRMED_MS,
@@ -140,7 +141,10 @@ export function sessionItems(
                     ? 'task_retired'
                     : row?.merge?.state === 'blocked' &&
                         !['cancelled', 'workflow_approval'].includes(row.merge.reason ?? '') &&
-                        (!leadHandles || row.merge.reason === 'protected_paths')
+                        (!leadHandles ||
+                          row.merge.reason === 'protected_paths' ||
+                          (row.merge.reason === 'out_of_scope' &&
+                            charterMode(ctx, session.project_id, 'merge_out_of_scope') !== 'on'))
                       ? 'session.merge_blocked'
                       : leads.has(session.id) && leadTurnFailed(ctx, session, latest)
                         ? 'lead_turn_failed'

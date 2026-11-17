@@ -33,6 +33,7 @@ import { agentAppToolPreparers } from './agent-app-tools.js';
 import { agentPromptPreparers } from './agent-prompts.js';
 import { agentProposalHandlers, agentProposalPreparers } from './agent-proposals.js';
 import { signalHandlers, signalPreparers } from './signals.js';
+import { projectBriefHandlers } from './project-brief.js';
 
 export const handlers: Handlers = {
   ...memoryHandlers,
@@ -63,6 +64,7 @@ export const handlers: Handlers = {
   ...agentAlwaysOnHandlers,
   ...agentProposalHandlers,
   ...signalHandlers,
+  ...projectBriefHandlers,
   ...visualHandlers,
   ...themeHandlers,
   ...styleHandlers,

@@ -13,6 +13,7 @@ import { inputSchemas } from '@pantheon/protocol';
 import { callingResident, wakeAgent } from './agent-always-on.js';
 import { residentProfile } from './agent-templates.js';
 import { checkAgentFields } from './agents.js';
+import { chartered } from './charter.js';
 import {
   projectAccess,
   userOnly,
@@ -69,6 +70,11 @@ export const agentProposalHandlers: Handlers = {
       'Give the fields that change',
     );
     checkAgentFields(ctx, session.project_id, fields, target);
+    requireThat(
+      chartered(ctx, p, 'create_agent', session) !== 'off',
+      'permission_denied',
+      "The project's charter does not let a lead propose agents; ask the user to create or change the agent",
+    );
     const proposal = ctx.store.insert<AgentProposal>('agent_proposals', {
       id: id(),
       revision: 1,

@@ -42,6 +42,7 @@ import {
 } from './task-dispatch.js';
 import { wakeLead } from './task-tracking.js';
 import { kindOfPaths, risky, scopeTierReason } from './task-kind.js';
+import { chartered } from './charter.js';
 import { workflowPolicy } from './workflow-policy.js';
 
 /** The longest iteration in days, so a mistyped year cannot make the board count each day of centuries. */
@@ -1193,6 +1194,12 @@ export const projectBoardHandlers: Handlers = {
       `Not found: board plan ${p.session_id}; write a plan with update_board first`,
     );
     requireVersion(plan, input.base_version);
+    const mode = chartered(ctx, p, 'plan_change', plan);
+    requireThat(
+      mode !== 'off',
+      'permission_denied',
+      "The project's charter does not let a lead change its plan; ask the user to change it",
+    );
     const proposals = plan.pending_proposals ?? [];
     requireThat(
       proposals.filter((proposal) => proposal.status === 'pending').length < 8,
@@ -1223,7 +1230,7 @@ export const projectBoardHandlers: Handlers = {
       plan.revision,
     );
     ctx.store.event('board.plan_proposed', next, input.project_id, proposal, c.command_id);
-    const applied = workflowPolicy(ctx, input.project_id).plan_changes === 'auto';
+    const applied = mode === 'on';
     if (applied)
       resolveProposal(
         ctx,

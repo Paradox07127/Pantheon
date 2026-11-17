@@ -1001,6 +1001,7 @@ const workflowPolicySettings = z.strictObject({
   improvement_mode: z.enum(['auto', 'confirm', 'off']).optional(),
   plan_changes: z.enum(['auto', 'confirm']).optional(),
   charter: charter.optional(),
+  must_ask_extra: z.array(str).optional(),
   path: z
     .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
     .optional(),
@@ -1039,6 +1040,29 @@ const projectSettingValues = {
 export type ProjectSettingValues = {
   [K in ProjectSettingKey]: z.infer<(typeof projectSettingValues)[K]>;
 };
+const decisionKinds = {
+  plan_change: true,
+  question: true,
+  milestone_accept: true,
+  repeated_failure: true,
+  agent_proposal: true,
+  permission: true,
+  budget: true,
+  improvement: true,
+  external: true,
+  other: true,
+} satisfies Record<NeedsYouItem['decision'], true>;
+/** Every `NeedsYouItem.decision`, the keys of the attention delivery rules. */
+export const NEEDS_YOU_DECISIONS = Object.keys(decisionKinds) as NeedsYouItem['decision'][];
+export type AttentionDelivery = 'now' | 'brief' | 'never';
+const attentionDelivery = z.partialRecord(
+  z.enum(NEEDS_YOU_DECISIONS),
+  z.enum(['now', 'brief', 'never']),
+);
+const quietHours = z.strictObject({
+  from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+});
 /** `~/.pantheon/config.json`, the user's own backends and model families. */
 export const userConfigSchema = z
   .strictObject({
@@ -1050,6 +1074,10 @@ export const userConfigSchema = z
     auto_archive_merged: z.boolean().optional(),
     /** Sessions keep a recap of where they stand; absent is on. */
     session_recap: z.boolean().optional(),
+    /** How each kind of decision reaches the user; an absent kind is now. */
+    attention_delivery: attentionDelivery.optional(),
+    /** Local HH:MM range, possibly across midnight, in which now waits for the brief. */
+    quiet_hours: quietHours.optional(),
     /** The most question rounds of a baseline; absent is 5. */
     baseline_rounds: z.number().int().min(1).max(5).optional(),
     /** The baseline session draws explanation charts, pinned to the board on confirm; absent is on. */
@@ -1670,6 +1698,8 @@ export const inputSchemas = {
     plan_changes: z.enum(['auto', 'confirm']).optional(),
     /** Merged into the current charter by power. */
     charter: charter.optional(),
+    /** Permission rules whose prompts always reach the user; replaces the current list. */
+    must_ask_extra: z.array(str).optional(),
     /** Merged into the current path by tier. */
     path: z
       .strictObject({ t1: tierPath.optional(), t2: tierPath.optional(), t3: tierPath.optional() })
@@ -1877,6 +1907,8 @@ export const inputSchemas = {
     key: z.enum(PROJECT_SETTING_KEYS),
     param: workflowPolicySettings.keyof().optional(),
   }),
+  /** {project_id, at}; moves the caller's seen cursor of the project to at, now by default. project.brief lists what happened after it. */
+  'project.seen': z.strictObject({ project_id: str, at: z.number().int().min(0).optional() }),
   'external.approve': z.strictObject({ project_id: str, subject_key: str }),
   /** SignalIssue; the user only. Mutes the issue: it keeps counting and wakes no agent. */
   'signal.mute': z.strictObject({ id: str }),
@@ -1906,6 +1938,15 @@ export const inputSchemas = {
         z.strictObject({ kind: z.literal('session'), session_id: str }),
       ])
       .optional(),
+  }),
+  /** The user only; routes a request to a resident again: steers the resident to answer it here, plan a new lane or add it to the lane, or sends it to the agent; returns {session_id, turn_id}. */
+  'request.reroute': z.strictObject({
+    turn_id: str,
+    to: z.union([
+      z.enum(['answer_here', 'new_plan']),
+      z.strictObject({ lane_id: str }),
+      z.strictObject({ agent_id: str }),
+    ]),
   }),
   'github.pr.create': z.strictObject({
     session_id: str,
@@ -2151,6 +2192,9 @@ export const inputSchemas = {
     auto_git_init: z.boolean().optional(),
     auto_archive_merged: z.boolean().optional(),
     session_recap: z.boolean().optional(),
+    /** Merges into the stored rules kind by kind. */
+    attention_delivery: attentionDelivery.optional(),
+    quiet_hours: quietHours.optional(),
     baseline_rounds: z.number().int().min(1).max(5).optional(),
     baseline_visuals: z.boolean().optional(),
     baseline_range_story: z.boolean().optional(),
@@ -2259,6 +2303,11 @@ export const querySchemas = {
     state: z.enum(['open', 'muted', 'resolved']).optional(),
   }),
   'projects.summary': z.strictObject({}),
+  /** ProjectBrief; what happened in the project after since, by default after the caller's seen cursor. */
+  'project.brief': z.strictObject({
+    project_id: str,
+    since: z.coerce.number().int().min(0).optional(),
+  }),
   'session.reviews': z.strictObject({ session_id: str }),
   'change_story.list': z.strictObject({ project_id: str }),
   'change_story.diff': z.strictObject({ story_id: str }),
@@ -2439,6 +2488,10 @@ export interface AppSettings {
   auto_archive_merged: boolean;
   /** Absent is on. */
   session_recap?: boolean;
+  /** Every decision kind; absent in the config is now. */
+  attention_delivery: Record<NeedsYouItem['decision'], AttentionDelivery>;
+  /** Local HH:MM; inside it now waits for the brief. */
+  quiet_hours?: { from: string; to: string };
   baseline_rounds: number;
   baseline_visuals: boolean;
   baseline_range_story: boolean;
@@ -2613,6 +2666,32 @@ export interface ProjectSummary {
   done_daily: { date: string; done: number }[];
   /** Newest session last_activity_at, as an ISO time; null without sessions. */
   last_activity_at: string | null;
+}
+/** What a brief item links to; a merge is the merged session's id. */
+export interface ProjectBriefRef {
+  kind: 'task' | 'milestone' | 'merge' | 'approval' | 'proposal' | 'event';
+  id: string;
+}
+/** One thing that happened after the brief's since; times are Unix milliseconds. */
+export type ProjectBriefItem =
+  /** Listed when a decision arrived after since; count and top are those of needs_you.list. */
+  | {
+      kind: 'decisions';
+      ref: ProjectBriefRef;
+      count: number;
+      /** The decisions that arrived after since. */
+      new: number;
+      top: NeedsYouItem;
+    }
+  | { kind: 'failure'; ref: ProjectBriefRef; at: number; reason: NeedsYouItem['reason'] }
+  | { kind: 'milestone'; ref: ProjectBriefRef; title: string; done: number; total: number }
+  | { kind: 'merge'; ref: ProjectBriefRef; at: number }
+  | { kind: 'assumption'; ref: ProjectBriefRef; at: number; text: string }
+  | { kind: 'proposal'; ref: ProjectBriefRef; at: number };
+/** GET /v1/project.brief. */
+export interface ProjectBrief {
+  since: number;
+  items: ProjectBriefItem[];
 }
 /** GET /v1/session.search; metadata first, then messages, newest first in each group. */
 export interface SessionSearchResult {
@@ -3236,6 +3315,11 @@ export interface BoardSessionTime {
   queue_ms: number;
 }
 
+/** Fields of a plan task's board row that packages/control/src/board-view-task-extras.ts fills. */
+export interface BoardTaskExtras {}
+/** Fields of a milestone's board row that packages/control/src/board-view-task-extras.ts fills. */
+export interface BoardMilestoneExtras {}
+
 export interface BoardModel {
   /** Commands failing at least twice in the range, ordered by failed runs then name, at most ten. */
   gate_failures?: { name: string; failed_runs: number; runs: number; flaky: boolean }[];
@@ -3304,7 +3388,7 @@ export interface BoardModel {
     days: { date: string; done: number; scope: number }[];
   }[];
   slots?: { limit: number; used: number; queued: number };
-  tasks: {
+  tasks: ({
     /** `<lead session id>:<task id>` for a plan task; the session id for a session without a task. */
     id: string;
     forked_from?: { session_id: string; before_turn_id?: string };
@@ -3479,7 +3563,7 @@ export interface BoardModel {
       /** Input plus output tokens of the task sessions; absent when the task had no session. */
       tokens?: number;
     };
-  }[];
+  } & BoardTaskExtras)[];
   /** Each lead session that wrote a plan. */
   leads?: {
     session_id: string;
@@ -3568,7 +3652,7 @@ export interface BoardModel {
    * edge would have; always set by the daemon.
    */
   proposed_edges?: BoardModel['edges'];
-  milestones: {
+  milestones: ({
     id: string;
     title: string;
     /** The required workbench sessions. */
@@ -3584,7 +3668,7 @@ export interface BoardModel {
     tasks?: { done: number; total: number };
     /** Calendar day; only on lead milestones that have one. */
     due_on?: string;
-  }[];
+  } & BoardMilestoneExtras)[];
   burnup: { day: string; scope: number; done: number }[];
   /** Lead plan tasks, each counted once however many sessions it had; a task is done once a session merged. */
   task_progress: {

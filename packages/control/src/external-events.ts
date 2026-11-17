@@ -12,7 +12,7 @@ import { residentProfile } from './agent-templates.js';
 import { ensureAgents } from './agents.js';
 import { ownEntry } from './board-plan.js';
 import { projectAccess, type ControlContext, type Handlers } from './context.js';
-import { externalEvents } from './user-config.js';
+import { charterMode } from './charter.js';
 import { appendNote } from './lead-inbox.js';
 import { openAgent } from './resident.js';
 import { wakeLead } from './task-tracking.js';
@@ -166,9 +166,11 @@ function githubListener(ctx: ControlContext, projectId: string): AgentProfile | 
 function handOver(ctx: ControlContext, events: ExternalEvent[]): void {
   const first = events[0]!,
     project = ctx.store.get<Project>('projects', first.project_id);
-  if (!project || externalEvents(ctx, project) === 'off' || project.removed_at) return;
+  if (!project || project.removed_at) return;
+  const mode = charterMode(ctx, project.id, 'start_external');
+  if (mode === 'off') return;
   const hold = !(
-    externalEvents(ctx, project) === 'auto' &&
+    mode === 'on' &&
     events.every((event) => event.actor_trust === 'self' && event.texts.every((t) => t.own))
   );
   const key = (text: ExternalEvent['texts'][number]) => `${text.author}\n${text.text}`;

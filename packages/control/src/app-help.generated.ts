@@ -392,6 +392,12 @@ export const appHelpGroups: AppHelpGroup[] = [
       },
       { type: 'project.read', tool: 'project_read' },
       { type: 'project.remove', tool: 'the user does this in the app' },
+      {
+        type: 'project.seen',
+        about:
+          "{project_id, at}; moves the caller's seen cursor of the project to at, now by default. project.brief lists what happened after it.",
+        tool: 'the user does this in the app',
+      },
       { type: 'project.sessionDefaults.clear', tool: 'the user does this in the app' },
       { type: 'project.sessionDefaults.set', tool: 'the user does this in the app' },
       { type: 'project.usageTargets.set', tool: 'the user does this in the app' },
@@ -451,8 +457,14 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'request',
     about:
-      "The user only; sends the user's request to the project's Assistant, or to the target session, steering it while it runs; returns {session_id, turn_id}",
+      'The user only; routes a request to a resident again: steers the resident to answer it here, plan a new lane or add it to the lane, or sends it to the agent; returns {session_id, turn_id}; The user onl',
     commands: [
+      {
+        type: 'request.reroute',
+        about:
+          'The user only; routes a request to a resident again: steers the resident to answer it here, plan a new lane or add it to the lane, or sends it to the agent; returns {session_id, turn_id}.',
+        tool: 'the user does this in the app',
+      },
       {
         type: 'request.send',
         about:

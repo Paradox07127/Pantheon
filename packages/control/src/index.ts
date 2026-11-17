@@ -152,6 +152,7 @@ import { SessionSearch } from './session-search.js';
 import { recoverWorkspaceProvisioning, stopWorkspaceProvisioning } from './provisioning.js';
 import { needsYou } from './needs-you.js';
 import { projectsSummary, summaryProjects } from './projects-summary.js';
+import { projectBrief } from './project-brief.js';
 import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
 import { agentProposal } from './agent-proposals.js';
@@ -972,6 +973,9 @@ export class Control extends EventEmitter {
   }
   projectsSummary(principal: Principal, readChanges: true | 'cached' = true) {
     return projectsSummary(this.ctx, principal, readChanges);
+  }
+  projectBrief(principal: Principal, projectId: string, since?: number) {
+    return projectBrief(this.ctx, principal, projectId, since);
   }
   async extensionsInventory(
     principal: Principal,

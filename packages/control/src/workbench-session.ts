@@ -163,6 +163,7 @@ import {
 } from './workspace.js';
 import { writerTempDirectory } from './workspace-removal.js';
 import { LEAD_INSTRUCTIONS, PLATFORM_CORE } from './agent-prompts.js';
+import { chartered, charterMode } from './charter.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
 export const WORKBENCH_TURN_MS = 6 * 60 * 60 * 1000;
@@ -4039,6 +4040,14 @@ function leadTaskMerge(
     'invalid_state',
     `Task ${input.task_id} has no session whose merge stopped on files outside its scope`,
   );
+  const mode = charterMode(ctx, plan.project_id, 'merge_out_of_scope');
+  requireThat(
+    mode === 'on',
+    'permission_denied',
+    mode === 'ask'
+      ? `The user merges the files outside the scope of task ${input.task_id} from the blocked merge card; tell the user why they belong in it`
+      : `The project's charter does not let a lead merge files outside a task's scope; widen the scope of task ${input.task_id} with update_board, stop it with stop_task, or ask the user`,
+  );
   const files = session.merge!.conflicts ?? [];
   requireThat(
     !files.some((file) => AGENT_CONFIGURATION.some((entry) => overlaps(file, entry))),
@@ -4070,7 +4079,10 @@ function leadTaskMerge(
   );
   return {
     session,
-    admit: (reads) => admitMerge(ctx, session, cause, false, input.reason, files, reads),
+    admit: (reads) => {
+      chartered(ctx, p, 'merge_out_of_scope', session);
+      return admitMerge(ctx, session, cause, false, input.reason, files, reads);
+    },
   };
 }
 

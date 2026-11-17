@@ -59,6 +59,7 @@ export const tables = [
   'agent_messages',
   'agent_proposals',
   'signal_issues',
+  'seen_cursors',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -224,6 +225,14 @@ export const migrations: readonly Migration[] = [
         CREATE TABLE signal_issues (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
         CREATE UNIQUE INDEX signal_issue_fingerprint ON signal_issues(json_extract(data,'$.project_id'), json_extract(data,'$.source'), json_extract(data,'$.fingerprint'));
       `);
+    },
+  },
+  {
+    version: 8,
+    up(db) {
+      db.exec(
+        'CREATE TABLE seen_cursors (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
+      );
     },
   },
 ];

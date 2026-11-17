@@ -22,7 +22,7 @@ import { projectRoutingTable } from './routing-table.js';
 import { runtimeReviewHistory } from './runtime-review.js';
 import { RUNTIME_LOOKBACK_MS, runtimeDiagnostics } from './runtime-findings.js';
 import { improvementSignals } from './improvement-signals.js';
-import { charterModes } from './charter.js';
+import { chartered, charterModes } from './charter.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { workflowDefinition } from './workflow-engine.js';
 import { listDevices } from './devices.js';
@@ -447,6 +447,11 @@ export const projectFactHandlers: Handlers = {
             m.owner_session_id === p.session_id && m.key === input.milestone_id && !m.removed_at,
         );
       requireThat(owned, 'not_found', `Not found: milestone ${input.milestone_id}`);
+      requireThat(
+        chartered(ctx, p, 'accept_milestone', owned) === 'on',
+        'permission_denied',
+        `The user accepts milestone ${owned.key} on the milestone card; the project's charter does not let a lead accept milestones`,
+      );
       old = owned;
     } else {
       userOnly(p);

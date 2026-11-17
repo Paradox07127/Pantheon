@@ -942,6 +942,13 @@ export interface SessionTurn extends Entity {
   causal_depth?: number;
   /** The turn started read-only, as its UserTurn told the runtime; absent when it could write. */
   read_only?: boolean;
+  /** What a resident did with the user's turn, from the events it caused on its plan; set when the turn completed. */
+  routing?: {
+    kind: 'answered' | 'new_plan' | 'added' | 'sent' | 'asked';
+    lane_id?: string;
+    task_ids?: string[];
+    agent_id?: string;
+  };
 }
 export type SessionRole = 'reviewer' | 'baseline' | 'story' | 'main';
 export interface RoleUsage {

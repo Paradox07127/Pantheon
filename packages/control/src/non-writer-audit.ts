@@ -183,6 +183,34 @@ export function finishReconciledWriteAudit(
   recordWriteAudit(ctx, sessionId, baseline, current);
 }
 
+/** The tool name, by its last segment or its title, of a call that writes files. */
+export function writesFiles(tool: string): boolean {
+  const name = tool
+    .split(/__|[.:/]/)
+    .at(-1)!
+    .replace(/[_-]/g, '')
+    .toLowerCase();
+  return (
+    /^(write|writefile|writetextfile|edit|editfile|multiedit|notebookedit|applypatch|filechange|delete|deletefile|move|movefile|execute)$/.test(
+      name,
+    ) || /^(write|edit|delete|move|execute)(?:\s|:)/i.test(tool)
+  );
+}
+
+/** The resolved path a file tool's input names, when it lies outside the worktree. */
+export function outsideWorktree(
+  worktree: string,
+  input: Record<string, unknown>,
+): string | undefined {
+  const target = [input.file_path, input.path, input.filePath, input.notebook_path].find(
+    (field): field is string => typeof field === 'string',
+  );
+  if (target === undefined) return;
+  const resolved = path.resolve(worktree, target);
+  const relative = path.relative(worktree, resolved);
+  return relative.startsWith('..') || path.isAbsolute(relative) ? resolved : undefined;
+}
+
 function recordWriteAudit(
   ctx: ControlContext,
   sessionId: string,
@@ -205,27 +233,11 @@ function recordWriteAudit(
   for (const event of ctx.store.kindEvents(session.project_id, ['agent.tool.started'])) {
     if (event.aggregate_id !== sessionId || event.sequence <= sequence) continue;
     const call = event.payload as Extract<AgentEvent, { kind: 'tool.started' }>;
-    const name = call.name
-      .split(/__|[.:/]/)
-      .at(-1)!
-      .replace(/[_-]/g, '')
-      .toLowerCase();
-    if (
-      /^(write|writefile|writetextfile|edit|editfile|multiedit|notebookedit|applypatch|filechange|delete|deletefile|move|movefile|execute)$/.test(
-        name,
-      ) ||
-      /^(write|edit|delete|move|execute)(?:\s|:)/i.test(call.name)
-    ) {
+    if (writesFiles(call.name)) {
       tools.add(call.name);
       if (worktree === undefined) continue;
-      const input = (call.input ?? {}) as Record<string, unknown>;
-      const target = [input.file_path, input.path, input.filePath, input.notebook_path].find(
-        (field): field is string => typeof field === 'string',
-      );
-      if (target === undefined) continue;
-      const resolved = path.resolve(worktree, target);
-      const relative = path.relative(worktree, resolved);
-      if (relative.startsWith('..') || path.isAbsolute(relative)) outside.add(resolved);
+      const resolved = outsideWorktree(worktree, (call.input ?? {}) as Record<string, unknown>);
+      if (resolved !== undefined) outside.add(resolved);
     }
   }
   const result = {

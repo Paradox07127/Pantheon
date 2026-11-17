@@ -55,7 +55,7 @@ function nextClock(time: string, after: number): number {
   return day.getTime();
 }
 
-function withinHours(hours: NonNullable<AgentRoutine['active_hours']>, at: number): boolean {
+export function withinHours(hours: NonNullable<AgentRoutine['active_hours']>, at: number): boolean {
   const time = new Date(at),
     minutes = time.getHours() * 60 + time.getMinutes(),
     from = minutesOf(hours.from),

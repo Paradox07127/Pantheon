@@ -569,6 +569,7 @@ export async function startDaemon(options: DaemonOptions) {
         await prefetch(p);
         return timed('projects.summary', () => control.projectsSummary(p, 'cached'));
       },
+      'project.brief': (p, i) => control.projectBrief(p, i.project_id, i.since),
       'extensions.inventory': (p, i) =>
         withRuntimeDeadline(
           control.extensionsInventory(p, i.project_id, i.runtime),

@@ -66,7 +66,11 @@ export const DEFAULT_WORKFLOW_POLICY: PolicySettings & {
 };
 
 /** The settings a project follows from the global values unless it sets them itself. */
-const INHERITED = [...Object.keys(DEFAULT_WORKFLOW_POLICY), 'task_size_hint'] as InheritedParam[];
+const INHERITED = [
+  ...Object.keys(DEFAULT_WORKFLOW_POLICY),
+  'task_size_hint',
+  'must_ask_extra',
+] as InheritedParam[];
 const SETTINGS: (keyof PolicySettings)[] = [...INHERITED, 'project_budget'];
 
 /** The settings the stored policy sets itself; one stored before global values sets each it holds. */

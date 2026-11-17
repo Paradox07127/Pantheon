@@ -30,6 +30,7 @@ import type {
   WorkbenchSession,
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
+import { milestoneExtras, taskExtras } from './board-view-task-extras.js';
 import {
   awaitingChange,
   boardTaskId,
@@ -1781,6 +1782,7 @@ export function boardView(
             ? { activity: { ...activityOf(newestLive.id), attempt: bound.length } }
             : {}),
         ...(recap ? { recap } : {}),
+        ...taskExtras(ctx, plan, task, newestLive && stored.get(newestLive.id)!),
       });
     }
   }
@@ -2525,6 +2527,7 @@ export function boardView(
             owner_session_id: view.milestone.owner_session_id,
             tasks: view.tasks!,
             ...(view.milestone.due_on ? { due_on: view.milestone.due_on } : {}),
+            ...milestoneExtras(ctx, view),
           }
         : {
             id: view.milestone.id,
@@ -2533,6 +2536,7 @@ export function boardView(
             merged: view.merged_total,
             status: view.status,
             criteria,
+            ...milestoneExtras(ctx, view),
           };
     }),
     burnup,

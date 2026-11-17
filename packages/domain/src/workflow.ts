@@ -113,6 +113,8 @@ export interface WorkflowPolicy extends Entity {
   plan_changes: 'auto' | 'confirm';
   /** What the lead may do without asking, by power; plan_change and start_external are not stored here but follow plan_changes and the project's external events. */
   charter?: Partial<Record<CharterPower, CharterMode>>;
+  /** Permission rules, in the syntax of Project.permission_rules, whose prompts always reach the user beside the built-in must-ask kinds. */
+  must_ask_extra?: string[];
   /** Whether the lead makes a task of each tier itself or dispatches a task session, reviewed or not; an absent tier takes its default. */
   path: Partial<Record<TaskKind['tier'], Exclude<FlowPath, 'parallel'>>>;
   /** Whether the lead wakes after each merge or once every task of a milestone has ended. */
