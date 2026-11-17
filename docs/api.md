@@ -255,16 +255,22 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `agent.agents` | `project_id`: string | list_agents (lead) |
 | `agent.app_help` | `topic?`: string | app_help (lead) |
+| `agent.archive` | `agent_id`: string |  |
+| `agent.create` | `project_id`: string<br>`name`: string<br>`role`: string<br>`instructions`: string<br>`brief?`: string<br>`tools?`: ("board" \| "dispatch" \| "memory" \| "browser" \| "app_debug" \| "app" \| "sessions" \| "github" \| "always_on" \| "agents")[]<br>`listens?`: ("github" \| "gate_failures" \| "app_errors")[]<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`routines?`: object[]<br>`template`: "assistant" \| "triage" \| "ideas" \| "goals" \| "custom" |  |
 | `agent.follow_up` | `project_id`: string<br>`after_minutes?`: integer<br>`at?`: integer<br>`note`: string | follow_up (lead) |
 | `agent.github_items` | `project_id`: string<br>`kind`: "pr" \| "issue" | github_items (lead) |
 | `agent.github_pr` | `project_id`: string<br>`number`: integer | github_pr (lead) |
+| `agent.proposal.resolve` | `proposal_id`: string<br>`decision`: "create" \| "decline"<br>`fields?`: object |  |
+| `agent.propose` | `project_id`: string<br>`agent_id?`: string<br>`name?`: string<br>`role?`: string<br>`instructions?`: string<br>`brief?`: string<br>`tools?`: ("board" \| "dispatch" \| "memory" \| "browser" \| "app_debug" \| "app" \| "sessions" \| "github" \| "always_on" \| "agents")[]<br>`listens?`: ("github" \| "gate_failures" \| "app_errors")[]<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`routines?`: object[]<br>`template?`: "assistant" \| "triage" \| "ideas" \| "goals" \| "custom" | propose_agent (lead) |
 | `agent.routine.cancel` | `project_id`: string<br>`routine_id`: string | routine_cancel (lead) |
 | `agent.routine.set` | `project_id`: string<br>`id?`: string<br>`prompt`: string<br>`every_minutes?`: integer<br>`at?`: string<br>`active_hours?`: object<br>`enabled`: boolean | routine_set (lead) |
 | `agent.session_read` | `session_id`: string<br>`turns?`: integer | session_read (lead) |
 | `agent.sessions` | `state?`: string | session_list (lead) |
 | `agent.tell_user` | `project_id`: string<br>`text`: string<br>`urgency`: "normal" \| "high" | tell_user (lead) |
-| `agent.update` | `agent_id`: string<br>`revision`: integer<br>`name?`: string<br>`instructions?`: string<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra" |  |
+| `agent.unarchive` | `agent_id`: string |  |
+| `agent.update` | `agent_id`: string<br>`revision`: integer<br>`name?`: string<br>`role?`: string<br>`instructions?`: string<br>`brief?`: string<br>`tools?`: ("board" \| "dispatch" \| "memory" \| "browser" \| "app_debug" \| "app" \| "sessions" \| "github" \| "always_on" \| "agents")[]<br>`listens?`: ("github" \| "gate_failures" \| "app_errors")[]<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`routines?`: object[] |  |
 
 ### app
 
@@ -516,7 +522,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `resident.open` | `project_id`: string<br>`kind`: "assistant" \| "triage" |  |
+| `resident.open` | `project_id`: string<br>`kind`: "assistant" \| "triage"<br>或<br>`agent_id`: string |  |
 
 ### review
 

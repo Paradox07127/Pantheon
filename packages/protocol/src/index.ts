@@ -11,6 +11,7 @@ import { rangeStoryInputSchemas } from './range-story.js';
 import { themeInputSchema, type ThemeInput } from './theme.js';
 import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
 import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
+import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
 import type {
   AgentToolGroup,
   ApprovalQuestion,
@@ -50,7 +51,10 @@ import type {
   WorkflowStep,
 } from '@pantheon/domain';
 export type {
+  AgentFields,
   AgentProfile,
+  AgentProposal,
+  AgentRoutineInput,
   AgentToolGroup,
   ApprovalQuestion,
   EffortLevel,
@@ -271,6 +275,7 @@ export const sessionTools = {
     ...appDebugTools,
     ...alwaysOnTools,
     ...appTools,
+    ...agentTools,
   },
   worker: {
     ...memoryTools,
@@ -323,6 +328,7 @@ export const leadToolEffects = {
   style_set: 'write',
   ...alwaysOnToolEffects,
   ...appToolEffects,
+  ...agentToolEffects,
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
 
 const inGroup = <T extends object>(tools: T, group: AgentToolGroup) =>
@@ -337,6 +343,7 @@ export const leadToolGroups: Record<keyof typeof sessionTools.lead, AgentToolGro
   ...inGroup(appDebugTools, 'app_debug'),
   ...inGroup(alwaysOnTools, 'always_on'),
   ...appToolGroups,
+  ...agentToolGroups,
   project_read: 'board',
   update_board: 'board',
   edit_board: 'board',
@@ -1421,6 +1428,7 @@ export const inputSchemas = {
   ...repoWriteInputSchemas,
   ...alwaysOnInputSchemas,
   ...appInputSchemas,
+  ...agentInputSchemas,
   'terminal.open': z.strictObject({
     project_id: z.string(),
     session_id: z.string().optional(),
@@ -1842,18 +1850,11 @@ export const inputSchemas = {
     param: workflowPolicySettings.keyof().optional(),
   }),
   'external.approve': z.strictObject({ project_id: str, subject_key: str }),
-  /** The user only; returns the project's open resident session of the kind, opening one when there is none. */
-  'resident.open': z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
-  /** The user only; changes an agent profile at its revision. A new model or effort applies to its open session, a new runtime ends it between turns and opens a successor; returns the AgentProfile. */
-  'agent.update': z.strictObject({
-    agent_id: str,
-    revision: z.number().int().positive(),
-    name: z.string().min(1).max(80).optional(),
-    instructions: z.string().min(1).max(20000).optional(),
-    runtime: str.optional(),
-    model: str.optional(),
-    effort: z.enum(EFFORT_LEVELS).optional(),
-  }),
+  /** The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none. */
+  'resident.open': z.union([
+    z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
+    z.strictObject({ agent_id: str }),
+  ]),
   'github.pr.create': z.strictObject({
     session_id: str,
     title: str.optional(),

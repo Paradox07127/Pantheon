@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,20 +9,24 @@ import { startDaemon } from '@pantheon/daemon';
 import type {
   AgentProfile,
   BoardPlan,
+  ExternalEvent,
   Principal,
   Project,
   Session,
   SessionSpec,
+  Timer,
 } from '@pantheon/domain';
 import { command } from '@pantheon/protocol';
-import type { ControlContext } from '../../packages/control/dist/context.js';
+import { leadSessionTools, type ControlContext } from '../../packages/control/dist/context.js';
 import { ensureAgents } from '../../packages/control/dist/agents.js';
 import {
   AGENT_TEMPLATES,
   ASSISTANT_TEMPLATE,
+  GOALS_TEMPLATE,
   residentProfile,
   TRIAGE_TEMPLATE,
 } from '../../packages/control/dist/agent-templates.js';
+import { receiveExternalEvent } from '../../packages/control/dist/external-events.js';
 import { eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -311,4 +315,252 @@ it("lists and permits only the lead tools of the resident profile's groups", asy
   expect(assistant.names).toContain('start_task');
   expect(assistant.names).toContain('browser_open');
   expect(assistant.names).not.toContain('app_errors');
+});
+
+const MINUTE = 60_000;
+const create = (f: Fixture, fields: Record<string, unknown>) =>
+  f.call<AgentProfile>('agent.create', {
+    project_id: f.project.id,
+    template: 'custom',
+    role: 'Helper',
+    instructions: 'You help with one kind of request.',
+    ...fields,
+  });
+const openAgent = (f: Fixture, agentId: string) =>
+  f.call<Session>('resident.open', { agent_id: agentId });
+const routineTimers = (f: Fixture, agentId: string) =>
+  f.store
+    .list<Timer>('timers')
+    .filter(
+      (timer) => timer.kind === 'agent-routine' && timer.subject_id.startsWith(`${agentId}:`),
+    );
+const pendingRoutines = (f: Fixture, agentId: string) =>
+  routineTimers(f, agentId)
+    .filter((timer) => timer.state === 'pending')
+    .map((timer) => timer.subject_id.slice(agentId.length + 1))
+    .sort();
+const refusal = (run: () => unknown) => {
+  try {
+    run();
+  } catch (error) {
+    return (error as { code?: string }).code;
+  }
+  return 'accepted';
+};
+const residentsOf = (f: Fixture, agentId: string) =>
+  f.store.list<Session>('sessions').filter((session) => session.resident?.agent_id === agentId);
+
+it('creates a goals agent with its weekly routine pending and no session, and refuses a taken name or a built-in template', async () => {
+  const f = await workbenchFixture();
+  const goals = create(f, {
+    template: 'goals',
+    name: 'Milestones',
+    role: 'Goals',
+    instructions: GOALS_TEMPLATE.instructions,
+  });
+  expect(f.store.must<AgentProfile>('agents', goals.id)).toMatchObject({
+    project_id: f.project.id,
+    template: 'goals',
+    name: 'Milestones',
+    role: 'Goals',
+    instructions: GOALS_TEMPLATE.instructions,
+    routines: GOALS_TEMPLATE.routines,
+    created_by: { kind: 'user' },
+  });
+  expect(pendingRoutines(f, goals.id)).toEqual(GOALS_TEMPLATE.routines!.map((r) => r.id));
+  expect(residentsOf(f, goals.id)).toEqual([]);
+  expect(
+    f.store
+      .events(0, f.project.id, 1000, ['agent_profile.created'])
+      .map((event) => event.aggregate_id),
+  ).toEqual([goals.id]);
+
+  expect(refusal(() => create(f, { name: 'Milestones' }))).toBe('invalid_input');
+  expect(refusal(() => create(f, { template: 'assistant', name: 'Second assistant' }))).toBe(
+    'invalid_input',
+  );
+  expect(agents(f).filter((agent) => agent.name === 'Milestones')).toHaveLength(1);
+});
+
+it("opens an agent's session by its id with its role prompt, and keeps the plans of two custom agents apart", async () => {
+  const f = await workbenchFixture();
+  let now = Date.now();
+  vi.spyOn(f.store, 'now').mockImplementation(() => now);
+  const goals = create(f, {
+    template: 'goals',
+    name: 'Milestones',
+    role: 'Goals',
+    instructions: GOALS_TEMPLATE.instructions,
+  });
+  const session = openAgent(f, goals.id);
+  expect(session).toMatchObject({
+    title: 'Milestones',
+    resident: { kind: 'goals', agent_id: goals.id },
+  });
+  expect(openAgent(f, goals.id).id).toBe(session.id);
+  await send(f, session.id, 'Where do the milestones stand?');
+  expect(lastInstructions(f)).toContain(GOALS_TEMPLATE.instructions);
+
+  const first = create(f, { name: 'Docs' }),
+    second = create(f, { name: 'Releases' });
+  const plan = async (agentId: string, taskId: string) => {
+    const resident = openAgent(f, agentId);
+    await send(f, resident.id, 'Plan it');
+    f.call(
+      'board.plan.update',
+      {
+        project_id: f.project.id,
+        base_version: 0,
+        headline: `Plan of ${agentId}`,
+        lanes: [{ id: 'core', title: 'Core' }],
+        tasks: [
+          {
+            id: taskId,
+            title: `Task ${taskId}`,
+            goal: `Finish task ${taskId}`,
+            lane: 'core',
+            depends_on: [],
+            source: ['Plan it'],
+            scope: [`src/${taskId}.ts`],
+            acceptance: ['pnpm test'],
+            kind: { domain: 'backend-logic', tier: 't1' },
+          },
+        ],
+        milestones: [],
+        risks: [],
+        assumptions: [],
+      },
+      null,
+      lead(f.project.id, resident.id, f.store.now()),
+    );
+    return resident;
+  };
+  const archive = (agentId: string) => f.call('agent.archive', { agent_id: agentId });
+  const firstSession = await plan(first.id, 'docs');
+  archive(first.id);
+  now += MINUTE;
+  await plan(second.id, 'release');
+  archive(second.id);
+  f.call('agent.unarchive', { agent_id: first.id });
+  const reopened = openAgent(f, first.id);
+  expect(reopened.id).not.toBe(firstSession.id);
+  expect(f.store.must<BoardPlan>('board_plans', reopened.id).tasks.map((t) => t.id)).toEqual([
+    'docs',
+  ]);
+});
+
+it('cancels the timer of a routine an update removes, and refuses the agents group off the assistant', async () => {
+  const f = await workbenchFixture();
+  const helper = create(f, {
+    name: 'Checker',
+    routines: [
+      { id: 'hourly', prompt: 'Check the gates', every_minutes: 60, enabled: true },
+      { id: 'evening', prompt: 'Sum up the day', at: '18:00', enabled: true },
+    ],
+  });
+  expect(pendingRoutines(f, helper.id)).toEqual(['evening', 'hourly']);
+  const evening = routineTimers(f, helper.id).find((t) => t.subject_id.endsWith(':evening'))!;
+  const updated = f.call<AgentProfile>('agent.update', {
+    agent_id: helper.id,
+    revision: helper.revision,
+    routines: [{ id: 'hourly', prompt: 'Check the gates', every_minutes: 60, enabled: true }],
+  });
+  expect(updated.routines.map((routine) => routine.id)).toEqual(['hourly']);
+  expect(f.store.must<Timer>('timers', evening.id).state).toBe('cancelled');
+  expect(pendingRoutines(f, helper.id)).toEqual(['hourly']);
+  expect(
+    refusal(() =>
+      f.call('agent.update', {
+        agent_id: helper.id,
+        revision: updated.revision,
+        tools: ['board', 'agents'],
+      }),
+    ),
+  ).toBe('invalid_input');
+});
+
+it('archives an agent between turns, closing its session and its routine timers, and reschedules them once unarchived', async () => {
+  const f = await workbenchFixture();
+  const helper = create(f, {
+    name: 'Checker',
+    routines: [{ id: 'hourly', prompt: 'Check the gates', every_minutes: 60, enabled: true }],
+  });
+  const session = openAgent(f, helper.id);
+  const archived = f.call<AgentProfile>('agent.archive', { agent_id: helper.id });
+  expect(archived.archived_at).toBeDefined();
+  expect(current(f, session.id).state).toBe('closed');
+  expect(pendingRoutines(f, helper.id)).toEqual([]);
+  expect(agents(f).find((agent) => agent.id === helper.id)!.archived_at).toBe(archived.archived_at);
+  expect(refusal(() => f.call('agent.archive', { agent_id: profileOf(f, 'assistant').id }))).toBe(
+    'invalid_input',
+  );
+
+  const restored = f.call<AgentProfile>('agent.unarchive', { agent_id: helper.id });
+  expect(restored).not.toHaveProperty('archived_at');
+  expect(pendingRoutines(f, helper.id)).toEqual(['hourly']);
+});
+
+it('lists propose_agent and list_agents to the default assistant and not to a lead that is not a resident', async () => {
+  const assistant = await residentTools();
+  expect(assistant.names).toEqual(expect.arrayContaining(['propose_agent', 'list_agents']));
+  const f = await workbenchFixture();
+  const direct = await f.create('Explain the answer file');
+  const tools = leadSessionTools(f.control['ctx'] as ControlContext, current(f, direct.id));
+  expect(tools).toContain('board.plan.update');
+  expect(tools).not.toContain('agent.propose');
+  expect(tools).not.toContain('agent.agents');
+});
+
+it('hands a GitHub event to the oldest agent that listens to GitHub, and fails it when none does and triage is archived', async () => {
+  const f = await workbenchFixture({
+    externalSources: [{ id: 'stub', poll: async () => MINUTE }],
+  });
+  const ctx = f.control['ctx'] as ControlContext;
+  f.call(
+    'project.externalEvents.set',
+    { project_id: f.project.id, mode: 'auto' },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  let reported = 0;
+  const report = (subject: string) => {
+    const event = receiveExternalEvent(ctx, {
+      project_id: f.project.id,
+      source: 'github',
+      subject_key: subject,
+      dedup_key: `github:7:${reported++}`,
+      kind: 'issue_assigned',
+      actor: 'taylor',
+      actor_trust: 'self',
+      title: 'Totals are wrong',
+      url: 'https://github.com/acme/reports/issues/12',
+      texts: [{ author: 'taylor', own: true, text: 'The weekly total counts refunds twice.' }],
+    });
+    f.store.update<ExternalEvent>(
+      'external_events',
+      { ...event, received_at: event.received_at - 3 * MINUTE },
+      event.revision,
+    );
+    return event.id;
+  };
+  const triage = profileOf(f, 'triage');
+  f.call('agent.update', { agent_id: triage.id, revision: triage.revision, listens: [] });
+  const watcher = create(f, { name: 'Watcher', listens: ['github'] });
+  const routed = report('github:acme/reports#12');
+  await f.control.tick();
+  const [resident] = residentsOf(f, watcher.id);
+  expect(f.store.must<ExternalEvent>('external_events', routed)).toMatchObject({
+    state: 'handled',
+    session_id: resident!.id,
+  });
+  expect(residentsOf(f, triage.id)).toEqual([]);
+
+  await settleResident(f, resident!.id);
+  f.call('agent.archive', { agent_id: watcher.id });
+  f.call('agent.archive', { agent_id: triage.id });
+  const failed = report('github:acme/reports#13');
+  await f.control.tick();
+  expect(f.store.must<ExternalEvent>('external_events', failed)).toMatchObject({
+    state: 'failed',
+    error: 'No agent listens to GitHub',
+  });
 });

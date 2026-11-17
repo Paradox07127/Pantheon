@@ -159,6 +159,10 @@ const descriptions: Record<ToolCommand, string> = {
     "List the open pull requests (kind pr) or issues (kind issue) of the project's GitHub repository, newest update first, at most 30.",
   'agent.github_pr':
     'Read one pull request of the GitHub repository by number, with its checks and review threads.',
+  'agent.agents':
+    "List this project's agents: id, name, template, role, tool groups, routines, and archived_at for an archived one.",
+  'agent.propose':
+    'Propose a new agent for the user to approve on a card: template (ideas, goals or custom), name, role (a short label), instructions (the role prompt: what it owns, how it works and when it speaks to the user), and optionally brief (why it is needed), tools (its tool groups), listens, routines (each with prompt, every_minutes of at least 60 or a daily local at HH:MM, and enabled), runtime, model and effort. To change an agent, give its agent_id and only the fields that change. Fields the agent could not be created or changed with are refused now. The answer reaches you as a note.',
 };
 
 const INVENTORY_TOOL = 'project_extensions_inventory';
@@ -263,6 +267,8 @@ const boundRevision = (type: CommandType) =>
   type === 'agent.tell_user' ||
   type === 'agent.routine.set' ||
   type === 'agent.routine.cancel' ||
+  type === 'agent.propose' ||
+  type === 'agent.agents' ||
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
   type === 'app.logs' ||

@@ -307,7 +307,8 @@ export interface NeedsYouItem {
       | 'improvements'
       | 'workflow_policies'
       | 'workflow_definitions'
-      | 'workflow_step_runs';
+      | 'workflow_step_runs'
+      | 'agent_proposals';
     id: string;
     revision: number;
   };
@@ -324,7 +325,8 @@ export interface NeedsYouItem {
     | 'project.over_budget'
     | 'lead.question'
     | 'workflow.approval'
-    | 'external.approval';
+    | 'external.approval'
+    | 'agent.proposal';
   project_id: string;
   /**
    * The approval's session, or the lead of a plan, milestone or improvement item; absent on session
@@ -371,7 +373,8 @@ export interface NeedsYouItem {
     | 'lead_question'
     | 'task_blocked'
     | 'workflow_approval'
-    | 'external_approval';
+    | 'external_approval'
+    | 'agent_proposal_awaiting_decision';
   actions: {
     command: string;
     allowed: boolean;
@@ -398,6 +401,14 @@ export interface NeedsYouItem {
   failure_class?: GateFailureClass;
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
+  /** The agent a pending proposal creates or changes, and how long it has waited in milliseconds. */
+  agent_proposal?: {
+    id: string;
+    name: string;
+    template: AgentProfile['template'];
+    agent_id?: string;
+    waited_ms: number;
+  };
   binding?: {
     action?: string;
     input_hash?: string;
@@ -719,7 +730,8 @@ export interface AgentRoutine {
 /** The lasting record behind a resident session: its role prompt, tools and model. */
 export interface AgentProfile extends Entity {
   project_id: string;
-  template: 'assistant' | 'triage';
+  /** assistant and triage are one per project; the others may repeat. */
+  template: 'assistant' | 'triage' | 'ideas' | 'goals' | 'custom';
   name: string;
   /** A label of two to four characters. */
   role: string;
@@ -738,6 +750,43 @@ export interface AgentProfile extends Entity {
   created_by: { kind: 'user' } | { kind: 'agent'; session_id: string };
   created_at: number;
   archived_at?: number;
+}
+/** A routine as agent.create, agent.update and agent.propose take it: every_minutes or daily at a local HH:MM. */
+export interface AgentRoutineInput {
+  id?: string;
+  prompt: string;
+  every_minutes?: number;
+  at?: string;
+  active_hours?: { from: string; to: string };
+  enabled: boolean;
+}
+/** The fields agent.create takes besides the project. */
+export interface AgentFields {
+  template: AgentProfile['template'];
+  name: string;
+  role: string;
+  instructions: string;
+  brief?: string;
+  tools?: AgentToolGroup[];
+  listens?: NonNullable<AgentProfile['listens']>;
+  runtime?: string;
+  model?: string;
+  effort?: EffortLevel;
+  routines?: AgentRoutineInput[];
+}
+/** An agent a resident proposes, or a change to one, that waits for the user's decision. */
+export interface AgentProposal extends Entity {
+  project_id: string;
+  /** The proposing resident session. */
+  session_id: string;
+  /** The agent the proposal changes; absent for a new agent. */
+  agent_id?: string;
+  /** The agent.create fields of a new agent, or the changed fields. */
+  fields: Partial<AgentFields>;
+  state: 'pending' | 'created' | 'changed' | 'declined';
+  result_agent_id?: string;
+  at: number;
+  resolved_at?: number;
 }
 /** A message an agent leaves for the user. */
 export interface AgentMessage extends Entity {
@@ -2155,7 +2204,8 @@ export interface LeadNote {
     | 'usage_reset'
     | 'external'
     | 'follow_up'
-    | 'routine';
+    | 'routine'
+    | 'agent_proposal';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;

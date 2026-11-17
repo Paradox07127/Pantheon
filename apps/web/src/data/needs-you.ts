@@ -16,7 +16,8 @@ export interface NeedsYouItem {
       | 'improvements'
       | 'workflow_policies'
       | 'workflow_definitions'
-      | 'workflow_step_runs';
+      | 'workflow_step_runs'
+      | 'agent_proposals';
     id: string;
     revision: number;
   };
@@ -33,7 +34,8 @@ export interface NeedsYouItem {
     | 'project.over_budget'
     | 'lead.question'
     | 'workflow.approval'
-    | 'external.approval';
+    | 'external.approval'
+    | 'agent.proposal';
   project_id: string;
   /** The approval's session, or the lead of a plan item; absent on session items, whose source is the session. */
   session_id?: string;
@@ -77,7 +79,8 @@ export interface NeedsYouItem {
     | 'lead_question'
     | 'task_blocked'
     | 'workflow_approval'
-    | 'external_approval';
+    | 'external_approval'
+    | 'agent_proposal_awaiting_decision';
   actions: {
     command: string;
     allowed: boolean;

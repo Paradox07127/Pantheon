@@ -4,16 +4,17 @@ import {
   type AgentMessage,
   type AgentProfile,
   type AgentRoutine,
+  type AgentRoutineInput,
   type BoardPlan,
   type LeadNote,
   type Principal,
   type Session,
   type Timer,
 } from '@pantheon/domain';
-import { inputSchemas, USER_PRINCIPAL_ID } from '@pantheon/protocol';
+import { inputSchemas } from '@pantheon/protocol';
 import { projectAccess, type ControlContext, type Handlers } from './context.js';
 import { appendNote } from './lead-inbox.js';
-import { openResident } from './resident.js';
+import { openAgent } from './resident.js';
 import { wakeLead } from './task-tracking.js';
 import { cancelTimer, scheduleTimer, timerHandlers } from './timers.js';
 
@@ -31,10 +32,13 @@ export const ALWAYS_ON_LINES = [
   'On a turn Pantheon woke you for, speak to the user only with tell_user or ask_user. When such a turn has nothing for the user, end it with one short line and do not call tell_user.',
 ];
 
-const user: Principal = { id: USER_PRINCIPAL_ID, role: 'user' };
-
 /** The calling resident session and its agent profile; any other caller is refused. */
-function callingResident(ctx: ControlContext, p: Principal, projectId: string, action: string) {
+export function callingResident(
+  ctx: ControlContext,
+  p: Principal,
+  projectId: string,
+  action: string,
+) {
   projectAccess(ctx, p, projectId, action);
   const session =
     p.role === 'lead' && p.session_id
@@ -80,7 +84,7 @@ export function nextRun(routine: AgentRoutine, after: number): number {
 const routineSubject = (profile: AgentProfile, routineId: string) => `${profile.id}:${routineId}`;
 
 /** Cancels the routine's pending run and schedules its next one while it is enabled. */
-function scheduleRoutine(ctx: ControlContext, profile: AgentProfile, routine: AgentRoutine) {
+export function scheduleRoutine(ctx: ControlContext, profile: AgentProfile, routine: AgentRoutine) {
   const subject = routineSubject(profile, routine.id);
   for (const timer of ctx.store.list<Timer>('timers'))
     if (timer.kind === ROUTINE && timer.subject_id === subject) cancelTimer(ctx, timer.id);
@@ -93,6 +97,16 @@ function scheduleRoutine(ctx: ControlContext, profile: AgentProfile, routine: Ag
       due_at: nextRun(routine, ctx.store.now()),
     });
 }
+
+/** The stored routine of one a command gives, with a new id when it has none. */
+export const routineOf = (input: AgentRoutineInput): AgentRoutine => ({
+  id: input.id ?? id(),
+  prompt: input.prompt,
+  ...(input.every_minutes !== undefined && { every_ms: input.every_minutes * MINUTE_MS }),
+  ...(input.at !== undefined && { at: input.at }),
+  ...(input.active_hours && { active_hours: input.active_hours }),
+  enabled: input.enabled,
+});
 
 /** The resident's plan; an empty one while it has written none. */
 function residentPlan(ctx: ControlContext, resident: Session): BoardPlan {
@@ -117,14 +131,14 @@ function residentPlan(ctx: ControlContext, resident: Session): BoardPlan {
 }
 
 /** Leaves the agent's open resident, opened when it has none, the note and wakes it. */
-function wakeAgent(
+export function wakeAgent(
   ctx: ControlContext,
-  profile: Pick<AgentProfile, 'project_id' | 'template'>,
+  profile: AgentProfile,
   kind: LeadNote['kind'],
   text: string,
   cause: string,
 ): void {
-  const resident = openResident(ctx, user, profile.project_id, profile.template, cause);
+  const resident = openAgent(ctx, profile, cause);
   const plan = appendNote(
     ctx,
     residentPlan(ctx, resident),
@@ -199,14 +213,8 @@ export const agentAlwaysOnHandlers: Handlers = {
       'Give exactly one of every_minutes or at',
     );
     const { profile } = callingResident(ctx, p, input.project_id, c.type);
-    const routine: AgentRoutine = {
-      id: input.id ?? id(),
-      prompt: input.prompt,
-      ...(input.every_minutes !== undefined && { every_ms: input.every_minutes * MINUTE_MS }),
-      ...(input.at !== undefined && { at: input.at }),
-      ...(input.active_hours && { active_hours: input.active_hours }),
-      enabled: input.enabled,
-    };
+    const { project_id: _project, ...fields } = input;
+    const routine = routineOf(fields);
     const replaced = profile.routines.some((each) => each.id === routine.id);
     requireThat(
       replaced || profile.routines.length < ROUTINE_LIMIT,

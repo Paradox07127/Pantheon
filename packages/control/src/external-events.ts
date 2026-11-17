@@ -1,17 +1,20 @@
 import {
   DomainError,
   requireThat,
+  type AgentProfile,
   type BoardPlan,
   type ExternalEvent,
   type Project,
   type Session,
 } from '@pantheon/domain';
-import { inputSchemas, USER_PRINCIPAL_ID } from '@pantheon/protocol';
+import { inputSchemas } from '@pantheon/protocol';
+import { residentProfile } from './agent-templates.js';
+import { ensureAgents } from './agents.js';
 import { ownEntry } from './board-plan.js';
 import { projectAccess, type ControlContext, type Handlers } from './context.js';
 import { externalEvents } from './user-config.js';
 import { appendNote } from './lead-inbox.js';
-import { openResident } from './resident.js';
+import { openAgent } from './resident.js';
 import { wakeLead } from './task-tracking.js';
 
 // Sources are polled about once a minute; two minutes joins the events of two polls in a row.
@@ -89,7 +92,7 @@ export function tickExternalIntake(ctx: ControlContext): void {
     try {
       ctx.store.transaction(() => handOver(ctx, events));
     } catch (error) {
-      // A triage session that cannot open fails its events with the reason; the rest of the tick still runs.
+      // Events no resident can take fail with the reason; the rest of the tick still runs.
       if (!(error instanceof DomainError)) throw error;
       for (const event of events)
         ctx.store.update(
@@ -144,6 +147,22 @@ function noteTriage(
   wakeLead(ctx, next, cause);
 }
 
+/** The oldest agent of the project that is not archived and listens to GitHub. */
+function githubListener(ctx: ControlContext, projectId: string): AgentProfile | undefined {
+  return ctx.store
+    .list<AgentProfile>('agents')
+    .filter(
+      (profile) =>
+        profile.project_id === projectId &&
+        !profile.archived_at &&
+        residentProfile(ctx.store, {
+          kind: profile.template,
+          agent_id: profile.id,
+        }).listens.includes('github'),
+    )
+    .sort((a, b) => a.created_at - b.created_at)[0];
+}
+
 function handOver(ctx: ControlContext, events: ExternalEvent[]): void {
   const first = events[0]!,
     project = ctx.store.get<Project>('projects', first.project_id);
@@ -168,13 +187,10 @@ function handOver(ctx: ControlContext, events: ExternalEvent[]): void {
     .flatMap((event) => event.texts)
     .filter((text) => !seen.has(key(text)) && seen.add(key(text)));
   const cause = `external:${first.id}`,
-    triage = openResident(
-      ctx,
-      { id: USER_PRINCIPAL_ID, role: 'user' },
-      project.id,
-      'triage',
-      cause,
-    ),
+    agent = first.source === 'github' ? githubListener(ctx, project.id) : undefined,
+    fallback = ensureAgents(ctx, project.id).find((profile) => profile.template === 'triage')!;
+  requireThat(agent ?? !fallback.archived_at, 'invalid_state', 'No agent listens to GitHub');
+  const triage = openAgent(ctx, agent ?? fallback, cause),
     plan = triagePlan(ctx, triage),
     wasHeld = ownEntry(plan.external_holds, first.subject_key) !== undefined;
   if (hold && !wasHeld)

@@ -29,6 +29,7 @@ import { externalEventHandlers } from './external-events.js';
 import { residentHandlers } from './resident.js';
 import { agentAlwaysOnHandlers } from './agent-always-on.js';
 import { agentAppToolPreparers } from './agent-app-tools.js';
+import { agentProposalHandlers, agentProposalPreparers } from './agent-proposals.js';
 
 export const handlers: Handlers = {
   ...memoryHandlers,
@@ -56,6 +57,7 @@ export const handlers: Handlers = {
   ...externalEventHandlers,
   ...residentHandlers,
   ...agentAlwaysOnHandlers,
+  ...agentProposalHandlers,
   ...visualHandlers,
   ...themeHandlers,
   ...styleHandlers,
@@ -71,4 +73,5 @@ export const preparers: Preparers = {
   'review.request': prepareReviewRequest,
   'session.resolve': prepareResolve,
   ...agentAppToolPreparers,
+  ...agentProposalPreparers,
 };

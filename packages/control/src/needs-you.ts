@@ -1,6 +1,8 @@
 import {
   DomainError,
   requireThat,
+  type AgentProfile,
+  type AgentProposal,
   type Approval,
   type BoardPlan,
   type ExternalEvent,
@@ -65,7 +67,8 @@ const NEXT_STEP: Record<
   | 'lead_permission'
   | 'milestone_ready_for_acceptance'
   | 'improvement_awaiting_decision'
-  | 'plan_proposal_awaiting_decision',
+  | 'plan_proposal_awaiting_decision'
+  | 'agent_proposal_awaiting_decision',
   string
 > = {
   merge_stuck: 'The user checks the stuck merge and cancels it if needed.',
@@ -104,6 +107,8 @@ const NEXT_STEP: Record<
     'The improvement proposal awaits the user; the user confirms it to start a trial, or rejects it.',
   plan_proposal_awaiting_decision:
     'The plan proposal awaits the user; the user accepts it, changes its ops before accepting, or rejects it.',
+  agent_proposal_awaiting_decision:
+    'An agent proposes to create or change an agent; the user creates it, edits its fields before creating it, or declines it.',
   background_task_long:
     'A background command or agent of the session has run for 30 minutes; the user stops it, or waits for it to end.',
 };
@@ -879,6 +884,34 @@ export function needsYou(
           ),
         ],
         next_step: NEXT_STEP.improvement_awaiting_decision,
+      });
+    }
+    for (const proposal of ctx.store.list<AgentProposal>('agent_proposals')) {
+      if (proposal.state !== 'pending' || !listedProject(proposal.project_id)) continue;
+      const target = proposal.agent_id
+        ? ctx.store.must<AgentProfile>('agents', proposal.agent_id)
+        : undefined;
+      items.push({
+        source: { table: 'agent_proposals', id: proposal.id, revision: proposal.revision },
+        kind: 'agent.proposal',
+        project_id: proposal.project_id,
+        session_id: proposal.session_id,
+        status: proposal.state,
+        created_at: proposal.at,
+        reason: 'agent_proposal_awaiting_decision',
+        actions: [
+          action('agent.proposal.resolve', () =>
+            projectAccess(ctx, principal, proposal.project_id, 'agent.proposal.resolve'),
+          ),
+        ],
+        agent_proposal: {
+          id: proposal.id,
+          name: proposal.fields.name ?? target!.name,
+          template: target?.template ?? proposal.fields.template!,
+          ...(target && { agent_id: target.id }),
+          waited_ms: ctx.store.now() - proposal.at,
+        },
+        next_step: NEXT_STEP.agent_proposal_awaiting_decision,
       });
     }
     for (const project of ctx.store.list<Project>('projects')) {

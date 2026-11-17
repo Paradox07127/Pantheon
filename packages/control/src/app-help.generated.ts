@@ -7,13 +7,31 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'agent',
     about:
-      "the command groups and screens, or one group's commands and the tools that call them; Wakes the calling resident with note after_minutes from now or at (Unix epoch ms); exactly one of them; GithubItem",
+      "the project's agents with their role, tools and routines; the command groups and screens, or one group's commands and the tools that call them; the user only; Wakes the calling resident with note afte",
     commands: [
+      {
+        type: 'agent.agents',
+        about:
+          "AgentList; the project's agents with their role, tools and routines. Resident leads with the agents group only.",
+        tool: 'list_agents',
+      },
       {
         type: 'agent.app_help',
         about:
           "AppHelp; the command groups and screens, or one group's commands and the tools that call them. Resident leads only.",
         tool: 'app_help',
+      },
+      {
+        type: 'agent.archive',
+        about:
+          "AgentProfile; the user only. Ends the agent's idle session and its routines; the assistant cannot be archived.",
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'agent.create',
+        about:
+          'AgentProfile; the user only. Creates an ideas, goals or custom agent of the project with its routines; its session opens on its first message or trigger.',
+        tool: 'the user does this in the app',
       },
       {
         type: 'agent.follow_up',
@@ -30,6 +48,18 @@ export const appHelpGroups: AppHelpGroup[] = [
         type: 'agent.github_pr',
         about: 'GithubPullDetail for a resident lead, as github.pr.detail reads it.',
         tool: 'github_pr',
+      },
+      {
+        type: 'agent.proposal.resolve',
+        about:
+          'AgentProposal; the user only. create applies the proposal with fields over it, decline turns it down; the proposing agent is told either way.',
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'agent.propose',
+        about:
+          'AgentProposal; proposes a new agent with the agent.create fields, or with agent_id a change of the given fields, for the user to decide on. Resident leads with the agents group only.',
+        tool: 'propose_agent',
       },
       {
         type: 'agent.routine.cancel',
@@ -60,9 +90,14 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'tell_user',
       },
       {
+        type: 'agent.unarchive',
+        about: "AgentProfile; the user only. Runs the agent's enabled routines again.",
+        tool: 'the user does this in the app',
+      },
+      {
         type: 'agent.update',
         about:
-          'The user only; changes an agent profile at its revision. A new model or effort applies to its open session, a new runtime ends it between turns and opens a successor; returns the AgentProfile.',
+          'The user only; changes an agent profile at its revision. A new model or effort applies to its open session, a new runtime ends it between turns and opens a successor; routines replace the list. Returns the AgentProfile.',
         tool: 'the user does this in the app',
       },
     ],
@@ -398,12 +433,12 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'resident',
     about:
-      "The user only; returns the project's open resident session of the kind, opening one when there is none",
+      'The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none',
     commands: [
       {
         type: 'resident.open',
         about:
-          "The user only; returns the project's open resident session of the kind, opening one when there is none.",
+          'The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none.',
         tool: 'the user does this in the app',
       },
     ],

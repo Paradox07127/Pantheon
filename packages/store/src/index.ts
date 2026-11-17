@@ -57,6 +57,7 @@ export const tables = [
   'user_styles',
   'agents',
   'agent_messages',
+  'agent_proposals',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -165,6 +166,14 @@ export const migrations: readonly Migration[] = [
         db.exec(
           `CREATE TABLE ${table} (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;`,
         );
+    },
+  },
+  {
+    version: 5,
+    up(db) {
+      db.exec(
+        'CREATE TABLE agent_proposals (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
+      );
     },
   },
 ];

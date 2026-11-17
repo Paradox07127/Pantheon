@@ -165,6 +165,7 @@ import {
 } from './workspace.js';
 import { writerTempDirectory } from './workspace-removal.js';
 import { appToolInstructions } from './agent-app-tools.js';
+import { AGENT_TOOL_LINES } from './agent-proposals.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
 export const WORKBENCH_TURN_MS = 6 * 60 * 60 * 1000;
@@ -231,6 +232,7 @@ export const residentInstructions = (
     ...RESIDENT_LEAD_LINES,
     ...(profile.tools.includes('always_on') ? ALWAYS_ON_LINES : []),
     ...appToolInstructions(profile.tools),
+    ...(profile.tools.includes('agents') ? AGENT_TOOL_LINES : []),
     'Your role:',
     profile.instructions,
   ].join('\n');
