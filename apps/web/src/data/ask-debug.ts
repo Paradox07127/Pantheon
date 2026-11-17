@@ -77,9 +77,12 @@ async function debugSession(projectId: string): Promise<Session | null> {
 export async function askDebugAgent({
   title,
   detail,
+  images,
 }: {
   title: string;
   detail?: string;
+  /** PNG data URLs, attached to the message; dropped when the report is copied. */
+  images?: readonly string[];
 }): Promise<void> {
   const prompt = await debugPrompt(title, detail);
   const target = window.pantheon ? await debugTarget() : null;
@@ -104,6 +107,23 @@ export async function askDebugAgent({
     });
     return;
   }
+  const attachments: string[] = [];
+  for (const [index, image] of (images ?? []).entries()) {
+    const bytes = Uint8Array.from(atob(image.slice(image.indexOf(',') + 1)), (c) =>
+      c.charCodeAt(0),
+    );
+    const uploaded = await window.pantheon!.attachFile(
+      project.id,
+      `debug-${index + 1}.png`,
+      'image/png',
+      bytes,
+    );
+    if (!uploaded.ok) {
+      toast({ title: failureText(uploaded.error), kind: 'failure', askAgent: false });
+      return;
+    }
+    attachments.push(uploaded.value.id);
+  }
   const session = await debugSession(project.id);
   // The daemon picks no runtime of its own, so a new session takes the defaults the new-session box does.
   const read = session ? null : await readQuery('project.defaults', {});
@@ -113,9 +133,13 @@ export async function askDebugAgent({
   );
   const runtime = defaultRuntime([], defaults?.runtime);
   const result: BridgeResult<unknown> = session
-    ? await askFix(session.id, session.state, session.revision, [
-        { id: `app-debug:${Date.now()}`, kind: 'reference', label: title, text: prompt },
-      ])
+    ? await askFix(
+        session.id,
+        session.state,
+        session.revision,
+        [{ id: `app-debug:${Date.now()}`, kind: 'reference', label: title, text: prompt }],
+        attachments,
+      )
     : await runCommand(
         'session.create',
         {
@@ -123,6 +147,7 @@ export async function askDebugAgent({
           input: prompt,
           purpose: 'app_debug',
           runtime,
+          ...(attachments.length ? { attachments } : {}),
           ...(defaults?.runtime === runtime
             ? {
                 ...(defaults.model ? { model: defaults.model } : {}),

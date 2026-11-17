@@ -10,6 +10,7 @@ import {
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { BackgroundHooks } from './components/BackgroundHooks';
 import { CommandPalette } from './components/CommandPalette';
+import { DebugView, toggleDebugView } from './components/DebugView';
 import type { PaletteItem } from './components/palette';
 import { recentActivityTitle } from './components/RecentActivity';
 import { RuntimeBanner } from './components/RuntimeBanner';
@@ -414,6 +415,12 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
               t({ id: 'app.palette.resetLayout', defaultMessage: 'Reset layout' }),
               resetLayout,
             ),
+            action(
+              'debug-view',
+              SHORTCUTS.find((s) => s.id === 'debug-view')!.label,
+              toggleDebugView,
+              shortcutKeys('debug-view') || undefined,
+            ),
             ...(current
               ? [page('screen-board', SCREEN_NAMES.board, () => setScreen('board'))]
               : []),
@@ -534,6 +541,7 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
   useShortcut('shortcuts', () => setSheet((now) => !now));
   useShortcut('back', back);
   useShortcut('forward', forward);
+  useShortcut('debug-view', toggleDebugView);
 
   const main = useRef<HTMLDivElement>(null);
   // A kept screen leaves display:none here, which would run every entrance transition in it again.
@@ -622,6 +630,7 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
       <ShortcutSheet open={sheet} onOpenChange={setSheet} />
       <SettingsDialog />
       <AddProject projects={allProjects} onOpened={openProject} />
+      <DebugView />
       <Toasts />
       {/* Notice cards, the badge, keeping awake and queued sends run once, in the main window. */}
       {kind === 'main' && (

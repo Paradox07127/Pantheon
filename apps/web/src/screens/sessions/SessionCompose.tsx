@@ -783,7 +783,7 @@ export function SessionCompose({
     useShell.getState().openSettings(null);
   };
   return (
-    <div className="cp-dock">
+    <div className="cp-dock" data-debug-region="sessions.composer">
       <div className="cp-col">
         <div className="cp-sts">
           {statusShown && (

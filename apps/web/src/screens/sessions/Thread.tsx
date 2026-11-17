@@ -362,7 +362,7 @@ export function Thread(props: {
           />
         ))}
       {finding && view && <ThreadFind turns={view.turns} scroller={flow} />}
-      <div className="ss-flow">
+      <div className="ss-flow" data-debug-region="sessions.transcript">
         {!props.head && timeline !== 'off' && (
           <MemoSessionTimeline
             sessionId={sessionId}

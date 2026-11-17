@@ -33,6 +33,7 @@ let bridge: {
   query: ReturnType<typeof vi.fn>;
   appInfo: ReturnType<typeof vi.fn>;
   logsDir: ReturnType<typeof vi.fn>;
+  attachFile: ReturnType<typeof vi.fn>;
 };
 const sent = () => bridge.command.mock.calls.map(([c]) => c as Command);
 
@@ -48,6 +49,10 @@ beforeEach(() => {
     ),
     appInfo: vi.fn(async () => ({ version: '1.2.3' })),
     logsDir: vi.fn(async () => '/data/logs'),
+    attachFile: vi.fn(async (_project: string, name: string) => ({
+      ok: true,
+      value: { id: `attachment-${name}` },
+    })),
   };
   vi.stubGlobal('window', { pantheon: bridge });
   vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } });
@@ -139,6 +144,67 @@ describe('asking the debug agent', () => {
     expect(prompt).toContain('at PushButton (push.tsx:9)');
     expect(prompt).toContain('render loop warning');
     expect(vi.mocked(toast).mock.calls.at(-1)![0].kind ?? 'result').toBe(expected.kind);
+  });
+
+  it.each([
+    {
+      name: 'attaches the images to the message for the live debug session',
+      target: { repo_root: REPO },
+      sessions: [debugListed('debug-live', {})],
+      expected: {
+        uploads: ['debug-1.png', 'debug-2.png'],
+        command: 'session.send',
+        attachments: ['attachment-debug-1.png', 'attachment-debug-2.png'],
+      },
+    },
+    {
+      name: 'attaches the images to a new debug session',
+      target: { repo_root: REPO },
+      sessions: [],
+      expected: {
+        uploads: ['debug-1.png', 'debug-2.png'],
+        command: 'session.create',
+        attachments: ['attachment-debug-1.png', 'attachment-debug-2.png'],
+      },
+    },
+    {
+      name: 'drops the images when it copies the report',
+      target: null,
+      sessions: [],
+      expected: { uploads: [], command: null, attachments: null },
+    },
+  ])('$name', async ({ target, sessions, expected }) => {
+    mock.target = target;
+    listed = sessions;
+    await askDebugAgent({
+      title: 'Debug view: 2 items',
+      images: ['data:image/png;base64,AQID', 'data:image/png;base64,BAU='],
+    });
+    expect(bridge.attachFile.mock.calls.map(([, name]) => name)).toEqual(expected.uploads);
+    if (expected.uploads.length)
+      expect([...bridge.attachFile.mock.calls[0]![3]]).toEqual([1, 2, 3]);
+    const commands = sent();
+    expect(commands.map((c) => c.type)).toEqual(expected.command ? [expected.command] : []);
+    if (expected.attachments) expect(commands[0]!.input.attachments).toEqual(expected.attachments);
+  });
+
+  it('stops with a failure when an image cannot be uploaded', async () => {
+    bridge.attachFile.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'too_large', message: 'Too large' },
+    });
+    await askDebugAgent({ title: 'Debug view: 1 item', images: ['data:image/png;base64,AQID'] });
+    expect(sent()).toEqual([]);
+    expect(vi.mocked(toast).mock.calls.at(-1)![0]).toMatchObject({
+      kind: 'failure',
+      askAgent: false,
+    });
+  });
+
+  it('sends no attachments without images', async () => {
+    listed = [debugListed('debug-live', {})];
+    await askDebugAgent({ title: 'Push failed' });
+    expect(sent()[0]!.input).not.toHaveProperty('attachments');
   });
 
   it('opens the debug session on the global defaults when the project has none', async () => {

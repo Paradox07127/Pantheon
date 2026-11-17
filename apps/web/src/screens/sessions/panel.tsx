@@ -1048,12 +1048,17 @@ export async function askFix(
   state: string | undefined,
   revision: number | null,
   items: readonly FeedbackItem[],
+  attachments?: readonly string[],
 ): Promise<BridgeResult<unknown>> {
   // A running turn that asks the user lists as waiting, yet still takes a steer.
   const raw = useBoard.getState().board?.sessions.find((s) => s.id === sessionId)?.state;
   const result = await runCommand(
     messageCommand(raw ?? state),
-    { session_id: sessionId, input: withFeedback('', items) },
+    {
+      session_id: sessionId,
+      input: withFeedback('', items),
+      ...(attachments?.length ? { attachments: [...attachments] } : {}),
+    },
     revision,
   ).catch(fail);
   if (result.ok) {

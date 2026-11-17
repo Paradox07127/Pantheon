@@ -234,6 +234,14 @@ export const SHORTCUTS = [
     scope: 'app',
   },
   {
+    id: 'debug-view',
+    keys: '',
+    get label() {
+      return t({ id: 'lib.shortcuts.label.debugView', defaultMessage: 'Debug view' });
+    },
+    scope: 'app',
+  },
+  {
     id: 'thread-find',
     keys: 'Meta+F',
     get label() {

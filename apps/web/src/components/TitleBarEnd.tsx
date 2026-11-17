@@ -1,5 +1,9 @@
+import { useEffect, useState } from 'react';
+import { SquareDashedMousePointer } from 'lucide-react';
+import { debugTarget } from '../data/app-errors';
 import type { NeedsYouItem } from '../data/needs-you';
 import { t } from '../i18n';
+import { toggleDebugView, useDebugView } from './DebugView';
 import { NeedsPopover } from './NeedsPopover';
 import './title-bar-end.css';
 
@@ -8,10 +12,27 @@ interface TitleBarEndProps {
   needs: readonly NeedsYouItem[];
 }
 
-/** The global controls at the right end of the window's title bar: what waits for the user. */
+/**
+ * The global controls at the right end of the window's title bar: in a dev build the debug view's
+ * toggle, then what waits for the user.
+ */
 export function TitleBarEnd({ needs }: TitleBarEndProps) {
+  const debugging = useDebugView((s) => s.open);
+  const [dev, setDev] = useState(false);
+  useEffect(() => void debugTarget().then((target) => setDev(target !== null)), []);
   return (
     <div className="tbe">
+      {dev && (
+        <button
+          type="button"
+          className="ib tbe-dbg"
+          aria-label={t({ id: 'components.debugView.title', defaultMessage: 'Debug view' })}
+          aria-pressed={debugging}
+          onClick={toggleDebugView}
+        >
+          <SquareDashedMousePointer aria-hidden="true" />
+        </button>
+      )}
       {needs.length > 0 && (
         <NeedsPopover
           items={needs}

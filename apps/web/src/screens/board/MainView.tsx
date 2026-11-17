@@ -239,6 +239,7 @@ export function MainView({
   return (
     <section
       className="bd-pn bd-s12 bd-flow bd-main"
+      data-debug-region="board.flow"
       aria-label={t({ id: 'board.plan.view.main', defaultMessage: 'Main view' })}
     >
       {onlyAdhoc ? (

@@ -46,6 +46,7 @@ export function NowSummary({ model, onOpenSession }: NowSummaryProps) {
   return (
     <section
       className="panel bns"
+      data-debug-region="board.summary"
       style={{ gridTemplateColumns: columns }}
       aria-label={t({ id: 'board.summary.label', defaultMessage: 'Summary' })}
     >

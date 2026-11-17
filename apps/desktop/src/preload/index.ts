@@ -103,6 +103,7 @@ const bridge: DesktopBridge = {
     ipcRenderer.invoke('pantheon:attachFile', project_id, name, mime, bytes),
   listWindowSnapshots: () => ipcRenderer.invoke('pantheon:listWindowSnapshots'),
   snapshotWindow: (project_id, id) => ipcRenderer.invoke('pantheon:snapshotWindow', project_id, id),
+  captureRegion: (rect) => ipcRenderer.invoke('pantheon:captureRegion', rect),
   openInTerminal: (workspace_id) => ipcRenderer.invoke('pantheon:openInTerminal', workspace_id),
   openInEditor: (workspace_id) => ipcRenderer.invoke('pantheon:openInEditor', workspace_id),
   editors: () => ipcRenderer.invoke('pantheon:editors'),

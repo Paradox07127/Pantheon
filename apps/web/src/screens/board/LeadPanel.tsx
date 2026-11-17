@@ -49,7 +49,7 @@ export function LeadPanel({
   // With one lead the board is its plan; with several each row names whose plan it is.
   const titled = (model.leads ?? []).length > 1;
   return (
-    <section className="bld" aria-label="lead">
+    <section className="bld" aria-label="lead" data-debug-region="board.lead">
       <ul className="bld-l">
         {(model.leads ?? []).map((lead) => {
           // A question the lead asked on the board leaves its session idle until the user answers.

@@ -162,7 +162,7 @@ export function TaskGroups({
   const id = useId();
   const groups = taskGroups(model);
   return (
-    <section className="bd-pn" aria-labelledby={id}>
+    <section className="bd-pn" aria-labelledby={id} data-debug-region="board.task-groups">
       <div className="bd-ph">
         <h2 id={id}>{t({ id: 'board.task.group.heading', defaultMessage: 'Tasks' })}</h2>
       </div>

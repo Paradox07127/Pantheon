@@ -23,3 +23,9 @@
 .app:has(.tbe-wait) {
   --end-w: var(--tbe-wait);
 }
+.app:has(.tbe-dbg) {
+  --end-w: var(--h-ctl);
+}
+.app:has(.tbe-wait):has(.tbe-dbg) {
+  --end-w: calc(var(--tbe-wait) + var(--sp-2) + var(--h-ctl));
+}

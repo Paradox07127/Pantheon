@@ -319,7 +319,7 @@ export function PublishBar({
     void send();
   };
   return (
-    <div className="pb">
+    <div className="pb" data-debug-region="board.publish-bar">
       <form
         // Empty and unfocused it is one line; focus or a draft opens it.
         className="pb-f pb-grow"

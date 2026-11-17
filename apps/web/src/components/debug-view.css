@@ -1,0 +1,439 @@
+/* The debug view: a layer over the window that outlines the page's regions and picks one. */
+.dbv {
+  position: fixed;
+  inset: 0;
+  z-index: 36;
+  pointer-events: none;
+}
+/* Below the title bar, which keeps dragging the window and its controls. */
+.dbv-hit {
+  position: absolute;
+  inset: var(--titlebar) 0 0;
+  pointer-events: auto;
+  outline: none;
+}
+.dbv-out {
+  position: absolute;
+  border: var(--hair) dashed var(--bd3);
+  border-radius: var(--r-md);
+}
+.dbv-box {
+  position: absolute;
+  border-radius: var(--r-md);
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    border-color var(--dur-1) var(--ease-std);
+}
+.dbv-box[data-state='hover'] {
+  border: 1.5px solid var(--focus-ring);
+  background: var(--st-hov);
+}
+.dbv-box[data-state='picked'] {
+  border: 2px solid var(--focus-ring);
+}
+.dbv-box[data-state='drill'] {
+  border: 1px dashed var(--focus-ring);
+}
+.dbv-box > .dbv-n {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+}
+.dbv-n {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: 1;
+}
+.dbv-tag {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--ov);
+  backdrop-filter: blur(var(--blur-md));
+  color: var(--tx);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+/* Kept in the page while empty, so what it says next is announced. */
+.dbv-tag:empty {
+  opacity: 0;
+}
+.dbv-tag[data-path] {
+  gap: var(--sp-1);
+  font-family: var(--font-mono);
+}
+.dbv-tag svg {
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+}
+.dbv-tag-n {
+  font-weight: 600;
+}
+.dbv-tag-f {
+  font-family: var(--font-mono);
+  color: var(--mu);
+}
+.dbv-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--sp-4);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: fit-content;
+  height: var(--bar);
+  margin: 0 auto;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-lg);
+  background: var(--ov);
+  backdrop-filter: blur(var(--blur-md));
+  pointer-events: auto;
+  transition:
+    opacity var(--dur-3) var(--ease-in),
+    transform var(--dur-3) var(--ease-in);
+}
+/* Centred in the room the inspector leaves. */
+.dbv[data-inspecting] .dbv-bar {
+  right: calc(400px + var(--sp-2));
+}
+.dbv-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dbv-title svg {
+  width: 16px;
+  height: 16px;
+}
+.dbv-sep {
+  align-self: center;
+  width: var(--hair);
+  height: 20px;
+  background: var(--bd2);
+}
+.dbv-lv {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: var(--hair) solid var(--bd2);
+  border-radius: calc(var(--r-sm) + 2px);
+  background: var(--sf2);
+}
+.dbv-lv button {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.dbv-lv button:hover {
+  color: var(--tx);
+}
+.dbv-lv [aria-pressed='true'] {
+  background: var(--sf);
+  outline: var(--hair) solid var(--bd);
+  color: var(--tx);
+}
+.dbv-count {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Above the toolbar, hidden until ⌘ has been held (data-cmd on the body), as the key hints are. */
+.dbv-keys {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--sp-2));
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: fit-content;
+  height: var(--h-ctl);
+  margin: 0 auto;
+  padding: 0 var(--sp-3);
+  border: var(--hair) solid var(--bd-ov);
+  border-radius: var(--r-lg);
+  background: var(--ov);
+  backdrop-filter: blur(var(--blur-md));
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.pt[data-cmd] .dbv-keys {
+  opacity: 1;
+  transition-timing-function: var(--ease-in);
+  transition-duration: var(--dur-2);
+}
+.dbv-keys > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.dbv-ins {
+  position: absolute;
+  top: var(--titlebar);
+  right: var(--sp-2);
+  bottom: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  width: 400px;
+  border: var(--hair) solid var(--bd);
+  border-left-color: var(--bd2);
+  border-radius: 0 var(--r-xl) var(--r-xl) 0;
+  background: var(--sf);
+  pointer-events: auto;
+  transform-origin: 100% 50%;
+  transition:
+    opacity var(--dur-3) var(--ease-in),
+    transform var(--dur-3) var(--ease-in);
+}
+@starting-style {
+  .dbv-bar,
+  .dbv-ins {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.dbv-ih {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--bar);
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.dbv-end {
+  margin-left: auto;
+}
+.dbv-ic {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--mu);
+}
+.dbv-it {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.dbv-sub {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.dbv-ct {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.dbv-ib {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.dbv-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: var(--sp-2);
+  list-style: none;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.dbv-pend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--r-sm);
+}
+.dbv-pend[data-on] {
+  background: var(--sel);
+}
+.dbv-ph {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.dbv-pb {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.dbv-note {
+  width: 100%;
+  min-height: var(--h-ctl);
+  padding: var(--sp-1) var(--sp-2);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  resize: none;
+  outline: none;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.dbv-note:is(:hover, :focus) {
+  border-color: var(--bd3);
+}
+.dbv-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.dbv-sec > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--tx2);
+  font-weight: 500;
+  list-style: none;
+}
+.dbv-sec > summary::-webkit-details-marker {
+  display: none;
+}
+.dbv-chev {
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+  transition: transform var(--dur-1) var(--ease-std);
+}
+.dbv-sec[open] .dbv-chev {
+  transform: rotate(90deg);
+}
+.dbv-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.dbv-src {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.dbv-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.dbv-stack > li:first-child {
+  font-weight: 600;
+}
+.dbv-shot {
+  display: block;
+  max-width: 100%;
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-sm);
+}
+.dbv-code {
+  position: relative;
+}
+.dbv-pre {
+  max-height: 320px;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.dbv-copy {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-1);
+}
+.dbv-kv {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-2);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.dbv-kv dt {
+  color: var(--mu);
+}
+.dbv-kv dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.dbv-if {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+}
+.dbv-send {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.dbv-to {
+  margin-right: auto;
+  color: var(--tx2);
+}

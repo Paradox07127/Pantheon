@@ -179,7 +179,7 @@ export function MilestoneCard({
   const totals = milestoneTotals(done, cells);
   const parts = PARTS.map((p) => ({ ...p, n: p.count(totals) })).filter((p) => p.n > 0);
   return (
-    <section className="bms" aria-labelledby={id}>
+    <section className="bms" aria-labelledby={id} data-debug-region="board.milestone">
       <Flag className="bms-ic" aria-hidden="true" />
       <h2 id={id} className="bms-h" title={milestone.title}>
         {milestone.title}
@@ -201,6 +201,7 @@ export function MilestoneCard({
       {parts.length > 0 && (
         <span
           className="bms-bar"
+          data-debug-region="board.progress"
           role="img"
           aria-label={t(
             {

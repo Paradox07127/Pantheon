@@ -1044,6 +1044,7 @@ export function Sidebar({
             <nav
               className="ss-list"
               aria-label={SCREEN_NAMES.sessions}
+              data-debug-region="sessions.list"
               onFocus={(e) => {
                 setFocused(e.target.matches(':focus-visible'));
                 const key = stopOf(e.target);
@@ -1149,6 +1150,7 @@ export function Sidebar({
       <aside
         className="sb sb-rail"
         aria-label={t({ id: 'components.sidebar.navigation', defaultMessage: 'Navigation' })}
+        data-debug-region="app.sidebar"
         onPointerDownCapture={(e) => {
           if (e.button === 0 && (e.target as Element).classList.contains('split'))
             railDrag.current = true;
@@ -1298,6 +1300,7 @@ export function Sidebar({
   return (
     <aside
       className="sb"
+      data-debug-region="app.sidebar"
       aria-label={t({ id: 'components.sidebar.navigation', defaultMessage: 'Navigation' })}
       style={{ width: layout.width }}
     >

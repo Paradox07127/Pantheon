@@ -618,6 +618,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
       {dockShown && (
         <aside
           className="ss-dock"
+          data-debug-region="sessions.inspector"
           aria-label={t({ id: 'sessions.header.panels', defaultMessage: 'Panels' })}
         >
           {!narrow && panels.length > 0 && inspector}
@@ -642,6 +643,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
             <Dialog.Popup
               ref={sheet}
               className="ss-panel ss-sheet"
+              data-debug-region="sessions.inspector"
               style={{
                 width: Math.min(main, panels.length ? widths[panels[0]!] : PANEL_WIDTH.initial),
               }}

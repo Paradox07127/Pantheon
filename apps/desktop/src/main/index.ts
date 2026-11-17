@@ -886,6 +886,49 @@ for (const action of [
     return { ok: true, value: action === 'Open' ? { id } : null };
   });
 }
+handleFrom('pantheon:captureRegion', async (from, rect: unknown) => {
+  const { x, y, width, height } = (rect ?? {}) as Record<string, number>;
+  // Number.isFinite is false for anything but a finite number.
+  if (![x, y, width, height].every(Number.isFinite) || width! <= 0 || height! <= 0)
+    return {
+      ok: false,
+      error: { code: 'invalid_input', message: 'rect needs finite x, y and a positive size' },
+    };
+  const [contentWidth, contentHeight] = from.getContentSize();
+  const left = Math.max(0, Math.floor(x!));
+  const top = Math.max(0, Math.floor(y!));
+  const right = Math.min(contentWidth!, Math.ceil(x! + width!));
+  const bottom = Math.min(contentHeight!, Math.ceil(y! + height!));
+  const image =
+    right > left && bottom > top
+      ? await from.webContents.capturePage({
+          x: left,
+          y: top,
+          width: right - left,
+          height: bottom - top,
+        })
+      : null;
+  if (!image || image.isEmpty())
+    return {
+      ok: false,
+      error: { code: 'capture_failed', message: 'The area is outside the window or not painted' },
+    };
+  let shrunk = Math.min(image.getSize().width, 1280),
+    url = image.resize({ width: shrunk }).toDataURL();
+  while (url.length > CAPTURE_BASE64_MAX && shrunk > 320) {
+    shrunk = Math.round(shrunk * 0.75);
+    url = image.resize({ width: shrunk }).toDataURL();
+  }
+  if (url.length > CAPTURE_BASE64_MAX)
+    return {
+      ok: false,
+      error: {
+        code: 'capture_failed',
+        message: 'The capture is too large even at its narrowest width',
+      },
+    };
+  return { ok: true, value: url };
+});
 handleFrom('pantheon:visualServe', async (from, input: unknown) => {
   if (
     typeof input !== 'object' ||
