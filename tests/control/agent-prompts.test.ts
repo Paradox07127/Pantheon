@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import type { AgentProfile, Principal, Session, SessionSpec } from '@pantheon/domain';
 import { sessionTools } from '@pantheon/protocol';
 import { leadSessionTools, type ControlContext } from '../../packages/control/dist/context.js';
+import { LEAD_INSTRUCTIONS } from '../../packages/control/dist/agent-prompts.js';
 import { eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -155,4 +156,11 @@ it('does not tell a new goals session that takes over to rewrite the plan with u
   const [takeover] = f.turns(successor()!.id);
   expect(takeover!.input).toContain('take over');
   expect(takeover!.input).not.toContain('update_board');
+});
+
+it('tells a lead to answer a worker question only from a cited source and otherwise leave it to the user', () => {
+  expect(LEAD_INSTRUCTIONS).toContain('answer_worker_question');
+  for (const source of ['quoted user words', 'plan assumption', 'memory entry', 'earlier answer'])
+    expect(LEAD_INSTRUCTIONS).toContain(source);
+  expect(LEAD_INSTRUCTIONS).not.toContain('pass_worker_question');
 });

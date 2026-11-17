@@ -9,15 +9,18 @@ import {
 } from 'react';
 import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
-import { Ellipsis } from 'lucide-react';
+import { CircleCheck, Ellipsis } from 'lucide-react';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { templateName } from '../data/agents';
 import { blocksText, decisionText, nextKey, primaryAction } from '../data/attention';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
+import { useCurrentProject } from '../data/current-project';
+import { useDecisionsToday } from '../data/decisions-for-user';
 import { ageText, failureText, reasonText, useNow, type NeedsYouItem } from '../data/needs-you';
 import { focusRequest } from '../data/focus-request';
 import { needsKey } from '../data/notice-tiers';
+import { visibleProjects } from '../data/projects';
 import { sessionTitle } from '../data/transcript';
 import { t } from '../i18n';
 import { listText } from '../lib/list-text';
@@ -101,6 +104,8 @@ function listPopover(props: {
   opener?: Ref<HTMLButtonElement>;
   /** Shown in place of the rows when there are none. */
   empty?: string;
+  /** Shown after the rows. */
+  footer?: ReactNode;
 }) {
   const groups = byProject(props.rows);
   return (
@@ -150,6 +155,7 @@ function listPopover(props: {
                 </div>
               );
             })}
+            {props.footer}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
@@ -381,6 +387,11 @@ export function NeedsPopover({
     };
   });
 
+  const shownIds = board ? visibleProjects(board.projects).map((p) => p.id) : NO_PROJECTS;
+  const decided = useDecisionsToday(open ? shownIds : NO_PROJECTS);
+  const decidedIn = shownIds.filter((id) => (decided[id] ?? 0) > 0);
+  const decidedCount = decidedIn.reduce((sum, id) => sum + decided[id]!, 0);
+
   const empty = t({ id: 'components.needsPopover.empty', defaultMessage: 'Nothing needs you.' });
   return listPopover({
     trigger,
@@ -390,6 +401,31 @@ export function NeedsPopover({
     projects: board?.projects ?? NO_PROJECTS,
     opener,
     empty,
+    footer: decidedCount > 0 && (
+      <button
+        type="button"
+        className="np-f"
+        onClick={() => {
+          setOpen(false);
+          const here = useCurrentProject.getState().projectId;
+          useShell
+            .getState()
+            .openProjectApproved(here && decidedIn.includes(here) ? here : decidedIn[0]!);
+        }}
+      >
+        <CircleCheck className="ic-sm" aria-hidden="true" />
+        <span className="np-ft">
+          {t(
+            {
+              id: 'components.needsPopover.approved',
+              defaultMessage: '{count, plural, other {# approved for you}}',
+            },
+            { count: decidedCount },
+          )}
+        </span>
+        <span className="np-c">{t({ id: 'lib.time.today', defaultMessage: 'Today' })}</span>
+      </button>
+    ),
     label: rows.length
       ? t(
           {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import type { AttentionDelivery, AttentionKind } from '@pantheon/protocol';
+import type { AppSettings, AttentionDelivery, AttentionKind } from '@pantheon/protocol';
 import { useAppSettings } from '../../data/app-settings';
 import {
   DECISION_NAME,
@@ -50,6 +50,45 @@ function DeliveryChoice(props: {
   );
 }
 
+/** A choice of delivery for each kind of decision and merges, then the locked row of an overdue question. */
+export function decisionDeliveryRows(
+  settings: AppSettings | null,
+  save: ReturnType<typeof useAppSettings>['save'],
+) {
+  const overdue = t({
+    id: 'settings.notifications.overdueQuestion',
+    defaultMessage: 'Question waiting over 4 hours',
+  });
+  return (
+    <div className="ps-rows" aria-busy={!settings || undefined}>
+      {KINDS.map((kind) => {
+        const name = t(DECISION_NAME[kind]);
+        return (
+          <Row key={kind} label={name} settingId={`notifications.${kind}`}>
+            <DeliveryChoice
+              label={name}
+              value={settings?.attention_delivery[kind] ?? null}
+              disabled={!settings}
+              onChange={(delivery) => void save({ attention_delivery: { [kind]: delivery } })}
+            />
+          </Row>
+        );
+      })}
+      <Row label={overdue}>
+        <DeliveryChoice
+          label={overdue}
+          value="now"
+          disabled
+          title={t({
+            id: 'settings.notifications.overdueReason',
+            defaultMessage: 'Always notifies: a question this old holds its plan',
+          })}
+        />
+      </Row>
+    </div>
+  );
+}
+
 /** How each kind of decision and merges reach the user, the quiet hours, and this computer's sound and badge. */
 export function NotificationsPage() {
   const prefs = useNotificationPrefs();
@@ -80,10 +119,6 @@ export function NotificationsPage() {
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
     />
   );
-  const overdue = t({
-    id: 'settings.notifications.overdueQuestion',
-    defaultMessage: 'Question waiting over 4 hours',
-  });
   const sound = t({ id: 'settings.notifications.sound', defaultMessage: 'Sound' });
   const badge = t({
     id: 'settings.notifications.badge',
@@ -92,34 +127,7 @@ export function NotificationsPage() {
   const test = t({ id: 'settings.notifications.test', defaultMessage: 'Send a test notification' });
   return (
     <>
-      <Section>
-        <div className="ps-rows" aria-busy={!settings || undefined}>
-          {KINDS.map((kind) => {
-            const name = t(DECISION_NAME[kind]);
-            return (
-              <Row key={kind} label={name} settingId={`notifications.${kind}`}>
-                <DeliveryChoice
-                  label={name}
-                  value={settings?.attention_delivery[kind] ?? null}
-                  disabled={!settings}
-                  onChange={(delivery) => void save({ attention_delivery: { [kind]: delivery } })}
-                />
-              </Row>
-            );
-          })}
-          <Row label={overdue}>
-            <DeliveryChoice
-              label={overdue}
-              value="now"
-              disabled
-              title={t({
-                id: 'settings.notifications.overdueReason',
-                defaultMessage: 'Always notifies: a question this old holds its plan',
-              })}
-            />
-          </Row>
-        </div>
-      </Section>
+      <Section>{decisionDeliveryRows(settings, save)}</Section>
       <Section
         title={t({ id: 'settings.notifications.delivery', defaultMessage: 'Delivery rules' })}
       >

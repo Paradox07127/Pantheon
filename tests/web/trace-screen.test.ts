@@ -689,12 +689,13 @@ describe('trace screen tabs', () => {
       (n) => n.type === 'button' && text(n) === zh('trace.replay.back'),
     );
 
-  it('names the timeline, runs, activity and diagnose tabs in that order', () => {
+  it('names the timeline, runs, activity, diagnose and approved-for-you tabs in that order', () => {
     expect(tabs(screen().value)).toEqual([
       ['timeline', zh('trace.tab.timeline')],
       ['runs', zh('trace.tab.runs')],
       ['activity', zh('trace.tab.activity')],
       ['diagnose', zh('trace.tab.diagnose')],
+      ['approved', zh('trace.tab.approved')],
     ]);
   });
 

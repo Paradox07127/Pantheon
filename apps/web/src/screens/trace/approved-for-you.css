@@ -1,0 +1,108 @@
+/* What was approved for the user: the table, and the delivery rules beside it. */
+.afy {
+  overflow-y: auto;
+}
+.afy-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.afy-r {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 2.4fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1.2fr)
+    96px;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 8px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.afy-hd {
+  min-height: var(--row);
+  border-top: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.afy-a,
+.afy-by {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.afy-a > svg,
+.afy-by > svg {
+  flex: none;
+  color: var(--mu);
+}
+.afy-what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.afy-what .mu {
+  font-size: var(--fs-xs);
+}
+.afy-c {
+  min-width: 0;
+  color: var(--tx2);
+}
+.afy-ref {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--bd3);
+  text-underline-offset: 3px;
+}
+.afy-ref:hover {
+  text-decoration-color: var(--tx);
+}
+.afy-when {
+  justify-self: end;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.afy-pnl {
+  flex: none;
+  width: 400px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  background: var(--sf);
+  transition: opacity var(--dur-2) var(--ease-in);
+}
+@starting-style {
+  .afy-pnl {
+    opacity: 0;
+  }
+}
+.afy-pnl-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--bar);
+  padding: 0 8px 0 16px;
+  border-bottom: var(--hair) solid var(--bd2);
+}
+.afy-pnl-h > svg {
+  flex: none;
+  color: var(--mu);
+}
+.afy-pnl-h h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}

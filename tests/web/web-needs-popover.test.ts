@@ -79,6 +79,12 @@ beforeEach(() => {
   };
   mock.shell = { openProjectSession: vi.fn(), openProject: vi.fn() };
   vi.mocked(runCommand).mockClear();
+  // The open list reads what was approved today.
+  vi.stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
+    pantheon: { query: vi.fn(async () => ({ ok: true, value: { items: [] } })) },
+  });
 });
 afterEach(() => {
   unmountAll();

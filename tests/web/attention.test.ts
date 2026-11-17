@@ -96,8 +96,17 @@ beforeEach(() => {
     askedNeed: null,
   };
   vi.mocked(runCommand).mockClear();
+  // The open needs-you list reads what was approved today.
+  vi.stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
+    pantheon: { query: vi.fn(async () => ({ ok: true, value: { items: [] } })) },
+  });
 });
-afterEach(() => unmountAll());
+afterEach(() => {
+  unmountAll();
+  vi.unstubAllGlobals();
+});
 
 describe('what needs you, by the decision it asks', () => {
   it('goes to the item after the one settled, else the one before, else to none', () => {

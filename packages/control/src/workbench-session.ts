@@ -227,7 +227,7 @@ export function workerInstructions(
   return [
     workerBase(planned?.done_when === 'report'),
     questionTool
-      ? `When you need the user to decide or answer something, ask with the ${questionTool} tool, not in plain text. The question goes to your lead's board, where the user answers it, and the answer comes back to this session. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own. Keep working on what does not depend on the answer.`
+      ? `When you need the user to decide or answer something, ask with the ${questionTool} tool, not in plain text. Your lead answers it when the plan or project memory settles it; otherwise the user does. The answer comes back to this session. Give 2 to 4 short options with the one you recommend first; the user can also type an answer of their own. Keep working on what does not depend on the answer.`
       : 'When you need the user to decide or answer something, report kind blocked with reason missing_context, or kind requirement when the task as written cannot be done, and end your turn; your lead asks the user.',
     [
       `You work on task ${task.id}${planned ? ` "${planned.title}"` : ''} of the lead session "${lead?.title ?? task.lead_session_id}".`,

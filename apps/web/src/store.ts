@@ -16,7 +16,7 @@ import { shownWindow } from './shell/window-kind';
 export type Screen =
   'sessions' | 'board' | 'insights' | 'repo' | 'runtime' | 'flow' | 'trace' | 'memory' | 'projects';
 
-export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose';
+export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved';
 export type MemoryTab = 'overview' | 'entries' | 'graph' | 'learned';
 
 export type Theme = 'light' | 'dark' | 'system';
@@ -184,6 +184,8 @@ interface ShellState {
   openProjectBoard: (projectId: string) => void;
   // Makes the project current and opens its runs going now, whose needs-you strip answers the wait.
   openProjectNeed: (projectId: string, needKey: string) => void;
+  // Makes the project current and opens the trace's list of what was approved for the user.
+  openProjectApproved: (projectId: string) => void;
   back: () => void;
   forward: () => void;
   // Drops a restored session the project's list no longer has.
@@ -446,6 +448,18 @@ export const useShell = create<ShellState>((set) => ({
         runsView: 'now',
         runsSession: null,
         askedNeed,
+        sessionTab: null,
+        sessionRun: null,
+        sessionGroup: null,
+        sessionTask: null,
+      },
+      projectId,
+    ),
+  openProjectApproved: (projectId) =>
+    navigate(
+      {
+        screen: 'trace',
+        traceTab: 'approved',
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,

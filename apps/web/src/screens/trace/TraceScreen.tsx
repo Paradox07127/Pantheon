@@ -115,6 +115,7 @@ import {
 import { StepReplay } from './StepReplay';
 import '../board/board.css';
 import { AnalyzeMenu } from './AnalyzeMenu';
+import { ApprovedForYou } from './ApprovedForYou';
 import { RuntimePanel } from './RuntimeDiagnostics';
 import { TraceTimeChart } from './TraceTimeChart';
 import { EventTable } from './EventTable';
@@ -260,6 +261,12 @@ const TABS: { tab: TraceTab; label: string }[] = [
     tab: 'diagnose',
     get label() {
       return t({ id: 'trace.tab.diagnose', defaultMessage: 'Diagnose' });
+    },
+  },
+  {
+    tab: 'approved',
+    get label() {
+      return t({ id: 'trace.tab.approved', defaultMessage: 'Approved for you' });
     },
   },
 ];
@@ -877,19 +884,28 @@ function TraceView({
   const heatSlow = useDelayed(heatReading);
   const lineSlow = useDelayed(lineReading);
 
+  const tabList = (
+    <Tabs.List
+      className="tb-tabs"
+      aria-label={t({ id: 'trace.tabs.label', defaultMessage: 'Trace views' })}
+    >
+      {TABS.map((v) => (
+        <Tabs.Tab key={v.tab} className="tb-tab" value={v.tab}>
+          {v.label}
+        </Tabs.Tab>
+      ))}
+    </Tabs.List>
+  );
+  if (tab === 'approved')
+    return (
+      <Tabs.Root className="tb-pg" value={tab} onValueChange={(value) => setTab(value as TraceTab)}>
+        <ApprovedForYou projectId={projectId} tabs={tabList} />
+      </Tabs.Root>
+    );
   return (
     <Tabs.Root className="tb-pg" value={tab} onValueChange={(value) => setTab(value as TraceTab)}>
       <TopBar title={SCREEN_NAMES.trace}>
-        <Tabs.List
-          className="tb-tabs"
-          aria-label={t({ id: 'trace.tabs.label', defaultMessage: 'Trace views' })}
-        >
-          {TABS.map((v) => (
-            <Tabs.Tab key={v.tab} className="tb-tab" value={v.tab}>
-              {v.label}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+        {tabList}
         {lanesShown && replaying && (
           <button type="button" className="btn ghost sm" onClick={closeReplay}>
             <ArrowLeft className="ic-sm" aria-hidden="true" />

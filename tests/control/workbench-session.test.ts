@@ -14,7 +14,10 @@ import type {
   Workspace,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import { workbenchSessionSpec } from '../../packages/control/dist/workbench-session.js';
+import {
+  workbenchSessionSpec,
+  workerInstructions,
+} from '../../packages/control/dist/workbench-session.js';
 import { awaitWorkspaceReady, eventually, fixture, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -805,6 +808,20 @@ it.each([
   ).control_instructions!;
   expect(instructions).toContain(tool);
   expect(instructions).not.toContain(other);
+});
+
+it('tells a task session with a question tool that its lead answers when the plan or memory settles it', async () => {
+  const f = await workbenchFixture();
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  const text = workerInstructions(
+    ctx,
+    { lead_session_id: 'lead', id: 'a', generation: 1 } as NonNullable<Session['task']>,
+    'AskUserQuestion',
+  );
+  expect(text).toContain(
+    'Your lead answers it when the plan or project memory settles it; otherwise the user does. The answer comes back to this session.',
+  );
+  expect(text).not.toContain('where the user answers it');
 });
 
 /** A workbench fixture whose adapter is registered under the runtime name with the given declarations. */

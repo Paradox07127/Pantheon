@@ -134,3 +134,30 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* What was approved for the user today, after the rows */
+.np-f {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row);
+  margin-top: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-top: var(--hair) solid var(--bd2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.np-f:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.np-ft {
+  flex: 1;
+  min-width: 0;
+}
