@@ -457,3 +457,24 @@ export interface BoardPlanView {
   assumptions: BoardPlan['assumptions'];
   updated_at: number;
 }
+/** One run of a milestone's checks against one commitment. */
+export interface MilestoneVerification extends Entity {
+  project_id: string;
+  /** The milestone row id. */
+  milestone_id: string;
+  commitment_hash: string;
+  state: 'pending' | 'running' | 'passed' | 'failed' | 'inconclusive' | 'skipped';
+  commands: { name: string; exit_code: number; output_tail: string; hidden: boolean }[];
+  review_id?: string;
+  runtime?: string;
+  started_at: number;
+  finished_at?: number;
+}
+export interface ProjectGoal extends Entity {
+  project_id: string;
+  /** The user's own words. */
+  text: string;
+  order: number;
+  created_at: number;
+  archived_at?: number;
+}

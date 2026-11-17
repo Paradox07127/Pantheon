@@ -54,6 +54,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'memory.turn',
     'needs_you.list',
     'permission.rules',
+    'personal.key.list',
     'project.baseline.read',
     'project.branches',
     'project.brief',

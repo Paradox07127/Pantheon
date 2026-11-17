@@ -60,6 +60,9 @@ export const tables = [
   'agent_proposals',
   'signal_issues',
   'seen_cursors',
+  'personal_keys',
+  'milestone_verifications',
+  'project_goals',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -233,6 +236,26 @@ export const migrations: readonly Migration[] = [
       db.exec(
         'CREATE TABLE seen_cursors (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
       );
+    },
+  },
+  {
+    version: 9,
+    up(db) {
+      db.exec(
+        'CREATE TABLE personal_keys (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
+      );
+    },
+  },
+  {
+    version: 10,
+    up(db) {
+      db.exec(`
+        CREATE TABLE milestone_verifications (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
+        CREATE INDEX milestone_verification_milestone ON milestone_verifications(json_extract(data,'$.milestone_id'));
+        CREATE INDEX milestone_verification_project ON milestone_verifications(json_extract(data,'$.project_id'));
+        CREATE TABLE project_goals (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
+        CREATE INDEX project_goal_project ON project_goals(json_extract(data,'$.project_id'));
+      `);
     },
   },
 ];

@@ -155,6 +155,7 @@ import { needsYou } from './needs-you.js';
 import { projectsSummary, summaryProjects } from './projects-summary.js';
 import { projectBrief } from './project-brief.js';
 import { decisionsForUser } from './decisions-for-user.js';
+import { personalKeyList } from './personal-keys.js';
 import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
 import { agentProposal } from './agent-proposals.js';
@@ -276,6 +277,8 @@ export interface ControlOptions {
     role: Role,
   ) => { token_file: string; daemon_url: string };
   revokeSessionCredential?: (sessionId: string) => void;
+  issuePersonalKey?: (keyId: string) => { token_file: string; digest: string };
+  revokePersonalKey?: (keyId: string) => void;
   /** Native transcript index the trace queries merge with the event log. */
   trace?: TraceIndex;
   /** Directory holding the user's config.json; absent means no user configuration. */
@@ -389,6 +392,8 @@ export class Control extends EventEmitter {
       readProcess: options.readProcess ?? readProcess,
       issueSessionCredential: options.issueSessionCredential,
       revokeSessionCredential: options.revokeSessionCredential,
+      issuePersonalKey: options.issuePersonalKey,
+      revokePersonalKey: options.revokePersonalKey,
       adapters: this.adapters,
       createRuntimeAdapter: options.createRuntimeAdapter,
       handles: this.handles,
@@ -990,6 +995,9 @@ export class Control extends EventEmitter {
   }
   decisionsForUser(principal: Principal, projectId: string, since?: number) {
     return decisionsForUser(this.ctx, principal, projectId, since);
+  }
+  personalKeyList(principal: Principal) {
+    return personalKeyList(this.ctx, principal);
   }
   async extensionsInventory(
     principal: Principal,

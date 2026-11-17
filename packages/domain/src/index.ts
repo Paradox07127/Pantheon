@@ -63,6 +63,14 @@ export interface Entity {
   id: string;
   revision: number;
 }
+/** A credential the user issued to a personal agent; the token itself lives only in its file. */
+export interface PersonalKey extends Entity {
+  label: string;
+  /** SHA-256 of the token, hex. */
+  digest: string;
+  created_at: number;
+  revoked_at?: number;
+}
 export type VisualContent =
   | { kind: 'vega-lite'; spec: Record<string, unknown> }
   | {

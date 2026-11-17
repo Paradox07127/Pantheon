@@ -2348,6 +2348,10 @@ export const inputSchemas = {
   }),
   /** {project_id, at}; moves the caller's seen cursor of the project to at, now by default. project.brief lists what happened after it. */
   'project.seen': z.strictObject({ project_id: str, at: z.number().int().min(0).optional() }),
+  /** The user only; issues a personal agent key named label and returns {key_id, token_file}. The token is only in that file, readable by the user alone. */
+  'personal.key.create': z.strictObject({ label: z.string().trim().min(1).max(80) }),
+  /** The user only; revokes the personal agent key at once, and it stays revoked after a restart. */
+  'personal.key.revoke': z.strictObject({ key_id: str }),
   'external.approve': z.strictObject({ project_id: str, subject_key: str }),
   /** SignalIssue; the user only. Mutes the issue: it keeps counting and wakes no agent. */
   'signal.mute': z.strictObject({ id: str }),
@@ -2903,6 +2907,8 @@ export const querySchemas = {
   'theme.get': z.strictObject({ theme_id: str }),
   /** UserStyleRead; the user only. */
   'style.read': z.strictObject({}),
+  /** The user only; returns {id, label, created_at, revoked_at?}[], every personal agent key in creation order. */
+  'personal.key.list': z.strictObject({}),
   /** BackendSummary[]. */
   'backend.list': z.strictObject({}),
   /** ImportCandidates. */

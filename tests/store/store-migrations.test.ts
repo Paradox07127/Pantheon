@@ -292,6 +292,54 @@ it('initializes all known migrations on an empty database without making a backu
   );
 });
 
+it('adds the milestone verification and project goal tables with their indexes to a database one version behind', () => {
+  const file = databaseFile();
+  const behind = open(file, migrations.slice(0, -1));
+  behind.insert('projects', row);
+  close(behind);
+  const store = open(file);
+  expect(tableList(store.db)).toEqual(
+    expect.arrayContaining([{ name: 'milestone_verifications' }, { name: 'project_goals' }]),
+  );
+  expect(
+    store.db
+      .prepare(
+        "SELECT name FROM sqlite_schema WHERE type='index' AND tbl_name IN ('milestone_verifications','project_goals') AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      .all(),
+  ).toEqual([
+    { name: 'milestone_verification_milestone' },
+    { name: 'milestone_verification_project' },
+    { name: 'project_goal_project' },
+  ]);
+  const verification = {
+    id: 'verification',
+    revision: 1,
+    project_id: row.id,
+    milestone_id: 'milestone',
+    commitment_hash: 'hash',
+    state: 'pending',
+    commands: [],
+    started_at: 1,
+  };
+  const goal = {
+    id: 'goal',
+    revision: 1,
+    project_id: row.id,
+    text: 'Ship it',
+    order: 0,
+    created_at: 1,
+  };
+  store.insert('milestone_verifications', verification);
+  store.insert('project_goals', goal);
+  expect(store.get('milestone_verifications', verification.id)).toEqual(verification);
+  expect(store.get('project_goals', goal.id)).toEqual(goal);
+  expect(store.get('projects', row.id)).toEqual(row);
+  expect(store.db.prepare('SELECT max(version) AS version FROM schema_migrations').get()).toEqual({
+    version: latestVersion,
+  });
+});
+
 it('creates the whole schema through known migrations in a memory and a file database', () => {
   const schema = [
     ...tables,

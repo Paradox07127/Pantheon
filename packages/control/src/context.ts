@@ -52,6 +52,8 @@ export interface ControlContext {
   readonly readProcess: NonNullable<ControlOptions['readProcess']>;
   readonly issueSessionCredential?: ControlOptions['issueSessionCredential'];
   readonly revokeSessionCredential?: ControlOptions['revokeSessionCredential'];
+  readonly issuePersonalKey?: ControlOptions['issuePersonalKey'];
+  readonly revokePersonalKey?: ControlOptions['revokePersonalKey'];
   readonly adapters: Map<string, HarnessAdapter>;
   readonly createRuntimeAdapter?: ControlOptions['createRuntimeAdapter'];
   // handles, cancelling and endTurns are keyed by session turn id.

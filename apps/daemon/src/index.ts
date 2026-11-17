@@ -24,6 +24,7 @@ import {
   DomainError,
   requireThat,
   type HarnessAdapter,
+  type PersonalKey,
   type Principal,
   type ProcessIdentity,
   type Session,
@@ -84,6 +85,13 @@ export class AuthRegistry {
   }
   add(token: string, principal: Principal): void {
     this.tokens.set(digest(token), principal);
+  }
+  addDigest(tokenDigest: string, principal: Principal): void {
+    this.tokens.set(tokenDigest, principal);
+  }
+  revokePrincipal(principalId: string): void {
+    for (const [key, principal] of this.tokens)
+      if (principal.id === principalId) this.tokens.delete(key);
   }
   issueSession(session: Session, role: Role, workspaceKind?: Workspace['kind']): string {
     requireThat(
@@ -308,6 +316,15 @@ export async function startDaemon(options: DaemonOptions) {
     const openedStore = (store = new Store(file, options.now, options.storeOptions));
     const token = randomBytes(32).toString('base64url');
     const registry = (auth = new AuthRegistry(token, openedStore.now));
+    // Personal keys outlive the daemon, so their folder is kept.
+    const personalKeys = path.join(directory, 'personal-keys');
+    mkdirSync(personalKeys, { recursive: true, mode: 0o700 });
+    const personalPrincipal = (keyId: string): Principal => ({
+      id: `personal:${keyId}`,
+      role: 'personal',
+    });
+    for (const key of openedStore.list<PersonalKey>('personal_keys'))
+      if (key.revoked_at === undefined) registry.addDigest(key.digest, personalPrincipal(key.id));
     const protectionPaths = options.protectionPaths;
     if (protectionPaths)
       trace = new TraceIndex({
@@ -349,6 +366,20 @@ export async function startDaemon(options: DaemonOptions) {
         revokeSessionCredential: (sessionId) => {
           registry.revokeSession(sessionId);
           rmSync(path.join(sessionTokens, sessionId), { force: true });
+        },
+        issuePersonalKey: (keyId) => {
+          const personalToken = randomBytes(32).toString('base64url'),
+            tokenDigest = digest(personalToken),
+            tokenFile = path.join(personalKeys, keyId),
+            partial = `${tokenFile}.${randomBytes(6).toString('hex')}.tmp`;
+          writeFileSync(partial, personalToken, { mode: 0o600, flag: 'wx' });
+          renameSync(partial, tokenFile);
+          registry.addDigest(tokenDigest, personalPrincipal(keyId));
+          return { token_file: tokenFile, digest: tokenDigest };
+        },
+        revokePersonalKey: (keyId) => {
+          registry.revokePrincipal(personalPrincipal(keyId).id);
+          rmSync(path.join(personalKeys, keyId), { force: true });
         },
       },
     ));
@@ -635,6 +666,7 @@ export async function startDaemon(options: DaemonOptions) {
       'theme.list': (p) => control.themeList(p),
       'theme.get': (p, i) => control.themeGet(p, i.theme_id),
       'style.read': (p) => control.styleRead(p),
+      'personal.key.list': (p) => control.personalKeyList(p),
       'import.candidates': (p) => control.importCandidates(p),
       'session.importable': (p, i) => control.importableSessions(p, i.project_id),
     };

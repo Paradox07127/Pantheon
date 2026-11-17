@@ -352,6 +352,25 @@ export const appHelpGroups: AppHelpGroup[] = [
     ],
   },
   {
+    group: 'personal',
+    about:
+      'The user only; issues a personal agent key named label and returns {key_id, token_file}; The user only; revokes the personal agent key at once, and it stays revoked after a restart',
+    commands: [
+      {
+        type: 'personal.key.create',
+        about:
+          'The user only; issues a personal agent key named label and returns {key_id, token_file}. The token is only in that file, readable by the user alone.',
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'personal.key.revoke',
+        about:
+          'The user only; revokes the personal agent key at once, and it stays revoked after a restart.',
+        tool: 'the user does this in the app',
+      },
+    ],
+  },
+  {
     group: 'project',
     about:
       "The user only; stores this round's answers and asks the baseline session for the next round; Removes a global value, so projects without their own follow the built-in default; the user only; Sets the ",

@@ -396,6 +396,13 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `permission.rule.add` | `project_id`: string<br>`rule`: string<br>`session_id`: string |  |
 | `permission.rule.remove` | `project_id`: string<br>`rule`: string |  |
 
+### personal
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `personal.key.create` | `label`: string |  |
+| `personal.key.revoke` | `key_id`: string |  |
+
 ### project.autoMerge
 
 | type | input | MCP 工具 |
@@ -726,6 +733,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `memory.turn` | `session_id`: string<br>`turn_id`: string |
 | `needs_you.list` | `project_id?`: string |
 | `permission.rules` | `project_id`: string |
+| `personal.key.list` | — |
 | `project.baseline.read` | `project_id`: string |
 | `project.branches` | `project_id`: string<br>`root?`: string |
 | `project.brief` | `project_id`: string<br>`since?`: integer |
