@@ -71,7 +71,7 @@ const directLeadActions = () =>
   Object.entries(sessionTools.lead)
     .filter(
       ([name]) =>
-        !['always_on', 'app', 'sessions', 'github', 'agents'].includes(
+        !['always_on', 'app', 'sessions', 'github', 'agents', 'signals'].includes(
           leadToolGroups[name as keyof typeof leadToolGroups],
         ),
     )

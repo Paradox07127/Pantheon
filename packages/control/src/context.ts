@@ -318,6 +318,7 @@ const RESIDENT_GROUPS: readonly LeadToolGroup[] = [
   'sessions',
   'github',
   'agents',
+  'signals',
 ];
 
 /** The board tools that write the plan, which a resident of a read-only board template does not get. */

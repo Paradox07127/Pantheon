@@ -564,6 +564,7 @@ export async function startDaemon(options: DaemonOptions) {
         return timed('needs_you.list', () => control.needsYou(p, i.project_id));
       },
       'external.read': (p, i) => control.externalRead(p, i.project_id),
+      'signal.list': (p, i) => control.signalList(p, i.project_id, i.state),
       'projects.summary': async (p) => {
         await prefetch(p);
         return timed('projects.summary', () => control.projectsSummary(p, 'cached'));

@@ -102,6 +102,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'session.tool_image',
     'session.trace',
     'session.turn_diff',
+    'signal.list',
     'style.read',
     'symbols.search',
     'task.trace',

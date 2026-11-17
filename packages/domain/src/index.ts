@@ -737,7 +737,8 @@ export type AgentToolGroup =
   | 'sessions'
   | 'github'
   | 'always_on'
-  | 'agents';
+  | 'agents'
+  | 'signals';
 /** A prompt an agent runs on its own, every every_ms or daily at at (HH:MM local time). */
 export interface AgentRoutine {
   id: string;
@@ -767,7 +768,7 @@ export interface AgentProfile extends Entity {
   tools?: AgentToolGroup[];
   routines: AgentRoutine[];
   /** Absent: the event sources of its template. */
-  listens?: ('github' | 'gate_failures' | 'app_errors')[];
+  listens?: ('github' | SignalSource)[];
   created_by: { kind: 'user' } | { kind: 'agent'; session_id: string };
   created_at: number;
   archived_at?: number;
@@ -1055,6 +1056,44 @@ export interface ExternalEvent {
   state: 'pending' | 'dropped' | 'handled' | 'failed';
   /** Why no lead could start for a failed event. */
   error?: string;
+}
+/** A kind of system signal the app records and an agent may listen to. */
+export type SignalSource =
+  'gate_failures' | 'flaky_tests' | 'app_errors' | 'session_failures' | 'trace_findings';
+/** The signals of one source with one fingerprint, grouped into one issue. */
+export interface SignalIssue extends Entity {
+  project_id: string;
+  source: SignalSource;
+  /** Unique per project and source. */
+  fingerprint: string;
+  /** At most 200 characters. */
+  title: string;
+  /** holding: a new issue waits to see whether it resolves on its own. */
+  state: 'new' | 'ongoing' | 'escalating' | 'regressed' | 'holding' | 'resolved' | 'muted';
+  /** interrupt wakes its listeners soon, digest comes in their hourly digest, record is only kept. */
+  priority: 'interrupt' | 'digest' | 'record';
+  count: number;
+  first_seen: number;
+  last_seen: number;
+  /** The newest samples, at most 3, each at most 2000 characters. */
+  samples: string[];
+  /** Times of the newest signals, as many as the source's escalation threshold. */
+  recent: number[];
+  /** The open issue that mutes this one. */
+  muted_by?: string;
+  muted_by_user?: boolean;
+  /** The issues this one mutes while it is open. */
+  inhibits?: { source: SignalSource; fingerprint_prefix: string }[];
+  /** Deliveries to agents, the newest 20; via says whether it woke the agent or came in its digest. */
+  routed: {
+    agent_id: string;
+    at: number;
+    state: SignalIssue['state'];
+    via: 'interrupt' | 'digest';
+  }[];
+  /** State changes, the newest 20. */
+  history: { at: number; state: SignalIssue['state']; text: string }[];
+  resolved_at?: number;
 }
 /** One place events come from, such as github, as the settings show it. */
 export interface ExternalSourceStatus {

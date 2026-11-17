@@ -61,6 +61,8 @@ export type {
   Principal,
   PermissionMode,
   RuntimeModel,
+  SignalIssue,
+  SignalSource,
 } from '@pantheon/domain';
 /** Every registered, configured or ACP-profile runtime, with configuration and known preflight fields. */
 export type RuntimeStatus = PreflightRuntimeStatus & {
@@ -1862,6 +1864,10 @@ export const inputSchemas = {
     param: workflowPolicySettings.keyof().optional(),
   }),
   'external.approve': z.strictObject({ project_id: str, subject_key: str }),
+  /** SignalIssue; the user only. Mutes the issue: it keeps counting and wakes no agent. */
+  'signal.mute': z.strictObject({ id: str }),
+  /** SignalIssue; the user only. Resolves the issue; its next signal is a regression. */
+  'signal.resolve': z.strictObject({ id: str }),
   /** The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none. */
   'resident.open': z.union([
     z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
@@ -2213,6 +2219,11 @@ export const querySchemas = {
   'needs_you.list': z.strictObject({ project_id: str.optional() }),
   /** The user only; returns ExternalRead. */
   'external.read': z.strictObject({ project_id: str }),
+  /** The user only; returns the project's SignalIssue records without samples, newest first; open is every one not muted or resolved. */
+  'signal.list': z.strictObject({
+    project_id: str,
+    state: z.enum(['open', 'muted', 'resolved']).optional(),
+  }),
   'projects.summary': z.strictObject({}),
   'session.reviews': z.strictObject({ session_id: str }),
   'change_story.list': z.strictObject({ project_id: str }),

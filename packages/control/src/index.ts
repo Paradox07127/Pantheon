@@ -155,6 +155,7 @@ import { projectsSummary, summaryProjects } from './projects-summary.js';
 import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
 import { agentProposal } from './agent-proposals.js';
+import { signalList } from './signals.js';
 import { continueSession } from './continuation.js';
 import { appendNote } from './lead-inbox.js';
 import type { ProtectionPaths } from './protection.js';
@@ -747,6 +748,9 @@ export class Control extends EventEmitter {
   }
   agentProposal(principal: Principal, proposalId: string) {
     return agentProposal(this.ctx, principal, proposalId);
+  }
+  signalList(principal: Principal, projectId: string, state?: 'open' | 'muted' | 'resolved') {
+    return signalList(this.ctx, principal, projectId, state);
   }
   projectUsageRead(principal: Principal, projectId: string) {
     return projectUsageRead(this.ctx, principal, projectId);

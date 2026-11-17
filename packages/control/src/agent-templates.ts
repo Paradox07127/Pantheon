@@ -20,6 +20,7 @@ export const ASSISTANT_TEMPLATE: AgentTemplate = {
     'sessions',
     'github',
     'agents',
+    'signals',
   ],
   listens: [],
 };
@@ -27,8 +28,15 @@ export const ASSISTANT_TEMPLATE: AgentTemplate = {
 export const TRIAGE_TEMPLATE: AgentTemplate = {
   name: 'Triage',
   role: 'Bugs',
-  tools: ['board', 'dispatch', 'memory', 'always_on', 'sessions', 'github'],
-  listens: ['github'],
+  tools: ['board', 'dispatch', 'memory', 'always_on', 'sessions', 'github', 'signals'],
+  listens: [
+    'github',
+    'gate_failures',
+    'flaky_tests',
+    'app_errors',
+    'session_failures',
+    'trace_findings',
+  ],
 };
 
 export const IDEAS_TEMPLATE: AgentTemplate = {

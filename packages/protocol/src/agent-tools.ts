@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentToolGroup, EffortLevel } from '@pantheon/domain';
+import type { AgentToolGroup, EffortLevel, SignalSource } from '@pantheon/domain';
 
 const str = z.string().min(1).max(65536);
 const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -44,8 +44,16 @@ export const AGENT_TOOL_GROUPS = [
   'github',
   'always_on',
   'agents',
+  'signals',
 ] as const satisfies readonly AgentToolGroup[];
-export const AGENT_EVENT_SOURCES = ['github', 'gate_failures', 'app_errors'] as const;
+export const SIGNAL_SOURCES = [
+  'gate_failures',
+  'flaky_tests',
+  'app_errors',
+  'session_failures',
+  'trace_findings',
+] as const satisfies readonly SignalSource[];
+export const AGENT_EVENT_SOURCES = ['github', ...SIGNAL_SOURCES] as const;
 
 // The daemon checks that a routine has exactly one of every_minutes and at.
 const routineInput = z.strictObject({

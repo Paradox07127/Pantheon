@@ -187,6 +187,9 @@ export const TOOL_GROUP_MODULES: Record<AgentToolGroup, string[]> = {
     'When the user asks for a standing helper, or a kind of request keeps coming back, call propose_agent with a template, a role prompt that says what the agent owns and when it speaks, its tool groups and its routines. The user approves it on a card.',
     'Call list_agents before proposing, so you do not duplicate an agent. To change an agent, call propose_agent with its agent_id and only the fields that change.',
   ],
+  signals: [
+    'Call signal_read on a signal issue before you act on it or tell the user about it, and signal_list when the user asks what failed or broke recently.',
+  ],
 };
 
 /** The templates that read the board and propose plan changes but do not write the plan. */

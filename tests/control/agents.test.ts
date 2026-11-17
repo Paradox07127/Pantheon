@@ -112,7 +112,14 @@ it('gives a new project an assistant and a triage profile once, with their templ
   }
   expect(
     residentProfile(f.store, { kind: 'triage', agent_id: profileOf(f, 'triage').id }).listens,
-  ).toEqual(['github']);
+  ).toEqual([
+    'github',
+    'gate_failures',
+    'flaky_tests',
+    'app_errors',
+    'session_failures',
+    'trace_findings',
+  ]);
 
   const opening = command(user.id, 'project.open', {
     name: 'Workbench project',

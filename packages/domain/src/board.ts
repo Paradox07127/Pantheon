@@ -333,7 +333,8 @@ export interface LeadNote {
     | 'external'
     | 'follow_up'
     | 'routine'
-    | 'agent_proposal';
+    | 'agent_proposal'
+    | 'signal';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;

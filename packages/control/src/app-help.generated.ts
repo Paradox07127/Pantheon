@@ -91,6 +91,18 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'session_list',
       },
       {
+        type: 'agent.signal_read',
+        about:
+          'SignalIssue; one signal issue of the project with its samples. Resident leads only.',
+        tool: 'signal_read',
+      },
+      {
+        type: 'agent.signals',
+        about:
+          "SignalIssue[] without samples; the project's signal issues, optionally of one state and source. Resident leads only.",
+        tool: 'signal_list',
+      },
+      {
         type: 'agent.tell_user',
         about: 'Leaves the user a message from the calling resident and notifies them.',
         tool: 'tell_user',
@@ -558,6 +570,22 @@ export const appHelpGroups: AppHelpGroup[] = [
       },
       { type: 'session.steer', tool: 'the user does this in the app' },
       { type: 'session.unarchive', tool: 'the user does this in the app' },
+    ],
+  },
+  {
+    group: 'signal',
+    about: 'the user only',
+    commands: [
+      {
+        type: 'signal.mute',
+        about: 'SignalIssue; the user only. Mutes the issue: it keeps counting and wakes no agent.',
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'signal.resolve',
+        about: 'SignalIssue; the user only. Resolves the issue; its next signal is a regression.',
+        tool: 'the user does this in the app',
+      },
     ],
   },
   {
