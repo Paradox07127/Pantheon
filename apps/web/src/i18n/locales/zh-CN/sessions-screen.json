@@ -237,6 +237,7 @@
   "sessions.thread.compactedFrom": "压缩前 {tokens} token",
   "sessions.thread.compacting": "正在压缩上下文",
   "sessions.thread.confirmedBaseline": "已确认的基线",
+  "sessions.thread.baselineAnswers": "第 {round} 轮回答",
   "sessions.thread.mcpStartFailed": "MCP 服务器 {name} 没有启动",
   "sessions.thread.interrupted": "已打断",
   "sessions.thread.interruptedKept": "已保留改动",

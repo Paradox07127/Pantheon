@@ -217,6 +217,108 @@ it("reports the window Claude Code applies, not the model's own, once the live r
   ).toHaveProperty('context_window', 1000000);
 });
 
+const assistant = (id: string, input: number, cacheRead: number, cacheWrite: number) => ({
+  type: 'assistant',
+  parent_tool_use_id: null,
+  message: {
+    id,
+    content: [{ type: 'text', text: id }],
+    usage: {
+      input_tokens: input,
+      cache_read_input_tokens: cacheRead,
+      cache_creation_input_tokens: cacheWrite,
+      output_tokens: 7,
+    },
+  },
+});
+
+it('reports the context of each assistant message while the turn runs, the turn totals at its end', async () => {
+  const f = fakeClaude();
+  const events: AgentEvent[] = [];
+  f.getContextUsage.mockResolvedValue(contextUsage);
+  const handle = await f.adapter.start(sessionSpec(), (event) => events.push(event));
+  cleanup.push(() => f.adapter.close(handle, Date.now() + 1000));
+  const usageOf = (turn_id: string) =>
+    events.filter((event) => event.kind === 'usage.updated' && event.turn_id === turn_id);
+  await f.adapter.send(handle, { turn_id: 'live-context-turn', input: 'Work' });
+  await vi.waitFor(() => expect(f.inputs).toHaveLength(1));
+  f.push(assistant('first-message', 10, 100, 5));
+  await vi.waitFor(() => expect(usageOf('live-context-turn')).toHaveLength(1));
+  // The SDK repeats a message once per content block; its context is reported once.
+  f.push(assistant('first-message', 10, 100, 5));
+  f.push(assistant('second-message', 20, 180, 30));
+  await vi.waitFor(() => expect(usageOf('live-context-turn')).toHaveLength(2));
+  expect(events.filter((event) => event.kind === 'turn.completed')).toEqual([]);
+  // The session's first turn reads the window once before it reports.
+  expect(usageOf('live-context-turn').map(({ key, provider_sequence, ...event }) => event)).toEqual(
+    [
+      {
+        turn_id: 'live-context-turn',
+        kind: 'usage.updated',
+        auto_compact_at_tokens: 167000,
+        context_tokens: 115,
+        context_window: 200000,
+        cost_source: 'unknown',
+        native_type: 'assistant',
+      },
+      {
+        turn_id: 'live-context-turn',
+        kind: 'usage.updated',
+        auto_compact_at_tokens: 167000,
+        context_tokens: 230,
+        context_window: 200000,
+        cost_source: 'unknown',
+        native_type: 'assistant',
+      },
+    ],
+  );
+  f.push({
+    ...result,
+    total_cost_usd: 0.4,
+    modelUsage: {
+      'claude-opus': {
+        ...opusUsage,
+        inputTokens: 30,
+        outputTokens: 14,
+        cacheReadInputTokens: 280,
+        cacheCreationInputTokens: 35,
+      },
+    },
+  });
+  await vi.waitFor(() =>
+    expect(events.filter((event) => event.kind === 'turn.completed')).toHaveLength(1),
+  );
+  expect(usageOf('live-context-turn')).toHaveLength(3);
+  expect(usageOf('live-context-turn')[2]).toMatchObject({
+    input_tokens: 345,
+    cached_input_tokens: 280,
+    cache_write_input_tokens: 35,
+    output_tokens: 14,
+    cost_usd: 0.4,
+    cost_source: 'estimated',
+    context_tokens: 230,
+    context_window: 200000,
+    auto_compact_at_tokens: 167000,
+    native_type: 'result',
+  });
+
+  await f.adapter.send(handle, { turn_id: 'known-window-turn', input: 'More work' });
+  await vi.waitFor(() => expect(f.inputs).toHaveLength(2));
+  f.push(assistant('third-message', 5, 250, 10));
+  await vi.waitFor(() => expect(usageOf('known-window-turn')).toHaveLength(1));
+  expect(usageOf('known-window-turn')[0]).toEqual({
+    key: expect.any(String),
+    provider_sequence: expect.any(Number),
+    turn_id: 'known-window-turn',
+    kind: 'usage.updated',
+    context_tokens: 265,
+    context_window: 200000,
+    auto_compact_at_tokens: 167000,
+    cost_source: 'unknown',
+    native_type: 'assistant',
+  });
+});
+
 it('reports usage and completes the turn when the live context read fails without retrying', async () => {
   const f = fakeClaude();
   const events: AgentEvent[] = [];

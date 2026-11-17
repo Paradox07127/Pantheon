@@ -147,6 +147,15 @@ describe('sidebar layout', () => {
     expect(items.filter((item) => item === allLabel)).toHaveLength(1);
   });
 
+  it('lists a confirmed baseline session and the lead it opened among the open sessions', () => {
+    const h = mount([
+      session('baseline', 'done', { title: '', workspace_id: null, baseline_started_at: 1 }),
+      session('lead', 'starting', { title: 'Baseline plan' }),
+      session('merged', 'merged'),
+    ]);
+    expect(rows(h)).toEqual(['baseline', 'lead']);
+  });
+
   it('draws no needs-you count at zero', () => {
     expect(waitButton(mount([session('running', 'running')]))).toBeUndefined();
   });

@@ -61,6 +61,9 @@ pipes. To work in a folder, write its absolute path as given: \`git -C <folder> 
      items and sections come only from the checklist files in task_lists,
      written as the bare reference with no text after it; a doc that describes
      the workstream is a source of its reason, not a section.
+     An unchecked item does not prove the work is open: before you call it open
+     or next, check the git log and the code for it. A later line of the same
+     list that records it done (merged, landed, a commit id) makes it done.
      A workstream with no evidence is a guess: drop it, or ask about it.
    - Note statements in the docs that the code or git history contradicts.
    - For each git folder, choose gate commands from scripts, CI steps and

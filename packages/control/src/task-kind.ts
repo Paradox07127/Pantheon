@@ -40,3 +40,17 @@ export function kindOfPaths(scope: string[]): TaskKind | undefined {
         : 't2';
   return { domain, tier };
 }
+
+/** Why kindOfPaths and a risky goal rate this scope above t1; undefined when they do not. */
+export function scopeTierReason(scope: string[], goal: string): string | undefined {
+  if (!scope.length) return undefined;
+  const paths = scope.map((file) => file.replace(/\/+$/, ''));
+  const packages = [...new Set(paths.map(packageOf).filter((name) => name !== undefined))];
+  const folder = paths.find(directory);
+  if (paths.some(risky)) return 'its scope names a risk';
+  if (packages.length > 1) return `its scope spans packages ${packages.join(', ')}`;
+  if (risky(goal)) return 'its goal names a risk';
+  if (paths.length > 2) return `its scope has ${paths.length} paths`;
+  if (folder) return `its scope names the directory ${folder}`;
+  return undefined;
+}

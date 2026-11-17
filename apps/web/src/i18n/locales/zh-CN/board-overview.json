@@ -259,6 +259,7 @@
   "board.panels.byRole": "按角色",
   "board.readStatus": "看板",
   "board.headline.sync": "更新看板",
+  "board.headline.syncBaseline": "摸底进行中",
   "board.headline.trace": "轨迹",
   "board.headline.range": "时间范围",
   "board.panels.currentMilestone": "当前里程碑",

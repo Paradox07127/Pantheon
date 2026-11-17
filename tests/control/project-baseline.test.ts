@@ -1073,8 +1073,45 @@ it('hands the next tasks with scope, acceptance and dependencies to the planning
     expect(first!.input).toContain(
       '- Document the importer (workstream: Importer): Docs are open Scope: README.md, docs Acceptance: pnpm lint; pnpm build Depends on: Parse JSON rows',
     );
-    expect(first!.input).toContain('quote its title as its source');
+    expect(first!.input).toContain(
+      "Its title and the user's answer it follows from are the user's words here: quote the title as its source, and that answer too when one applies.",
+    );
     expect(first!.input).not.toContain('Export CSV');
+  } finally {
+    await f.close();
+  }
+});
+
+it('hands the planning lead every workstream and contradiction of a long baseline', async () => {
+  const f = await setup({ managedWorkspaces: true });
+  try {
+    const head = f.populate();
+    const baseline = await f.startBaseline();
+    await f.submitFolder(baseline, f.folder());
+    const long = (n: number, what: string) => `${what} ${n} `.padEnd(390, 'x');
+    const submitted = await f.submit(baseline, {
+      ...f.result(head),
+      contradictions: Array.from({ length: 16 }, (_, n) => ({
+        text: long(n, 'Contradiction'),
+        refs: ['file:README.md:3'],
+      })),
+      findings: Array.from({ length: 16 }, (_, n) => ({
+        text: long(n, 'Finding'),
+        refs: [`commit:${head}`],
+        severity: 'info',
+      })),
+    });
+    const planned = await f.call<ProjectBaseline & { lead_session_id?: string }>(
+      'project.baseline.confirm',
+      { baseline_id: submitted.id, answers: [], plan_board: true },
+      submitted.revision,
+    );
+    const [first] = f.store
+      .list<SessionTurn>('session_turns')
+      .filter((turn) => turn.session_id === planned.lead_session_id);
+    expect(first!.input.length).toBeGreaterThan(12000);
+    expect(first!.input).toContain(long(15, 'Contradiction'));
+    expect(first!.input).toContain('- Importer (running): CSV parsing is done');
   } finally {
     await f.close();
   }
@@ -1747,9 +1784,8 @@ it('keeps the user answers in the first plan message and cuts long workstreams i
         id: `importer-${index}`,
         title: `Importer part ${index}`,
         reason: 'The importer still parses every row by hand. '.repeat(8),
-        next: Array.from(
-          { length: 6 },
-          () => 'Move the row parser into its own module and cover it with tests',
+        next: Array.from({ length: 12 }, () =>
+          'Move the row parser into its own module and cover it with tests. '.repeat(5),
         ),
       })),
     });

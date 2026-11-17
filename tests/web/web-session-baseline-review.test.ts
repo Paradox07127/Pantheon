@@ -16,6 +16,7 @@ vi.mock('@/store', () => ({
   useShell: (selector: any) => selector({ openSession: mock.openSession }),
 }));
 import { BaselineReview } from '@/screens/sessions/SessionsScreen';
+import { ReviewBaseline } from '@/screens/projects/BaselineBlocks';
 import { zh, zhf } from './i18n-setup.js';
 
 const session = {
@@ -36,6 +37,7 @@ const baseline = (id: string, state: ProjectBaseline['state']): ProjectBaseline 
 });
 
 let read: ProjectBaseline | null;
+let commands: { type: string; input: any }[];
 /** The project introduction's body; undefined for an introduction without one. */
 let body: string | undefined;
 const introRead = () => ({
@@ -75,10 +77,21 @@ async function mount() {
 beforeEach(() => {
   read = null;
   body = undefined;
-  mock.board = { board: { cursor: 1 }, events: [], resync: 0, status: { state: 'live' } };
+  mock.board = {
+    board: { cursor: 1 },
+    events: [],
+    resync: 0,
+    status: { state: 'live' },
+    refresh() {},
+  };
   mock.openSession = vi.fn();
+  commands = [];
   vi.stubGlobal('window', {
     pantheon: {
+      command: vi.fn(async (command: any) => {
+        commands.push(command);
+        return { ok: true, value: { ...command.input, state: 'confirmed' } };
+      }),
       query: vi.fn(async (method: string) => ({
         ok: true,
         value:
@@ -120,6 +133,55 @@ it('waits for the next round after the user asked for more', async () => {
   const h = await mount();
   expect(named(h.value!.review, 'ReviewBaseline').props.baseline).toEqual(read);
   expect(named(h.value!.form, 'RunningBaseline')).toBeTruthy();
+});
+
+const answeredRound = {
+  questions: [
+    {
+      id: 'license',
+      header: 'License',
+      question: 'Which license?',
+      options: [{ label: 'MIT', description: '' }],
+      multiSelect: false,
+    },
+  ],
+  answers: [
+    { question_id: 'license', question: 'Which license?', answer: 'MIT', by: 'user' as const },
+  ],
+  at: 1,
+};
+
+it('confirms the brief the newest round handed back, not the one drafted while it ran', async () => {
+  const withBrief = (state: ProjectBaseline['state'], goal: string, revision: number) => {
+    const base = baseline('baseline-a', state);
+    return {
+      ...base,
+      revision,
+      rounds: [answeredRound],
+      result: { ...base.result!, brief: { goal, goals: [], non_goals: [], sources: [] } },
+    };
+  };
+  // The thread keeps one review from Ask me more until the next round is handed back.
+  let current = withBrief('running', 'Ship the importer', 3);
+  const h = host(() => ReviewBaseline({ baseline: current }));
+  await h.flush();
+  current = withBrief('submitted', 'Ship the importer and the exporter', 4);
+  h.render();
+  await h.flush();
+  find(
+    h.value,
+    (n) =>
+      typeof n.type === 'function' &&
+      n.type.name === 'Button' &&
+      n.props.label === zh('projects.baseline.confirmBaseline'),
+  ).props.onPress();
+  await h.flush();
+  expect(commands).toMatchObject([
+    {
+      type: 'project.baseline.confirm',
+      input: { brief: { goal: 'Ship the importer and the exporter' } },
+    },
+  ]);
 });
 
 it('opens the lead session once the baseline is confirmed', async () => {
@@ -229,3 +291,22 @@ it.each([
     else expect(nodes(flow).map((n) => n.props.text)).toContain(drawn);
   },
 );
+
+// Last: the confirmed read it leaves in the shared query cache would reach the tests after it.
+it('keeps the answered rounds in the thread once the baseline is confirmed', async () => {
+  read = { ...baseline('baseline-a', 'confirmed'), rounds: [answeredRound, answeredRound] };
+  const h = host(() => BaselineReview({ session }));
+  await h.flush();
+  const rounds = nodes(h.value).filter(
+    (n) => typeof n.type === 'function' && n.type.name === 'AnsweredRound',
+  );
+  expect(rounds.map((n) => n.props.n)).toEqual([1, 2]);
+  const row = host(() => (rounds[0]!.type as (props: unknown) => ReactNode)(rounds[0]!.props));
+  const button = find(row.value, (n) => n.type === 'button');
+  expect(text(button)).toContain(zhf('projects.baseline.roundRow', { round: 1 }));
+  expect(button.props['aria-expanded']).toBe(false);
+  button.props.onClick();
+  row.render();
+  expect(text(row.value)).toContain('Which license?');
+  expect(text(row.value)).toContain('MIT');
+});

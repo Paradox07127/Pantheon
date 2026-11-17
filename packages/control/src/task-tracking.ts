@@ -7,6 +7,7 @@ import {
   type LeadNote,
   type Principal,
   type Project,
+  type ProjectBaseline,
   type Session,
   type SessionTurn,
   type TurnSkill,
@@ -1339,6 +1340,16 @@ function boardSync(
       brief: syncBrief(ctx, ctx.store.get<BoardPlan>('board_plans', p.session_id!), logs),
     };
   userOnly(p);
+  const baseline = ctx.store
+    .list<ProjectBaseline>('project_baselines')
+    .filter((entry) => entry.project_id === input.project_id)
+    .at(-1);
+  // Confirming the baseline opens the lead that plans the board.
+  requireThat(
+    baseline?.state !== 'running' && baseline?.state !== 'submitted',
+    'invalid_state',
+    'A baseline of this project is running or waiting for confirmation; update the board after it is confirmed',
+  );
   const turns = ctx.store.list<SessionTurn>('session_turns');
   const sessionIds: string[] = [];
   for (const plan of ctx.store.list<BoardPlan>('board_plans')) {

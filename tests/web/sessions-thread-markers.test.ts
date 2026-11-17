@@ -4,7 +4,7 @@ import type { WorkbenchSession } from '@pantheon/protocol';
 import { Collapsible } from '../../apps/web/node_modules/@base-ui/react/collapsible/index.mjs';
 import { Dialog } from '../../apps/web/node_modules/@base-ui/react/dialog/index.mjs';
 import { find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ board: {} as any }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('@/data/board', () => ({
@@ -234,5 +234,36 @@ describe('the confirmed baseline a lead starts from', () => {
     expect(text(find(card, (n) => n.type === Collapsible.Panel))).toBe(shown);
     // The text shows only inside the card.
     expect(nodes(h.value).filter((n) => n.props.children === shown)).toHaveLength(1);
+  });
+});
+
+describe('the answers the user gave in the baseline session', () => {
+  it.each([
+    ['turn-round-1', 1],
+    ['turn-round-2', 2],
+  ])('fold into a card named for their round (%s)', (id, round) => {
+    const answers = (turnId: string, n: number) =>
+      turn({
+        id: turnId,
+        input: `The user answered the questions of round ${n}:\n- Which license? Answer: MIT`,
+        origin: 'baseline',
+      });
+    mock.board.board = {
+      sessions: [
+        { id: 'session-a', runtime: 'claude', revision: 4, baseline: { baseline_id: 'b-1' } },
+      ],
+      session_turns: [
+        turn({ id: 'turn-scan', input: 'Scan the project' }),
+        answers('turn-round-1', 1),
+        answers('turn-round-2', 2),
+      ],
+    };
+    const h = turnHost(listed('running'), {
+      turn: mock.board.board.session_turns.find((t: SessionTurn) => t.id === id),
+    });
+    const card = find(h.value, (n) => n.type === Collapsible.Root);
+    expect(text(find(card, (n) => n.type === Collapsible.Trigger))).toBe(
+      zhf('sessions.thread.baselineAnswers', { round }),
+    );
   });
 });

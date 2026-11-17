@@ -19,6 +19,7 @@ import { pickBoardPage, useBoardPage, type BoardPage } from '../../data/board-pa
 import { useBoardView } from '../../data/board-view';
 import { ReadStatus } from '../../components/ReadStatus';
 import { Skeleton as LoadingBlock } from '../../components/Skeleton';
+import { Tip } from '../../components/Tip';
 import { TopBar } from '../../components/TopBar';
 import { runCommand } from '../../data/commands';
 import { failureText } from '../../data/needs-you';
@@ -45,7 +46,7 @@ import {
   setBoardEditing,
   useBoardEditing,
 } from './EditMode';
-import type { SessionDefaults } from './frame-model';
+import { baselineSyncReason, type SessionDefaults } from './frame-model';
 import { leadLine, LeadPanel } from './LeadPanel';
 import { LeadPlan } from './LeadPlan';
 import { HistoryView } from './HistoryView';
@@ -264,7 +265,13 @@ interface BoardViewProps {
   onOpenTrace: () => void;
   onStartTask?: (task: BoardModel['tasks'][number]) => void;
   /** The bar's update action; absent without a project. */
-  sync?: { busy: boolean; error: string | null; onSync: () => void };
+  sync?: {
+    busy: boolean;
+    error: string | null;
+    onSync: () => void;
+    /** Why the update is off; absent while it can run. */
+    off?: string | null;
+  };
   /** The project's setup, shown in place of an empty board; absent without a project. */
   setup?: ProjectSetupRead;
   /** The bar's baseline link and start action; absent without a project. */
@@ -911,15 +918,27 @@ export function BoardView(props: BoardViewProps) {
                 <Menu.Portal>
                   <Menu.Positioner side="bottom" align="end" sideOffset={4} style={{ zIndex: 40 }}>
                     <Menu.Popup className="wmenu pop">
-                      {sync && (
-                        <Menu.Item
-                          disabled={sync.busy || props.stale}
-                          aria-busy={sync.busy || undefined}
-                          onClick={sync.onSync}
-                        >
-                          {t({ id: 'board.headline.sync', defaultMessage: 'Update board' })}
-                        </Menu.Item>
-                      )}
+                      {sync &&
+                        (sync.off ? (
+                          <>
+                            <Tip content={sync.off}>
+                              <Menu.Item disabled aria-describedby="board-sync-off">
+                                {t({ id: 'board.headline.sync', defaultMessage: 'Update board' })}
+                              </Menu.Item>
+                            </Tip>
+                            <span id="board-sync-off" hidden>
+                              {sync.off}
+                            </span>
+                          </>
+                        ) : (
+                          <Menu.Item
+                            disabled={sync.busy || props.stale}
+                            aria-busy={sync.busy || undefined}
+                            onClick={sync.onSync}
+                          >
+                            {t({ id: 'board.headline.sync', defaultMessage: 'Update board' })}
+                          </Menu.Item>
+                        ))}
                       {baseline?.link && (
                         <Menu.Item onClick={() => onOpenSession(baseline.link!.session_id)}>
                           {baseline.link.label}
@@ -1230,6 +1249,7 @@ export function BoardScreen({
             busy: syncing || syncLeft !== null,
             error: syncError,
             onSync: () => void onSync(projectId),
+            off: baselineSyncReason(setup?.baseline),
           },
           setup,
           baseline: setup && baselineBar(setup),

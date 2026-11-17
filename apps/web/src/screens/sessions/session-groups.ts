@@ -692,7 +692,9 @@ export function sidebarGroups(
     shown.filter((s) => !nested(s)),
     view.sort,
   );
-  const going = top.filter((s) => !s.archived_at && !FINISHED.has(s.state));
+  // A baseline session ends once confirmed but stays with the open ones until archived.
+  const finished = (s: WorkbenchSession) => FINISHED.has(s.state) && !baselineRow(s);
+  const going = top.filter((s) => !s.archived_at && !finished(s));
   const rows = (sessions: WorkbenchSession[]) =>
     sessions.map((session) => ({ session, children: descendants(session) }));
   const today = new Date(now).setHours(0, 0, 0, 0);
@@ -712,7 +714,7 @@ export function sidebarGroups(
       key: 'ended',
       label: endedLabel(),
       folded: true,
-      rows: rows(top.filter((s) => !s.archived_at && FINISHED.has(s.state))),
+      rows: rows(top.filter((s) => !s.archived_at && finished(s))),
     },
     {
       key: 'archived',

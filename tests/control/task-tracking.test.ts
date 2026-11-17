@@ -5,6 +5,7 @@ import type {
   BoardPlan,
   Principal,
   Project,
+  ProjectBaseline,
   Session,
   SessionTurn,
   WorkflowPolicy,
@@ -658,6 +659,39 @@ it('opens a new lead to sync the board when no lead takes input', async () => {
     expect.objectContaining({ code: 'permission_denied' }),
   );
 });
+
+it.each(['running', 'submitted'] as const)(
+  'refuses a user sync while a baseline is %s and syncs after it is confirmed',
+  async (state) => {
+    const f = await workbenchFixture();
+    const baseline = f.store.insert<ProjectBaseline>('project_baselines', {
+      id: 'open-baseline',
+      revision: 1,
+      project_id: f.project.id,
+      state,
+      facts_id: 'facts',
+      dropped: 0,
+      created_at: f.store.now(),
+    });
+    const sessions = f.store.list<Session>('sessions').length;
+
+    await expect(sync(f)).rejects.toMatchObject({
+      code: 'invalid_state',
+      message:
+        'A baseline of this project is running or waiting for confirmation; update the board after it is confirmed',
+    });
+    expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
+
+    f.store.update<ProjectBaseline>(
+      'project_baselines',
+      { ...baseline, state: 'confirmed' },
+      baseline.revision,
+    );
+    const { session_ids } = await sync(f);
+    expect(session_ids).toHaveLength(1);
+    expect(current(f, session_ids[0]!).title).toBe('Board sync');
+  },
+);
 
 it('does not sync a lead again while its sync turn runs', async () => {
   const f = await workbenchFixture();

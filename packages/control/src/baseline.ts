@@ -1076,7 +1076,8 @@ function answered(questions: BaselineQuestion[], answer: BaselineAnswer): string
   return `${answer.question} Answer: ${text}`;
 }
 
-const RESULT_LIMIT = 8000;
+// About four times the summary of a real baseline with 9 workstreams and 12 tasks (8.5k characters).
+const RESULT_LIMIT = 32000;
 
 function firstPlanMessage(
   result: BaselineResult,
@@ -1135,12 +1136,12 @@ function firstPlanMessage(
       ? [
           'This is the confirmed new baseline of the project that you started with rerun_baseline.',
           'Rewrite your plan from it with update_board: keep the ids of tasks that still apply, add tasks for the work still to do, and remove tasks that are no longer needed. Stages that can be accepted become milestones, the open questions become risks or assumptions, risk findings become risks and contradictions become assumptions.',
-          'Each next task becomes a board task: quote its title as its source and copy its scope, acceptance and dependencies.',
+          "Each next task becomes a board task with its scope, acceptance and dependencies. Its title and the user's answer it follows from are the user's words here: quote the title as its source, and that answer too when one applies.",
         ]
       : [
           'This is the confirmed baseline of the project.',
           'Write the first plan of the board with update_board: workstreams become lanes, the work still to do becomes tasks with their dependencies, stages that can be accepted become milestones, the open questions become risks or assumptions, risk findings become risks and contradictions become assumptions.',
-          'Each next task becomes a board task: quote its title as its source and copy its scope, acceptance and dependencies.',
+          "Each next task becomes a board task with its scope, acceptance and dependencies. Its title and the user's answer it follows from are the user's words here: quote the title as its source, and that answer too when one applies.",
         ]),
     'When the plan is written, end your turn; do not implement anything.',
     summary.length > RESULT_LIMIT ? `${summary.slice(0, RESULT_LIMIT)}…` : summary,

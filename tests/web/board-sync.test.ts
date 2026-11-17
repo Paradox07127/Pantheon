@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { deferred, find, named, text, mount, unmountAll } from './web-hook-host.js';
+import { deferred, find, named, nodes, text, mount, unmountAll } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({ board: {} as any, openSession: (_id: string) => {} }));
 vi.mock('@/data/project-defaults', async (actual) => ({
   ...(await actual<object>()),
@@ -239,3 +239,48 @@ it('keeps the failure of a refused sync for the headline bar', async () => {
   expect(h.value.props.sync.error).toContain('Authenticated user required');
   expect(mock.openSession).not.toHaveBeenCalled();
 });
+
+it.each([
+  ['running', true],
+  ['submitted', true],
+  ['confirmed', false],
+  ['failed', false],
+] as const)(
+  'turns the update item off, saying why, while the newest baseline is %s: %s',
+  async (state, off) => {
+    (window as any).pantheon.query = vi.fn(async (method: string) => ({
+      ok: true,
+      value:
+        method === 'project.baseline.read'
+          ? {
+              id: 'baseline-a',
+              revision: 1,
+              project_id: 'project-a',
+              state,
+              session_id: 'baseline-session',
+              facts_id: 'facts-a',
+              dropped: 0,
+              created_at: 1,
+            }
+          : { tasks: [] },
+    }));
+    const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
+    await h.flush();
+    const tree = view(h.value.props.sync).value;
+    const update = syncItem(tree);
+    expect(!!update.props.disabled).toBe(off);
+    const described = update.props['aria-describedby'];
+    if (!off) return expect(described).toBeUndefined();
+    expect(text(find(tree, (n) => n.props.id === described && n.type === 'span'))).toBe(
+      zh('board.headline.syncBaseline'),
+    );
+    const tip = find(
+      tree,
+      (n) =>
+        typeof n.type === 'function' &&
+        n.type.name === 'Tip' &&
+        nodes(n.props.children).includes(update),
+    );
+    expect(tip.props.content).toBe(zh('board.headline.syncBaseline'));
+  },
+);

@@ -15,6 +15,7 @@ import {
   type Project,
   type Session,
   type SessionTurn,
+  type TaskKind,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import {
@@ -40,7 +41,7 @@ import {
   taskRuntime,
 } from './task-dispatch.js';
 import { wakeLead } from './task-tracking.js';
-import { kindOfPaths, risky } from './task-kind.js';
+import { kindOfPaths, risky, scopeTierReason } from './task-kind.js';
 import { workflowPolicy } from './workflow-policy.js';
 
 /** The longest iteration in days, so a mistyped year cannot make the board count each day of centuries. */
@@ -53,6 +54,7 @@ type PlanInput = Omit<
 type PlanTask = PlanInput['tasks'][number];
 type EditOp = ReturnType<(typeof inputSchemas)['board.plan.edit']['parse']>['ops'][number];
 type PatchOp = Exclude<EditOp, { type: 'resolve_edit' }>;
+type TaskTier = TaskKind['tier'];
 
 /** Task fields a user edit changes at once even while the task has an unfinished session. */
 const RECORD_FIELDS = [
@@ -307,8 +309,9 @@ function withScopeKind(task: PlanTask): PlanTask {
 /**
  * Refuses a lead's task that names a runtime the daemon cannot open it on, names another device
  * unknown or without device_reason, needs labels or uses resources its device lacks, or leaves the routing
- * table's first choice or the workflow policy's path without saying why; a task is checked only
- * when it is new or the write changes the fields a check reads.
+ * table's first choice or the workflow policy's path without saying why, listing every problem in
+ * one refusal; a task is checked only when it is new or the write changes the fields a check reads.
+ * writtenTiers holds the tier the lead wrote, or undefined for no kind, for tasks it wrote a kind of.
  */
 function refuseUnexplained(
   ctx: ControlContext,
@@ -316,11 +319,16 @@ function refuseUnexplained(
   current: BoardPlan | undefined,
   input: PlanInput,
   taskIds: Set<string>,
+  writtenTiers: Map<string, TaskTier | undefined> = new Map(),
 ): void {
   const policy = workflowPolicy(ctx, input.project_id),
     defaults = sessionDefaults(ctx, ctx.store.must<Project>('projects', input.project_id));
   let table: ReturnType<typeof projectRoutingTable> | undefined,
     devices: ReturnType<typeof listDevices> | undefined;
+  const problems: string[] = [];
+  const check = (ok: unknown, problem: string) => {
+    if (!ok) problems.push(problem);
+  };
   for (const task of input.tasks) {
     if (!taskIds.has(task.id)) continue;
     const old = current?.tasks.find((entry) => entry.id === task.id);
@@ -333,9 +341,8 @@ function refuseUnexplained(
       } catch (error) {
         unavailable = (error as Error).message;
       }
-      requireThat(
+      check(
         !unavailable,
-        'invalid_input',
         `tasks: task ${task.id} names runtime ${task.runtime}, which cannot open its session: ${unavailable}`,
       );
     }
@@ -347,22 +354,19 @@ function refuseUnexplained(
         needs = task.needs ?? [];
       devices ??= listDevices(ctx);
       const device = devices.find((entry) => entry.id === deviceId);
-      requireThat(
+      check(
         device,
-        'invalid_input',
         `tasks: task ${task.id} names device ${deviceId}, which is not configured; the devices are ${devices.map((entry) => entry.id).join(', ')}`,
       );
-      requireThat(
+      check(
         deviceId === 'local' || task.device_reason,
-        'invalid_input',
         `tasks: task ${task.id} runs on device ${deviceId}; write device_reason to say why`,
       );
       // An offline device's probe is not known, so its labels and runtimes are not checked.
-      if (device.online) {
+      if (device?.online) {
         const missing = needs.filter((label) => !deviceHasLabel(device, label));
-        requireThat(
+        check(
           !missing.length,
-          'invalid_input',
           `tasks: task ${task.id} needs ${missing.join(', ')}, which device ${deviceId} does not have; the devices with all of its needs are ${
             devices
               .filter((entry) => needs.every((label) => deviceHasLabel(entry, label)))
@@ -375,25 +379,23 @@ function refuseUnexplained(
           current ?? ({ id: leadId, project_id: input.project_id } as BoardPlan),
           task,
         );
-        requireThat(
+        check(
           deviceId === 'local' || device.runtimes[runtimeName],
-          'invalid_input',
           `tasks: task ${task.id} runs on runtime ${runtimeName}, which device ${deviceId} does not have; it has ${Object.keys(device.runtimes).join(', ') || 'none'}`,
         );
       }
-      for (const [name, amount] of Object.entries(task.uses ?? {}))
-        requireThat(
-          (device.resources[name] ?? 0) >= amount,
-          'invalid_input',
-          `tasks: task ${task.id} uses ${amount} of resource ${name}, but device ${deviceId} has ${device.resources[name] ?? 0}`,
-        );
+      if (device)
+        for (const [name, amount] of Object.entries(task.uses ?? {}))
+          check(
+            (device.resources[name] ?? 0) >= amount,
+            `tasks: task ${task.id} uses ${amount} of resource ${name}, but device ${deviceId} has ${device.resources[name] ?? 0}`,
+          );
     }
     const routed = (['runtime', 'model', 'effort'] as const).filter((field) => task[field]);
     if (defaults?.single_model && !defaults.writer && !task.route_reason) {
       const off = routed.filter((field) => task[field] !== defaults[field]);
-      requireThat(
+      check(
         !off.length || !changed(['runtime', 'model', 'effort', 'route_reason']),
-        'invalid_input',
         `tasks: task ${task.id} names ${off.map((field) => `${field} ${task[field]}`).join(', ')}, but the project runs tasks on its default runtime ${defaults.runtime}, model ${defaults.model} and effort ${defaults.effort ?? 'unset'} only; write route_reason to say why`,
       );
     }
@@ -408,21 +410,28 @@ function refuseUnexplained(
       const first =
         defaults?.writer ??
         table.cells.find((cell) => cell.domain === domain && cell.tier === tier)?.first;
-      requireThat(
+      check(
         !first || routed.every((field) => task[field] === first[field]),
-        'invalid_input',
         `tasks: task ${task.id} differs from the routing table's first choice for ${domain} ${tier} (runtime ${first?.runtime}, model ${first?.model}, effort ${first?.effort ?? 'unset'}); write route_reason to say why`,
       );
     }
     if (task.kind && task.path && !task.flow_reason && changed(['path', 'kind', 'flow_reason'])) {
-      const given = policy.path[task.kind.tier];
-      requireThat(
+      const given = policy.path[task.kind.tier],
+        written = writtenTiers.get(task.id);
+      // A tier the scope raised says why, since the lead's own tier would have passed.
+      const raised =
+        writtenTiers.has(task.id) &&
+        (!written || TASK_TIERS.indexOf(written) < TASK_TIERS.indexOf(task.kind.tier)) &&
+        scopeTierReason(task.scope, task.goal);
+      check(
         task.path === given,
-        'invalid_input',
-        `tasks: task ${task.id} takes path ${task.path}, but the workflow policy gives ${task.kind.tier} tasks path ${given}; write flow_reason to say why`,
+        raised
+          ? `tasks: task ${task.id} is tier ${task.kind.tier}${written ? `, not the ${written} you wrote,` : ''} because ${raised}; the workflow policy gives ${task.kind.tier} tasks path ${given}; narrow the scope or write flow_reason to say why`
+          : `tasks: task ${task.id} takes path ${task.path}, but the workflow policy gives ${task.kind.tier} tasks path ${given}; write flow_reason to say why`,
       );
     }
   }
+  requireThat(!problems.length, 'invalid_input', problems.join('\n'));
 }
 
 /** The lead's plan as a whole plan input, its milestones read from the lead's milestone rows. */
@@ -484,6 +493,7 @@ function storePlan(
     quoted?: string[];
     pendingEdits?: PendingPlanEdit[];
     leadTasks?: Set<string>;
+    writtenTiers?: Map<string, TaskTier | undefined>;
     userEdits?: { edit_id: string; task_ids: string[] }[];
   } = {},
 ): BoardPlan {
@@ -501,7 +511,8 @@ function storePlan(
     );
   }
   input = { ...input, order_lock: orderLock };
-  if (options.leadTasks) refuseUnexplained(ctx, leadId, current, input, options.leadTasks);
+  if (options.leadTasks)
+    refuseUnexplained(ctx, leadId, current, input, options.leadTasks, options.writtenTiers);
   const contract = (task: BoardPlan['tasks'][number]) =>
     canonical({
       title: task.title,
@@ -826,6 +837,18 @@ const opTaskIds = (op: PatchOp): string[] =>
       ? []
       : [op.type === 'add_task' ? op.task.id : op.task_id];
 
+/** The tier each op writes for the task it adds or gives a kind; undefined for a task added without one. */
+const opsTiers = (ops: PatchOp[]) =>
+  new Map(
+    ops.flatMap((op): [string, TaskTier | undefined][] =>
+      op.type === 'add_task'
+        ? [[op.task.id, op.task.kind?.tier]]
+        : op.type === 'set_task' && op.patch.kind
+          ? [[op.task_id, op.patch.kind.tier]]
+          : [],
+    ),
+  );
+
 function opText(op: PatchOp): string {
   switch (op.type) {
     case 'lock_order':
@@ -893,6 +916,7 @@ function leadEdit(
   return storePlan(ctx, p, plan.id, applyOps(planContent(ctx, plan), patches), commandId, {
     pendingEdits: pending,
     leadTasks,
+    writtenTiers: opsTiers(ops.flatMap((op) => (op.type === 'resolve_edit' ? [] : [op]))),
     userEdits: pending
       .filter(
         (edit) =>
@@ -1097,7 +1121,10 @@ export const projectBoardHandlers: Handlers = {
       p.session_id!,
       { ...input, tasks: input.tasks.map(withScopeKind) },
       c.command_id,
-      { leadTasks: new Set(input.tasks.map((task) => task.id)) },
+      {
+        leadTasks: new Set(input.tasks.map((task) => task.id)),
+        writtenTiers: new Map(input.tasks.map((task) => [task.id, task.kind?.tier])),
+      },
     );
     reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', p.session_id!), c.command_id);
     return planView(ctx, input.project_id, p.session_id!);
@@ -1149,7 +1176,14 @@ export const projectBoardHandlers: Handlers = {
     );
     const edited = applyOps(planContent(ctx, plan), input.ops);
     refuseInvalid(ctx, edited);
-    refuseUnexplained(ctx, plan.id, plan, edited, new Set(input.ops.flatMap(opTaskIds)));
+    refuseUnexplained(
+      ctx,
+      plan.id,
+      plan,
+      edited,
+      new Set(input.ops.flatMap(opTaskIds)),
+      opsTiers(input.ops),
+    );
     const proposal: PlanProposal = {
       proposal_id: id(),
       ops: input.ops,

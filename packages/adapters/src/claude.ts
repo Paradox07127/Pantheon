@@ -1289,6 +1289,8 @@ interface ClaudeSession {
   costBaseline?: { native_session_id: string; total_cost_usd: number; tokens?: TokenTotals };
   /** Claude Code names this new session itself; input is its first message until the title is read. */
   autoTitle?: { input?: string };
+  /** The window and auto-compact threshold the last turn reported for the current model. */
+  contextLimits?: { window?: number; autoCompactAtTokens?: number };
   /** MCP tools with a ui:// interface, by their mcp__server__tool name, as of the latest init. */
   appTools: Map<string, { server: string; resource_uri: string; visibility?: string[] }>;
   /** The MCP servers the CLI last reported for this session. */
@@ -2461,6 +2463,11 @@ export class ClaudeAdapter implements HarnessAdapter {
           answer('deny', undefined, undefined, true);
         if (session.state === 'running') session.state = 'idle';
         const usage = current.usage;
+        if (usage)
+          session.contextLimits = {
+            window: usage.context_window,
+            autoCompactAtTokens: current.autoCompactAtTokens,
+          };
         // The control layer keeps one usage record per user turn, so native turns are summed.
         if (usage)
           session.emit({
@@ -2682,6 +2689,7 @@ export class ClaudeAdapter implements HarnessAdapter {
     handle.requested_model = model;
     handle.requested_effort = effort;
     delete handle.reported_model;
+    session.contextLimits = undefined;
     return { ok: true };
   }
   /** Hands the messages of a long-lived query to whichever turn runs on it. */
@@ -2708,6 +2716,8 @@ export class ClaudeAdapter implements HarnessAdapter {
     const appCalls = new Set<string>();
     const artifactCalls = new Set<string>();
     let contextTokens: number | undefined;
+    let contextReportedFor: string | undefined;
+    let readingLimits = false;
     // Usage-limit signals of the user turn in progress.
     let rateLimit: SDKRateLimitInfo | undefined;
     let rateLimitError = false;
@@ -3110,11 +3120,56 @@ export class ClaudeAdapter implements HarnessAdapter {
           });
         if (message.type === 'assistant' && message.error === 'rate_limit') rateLimitError = true;
         // Subagent messages carry their own context, not the session's.
-        if (message.type === 'assistant' && !message.parent_tool_use_id && message.message.usage)
+        if (message.type === 'assistant' && !message.parent_tool_use_id && message.message.usage) {
           contextTokens =
             message.message.usage.input_tokens +
             (message.message.usage.cache_read_input_tokens ?? 0) +
             (message.message.usage.cache_creation_input_tokens ?? 0);
+          // Context fields alone: control keeps the turn's other usage fields until the turn ends.
+          if (message.message.id !== contextReportedFor) {
+            contextReportedFor = message.message.id;
+            const turn = current;
+            const report = () => {
+              const limits = session.contextLimits;
+              session.emit({
+                key: String(++session.sequence),
+                provider_sequence: session.sequence,
+                turn_id: turn.id,
+                kind: 'usage.updated',
+                ...(limits?.autoCompactAtTokens !== undefined
+                  ? { auto_compact_at_tokens: limits.autoCompactAtTokens }
+                  : {}),
+                context_tokens: contextTokens!,
+                ...(limits?.window !== undefined ? { context_window: limits.window } : {}),
+                // The cost is known only once a result arrives.
+                cost_source: 'unknown',
+                native_type: 'assistant',
+              });
+            };
+            if (session.contextLimits) report();
+            else if (!readingLimits) {
+              // A session's first turn knows no window yet; the report waits for one read of it.
+              readingLimits = true;
+              void stream
+                .getContextUsage({ detail: 'summary' })
+                .then(
+                  (context) => ({
+                    window: context.rawMaxTokens,
+                    autoCompactAtTokens: context.isAutoCompactEnabled
+                      ? context.autoCompactThreshold
+                      : undefined,
+                  }),
+                  // A failed read still reports the tokens, without a window.
+                  () => ({}),
+                )
+                .then((limits) => {
+                  readingLimits = false;
+                  session.contextLimits ??= limits;
+                  if (active() === turn) report();
+                });
+            }
+          }
+        }
         if (message.type === 'stream_event' && message.parent_tool_use_id === null) {
           if (message.event.type === 'message_start') {
             streamed.add(message.event.message.id);

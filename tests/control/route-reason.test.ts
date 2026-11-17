@@ -226,6 +226,64 @@ it('refuses a path other than the workflow policy gives without flow_reason and 
   expect(taskOf(f, lead)?.path).toBe('direct');
 });
 
+const sixFiles = ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => `packages/export/src/${name}.ts`);
+
+it.each([
+  { scope: sixFiles, goal: 'Serve exports', tier: 't2', reason: 'its scope has 6 paths' },
+  {
+    scope: ['packages/export/src'],
+    goal: 'Serve exports',
+    tier: 't2',
+    reason: 'its scope names the directory packages/export/src',
+  },
+  {
+    scope: ['packages/export/src/a.ts', 'packages/web/src/b.ts'],
+    goal: 'Serve exports',
+    tier: 't3',
+    reason: 'its scope spans packages packages/export, packages/web',
+  },
+  {
+    scope: ['packages/export/src/a.ts'],
+    goal: 'Move the token store to a new migration',
+    tier: 't3',
+    reason: 'its goal names a risk',
+  },
+])(
+  'says the tier its scope raised and why when the path differs: $reason',
+  async ({ scope, goal, tier, reason }) => {
+    const { f, lead } = await setup();
+    const error = failure(() =>
+      write(f, lead, [
+        task({ kind: { domain: 'backend-logic', tier: 't1' }, path: 'direct', scope, goal }),
+      ]),
+    );
+    expect(error.code).toBe('invalid_input');
+    expect(error.message).toContain(
+      `task api is tier ${tier}, not the t1 you wrote, because ${reason};`,
+    );
+    expect(error.message).toContain('narrow the scope or write flow_reason');
+  },
+);
+
+it('refuses every task that breaks a rule in one refusal', async () => {
+  const { f, lead } = await setup();
+  const error = failure(() =>
+    write(f, lead, [
+      task({
+        id: 'docs',
+        kind: { domain: 'backend-logic', tier: 't1' },
+        path: 'direct',
+        scope: sixFiles,
+      }),
+      task({ id: 'live', scope: ['packages/live/src/index.ts'], uses: { 'live-subscription': 1 } }),
+    ]),
+  );
+  expect(error.code).toBe('invalid_input');
+  expect(error.message).toContain('task live uses 1 of resource live-subscription');
+  expect(error.message).toContain('task docs is tier t2');
+  expect(planOf(f, lead)).toBeUndefined();
+});
+
 it('refuses a task that names a runtime this daemon does not have', async () => {
   const { f, lead } = await setup();
   const error = failure(() => write(f, lead, [task({ runtime: 'missing-runtime' })]));

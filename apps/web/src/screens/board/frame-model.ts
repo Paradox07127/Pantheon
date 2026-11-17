@@ -1,3 +1,4 @@
+import type { ProjectBaseline } from '@pantheon/domain';
 import type { BoardModel, BoardSnapshot, BoardTaskStatus, CommandType } from '@pantheon/protocol';
 import type { GlyphName } from '../../components/SessionStateIcon';
 import { shortId } from '../../data/format';
@@ -141,6 +142,14 @@ function offReason(item: NeedItem, command: string): string | null {
     ? reasonText(action.disabled_reason)
     : t({ id: 'board.needs.noReason', defaultMessage: 'The backend gave no reason' });
 }
+
+/** Why Update board is off for the project's newest baseline: it runs or awaits confirmation. */
+export const baselineSyncReason = (
+  baseline: Pick<ProjectBaseline, 'state'> | null | undefined,
+): string | null =>
+  baseline?.state === 'running' || baseline?.state === 'submitted'
+    ? t({ id: 'board.headline.syncBaseline', defaultMessage: 'A baseline is running' })
+    : null;
 
 const asksQuestion = (item: NeedItem) => item.binding?.action === 'AskUserQuestion';
 

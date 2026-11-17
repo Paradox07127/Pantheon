@@ -198,7 +198,7 @@ export function RunningBaseline({ baseline }: { baseline: ProjectBaseline }) {
 type AnsweredRoundData = NonNullable<ProjectBaseline['rounds']>[number];
 
 /** An answered round as one row that opens to each question and its answer. */
-function AnsweredRound({ n, round }: { n: number; round: AnsweredRoundData }) {
+export function AnsweredRound({ n, round }: { n: number; round: AnsweredRoundData }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -267,6 +267,13 @@ export function ReviewBaseline({
   onOpenSession?: (sessionId: string) => void;
 }) {
   const [draft, setDraft] = useState(() => baselineDraft(baseline));
+  // A draft made while a round ran holds the last round's result; each handed-back round starts it over.
+  const drafted = `${interviewDraft(baseline)}:${baseline.state}`;
+  const [draftOf, setDraftOf] = useState(drafted);
+  if (draftOf !== drafted) {
+    setDraftOf(drafted);
+    setDraft(baselineDraft(baseline));
+  }
   const send = useSend();
   const edit = (patch: Partial<BaselineDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const folders = baselineFolders(baseline, draft);
