@@ -22,8 +22,11 @@ import type {
 import { t } from '../../i18n';
 import { Clip } from '../Clip';
 import {
+  FLOOR,
+  LABEL_LINE,
   PAD,
   fitZoom,
+  labelLines,
   layoutGraph,
   type EdgeStyle,
   type GraphLayout,
@@ -42,8 +45,6 @@ export type { GraphSpec } from './graph-layout';
 const MAX_HEIGHT = 1200;
 // A growing card picks the graph's direction for a box this high.
 const CHOICE_HEIGHT = 640;
-// Fitting shrinks a graph no further than this, where 12px labels still read at 8px.
-const FLOOR = 2 / 3;
 /** The legend row's height under the plot. */
 const LEGEND = 28;
 const CORNER = 6;
@@ -176,6 +177,8 @@ function Route({ data }: EdgeProps<Edge<RouteData>>) {
   if (!data || data.edge.points.length < 2) return null;
   const { points, both, label, label_box: box } = data.edge;
   const n = points.length;
+  const lines = label === undefined ? [] : labelLines(label);
+  const middle = box && { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   return (
     <g
       className="vis-ge"
@@ -186,11 +189,22 @@ function Route({ data }: EdgeProps<Edge<RouteData>>) {
       <path className="vis-ge-p" d={routePath(points, { start: both ? HEAD : 0, end: HEAD })} />
       <path className="vis-ge-h" d={headPath(points[n - 1]!, points[n - 2]!)} />
       {both && <path className="vis-ge-h" d={headPath(points[0]!, points[1]!)} />}
-      {box && label !== undefined && (
+      {box && middle && label !== undefined && (
         <g className="vis-ge-l">
+          {lines.length > 1 && <title>{label}</title>}
           <rect x={box.x} y={box.y} width={box.width} height={box.height} rx={5} />
-          <text x={box.x + box.width / 2} y={box.y + box.height / 2}>
-            {label}
+          <text x={middle.x} y={middle.y}>
+            {lines.length > 1
+              ? lines.map((line, i) => (
+                  <tspan
+                    key={i}
+                    x={middle.x}
+                    y={middle.y + (i - (lines.length - 1) / 2) * LABEL_LINE}
+                  >
+                    {line}
+                  </tspan>
+                ))
+              : label}
           </text>
         </g>
       )}

@@ -1,0 +1,187 @@
+{
+  "nodes": [
+    {
+      "id": "user",
+      "label": "User",
+      "sublabel": "asks for work",
+      "kind": "client",
+      "group": "lane_ui"
+    },
+    {
+      "id": "chat",
+      "label": "Chat Surface",
+      "sublabel": "thread + files",
+      "kind": "client",
+      "group": "lane_ui"
+    },
+    {
+      "id": "final",
+      "label": "Final Reply",
+      "sublabel": "answer + changes",
+      "kind": "client",
+      "group": "lane_ui"
+    },
+    {
+      "id": "planner",
+      "label": "Agent Planner",
+      "sublabel": "plan next step context aware",
+      "kind": "service",
+      "group": "group_agent_loop"
+    },
+    {
+      "id": "router",
+      "label": "Tool Router",
+      "sublabel": "choose capability",
+      "kind": "service",
+      "group": "group_agent_loop"
+    },
+    {
+      "id": "approval",
+      "label": "Approval Gate",
+      "sublabel": "scope + consent block risky ops",
+      "kind": "policy",
+      "group": "group_exception_path"
+    },
+    {
+      "id": "blocked",
+      "label": "Blocked",
+      "sublabel": "wait or reject",
+      "kind": "policy",
+      "group": "group_exception_path"
+    },
+    {
+      "id": "retry",
+      "label": "Retry Path",
+      "sublabel": "revise request",
+      "kind": "policy",
+      "group": "group_exception_path"
+    },
+    {
+      "id": "store",
+      "label": "Context Store",
+      "sublabel": "repo + memory",
+      "kind": "store",
+      "group": "group_evidence_path"
+    },
+    {
+      "id": "trace",
+      "label": "Trace Log",
+      "sublabel": "events + output",
+      "kind": "store",
+      "group": "group_evidence_path"
+    },
+    {
+      "id": "tool",
+      "label": "Tool Call",
+      "sublabel": "shell / browser / MCP structured result",
+      "kind": "service",
+      "group": "group_tool_work"
+    },
+    {
+      "id": "external",
+      "label": "External API",
+      "sublabel": "network service",
+      "kind": "external",
+      "group": "group_tool_work"
+    }
+  ],
+  "edges": [
+    {
+      "from": "user",
+      "to": "chat",
+      "style": "main"
+    },
+    {
+      "from": "chat",
+      "to": "planner",
+      "label": "plan",
+      "style": "main"
+    },
+    {
+      "from": "planner",
+      "to": "router",
+      "style": "main"
+    },
+    {
+      "from": "router",
+      "to": "approval",
+      "label": "needs approval?"
+    },
+    {
+      "from": "approval",
+      "to": "tool",
+      "style": "main"
+    },
+    {
+      "from": "approval",
+      "to": "blocked",
+      "label": "denied"
+    },
+    {
+      "from": "blocked",
+      "to": "retry",
+      "style": "async"
+    },
+    {
+      "from": "tool",
+      "to": "external",
+      "style": "main"
+    },
+    {
+      "from": "external",
+      "to": "final",
+      "style": "main"
+    },
+    {
+      "from": "external",
+      "to": "trace",
+      "label": "record result",
+      "style": "async"
+    },
+    {
+      "from": "store",
+      "to": "trace",
+      "label": "trace + memory",
+      "style": "async"
+    }
+  ],
+  "groups": [
+    {
+      "id": "lane_ui",
+      "label": "User Interface"
+    },
+    {
+      "id": "group_agent_loop",
+      "label": "Planning loop",
+      "parent": "lane_agent"
+    },
+    {
+      "id": "lane_agent",
+      "label": "Agent Runtime"
+    },
+    {
+      "id": "group_exception_path",
+      "label": "Human or policy stop",
+      "parent": "lane_policy"
+    },
+    {
+      "id": "lane_policy",
+      "label": "Policy & Recovery"
+    },
+    {
+      "id": "group_evidence_path",
+      "label": "Evidence path",
+      "parent": "lane_tools"
+    },
+    {
+      "id": "group_tool_work",
+      "label": "Tool work",
+      "parent": "lane_tools"
+    },
+    {
+      "id": "lane_tools",
+      "label": "Tool Execution & Evidence"
+    }
+  ],
+  "direction": "TB"
+}

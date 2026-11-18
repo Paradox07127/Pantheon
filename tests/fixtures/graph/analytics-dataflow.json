@@ -1,0 +1,107 @@
+{
+  "direction": "LR",
+  "nodes": [
+    {
+      "id": "web",
+      "label": "Web App · browser SDK · events",
+      "group": "Sources"
+    },
+    {
+      "id": "mobile",
+      "label": "Mobile · iOS / Android · events",
+      "group": "Sources"
+    },
+    {
+      "id": "edge",
+      "label": "Edge API · collector · TLS",
+      "group": "Ingest"
+    },
+    {
+      "id": "consent",
+      "label": "Consent Gate · policy filter · PII guard",
+      "group": "Process"
+    },
+    {
+      "id": "stream",
+      "label": "Event Stream · Kafka topic · ordered",
+      "group": "Process"
+    },
+    {
+      "id": "pii",
+      "label": "PII Vault · encrypted · restricted",
+      "group": "Store"
+    },
+    {
+      "id": "warehouse",
+      "label": "Warehouse · analytics tables · curated",
+      "group": "Store"
+    },
+    {
+      "id": "features",
+      "label": "Feature Store · daily batch · derived",
+      "group": "Store"
+    },
+    {
+      "id": "dashboard",
+      "label": "Dashboards · product metrics · SQL",
+      "group": "Consume"
+    },
+    {
+      "id": "model",
+      "label": "ML Model · ranking job · features",
+      "group": "Consume"
+    }
+  ],
+  "edges": [
+    {
+      "from": "web",
+      "to": "edge",
+      "label": "clickstream (user events)"
+    },
+    {
+      "from": "mobile",
+      "to": "edge",
+      "label": "app events (device events)"
+    },
+    {
+      "from": "edge",
+      "to": "consent",
+      "label": "identity + consent (PII touch)"
+    },
+    {
+      "from": "edge",
+      "to": "stream",
+      "label": "accepted events (append-only)"
+    },
+    {
+      "from": "consent",
+      "to": "pii",
+      "label": "identity map (encrypted PII)"
+    },
+    {
+      "from": "stream",
+      "to": "warehouse",
+      "label": "normalized facts (non-PII)"
+    },
+    {
+      "from": "warehouse",
+      "to": "features",
+      "label": "daily aggregates (batch)"
+    },
+    {
+      "from": "warehouse",
+      "to": "dashboard",
+      "label": "metrics SQL (read-only)"
+    },
+    {
+      "from": "features",
+      "to": "model",
+      "label": "feature vectors (derived)"
+    },
+    {
+      "from": "pii",
+      "to": "dashboard",
+      "label": "restricted join (approved only)"
+    }
+  ]
+}

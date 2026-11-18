@@ -1,0 +1,227 @@
+{
+  "nodes": [
+    {
+      "id": "web",
+      "label": "apps/web screens",
+      "group": "client"
+    },
+    {
+      "id": "web_data",
+      "label": "apps/web/src/data",
+      "group": "client"
+    },
+    {
+      "id": "desktop_main",
+      "label": "apps/desktop main",
+      "group": "client"
+    },
+    {
+      "id": "preload",
+      "label": "apps/desktop preload",
+      "group": "client"
+    },
+    {
+      "id": "cli",
+      "label": "apps/cli (pantheon, pantheon mcp)",
+      "group": "client"
+    },
+    {
+      "id": "daemon",
+      "label": "apps/daemon (Hono HTTP/WS)",
+      "group": "server"
+    },
+    {
+      "id": "control",
+      "label": "packages/control (Control)",
+      "group": "server"
+    },
+    {
+      "id": "scheduler",
+      "label": "control scheduler + outbox",
+      "group": "server"
+    },
+    {
+      "id": "adapters",
+      "label": "packages/adapters",
+      "group": "runtime"
+    },
+    {
+      "id": "store",
+      "label": "packages/store",
+      "group": "core"
+    },
+    {
+      "id": "protocol",
+      "label": "packages/protocol",
+      "group": "core"
+    },
+    {
+      "id": "domain",
+      "label": "packages/domain",
+      "group": "core"
+    },
+    {
+      "id": "sqlite",
+      "label": "SQLite WAL database",
+      "group": "external"
+    },
+    {
+      "id": "git",
+      "label": "git repos + worktrees",
+      "group": "external"
+    },
+    {
+      "id": "claude",
+      "label": "Claude Code (Agent SDK)",
+      "group": "external"
+    },
+    {
+      "id": "codex",
+      "label": "Codex app-server",
+      "group": "external"
+    },
+    {
+      "id": "acp",
+      "label": "ACP agents (grok, agy, dsh...)",
+      "group": "external"
+    },
+    {
+      "id": "devices",
+      "label": "SSH devices",
+      "group": "external"
+    },
+    {
+      "id": "gh",
+      "label": "GitHub via gh",
+      "group": "external"
+    },
+    {
+      "id": "wsl",
+      "label": "WSL 2 distro (Windows)",
+      "group": "external"
+    }
+  ],
+  "edges": [
+    {
+      "from": "web",
+      "to": "web_data",
+      "label": "hooks"
+    },
+    {
+      "from": "web_data",
+      "to": "preload",
+      "label": "DesktopBridge calls"
+    },
+    {
+      "from": "preload",
+      "to": "desktop_main",
+      "label": "IPC"
+    },
+    {
+      "from": "desktop_main",
+      "to": "daemon",
+      "label": "commands, queries, event WS, terminal WS"
+    },
+    {
+      "from": "desktop_main",
+      "to": "wsl",
+      "label": "installs runtime, starts daemon"
+    },
+    {
+      "from": "cli",
+      "to": "daemon",
+      "label": "HTTP commands with session token"
+    },
+    {
+      "from": "claude",
+      "to": "cli",
+      "label": "MCP tool calls"
+    },
+    {
+      "from": "codex",
+      "to": "cli",
+      "label": "MCP tool calls"
+    },
+    {
+      "from": "daemon",
+      "to": "control",
+      "label": "Control.execute / queries"
+    },
+    {
+      "from": "control",
+      "to": "store",
+      "label": "state, events, outbox in one transaction"
+    },
+    {
+      "from": "store",
+      "to": "sqlite",
+      "label": "SQL"
+    },
+    {
+      "from": "control",
+      "to": "scheduler",
+      "label": "queued work, timers"
+    },
+    {
+      "from": "scheduler",
+      "to": "adapters",
+      "label": "start/send/resume turns"
+    },
+    {
+      "from": "scheduler",
+      "to": "git",
+      "label": "worktree add, rebase, gate, ff-merge"
+    },
+    {
+      "from": "adapters",
+      "to": "claude",
+      "label": "SDK session"
+    },
+    {
+      "from": "adapters",
+      "to": "codex",
+      "label": "JSON-RPC"
+    },
+    {
+      "from": "adapters",
+      "to": "acp",
+      "label": "stdio JSON-RPC"
+    },
+    {
+      "from": "control",
+      "to": "devices",
+      "label": "SSH, git push/fetch"
+    },
+    {
+      "from": "control",
+      "to": "gh",
+      "label": "notifications, PRs"
+    },
+    {
+      "from": "control",
+      "to": "protocol",
+      "label": "schemas"
+    },
+    {
+      "from": "web",
+      "to": "protocol",
+      "label": "types"
+    },
+    {
+      "from": "protocol",
+      "to": "domain",
+      "label": "import type"
+    },
+    {
+      "from": "adapters",
+      "to": "domain",
+      "label": "types"
+    },
+    {
+      "from": "store",
+      "to": "domain",
+      "label": "types"
+    }
+  ],
+  "direction": "LR"
+}

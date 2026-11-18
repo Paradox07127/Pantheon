@@ -1,0 +1,172 @@
+{
+  "nodes": [
+    {
+      "id": "queued",
+      "label": "Queued",
+      "sublabel": "01 · change accepted pending"
+    },
+    {
+      "id": "building",
+      "label": "Building",
+      "sublabel": "02 · immutable image running"
+    },
+    {
+      "id": "verifying",
+      "label": "Verifying",
+      "sublabel": "03 · tests + policy gate"
+    },
+    {
+      "id": "ready",
+      "label": "Ready",
+      "sublabel": "04 · promotion pending approved"
+    },
+    {
+      "id": "live",
+      "label": "Live",
+      "sublabel": "05 · production healthy success"
+    },
+    {
+      "id": "approval",
+      "label": "Needs Approval",
+      "sublabel": "release owner pause"
+    },
+    {
+      "id": "cancelled",
+      "label": "Cancelled",
+      "sublabel": "approval denied terminal"
+    },
+    {
+      "id": "paused",
+      "label": "Health Paused",
+      "sublabel": "SLO regression observe"
+    },
+    {
+      "id": "rollback",
+      "label": "Rolling Back",
+      "sublabel": "last good image automatic"
+    },
+    {
+      "id": "rolled_back",
+      "label": "Rolled Back",
+      "sublabel": "service restored terminal"
+    },
+    {
+      "id": "failed",
+      "label": "Failed",
+      "sublabel": "rollback failed terminal"
+    },
+    {
+      "id": "aborted",
+      "label": "Aborted",
+      "sublabel": "change withdrawn terminal"
+    },
+    {
+      "id": "root_start",
+      "label": "Start",
+      "shape": "start"
+    },
+    {
+      "id": "root_end",
+      "label": "End",
+      "shape": "end"
+    }
+  ],
+  "edges": [
+    {
+      "from": "root_start",
+      "to": "queued"
+    },
+    {
+      "from": "queued",
+      "to": "building",
+      "label": "pick up"
+    },
+    {
+      "from": "building",
+      "to": "verifying",
+      "label": "image built"
+    },
+    {
+      "from": "verifying",
+      "to": "ready",
+      "label": "checks pass"
+    },
+    {
+      "from": "ready",
+      "to": "live",
+      "label": "promote"
+    },
+    {
+      "from": "verifying",
+      "to": "building",
+      "label": "tests fail"
+    },
+    {
+      "from": "verifying",
+      "to": "approval",
+      "label": "needs sign-off"
+    },
+    {
+      "from": "approval",
+      "to": "ready",
+      "label": "approved"
+    },
+    {
+      "from": "approval",
+      "to": "cancelled",
+      "label": "denied"
+    },
+    {
+      "from": "live",
+      "to": "paused",
+      "label": "SLO alert"
+    },
+    {
+      "from": "paused",
+      "to": "live",
+      "label": "recovered"
+    },
+    {
+      "from": "paused",
+      "to": "rollback",
+      "label": "breach persists"
+    },
+    {
+      "from": "rollback",
+      "to": "rolled_back",
+      "label": "restored"
+    },
+    {
+      "from": "rollback",
+      "to": "failed",
+      "label": "rollback error"
+    },
+    {
+      "from": "building",
+      "to": "aborted",
+      "label": "abort"
+    },
+    {
+      "from": "verifying",
+      "to": "aborted",
+      "label": "abort"
+    },
+    {
+      "from": "cancelled",
+      "to": "root_end"
+    },
+    {
+      "from": "rolled_back",
+      "to": "root_end"
+    },
+    {
+      "from": "failed",
+      "to": "root_end"
+    },
+    {
+      "from": "aborted",
+      "to": "root_end"
+    }
+  ],
+  "direction": "LR"
+}

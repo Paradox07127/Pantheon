@@ -517,6 +517,11 @@ describe('graph diagram', () => {
     ],
   };
 
+  const fixture = (name: string): Spec =>
+    JSON.parse(readFileSync(new URL(`../fixtures/graph/${name}.json`, import.meta.url), 'utf8'));
+  const architecture = fixture('service-architecture');
+  const workflow = fixture('agent-workflow');
+
   // ELK runs for real; a layout takes more turns than the other renderers' draws.
   async function drawn(spec: Spec, width: number, height: number, more: object = {}) {
     const h = mount(() => GraphDiagram({ spec, height, ...more }));
@@ -627,24 +632,24 @@ describe('graph diagram', () => {
     },
   );
 
-  // A five-step chain is about 640px long and 96px wide; down it fits a box 420px high at full size.
+  // A five-step chain is about 640px long and 96px wide, an eight-step one about 1050px long.
   it.each([
     [
-      'an across chain the down layout fits less than 1.25 times larger',
+      'an across chain that fits at two thirds while down fits at full size',
       chain(5, 'LR'),
-      [640, 420],
+      [520, 420],
       'LR',
     ],
     [
-      'an across chain the down layout fits 1.25 times larger or more',
-      chain(5, 'LR'),
-      [520, 420],
+      'an across chain that fits only below two thirds where down fits',
+      chain(8, 'LR'),
+      [360, 900],
       'TB',
     ],
     ['a down chain in a wide short box', chain(8, 'TB'), [1200, 280], 'LR'],
     ['a down chain in a narrow tall box', chain(8, 'TB'), [360, 900], 'TB'],
   ] as const)(
-    'with a direction lays %s out the way given unless the other fits 1.25 times larger',
+    'with a direction lays %s out the way given unless only the other fits at two thirds or more',
     async (_, spec, [width, height], way) => {
       const h = await drawn(spec, width, height);
       expect(find(h.value, (n) => n.props['data-direction']).props['data-direction']).toBe(way);
@@ -830,10 +835,40 @@ describe('graph diagram', () => {
   it.each([
     ['a shop of seven nodes', shop, [1200, 420], 0],
     ['a service map of twelve nodes in three groups', services, [1200, 720], 3],
+    ['a runtime architecture of twenty nodes', architecture, [1200, 680], 3],
+    ['an analytics data flow', fixture('analytics-dataflow'), [1200, 680], 0],
+    ['an agent workflow in nested groups', workflow, [1200, 680], 0],
+    ['a release state machine', fixture('release-lifecycle'), [1200, 680], 0],
   ] as const)(
-    'lays %s out with no label over a node, a label or another route, crossing at most %i times',
+    'lays %s out with no node over another, no edge through a node or a group label and no label over a node, a label or another route, crossing at most %i times',
     async (_, spec, [width, height], most) => {
       const h = await drawn(spec, width, height);
+      const laid = cards(h);
+      expect(
+        laid.flatMap((a, i) =>
+          laid
+            .slice(i + 1)
+            .filter((b) => overlap(a, b))
+            .map((b) => `${a.id}/${b.id}`),
+        ),
+      ).toEqual([]);
+      // A group's label line, 2px around: its 12px name and member count, 8px below its top and 12px in.
+      const heads = flowOf(h)
+        .props.nodes.filter((n: { type: string }) => n.type === 'group')
+        .map((g: Laid & { data: { group: { label: string; members: number } } }) => ({
+          id: g.id,
+          position: { x: g.position.x + 10, y: g.position.y + 6 },
+          width: [...g.data.group.label].length * 6.8 + 8 + 8 * String(g.data.group.members).length,
+          height: 20,
+        }));
+      const passes = flowOf(h).props.edges.flatMap((e: any) =>
+        runs(e.data.edge.points).flatMap((run) =>
+          [...laid.filter((n) => n.id !== e.source && n.id !== e.target), ...heads]
+            .filter((b) => through(run, b))
+            .map((b) => `${e.source}>${e.target} through ${b.id}`),
+        ),
+      );
+      expect([...new Set(passes)]).toEqual([]);
       const all = routes(h);
       const labels = all.filter((r) => r.label_box);
       expect(labels).toHaveLength(spec.edges.filter((e) => e.label).length);
@@ -863,6 +898,56 @@ describe('graph diagram', () => {
     expect(
       labels.filter((r) => !runs(r.points).some((run) => through(run, boxed(r.label_box!)))),
     ).toEqual([]);
+  });
+
+  it('lays groups that share layers side by side, not over each other', async () => {
+    const spec: Spec = { ...architecture, direction: 'TB' };
+    const h = await drawn(spec, 1200, 1200);
+    expect(find(h.value, (n) => n.props['data-direction']).props['data-direction']).toBe('TB');
+    // Each group's stretch across and along the flow its members take.
+    const spans = new Map<string, { x: [number, number]; y: [number, number] }>();
+    for (const node of spec.nodes.filter((n) => n.group !== undefined)) {
+      const { position: p, width, height } = at(h, node.id);
+      const s = spans.get(node.group!) ?? { x: [Infinity, -Infinity], y: [Infinity, -Infinity] };
+      spans.set(node.group!, {
+        x: [Math.min(s.x[0], p.x), Math.max(s.x[1], p.x + width)],
+        y: [Math.min(s.y[0], p.y), Math.max(s.y[1], p.y + height)],
+      });
+    }
+    const meet = (a: [number, number], b: [number, number]) => a[0] < b[1] && b[0] < a[1];
+    const all = [...spans];
+    const shared = all.flatMap(([a, s], i) =>
+      all.slice(i + 1).flatMap(([b, t]) => (meet(s.y, t.y) ? [[a, b, meet(s.x, t.x)]] : [])),
+    );
+    expect(shared.length).toBeGreaterThan(0);
+    expect(shared.filter(([, , over]) => over)).toEqual([]);
+  });
+
+  it('wraps an edge label wider than 160px onto two lines at most, its full text in its title', async () => {
+    const wraps = 'sends the signed release manifest';
+    const long = 'retries the upload with backoff until the object store accepts every single part';
+    const spec: Spec = {
+      nodes: ['build', 'sign', 'store'].map((id) => ({ id, label: id })),
+      edges: [
+        { from: 'build', to: 'sign', label: wraps },
+        { from: 'sign', to: 'store', label: long },
+      ],
+      direction: 'LR',
+    };
+    const h = await drawn(spec, 1200, 420);
+    expect(find(h.value, (n) => n.props['data-direction']).props['data-direction']).toBe('LR');
+    for (const route of routes(h)) expect(route.label_box!.width).toBeLessThanOrEqual(160);
+    const [first, second] = drawnEdges(h);
+    const lines = (edge: any) =>
+      nodes(nodes(edge).find((n) => n.type === 'text'))
+        .filter((n) => n.type === 'tspan')
+        .map(text);
+    const title = (edge: any) => text(nodes(edge).find((n) => n.type === 'title'));
+    expect(lines(first)).toHaveLength(2);
+    expect(lines(first).join(' ')).toBe(wraps);
+    expect(lines(second)).toHaveLength(2);
+    expect(lines(second)[1]).toMatch(/…$/);
+    expect([title(first), title(second)]).toEqual([wraps, long]);
   });
 
   it('lists the kinds and edge styles in use with their counts under the plot', async () => {
