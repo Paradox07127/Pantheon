@@ -219,7 +219,7 @@ it('lists the models of a runtime for the personal home, which has no roots, in 
       kind: 'personal',
     }),
   );
-  const models = vi.spyOn(f.adapter, 'models');
+  const models = vi.spyOn(f.adapter as Required<Pick<HarnessAdapter, 'models'>>, 'models');
   await f.control.runtimeModels(user, home.id, f.adapter.name);
   const cwd = models.mock.calls[0]![0];
   expect(path.basename(cwd)).toBe('personal-agent');
