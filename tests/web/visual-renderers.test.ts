@@ -935,6 +935,7 @@ describe('graph diagram', () => {
     ['a tool call through the MCP server', fixture('mcp-tool-call'), [1200, 640], 0],
     ['the states of a board task', fixture('board-task-states'), [1200, 640], 3],
     ['a session change landing', fixture('session-landing'), [1200, 640], 1],
+    ['the dependencies of a workspace', fixture('workspace-dependencies'), [1200, 640], 5],
   ] as const)(
     'lays %s out with no node over another, no edge through a node or a group label and no label over a node, a label or another route, crossing at most %i times',
     async (_, spec, [width, height], most) => {
@@ -976,16 +977,82 @@ describe('graph diagram', () => {
           all.filter((o) => o !== route && runs(o.points).some((r) => through(r, box))),
         ).toEqual([]);
       }
-      const crossings = all.flatMap((a, i) =>
-        all
-          .slice(i + 1)
-          .flatMap((b) =>
-            runs(a.points).flatMap((r) => runs(b.points).filter((s) => crosses(r, s))),
+      // A run that edges share in a trunk crosses another route once, not once for each edge.
+      const crossings = new Set(
+        all.flatMap((a, i) =>
+          all.slice(i + 1).flatMap((b) =>
+            runs(a.points).flatMap((r) =>
+              runs(b.points)
+                .filter((s) => crosses(r, s))
+                .map((s) => {
+                  const upright = Math.abs(r[0].y - r[1].y) < 0.5 ? s : r;
+                  const level = upright === s ? r : s;
+                  return `${Math.round(upright[0].x)},${Math.round(level[0].y)}`;
+                }),
+            ),
           ),
+        ),
       );
-      expect(crossings.length).toBeLessThanOrEqual(most);
+      expect(crossings.size).toBeLessThanOrEqual(most);
     },
   );
+
+  it('joins three unlabelled edges of one style into one side of a node in a trunk with one head, and keeps a labelled one apart', async () => {
+    const spec: Spec = {
+      nodes: [
+        ...['a', 'b', 'c', 'd'].map((id) => ({ id, label: `source ${id}` })),
+        { id: 'sink', label: 'sink' },
+      ],
+      edges: [
+        { from: 'a', to: 'sink' },
+        { from: 'b', to: 'sink' },
+        { from: 'c', to: 'sink' },
+        { from: 'd', to: 'sink', label: 'reads' },
+      ],
+      direction: 'TB',
+    };
+    const h = await drawn(spec, 1200, 420);
+    const edges = flowOf(h).props.edges;
+    // Where a route ends, and the line its last run is on.
+    const last = (edge: any) => {
+      const [p, q]: Point[] = edge.data.edge.points.slice(-2);
+      const line = Math.abs(p!.x - q!.x) < 0.5 ? `x${Math.round(q!.x)}` : `y${Math.round(q!.y)}`;
+      return [`${Math.round(q!.x)},${Math.round(q!.y)}`, line];
+    };
+    const plain = edges.filter((e: any) => e.source !== 'd');
+    expect(new Set(plain.map((e: any) => last(e).join(' '))).size).toBe(1);
+    const labelled = edges.find((e: any) => e.source === 'd');
+    expect(last(labelled)[0]).not.toBe(last(plain[0])[0]);
+    expect(edges.map((e: any) => e.ariaLabel)).toEqual(
+      ['a', 'b', 'c', 'd'].map((id) => `source ${id} 到 sink`),
+    );
+    // Each edge is a route path; of the three in the trunk, one draws the head.
+    const paths = (edge: any) => nodes(edge).filter((n) => n.type === 'path').length;
+    const drawnPlain = () =>
+      drawnEdges(h).filter((_: unknown, i: number) => edges[i].source !== 'd');
+    expect(drawnPlain().map(paths).sort()).toEqual([1, 1, 2]);
+    // Hovering one lights its whole route over the others, with the trunk's head.
+    flowOf(h).props.onEdgeMouseEnter({}, plain[1]);
+    h.render();
+    const lit = flowOf(h).props.edges.find((e: any) => e.id === plain[1].id);
+    const rest = flowOf(h).props.edges.filter((e: any) => e.id !== plain[1].id);
+    expect(lit.data.focus).toBe('on');
+    for (const other of rest) expect(lit.zIndex ?? 0).toBeGreaterThan(other.zIndex ?? 0);
+    expect(paths(flowOf(h).props.edgeTypes.route(lit))).toBe(2);
+    flowOf(h).props.onEdgeMouseLeave({}, plain[1]);
+    h.render();
+    expect(flowOf(h).props.edges.map((e: any) => e.data.focus)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    // Three edges out of one side of a node share their first run.
+    const out = await drawn({ ...fan(3), direction: 'TB' }, 1200, 420);
+    const first = (edge: any) =>
+      last({ data: { edge: { points: [...edge.data.edge.points].reverse() } } });
+    expect(new Set(flowOf(out).props.edges.map((e: any) => first(e).join(' '))).size).toBe(1);
+  });
 
   it('puts each edge label on its own route', async () => {
     const h = await drawn(services, 1200, 720);

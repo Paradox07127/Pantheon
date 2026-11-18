@@ -1,0 +1,177 @@
+{
+  "direction": "TB",
+  "groups": [
+    {
+      "id": "apps",
+      "label": "apps/"
+    },
+    {
+      "id": "packages",
+      "label": "packages/"
+    },
+    {
+      "id": "backend",
+      "label": "Back end",
+      "parent": "packages"
+    },
+    {
+      "id": "shared",
+      "label": "Shared types",
+      "parent": "packages"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "daemon",
+      "label": "daemon",
+      "group": "apps",
+      "kind": "service",
+      "icon": "server",
+      "sublabel": "@pantheon/daemon, Hono HTTP + WS",
+      "detail": ["depends on 5 of 5 packages"],
+      "sources": ["file:apps/daemon/package.json"]
+    },
+    {
+      "id": "desktop",
+      "label": "desktop",
+      "group": "apps",
+      "kind": "client",
+      "icon": "monitor",
+      "sublabel": "@pantheon/desktop, Electron",
+      "sources": ["file:apps/desktop/package.json"]
+    },
+    {
+      "id": "web",
+      "label": "web",
+      "group": "apps",
+      "kind": "client",
+      "icon": "app-window",
+      "sublabel": "@pantheon/web, React + Vite",
+      "sources": ["file:apps/web/package.json"]
+    },
+    {
+      "id": "cli",
+      "label": "cli",
+      "group": "apps",
+      "kind": "client",
+      "icon": "terminal",
+      "sublabel": "@pantheon/cli, pantheon + pantheon mcp",
+      "detail": ["also imports domain; architecture.md omits it"],
+      "sources": ["file:apps/cli/package.json"]
+    },
+    {
+      "id": "control",
+      "label": "control",
+      "group": "backend",
+      "kind": "service",
+      "icon": "cpu",
+      "sublabel": "@pantheon/control, the Control class",
+      "sources": ["file:packages/control/package.json"]
+    },
+    {
+      "id": "adapters",
+      "label": "adapters",
+      "group": "backend",
+      "kind": "service",
+      "icon": "plug",
+      "sublabel": "Claude, Codex, ACP, fixture runtimes",
+      "sources": ["file:packages/adapters/package.json"]
+    },
+    {
+      "id": "store",
+      "label": "store",
+      "group": "backend",
+      "kind": "store",
+      "sublabel": "SQLite state, events, outbox",
+      "sources": ["file:packages/store/package.json"]
+    },
+    {
+      "id": "protocol",
+      "label": "protocol",
+      "group": "shared",
+      "kind": "service",
+      "icon": "code",
+      "sublabel": "zod command and query schemas",
+      "detail": ["imports domain as types only"],
+      "sources": ["file:packages/protocol/package.json"]
+    },
+    {
+      "id": "domain",
+      "label": "domain",
+      "group": "shared",
+      "kind": "service",
+      "icon": "layers",
+      "sublabel": "object types, DomainError; no deps",
+      "sources": ["file:packages/domain/package.json"]
+    }
+  ],
+  "edges": [
+    {
+      "from": "daemon",
+      "to": "control",
+      "style": "main"
+    },
+    {
+      "from": "control",
+      "to": "protocol",
+      "style": "main"
+    },
+    {
+      "from": "protocol",
+      "to": "domain",
+      "style": "main"
+    },
+    {
+      "from": "daemon",
+      "to": "adapters"
+    },
+    {
+      "from": "daemon",
+      "to": "store"
+    },
+    {
+      "from": "daemon",
+      "to": "protocol"
+    },
+    {
+      "from": "daemon",
+      "to": "domain"
+    },
+    {
+      "from": "control",
+      "to": "adapters"
+    },
+    {
+      "from": "control",
+      "to": "store"
+    },
+    {
+      "from": "control",
+      "to": "domain"
+    },
+    {
+      "from": "adapters",
+      "to": "domain"
+    },
+    {
+      "from": "store",
+      "to": "domain"
+    },
+    {
+      "from": "desktop",
+      "to": "protocol"
+    },
+    {
+      "from": "web",
+      "to": "protocol"
+    },
+    {
+      "from": "cli",
+      "to": "protocol"
+    },
+    {
+      "from": "cli",
+      "to": "domain"
+    }
+  ]
+}

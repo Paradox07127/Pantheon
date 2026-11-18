@@ -291,7 +291,13 @@ type Focus = 'on' | 'dim' | undefined;
 
 type CardData = { node: LaidNode; focus: Focus };
 type GroupData = { group: LaidGroup };
-type RouteData = { edge: GraphLayout['edges'][number]; focus: Focus; tone?: NodeKind };
+type RouteData = {
+  edge: GraphLayout['edges'][number];
+  focus: Focus;
+  tone?: NodeKind;
+  /** Draws the head at its end, which the edges joined in a trunk share. */
+  head: boolean;
+};
 
 /** An orthogonal route with each bend rounded; the ends move back by `cut` for their heads. */
 function routePath(points: Point[], cut: { start: number; end: number }): string {
@@ -353,7 +359,7 @@ function Route({ data }: EdgeProps<Edge<RouteData>>) {
       data-focus={data.focus}
     >
       <path className="vis-ge-p" d={routePath(points, { start: both ? HEAD : 0, end: HEAD })} />
-      <path className="vis-ge-h" d={headPath(points[n - 1]!, points[n - 2]!)} />
+      {data.head && <path className="vis-ge-h" d={headPath(points[n - 1]!, points[n - 2]!)} />}
       {both && <path className="vis-ge-h" d={headPath(points[0]!, points[1]!)} />}
       {box && middle && label !== undefined && (
         <g className="vis-ge-l">
@@ -555,6 +561,7 @@ export function GraphDiagram({
   const box = useRef<HTMLDivElement>(null);
   const [laid, setLaid] = useState<Laid | null>(null);
   const [hover, setHover] = useState<string | null>(null);
+  const [lit, setLit] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | undefined>(undefined);
   const legend = legendItems(spec);
   const below = legend.shown ? LEGEND : 0;
@@ -613,6 +620,7 @@ export function GraphDiagram({
   };
   const names = new Map(spec.nodes.map((node) => [node.id, node.label]));
   const kinds = new Map(spec.nodes.map((node) => [node.id, node.kind]));
+  const litEdge = lit === null ? undefined : laid?.layout.edges.find((edge) => edge.id === lit);
   const near =
     laid && hover
       ? new Set(
@@ -620,7 +628,30 @@ export function GraphDiagram({
             .filter((edge) => edge.from === hover || edge.to === hover)
             .flatMap((edge) => [edge.from, edge.to]),
         ).add(hover)
-      : null;
+      : litEdge
+        ? new Set([litEdge.from, litEdge.to])
+        : null;
+  const focusOf = (edge: GraphLayout['edges'][number]): Focus =>
+    litEdge
+      ? edge === litEdge
+        ? 'on'
+        : 'dim'
+      : hover
+        ? edge.from === hover || edge.to === hover
+          ? 'on'
+          : 'dim'
+        : undefined;
+  // Edges joined in a trunk end on one point from one side; one of them, a lit one first, draws it.
+  const tip = (edge: GraphLayout['edges'][number]) => {
+    const [p, q] = edge.points.slice(-2) as [Point, Point];
+    const way = `${Math.sign(Math.round(q.x - p.x))},${Math.sign(Math.round(q.y - p.y))}`;
+    return `${Math.round(q.x)},${Math.round(q.y)},${way},${edge.style ?? ''}`;
+  };
+  const heads = new Map<string, string>();
+  for (const edge of [...(laid?.layout.edges ?? [])].sort(
+    (a, b) => +(focusOf(b) === 'on') - +(focusOf(a) === 'on'),
+  ))
+    if (edge.points.length >= 2 && !heads.has(tip(edge))) heads.set(tip(edge), edge.id);
   const nodes: Node[] = laid
     ? [
         ...laid.layout.groups.map((group): Node<GroupData> => ({
@@ -657,15 +688,19 @@ export function GraphDiagram({
         const name = (id: string) => names.get(id) ?? groupNames.get(id);
         const values = { from: name(edge.from), to: name(edge.to) };
         const tone = kinds.get(edge.to);
+        const focus = focusOf(edge);
         return {
           id: edge.id,
           source: end(edge.from),
           target: end(edge.to),
           type: 'route',
+          // A lit route draws over the others, its part in a trunk too.
+          ...(focus === 'on' && { zIndex: 1 }),
           data: {
             edge,
-            focus: hover ? (edge.from === hover || edge.to === hover ? 'on' : 'dim') : undefined,
+            focus,
             ...(tone && { tone }),
+            head: edge.points.length >= 2 && heads.get(tip(edge)) === edge.id,
           },
           ariaLabel: edge.both
             ? t(
@@ -718,6 +753,8 @@ export function GraphDiagram({
             }}
             onNodeMouseEnter={(_, node) => setHover(node.type === 'card' ? node.id : null)}
             onNodeMouseLeave={() => setHover(null)}
+            onEdgeMouseEnter={(_, edge) => setLit(edge.id)}
+            onEdgeMouseLeave={() => setLit(null)}
             edgesFocusable={false}
             deleteKeyCode={null}
             // A plain wheel keeps scrolling the page; pinch or the modifier key with the wheel zooms.

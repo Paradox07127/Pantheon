@@ -1510,6 +1510,7 @@ async function layeredLayout(
     })),
   };
   for (const edge of unblock(drawing)) delete edge.label_box;
+  bundle(drawing);
   placeLabels(drawing, across);
   const edgesOut = drawing.edges.map((edge) => ({
     ...edge,
@@ -1559,21 +1560,30 @@ function crosses([a, b]: Run, [c, d]: Run): boolean {
   );
 }
 
-/** How many times routes cross. */
+/**
+ * The places where `mine` cross each other or `theirs`: a run that routes share in a trunk crosses
+ * another route once.
+ */
+function crossAt(mine: Point[][], theirs: Point[][] = []): Set<string> {
+  const at = new Set<string>();
+  const add = (a: Point[], b: Point[]) => {
+    for (const r of runs(a))
+      for (const s of runs(b)) {
+        if (!crosses(r, s)) continue;
+        const [upright, level] = Math.abs(r[0].y - r[1].y) < 0.5 ? [s, r] : [r, s];
+        at.add(`${Math.round(upright[0].x)},${Math.round(level[0].y)}`);
+      }
+  };
+  mine.forEach((a, i) => {
+    for (const b of mine.slice(i + 1)) add(a, b);
+    for (const b of theirs) add(a, b);
+  });
+  return at;
+}
+
+/** How many places routes cross at. */
 function crossings(layout: GraphLayout): number {
-  const all = layout.edges.map((edge) => runs(edge.points));
-  return all.reduce(
-    (sum, mine, i) =>
-      sum +
-      all
-        .slice(i + 1)
-        .reduce(
-          (count, theirs) =>
-            count + mine.reduce((n, r) => n + theirs.filter((s) => crosses(r, s)).length, 0),
-          0,
-        ),
-    0,
-  );
+  return crossAt(layout.edges.map((edge) => edge.points)).size;
 }
 
 /** How hard the routes are to follow: routes through a node or a group's label, crossings, bends. */
@@ -1584,6 +1594,172 @@ function tangle(layout: GraphLayout): number {
   ).length;
   const bends = layout.edges.reduce((sum, edge) => sum + Math.max(0, edge.points.length - 2), 0);
   return through * 1e6 + crossings(layout) * CROSSING + bends;
+}
+
+/** The side of its end node a route comes in at, from the way its last run goes. */
+type Side = 'top' | 'bottom' | 'left' | 'right';
+const sideOf = (points: Point[]): Side => {
+  const [p, q] = [points.at(-2)!, points.at(-1)!];
+  if (Math.abs(p.x - q.x) < 0.5) return q.y > p.y ? 'top' : 'bottom';
+  return q.x > p.x ? 'left' : 'right';
+};
+/** Into and back out of the frame where a route comes in at the side from above. */
+const SIDE: Record<Side, readonly [(p: Point) => Point, (p: Point) => Point]> = {
+  top: [(p) => ({ ...p }), (p) => ({ ...p })],
+  bottom: [(p) => ({ x: p.x, y: -p.y }), (p) => ({ x: p.x, y: -p.y })],
+  left: [turn, turn],
+  right: [(p) => ({ x: p.y, y: -p.x }), (p) => ({ x: -p.y, y: p.x })],
+};
+
+/** The length the routes draw, a stretch that several share counted once. */
+function ink(routes: Point[][]): number {
+  const lines = new Map<string, [number, number][]>();
+  for (const [p, q] of routes.flatMap(runs)) {
+    const level = Math.abs(p.y - q.y) < 0.5;
+    const key = level ? `y${Math.round(p.y)}` : `x${Math.round(p.x)}`;
+    const span: [number, number] = level
+      ? [Math.min(p.x, q.x), Math.max(p.x, q.x)]
+      : [Math.min(p.y, q.y), Math.max(p.y, q.y)];
+    lines.set(key, [...(lines.get(key) ?? []), span]);
+  }
+  let total = 0;
+  for (const spans of lines.values()) {
+    let end = -Infinity;
+    for (const [lo, hi] of spans.sort((s, t) => s[0] - t[0])) {
+      total += Math.max(0, hi - Math.max(lo, end));
+      end = Math.max(end, hi);
+    }
+  }
+  return total;
+}
+
+/**
+ * How the runs of two routes lie over a shared stretch: `on` one line, `near` side by side closer
+ * than edges keep apart.
+ */
+function besides(a: Point[], b: Point[]): Set<'on' | 'near'> {
+  const found = new Set<'on' | 'near'>();
+  for (const r of runs(a).map(runBox))
+    for (const s of runs(b).map(runBox)) {
+      const flat = r.height < 0.5;
+      if (flat !== s.height < 0.5) continue;
+      const gap = flat ? Math.abs(r.y - s.y) : Math.abs(r.x - s.x);
+      const shared = flat
+        ? Math.min(r.x + r.width, s.x + s.width) - Math.max(r.x, s.x)
+        : Math.min(r.y + r.height, s.y + s.height) - Math.max(r.y, s.y);
+      if (shared > 0.5 && gap < EDGE_GAP / 2) found.add(gap < 0.5 ? 'on' : 'near');
+    }
+  return found;
+}
+
+/**
+ * Joins `members`, which end on one side of `node` (start there when `out`), into one trunk: each
+ * runs on until it first reaches a level before the side, along that level to one place on the
+ * side, and on into it with the rest. The join takes the fewest crossings, then bends, then the
+ * least length drawn, clear of nodes, group labels, edge labels and other routes; there is none
+ * where that crosses more than the routes did.
+ */
+function join(drawing: Drawing, members: LaidEdge[], node: LaidNode, side: Side, out: boolean) {
+  const [into, back] = SIDE[side];
+  const others = drawing.edges.filter((edge) => !members.includes(edge));
+  // An edge already in a trunk at its other end may keep running on it, though not beside it.
+  const joined = members.map((edge) =>
+    others.filter((other) => besides(other.points, edge.points).has('on')),
+  );
+  const clear = members.map((edge, i) =>
+    routeCost({ ...drawing, edges: others.filter((other) => !joined[i]!.includes(other)) }, edge),
+  );
+  const labels = drawing.edges.flatMap((edge) => edge.label_box ?? []);
+  const theirs = others.map((edge) => edge.points);
+  const local = members.map((edge) => (out ? [...edge.points].reverse() : edge.points).map(into));
+  const corners = [node, { x: node.x + node.width, y: node.y + node.height }].map(into);
+  const top = Math.min(...corners.map((p) => p.y));
+  const [left, right] = [
+    Math.min(...corners.map((p) => p.x)),
+    Math.max(...corners.map((p) => p.x)),
+  ];
+  const xs = new Set(local.map((route) => route.at(-1)!.x));
+  for (let x = left + EDGE_CLEAR; x <= right - EDGE_CLEAR; x += EDGE_GAP / 2) xs.add(x);
+  // The level and the trunk touch no other route on their line, which would read as joining it.
+  const lines = others.flatMap((edge) => runs(edge.points.map(into)).map(runBox));
+  const alone = (y: number, from: number, to: number, x: number) =>
+    !lines.some((s) =>
+      s.height < 0.5
+        ? Math.abs(s.y - y) < 0.5 && s.x <= to + 0.5 && s.x + s.width >= from - 0.5
+        : Math.abs(s.x - x) < 0.5 && s.y <= top + 0.5 && s.y + s.height >= y - 0.5,
+    );
+  const score = (routes: Point[][], y: number) =>
+    crossAt(routes, theirs).size * 1e7 +
+    routes.reduce((sum, route) => sum + route.length - 2, 0) * 1e5 +
+    (top - y) * 100 +
+    ink(routes);
+  const before = crossAt(
+    members.map((edge) => edge.points),
+    theirs,
+  ).size;
+  let best: { routes: Point[][]; score: number } | undefined;
+  const highest = Math.max(...local.map((route) => Math.min(...route.map((p) => p.y))));
+  for (let y = top - EDGE_CLEAR; y > highest; y -= 4) {
+    const heads = local.map((route) => {
+      const k = runs(route).findIndex(
+        ([p, q]) => Math.abs(p.x - q.x) < 0.5 && Math.min(p.y, q.y) <= y && y <= Math.max(p.y, q.y),
+      );
+      return k < 0 ? undefined : [...route.slice(0, k + 1), { x: route[k]!.x, y }];
+    });
+    if (heads.some((head) => !head)) continue;
+    const at = heads.map((head) => head!.at(-1)!.x);
+    for (const x of xs) {
+      if (!alone(y, Math.min(x, ...at), Math.max(x, ...at), x)) continue;
+      const routes = heads.map((head) => {
+        const route = simplify([...head!, { x, y }, { x, y: top }]).map(back);
+        return out ? route.reverse() : route;
+      });
+      if (
+        routes.some(
+          (route, i) =>
+            clear[i]!(route) === Infinity ||
+            joined[i]!.some((other) => besides(route, other.points).has('near')) ||
+            runs(route).some((run) =>
+              labels.some((box) => overlaps(runBox(run), box, LABEL_CLEAR)),
+            ),
+        ) ||
+        routes.some((a, i) => routes.slice(i + 1).some((b) => besides(a, b).has('near')))
+      )
+        continue;
+      const cost = score(routes, y);
+      if (!best || cost < best.score) best = { routes, score: cost };
+    }
+  }
+  if (!best || Math.floor(best.score / 1e7) > before) return;
+  members.forEach((edge, i) => {
+    const points = best.routes[i]!;
+    const [end, next] = out ? [0, 1] : [points.length - 1, points.length - 2];
+    points[end] = onOutline(points[end]!, points[next]!, node);
+    edge.points = points;
+  });
+}
+
+/**
+ * Joins three or more unlabelled one-way edges of one style that come into one side of a node into
+ * a trunk, then those that leave one side of a node.
+ */
+function bundle(drawing: Drawing) {
+  const byId = new Map(drawing.nodes.map((node) => [node.id, node]));
+  for (const out of [false, true]) {
+    const sets = new Map<string, LaidEdge[]>();
+    for (const edge of drawing.edges) {
+      const id = out ? edge.from : edge.to;
+      if (edge.label !== undefined || edge.both || edge.from === edge.to) continue;
+      if (edge.points.length < 2 || !byId.has(id)) continue;
+      const points = out ? [...edge.points].reverse() : edge.points;
+      const key = [id, sideOf(points), edge.style ?? ''].join('\n');
+      sets.set(key, [...(sets.get(key) ?? []), edge]);
+    }
+    for (const [key, members] of sets) {
+      const [id, side] = key.split('\n') as [string, Side];
+      if (members.length >= 3) join(drawing, members, byId.get(id)!, side, out);
+    }
+  }
 }
 
 /**
@@ -1907,6 +2083,7 @@ async function compactLayout(
     points[n - 1] = onOutline(points[n - 1]!, points[n - 2]!, shaped.get(edge.to));
   }
   unblock(drawing);
+  bundle(drawing);
   placeLabels(drawing, across);
   // The drawing from its top-left corner, turned back when it runs across.
   const boxes: Box[] = [
