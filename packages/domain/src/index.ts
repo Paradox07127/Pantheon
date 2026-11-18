@@ -361,6 +361,9 @@ export function permissionRule(tool: string, input: unknown): string {
   if (/[;&|`\n<>{}*?[~$]/.test(command) || /[=/]/.test(first)) return `Bash(${command.trim()})`;
   return second && !second.startsWith('-') ? `Bash(${first} ${second})` : `Bash(${first})`;
 }
+/** Who acts next on a failing task: retry it, switch its runtime, its lead, or the user. */
+export type TaskRungName = 'retry' | 'switch' | 'lead' | 'user';
+
 export interface NeedsYouItem {
   source: {
     table:
@@ -399,6 +402,8 @@ export interface NeedsYouItem {
   session_id?: string;
   /** The plan task, `<lead session id>:<task id>`, of a task item. */
   task_id?: string;
+  /** The rung of the item's task, as its board row has it; absent on items of no task. */
+  rung?: TaskRungName;
   /** The turn and native request of a lost request or an undelivered answer. */
   turn_id?: string;
   request_id?: string;

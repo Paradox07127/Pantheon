@@ -389,7 +389,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `milestone.accept` | `milestone_id`: string<br>`evidence_refs`: string[]<br>`criteria_checked?`: integer[] | milestone_accept (lead) |
+| `milestone.accept` | `milestone_id`: string<br>`evidence_refs`: string[]<br>`criteria_checked?`: integer[]<br>`override_reason?`: string | milestone_accept (lead) |
 | `milestone.create` | `project_id`: string<br>`title`: string<br>`required_sessions`: string[]<br>`criteria`: string[] |  |
 | `milestone.revise` | `milestone_id`: string<br>`title`: string<br>`required_sessions`: string[]<br>`criteria`: string[] |  |
 

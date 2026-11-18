@@ -216,6 +216,7 @@ it('tells the lead and the user once when the session of a started task cannot o
       status: 'queued',
       created_at: error.at,
       reason: 'task_dispatch_failed',
+      rung: 'retry',
       decision: 'other',
       blocks: 0,
       actions: [],

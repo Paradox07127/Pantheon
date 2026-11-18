@@ -32,6 +32,8 @@ import type {
   LaneDepth,
   McpServerStatus,
   NeedsYouItem,
+  TaskRungName,
+  MilestoneVerification,
   MilestoneView,
   PendingPlanEdit,
   PermissionMode,
@@ -2599,6 +2601,15 @@ export const inputSchemas = {
       .describe(
         'Indices of the criteria you checked; every criterion must be in it. Absent accepts the whole milestone.',
       ),
+    override_reason: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe(
+        "Why you accept although the milestone's verification has not passed; required then, and the user sees it.",
+      ),
   }),
   'project.open': z.strictObject({
     name: str,
@@ -3532,6 +3543,8 @@ export type DecisionForUser =
       session_id: string;
       /** The reason the lead gave when it used the power; absent when it gave none. */
       reason?: string;
+      /** The current verification of the milestone a lead accepted although it had not passed. */
+      verification?: { id: string; state: MilestoneVerification['state'] };
     }
   /**
    * A task session's question the lead answered; answer is the lead's, session_id the asking session's
@@ -4104,7 +4117,7 @@ export interface BoardActivity {
  * was told and owns the next move; user: it waits for the user.
  */
 export interface BoardTaskRung {
-  rung: 'retry' | 'switch' | 'lead' | 'user';
+  rung: TaskRungName;
   by: 'pantheon' | 'lead' | 'user';
   /** A merge problem, review_findings, dispatch_failed, a needs-you reason such as workflow_approval, a tracked state, stalled, looping or runtime_changed. */
   reason: string;

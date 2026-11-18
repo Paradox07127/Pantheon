@@ -171,6 +171,7 @@ function leadMilestoneView(ctx: ControlContext, milestone: Milestone): Milestone
         independence: verification.independence,
         runtime: verification.runtime,
         reason: verification.reason,
+        reason_code: verification.reason_code,
         started_at: verification.started_at,
         finished_at: verification.finished_at,
         failed: verification.commands
@@ -483,6 +484,7 @@ export const projectFactHandlers: Handlers = {
   'milestone.accept': (ctx, p, c) => {
     const input = inputSchemas['milestone.accept'].parse(c.input);
     let old: Milestone;
+    let override: NonNullable<Milestone['acceptance']>['override'];
     if (p.role === 'lead') {
       projectAccess(ctx, p, p.project_id!, c.type);
       // A lead names its own milestones by key; the MCP binding sends no revision.
@@ -493,11 +495,33 @@ export const projectFactHandlers: Handlers = {
             m.owner_session_id === p.session_id && m.key === input.milestone_id && !m.removed_at,
         );
       requireThat(owned, 'not_found', `Not found: milestone ${input.milestone_id}`);
+      // A verification still running has not passed either.
+      const verification = milestoneView(ctx, owned).verification;
+      const overridden = verification && verification.state !== 'passed' ? verification : undefined;
       requireThat(
-        chartered(ctx, p, 'accept_milestone', owned) === 'on',
+        chartered(
+          ctx,
+          p,
+          'accept_milestone',
+          owned,
+          overridden && input.override_reason,
+          overridden && { id: overridden.id, state: overridden.state },
+        ) === 'on',
         'permission_denied',
         `The user accepts milestone ${owned.key} on the milestone card; the project's charter does not let a lead accept milestones`,
       );
+      if (overridden) {
+        requireThat(
+          input.override_reason,
+          'invalid_request',
+          `The verification of milestone ${owned.key} is ${overridden.state}, not passed; to accept it anyway, give override_reason with why, or propose fix tasks instead`,
+        );
+        override = {
+          reason: input.override_reason,
+          verification_id: overridden.id,
+          state: overridden.state,
+        };
+      }
       old = owned;
     } else {
       actsAsUser(p);
@@ -562,6 +586,7 @@ export const projectFactHandlers: Handlers = {
           evidence_refs: input.evidence_refs,
           commitment_hash: commitmentHash(old, view.required_sessions, plan),
           criteria_checked: checked,
+          ...(override ? { override } : {}),
         },
       },
       old.revision,

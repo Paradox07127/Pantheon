@@ -242,6 +242,14 @@ it('renders each kind of note from its template', async () => {
       kind: 'other_plan',
       text: 'Fix the parser (direct-lead) planned: Parser fixed; lanes: Core, Docs',
     },
+    {
+      id: 'n-verified',
+      at,
+      session_id: '',
+      task_id: '',
+      kind: 'milestone_verified',
+      text: 'Verification v1 of milestone release "Release": failed.',
+    },
   ];
   const { text } = inboxDigest(ctx, plan, notes, 20_000);
   for (const expected of [
@@ -255,6 +263,7 @@ it('renders each kind of note from its template', async () => {
     '<note kind="signal" id="n-signal">\nSignal issues that changed since your last digest',
     'How to handle: give each item one outcome: joined to a task, fix task started, told the user, or recorded.',
     '<note kind="other_plan" id="n-other-plan" session="direct-lead">\nWhat happened: Fix the parser (direct-lead) planned: Parser fixed; lanes: Core, Docs\nHow to handle: do not plan the same work; when a request of the user matches it, name that plan to them instead.\n</note>',
+    '<note kind="milestone_verified" id="n-verified">\nWhat happened: Verification v1 of milestone release "Release": failed.\nHow to handle: a verification that did not pass is yours to handle, not the user\'s.',
   ])
     expect(text).toContain(expected);
 });

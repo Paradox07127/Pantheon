@@ -214,4 +214,9 @@ it.each([
   expect(row.rung).toEqual(
     reason && { rung: 'user', by: 'user', reason, since: changed.created_at, switches: [] },
   );
+  const taskItems = f.control
+    .needsYou(user, f.project.id)
+    .items.filter((item) => item.task_id === row.id);
+  if (reason) expect(taskItems.length).toBeGreaterThan(0);
+  for (const item of taskItems) expect(item.rung).toBe(row.rung?.rung);
 });

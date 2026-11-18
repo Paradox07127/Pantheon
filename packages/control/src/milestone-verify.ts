@@ -4,6 +4,7 @@ import {
   type BoardPlan,
   type Milestone,
   type MilestoneVerification,
+  type MilestoneVerificationReason,
   type Project,
   type Review,
   type Session,
@@ -13,10 +14,11 @@ import { taskSessions } from './board-plan.js';
 import { rootOf, type ControlContext } from './context.js';
 import { runGit } from './git.js';
 import { checkCandidate, gateFailed } from './landing.js';
-import { contractLines } from './lead-inbox.js';
+import { appendNote, contractLines } from './lead-inbox.js';
 import { commitmentHash, milestoneView } from './project-facts.js';
 import { reviewerVerdict, startReview } from './review.js';
 import { verifierRuntime } from './runtime-vendor.js';
+import { wakeLead } from './task-tracking.js';
 import { afterCommit } from './workbench-session.js';
 import { workflowPolicy } from './workflow-policy.js';
 
@@ -34,18 +36,61 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
   return result.stdout.toString();
 }
 
+const INDEPENDENCE: Record<NonNullable<MilestoneVerification['independence']>, string> = {
+  other_vendor: 'another vendor',
+  other_runtime: 'another runtime of an unknown vendor',
+  same_runtime: "the writers' own runtime",
+};
+const OUTPUT_TAIL_LIMIT = 600;
+
+/** What the lead's note says about a verification that ended. */
+function verifiedText(milestone: Milestone, row: MilestoneVerification): string {
+  return [
+    `Verification ${row.id} of milestone ${milestone.key} "${milestone.title}": ${row.state}.${
+      row.runtime
+        ? ` Checked on ${row.runtime}${row.independence ? `, ${INDEPENDENCE[row.independence]}` : ''}.`
+        : ''
+    }`,
+    ...row.commands
+      .filter((command) => command.exit_code !== 0)
+      .map(
+        (command) =>
+          `Failed: ${command.name} (exit ${command.exit_code})\n${command.output_tail.slice(-OUTPUT_TAIL_LIMIT)}`,
+      ),
+    ...(row.verdict ? [`Verdict ${row.verdict.verdict}: ${row.verdict.summary}`] : []),
+    ...(row.reason && row.reason !== row.verdict?.summary ? [`Reason: ${row.reason}`] : []),
+    ...(row.state === 'failed'
+      ? ['Propose fix tasks under this milestone with propose_board, citing this evidence.']
+      : []),
+  ].join('\n');
+}
+
+/** Ends the row and tells the milestone's lead, waking it. */
 function finish(
   ctx: ControlContext,
   row: MilestoneVerification,
-  state: 'passed' | 'failed' | 'inconclusive',
-  fields: Partial<MilestoneVerification> = {},
+  end:
+    | { state: 'passed' }
+    | { state: 'failed' | 'inconclusive'; reason_code: MilestoneVerificationReason },
+  fields: Omit<Partial<MilestoneVerification>, 'reason_code'> = {},
 ): void {
   const next = ctx.store.update<MilestoneVerification>(
     'milestone_verifications',
-    { ...row, ...fields, state, finished_at: ctx.store.now() },
+    { ...row, ...fields, ...end, finished_at: ctx.store.now() },
     row.revision,
   );
   ctx.store.event('milestone.verified', next, next.project_id, next);
+  const milestone = ctx.store.must<Milestone>('milestones', next.milestone_id),
+    plan = ctx.store.get<BoardPlan>('board_plans', milestone.owner_session_id!);
+  if (!plan) return;
+  const noted = appendNote(ctx, plan, {
+    at: ctx.store.now(),
+    session_id: '',
+    task_id: '',
+    kind: 'milestone_verified',
+    text: verifiedText(milestone, next),
+  });
+  wakeLead(ctx, noted, '');
 }
 
 /**
@@ -96,7 +141,13 @@ function startVerifier(
 ): void {
   const writers = [...new Set(tasks.flatMap(({ sessions }) => sessions.map((s) => s.runtime)))];
   const chosen = verifierRuntime(ctx, row.project_id, writers);
-  if (!chosen) return finish(ctx, row, 'inconclusive', { reason: 'no runtime can verify' });
+  if (!chosen)
+    return finish(
+      ctx,
+      row,
+      { state: 'inconclusive', reason_code: 'no_verifier_runtime' },
+      { reason: 'no runtime can verify' },
+    );
   const prompt = [
     verifierInstruction,
     `Milestone: ${milestone.title}`,
@@ -123,7 +174,12 @@ function startVerifier(
     );
   } catch (error) {
     if (!(error instanceof DomainError)) throw error;
-    finish(ctx, row, 'inconclusive', { reason: error.message });
+    finish(
+      ctx,
+      row,
+      { state: 'inconclusive', reason_code: 'review_not_started' },
+      { reason: error.message },
+    );
   }
 }
 
@@ -189,7 +245,9 @@ function checkMilestone(ctx: ControlContext, milestone: Milestone, row: Mileston
           return finish(
             ctx,
             next,
-            failed.failure_class === 'environment' ? 'inconclusive' : 'failed',
+            failed.failure_class === 'environment'
+              ? { state: 'inconclusive', reason_code: 'checks_environment' }
+              : { state: 'failed', reason_code: 'checks_failed' },
           );
         startVerifier(ctx, milestone, tasks, next, diffs.join('\n'));
       });
@@ -201,7 +259,7 @@ function checkMilestone(ctx: ControlContext, milestone: Milestone, row: Mileston
           finish(
             ctx,
             ctx.store.must<MilestoneVerification>('milestone_verifications', row.id),
-            'inconclusive',
+            { state: 'inconclusive', reason_code: 'check_error' },
             {
               reason: error instanceof Error ? error.message : String(error),
             },
@@ -229,22 +287,40 @@ function settleVerification(ctx: ControlContext, row: MilestoneVerification): vo
     verdict?.verdict === 'pass' &&
     !blocking.length
   )
-    return finish(ctx, row, 'passed', fields);
+    return finish(ctx, row, { state: 'passed' }, fields);
   if (verdict?.verdict === 'fail' || blocking.length)
-    return finish(ctx, row, 'failed', {
+    return finish(
+      ctx,
+      row,
+      { state: 'failed', reason_code: 'verifier_failed' },
+      {
+        ...fields,
+        reason: [
+          ...(verdict?.verdict === 'fail' ? [verdict.summary] : []),
+          ...blocking.map((finding) => `${finding.location}: ${finding.impact}`),
+        ].join('\n'),
+      },
+    );
+  finish(
+    ctx,
+    row,
+    {
+      state: 'inconclusive',
+      reason_code:
+        review.state === 'failed'
+          ? 'review_failed'
+          : review.incomplete
+            ? 'review_incomplete'
+            : 'no_verdict',
+    },
+    {
       ...fields,
-      reason: [
-        ...(verdict?.verdict === 'fail' ? [verdict.summary] : []),
-        ...blocking.map((finding) => `${finding.location}: ${finding.impact}`),
-      ].join('\n'),
-    });
-  finish(ctx, row, 'inconclusive', {
-    ...fields,
-    reason:
-      review.state === 'failed'
-        ? `Review ${review.id} failed`
-        : (review.incomplete ?? 'The verifier handed in no verdict'),
-  });
+      reason:
+        review.state === 'failed'
+          ? `Review ${review.id} failed`
+          : (review.incomplete ?? 'The verifier handed in no verdict'),
+    },
+  );
 }
 
 /**
@@ -304,5 +380,10 @@ export function advanceMilestoneVerifications(ctx: ControlContext): void {
 export function recoverMilestoneVerifications(ctx: ControlContext): void {
   for (const row of ctx.store.list<MilestoneVerification>('milestone_verifications'))
     if (row.state === 'running' && !row.review_id)
-      finish(ctx, row, 'inconclusive', { reason: 'daemon_restart' });
+      finish(
+        ctx,
+        row,
+        { state: 'inconclusive', reason_code: 'daemon_restart' },
+        { reason: 'daemon_restart' },
+      );
 }

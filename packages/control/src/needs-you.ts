@@ -29,6 +29,7 @@ import {
   projectBudgetItems,
   stepRunItems,
 } from './needs-you-workflow.js';
+import { taskRung, taskRungFacts } from './task-rung.js';
 
 /** A running merge with no progress event for this long is stuck; each gate command has a timeout. */
 const MERGE_STUCK_MS = 30 * 60_000;
@@ -248,6 +249,35 @@ export function itemTask(
   return { plan, taskId: binding.id };
 }
 
+/** The rung of an item's task, from the facts its board row reads; none on items of no task. */
+function itemRung(
+  ctx: ControlContext,
+  planOf: Map<string, BoardPlan>,
+): (item: NeedsYouDraft) => NeedsYouItem['rung'] {
+  const sessions = ctx.store.list<Session>('sessions'),
+    now = ctx.store.now(),
+    rungs = new Map<string, NeedsYouItem['rung']>();
+  return (item) => {
+    const bound = itemTask(ctx, item, planOf);
+    if (!bound) return;
+    const key = boardTaskId(bound.plan.id, bound.taskId);
+    if (!rungs.has(key))
+      rungs.set(
+        key,
+        taskRung(
+          taskRungFacts(
+            ctx,
+            bound.plan,
+            bound.taskId,
+            taskSessions(ctx, bound.plan.id, bound.taskId, sessions, bound.plan),
+            now,
+          ),
+        )?.rung,
+      );
+    return rungs.get(key);
+  };
+}
+
 /** Counts the plan tasks not done that wait on an item: those that depend on its task, and those its lead question holds. */
 function blockedTasks(
   ctx: ControlContext,
@@ -342,7 +372,8 @@ export function needsYou(
       ...projectBudgetItems(ctx, scope),
     );
   }
-  const blocked = blockedTasks(ctx, planOf);
+  const blocked = blockedTasks(ctx, planOf),
+    rungOf = itemRung(ctx, planOf);
   // Tool input can hold secrets, and a rule or a background command can be a whole command line.
   const shown =
     principal.role === 'personal'
@@ -355,7 +386,10 @@ export function needsYou(
   // Most tasks blocked first, then the longest waiting.
   return {
     items: shown
-      .map((item) => ({ ...item, blocks: blocked(item) }))
+      .map((item) => {
+        const rung = rungOf(item);
+        return { ...item, ...(rung ? { rung } : {}), blocks: blocked(item) };
+      })
       .sort(
         (a, b) =>
           b.blocks - a.blocks ||

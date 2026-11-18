@@ -5,6 +5,7 @@ import type {
   CharterPower,
   LeadQuestion,
   Milestone,
+  MilestoneVerification,
   PlanProposal,
   Principal,
   Session,
@@ -137,6 +138,7 @@ export function decisionsForUser(
         subject: string;
         session_id: string;
         reason?: string;
+        verification?: { id: string; state: MilestoneVerification['state'] };
       };
       return used.mode === 'on' && LISTED_POWERS.includes(used.power)
         ? [
@@ -147,6 +149,7 @@ export function decisionsForUser(
               subject: used.subject,
               session_id: used.session_id,
               ...(used.reason ? { reason: used.reason } : {}),
+              ...(used.verification ? { verification: used.verification } : {}),
             },
           ]
         : [];

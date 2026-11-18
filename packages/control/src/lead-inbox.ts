@@ -526,6 +526,12 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       `What happened: ${text}`,
       "How to handle: the user already decided on the card, so do not tell them the outcome again. Check whether the agent was created or changed. You keep the requests and promises you hold; if the user should go on in the new agent's conversation, tell them its name and the open request in one line. If they declined, do not propose the same agent again unless the user brings it up; if they edited it, the agent works from their version.",
     ];
+  else if (kind === 'milestone_verified')
+    lines = [
+      startTag(own),
+      `What happened: ${text}`,
+      "How to handle: a verification that did not pass is yours to handle, not the user's. Prefer proposing fix tasks under the milestone with propose_board; to accept it anyway, call milestone_accept with override_reason, which the user sees. After a passed one, accept the milestone once you have checked its criteria.",
+    ];
   else if (kind === 'other_plan')
     lines = [
       startTag([...own, ['session', note.session_id]]),

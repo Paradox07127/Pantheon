@@ -7,6 +7,7 @@ import {
   type AgentEvent,
   type AgentEventSink,
   type BoardPlan,
+  type LeadNote,
   type Milestone,
   type MilestoneVerification,
   type Principal,
@@ -30,6 +31,7 @@ import {
   gateFolder,
   insertSession,
   insideSandbox,
+  user,
 } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -184,6 +186,7 @@ it('lists the failed commands of a failed verification with their output tails',
   verification(f, milestone, {
     state: 'failed',
     reason: 'A check failed',
+    reason_code: 'checks_failed',
     commands: [
       { name: 'build', exit_code: 0, output_tail: 'built', hidden: false },
       {
@@ -199,6 +202,7 @@ it('lists the failed commands of a failed verification with their output tails',
   expect(viewOf(f, milestone).verification).toMatchObject({
     state: 'failed',
     reason: 'A check failed',
+    reason_code: 'checks_failed',
     failed: [{ name: 'test', output_tail: '1 test failed' }],
     commands: [
       { name: 'build', exit_code: 0 },
@@ -230,6 +234,82 @@ it('never shows a verification on a milestone the user created', async () => {
   const view = viewOf(f, milestone);
   expect(view.status).toBe('ready_for_acceptance');
   expect(view).not.toHaveProperty('verification');
+});
+
+const leadAccept = (f: Fixture, extra: Record<string, unknown> = {}) =>
+  f.call<Milestone>(
+    'milestone.accept',
+    { milestone_id: 'release', evidence_refs: ['task:api'], ...extra },
+    null,
+    leadOf(f),
+  );
+
+it.each(['failed', 'inconclusive', 'running'] as const)(
+  'refuses a lead acceptance over a %s verification that gives no override reason',
+  async (state) => {
+    const f = await opened();
+    const milestone = readyLeadMilestone(f);
+    verification(f, milestone, { state });
+    expect(() => leadAccept(f)).toThrow(
+      expect.objectContaining({
+        code: 'invalid_request',
+        message: expect.stringMatching(new RegExp(`verification .*is ${state}.*override_reason`)),
+      }),
+    );
+    expect(f.store.must<Milestone>('milestones', milestone.id)).not.toHaveProperty('acceptance');
+  },
+);
+
+it.each<[string, MilestoneVerification['state'] | undefined, 'lead' | 'user', string | undefined]>([
+  ['a lead with a reason over a failed verification', 'failed', 'lead', 'The clone has no network'],
+  ['a lead over a passed verification', 'passed', 'lead', undefined],
+  ['a lead while verification is off', undefined, 'lead', undefined],
+  ['the user over a failed verification', 'failed', 'user', undefined],
+])('accepts for %s', async (_, state, by, reason) => {
+  const f = await opened();
+  const milestone = readyLeadMilestone(f);
+  const row = state && verification(f, milestone, { state });
+  const accepted =
+    by === 'lead'
+      ? leadAccept(f, reason ? { override_reason: reason } : {})
+      : f.call<Milestone>(
+          'milestone.accept',
+          { milestone_id: milestone.id, evidence_refs: ['task:api'] },
+          f.store.must<Milestone>('milestones', milestone.id).revision,
+        );
+  const { acceptance } = f.store.must<Milestone>('milestones', accepted.id);
+  if (reason)
+    expect(acceptance?.override).toEqual({ reason, verification_id: row!.id, state: 'failed' });
+  else expect(acceptance).not.toHaveProperty('override');
+  expect(viewOf(f, milestone).status).toBe('completed');
+});
+
+it('lists a lead acceptance over a failed verification with its reason among the decisions made for the user', async () => {
+  const f = await opened();
+  const milestone = readyLeadMilestone(f);
+  const row = verification(f, milestone, { state: 'failed' });
+  leadAccept(f, { override_reason: 'The failing check needs a network the clone lacks' });
+  expect(f.control.decisionsForUser(user, f.project.id).items).toContainEqual(
+    expect.objectContaining({
+      kind: 'power_used',
+      power: 'accept_milestone',
+      subject: milestone.id,
+      reason: 'The failing check needs a network the clone lacks',
+      verification: { id: row.id, state: 'failed' },
+    }),
+  );
+});
+
+it('asks the user nothing more than the acceptance of a milestone whose verification failed', async () => {
+  const f = await opened();
+  const milestone = readyLeadMilestone(f);
+  verification(f, milestone, { state: 'failed' });
+  expect(
+    f.control
+      .needsYou(user, f.project.id)
+      .items.filter((item) => item.source?.id === milestone.id)
+      .map((item) => item.reason),
+  ).toEqual(['milestone_ready_for_acceptance']);
 });
 
 it('reads milestone verification off by default and stores the user turning it on', async () => {
@@ -283,6 +363,7 @@ async function mergedMilestone(
   options: {
     acceptance?: string[];
     gate?: (dir: string) => string;
+    gateTimeoutMs?: number;
     policy?: 'off' | 'auto';
   } = {},
 ) {
@@ -299,6 +380,7 @@ async function mergedMilestone(
         {
           name: 'Gate',
           argv: gate.argv(options.gate?.(gate.dir) ?? 'console.log(process.cwd())'),
+          ...(options.gateTimeoutMs ? { timeout_ms: options.gateTimeoutMs } : {}),
         },
       ],
     },
@@ -428,6 +510,14 @@ const reviewNotes = (f: Workbench) =>
     .kindEvents(f.project.id, ['lead.note_added'])
     .filter((event) => (event.payload as { kind: string }).kind.startsWith('review_'));
 
+const verifiedNotes = (f: Workbench) =>
+  f.store
+    .kindEvents(f.project.id, ['lead.note_added'])
+    .map((event) => event.payload as LeadNote)
+    .filter((note) => note.kind === 'milestone_verified');
+
+const FIX_LINE = 'Propose fix tasks under this milestone with propose_board, citing this evidence.';
+
 it('starts no verification of a ready lead milestone while verification is off', async () => {
   const { f, milestone } = await mergedMilestone({ policy: 'off' });
   for (let tick = 0; tick < 3; tick++) await f.control.tick();
@@ -476,11 +566,36 @@ it.skipIf(insideSandbox)(
       independence: 'other_runtime',
       verdict: { verdict: 'pass', summary: 'Exports download in the clone' },
     });
+    expect(settled).not.toHaveProperty('reason_code');
     expect(settled.finished_at).toBeTypeOf('number');
     expect(
       f.store.kindEvents(f.project.id, ['milestone.verified']).map((event) => event.payload),
     ).toEqual([settled]);
     expect(reviewNotes(f)).toEqual([]);
+    const notes = verifiedNotes(f);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.text).toContain('passed');
+    expect(notes[0]!.text).toContain('Exports download in the clone');
+    expect(notes[0]!.text).not.toContain(FIX_LINE);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'tells the lead of a failed verification with the failed command and its output, and wakes it',
+  async () => {
+    const command = "printf 'rows %s\\n' missing; exit 3";
+    const { f, lead } = await mergedMilestone({ acceptance: [command] });
+    await ended(f);
+    const notes = verifiedNotes(f);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.text).toContain('failed');
+    expect(notes[0]!.text).toContain(command);
+    expect(notes[0]!.text).toContain('rows missing');
+    expect(notes[0]!.text).toContain(FIX_LINE);
+    await eventually(
+      () => f.turns(lead.id).some((turn) => turn.input.includes('<note kind="milestone_verified"')),
+      () => f.control.tick(),
+    );
   },
 );
 
@@ -514,6 +629,74 @@ it.skipIf(insideSandbox)('starts no second verification of the same commitment',
   expect(rowsOf(f)).toHaveLength(1);
 });
 
+it
+  .skipIf(insideSandbox)
+  .each<
+    [
+      string,
+      Parameters<typeof mergedMilestone>[0],
+      ((setup: Merged) => Promise<void>) | undefined,
+      Pick<MilestoneVerification, 'state' | 'reason_code'>,
+    ]
+  >([
+    [
+      'a failing check',
+      { acceptance: ['exit 3'] },
+      undefined,
+      { state: 'failed', reason_code: 'checks_failed' },
+    ],
+    [
+      'a check that timed out',
+      { gate: () => 'setTimeout(() => {}, 10000)', gateTimeoutMs: 200 },
+      undefined,
+      { state: 'inconclusive', reason_code: 'checks_environment' },
+    ],
+    [
+      'no runtime that can verify',
+      {},
+      async ({ f }) => {
+        f.control.adapters.clear();
+      },
+      { state: 'inconclusive', reason_code: 'no_verifier_runtime' },
+    ],
+    [
+      'a fail verdict',
+      {},
+      async (setup) => {
+        const { review } = await reviewing(setup);
+        endReview(setup, review, { verdict: 'fail', summary: 'Exports return no rows' });
+      },
+      { state: 'failed', reason_code: 'verifier_failed' },
+    ],
+    [
+      'a verifier that ended with no finding and no reply',
+      {},
+      async (setup) => {
+        await reviewing(setup);
+        setup.reviewer.emit({ kind: 'turn.completed', status: 'completed' });
+      },
+      { state: 'inconclusive', reason_code: 'review_incomplete' },
+    ],
+    [
+      'a verifier that handed in no verdict',
+      {},
+      async (setup) => {
+        const { review } = await reviewing(setup);
+        endReview(setup, review);
+      },
+      { state: 'inconclusive', reason_code: 'no_verdict' },
+    ],
+  ])('records why the verification ended on %s', async (_, options, drive, expected) => {
+  const setup = await mergedMilestone(options);
+  await drive?.(setup);
+  expect(await ended(setup.f)).toMatchObject(expected);
+  expect(
+    setup.f
+      .call<ProjectRead>('project.read', { project_id: setup.f.project.id })
+      .milestones.find((view) => view.milestone.id === setup.milestone.id)?.verification,
+  ).toMatchObject({ reason_code: expected.reason_code });
+});
+
 it.skipIf(insideSandbox)(
   'ends the verification inconclusive when the verifier hands in no verdict',
   async () => {
@@ -545,7 +728,9 @@ it.skipIf(insideSandbox)(
     );
     const checking = [...completions].filter((completion) => !earlier.has(completion));
     await f.restart();
-    expect(rowsOf(f)).toMatchObject([{ state: 'inconclusive', reason: 'daemon_restart' }]);
+    expect(rowsOf(f)).toMatchObject([
+      { state: 'inconclusive', reason: 'daemon_restart', reason_code: 'daemon_restart' },
+    ]);
     writeFileSync(path.join(setup.gate.dir, 'release'), '');
     await Promise.allSettled(checking);
   },

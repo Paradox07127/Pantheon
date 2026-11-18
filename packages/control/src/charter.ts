@@ -1,4 +1,11 @@
-import type { CharterMode, CharterPower, Entity, Principal, Project } from '@pantheon/domain';
+import type {
+  CharterMode,
+  CharterPower,
+  Entity,
+  MilestoneVerification,
+  Principal,
+  Project,
+} from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { externalEvents } from './user-config.js';
 import { DEFAULT_WORKFLOW_POLICY, workflowPolicy } from './workflow-policy.js';
@@ -50,6 +57,7 @@ export function chartered(
   power: CharterPower,
   subject: Entity,
   reason?: string,
+  verification?: { id: string; state: MilestoneVerification['state'] },
 ): CharterMode {
   if (p.role === 'user') return 'on';
   const mode = charterMode(ctx, p.project_id!, power);
@@ -59,6 +67,7 @@ export function chartered(
     subject: subject.id,
     session_id: p.session_id,
     ...(reason ? { reason } : {}),
+    ...(verification ? { verification } : {}),
   });
   return mode;
 }

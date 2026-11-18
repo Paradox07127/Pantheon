@@ -186,6 +186,7 @@ const wakingNote = (plan: BoardPlan, note: LeadNote) =>
   note.kind === 'review_failed' ||
   note.kind === 'plan_review_completed' ||
   note.kind === 'plan_review_failed' ||
+  note.kind === 'milestone_verified' ||
   (note.kind === 'user_edit' && (note.edit?.wake === true || note.edit?.applied === false)) ||
   reportDone(plan, note);
 

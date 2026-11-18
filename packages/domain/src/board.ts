@@ -23,6 +23,8 @@ export interface Milestone extends Entity {
     commitment_hash: string;
     /** Indices into criteria the accepter checked; absent when the acceptance covers the whole milestone. */
     criteria_checked?: number[];
+    /** A lead's acceptance over a current verification that had not passed, with the reason it gave. */
+    override?: { reason: string; verification_id: string; state: MilestoneVerification['state'] };
   };
   /** The lead session that wrote it; absent on milestones the user created. */
   owner_session_id?: string;
@@ -392,7 +394,9 @@ export interface LeadNote {
     /** A lead that is not a resident wrote or changed its plan; one per plan in the Assistant's inbox, and it does not wake the Assistant. */
     | 'other_plan'
     /** A task session asked a question its lead may answer; wakes the lead. */
-    | 'worker_question';
+    | 'worker_question'
+    /** A verification of one of the lead's milestones ended; wakes the lead. */
+    | 'milestone_verified';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;
@@ -449,7 +453,14 @@ export interface MilestoneView {
   /** The newest verification of the current commitment of a ready or completed lead milestone; absent when none ran. */
   verification?: Pick<
     MilestoneVerification,
-    'id' | 'state' | 'independence' | 'runtime' | 'reason' | 'started_at' | 'finished_at'
+    | 'id'
+    | 'state'
+    | 'independence'
+    | 'runtime'
+    | 'reason'
+    | 'reason_code'
+    | 'started_at'
+    | 'finished_at'
   > & {
     failed: { name: string; output_tail: string }[];
     /** The commands the run went through, in order; hidden checks are left out. */
@@ -494,6 +505,18 @@ export interface BoardPlanView {
   assumptions: BoardPlan['assumptions'];
   updated_at: number;
 }
+/** Why a verification failed or was inconclusive. */
+export type MilestoneVerificationReason =
+  | 'checks_failed'
+  | 'checks_environment'
+  | 'check_error'
+  | 'no_verifier_runtime'
+  | 'review_not_started'
+  | 'verifier_failed'
+  | 'review_failed'
+  | 'review_incomplete'
+  | 'no_verdict'
+  | 'daemon_restart';
 /** One run of a milestone's checks against one commitment. */
 export interface MilestoneVerification extends Entity {
   project_id: string;
@@ -514,6 +537,8 @@ export interface MilestoneVerification extends Entity {
   independence?: 'other_vendor' | 'other_runtime' | 'same_runtime';
   /** Why the run ended as it did, when its state and commands do not say. */
   reason?: string;
+  /** Set on every failed or inconclusive run; absent on a passed one. */
+  reason_code?: MilestoneVerificationReason;
   /** The commit of each source root the checks ran on. */
   commits?: { source: string; commit: string }[];
   /** The verdict the verifier handed in, as its review records it. */
