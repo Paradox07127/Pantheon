@@ -8,6 +8,7 @@ import {
   type Principal,
   type Project,
   type ProjectBaseline,
+  type RuntimeChoice,
   type Session,
   type SessionTurn,
   type TurnSkill,
@@ -23,7 +24,8 @@ import {
   type Handler,
   type Handlers,
 } from './context.js';
-import { autoMerge } from './user-config.js';
+import { autoMerge, sessionDefaults } from './user-config.js';
+import { projectRoutingTable } from './routing-table.js';
 import { gateCommands } from './landing.js';
 import { relayingQuestion } from './approvals.js';
 import { charterMode } from './charter.js';
@@ -76,6 +78,7 @@ import {
   unsnooze,
 } from './session.js';
 import {
+  admitted,
   dispatchQueue,
   dispatchTasks,
   placedTaskSessions,
@@ -187,6 +190,7 @@ const wakingNote = (plan: BoardPlan, note: LeadNote) =>
   note.kind === 'plan_review_completed' ||
   note.kind === 'plan_review_failed' ||
   note.kind === 'milestone_verified' ||
+  note.kind === 'runtime_switched' ||
   (note.kind === 'user_edit' && (note.edit?.wake === true || note.edit?.applied === false)) ||
   reportDone(plan, note);
 
@@ -391,6 +395,8 @@ export interface HandBackCheck {
   used: number;
   limit: number;
   held?: 'usage_limit' | 'project_budget';
+  /** Only the count refuses it: the session was handed the problem back limit times, and no hold applies. */
+  used_up?: true;
 }
 
 /** Whether the tracker hands the merge problem back to the session; an allowed one is held while a turn would fail or spend over the budget. */
@@ -407,10 +413,9 @@ export function handBackAllowed(
       (reason) => reason === problem,
     ).length,
     limit = policy.handback_limit;
-  const allowed =
+  const fixable =
     HANDED_BACK.includes(problem) &&
     !(problem === 'gate_failed' && policy.gate_on_fail === 'stop') &&
-    used < limit &&
     !(
       (problem === 'no_changes' || problem === 'uncommitted_changes') &&
       reportedRequirement(ctx, plan, session, latestTurn)
@@ -419,7 +424,7 @@ export function handBackAllowed(
     !(problem === 'gate_failed' && session.merge?.failure_class === 'environment') &&
     // The same text again means the last hand-back made no progress.
     handBackText(ctx, session, problem) !== lastHandBackText;
-  if (!allowed) return { allowed, used, limit };
+  if (!fixable) return { allowed: false, used, limit };
   // A turn before the usage limit resets would fail the same way, and one over the project
   // budget would spend more, so the hand-back waits.
   const held = usageLimitWaiting(ctx, session.id)
@@ -427,7 +432,9 @@ export function handBackAllowed(
     : projectOverBudget(ctx, plan.project_id)
       ? 'project_budget'
       : undefined;
-  return held ? { allowed, used, limit, held } : { allowed, used, limit };
+  if (used >= limit)
+    return held ? { allowed: false, used, limit } : { allowed: false, used, limit, used_up: true };
+  return held ? { allowed: true, used, limit, held } : { allowed: true, used, limit };
 }
 
 /** The task session reported a requirement after its turn started, so it waits for the lead's answer. */
@@ -1004,6 +1011,107 @@ export function tickTaskTracking(ctx: ControlContext): void {
         if (handBack(ctx, session, problem)) {
           handedBack[session.id] = [...(ownEntry(handedBack, session.id) ?? []), problem];
           changed = true;
+          continue;
+        }
+      }
+      if (
+        problem &&
+        check?.used_up &&
+        // A limit of 0 turns hand-backs off, the one on the alternate runtime too.
+        check.limit > 0 &&
+        workflowPolicy(ctx, plan.project_id).recovery_switch === 'auto'
+      ) {
+        const taskId = session.task!.id,
+          generation = taskGeneration(plan, taskId),
+          switched = ownEntry(plan.runtime_switches, taskId);
+        // The hand-back of a switch waits while the session's idle process on the old runtime closes.
+        const moving =
+          switched?.generation === generation &&
+          check.used === check.limit &&
+          !!plan.contract_changed?.includes(session.id);
+        let alternate: RuntimeChoice | undefined;
+        if (
+          !moving &&
+          !ctx.store.kindEvents(plan.project_id, ['task.runtime_switched']).some((event) => {
+            const done = event.payload as {
+              lead_session_id: string;
+              task_id: string;
+              generation: number;
+            };
+            return (
+              done.lead_session_id === plan.id &&
+              done.task_id === taskId &&
+              done.generation === generation
+            );
+          })
+        ) {
+          const defaults = sessionDefaults(
+              ctx,
+              ctx.store.must<Project>('projects', plan.project_id),
+            ),
+            task = plan.tasks.find((each) => each.id === taskId),
+            kind = task?.kind,
+            // A project with its own writer does not route, as dispatch does not.
+            routed =
+              !defaults?.writer && kind
+                ? projectRoutingTable(ctx, plan.project_id).cells.find(
+                    (cell) => cell.domain === kind.domain && cell.tier === kind.tier,
+                  )?.alternate
+                : undefined,
+            fallback = defaults?.fallbacks?.writer;
+          // A runtime the plan names for the task is the lead's choice; Pantheon does not move it.
+          alternate = task?.runtime
+            ? undefined
+            : [routed, fallback].find(
+                (choice) =>
+                  choice && choice.runtime !== session.runtime && admitted(ctx, choice.runtime),
+              );
+        }
+        if (alternate) {
+          const latest = ctx.store.must<BoardPlan>('board_plans', plan.id);
+          ctx.store.update(
+            'board_plans',
+            {
+              ...latest,
+              runtime_switches: {
+                ...latest.runtime_switches,
+                [taskId]: {
+                  generation,
+                  from: session.runtime,
+                  to: alternate,
+                  reason: problem,
+                  at: ctx.store.now(),
+                },
+              },
+              // The hand-back's turn moves the session to the switch's runtime first.
+              contract_changed: [...new Set([...(latest.contract_changed ?? []), session.id])],
+            },
+            latest.revision,
+          );
+          notes.push(
+            recordNote(ctx, plan, {
+              at: ctx.store.now(),
+              session_id: session.id,
+              task_id: taskId,
+              kind: 'runtime_switched',
+              text: `Pantheon handed the ${problem} problem back to session ${session.id} ${check.limit} times on runtime ${session.runtime} without a fix, so it moved the task to runtime ${alternate.runtime}${alternate.model ? ` (model ${alternate.model})` : ''} and handed the problem back there once more.`,
+            }),
+          );
+          ctx.store.event('task.runtime_switched', session, session.project_id, {
+            lead_session_id: plan.id,
+            task_id: taskId,
+            generation,
+            from: session.runtime,
+            to: alternate,
+            reason: problem,
+          });
+          changed = true;
+        }
+        if (moving || alternate) {
+          if (handBack(ctx, session, problem)) {
+            handedBack[session.id] = [...(ownEntry(handedBack, session.id) ?? []), problem];
+            changed = true;
+          }
           continue;
         }
       }

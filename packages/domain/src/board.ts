@@ -1,4 +1,11 @@
-import type { ApprovalQuestion, EffortLevel, Entity, PersonalVia, Review } from './index.js';
+import type {
+  ApprovalQuestion,
+  EffortLevel,
+  Entity,
+  PersonalVia,
+  Review,
+  RuntimeChoice,
+} from './index.js';
 import type { WorkflowStep } from './workflow.js';
 export interface ProjectBrief extends Entity {
   project_id: string;
@@ -234,6 +241,15 @@ export interface BoardPlan extends Entity {
   /** The merge problems, by session id, Pantheon already handed back to the session to fix. */
   handed_back?: Record<string, string[]>;
   /**
+   * The runtime Pantheon moved each task to, by task id, after its hand-backs of reason ran out on
+   * runtime from; kept while the lead leaves the task's runtime, model, effort and generation alone.
+   * told: the task session heard of the move, so a later change of the task is the lead's.
+   */
+  runtime_switches?: Record<
+    string,
+    { generation: number; from: string; to: RuntimeChoice; reason: string; at: number; told?: true }
+  >;
+  /**
    * The stall and loop alerts of a task session's turn the lead was told of, a loop that went on
    * after it and a stall it did not act on, and the stall and loop of the lead's own turn, by id of
    * a turn still running; a task session's loop across its ended turns, by session id; a task
@@ -396,7 +412,9 @@ export interface LeadNote {
     /** A task session asked a question its lead may answer; wakes the lead. */
     | 'worker_question'
     /** A verification of one of the lead's milestones ended; wakes the lead. */
-    | 'milestone_verified';
+    | 'milestone_verified'
+    /** Pantheon moved a task whose hand-backs ran out to another runtime; wakes the lead. */
+    | 'runtime_switched';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;

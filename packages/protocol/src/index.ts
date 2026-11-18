@@ -2520,6 +2520,12 @@ export const inputSchemas = {
       .describe(
         'auto runs the checks and a verifier review of a lead milestone once it is ready; off runs neither.',
       ),
+    recovery_switch: z
+      .enum(['off', 'auto'])
+      .optional()
+      .describe(
+        "auto moves a task session whose hand-backs of one problem ran out to the routing cell's alternate runtime, or else the writer fallback, for one more hand-back; off leaves it to the lead.",
+      ),
     handback_limit: z.union([z.literal(0), z.number().int().min(2).max(5)]).optional(),
     /** null clears the hint. */
     task_size_hint: z.number().int().nullable().optional(),

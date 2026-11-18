@@ -269,6 +269,10 @@ export function MilestoneCard({
   const verifying = verification?.state === 'pending' || verification?.state === 'running';
   const now = Math.max(model.now, useNow(verifying ? 1000 : 60_000));
   const failedChecks = verification?.commands.filter((c) => c.exit_code !== 0).length ?? 0;
+  // A failed verification lists only the commands that failed.
+  const listed =
+    verification?.commands.filter((c) => verification.state !== 'failed' || c.exit_code !== 0) ??
+    [];
   const code = verification?.reason_code;
   const reason =
     !code || code === 'checks_failed'
@@ -482,9 +486,9 @@ export function MilestoneCard({
           </Collapsible.Trigger>
           <Collapsible.Panel className="bms-vp">
             <div className="bms-vb">
-              {verification.commands.length > 0 && (
+              {listed.length > 0 && (
                 <ul className="bms-vl">
-                  {verification.commands.map((command, index) => {
+                  {listed.map((command, index) => {
                     const output =
                       command.exit_code !== 0
                         ? verification.failed.find((f) => f.name === command.name)?.output_tail

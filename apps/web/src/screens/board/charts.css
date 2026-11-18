@@ -310,6 +310,13 @@
   gap: 12px;
   height: 32px;
 }
+/* The title, then the verification glyph, in the title's column. */
+.bp-msn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
 .bp-trk {
   height: 8px;
   border-radius: var(--r-sm);

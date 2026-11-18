@@ -145,6 +145,25 @@ it.each([
   );
 });
 
+it('gives each of two copies of a question its own description ids, each option pointing into its copy', () => {
+  const props = { group: true, draft: 'd', questions: [track], label: 'Open questions' } as const;
+  const html = renderToStaticMarkup(
+    createElement(
+      'div',
+      null,
+      createElement(QuestionCard, props),
+      createElement(QuestionCard, props),
+    ),
+  );
+  const copies = html.split('aria-label="Open questions"').slice(1);
+  expect(copies).toHaveLength(2);
+  const ids = copies.map((copy) => [...copy.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]));
+  expect(ids.map((own) => own.length)).toEqual([2, 2]);
+  expect(ids[0]!.filter((id) => ids[1]!.includes(id))).toEqual([]);
+  for (const [n, copy] of copies.entries())
+    expect([...copy.matchAll(/aria-describedby="([^"]+)"/g)].map((m) => m[1])).toEqual(ids[n]);
+});
+
 const session = {
   id: 's1',
   project_id: 'p1',

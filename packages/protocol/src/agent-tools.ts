@@ -104,8 +104,21 @@ const changeFields = {
     .describe('Up to 10 routines; a change replaces the whole list.'),
 };
 
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+// agent.propose and agent.proposal.resolve do not take it.
+const contract = z
+  .strictObject({
+    weekly_input_tokens: z.number().int().positive().optional(),
+    loudest: z.enum(['feed', 'notify', 'ask']).optional(),
+    quiet_hours: z.strictObject({ from: hhmm, to: hhmm }).optional(),
+  })
+  .describe(
+    'Limits on when its wakes may reach the user: input tokens a week, the loudest of feed, notify or ask, and local HH:MM quiet hours.',
+  );
+
 const createFields = {
   ...changeFields,
+  contract: contract.optional(),
   template: z.enum(AGENT_TEMPLATE_NAMES),
   name: z.string().min(1).max(80),
   role: z.string().min(1).max(24),
@@ -119,6 +132,10 @@ export const agentInputSchemas = {
     agent_id: str,
     revision: z.number().int().positive(),
     ...changeFields,
+    contract: contract
+      .nullable()
+      .optional()
+      .describe('A new contract replaces it; null removes it.'),
   }),
   /** AgentProfile; the user only. Ends the agent's idle session and its routines; the assistant cannot be archived. */
   'agent.archive': z.strictObject({ agent_id: str }),

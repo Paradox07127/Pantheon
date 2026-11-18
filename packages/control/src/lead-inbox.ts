@@ -36,7 +36,7 @@ import {
   withoutNativeConversation,
 } from './session.js';
 import { queueStepTurn, wakeLead } from './task-tracking.js';
-import { taskRuntime } from './task-dispatch.js';
+import { runtimeSwitch, taskRuntime } from './task-dispatch.js';
 import { changeModel } from './workbench-session.js';
 import { causeTurn, chainDepth } from './progress.js';
 import { retiredBinding, taskGeneration, taskSessions, taskState } from './board-plan.js';
@@ -311,6 +311,7 @@ const TASK_FAILED = [
   'no_changes',
   'dispatch_failed',
   'runtime_unavailable',
+  'runtime_switched',
   'discarded',
 ];
 const TASK_WAITING = ['blocked', 'waiting', 'wait_ended', 'answer'];
@@ -324,6 +325,8 @@ const FAILED_HANDLING: Record<string, string> = {
   dispatch_failed:
     "Pantheon keeps retrying; change the task's runtime if the error names it, or tell the user if it needs their setup.",
   runtime_unavailable: 'name an available runtime for the task, or leave it as it is.',
+  runtime_switched:
+    "usually nothing to do: the next failure of this problem comes to you instead of another retry. To take the task back to its old runtime, or to another one, name that runtime on the task with update_board; a plan that leaves the task's runtime, model and effort as they are keeps the switch.",
   discarded: 'nothing to do unless the task should come back.',
 };
 const WAITING_HANDLING: Record<string, string> = {
@@ -1035,7 +1038,10 @@ function taskContract(ctx: ControlContext, session: Session): string {
   ].join('\n');
 }
 
-/** The task of a session with a pending contract change; undefined without one or once removed. */
+/**
+ * The task of a session with a pending contract change, with the runtime, model and effort of
+ * Pantheon's runtime switch over its own; undefined without one or once removed.
+ */
 function changedTask(
   ctx: ControlContext,
   session: Session,
@@ -1043,7 +1049,11 @@ function changedTask(
   if (!session.task) return;
   const plan = ctx.store.get<BoardPlan>('board_plans', session.task.lead_session_id);
   if (!plan?.contract_changed?.includes(session.id) || retiredBinding(plan, session)) return;
-  return plan.tasks.find((candidate) => candidate.id === session.task!.id);
+  const task = plan.tasks.find((candidate) => candidate.id === session.task!.id),
+    switched = task && runtimeSwitch(plan, task);
+  return switched
+    ? { ...task!, runtime: switched.runtime, model: switched.model, effort: switched.effort }
+    : task;
 }
 
 /** The runtime the task names when the session should move to it; undefined when it stays. */
@@ -1225,9 +1235,7 @@ export function takeContractChange(
   if (!session.task || session.state === 'running') return;
   const plan = ctx.store.get<BoardPlan>('board_plans', session.task.lead_session_id);
   if (!plan?.contract_changed?.includes(session.id)) return;
-  const task = retiredBinding(plan, session)
-    ? undefined
-    : plan.tasks.find((candidate) => candidate.id === session.task!.id);
+  const task = retiredBinding(plan, session) ? undefined : changedTask(ctx, session);
   if (
     task &&
     (nextRuntime(ctx, session, task) ||
@@ -1237,10 +1245,24 @@ export function takeContractChange(
   )
     return;
   const target = task && taskRuntime(ctx, plan, task);
+  const switched = task && plan.runtime_switches?.[task.id];
+  // Pantheon's own move reaches the session once.
+  const moved = switched && !switched.told && switched.to.runtime === session.runtime;
   if (consume) {
     const next = ctx.store.update(
       'board_plans',
-      { ...plan, contract_changed: plan.contract_changed.filter((value) => value !== session.id) },
+      {
+        ...plan,
+        contract_changed: plan.contract_changed.filter((value) => value !== session.id),
+        ...(moved
+          ? {
+              runtime_switches: {
+                ...plan.runtime_switches,
+                [task.id]: { ...switched, told: true as const },
+              },
+            }
+          : {}),
+      },
       plan.revision,
     );
     if (task && target !== session.runtime) tellRuntimeUnavailable(ctx, next, session, target!);
@@ -1248,7 +1270,9 @@ export function takeContractChange(
   if (!task) return '[Pantheon] The lead removed this task from the board.';
   const own = sessionTask(plan, session)!;
   return [
-    '[Pantheon] The lead changed this task. It now reads:',
+    moved
+      ? `[Pantheon] Pantheon moved this task from runtime ${switched.from} to ${switched.to.runtime}: the ${switched.reason} problem came back there without a fix. The task reads:`
+      : '[Pantheon] The lead changed this task. It now reads:',
     `Title: ${own.title}`,
     ...contractLines(own),
     ...(target !== session.runtime

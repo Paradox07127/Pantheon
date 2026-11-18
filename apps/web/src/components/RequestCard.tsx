@@ -497,7 +497,9 @@ export function RequestCard({
               })}
             >
               {milestone.milestone.criteria.map((criterion, index) => (
-                <li key={index}>{criterion.text}</li>
+                <li key={index}>
+                  <Clip text={criterion.text} lines={3} />
+                </li>
               ))}
             </ul>
           )}

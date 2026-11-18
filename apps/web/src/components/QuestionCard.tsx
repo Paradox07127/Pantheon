@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react';
+import { useId, type ReactElement, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import type { ApprovalQuestion, BaselinePreview } from '@pantheon/domain';
 import { useDrafts, type Answers } from '../data/drafts';
@@ -115,9 +115,8 @@ export function QuestionCard(props: QuestionCardProps) {
   const blank: Answers = { picked: questions.map(() => []), typed: questions.map(() => '') };
   // Unfinished answers outlive the card.
   const { picked, typed, decided = [] } = useDrafts((s) => s.answers[draft]) ?? blank;
-  // An option's description sits beside its button, so its "Show more" is no button in a button;
-  // a card shown twice holds the same text under the same id.
-  const about = `qc-${draft}`;
+  // An option's description sits beside its button, so its "Show more" is no button in a button.
+  const about = useId();
   const change = (next: (now: Answers) => Partial<Answers>) => {
     const now = useDrafts.getState().answers[draft] ?? blank;
     useDrafts.getState().answer(draft, { ...now, ...next(now) });

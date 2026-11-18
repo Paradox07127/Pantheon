@@ -47,6 +47,8 @@
   "board.recovery.step.ahead": "未到",
   "board.recovery.step.current": "当前",
   "board.recovery.step.done": "已完成",
+  "board.recovery.step.handedBack": "已交回 {used} / {limit}",
+  "board.recovery.step.handedBackCount": "{count, plural, other {已交回 # 次}}",
   "board.recovery.step.lead": "lead",
   "board.recovery.step.skipped": "已跳过",
   "board.recovery.step.switch": "其他运行时",

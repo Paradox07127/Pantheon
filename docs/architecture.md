@@ -30,6 +30,28 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 3. 处理函数改状态表、写事件、往 outbox 排后续工作；事件经 `GET /v1/events` 和 `WS /v1/events/ws` 推给客户端。
 4. `scheduler.ts` 按 outbox 和定时器推进：准备 worktree(`provisioning.ts`)、起回合(`session.ts`、`native-session.ts`)、送达权限回答(`approvals.ts`)、合并(`workbench-session.ts` 调 `landing.ts`)、删 worktree 和审查目录，并推进摸底与改动解读会话。
 
+## 项目级和个人级 agent
+
+项目级 agent 是每个项目的常驻 agent(Assistant、Triage、Ideas、Goals、自建),持 lead 会话凭证，只碰自己的项目。个人级 agent 持个人密钥，跨所有项目，只走 `personal-scope.ts` 的白名单，daemon 入口和命令入口各拦一次。下表是 `agent-scope.ts` 的 `agentScopeMarkdown()` 的输出,`tests/control/agent-scope.test.ts` 核对两边一致。
+
+<!-- agent-scope:start -->
+| 能力 | 项目级 agent | 个人级 agent | 个人级可用的接口 | 个人级被拒的命令 |
+| --- | --- | --- | --- | --- |
+| 所有项目的概况 | 只看自己的项目 | 读所有项目的概况 | `projects.summary` |  |
+| 需要你 | 不经这个查询 | 读所有项目里用户看到的条目，不含工具输入原文，条目上的操作都不可用 | `needs_you.list` |  |
+| 离开期间简报和已读位置 | 不经这两个接口 | 读每个项目的简报，只移动它自己的已读位置 | `project.brief`、`project.seen` |  |
+| 替用户做的决定 | 不经这个查询 | 读每个项目的记录，不含存储规则原文 | `project.decisions` |  |
+| 整份计划 | 经 `project_read` 读自己项目的计划 | 不能，`board.view` 被拒 |  |  |
+| 会话记录 | 读自己项目的会话 | 不能 |  |  |
+| 写计划、派发、开始或停止任务 | 对自己项目的计划和任务可以 | 不能 |  | `board.plan.edit`、`task.start` |
+| 给项目的助理发请求 | 不经这个命令 | 可以，请求算用户原话，回合带 `via` 标记 | `request.send` |  |
+| 回答提问、计划变更、里程碑验收 | 按章程回答自己 worker 的提问，验收自己的里程碑 | 默认都不能，用户在设置里逐类打开；转述的 worker 提问和超预算时的计划变更始终留给用户 | `lead.question.answer`、`board.plan.proposal.resolve`、`milestone.accept` |  |
+| 权限请求、建 agent、外部事件开工、预算项 | 按章程代批自己 worker 的权限请求，可以提议新建 agent | 不能，始终留给用户 |  | `approval.respond`、`agent.create`、`agent.propose`、`agent.proposal.resolve`、`external.approve`、`workflow.policy.set` |
+| 记忆和学到的改动 | 可以提议 | 不能 |  | `memory.propose`、`improvement.decide` |
+| 什么时候醒 | 自己项目的备注、例行任务、信号 | 外部个人 agent 由它自己的程序决定什么时候调用 |  |  |
+| 层级 | 常驻 agent 管它的 worker | 在常驻 agent 旁边，不在常驻和 worker 之间，没有自己的计划 |  |  |
+<!-- agent-scope:end -->
+
 ## control 模块分组
 
 - 交互终端:`terminals.ts`(懒加载 node-pty、用户 login shell、内存输出回放、会话结束与无连接超时清理；daemon 的独立 WebSocket 只传输出)

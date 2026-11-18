@@ -227,6 +227,7 @@ export {
   personalQuery,
   personalCommand,
 } from './personal-scope.js';
+export { AGENT_SCOPE, agentScopeMarkdown, type AgentScopeRow } from './agent-scope.js';
 export { TraceIndex } from './trace-index.js';
 export { RUNTIME_EVENT_KINDS } from './runtime-findings.js';
 export { runtimeConfig } from './user-config.js';

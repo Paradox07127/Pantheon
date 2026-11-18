@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactElement } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { shortId } from '../../data/format';
 import { t } from '../../i18n';
@@ -295,7 +296,7 @@ export function RisksPanel({ model }: { model: BoardModel }) {
           {items.map((r, i) => (
             <li key={i}>
               {kind === 'risk' ? <WarnIcon /> : <i className="bul" aria-hidden="true" />}
-              <span>{r.text}</span>
+              <Clip text={r.text} lines={3} />
             </li>
           ))}
         </ul>

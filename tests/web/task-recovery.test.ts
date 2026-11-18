@@ -291,6 +291,40 @@ describe('the task drawer', () => {
     expect(text(recovery)).toContain(zh('board.recovery.repeated'));
   });
 
+  it.each([
+    [
+      'its hand-backs against the limit',
+      rung('lead', { used: 2, limit: 2 }),
+      undefined,
+      zhf('board.recovery.step.handedBack', { used: 2, limit: 2 }),
+    ],
+    [
+      'the hand-backs of its reason without a limit',
+      rung('lead'),
+      ['gate_failed', 'out_of_scope', 'gate_failed'],
+      zhf('board.recovery.step.handedBackCount', { count: 2 }),
+    ],
+    ['no count without the hand-backs', rung('lead'), null, ''],
+    ['none when nothing was handed back', rung('lead'), [], zh('board.task.drawer.none')],
+  ])('words the passed retry step of a lead task by %s', (_name, value, handed, words) => {
+    const t = task('a', {
+      rung: value,
+      ...(handed !== null && {
+        activity: {
+          phase: 'idle',
+          since: NOW,
+          health: 'fresh',
+          attempt: 1,
+          ...(handed && { handed_back: handed }),
+        },
+      }),
+    });
+    const recovery = section(drawer(t), zh('board.recovery.heading'))!;
+    const ladder = nodes(recovery).find((n) => n.type === 'ol')!;
+    const retry = nodes(ladder).filter((n) => n.type === 'li')[0]!;
+    expect(text(retry)).toBe(`${zh('board.recovery.rung.retry')}${words}`);
+  });
+
   it('shows no reason for a reason it does not know, and no code', () => {
     const t = task('a', { rung: rung('lead', { reason: 'something_new' }) });
     const recovery = section(drawer(t), zh('board.recovery.heading'))!;

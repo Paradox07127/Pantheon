@@ -233,13 +233,21 @@ function noticeCard(item: ToastItem, card: NoticeCard, life: ReactNode) {
               <Clip text={card.command} />
             </code>
           )}
-          {card.summary && <p className="nc-text">{card.summary}</p>}
+          {card.summary && (
+            <p className="nc-text">
+              <Clip text={card.summary} />
+            </p>
+          )}
         </>
       ) : (
         <>
           {(card.command || card.summary) && (
             <p className="nc-line">
-              {card.command && <code className="nc-code">{card.command}</code>}
+              {card.command && (
+                <code className="nc-code">
+                  <Clip text={card.command} />
+                </code>
+              )}
               {card.summary && <span className="nc-note">{card.summary}</span>}
             </p>
           )}

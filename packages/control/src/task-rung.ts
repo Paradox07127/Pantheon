@@ -60,14 +60,21 @@ export function taskRungFacts(
   now: number,
 ): TaskRungFacts {
   const ids = new Set(sessions.map((session) => session.id));
+  // The sessions Pantheon switched that have not moved since.
+  const switching = new Set<string>();
   const facts: TaskRungFacts = {
     user: [],
     switches: ctx.store
-      .kindEvents(plan.project_id, ['session.runtime_changed'])
+      .kindEvents(plan.project_id, ['task.runtime_switched', 'session.runtime_changed'])
       .filter((event) => ids.has(event.aggregate_id))
-      .map((event) => {
+      .flatMap((event) => {
+        if (event.kind === 'task.runtime_switched') {
+          switching.add(event.aggregate_id);
+          return [];
+        }
         const { from, to } = event.payload as { from: string; to: string };
-        return { from, to, at: event.created_at, by: 'lead' as const };
+        const by = switching.delete(event.aggregate_id) ? ('pantheon' as const) : ('lead' as const);
+        return [{ from, to, at: event.created_at, by }];
       }),
   };
   const entry = ownEntry(plan.dispatch, taskId);
@@ -219,7 +226,11 @@ export function taskRung(facts: TaskRungFacts): BoardTaskRung | undefined {
       since: lead.at,
       switches,
     };
-  const retry = facts.retry_turn;
+  const retry = facts.retry_turn,
+    last = switches.at(-1);
+  // Only the hand-back Pantheon gives on the runtime it switched to goes past the limit.
+  if (retry && last?.by === 'pantheon' && retry.used > retry.limit)
+    return { rung: 'switch', by: 'pantheon', reason: 'runtime_changed', since: last.at, switches };
   if (retry)
     return {
       rung: 'retry',
@@ -239,7 +250,6 @@ export function taskRung(facts: TaskRungFacts): BoardTaskRung | undefined {
       since: facts.dispatch_error.at,
       switches,
     };
-  const last = switches.at(-1);
   if (last)
     return { rung: 'switch', by: last.by, reason: 'runtime_changed', since: last.at, switches };
 }

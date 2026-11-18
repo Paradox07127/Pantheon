@@ -578,7 +578,12 @@ function storePlan(
     (current?.tasks ?? [])
       .filter((old) => {
         const task = input.tasks.find((candidate) => candidate.id === old.id);
-        return !task || contract(task) !== contract(old);
+        return (
+          !task ||
+          contract(task) !== contract(old) ||
+          // Naming a runtime ends Pantheon's switch, which the runtime above still follows.
+          (!!ownEntry(current!.runtime_switches, old.id) && task.runtime !== old.runtime)
+        );
       })
       .map((old) => old.id),
   );
@@ -662,6 +667,24 @@ function storePlan(
     ...(current?.last_told ? { last_told: current.last_told } : {}),
     contract_changed: [...new Set([...(current?.contract_changed ?? []), ...told])],
     ...(current?.handed_back ? { handed_back: current.handed_back } : {}),
+    ...(current?.runtime_switches
+      ? {
+          runtime_switches: Object.fromEntries(
+            Object.entries(current.runtime_switches).filter(([taskId, switched]) => {
+              const old = current.tasks.find((task) => task.id === taskId),
+                task = input.tasks.find((candidate) => candidate.id === taskId);
+              return (
+                !!old &&
+                !!task &&
+                task.runtime === old.runtime &&
+                task.model === old.model &&
+                task.effort === old.effort &&
+                ownEntry(generations, taskId)?.generation === switched.generation
+              );
+            }),
+          ),
+        }
+      : {}),
     ...(current?.alerted ? { alerted: current.alerted } : {}),
     ...(current?.accepted
       ? {

@@ -162,6 +162,8 @@ export interface WorkflowPolicy extends Entity {
   gate_runner?: 'daemon' | 'session';
   /** Whether a lead milestone that becomes ready has its checks and verifier review run on their own. */
   milestone_verify?: 'off' | 'auto';
+  /** Whether a task session whose hand-backs of one problem ran out moves once to an alternate runtime for one more, before the lead takes over. */
+  recovery_switch?: 'off' | 'auto';
   /** The most files a task should change, as a hint to the lead; absent gives no hint. */
   task_size_hint?: number;
   /** The budget of a task by tier and path; a cell without one has no budget. Exceeding it only flags the task. */

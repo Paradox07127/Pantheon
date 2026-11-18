@@ -1129,6 +1129,8 @@ export function TaskDrawer({
               >
                 {(Object.keys(RUNGS) as BoardTaskRung['rung'][]).map((level, i, levels) => {
                   const at = levels.indexOf(rung.rung);
+                  // Without the rung's count, the hand-backs of its reason; the limit is not on the task.
+                  const handed = task.activity?.handed_back?.filter((r) => r === rung.reason);
                   // Tries Pantheon used, or runtime changes, of a rung already passed.
                   const used =
                     i >= at
@@ -1136,14 +1138,25 @@ export function TaskDrawer({
                       : level === 'retry' && rung.used !== undefined && rung.limit !== undefined
                         ? t(
                             {
-                              id: 'board.recovery.budget.amount',
-                              defaultMessage: '{used} / {limit}',
+                              id: 'board.recovery.step.handedBack',
+                              defaultMessage: 'Handed back {used} / {limit}',
                             },
                             { used: rung.used, limit: rung.limit },
                           )
-                        : level === 'switch' && rung.switches.length > 0
-                          ? String(rung.switches.length)
-                          : null;
+                        : level === 'retry' && handed?.length
+                          ? t(
+                              {
+                                id: 'board.recovery.step.handedBackCount',
+                                defaultMessage:
+                                  '{count, plural, one {Handed back # time} other {Handed back # times}}',
+                              },
+                              { count: handed.length },
+                            )
+                          : level === 'switch' && rung.switches.length > 0
+                            ? String(rung.switches.length)
+                            : null;
+                  // Without the task's activity it is unknown whether Pantheon handed it back.
+                  const none = level === 'retry' && !task.activity ? null : noneText();
                   return (
                     <li key={level} aria-current={i === at ? 'step' : undefined}>
                       {used ? (
@@ -1173,7 +1186,7 @@ export function TaskDrawer({
                       )}
                       <span>{RUNGS[level]()}</span>
                       <span className="bd-lad-r">
-                        {i === at ? rungReason(rung.reason) : i < at ? (used ?? noneText()) : null}
+                        {i === at ? rungReason(rung.reason) : i < at ? (used ?? none) : null}
                       </span>
                     </li>
                   );

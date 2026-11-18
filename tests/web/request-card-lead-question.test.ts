@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { HookHost, find, nodes, text } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
-vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+vi.mock('react', async (actual) =>
+  (await import('./web-hook-host.js')).reactMock(actual, { useId: 'card' }),
+);
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );

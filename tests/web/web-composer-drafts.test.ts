@@ -12,7 +12,9 @@ import {
   unmountAll,
 } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({ board: {} as any }));
-vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+vi.mock('react', async (actual) =>
+  (await import('./web-hook-host.js')).reactMock(actual, { useId: 'card' }),
+);
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );

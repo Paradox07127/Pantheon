@@ -95,7 +95,17 @@ export function overlaps(a: string, b: string): boolean {
     .every((segment, index) => segment === right[index]);
 }
 
+/** Pantheon's runtime switch of the task's current generation, while the task names no runtime. */
+export function runtimeSwitch(plan: BoardPlan, task: PlanTask): RuntimeChoice | undefined {
+  const switched = ownEntry(plan.runtime_switches, task.id);
+  return switched?.generation === taskGeneration(plan, task.id) && !task.runtime
+    ? switched.to
+    : undefined;
+}
+
 function taskChoice(ctx: ControlContext, plan: BoardPlan, task: PlanTask): RuntimeChoice {
+  const switched = runtimeSwitch(plan, task);
+  if (switched) return switched;
   const defaults = sessionDefaults(ctx, ctx.store.must<Project>('projects', plan.project_id));
   const selected =
     defaults?.writer ??
@@ -138,7 +148,7 @@ function taskChoice(ctx: ControlContext, plan: BoardPlan, task: PlanTask): Runti
   return choice;
 }
 
-function admitted(ctx: ControlContext, name: string): boolean {
+export function admitted(ctx: ControlContext, name: string): boolean {
   try {
     runtime(ctx, name, 'writer');
     return true;

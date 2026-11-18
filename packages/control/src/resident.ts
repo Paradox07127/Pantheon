@@ -298,10 +298,11 @@ export function createAgent(
 export function updateAgent(
   ctx: ControlContext,
   profile: AgentProfile,
-  fields: Partial<AgentFields>,
+  fields: Partial<Omit<AgentFields, 'contract'>> & { contract?: AgentFields['contract'] | null },
   cause: string,
 ): AgentProfile {
-  checkAgentFields(ctx, profile.project_id, fields, profile);
+  const { contract, ...rest } = fields;
+  checkAgentFields(ctx, profile.project_id, rest, profile);
   const open = openOf(ctx, profile);
   const moved =
     fields.runtime !== undefined && fields.runtime !== (open?.runtime ?? profile.runtime);
@@ -319,13 +320,15 @@ export function updateAgent(
       'Runtime cannot change the model during a turn',
     );
   const { model: _model, effort: _effort, ...kept } = profile;
-  const { routines, ...changed } = fields;
+  const { routines, ...changed } = rest;
+  // Another runtime starts on its own default model unless one comes with it.
+  const { contract: _contract, ...uncontracted } = moved ? kept : profile;
   const next = ctx.store.update<AgentProfile>(
     'agents',
     {
-      // Another runtime starts on its own default model unless one comes with it.
-      ...(moved ? kept : profile),
+      ...(contract === null ? uncontracted : moved ? kept : profile),
       ...changed,
+      ...(contract && { contract }),
       ...(routines && { routines: routines.map(routineOf) }),
     },
     profile.revision,
@@ -334,7 +337,11 @@ export function updateAgent(
     'agent_profile.updated',
     next,
     next.project_id,
-    { ...changed, ...(routines && { routines: next.routines }) },
+    {
+      ...changed,
+      ...(contract !== undefined && { contract }),
+      ...(routines && { routines: next.routines }),
+    },
     cause,
   );
   if (routines) {

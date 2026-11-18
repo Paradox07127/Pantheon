@@ -2,10 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { ApprovalQuestion, Improvement } from '@pantheon/domain';
 import { find, mount as host, named, nodes, text, unmountAll } from './web-hook-host.js';
-vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+vi.mock('react', async (actual) =>
+  (await import('./web-hook-host.js')).reactMock(actual, { useId: 'card' }),
+);
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
+import { Clip } from '../../apps/web/src/components/Clip.js';
 import { QuestionCard } from '../../apps/web/src/components/QuestionCard.js';
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
 import { useDrafts } from '../../apps/web/src/data/drafts.js';
@@ -421,6 +424,20 @@ describe('request card', () => {
       { milestone_id: 'milestone-1', evidence_refs: ['session:worker-1'], criteria_checked: [0] },
       3,
     );
+  });
+
+  it('keeps each criterion of a milestone whole behind a three-line clip', () => {
+    const { h } = mount({
+      item: milestoneItem,
+      who: 'Search and redirects',
+      milestone: { milestone: milestoneView, stored, cells, evidence: [] },
+    });
+    const items = nodes(
+      find(h.value, (n) => n.props['aria-label'] === zh('components.requestCard.criteria')),
+    ).filter((n) => n.type === 'li');
+    expect(items.map((li) => find(li, (n) => n.type === Clip).props)).toEqual([
+      { text: 'Old links redirect', lines: 3 },
+    ]);
   });
 
   it('turns the acceptance off until the board names the milestone', () => {

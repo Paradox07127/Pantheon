@@ -30,6 +30,7 @@ import {
   type SnapshotMilestone,
   type SnapshotSession,
 } from './panels-model';
+import { VerifyBadge } from './MilestoneCard';
 import { StatusIcon } from './status';
 import { TellLead, useDialogContent } from './TellLead';
 import { Clip } from '../../components/Clip';
@@ -630,7 +631,12 @@ export function Milestones({ model, actions }: { model: BoardModel; actions?: Mi
                 <div
                   className={`bp-msr${lead ? ' bp-msl' : ''}${finished ? ' fin' : ''}${actions ? ' with-acts' : ''}`}
                 >
-                  <Clip className="nm" text={ms.title} />
+                  <span className="bp-msn">
+                    <Clip className="nm" text={ms.title} />
+                    {ms.verification && (
+                      <VerifyBadge verification={ms.verification} now={model.now} glyphOnly />
+                    )}
+                  </span>
                   <span
                     className="bp-trk"
                     role="progressbar"

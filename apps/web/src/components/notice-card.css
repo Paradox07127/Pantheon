@@ -123,11 +123,9 @@
   font-size: var(--fs-xs);
 }
 .nc-text {
+  display: flex;
   margin: 0;
-  overflow: hidden;
   font-size: var(--fs-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .nc-line {
   margin: 0;
@@ -136,11 +134,9 @@
   line-height: var(--lh-xs);
 }
 .nc-code {
+  display: flex;
   min-width: 0;
-  overflow: hidden;
   font-family: var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .nc-note {
   flex: none;

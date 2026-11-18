@@ -9,6 +9,7 @@ vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { useId: 'card-id' }),
 );
 import { RuntimeGlyph, runtimeName } from '@/components/RuntimeGlyph';
+import { Milestones } from '@/screens/board/Charts';
 import { MilestoneCard, VerifyBadge } from '@/screens/board/MilestoneCard';
 import { TellLead } from '@/screens/board/TellLead';
 import type { BoardMilestone, SnapshotMilestone } from '@/screens/board/panels-model';
@@ -130,12 +131,40 @@ describe('verification badge on the milestone card', () => {
   });
 });
 
+describe('verification on the milestones list', () => {
+  it.each([
+    [
+      'running',
+      (): string | null => say('board.verify.badge.running', { elapsed: durationText(3 * 60_000) }),
+    ],
+    ['passed', (): string | null => zh('board.verify.badge.passed')],
+    ['failed', (): string | null => zh('board.verify.badge.failed')],
+    ['inconclusive', (): string | null => zh('board.verify.badge.inconclusive')],
+    ['skipped', (): string | null => null],
+    ['absent', (): string | null => null],
+  ] as const)('names a %s verification in the row of its milestone', (state, words) => {
+    const ms = milestone(state === 'absent' ? undefined : { state, finished_at: NOW });
+    const tree = new HookHost(() => Milestones({ model: board(ms) })).render();
+    const row = find(tree, (n) =>
+      children(n).some(
+        (c) => c.props.role === 'progressbar' && c.props['aria-label'] === 'importer ready',
+      ),
+    );
+    const drawn = nodes(row).flatMap((n) =>
+      n.type === VerifyBadge ? nodes(VerifyBadge(n.props)) : [n],
+    );
+    const named = drawn.filter((n) => n.props.role === 'img').map((n) => n.props['aria-label']);
+    const expected = words();
+    expect(named).toEqual(expected === null ? [] : [expected]);
+  });
+});
+
 describe('verdict of a milestone verification', () => {
   it.each(['pending', 'running', 'skipped'] as const)('has no verdict while %s', (state) => {
     expect(verdict(card(milestone({ state })))).toBeUndefined();
   });
 
-  it('opens a failed verification with each command, the output of the failed one, and keeps Accept on', () => {
+  it('opens a failed verification with the failed command and its output, and keeps Accept on', () => {
     const out = card(
       milestone({
         state: 'failed',
@@ -151,15 +180,14 @@ describe('verdict of a milestone verification', () => {
     expect(shown.props.defaultOpen).toBe(true);
     expect(text(shown)).toContain(say('board.verify.card.checksFailed', { count: 1 }));
     const rows = nodes(shown).filter((n) => n.type === 'li');
-    expect(text(rows[0]!)).toBe('pnpm lint');
-    expect(text(rows[1]!).startsWith('pnpm test')).toBe(true);
+    expect(rows).toHaveLength(1);
+    expect(text(rows[0]!).startsWith('pnpm test')).toBe(true);
     expect(rows.map((row) => find(row, (n) => n.props.role === 'img').props['aria-label'])).toEqual(
-      [zh('board.verify.check.passed'), zh('board.verify.check.failed')],
+      [zh('board.verify.check.failed')],
     );
-    expect(text(find(rows[1]!, (n) => n.type === 'pre'))).toBe(
+    expect(text(find(rows[0]!, (n) => n.type === 'pre'))).toBe(
       'FAIL importer.test.ts\nexpected 2 rows',
     );
-    expect(nodes(rows[0]!).some((n) => n.type === 'pre')).toBe(false);
     expect(nodes(shown).some((n) => n.type === RuntimeGlyph)).toBe(false);
     const accept = find(
       out,
@@ -170,6 +198,34 @@ describe('verdict of a milestone verification', () => {
     );
     expect(accept.props.disabled).toBe(false);
   });
+
+  it.each([
+    ['failed', ['pnpm test']],
+    ['passed', ['pnpm lint', 'pnpm test']],
+  ] as const)(
+    'lists the commands of a %s verification as %j, without an empty output',
+    (state, names) => {
+      const shown = verdict(
+        card(
+          milestone({
+            state,
+            finished_at: NOW,
+            commands: [
+              { name: 'pnpm lint', exit_code: 0 },
+              { name: 'pnpm test', exit_code: state === 'failed' ? 1 : 0 },
+            ],
+            failed: state === 'failed' ? [{ name: 'pnpm test', output_tail: '' }] : [],
+          }),
+        ),
+      )!;
+      expect(
+        nodes(shown)
+          .filter((n) => n.type === 'li')
+          .map(text),
+      ).toEqual(names);
+      expect(nodes(shown).some((n) => n.type === 'pre')).toBe(false);
+    },
+  );
 
   it('keeps a passed verification closed and names the verifier and how far it stands from the writers', () => {
     const shown = verdict(

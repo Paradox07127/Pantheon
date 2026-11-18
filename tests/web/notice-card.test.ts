@@ -90,6 +90,26 @@ describe('notice cards', () => {
     ]);
   });
 
+  it('keeps the whole summary of a card and the command of a result behind one-line clips', () => {
+    noticeNeeds({ heading: 'lead', event: 'asks you', summary: 'Should refunds be partial?' });
+    noticeResult({
+      heading: 'ledger-report',
+      event: 'checks failed',
+      tone: 'failed',
+      command: 'pnpm test:integration',
+      summary: '2 failing',
+    });
+    const clips = mounted.items().filter((n) => n.type === Clip);
+    expect(clips.map((n) => [n.props.text, n.props.lines ?? 1])).toEqual([
+      ['ledger-report', 1],
+      ['checks failed', 1],
+      ['pnpm test:integration', 1],
+      ['lead', 1],
+      ['asks you', 1],
+      ['Should refunds be partial?', 1],
+    ]);
+  });
+
   it('keeps a card that needs the user, without a countdown, until it is closed by its id', () => {
     const id = noticeNeeds({
       id: 'approval-7',

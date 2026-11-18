@@ -580,6 +580,37 @@ it('cancels the timer of a routine an update removes, and refuses the agents gro
   ).toBe('invalid_input');
 });
 
+it('stores a contract given on create, changes or removes it on update, and refuses an unknown level or a zero cap', async () => {
+  const f = await workbenchFixture();
+  const contract = {
+    weekly_input_tokens: 200_000,
+    loudest: 'notify',
+    quiet_hours: { from: '22:00', to: '07:00' },
+  };
+  const helper = create(f, { name: 'Bounded', contract });
+  expect(f.store.must<AgentProfile>('agents', helper.id).contract).toEqual(contract);
+  const changed = f.call<AgentProfile>('agent.update', {
+    agent_id: helper.id,
+    revision: helper.revision,
+    contract: { loudest: 'feed' },
+  });
+  expect(f.store.must<AgentProfile>('agents', helper.id).contract).toEqual({ loudest: 'feed' });
+  f.call('agent.update', { agent_id: helper.id, revision: changed.revision, contract: null });
+  expect(f.store.must<AgentProfile>('agents', helper.id)).not.toHaveProperty('contract');
+
+  const schemaRefusal = (fields: Record<string, unknown>) => {
+    try {
+      create(f, fields);
+    } catch (error) {
+      return (error as Error).name;
+    }
+    return 'accepted';
+  };
+  expect(schemaRefusal({ name: 'Loud', contract: { loudest: 'shout' } })).toBe('ZodError');
+  expect(schemaRefusal({ name: 'Free', contract: { weekly_input_tokens: 0 } })).toBe('ZodError');
+  expect(agents(f).find((agent) => agent.template === 'assistant')).not.toHaveProperty('contract');
+});
+
 it('archives an agent between turns, closing its session and its routine timers, and reschedules them once unarchived', async () => {
   const f = await workbenchFixture();
   const helper = create(f, {

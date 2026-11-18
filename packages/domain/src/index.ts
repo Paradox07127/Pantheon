@@ -885,9 +885,17 @@ export interface AgentProfile extends Entity {
   routines: AgentRoutine[];
   /** Absent: the event sources of its template. */
   listens?: ('github' | SignalSource)[];
+  /** Limits on when its wakes may reach the user; absent: none. */
+  contract?: AgentContract;
   created_by: { kind: 'user' } | { kind: 'agent'; session_id: string };
   created_at: number;
   archived_at?: number;
+}
+/** An agent's limits: input tokens a week, the loudest way it may reach the user, local HH:MM quiet hours. */
+export interface AgentContract {
+  weekly_input_tokens?: number;
+  loudest?: 'feed' | 'notify' | 'ask';
+  quiet_hours?: { from: string; to: string };
 }
 /** A routine as agent.create, agent.update and agent.propose take it: every_minutes or daily at a local HH:MM. */
 export interface AgentRoutineInput {
@@ -912,6 +920,7 @@ export interface AgentFields {
   model?: string;
   effort?: EffortLevel;
   routines?: AgentRoutineInput[];
+  contract?: AgentContract;
 }
 /** An agent a resident proposes, or a change to one, that waits for the user's decision. */
 export interface AgentProposal extends Entity {
