@@ -4,6 +4,8 @@ import type {
   CharterMode,
   CharterPower,
   LeadQuestion,
+  Milestone,
+  PlanProposal,
   Principal,
   Session,
 } from '@pantheon/domain';
@@ -19,7 +21,9 @@ const LISTED_POWERS: CharterPower[] = [
   'create_agent',
 ];
 
-/** What a lead or a stored rule decided for the user in the project from since on, newest first. */
+type PersonalAnswer = Extract<DecisionForUser, { kind: 'personal_answer' }>;
+
+/** What a lead, a stored rule or a personal agent key decided for the user in the project from since on, newest first. */
 export function decisionsForUser(
   ctx: ControlContext,
   principal: Principal,
@@ -29,8 +33,21 @@ export function decisionsForUser(
   projectAccess(ctx, principal, projectId, 'project.decisions');
   const events = ctx.store.kindEventsSince(
     projectId,
-    ['charter.power_used', 'approval.approved', 'lead.question_answered'],
+    [
+      'charter.power_used',
+      'approval.approved',
+      'lead.question_answered',
+      'personal.called',
+      'board.plan_proposal_resolved',
+      'milestone.accepted',
+    ],
     since ?? 0,
+  );
+  // A key's answer is the decision event its own command wrote.
+  const called = new Map(
+    events
+      .filter((event) => event.kind === 'personal.called')
+      .map((event) => [event.causation_id, event]),
   );
   // Only a task session's question carries answered_by, and the lead answers it with citations.
   const byLead = (event: (typeof events)[number]) =>
@@ -42,6 +59,53 @@ export function decisionsForUser(
   );
   const items = events.flatMap((event): DecisionForUser[] => {
     const at = event.created_at;
+    const call = event.kind === 'personal.called' ? undefined : called.get(event.causation_id);
+    if (call) {
+      const { key_id, type } = call.payload as { key_id: string; type: PersonalAnswer['command'] };
+      const row = { kind: 'personal_answer', at: call.created_at, key_id, command: type } as const;
+      if (event.kind === 'lead.question_answered' && type === 'lead.question.answer') {
+        const question = event.payload as LeadQuestion;
+        return [
+          {
+            ...row,
+            subject: question.id,
+            lead_session_id: event.aggregate_id,
+            text: question.question,
+            ...(question.answer ? { decision: question.answer.text } : {}),
+          },
+        ];
+      }
+      if (event.kind === 'board.plan_proposal_resolved' && type === 'board.plan.proposal.resolve') {
+        const proposal = event.payload as PlanProposal;
+        return [
+          {
+            ...row,
+            subject: proposal.proposal_id,
+            lead_session_id: event.aggregate_id,
+            text: proposal.reason,
+            decision: proposal.status,
+            ...(proposal.resolution_reason ? { reason: proposal.resolution_reason } : {}),
+          },
+        ];
+      }
+      if (event.kind === 'milestone.accepted' && type === 'milestone.accept') {
+        const milestone = event.payload as Milestone;
+        return [
+          {
+            ...row,
+            subject: milestone.id,
+            ...(milestone.owner_session_id ? { lead_session_id: milestone.owner_session_id } : {}),
+            text: milestone.title,
+          },
+        ];
+      }
+    }
+    if (
+      event.kind === 'personal.called' ||
+      event.kind === 'board.plan_proposal_resolved' ||
+      event.kind === 'milestone.accepted'
+    )
+      return [];
     if (event.kind === 'lead.question_answered') {
       const question = byLead(event)
         ? ctx.store
@@ -72,6 +136,7 @@ export function decisionsForUser(
         mode: CharterMode;
         subject: string;
         session_id: string;
+        reason?: string;
       };
       return used.mode === 'on' && LISTED_POWERS.includes(used.power)
         ? [
@@ -81,6 +146,7 @@ export function decisionsForUser(
               power: used.power as ListedPower,
               subject: used.subject,
               session_id: used.session_id,
+              ...(used.reason ? { reason: used.reason } : {}),
             },
           ]
         : [];

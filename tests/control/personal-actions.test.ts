@@ -6,6 +6,8 @@ import {
   id,
   type Approval,
   type BoardPlan,
+  type LeadNote,
+  type LeadQuestion,
   type Milestone,
   type Principal,
   type Session,
@@ -177,6 +179,68 @@ function propose(f: Fixture) {
   ).proposal_id;
 }
 
+const KEY_VIA = { kind: 'personal', key_id: 'k1' };
+const KEY_REASON = 'Keep the export contract as it is';
+const USER_REASON = 'Finance still reads the old columns';
+
+/** A new proposal of the lead that the user resolves; returns its id. */
+function resolveAsUser(f: Fixture, decision: 'accept' | 'reject', reason?: string) {
+  const proposalId = propose(f);
+  f.call('board.plan.proposal.resolve', {
+    project_id: f.project.id,
+    lead_session_id: 'lead',
+    proposal_id: proposalId,
+    decision,
+    ...(reason ? { reason } : {}),
+  });
+  return proposalId;
+}
+
+/** The note that tells the lead how its proposal was decided. */
+const decisionNote = (f: Fixture, proposalId: string) =>
+  f.store
+    .kindEvents(f.project.id, ['lead.note_added'])
+    .map((event) => event.payload as LeadNote)
+    .find((note) => note.kind === 'user_edit' && note.proposal_id === proposalId);
+
+/** The inputs of every turn Pantheon queued to wake the lead, joined. */
+const leadReceived = (f: Fixture) =>
+  f.store
+    .list<SessionTurn>('session_turns')
+    .filter((turn) => turn.session_id === 'lead' && turn.origin === 'tracker')
+    .map((turn) => turn.input)
+    .join('\n');
+
+const NOT_USER_WORDS = "Its words are not the user's own words: do not quote them as the user's.";
+
+/** The lead adds a task to its plan quoting the words as its source. */
+const addQuotingTask = (f: Fixture, taskId: string, quote: string) =>
+  f.call(
+    'board.plan.edit',
+    {
+      project_id: f.project.id,
+      base_version: plan(f).plan_version,
+      ops: [
+        {
+          type: 'add_task',
+          task: {
+            id: taskId,
+            title: 'Quoted task',
+            goal: 'Do what the words ask',
+            lane: 'core',
+            depends_on: [],
+            source: [quote],
+            scope: [],
+            acceptance: [],
+            done_when: 'report',
+          },
+        },
+      ],
+    },
+    null,
+    leadOf(f, 'lead'),
+  );
+
 /** Spends the project's whole budget with one ended turn. */
 function overBudget(f: Fixture) {
   setPolicy(f, { project_budget: { input_tokens: 100 } });
@@ -243,14 +307,58 @@ const situations: Record<string, Situation> = {
         ).toEqual([]),
     };
   },
-  "the lead's question": (f) => ({
-    input: {
-      project_id: f.project.id,
-      lead_session_id: 'lead',
-      question_id: askQuestion(f),
-      answer: 'CSV',
-    },
-  }),
+  "the lead's question": (f) => {
+    const questionId = askQuestion(f);
+    return {
+      input: {
+        project_id: f.project.id,
+        lead_session_id: 'lead',
+        question_id: questionId,
+        answer: 'CSV',
+      },
+      then: (result) => {
+        const own = askQuestion(f);
+        f.call('lead.question.answer', {
+          project_id: f.project.id,
+          lead_session_id: 'lead',
+          question_id: own,
+          answer: 'JSON',
+        });
+        const stored = (entryId: string) => plan(f).questions!.find((q) => q.id === entryId)!;
+        expect(stored(questionId).via).toEqual(result && KEY_VIA);
+        expect(stored(own)).not.toHaveProperty('via');
+        expect(
+          f.store
+            .kindEvents(f.project.id, ['lead.question_answered'])
+            .map((event) => (event.payload as LeadQuestion).via),
+        ).toEqual(result ? [KEY_VIA, undefined] : [undefined]);
+        const answerNotes = f.store
+          .kindEvents(f.project.id, ['lead.note_added'])
+          .map((event) => event.payload as LeadNote)
+          .filter((note) => note.kind === 'answer');
+        expect(answerNotes.map((note) => note.via)).toEqual(
+          result ? [KEY_VIA, undefined] : [undefined],
+        );
+        const received = leadReceived(f);
+        expect(
+          received.includes(
+            `What happened: the user's personal agent answered your question for the user: "Which file format comes first?" Answer: "CSV". You had assumed: "CSV comes first".\n`,
+          ),
+        ).toBe(!!result);
+        expect(
+          received.includes(
+            `How to handle: the answer applies to this question only; apply it to the plan, start the tasks that waited for it, and fix anything built on a different assumption. ${NOT_USER_WORDS}\n</note>`,
+          ),
+        ).toBe(!!result);
+        expect(received).toContain(
+          'What happened: the user answered your question: "Which file format comes first?" Answer: "JSON". You had assumed: "CSV comes first".\n',
+        );
+        expect(received).toContain(
+          'How to handle: the answer applies to this question only; apply it to the plan, start the tasks that waited for it, and fix anything built on a different assumption.\n</note>',
+        );
+      },
+    };
+  },
   "a task session's relayed question": (f) => ({
     input: {
       project_id: f.project.id,
@@ -263,14 +371,57 @@ const situations: Record<string, Situation> = {
       expect(plan(f).questions?.find((q) => q.id === 'relayed')?.answer).toBeUndefined();
     },
   }),
-  'a plan proposal': (f) => ({
-    input: {
-      project_id: f.project.id,
-      lead_session_id: 'lead',
-      proposal_id: propose(f),
-      decision: 'accept',
-    },
-  }),
+  'a plan proposal': (f) => {
+    const proposalId = propose(f);
+    return {
+      input: {
+        project_id: f.project.id,
+        lead_session_id: 'lead',
+        proposal_id: proposalId,
+        decision: 'accept',
+      },
+      then: (result) => {
+        const own = resolveAsUser(f, 'reject');
+        expect(decisionNote(f, proposalId)?.via).toEqual(result && KEY_VIA);
+        expect(decisionNote(f, own)).not.toHaveProperty('via');
+      },
+    };
+  },
+  'a plan proposal rejected with a reason': (f) => {
+    const proposalId = propose(f);
+    return {
+      input: {
+        project_id: f.project.id,
+        lead_session_id: 'lead',
+        proposal_id: proposalId,
+        decision: 'reject',
+        reason: KEY_REASON,
+      },
+      then: () => {
+        const own = resolveAsUser(f, 'reject', USER_REASON);
+        const received = leadReceived(f);
+        expect(received).toContain(
+          `What happened: the user's personal agent decided your proposal ${proposalId} for the user: reject: ${KEY_REASON}\n`,
+        );
+        expect(received).toMatch(
+          new RegExp(
+            `How to handle: the user let their personal agent make this decision\\. Read your current plan; [^\\n]*build on the plan as it is for the rest\\. ${NOT_USER_WORDS}\\n</note>`,
+          ),
+        );
+        expect(received).toContain(
+          `What happened: the user decided your proposal ${own}: reject: ${USER_REASON}\n`,
+        );
+        expect(received).toMatch(
+          /How to handle: these are the user's own actions\. Read your current plan; [^\n]*build on the plan as it is for the rest\.\n<\/note>/,
+        );
+        expect(
+          [KEY_REASON, USER_REASON].map(
+            (quote, index) => outcome(() => addQuotingTask(f, `quote${index}`, quote)).code,
+          ),
+        ).toEqual(['invalid_input', 'accepted']);
+      },
+    };
+  },
   'a plan proposal accepted with edits': (f) => {
     const proposalId = propose(f);
     return {
@@ -329,6 +480,12 @@ it.each<[CommandType, PersonalAnswerKind[], keyof typeof situations, string]>([
   ['lead.question.answer', ['question'], "a task session's relayed question", 'permission_denied'],
   ['board.plan.proposal.resolve', [], 'a plan proposal', 'permission_denied'],
   ['board.plan.proposal.resolve', ['plan_change'], 'a plan proposal', 'accepted'],
+  [
+    'board.plan.proposal.resolve',
+    ['plan_change'],
+    'a plan proposal rejected with a reason',
+    'accepted',
+  ],
   [
     'board.plan.proposal.resolve',
     ['plan_change'],

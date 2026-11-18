@@ -50,7 +50,7 @@ const session = (
 const screen = (id: string) => zh(`app.screenName.${id}`);
 const allLabel = screen('projects');
 beforeEach(() => {
-  mock.board = { board: null, status: { state: 'live' } };
+  mock.board = { board: null, events: [], status: { state: 'live' } };
   mock.shell = { screen: 'board', sessionId: null, sessionGroup: null, openSession: vi.fn() };
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' });

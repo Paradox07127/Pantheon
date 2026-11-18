@@ -50,12 +50,13 @@ export async function open(runDir, { ms = 60_000 } = {}) {
 
   const errors = () => page.evaluate('window.__verifyErrors ?? []');
 
-  /** Calls `fn` until it returns a truthy value or `ms` passes; returns the last value, never throws on time. */
+  /** Calls `fn` until it returns a truthy value that is not an empty list, or `ms` passes; returns the last value, never throws on time. */
   const poll = async (fn, ms = 10_000) => {
     let value;
     for (const end = Date.now() + ms; Date.now() < end; await delay(200)) {
       value = await fn();
-      if (value) return value;
+      // An empty list is truthy; a caller that polls for rows has not got them yet.
+      if (Array.isArray(value) ? value.length : value) return value;
     }
     return value;
   };

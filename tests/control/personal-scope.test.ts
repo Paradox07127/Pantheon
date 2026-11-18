@@ -43,6 +43,12 @@ describe('a personal principal at the command entry and the project check', () =
     });
     expect(f.control.projectBrief(user, f.project.id).since).toBe(1000);
     expect(f.control.projectBrief(personal, f.project.id).since).toBe(2000);
+    const recorded = f.store.db
+      .prepare("SELECT payload FROM events WHERE kind='personal.called'")
+      .all() as { payload: string }[];
+    expect(recorded.map((row) => JSON.parse(row.payload))).toEqual([
+      { key_id: 'k1', type: 'project.seen', project_id: f.project.id },
+    ]);
   });
 
   it.each([

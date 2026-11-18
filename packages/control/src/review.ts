@@ -131,8 +131,8 @@ export function prepareReviewRequest(
     return (ctx: ControlContext, principal: Principal, command: Command) => {
       const { input, session, requester, goal } = reviewTarget(ctx, principal, command);
       if (requester) {
-        const reopened = reopenReviewStep(ctx, session);
-        if (reopened) return { reopened };
+        const step = reopenReviewStep(ctx, session);
+        if (step) return step;
         const duplicate = ctx.store
           .list<Review>('reviews')
           .find(

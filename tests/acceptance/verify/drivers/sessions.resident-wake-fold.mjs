@@ -82,7 +82,16 @@ const turns = last.session_turns.filter((t) => t.session_id === assistant);
 result.daemon = {
   workers: last.sessions
     .filter((s) => s.task?.lead_session_id === assistant)
-    .map((s) => ({ id: s.id, state: s.state, outcome: s.outcome })),
+    .map((s) => ({
+      id: s.id,
+      state: s.state,
+      outcome: s.outcome,
+      // Why a worker that did not merge stopped: its merge and how each of its turns ended.
+      merge: s.merge ?? null,
+      turns: last.session_turns
+        .filter((t) => t.session_id === s.id)
+        .map((t) => ({ state: t.state, error: t.error ?? null })),
+    })),
   turns: turns.map((t) => ({ origin: t.origin ?? null, state: t.state })),
 };
 check('worker 合并后常驻会话有 origin=tracker 的回合', settled, result.daemon);

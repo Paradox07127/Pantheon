@@ -133,7 +133,7 @@ describe('what needs you, by the decision it asks', () => {
           .slice(1)
           .map((b) => text(b)),
       ),
-    ).toEqual([[zh('board.needs.actions.board')], [zh('projects.needs.allow')]]);
+    ).toEqual([[zh('board.plan.proposal.accept')], [zh('projects.needs.allow')]]);
     const more = find(
       rows(h.value)[1],
       (n) =>

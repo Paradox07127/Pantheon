@@ -21,6 +21,7 @@ import {
   CheckIcon,
   ChevronRight,
   Crown,
+  KeyRound,
   Minus,
   RefreshCw,
   Undo2,
@@ -730,6 +731,12 @@ export function ThreadTurn(props: {
                   <span className="apd-from">
                     <AppWindow aria-hidden="true" />
                     <span className="mono">{view.app.server}</span>
+                  </span>
+                )}
+                {turn.via && (
+                  <span className="apd-from">
+                    <KeyRound aria-hidden="true" />
+                    {t({ id: 'sessions.thread.viaPersonal', defaultMessage: 'Personal agent key' })}
                   </span>
                 )}
                 <div className={`ss-user${entering}`} data-find="input">

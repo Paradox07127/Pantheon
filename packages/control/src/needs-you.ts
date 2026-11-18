@@ -113,8 +113,8 @@ export function latestEvent(
   aggregateId: string,
   kind: string,
 ): { sequence: number; created_at: number; payload: string } | undefined {
-  return ctx.store.db
-    .prepare(
+  return ctx.store
+    .statement(
       'SELECT sequence, created_at, payload FROM events WHERE aggregate_id=? AND kind=? ORDER BY sequence DESC LIMIT 1',
     )
     .get(aggregateId, kind) as
@@ -140,14 +140,14 @@ export function continuationLimit(
   ctx: ControlContext,
   sessionId: string,
 ): { created_at: number } | undefined {
-  const skip = ctx.store.db
-    .prepare(
+  const skip = ctx.store
+    .statement(
       "SELECT sequence, created_at FROM events WHERE aggregate_id=? AND kind='session.continuation_skipped' AND json_extract(payload,'$.reason')='limit_reached' ORDER BY sequence DESC LIMIT 1",
     )
     .get(sessionId) as { sequence: number; created_at: number } | undefined;
   if (!skip) return;
-  const later = ctx.store.db
-    .prepare(
+  const later = ctx.store
+    .statement(
       "SELECT 1 FROM events WHERE kind='turn.queued' AND json_extract(payload,'$.session_id')=? AND sequence>? LIMIT 1",
     )
     .get(sessionId, skip.sequence);

@@ -113,8 +113,8 @@ export function runTimes(
     'session.merge_started',
     'session.gate_started',
   ];
-  const rows = ctx.store.db
-    .prepare(
+  const rows = ctx.store
+    .statement(
       `SELECT aggregate_id, kind, max(created_at) AS at FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind IN (${kinds.map(() => '?').join(',')}) GROUP BY aggregate_id, kind`,
     )
     .all(projectId, ...kinds) as { aggregate_id: string; kind: string; at: number }[];

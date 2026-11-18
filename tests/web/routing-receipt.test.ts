@@ -103,6 +103,8 @@ const daemon = (turns: SessionTurn[]) =>
 
 beforeEach(() => {
   vi.stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
     pantheon: {
       query: async (method: string) =>
         ok(method === 'agent.list' ? AGENTS : method === 'board.view' ? VIEW : []),

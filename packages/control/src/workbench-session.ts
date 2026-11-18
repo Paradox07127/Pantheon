@@ -55,6 +55,7 @@ import {
   type SessionHandle,
   type SessionSpec,
   type SessionTurn,
+  type StepRun,
   type Timer,
   type TurnAttachment,
   type Visual,
@@ -739,8 +740,11 @@ const readsMoved = (read: WorktreeRead) =>
       read[key] !== undefined && JSON.stringify(read[key]) !== JSON.stringify(read.last?.[key]),
   );
 
-/** The session list's Git reads of each workspace, by workspace id. */
-const worktreeReads = new Map<string, WorktreeRead>();
+/**
+ * The session list's Git reads of each workspace, by workspace id and session id: sessions in one
+ * project folder share its workspace but not their activity or base.
+ */
+const worktreeReads = new Map<string, Map<string, WorktreeRead>>();
 
 /** Drops the workspace's listed Git reads and diff after something other than session activity moved its worktree. */
 export function forgetWorktreeReads(workspaceId: string): void {
@@ -751,10 +755,11 @@ export function forgetWorktreeReads(workspaceId: string): void {
   workspaceStatusDirectories.delete(workspaceId);
 }
 
-/** The workspace's listed Git reads, empty after the session's last activity moved or the reads aged out. */
-function worktreeRead(workspaceId: string, activity: number): WorktreeRead {
+/** The session's listed Git reads of the workspace, empty after its last activity moved or the reads aged out. */
+function worktreeRead(workspaceId: string, sessionId: string, activity: number): WorktreeRead {
   const now = Date.now(),
-    cached = worktreeReads.get(workspaceId);
+    sessions = worktreeReads.get(workspaceId) ?? new Map<string, WorktreeRead>(),
+    cached = sessions.get(sessionId);
   if (
     cached &&
     cached.activity === activity &&
@@ -767,7 +772,7 @@ function worktreeRead(workspaceId: string, activity: number): WorktreeRead {
     ...(cached ? { last: knownReads(cached) } : {}),
     ...(cached?.activity === activity ? { aged: true as const } : {}),
   };
-  worktreeReads.set(workspaceId, read);
+  worktreeReads.set(workspaceId, sessions.set(sessionId, read));
   return read;
 }
 
@@ -785,7 +790,7 @@ export function prefetchedPaths(
   const activities = sessionActivity(ctx, projectId, approvals),
     now = Date.now();
   return (session, workspaceId) => {
-    const read = worktreeReads.get(workspaceId);
+    const read = worktreeReads.get(workspaceId)?.get(session.id);
     return read?.activity === (activities.get(session.id)?.at ?? 0) &&
       now - read.at < WORKTREE_READ_MS
       ? read.paths
@@ -936,8 +941,8 @@ function sessionActivity(
 ): Map<string, SessionActivity> {
   const sessionOf = new Map(
     (
-      ctx.store.db
-        .prepare(
+      ctx.store
+        .statement(
           "SELECT id, data->>'$.session_id' AS session_id FROM session_turns WHERE data->>'$.project_id'=?",
         )
         .all(projectId) as { id: string; session_id: string }[]
@@ -974,8 +979,8 @@ function sessionActivity(
     'session.gate_step_checked',
     'session.gate_checked',
   ];
-  const rows = ctx.store.db
-    .prepare(
+  const rows = ctx.store
+    .statement(
       `SELECT kind, aggregate_id, created_at, CASE WHEN kind IN (${payloadKinds.map(() => '?').join(',')}) THEN payload END AS payload FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind IN (${kinds.map(() => '?').join(',')}) ORDER BY sequence`,
     )
     .all(...payloadKinds, projectId, ...kinds) as {
@@ -1105,7 +1110,7 @@ function listedSessions(
             ? undefined
             : gateCommands(ctx, project, workspace, session),
         ...(readChanges && workspaceReady(workspace) && workspace.removed_at === undefined
-          ? { cached: worktreeRead(workspace.id, activity?.at ?? 0) }
+          ? { cached: worktreeRead(workspace.id, session.id, activity?.at ?? 0) }
           : {}),
       };
     });
@@ -1154,7 +1159,7 @@ export function cachedReady(
     (workspace.kind === 'in_place' && !sessionBase(session, workspace))
   )
     return false;
-  const cached = worktreeReads.get(workspace.id);
+  const cached = worktreeReads.get(workspace.id)?.get(session.id);
   if (!cached) return undefined;
   const { facts } = knownReads(cached);
   // A failed read (null) says no more than a missing one.
@@ -1282,6 +1287,58 @@ export function prefetchWorktreeReads(
   return Promise.race([work, Promise.all(awaited).then(() => undefined)]);
 }
 
+/** The listed session's gate without its counts; head is the worktree HEAD the list read, if any. */
+function listedGate(
+  ctx: ControlContext,
+  { session, activity, commands }: ListedSession,
+  head: string | undefined,
+): Omit<NonNullable<WorkbenchSession['gate']>, 'passed' | 'failed' | 'running'> | undefined {
+  const checked = activity?.checked;
+  return !commands?.length
+    ? undefined
+    : session.gate_run?.state === 'cancelling' || session.gate_run?.state === 'cancelled'
+      ? { state: session.gate_run.state }
+      : session.gate_run?.state === 'failed'
+        ? {
+            state: 'failed',
+            ...(session.gate_run.finished_at
+              ? { finished_at: new Date(session.gate_run.finished_at).toISOString() }
+              : {}),
+          }
+        : gateOperationActive(session) ||
+            runningGates(ctx).has(session.id) ||
+            (session.merge?.state === 'running' && activity?.gating)
+          ? { state: 'running' }
+          : checked
+            ? {
+                state:
+                  checked.stale ||
+                  checked.spec !== hash(commands) ||
+                  (head !== undefined && head !== checked.commit)
+                    ? 'stale'
+                    : checked.failed
+                      ? 'failed'
+                      : 'passed',
+                finished_at: new Date(checked.at).toISOString(),
+              }
+            : undefined;
+}
+
+/** The state, merge and gate of the project's listed sessions as sessionList(…, false) lists them. */
+export function listedOutcomes(
+  ctx: ControlContext,
+  p: Principal,
+  projectId: string,
+  action: string,
+): (Pick<WorkbenchSession, 'id' | 'state' | 'merge'> & { gate: ReturnType<typeof listedGate> })[] {
+  return listedSessions(ctx, p, projectId, false, action).map((each) => ({
+    id: each.session.id,
+    state: each.state,
+    merge: each.workspace && each.session.merge ? publicMerge(each.session.merge) : null,
+    gate: listedGate(ctx, each, undefined),
+  }));
+}
+
 /**
  * Runs no Git: true and 'cached' show the reads prefetchWorktreeReads cached, and a read not cached
  * yet as unknown; false skips the worktree reads, so ready sessions list as idle. action is the
@@ -1307,8 +1364,8 @@ export function sessionList(
     latestContexts = new Map<string, string>(),
     firstInputs = new Map<string, { text: string; at: string }>();
   const initialInputs = new Set<string>();
-  const queued = ctx.store.db
-    .prepare(
+  const queued = ctx.store
+    .statement(
       "SELECT e.created_at, t.data->>'$.session_id' AS session_id, t.data->>'$.origin' AS origin, t.data->'$.input' AS input FROM events e INDEXED BY events_project_kind JOIN session_turns t ON t.id=e.aggregate_id WHERE e.project_id=? AND e.kind='turn.queued' ORDER BY e.sequence",
     )
     .all(projectId) as {
@@ -1328,8 +1385,8 @@ export function sessionList(
         at: new Date(turn.created_at).toISOString(),
       });
   }
-  const projectTurns = ctx.store.db
-    .prepare(
+  const projectTurns = ctx.store
+    .statement(
       "SELECT id, data->>'$.session_id' AS session_id, data->>'$.kind' AS kind, data->>'$.state' AS state, data->'$.delivery_reason' AS delivery_reason, data->>'$.rolled_back' AS rolled_back, CASE WHEN json_type(data,'$.usage.context_tokens') IS NOT NULL THEN data->'$.usage' END AS usage FROM session_turns WHERE data->>'$.project_id'=? ORDER BY rowid",
     )
     .all(projectId) as ListedTurn[];
@@ -1347,8 +1404,8 @@ export function sessionList(
     ),
     now = ctx.store.now();
   const compactions = new Map<string, number>();
-  for (const event of ctx.store.db
-    .prepare(
+  for (const event of ctx.store
+    .statement(
       "SELECT aggregate_id FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind='agent.context.compacted'",
     )
     .all(projectId) as { aggregate_id: string }[])
@@ -1358,8 +1415,8 @@ export function sessionList(
   // A payload field that is not a string reads as null.
   const text = (field: string, as: '->' | '->>') =>
     `CASE WHEN json_type(payload,'$.${field}')='text' THEN payload${as}'$.${field}' END AS ${field}`;
-  for (const event of ctx.store.db
-    .prepare(
+  for (const event of ctx.store
+    .statement(
       `SELECT kind, aggregate_id, ${text('turn_id', '->>')}, ${text('error_code', '->')}, ${text('error', '->')} FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind IN ('turn.failed','turn.cancelled','agent.turn.completed') ORDER BY sequence`,
     )
     .all(projectId) as {
@@ -1385,7 +1442,7 @@ export function sessionList(
   const restorable = restorableTurns(ctx, projectId);
   const writer = folderWriter(ctx, ctx.store.must<Project>('projects', projectId));
   return listed.map((each): WorkbenchSession => {
-    const { session, requests, state, activity, workspace, commands, cached } = each;
+    const { session, requests, state, activity, workspace, cached } = each;
     const latestTurn = latestSends.get(session.id);
     const turnError = (
       latestTurn &&
@@ -1513,37 +1570,7 @@ export function sessionList(
       ? { changes: null, worktree: null, head: undefined }
       : cachedListedGit(ctx, p, { ...each, workspace, cached });
     const gitFacts = cached && knownReads(cached).facts;
-    const checked = activity?.checked;
-    const gate:
-      Omit<NonNullable<WorkbenchSession['gate']>, 'passed' | 'failed' | 'running'> | undefined =
-      !commands?.length
-        ? undefined
-        : session.gate_run?.state === 'cancelling' || session.gate_run?.state === 'cancelled'
-          ? { state: session.gate_run.state }
-          : session.gate_run?.state === 'failed'
-            ? {
-                state: 'failed',
-                ...(session.gate_run.finished_at
-                  ? { finished_at: new Date(session.gate_run.finished_at).toISOString() }
-                  : {}),
-              }
-            : gateOperationActive(session) ||
-                runningGates(ctx).has(session.id) ||
-                (session.merge?.state === 'running' && activity?.gating)
-              ? { state: 'running' }
-              : checked
-                ? {
-                    state:
-                      checked.stale ||
-                      checked.spec !== hash(commands) ||
-                      (head !== undefined && head !== checked.commit)
-                        ? 'stale'
-                        : checked.failed
-                          ? 'failed'
-                          : 'passed',
-                    finished_at: new Date(checked.at).toISOString(),
-                  }
-                : undefined;
+    const gate = listedGate(ctx, each, head);
     return withRun({
       id: session.id,
       title: session.title ?? '',
@@ -4122,7 +4149,7 @@ function leadTaskMerge(
   return {
     session,
     admit: (reads) => {
-      chartered(ctx, p, 'merge_out_of_scope', session);
+      chartered(ctx, p, 'merge_out_of_scope', session, input.reason);
       return admitMerge(ctx, session, cause, false, input.reason, files, reads);
     },
   };
@@ -4187,6 +4214,13 @@ function autoMergeCandidate(
     session.state !== 'open' ||
     session.stop_pending ||
     session.merge?.state === 'running' ||
+    // The steps before the merge resume the merge a prompt step's turn held, or hold it for the user.
+    ctx.store
+      .list<StepRun>('workflow_step_runs')
+      .some(
+        (run) =>
+          run.turn_id === turnId && run.slot === 'before_merge' && run.step.kind.type === 'prompt',
+      ) ||
     // A lead's worktree holds the plan; its task sessions merge the planned work.
     (plan && !reported)
   )

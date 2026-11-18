@@ -255,6 +255,17 @@ it('lists each device with its configuration entry and what holds it now', async
   }
 });
 
+it('refuses the device list to an expired principal', async () => {
+  const f = await fixture();
+  try {
+    await expect(f.control.listDevices({ ...user, expires_at: 1 })).rejects.toMatchObject({
+      code: 'permission_denied',
+    });
+  } finally {
+    await f.close();
+  }
+});
+
 it('refuses to save a device for a session principal', () => {
   const lead: Principal = { id: 'lead', role: 'lead', session_id: 'session', project_id: 'p' };
   expect(() =>

@@ -10,6 +10,8 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
+import { useAgents } from '@/data/agents';
+import { useFactsRead } from '@/data/facts-read';
 import { useProjectQuery } from '@/data/project-read';
 import { useRepoStatus } from '@/data/repo';
 import { useProjectHead } from '@/data/runtime-models';
@@ -233,21 +235,36 @@ it('reads again once the board lands after a remount joined a read sent before a
   sync.stop();
 });
 
+const gitAnswer = { files: [], branch: 'main', sha: 'abc', subject: 'first' };
 it.each([
-  ['project.head', (project: string) => useProjectHead(project)],
-  ['repo.status', (project: string) => useRepoStatus(project, '/src/project')],
+  [
+    'project.head',
+    'workspace.repository_changed',
+    gitAnswer,
+    (project: string) => useProjectHead(project),
+  ],
+  [
+    'repo.status',
+    'workspace.repository_changed',
+    gitAnswer,
+    (project: string) => useRepoStatus(project, '/src/project'),
+  ],
+  ['agent.list', 'agent_profile.updated', [], (project: string) => useAgents(project)],
+  [
+    'project.facts.read',
+    'project.facts_collected',
+    { facts: null, workstreams: [] },
+    (project: string) => useFactsRead(project),
+  ],
 ])(
-  'reads %s again after a repository event, not when unrelated events move the board',
-  async (method, read) => {
+  'reads %s again after %s, not when unrelated events move the board',
+  async (method, kind, value, read) => {
     const { at, sync, push } = await connected();
     const project = `project-${method}`;
     const h = mount(() => read(project));
     await h.flush();
     expect(reads.map((r) => r.method)).toEqual([method]);
-    reads[0]!.answer({
-      ok: true,
-      value: { files: [], branch: 'main', sha: 'abc', subject: 'first' },
-    });
+    reads[0]!.answer({ ok: true, value });
     await h.flush();
 
     at.cursor = 7;
@@ -260,7 +277,7 @@ it.each([
     expect(reads.map((r) => r.method)).toEqual([method]);
 
     at.cursor = 8;
-    push({ type: 'event', event: event(8, 'workspace.repository_changed', project) });
+    push({ type: 'event', event: event(8, kind, project) });
     await vi.advanceTimersByTimeAsync(200);
     h.render();
     await h.flush();

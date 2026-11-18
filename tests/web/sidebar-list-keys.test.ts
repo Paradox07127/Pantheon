@@ -62,6 +62,7 @@ beforeEach(() => {
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' });
   mock.board = {
     board: { sessions: [{ id: 'a', revision: 4 }], workspaces: [] },
+    events: [],
     status: { state: 'live' },
   };
   mock.shell = {

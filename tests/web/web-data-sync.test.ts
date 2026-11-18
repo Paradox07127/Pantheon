@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { BoardSnapshot, BridgeResult, EventFrame } from '@pantheon/protocol';
-import { MAX_EVENTS, startSync, type DaemonEvent, type SyncView } from '@/data/sync';
+import {
+  MAX_EVENTS,
+  STREAM_REFRESH_MS,
+  WHOLE_READ_MS,
+  startSync,
+  type DaemonEvent,
+  type SyncView,
+} from '@/data/sync';
 import { shortId } from '@/data/format';
 import { useBoard } from '@/data/board';
 
@@ -95,6 +102,7 @@ function setup(options: { project_id?: string } = {}) {
   };
   return { bridge, queries, subs, views, view, sequences, sync, live };
 }
+type Harness = ReturnType<typeof setup>;
 
 it('starts connecting, reads the board, then subscribes from its cursor and goes live', async () => {
   const t = setup({ project_id: 'p1' });
@@ -576,6 +584,91 @@ it('reads the board during a long burst of events that arrive faster than the re
     await vi.advanceTimersByTimeAsync(50);
   }
   expect(t.queries).toHaveLength(2);
+});
+
+it('reads the board of every project only at startup while each event names its project', async () => {
+  const t = setup();
+  await t.live(0);
+  for (const seq of [1, 2, 3]) {
+    t.subs[0]!.push({ type: 'event', event: event(seq) });
+    await vi.advanceTimersByTimeAsync(100);
+    await t.queries.at(-1)!.answer({ ok: true, value: board(seq) });
+  }
+  expect(t.queries.filter((q) => q.params === undefined)).toHaveLength(1);
+  expect(t.queries).toHaveLength(4);
+});
+
+it.each([
+  ['reads only the project an event names', [event(1)], [{ project_id: 'p' }]],
+  [
+    'reads once each project that the events since the last read name',
+    [event(1), { ...event(2), project_id: 'q' }, event(3)],
+    [{ project_id: 'p' }, { project_id: 'q' }],
+  ],
+  [
+    'reads only the project that streamed events name',
+    [{ ...event(1), kind: 'agent.message.delta' }],
+    [{ project_id: 'p' }],
+  ],
+  [
+    'reads every project after an event that names no project',
+    [{ ...event(1), project_id: '' }],
+    [undefined],
+  ],
+  ['reads every project after a gap in the sequence', [event(2)], [undefined]],
+  [
+    'reads every project after an event once 30 s passed since the last read of every project',
+    [event(2)],
+    [{ project_id: 'p' }, undefined],
+    async (t: Harness) => {
+      t.subs[0]!.push({ type: 'event', event: event(1) });
+      await vi.advanceTimersByTimeAsync(100);
+      await t.queries.at(-1)!.answer({ ok: true, value: board(1) });
+      await vi.advanceTimersByTimeAsync(WHOLE_READ_MS - 100);
+    },
+  ],
+  [
+    'merges the projects whose read succeeded and reads again only the one whose read failed',
+    [],
+    [{ project_id: 'p' }, { project_id: 'q' }, { project_id: 'q' }],
+    async (t: Harness) => {
+      t.subs[0]!.push({ type: 'event', event: event(1) });
+      t.subs[0]!.push({ type: 'event', event: { ...event(2), project_id: 'q' } });
+      await vi.advanceTimersByTimeAsync(100);
+      const sessions = [{ id: 'ps', project_id: 'p' }] as BoardSnapshot['sessions'];
+      await t.queries[1]!.answer({ ok: true, value: { ...board(2), sessions } });
+      await t.queries[2]!.answer({
+        ok: false,
+        error: { code: 'daemon_unavailable', message: 'busy' },
+      });
+    },
+    { board: { sessions: [{ id: 'ps' }] }, error: 'busy' },
+  ],
+] as [string, DaemonEvent[], unknown[], ((t: Harness) => Promise<void>)?, object?][])(
+  '%s',
+  async (_, events, reads, before, view) => {
+    const t = setup();
+    await t.live(0);
+    await before?.(t);
+    for (const e of events) t.subs[0]!.push({ type: 'event', event: e });
+    await vi.advanceTimersByTimeAsync(STREAM_REFRESH_MS);
+    expect(t.queries.slice(1).map((q) => q.params)).toEqual(reads);
+    if (view) expect(t.view()).toMatchObject(view);
+  },
+);
+
+it('reads every project when the window gains focus', async () => {
+  const listeners = new Map<string, () => void>();
+  vi.stubGlobal('addEventListener', (type: string, listener: () => void) =>
+    listeners.set(type, listener),
+  );
+  vi.stubGlobal('removeEventListener', () => {});
+  const t = setup();
+  await t.live(0);
+  listeners.get('focus')?.();
+  await vi.advanceTimersByTimeAsync(STREAM_REFRESH_MS);
+  expect(t.queries.slice(1).map((q) => q.params)).toEqual([undefined]);
+  t.sync.stop();
 });
 
 it('ignores frames and results after stop and never sends commands', async () => {

@@ -341,8 +341,8 @@ function planHistory(ctx: ControlContext, projectId: string): Event[] {
  * only of a collabAgentToolCall, which keeps it.
  */
 function boardEvents(ctx: ControlContext, projectId: string, kinds: string[]): Event[] {
-  const rows = ctx.store.db
-    .prepare(
+  const rows = ctx.store
+    .statement(
       `SELECT sequence, event_id, kind, aggregate_id, aggregate_revision, project_id, causation_id, created_at,
          CASE WHEN kind='agent.tool.started' AND payload->>'$.name' IS NOT 'collabAgentToolCall'
            THEN json_remove(payload, '$.input') ELSE payload END AS payload

@@ -789,26 +789,54 @@ function useEverySessionList(): SessionLists {
     reconnects.current = { live, count: reconnects.current.count + (live ? 1 : 0) };
   const reconnected = reconnects.current.count;
   const [lists, setLists] = useState(NO_LISTS);
+  // Session events read only their own projects; the newest read sent of a project wins.
+  const sent = useRef({
+    triggers: null as readonly unknown[] | null,
+    through: 0,
+    order: 0,
+    whole: 0,
+    by: {} as Record<string, number>,
+  });
   useEffect(() => {
     if (!ids.length) return;
-    let current = true;
-    void Promise.all(ids.map((project_id) => readQuery('session.list', { project_id }))).then(
+    const s = sent.current;
+    const triggers = [key, focus, resync, reconnected];
+    const whole = !s.triggers || triggers.some((each, i) => each !== s.triggers![i]);
+    s.triggers = triggers;
+    const { events } = useBoard.getState();
+    const touched = new Set(
+      events
+        .filter(
+          (e) =>
+            e.sequence > s.through && SESSION_KINDS.some((prefix) => e.kind.startsWith(prefix)),
+        )
+        .map((e) => e.project_id),
+    );
+    s.through = newestSessionEvent(events);
+    const read = whole || touched.has('') ? ids : ids.filter((id) => touched.has(id));
+    if (!read.length) return;
+    const order = ++s.order;
+    if (whole) s.whole = order;
+    for (const id of read) s.by[id] = order;
+    void Promise.all(read.map((project_id) => readQuery('session.list', { project_id }))).then(
       (results) => {
-        if (!current) return;
-        setLists(
-          Object.fromEntries(
-            results.flatMap((result, i) =>
-              result.ok && Array.isArray(result.value)
-                ? [[ids[i]!, result.value as WorkbenchSession[]]]
-                : [],
-            ),
-          ),
-        );
+        if (order < s.whole) return;
+        setLists((all) => {
+          // A whole read drops the projects gone since; one overtaken by a later read keeps its list.
+          const next: Record<string, readonly WorkbenchSession[]> = whole
+            ? Object.fromEntries(Object.entries(all).filter(([id]) => read.includes(id)))
+            : { ...all };
+          results.forEach((result, i) => {
+            const id = read[i]!;
+            if (s.by[id] !== order) return;
+            if (result.ok && Array.isArray(result.value))
+              next[id] = result.value as WorkbenchSession[];
+            else delete next[id];
+          });
+          return next;
+        });
       },
     );
-    return () => {
-      current = false;
-    };
   }, [key, tick, focus, resync, reconnected]);
   return lists;
 }

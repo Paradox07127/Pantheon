@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -70,6 +70,19 @@ it('lists the rows another connection committed', () => {
     expect(titles(store)).toEqual(['A', 'B']);
   } finally {
     other.close();
+    store.close();
+  }
+});
+
+it('prepares a repeated read once on its connection', () => {
+  const { store } = fileStore();
+  try {
+    store.insert('sessions', { id: 'a', revision: 1, title: 'A' });
+    const prepare = vi.spyOn(store.db, 'prepare');
+    for (let i = 0; i < 3; i++)
+      expect(store.get('sessions', 'a')).toEqual({ id: 'a', revision: 1, title: 'A' });
+    expect(prepare).toHaveBeenCalledTimes(1);
+  } finally {
     store.close();
   }
 });

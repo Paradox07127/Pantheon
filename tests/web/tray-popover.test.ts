@@ -18,7 +18,7 @@ vi.mock('@/store', () => ({
   resolveTheme: (theme: string, dark: boolean) =>
     theme === 'system' ? (dark ? 'dark' : 'light') : theme,
 }));
-import { TrayPopover } from '@/shell/TrayPopover';
+import { TrayPopover, useProjectSessions } from '@/shell/TrayPopover';
 import { zh } from './i18n-setup.js';
 
 const WAITING = zh('trayPopover.waiting.title');
@@ -416,6 +416,65 @@ describe('tray popover other groups', () => {
       `${zh('trayPopover.newSession')}⌘N`,
       zh('trayPopover.openPantheon'),
     ]);
+  });
+});
+
+describe('tray popover session lists', () => {
+  let sequence = 0;
+  const sessionEvent = (kind: string, project_id: string) => ({
+    sequence: ++sequence,
+    event_id: `event-${sequence}`,
+    kind,
+    aggregate_id: 'other',
+    aggregate_revision: 1,
+    project_id,
+    causation_id: '',
+    created_at: NOW,
+    payload: {},
+  });
+
+  it.each([
+    [
+      'reads again only the session list of the project a session event belongs to',
+      [['session.updated', 'alpha']],
+      ['alpha'],
+    ],
+    [
+      'reads each project with events since the last read once',
+      [
+        ['turn.completed', 'alpha'],
+        ['workspace.updated', 'beta'],
+        ['session.updated', 'alpha'],
+      ],
+      ['alpha', 'beta'],
+    ],
+    [
+      'reads every project after a session event of no project',
+      [['session.updated', '']],
+      ['alpha', 'beta'],
+    ],
+  ])('%s, keeping the lists of the others', async (_, events, read) => {
+    lists = { alpha: [listed('alpha-old')], beta: [listed('beta-old')] };
+    const h = mount(() => useProjectSessions(['alpha', 'beta']));
+    await h.flush();
+    bridge.query.mockClear();
+    lists = { alpha: [listed('alpha-new')], beta: [listed('beta-new')] };
+    mock.board = {
+      ...mock.board,
+      events: events.map(([kind, project_id]) => sessionEvent(kind!, project_id!)),
+    };
+    h.render();
+    await vi.advanceTimersByTimeAsync(1000);
+    await h.flush();
+    expect(
+      bridge.query.mock.calls
+        .filter(([method]: [string]) => method === 'session.list')
+        .map(([, params]: [string, { project_id: string }]) => params.project_id)
+        .sort(),
+    ).toEqual(read);
+    expect(h.value.map((each) => each.session.id)).toEqual(
+      ['alpha', 'beta'].map((id) => `${id}-${read.includes(id) ? 'new' : 'old'}`),
+    );
   });
 });
 

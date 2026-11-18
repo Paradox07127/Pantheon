@@ -212,6 +212,9 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                     {t({ id: 'trace.approved.column.by', defaultMessage: 'Approved by' })}
                   </span>
                   <span role="columnheader">
+                    {t({ id: 'trace.approved.column.reason', defaultMessage: 'Reason' })}
+                  </span>
+                  <span role="columnheader">
                     {t({ id: 'trace.approved.column.rule', defaultMessage: 'Rule' })}
                   </span>
                   <span role="columnheader">
@@ -225,7 +228,8 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                 {rows.map((row) => (
                   <div key={row.key} className="afy-r" role="row">
                     <span role="cell" className="afy-a">
-                      {row.answer !== null ? (
+                      {row.answer !== null ||
+                      (row.kind === 'personal_answer' && row.subject === null) ? (
                         <MessageSquare className="ic-sm" aria-hidden="true" />
                       ) : row.subject === null ? (
                         <KeyRound className="ic-sm" aria-hidden="true" />
@@ -244,15 +248,21 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
                           ) : (
                             <Clip text={row.answer.text} className="mu" />
                           ))}
+                        {row.decision !== null && <Clip text={row.decision} className="mu" />}
                       </span>
                     </span>
                     <span role="cell" className="afy-by">
-                      {row.rule === null ? (
-                        <Crown className="ic-sm" aria-hidden="true" />
-                      ) : (
+                      {row.kind === 'prompt_by_rule' ? (
                         <ScrollText className="ic-sm" aria-hidden="true" />
+                      ) : row.kind === 'personal_answer' ? (
+                        <KeyRound className="ic-sm" aria-hidden="true" />
+                      ) : (
+                        <Crown className="ic-sm" aria-hidden="true" />
                       )}
                       {row.by}
+                    </span>
+                    <span role="cell" className="afy-c">
+                      {row.reason !== null && <Clip text={row.reason} />}
                     </span>
                     <span role="cell" className="afy-c">
                       {row.rule !== null && <Clip text={row.rule} className="mono" />}

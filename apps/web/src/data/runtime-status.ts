@@ -137,6 +137,8 @@ const statusReaders = new Set<(next: RuntimeStatusRead) => void>();
 let statusAsked = 0;
 /** The forced read in flight; a plain read joins it instead of overtaking it with the cached answer. */
 let statusForced: Promise<void> | null = null;
+/** The plain read in flight and the newest connection change it was sent after. */
+let statusPlain: { done: Promise<void>; seen: number } | null = null;
 
 /** The runtimes a read lists, in display order, and why each cannot start a session (of `kind` when given). */
 export function runtimeChoices(
@@ -165,34 +167,40 @@ export function runtimeChoices(
  */
 export function useRuntimeStatus(kind?: SessionKind) {
   const [read, setRead] = useState<RuntimeStatusRead>({ state: 'loading' });
+  const changed = useBoard((s) => connectionTrigger(s.events));
+  const seen = useRef(changed);
   // Only the latest read lands; an earlier one answered late is dropped.
-  const load = useCallback((refresh: boolean) => {
+  const load = useCallback((refresh: boolean, join = false) => {
     if (!refresh && statusForced) return statusForced;
+    // A reload asks anew; a mount, the timer or a change joins a read sent since the last change.
+    if (join && !refresh && statusPlain?.seen === seen.current) return statusPlain.done;
     const at = ++statusAsked;
     const done: Promise<void> = readStatus(refresh).then((next) => {
       if (statusForced === done) statusForced = null;
+      if (statusPlain?.done === done) statusPlain = null;
       if (at !== statusAsked) return;
       if (next.state === 'ready') lastInstalled = installedOf(next.statuses);
       for (const reader of statusReaders) reader(next);
     });
     if (refresh) statusForced = done;
+    else statusPlain = { done, seen: seen.current };
     return done;
   }, []);
   useEffect(() => {
     statusReaders.add(setRead);
-    void load(false);
-    const timer = setInterval(() => void load(false), EVERY_MS);
+    void load(false, true);
+    const timer = setInterval(() => void load(false, true), EVERY_MS);
     return () => {
       clearInterval(timer);
       statusReaders.delete(setRead);
+      // A read no mounted reader waits for is joined by none.
+      if (statusReaders.size === 0) statusPlain = null;
     };
   }, [load]);
-  const changed = useBoard((s) => connectionTrigger(s.events));
-  const seen = useRef(changed);
   useEffect(() => {
     if (seen.current === changed) return;
     seen.current = changed;
-    void load(false);
+    void load(false, true);
   }, [changed, load]);
   const { runtimes, unavailable } = runtimeChoices(read, kind);
   // Unavailable for a reason of their own setup, whatever the session asks of them.

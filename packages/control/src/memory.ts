@@ -72,8 +72,7 @@ Use kind note for these, report for an analysis of the current state with its ev
 Search the topic first and reuse the key of an entry you update, so the new version replaces it; name new keys topic/subtopic, such as testing/e2e-ports. Pass the packet's signature as based_on.
 Do not store code structure, fixes already in git, the progress of the current task, secrets, whole transcripts, or guesses written as facts.`;
 
-function enqueue(ctx: ControlContext, project: string): void {
-  const stamp = signature(ctx, project);
+function enqueue(ctx: ControlContext, project: string, stamp = signature(ctx, project)): void {
   if (
     rows<MemoryJob>(ctx, 'memory_jobs', project).some(
       (j) => j.signature === stamp && ['pending', 'running', 'done', 'failed'].includes(j.state),
@@ -128,12 +127,21 @@ function archive(
   // Historical text stays in the local index; every retrieval applies the lifecycle gate.
   return next;
 }
-/** Materialize expiry and cascading invalidation. Read correctness never depends on this job running. */
-function sweep(ctx: ControlContext, project: string): void {
-  const valid = new Set(current(ctx, project).map((r) => r.id));
+/**
+ * Materialize expiry and cascading invalidation. Read correctness never depends on this job running.
+ * Returns the source signature and the current records it read, when it archived nothing.
+ */
+function sweep(ctx: ControlContext, project: string): [string, MemoryRecord[]] | undefined {
+  const stamp = sourceSignature(ctx, project),
+    kept = current(ctx, project, stamp),
+    valid = new Set(kept.map((r) => r.id));
+  let archived = false;
   for (const r of records(ctx, project))
-    if (r.state === 'active' && !valid.has(r.id))
+    if (r.state === 'active' && !valid.has(r.id)) {
       archive(ctx, r, r.expires_at && r.expires_at <= ctx.store.now() ? 'expired' : 'stale');
+      archived = true;
+    }
+  return archived ? undefined : [stamp, kept];
 }
 function sameScope(a: MemoryRecord, b: MemoryRecord): boolean {
   return a.key === b.key && hash(taskScope(a.task) ?? null) === hash(taskScope(b.task) ?? null);
@@ -801,8 +809,9 @@ export function tickMemory(ctx: ControlContext): void {
         !rows<Improvement>(ctx, 'improvements', project.id).length
       )
         return;
-      sweep(ctx, project.id);
-      enqueue(ctx, project.id);
+      // An archive in sweep changes the signature, so enqueue then computes it again.
+      const kept = sweep(ctx, project.id);
+      enqueue(ctx, project.id, kept && signature(ctx, project.id, ...kept));
     });
   const now = ctx.store.now();
   // A single job per tick, with a reclaimable lease after a crash.

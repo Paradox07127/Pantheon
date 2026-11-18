@@ -49,6 +49,26 @@ const HIDDEN_FRAME_MS = 250;
 export const SLOW_CODES: ReadonlySet<string> = new Set(['query_timeout', 'daemon_busy']);
 // A query hook reads once more this long after a slow answer.
 export const SLOW_RETRY_MS = 2000;
+// Some daemon writes record no event, so a read of one project misses them; once this long has
+// passed since the last read of every project, the next read after an event reads every project.
+export const WHOLE_READ_MS = 30_000;
+
+// How a read of one project's board, which holds only that project's rows, merges into the board
+// of every project: the read's cursor replaces the cursor, and the project's rows, found by `id` in
+// projects and by `project_id` elsewhere, are replaced in place; new ones follow at the end.
+// A row the read holds leaves the board wherever it was, since a row can move to another project.
+// The daemon's board also carries reviews, which BoardSnapshot does not list.
+const MERGE: Record<keyof BoardSnapshot | 'reviews', 'cursor' | 'id' | 'project_id'> = {
+  cursor: 'cursor',
+  projects: 'id',
+  project_briefs: 'project_id',
+  milestones: 'project_id',
+  sessions: 'project_id',
+  session_turns: 'project_id',
+  workspaces: 'project_id',
+  reviews: 'project_id',
+};
+type Rows = Record<string, { id: string; project_id?: string }[] | undefined>;
 
 // The last applied board of each scope, so a new window shows it while it connects.
 const SNAPSHOT_KEY = 'pantheon.boardSnapshot.v1';
@@ -149,6 +169,12 @@ export function startSync(
     refreshBackoff = FIRST_BACKOFF_MS,
     refreshing = false,
     refreshAgain = false,
+    // Projects named by events since the last read, '' for none, each with its newest sequence.
+    pending = new Map<string, number>(),
+    // The next read is of every project: a gap, a manual refresh or a failed read of every project.
+    readWhole = false,
+    // When the last read of every project was sent.
+    wholeReadAt = 0,
     // Events received since the last notice; the notice appends them in one copy.
     arrived: DaemonEvent[] = [],
     frame: number | undefined,
@@ -212,8 +238,8 @@ export function startSync(
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
   };
   // ipcRenderer.invoke rejects when the main-process handler throws.
-  const readBoard = (): Promise<BridgeResult<unknown>> =>
-    bridge.query('board', params).catch((reason: unknown) => ({
+  const readBoard = (asked = params): Promise<BridgeResult<unknown>> =>
+    bridge.query('board', asked).catch((reason: unknown) => ({
       ok: false,
       error: {
         code: 'ipc_failed',
@@ -229,6 +255,7 @@ export function startSync(
       emit();
     }
     starting++;
+    wholeReadAt = Date.now();
     void readBoard().then((result) => {
       starting--;
       if (stopped || issued !== generation) return;
@@ -313,6 +340,8 @@ export function startSync(
           clearTimeout(streamTimer);
           refreshTimer = streamTimer = undefined;
           refreshAgain = false;
+          pending = new Map();
+          readWhole = false;
           events = [];
           arrived = [];
           seen.clear();
@@ -338,6 +367,8 @@ export function startSync(
     arrived.push(event);
     cursor = event.sequence;
     emit();
+    if (gap) readWhole = true;
+    pending.set(event.project_id, event.sequence);
     if (STREAM_KINDS.has(event.kind) && !gap) {
       streamTimer ??= setTimeout(() => {
         streamTimer = undefined;
@@ -366,33 +397,92 @@ export function startSync(
       refreshAgain = true;
       return;
     }
+    // A project's window reads its own board whole; a board of every project not yet read in this
+    // history or an event without a project has nothing a project's read can merge into.
+    const whole =
+      readWhole ||
+      !!options.project_id ||
+      !board ||
+      boardGeneration !== generation ||
+      pending.has('') ||
+      (pending.size > 0 && Date.now() - wholeReadAt >= WHOLE_READ_MS);
+    const asked = pending;
+    if (!whole && !asked.size) return;
+    pending = new Map();
+    readWhole = false;
     refreshing = true;
     const issued = generation;
     const covers = boardCursor;
-    void readBoard().then((result) => {
+    const projects = whole ? [] : [...asked.keys()];
+    if (whole) wholeReadAt = Date.now();
+    void Promise.all(
+      whole ? [readBoard()] : projects.map((project_id) => readBoard({ project_id })),
+    ).then((results) => {
       refreshing = false;
       if (stopped) return;
       if (issued === generation) {
-        if (!result.ok) {
-          error = result.error.message;
+        const failed = results.find((result) => !result.ok);
+        // The projects whose read succeeded, in the order of `fresh`.
+        const answered = projects.filter((_, i) => results[i]!.ok);
+        const fresh = results.flatMap((result) =>
+          result.ok ? [result.value as BoardSnapshot] : [],
+        );
+        const at = Math.min(...fresh.map((read) => read.cursor));
+        if (fresh.length && (!board || boardGeneration !== issued || at >= board.cursor)) {
+          if (whole) board = fresh[0]!;
+          else {
+            const merged: Record<string, unknown> = {};
+            for (const [field, key] of Object.entries(MERGE))
+              merged[field] =
+                key === 'cursor'
+                  ? at
+                  : answered.reduce(
+                      (rows, project, i) => {
+                        const read = new Map(
+                          ((fresh[i] as unknown as Rows)[field] ?? []).map((row) => [row.id, row]),
+                        );
+                        return rows
+                          .flatMap((row) => {
+                            if (row[key] !== project) return read.has(row.id) ? [] : [row];
+                            const replaced = read.get(row.id);
+                            read.delete(row.id);
+                            return replaced ? [replaced] : [];
+                          })
+                          .concat([...read.values()]);
+                      },
+                      (board as unknown as Rows)[field] ?? [],
+                    );
+            board = merged as unknown as BoardSnapshot;
+          }
+          // A read the daemon answered before an event it was asked for reads that project again.
+          for (const [project, sequence] of asked)
+            if (
+              (whole || answered.includes(project)) &&
+              sequence > (whole ? at : fresh[answered.indexOf(project)]!.cursor)
+            )
+              pending.set(project, Math.max(pending.get(project) ?? 0, sequence));
+          boardGeneration = issued;
+          applied();
+          if (!failed) {
+            changed = Math.max(changed, Math.min(covers, board.cursor));
+            error = null;
+            refreshBackoff = FIRST_BACKOFF_MS;
+            if (board.cursor < boardCursor) scheduleRefresh();
+          }
+          emit();
+        }
+        if (failed && !failed.ok) {
+          // The next read asks again for what this one asked of the reads that failed.
+          readWhole ||= whole;
+          for (const [project, sequence] of asked)
+            if (!answered.includes(project))
+              pending.set(project, Math.max(pending.get(project) ?? 0, sequence));
+          error = failed.error.message;
           emit();
           clearTimeout(refreshTimer);
           refreshTimer = undefined;
           scheduleRefresh(refreshBackoff);
           refreshBackoff = Math.min(refreshBackoff * 2, MAX_BACKOFF_MS);
-        } else if (
-          !board ||
-          boardGeneration !== issued ||
-          (result.value as BoardSnapshot).cursor >= board.cursor
-        ) {
-          board = result.value as BoardSnapshot;
-          boardGeneration = issued;
-          changed = Math.max(changed, Math.min(covers, board.cursor));
-          error = null;
-          applied();
-          refreshBackoff = FIRST_BACKOFF_MS;
-          emit();
-          if (board.cursor < boardCursor) scheduleRefresh();
         }
       }
       if (refreshAgain) {
@@ -407,11 +497,20 @@ export function startSync(
     if (e.key === SNAPSHOT_KEY) boards = restoreBoards();
   };
   globalThis.addEventListener?.('storage', onStorage);
+  // Picks up the daemon writes that record no event.
+  const onFocus = () => {
+    readWhole = true;
+    scheduleRefresh();
+  };
+  globalThis.addEventListener?.('focus', onFocus);
   connect();
   // The starting view replaces the previous one at once.
   notify();
   return {
-    refresh: () => scheduleRefresh(),
+    refresh() {
+      readWhole = true;
+      scheduleRefresh();
+    },
     // Connects now instead of when the backoff runs out, and starts the backoff over.
     reconnect() {
       if (starting) return;
@@ -423,6 +522,7 @@ export function startSync(
     stop() {
       stopped = true;
       globalThis.removeEventListener?.('storage', onStorage);
+      globalThis.removeEventListener?.('focus', onFocus);
       end?.();
       clearTimeout(retryTimer);
       clearTimeout(livenessTimer);

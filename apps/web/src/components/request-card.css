@@ -31,6 +31,7 @@
 }
 .rq > .rq-hd .rq-who {
   display: flex;
+  flex: 1 1 0;
   font-weight: 400;
   color: var(--mu);
 }
@@ -53,6 +54,13 @@
 }
 .rq-sub:empty {
   display: none;
+}
+/* Beside the task drawer the board's list narrows its fixed columns. */
+.bd-needs[data-drawer] .rq > .rq-hd {
+  grid-template-columns: 16px 112px minmax(0, 1fr) 88px 48px 144px;
+}
+.bd-needs[data-drawer] .rq-sub {
+  padding-left: calc(16px + 112px + 2 * var(--sp-2));
 }
 .rq-hd {
   display: flex;

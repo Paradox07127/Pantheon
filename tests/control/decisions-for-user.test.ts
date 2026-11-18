@@ -1,9 +1,13 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import {
   id,
   type AgentEvent,
   type Approval,
   type BoardPlan,
+  type Milestone,
   type Principal,
   type Session,
   type SessionTurn,
@@ -14,7 +18,7 @@ import type { DecisionForUser } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { agentEvent } from '../../packages/control/dist/agent.js';
 import { awaitWorkspaceReady, eventually, fixture, insertSession, user } from '../helpers.js';
-import { workbenchFixture } from './workbench-fixture.js';
+import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Plain = Awaited<ReturnType<typeof fixture>>;
 type Caller = Pick<Plain, 'call' | 'store' | 'project' | 'control'>;
@@ -185,7 +189,90 @@ async function proposed(planChanges: 'auto' | 'confirm') {
     null,
     lead,
   );
-  return { f, match: { power: 'plan_change', subject: plan.id, session_id: 'lead' } };
+  return {
+    f,
+    match: {
+      power: 'plan_change',
+      subject: plan.id,
+      session_id: 'lead',
+      reason: 'The export needs a narrower contract',
+    },
+  };
+}
+
+const mergeReason = 'The README names the new module';
+
+function commit(repository: string, name: string, contents: string) {
+  mkdirSync(path.dirname(path.join(repository, name)), { recursive: true });
+  writeFileSync(path.join(repository, name), contents);
+  git(repository, 'add', '--', name);
+  git(repository, 'commit', '--quiet', '-m', `Update ${name}`);
+}
+
+/** A lead that merges its task's session whose merge stopped on a file outside the task's scope. */
+async function mergedOutOfScope() {
+  const f = await workbenchFixture();
+  git(f.source, 'config', 'user.name', 'Source User');
+  git(f.source, 'config', 'user.email', 'source@example.invalid');
+  setPolicy(f, { charter: { merge_out_of_scope: 'on' } });
+  const current = (sessionId: string) => f.store.must<Session>('sessions', sessionId);
+  const lead = await f.create('Plan the export feature');
+  await awaitWorkspaceReady(f.control, lead.workspace_id!);
+  await eventually(
+    () => f.turns(lead.id).every((turn) => turn.state === 'completed'),
+    () => f.control.tick(),
+  );
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [task],
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    leadOf(f, lead.id),
+  );
+  const session = await f.call<Promise<Session>>('session.create', {
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    input: 'Build it',
+    task_id: `${lead.id}:${task.id}`,
+  });
+  const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
+  await eventually(
+    () =>
+      f.turns(session.id).every((turn) => turn.state === 'completed') &&
+      current(session.id).state === 'open',
+    () => f.control.tick(),
+  );
+  commit(workspace.path, 'src/a/x.ts', 'export const x = 1;\n');
+  commit(workspace.path, 'README.md', 'Names the new module\n');
+  await f.call('session.merge', { session_id: session.id }, current(session.id).revision);
+  await eventually(
+    () => current(session.id).merge?.state === 'blocked',
+    () => f.control.tick(),
+    10000,
+  );
+  await f.call(
+    'session.merge',
+    { project_id: f.project.id, task_id: task.id, allow_out_of_scope: true, reason: mergeReason },
+    null,
+    leadOf(f, lead.id),
+  );
+  return {
+    f,
+    match: {
+      power: 'merge_out_of_scope',
+      subject: session.id,
+      session_id: lead.id,
+      reason: mergeReason,
+    },
+  };
 }
 
 const formatQuestion = 'Which format should the export use?';
@@ -237,6 +324,122 @@ async function questionFixture() {
 }
 
 type Act = () => Promise<{ f: Caller; match: Record<string, unknown> }>;
+
+const personal: Principal = { id: 'personal:k1', role: 'personal' };
+const leadQuestion = 'Which file format comes first?';
+const proposalReason = 'The export needs a narrower contract';
+
+/** What by did in a project whose lead has a plan, with the personal key let to answer every kind. */
+const answeredBy =
+  (by: Principal, act: (f: Plain, by: Principal) => Record<string, unknown>): Act =>
+  async () => {
+    const userConfigDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-decisions-'));
+    const f = await fixture({ managedWorkspaces: true, controlOptions: { userConfigDir } });
+    plains.push({
+      ...f,
+      close: async () => {
+        await f.close();
+        rmSync(userConfigDir, { recursive: true, force: true });
+      },
+    });
+    f.call('app.settings.set', {
+      personal_answers: ['question', 'plan_change', 'milestone_accept'],
+    });
+    setPolicy(f, { plan_changes: 'confirm' });
+    leadWithPlan(f);
+    return { f, match: act(f, by) };
+  };
+
+function answerLeadQuestion(f: Plain, by: Principal) {
+  const question = f.call<{ id: string }>(
+    'lead.ask',
+    {
+      project_id: f.project.id,
+      question: leadQuestion,
+      options: ['CSV', 'JSON'],
+      recommended: 'CSV',
+      assumption: 'CSV comes first',
+      blocks: ['api'],
+    },
+    null,
+    leadOf(f, 'lead'),
+  ).id;
+  f.call(
+    'lead.question.answer',
+    { project_id: f.project.id, lead_session_id: 'lead', question_id: question, answer: 'CSV' },
+    null,
+    by,
+  );
+  return {
+    key_id: 'k1',
+    command: 'lead.question.answer',
+    subject: question,
+    lead_session_id: 'lead',
+    text: leadQuestion,
+    decision: 'CSV',
+  };
+}
+
+const resolveProposal = (decision: 'accept' | 'reject') => (f: Plain, by: Principal) => {
+  const proposal = f.call<{ proposal_id: string }>(
+    'board.plan.propose',
+    {
+      project_id: f.project.id,
+      base_version: f.store.must<BoardPlan>('board_plans', 'lead').plan_version,
+      reason: proposalReason,
+      ops: [{ type: 'set_task', task_id: 'api', patch: { title: 'Export API' } }],
+    },
+    null,
+    leadOf(f, 'lead'),
+  ).proposal_id;
+  f.call(
+    'board.plan.proposal.resolve',
+    {
+      project_id: f.project.id,
+      lead_session_id: 'lead',
+      proposal_id: proposal,
+      decision,
+      reason: 'Keeps the contract small',
+    },
+    null,
+    by,
+  );
+  return {
+    key_id: 'k1',
+    command: 'board.plan.proposal.resolve',
+    subject: proposal,
+    lead_session_id: 'lead',
+    text: proposalReason,
+    decision: decision === 'accept' ? 'accepted' : 'rejected',
+    reason: 'Keeps the contract small',
+  };
+};
+
+function acceptMilestone(f: Plain, by: Principal) {
+  const plan = f.store.must<BoardPlan>('board_plans', 'lead');
+  f.store.update<BoardPlan>(
+    'board_plans',
+    {
+      ...plan,
+      accepted: { api: { at: f.store.now(), evidence: 'The report answers it', generation: 1 } },
+    },
+    plan.revision,
+  );
+  const milestone = f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
+  f.call(
+    'milestone.accept',
+    { milestone_id: milestone.id, evidence_refs: ['task:api'] },
+    milestone.revision,
+    by,
+  );
+  return {
+    key_id: 'k1',
+    command: 'milestone.accept',
+    subject: milestone.id,
+    lead_session_id: 'lead',
+    text: 'Release',
+  };
+}
 
 it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
   [
@@ -301,6 +504,7 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     },
     'power_used',
   ],
+  ['a merge of files outside the task scope', mergedOutOfScope, 'power_used'],
   ['a plan proposal while plan changes need confirming', () => proposed('confirm'), undefined],
   [
     'a task session question the lead answered',
@@ -340,11 +544,56 @@ it.each<[string, Act, DecisionForUser['kind'] | undefined]>([
     },
     undefined,
   ],
+  [
+    "the lead's question the personal key answered",
+    answeredBy(personal, answerLeadQuestion),
+    'personal_answer',
+  ],
+  [
+    'a plan proposal the personal key accepted',
+    answeredBy(personal, resolveProposal('accept')),
+    'personal_answer',
+  ],
+  [
+    'a plan proposal the personal key rejected',
+    answeredBy(personal, resolveProposal('reject')),
+    'personal_answer',
+  ],
+  [
+    'a milestone the personal key accepted',
+    answeredBy(personal, acceptMilestone),
+    'personal_answer',
+  ],
+  [
+    'a request the personal key sent',
+    answeredBy(personal, (f, by) => {
+      f.call(
+        'request.send',
+        { project_id: f.project.id, input: 'What does the export hold?' },
+        null,
+        by,
+      );
+      return {};
+    }),
+    undefined,
+  ],
+  [
+    'the personal key marking the project seen',
+    answeredBy(personal, (f, by) => {
+      f.call('project.seen', { project_id: f.project.id }, null, by);
+      return {};
+    }),
+    undefined,
+  ],
+  ["the lead's question the user answered", answeredBy(user, answerLeadQuestion), undefined],
+  ['a plan proposal the user accepted', answeredBy(user, resolveProposal('accept')), undefined],
+  ['a milestone the user accepted', answeredBy(user, acceptMilestone), undefined],
 ])('lists what %s decided', async (_label, act, kind) => {
   const { f, match } = await act();
   const { items } = f.control.decisionsForUser(user, f.project.id);
   expect(items).toEqual(kind ? [expect.objectContaining({ kind, ...match })] : []);
   if (kind) expect(items[0]!.at).toBeGreaterThan(0);
+  if (kind === 'power_used' && !('reason' in match)) expect(items[0]).not.toHaveProperty('reason');
 });
 
 it('drops the decisions made before since and lists the rest newest first', async () => {

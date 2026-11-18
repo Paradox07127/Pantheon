@@ -18,6 +18,7 @@ import {
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext, type Handlers } from './context.js';
 import { boardTaskId } from './board-plan.js';
+import { personalCalled } from './personal-scope.js';
 import { itemTask, needsYou } from './needs-you.js';
 import { milestoneView } from './project-facts.js';
 
@@ -206,6 +207,7 @@ export const projectBriefHandlers: Handlers = {
     const input = inputSchemas['project.seen'].parse(c.input);
     projectAccess(ctx, p, input.project_id, c.type);
     ctx.store.must<Project>('projects', input.project_id);
+    personalCalled(ctx, p, c, input.project_id);
     const at = input.at ?? ctx.store.now(),
       key = cursorId(p, input.project_id),
       cursor = ctx.store.get<SeenCursor>('seen_cursors', key),

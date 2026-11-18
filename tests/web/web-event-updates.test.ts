@@ -427,11 +427,11 @@ it('keeps reading after StrictMode cleans up the mount effects and runs them aga
   const h = mount(() => useRefetchTick(sequence, false));
   remountEffects(h);
   await vi.advanceTimersByTimeAsync(2_500);
-  expect(h.render()).toBe(1);
+  expect(h.render()).toBe(0);
   sequence = 2;
   h.render();
   await vi.advanceTimersByTimeAsync(2_500);
-  expect(h.render()).toBe(2);
+  expect(h.render()).toBe(1);
 });
 
 it('appends new session events to the transcript without rebuilding earlier turns', () => {

@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from 'react';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import { Collapsible } from '../../apps/web/node_modules/@base-ui/react/collapsible/index.mjs';
 import { Dialog } from '../../apps/web/node_modules/@base-ui/react/dialog/index.mjs';
+import { KeyRound } from '../../apps/web/node_modules/lucide-react';
 import { find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
 import { zh, zhf } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ board: {} as any }));
@@ -127,6 +128,21 @@ describe('the interrupted notice', () => {
       `${zh('sessions.thread.interrupted')}${zh('sessions.thread.interruptedKept')}10:41`,
     );
     expect(text(find(bar, (n) => n.props.className === 'ss-nbt'))).toBe('10:41');
+  });
+});
+
+describe('the source of a turn the user side sent', () => {
+  it.each([
+    ['a personal agent key', { via: { kind: 'personal', key_id: 'k1' } } as const, true],
+    ['the user', {}, false],
+  ])('names %s as its sender only when a key sent it', (_name, extra, shown) => {
+    const h = turnHost(listed('idle'), { turn: turn(extra) });
+    expect(text(h.value).includes(zh('sessions.thread.viaPersonal'))).toBe(shown);
+    expect(
+      nodes(h.value)
+        .filter((n) => n.type === KeyRound)
+        .map((n) => n.props['aria-hidden']),
+    ).toEqual(shown ? ['true'] : []);
   });
 });
 

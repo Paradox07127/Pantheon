@@ -75,7 +75,7 @@ const descriptions: Record<ToolCommand, string> = {
   'review.verdict':
     'End your review with one call: verdict pass when nothing you found must be fixed before merge, otherwise fail, and a summary of what you checked and found. Call it after your review_finding calls. A later call replaces your verdict. Refused invalid_state once the review has ended.',
   'review.request':
-    "Ask for an independent read-only review of a committed task session in your plan: session_id from project_read, runtimes naming the reviewers (a runtime other than the writer's when one is available). Use it when a change is risky and its path has no review step. Findings come back as a board update; send concrete ones to the session with message_task. A review is evidence for your decision: it never accepts or merges a task, and a failed reviewer is not a clean review. On a task whose review step failed without a fail verdict, it runs that step's review again with the step's own reviewer, not the runtimes you name, and returns the reopened run. Refused when the round limit is reached or the same reviewer is already reviewing that session.",
+    "Ask for an independent read-only review of a committed task session in your plan: session_id from project_read, runtimes naming the reviewers (a runtime other than the writer's when one is available). Use it when a change is risky and its path has no review step. Findings come back as a board update; send concrete ones to the session with message_task. A review is evidence for your decision: it never accepts or merges a task, and a failed reviewer is not a clean review. On a task whose review step failed without a fail verdict, it runs that step's review again with the step's own reviewer, not the runtimes you name, and returns the reopened run. On a task whose review step a reviewer failed by verdict, it sends the verdict and findings to the task session, runs the review again after that turn, and returns handed_back. Refused when the round limit is reached or the same reviewer is already reviewing that session.",
   'project.read':
     "Read the project: details, brief, milestones, and every lead's board plan with each task's state and sessions. A lead also gets a lead section: workflow policy (paths, steps, slots), routing per task kind, devices, experiences in force, and recent retrospectives and runtime reviews. Call it before you plan or decide, and after a board update when you need the current state; a task session calls it to see the tasks around its own. It returns plan_version, which update_board, edit_board and propose_board need as base_version. To rewrite the plan from the repository, use sync_board instead.",
   'board.plan.update':
@@ -319,7 +319,7 @@ const toolCallId = (meta: Record<string, unknown> | undefined) => {
   return typeof id === 'string' && id ? id : undefined;
 };
 
-// Pauses before each resend of a command whose reply did not arrive.
+// Pauses before each resend of a daemon request whose reply did not arrive.
 const RESEND_DELAYS = [100, 300, 900];
 
 export async function createMcpServer(daemonUrl: string, token: string): Promise<Server> {
@@ -360,20 +360,23 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
       );
     return result;
   };
-  // The daemon answers a resent command with the receipt it kept for the command's idempotency key.
-  const send = async (sent: Command): Promise<Record<string, unknown>> => {
+  const retried = async (
+    call: () => Promise<Record<string, unknown>>,
+  ): Promise<Record<string, unknown>> => {
     for (const delay of RESEND_DELAYS) {
       try {
-        return await request('/v1/commands', sent);
+        return await call();
       } catch (error) {
         if (!(error instanceof CommandError) || error.code !== 'daemon_unavailable') throw error;
       }
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    return request('/v1/commands', sent);
+    return call();
   };
+  // The daemon answers a resent command with the receipt it kept for the command's idempotency key.
+  const send = (sent: Command) => retried(() => request('/v1/commands', sent));
   const authenticate = async (): Promise<Identity> => {
-    const identity = (await request('/v1/session-principal')) as Identity;
+    const identity = (await retried(() => request('/v1/session-principal'))) as Identity;
     const principal = identity.principal;
     if (
       !principal?.session_id ||

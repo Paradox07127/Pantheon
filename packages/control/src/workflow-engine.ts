@@ -11,6 +11,7 @@ import {
   type Principal,
   type Project,
   type Review,
+  type ReviewFinding,
   type Session,
   type SessionTurn,
   type StepRun,
@@ -30,7 +31,7 @@ import {
 import { autoMerge } from './user-config.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { currentBinding, currentDirectMerge, taskGeneration, taskSessions } from './board-plan.js';
-import { dispatchQueue, taskPath } from './task-dispatch.js';
+import { dispatchQueue, placementRows, taskPath } from './task-dispatch.js';
 import { admitMerge, afterCommit, readMergeStates } from './workbench-session.js';
 import { appendNote, contractLines } from './lead-inbox.js';
 import { doneReported, queueStepTurn, wakeLead } from './task-tracking.js';
@@ -965,6 +966,10 @@ function startReviewStep(ctx: ControlContext, run: StepRun): void {
   ctx.completions.add(work);
 }
 
+/** A review finding as the task session reads it in the turn that asks it to fix the finding. */
+const findingText = (f: ReviewFinding) =>
+  `${f.location}\nQuote: ${f.quote}\nEvidence: ${f.evidence}\nImpact: ${f.impact}${f.reproduction === undefined ? '' : `\nReproduction: ${JSON.stringify(f.reproduction)}`}`;
+
 /** Before the merge, blocking findings go to the task session, and the slot runs again after its turn. */
 function settleReviewStep(ctx: ControlContext, run: StepRun): void {
   const review = ctx.store.must<Review>('reviews', run.review_id!);
@@ -1008,13 +1013,15 @@ function settleReviewStep(ctx: ControlContext, run: StepRun): void {
             ...(silent.length && !failed.length
               ? ['Call request_review for this task to run the review again.']
               : []),
+            ...(failed.length
+              ? [
+                  'Call request_review for this task to send the verdict back to the task session; the review runs again after its turn.',
+                ]
+              : []),
           ].join('\n')
         : `Review ${review.id} ${review.state}`,
     );
-  const findings = blocking.map(
-    (f) =>
-      `${f.location}\nQuote: ${f.quote}\nEvidence: ${f.evidence}\nImpact: ${f.impact}${f.reproduction === undefined ? '' : `\nReproduction: ${JSON.stringify(f.reproduction)}`}`,
-  );
+  const findings = blocking.map(findingText);
   if (run.slot !== 'before_merge')
     return failStep(ctx, run, [`Review ${review.id} found:`, ...findings].join('\n'));
   const session = ctx.store.must<Session>('sessions', run.session_id!);
@@ -1108,24 +1115,48 @@ function rerunSlot(ctx: ControlContext, run: StepRun, answers: ConditionAnswers)
 }
 
 /**
- * Runs again the failed review step before the merge of a held task session, unless a reviewer
- * failed it by verdict; the reopened run's id.
+ * Runs again the failed review step before the merge of a held task session. When a reviewer
+ * failed it by verdict, sends the verdict and open findings to the task session instead, and the
+ * slot runs again after that turn; undefined at the round limit.
  */
-export function reopenReviewStep(ctx: ControlContext, session: Session): string | undefined {
+export function reopenReviewStep(
+  ctx: ControlContext,
+  session: Session,
+): { reopened: string } | { handed_back: string; turn_id: string } | undefined {
   const plan =
     session.task && ctx.store.get<BoardPlan>('board_plans', session.task.lead_session_id);
   if (!plan || !heldForSteps(session)) return;
   const run = liveRuns(ctx, plan, session.task!.id, 'before_merge').find(
     (r) => r.session_id === session.id && r.state === 'failed' && r.review_id && !r.turn_id,
   );
-  if (
-    !run ||
-    ctx.store
-      .must<Review>('reviews', run.review_id!)
-      .verdicts?.some((given) => given.verdict === 'fail')
-  )
-    return;
-  if (rerunSlot(ctx, run, decidedConditions(ctx))) return run.id;
+  if (!run) return;
+  const review = ctx.store.must<Review>('reviews', run.review_id!),
+    failed = review.verdicts?.filter((given) => given.verdict === 'fail') ?? [];
+  if (!failed.length)
+    return rerunSlot(ctx, run, decidedConditions(ctx)) ? { reopened: run.id } : undefined;
+  if (reviewStart(ctx, run).failure !== undefined) return;
+  const turn = queueStepTurn(
+    ctx,
+    session,
+    run.task_id,
+    [
+      [
+        `[Pantheon] The workflow review “${run.step.title}” failed by verdict before the merge:`,
+        ...failed.map((verdict) => `${verdict.runtime}: ${verdict.summary}`),
+      ].join('\n'),
+      ...review.findings.filter((f) => f.status === 'open').map(findingText),
+      'Fix what it found and commit; the workflow steps before the merge run again after this turn.',
+    ].join('\n\n'),
+  );
+  requireThat(turn, 'resource_busy', 'The task session cannot take a turn now');
+  changeRun(
+    ctx,
+    { ...run, turn_id: turn.id },
+    'failed',
+    `The fail verdict of review ${review.id} sent to the task session`,
+  );
+  unsnooze(ctx, session.id, 'merge_blocked');
+  return { handed_back: run.id, turn_id: turn.id };
 }
 
 /** Runs a slot command in the source repository; a restart fails it as recoverWorkflowSteps does. */
@@ -1526,10 +1557,14 @@ export function advanceSteps(ctx: ControlContext): void {
       changeRun(ctx, run, 'retired');
   }
   const plans = ctx.store.list<BoardPlan>('board_plans');
+  // Shared by the projects below, and read again after startSlot, which may write.
+  let placement: ReturnType<typeof placementRows> | undefined;
   for (const projectId of new Set(plans.map((p) => p.project_id)))
-    for (const entry of dispatchQueue(ctx, projectId))
-      if (!entry.wait || entry.wait === 'step')
+    for (const entry of dispatchQueue(ctx, projectId, (placement ??= placementRows(ctx))))
+      if (!entry.wait || entry.wait === 'step') {
         startSlot(ctx, entry.plan, entry.task, 'before_dispatch');
+        placement = undefined;
+      }
   const children = childRuns(ctx);
   // Read for the tasks below, and read again after each call that may write.
   let read: { sessions: Session[]; plans: Map<string, BoardPlan>; runs: StepRun[] } | undefined;

@@ -821,12 +821,13 @@ export function TaskDrawer({
       // Esc inside a dialog, menu or select list the drawer opened closes only that one.
       if (e.key === 'Escape' && !(e.target as Element).closest?.('.pj-dlg, .mn')) onSelect(null);
     };
-    // A click on another flow node or task card switches the drawer instead of closing it.
+    // A click on another flow node or task card switches the drawer instead of closing it;
+    // the needs-you list beside it settles what the drawer shows.
     const onDown = (e: PointerEvent) => {
       const target = e.target as Element;
       if (
         !ref.current?.contains(target) &&
-        !target.closest?.('.react-flow__node, [data-task-card], .pj-dlg, .pj-scrim, .mn')
+        !target.closest?.('.react-flow__node, [data-task-card], .pj-dlg, .pj-scrim, .mn, .bf-needs')
       )
         onSelect(null);
     };

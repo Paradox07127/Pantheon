@@ -38,7 +38,7 @@ const session = (id: string): WorkbenchSession => ({
 });
 
 beforeEach(() => {
-  mock.board = { board: null, status: { state: 'live' } };
+  mock.board = { board: null, events: [], status: { state: 'live' } };
   mock.shell = { screen: 'board', sessionId: null, sessionGroup: null };
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' });

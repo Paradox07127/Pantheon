@@ -112,7 +112,6 @@ const PRIMARY: ReadonlySet<NeedActionKey> = new Set([
   'confirm',
   'merge',
   'merge_out_of_scope',
-  'board',
   'keep',
 ]);
 
@@ -210,6 +209,7 @@ export function RequestCard({
         command.type === 'improvement.decide' ||
         command.type === 'workflow.step.decide' ||
         command.type === 'workflow.definition.trial.decide' ||
+        command.type === 'board.plan.proposal.resolve' ||
         command.type === 'lead.question.answer')
     )
       return;

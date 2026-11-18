@@ -117,9 +117,17 @@ export function listenName(source: EventSource): string {
   }
 }
 
+/** Every write of a profile records one of these. */
+const AGENT_KINDS: ReadonlySet<string> = new Set([
+  'agent_profile.created',
+  'agent_profile.updated',
+]);
+
 /** The project's agents from agent.list, archived ones included; null until read. */
 export function useAgents(projectId: string | null): AgentListed[] | null {
-  return useProjectQuery<AgentListed[]>('agent.list', projectId, Array.isArray).read;
+  return useProjectQuery<AgentListed[]>('agent.list', projectId, Array.isArray, undefined, {
+    kinds: AGENT_KINDS,
+  }).read;
 }
 
 /** The proposal as the daemon stores it, read again once it is decided; null until read. */

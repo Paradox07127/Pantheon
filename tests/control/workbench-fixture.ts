@@ -82,6 +82,8 @@ export async function workbenchFixture(
     localCommand?: LocalCommand;
     /** Runs the app as if built in the project's source checkout. */
     appCheckout?: boolean;
+    /** Gives the daemon a user configuration directory, so app settings can be set. */
+    userConfig?: boolean;
   } = {},
 ) {
   const cache = path.join(process.cwd(), 'node_modules/.cache');
@@ -121,6 +123,7 @@ export async function workbenchFixture(
       externalSources: options.externalSources ?? [],
       localCommand: options.localCommand,
       ...(options.appCheckout ? { appRoot: source } : {}),
+      ...(options.userConfig ? { userConfigDir: path.join(root, 'config') } : {}),
     };
   // A commit survives a process crash in WAL mode without the disk sync the daemon asks for.
   store.db.exec('PRAGMA synchronous=NORMAL');

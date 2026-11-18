@@ -80,8 +80,12 @@ export const touchesSession = (
 /** The shortest gap between two reads while events keep arriving. */
 const REFETCH_GAP_MS = 500;
 
+// The newest event sequence a refetch tick saw; a read sent before a newer one may predate it.
+let seenSequence = 0;
+
 /**
- * Counts up after the event named by `sequence`: streamed frames STREAM_REFRESH_MS after, every
+ * Counts up after the event named by `sequence`, but not for the one there at mount, which the
+ * mount's own read covers: streamed frames STREAM_REFRESH_MS after, every
  * other event REFRESH_DELAY_MS after, but never sooner than REFETCH_GAP_MS after the last count.
  * Given the query the count reads, the gap starts when its last read answered, and a count due
  * while a read of it is out waits for that read. Events that arrive while a count is pending join it.
@@ -96,8 +100,10 @@ export function useRefetchTick(
   const lastRead = useRef(-Infinity);
   const read = useRef(query);
   read.current = query;
+  const mounted = useRef(sequence);
   useEffect(() => {
-    if (!sequence) return;
+    seenSequence = Math.max(seenSequence, sequence);
+    if (!sequence || sequence === mounted.current) return;
     const out = () => {
       const [method, key] = read.current ?? [];
       return method && key ? cachedQuery(method, key) : undefined;
@@ -266,12 +272,13 @@ export function useQuery<T>(
           },
     );
     const read = () => readQuery(method, latest.current.params(key));
+    // A mount joins only a read sent once the newest event a tick has seen was in.
     const reading = readCached(
       method,
       key,
       read,
       share || ticked,
-      ticked ? `${tick} ${resync}` : undefined,
+      ticked ? `${tick} ${resync}` : `seen ${seenSequence}`,
     );
     void reading.then((result) => {
       // A slow read of the same key still lands unless a newer answer was already taken.

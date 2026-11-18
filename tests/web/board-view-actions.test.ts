@@ -128,6 +128,8 @@ beforeEach(() => {
     refresh() {},
   };
   vi.stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
     pantheon: {
       query: vi.fn((method: string) =>
         method === 'project.baseline.read'

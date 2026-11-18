@@ -292,9 +292,12 @@ it('initializes all known migrations on an empty database without making a backu
   );
 });
 
-it('adds the milestone verification and project goal tables with their indexes to a database one version behind', () => {
+it('adds the milestone verification and project goal tables with their indexes to a database without them', () => {
   const file = databaseFile();
-  const behind = open(file, migrations.slice(0, -1));
+  const behind = open(
+    file,
+    migrations.filter((migration) => migration.version < 10),
+  );
   behind.insert('projects', row);
   close(behind);
   const store = open(file);
@@ -338,6 +341,45 @@ it('adds the milestone verification and project goal tables with their indexes t
   expect(store.db.prepare('SELECT max(version) AS version FROM schema_migrations').get()).toEqual({
     version: latestVersion,
   });
+});
+
+it('indexes the per-project plan and improvement reads and the active turn read on a database one version behind', () => {
+  const file = databaseFile();
+  close(open(file, migrations.slice(0, -1)));
+  const store = open(file);
+  const plan = (sql: string, ...values: string[]) =>
+    store.db
+      .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+      .all(...values)
+      .map((step) => String(step.detail));
+  for (const table of ['board_plans', 'improvements'])
+    expect(
+      plan(
+        `SELECT data FROM ${table} WHERE json_extract(data,'$.project_id')=? ORDER BY rowid`,
+        'project',
+      ),
+    ).toEqual([expect.stringMatching(new RegExp(`^SEARCH ${table} USING INDEX `))]);
+  expect(
+    plan(
+      "SELECT json_extract(data,'$.session_id') AS id FROM session_turns WHERE json_extract(data,'$.state') IN ('queued','running')",
+    ),
+  ).toEqual([expect.stringMatching(/^SEARCH session_turns USING INDEX /)]);
+});
+
+it('indexes the per-project turn reads of the session list on a database one version behind', () => {
+  const file = databaseFile();
+  close(open(file, migrations.slice(0, -1)));
+  const store = open(file);
+  for (const sql of [
+    "SELECT id, data->>'$.session_id' AS session_id FROM session_turns WHERE data->>'$.project_id'=?",
+    "SELECT id, data->>'$.session_id' AS session_id, data->>'$.kind' AS kind, data->>'$.state' AS state, data->'$.delivery_reason' AS delivery_reason, data->>'$.rolled_back' AS rolled_back, CASE WHEN json_type(data,'$.usage.context_tokens') IS NOT NULL THEN data->'$.usage' END AS usage FROM session_turns WHERE data->>'$.project_id'=? ORDER BY rowid",
+  ])
+    expect(
+      store.db
+        .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .all('project')
+        .map((step) => String(step.detail)),
+    ).toEqual([expect.stringMatching(/^SEARCH session_turns USING INDEX session_turns_project /)]);
 });
 
 it('creates the whole schema through known migrations in a memory and a file database', () => {

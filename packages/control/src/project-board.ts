@@ -27,7 +27,7 @@ import {
   type ControlContext,
   type Handlers,
 } from './context.js';
-import { personalAnswer, personalCalled } from './personal-scope.js';
+import { personalAnswer, personalCalled, personalKeyId } from './personal-scope.js';
 import { sessionDefaults } from './user-config.js';
 import { runtime } from './admission.js';
 import { ownEntry, planUnfinished, planViews, retiredBinding } from './board-plan.js';
@@ -177,7 +177,8 @@ function sourceProblem(
     ...ctx.store
       .kindEvents(input.project_id, ['lead.note_added'])
       .map((event) => event.payload as LeadNote)
-      .filter((note) => note.kind === 'user_edit')
+      // A decision the personal agent made for the user is not the user's words.
+      .filter((note) => note.kind === 'user_edit' && !note.via)
       .map((note) => note.text),
     ...quoted,
   ];
@@ -971,7 +972,7 @@ function resolveProposal(
   plan: BoardPlan,
   proposal: PlanProposal,
   resolution: Pick<PlanProposal, 'status' | 'resolution_reason'>,
-  note: Pick<LeadNote, 'task_id' | 'text' | 'decision'>,
+  note: Pick<LeadNote, 'task_id' | 'text' | 'decision' | 'via'>,
   commandId: string,
 ): void {
   const resolved: PlanProposal = { ...proposal, ...resolution, resolved_at: ctx.store.now() };
@@ -1244,7 +1245,7 @@ export const projectBoardHandlers: Handlers = {
       `Not found: board plan ${p.session_id}; write a plan with update_board first`,
     );
     requireVersion(plan, input.base_version);
-    const mode = chartered(ctx, p, 'plan_change', plan);
+    const mode = chartered(ctx, p, 'plan_change', plan, input.reason);
     requireThat(
       mode !== 'off',
       'permission_denied',
@@ -1386,6 +1387,7 @@ export const projectBoardHandlers: Handlers = {
         task_id: ops.flatMap(opTaskIds)[0] ?? '',
         decision: input.decision,
         text: `The user chose to ${input.decision} plan proposal ${proposal.proposal_id}${input.reason ? `: ${input.reason}` : ''}${input.decision === 'accept' && input.ops ? `\nThe user changed the ops that applied:\n${ops.map((op) => `- ${opText(op)}`).join('\n')}` : ''}`,
+        ...(p.role === 'personal' ? { via: { kind: 'personal', key_id: personalKeyId(p) } } : {}),
       },
       c.command_id,
     );

@@ -238,6 +238,34 @@ it('lists the last read of a worktree until a prefetch reads it again, and emits
   expect(changed()).toBe(2);
 });
 
+it('emits no repository change for repeated prefetches of two sessions in one unchanged project folder, and one after a folder edit', async () => {
+  const f = await workbenchFixture();
+  const open = (extra: Record<string, unknown> = {}) =>
+    f.call<Promise<Session>>('session.create', {
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      input: 'Read the answer file',
+      workspace: 'in_place',
+      ...extra,
+    });
+  const first = await open();
+  await settled(f, first.id);
+  // A diagnosis session may run in the folder beside its writer.
+  const second = await open({ purpose: 'app_debug' });
+  await settled(f, second.id);
+  expect(second.workspace_id).toBe(first.workspace_id);
+  vi.useFakeTimers({ toFake: ['Date'] });
+  const changed = () => f.store.kindEvents(f.project.id, ['workspace.repository_changed']).length;
+  await f.prefetch();
+  const read = changed();
+  for (let call = 0; call < 5; call++) await f.prefetch();
+  expect(changed()).toBe(read);
+  writeFileSync(path.join(f.source, 'folder-note.txt'), 'uncommitted\n');
+  vi.setSystemTime(Date.now() + 2000);
+  await f.prefetch();
+  expect(changed()).toBe(read + 1);
+});
+
 it('prefetches the workspaces of every project in the summary when no project is given', async () => {
   const { f, syncCalls } = await sessionsOfEachRead();
   const otherSource = path.join(f.root, 'project/other');

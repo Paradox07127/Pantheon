@@ -11,8 +11,10 @@ import type {
   SessionTurn,
   WorkflowPolicy,
 } from '@pantheon/domain';
+import type { PersonalAnswerKind } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { agentEvent } from '../../packages/control/dist/agent.js';
+import { INBOX_HEADER } from '../../packages/control/dist/lead-inbox.js';
 import { awaitWorkspaceReady, eventually, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -68,7 +70,7 @@ async function running(f: Fixture, session: Session) {
  * quotes a request it sent to the Assistant instead of the lead's first message.
  */
 async function workerFixture(policy?: Record<string, unknown>, requester?: Principal) {
-  const f = await workbenchFixture();
+  const f = await workbenchFixture({ userConfig: true });
   const lead = await f.create(requester ? 'Plan the export feature' : request);
   await settle(f, lead);
   if (requester) {
@@ -210,8 +212,14 @@ function memoryNote(f: Fixture): string {
   return f.call<MemoryRecord>('memory.commit', { memory_id: draft.id }, draft.revision).id;
 }
 
-/** A question the lead asked the user and the user answered; returns its id. */
-function earlierAnswer(f: Fixture, leadId: string): string {
+const personal: Principal = { id: 'personal:k1', role: 'personal' };
+
+/** Lets the user's personal agent answer decisions of these kinds. */
+const allowPersonal = (f: Fixture, kinds: PersonalAnswerKind[]) =>
+  f.call('app.settings.set', { personal_answers: kinds });
+
+/** A question the lead asked the user and `by` answered; returns its id. */
+function earlierAnswer(f: Fixture, leadId: string, by: Principal = user): string {
   const asked = f.call<LeadQuestion>(
     'lead.ask',
     {
@@ -225,12 +233,12 @@ function earlierAnswer(f: Fixture, leadId: string): string {
     null,
     leadOf(f, leadId),
   );
-  f.call('lead.question.answer', {
-    project_id: f.project.id,
-    lead_session_id: leadId,
-    question_id: asked.id,
-    answer: 'No',
-  });
+  f.call(
+    'lead.question.answer',
+    { project_id: f.project.id, lead_session_id: leadId, question_id: asked.id, answer: 'No' },
+    null,
+    by,
+  );
   return asked.id;
 }
 
@@ -238,6 +246,49 @@ type Cite = (f: Fixture, leadId: string) => Citation[];
 const userWords: Cite = () => [
   { kind: 'user_words', ref: 'finance opens the files in spreadsheets' },
 ];
+
+/** The lead proposes a plan change and `by` rejects it giving the task's user words as the reason. */
+function rejectWithUserWords(f: Fixture, leadId: string, by: Principal): Citation[] {
+  const { proposal_id } = f.call<{ proposal_id: string }>(
+    'board.plan.propose',
+    {
+      project_id: f.project.id,
+      base_version: f.store.must<BoardPlan>('board_plans', leadId).plan_version,
+      reason: 'Task a reads better as the export task',
+      ops: [{ type: 'set_task', task_id: 'a', patch: { title: 'Export task' } }],
+    },
+    null,
+    leadOf(f, leadId),
+  );
+  f.call(
+    'board.plan.proposal.resolve',
+    {
+      project_id: f.project.id,
+      lead_session_id: leadId,
+      proposal_id,
+      decision: 'reject',
+      reason: 'finance opens the files in spreadsheets',
+    },
+    null,
+    by,
+  );
+  return userWords(f, leadId);
+}
+
+/** A turn of the user's personal agent on the lead with `words` and a board updates digest after them. */
+function keyTurnWithDigest(f: Fixture, leadId: string, words: string) {
+  f.store.insert<SessionTurn>('session_turns', {
+    id: `key-turn-${f.turns(leadId).length}`,
+    revision: 1,
+    project_id: f.project.id,
+    session_id: leadId,
+    input: `${words}\n\n${INBOX_HEADER}\n<note kind="user_edit" id="n1">\nWhat happened: the user changed your plan:\n- add task b "Task b" quoting: ${request}\n</note>`,
+    kind: 'send',
+    delivery: 'delivered',
+    state: 'completed',
+    via: { kind: 'personal', key_id: 'k1' },
+  });
+}
 
 it.each<[string, Record<string, unknown> | undefined, Cite, string]>([
   ['the user words of the task', undefined, userWords, 'answered'],
@@ -253,6 +304,48 @@ it.each<[string, Record<string, unknown> | undefined, Cite, string]>([
     undefined,
     (f, leadId) => [{ kind: 'earlier_answer', ref: earlierAnswer(f, leadId) }],
     'answered',
+  ],
+  [
+    "an earlier answer of the user's personal agent",
+    undefined,
+    (f, leadId) => {
+      allowPersonal(f, ['question']);
+      return [{ kind: 'earlier_answer', ref: earlierAnswer(f, leadId, personal) }];
+    },
+    'invalid_input',
+  ],
+  [
+    'the user words the user also gave as the reason to reject a plan change',
+    { plan_changes: 'confirm' },
+    (f, leadId) => rejectWithUserWords(f, leadId, user),
+    'answered',
+  ],
+  [
+    "the user words the user's personal agent gave as the reason to reject a plan change",
+    { plan_changes: 'confirm' },
+    (f, leadId) => {
+      allowPersonal(f, ['plan_change']);
+      return rejectWithUserWords(f, leadId, personal);
+    },
+    'invalid_input',
+  ],
+  [
+    "the user words a digest after a turn of the user's personal agent repeats",
+    undefined,
+    (f, leadId) => {
+      keyTurnWithDigest(f, leadId, 'What is left on the export?');
+      return userWords(f, leadId);
+    },
+    'answered',
+  ],
+  [
+    "the user words a turn of the user's personal agent says ahead of its digest",
+    undefined,
+    (f, leadId) => {
+      keyTurnWithDigest(f, leadId, 'Remember finance opens the files in spreadsheets');
+      return userWords(f, leadId);
+    },
+    'invalid_input',
   ],
   ['no citation', undefined, () => [], 'invalid_input'],
   [
@@ -314,7 +407,7 @@ it.each<[string, Record<string, unknown> | undefined, Cite, string]>([
 
 it.each<[string, Principal, boolean]>([
   ['the user', user, true],
-  ["the user's personal agent", { id: 'personal:k1', role: 'personal' }, false],
+  ["the user's personal agent", personal, false],
 ])(
   'lets the lead cite the words of a request %s sent only when the user sent it',
   async (_label, requester, resolves) => {

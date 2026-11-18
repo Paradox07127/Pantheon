@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { BridgeResult, ProjectFactsRead } from '@pantheon/protocol';
 import { useBoard } from './board';
 import { runCommand } from './commands';
-import { useProjectQuery } from './project-read';
+import { REPOSITORY_KINDS, useProjectQuery } from './project-read';
 
 export type { ProjectFactsRead };
 
@@ -15,9 +15,24 @@ const isFactsRead = (value: unknown): boolean => {
   );
 };
 
-/** GET /v1/project.facts.read: the newest measured snapshot, read again whenever the board moves. */
+/** Events that change the snapshot, the submitted or confirmed baseline's workstreams, or whether a root has commits. */
+const FACTS_KINDS: ReadonlySet<string> = new Set([
+  'project.facts_collected',
+  'project.baseline_submitted',
+  'project.baseline_confirmed',
+  'project.baseline_continued',
+  ...REPOSITORY_KINDS,
+]);
+
+/** GET /v1/project.facts.read: the newest measured snapshot, read again after the events that change it. */
 export function useFactsRead(project_id: string | null) {
-  return useProjectQuery<ProjectFactsRead>('project.facts.read', project_id, isFactsRead);
+  return useProjectQuery<ProjectFactsRead>(
+    'project.facts.read',
+    project_id,
+    isFactsRead,
+    undefined,
+    { kinds: FACTS_KINDS },
+  );
 }
 
 /**

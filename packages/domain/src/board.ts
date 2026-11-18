@@ -1,4 +1,4 @@
-import type { ApprovalQuestion, EffortLevel, Entity } from './index.js';
+import type { ApprovalQuestion, EffortLevel, Entity, PersonalVia } from './index.js';
 import type { WorkflowStep } from './workflow.js';
 export interface ProjectBrief extends Entity {
   project_id: string;
@@ -111,6 +111,8 @@ export interface LeadQuestion {
   questions?: ApprovalQuestion[];
   /** Who answered a relayed worker question; absent when the user answered before the lead. */
   answered_by?: 'user' | 'lead';
+  /** Who answered for the user; absent when the user answered. */
+  via?: PersonalVia;
   /**
    * What the lead's answer rests on: words of the asking task's source, a plan assumption's text, a
    * current memory id, or the id of an answered question of the plan.
@@ -417,6 +419,8 @@ export interface LeadNote {
   edit_id?: string;
   proposal_id?: string;
   decision?: 'accept' | 'reject';
+  /** Who decided for the user; absent when the user decided. */
+  via?: PersonalVia;
   /** The commit a merged session landed at and the branch it landed on. */
   commit?: string;
   source_branch?: string;

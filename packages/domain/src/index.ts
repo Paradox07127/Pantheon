@@ -912,6 +912,8 @@ export interface TurnSkill {
   name: string;
   path: string;
 }
+/** The user's personal agent acted for the user with the key of this id. */
+export type PersonalVia = { kind: 'personal'; key_id: string };
 export interface SessionTurn extends Entity {
   project_id: string;
   session_id: string;
@@ -945,7 +947,7 @@ export interface SessionTurn extends Entity {
   /** The MCP server whose interface sent this input. */
   app?: { server: string };
   /** The user's personal agent sent this request with the key of this id; the words are still the user's. */
-  via?: { kind: 'personal'; key_id: string };
+  via?: PersonalVia;
   /** Latest reported usage totals for this turn, in tokens and USD. */
   usage?: Usage;
   /**

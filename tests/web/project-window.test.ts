@@ -99,7 +99,7 @@ const PROJECTS = [
 
 beforeEach(() => {
   mock.items.clear();
-  mock.board = { board: null, status: { state: 'live' } };
+  mock.board = { board: null, events: [], status: { state: 'live' } };
   inWindow({ kind: 'main' });
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' });
   useShell.setState({ screen: 'board', sessionId: null, sessionGroup: null });

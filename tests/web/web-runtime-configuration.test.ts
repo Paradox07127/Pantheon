@@ -44,7 +44,7 @@ async function mount<T>(body: () => T) {
 beforeEach(() => {
   statuses = [status('grok', true, false), status('claude', false), status('codex')];
   query.mockClear();
-  vi.stubGlobal('window', { pantheon: { query } });
+  vi.stubGlobal('window', { pantheon: { query }, addEventListener() {}, removeEventListener() {} });
   useBoard.setState({
     board: { cursor: 1, projects: [project], sessions: [] },
     events: [],

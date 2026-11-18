@@ -175,8 +175,8 @@ export function placementRows(ctx: ControlContext) {
     // The sessions with a queued or running turn.
     busy: new Set(
       (
-        ctx.store.db
-          .prepare(
+        ctx.store
+          .statement(
             "SELECT json_extract(data,'$.session_id') AS id FROM session_turns WHERE json_extract(data,'$.state') IN ('queued','running')",
           )
           .all() as { id: string }[]
@@ -371,9 +371,9 @@ const externalHeld = (plan: BoardPlan, task: PlanTask): boolean =>
 export function dispatchQueue(
   ctx: ControlContext,
   projectId: string,
+  rows = placementRows(ctx),
 ): { plan: BoardPlan; task: PlanTask; wait?: DispatchWait }[] {
-  const rows = placementRows(ctx),
-    plans = rows.plans.filter((plan) => plan.project_id === projectId);
+  const plans = rows.plans.filter((plan) => plan.project_id === projectId);
   const queued = plans
     .flatMap((plan) =>
       plan.tasks
@@ -711,12 +711,13 @@ const dispatchOpenings = new WeakMap<ControlContext, Map<string, SessionOpening>
 /** Reads, without blocking, the start point of each project with a task to dispatch now; undefined when none has. */
 export function readDispatchOpenings(ctx: ControlContext): Promise<void> | undefined {
   // Ticks run every 50 ms, so a task that still waits reads no git.
+  const rows = placementRows(ctx);
   const projects = new Set(
     ctx.store
       .list<BoardPlan>('board_plans')
       .filter((plan) => Object.keys(plan.dispatch ?? {}).length)
       .map((plan) => plan.project_id)
-      .filter((projectId) => dispatchQueue(ctx, projectId).some((entry) => !entry.wait)),
+      .filter((projectId) => dispatchQueue(ctx, projectId, rows).some((entry) => !entry.wait)),
   );
   dispatchOpenings.delete(ctx);
   if (!projects.size) return;

@@ -89,6 +89,56 @@ it('closes acquired resources after the HTTP listener fails', async () => {
   expect(mock.lock.close).toHaveBeenCalledTimes(1);
 });
 
+// The tick beat reads Date.now for its quiet period, so the clock is faked with the interval.
+const startOnFakeBeat = async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+  daemon = await startDaemon({ directory: directory(), adapters: [] });
+  return daemon;
+};
+const writeStore = (started: NonNullable<typeof daemon>) =>
+  started.store.event('test.write', { id: 'written', revision: 1 }, '', {});
+
+it('runs the tick about once a second while the store stays unwritten', async () => {
+  const started = await startOnFakeBeat();
+  const tick = vi.spyOn(started.control, 'tick');
+  await vi.advanceTimersByTimeAsync(3_000);
+  expect(tick.mock.calls.length).toBeGreaterThanOrEqual(3);
+  expect(tick.mock.calls.length).toBeLessThanOrEqual(4);
+});
+
+it.each([
+  ['the store is written', writeStore],
+  [
+    'the control announces a change',
+    (started: NonNullable<typeof daemon>) =>
+      void started.control.emit('events', started.store.cursor()),
+  ],
+])('runs the tick on the next beat after %s', async (_, change) => {
+  const started = await startOnFakeBeat();
+  const tick = vi.spyOn(started.control, 'tick').mockResolvedValue();
+  await vi.advanceTimersByTimeAsync(100);
+  const settled = tick.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(400);
+  expect(tick.mock.calls.length).toBe(settled);
+  change(started);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(tick.mock.calls.length).toBe(settled + 1);
+});
+
+it('runs the tick again on the next beat after a tick wrote the store', async () => {
+  const started = await startOnFakeBeat();
+  let writes = 1;
+  const tick = vi.spyOn(started.control, 'tick').mockImplementation(async () => {
+    if (writes-- > 0) writeStore(started);
+  });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(tick).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(tick).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(800);
+  expect(tick).toHaveBeenCalledTimes(2);
+});
+
 it('returns an inventory deadline error before the desktop transport deadline', async () => {
   daemon = await startDaemon({ directory: directory(), adapters: [], intervalMs: 60_000 });
   vi.spyOn(daemon.control, 'extensionsInventory').mockImplementation(() => new Promise(() => {}));

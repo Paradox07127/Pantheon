@@ -8,7 +8,7 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import { projectAccess, type ControlContext } from './context.js';
-import { requireMergeReady, sessionList } from './workbench-session.js';
+import { listedOutcomes, requireMergeReady } from './workbench-session.js';
 import { usageResetAt } from './continuation.js';
 import { acceptInput } from './session.js';
 import { ownEntry, retiredBinding } from './board-plan.js';
@@ -47,7 +47,7 @@ export function sessionItems(
           .map((s) => s.project_id),
       ),
     ].flatMap((id) =>
-      sessionList(ctx, principal, id, false, 'needs_you.list').map(
+      listedOutcomes(ctx, principal, id, 'needs_you.list').map(
         (session) => [session.id, session] as const,
       ),
     ),

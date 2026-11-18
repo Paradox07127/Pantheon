@@ -140,7 +140,7 @@ beforeEach(() => {
   reads.facts = reads.landed({ facts: null, workstreams: [] });
   reads.stale = reads.landed(null);
   stored = new Map();
-  mock.board = { board: null, status: { state: 'live' } };
+  mock.board = { board: null, events: [], status: { state: 'live' } };
   mock.shell = {
     screen: 'board',
     sessionId: null,

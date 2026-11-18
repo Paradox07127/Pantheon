@@ -44,6 +44,11 @@ describe('toast stack', () => {
     // Base UI marks the toasts expanded exactly while it holds their timers.
     ['.toast[data-expanded] .toast-life', 'animation-play-state', 'paused'],
     ['.toast-vp', 'width', 'min(320px,'],
+    [
+      ":root:has(.tbe-wait[aria-expanded='true']) .toast-vp",
+      'transform',
+      'translateX(calc(-1 * (440px + var(--sp-2))))',
+    ],
     ['.toast-body', 'min-height', '40px'],
     ['.toast:is([data-starting-style],[data-ending-style])', 'transform', 'translateX(12px)'],
   ])('sets %s %s to %s', (selector, property, value) => {

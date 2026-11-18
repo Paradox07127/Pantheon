@@ -50,7 +50,7 @@ const LIST = [
 ];
 
 beforeEach(() => {
-  mock.board = { board: null, status: { state: 'live' } };
+  mock.board = { board: null, events: [], status: { state: 'live' } };
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal('navigator', { userAgent: 'Macintosh' });
 });

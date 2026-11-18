@@ -19,6 +19,9 @@ const DECISION_KINDS: ReadonlySet<string> = new Set([
   'charter.power_used',
   'lead.question_answered',
   'lead.question_overruled',
+  'personal.called',
+  'board.plan_proposal_resolved',
+  'milestone.accepted',
 ]);
 
 /** Local midnight of the range's first day, in Unix milliseconds. */
@@ -95,19 +98,46 @@ const powerText = (power: Extract<DecisionForUser, { kind: 'power_used' }>['powe
   }
 };
 
+/** The charter power a lead's decision ran under. */
+const powerRule = (power: Extract<DecisionForUser, { kind: 'power_used' }>['power']): string => {
+  switch (power) {
+    case 'plan_change':
+      return t({ id: 'trace.approved.rule.planChange', defaultMessage: 'Charter: plan changes' });
+    case 'accept_milestone':
+      return t({
+        id: 'trace.approved.rule.acceptMilestone',
+        defaultMessage: 'Charter: accept milestones',
+      });
+    case 'merge_out_of_scope':
+      return t({
+        id: 'trace.approved.rule.mergeOutOfScope',
+        defaultMessage: 'Charter: merge outside scope',
+      });
+    case 'create_agent':
+      return t({ id: 'trace.approved.rule.createAgent', defaultMessage: 'Charter: create agents' });
+  }
+};
+
 /** The type the list is filtered by. */
 export type DecisionType = 'permission' | 'answer' | 'plan_change';
 
-/** A decision's type; a power other than a plan change has none. */
+/** A decision's type; a power other than a plan change, and a milestone a key accepted, have none. */
 export function decisionType(item: DecisionForUser): DecisionType | null {
   if (item.kind === 'prompt_approved' || item.kind === 'prompt_by_rule') return 'permission';
   if (item.kind === 'question_answered') return 'answer';
+  if (item.kind === 'personal_answer')
+    return item.command === 'lead.question.answer'
+      ? 'answer'
+      : item.command === 'board.plan.proposal.resolve'
+        ? 'plan_change'
+        : null;
   return item.power === 'plan_change' ? 'plan_change' : null;
 }
 
 /** One row of the list, as text. */
 export interface DecisionRow {
   key: string;
+  kind: DecisionForUser['kind'];
   at: number;
   /** What was decided: a prompt's input or tool, the power used, or the question answered. */
   action: string;
@@ -115,39 +145,83 @@ export interface DecisionRow {
   code: boolean;
   /** The id of the plan, milestone or session a power acted on. */
   subject: string | null;
-  /** The lead, or the stored rule. */
+  /** The lead, the stored rule, or the personal agent key. */
   by: string;
-  /** The stored rule, or what the lead's answer cited. */
+  /** Why it was decided: the reason the lead gave for a power, or what its answer cited. */
+  reason: string | null;
+  /** The stored rule, the charter power the lead decided under, or the kind the user let a key answer. */
   rule: string | null;
   /** The session to open; null once it was deleted. */
   sessionId: string | null;
   /** A question's answer, the user's once they overruled the lead's, and what an overrule names. */
   answer: { text: string; overruled: boolean; leadSessionId: string; questionId: string } | null;
+  /** What a personal agent key answered, or how it resolved a plan proposal. */
+  decision: string | null;
 }
+
+/** The kind of decision the user let a personal agent key answer. */
+const personalRule = (
+  command: Extract<DecisionForUser, { kind: 'personal_answer' }>['command'],
+) => {
+  switch (command) {
+    case 'lead.question.answer':
+      return t({
+        id: 'trace.approved.rule.personalQuestion',
+        defaultMessage: 'Allowed: questions',
+      });
+    case 'board.plan.proposal.resolve':
+      return t({
+        id: 'trace.approved.rule.personalPlanChange',
+        defaultMessage: 'Allowed: plan changes',
+      });
+    case 'milestone.accept':
+      return t({
+        id: 'trace.approved.rule.personalMilestone',
+        defaultMessage: 'Allowed: milestone acceptance',
+      });
+  }
+};
+
+const personalDecision = (item: Extract<DecisionForUser, { kind: 'personal_answer' }>) => {
+  if (item.command === 'lead.question.answer') return item.decision ?? null;
+  if (item.decision === 'accepted')
+    return t({ id: 'trace.approved.decision.accepted', defaultMessage: 'Accepted' });
+  if (item.decision === 'rejected')
+    return t({ id: 'trace.approved.decision.rejected', defaultMessage: 'Rejected' });
+  return null;
+};
 
 export function decisionRow(item: DecisionForUser): DecisionRow {
   const lead = t({ id: 'trace.approved.by.lead', defaultMessage: 'Lead' });
   if (item.kind === 'power_used')
     return {
       key: `${item.power}:${item.subject}:${item.at}`,
+      kind: item.kind,
       at: item.at,
       action: powerText(item.power),
       code: false,
       subject: item.subject,
       by: lead,
-      rule: null,
+      reason: item.reason ?? null,
+      rule: powerRule(item.power),
       sessionId: item.session_id,
       answer: null,
+      decision: null,
     };
   if (item.kind === 'question_answered')
     return {
       key: `${item.lead_session_id}:${item.question_id}`,
+      kind: item.kind,
       at: item.at,
       action: item.question,
       code: false,
       subject: null,
       by: lead,
-      rule: listText(...item.citations.map((citation) => citation.ref)),
+      reason: listText(...item.citations.map((citation) => citation.ref)),
+      rule: t({
+        id: 'trace.approved.rule.answerWorkerQuestions',
+        defaultMessage: 'Charter: answer worker questions',
+      }),
       sessionId: item.session_id ?? null,
       answer: {
         text: item.overruled?.answer ?? item.answer,
@@ -155,10 +229,29 @@ export function decisionRow(item: DecisionForUser): DecisionRow {
         leadSessionId: item.lead_session_id,
         questionId: item.question_id,
       },
+      decision: null,
+    };
+  if (item.kind === 'personal_answer')
+    return {
+      key: `${item.command}:${item.subject}:${item.at}`,
+      kind: item.kind,
+      at: item.at,
+      action: item.text,
+      code: false,
+      // A question shows no id, as a lead's answer does.
+      subject: item.command === 'lead.question.answer' ? null : item.subject,
+      by: t({ id: 'trace.approved.by.personal', defaultMessage: 'Personal agent key' }),
+      reason: item.reason ?? null,
+      rule: personalRule(item.command),
+      sessionId: item.lead_session_id ?? null,
+      // An overrule replaces only a lead's answer.
+      answer: null,
+      decision: personalDecision(item),
     };
   const input = item.input_summary ?? item.tool;
   return {
     key: item.approval_id,
+    kind: item.kind,
     at: item.at,
     action: input ?? t({ id: 'trace.approved.prompt', defaultMessage: 'Permission request' }),
     code: input !== undefined,
@@ -167,8 +260,16 @@ export function decisionRow(item: DecisionForUser): DecisionRow {
       item.kind === 'prompt_by_rule'
         ? t({ id: 'trace.approved.by.rule', defaultMessage: 'Stored rule' })
         : lead,
-    rule: item.kind === 'prompt_by_rule' ? (item.rule ?? null) : null,
+    reason: null,
+    rule:
+      item.kind === 'prompt_by_rule'
+        ? (item.rule ?? null)
+        : t({
+            id: 'trace.approved.rule.approveWorkerPrompts',
+            defaultMessage: 'Charter: approve worker prompts',
+          }),
     sessionId: item.session_id ?? null,
     answer: null,
+    decision: null,
   };
 }

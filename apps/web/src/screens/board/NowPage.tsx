@@ -24,8 +24,13 @@ import { UnsentEdits } from './UnsentEdits';
 /** The needs-you list with the proposals its items point at; the hooks sit here, as the page holds none. */
 export function ProjectNeeds({
   projectId,
+  drawer,
   ...props
-}: Omit<ComponentProps<typeof NeedsStrip>, 'improvements'> & { projectId: string }) {
+}: Omit<ComponentProps<typeof NeedsStrip>, 'improvements'> & {
+  projectId: string;
+  /** The task drawer is open beside the list. */
+  drawer?: boolean;
+}) {
   const improvements = useNeedImprovements(props.model);
   const brief = useProjectBrief(projectId);
   // The since-you-left card above lands with its own read; shown before it, the list would move down.
@@ -33,7 +38,7 @@ export function ProjectNeeds({
   if (brief.read !== null || !brief.loading) landed.current = projectId;
   if (landed.current !== projectId) return null;
   return (
-    <div className="bd-needs">
+    <div className="bd-needs" data-drawer={drawer ? '' : undefined}>
       <NeedsStrip {...props} improvements={improvements.read} />
     </div>
   );
@@ -99,6 +104,7 @@ export function NowPage({
           run={actions.run}
           onOpenSession={onOpenSession}
           stale={stale}
+          drawer={selectedIn('flow') !== null}
         />
       )}
       {model && shown && (

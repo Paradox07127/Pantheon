@@ -87,6 +87,8 @@ beforeEach(() => {
   mock.openSession = vi.fn();
   commands = [];
   vi.stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
     pantheon: {
       command: vi.fn(async (command: any) => {
         commands.push(command);

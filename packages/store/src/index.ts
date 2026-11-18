@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import {
   chmodSync,
   copyFileSync,
@@ -258,6 +258,23 @@ export const migrations: readonly Migration[] = [
       `);
     },
   },
+  {
+    // A query uses an expression index only when it writes the expression the same way.
+    version: 11,
+    up(db) {
+      db.exec(`
+        CREATE INDEX board_plans_project ON board_plans(json_extract(data,'$.project_id'));
+        CREATE INDEX improvements_project ON improvements(json_extract(data,'$.project_id'));
+        CREATE INDEX session_turns_active ON session_turns(json_extract(data,'$.state')) WHERE json_extract(data,'$.state') IN ('queued','running');
+      `);
+    },
+  },
+  {
+    version: 12,
+    up(db) {
+      db.exec("CREATE INDEX session_turns_project ON session_turns(data->>'$.project_id');");
+    },
+  },
 ];
 function fsyncPath(name: string): void {
   const fd = openSync(name, 'r');
@@ -294,6 +311,7 @@ export class Store {
   // directly (total_changes differs from the count after the last write here) drops them all.
   private readonly lists = new Map<Table, readonly Entity[]>();
   private listed = { version: -1, changes: -1 };
+  private readonly statements = new Map<string, StatementSync>();
   constructor(
     readonly file: string,
     readonly now: () => number = Date.now,
@@ -338,6 +356,7 @@ export class Store {
       if (backingUp) integrityCheck(this.db);
       if (existing) {
         this.db.close();
+        this.statements.clear();
         this.db = new DatabaseSync(file);
         writable = true;
       }
@@ -409,6 +428,7 @@ export class Store {
               chmodSync(restoring, 0o600);
               fsyncPath(restoring);
               this.db.close();
+              this.statements.clear();
               for (const suffix of ['-wal', '-shm'])
                 if (existsSync(file + suffix)) unlinkSync(file + suffix);
               renameSync(restoring, file);
@@ -460,8 +480,17 @@ export class Store {
       throw error;
     }
   }
+  /** sql prepared once on this connection; shared, so not for a read iterated while it runs again. */
+  statement(sql: string): StatementSync {
+    let statement = this.statements.get(sql);
+    if (!statement) {
+      statement = this.db.prepare(sql);
+      this.statements.set(sql, statement);
+    }
+    return statement;
+  }
   private changes(): number {
-    return Number(this.db.prepare('SELECT total_changes() AS n').get()!.n);
+    return Number(this.statement('SELECT total_changes() AS n').get()!.n);
   }
   /** Runs a write of this Store, which changes only table among the listed tables. */
   private write<R>(table: Table | undefined, run: () => R): R {
@@ -472,7 +501,7 @@ export class Store {
     return result;
   }
   get<T extends Entity>(table: Table, key: string): T | undefined {
-    const row = this.db.prepare(`SELECT data FROM ${table} WHERE id=?`).get(key) as
+    const row = this.statement(`SELECT data FROM ${table} WHERE id=?`).get(key) as
       { data: string } | undefined;
     return row ? readRow<T>(row.data) : undefined;
   }
@@ -483,7 +512,7 @@ export class Store {
   }
   /** Every row of the table in insertion order; the rows are frozen, the array is the caller's. */
   list<T extends Entity>(table: Table): T[] {
-    const version = Number(this.db.prepare('PRAGMA data_version').get()!.data_version);
+    const version = Number(this.statement('PRAGMA data_version').get()!.data_version);
     const changes = this.changes();
     if (version !== this.listed.version || changes !== this.listed.changes) {
       this.lists.clear();
@@ -492,7 +521,7 @@ export class Store {
     let rows = this.lists.get(table);
     if (!rows) {
       rows = (
-        this.db.prepare(`SELECT data FROM ${table} ORDER BY rowid`).all() as { data: string }[]
+        this.statement(`SELECT data FROM ${table} ORDER BY rowid`).all() as { data: string }[]
       ).map((r) => frozen(readRow(r.data)));
       this.lists.set(table, rows);
     }
@@ -500,18 +529,23 @@ export class Store {
   }
   insert<T extends Entity>(table: Table, value: T): T {
     this.write(table, () =>
-      this.db
-        .prepare(`INSERT INTO ${table} VALUES(?,?,?)`)
-        .run(value.id, value.revision, JSON.stringify(value)),
+      this.statement(`INSERT INTO ${table} VALUES(?,?,?)`).run(
+        value.id,
+        value.revision,
+        JSON.stringify(value),
+      ),
     );
     return value;
   }
   update<T extends Entity>(table: Table, value: T, expected: number): T {
     const next = { ...value, revision: expected + 1 };
     const result = this.write(table, () =>
-      this.db
-        .prepare(`UPDATE ${table} SET revision=?,data=? WHERE id=? AND revision=?`)
-        .run(next.revision, JSON.stringify(next), value.id, expected),
+      this.statement(`UPDATE ${table} SET revision=?,data=? WHERE id=? AND revision=?`).run(
+        next.revision,
+        JSON.stringify(next),
+        value.id,
+        expected,
+      ),
     );
     if (Number(result.changes) !== 1)
       throw new DomainError('revision_conflict', `Stale ${table}/${value.id}`);
@@ -519,7 +553,7 @@ export class Store {
   }
   remove(table: Table, key: string, expected: number): void {
     const result = this.write(table, () =>
-      this.db.prepare(`DELETE FROM ${table} WHERE id=? AND revision=?`).run(key, expected),
+      this.statement(`DELETE FROM ${table} WHERE id=? AND revision=?`).run(key, expected),
     );
     if (Number(result.changes) !== 1)
       throw new DomainError('revision_conflict', `Stale ${table}/${key}`);
@@ -527,34 +561,32 @@ export class Store {
   // Visual revisions count redraws; board metadata and session detachment keep that revision.
   saveVisual(value: Visual): Visual {
     this.write('visuals', () =>
-      this.db
-        .prepare('UPDATE visuals SET revision=?,data=? WHERE id=?')
-        .run(value.revision, JSON.stringify(value), value.id),
+      this.statement('UPDATE visuals SET revision=?,data=? WHERE id=?').run(
+        value.revision,
+        JSON.stringify(value),
+        value.id,
+      ),
     );
     return value;
   }
   projectIntro(projectId: string): ProjectIntro | undefined {
-    const row = this.db
-      .prepare('SELECT data FROM project_intros WHERE project_id=?')
-      .get(projectId) as { data: string } | undefined;
+    const row = this.statement('SELECT data FROM project_intros WHERE project_id=?').get(
+      projectId,
+    ) as { data: string } | undefined;
     return row ? (JSON.parse(row.data) as ProjectIntro) : undefined;
   }
   detachProjectIntroSession(sessionId: string): void {
     this.write(undefined, () =>
-      this.db
-        .prepare(
-          "UPDATE project_intros SET data=json_set(data,'$.session_id',NULL) WHERE json_extract(data,'$.session_id')=?",
-        )
-        .run(sessionId),
+      this.statement(
+        "UPDATE project_intros SET data=json_set(data,'$.session_id',NULL) WHERE json_extract(data,'$.session_id')=?",
+      ).run(sessionId),
     );
   }
   saveProjectIntro(intro: ProjectIntro): void {
     this.write(undefined, () =>
-      this.db
-        .prepare(
-          'INSERT INTO project_intros VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET data=excluded.data',
-        )
-        .run(intro.project_id, JSON.stringify(intro)),
+      this.statement(
+        'INSERT INTO project_intros VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET data=excluded.data',
+      ).run(intro.project_id, JSON.stringify(intro)),
     );
   }
   event(
@@ -575,20 +607,18 @@ export class Store {
       payload,
     };
     const result = this.write(undefined, () =>
-      this.db
-        .prepare(
-          'INSERT INTO events(event_id,kind,aggregate_id,aggregate_revision,project_id,causation_id,created_at,payload) VALUES(?,?,?,?,?,?,?,?)',
-        )
-        .run(
-          event.event_id,
-          kind,
-          entity.id,
-          entity.revision,
-          project_id,
-          causation_id,
-          event.created_at,
-          JSON.stringify(payload),
-        ),
+      this.statement(
+        'INSERT INTO events(event_id,kind,aggregate_id,aggregate_revision,project_id,causation_id,created_at,payload) VALUES(?,?,?,?,?,?,?,?)',
+      ).run(
+        event.event_id,
+        kind,
+        entity.id,
+        entity.revision,
+        project_id,
+        causation_id,
+        event.created_at,
+        JSON.stringify(payload),
+      ),
     );
     return { ...event, sequence: Number(result.lastInsertRowid) };
   }
@@ -600,41 +630,35 @@ export class Store {
     kinds?: readonly string[],
     session_id?: string,
   ): Event[] {
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM events WHERE sequence>?${project_id ? ' AND project_id=?' : ''}${
-          kinds ? ` AND kind IN (${kinds.map(() => '?').join(',')})` : ''
-        }${
-          session_id
-            ? ` AND (aggregate_id=? OR aggregate_id IN (SELECT id FROM session_turns WHERE data->>'$.session_id'=?) OR (kind LIKE 'approval.%' AND payload->>'$.session_id'=?))`
-            : ''
-        } ORDER BY sequence LIMIT ?`,
-      )
-      .all(
-        after,
-        ...(project_id ? [project_id] : []),
-        ...(kinds ?? []),
-        ...(session_id ? [session_id, session_id, session_id] : []),
-        limit,
-      ) as unknown as (Omit<Event, 'payload'> & { payload: string })[];
+    const rows = this.statement(
+      `SELECT * FROM events WHERE sequence>?${project_id ? ' AND project_id=?' : ''}${
+        kinds ? ` AND kind IN (${kinds.map(() => '?').join(',')})` : ''
+      }${
+        session_id
+          ? ` AND (aggregate_id=? OR aggregate_id IN (SELECT id FROM session_turns WHERE data->>'$.session_id'=?) OR (kind LIKE 'approval.%' AND payload->>'$.session_id'=?))`
+          : ''
+      } ORDER BY sequence LIMIT ?`,
+    ).all(
+      after,
+      ...(project_id ? [project_id] : []),
+      ...(kinds ?? []),
+      ...(session_id ? [session_id, session_id, session_id] : []),
+      limit,
+    ) as unknown as (Omit<Event, 'payload'> & { payload: string })[];
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
   }
   /** The project's events of these kinds in order, read through the project and kind index. */
   kindEvents(project_id: string, kinds: string[]): Event[] {
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind IN (${kinds.map(() => '?').join(',')}) ORDER BY sequence`,
-      )
-      .all(project_id, ...kinds) as unknown as (Omit<Event, 'payload'> & { payload: string })[];
+    const rows = this.statement(
+      `SELECT * FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind IN (${kinds.map(() => '?').join(',')}) ORDER BY sequence`,
+    ).all(project_id, ...kinds) as unknown as (Omit<Event, 'payload'> & { payload: string })[];
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
   }
   /** kindEvents from `since` on, read through the project, kind and time index. */
   kindEventsSince(project_id: string, kinds: string[], since: number): Event[] {
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM events INDEXED BY events_diagnostic_window WHERE project_id=? AND kind IN (${kinds.map(() => '?').join(',')}) AND created_at>=? ORDER BY sequence`,
-      )
-      .all(project_id, ...kinds, since) as unknown as (Omit<Event, 'payload'> & {
+    const rows = this.statement(
+      `SELECT * FROM events INDEXED BY events_diagnostic_window WHERE project_id=? AND kind IN (${kinds.map(() => '?').join(',')}) AND created_at>=? ORDER BY sequence`,
+    ).all(project_id, ...kinds, since) as unknown as (Omit<Event, 'payload'> & {
       payload: string;
     })[];
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
@@ -648,7 +672,7 @@ export class Store {
     limit: number,
     laneKey?: string,
   ): Event[] {
-    const query = this.db.prepare(
+    const query = this.statement(
       `SELECT sequence, event_id, kind, aggregate_id, aggregate_revision, project_id,
          causation_id, created_at, json_object(
            'turn_id', payload ->> '$.turn_id', 'tool_call_id', payload ->> '$.tool_call_id',
@@ -696,70 +720,71 @@ export class Store {
   }
   /** Times of the aggregate's first and last event, read through the aggregate index; null without events. */
   eventSpan(aggregate_id: string): { first: number; last: number } | null {
-    const row = this.db
-      .prepare(
-        'SELECT min(created_at) AS first, max(created_at) AS last FROM events WHERE aggregate_id=?',
-      )
-      .get(aggregate_id) as { first: number | null; last: number | null };
+    const row = this.statement(
+      'SELECT min(created_at) AS first, max(created_at) AS last FROM events WHERE aggregate_id=?',
+    ).get(aggregate_id) as { first: number | null; last: number | null };
     return row.first === null ? null : { first: row.first, last: row.last! };
   }
   cursor(): number {
-    const row = this.db.prepare("SELECT seq FROM sqlite_sequence WHERE name='events'").get();
+    const row = this.statement("SELECT seq FROM sqlite_sequence WHERE name='events'").get();
     return Number(row?.seq ?? 0);
   }
   pruneEvents(beforeSequence: number): void {
     this.write(undefined, () =>
       this.transaction(() => {
-        this.db.prepare('DELETE FROM events WHERE sequence<?').run(beforeSequence);
-        const row = this.db.prepare('SELECT min(sequence) AS n FROM events').get() as {
+        this.statement('DELETE FROM events WHERE sequence<?').run(beforeSequence);
+        const row = this.statement('SELECT min(sequence) AS n FROM events').get() as {
           n: number | null;
         };
-        this.db
-          .prepare(
-            'INSERT INTO event_retention VALUES(1,?) ON CONFLICT(id) DO UPDATE SET horizon=excluded.horizon',
-          )
-          .run(row.n ?? this.cursor() + 1);
+        this.statement(
+          'INSERT INTO event_retention VALUES(1,?) ON CONFLICT(id) DO UPDATE SET horizon=excluded.horizon',
+        ).run(row.n ?? this.cursor() + 1);
       }),
     );
   }
   eventHorizon(): number {
-    const row = this.db.prepare('SELECT horizon FROM event_retention WHERE id=1').get() as
+    const row = this.statement('SELECT horizon FROM event_retention WHERE id=1').get() as
       { horizon: number } | undefined;
     return row?.horizon ?? 1;
   }
   receipt(key: string): { input_hash: string; receipt: unknown } | undefined {
-    const row = this.db.prepare('SELECT * FROM inbox WHERE source_key=?').get(key) as
+    const row = this.statement('SELECT * FROM inbox WHERE source_key=?').get(key) as
       { input_hash: string; receipt: string } | undefined;
     return row && { input_hash: row.input_hash, receipt: JSON.parse(row.receipt) };
   }
   remember(key: string, inputHash: string, receipt: unknown): void {
     this.write(undefined, () =>
-      this.db
-        .prepare('INSERT INTO inbox VALUES(?,?,?)')
-        .run(key, inputHash, JSON.stringify(receipt)),
+      this.statement('INSERT INTO inbox VALUES(?,?,?)').run(
+        key,
+        inputHash,
+        JSON.stringify(receipt),
+      ),
     );
   }
   enqueue(kind: string, payload: unknown): string {
     const key = id();
     this.write(undefined, () =>
-      this.db
-        .prepare('INSERT INTO outbox(id,kind,payload) VALUES(?,?,?)')
-        .run(key, kind, JSON.stringify(payload)),
+      this.statement('INSERT INTO outbox(id,kind,payload) VALUES(?,?,?)').run(
+        key,
+        kind,
+        JSON.stringify(payload),
+      ),
     );
     return key;
   }
   pending(): Outbox[] {
-    return this.db
-      .prepare("SELECT * FROM outbox WHERE state='pending' ORDER BY rowid")
-      .all() as unknown as Outbox[];
+    return this.statement(
+      "SELECT * FROM outbox WHERE state='pending' ORDER BY rowid",
+    ).all() as unknown as Outbox[];
   }
   mark(key: string, state: Outbox['state']): void {
     this.write(undefined, () =>
-      this.db.prepare('UPDATE outbox SET state=? WHERE id=?').run(state, key),
+      this.statement('UPDATE outbox SET state=? WHERE id=?').run(state, key),
     );
   }
   close(): void {
     this.db.close();
+    this.statements.clear();
   }
 }
 

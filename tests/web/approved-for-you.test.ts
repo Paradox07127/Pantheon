@@ -1,6 +1,7 @@
 import { createElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DecisionForUser } from '@pantheon/protocol';
+import { Crown, KeyRound, ScrollText } from '../../apps/web/node_modules/lucide-react';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
@@ -50,6 +51,7 @@ const power: DecisionForUser = {
   power: 'plan_change',
   subject: 'plan-7',
   session_id: 'session-lead',
+  reason: 'The export needs a narrower contract',
 };
 const deleted: DecisionForUser = {
   kind: 'prompt_approved',
@@ -77,6 +79,36 @@ const overruled: DecisionForUser = {
   answer: 'Yes, add the new ones alongside',
   citations: [{ kind: 'assumption', ref: 'The public API stays compatible' }],
   overruled: { answer: 'Rename them now', at: AT - 200_000 },
+};
+const keyAnswered: DecisionForUser = {
+  kind: 'personal_answer',
+  at: AT - 480_000,
+  key_id: 'k1',
+  command: 'lead.question.answer',
+  subject: 'question-format',
+  lead_session_id: 'session-lead',
+  text: 'Which file format comes first?',
+  decision: 'CSV',
+};
+const keyResolved: DecisionForUser = {
+  kind: 'personal_answer',
+  at: AT - 540_000,
+  key_id: 'k1',
+  command: 'board.plan.proposal.resolve',
+  subject: 'proposal-3',
+  lead_session_id: 'session-lead',
+  text: 'Split the refund export into two tasks',
+  decision: 'rejected',
+  reason: 'Keeps the contract small',
+};
+const keyAccepted: DecisionForUser = {
+  kind: 'personal_answer',
+  at: AT - 600_000,
+  key_id: 'k1',
+  command: 'milestone.accept',
+  subject: 'milestone-3',
+  lead_session_id: 'session-lead',
+  text: 'Refunds ship',
 };
 
 let decisions: Record<string, DecisionForUser[]>;
@@ -141,6 +173,15 @@ describe('approved for you', () => {
     );
   const rowOf = (tree: unknown, words: string) => rows(tree).find((r) => text(r).includes(words))!;
   const link = (row: ReactElement) => nodes(row).find((n) => n.type === 'button');
+  const columns = (tree: unknown) =>
+    nodes(table(tree))
+      .filter((n) => n.props.role === 'columnheader')
+      .map((n) => text(n));
+  /** The cell of row under the column named name. */
+  const cell = (tree: unknown, row: ReactElement, name: string) =>
+    nodes(row).filter((n) => n.props.role === 'cell')[columns(tree).indexOf(name)]!;
+  const icons = (node: ReactElement) =>
+    nodes(node).filter((n) => n.type === Crown || n.type === ScrollText || n.type === KeyRound);
 
   it('reads what was decided today for the project', async () => {
     await page();
@@ -150,6 +191,35 @@ describe('approved for you', () => {
     });
   });
 
+  it('names the columns with the reason before the rule', async () => {
+    const h = await page();
+    expect(columns(h.value)).toEqual([
+      zh('trace.approved.column.action'),
+      zh('trace.approved.column.by'),
+      zh('trace.approved.column.reason'),
+      zh('trace.approved.column.rule'),
+      zh('trace.approved.column.task'),
+      zh('trace.approved.column.when'),
+      '',
+    ]);
+  });
+
+  const milestone: DecisionForUser = {
+    kind: 'power_used',
+    at: AT - 360_000,
+    power: 'accept_milestone',
+    subject: 'milestone-2',
+    session_id: 'session-lead',
+  };
+  const merged: DecisionForUser = {
+    kind: 'power_used',
+    at: AT - 420_000,
+    power: 'merge_out_of_scope',
+    subject: 'session-tests',
+    session_id: 'session-lead',
+    reason: 'The README names the new module',
+  };
+
   it.each([
     [
       'a worker prompt the lead approved',
@@ -157,13 +227,19 @@ describe('approved for you', () => {
       [zh('trace.approved.by.lead')],
       'Refund list page',
       'session-worker',
+      zh('trace.approved.rule.approveWorkerPrompts'),
+      '',
+      Crown,
     ],
     [
       'a prompt a stored rule answered',
       'pnpm test',
-      [zh('trace.approved.by.rule'), 'Bash(pnpm test:*)'],
+      [zh('trace.approved.by.rule')],
       'Refund idempotency',
       'session-tests',
+      'Bash(pnpm test:*)',
+      '',
+      ScrollText,
     ],
     [
       'a power the lead used on its own',
@@ -171,20 +247,96 @@ describe('approved for you', () => {
       [zh('trace.approved.by.lead'), 'plan-7'],
       'Refunds rollout',
       'session-lead',
+      zh('trace.approved.rule.planChange'),
+      'The export needs a narrower contract',
+      Crown,
     ],
-  ])('lists %s with who decided and links its session', async (_name, action, words, task, id) => {
-    const h = await page();
-    const row = rowOf(h.value, action);
-    for (const word of words) expect(text(row)).toContain(word);
-    expect(text(link(row)!)).toBe(task);
-    link(row)!.props.onClick();
-    expect(mock.shell.openSession).toHaveBeenCalledWith(id);
-  });
+    [
+      'a merge the lead made outside the task scope',
+      zh('trace.approved.power.mergeOutOfScope'),
+      [zh('trace.approved.by.lead'), 'session-tests'],
+      'Refunds rollout',
+      'session-lead',
+      zh('trace.approved.rule.mergeOutOfScope'),
+      'The README names the new module',
+      Crown,
+    ],
+    [
+      'a power recorded without a reason',
+      zh('trace.approved.power.acceptMilestone'),
+      [zh('trace.approved.by.lead'), 'milestone-2'],
+      'Refunds rollout',
+      'session-lead',
+      zh('trace.approved.rule.acceptMilestone'),
+      '',
+      Crown,
+    ],
+    [
+      "the lead's question a personal agent key answered",
+      keyAnswered.text,
+      [zh('trace.approved.by.personal'), 'CSV'],
+      'Refunds rollout',
+      'session-lead',
+      zh('trace.approved.rule.personalQuestion'),
+      '',
+      KeyRound,
+    ],
+    [
+      'a plan proposal a personal agent key rejected',
+      keyResolved.text,
+      [zh('trace.approved.by.personal'), 'proposal-3', zh('trace.approved.decision.rejected')],
+      'Refunds rollout',
+      'session-lead',
+      zh('trace.approved.rule.personalPlanChange'),
+      'Keeps the contract small',
+      KeyRound,
+    ],
+    [
+      'a milestone a personal agent key accepted',
+      keyAccepted.text,
+      [zh('trace.approved.by.personal'), 'milestone-3'],
+      'Refunds rollout',
+      'session-lead',
+      zh('trace.approved.rule.personalMilestone'),
+      '',
+      KeyRound,
+    ],
+  ])(
+    'lists %s with who decided, its reason and rule, and links its session',
+    async (_name, action, words, task, id, rule, reason, icon) => {
+      decisions.alpha = [
+        byLead,
+        byRule,
+        power,
+        merged,
+        milestone,
+        keyAnswered,
+        keyResolved,
+        keyAccepted,
+      ];
+      const h = await page();
+      const row = rowOf(h.value, action);
+      // Only a lead's answer to a task session's question can be overruled.
+      expect(nodes(row).some((n) => !!n.props.onOpenChange)).toBe(false);
+      for (const word of words) expect(text(row)).toContain(word);
+      expect(text(cell(h.value, row, zh('trace.approved.column.rule')))).toBe(rule);
+      expect(text(cell(h.value, row, zh('trace.approved.column.reason')))).toBe(reason);
+      expect(icons(cell(h.value, row, zh('trace.approved.column.by'))).map((n) => n.type)).toEqual([
+        icon,
+      ]);
+      expect(text(link(row)!)).toBe(task);
+      link(row)!.props.onClick();
+      expect(mock.shell.openSession).toHaveBeenCalledWith(id);
+    },
+  );
 
   it('shows a row of a deleted session without a link', async () => {
     const h = await page();
     expect(rows(h.value)).toHaveLength(4);
-    const row = rowOf(h.value, zh('trace.approved.prompt'));
+    const row = rows(h.value).find(
+      (r) =>
+        text(cell(h.value, r, zh('trace.approved.column.action'))) === zh('trace.approved.prompt'),
+    )!;
     expect(text(row)).toContain(zh('trace.approved.by.lead'));
     expect(link(row)).toBeUndefined();
   });
@@ -206,13 +358,6 @@ describe('approved for you', () => {
   });
 
   describe('the type filter', () => {
-    const milestone: DecisionForUser = {
-      kind: 'power_used',
-      at: AT - 360_000,
-      power: 'accept_milestone',
-      subject: 'milestone-2',
-      session_id: 'session-lead',
-    };
     const filter = (tree: unknown) =>
       find(
         tree as ReactElement,
@@ -228,15 +373,15 @@ describe('approved for you', () => {
       rows(tree).map((r) => text(nodes(r).find((n) => n.props.role === 'cell')!));
 
     beforeEach(() => {
-      decisions.alpha = [byLead, byRule, power, deleted, answered, milestone];
+      decisions.alpha = [byLead, byRule, power, deleted, answered, milestone, keyAnswered];
     });
 
     it('names each type with its count in the range read', async () => {
       const h = await page();
       expect(segments(h.value).map((s) => s.props['aria-label'])).toEqual([
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.all'), count: 6 }),
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.all'), count: 7 }),
         zhf('trace.approved.type.count', { type: zh('trace.approved.type.permission'), count: 3 }),
-        zhf('trace.approved.type.count', { type: zh('trace.approved.type.answer'), count: 1 }),
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.answer'), count: 2 }),
         zhf('trace.approved.type.count', { type: zh('trace.approved.type.planChange'), count: 1 }),
       ]);
       expect(query).toHaveBeenCalledTimes(1);
@@ -275,12 +420,12 @@ describe('approved for you', () => {
         3,
         ['git push origin refund-list', 'pnpm test', zh('trace.approved.prompt')],
       ],
-      ['answers', 'answer', 1, [answered.question]],
+      ['answers', 'answer', 2, [answered.question, keyAnswered.text]],
       ['plan changes', 'plan_change', 1, [zh('trace.approved.power.planChange')]],
       [
         'all, with a power that has no type of its own',
         'all',
-        6,
+        7,
         [zh('trace.approved.power.acceptMilestone'), answered.question, 'pnpm test'],
       ],
     ])('narrows the table to %s', async (_name, type, count, words) => {
@@ -313,7 +458,10 @@ describe('approved for you', () => {
       h.render();
       await h.flush();
       expect(filter(h.value).props.value).toBe('answer');
-      expect(actions(h.value)).toEqual([expect.stringContaining(answered.question)]);
+      expect(actions(h.value)).toEqual([
+        expect.stringContaining(answered.question),
+        expect.stringContaining(keyAnswered.text),
+      ]);
     });
   });
 
@@ -359,6 +507,12 @@ describe('approved for you', () => {
         zh('trace.approved.overrule'),
       ])
         expect(text(row)).toContain(word);
+      expect(text(cell(h.value, row, zh('trace.approved.column.reason')))).toBe(
+        'close days the way the ledger does',
+      );
+      expect(text(cell(h.value, row, zh('trace.approved.column.rule')))).toBe(
+        zh('trace.approved.rule.answerWorkerQuestions'),
+      );
       expect(text(link(row)!)).toBe('Refund list page');
     });
 

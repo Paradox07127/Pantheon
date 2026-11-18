@@ -177,6 +177,8 @@ beforeEach(() => {
     setItem: (key: string, value: string) => void (stored[key] = value),
   });
   vi.stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
     pantheon: {
       query: vi.fn(() => new Promise(() => {})),
       command: vi.fn(async () => ({ ok: true, value: null })),

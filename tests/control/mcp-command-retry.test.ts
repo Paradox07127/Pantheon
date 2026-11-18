@@ -20,11 +20,21 @@ function fakeDaemon() {
     lostReplies: 0,
     brokenBodies: 0,
     refusal: undefined as string | undefined,
+    principalRequests: 0,
+    unansweredPrincipals: 0,
+    principalRefusal: undefined as string | undefined,
   };
   vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
-    if (url.pathname === '/v1/session-principal')
+    if (url.pathname === '/v1/session-principal') {
+      daemon.principalRequests++;
+      if (daemon.unansweredPrincipals > 0) {
+        daemon.unansweredPrincipals--;
+        throw new TypeError('fetch failed');
+      }
+      if (daemon.principalRefusal)
+        return Response.json({ error: daemon.principalRefusal }, { status: 403 });
       return Response.json({
         principal: {
           id: 'session:worker-session',
@@ -34,6 +44,7 @@ function fakeDaemon() {
           expires_at: new Date(Date.now() + 60_000).toISOString(),
         },
       });
+    }
     const body = (await request.json()) as Command;
     sent.push(body);
     if (daemon.refusal)
@@ -137,4 +148,20 @@ it("keys a command by the runtime's tool call id, also across a restarted MCP se
   expect(keys[4]).toBe(keys[3]);
   expect(new Set([keys[0], keys[1], keys[3], keys[5], keys[6]]).size).toBe(5);
   expect(daemon.executed).toHaveLength(5);
+});
+
+it('asks the daemon for the session identity again when its first request goes unanswered', async () => {
+  const daemon = fakeDaemon();
+  daemon.unansweredPrincipals = 1;
+  const client = await connect();
+  expect(daemon.principalRequests).toBe(2);
+  const { tools } = await client.listTools();
+  expect(tools.map((tool) => tool.name)).toContain('report');
+});
+
+it('fails at once when the daemon refuses the session identity', async () => {
+  const daemon = fakeDaemon();
+  daemon.principalRefusal = 'permission_denied';
+  await expect(connect()).rejects.toMatchObject({ code: 'permission_denied' });
+  expect(daemon.principalRequests).toBe(1);
 });

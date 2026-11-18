@@ -19,11 +19,11 @@ type Payload<K extends AgentEvent['kind']> = Extract<AgentEvent, { kind: K }>;
  * in the background, and a task still running when the process started anew or exited stopped.
  */
 export function sessionTasks(ctx: ControlContext, sessionId: string): SessionTasks {
-  const { cursor } = ctx.store.db
-    .prepare('SELECT coalesce(max(sequence),0) AS cursor FROM events WHERE aggregate_id=?')
+  const { cursor } = ctx.store
+    .statement('SELECT coalesce(max(sequence),0) AS cursor FROM events WHERE aggregate_id=?')
     .get(sessionId) as { cursor: number };
-  const rows = ctx.store.db
-    .prepare(
+  const rows = ctx.store
+    .statement(
       `SELECT kind, created_at, payload FROM events WHERE aggregate_id=? AND sequence<=? AND kind IN (${TASK_KINDS.map(() => '?').join(',')}) ORDER BY sequence`,
     )
     .all(sessionId, cursor, ...TASK_KINDS) as {

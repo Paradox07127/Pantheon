@@ -573,6 +573,9 @@ describe('the rest of the task drawer', () => {
     const option = element('mn-row', 'mn', 'mn-list', 'pop');
     heard.get('pointerdown')!({ target: option });
     heard.get('keydown')!({ key: 'Escape', target: option });
+    heard.get('pointerdown')!({
+      target: element('ib', 'rq-acts', 'rq-hd', 'rq', 'bf-need', 'bf-needs'),
+    });
     expect(onSelect).not.toHaveBeenCalled();
     heard.get('pointerdown')!({ target: element('bd-canvas') });
     expect(onSelect).toHaveBeenCalledWith(null);

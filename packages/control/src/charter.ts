@@ -49,6 +49,7 @@ export function chartered(
   p: Principal,
   power: CharterPower,
   subject: Entity,
+  reason?: string,
 ): CharterMode {
   if (p.role === 'user') return 'on';
   const mode = charterMode(ctx, p.project_id!, power);
@@ -57,6 +58,7 @@ export function chartered(
     mode,
     subject: subject.id,
     session_id: p.session_id,
+    ...(reason ? { reason } : {}),
   });
   return mode;
 }

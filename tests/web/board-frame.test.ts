@@ -670,6 +670,8 @@ describe('publish bar', () => {
   let agentList: AgentProfile[] = [];
   const stubRuntimes = (runtimes: string[]) =>
     vi.stubGlobal('window', {
+      addEventListener() {},
+      removeEventListener() {},
       pantheon: {
         query: async (method: string) => ({
           ok: true,
@@ -1447,6 +1449,64 @@ describe('needs-you row', () => {
     expect(nodes(h.value).filter((n) => n.type === 'p')).toEqual([]);
   });
 
+  it('accepts a plan change from its row with the ops the lead proposed, and keeps reject and the board in its menu', async () => {
+    const proposal = (allowed: boolean) =>
+      need({
+        source: { table: 'board_plans', id: 'lead-1', revision: 6 },
+        kind: 'board.plan.proposal',
+        session_id: 'lead-1',
+        request_id: 'proposal-1',
+        reason: 'plan_proposal_awaiting_decision',
+        decision: 'plan_change',
+        primary: 'board.plan.proposal.resolve',
+        actions: [
+          allowed
+            ? { command: 'board.plan.proposal.resolve', allowed: true }
+            : {
+                command: 'board.plan.proposal.resolve',
+                allowed: false,
+                disabled_reason: 'permission_denied',
+              },
+        ],
+        binding: undefined,
+      });
+    const accept = zh('board.plan.proposal.accept');
+    const reject = zh('board.plan.proposal.reject');
+    expect(keys(proposal(false))).toEqual([
+      ['approve', accept, reason('permissionDenied')],
+      ['reject', reject, reason('permissionDenied')],
+      ['board', act('board'), null],
+    ]);
+    const run = vi.fn(async () => null);
+    const h = row(proposal(true), run, () => {});
+    expect(
+      nodes(h.value)
+        .filter((n) => n.type === 'button')
+        .map((n) => text(n)),
+    ).toEqual([accept]);
+    expect(moreItems(h.value).map((n) => text(n))).toEqual([reject, act('board')]);
+    button(h.value, accept).props.onClick();
+    await h.flush();
+    const resolve = {
+      project_id: 'project-a',
+      lead_session_id: 'lead-1',
+      proposal_id: 'proposal-1',
+    };
+    expect(run).toHaveBeenCalledWith(
+      'board.plan.proposal.resolve',
+      { ...resolve, decision: 'accept' },
+      null,
+    );
+    const rejected = row(proposal(true), run, () => {});
+    moreItem(rejected.value, reject).props.onClick();
+    await rejected.flush();
+    expect(run).toHaveBeenLastCalledWith(
+      'board.plan.proposal.resolve',
+      { ...resolve, decision: 'reject' },
+      null,
+    );
+  });
+
   it('names a failed session row by its reason, then by the session that failed', () => {
     const failed = need({
       source: { table: 'sessions', id: 'worker-1', revision: 7 },
@@ -1630,9 +1690,11 @@ describe('needs-you strip folding', () => {
     );
   };
 
-  it('folds an expanded list back to its first rows', () => {
+  it('shows every row once expanded, with no button to fold them back', () => {
     const h = fiveNeeds();
     const rows = () => nodes(h.value).filter((n) => n.type === named(h.value, 'RequestCard').type);
+    // The rows are unrendered cards, so the strip's own buttons are the only ones in its tree.
+    const stripButtons = () => nodes(h.value).filter((n) => n.type === 'button');
     expect(rows()).toHaveLength(3);
     find(
       h.value,
@@ -1640,12 +1702,7 @@ describe('needs-you strip folding', () => {
     ).props.onClick();
     h.render();
     expect(rows()).toHaveLength(5);
-    find(
-      h.value,
-      (n) => n.type === 'button' && text(n) === zh('board.frame.needs.less'),
-    ).props.onClick();
-    h.render();
-    expect(rows()).toHaveLength(3);
+    expect(stripButtons()).toEqual([]);
   });
 
   it('tells the shell which waits its rows show, so the notice feed leaves only those out', () => {

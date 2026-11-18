@@ -66,6 +66,8 @@ beforeEach(() => {
   };
   mock.openSession = vi.fn();
   vi.stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
     pantheon: {
       query: vi.fn(async () => ({ ok: true, value: { tasks: [] } })),
       command: vi.fn(async (command: any) => {

@@ -1128,19 +1128,35 @@ export class Control extends EventEmitter {
     if (refresh) await refreshDevices(this.ctx);
     const configured = readUserConfig(this.ctx.userConfigDir).devices,
       loads = deviceLoads(this.ctx);
-    const active = new Set(
-      this.store
-        .list<Session>('sessions')
-        .filter((session) => session.state !== 'closed' && !session.outcome)
-        .map((session) => session.id),
-    );
-    const sessions = this.store
-      .list<Project>('projects')
-      .flatMap((project) =>
-        sessionList(this.ctx, principal, project.id, false).filter((session) =>
-          active.has(session.id),
-        ),
+    const all = this.store.list<Session>('sessions'),
+      opened = this.store.statement(
+        "SELECT created_at FROM events WHERE aggregate_id=? AND project_id=? AND kind='session.opened' ORDER BY sequence DESC LIMIT 1",
       );
+    // The open sessions session.list lists, in its order: by project, then as stored.
+    const sessions = this.store.list<Project>('projects').flatMap((project) => {
+      // session.list makes this check for each project; it refuses an expired principal.
+      projectAccess(this.ctx, principal, project.id, 'project.read');
+      return all
+        .filter(
+          (session) =>
+            session.project_id === project.id &&
+            (session.workspace_id ||
+              session.baseline ||
+              session.runtime_review ||
+              session.resident) &&
+            session.state !== 'closed' &&
+            !session.outcome,
+        )
+        .map((session) => ({
+          device_id: session.device_id ?? 'local',
+          id: session.id,
+          title: session.title ?? '',
+          runtime: session.runtime,
+          started_at: new Date(
+            (opened.get(session.id, project.id)?.created_at as number | undefined) ?? 0,
+          ).toISOString(),
+        }));
+    });
     return listDevices(this.ctx).map((device) => {
       const config = configured?.[device.id];
       return {
@@ -1149,13 +1165,8 @@ export class Control extends EventEmitter {
         load: {
           ...(loads.get(device.id) ?? { sessions: 0, uses: {} }),
           active_sessions: sessions
-            .filter((session) => (session.device_id ?? 'local') === device.id)
-            .map((session) => ({
-              id: session.id,
-              title: session.title,
-              runtime: session.runtime,
-              started_at: session.created_at,
-            })),
+            .filter((session) => session.device_id === device.id)
+            .map(({ device_id: _device, ...session }) => session),
         },
       };
     });

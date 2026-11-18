@@ -58,12 +58,13 @@ export function jumpTo(hit: SettingHit) {
   if (hit.board) return openBoardTab(hit.board);
   if (hit.pageOnly) return;
   // The page renders once the query is cleared; a row that waits on the page's settings read renders
-  // frames later, so the anchor is looked for each frame for about a second (60 frames).
-  const reveal = (framesLeft: number) =>
+  // as late as the daemon answers, so the anchor is looked for each frame for up to 10 s.
+  const until = Date.now() + 10_000;
+  const reveal = () =>
     requestAnimationFrame(() => {
       const anchor = revealSetting(hit.id, 'center');
       if (!anchor) {
-        if (framesLeft > 0) reveal(framesLeft - 1);
+        if (Date.now() < until) reveal();
         return;
       }
       anchor.dataset.flash = 'on';
@@ -73,5 +74,5 @@ export function jumpTo(hit: SettingHit) {
         anchor.addEventListener('transitionend', () => delete anchor.dataset.flash, { once: true });
       }, 1200);
     });
-  reveal(60);
+  reveal();
 }

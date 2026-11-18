@@ -242,6 +242,7 @@ check('展开后全部行按顺序等于 needs_you.list', sameRows(unfolded?.row
   ui: unfolded?.rows.map((r) => [r.kind, r.blocks]),
   daemon: daemonNow.map((i) => [i.decision, i.blocks]),
 });
+check('展开后列表底部没有折叠按钮', unfolded && unfolded.more === null, unfolded?.more);
 const all = unfolded?.rows ?? [];
 const permissionRows = all.filter((r) => r.kind === '权限');
 const permissionItems = daemonNow.filter((i) => i.decision === 'permission');
@@ -268,6 +269,8 @@ check(
   questionRow?.what?.includes(QUESTION) && questionRow.primary[0]?.text === '回答',
   questionRow,
 );
+const planRow = all.find((r) => r.kind === '计划变更');
+check('计划变更行按钮是 "接受"', planRow?.primary[0]?.text === '接受', planRow);
 
 // No floating notice card for a wait the list shows. Only wait cards count: a result card such as
 // "Assistant 回合完成" names the same session but tells a turn end, not a wait.

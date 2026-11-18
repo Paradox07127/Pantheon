@@ -163,10 +163,15 @@ const settle = async () => {
   await host.flush();
 };
 const sent = () => notify.mock.calls.map(([notice]) => notice);
-// Answers the next reads of the projects' session lists with these, after a session event.
+// Answers the next reads of the projects' session lists with these, after a session event of each.
 const relist = (next: typeof lists) => {
   lists = { ...lists, ...next };
-  deliver(event('session.updated', 'beta-login'));
+  deliver(
+    ...Object.keys(next).map((project_id) => ({
+      ...event('session.updated', `${project_id}-login`),
+      project_id,
+    })),
+  );
 };
 
 beforeEach(() => {
@@ -417,6 +422,44 @@ describe('system notifications and in-app cards', () => {
       'session.list',
       'session.list',
     ]);
+  });
+
+  it.each([
+    [
+      'reads again only the session list of the project a session event belongs to',
+      [['session.updated', 'alpha']],
+      ['alpha'],
+    ],
+    [
+      'reads each project with events since the last read once',
+      [
+        ['turn.completed', 'alpha'],
+        ['workspace.updated', 'beta'],
+        ['session.updated', 'alpha'],
+      ],
+      ['alpha', 'beta'],
+    ],
+    [
+      'reads every project after a session event of no project',
+      [['session.updated', '']],
+      ['alpha', 'beta'],
+    ],
+  ])('%s', async (_, events, read) => {
+    await settle();
+    const query = vi.spyOn(window.pantheon!, 'query');
+    deliver(
+      ...events.map(([kind, project_id]) => ({
+        ...event(kind!, 'other'),
+        project_id: project_id!,
+      })),
+    );
+    await settle();
+    expect(
+      query.mock.calls
+        .filter(([method]) => method === 'session.list')
+        .map(([, params]) => (params as { project_id: string }).project_id)
+        .sort(),
+    ).toEqual(read);
   });
 });
 

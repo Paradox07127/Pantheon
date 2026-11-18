@@ -1,5 +1,6 @@
 {
   "sessions.thread.checkpoint": "检查点",
   "sessions.thread.checkpointBack": "回到这里",
-  "sessions.thread.checkpointTitle": "回到这个检查点"
+  "sessions.thread.checkpointTitle": "回到这个检查点",
+  "sessions.thread.viaPersonal": "个人级密钥"
 }

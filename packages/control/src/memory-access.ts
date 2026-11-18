@@ -20,8 +20,8 @@ export function rows<T>(
   table: 'memory_records' | 'memory_jobs' | 'board_plans' | 'improvements',
   project: string,
 ): T[] {
-  return ctx.store.db
-    .prepare(`SELECT data FROM ${table} WHERE json_extract(data,'$.project_id')=? ORDER BY rowid`)
+  return ctx.store
+    .statement(`SELECT data FROM ${table} WHERE json_extract(data,'$.project_id')=? ORDER BY rowid`)
     .all(project)
     .map((r) => JSON.parse(String(r.data)) as T);
 }
@@ -32,11 +32,13 @@ export const state = (ctx: ControlContext, project: string) =>
 
 /** Only authoritative source fields. Delivery acknowledgements, page writes and inbox consumption are excluded. */
 export function sources(ctx: ControlContext, project: string) {
-  const plans = rows<BoardPlan>(ctx, 'board_plans', project);
+  const plans = rows<BoardPlan>(ctx, 'board_plans', project),
+    sessions = ctx.store.list<Session>('sessions');
   return {
     brief: ctx.store.get('project_briefs', project) ?? null,
-    tasks: plans.flatMap((plan) =>
-      plan.tasks.map((task) => ({
+    tasks: plans.flatMap((plan) => {
+      const lead = ctx.store.get<Session>('sessions', plan.id);
+      return plan.tasks.map((task) => ({
         lead_session_id: plan.id,
         task_id: task.id,
         generation: taskGeneration(plan, task.id),
@@ -44,16 +46,11 @@ export function sources(ctx: ControlContext, project: string) {
         goal: task.goal,
         scope: task.scope,
         acceptance: task.acceptance,
-        state: taskState(
-          plan,
-          task.id,
-          taskSessions(ctx, plan.id, task.id),
-          ctx.store.get<Session>('sessions', plan.id),
-        ),
+        state: taskState(plan, task.id, taskSessions(ctx, plan.id, task.id, sessions, plan), lead),
         completion: plan.accepted?.[task.id] ?? plan.direct_merged?.[task.id] ?? null,
         done_when: task.done_when ?? 'merged',
-      })),
-    ),
+      }));
+    }),
     experiences: rows<Improvement>(ctx, 'improvements', project)
       .filter((i) => i.change.type === 'experience')
       .map((i) => ({ id: i.id, revision: i.revision, status: i.status, change: i.change })),
@@ -62,6 +59,7 @@ export function sources(ctx: ControlContext, project: string) {
 export function taskCurrent(
   ctx: ControlContext,
   r: Pick<MemoryRecord, 'project_id' | 'task'>,
+  sessions = ctx.store.list<Session>('sessions'),
 ): boolean {
   if (!r.task) return true;
   const plan = ctx.store.get<BoardPlan>('board_plans', r.task.lead_session_id);
@@ -73,14 +71,16 @@ export function taskCurrent(
     taskState(
       plan,
       r.task.id,
-      taskSessions(ctx, plan.id, r.task.id),
+      taskSessions(ctx, plan.id, r.task.id, sessions),
       ctx.store.get<Session>('sessions', plan.id),
     ) !== 'done'
   );
 }
-export function alive(ctx: ControlContext, r: MemoryRecord): boolean {
+export function alive(ctx: ControlContext, r: MemoryRecord, sessions?: Session[]): boolean {
   return (
-    r.state === 'active' && (!r.expires_at || r.expires_at > ctx.store.now()) && taskCurrent(ctx, r)
+    r.state === 'active' &&
+    (!r.expires_at || r.expires_at > ctx.store.now()) &&
+    taskCurrent(ctx, r, sessions)
   );
 }
 export function sourceSignature(
@@ -88,23 +88,30 @@ export function sourceSignature(
   project: string,
   all = records(ctx, project),
 ): string {
+  const sessions = ctx.store.list<Session>('sessions');
   return hash({
     sources: sources(ctx, project),
-    decisions: all.filter((r) => r.kind === 'decision' && alive(ctx, r)).map((r) => r.id),
+    decisions: all.filter((r) => r.kind === 'decision' && alive(ctx, r, sessions)).map((r) => r.id),
   });
 }
 /** The one lifecycle gate every memory read goes through. */
-export function current(ctx: ControlContext, project: string): MemoryRecord[] {
+export function current(
+  ctx: ControlContext,
+  project: string,
+  // The project's sourceSignature, when the caller computed it since the last write.
+  known?: string,
+): MemoryRecord[] {
   const all = records(ctx, project),
     byId = new Map(all.map((r) => [r.id, r]));
-  const stamp = sourceSignature(ctx, project, all),
+  const stamp = known ?? sourceSignature(ctx, project, all),
+    sessions = ctx.store.list<Session>('sessions'),
     accepted = new Map<string, boolean>();
   const valid = (r: MemoryRecord, visiting = new Set<string>()): boolean => {
     if (accepted.has(r.id)) return accepted.get(r.id)!;
     if (visiting.has(r.id)) return false;
     const next = new Set(visiting).add(r.id);
     const ok =
-      alive(ctx, r) &&
+      alive(ctx, r, sessions) &&
       (!r.source_signature || r.source_signature === stamp) &&
       r.dependencies.every((k) => {
         const source = byId.get(k);
@@ -115,11 +122,16 @@ export function current(ctx: ControlContext, project: string): MemoryRecord[] {
   };
   return all.filter((r) => valid(r));
 }
-export function signature(ctx: ControlContext, project: string): string {
+export function signature(
+  ctx: ControlContext,
+  project: string,
+  stamp = sourceSignature(ctx, project),
+  valid = current(ctx, project, stamp),
+): string {
   return hash({
     epoch: state(ctx, project)?.epoch ?? 0,
-    sources: sourceSignature(ctx, project),
-    current: current(ctx, project).map((r) => r.id),
+    sources: stamp,
+    current: valid.map((r) => r.id),
   });
 }
 /** Serialized item bytes, including JSON escaping, without opening indexed artifact bodies. */

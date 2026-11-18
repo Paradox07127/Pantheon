@@ -39,21 +39,40 @@ async function readDevices(refresh: boolean): Promise<DevicesRead> {
   return { state: 'ready', devices: value as DeviceListItem[] };
 }
 
+/** The plain read in flight; a mounting reader takes its answer instead of sending its own. */
+let plainOut: Promise<DevicesRead> | null = null;
+let readers = 0;
+
 /** GET /v1/device.list on mount; reload settles once its read has landed. */
 export function useDevices() {
   const [read, setRead] = useState<DevicesRead>({ state: 'loading' });
   // Only the latest read lands; an earlier one answered late is dropped.
   const latest = useRef(0);
-  const reload = useCallback(async (refresh: boolean) => {
+  const take = useCallback(async (refresh: boolean, join: boolean) => {
     const at = ++latest.current;
-    const next = await readDevices(refresh);
+    let reading = join ? plainOut : null;
+    if (!reading) {
+      const sent = readDevices(refresh);
+      reading = sent;
+      if (!refresh) {
+        plainOut = sent;
+        void sent.then(() => {
+          if (plainOut === sent) plainOut = null;
+        });
+      }
+    }
+    const next = await reading;
     if (at === latest.current) setRead(next);
   }, []);
+  const reload = useCallback((refresh: boolean) => take(refresh, false), [take]);
   useEffect(() => {
-    void reload(false);
+    readers++;
+    void take(false, true);
     return () => {
       latest.current++;
+      // A read no mounted reader waits for is joined by none.
+      if (--readers === 0) plainOut = null;
     };
-  }, [reload]);
+  }, [take]);
   return { read, reload };
 }

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from 'react';
 import { ExternalLink, SquarePen } from 'lucide-react';
 import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
 import { runtimeName } from '../components/RuntimeGlyph';
@@ -50,11 +57,34 @@ export function useProjectSessions(projectIds: readonly string[]) {
   const focus = useFocusTick();
   const [lists, setLists] = useState<Readonly<Record<string, readonly WorkbenchSession[]>>>({});
   const key = projectIds.join('\n');
+  // Session events read only their own projects; the newest read sent of a project wins.
+  const sent = useRef({
+    triggers: null as readonly unknown[] | null,
+    through: 0,
+    order: 0,
+    by: {} as Record<string, number>,
+  });
   useEffect(() => {
-    let current = true;
-    for (const project_id of projectIds)
+    const s = sent.current;
+    const triggers = [key, focus, resync];
+    const whole = !s.triggers || triggers.some((each, i) => each !== s.triggers![i]);
+    s.triggers = triggers;
+    const { events } = useBoard.getState();
+    const touched = new Set(
+      events
+        .filter(
+          (e) =>
+            e.sequence > s.through && SESSION_KINDS.some((prefix) => e.kind.startsWith(prefix)),
+        )
+        .map((e) => e.project_id),
+    );
+    s.through = newestSessionEvent(events);
+    const read = whole || touched.has('') ? projectIds : projectIds.filter((id) => touched.has(id));
+    const order = ++s.order;
+    for (const project_id of read) {
+      s.by[project_id] = order;
       void readQuery('session.list', { project_id }).then((result) => {
-        if (!current) return;
+        if (s.by[project_id] !== order) return;
         const list =
           result.ok && Array.isArray(result.value) ? (result.value as WorkbenchSession[]) : null;
         setLists((all) => {
@@ -62,9 +92,7 @@ export function useProjectSessions(projectIds: readonly string[]) {
           return list ? { ...rest, [project_id]: list } : rest;
         });
       });
-    return () => {
-      current = false;
-    };
+    }
   }, [key, tick, focus, resync]);
   return projectIds.flatMap((id) =>
     (lists[id] ?? []).map((session) => ({ project_id: id, session })),

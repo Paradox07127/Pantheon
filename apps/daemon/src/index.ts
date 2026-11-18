@@ -74,6 +74,8 @@ const SESSION_CREDENTIAL_MS = 24 * 60 * 60 * 1000;
 const HEARTBEAT_MS = 15_000;
 // Milliseconds between checks of whether each runtime is installed and logged in.
 const RUNTIME_STATUS_MS = 5 * 60_000;
+// The longest the tick waits while the store is unwritten since the last tick began.
+const QUIET_TICK_MS = 1000;
 // A query holding the event loop longer than this is reported as a diagnostic.
 const QUERY_HOLD_MS = 500;
 // The longest a session list waits for its worktrees' Git reads, well under the app's 5 s query timeout.
@@ -904,8 +906,30 @@ export async function startDaemon(options: DaemonOptions) {
         control.emit('diagnostic', new Error('Invalid PANTHEON_OTLP_HTTP_ENDPOINT'));
       }
     }
+    // total_changes counts this connection's writes, which are all of the store's writes.
+    const totalChanges = openedStore.db.prepare('SELECT total_changes() AS n');
+    let ticked: { changes: number; at: number } | undefined;
+    // A beat during a tick would only find it busy, so it leaves the start mark alone.
+    let ticking = false;
+    // The control announced a change that may be in memory alone; a tick announces at its own end.
+    let announced = false;
+    control.on('events', () => {
+      if (!ticking) announced = true;
+    });
     interval = setInterval(() => {
-      void control.tick().catch((error) => control.emit('diagnostic', error));
+      if (ticking) return;
+      const changes = Number(totalChanges.get()!.n),
+        at = Date.now();
+      if (!announced && ticked?.changes === changes && at - ticked.at < QUIET_TICK_MS) return;
+      announced = false;
+      ticked = { changes, at };
+      ticking = true;
+      void control
+        .tick()
+        .catch((error) => control.emit('diagnostic', error))
+        .finally(() => {
+          ticking = false;
+        });
     }, options.intervalMs ?? 50);
     const refreshRuntimeStatus = (): void => {
       void control.refreshRuntimeStatus().catch((error) => control.emit('diagnostic', error));

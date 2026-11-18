@@ -199,6 +199,29 @@ describe('needs-you list under the card', () => {
     await h.flush();
     expect(h.value).not.toBeNull();
   });
+
+  it('marks its list while the task drawer is open, so the rows take the narrow columns', async () => {
+    serve(served);
+    const list = (drawer: boolean) =>
+      mount(() =>
+        ProjectNeeds({
+          projectId: 'project-brief-i',
+          model,
+          sessions,
+          run: async () => null,
+          onOpenSession() {},
+          drawer,
+        }),
+      );
+    const open = list(true);
+    await open.flush();
+    expect((open.value as ReactElement<Record<string, unknown>>).props['data-drawer']).toBe('');
+    const shut = list(false);
+    await shut.flush();
+    expect(
+      (shut.value as ReactElement<Record<string, unknown>>).props['data-drawer'],
+    ).toBeUndefined();
+  });
 });
 
 describe('since you left card', () => {

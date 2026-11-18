@@ -283,15 +283,27 @@ export function needActions(
           : t({ id: 'board.needs.actions.revertTrial', defaultMessage: 'Revert' }),
       reason: offReason(item, 'workflow.definition.trial.decide'),
     }));
-  // The item holds no ops, so the proposal is decided on the board.
-  if (item.kind === 'board.plan.proposal')
+  // Accepting here takes the lead's own ops; changing them first is done on the board.
+  if (item.kind === 'board.plan.proposal') {
+    const reason = offReason(item, 'board.plan.proposal.resolve');
     return [
+      {
+        key: 'approve',
+        label: t({ id: 'board.plan.proposal.accept', defaultMessage: 'Accept' }),
+        reason,
+      },
+      {
+        key: 'reject',
+        label: t({ id: 'board.plan.proposal.reject', defaultMessage: 'Reject' }),
+        reason,
+      },
       {
         key: 'board',
         label: t({ id: 'board.needs.actions.board', defaultMessage: 'View on board' }),
         reason: null,
       },
     ];
+  }
   if (item.kind === 'lead.question')
     return [
       {
@@ -541,6 +553,17 @@ export function needCommand(
     return {
       type: 'workflow.step.decide',
       input: { step_run_id: item.source.id, decision: key },
+      revision: null,
+    };
+  if (item.kind === 'board.plan.proposal' && (key === 'approve' || key === 'reject'))
+    return {
+      type: 'board.plan.proposal.resolve',
+      input: {
+        project_id: item.project_id,
+        lead_session_id: item.session_id,
+        proposal_id: item.request_id,
+        decision: key === 'approve' ? 'accept' : 'reject',
+      },
       revision: null,
     };
   if (item.kind === 'external.approval' && key === 'approve')

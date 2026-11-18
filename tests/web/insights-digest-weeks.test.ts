@@ -71,6 +71,7 @@ beforeEach(() => {
 afterEach(() => {
   unmountAll();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 const boardReads = () => mock.reads.filter((r) => r.method === 'board.view').map((r) => r.params);
@@ -108,6 +109,7 @@ const MODEL = {
 
 describe('engineering board range', () => {
   it('offers today, 7 days, 30 days and all, and reads the board of the picked one', () => {
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
     expect(RANGES.map((r) => [r.days, r.label])).toEqual([
       [1, zh('board.ranges.today')],
       [7, '7 天'],

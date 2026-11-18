@@ -205,8 +205,8 @@ export async function captureCheckpoint(
  */
 export function restorableTurns(ctx: ControlContext, projectId: string): Map<string, string> {
   const events = (kind: string, field: string) =>
-    ctx.store.db
-      .prepare(
+    ctx.store
+      .statement(
         `SELECT ${field} AS value, sequence FROM events INDEXED BY events_project_kind WHERE project_id=? AND kind=? ORDER BY sequence`,
       )
       .all(projectId, kind) as { value: string; sequence: number }[];
@@ -217,8 +217,8 @@ export function restorableTurns(ctx: ControlContext, projectId: string): Map<str
     events('session.checkpoint_failed', "payload->>'$.turn_id'").map((event) => event.value),
   );
   const ran = new Set(events('turn.running', 'aggregate_id').map((event) => event.value));
-  const queued = ctx.store.db
-    .prepare(
+  const queued = ctx.store
+    .statement(
       "SELECT t.id, t.data->>'$.session_id' AS session_id, t.data->>'$.kind' AS kind, t.data->>'$.origin' AS origin, t.data->>'$.rolled_back' AS rolled_back, e.sequence FROM events e INDEXED BY events_project_kind JOIN session_turns t ON t.id=e.aggregate_id WHERE e.project_id=? AND e.kind='turn.queued' ORDER BY e.sequence",
     )
     .all(projectId) as {

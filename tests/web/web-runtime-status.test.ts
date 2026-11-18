@@ -158,6 +158,7 @@ describe('runtime status read', () => {
     vi.stubGlobal('window', { pantheon: { query: vi.fn(() => answers.shift()) } });
     const first = mount(() => useRuntimeStatus());
     const second = mount(() => useRuntimeStatus());
+    void second.value.reload();
     await second.flush();
     older.resolve({ ok: true, value: [status({ runtime: 'claude' })] });
     await first.flush();

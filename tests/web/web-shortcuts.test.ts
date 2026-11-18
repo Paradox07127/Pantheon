@@ -157,7 +157,11 @@ describe('interrupt shortcut', () => {
     ...extra,
   });
   const mountSidebar = (session: object) => {
-    mock.board = { board: { sessions: [{ id: 's1', revision: 7 }] }, status: { state: 'live' } };
+    mock.board = {
+      board: { sessions: [{ id: 's1', revision: 7 }] },
+      events: [],
+      status: { state: 'live' },
+    };
     mock.shell = { screen: 'sessions', sessionId: 's1', sessionGroup: null };
     mount(() =>
       Sidebar({

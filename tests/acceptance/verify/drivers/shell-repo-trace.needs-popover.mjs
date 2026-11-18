@@ -305,6 +305,12 @@ check(
   questionRow?.primary[0] === '回答' && questionRow.more[0] === '更多操作：问题',
   questionRow,
 );
+const planRow = group?.rows.find((r) => r.title === '计划变更');
+check(
+  '计划变更行主按钮是 "接受"，有 "更多操作：计划变更"',
+  planRow?.primary[0] === '接受' && planRow.more[0] === '更多操作：计划变更',
+  planRow,
+);
 // The question row's menu holds the rest of its actions.
 const menuItems = () =>
   poll(async () => {

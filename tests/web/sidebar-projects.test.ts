@@ -60,7 +60,7 @@ const PROJECTS = [
 
 const screen = (id: string) => zh(`app.screenName.${id}`);
 beforeEach(() => {
-  mock.board = { board: null, status: { state: 'live' } };
+  mock.board = { board: null, events: [], status: { state: 'live' } };
   mock.shell = { screen: 'projects', sessionId: null, sessionGroup: null };
   mock.summaries = [summary('alpha', 0, 2), summary('beta', 3, 1), summary('gamma', 0, 0)];
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });

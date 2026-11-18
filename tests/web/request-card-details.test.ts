@@ -207,7 +207,7 @@ describe('request card details', () => {
     expect(text(h.value)).not.toContain('The task has no running turn');
   });
 
-  it('marks a lead plan proposal with the plan edit icon and sends its one action to the board', () => {
+  it('marks a lead plan proposal with the plan edit icon and offers to accept it, reject it or open the board', () => {
     const openProjectBoard = vi.fn();
     useShell.setState({ openProjectBoard });
     const leadSession = { ...worker, id: 'lead-1', title: 'Refunds lead', task: undefined };
@@ -221,8 +221,12 @@ describe('request card details', () => {
     );
     expect(text(find(h.value, (n) => n.props.className === 'rq-who'))).toBe(who);
     expect(text(h.value)).toContain(zh('data.reason.planProposalAwaitingDecision'));
-    expect(labels(h.value)).toEqual([zh('board.needs.actions.board')]);
-    expect(button(h.value, zh('board.needs.actions.board')).props.className).toBe('btn pri');
+    expect(labels(h.value)).toEqual([
+      zh('board.plan.proposal.accept'),
+      zh('board.plan.proposal.reject'),
+      zh('board.needs.actions.board'),
+    ]);
+    expect(button(h.value, zh('board.plan.proposal.accept')).props.className).toBe('btn pri');
     button(h.value, zh('board.needs.actions.board')).props.onClick();
     expect(openProjectBoard).toHaveBeenCalledWith('project-a');
     expect(run).not.toHaveBeenCalled();

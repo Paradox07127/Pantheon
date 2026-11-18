@@ -2381,7 +2381,7 @@ export const inputSchemas = {
           kind: z
             .enum(['user_words', 'assumption', 'memory', 'earlier_answer'])
             .describe(
-              "user_words: words of the asking task's source; assumption: a plan assumption; memory: a current memory entry; earlier_answer: an answered question of your plan.",
+              "user_words: words of the asking task's source; assumption: a plan assumption; memory: a current memory entry; earlier_answer: a question of your plan the user answered themselves.",
             ),
           ref: str.describe(
             'For user_words, the words copied exactly; for assumption, its whole text; for memory, the memory id; for earlier_answer, the question id.',
@@ -3398,6 +3398,8 @@ export type DecisionForUser =
       >;
       subject: string;
       session_id: string;
+      /** The reason the lead gave when it used the power; absent when it gave none. */
+      reason?: string;
     }
   /**
    * A task session's question the lead answered; answer is the lead's, session_id the asking session's
@@ -3413,6 +3415,23 @@ export type DecisionForUser =
       answer: string;
       citations: NonNullable<NonNullable<BoardPlan['questions']>[number]['citations']>;
       overruled?: { answer: string; at: number };
+    }
+  /** A decision a personal agent key answered for the user. */
+  | {
+      kind: 'personal_answer';
+      at: number;
+      key_id: string;
+      command: 'lead.question.answer' | 'board.plan.proposal.resolve' | 'milestone.accept';
+      /** The id of the question, plan proposal or milestone. */
+      subject: string;
+      /** The lead session whose question or proposal it was, or that owns the milestone. */
+      lead_session_id?: string;
+      /** The question, the reason the lead gave for the proposal, or the milestone's title. */
+      text: string;
+      /** The answer, or the proposal's status once resolved; absent for a milestone. */
+      decision?: string;
+      /** The reason given when resolving the proposal. */
+      reason?: string;
     };
 /** GET /v1/project.decisions. */
 export interface DecisionsForUser {

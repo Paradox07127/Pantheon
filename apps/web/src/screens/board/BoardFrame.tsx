@@ -240,19 +240,17 @@ export function NeedsStrip({
             </li>
           ))}
         </ul>
-        {needs && needs.length > FOLDED && (
+        {needs && needs.length > FOLDED && !all && (
           <button
             type="button"
             className="bd-lnk bf-more"
-            aria-expanded={all}
-            onClick={() => setAll(!all)}
+            aria-expanded={false}
+            onClick={() => setAll(true)}
           >
-            {all
-              ? t({ id: 'board.frame.needs.less', defaultMessage: 'Show less' })
-              : t(
-                  { id: 'board.frame.needs.more', defaultMessage: '{count} more' },
-                  { count: needs.length - FOLDED },
-                )}
+            {t(
+              { id: 'board.frame.needs.more', defaultMessage: '{count} more' },
+              { count: needs.length - FOLDED },
+            )}
           </button>
         )}
       </section>

@@ -13,6 +13,11 @@
   gap: var(--sp-2);
   width: min(320px, calc(100vw - 2 * var(--sp-4)));
   outline: none;
+  transition: transform var(--dur-3) var(--ease-std);
+}
+:root:has(.tbe-wait[aria-expanded='true']) .toast-vp {
+  /* Left of the title bar's needs-you popover, which is 440px wide (needs-popover.css). */
+  transform: translateX(calc(-1 * (440px + var(--sp-2))));
 }
 /* Within the 280px overview column, so the stack never covers the composer's send button. */
 :root:has(.ov-card) .toast-vp {

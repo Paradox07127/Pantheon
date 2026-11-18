@@ -79,6 +79,7 @@ import {
   dispatchQueue,
   dispatchTasks,
   placedTaskSessions,
+  placementRows,
   selectedParts,
   taskPlaces,
 } from './task-dispatch.js';
@@ -697,9 +698,10 @@ function turnAlerts(
 
 /** The tasks that wait for a place while the session holds one, as a sentence; empty otherwise. */
 function placeWaiters(ctx: ControlContext, plan: BoardPlan, session: Session): string {
-  if (!placedTaskSessions(ctx, session.project_id).some((other) => other.id === session.id))
+  const rows = placementRows(ctx);
+  if (!placedTaskSessions(ctx, session.project_id, rows).some((other) => other.id === session.id))
     return '';
-  const waiting = dispatchQueue(ctx, session.project_id)
+  const waiting = dispatchQueue(ctx, session.project_id, rows)
     .filter((entry) => entry.wait === 'capacity')
     .map((entry) =>
       entry.plan.id === plan.id ? entry.task.id : `${entry.plan.id}:${entry.task.id}`,
