@@ -1,8 +1,9 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Copy, RefreshCw, X, Zap } from 'lucide-react';
 import type { BaselineFolder } from '@pantheon/domain';
 import type { FileRef } from '@pantheon/protocol';
 import { Markdown, openFailureText } from '../../components/Markdown';
+import { GraphDiagram } from '../../components/visual/GraphDiagram';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
 import { useBoard } from '../../data/board';
@@ -14,10 +15,8 @@ import { listText } from '../../lib/list-text';
 import { BaselinePopover } from '../projects/BaselineBlocks';
 import { useSize } from './Charts';
 import {
-  ARCH_NODE,
   DARK_SHADE,
   SHADES,
-  archLayout,
   cellLabel,
   commitShade,
   shellLine,
@@ -28,6 +27,8 @@ import {
 import { useProjectSetup } from './project-setup';
 import './intro.css';
 
+/** The architecture's height in px before a taller graph grows it. */
+const ARCH_HEIGHT = 320;
 /** Treemap height in px, and the width it is laid out in before its box is measured. */
 const TREEMAP_HEIGHT = 192;
 const TREEMAP_WIDTH = 480;
@@ -170,77 +171,21 @@ export function CommandRow({
   );
 }
 
-/** Nodes in columns along the edges; an edge with the graph's edge back has a head at each end. */
+/** The architecture, drawn by the graph visual's renderer. */
 export function ArchDiagram({ spec }: { spec: NonNullable<ProjectIntro['architecture']> }) {
-  const marker = `in-ah-${useId().replace(/[^\w-]/g, '')}`;
-  const laid = useMemo(() => archLayout(spec), [spec]);
-  const names = new Map(spec.nodes.map((node) => [node.id, node.label]));
-  const edgeText = (edge: (typeof laid.edges)[number]) => {
-    const values = { from: names.get(edge.from), to: names.get(edge.to) };
-    return edge.both
-      ? t(
-          { id: 'memory.intro.architecture.both', defaultMessage: '{from} and {to}, both ways' },
-          values,
-        )
-      : t({ id: 'memory.intro.architecture.edge', defaultMessage: '{from} to {to}' }, values);
-  };
   return (
     <div
-      className="in-arch"
       role="group"
-      aria-label={t({
-        id: 'memory.intro.architecture.group',
-        defaultMessage: 'Architecture nodes',
-      })}
-      style={{ width: laid.width, height: laid.height }}
+      aria-label={t(
+        {
+          id: 'memory.intro.architecture.counts',
+          defaultMessage:
+            'Architecture diagram, {nodes, plural, one {# node} other {# nodes}} and {edges, plural, one {# edge} other {# edges}}',
+        },
+        { nodes: spec.nodes.length, edges: spec.edges.length },
+      )}
     >
-      <svg
-        width={laid.width}
-        height={laid.height}
-        viewBox={`0 0 ${laid.width} ${laid.height}`}
-        role="img"
-        aria-label={t(
-          {
-            id: 'memory.intro.architecture.label',
-            defaultMessage:
-              'Architecture diagram, {count, plural, one {# node} other {# nodes}}: {list}',
-          },
-          { count: spec.nodes.length, list: listText(...laid.edges.map(edgeText)) },
-        )}
-      >
-        <defs>
-          <marker
-            id={marker}
-            viewBox="0 0 8 8"
-            refX="8"
-            refY="4"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M0 0L8 4L0 8z" />
-          </marker>
-        </defs>
-        {laid.edges.map((edge) => (
-          <path
-            key={`${edge.from}:${edge.to}`}
-            className="in-eg"
-            d={edge.d}
-            markerEnd={`url(#${marker})`}
-            markerStart={edge.both ? `url(#${marker})` : undefined}
-          />
-        ))}
-      </svg>
-      {laid.nodes.map((node) => (
-        <div
-          key={node.id}
-          className="in-nd"
-          style={{ left: node.x, top: node.y, width: ARCH_NODE.w, height: ARCH_NODE.h }}
-        >
-          <span className="in-b in-cut">{node.label}</span>
-          {node.group && <span className="mu in-t1 in-cut">{node.group}</span>}
-        </div>
-      ))}
+      <GraphDiagram spec={spec} height={ARCH_HEIGHT} grows />
     </div>
   );
 }
@@ -594,9 +539,7 @@ export function IntroView({ projectId }: { projectId: string }) {
                 )}
               </span>
             </div>
-            <div className="in-scroll">
-              <ArchDiagram spec={architecture} />
-            </div>
+            <ArchDiagram spec={architecture} />
           </section>
         )}
 

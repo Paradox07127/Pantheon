@@ -327,6 +327,100 @@ it.each([
   if (!result.success) expect(JSON.stringify(result.error.issues)).toContain(field);
 });
 
+it('accepts a graph with node kinds, detail lines, sources, edge styles and nested groups', () => {
+  const spec = {
+    nodes: [
+      {
+        id: 'api',
+        label: 'API',
+        kind: 'service',
+        sublabel: 'src/server.ts',
+        sources: ['file:src/server.ts:12'],
+        group: 'core',
+      },
+      { id: 'db', label: 'Orders', kind: 'store', group: 'data' },
+      { id: 'web', label: 'Web', kind: 'client', group: 'frontend' },
+    ],
+    edges: [
+      { from: 'web', to: 'api', style: 'main', label: 'checkout' },
+      { from: 'api', to: 'db', style: 'data' },
+      { from: 'db', to: 'api', style: 'return' },
+      { from: 'api', to: 'api', style: 'async' },
+    ],
+    groups: [
+      { id: 'core', label: 'Core' },
+      { id: 'data', label: 'Data', parent: 'core' },
+    ],
+  };
+  expect(visualSpecs.graph.safeParse(spec).success).toBe(true);
+});
+
+it.each([
+  [
+    'an unknown node kind',
+    { nodes: [{ id: 'a', label: 'A', kind: 'database' }], edges: [] },
+    'kind',
+  ],
+  [
+    'an unknown edge style',
+    {
+      nodes: [
+        { id: 'a', label: 'A' },
+        { id: 'b', label: 'B' },
+      ],
+      edges: [{ from: 'a', to: 'b', style: 'dotted' }],
+    },
+    'style',
+  ],
+  [
+    'a group whose parent is missing',
+    {
+      nodes: [{ id: 'a', label: 'A', group: 'core' }],
+      edges: [],
+      groups: [{ id: 'core', label: 'Core', parent: 'platform' }],
+    },
+    'Missing group id: platform',
+  ],
+  [
+    'groups that are each inside the other',
+    {
+      nodes: [{ id: 'a', label: 'A', group: 'core' }],
+      edges: [],
+      groups: [
+        { id: 'core', label: 'Core', parent: 'data' },
+        { id: 'data', label: 'Data', parent: 'core' },
+      ],
+    },
+    'form a cycle',
+  ],
+  [
+    'a group inside itself',
+    { nodes: [{ id: 'a', label: 'A' }], edges: [], groups: [{ id: 'g', label: 'G', parent: 'g' }] },
+    'form a cycle',
+  ],
+  [
+    'two groups with one id',
+    {
+      nodes: [{ id: 'a', label: 'A' }],
+      edges: [],
+      groups: [
+        { id: 'g', label: 'G' },
+        { id: 'g', label: 'Again' },
+      ],
+    },
+    'Duplicate group id: g',
+  ],
+  [
+    'a source that is not a file or commit',
+    { nodes: [{ id: 'a', label: 'A', sources: ['README.md'] }], edges: [] },
+    'sources',
+  ],
+])('rejects a graph with %s', (_, spec, issue) => {
+  const result = visualSpecs.graph.safeParse(spec);
+  expect(result.success).toBe(false);
+  if (!result.success) expect(JSON.stringify(result.error.issues)).toContain(issue);
+});
+
 it('declares strict user commands and bounds visual titles', () => {
   for (const [type, input] of [
     ['visual.read', { visual_id: 'chart' }],

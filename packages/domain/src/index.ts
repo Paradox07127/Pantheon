@@ -91,8 +91,21 @@ export type VisualContent =
   | {
       kind: 'graph';
       spec: {
-        nodes: { id: string; label: string; group?: string }[];
-        edges: { from: string; to: string; label?: string }[];
+        nodes: {
+          id: string;
+          label: string;
+          group?: string;
+          kind?: 'client' | 'service' | 'store' | 'queue' | 'external' | 'policy';
+          sublabel?: string;
+          sources?: string[];
+        }[];
+        edges: {
+          from: string;
+          to: string;
+          label?: string;
+          style?: 'main' | 'async' | 'data' | 'return';
+        }[];
+        groups?: { id: string; label: string; parent?: string }[];
         direction?: 'LR' | 'TB';
       };
     }

@@ -1,37 +1,222 @@
-import { useRef, useState } from 'react';
-import type { VisualContent } from '@pantheon/domain';
-import type { Edge, MiniMap as FlowMap, Node, ReactFlow as Flow } from '@xyflow/react';
+import { useRef, useState, type ComponentType } from 'react';
+import { Box, Database, Globe, ListOrdered, Monitor, Shield, type LucideProps } from 'lucide-react';
+import type {
+  Edge,
+  EdgeProps,
+  MiniMap as FlowMap,
+  Node,
+  NodeProps,
+  ReactFlow as Flow,
+} from '@xyflow/react';
 import { t } from '../../i18n';
+import { Clip } from '../Clip';
+import {
+  PAD,
+  fitZoom,
+  layoutGraph,
+  type EdgeStyle,
+  type GraphLayout,
+  type GraphSpec,
+  type LaidGroup,
+  type LaidNode,
+  type NodeKind,
+  type Point,
+} from './graph-layout';
 import { Drawing, useDraw } from './shared';
 import './graph-diagram.css';
 
-export type GraphSpec = Extract<VisualContent, { kind: 'graph' }>['spec'];
+export type { GraphSpec } from './graph-layout';
 
-const NODE_HEIGHT = 24;
 // A tall graph grows its card to this, the height of the zoomed visual view, then pans.
 const MAX_HEIGHT = 640;
-// Room around the laid-out graph, as fitView's default 10% padding needs.
-const PAD = 32;
 // Fitting shrinks a graph no further than this, where 12px labels still read at 8px.
 const FLOOR = 2 / 3;
-// Estimated label widths at 12px: wide (CJK) characters take 12px, the others 7px.
-const nodeWidth = (label: string): number =>
-  Math.min(
-    240,
-    [...label].reduce((width, c) => width + (c.charCodeAt(0) > 0x2e7f ? 12 : 7), 24),
+/** The legend row's height under the plot. */
+const LEGEND = 28;
+const CORNER = 6;
+const HEAD = 6;
+
+const KINDS: readonly NodeKind[] = ['client', 'service', 'store', 'queue', 'external', 'policy'];
+const STYLES: readonly EdgeStyle[] = ['main', 'async', 'data', 'return'];
+
+const KIND_ICON: Record<NodeKind, ComponentType<LucideProps>> = {
+  client: Monitor,
+  service: Box,
+  store: Database,
+  queue: ListOrdered,
+  external: Globe,
+  policy: Shield,
+};
+
+// Getters, so each name is read in the language loaded by then.
+const KIND_NAME: Record<NodeKind, string> = {
+  get client() {
+    return t({ id: 'visual.graph.kind.client', defaultMessage: 'Client' });
+  },
+  get service() {
+    return t({ id: 'visual.graph.kind.service', defaultMessage: 'Service' });
+  },
+  get store() {
+    return t({ id: 'visual.graph.kind.store', defaultMessage: 'Store' });
+  },
+  get queue() {
+    return t({ id: 'visual.graph.kind.queue', defaultMessage: 'Queue' });
+  },
+  get external() {
+    return t({ id: 'visual.graph.kind.external', defaultMessage: 'External' });
+  },
+  get policy() {
+    return t({ id: 'visual.graph.kind.policy', defaultMessage: 'Policy' });
+  },
+};
+
+const STYLE_NAME: Record<EdgeStyle, string> = {
+  get main() {
+    return t({ id: 'visual.graph.style.main', defaultMessage: 'Main path' });
+  },
+  get async() {
+    return t({ id: 'visual.graph.style.async', defaultMessage: 'Async' });
+  },
+  get data() {
+    return t({ id: 'visual.graph.style.data', defaultMessage: 'Data' });
+  },
+  get return() {
+    return t({ id: 'visual.graph.style.return', defaultMessage: 'Return' });
+  },
+};
+
+/** Counts of the node kinds and edge styles the spec uses, in legend order. */
+export function legendItems(spec: GraphSpec) {
+  const kinds = KINDS.map(
+    (kind) => [kind, spec.nodes.filter((node) => node.kind === kind).length] as const,
+  ).filter(([, count]) => count > 0);
+  const styles = STYLES.map(
+    (style) => [style, spec.edges.filter((edge) => edge.style === style).length] as const,
+  ).filter(([, count]) => count > 0);
+  return { kinds, styles, shown: kinds.length + styles.length >= 2 };
+}
+
+/** Hover focus: the hovered node's edges stand out, nodes off them dim. */
+type Focus = 'on' | 'dim' | undefined;
+
+type CardData = { node: LaidNode; focus: Focus };
+type GroupData = { group: LaidGroup };
+type RouteData = { edge: GraphLayout['edges'][number]; focus: Focus; tone?: NodeKind };
+
+/** An orthogonal route with each bend rounded; the ends move back by `cut` for their heads. */
+function routePath(points: Point[], cut: { start: number; end: number }): string {
+  if (points.length < 2) return '';
+  const at = points.map((p) => ({ ...p }));
+  const pull = (end: Point, toward: Point, by: number) => {
+    const length = Math.hypot(toward.x - end.x, toward.y - end.y);
+    if (!length || !by) return;
+    const k = Math.min(by, length) / length;
+    end.x += (toward.x - end.x) * k;
+    end.y += (toward.y - end.y) * k;
+  };
+  pull(at[0]!, points[1]!, cut.start);
+  pull(at[at.length - 1]!, points[points.length - 2]!, cut.end);
+  let d = `M${at[0]!.x} ${at[0]!.y}`;
+  for (let i = 1; i < at.length - 1; i++) {
+    const [before, corner, after] = [at[i - 1]!, at[i]!, at[i + 1]!];
+    const into = Math.hypot(corner.x - before.x, corner.y - before.y);
+    const out = Math.hypot(after.x - corner.x, after.y - corner.y);
+    const r = Math.min(CORNER, into / 2, out / 2);
+    if (!into || !out || !r) {
+      d += `L${corner.x} ${corner.y}`;
+      continue;
+    }
+    const a = {
+      x: corner.x - ((corner.x - before.x) / into) * r,
+      y: corner.y - ((corner.y - before.y) / into) * r,
+    };
+    const b = {
+      x: corner.x + ((after.x - corner.x) / out) * r,
+      y: corner.y + ((after.y - corner.y) / out) * r,
+    };
+    d += `L${a.x} ${a.y}Q${corner.x} ${corner.y} ${b.x} ${b.y}`;
+  }
+  const last = at[at.length - 1]!;
+  return `${d}L${last.x} ${last.y}`;
+}
+
+/** A head with its tip on `tip`, pointing away from `from`. */
+function headPath(tip: Point, from: Point): string {
+  const length = Math.hypot(tip.x - from.x, tip.y - from.y) || 1;
+  const [ux, uy] = [(tip.x - from.x) / length, (tip.y - from.y) / length];
+  const [bx, by] = [tip.x - ux * HEAD, tip.y - uy * HEAD];
+  const half = HEAD / 2;
+  return `M${tip.x} ${tip.y}L${bx - uy * half} ${by + ux * half}L${bx + uy * half} ${by - ux * half}Z`;
+}
+
+function Route({ data }: EdgeProps<Edge<RouteData>>) {
+  if (!data || data.edge.points.length < 2) return null;
+  const { points, both, label, label_box: box } = data.edge;
+  const n = points.length;
+  return (
+    <g
+      className="vis-ge"
+      data-style={data.edge.style ?? 'plain'}
+      data-kind={data.tone}
+      data-focus={data.focus}
+    >
+      <path className="vis-ge-p" d={routePath(points, { start: both ? HEAD : 0, end: HEAD })} />
+      <path className="vis-ge-h" d={headPath(points[n - 1]!, points[n - 2]!)} />
+      {both && <path className="vis-ge-h" d={headPath(points[0]!, points[1]!)} />}
+      {box && label !== undefined && (
+        <g className="vis-ge-l">
+          <rect x={box.x} y={box.y} width={box.width} height={box.height} rx={5} />
+          <text x={box.x + box.width / 2} y={box.y + box.height / 2}>
+            {label}
+          </text>
+        </g>
+      )}
+    </g>
   );
+}
+
+function GroupBox({ data: { group } }: NodeProps<Node<GroupData>>) {
+  return (
+    <div className="vis-gg" data-depth={group.depth}>
+      <span className="vis-gg-h">
+        <Clip text={group.label} />
+        <span className="vis-gg-n">{group.members}</span>
+      </span>
+    </div>
+  );
+}
+
+/** Node and edge components, made once the flow library has loaded. */
+function flowTypes(flow: typeof import('@xyflow/react')) {
+  function Card({ data: { node, focus }, selected }: NodeProps<Node<CardData>>) {
+    const Icon = node.kind && KIND_ICON[node.kind];
+    return (
+      <div
+        className="vis-gn"
+        data-kind={node.kind}
+        data-focus={focus}
+        data-selected={selected || undefined}
+      >
+        <flow.Handle type="target" position={flow.Position.Left} isConnectable={false} />
+        {Icon && <Icon className="vis-gn-ic" aria-hidden="true" />}
+        <Clip className="vis-gn-t" text={node.label} />
+        {node.sublabel !== undefined && <Clip className="vis-gn-s" text={node.sublabel} />}
+        <flow.Handle type="source" position={flow.Position.Right} isConnectable={false} />
+      </div>
+    );
+  }
+  return { nodeTypes: { card: Card, group: GroupBox }, edgeTypes: { route: Route } };
+}
 
 interface Laid {
   ReactFlow: typeof Flow;
   MiniMap: typeof FlowMap;
-  nodes: Node[];
-  /** The laid-out graph's height in px. */
-  extent: number;
-  /** The laid-out graph's width in px. */
-  span: number;
-  /** The card's width in px when the graph was laid out. */
+  Background: typeof import('@xyflow/react').Background;
+  dots: import('@xyflow/react').BackgroundVariant;
+  types: ReturnType<typeof flowTypes>;
+  layout: GraphLayout;
+  /** The plot's width in px when the graph was laid out. */
   room: number;
-  edges: Edge[];
 }
 
 export function GraphDiagram({
@@ -39,128 +224,212 @@ export function GraphDiagram({
   height,
   selected,
   onSelect,
-  directed = false,
   grows = false,
 }: {
   spec: GraphSpec;
   height: number;
   selected?: string;
-  directed?: boolean;
   /** Grows past the height to fit a taller graph, up to the zoomed view's height. */
   grows?: boolean;
   onSelect?: (id: string) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [laid, setLaid] = useState<Laid | null>(null);
+  const [hover, setHover] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | undefined>(undefined);
+  const legend = legendItems(spec);
+  const below = legend.shown ? LEGEND : 0;
   const ready = useDraw(
     async (live) => {
-      const [flow, dagre] = await Promise.all([
+      const [flow] = await Promise.all([
         import('@xyflow/react'),
-        import('@dagrejs/dagre'),
         import('@xyflow/react/dist/base.css'),
       ]);
       const at = box.current;
       if (!live() || !at) return undefined;
-      const direction = spec.direction ?? 'LR';
-      const g = new dagre.Graph();
-      g.setGraph({ rankdir: direction, nodesep: 16, ranksep: 48, marginx: 0, marginy: 0 });
-      g.setDefaultEdgeLabel(() => ({}));
-      for (const node of spec.nodes)
-        g.setNode(node.id, { width: nodeWidth(node.label), height: NODE_HEIGHT });
-      for (const edge of spec.edges)
-        g.setEdge(
-          edge.from,
-          edge.to,
-          edge.label === undefined
-            ? {}
-            : { width: nodeWidth(edge.label), height: NODE_HEIGHT, labelpos: 'c' },
-        );
-      dagre.layout(g);
-      const across = direction === 'LR';
-      const bottoms = spec.nodes.map((node) => g.node(node.id).y! + NODE_HEIGHT / 2);
-      const tops = spec.nodes.map((node) => g.node(node.id).y! - NODE_HEIGHT / 2);
-      const rights = spec.nodes.map((node) => g.node(node.id).x! + g.node(node.id).width! / 2);
-      const lefts = spec.nodes.map((node) => g.node(node.id).x! - g.node(node.id).width! / 2);
+      const room = at.clientWidth;
+      const tall = (grows ? Math.max(height, MAX_HEIGHT) : height) - below;
+      const layout = await layoutGraph(spec, { x: room, y: tall });
+      if (!live()) return undefined;
       setLaid({
-        extent: bottoms.length ? Math.max(...bottoms) - Math.min(...tops) : 0,
-        span: rights.length ? Math.max(...rights) - Math.min(...lefts) : 0,
-        room: at.clientWidth,
         ReactFlow: flow.ReactFlow,
         MiniMap: flow.MiniMap,
-        nodes: spec.nodes.map((node) => {
-          const at = g.node(node.id);
-          return {
-            id: node.id,
-            data: { label: node.label },
-            position: { x: at.x! - at.width! / 2, y: at.y! - NODE_HEIGHT / 2 },
-            width: at.width!,
-            height: NODE_HEIGHT,
-            className: 'vis-node',
-            sourcePosition: across ? flow.Position.Right : flow.Position.Bottom,
-            targetPosition: across ? flow.Position.Left : flow.Position.Top,
-          };
-        }),
-        edges: spec.edges.map((edge, index) => ({
-          id: String(index),
-          source: edge.from,
-          target: edge.to,
-          ...(directed && { markerEnd: { type: flow.MarkerType.ArrowClosed } }),
-          ...(edge.label !== undefined && { label: edge.label }),
-        })),
+        Background: flow.Background,
+        dots: flow.BackgroundVariant.Dots,
+        types: flowTypes(flow),
+        layout,
+        room,
       });
       return undefined;
     },
-    [spec, directed],
+    [spec, grows, height],
   );
   const shown =
     grows && laid
-      ? Math.min(Math.max(height, laid.extent + PAD * 2), Math.max(height, MAX_HEIGHT))
+      ? Math.min(
+          Math.max(height, laid.layout.height + PAD * 2 + below),
+          Math.max(height, MAX_HEIGHT),
+        )
       : height;
   // Past the card even at the floor, the graph pans and a map shows the whole and the view.
-  const overflows = !!laid && (laid.span * FLOOR > laid.room || laid.extent * FLOOR > shown);
+  const overflows = !!laid && fitZoom(laid.layout, { x: laid.room, y: shown - below }) < FLOOR;
+  const chosen = selected ?? picked;
+  const pick = (id: string) => {
+    setPicked(id);
+    onSelect?.(id);
+  };
+  const names = new Map(spec.nodes.map((node) => [node.id, node.label]));
+  const kinds = new Map(spec.nodes.map((node) => [node.id, node.kind]));
+  const near =
+    laid && hover
+      ? new Set(
+          laid.layout.edges
+            .filter((edge) => edge.from === hover || edge.to === hover)
+            .flatMap((edge) => [edge.from, edge.to]),
+        ).add(hover)
+      : null;
+  const nodes: Node[] = laid
+    ? [
+        ...laid.layout.groups.map((group): Node<GroupData> => ({
+          id: `group:${group.id}`,
+          type: 'group',
+          data: { group },
+          position: { x: group.x, y: group.y },
+          width: group.width,
+          height: group.height,
+          // Behind the edges, an inner group over its outer one.
+          zIndex: group.depth - 100,
+          selectable: false,
+          focusable: false,
+          ariaRole: 'presentation',
+        })),
+        ...laid.layout.nodes.map((node): Node<CardData> => ({
+          id: node.id,
+          type: 'card',
+          data: { node, focus: near && !near.has(node.id) ? 'dim' : undefined },
+          position: { x: node.x, y: node.y },
+          width: node.width,
+          height: node.height,
+          className: 'vis-gw',
+          selected: node.id === chosen,
+          ariaLabel: node.kind
+            ? t(
+                { id: 'visual.graph.node', defaultMessage: '{label}, {kind}' },
+                { label: node.label, kind: KIND_NAME[node.kind] },
+              )
+            : node.label,
+        })),
+      ]
+    : [];
+  const edges: Edge[] = laid
+    ? laid.layout.edges.map((edge): Edge<RouteData> => {
+        const values = { from: names.get(edge.from), to: names.get(edge.to) };
+        const tone = kinds.get(edge.to);
+        return {
+          id: edge.id,
+          source: edge.from,
+          target: edge.to,
+          type: 'route',
+          data: {
+            edge,
+            focus: hover ? (edge.from === hover || edge.to === hover ? 'on' : 'dim') : undefined,
+            ...(tone && { tone }),
+          },
+          ariaLabel: edge.both
+            ? t(
+                { id: 'visual.graph.edgeBoth', defaultMessage: '{from} and {to}, both ways' },
+                values,
+              )
+            : t({ id: 'visual.graph.edge', defaultMessage: '{from} to {to}' }, values),
+        };
+      })
+    : [];
   return (
     <div
       ref={box}
-      className="vis-fill vis-graph"
+      className="vis-graph vis-gd"
       style={{ height: shown }}
+      data-direction={laid?.layout.direction}
       onKeyDown={(event) => {
-        if (!onSelect || (event.key !== 'Enter' && event.key !== ' ')) return;
+        if (event.key === 'Escape' && chosen !== undefined) {
+          event.stopPropagation();
+          setPicked(undefined);
+          return;
+        }
+        if (event.key !== 'Enter' && event.key !== ' ') return;
         const id = (event.target as HTMLElement).closest<HTMLElement>('.react-flow__node')?.dataset
           .id;
-        if (id && spec.nodes.some((node) => node.id === id)) {
+        if (id && names.has(id)) {
           event.preventDefault();
-          onSelect(id);
+          pick(id);
         }
       }}
     >
-      {laid && (
-        <laid.ReactFlow
-          nodes={laid.nodes.map((node) => ({ ...node, selected: node.id === selected }))}
-          edges={laid.edges}
-          fitView
-          fitViewOptions={{ minZoom: FLOOR, maxZoom: 1 }}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={!!onSelect}
-          nodesFocusable={!!onSelect}
-          onNodeClick={(_, node) => onSelect?.(node.id)}
-          edgesFocusable={false}
-          deleteKeyCode={null}
-          // A plain wheel keeps scrolling the page; pinch or the modifier key with the wheel zooms.
-          zoomOnScroll={false}
-          preventScrolling={false}
-          proOptions={{ hideAttribution: true }}
+      <div className="vis-gp">
+        {laid && (
+          <laid.ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={laid.types.nodeTypes}
+            edgeTypes={laid.types.edgeTypes}
+            fitView
+            fitViewOptions={{ minZoom: FLOOR, maxZoom: 1, padding: `${PAD}px` }}
+            minZoom={FLOOR / 2}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            nodesFocusable
+            onNodeClick={(_, node) => {
+              if (node.type === 'card') pick(node.id);
+            }}
+            onNodeMouseEnter={(_, node) => setHover(node.type === 'card' ? node.id : null)}
+            onNodeMouseLeave={() => setHover(null)}
+            edgesFocusable={false}
+            deleteKeyCode={null}
+            // A plain wheel keeps scrolling the page; pinch or the modifier key with the wheel zooms.
+            zoomOnScroll={false}
+            preventScrolling={false}
+            proOptions={{ hideAttribution: true }}
+          >
+            <laid.Background variant={laid.dots} gap={16} size={1} />
+            {overflows && (
+              <laid.MiniMap
+                pannable
+                zoomable={false}
+                nodeColor={(node) => (node.type === 'group' ? 'transparent' : '')}
+                ariaLabel={t({ id: 'visual.graph.overview', defaultMessage: 'Whole graph' })}
+              />
+            )}
+          </laid.ReactFlow>
+        )}
+        {!ready && <Drawing />}
+      </div>
+      {legend.shown && (
+        <ul
+          className="vis-gl"
+          aria-label={t({ id: 'visual.graph.legend', defaultMessage: 'Legend' })}
         >
-          {overflows && (
-            <laid.MiniMap
-              pannable
-              zoomable={false}
-              ariaLabel={t({ id: 'visual.graph.overview', defaultMessage: 'Whole graph' })}
-            />
-          )}
-        </laid.ReactFlow>
+          {legend.kinds.map(([kind, count]) => {
+            const Icon = KIND_ICON[kind];
+            return (
+              <li key={kind} data-kind={kind}>
+                <Icon className="vis-gl-ic" aria-hidden="true" />
+                <span>{KIND_NAME[kind]}</span>
+                <span className="vis-gl-n">{count}</span>
+              </li>
+            );
+          })}
+          {legend.styles.map(([style, count]) => (
+            <li key={style} data-style={style}>
+              <svg className="vis-gl-ln" viewBox="0 0 20 8" aria-hidden="true">
+                <path d="M0 4H20" />
+              </svg>
+              <span>{STYLE_NAME[style]}</span>
+              <span className="vis-gl-n">{count}</span>
+            </li>
+          ))}
+        </ul>
       )}
-      {!ready && <Drawing />}
     </div>
   );
 }

@@ -63,40 +63,17 @@ const xy = vi.hoisted(() => ({
   MiniMap: function MiniMap() {
     return null;
   },
+  Background: function Background() {
+    return null;
+  },
+  Handle: function Handle() {
+    return null;
+  },
+  BackgroundVariant: { Dots: 'dots' },
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }));
 vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', () => xy);
 vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.js', () => xy);
-
-const dg = vi.hoisted(() => {
-  const graphs: { label: any; nodes: Map<string, any>; edges: any[] }[] = [];
-  class Graph {
-    label: any;
-    nodes = new Map<string, any>();
-    edges: any[] = [];
-    constructor() {
-      graphs.push(this);
-    }
-    setGraph(label: unknown) {
-      this.label = label;
-    }
-    setDefaultEdgeLabel() {}
-    setNode(id: string, value: { width: number; height: number }) {
-      this.nodes.set(id, { ...value, x: 100 + this.nodes.size * 200, y: 50 });
-    }
-    setEdge(from: string, to: string, value?: unknown) {
-      this.edges.push({ from, to, value });
-    }
-    node(id: string) {
-      return this.nodes.get(id);
-    }
-  }
-  return { graphs, Graph, layout: vi.fn() };
-});
-vi.mock('../../apps/web/node_modules/@dagrejs/dagre/dist/dagre.esm.js', () => ({
-  Graph: dg.Graph,
-  layout: dg.layout,
-}));
 
 import { GraphDiagram } from '@/components/visual/GraphDiagram';
 import { KlineChart } from '@/components/visual/KlineChart';
@@ -106,6 +83,10 @@ import { TableVisual, type TableSpec } from '@/components/visual/TableVisual';
 import { VegaChart } from '@/components/visual/VegaChart';
 import { currentLocale } from '@/i18n';
 import { zh } from './i18n-setup.js';
+
+// ELK's layout code binds the globals it finds when the first ELK is made, so that happens before
+// a test stubs window.
+new (await import('../../apps/web/node_modules/elkjs/lib/elk.bundled.js')).default();
 
 const ownWindow = { name: 'frame' };
 const listeners: Record<string, (event: any) => void> = {};
@@ -140,7 +121,6 @@ async function settle(h: HookHost<any>) {
 
 beforeEach(() => {
   lw.made.splice(0);
-  dg.graphs.splice(0);
   vi.clearAllMocks();
   vi.stubGlobal('window', {
     addEventListener: (kind: string, listener: (event: any) => void) =>
@@ -439,46 +419,269 @@ describe('Mermaid diagram', () => {
 });
 
 describe('graph diagram', () => {
-  const groups = ['a', 'b', 'c', 'd', 'e', 'f'];
-  const spec = {
-    nodes: groups.map((group) => ({ id: `n-${group}`, label: `node ${group}`, group })),
-    edges: [{ from: 'n-a', to: 'n-b', label: 'calls' }],
+  type Spec = Parameters<typeof GraphDiagram>[0]['spec'];
+  type Laid = { id: string; position: { x: number; y: number }; width: number; height: number };
+  const chain = (count: number, direction?: 'LR' | 'TB'): Spec => ({
+    nodes: Array.from({ length: count }, (_, i) => ({ id: `n${i}`, label: `step ${i}` })),
+    edges: Array.from({ length: count - 1 }, (_, i) => ({ from: `n${i}`, to: `n${i + 1}` })),
+    ...(direction && { direction }),
+  });
+  const fan = (count: number): Spec => ({
+    nodes: [
+      { id: 'root', label: 'root' },
+      ...Array.from({ length: count }, (_, i) => ({ id: `leaf${i}`, label: `leaf ${i}` })),
+    ],
+    edges: Array.from({ length: count }, (_, i) => ({ from: 'root', to: `leaf${i}` })),
+  });
+  const shop: Spec = {
+    nodes: [
+      { id: 'web', label: 'Storefront', kind: 'client', group: 'edge' },
+      { id: 'api', label: 'Orders API', kind: 'service', group: 'core', sublabel: 'src/api' },
+      { id: 'auth', label: 'Auth gate', kind: 'policy', group: 'core' },
+      { id: 'jobs', label: 'Job queue', kind: 'queue', group: 'data' },
+      { id: 'db', label: 'Orders DB', kind: 'store', group: 'data' },
+      { id: 'cache', label: 'Cache', kind: 'store', group: 'data' },
+      { id: 'pay', label: 'Payments' },
+    ],
+    edges: [
+      { from: 'web', to: 'api', style: 'main', label: 'checkout' },
+      { from: 'api', to: 'auth' },
+      { from: 'api', to: 'db', style: 'data' },
+      { from: 'api', to: 'jobs', style: 'async' },
+      { from: 'jobs', to: 'pay' },
+      { from: 'pay', to: 'api', style: 'return' },
+      { from: 'api', to: 'cache' },
+      { from: 'cache', to: 'api' },
+    ],
+    groups: [
+      { id: 'core', label: 'Core' },
+      { id: 'data', label: 'Data', parent: 'core' },
+    ],
   };
 
-  it('lays the graph out left to right unless told otherwise, read-only', async () => {
-    const h = mount(() => GraphDiagram({ spec, height: 280 }));
-    await settle(h);
-    expect(dg.graphs[0]!.label.rankdir).toBe('LR');
-    const flow = find(h.value, (n) => n.type === xy.ReactFlow);
+  // ELK runs for real; a layout takes more turns than the other renderers' draws.
+  async function drawn(spec: Spec, width: number, height: number, more: object = {}) {
+    const h = mount(() => GraphDiagram({ spec, height, ...more }));
+    sized(h, width, height);
+    for (let i = 0; i < 10 && !nodes(h.value).some((n) => n.type === xy.ReactFlow); i++)
+      await settle(h);
+    return h;
+  }
+  const flowOf = (h: HookHost<any>) => find(h.value, (n) => n.type === xy.ReactFlow);
+  const cards = (h: HookHost<any>): Laid[] =>
+    flowOf(h).props.nodes.filter((n: { type: string }) => n.type === 'card');
+  const at = (h: HookHost<any>, id: string) => cards(h).find((n) => n.id === id)!;
+  const inside = (inner: Laid, outer: Laid) =>
+    inner.position.x >= outer.position.x &&
+    inner.position.y >= outer.position.y &&
+    inner.position.x + inner.width <= outer.position.x + outer.width &&
+    inner.position.y + inner.height <= outer.position.y + outer.height;
+  const overlap = (a: Laid, b: Laid) =>
+    a.position.x < b.position.x + b.width &&
+    b.position.x < a.position.x + a.width &&
+    a.position.y < b.position.y + b.height &&
+    b.position.y < a.position.y + a.height;
+  // A node or edge component of the flow, drawn with the props the flow gives it.
+  const drawnNode = (h: HookHost<any>, id: string) => {
+    const node = flowOf(h).props.nodes.find((n: { id: string }) => n.id === id);
+    return flowOf(h).props.nodeTypes[node.type]({ ...node, selected: !!node.selected });
+  };
+  const drawnEdges = (h: HookHost<any>) =>
+    flowOf(h).props.edges.map((edge: any) => flowOf(h).props.edgeTypes[edge.type](edge));
+
+  it('gives every node a box of its own, read-only, none overlapping another', async () => {
+    const h = await drawn(shop, 1200, 420);
+    const laid = cards(h);
+    expect(laid.map((n) => n.id)).toEqual(shop.nodes.map((n) => n.id));
+    for (const node of laid) expect(node.width * node.height).toBeGreaterThan(0);
+    const pairs = laid.flatMap((a, i) => laid.slice(i + 1).filter((b) => overlap(a, b)));
+    expect(pairs).toEqual([]);
+    const flow = flowOf(h);
     expect(flow.props.nodesDraggable).toBe(false);
     expect(flow.props.nodesConnectable).toBe(false);
-    expect(flow.props.nodes.map((n: any) => n.data.label)).toEqual(groups.map((g) => `node ${g}`));
-    expect(flow.props.edges).toEqual([
-      expect.objectContaining({ source: 'n-a', target: 'n-b', label: 'calls' }),
+  });
+
+  it('draws a group around its members and a nested group inside its parent', async () => {
+    const h = await drawn(shop, 1200, 420);
+    const groups = flowOf(h).props.nodes.filter((n: { type: string }) => n.type === 'group');
+    const box = (id: string) => groups.find((g: { id: string }) => g.id === `group:${id}`);
+    for (const node of shop.nodes.filter((n) => n.group))
+      expect(inside(at(h, node.id), box(node.group!))).toBe(true);
+    expect(inside(box('data'), box('core'))).toBe(true);
+    expect(inside(at(h, 'pay'), box('core'))).toBe(false);
+    // A group named only by its nodes is drawn as a top-level group of that name.
+    expect(text(drawnNode(h, 'group:edge'))).toBe('edge1');
+    expect(text(drawnNode(h, 'group:core'))).toBe('Core5');
+  });
+
+  it('keeps the declared order of the nodes in a rank', async () => {
+    const down = await drawn({ ...fan(5), direction: 'TB' }, 1200, 420);
+    const xs = [0, 1, 2, 3, 4].map((i) => at(down, `leaf${i}`).position.x);
+    expect(xs).toEqual([...xs].sort((a, b) => a - b));
+    // Leaves and their edges declared from the last to the first.
+    const reversed = fan(5);
+    reversed.nodes = [reversed.nodes[0]!, ...reversed.nodes.slice(1).reverse()];
+    reversed.edges = [...reversed.edges].reverse();
+    const back = await drawn({ ...reversed, direction: 'TB' }, 1200, 420);
+    const backXs = [4, 3, 2, 1, 0].map((i) => at(back, `leaf${i}`).position.x);
+    expect(backXs).toEqual([...backXs].sort((a, b) => a - b));
+  });
+
+  // The nodes that line up: a chain's steps, or a fan's leaves; `row` when they share one row.
+  it.each([
+    ['a long chain in a wide short box', chain(8), [1200, 280], 'LR', 'row'],
+    ['a long chain in a narrow tall box', chain(8), [360, 900], 'TB', 'column'],
+    ['a wide fan-out in a wide short box', fan(8), [1200, 280], 'TB', 'row'],
+    ['a wide fan-out in a narrow tall box', fan(8), [360, 900], 'LR', 'column'],
+  ] as const)(
+    'without a direction lays %s out the way that fits at the larger zoom',
+    async (_, spec, [width, height], way, line) => {
+      const h = await drawn(spec, width, height);
+      expect(find(h.value, (n) => n.props['data-direction']).props['data-direction']).toBe(way);
+      const lined = spec.nodes.filter((n) => n.id !== 'root').map((n) => at(h, n.id).position);
+      const rows = new Set(lined.map((p) => p.y));
+      const columns = new Set(lined.map((p) => p.x));
+      expect([rows.size === 1, columns.size === 1]).toEqual([line === 'row', line === 'column']);
+    },
+  );
+
+  it('follows the direction the spec gives', async () => {
+    const h = await drawn(chain(8, 'TB'), 1200, 280);
+    expect(find(h.value, (n) => n.props['data-direction']).props['data-direction']).toBe('TB');
+  });
+
+  it('names each node by its label and kind and draws its kind and detail line', async () => {
+    const h = await drawn(shop, 1200, 420);
+    const named = Object.fromEntries(
+      flowOf(h)
+        .props.nodes.filter((n: { type: string }) => n.type === 'card')
+        .map((n: { id: string; ariaLabel: string }) => [n.id, n.ariaLabel]),
+    );
+    expect(named.db).toBe('Orders DB，存储');
+    expect(named.auth).toBe('Auth gate，策略');
+    expect(named.pay).toBe('Payments');
+    expect(flowOf(h).props.nodesFocusable).toBe(true);
+    const api = drawnNode(h, 'api');
+    expect(api.props['data-kind']).toBe('service');
+    expect(text(api)).toBe('Orders APIsrc/api');
+    expect(drawnNode(h, 'pay').props['data-kind']).toBeUndefined();
+  });
+
+  it('draws each edge in its style, a data edge in its target kind, a two-way edge with two heads', async () => {
+    const h = await drawn(shop, 1200, 420);
+    const edges = drawnEdges(h);
+    const ends = flowOf(h).props.edges.map((e: any) => `${e.source}>${e.target}`);
+    const by = (end: string) => edges[ends.indexOf(end)];
+    expect(by('web>api').props['data-style']).toBe('main');
+    expect(by('api>jobs').props['data-style']).toBe('async');
+    expect(by('pay>api').props['data-style']).toBe('return');
+    expect(by('api>auth').props['data-style']).toBe('plain');
+    expect(by('api>db').props).toMatchObject({ 'data-style': 'data', 'data-kind': 'store' });
+    // The edge back from the cache is the same edge's second head.
+    expect(ends).not.toContain('cache>api');
+    const heads = (edge: any) => nodes(edge).filter((n) => n.type === 'path').length - 1;
+    expect(heads(by('api>cache'))).toBe(2);
+    expect(heads(by('api>auth'))).toBe(1);
+    const names = flowOf(h).props.edges.map((e: any) => e.ariaLabel);
+    expect(names).toContain('Orders API 和 Cache 双向');
+    expect(names).toContain('Storefront 到 Orders API');
+    expect(text(by('web>api'))).toBe('checkout');
+  });
+
+  it('routes every edge in right angles from node to node', async () => {
+    const h = await drawn(shop, 1200, 420);
+    for (const edge of flowOf(h).props.edges) {
+      const points: { x: number; y: number }[] = edge.data.edge.points;
+      expect(points.length).toBeGreaterThanOrEqual(2);
+      for (let i = 1; i < points.length; i++)
+        expect(
+          Math.abs(points[i]!.x - points[i - 1]!.x) < 0.5 ||
+            Math.abs(points[i]!.y - points[i - 1]!.y) < 0.5,
+        ).toBe(true);
+    }
+  });
+
+  it('lists the kinds and edge styles in use with their counts under the plot', async () => {
+    const h = await drawn(shop, 1200, 420);
+    const legend = find(h.value, (n) => n.props['aria-label'] === zh('visual.graph.legend'));
+    expect(legend.type).toBe('ul');
+    expect(
+      nodes(legend)
+        .filter((n) => n.type === 'li')
+        .map(text),
+    ).toEqual([
+      '客户端1',
+      '服务1',
+      '存储2',
+      '队列1',
+      '策略1',
+      '主路径1',
+      '异步1',
+      '数据1',
+      '返回1',
     ]);
   });
 
-  it('draws every node 24 high on the same neutral style, whatever its group', async () => {
-    const down = { ...spec, direction: 'TB' as const };
-    const h = mount(() => GraphDiagram({ spec: down, height: 280 }));
-    await settle(h);
-    expect(dg.graphs[0]!.label.rankdir).toBe('TB');
-    expect([...dg.graphs[0]!.nodes.values()].map((n) => n.height)).toEqual(groups.map(() => 24));
-    const flow = find(h.value, (n) => n.type === xy.ReactFlow);
-    expect(flow.props.nodes.map((n: any) => [n.className, n.height])).toEqual(
-      groups.map(() => ['vis-node', 24]),
+  it('shows no legend for fewer than two kinds and styles', async () => {
+    const one: Spec = { nodes: [{ id: 'a', label: 'A', kind: 'store' }], edges: [] };
+    const h = await drawn(one, 1200, 280);
+    expect(cards(h)).toHaveLength(1);
+    expect(nodes(h.value).some((n) => n.props['aria-label'] === zh('visual.graph.legend'))).toBe(
+      false,
     );
   });
 
-  it('gives dagre the size of each edge label and fits the view between two thirds and full size', async () => {
-    const h = mount(() => GraphDiagram({ spec, height: 280 }));
-    await settle(h);
-    const [edge] = dg.graphs[0]!.edges;
-    expect(edge).toMatchObject({ from: 'n-a', to: 'n-b' });
-    expect(edge.value.width).toBeGreaterThanOrEqual('calls'.length * 7);
-    expect(edge.value.height).toBeGreaterThan(0);
-    const flow = find(h.value, (n) => n.type === xy.ReactFlow);
-    expect(flow.props.fitViewOptions).toMatchObject({ minZoom: 2 / 3, maxZoom: 1 });
+  it('dims what is off the hovered node and lights its edges', async () => {
+    const h = await drawn(shop, 1200, 420);
+    flowOf(h).props.onNodeMouseEnter({}, { id: 'jobs', type: 'card' });
+    h.render();
+    expect(drawnNode(h, 'jobs').props['data-focus']).toBeUndefined();
+    expect(drawnNode(h, 'pay').props['data-focus']).toBeUndefined();
+    expect(drawnNode(h, 'db').props['data-focus']).toBe('dim');
+    const ends = flowOf(h).props.edges.map((e: any) => `${e.source}>${e.target}`);
+    const focus = drawnEdges(h).map((e: any) => e.props['data-focus']);
+    expect(focus[ends.indexOf('api>jobs')]).toBe('on');
+    expect(focus[ends.indexOf('web>api')]).toBe('dim');
+    flowOf(h).props.onNodeMouseLeave({}, { id: 'jobs', type: 'card' });
+    h.render();
+    expect(drawnNode(h, 'db').props['data-focus']).toBeUndefined();
+  });
+
+  it('selects a node by Enter or a click and lets it go by Esc', async () => {
+    const onSelect = vi.fn();
+    const h = await drawn(shop, 1200, 420, { onSelect });
+    const box = find(h.value, (n) => n.props['data-direction']);
+    const on = (id: string) => ({
+      closest: () => ({ dataset: { id } }),
+    });
+    box.props.onKeyDown({ key: 'Enter', target: on('db'), preventDefault() {} });
+    h.render();
+    expect(onSelect).toHaveBeenCalledWith('db');
+    expect(drawnNode(h, 'db').props['data-selected']).toBe(true);
+    find(h.value, (n) => n.props['data-direction']).props.onKeyDown({
+      key: 'Escape',
+      target: on('db'),
+      stopPropagation() {},
+    });
+    h.render();
+    expect(drawnNode(h, 'db').props['data-selected']).toBeUndefined();
+    flowOf(h).props.onNodeClick({}, { id: 'api', type: 'card' });
+    h.render();
+    expect(onSelect).toHaveBeenLastCalledWith('api');
+    expect(drawnNode(h, 'api').props['data-selected']).toBe(true);
+  });
+
+  it('fits the view between two thirds and full size', async () => {
+    const h = await drawn(shop, 1200, 420);
+    expect(flowOf(h).props.fitViewOptions).toMatchObject({ minZoom: 2 / 3, maxZoom: 1 });
+  });
+
+  it('shows the error in place of the picture when the layout fails, with no other layout', async () => {
+    const broken: Spec = { nodes: [{ id: 'a', label: 'A' }], edges: [{ from: 'a', to: 'gone' }] };
+    const h = mount(() => GraphDiagram({ spec: broken, height: 280 }));
+    sized(h, 1200, 280);
+    await expect(settle(h)).rejects.toThrow();
+    expect(nodes(h.value).some((n) => n.type === xy.ReactFlow)).toBe(false);
   });
 
   it.each([
@@ -487,9 +690,7 @@ describe('graph diagram', () => {
   ])(
     'in a card %ipx wide, a graph that outgrows it at two thirds shows a map of the whole: %s',
     async (width, map) => {
-      const h = mount(() => GraphDiagram({ spec, height: 280 }));
-      sized(h, width, 280);
-      await settle(h);
+      const h = await drawn(chain(10, 'LR'), width, 280);
       const maps = nodes(h.value).filter((n) => n.type === xy.MiniMap);
       expect(maps.length).toBe(map ? 1 : 0);
       if (map)
@@ -502,36 +703,15 @@ describe('graph diagram', () => {
   );
 
   it('grows a card to a graph taller than it, up to the zoomed view, and keeps a short one at its size', async () => {
-    const box = (h: HookHost<any>) =>
-      find(h.value, (n) => String(n.props.className).includes('vis-graph')).props.style.height;
-    const short = mount(() => GraphDiagram({ spec, height: 280, grows: true }));
-    await settle(short);
-    expect(box(short)).toBe(280);
-    // Ranks 120 apart: 3 ranks need more than 280, 6 more than the zoomed view.
-    const ranked = (count: number) =>
-      vi.spyOn(dg.Graph.prototype, 'setNode').mockImplementation(function (
-        this: InstanceType<typeof dg.Graph>,
-        id: string,
-        value: { width: number; height: number },
-      ) {
-        if (this.nodes.size < count)
-          this.nodes.set(id, { ...value, x: 100, y: 12 + this.nodes.size * 120 });
-        else this.nodes.set(id, { ...value, x: 300, y: 12 });
-      });
-    ranked(3);
-    const mid = mount(() => GraphDiagram({ spec, height: 280, grows: true }));
-    await settle(mid);
-    expect(box(mid)).toBeGreaterThan(280);
-    expect(box(mid)).toBeLessThan(640);
-    ranked(6);
-    const tall = mount(() => GraphDiagram({ spec, height: 280, grows: true }));
-    await settle(tall);
-    expect(box(tall)).toBe(640);
+    const tallOf = (h: HookHost<any>) =>
+      find(h.value, (n) => n.props['data-direction']).props.style.height;
+    expect(tallOf(await drawn(chain(2, 'TB'), 1200, 280, { grows: true }))).toBe(280);
+    const mid = tallOf(await drawn(chain(5, 'TB'), 1200, 280, { grows: true }));
+    expect(mid).toBeGreaterThan(280);
+    expect(mid).toBeLessThan(640);
+    expect(tallOf(await drawn(chain(12, 'TB'), 1200, 280, { grows: true }))).toBe(640);
     // A pinned card keeps the size picked for it.
-    const pinned = mount(() => GraphDiagram({ spec, height: 280 }));
-    await settle(pinned);
-    expect(box(pinned)).toBe(280);
-    vi.restoreAllMocks();
+    expect(tallOf(await drawn(chain(12, 'TB'), 1200, 280))).toBe(280);
   });
 });
 

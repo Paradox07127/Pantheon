@@ -6,7 +6,7 @@ export const introInstructions = [
   'summary: what the project does, in one or two sentences, with no marketing words.',
   'features: what a user of the project can do with it, each with its sources.',
   'modules: the directories a new contributor must know, each with its role in one sentence and its entry file when it has one. A package that its docs or subdirectories split into parts is listed as those parts. Write no numbers; Pantheon measures them.',
-  'architecture: the running parts and what calls what, as nodes and edges: each module as a node grouped by layer with group, plus the processes, stores and services they talk to, each edge labelled with what passes along it.',
+  'architecture: the running parts and what calls what, as nodes and edges: each module as a node grouped by layer or subsystem with group, plus the processes, stores and services they talk to. Give each node a kind, keep its label short with detail in sublabel, mark the main path with edge style main, and label each edge with what passes along it.',
   'body: optional Markdown for what the fields above cannot carry, such as one mermaid diagram for each main flow. It may contain fenced code blocks with the languages mermaid, vega-lite or kline; the board renders them as charts.',
   'Cite sources in the format the brief uses: file:<path>, file:<path>:<line> or commit:<sha>. Paths are relative to a project root. Every source must resolve: a file tracked by git at HEAD (or present in a root without git), and a line inside that file. Do not state what the sources do not show.',
 ].join('\n');

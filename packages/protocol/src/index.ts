@@ -1707,12 +1707,62 @@ export const visualSpecs = {
   graph: z
     .strictObject({
       nodes: z
-        .array(z.strictObject({ id: z.string(), label: z.string(), group: z.string().optional() }))
+        .array(
+          z.strictObject({
+            id: z.string(),
+            label: z.string().describe('A short name; put detail in sublabel.'),
+            group: z
+              .string()
+              .optional()
+              .describe(
+                'The layer or subsystem the node belongs to: a groups id, or any name, which becomes a top-level group.',
+              ),
+            kind: z
+              .enum(['client', 'service', 'store', 'queue', 'external', 'policy'])
+              .optional()
+              .describe(
+                'What the node is, shown by its colour and icon: client (an interface or entry point), service (a process, module or function), store (a database, file or cache), queue (a queue, event stream or scheduler), external (a third party or a person), policy (auth, a gate or an approval).',
+              ),
+            sublabel: z
+              .string()
+              .max(80)
+              .optional()
+              .describe('One short detail line under the label, such as a path or a technology.'),
+            sources: sources
+              .optional()
+              .describe(
+                'Where the node is in the code: file:<path>, file:<path>:<line> or commit:<sha>.',
+              ),
+          }),
+        )
         .min(1)
         .max(200),
       edges: z
-        .array(z.strictObject({ from: z.string(), to: z.string(), label: z.string().optional() }))
+        .array(
+          z.strictObject({
+            from: z.string(),
+            to: z.string(),
+            label: z.string().optional().describe('What passes along the edge, in a few words.'),
+            style: z
+              .enum(['main', 'async', 'data', 'return'])
+              .optional()
+              .describe(
+                'main for the main path, async for events and background work, data for reads and writes of data, return for replies and callbacks; absent for a plain call.',
+              ),
+          }),
+        )
         .max(400),
+      groups: z
+        .array(
+          z.strictObject({
+            id: z.string(),
+            label: z.string(),
+            parent: z.string().optional().describe('The id of the group this one sits in.'),
+          }),
+        )
+        .max(50)
+        .optional()
+        .describe('Named boundaries for layers or subsystems; nodes join one by its id in group.'),
       direction: z.enum(['LR', 'TB']).optional(),
     })
     .superRefine((spec, ctx) => {
@@ -1734,6 +1784,39 @@ export const visualSpecs = {
               path: ['edges', index, field],
               message: `Missing node id: ${edge[field]}`,
             });
+      });
+      const parents = new Map<string, string | undefined>();
+      spec.groups?.forEach((group, index) => {
+        if (parents.has(group.id))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['groups', index, 'id'],
+            message: `Duplicate group id: ${group.id}`,
+          });
+        parents.set(group.id, group.parent);
+      });
+      spec.groups?.forEach((group, index) => {
+        if (group.parent === undefined) return;
+        if (!parents.has(group.parent)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['groups', index, 'parent'],
+            message: `Missing group id: ${group.parent}`,
+          });
+          return;
+        }
+        const seen = new Set([group.id]);
+        for (let at: string | undefined = group.parent; at !== undefined; at = parents.get(at)) {
+          if (seen.has(at)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['groups', index, 'parent'],
+              message: `The parents of group ${group.id} form a cycle`,
+            });
+            return;
+          }
+          seen.add(at);
+        }
       });
     }),
   html: z.strictObject({ html: z.string().min(1).max(524288) }),
@@ -1808,7 +1891,7 @@ export const visualDrawInputSchema = z.strictObject({
   spec: z
     .unknown()
     .describe(
-      'Depends on kind. vega-lite: a Vega-Lite JSON object, at most 512 KB, data inline (no data.url), transparent background, units labelled. graph: { nodes: [{ id, label, group? }], edges: [{ from, to, label? }], direction?: "LR" or "TB" }, 1-200 nodes with unique ids, at most 400 edges between existing nodes. mermaid: { source }, 1-20000 characters. table: { columns: [{ key, title, type: text, number or date }], rows: [{ key: value }], sort?: { key, direction } }. kline: { candles: [{ time, open, high, low, close, volume? }], lines?: [{ name, points: [{ time, value }] }] }, 1-5000 candles, at most 8 lines, time strictly increasing in one form (ISO date, ISO date-time or Unix seconds). html: { html }, one self-contained document with scripts, styles and data inline, no network; only when no other kind fits.',
+      'Depends on kind. vega-lite: a Vega-Lite JSON object, at most 512 KB, data inline (no data.url), transparent background, units labelled. graph: { nodes: [{ id, label, group?, kind?, sublabel?, sources? }], edges: [{ from, to, label?, style? }], groups?: [{ id, label, parent? }], direction?: "LR" or "TB" }, 1-200 nodes with unique ids, at most 400 edges between existing nodes; leave direction out to let the board pick the one that fits. mermaid: { source }, 1-20000 characters. table: { columns: [{ key, title, type: text, number or date }], rows: [{ key: value }], sort?: { key, direction } }. kline: { candles: [{ time, open, high, low, close, volume? }], lines?: [{ name, points: [{ time, value }] }] }, 1-5000 candles, at most 8 lines, time strictly increasing in one form (ISO date, ISO date-time or Unix seconds). html: { html }, one self-contained document with scripts, styles and data inline, no network; only when no other kind fits.',
     ),
   source: z
     .string()

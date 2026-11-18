@@ -191,37 +191,8 @@
   border-radius: max(calc(var(--r-sm) - 2px), 4px);
 }
 
-/* Architecture: node boxes over one drawing of the edges. */
 .in-scroll {
   overflow-x: auto;
-}
-.in-arch {
-  position: relative;
-  flex: none;
-}
-.in-arch > svg {
-  position: absolute;
-  inset: 0;
-  overflow: visible;
-}
-.in-arch marker > path {
-  fill: var(--bd3);
-}
-.in-eg {
-  fill: none;
-  stroke: var(--bd3);
-  stroke-width: 1.2;
-}
-.in-nd {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  box-sizing: border-box;
-  padding: 0 var(--sp-3);
-  border: var(--hair) solid var(--bd);
-  border-radius: var(--r-sm);
-  background: var(--sf);
 }
 
 /* Module treemap: grey steps of the text colour; a cell picks its module. */

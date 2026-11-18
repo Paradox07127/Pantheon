@@ -339,6 +339,17 @@ describe('project introduction', () => {
     expect(has(bare.value, (n) => typeName(n) === 'Treemap')).toBe(true);
   });
 
+  it('draws the architecture with the graph visual renderer, named by its counts', async () => {
+    const h = await mountIntro();
+    const arch = find(h.value, (n) => typeName(n) === 'ArchDiagram');
+    const drawn = mount(() => (arch.type as (props: unknown) => ReactNode)(arch.props));
+    const group = find(drawn.value, (n) => n.props.role === 'group');
+    expect(group.props['aria-label']).toBe('架构图，2 个节点，1 条边');
+    const graph = find(group, (n) => typeName(n) === 'GraphDiagram');
+    expect(graph.props.spec).toBe(arch.props.spec);
+    expect(graph.props.grows).toBe(true);
+  });
+
   it('draws the whole introduction body with its charts in the main flows, and nothing for an empty body', async () => {
     const flow = '```mermaid\nflowchart LR\n  web --> api\n```';
     const chart = '```vega-lite\n{"mark":"bar"}\n```';

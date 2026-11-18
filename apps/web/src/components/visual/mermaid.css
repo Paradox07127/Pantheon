@@ -1,0 +1,203 @@
+/* Paint for mermaid's diagrams. Type that sizes a box is measured with mermaid (MermaidDiagram). */
+.vis-mermaid svg [filter] {
+  filter: none;
+}
+
+/* Node cards: flowchart nodes, states, sequence actors. A node kind's classDef paints over them. */
+.vis-mermaid .flowchart .node > :is(rect, polygon, circle, ellipse, path),
+.vis-mermaid .statediagram-state:not(.statediagram-cluster) rect:not(.divider),
+.vis-mermaid rect.actor {
+  fill: var(--sf2);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-mermaid .flowchart .node > rect,
+.vis-mermaid .statediagram-state:not(.statediagram-cluster) rect:not(.divider),
+.vis-mermaid rect.actor {
+  rx: var(--r-sm);
+  ry: var(--r-sm);
+}
+.vis-mermaid .nodeLabel,
+.vis-mermaid .label-group,
+.vis-mermaid .label.name {
+  color: var(--tx);
+}
+/* Every line after a label's first is its detail. */
+.vis-mermaid .node > .label:not(.noteLabel, [class*='attribute-']) > foreignObject:first-of-type p,
+.vis-mermaid .statediagram-state > .label > foreignObject + foreignObject p {
+  color: var(--mu);
+}
+.vis-mermaid
+  .node
+  > .label:not(.noteLabel, [class*='attribute-'])
+  > foreignObject:first-of-type
+  p::first-line {
+  color: var(--tx);
+}
+.vis-mermaid .statediagram-state .divider {
+  stroke: var(--bd2);
+  stroke-width: var(--hair);
+}
+
+/* Groups: subgraphs, composite states and sequence blocks are dashed boundaries. */
+.vis-mermaid .flowchart .cluster > rect,
+.vis-mermaid svg .statediagram-cluster rect.outer,
+.vis-mermaid rect.rect {
+  fill: color-mix(in srgb, var(--tx) 2%, transparent);
+  stroke: var(--bd3);
+  stroke-width: var(--hair);
+  stroke-dasharray: 4 3;
+  rx: var(--r-md);
+  ry: var(--r-md);
+}
+.vis-mermaid .statediagram-cluster rect.inner {
+  fill: none;
+  stroke: none;
+}
+.vis-mermaid .cluster-label .nodeLabel {
+  color: var(--tx2);
+}
+.vis-mermaid .loopLine {
+  stroke: var(--bd3);
+  stroke-width: var(--hair);
+  stroke-dasharray: 4 3;
+}
+.vis-mermaid .labelBox {
+  fill: none;
+  stroke: none;
+}
+.vis-mermaid .labelText {
+  fill: var(--tx2);
+}
+.vis-mermaid .loopText > tspan {
+  fill: var(--mu);
+  font-size: var(--fs-xs);
+}
+
+/* Edges and their label pills. */
+.vis-mermaid :is(.flowchart-link, .transition, .relationshipLine, .relation) {
+  stroke: var(--mu);
+  stroke-width: 1px;
+}
+.vis-mermaid .marker {
+  fill: var(--mu);
+  stroke: var(--mu);
+}
+.vis-mermaid .marker.er {
+  fill: none;
+}
+.vis-mermaid .labelBkg {
+  border-color: var(--bd);
+  border-radius: calc(var(--r-sm) - 2px);
+  background: var(--sf);
+}
+.vis-mermaid .labelBkg :is(.edgeLabel, p) {
+  background: none;
+  color: var(--tx2);
+}
+
+/* State start and end. */
+.vis-mermaid .node > circle.state-start {
+  r: 4px;
+  fill: var(--tx2);
+  stroke: none;
+}
+.vis-mermaid .statediagram .node:not(.statediagram-note) > .outer-path > path {
+  fill: none;
+  stroke: var(--tx2);
+  stroke-width: 1px;
+}
+.vis-mermaid .statediagram .node:not(.statediagram-note) > .outer-path > g > path {
+  fill: var(--tx2);
+  stroke: none;
+}
+
+/* Sequences: lifelines, activations and messages; notes here and in state diagrams. */
+.vis-mermaid text.actor > tspan {
+  fill: var(--tx);
+  font-weight: 600;
+}
+.vis-mermaid text.actor > tspan + tspan {
+  fill: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+.vis-mermaid .actor-line {
+  stroke: var(--bd2);
+  stroke-width: 1px;
+  stroke-dasharray: 4 3;
+}
+.vis-mermaid [class^='activation'] {
+  fill: var(--sf2);
+  stroke: var(--bd3);
+  stroke-width: var(--hair);
+}
+.vis-mermaid :is(.messageLine0, .messageLine1) {
+  stroke: var(--mu);
+  stroke-width: 1px;
+}
+.vis-mermaid [id$='-arrowhead'] path,
+.vis-mermaid [id$='-crosshead'] path {
+  fill: var(--mu);
+  stroke: var(--mu);
+}
+.vis-mermaid .messageText {
+  fill: var(--tx2);
+}
+.vis-mermaid svg rect.note {
+  fill: var(--sf2);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+  rx: calc(var(--r-sm) - 2px);
+  ry: calc(var(--r-sm) - 2px);
+}
+.vis-mermaid .statediagram-note > .outer-path > path:first-child {
+  fill: var(--sf2);
+  stroke: none;
+}
+.vis-mermaid .statediagram-note > .outer-path > path + path {
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-mermaid .noteText > tspan {
+  fill: var(--tx2);
+  font-size: var(--fs-xs);
+}
+
+/* ER entities are tables: a header band, then rows in alternating surfaces. */
+.vis-mermaid :is(.erDiagram, .classDiagram) .node > .outer-path > path:first-child {
+  fill: var(--sf2);
+  stroke: none;
+}
+.vis-mermaid :is(.erDiagram, .classDiagram) .node > .outer-path > path + path {
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-mermaid .erDiagram .row-rect-odd > path:first-child {
+  fill: var(--sf);
+}
+.vis-mermaid .erDiagram .row-rect-even > path:first-child {
+  fill: var(--sf2);
+}
+.vis-mermaid .erDiagram :is(.row-rect-odd, .row-rect-even) > path {
+  stroke: none;
+}
+.vis-mermaid :is(.erDiagram, .classDiagram) .divider > path {
+  fill: none;
+  stroke: var(--bd2);
+  stroke-width: var(--hair);
+}
+.vis-mermaid .attribute-type .nodeLabel,
+.vis-mermaid .attribute-comment .nodeLabel,
+.vis-mermaid .annotation-group .nodeLabel {
+  color: var(--mu);
+}
+.vis-mermaid .attribute-keys p:not(:empty) {
+  border-color: var(--bd);
+  border-radius: calc(var(--r-sm) - 2px);
+  background: var(--sf2);
+  color: var(--tx2);
+}
+.vis-mermaid :is(.members-group, .methods-group) .nodeLabel {
+  color: var(--tx2);
+}

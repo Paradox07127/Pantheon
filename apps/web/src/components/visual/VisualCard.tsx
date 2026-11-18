@@ -291,9 +291,16 @@ export function VisualFrame({
     const host = new URL(url).host;
     setBlocked((hosts) => (hosts.includes(host) ? hosts : [...hosts, host]));
   };
-  // The candlestick chart holds its range control and a table its rows, which a picture would hide.
+  // The candlestick chart holds its range control, a table its rows and a graph its focusable
+  // nodes, which a picture would hide.
   const role =
-    inline || invalid || content.kind === 'kline' || content.kind === 'table' ? 'group' : 'img';
+    inline ||
+    invalid ||
+    content.kind === 'kline' ||
+    content.kind === 'table' ||
+    content.kind === 'graph'
+      ? 'group'
+      : 'img';
   const viewSpecOpen = () => setSpecOpen(true);
   const spec = specText(content, invalid);
   // The fix sends every issue, though the card shows the first.

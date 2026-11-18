@@ -295,11 +295,14 @@ describe('project introduction body', () => {
     ]);
   });
 
-  it('heads the architecture with its node count and draws it as its own diagram', async () => {
+  it('heads the architecture with its node count and draws it with the graph renderer', async () => {
     const h = await mountIntro();
     expect(text(h.value)).toContain('2 个节点');
-    expect(has(h.value, (n) => typeName(n) === 'ArchDiagram')).toBe(true);
-    expect(has(h.value, (n) => typeName(n) === 'GraphDiagram')).toBe(false);
+    const arch = find(h.value, (n) => typeName(n) === 'ArchDiagram');
+    const drawn = mount(() => ArchDiagram(arch.props));
+    expect(find(drawn.value, (n) => typeName(n) === 'GraphDiagram').props.spec).toBe(
+      arch.props.spec,
+    );
   });
 
   it('puts the picked module in place of the treemap and lets it go by its button or Esc', async () => {
@@ -555,19 +558,12 @@ describe('architecture diagram', () => {
     expect(reach).toBeLessThanOrEqual(laid.width);
   });
 
-  it('names each node and its group and puts a head on both ends of a two-way edge', () => {
+  it('names the diagram by its node and edge counts and hands the whole spec to the graph renderer', () => {
     const h = mount(() => ArchDiagram({ spec }));
-    const named = byClass(h.value, 'in-nd').map((n) => text(n));
-    expect(named[0]).toBe('Back officefrontend');
-    const svg = find(h.value, (n) => n.type === 'svg');
-    expect(svg.props.role).toBe('img');
-    expect(svg.props['aria-label']).toContain('API 和 Channel 双向');
-    const marker = find(svg, (n) => n.type === 'marker').props.id;
-    const edges = byClass(svg, 'in-eg');
-    expect(edges).toHaveLength(6);
-    expect(edges.every((e) => e.props.markerEnd === `url(#${marker})`)).toBe(true);
-    expect(edges.filter((e) => e.props.markerStart).map((e) => e.props.d)).toEqual([
-      'M320 34C340 34 340 166 360 166',
-    ]);
+    const group = find(h.value, (n) => n.props.role === 'group');
+    expect(group.props['aria-label']).toBe('架构图，6 个节点，7 条边');
+    const graph = find(group, (n) => typeName(n) === 'GraphDiagram');
+    expect(graph.props.spec).toBe(spec);
+    expect(graph.props.grows).toBe(true);
   });
 });

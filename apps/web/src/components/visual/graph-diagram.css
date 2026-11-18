@@ -1,14 +1,212 @@
-.vis-graph .vis-node {
+/* A graph: node cards over group boundaries on a dot grid, routed edges, a legend under the plot. */
+.vis-gd {
+  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 var(--sp-2);
+  flex-direction: column;
+  width: 100%;
+  --xy-background-pattern-color: var(--bd2);
+}
+.vis-gp {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Kind colours paint shapes only; text stays neutral. */
+.vis-gd [data-kind='client'] {
+  --k: var(--series-1);
+}
+.vis-gd [data-kind='service'] {
+  --k: var(--series-2);
+}
+.vis-gd [data-kind='store'] {
+  --k: var(--series-4);
+}
+.vis-gd [data-kind='queue'] {
+  --k: var(--series-3);
+}
+.vis-gd [data-kind='external'] {
+  --k: var(--series-5);
+}
+.vis-gd [data-kind='policy'] {
+  --k: var(--series-6);
+}
+
+/* Edge styles, read by the edges and the legend's line samples. */
+.vis-gd [data-style] {
+  --ge: var(--mu);
+  --gw: 1px;
+  --gd: none;
+}
+.vis-gd [data-style='main'] {
+  --ge: var(--tx2);
+  --gw: 1.5px;
+}
+.vis-gd [data-style='async'] {
+  --gd: 4 3;
+}
+.vis-gd [data-style='data'] {
+  --ge: var(--k, var(--mu));
+}
+.vis-gd [data-style='return'] {
+  --ge: var(--bd3);
+  --gd: 1 3;
+}
+
+/* The node's wrapper takes the keyboard focus; its ring follows the card's corners. */
+.vis-gw {
+  border-radius: var(--r-sm);
+}
+.vis-gn {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0 var(--sp-3);
   border: var(--hair) solid var(--bd);
-  border-radius: calc(var(--r-sm) - 2px);
-  background: var(--sf);
+  border-radius: var(--r-sm);
+  background-color: var(--sf2);
+  transition:
+    opacity var(--dur-2) var(--ease-std),
+    background-color var(--dur-2) var(--ease-std),
+    border-color var(--dur-2) var(--ease-std);
+}
+.vis-gn[data-kind] {
+  padding-left: 28px;
+  border-color: color-mix(in srgb, var(--k) 45%, var(--bd));
+  background-color: color-mix(in srgb, var(--k) 8%, var(--sf2));
+}
+.vis-gn:hover {
+  background-image: linear-gradient(var(--st-hov), var(--st-hov));
+}
+.vis-gn[data-selected] {
+  border: 1px solid var(--k, var(--tx2));
+}
+.vis-gn[data-focus='dim'] {
+  opacity: 0.35;
+}
+.vis-gn-ic {
+  position: absolute;
+  top: 50%;
+  left: 7px;
+  width: 14px;
+  height: 14px;
+  translate: 0 -50%;
+  color: var(--k);
+}
+.vis-gn-t {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+  color: var(--tx);
+}
+.vis-gn-s {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);
+  color: var(--mu);
+}
+
+.vis-gg {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--hair) dashed var(--bd3);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--tx) 2%, transparent);
+}
+.vis-gg-h {
+  display: flex;
+  gap: var(--sp-1);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 600;
   color: var(--tx2);
-  white-space: nowrap;
+}
+.vis-gg-n {
+  flex: none;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--mu);
+}
+
+.vis-ge {
+  transition: opacity var(--dur-2) var(--ease-std);
+}
+.vis-ge[data-focus='on'] {
+  --ge: var(--tx);
+  --gw: 1.5px;
+}
+.vis-ge[data-focus='dim'] {
+  opacity: 0.35;
+}
+.vis-ge-p {
+  fill: none;
+  stroke: var(--ge);
+  stroke-width: var(--gw);
+  stroke-dasharray: var(--gd);
+  transition: stroke var(--dur-2) var(--ease-std);
+}
+.vis-ge-h {
+  fill: var(--ge);
+}
+.vis-ge[data-style='return'] .vis-ge-h {
+  fill: var(--sf);
+  stroke: var(--ge);
+  stroke-width: 1px;
+}
+.vis-ge-l rect {
+  fill: var(--sf);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-ge-l text {
+  fill: var(--tx2);
+  font-size: var(--fs-xs);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.vis-gl {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-4);
+  margin: 0;
+  padding: var(--sp-1) var(--sp-4) var(--sp-2);
+  list-style: none;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--tx2);
+}
+.vis-gl > li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.vis-gl-ic {
+  width: 14px;
+  height: 14px;
+  color: var(--k);
+}
+.vis-gl-ln {
+  width: 20px;
+  height: 8px;
+  overflow: visible;
+}
+.vis-gl-ln path {
+  fill: none;
+  stroke: var(--ge);
+  stroke-width: var(--gw);
+  stroke-dasharray: var(--gd);
+}
+.vis-gl-n {
+  font-variant-numeric: tabular-nums;
+  color: var(--mu);
 }

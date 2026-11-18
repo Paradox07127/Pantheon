@@ -26,6 +26,7 @@ export function VegaChart({ spec, height }: { spec: Record<string, unknown>; hei
       if (!live() || !at) return undefined;
       const color = (name: string) => token(at, name);
       const size = Number.parseFloat(token(at, '--fs-xs'));
+      const title = Number.parseFloat(token(at, '--fs-sm'));
       // vega-embed lets a spec's usermeta.embedOptions override the options below.
       const { usermeta: _, ...drawn } = spec;
       const result = await embed(
@@ -46,21 +47,35 @@ export function VegaChart({ spec, height }: { spec: Record<string, unknown>; hei
             background: 'transparent',
             font: color('font-family'),
             view: { stroke: 'transparent' },
+            // No axis lines or ticks; a hairline grid on value axes only.
             axis: {
-              domainColor: color('--bd'),
+              domain: false,
+              ticks: false,
+              tickSize: 0,
+              grid: true,
               gridColor: color('--bd2'),
-              tickColor: color('--bd'),
+              gridWidth: 0.5,
               labelColor: color('--mu'),
               titleColor: color('--tx2'),
               labelFontSize: size,
               titleFontSize: size,
+              titleFontWeight: 600,
             },
+            axisDiscrete: { grid: false },
             legend: {
+              orient: 'top',
+              symbolType: 'circle',
+              // A symbol's size is its area: an 8px circle.
+              symbolSize: 64,
               labelColor: color('--mu'),
               titleColor: color('--tx2'),
               labelFontSize: size,
               titleFontSize: size,
             },
+            scale: { barBandPaddingInner: 0.25 },
+            bar: { cornerRadius: 3 },
+            point: { size: 48 },
+            line: { strokeWidth: 1.5 },
             header: {
               labelColor: color('--mu'),
               titleColor: color('--tx2'),
@@ -70,7 +85,14 @@ export function VegaChart({ spec, height }: { spec: Record<string, unknown>; hei
             // Vega-Lite draws text and rule marks black unless told otherwise.
             text: { color: color('--tx2'), fontSize: size },
             rule: { color: color('--tx2') },
-            title: { color: color('--tx') },
+            title: {
+              anchor: 'start',
+              color: color('--tx'),
+              fontSize: title,
+              fontWeight: 600,
+              subtitleColor: color('--mu'),
+              subtitleFontSize: size,
+            },
             range: { category: [1, 2, 3, 4, 5, 6].map((n) => color(`--series-${n}`)) },
           },
         },

@@ -1,8 +1,5 @@
 {
-  "memory.intro.architecture.both": "{from} 和 {to} 双向",
-  "memory.intro.architecture.edge": "{from} 到 {to}",
-  "memory.intro.architecture.group": "架构图的节点",
-  "memory.intro.architecture.label": "架构图，{count, plural, other {# 个节点}}：{list}",
+  "memory.intro.architecture.counts": "架构图，{nodes, plural, other {# 个节点}}，{edges, plural, other {# 条边}}",
   "memory.intro.architecture.nodes": "{count, plural, other {# 个节点}}",
   "memory.intro.featuresAndGoals": "功能与目标",
   "memory.intro.goals": "目标",
