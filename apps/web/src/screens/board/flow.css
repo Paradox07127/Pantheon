@@ -144,6 +144,11 @@
   /* The layer under it lets pan and zoom through; the name takes the pointer for its title. */
   pointer-events: auto;
 }
+/* The lane frame is as wide as the canvas; the reason stays in the title column, clear of the nodes. */
+.bd-lane-r {
+  max-width: 64px;
+  pointer-events: auto;
+}
 .bd-lane-n {
   font-variant-numeric: tabular-nums;
 }

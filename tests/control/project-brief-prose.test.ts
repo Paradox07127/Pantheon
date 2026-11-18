@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { ProjectBriefRef } from '@pantheon/protocol';
+import type { ProjectBriefItem, ProjectBriefRef } from '@pantheon/protocol';
+import { briefItemsKey } from '../../packages/control/dist/project-brief.js';
 import { eventually, fixture, user } from '../helpers.js';
 
 type Reply = {
@@ -182,4 +183,21 @@ it('makes no side call with the setting off or for an empty brief', async () => 
   await settled();
   expect(summarizer).not.toHaveBeenCalled();
   expect(brief(f).prose).toBeUndefined();
+});
+
+it('keeps the paragraph of a brief when only the count of what was decided for the user moves', () => {
+  const merged: ProjectBriefItem = {
+    kind: 'merge',
+    ref: { kind: 'merge', id: 'session-a' },
+    at: 1,
+  };
+  const decided = (count: number): ProjectBriefItem => ({
+    kind: 'decided',
+    ref: { kind: 'decided', id: 'project-a' },
+    count,
+    types: { permission: count, answer: 0, plan_change: 0 },
+  });
+  expect(briefItemsKey([merged, decided(2)])).toBe(briefItemsKey([merged]));
+  expect(briefItemsKey([merged, decided(3)])).toBe(briefItemsKey([merged, decided(2)]));
+  expect(briefItemsKey([merged, { ...merged, at: 2 }])).not.toBe(briefItemsKey([merged]));
 });

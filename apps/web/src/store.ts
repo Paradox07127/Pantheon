@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WorkbenchSession } from '@pantheon/protocol';
+import type { DecisionType, WorkbenchSession } from '@pantheon/protocol';
 import { useBoard } from './data/board';
 import {
   currentProject,
@@ -162,6 +162,10 @@ interface ShellState {
   stripWaits: ReadonlySet<string> | null;
   /** The wait, by notice card id, that the needs-you strip brings into view and focuses once it lists it. */
   askedNeed: string | null;
+  /** The type the approved-for-you list opens filtered by, once; null keeps its own. */
+  approvedType: DecisionType | null;
+  /** The time the asking page counted from, Unix milliseconds; the list opens on a range that reaches it. */
+  approvedSince: number | null;
   // Opens the trace's runs tab on the session, or on every session for null.
   showRuns: (sessionId: string | null) => void;
   setTraceTab: (tab: TraceTab) => void;
@@ -186,8 +190,8 @@ interface ShellState {
   openProjectBoard: (projectId: string) => void;
   // Makes the project current and opens its runs going now, whose needs-you strip answers the wait.
   openProjectNeed: (projectId: string, needKey: string) => void;
-  // Makes the project current and opens the trace's list of what was approved for the user.
-  openProjectApproved: (projectId: string) => void;
+  // Makes the project current and opens the trace's list of what was approved for the user, of one type when given.
+  openProjectApproved: (projectId: string, type?: DecisionType, since?: number) => void;
   back: () => void;
   forward: () => void;
   // Drops a restored session the project's list no longer has.
@@ -327,6 +331,8 @@ export const useShell = create<ShellState>((set) => ({
   boardWaits: null,
   stripWaits: null,
   askedNeed: null,
+  approvedType: null,
+  approvedSince: null,
   showRuns: (runsSession) =>
     navigate({
       screen: 'trace',
@@ -458,11 +464,13 @@ export const useShell = create<ShellState>((set) => ({
       },
       projectId,
     ),
-  openProjectApproved: (projectId) =>
+  openProjectApproved: (projectId, type, since) =>
     navigate(
       {
         screen: 'trace',
         traceTab: 'approved',
+        approvedType: type ?? null,
+        approvedSince: since ?? null,
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,

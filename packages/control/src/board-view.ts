@@ -2545,7 +2545,11 @@ export function boardView(
     counts,
     ...(gateFailures.length ? { gate_failures: gateFailures } : {}),
     lanes: plans.flatMap((plan) =>
-      plan.lanes.map((lane) => ({ id: `${plan.id}:${lane.id}`, title: lane.title })),
+      plan.lanes.map((lane) => ({
+        id: `${plan.id}:${lane.id}`,
+        title: lane.title,
+        ...(lane.fanout_reason ? { fanout_reason: lane.fanout_reason } : {}),
+      })),
     ),
     tasks,
     iterations,

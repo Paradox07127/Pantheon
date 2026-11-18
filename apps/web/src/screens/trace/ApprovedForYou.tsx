@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Tabs } from '@base-ui/react/tabs';
 import { Bell, Crown, KeyRound, MessageSquare, ScrollText, User, Workflow, X } from 'lucide-react';
+import { decisionType, type DecisionType } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
 import { TopBar } from '../../components/TopBar';
@@ -11,11 +12,10 @@ import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
 import {
   decisionRow,
-  decisionType,
+  rangeSince,
   useDecisionsForUser,
   type DecisionRange,
   type DecisionRow,
-  type DecisionType,
 } from '../../data/decisions-for-user';
 import { shortId } from '../../data/format';
 import { sendProjectCommand } from '../../data/project-read';
@@ -91,6 +91,19 @@ function DeliveryRules() {
 export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; tabs: ReactNode }) {
   const [range, setRange] = useState<DecisionRange>('today');
   const [type, setType] = useState<TypeFilter>('all');
+  // The type another page opened the list on, taken once.
+  const asked = useShell((s) => s.approvedType);
+  const askedSince = useShell((s) => s.approvedSince);
+  useEffect(() => {
+    if (!asked) return;
+    setType(asked);
+    // The shortest range that reaches back to the time the asking page counted from.
+    if (askedSince !== null)
+      setRange(
+        RANGES.find(({ range }) => rangeSince(range, Date.now()) <= askedSince)?.range ?? 'month',
+      );
+    useShell.setState({ approvedType: null, approvedSince: null });
+  }, [asked, askedSince]);
   const [notifying, setNotifying] = useState(false);
   // The open overrule dialog: its row, the typed answer, and the last failure.
   const [overruling, setOverruling] = useState<{

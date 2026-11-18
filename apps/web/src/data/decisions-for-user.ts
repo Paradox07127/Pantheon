@@ -118,22 +118,6 @@ const powerRule = (power: Extract<DecisionForUser, { kind: 'power_used' }>['powe
   }
 };
 
-/** The type the list is filtered by. */
-export type DecisionType = 'permission' | 'answer' | 'plan_change';
-
-/** A decision's type; a power other than a plan change, and a milestone a key accepted, have none. */
-export function decisionType(item: DecisionForUser): DecisionType | null {
-  if (item.kind === 'prompt_approved' || item.kind === 'prompt_by_rule') return 'permission';
-  if (item.kind === 'question_answered') return 'answer';
-  if (item.kind === 'personal_answer')
-    return item.command === 'lead.question.answer'
-      ? 'answer'
-      : item.command === 'board.plan.proposal.resolve'
-        ? 'plan_change'
-        : null;
-  return item.power === 'plan_change' ? 'plan_change' : null;
-}
-
 /** One row of the list, as text. */
 export interface DecisionRow {
   key: string;

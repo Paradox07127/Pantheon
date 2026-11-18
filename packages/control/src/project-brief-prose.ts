@@ -14,7 +14,13 @@ import {
 } from '@pantheon/protocol';
 import { readAppSettings } from './app-settings.js';
 import { userOnly, type ControlContext, type Handlers } from './context.js';
-import { briefItemsKey, cursorId, projectBrief, type SeenCursor } from './project-brief.js';
+import {
+  briefItemsKey,
+  cursorId,
+  projectBrief,
+  proseItems,
+  type SeenCursor,
+} from './project-brief.js';
 import { projectOverBudget } from './workflow-policy.js';
 
 /** One brief item as the side model reads it, under the key its sentences cite it by. */
@@ -149,7 +155,7 @@ export function writeBriefProse(
   const brief = projectBrief(ctx, principal, projectId);
   if (
     !summarizer ||
-    brief.items.length === 0 ||
+    proseItems(brief.items).length === 0 ||
     brief.prose ||
     readAppSettings(ctx).brief_prose === false ||
     projectOverBudget(ctx, projectId)
@@ -161,7 +167,7 @@ export function writeBriefProse(
   asked.set(ctx, started);
   if (started.has(key)) return false;
   started.add(key);
-  const facts = briefFacts(ctx, projectId, brief.items);
+  const facts = briefFacts(ctx, projectId, proseItems(brief.items));
   const prompt = briefProsePrompt(facts);
   const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;

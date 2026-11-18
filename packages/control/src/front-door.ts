@@ -50,7 +50,7 @@ function deliver(
 }
 
 /**
- * What the resident did with the user's turn, from the events on its plan while the turn ran; an
+ * What the resident did with the user's turn, from its own events on its plan while the turn ran; an
  * event belongs to the turn that was running when it happened, so a steer folds into that turn.
  */
 export function routingReceipt(
@@ -71,10 +71,35 @@ export function routingReceipt(
       .get(turn.session_id, after, before) as { payload: string } | undefined;
     return row && (JSON.parse(row.payload) as BoardPlan);
   };
-  const was = plan(-1, span.start),
-    now = plan(span.start, span.end);
-  const lanes = (now?.lanes ?? []).filter((lane) => !was?.lanes.some((old) => old.id === lane.id)),
-    tasks = (now?.tasks ?? []).filter((task) => !was?.tasks.some((old) => old.id === task.id)),
+  const was = plan(-1, span.start);
+  // A plan update is the session's own when the inbox holds its command under the session's principal.
+  const updates = ctx.store.db
+    .prepare(
+      "SELECT payload, EXISTS(SELECT 1 FROM inbox WHERE source_key='session:'||events.aggregate_id||':command:'||events.causation_id) AS own FROM events WHERE aggregate_id=? AND kind='board.plan_updated' AND sequence>? AND sequence<? ORDER BY sequence",
+    )
+    .all(turn.session_id, span.start, span.end) as { payload: string; own: number }[];
+  // Only what an own update brought in counts, so a lane or task the user added stays out.
+  const ownLanes = new Set<string>(),
+    ownTasks = new Set<string>();
+  let previous = was,
+    now: BoardPlan | undefined;
+  for (const update of updates) {
+    const next = JSON.parse(update.payload) as BoardPlan;
+    if (update.own) {
+      now = next;
+      for (const lane of next.lanes)
+        if (!previous?.lanes.some((old) => old.id === lane.id)) ownLanes.add(lane.id);
+      for (const task of next.tasks)
+        if (!previous?.tasks.some((old) => old.id === task.id)) ownTasks.add(task.id);
+    }
+    previous = next;
+  }
+  const lanes = (now?.lanes ?? []).filter(
+      (lane) => ownLanes.has(lane.id) && !was?.lanes.some((old) => old.id === lane.id),
+    ),
+    tasks = (now?.tasks ?? []).filter(
+      (task) => ownTasks.has(task.id) && !was?.tasks.some((old) => old.id === task.id),
+    ),
     taskIds = tasks.map((task) => task.id);
   if (lanes.length)
     return {

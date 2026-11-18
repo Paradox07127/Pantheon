@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import type { AppSettings, BoardModel, ProjectBrief } from '@pantheon/protocol';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
-const mock = vi.hoisted(() => ({ board: {} as any, openSession: vi.fn() }));
+const mock = vi.hoisted(() => ({
+  board: {} as any,
+  openSession: vi.fn(),
+  openProjectApproved: vi.fn(),
+}));
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { useId: 'brief-id' }),
 );
@@ -12,9 +16,11 @@ vi.mock('@/data/board', () => ({
   }),
 }));
 vi.mock('@/store', () => ({
-  useShell: Object.assign((selector: any) => selector({ openSession: mock.openSession }), {
-    setState() {},
-  }),
+  useShell: Object.assign(
+    (selector: any) =>
+      selector({ openSession: mock.openSession, openProjectApproved: mock.openProjectApproved }),
+    { setState() {} },
+  ),
 }));
 import { BriefCard } from '@/screens/board/BriefCard';
 import { ProjectNeeds } from '@/screens/board/NowPage';
@@ -140,6 +146,7 @@ const serve = (brief: ProjectBrief, settings: Partial<AppSettings> = {}) => {
 
 beforeEach(() => {
   mock.openSession.mockReset();
+  mock.openProjectApproved.mockReset();
   mock.board = {
     board: { cursor: 1, projects: [], sessions: [], session_turns: [], workspaces: [] },
     events: [
@@ -283,6 +290,40 @@ describe('since you left card', () => {
     ]);
     expect(prevented.preventDefault).toHaveBeenCalledTimes(5);
     expect(text(h.value)).toContain('Refund UI');
+  });
+
+  it('counts what was decided for the user and links each type to the approved list filtered by it', async () => {
+    serve({
+      since: LEFT,
+      items: [
+        {
+          kind: 'decided',
+          ref: { kind: 'decided', id: 'project-brief-j' },
+          count: 6,
+          types: { permission: 3, answer: 2, plan_change: 0 },
+        },
+      ],
+    });
+    const h = await card('project-brief-j');
+    const cell = group(h.value, zhf('board.brief.decidedCount', { count: 6 }));
+    expect(text(cell)).toContain(zh('board.brief.decided'));
+    expect(text(cell)).toContain('6');
+    const shown = links(cell);
+    expect(shown.map(text)).toEqual([
+      zhf('board.brief.decidedPermissions', { count: 3 }),
+      zhf('board.brief.decidedAnswers', { count: 2 }),
+    ]);
+    shown.forEach((link) => link.props.onClick({ preventDefault() {} }));
+    expect(mock.openProjectApproved.mock.calls).toEqual([
+      ['project-brief-j', 'permission', LEFT],
+      ['project-brief-j', 'answer', LEFT],
+    ]);
+  });
+
+  it('has no decided cell without decisions', async () => {
+    serve(served);
+    const h = await card('project-brief-k');
+    expect(text(h.value)).not.toContain(zh('board.brief.decided'));
   });
 
   it('marks the project read and hides', async () => {

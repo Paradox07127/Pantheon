@@ -14,6 +14,7 @@ vi.mock('@/data/board', () => ({
 vi.mock('@/store', () => ({
   useShell: Object.assign((selector: any) => selector(mock.shell), {
     getState: () => mock.shell,
+    setState: (patch: object) => Object.assign(mock.shell, patch),
   }),
   resolveTheme: () => 'light',
 }));
@@ -144,6 +145,8 @@ beforeEach(() => {
     openProjectSession: vi.fn(),
     openProject: vi.fn(),
     openProjectApproved: vi.fn(),
+    approvedType: null,
+    approvedSince: null,
   };
 });
 afterEach(() => {
@@ -447,6 +450,38 @@ describe('approved for you', () => {
       expect(text(h.value)).toContain(zh('trace.approved.empty'));
       expect(() => table(h.value)).toThrow();
     });
+
+    it('opens on the type another page asked for, once', async () => {
+      mock.shell.approvedType = 'answer';
+      const h = await page();
+      h.render();
+      expect(filter(h.value).props.value).toBe('answer');
+      expect(mock.shell.approvedType).toBeNull();
+      pick(h, 'all');
+      expect(filter(h.value).props.value).toBe('all');
+    });
+
+    it.each([
+      ['today', 0],
+      ['week', 3],
+      ['month', 12],
+      ['month', 90],
+    ] as const)(
+      'opens on %s when the asking page counted from %i days ago',
+      async (range, days) => {
+        mock.shell.approvedType = 'answer';
+        mock.shell.approvedSince = Date.now() - days * 86_400_000;
+        const h = await page();
+        h.render();
+        expect(
+          find(
+            h.value,
+            (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.range'),
+          ).props.value,
+        ).toBe(range);
+        expect(mock.shell.approvedSince).toBeNull();
+      },
+    );
 
     it('keeps the picked type when the range changes', async () => {
       const h = await page();

@@ -3338,9 +3338,9 @@ export interface ProjectSummary {
   /** Newest session last_activity_at, as an ISO time; null without sessions. */
   last_activity_at: string | null;
 }
-/** What a brief item links to; a merge is the merged session's id. */
+/** What a brief item links to; a merge is the merged session's id, decided the project's id. */
 export interface ProjectBriefRef {
-  kind: 'task' | 'milestone' | 'merge' | 'approval' | 'proposal' | 'event';
+  kind: 'task' | 'milestone' | 'merge' | 'approval' | 'proposal' | 'event' | 'decided';
   id: string;
 }
 /** One thing that happened after the brief's since; times are Unix milliseconds. */
@@ -3358,7 +3358,9 @@ export type ProjectBriefItem =
   | { kind: 'milestone'; ref: ProjectBriefRef; title: string; done: number; total: number }
   | { kind: 'merge'; ref: ProjectBriefRef; at: number }
   | { kind: 'assumption'; ref: ProjectBriefRef; at: number; text: string }
-  | { kind: 'proposal'; ref: ProjectBriefRef; at: number };
+  | { kind: 'proposal'; ref: ProjectBriefRef; at: number }
+  /** Listed when something was decided for the user after since; count is all of project.decisions. */
+  | { kind: 'decided'; ref: ProjectBriefRef; count: number; types: Record<DecisionType, number> };
 /** The side model's paragraph about a brief; each sentence cites the items it is about. */
 export interface ProjectBriefProse {
   sentences: { text: string; refs: ProjectBriefRef[] }[];
@@ -3442,6 +3444,20 @@ export type DecisionForUser =
 /** GET /v1/project.decisions. */
 export interface DecisionsForUser {
   items: DecisionForUser[];
+}
+/** The type the approved-for-you list is filtered by. */
+export type DecisionType = 'permission' | 'answer' | 'plan_change';
+/** A decision's type; a power other than a plan change, and a milestone a key accepted, have none. */
+export function decisionType(item: DecisionForUser): DecisionType | null {
+  if (item.kind === 'prompt_approved' || item.kind === 'prompt_by_rule') return 'permission';
+  if (item.kind === 'question_answered') return 'answer';
+  if (item.kind === 'personal_answer')
+    return item.command === 'lead.question.answer'
+      ? 'answer'
+      : item.command === 'board.plan.proposal.resolve'
+        ? 'plan_change'
+        : null;
+  return item.power === 'plan_change' ? 'plan_change' : null;
 }
 /** GET /v1/session.search; metadata first, then messages, newest first in each group. */
 export interface SessionSearchResult {
@@ -4143,7 +4159,8 @@ export interface BoardModel {
     /** null when no turn in the range reported a cost. */
     cost_usd: number | null;
   };
-  lanes: { id: string; title: string }[];
+  /** fanout_reason is absent when the lead gave none. */
+  lanes: { id: string; title: string; fanout_reason?: string }[];
   iterations?: {
     id: string;
     title: string;

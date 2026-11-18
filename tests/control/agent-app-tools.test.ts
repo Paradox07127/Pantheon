@@ -16,6 +16,7 @@ import {
   type SessionTurn,
 } from '@pantheon/domain';
 import { command, inputSchemas, type CommandType } from '@pantheon/protocol';
+import { appHelpGroups } from '../../packages/control/dist/app-help.generated.js';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import type { LocalCommand } from '../../packages/control/src/local-command.js';
 import { fixture, user } from '../helpers.js';
@@ -87,6 +88,22 @@ it('keeps the generated app manual in step with the protocol', () => {
     fileURLToPath(new URL('../../scripts/app-help.mjs', import.meta.url)),
     '--check',
   ]);
+});
+
+it('ends the purpose of each group in the app manual with a whole sentence of a command', () => {
+  for (const { group, about, commands } of appHelpGroups) {
+    const last = about.split('; ').at(-1)!;
+    expect(
+      !about ||
+        commands.some((c) =>
+          c.about
+            ?.split(/(?<=\.)\s/)[0]!
+            .replace(/\.$/, '')
+            .endsWith(last),
+        ),
+      `${group}: ${about}`,
+    ).toBe(true);
+  }
 });
 
 it("lists the project's sessions with type and state, reads a long one within its size, and refuses another project's", async () => {

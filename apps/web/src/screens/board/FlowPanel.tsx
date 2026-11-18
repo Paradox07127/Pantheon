@@ -15,6 +15,7 @@ import {
 import '@xyflow/react/dist/base.css';
 import { Minus, Plus, Trash } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { Tip } from '../../components/Tip';
 import { useNow } from '../../data/needs-you';
 import {
@@ -241,10 +242,14 @@ function Lanes({
             key={lane.id ?? ''}
             className="bd-lane"
             style={{ top: lane.y, height: lane.height, width: layout.width }}
+            {...(lane.fanout_reason
+              ? { role: 'group', 'aria-label': listText(lane.title, lane.fanout_reason) }
+              : {})}
           >
             <span className="bd-lane-t" title={lane.title || undefined}>
               {lane.title}
             </span>
+            {lane.fanout_reason && <Clip text={lane.fanout_reason} className="bd-lane-r" />}
             <span
               className="bd-lane-bar"
               role="img"

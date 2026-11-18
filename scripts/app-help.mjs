@@ -52,9 +52,15 @@ const groups = [...new Set(names.map((name) => name.split('.')[0]))].map((group)
       ...(docs.has(type) ? { about: docs.get(type) } : {}),
       ...(tools.get(type) ?? { tool: USER_ONLY }),
     }));
-  const about = [...new Set(commands.filter((c) => c.about).map((c) => firstSentence(c.about)))]
-    .join('; ')
-    .slice(0, 200);
+  // Whole sentences only, as many as fit in 200 characters.
+  let about = '';
+  for (const sentence of new Set(
+    commands.filter((c) => c.about).map((c) => firstSentence(c.about)),
+  )) {
+    const next = about ? `${about}; ${sentence}` : sentence;
+    if (next.length > 200) break;
+    about = next;
+  }
   return { group, about, commands };
 });
 

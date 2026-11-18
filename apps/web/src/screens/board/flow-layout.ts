@@ -42,7 +42,10 @@ function bandOf(task: Task, group: FlowGroup): string | null {
 }
 
 /** The bands in drawing order, the band of tasks without a value last. */
-function bands(model: BoardModel, group: FlowGroup): { id: string | null; title: string }[] {
+function bands(
+  model: BoardModel,
+  group: FlowGroup,
+): { id: string | null; title: string; fanout_reason?: string }[] {
   switch (group) {
     case 'lane':
       return [...model.lanes, { id: null, title: '' }];
@@ -76,7 +79,14 @@ export interface FlowLayout {
   /** Top-left corner of each task's card. */
   nodes: { id: string; x: number; y: number }[];
   /** id null is the band of tasks without a known value; it comes last. */
-  lanes: { id: string | null; title: string; y: number; height: number; tasks: string[] }[];
+  lanes: {
+    id: string | null;
+    title: string;
+    fanout_reason?: string;
+    y: number;
+    height: number;
+    tasks: string[];
+  }[];
   edges: BoardModel['edges'];
   /** Space between columns. */
   gap: number;
@@ -94,7 +104,7 @@ export function layoutKey(model: BoardModel, group: FlowGroup = 'lane'): string 
   return JSON.stringify([
     group,
     model.tasks.map((t) => [t.id, bandOf(t, group)]),
-    model.lanes.map((l) => [l.id, l.title]),
+    model.lanes.map((l) => [l.id, l.title, l.fanout_reason]),
     model.edges.map((e) => [e.from, e.to]),
   ]);
 }
@@ -180,7 +190,14 @@ export function flowLayout(
       });
     const height =
       2 * LANE_PADDING + rowHeight.reduce((sum, h) => sum + h, 0) + (rows.length - 1) * ROW_GAP;
-    lanes.push({ id: lane.id, title: lane.title, y, height, tasks: tasks.map((t) => t.id) });
+    lanes.push({
+      id: lane.id,
+      title: lane.title,
+      ...(lane.fanout_reason ? { fanout_reason: lane.fanout_reason } : {}),
+      y,
+      height,
+      tasks: tasks.map((t) => t.id),
+    });
     y += height + LANE_GAP;
   }
   return {

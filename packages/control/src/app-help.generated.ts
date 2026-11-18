@@ -7,7 +7,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'agent',
     about:
-      "the project's agents with their role, tools and routines; the command groups and screens, or one group's commands and the tools that call them; the user only; Wakes the calling resident with note afte",
+      "the project's agents with their role, tools and routines; the command groups and screens, or one group's commands and the tools that call them; the user only",
     commands: [
       {
         type: 'agent.agents',
@@ -124,7 +124,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'app',
     about:
-      'A session credential; returns AppDom for the whole window or the first element selector matches; A session credential; returns AppErrors, the recent errors of the desktop window; Returns AppLogs, the ',
+      'A session credential; returns AppDom for the whole window or the first element selector matches; A session credential; returns AppErrors, the recent errors of the desktop window',
     commands: [
       {
         type: 'app.dom',
@@ -159,7 +159,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'board',
     about:
-      "Patches a lead's plan by task id; the same command serves the lead and the user; Takes back a user edit that still waits for the lead; the user only; Applies or rejects a pending lead proposal; the us",
+      "Patches a lead's plan by task id; the same command serves the lead and the user; Takes back a user edit that still waits for the lead; the user only",
     commands: [
       {
         type: 'board.plan.edit',
@@ -193,7 +193,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'browser',
     about:
-      "A session credential; opens url in the session's browser panel of the desktop window, returns BrowserPage; A session credential; returns the url, title and visible text of the session's browser panel ",
+      "A session credential; opens url in the session's browser panel of the desktop window, returns BrowserPage",
     commands: [
       {
         type: 'browser.open',
@@ -273,7 +273,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'lead',
     about:
-      "Reads one note of the calling lead's plan in full, by the id its digest names; read-only; The user only; replaces the answer a lead gave a task session's question and tells the lead and that session; ",
+      "Reads one note of the calling lead's plan in full, by the id its digest names; read-only; The user only; replaces the answer a lead gave a task session's question and tells the lead and that session",
     commands: [
       { type: 'lead.ask', tool: 'ask_user' },
       {
@@ -373,7 +373,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'project',
     about:
-      "The user only; stores this round's answers and asks the baseline session for the next round; The user only; asks the side model for the paragraph of the caller's project.brief, at most once per brief,",
+      "The user only; stores this round's answers and asks the baseline session for the next round",
     commands: [
       { type: 'project.autoMerge.set', tool: 'the user does this in the app' },
       { type: 'project.baseline.confirm', tool: 'the user does this in the app' },
@@ -453,7 +453,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'repo',
     about:
-      "Commits only paths with the user's own git identity, configuration and hooks; returns { sha }; Restores tracked files in the index and the worktree to HEAD and deletes untracked ones; returns { undo_i",
+      "Commits only paths with the user's own git identity, configuration and hooks; returns { sha }",
     commands: [
       {
         type: 'repo.commit',
@@ -495,7 +495,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'request',
     about:
-      'The user only; routes a request to a resident again: steers the resident to answer it here, plan a new lane or add it to the lane, or sends it to the agent; returns {session_id, turn_id}; The user onl',
+      'The user only; routes a request to a resident again: steers the resident to answer it here, plan a new lane or add it to the lane, or sends it to the agent; returns {session_id, turn_id}',
     commands: [
       {
         type: 'request.reroute',
@@ -567,7 +567,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'session',
     about:
-      "Takes over a native session the runtime already has, working in the user's own folder; the user only; Context an MCP interface gives the model; the user only; Stops one background task of the session,",
+      "Takes over a native session the runtime already has, working in the user's own folder; the user only; Context an MCP interface gives the model; the user only",
     commands: [
       {
         type: 'session.adopt',
@@ -668,7 +668,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'style',
     about:
-      'The user only; empties the user stylesheet, returns UserStyleRead; The user only; turns the user stylesheet on or off and keeps its CSS, returns UserStyleRead; Returns UserStyleRead; A session credent',
+      'The user only; empties the user stylesheet, returns UserStyleRead; The user only; turns the user stylesheet on or off and keeps its CSS, returns UserStyleRead; Returns UserStyleRead',
     commands: [
       {
         type: 'style.clear',
@@ -693,7 +693,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'task',
     about:
-      "Accepts the done report of a report task in the calling lead's plan; Stops one background task of the session working on a task in the calling lead's plan; Interrupts the running turn of a task in the",
+      "Accepts the done report of a report task in the calling lead's plan; Stops one background task of the session working on a task in the calling lead's plan",
     commands: [
       {
         type: 'task.accept',
@@ -742,7 +742,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'theme',
     about:
-      'The user only; null goes back to the default theme; The user only; deleting the applied theme goes back to the default first; A session credential or the user; saves the theme and applies it, returns ',
+      'The user only; null goes back to the default theme; The user only; deleting the applied theme goes back to the default first',
     commands: [
       {
         type: 'theme.apply',
@@ -777,7 +777,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'visual',
     about:
-      "The user only; order contains exactly the project's pinned visual ids; The user only; at most 200 visuals, newest first or in pinned board order; The user only; pins at the end or changes the existing",
+      "The user only; order contains exactly the project's pinned visual ids; The user only; at most 200 visuals, newest first or in pinned board order",
     commands: [
       {
         type: 'visual.arrange',
@@ -807,7 +807,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'workflow',
     about:
-      "Removes the project's own workflow policy values, so it follows the global ones; the user only; Changes the given workflow policy parameters of a project; the user only; Hands in the verdict of the wo",
+      "Removes the project's own workflow policy values, so it follows the global ones; the user only; Changes the given workflow policy parameters of a project; the user only",
     commands: [
       { type: 'workflow.definition.save_as', tool: 'the user does this in the app' },
       { type: 'workflow.definition.set', tool: 'the user does this in the app' },

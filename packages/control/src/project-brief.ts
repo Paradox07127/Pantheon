@@ -10,6 +10,7 @@ import {
   type Session,
 } from '@pantheon/domain';
 import {
+  decisionType,
   inputSchemas,
   type ProjectBrief,
   type ProjectBriefItem,
@@ -18,6 +19,7 @@ import {
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext, type Handlers } from './context.js';
 import { boardTaskId } from './board-plan.js';
+import { decisionsForUser } from './decisions-for-user.js';
 import { personalCalled } from './personal-scope.js';
 import { itemTask, needsYou } from './needs-you.js';
 import { milestoneView } from './project-facts.js';
@@ -39,7 +41,12 @@ export interface SeenCursor extends Entity {
 export const cursorId = (principal: Principal, projectId: string) =>
   JSON.stringify([principal.id, projectId]);
 
-export const briefItemsKey = (items: ProjectBriefItem[]) => hash(items);
+/** The items the paragraph is about: the decided count moves with every approval a lead gives, so it is left out. */
+export const proseItems = (items: ProjectBriefItem[]) =>
+  items.filter(
+    (item): item is Exclude<ProjectBriefItem, { kind: 'decided' }> => item.kind !== 'decided',
+  );
+export const briefItemsKey = (items: ProjectBriefItem[]) => hash(proseItems(items));
 
 const FAILURES: NeedsYouItem['kind'][] = [
   'session.failed',
@@ -196,6 +203,20 @@ export function projectBrief(
         ref: { kind: 'proposal', id: event.aggregate_id },
         at: event.created_at,
       });
+  const decided = decisionsForUser(ctx, principal, projectId, after + 1).items;
+  if (decided.length) {
+    const types = { permission: 0, answer: 0, plan_change: 0 };
+    for (const item of decided) {
+      const type = decisionType(item);
+      if (type) types[type]++;
+    }
+    items.push({
+      kind: 'decided',
+      ref: { kind: 'decided', id: projectId },
+      count: decided.length,
+      types,
+    });
+  }
   const prose = cursor?.prose;
   return prose && prose.since === after && prose.items_key === briefItemsKey(items)
     ? { since: after, items, prose: { sentences: prose.sentences, at: prose.at } }

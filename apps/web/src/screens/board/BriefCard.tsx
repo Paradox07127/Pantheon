@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Bot, Flag, GitMerge, Lightbulb } from 'lucide-react';
+import { Bot, Flag, GitMerge, KeyRound, Lightbulb, MessageSquare, Workflow } from 'lucide-react';
 import type { BoardModel, ProjectBrief, ProjectBriefItem } from '@pantheon/protocol';
 import { toast } from '../../components/Toast';
 import { useAppSettings } from '../../data/app-settings';
@@ -31,6 +31,7 @@ export function BriefCard({
   const { read: brief, reload } = useProjectBrief(projectId);
   const events = useBoard((s) => s.events);
   const openSession = useShell((s) => s.openSession);
+  const openApproved = useShell((s) => s.openProjectApproved);
   // The read the user marked read stays hidden until the brief is read again.
   const [seen, setSeen] = useState<ProjectBrief | null>(null);
   const { settings } = useAppSettings();
@@ -38,8 +39,11 @@ export function BriefCard({
   // The briefs the paragraph was asked for, by their items, so each is asked for once.
   const asked = useRef(new Set<string>());
   useEffect(() => {
-    if (!brief || brief === seen || brief.prose || brief.items.length === 0 || !proseOn) return;
-    const key = JSON.stringify([projectId, brief.since, brief.items]);
+    if (!brief || brief === seen || brief.prose || !proseOn) return;
+    // The decided count is not part of the paragraph, so a new count asks for no new one.
+    const about = brief.items.filter((item) => item.kind !== 'decided');
+    if (about.length === 0) return;
+    const key = JSON.stringify([projectId, brief.since, about]);
     if (asked.current.has(key)) return;
     asked.current.add(key);
     void writeBriefProse(projectId);
@@ -262,6 +266,58 @@ export function BriefCard({
           </span>
         );
       }),
+    });
+  const decided = of('decided')[0];
+  if (decided)
+    cells.push({
+      key: 'decided',
+      cap: t({ id: 'board.brief.decided', defaultMessage: 'Decided for you' }),
+      label: t(
+        { id: 'board.brief.decidedCount', defaultMessage: '{count} decided for you' },
+        { count: decided.count },
+      ),
+      count: decided.count,
+      rows: (
+        [
+          [
+            'permission',
+            <KeyRound aria-hidden="true" />,
+            t(
+              {
+                id: 'board.brief.decidedPermissions',
+                defaultMessage: '{count, plural, one {# permission} other {# permissions}}',
+              },
+              { count: decided.types.permission },
+            ),
+          ],
+          [
+            'answer',
+            <MessageSquare aria-hidden="true" />,
+            t(
+              {
+                id: 'board.brief.decidedAnswers',
+                defaultMessage: '{count, plural, one {# answer} other {# answers}}',
+              },
+              { count: decided.types.answer },
+            ),
+          ],
+          [
+            'plan_change',
+            <Workflow aria-hidden="true" />,
+            t(
+              {
+                id: 'board.brief.decidedPlanChanges',
+                defaultMessage: '{count, plural, one {# plan change} other {# plan changes}}',
+              },
+              { count: decided.types.plan_change },
+            ),
+          ],
+        ] as const
+      )
+        .filter(([type]) => decided.types[type] > 0)
+        .map(([type, icon, title]) =>
+          link(type, icon, title, () => openApproved(projectId, type, brief.since)),
+        ),
     });
   const assumptions = of('assumption');
   if (assumptions.length)

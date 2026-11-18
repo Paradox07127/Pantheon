@@ -976,6 +976,61 @@ it('computes tasks, edges and milestones from lead plans and their sessions', as
   expect(board.risks).toEqual([{ text: 'The export format may change', kind: 'risk' }]);
 });
 
+it('carries the reason a lead gave for running a lane in parallel, and nothing for a lane without one', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [
+        { id: 'core', title: 'Core', fanout_reason: 'The formats share no files' },
+        { id: 'ui', title: 'UI' },
+      ],
+      tasks: [
+        {
+          id: 'a',
+          title: 'Serve exports',
+          goal: 'Exports download',
+          lane: 'core',
+          depends_on: [],
+          source: ['Plan the export feature'],
+          scope: ['src/export'],
+          acceptance: ['pnpm test'],
+        },
+        {
+          id: 'b',
+          title: 'Add a download button',
+          goal: 'Users can click it',
+          lane: 'ui',
+          depends_on: [],
+          source: ['the export feature'],
+          scope: ['src/ui'],
+          acceptance: ['pnpm test'],
+        },
+      ],
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    {
+      id: `session:${lead.id}`,
+      role: 'lead',
+      project_id: f.project.id,
+      session_id: lead.id,
+      expires_at: f.store.now() + 60000,
+    },
+  );
+
+  expect(f.control.boardView(user, f.project.id, 1).lanes).toStrictEqual([
+    { id: `${lead.id}:core`, title: 'Core', fanout_reason: 'The formats share no files' },
+    { id: `${lead.id}:ui`, title: 'UI' },
+  ]);
+});
+
 it('counts a task done and its dependents unblocked only once every live session of it merged', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');

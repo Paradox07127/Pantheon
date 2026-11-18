@@ -279,6 +279,18 @@ describe('board canvas bands', () => {
     expect(names.map((n) => n.props.title)).toEqual(['API', 'UI']);
   });
 
+  it("names a lane after its title and the lead's reason for running it in parallel", () => {
+    const model = mixed();
+    model.lanes[0]!.fanout_reason = 'Endpoints share no files';
+    const lanes = call(named(canvas({ model }).value, 'Lanes'));
+    const boxes = nodes(lanes).filter((n) => n.key === 'api' || n.key === 'ui');
+    expect(boxes.map((n) => [n.props.role, n.props['aria-label']])).toEqual([
+      ['group', 'API, Endpoints share no files'],
+      [undefined, undefined],
+    ]);
+    expect(nodes(lanes).some((n) => n.props.text === 'Endpoints share no files')).toBe(true);
+  });
+
   it('gives a discarded row its own segment, so the bar holds every task the total counts', () => {
     const model = board([
       task('m', { lane_id: 'api', state: 'merged', status: 'done' }),

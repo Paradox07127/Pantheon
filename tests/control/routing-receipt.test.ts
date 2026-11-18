@@ -170,6 +170,84 @@ it('marks a turn that asked the user a question as asked', async () => {
   expect(turn.routing).toEqual({ kind: 'asked' });
 });
 
+/** A user's own plan change for the assistant's plan, made ready before the turn and run during it. */
+const userChanges: [string, (f: Fixture, assistant: string) => () => unknown][] = [
+  [
+    'adds a task with a plan edit',
+    (f, assistant) => () =>
+      f.call('board.plan.edit', {
+        project_id: f.project.id,
+        lead_session_id: assistant,
+        base_version: f.store.must<BoardPlan>('board_plans', assistant).plan_version,
+        ops: [{ type: 'add_task', task: task('mine', 'core') }],
+      }),
+  ],
+  [
+    'accepts a proposal that adds a lane',
+    (f, assistant) => {
+      f.call('workflow.policy.set', { project_id: f.project.id, plan_changes: 'confirm' });
+      const { proposal_id } = f.call<{ proposal_id: string }>(
+        'board.plan.propose',
+        {
+          project_id: f.project.id,
+          base_version: f.store.must<BoardPlan>('board_plans', assistant).plan_version,
+          reason: 'Exports need their own lane',
+          ops: [
+            { type: 'add_lane', lane: lanes.export },
+            { type: 'add_task', task: task('csv', 'export') },
+          ],
+        },
+        null,
+        leadOf(f, assistant),
+      );
+      return () =>
+        f.call('board.plan.proposal.resolve', {
+          project_id: f.project.id,
+          lead_session_id: assistant,
+          proposal_id,
+          decision: 'accept',
+        });
+    },
+  ],
+];
+
+it.each(userChanges)(
+  'marks a turn that only answered as answered when the user %s while it runs',
+  async (_, prepare) => {
+    const f = await workbenchFixture();
+    const assistant = await askedAssistant(f);
+    writePlan(f, assistant, [lanes.core], [task('a', 'core')]);
+    const change = prepare(f, assistant);
+
+    const turn = await heldTurn(f, change);
+
+    expect(turn.routing).toEqual({ kind: 'answered' });
+  },
+);
+
+it('counts only the lane and tasks the assistant added when the user adds a task in the same turn', async () => {
+  const f = await workbenchFixture();
+  const assistant = await askedAssistant(f);
+  writePlan(f, assistant, [lanes.core], [task('a', 'core')]);
+
+  const turn = await heldTurn(f, (sessionId) => {
+    f.call('board.plan.edit', {
+      project_id: f.project.id,
+      lead_session_id: sessionId,
+      base_version: f.store.must<BoardPlan>('board_plans', sessionId).plan_version,
+      ops: [{ type: 'add_task', task: task('mine', 'core') }],
+    });
+    writePlan(
+      f,
+      sessionId,
+      [lanes.core, lanes.export],
+      [task('a', 'core'), task('mine', 'core'), task('csv', 'export')],
+    );
+  });
+
+  expect(turn.routing).toEqual({ kind: 'new_plan', lane_id: 'export', task_ids: ['csv'] });
+});
+
 it('steers the assistant once with a message that names the lane the user routes to', async () => {
   const f = await workbenchFixture();
   const assistant = await askedAssistant(f);
