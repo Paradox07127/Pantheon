@@ -21,7 +21,7 @@ import {
   type ControlContext,
   type Preparers,
 } from './context.js';
-import { baselineRuntime, sourcing } from './baseline.js';
+import { baselineRuntime, sourceReasons } from './baseline.js';
 import { collectTextCounts } from './baseline-facts.js';
 import { runtime } from './admission.js';
 import { runGit } from './git.js';
@@ -276,16 +276,17 @@ export const projectIntroPreparers: Preparers = {
         (feature, index) => [`features[${index}].sources`, feature.sources] as const,
       ),
     ] as const;
-    const sourced = await sourcing(
+    const reason = await sourceReasons(
       roots,
       fields.flatMap(([, refs]) => refs),
     );
-    for (const [field, refs] of fields)
-      requireThat(
-        sourced(refs),
-        'invalid_input',
-        `${field}: at least one source must resolve inside a project root`,
-      );
+    for (const [field, refs] of fields) {
+      requireThat(refs.length > 0, 'invalid_input', `${field}: at least one source is required`);
+      for (const ref of refs) {
+        const refused = reason(ref);
+        requireThat(refused === undefined, 'invalid_input', `${field}: ${refused}`);
+      }
+    }
     const modules = input.modules.map((module, index) => {
       const root =
         !path.isAbsolute(module.path) &&

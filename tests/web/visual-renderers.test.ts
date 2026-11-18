@@ -60,6 +60,9 @@ const xy = vi.hoisted(() => ({
   ReactFlow: function ReactFlow() {
     return null;
   },
+  MiniMap: function MiniMap() {
+    return null;
+  },
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }));
 vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', () => xy);
@@ -119,6 +122,12 @@ function mount<T>(body: () => T) {
   hosts.push(h);
   h.render();
   return h;
+}
+
+// Nothing is laid out here, so a test gives the measured box its size before the draw reads it.
+function sized(h: HookHost<any>, width: number, height: number) {
+  const box = find(h.value, (n) => n.props.ref?.current).props.ref.current;
+  Object.defineProperties(box, { clientWidth: { value: width }, clientHeight: { value: height } });
 }
 
 // Dynamic imports take more than a few microtasks to land.
@@ -385,6 +394,48 @@ describe('Mermaid diagram', () => {
     const svg = find(h.value, (n) => n.props.dangerouslySetInnerHTML);
     expect(svg.props.dangerouslySetInnerHTML.__html).toBe('<svg data-drawn="yes"></svg>');
   });
+
+  it.each([
+    [
+      'fits a diagram into its box when that shrinks it no further than two thirds',
+      '0 0 1500 600',
+      [1200, 480],
+    ],
+    ['draws a larger diagram at two thirds and scrolls its box', '-8 -8 3000 900', [2000, 600]],
+    ['never enlarges a small diagram', '0 0 300 150', [300, 150]],
+  ])('%s', async (_name, viewBox, [width, height]) => {
+    mm.render.mockResolvedValueOnce({ svg: `<svg viewBox="${viewBox}"></svg>` });
+    const spec = { source: 'graph LR\na-->b' };
+    const h = mount(() => MermaidDiagram({ spec, height: 720 }));
+    sized(h, 1200, 720);
+    await settle(h);
+    const drawn = find(h.value, (n) => n.props.dangerouslySetInnerHTML);
+    expect(drawn.props.style).toEqual({ width, height });
+  });
+
+  it('colours notes, table rows, actors and labels from the app tokens', async () => {
+    const spec = { source: 'erDiagram\nA ||--o{ B : has' };
+    const h = mount(() => MermaidDiagram({ spec, height: 280 }));
+    await settle(h);
+    const { themeVariables } = mm.initialize.mock.calls[0]![0];
+    expect(themeVariables).toMatchObject({
+      noteBkgColor: 'token(--bg)',
+      noteTextColor: 'token(--tx)',
+      noteBorderColor: 'token(--bd)',
+      rowOdd: 'token(--sf)',
+      rowEven: 'token(--sf2)',
+      attributeBackgroundColorOdd: 'token(--sf)',
+      attributeBackgroundColorEven: 'token(--sf2)',
+    });
+    for (const name of ['actorBkg', 'signalColor', 'labelBoxBkgColor', 'activationBkgColor'])
+      expect(themeVariables[name]).toMatch(/^token\(--/);
+    for (const name of ['loopTextColor', 'stateLabelColor', 'labelBackgroundColor'])
+      expect(themeVariables[name]).toMatch(/^token\(--/);
+    // Every colour is a token, so none falls back to a light default.
+    const { fontFamily: _font, dropShadow, ...colours } = themeVariables;
+    expect(dropShadow).toBe('none');
+    for (const value of Object.values(colours)) expect(value).toMatch(/^token\(--[a-z0-9]+\)$/);
+  });
 });
 
 describe('graph diagram', () => {
@@ -419,7 +470,7 @@ describe('graph diagram', () => {
     );
   });
 
-  it('gives dagre the size of each edge label and never fits the view below full size', async () => {
+  it('gives dagre the size of each edge label and fits the view between two thirds and full size', async () => {
     const h = mount(() => GraphDiagram({ spec, height: 280 }));
     await settle(h);
     const [edge] = dg.graphs[0]!.edges;
@@ -427,8 +478,28 @@ describe('graph diagram', () => {
     expect(edge.value.width).toBeGreaterThanOrEqual('calls'.length * 7);
     expect(edge.value.height).toBeGreaterThan(0);
     const flow = find(h.value, (n) => n.type === xy.ReactFlow);
-    expect(flow.props.fitViewOptions.minZoom).toBeGreaterThanOrEqual(1);
+    expect(flow.props.fitViewOptions).toMatchObject({ minZoom: 2 / 3, maxZoom: 1 });
   });
+
+  it.each([
+    [600, true],
+    [1200, false],
+  ])(
+    'in a card %ipx wide, a graph that outgrows it at two thirds shows a map of the whole: %s',
+    async (width, map) => {
+      const h = mount(() => GraphDiagram({ spec, height: 280 }));
+      sized(h, width, 280);
+      await settle(h);
+      const maps = nodes(h.value).filter((n) => n.type === xy.MiniMap);
+      expect(maps.length).toBe(map ? 1 : 0);
+      if (map)
+        expect(maps[0]!.props).toMatchObject({
+          pannable: true,
+          zoomable: false,
+          ariaLabel: zh('visual.graph.overview'),
+        });
+    },
+  );
 
   it('grows a card to a graph taller than it, up to the zoomed view, and keeps a short one at its size', async () => {
     const box = (h: HookHost<any>) =>

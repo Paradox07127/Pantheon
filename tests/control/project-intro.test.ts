@@ -156,11 +156,52 @@ it.each([
     'features[0].sources',
     { features: [{ title: 'Unsupported', text: 'No evidence', sources: ['file:missing.md'] }] },
   ],
+  [
+    'sources',
+    { sources: ['file:src/index.ts:9'] },
+    'sources: file:src/index.ts:9 is past the end of src/index.ts (2 lines)',
+  ],
+  [
+    'sources',
+    { sources: ['file:missing.ts:3', 'file:README.md'] },
+    'sources: file:missing.ts:3 does not exist',
+  ],
+  [
+    'sources',
+    { sources: ['file:src/untracked.ts'] },
+    'sources: file:src/untracked.ts is not tracked by git at HEAD',
+  ],
+  [
+    'features[0].sources',
+    {
+      features: [
+        {
+          title: 'Read notes',
+          text: 'Read a note.',
+          sources: ['file:src/index.ts:1', 'file:README.md:2'],
+        },
+      ],
+    },
+    'features[0].sources: file:README.md:2 is past the end of README.md (1 lines)',
+  ],
+  [
+    'features[0].sources',
+    {
+      features: [
+        {
+          title: 'Read notes',
+          text: 'Read a note.',
+          sources: ['file:README.md', 'file:src/untracked.ts:1'],
+        },
+      ],
+    },
+    'features[0].sources: file:src/untracked.ts:1 is not tracked by git at HEAD',
+  ],
 ])(
   'refuses invalid %s with a field-specific reason and keeps the stored introduction',
-  async (field, patch) => {
+  async (field, patch, reason?: string) => {
     const f = await setup();
-    await expect(() => f.submit(patch)).rejects.toThrow(field);
+    await expect(() => f.submit(patch)).rejects.toThrow(reason ?? field);
     expect((await f.read()).intro).toBeNull();
   },
 );

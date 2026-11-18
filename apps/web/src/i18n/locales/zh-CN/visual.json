@@ -33,6 +33,7 @@
   "visual.error.failed": "图没有画出来",
   "visual.error.fix": "让 agent 修",
   "visual.error.invalid": "规格没通过校验：{message}",
+  "visual.graph.overview": "整张图",
   "visual.kind.graph": "关系图",
   "visual.kind.html": "沙箱页面",
   "visual.kind.kline": "K 线",

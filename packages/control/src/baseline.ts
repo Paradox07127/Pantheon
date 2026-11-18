@@ -163,6 +163,90 @@ export async function sourcing(
   };
 }
 
+const lineCount = (text: Buffer): number =>
+  text.length === 0 ? 0 : text.toString().split('\n').length - (text.at(-1) === 10 ? 1 : 0);
+
+/**
+ * Checks each reference on its own: a file must be tracked at HEAD in a git root, or be a regular
+ * file in any other root, and its line must fall inside it; a commit must name a commit in a root.
+ * The returned function gives the reason a reference fails, or undefined when it resolves.
+ */
+export async function sourceReasons(
+  roots: string[],
+  refs: string[],
+): Promise<(ref: string) => string | undefined> {
+  const exists = await sourcing(
+    roots,
+    commitRefs(refs).map((commit) => `commit:${commit}`),
+  );
+  const files = refs.flatMap((ref) => {
+    const match = /^file:(.+?)(?::([1-9][0-9]*))?$/.exec(ref);
+    const root = match && roots.find((root) => located(root, match[1]!));
+    return match ? [{ ref, file: match[1]!, line: Number(match[2] ?? 0), root }] : [];
+  });
+  const reasons = new Map<string, string | undefined>();
+  await Promise.all(
+    roots.map(async (root) => {
+      const here = files.filter((entry) => entry.root === root);
+      if (!here.length) return;
+      const lines = new Map<string, number | undefined>();
+      if (await committed(root)) {
+        // A path with a newline cannot be one line of batch input.
+        const named = [...new Set(here.map((entry) => entry.file))].filter(
+          (file) => !file.includes('\n'),
+        );
+        const input = Buffer.from(named.map((file) => `HEAD:./${file}\n`).join(''));
+        const read = await runGit(root, ['cat-file', '--batch'], input, true);
+        let offset = 0;
+        for (const file of named) {
+          if (read.exit_code !== 0) break;
+          const end = read.stdout.indexOf(10, offset);
+          const header = /^[0-9a-f]+ (\w+) (\d+)$/.exec(
+            read.stdout.subarray(offset, end).toString(),
+          );
+          offset = end + 1;
+          if (!header) continue;
+          const size = Number(header[2]);
+          if (header[1] === 'blob')
+            lines.set(file, lineCount(read.stdout.subarray(offset, offset + size)));
+          offset += size + 1;
+        }
+        for (const entry of here) {
+          const count = lines.get(entry.file);
+          reasons.set(
+            entry.ref,
+            count === undefined
+              ? `${entry.ref} is not tracked by git at HEAD`
+              : entry.line > count
+                ? `${entry.ref} is past the end of ${entry.file} (${count} lines)`
+                : undefined,
+          );
+        }
+        return;
+      }
+      for (const entry of here) {
+        const target = realpathSync(path.resolve(root, entry.file));
+        const count = lstatSync(target).isFile() ? lineCount(readFileSync(target)) : undefined;
+        reasons.set(
+          entry.ref,
+          count === undefined
+            ? `${entry.ref} is not a file`
+            : entry.line > count
+              ? `${entry.ref} is past the end of ${entry.file} (${count} lines)`
+              : undefined,
+        );
+      }
+    }),
+  );
+  return (ref) => {
+    if (ref.startsWith('file:'))
+      return reasons.has(ref) ? reasons.get(ref) : `${ref} does not exist`;
+    if (/^commit:[0-9a-fA-F]{7,40}$/.test(ref))
+      return exists([ref]) ? undefined : `${ref} does not name a commit in a project root`;
+    return `${ref} is not a file:<path>, file:<path>:<line> or commit:<sha> source`;
+  };
+}
+
 /** Task lists by root default to those of the newest submitted or confirmed baseline. */
 async function projectFacts(
   ctx: ControlContext,
