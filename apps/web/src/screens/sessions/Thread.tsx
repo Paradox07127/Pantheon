@@ -25,6 +25,7 @@ import {
   Minus,
   RefreshCw,
   Undo2,
+  User,
 } from 'lucide-react';
 import type { BoardHistory, BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
 import { MarkdownLinks } from '../../components/Markdown';
@@ -40,6 +41,13 @@ import { supports, useRuntimeStatus } from '../../data/runtime-status';
 import { useMemorySessionTurns } from '../../data/memory';
 import { reducedMotion } from '../../lib/motion';
 import { failureText, type NeedsYouState } from '../../data/needs-you';
+import {
+  openPersonalAgent,
+  personalCall,
+  personalHomeOf,
+  useBuiltInPersonalKey,
+  type PersonalCall,
+} from '../../data/personal-agent';
 import type { DaemonEvent } from '../../data/sync';
 import { pantheonTool, workspaceFile } from '../../data/tool-calls';
 import {
@@ -51,10 +59,12 @@ import {
   type RequestItem,
   type Session,
   type SessionTurn,
+  type ToolItem,
   type TranscriptItem,
   type TurnView,
 } from '../../data/transcript';
 import { t } from '../../i18n';
+import { SCREEN_NAMES } from '../../screens';
 import { useShortcut } from '../../lib/shortcuts';
 import { clockText } from '../../lib/time-text';
 import {
@@ -76,6 +86,7 @@ import type { Panel } from './inspector-model';
 import { shownInput, statusTicks, timelineNodes, type TimelineNode } from './thread-model';
 import { ThreadFind, useThreadFind } from './ThreadFind';
 import { MemoryUsed } from './MemoryUsed';
+import { PersonalNeedsList, PersonalSentLine } from './PersonalNeedsList';
 import { Items, ResolveButtons, ThreadMark, TurnWork } from './parts';
 import { showThreadTurns } from './trace';
 import { BaselineReview, PendingQuestions, RequestCard, RequestSlot } from './RequestCards';
@@ -162,6 +173,11 @@ export function Thread(props: {
     return next;
   }, [board, sessionId]);
   const turnIds = useMemo(() => new Set(turns.map((t) => t.id)), [turns]);
+  // Asked for only by a thread holding a turn a personal key sent.
+  const sentByKey = useMemo(() => turns.some((t) => t.via), [turns]);
+  const personalKey = useBuiltInPersonalKey(
+    sentByKey ? (personalHomeOf(board.projects)?.id ?? null) : null,
+  );
   const keep = (e: DaemonEvent) =>
     isSessionEvent(e, sessionId, turnIds) || isSessionApproval(e, sessionId);
   const history = useEventHistory({
@@ -460,6 +476,7 @@ export function Thread(props: {
                       statusInCompose={session?.state === 'running' && t === runningTurn}
                       forkSteps={forkSteps}
                       sessions={listedSessions}
+                      personalKey={personalKey}
                     />
                   ))}
               {(expanded ? (view?.loose.items ?? []) : loose).length > 0 && (
@@ -569,6 +586,8 @@ export function ThreadTurn(props: {
   forkSteps?: boolean;
   /** The project's listed sessions, read when a rewrite puts the turn's references back. */
   sessions?: () => readonly WorkbenchSession[];
+  /** The built-in personal agent's key; a turn it sent names the personal agent. */
+  personalKey?: string | null;
 }) {
   const { view, listed } = props;
   const { turn } = view;
@@ -585,7 +604,19 @@ export function ThreadTurn(props: {
     (s) => s.board?.sessions.find((k) => k.id === turn.session_id)?.runtime ?? '',
   );
   const told = new Set<TranscriptItem>();
-  const shown = view.items.map((item) => {
+  // Only the personal agent's own thread looks for its needs-you reads and sent requests.
+  const personal: { item: ToolItem; call: PersonalCall }[] = [];
+  if (listed?.resident?.kind === 'personal')
+    for (const item of view.items)
+      if (item.kind === 'tool') {
+        const call = personalCall(item);
+        if (call) personal.push({ item, call });
+      }
+  const shown = (
+    personal.length
+      ? view.items.filter((item) => personal.every((p) => p.item !== item))
+      : view.items
+  ).map((item) => {
     const said = toldText(item);
     if (said) told.add(said);
     return said ?? item;
@@ -737,12 +768,34 @@ export function ThreadTurn(props: {
                     <span className="mono">{view.app.server}</span>
                   </span>
                 )}
-                {turn.via && (
-                  <span className="apd-from">
-                    <KeyRound aria-hidden="true" />
-                    {t({ id: 'sessions.thread.viaPersonal', defaultMessage: 'Personal agent key' })}
-                  </span>
-                )}
+                {turn.via &&
+                  (turn.via.key_id === props.personalKey ? (
+                    <span
+                      className="apd-from"
+                      role="group"
+                      aria-label={t({
+                        id: 'sessions.personalAgent.sentBy',
+                        defaultMessage: 'Sent by Personal agent',
+                      })}
+                    >
+                      <User aria-hidden="true" />
+                      <button
+                        type="button"
+                        className="pn-ref"
+                        onClick={() => void openPersonalAgent()}
+                      >
+                        {SCREEN_NAMES.personal}
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="apd-from">
+                      <KeyRound aria-hidden="true" />
+                      {t({
+                        id: 'sessions.thread.viaPersonal',
+                        defaultMessage: 'Personal agent key',
+                      })}
+                    </span>
+                  ))}
                 <div className={`ss-user${entering}`} data-find="input">
                   {turn.input}
                 </div>
@@ -787,6 +840,12 @@ export function ThreadTurn(props: {
           {spoke !== null && <span className="ss-whot">{clockText(spoke)}</span>}
         </div>
       )}
+      {personal.map(
+        ({ item, call }) =>
+          call.kind === 'sent' && (
+            <PersonalSentLine key={`sent-${item.id}`} call={call} at={item.completed_at} />
+          ),
+      )}
       {fold ? (
         <>
           {items(fold.head)}
@@ -803,6 +862,12 @@ export function ThreadTurn(props: {
         </>
       ) : (
         items(shown)
+      )}
+      {personal.map(
+        ({ item, call }) =>
+          call.kind === 'needs' && (
+            <PersonalNeedsList key={`needs-${item.id}`} items={call.items} at={call.at} />
+          ),
       )}
       {(streaming || caret) && (
         <span

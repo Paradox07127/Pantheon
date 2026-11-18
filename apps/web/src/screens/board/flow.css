@@ -152,6 +152,109 @@
 .bd-lane-n {
   font-variant-numeric: tabular-nums;
 }
+/* A plan lane's head runs across its top, over the cards; the title column starts under it. */
+.bd-lane[data-head] {
+  padding-top: 48px;
+}
+/* A lane too narrow for one row (flowLayout's headRows) puts who chose, the reason and the plan state on a second. */
+.bd-lane[data-head='2'] {
+  padding-top: 76px;
+}
+.bd-lane-h {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  height: var(--h-ctl);
+  cursor: default;
+}
+.bd-lane[data-head='2'] > .bd-lane-h {
+  flex-wrap: wrap;
+  align-content: space-between;
+  height: calc(2 * var(--h-ctl));
+}
+.bd-lane-h > :not(.bd-lane-hs),
+.bd-lane-hs > * {
+  pointer-events: auto;
+}
+.bd-lane-h > .tb-seg {
+  flex: none;
+  white-space: nowrap;
+}
+.bd-lane-hs {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  height: var(--h-ctl);
+}
+.bd-lane[data-head='2'] .bd-lane-hs {
+  flex-basis: 100%;
+}
+/* On the first row the title gives way to the depth choice, never pushes it to a row of its own. */
+.bd-lane[data-head='2'] .bd-lane-ht {
+  flex-basis: 0;
+  flex-grow: 1;
+}
+.bd-lane-ht {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 200px;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 500;
+  color: var(--tx);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bd-lane-by {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tx2);
+}
+.bd-lane-by > svg,
+.bd-lane-stop svg {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--mu);
+}
+.bd-lane-by[data-user] {
+  color: var(--tx);
+  font-weight: 500;
+}
+.bd-lane-by[data-user] > svg {
+  color: var(--tx);
+}
+.bd-lane-why {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.bd-lane-stop {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--tx2);
+}
+.bd-lane-stop .chip svg {
+  color: var(--wait);
+}
+.bd-lane-at {
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
 .bd-lane-bar {
   display: flex;
   gap: 2px;

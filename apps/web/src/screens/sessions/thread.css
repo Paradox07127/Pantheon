@@ -1171,3 +1171,119 @@ button.tchip:hover {
   text-decoration: underline 2px var(--ink);
   text-underline-offset: 3px;
 }
+/* What waited when the personal agent read it, by project; each row opens the item in its project. */
+.pn {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-1);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.pn-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-ctl);
+  padding: 0 var(--sp-2);
+  color: var(--mu);
+}
+.pn-h > time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.pn-sep {
+  margin: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-top: var(--hair) solid var(--bd2);
+}
+.pn-g {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-ctl);
+  padding: 0 var(--sp-2);
+}
+.pn-g > b {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.pn-n {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pn-r {
+  display: grid;
+  grid-template-columns: 16px 120px minmax(0, 1fr) 88px 48px;
+  align-items: center;
+  column-gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.pn-r:hover {
+  background: var(--sel);
+}
+.pn-r:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.pn-r > :last-child {
+  text-align: right;
+}
+.pn-k {
+  display: inline-flex;
+}
+.pn-kd {
+  color: var(--tx);
+  font-weight: 500;
+}
+.pn-more {
+  grid-column: 2 / -1;
+  color: var(--mu);
+}
+/* A request the personal agent sent: to which agent, in which project, both links. */
+.pn-sent {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.pn-sent > svg {
+  flex: none;
+  color: var(--mu);
+}
+.pn-sent > span:first-of-type {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pn-ref {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--bd3);
+  text-underline-offset: 3px;
+}
+.pn-ref:hover {
+  text-decoration-color: var(--tx);
+}
+.pn-ref:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}

@@ -305,5 +305,19 @@
   "board.setup.folders": "已提交的文件夹",
   "board.setup.intro.step": "项目介绍",
   "board.setup.charts": "解释图表",
-  "board.setup.summary": "总结"
+  "board.setup.summary": "总结",
+  "board.needs.estimate.label": "{lane} 的估算",
+  "board.needs.estimate.sessions": "会话",
+  "board.needs.estimate.sessionsLabel": "会话：{count}",
+  "board.needs.estimate.writers": "编写",
+  "board.needs.estimate.reviewers": "审查",
+  "board.needs.estimate.planReview": "计划审查",
+  "board.needs.estimate.verification": "验证",
+  "board.needs.estimate.tokens": "Token",
+  "board.needs.estimate.history": "{runs, plural, other {输入加输出，来自过去 # 次运行}}",
+  "board.needs.estimate.budgetTokens": "输入，来自预算",
+  "board.needs.estimate.time": "时间",
+  "board.needs.estimate.budgetTime": "来自预算",
+  "board.needs.estimate.unknown": "未知",
+  "board.needs.estimate.tasks": "{count, plural, other {# 个任务}}"
 }

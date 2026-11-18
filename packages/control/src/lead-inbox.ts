@@ -8,6 +8,7 @@ import {
   type BoardPlan,
   type LeadNote,
   type LeadQuestion,
+  type PendingPlanEdit,
   type PlanEditOp,
   type Session,
   type SessionTurn,
@@ -263,6 +264,17 @@ export function opText(op: Exclude<PlanEditOp, { type: 'resolve_edit' }>): strin
   }
 }
 
+/** A user's refute of a plan assumption, as the lead reads it, with the tasks the plan rests on it now. */
+export function refuteText(
+  plan: BoardPlan,
+  refute: NonNullable<PendingPlanEdit['refutes']>[number],
+): string {
+  const affects = plan.assumptions.find(
+    (assumption) => assumption.id === refute.assumption_id,
+  )?.affects;
+  return `the user says assumption ${refute.assumption_id} "${refute.text}" is wrong: ${refute.instead}; tasks resting on it: ${affects?.join(', ') || 'none'}`;
+}
+
 /** The task's state and generation, as since-last texts compare them. */
 function taskStateText(ctx: ControlContext, plan: BoardPlan, taskId: string): string {
   const lead = ctx.store.get<Session>('sessions', plan.id);
@@ -465,19 +477,24 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
     const editId = note.edit?.edit_id ?? note.edit_id,
       ops = (note.edit?.ops ?? [])
         .flatMap((op) => (op.type === 'resolve_edit' ? [] : [`\n- ${opText(op)}`]))
+        .join(''),
+      refutes = (note.edit?.refutes ?? [])
+        .map((refute) => `\n- ${refuteText(plan, refute)}`)
         .join('');
     const happened =
       kind === 'user_message'
         ? `the user wrote to the session of task ${taskRef}: "${text}"`
-        : note.edit_state === 'pending'
-          ? `the user asks to change tasks that have open sessions (edit ${editId}):${ops}`
-          : note.edit_state === 'applied'
-            ? `the user changed your plan:${ops}`
-            : note.edit_state === 'withdrawn'
-              ? `the user withdrew edit ${editId}; your plan stays as it is`
-              : note.edit_state === 'proposal' && note.decision
-                ? `the user${note.via ? "'s personal agent" : ''} decided your proposal ${note.proposal_id}${note.via ? ' for the user' : ''}: ${note.decision}${proposalDetail(note, text)}`
-                : text;
+        : note.edit_state === 'pending' && refutes
+          ? `the user asks to change your plan (edit ${editId}):${ops}${refutes}`
+          : note.edit_state === 'pending'
+            ? `the user asks to change tasks that have open sessions (edit ${editId}):${ops}`
+            : note.edit_state === 'applied'
+              ? `the user changed your plan:${ops}`
+              : note.edit_state === 'withdrawn'
+                ? `the user withdrew edit ${editId}; your plan stays as it is`
+                : note.edit_state === 'proposal' && note.decision
+                  ? `the user${note.via ? "'s personal agent" : ''} decided your proposal ${note.proposal_id}${note.via ? ' for the user' : ''}: ${note.decision}${proposalDetail(note, text)}`
+                  : text;
     lines = [
       startTag([...own, ['task', note.task_id]]),
       `What happened: ${happened}`,
@@ -485,7 +502,7 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       `How to handle: ${note.via ? 'the user let their personal agent make this decision.' : "these are the user's own actions."} ${
         kind === 'user_message'
           ? 'The session is handling it; change the plan only if the message changes the task, and do not answer it again yourself.'
-          : `Read your current plan; ${editId ? `resolve edit ${editId} with edit_board resolve_edit and a reason only if it is still pending, and ` : ''}build on the plan as it is for the rest.`
+          : `Read your current plan; ${editId ? `resolve edit ${editId} with edit_board resolve_edit and a reason only if it is still pending, and ` : ''}build on the plan as it is for the rest.${refutes ? ' For an assumption the user says is wrong: apply the edit with resolve_edit and change the tasks resting on it in the same edit_board call, or reject it with the reason it stands.' : ''}`
       }${note.via ? NOT_USER_WORDS : ''}`,
     ];
   } else if (kind === 'usage_reset')

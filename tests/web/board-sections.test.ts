@@ -11,7 +11,7 @@ import { zh } from './i18n-setup.js';
 
 describe('board view storage', () => {
   it.each<[string, (string | null)[], (key: string | null) => string | null]>([
-    ['reads each stored view key back', ['now', 'history', 'canvas'], (key) => key],
+    ['reads each stored view key back', ['goals', 'now', 'history', 'canvas'], (key) => key],
     [
       'opens the now view for a former tab key',
       ['progress', 'milestones', 'tasks', 'commitments', 'quality', 'usage'],
@@ -273,6 +273,13 @@ describe('board refresh', () => {
       'board.plan_proposal_resolved',
       'improvement.status_changed',
       'lead.question_asked',
+    ]),
+    ...each('reads the board again when a goal changes: ', [
+      'goal.created',
+      'goal.revised',
+      'goal.reordered',
+      'goal.archived',
+      'goal.restored',
     ]),
   ])('%s', (_name, kinds) => {
     for (const kind of kinds) expect(changesBoard(kind)).toBe(true);

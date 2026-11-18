@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -5,10 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { checkTask } from '../tests/eval/lib/check.mjs';
 import { jobOrder, parseConditions } from '../tests/eval/lib/conditions.mjs';
 import { render, summarize } from '../tests/eval/lib/report.mjs';
-import { loadTasks } from '../tests/eval/lib/tasks.mjs';
+import { loadTasks, missingCommits } from '../tests/eval/lib/tasks.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [command, ...names] = process.argv.slice(2);
+// The frozen commits predate this repository's public history; a separate repository can hold them.
+const historyRoot = path.resolve(process.env.PANTHEON_EVAL_HISTORY ?? repoRoot);
 
 const rule = {
   confidence: 0.95,
@@ -25,7 +28,19 @@ const FROZEN_SETTLE_MS = 3600000;
 // Real-model runs per invocation without --over-cap.
 const REAL_RUN_CAP = 5;
 const usage =
-  'usage: node scripts/eval.mjs check [task-name...] | run --runtime fixture|reference|codex|claude [--task <name>]... [--condition <name>]... [--model <id>] [--repetitions <n>] [--over-cap] [--workspace <dir>] [--out <dir>] | report <run-dir>';
+  'usage: node scripts/eval.mjs check [task-name...] | run --runtime fixture|reference|codex|claude [--task <name>]... [--condition <name>]... [--model <id>] [--repetitions <n>] [--over-cap] [--workspace <dir>] [--out <dir>] | report <run-dir> | history <bundle> <dir>';
+
+/** Returns the tasks; exits with how to supply them when historyRoot lacks one of their commits. */
+const withCommits = (tasks) => {
+  const missing = missingCommits(historyRoot, tasks);
+  if (missing.length === 0) return tasks;
+  for (const { task, field, commit } of missing)
+    console.error(`task ${task}: ${field} ${commit} is not in ${historyRoot}`);
+  console.error(
+    'The frozen commits are not in the public history of this repository. Build a repository that holds them with `node scripts/eval.mjs history <bundle> <dir>`, then set PANTHEON_EVAL_HISTORY=<dir>.',
+  );
+  process.exit(2);
+};
 
 const writeReport = (out, runs, rule) => {
   const report = render(summarize(runs, rule));
@@ -85,6 +100,10 @@ if (command === 'run') {
   } catch (error) {
     refuse(error.message);
   }
+  const frozen =
+    runtime === 'fixture'
+      ? []
+      : loadTasks(path.join(repoRoot, 'tests/eval/tasks'), values('--task'));
   // Each job is a task, a condition, a repetition and the runOne spec for a workspace.
   const jobs =
     runtime === 'fixture'
@@ -106,20 +125,16 @@ if (command === 'run') {
             }),
           }),
         )
-      : jobOrder(
-          loadTasks(path.join(repoRoot, 'tests/eval/tasks'), values('--task')),
-          named,
-          repetitions,
-        ).map(({ task, condition, repetition }) => ({
+      : jobOrder(frozen, named, repetitions).map(({ task, condition, repetition }) => ({
           task: task.name,
           condition,
           repetition,
           spec: () => ({
-            createRepo: frozenTasks.createRepo(repoRoot, task),
+            createRepo: frozenTasks.createRepo(historyRoot, task),
             adapters: [
               new FixtureAdapter(),
               runtime === 'reference'
-                ? frozenTasks.referenceAdapter(repoRoot, task)
+                ? frozenTasks.referenceAdapter(historyRoot, task)
                 : runtime === 'codex'
                   ? new CodexAdapter()
                   : new ClaudeAdapter(),
@@ -130,7 +145,7 @@ if (command === 'run') {
             task: frozenTasks.planTask(task, runtime, model),
             gate: frozenTasks.gate,
             condition,
-            hiddenCheck: frozenTasks.hiddenCheck(repoRoot, task),
+            hiddenCheck: frozenTasks.hiddenCheck(historyRoot, task),
             settleMs: FROZEN_SETTLE_MS,
             quietMs: FROZEN_QUIET_MS,
           }),
@@ -139,6 +154,7 @@ if (command === 'run') {
     refuse(
       `refused: ${jobs.length} real runs is above ${REAL_RUN_CAP}; name fewer tasks, conditions or repetitions, or pass --over-cap`,
     );
+  withCommits(frozen);
   const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, '') + 'Z';
   const out = path.resolve(
     repoRoot,
@@ -234,14 +250,34 @@ if (command === 'report' && names[0]) {
   process.exit(0);
 }
 
+if (command === 'history' && names.length === 2) {
+  const [bundle, target] = names.map((name) => path.resolve(name));
+  if (fs.existsSync(target) && fs.readdirSync(target).length > 0) {
+    console.error(`refused: ${target} is not empty`);
+    process.exit(2);
+  }
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+  );
+  execFileSync('git', ['init', '-q', '--bare', target], { env });
+  execFileSync('git', ['fetch', '-q', bundle, 'refs/*:refs/bundle/*'], { cwd: target, env });
+  const missing = missingCommits(target, loadTasks(path.join(repoRoot, 'tests/eval/tasks')));
+  for (const { task, field, commit } of missing)
+    console.error(`task ${task}: ${field} ${commit} is not in ${bundle}`);
+  if (missing.length) process.exit(1);
+  console.log(target);
+  console.log(`Set PANTHEON_EVAL_HISTORY=${target} to read the frozen commits from it.`);
+  process.exit(0);
+}
+
 if (command !== 'check') {
   console.error(usage);
   process.exit(2);
 }
 
 let rejected = false;
-for (const task of loadTasks(path.join(repoRoot, 'tests/eval/tasks'), names)) {
-  const result = checkTask(repoRoot, task);
+for (const task of withCommits(loadTasks(path.join(repoRoot, 'tests/eval/tasks'), names))) {
+  const result = checkTask(repoRoot, historyRoot, task);
   console.log(
     `${result.name}: base ${result.base}, source ${result.source}${result.ok ? '' : ' — rejected'}`,
   );

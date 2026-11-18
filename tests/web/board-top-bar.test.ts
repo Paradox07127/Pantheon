@@ -389,11 +389,13 @@ describe('the board top bar in a narrow window', () => {
     const tabs = labelled(bar(mount(() => view()).value).props.children, zh('board.view.label'));
     const radios = nodes(tabs.props.children).filter((n) => n.props.value !== undefined);
     expect(radios.map((r) => r.props['aria-label'])).toEqual([
+      zh('board.view.goals'),
       zh('board.history.span.now'),
       zh('board.history.span.history'),
       zh('board.view.canvas'),
     ]);
     expect(radios.map((r) => text(find(r, (n) => n.props.className === 'tb-lbl')))).toEqual([
+      zh('board.view.goals'),
       zh('board.history.span.now'),
       zh('board.history.span.history'),
       zh('board.view.canvas'),

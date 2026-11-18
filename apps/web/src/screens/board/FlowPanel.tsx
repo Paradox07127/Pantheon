@@ -1,5 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+} from 'react';
 import { flushSync } from 'react-dom';
+import { Radio } from '@base-ui/react/radio';
+import { RadioGroup } from '@base-ui/react/radio-group';
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -13,10 +23,11 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
-import { Minus, Plus, Trash } from 'lucide-react';
+import { Check, Crown, Minus, Plus, Settings2, Trash, User, type LucideProps } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { Tip } from '../../components/Tip';
+import { toast } from '../../components/Toast';
 import { useNow } from '../../data/needs-you';
 import {
   addDraftEdit,
@@ -35,6 +46,7 @@ import {
 } from '../../data/plan-edit';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { dayText } from '../../lib/time-text';
 import { activityLine } from './activity';
 import {
   MAX_USER_ZOOM,
@@ -216,16 +228,57 @@ function laneCount(task: Task): LaneCount | null {
   }
 }
 
+type Lane = BoardModel['lanes'][number];
+type Depth = NonNullable<Lane['depth']>;
+
+const DEPTHS: { key: Depth; label: () => string }[] = [
+  {
+    key: 'just_do',
+    label: () => t({ id: 'board.canvas.lane.depth.justDo', defaultMessage: 'Just do it' }),
+  },
+  {
+    key: 'plan_first',
+    label: () => t({ id: 'board.canvas.lane.depth.planFirst', defaultMessage: 'Plan first' }),
+  },
+  {
+    key: 'spec_first',
+    label: () => t({ id: 'board.canvas.lane.depth.specFirst', defaultMessage: 'Spec first' }),
+  },
+];
+
+const CHOSEN_BY: Record<
+  NonNullable<Lane['depth_by']>,
+  { Icon: ComponentType<LucideProps>; label: () => string }
+> = {
+  lead: {
+    Icon: Crown,
+    label: () => t({ id: 'board.canvas.lane.by.lead', defaultMessage: 'Lead' }),
+  },
+  user: { Icon: User, label: () => t({ id: 'board.canvas.lane.by.user', defaultMessage: 'You' }) },
+  pantheon: {
+    Icon: Settings2,
+    label: () => t({ id: 'board.canvas.lane.by.pantheon', defaultMessage: 'Pantheon' }),
+  },
+};
+
 // Band titles, bars, counts and separators sit under the flow and follow its pan and zoom.
 // A stack counts as its tasks; the milestone and drafted tasks do not count.
 function Lanes({
   layout,
   tasks,
   stacks,
+  heads,
+  now,
+  onDepth,
 }: {
   layout: FlowLayout;
   tasks: ReadonlyMap<string, Task>;
   stacks: ReadonlyMap<string, readonly string[]>;
+  /** The plan lanes by id, whose bands get a head with their depth; empty in another grouping. */
+  heads: ReadonlyMap<string, Lane>;
+  now: number;
+  /** Sets a lane's depth; absent on a read-only chart. */
+  onDepth?: (laneId: string, depth: Depth) => void;
 }) {
   const { x, y, zoom } = useViewport();
   return (
@@ -239,18 +292,87 @@ function Lanes({
         }
         const merged = counts.get('merged') ?? 0;
         const total = counted.length;
+        const head = lane.id === null ? undefined : heads.get(lane.id);
+        const by = head?.depth_by && CHOSEN_BY[head.depth_by];
+        const reason =
+          head?.depth_by === 'lead'
+            ? head.depth_reason
+            : head?.depth_by === 'pantheon'
+              ? t({
+                  id: 'board.canvas.lane.reason.pantheon',
+                  defaultMessage: 'Holds a top-tier task',
+                })
+              : undefined;
         return (
           <div
             key={lane.id ?? ''}
             className="bd-lane"
             style={{ top: lane.y, height: lane.height, width: layout.width }}
+            data-head={head ? layout.headRows : undefined}
             {...(lane.fanout_reason
               ? { role: 'group', 'aria-label': listText(lane.title, lane.fanout_reason) }
               : {})}
           >
-            <span className="bd-lane-t" title={lane.title || undefined}>
-              {lane.title}
-            </span>
+            {head ? (
+              <div className="bd-lane-h">
+                <span className="bd-lane-ht" title={lane.title || undefined}>
+                  {lane.title}
+                </span>
+                <RadioGroup<Depth | null>
+                  className="tb-seg"
+                  aria-label={t(
+                    { id: 'board.canvas.lane.depth.label', defaultMessage: 'Depth of {lane}' },
+                    { lane: lane.title },
+                  )}
+                  value={head.depth ?? null}
+                  disabled={!onDepth}
+                  onValueChange={(depth) => depth && onDepth?.(head.id, depth)}
+                >
+                  {DEPTHS.map((d) => (
+                    <Radio.Root key={d.key} value={d.key}>
+                      {d.label()}
+                    </Radio.Root>
+                  ))}
+                </RadioGroup>
+                <span className="bd-lane-hs">
+                  {by && (
+                    <span className="bd-lane-by" data-user={head.depth_by === 'user' || undefined}>
+                      <by.Icon aria-hidden="true" />
+                      {by.label()}
+                    </span>
+                  )}
+                  {reason && <Clip text={reason} className="bd-lane-why" />}
+                  {head.stop && (
+                    <span className="bd-lane-stop">
+                      {head.stop.state === 'waiting' ? (
+                        <span className="chip">
+                          <User aria-hidden="true" />
+                          {t({
+                            id: 'board.canvas.lane.stop.waiting',
+                            defaultMessage: 'Waits for your plan approval',
+                          })}
+                        </span>
+                      ) : (
+                        <>
+                          <Check aria-hidden="true" />
+                          {t({
+                            id: 'board.canvas.lane.stop.approved',
+                            defaultMessage: 'Plan approved',
+                          })}
+                          <span className="bd-lane-at">
+                            {dayText(head.stop.at, now, { time: true })}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ) : (
+              <span className="bd-lane-t" title={lane.title || undefined}>
+                {lane.title}
+              </span>
+            )}
             {lane.fanout_reason && <Clip text={lane.fanout_reason} className="bd-lane-r" />}
             <span
               className="bd-lane-bar"
@@ -469,6 +591,10 @@ function FlowCanvas({
   }, [width, zoom, key, setViewport]);
 
   const tasks = useMemo(() => new Map(drafted.model.tasks.map((t) => [t.id, t])), [drafted]);
+  const heads = useMemo(
+    () => new Map(group === 'lane' ? model.lanes.map((l) => [l.id, l]) : []),
+    [model.lanes, group],
+  );
   const stacks = useMemo(
     () =>
       new Map(
@@ -819,7 +945,30 @@ function FlowCanvas({
         >
           {width > 0 && (
             <>
-              <Lanes layout={layout} tasks={tasks} stacks={stacks} />
+              <Lanes
+                layout={layout}
+                tasks={tasks}
+                stacks={stacks}
+                heads={heads}
+                now={now}
+                {...(tell && {
+                  // The board's lane ids are `<lead session id>:<lane id>`.
+                  onDepth: async (laneId: string, depth: Depth) => {
+                    const at = laneId.indexOf(':');
+                    const failure = await tell.run(
+                      'board.lane.depth.set',
+                      {
+                        project_id: projectId,
+                        lead_session_id: laneId.slice(0, at),
+                        lane_id: laneId.slice(at + 1),
+                        depth,
+                      },
+                      null,
+                    );
+                    if (failure) toast({ title: failure, kind: 'failure' });
+                  },
+                })}
+              />
               <ReactFlow<ChartNode, FlowEdge>
                 nodes={nodes}
                 edges={edges}

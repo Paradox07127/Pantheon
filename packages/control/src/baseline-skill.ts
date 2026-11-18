@@ -73,6 +73,8 @@ pipes. To work in a folder, write its absolute path as given: \`git -C <folder> 
    - Note statements in the docs that the code or git history contradicts.
    - For each git folder, choose gate commands from scripts, CI steps and
      instruction files. Cite where each command comes from.
+     If Pantheon reports that a command failed in a fresh worktree, fix it or
+     say why it cannot run here; you get this once.
 5. Write the questions as question cards.
    - Each question has a header of at most 12 characters and 2 to 4 options.
      Each option has a label and a description of one line.

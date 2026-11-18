@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -48,4 +49,23 @@ export function loadTasks(root, names) {
     if (!task) throw new Error(`no task named ${name} under ${root}`);
     return task;
   });
+}
+
+/** The base and source commits of the tasks that the git directory history does not hold. */
+export function missingCommits(history, tasks) {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+  );
+  return tasks.flatMap((task) =>
+    ['base_commit', 'source_commit']
+      .filter(
+        (field) =>
+          spawnSync('git', ['cat-file', '-e', `${task[field]}^{commit}`], {
+            cwd: history,
+            env,
+            stdio: 'ignore',
+          }).status !== 0,
+      )
+      .map((field) => ({ task: task.name, field, commit: task[field] })),
+  );
 }

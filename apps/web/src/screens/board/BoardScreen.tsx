@@ -37,6 +37,7 @@ import { CanvasPage } from './CanvasPage';
 import { Milestones } from './Charts';
 import { EditBar, EditButton, setBoardEditing, useBoardEditing } from './EditMode';
 import { baselineSyncReason, type SessionDefaults } from './frame-model';
+import { GoalsPage } from './GoalsPage';
 import { leadLine } from './LeadPanel';
 import { LeadPlan } from './LeadPlan';
 import { HistoryPage } from './HistoryPage';
@@ -216,7 +217,8 @@ export interface BoardViewProps {
   readAt?: number | null;
   range: BoardRange;
   onRange: (range: BoardRange) => void;
-  page: BoardPage;
+  /** Null until the board read decides which view the project opens on. */
+  page: BoardPage | null;
   onPage: (page: BoardPage) => void;
   /** Reads the review metrics and role usage tables; absent without a project. */
   projectId?: string;
@@ -598,11 +600,16 @@ export function BoardView(props: BoardViewProps) {
   const [selected, setSelected] = useState<{ taskId: string; panel: TaskPanel } | null>(null);
   // The now view's chart expanded over the strips above it; held for this project while the page lives.
   const [graphFull, setGraphFull] = useState(false);
+  // The milestone the goals view opened the now view on, and whether it asked for the needs-you strip.
+  const [picked, setPicked] = useState<string | null>(null);
+  const [needsAsked, setNeedsAsked] = useState(false);
   const [selectedProject, setSelectedProject] = useState(projectId);
   if (selectedProject !== projectId) {
     setSelectedProject(projectId);
     setSelected(null);
     setGraphFull(false);
+    setPicked(null);
+    setNeedsAsked(false);
   }
   // The more menu's baseline start opens the model popover at the menu button.
   const [choosing, setChoosing] = useState(false);
@@ -633,7 +640,8 @@ export function BoardView(props: BoardViewProps) {
   }, [drawn, listed.join('\n')]);
   const pending =
     !model && (error ? <Failure error={error} onRetry={onRetry} /> : loading && <Skeleton />);
-  const current = model && currentMilestone(model.milestones);
+  const current =
+    model && (model.milestones.find((m) => m.id === picked) ?? currentMilestone(model.milestones));
   const layout = useBoardLayout(projectId);
   const onLayout: ChangeLayout = (change) => {
     if (projectId) saveLayout(projectId, change(layout));
@@ -708,6 +716,7 @@ export function BoardView(props: BoardViewProps) {
   // The canvas and whole history views put their controls in these elements of the bar.
   const [canvasBar, setCanvasBar] = useState<HTMLElement | null>(null);
   const [historyBar, setHistoryBar] = useState<HTMLElement | null>(null);
+  const [goalsBar, setGoalsBar] = useState<HTMLElement | null>(null);
   const canvasPanels = CANVAS_TABS.flatMap(placed).map((place) => ({
     place,
     title: panels[place.key]!.title,
@@ -741,7 +750,7 @@ export function BoardView(props: BoardViewProps) {
   const loadingPanel = (
     <section className="bd-pn bd-s12" aria-labelledby="bd-load-h">
       <div className="bd-ph">
-        <h2 id="bd-load-h">{PAGES.find((p) => p.key === page)!.label}</h2>
+        <h2 id="bd-load-h">{PAGES.find((p) => p.key === page)?.label}</h2>
       </div>
       {pending}
     </section>
@@ -757,11 +766,11 @@ export function BoardView(props: BoardViewProps) {
     <>
       <TopBar title={SCREEN_NAMES.board}>
         {projectId && (
-          <RadioGroup<BoardPage>
+          <RadioGroup<BoardPage | null>
             className="tb-seg bd-views"
             aria-label={t({ id: 'board.view.label', defaultMessage: 'Board view' })}
             value={page}
-            onValueChange={onPage}
+            onValueChange={(next) => next && onPage(next)}
           >
             {PAGES.map((p) => (
               <Radio.Root key={p.key} value={p.key} aria-label={p.label}>
@@ -788,6 +797,9 @@ export function BoardView(props: BoardViewProps) {
               />
             )}
             <div className="tb-end">
+              {page === 'goals' && projectId && model && (
+                <span className="bd-slot" ref={setGoalsBar} />
+              )}
               {(page === 'now' || page === 'canvas') && !setupOnly && (
                 <RadioGroup<BoardRange>
                   className="tb-seg"
@@ -825,7 +837,7 @@ export function BoardView(props: BoardViewProps) {
               {page === 'now' && !setupOnly && projectId && model && actions && !editing && (
                 <EditButton projectId={projectId} disabled={!scoped} count={unsent} />
               )}
-              {!setupOnly && projectId && actions && (
+              {!setupOnly && page !== 'goals' && projectId && actions && (
                 <NewTask model={model} disabled={!scoped} onNew={newTask} />
               )}
               <BoardDevices />
@@ -909,10 +921,10 @@ export function BoardView(props: BoardViewProps) {
           />
         )}
         {drawn && editing && model && projectId && <EditBar model={model} projectId={projectId} />}
-        {drawn ? (
+        {drawn && page ? (
           <div className="bd-split">
             <div className="bd-split-main">
-              {scoped && !setupOnly && (
+              {scoped && !setupOnly && page !== 'goals' && (
                 <div className="bd-pub">
                   <PublishBar
                     projectId={scoped.projectId}
@@ -933,6 +945,27 @@ export function BoardView(props: BoardViewProps) {
                   {baseline?.readFailure && <Failure {...baseline.readFailure} />}
                 </div>
               )}
+              {page === 'goals' &&
+                projectId &&
+                (model ? (
+                  <GoalsPage
+                    key={projectId}
+                    model={model}
+                    projectId={projectId}
+                    bar={goalsBar}
+                    onOpenNeeds={() => {
+                      setGraphFull(false);
+                      setNeedsAsked(!!model.needs?.length);
+                      onPage('now');
+                    }}
+                    onOpenNow={(milestoneId) => {
+                      setPicked(milestoneId);
+                      onPage('now');
+                    }}
+                  />
+                ) : (
+                  loadingPanel
+                ))}
               {/* The pages hold no hooks; called inline, their elements stay in this view's tree. */}
               {page === 'now'
                 ? NowPage({
@@ -958,6 +991,8 @@ export function BoardView(props: BoardViewProps) {
                     loadingPanel,
                     graphFull,
                     onGraphFull: () => setGraphFull((on) => !on),
+                    needsAsked,
+                    onNeedsAsked: () => setNeedsAsked(false),
                   })
                 : shown && (page === 'canvas' || !projectId)
                   ? CanvasPage({
@@ -971,7 +1006,8 @@ export function BoardView(props: BoardViewProps) {
                       onRetry,
                       selectFlow,
                     })
-                  : HistoryPage({
+                  : page !== 'goals' &&
+                    HistoryPage({
                       model,
                       projectId,
                       setupPanel,
@@ -982,7 +1018,7 @@ export function BoardView(props: BoardViewProps) {
                       historyBar,
                     })}
             </div>
-            {page !== 'history' && drawer}
+            {page !== 'history' && page !== 'goals' && drawer}
           </div>
         ) : (
           <div className="bd-cv" aria-busy="true">
@@ -1020,7 +1056,11 @@ export function BoardScreen({
   const [range, setRange] = useState<BoardRange>('active');
   // The in-progress range reads today's board and leaves the ended tasks out.
   const view = useBoardView(projectId, range === 'active' ? 1 : range);
-  const page = useBoardPage(projectId);
+  // Undecided while the first read of the project is out, so no view shows before it lands.
+  const page = useBoardPage(
+    projectId,
+    view.data ? !!view.data.goals?.length : view.loading && !view.error ? null : false,
+  );
   const onPage = (next: BoardPage) => {
     if (projectId) pickBoardPage(projectId, next);
   };

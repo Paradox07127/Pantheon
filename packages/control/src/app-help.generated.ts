@@ -280,6 +280,12 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'the user does this in the app',
       },
       {
+        type: 'goal.restore',
+        about:
+          'The user only; brings an archived goal back at its order while fewer than 7 are active.',
+        tool: 'the user does this in the app',
+      },
+      {
         type: 'goal.set',
         about:
           "The user only; adds a goal of the project in the user's words, or rewrites one by goal_id.",

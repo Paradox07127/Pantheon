@@ -119,7 +119,7 @@ export function userRejectText(item: Improvement): string | null {
 }
 
 /** The status column of a row: when it was proposed, how far its trial is, or why it ended. */
-export function statusText(item: ImprovementListItem, now: number): string {
+export function statusText(item: Omit<ImprovementListItem, 'grade'>, now: number): string {
   switch (item.status) {
     case 'candidate':
       return proposedText(item.proposed_at, now);

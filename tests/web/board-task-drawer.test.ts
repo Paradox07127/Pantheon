@@ -290,6 +290,28 @@ describe('the rest of the task drawer', () => {
     });
   });
 
+  it('marks what backs a merged task among the badges at its head, and nothing without a level', () => {
+    const backed = row('a', {
+      status: 'done',
+      state: 'merged',
+      evidence_level: 'reviewed',
+      evidence_reviewer: 'other_vendor',
+    });
+    const mark = (task: Task) => {
+      const el = maybe(drawer(task.id, [task]).value, 'EvidenceMark');
+      const drawn = el && (el.type as (p: object) => ReactNode)(el.props);
+      return drawn ? [(drawn as never as { props: object }).props, text(drawn)] : null;
+    };
+    expect(mark(backed)).toEqual([
+      expect.objectContaining({
+        role: 'img',
+        'aria-label': zh('board.evidence.reviewed.otherVendor.label'),
+      }),
+      zh('board.evidence.reviewed.otherVendor'),
+    ]);
+    expect(mark(row('a', { status: 'done', state: 'merged' }))).toBeNull();
+  });
+
   it('ticks each acceptance check the task met, read-only', () => {
     const boxes = nodes(drawer().value).filter((n) => n.props.type === 'checkbox');
     expect(boxes.map((n) => [n.props.checked, n.props.disabled])).toEqual([

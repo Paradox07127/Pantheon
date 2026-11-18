@@ -115,6 +115,12 @@
 .ag-end {
   margin-left: auto;
 }
+/* A routine's check command, on the rest of its row. */
+.ag-pk {
+  flex: 1;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
 .ag-add {
   align-self: flex-start;
 }

@@ -26,5 +26,15 @@
   "board.canvas.remove": "移除",
   "board.canvas.empty": "画布上还没有图",
   "board.canvas.draw": "让 agent 画一张",
-  "board.canvas.replay.range": "{from} – {to}"
+  "board.canvas.replay.range": "{from} – {to}",
+  "board.canvas.lane.depth.label": "{lane} 的深度",
+  "board.canvas.lane.depth.justDo": "直接做",
+  "board.canvas.lane.depth.planFirst": "先计划",
+  "board.canvas.lane.depth.specFirst": "先写规格",
+  "board.canvas.lane.by.lead": "Lead",
+  "board.canvas.lane.by.user": "你",
+  "board.canvas.lane.by.pantheon": "Pantheon",
+  "board.canvas.lane.reason.pantheon": "含最高档任务",
+  "board.canvas.lane.stop.waiting": "等你批准计划",
+  "board.canvas.lane.stop.approved": "计划已批准"
 }

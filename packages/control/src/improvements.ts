@@ -1,6 +1,7 @@
 import {
   canonical,
   id,
+  learnedGrade,
   requireThat,
   type BoardPlan,
   type Improvement,
@@ -11,20 +12,25 @@ import {
 } from '@pantheon/domain';
 import {
   inputSchemas,
+  type Command,
   type ImprovementListItem,
   type ImprovementSession,
 } from '@pantheon/protocol';
-import { insert, projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
-import { screenExperience } from './experience-screen.js';
+import {
+  gitFolderAsync,
+  insert,
+  projectAccess,
+  resolvedPath,
+  userOnly,
+  type ControlContext,
+  type Handler,
+  type Handlers,
+  type Preparers,
+} from './context.js';
+import { changeKind } from './learned-change-kinds.js';
 import { sessionTaskScope } from './memory-access.js';
 import { agentAttempt, improvementSignals } from './improvement-signals.js';
-import {
-  applyPolicyChange,
-  changedPolicy,
-  pinParam,
-  policyValue,
-  workflowPolicy,
-} from './workflow-policy.js';
+import { changedPolicy, pinParam, policyValue, workflowPolicy } from './workflow-policy.js';
 
 const LIST_LIMIT = 100;
 /** How long the daemon waits before proposing a reverted or rejected change again, in milliseconds. */
@@ -99,25 +105,24 @@ function setStatus(
   return next;
 }
 
-function startTrial(ctx: ControlContext, improvement: Improvement, commandId: string) {
-  const change = improvement.change;
-  if (change.type === 'experience') {
-    const refusal = screenExperience(
-      ctx.store.must<Project>('projects', improvement.project_id),
-      change,
-    );
-    return refusal
-      ? setStatus(ctx, improvement, 'rejected', commandId, refusal)
-      : setStatus(ctx, improvement, 'trial', commandId);
-  }
-  const from = applyPolicyChange(
+/** Puts the change in force: on trial when its grade is trial, else kept at once. */
+function applyImprovement(
+  ctx: ControlContext,
+  improvement: Improvement,
+  commandId: string,
+  gitRoots: ReadonlySet<string> = new Set(),
+) {
+  const applied = changeKind(improvement.change).apply(ctx, improvement, commandId, gitRoots);
+  if (applied.refusal) return setStatus(ctx, improvement, 'rejected', commandId, applied.refusal);
+  return setStatus(
     ctx,
-    improvement.project_id,
-    change,
-    { improvement_id: improvement.id },
+    improvement,
+    learnedGrade(improvement.change) === 'trial' ? 'trial' : 'active',
     commandId,
+    'from' in applied
+      ? { change: { ...improvement.change, from: applied.from } as Improvement['change'] }
+      : {},
   );
-  return setStatus(ctx, improvement, 'trial', commandId, { change: { ...change, from } });
 }
 
 function revert(
@@ -126,35 +131,22 @@ function revert(
   commandId: string,
   fields: Partial<Improvement> = {},
   detail: Record<string, unknown> = {},
+  gitRoots: ReadonlySet<string> = new Set(),
 ) {
-  const change = improvement.change;
-  if (change.type !== 'policy_change')
-    return setStatus(ctx, improvement, 'reverted', commandId, fields, detail);
-  const now = policyValue(workflowPolicy(ctx, improvement.project_id), change);
-  if (canonical(now) !== canonical(change.to))
-    return setStatus(
-      ctx,
-      improvement,
-      'reverted',
-      commandId,
-      {
-        ...fields,
-        status_detail: `${change.param} was changed to ${canonical(now)} since the trial started, so it stays`,
-      },
-      detail,
-    );
-  applyPolicyChange(
+  const kept = changeKind(improvement.change).revert(ctx, improvement, commandId, gitRoots);
+  return setStatus(
     ctx,
-    improvement.project_id,
-    { param: change.param, tier: change.tier, to: change.from },
-    { improvement_id: improvement.id },
+    improvement,
+    'reverted',
     commandId,
+    kept ? { ...fields, status_detail: kept } : fields,
+    detail,
   );
-  return setStatus(ctx, improvement, 'reverted', commandId, fields, detail);
 }
 
-const samePolicyTarget = (a: Improvement['change'], b: Pick<PolicyChange, 'param' | 'tier'>) =>
-  a.type === 'policy_change' && a.param === b.param && a.tier === b.tier;
+/** Whether the row changes what the change changes. */
+const sameTarget = (row: Improvement, change: Improvement['change']) =>
+  row.change.type === change.type && changeKind(change).sameTarget(row.change, change);
 
 /** The count and revision sum of the retrospectives: it changes when one is recorded or replaced. */
 const retrospectivesMark = (ctx: ControlContext) =>
@@ -188,17 +180,17 @@ export function proposeFromSignals(ctx: ControlContext): void {
       const suggestion = finding.suggestion;
       // The rules suggest only policy changes; an experience's text comes from a lead.
       if (suggestion?.type !== 'policy_change' || finding.withheld) continue;
-      const sameTarget = improvements.filter(
-        (row) => row.project_id === project.id && samePolicyTarget(row.change, suggestion),
-      );
+      const change = { ...suggestion, from: policyValue(policy, suggestion) };
       if (
-        sameTarget.some(
-          (row) =>
-            ['candidate', 'trial'].includes(row.status) ||
-            (['reverted', 'rejected'].includes(row.status) &&
-              canonical((row.change as PolicyChange).to) === canonical(suggestion.to) &&
-              now - row.decided_at! < RETRY_AFTER_MS),
-        )
+        improvements
+          .filter((row) => row.project_id === project.id && sameTarget(row, change))
+          .some(
+            (row) =>
+              ['candidate', 'trial'].includes(row.status) ||
+              (['reverted', 'rejected'].includes(row.status) &&
+                canonical((row.change as PolicyChange).to) === canonical(suggestion.to) &&
+                now - row.decided_at! < RETRY_AFTER_MS),
+          )
       )
         continue;
       const improvement = insert<Improvement>(
@@ -212,7 +204,7 @@ export function proposeFromSignals(ctx: ControlContext): void {
           signal: finding.signal,
           retrospective_ids: finding.retrospective_ids,
           status: 'candidate',
-          change: { ...suggestion, from: policyValue(policy, suggestion) },
+          change,
           proposed_at: now,
         },
         'improvement.proposed',
@@ -220,7 +212,7 @@ export function proposeFromSignals(ctx: ControlContext): void {
         '',
       );
       improvements.push(improvement);
-      if (policy.improvement_mode === 'auto') startTrial(ctx, improvement, '');
+      if (policy.improvement_mode === 'auto') applyImprovement(ctx, improvement, '');
     }
   }
 }
@@ -229,6 +221,7 @@ const kindOf = (row: Retrospective) => row.measured_kind ?? row.planned_kind;
 /** Whether the task counts for the trial: of the path's tier, or of the experience's domain, tier and runtime. */
 function counts(change: Improvement['change'], row: Retrospective): boolean {
   if (change.type === 'policy_change') return !change.tier || kindOf(row)?.tier === change.tier;
+  if (change.type !== 'experience') return false;
   return (
     (!change.domain || kindOf(row)?.domain === change.domain) &&
     (!change.tier || kindOf(row)?.tier === change.tier) &&
@@ -301,6 +294,7 @@ function trialMetrics(
       },
     };
   }
+  if (change.type !== 'policy_change') return undefined;
   const tokensAndWall: Record<string, Metric> = {
     input_tokens: (rows) => total(rows, inputTokens),
     wall_ms: (rows) => total(rows, wallMs),
@@ -408,6 +402,7 @@ function better(change: Improvement['change'], before: Measure, after: Measure):
   if (harmful - beneficial > HARM_MARGIN) return false;
   if (change.type === 'experience')
     return perTask(after, 'signal_findings') <= perTask(before, 'signal_findings') * FINDINGS_SHARE;
+  if (change.type !== 'policy_change') return false;
   if (change.param === 'max_parallel')
     return fell(perTask(before, 'wait_and_execution_ms'), perTask(after, 'wait_and_execution_ms'));
   const tokens = [perTask(before, 'input_tokens'), perTask(after, 'input_tokens')] as const,
@@ -513,19 +508,27 @@ export const improvementHandlers: Handlers = {
         `${proposed.param} is already ${canonical(proposed.to)}`,
       );
       change = { ...proposed, from };
-      requireThat(
-        !ctx.store
-          .list<Improvement>('improvements')
-          .some(
-            (other) =>
-              other.project_id === input.project_id &&
-              ['candidate', 'trial'].includes(other.status) &&
-              samePolicyTarget(other.change, proposed),
-          ),
-        'invalid_state',
-        `Another improvement of ${proposed.param} is waiting or on trial`,
-      );
-    } else change = input.change;
+    } else if (input.change.type === 'gate_command')
+      change = { ...input.change, root: resolvedPath(input.change.root) };
+    else change = input.change;
+    requireThat(
+      !ctx.store
+        .list<Improvement>('improvements')
+        .some(
+          (other) =>
+            other.project_id === input.project_id &&
+            ['candidate', 'trial'].includes(other.status) &&
+            sameTarget(other, change),
+        ),
+      'invalid_state',
+      `Another improvement of ${
+        change.type === 'policy_change'
+          ? change.param
+          : change.type === 'gate_command'
+            ? `the gate of ${change.root}`
+            : 'the worktree setup'
+      } is waiting or on trial`,
+    );
     const improvement = insert<Improvement>(
       ctx,
       'improvements',
@@ -544,62 +547,83 @@ export const improvementHandlers: Handlers = {
       input.project_id,
       c.command_id,
     );
-    if (policy.improvement_mode !== 'auto') return improvement;
-    return startTrial(ctx, improvement, c.command_id);
+    if (policy.improvement_mode !== 'auto' || learnedGrade(change) !== 'trial') return improvement;
+    return applyImprovement(ctx, improvement, c.command_id);
   },
+  'improvement.decide': (ctx, p, c) => decide(ctx, p, c),
+};
+
+/** A gate change reads its root as a git folder before the transaction. */
+export const improvementPreparers: Preparers = {
   'improvement.decide': (ctx, p, c) => {
     userOnly(p);
     const input = inputSchemas['improvement.decide'].parse(c.input);
-    projectAccess(ctx, p, input.project_id, c.type);
-    ctx.store.must<Project>('projects', input.project_id);
-    const improvement = ctx.store.get<Improvement>('improvements', input.improvement_id);
-    requireThat(
-      improvement?.project_id === input.project_id,
-      'not_found',
-      `improvements/${input.improvement_id}`,
+    const change = ctx.store.get<Improvement>('improvements', input.improvement_id)?.change;
+    if (change?.type !== 'gate_command' || !['confirm', 'revert'].includes(input.decision))
+      return improvementHandlers['improvement.decide']!;
+    return gitFolderAsync(change.root).then(
+      (git): Handler =>
+        (ctx, p, c) =>
+          decide(ctx, p, c, new Set(git ? [change.root] : [])),
     );
-    const status = improvement.status;
-    const fits = (...statuses: Status[]) =>
-      requireThat(
-        statuses.includes(status),
-        'invalid_state',
-        `Cannot ${input.decision} an improvement in ${status}`,
-      );
-    switch (input.decision) {
-      case 'confirm':
-        fits('candidate');
-        return startTrial(ctx, improvement, c.command_id);
-      case 'reject':
-        fits('candidate');
-        return setStatus(ctx, improvement, 'rejected', c.command_id, {
-          reject_reason: input.reject_reason,
-          reject_note: input.reject_note,
-        });
-      case 'revert':
-        fits('trial', 'active');
-        return revert(ctx, improvement, c.command_id);
-      case 'pin': {
-        const change = improvement.change;
-        requireThat(
-          change.type === 'policy_change',
-          'invalid_input',
-          'Only a policy change can be pinned',
-        );
-        fits('trial', 'active');
-        pinParam(
-          ctx,
-          improvement.project_id,
-          change.param,
-          { improvement_id: improvement.id },
-          c.command_id,
-        );
-        return status === 'trial'
-          ? setStatus(ctx, improvement, 'active', c.command_id)
-          : improvement;
-      }
-    }
   },
 };
+
+function decide(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  gitRoots: ReadonlySet<string> = new Set(),
+) {
+  userOnly(p);
+  const input = inputSchemas['improvement.decide'].parse(c.input);
+  projectAccess(ctx, p, input.project_id, c.type);
+  ctx.store.must<Project>('projects', input.project_id);
+  const improvement = ctx.store.get<Improvement>('improvements', input.improvement_id);
+  requireThat(
+    improvement?.project_id === input.project_id,
+    'not_found',
+    `improvements/${input.improvement_id}`,
+  );
+  const status = improvement.status;
+  const fits = (...statuses: Status[]) =>
+    requireThat(
+      statuses.includes(status),
+      'invalid_state',
+      `Cannot ${input.decision} an improvement in ${status}`,
+    );
+  switch (input.decision) {
+    case 'confirm':
+      fits('candidate');
+      return applyImprovement(ctx, improvement, c.command_id, gitRoots);
+    case 'reject':
+      fits('candidate');
+      return setStatus(ctx, improvement, 'rejected', c.command_id, {
+        reject_reason: input.reject_reason,
+        reject_note: input.reject_note,
+      });
+    case 'revert':
+      fits('trial', 'active');
+      return revert(ctx, improvement, c.command_id, {}, {}, gitRoots);
+    case 'pin': {
+      const change = improvement.change;
+      requireThat(
+        change.type === 'policy_change',
+        'invalid_input',
+        'Only a policy change can be pinned',
+      );
+      fits('trial', 'active');
+      pinParam(
+        ctx,
+        improvement.project_id,
+        change.param,
+        { improvement_id: improvement.id },
+        c.command_id,
+      );
+      return status === 'trial' ? setStatus(ctx, improvement, 'active', c.command_id) : improvement;
+    }
+  }
+}
 
 /** The project's improvements, newest first, optionally of one status. */
 export function improvementList(
@@ -616,7 +640,8 @@ export function improvementList(
     .sort((a, b) => b.proposed_at - a.proposed_at)
     .slice(0, LIST_LIMIT)
     .map((row) => {
-      const { trial_evaluation: _, ...item } = row;
+      const { trial_evaluation: _, ...rest } = row;
+      const item = { ...rest, grade: learnedGrade(row.change) };
       if (row.trial_started_at === undefined) return item;
       const evidence = trialEvidence(ctx, row);
       const { comparison, no_baseline: noBaseline } = evidence;

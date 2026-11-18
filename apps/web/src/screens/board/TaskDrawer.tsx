@@ -61,6 +61,7 @@ import {
   type NeedAction,
   type NeedItem,
 } from './frame-model';
+import { EvidenceMark } from './EvidenceMark';
 import { PlanEdit } from './PlanEdit';
 import { PlanList } from './PlanList';
 import { dayText } from '../../lib/time-text';
@@ -1027,6 +1028,7 @@ export function TaskDrawer({
           )}
           <div className="bd-dmeta">
             <TaskStateBadge task={task} />
+            <EvidenceMark level={task.evidence_level} reviewer={task.evidence_reviewer} />
             <TaskRoute
               task={task}
               className="bd-stc mu"

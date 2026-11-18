@@ -1038,6 +1038,7 @@ it('lists the active goals in order with their progress and links the milestone 
       milestone_ids: [],
       milestones: { done: 0, ready: 0, total: 0 },
       tasks: { done: 0, total: 0 },
+      needs: 0,
     },
     {
       id: first!.id,
@@ -1047,6 +1048,7 @@ it('lists the active goals in order with their progress and links the milestone 
       milestone_ids: [milestone.id],
       milestones: { done: 0, ready: 0, total: 1 },
       tasks: { done: 0, total: 1 },
+      needs: 0,
     },
   ]);
   expect(board.milestones[0]).toMatchObject({ id: milestone.id, goal_id: first!.id });

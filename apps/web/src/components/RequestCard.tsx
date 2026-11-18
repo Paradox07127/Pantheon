@@ -4,6 +4,7 @@ import { Ellipsis, FlaskConical, Gauge, Lightbulb, Pencil } from 'lucide-react';
 import type { ApprovalQuestion, Improvement } from '@pantheon/domain';
 import type { BoardTaskRung } from '@pantheon/protocol';
 import { blocksText, decisionText, primaryAction } from '../data/attention';
+import { useBoard } from '../data/board';
 import {
   ageText,
   blockedReasonText,
@@ -45,6 +46,7 @@ import { ResolveButtons } from '../screens/sessions/parts';
 import { openSettingsPage } from '../screens/settings/settings-jump';
 import { useShell } from '../store';
 import { Clip } from './Clip';
+import { changeFrom, LearnedChangeDiff } from './LearnedChangeDiff';
 import { Menu, MenuItem } from './Menu';
 import { QuestionCard } from './QuestionCard';
 import { RuntimeGlyph } from './RuntimeGlyph';
@@ -89,6 +91,8 @@ export interface RequestCardProps {
   onActed?: () => void;
   /** Gets a list row's one action button, which a list moves the focus to. */
   primaryRef?: (el: HTMLButtonElement | null) => void;
+  /** Drawn under a compact row's line, after its own facts. */
+  sub?: ReactNode;
 }
 
 // The waiting dot stays with approvals and questions; every other kind has its mark from elsewhere.
@@ -139,6 +143,7 @@ export function RequestCard({
   selected,
   onActed,
   primaryRef,
+  sub,
 }: RequestCardProps) {
   const asked = item.kind === 'lead.question' ? item.question : undefined;
   const relayed = asked?.source;
@@ -162,6 +167,8 @@ export function RequestCard({
   // A list row's question card opens under the row from its one action.
   const [answering, setAnswering] = useState(false);
   const accepting = useDialogContent<{ stored: SnapshotMilestone }>();
+  // The board that draws the card draws it again on every read, so no subscription is needed.
+  const replaced = changeFrom(improvement, useBoard.getState().board?.projects);
   const full = size === 'full';
   const sessionId = needSession(item);
   const actions = stripActions(item, session, lead, rung);
@@ -342,7 +349,20 @@ export function RequestCard({
   const counts = milestone && milestoneCounts(milestone.milestone);
   const what =
     item.kind === 'improvement.candidate' && improvement
-      ? changeText(improvement.change)
+      ? improvement.change.type === 'gate_command'
+        ? t(
+            {
+              id: 'components.requestCard.gateCounts',
+              defaultMessage:
+                'Gate of {root}: {n, plural, one {# command} other {# commands}} to {m, plural, one {# command} other {# commands}}',
+            },
+            {
+              root: improvement.change.root,
+              n: ((replaced as typeof improvement.change.from) ?? []).length,
+              m: improvement.change.to.length,
+            },
+          )
+        : changeText(improvement.change)
       : questions.length > 0
         ? questions[0]!.question
         : item.reason === 'task_blocked' && item.blocked
@@ -448,6 +468,11 @@ export function RequestCard({
   );
   const rest = actions.filter((action) => action !== primary);
 
+  // The row's count of commands hides what each one runs and whether its failure fails the gate.
+  const changeDiff = (improvement?.change.type === 'gate_command' ||
+    improvement?.change.type === 'worktree_setup') && (
+    <LearnedChangeDiff change={improvement.change} from={replaced} />
+  );
   const body = full ? (
     <div className="rqf-body">
       <p className="rq-what">{what}</p>
@@ -508,6 +533,7 @@ export function RequestCard({
       )}
       {improvement && (
         <>
+          {changeDiff}
           {improvement.change.type === 'experience' && improvement.change.countercondition && (
             <p className="rq-what">
               {t(
@@ -643,7 +669,9 @@ export function RequestCard({
         {item.kind === 'session.reconciling' && (
           <ResolveButtons item={item as NeedsYouItem} title={who} />
         )}
+        {changeDiff}
         {answering && card}
+        {sub}
       </div>
     </>
   );

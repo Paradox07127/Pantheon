@@ -2674,6 +2674,13 @@ export function boardView(
       milestone_ids,
       milestones,
       tasks,
+      needs: needs.filter((item) =>
+        milestone_ids.includes(
+          item.source.table === 'milestones'
+            ? item.source.id
+            : (byId.get(item.task_id ?? '')?.milestone_id ?? ''),
+        ),
+      ).length,
     })),
     burnup,
     task_progress: {

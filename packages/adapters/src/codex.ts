@@ -42,7 +42,7 @@ import {
 import { MIN_VERSIONS } from './capabilities.js';
 import { installedFields, notInstalled, readVersion, type Preflight } from './preflight.js';
 
-import { imageLimit, tracePayload } from './trace.js';
+import { imageLimit, needsYouLimit, tracePayload } from './trace.js';
 import { plannerInstructions } from './planner.js';
 import { nativeSessionTitle, prepareNativeState } from './native-state.js';
 
@@ -609,7 +609,7 @@ function appResult(
   return JSON.stringify(base).length <= APP_RESULT_LIMIT ? base : undefined;
 }
 
-function rawToolEvent(frame: Notification): ToolEvent | undefined {
+function rawToolEvent(frame: Notification, started: ToolEvent[]): ToolEvent | undefined {
   const item = frame.params?.item as Record<string, unknown> | undefined;
   if (!item || typeof item.call_id !== 'string') return;
   switch (item.type) {
@@ -643,11 +643,17 @@ function rawToolEvent(frame: Notification): ToolEvent | undefined {
     case 'function_call_output':
     case 'custom_tool_call_output': {
       const { text, ok } = toolOutputOutcome(item.output);
+      const needsYou = started.some(
+        (tool) =>
+          tool.kind === 'tool.started' &&
+          tool.tool_call_id === item.call_id &&
+          tool.name === 'pantheon.needs_you',
+      );
       return {
         kind: 'tool.completed',
         tool_call_id: item.call_id,
         ok: ok ?? true,
-        output: tracePayload({ text }),
+        output: tracePayload({ text }, needsYou ? needsYouLimit : undefined),
       };
     }
   }
@@ -787,7 +793,7 @@ function toolEvent(frame: Notification, tools?: McpTools): ToolEvent | undefined
         kind: 'tool.completed',
         tool_call_id: item.id,
         ok,
-        output: tracePayload(output),
+        output: tracePayload(output, name === 'pantheon.needs_you' ? needsYouLimit : undefined),
         ...(['commandExecution', 'mcpToolCall', 'dynamicToolCall'].includes(String(item.type)) &&
         typeof duration === 'number' &&
         Number.isFinite(duration) &&
@@ -1907,7 +1913,7 @@ export class CodexAdapter implements HarnessAdapter {
         if (!current && /^(turn|item)\//.test(frame.method)) return;
         if (frame.method === 'rawResponseItem/completed') {
           if (!current || p.turnId !== current.native_id) return;
-          const tool = rawToolEvent(frame);
+          const tool = rawToolEvent(frame, current.rawTools);
           if (tool) {
             current.rawTools.push(tool);
             return;

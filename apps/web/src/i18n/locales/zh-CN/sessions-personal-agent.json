@@ -20,5 +20,12 @@
   "sessions.personalAgent.keys.builtIn": "内置个人级智能体",
   "sessions.personalAgent.keys.revoked": "已吊销",
   "sessions.personalAgent.keys.revoke": "吊销",
-  "sessions.personalAgent.keys.builtInRevoke": "吊销后，个人级智能体读不到你的项目，也不会被唤醒；你再次打开它时，它会拿到一把新密钥。"
+  "sessions.personalAgent.keys.builtInRevoke": "吊销后，个人级智能体读不到你的项目，也不会被唤醒；你再次打开它时，它会拿到一把新密钥。",
+  "sessions.personalAgent.needs.label": "等你处理：{count, plural, other {# 项}}，在 {projects, plural, other {# 个项目}}",
+  "sessions.personalAgent.needs.none": "没有等你处理的事",
+  "sessions.personalAgent.needs.asOf": "截至 {time}",
+  "sessions.personalAgent.needs.more": "还有 {count, plural, other {# 项}}",
+  "sessions.personalAgent.assistant": "助理",
+  "sessions.personalAgent.sentTo": "已转给{project}的{agent}",
+  "sessions.personalAgent.sentBy": "由个人级智能体发来"
 }

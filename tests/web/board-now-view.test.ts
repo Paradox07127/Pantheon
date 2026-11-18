@@ -169,12 +169,12 @@ afterEach(() => {
 
 describe('project board views', () => {
   it('reads a stored view back and opens the now view for anything else', () => {
-    for (const key of ['now', 'history', 'canvas']) expect(readBoardPage(key)).toBe(key);
+    for (const key of ['goals', 'now', 'history', 'canvas']) expect(readBoardPage(key)).toBe(key);
     for (const raw of [null, '', 'progress', 'milestones', 'quality', 'intro', 'memory'])
       expect(readBoardPage(raw)).toBe('now');
   });
 
-  it('switches between now, whole history and canvas from one segmented control', () => {
+  it('switches between goals, now, whole history and canvas from one segmented control', () => {
     const onPage = vi.fn();
     const h = mount(() => BoardView(viewProps({ projectId: 'project-a', onPage })));
     const views = labelled(h.value, zh('board.view.label'));
@@ -183,6 +183,7 @@ describe('project board views', () => {
         .filter((n) => n.props.value !== undefined)
         .map(text),
     ).toEqual([
+      zh('board.view.goals'),
       zh('board.history.span.now'),
       zh('board.history.span.history'),
       zh('board.view.canvas'),

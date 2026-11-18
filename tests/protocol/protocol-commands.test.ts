@@ -198,6 +198,14 @@ it('defines strict session pin, archive, unarchive and delete commands', () => {
   }
 });
 
+it('defines strict goal archive and restore commands', () => {
+  for (const type of ['goal.archive', 'goal.restore'] as const) {
+    expect(inputSchemas[type].safeParse({ goal_id: 'g' }).success, type).toBe(true);
+    expect(inputSchemas[type].safeParse({}).success, type).toBe(false);
+    expect(inputSchemas[type].safeParse({ goal_id: 'g', extra: 1 }).success, type).toBe(false);
+  }
+});
+
 it('defines a strict session snooze command', () => {
   const schema = inputSchemas['session.snooze'];
   expect(schema.safeParse({ session_id: 's', snoozed: true }).success).toBe(true);
@@ -496,4 +504,24 @@ it('accepts a free-text question without options and at most four options per qu
   );
   const options = Array.from({ length: 5 }, (_, i) => ({ label: `Option ${i}`, description: '' }));
   expect(approvalQuestions.safeParse([{ ...question, options }]).success).toBe(false);
+});
+
+it('accepts a gate command and a worktree setup change in an improvement proposal', () => {
+  const schema = inputSchemas['improvement.propose'];
+  const proposal = (change: Record<string, unknown>) =>
+    schema.safeParse({ project_id: 'project', retrospective_ids: ['r1', 'r2'], change }).success;
+  const gate = {
+    type: 'gate_command',
+    root: '/repo',
+    to: [{ name: 'test', argv: ['pnpm', 'test'] }],
+  };
+  expect(proposal(gate)).toBe(true);
+  expect(
+    proposal({
+      type: 'worktree_setup',
+      to: { copy_paths: ['.env'], command: { argv: ['pnpm', 'install'] } },
+    }),
+  ).toBe(true);
+  const { root: _, ...withoutRoot } = gate;
+  expect(proposal(withoutRoot)).toBe(false);
 });

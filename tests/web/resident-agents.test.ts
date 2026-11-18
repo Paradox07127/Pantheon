@@ -35,6 +35,8 @@ vi.mock('@/data/agents', async (actual) => ({
 }));
 const toast = vi.hoisted(() => vi.fn());
 vi.mock('@/components/Toast', async (actual) => ({ ...(await actual<object>()), toast }));
+import { ROUTINE_TEMPLATES } from '@pantheon/protocol/routine-catalog';
+import { MenuItem } from '@/components/Menu';
 import { Sidebar } from '@/components/Sidebar';
 import { AgentProfilePanel, NewAgentDialog } from '@/screens/sessions/AgentForm';
 import { AgentProposalCall } from '@/screens/sessions/AgentProposal';
@@ -520,6 +522,129 @@ describe('agent profile', () => {
     );
   });
 
+  const routineRow = (tree: unknown, number: number) =>
+    nodes(tree as never).find(
+      (n) =>
+        n.props.role === 'group' &&
+        n.props['aria-label'] === zhf('sessions.agents.routine.label', { number }),
+    )!;
+  const rowControl = (row: unknown, name: string) =>
+    nodes(row as never).find((n) => n.props['aria-label'] === zh(name))!;
+  /** The command a routine row runs only if it succeeds, under its caption; undefined without one. */
+  const checkOf = (row: unknown) => {
+    const caption = nodes(row as never).find(
+      (n) => n.type === 'span' && text(n) === zh('sessions.agents.routine.check'),
+    );
+    const group =
+      caption && nodes(row as never).find((n) => n.props['aria-labelledby'] === caption.props.id);
+    return group && text(group).slice(text(caption).length);
+  };
+  const BUG_HUNT_CHECK = [
+    'sh',
+    '-c',
+    'test -z "$ROUTINE_LAST_RUN_AT" || test -n "$(git log --since="$ROUTINE_LAST_RUN_AT" --oneline -1)"',
+  ];
+
+  it.each([
+    {
+      template: 'bug-hunt',
+      shown: { 'sessions.agents.routine.at': '09:00' },
+      schedule: { at: '09:00' },
+      precheck: { argv: BUG_HUNT_CHECK },
+    },
+    {
+      template: 'security-scan',
+      shown: { 'sessions.agents.routine.interval': '7', 'sessions.agents.routine.unit': 'days' },
+      schedule: { every_minutes: 10080 },
+    },
+    {
+      template: 'test-coverage',
+      shown: { 'sessions.agents.routine.interval': '7', 'sessions.agents.routine.unit': 'days' },
+      schedule: { every_minutes: 10080 },
+    },
+  ])(
+    'adds a row from the $template routine template and saves it through agent.update',
+    async ({ template, shown, schedule, precheck }) => {
+      const { prompt } = ROUTINE_TEMPLATES.find((each) => each.id === template)!;
+      agentMock.agents = [agent('agent-ideas', 'ideas', { revision: 2 })];
+      const h = profile('agent-ideas');
+      nodes(h.value)
+        .find(
+          (n) =>
+            n.type === MenuItem && text(n) === zh(`sessions.agents.routineTemplate.${template}`),
+        )!
+        .props.onClick();
+      h.render();
+      const row = routineRow(h.value, 1);
+      expect(rowControl(row, 'sessions.agents.routine.prompt').props.value).toBe(prompt);
+      for (const [name, value] of Object.entries(shown))
+        expect(rowControl(row, name).props.value).toBe(value);
+      expect(checkOf(row)).toBe(precheck?.argv.join(' '));
+      pressed(h.value, zh('sessions.agents.save'))!.props.onClick();
+      await h.flush();
+      expect(runCommand).toHaveBeenLastCalledWith(
+        'agent.update',
+        {
+          agent_id: 'agent-ideas',
+          revision: 2,
+          routines: [{ prompt, ...schedule, enabled: true, ...(precheck && { precheck }) }],
+        },
+        null,
+      );
+    },
+  );
+
+  it('shows the check of each routine read back, keeps an untouched one and drops a removed one on save', async () => {
+    agentMock.agents = [
+      agent('agent-ideas', 'ideas', {
+        revision: 3,
+        routines: [
+          {
+            id: 'nightly',
+            prompt: 'Nightly',
+            at: '02:00',
+            enabled: true,
+            precheck: { argv: ['make', 'changed'], timeout_ms: 30_000 },
+          },
+          {
+            id: 'hourly',
+            prompt: 'Hourly',
+            every_ms: 3_600_000,
+            enabled: true,
+            precheck: { argv: ['test', '-f', 'flag'] },
+          },
+        ],
+      }),
+    ];
+    const h = profile('agent-ideas');
+    expect(checkOf(routineRow(h.value, 1))).toBe('make changed');
+    expect(checkOf(routineRow(h.value, 2))).toBe('test -f flag');
+    rowControl(routineRow(h.value, 2), 'sessions.agents.routine.removeCheck').props.onClick();
+    h.render();
+    expect(checkOf(routineRow(h.value, 2))).toBeUndefined();
+    pressed(h.value, zh('sessions.agents.save'))!.props.onClick();
+    await h.flush();
+    expect(runCommand).toHaveBeenLastCalledWith(
+      'agent.update',
+      {
+        agent_id: 'agent-ideas',
+        revision: 3,
+        routines: [
+          {
+            id: 'nightly',
+            prompt: 'Nightly',
+            at: '02:00',
+            enabled: true,
+            precheck: { argv: ['make', 'changed'], timeout_seconds: 30 },
+          },
+          { id: 'hourly', prompt: 'Hourly', every_minutes: 60, enabled: true },
+        ],
+      },
+      null,
+    );
+    expect((runCommand.mock.calls.at(-1)![1] as any).routines[1]).not.toHaveProperty('precheck');
+  });
+
   it('offers no archive for the assistant', () => {
     agentMock.agents = [agent('agent-assistant', 'assistant')];
     const h = profile('agent-assistant');
@@ -587,6 +712,44 @@ describe('agent proposal', () => {
       'agent.proposal.resolve',
       { proposal_id: 'proposal-a', decision: 'create', fields: { name: 'Idea box' } },
       null,
+    );
+  });
+
+  it('adds a routine template without its check and creates with the template’s prompt and time', async () => {
+    const withRoutines = (id: string) => ({
+      ...proposal(id),
+      fields: { ...proposal(id).fields, routines: [] },
+    });
+    agentMock.proposal = withRoutines;
+    const h = call('proposal-e', { fields: withRoutines('proposal-e').fields });
+    pressed(h.value, zh('sessions.agents.proposal.edit'))!.props.onClick();
+    h.render();
+    nodes(h.value)
+      .find(
+        (n) => n.type === MenuItem && text(n) === zh('sessions.agents.routineTemplate.bug-hunt'),
+      )!
+      .props.onClick();
+    h.render();
+    const row = nodes(h.value).find(
+      (n) => n.props['aria-label'] === zhf('sessions.agents.routine.label', { number: 1 }),
+    )!;
+    expect(
+      nodes(row).find((n) => n.props['aria-label'] === zh('sessions.agents.routine.removeCheck')),
+    ).toBeUndefined();
+    pressed(h.value, zh('sessions.agents.create'))!.props.onClick();
+    await h.flush();
+    const { prompt } = ROUTINE_TEMPLATES.find((each) => each.id === 'bug-hunt')!;
+    expect(runCommand).toHaveBeenLastCalledWith(
+      'agent.proposal.resolve',
+      {
+        proposal_id: 'proposal-e',
+        decision: 'create',
+        fields: { routines: [{ prompt, at: '09:00', enabled: true }] },
+      },
+      null,
+    );
+    expect((runCommand.mock.calls.at(-1)![1] as any).fields.routines[0]).not.toHaveProperty(
+      'precheck',
     );
   });
 

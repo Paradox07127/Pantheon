@@ -333,15 +333,20 @@ describe('board view', () => {
     expect(view(null, { loading: true, page: 'canvas' })).not.toContain('bd-load-h');
   });
 
-  it('names the views now, whole history and canvas in that order', () => {
+  it('names the views goals, now, whole history and canvas in that order', () => {
     const html = view(flowBoard, { projectId: 'flow-views' });
     const views = [
       ...html.matchAll(
         /role="radio"[^>]*>(?:<svg[\s\S]*?<\/svg>)?(?:<span class="tb-lbl">)?([^<]*)/g,
       ),
     ].map((m) => m[1]);
-    expect(views.slice(0, 3)).toEqual(
-      zhs('board.history.span.now', 'board.history.span.history', 'board.view.canvas'),
+    expect(views.slice(0, 4)).toEqual(
+      zhs(
+        'board.view.goals',
+        'board.history.span.now',
+        'board.history.span.history',
+        'board.view.canvas',
+      ),
     );
   });
 

@@ -1,6 +1,7 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ChevronDown, Pin, Play, Undo2, X } from 'lucide-react';
 import type { Improvement, Retrospective, ImprovementSignal } from '@pantheon/domain';
+import { changeFrom, LearnedChangeDiff } from '../../components/LearnedChangeDiff';
 import { Menu, MenuItem, MenuSeparator } from '../../components/Menu';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { SessionStateIcon } from '../../components/SessionStateIcon';
@@ -9,6 +10,7 @@ import { shortId } from '../../data/format';
 import { useProjectRetrospectives } from '../../data/retrospective-read';
 import { useSessionList } from '../../data/workbench-sessions';
 import {
+  changeText,
   decideImprovement,
   DOMAIN_LABEL,
   PARAM_LABEL,
@@ -284,6 +286,10 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
     change.type === 'experience' && (item.status === 'trial' || item.status === 'active');
   const used = useImprovementSessions(projectId, injected ? item.id : null);
   const listed = useSessionList(injected ? projectId : null);
+  const replaced = changeFrom(
+    item,
+    useBoard((s) => s.board?.projects),
+  );
 
   const cells: { cap: string; value: ReactNode }[] = [];
   if (change.type === 'experience') {
@@ -459,8 +465,16 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
       </div>
 
       <p className="mld-rule">
-        {change.type === 'experience' ? codeParts(change.procedure) : policyRule(change)}
+        {change.type === 'experience'
+          ? codeParts(change.procedure)
+          : change.type === 'policy_change'
+            ? policyRule(change)
+            : changeText(change)}
       </p>
+
+      {(change.type === 'gate_command' || change.type === 'worktree_setup') && (
+        <LearnedChangeDiff change={change} from={replaced} />
+      )}
 
       {change.type === 'experience' && change.countercondition && (
         <div className="mld-sec">

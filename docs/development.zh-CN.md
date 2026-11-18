@@ -203,6 +203,10 @@ node tests/acceptance/verify/run.mjs --boot [--out <目录>] [--size WxH] [条�
 | `node scripts/eval.mjs run --runtime codex` 或 `claude` | 用真实模型跑冻结任务。                         |
 | `node scripts/eval.mjs report <运行目录>`               | 按运行目录重出报告。                           |
 
+冻结任务引用的提交不在本仓库的公开历史里。
+`node scripts/eval.mjs history <bundle> <目录>` 把存着这些提交的 git bundle 取进 `<目录>` 下新建的裸仓库，并列出它缺的提交。
+设上 `PANTHEON_EVAL_HISTORY=<目录>` 后,`check` 和 `run` 从这个仓库读冻结提交。
+
 `run` 还接受 `--task <名字>`(可多次)、`--repetitions <n>`、`--workspace <目录>` 和 `--out <目录>`。
 `codex` 或 `claude` 的运行用真实 home 和真实模型。工作区默认在 `~/.pantheon-eval/`,`--workspace` 必须在本检出目录之外。
 

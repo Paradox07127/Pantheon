@@ -3,13 +3,17 @@ import type { TraceSpan } from '@pantheon/domain';
 /** The most base64 one image a tool returned carries in its event. */
 export const imageLimit = 4 * 1024 * 1024;
 
-export function tracePayload(value: unknown): Record<string, unknown> {
+/** The payload limit of the personal needs_you result, which the thread parses whole: about 40 items. */
+export const needsYouLimit = 65536;
+
+/** Bounds a payload to 16384 characters with strings of up to 4096, or to `limit` that one string may fill. */
+export function tracePayload(value: unknown, limit?: number): Record<string, unknown> {
   let truncated = false;
-  let remaining = 16384;
+  let remaining = limit ?? 16384;
   let nodes = 512;
   const seen = new WeakSet<object>();
   const text = (value: string): string => {
-    const kept = value.slice(0, Math.min(4096, remaining));
+    const kept = value.slice(0, Math.min(limit ?? 4096, remaining));
     remaining -= kept.length;
     if (kept.length < value.length) truncated = true;
     return kept;

@@ -356,6 +356,58 @@
   align-self: flex-start;
   margin: 2px 0 6px;
 }
+/* A plan approval row's estimate: sessions, tokens and time side by side under its line, each amount on one line while they fit. */
+.bf-est {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, max-content));
+  gap: var(--sp-6);
+  padding: var(--sp-1) 0 var(--sp-1);
+}
+.bf-es {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.bf-es-t {
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.bf-el {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+}
+.bf-el-v {
+  flex: none;
+  min-width: 56px;
+  font-family: var(--font-mono);
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.bf-el-v[data-unknown] {
+  font-family: var(--font-sans);
+  color: var(--tx2);
+}
+.bf-el-rt,
+.bf-el-r {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.bf-el-r > [role='img'] {
+  display: inline-flex;
+}
+.bf-el-n {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Since you left: a header across the card, then a cell per kind of change with its count; a cell with items opens them in a popover. */
 .bf-brief {

@@ -7,6 +7,7 @@ import {
   type SignalIssue,
   type Workspace,
 } from '@pantheon/domain';
+import { baselineChecked } from './baseline.js';
 import type { ControlContext } from './context.js';
 import { runGit } from './git.js';
 import { gateFailed, gateTemporary, runCandidateCommand } from './landing.js';
@@ -39,6 +40,7 @@ function finish(
     workspace_id: row.workspace_id!,
     reason: 'environment_check',
   });
+  if (ended.cause.kind === 'baseline') baselineChecked(ctx, ended);
   if (ended.cause.kind !== 'signal') return;
   const base = ended.commit?.slice(0, 7) ?? 'the base commit',
     failed = ended.commands.find((command) => command.exit_code !== 0);

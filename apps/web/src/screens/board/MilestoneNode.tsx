@@ -5,6 +5,7 @@ import type { BoardModel } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { t } from '../../i18n';
 import type { FlowOverlay } from './FlowOverlays';
+import { EvidenceMark } from './EvidenceMark';
 import { placeholder } from './MergedStack';
 import { daysLeft, dueText, VerifyBadge } from './MilestoneCard';
 import { milestoneCounts, type BoardMilestone } from './panels-model';
@@ -121,6 +122,11 @@ export function MilestoneNode({ data }: NodeProps<MilestoneFlowNode>) {
             )}
           </span>
         </div>
+        {milestone.evidence_level && (
+          <div className="bd-nev">
+            <EvidenceMark level={milestone.evidence_level} />
+          </div>
+        )}
         {milestone.criteria.length > 0 && (
           <div className="bd-nrow bd-ms-acc">
             <span

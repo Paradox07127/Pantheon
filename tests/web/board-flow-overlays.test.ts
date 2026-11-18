@@ -23,6 +23,7 @@ import { NODE_HEIGHT } from '@/screens/board/flow-layout';
 import { MergedStack, stackMerged } from '@/screens/board/MergedStack';
 import { MilestoneNode } from '@/screens/board/MilestoneNode';
 import { VerifyBadge } from '@/screens/board/MilestoneCard';
+import { EvidenceMark } from '@/screens/board/EvidenceMark';
 import { addDraftEdit, discardDraftEdits, draftEdits } from '@/data/plan-draft';
 import type { SnapshotSession } from '@/screens/board/panels-model';
 
@@ -427,6 +428,33 @@ describe('the flow chart overlays', () => {
     const badge = find(host.value, (n) => n.type === VerifyBadge);
     const drawn = VerifyBadge(badge.props)!;
     expect(find(drawn, (n) => n.props.role === 'img').props['aria-label']).toBe(zh(id));
+  });
+
+  const evidenceOf = (level: BoardModel['milestones'][number]['evidence_level']) => {
+    const model = board();
+    model.milestones[0] = { ...model.milestones[0]!, ...(level && { evidence_level: level }) };
+    const milestone = canvas({ model }).node('milestone:m1');
+    const host = mount(() => MilestoneNode({ data: milestone.data } as never));
+    const mark = nodes(host.value).find((n) => n.type === EvidenceMark);
+    const drawn = mark && EvidenceMark(mark.props);
+    return drawn ? [drawn.props['aria-label'], text(drawn)] : null;
+  };
+
+  it.each([
+    ['accepted', 'accepted'],
+    ['verified', 'verified'],
+    ['reviewed', 'reviewed'],
+    ['gate', 'gate'],
+    ['report', 'report'],
+  ] as const)('marks the milestone node backed by %s', (level, key) => {
+    expect(evidenceOf(level)).toEqual([
+      zh(`board.evidence.${key}.label`),
+      zh(`board.evidence.${key}`),
+    ]);
+  });
+
+  it('marks no milestone node without a level', () => {
+    expect(evidenceOf(undefined)).toBeNull();
   });
 
   it('draws the link from merged work into the milestone as met', () => {

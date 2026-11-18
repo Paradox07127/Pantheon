@@ -8,8 +8,9 @@ import { useQuery, useRefetchTick } from './workbench-sessions';
 const acceptView = (value: unknown): BoardModel | null =>
   Array.isArray((value as Partial<BoardModel> | null)?.tasks) ? (value as BoardModel) : null;
 
-// Session states, merges, usage, milestones, review findings, plans, claims and worker reports.
+// Session states, merges, usage, goals, milestones, review findings, plans, claims and worker reports.
 const BOARD_PREFIXES = [
+  'goal.',
   'session.',
   'turn.',
   'workspace.',

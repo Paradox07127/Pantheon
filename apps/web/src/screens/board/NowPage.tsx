@@ -101,6 +101,8 @@ export function NowPage({
   loadingPanel,
   graphFull,
   onGraphFull,
+  needsAsked,
+  onNeedsAsked,
 }: {
   model: BoardModel | null;
   shown: BoardModel | null;
@@ -126,6 +128,9 @@ export function NowPage({
   /** The user expanded the chart over the strips. */
   graphFull: boolean;
   onGraphFull: () => void;
+  /** The goals view asked for the needs-you strip; `onNeedsAsked` once it took the focus. */
+  needsAsked: boolean;
+  onNeedsAsked: () => void;
 }) {
   // Only a chart with nodes to draw holds its share of the height or takes the strips' place.
   const graph = !setupPanel && !empty && !!shown && hasPlanTasks(shown);
@@ -154,6 +159,8 @@ export function NowPage({
               drawer={selectedIn('flow') !== null}
               hidden={full}
               onShow={onGraphFull}
+              asked={needsAsked}
+              onAsked={onNeedsAsked}
             />
           )}
           {model && shown && (

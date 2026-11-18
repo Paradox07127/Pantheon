@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { id } from '@pantheon/domain';
 import type {
+  Approval,
   BoardPlan,
   Milestone,
   Principal,
@@ -127,8 +128,9 @@ describe('project goals', () => {
   it('refuses goal changes from a lead and from a personal agent', async () => {
     const f = await fixture();
     try {
+      const leader = lead(f);
       const byLead = failure(() =>
-        f.call('goal.set', { project_id: f.project.id, text: 'Lead goal' }, null, lead(f)),
+        f.call('goal.set', { project_id: f.project.id, text: 'Lead goal' }, null, leader),
       );
       expect(byLead.code).toBe('permission_denied');
       const personal: Principal = { id: 'personal:k1', role: 'personal' };
@@ -140,6 +142,59 @@ describe('project goals', () => {
         message: "Outside the personal agent's scope",
       });
       expect(goals(f)).toEqual([]);
+      const archived = add(f, 'Ship export');
+      const next = f.call<ProjectGoal>('goal.archive', { goal_id: archived.id }, archived.revision);
+      for (const principal of [leader, personal])
+        expect(
+          failure(() => f.call('goal.restore', { goal_id: archived.id }, next.revision, principal))
+            .code,
+        ).toBe('permission_denied');
+      expect(goals(f)).toEqual([]);
+    } finally {
+      await f.close();
+    }
+  });
+  it('restores an archived goal at its order, after a goal that took the same order', async () => {
+    const f = await fixture();
+    try {
+      const [a, b, c] = ['A', 'B', 'C'].map((text) => add(f, text));
+      const restore = (goal: ProjectGoal) => {
+        const archived = f.call<ProjectGoal>('goal.archive', { goal_id: goal.id }, goal.revision);
+        const restored = f.call<ProjectGoal>(
+          'goal.restore',
+          { goal_id: goal.id },
+          archived.revision,
+        );
+        expect(restored.archived_at).toBeUndefined();
+        expect(restored.revision).toBe(archived.revision + 1);
+        return restored;
+      };
+      restore(b!);
+      expect(goals(f).map((g) => g.text)).toEqual(['A', 'B', 'C']);
+      const archived = f.call<ProjectGoal>('goal.archive', { goal_id: a!.id }, a!.revision);
+      f.call('goal.reorder', { project_id: f.project.id, goal_ids: [c!.id, b!.id] });
+      f.call('goal.restore', { goal_id: a!.id }, archived.revision);
+      expect(goals(f).map((g) => g.text)).toEqual(['C', 'A', 'B']);
+    } finally {
+      await f.close();
+    }
+  });
+  it('refuses to restore a goal that is not archived or past seven active goals', async () => {
+    const f = await fixture();
+    try {
+      const first = add(f, 'Goal 1');
+      expect(
+        failure(() => f.call('goal.restore', { goal_id: first.id }, first.revision)),
+      ).toMatchObject({ code: 'invalid_state' });
+      const archived = f.call<ProjectGoal>('goal.archive', { goal_id: first.id }, first.revision);
+      for (let n = 2; n <= 8; n += 1) add(f, `Goal ${n}`);
+      expect(
+        failure(() => f.call('goal.restore', { goal_id: first.id }, archived.revision)),
+      ).toMatchObject({
+        code: 'invalid_state',
+        message: 'A project has at most 7 active goals; archive one first',
+      });
+      expect(goals(f).map((g) => g.id)).not.toContain(first.id);
     } finally {
       await f.close();
     }
@@ -445,6 +500,108 @@ describe('milestone goal links', () => {
         milestones: { done: 1, ready: 0, total: 1 },
         tasks: { done: 1, total: 1 },
       });
+    } finally {
+      await f.close();
+    }
+  });
+  it('keeps the milestones of a goal under it after the goal is archived and restored', async () => {
+    const f = await fixture({ managedWorkspaces: true });
+    try {
+      const goal = add(f, 'Ship export');
+      const p = exportLead(f);
+      sendPlan(f, p, { goal: goal.id });
+      const archived = f.call<ProjectGoal>('goal.archive', { goal_id: goal.id }, goal.revision);
+      f.call('goal.restore', { goal_id: goal.id }, archived.revision);
+      const row = f.store.list<Milestone>('milestones').find((m) => m.key === 'm1')!;
+      const views = f.call<ProjectRead>('project.read', { project_id: f.project.id }).goals;
+      expect(views.map((view) => [view.goal.id, view.milestone_ids])).toEqual([
+        [goal.id, [row.id]],
+      ]);
+    } finally {
+      await f.close();
+    }
+  });
+  it('counts on each board goal the items waiting on its tasks and milestones', async () => {
+    const f = await fixture({ managedWorkspaces: true });
+    try {
+      const shipped = add(f, 'Ship export');
+      const other = add(f, 'Keep data local');
+      const p = exportLead(f);
+      const task = (id: string, milestone: string) => ({
+        id,
+        title: id,
+        goal: 'Serve exports',
+        lane: 'core',
+        depends_on: [],
+        source: ['Ship the export API'],
+        scope: [],
+        acceptance: [],
+        done_when: 'report',
+        milestone,
+      });
+      f.call(
+        'board.plan.update',
+        {
+          project_id: f.project.id,
+          base_version: 0,
+          headline: 'Export ships this week',
+          lanes: [{ id: 'core', title: 'Core' }],
+          tasks: [task('api', 'm1'), task('csv', 'm2'), task('local', 'm3')],
+          milestones: [
+            { id: 'm1', title: 'Release', criteria: ['Exports download'], tasks: ['api'] },
+            { id: 'm2', title: 'Formats', criteria: ['CSV'], tasks: ['csv'] },
+            { id: 'm3', title: 'Offline', criteria: ['No upload'], tasks: ['local'] },
+          ].map((milestone) => ({
+            ...milestone,
+            goal: milestone.id === 'm3' ? other.id : shipped.id,
+          })),
+          risks: [],
+          assumptions: [],
+        },
+        null,
+        p,
+      );
+      const plan = planOf(f, p);
+      const at = f.store.now();
+      f.store.update<BoardPlan>(
+        'board_plans',
+        {
+          ...plan,
+          accepted: { api: { at, evidence: 'The report answers it', generation: 1 } },
+          dispatch: {
+            csv: {
+              requested_at: at,
+              error: { code: 'workspace_failed', message: 'No worktree', at, attempts: 1 },
+            },
+          },
+        },
+        plan.revision,
+      );
+      const needsOf = () =>
+        f.control.boardView(user, f.project.id, 1).goals.map((goal) => [goal.id, goal.needs]);
+      expect(needsOf()).toEqual([
+        [shipped.id, 2],
+        [other.id, 0],
+      ]);
+      f.store.insert<Approval>('approvals', {
+        id: 'lead-approval',
+        revision: 1,
+        project_id: f.project.id,
+        kind: 'permission',
+        session_id: p.session_id!,
+        request_id: 'lead-request',
+        tool: 'Bash',
+        input_hash: 'hash',
+        decider: 'user',
+        state: 'pending',
+        created_at: at,
+      });
+      const board = f.control.boardView(user, f.project.id, 1);
+      expect(board.needs!.find((item) => item.source.id === 'lead-approval')).toBeDefined();
+      expect(needsOf()).toEqual([
+        [shipped.id, 2],
+        [other.id, 0],
+      ]);
     } finally {
       await f.close();
     }

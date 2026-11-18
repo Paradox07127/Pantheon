@@ -1,0 +1,42 @@
+/* Evidence mark: the same chip on the task node, the task drawer and the milestone node; report only is the weakest. */
+.bd-evm {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px 0 4px;
+  border: var(--hair) solid var(--bd2);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.bd-evm > svg {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--mu);
+}
+.bd-evm:is([data-level='verified'], [data-level='accepted']) {
+  color: var(--tx);
+}
+.bd-evm:is([data-level='verified'], [data-level='accepted']) > svg {
+  color: var(--ok);
+}
+.bd-evm[data-level='report'] {
+  border-style: dashed;
+  border-color: var(--bd3);
+  background: none;
+  color: var(--mu);
+}
+.bd-evm[data-level='report'] > svg {
+  color: var(--faint);
+}
+/* The node's own row for the mark, under its title and line. */
+.bd-nev {
+  display: flex;
+  min-width: 0;
+}

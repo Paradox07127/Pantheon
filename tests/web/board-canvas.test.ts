@@ -341,6 +341,104 @@ describe('board canvas bands', () => {
     expect(nodes(lanes).some((n) => n.props.text === 'Endpoints share no files')).toBe(true);
   });
 
+  type Lane = BoardModel['lanes'][number];
+  const deep = (lane: Partial<Lane>) => {
+    const model = board([
+      task('a', { lane_id: 'lead-1:api' }),
+      task('b', { lane_id: 'lead-1:ui' }),
+    ]);
+    model.lanes = [
+      { id: 'lead-1:api', title: 'API', ...lane },
+      { id: 'lead-1:ui', title: 'UI' },
+    ];
+    return model;
+  };
+  const sessions = [{ id: 'lead-1', project_id: 'canvas-project' }] as never[];
+  const depthOf = (lane: string) => zhf('board.canvas.lane.depth.label', { lane });
+  const headed = (lane: Partial<Lane>, run = vi.fn(async () => null as string | null)) =>
+    call(named(canvas({ model: deep(lane), tell: { sessions, run } }).value, 'Lanes'));
+  const laneText = (tree: ReactNode, id: string) => text(nodes(tree).find((n) => n.key === id));
+
+  it("marks the lane's depth in a three-way choice named after the lane, none while it has none", () => {
+    const lanes = headed({ depth: 'plan_first', depth_by: 'lead' });
+    const choice = labelled(lanes, depthOf('API'));
+    expect(choice.props.value).toBe('plan_first');
+    expect(nodes(choice.props.children).map((n) => [n.props.value, text(n)])).toEqual([
+      ['just_do', zh('board.canvas.lane.depth.justDo')],
+      ['plan_first', zh('board.canvas.lane.depth.planFirst')],
+      ['spec_first', zh('board.canvas.lane.depth.specFirst')],
+    ]);
+    expect(labelled(lanes, depthOf('UI')).props.value).toBeNull();
+  });
+
+  it('sets the depth the user picks on the lead of the lane', async () => {
+    const run = vi.fn(async () => null as string | null);
+    labelled(
+      headed({ depth: 'just_do', depth_by: 'lead' }, run),
+      depthOf('API'),
+    ).props.onValueChange('spec_first');
+    await Promise.resolve();
+    expect(run).toHaveBeenCalledWith(
+      'board.lane.depth.set',
+      {
+        project_id: 'canvas-project',
+        lead_session_id: 'lead-1',
+        lane_id: 'api',
+        depth: 'spec_first',
+      },
+      null,
+    );
+  });
+
+  it.each<[string, NonNullable<Lane['depth_by']>, () => string, () => string | null]>([
+    [
+      'the lead',
+      'lead',
+      () => zh('board.canvas.lane.by.lead'),
+      () => 'One change the gates can check',
+    ],
+    ['you', 'user', () => zh('board.canvas.lane.by.user'), () => null],
+    [
+      'Pantheon',
+      'pantheon',
+      () => zh('board.canvas.lane.by.pantheon'),
+      () => zh('board.canvas.lane.reason.pantheon'),
+    ],
+  ])(
+    'says %s chose the depth, with the reason only the lead gives or Pantheon holds',
+    (_who, by, name, why) => {
+      const shown = laneText(
+        headed({
+          depth: 'plan_first',
+          depth_by: by,
+          depth_reason: 'One change the gates can check',
+        }),
+        'lead-1:api',
+      );
+      expect(shown).toContain(name());
+      const reason = why();
+      if (reason) expect(shown).toContain(reason);
+      if (by !== 'lead') expect(shown).not.toContain('One change the gates can check');
+    },
+  );
+
+  it("shows whether the lane's plan waits for the user's approval or was approved", () => {
+    const waiting = laneText(
+      headed({ depth: 'plan_first', depth_by: 'pantheon', stop: { state: 'waiting', at: NOW } }),
+      'lead-1:api',
+    );
+    expect(waiting).toContain(zh('board.canvas.lane.stop.waiting'));
+    const approved = laneText(
+      headed({ depth: 'plan_first', depth_by: 'user', stop: { state: 'approved', at: NOW } }),
+      'lead-1:api',
+    );
+    expect(approved).toContain(zh('board.canvas.lane.stop.approved'));
+    expect(approved).not.toContain(zh('board.canvas.lane.stop.waiting'));
+    const none = laneText(headed({ depth: 'just_do', depth_by: 'lead' }), 'lead-1:api');
+    expect(none).not.toContain(zh('board.canvas.lane.stop.approved'));
+    expect(none).not.toContain(zh('board.canvas.lane.stop.waiting'));
+  });
+
   it('gives a discarded row its own segment, so the bar holds every task the total counts', () => {
     const model = board([
       task('m', { lane_id: 'api', state: 'merged', status: 'done' }),

@@ -35,7 +35,7 @@ import { ownEntry, planUnfinished, planViews, retiredBinding } from './board-pla
 import { residentPlan } from './agent-always-on.js';
 import { deviceHasLabel, listDevices } from './devices.js';
 import { history } from './project-facts.js';
-import { INBOX_HEADER, appendNote, noteOtherPlan, opText } from './lead-inbox.js';
+import { INBOX_HEADER, appendNote, noteOtherPlan, opText, refuteText } from './lead-inbox.js';
 import { reviewPlan } from './review.js';
 import { projectRoutingTable } from './routing-table.js';
 import {
@@ -59,7 +59,7 @@ type PlanInput = Omit<
 > & { order_lock?: string[] };
 type PlanTask = PlanInput['tasks'][number];
 type EditOp = ReturnType<(typeof inputSchemas)['board.plan.edit']['parse']>['ops'][number];
-type PatchOp = Exclude<EditOp, { type: 'resolve_edit' }>;
+type PatchOp = Exclude<EditOp, { type: 'resolve_edit' | 'refute_assumption' }>;
 type ProposedOp = ReturnType<(typeof inputSchemas)['board.plan.propose']['parse']>['ops'][number];
 type PlanOp = Exclude<ProposedOp, { type: 'add_lane' }>;
 type Lane = BoardPlan['lanes'][number];
@@ -1014,17 +1014,27 @@ function leadEdit(
   ctx: ControlContext,
   p: Principal,
   plan: BoardPlan,
-  ops: EditOp[],
+  edits: EditOp[],
   commandId: string,
   lanes: Lane[] = [],
 ): BoardPlan {
+  const ops = edits.filter(
+    (op): op is Exclude<EditOp, { type: 'refute_assumption' }> => op.type !== 'refute_assumption',
+  );
+  requireThat(
+    ops.length === edits.length,
+    'permission_denied',
+    'Only the user refutes an assumption',
+  );
   requireThat(
     p.role === 'user' || ops.every((op) => op.type !== 'lock_order' && op.type !== 'unlock_order'),
     'permission_denied',
     'Only the user may lock or unlock task order',
   );
   const pending = [...plan.pending_edits],
-    patches: PatchOp[] = [];
+    patches: PatchOp[] = [],
+    refutes: NonNullable<PendingPlanEdit['refutes']> = [],
+    gone: LeadNote[] = [];
   for (const op of ops) {
     if (op.type !== 'resolve_edit') {
       patches.push(op);
@@ -1035,7 +1045,25 @@ function leadEdit(
     );
     requireThat(index >= 0, 'not_found', `Not found: pending user edit ${op.edit_id}`);
     const edit = pending[index]!;
-    if (op.decision === 'apply') patches.push(...edit.ops);
+    if (op.decision === 'apply') {
+      patches.push(...edit.ops);
+      const kept = (edit.refutes ?? []).filter((refute) =>
+        plan.assumptions.some((assumption) => assumption.id === refute.assumption_id),
+      );
+      refutes.push(...kept);
+      const removed = (edit.refutes ?? [])
+        .filter((refute) => !kept.includes(refute))
+        .map((refute) => refute.assumption_id);
+      if (removed.length)
+        gone.push({
+          at: ctx.store.now(),
+          session_id: '',
+          task_id: edit.task_ids[0] ?? '',
+          kind: 'user_edit',
+          edit_id: edit.edit_id,
+          text: `Assumption ${removed.join(', ')} is no longer in your plan, so edit ${edit.edit_id} did not change it; its other changes were applied.`,
+        });
+    }
     pending[index] = {
       ...edit,
       status: op.decision === 'apply' ? 'applied' : 'rejected',
@@ -1045,20 +1073,34 @@ function leadEdit(
   }
   // A user edit the lead applies stays unchecked, as it is when the user's edit applies at once.
   const leadTasks = new Set(ops.flatMap((op) => (op.type === 'resolve_edit' ? [] : opTaskIds(op))));
-  return storePlan(ctx, p, plan.id, applyOps(planContent(ctx, plan, lanes), patches), commandId, {
-    pendingEdits: pending,
-    leadTasks,
-    writtenTiers: opsTiers(ops.flatMap((op) => (op.type === 'resolve_edit' ? [] : [op]))),
-    userEdits: pending
-      .filter(
-        (edit) =>
-          edit.status === 'applied' &&
-          plan.pending_edits.some(
-            (old) => old.edit_id === edit.edit_id && old.status === 'pending',
-          ),
-      )
-      .map((edit) => ({ edit_id: edit.edit_id, task_ids: edit.task_ids })),
+  const content = planContent(ctx, plan, lanes);
+  // An applied refute replaces the assumption's text before the edit's ops apply.
+  const assumptions = content.assumptions.map((assumption) => {
+    const refute = refutes.find((entry) => entry.assumption_id === assumption.id);
+    return refute ? { ...assumption, text: refute.instead } : assumption;
   });
+  const next = storePlan(
+    ctx,
+    p,
+    plan.id,
+    applyOps({ ...content, assumptions }, patches),
+    commandId,
+    {
+      pendingEdits: pending,
+      leadTasks,
+      writtenTiers: opsTiers(ops.flatMap((op) => (op.type === 'resolve_edit' ? [] : [op]))),
+      userEdits: pending
+        .filter(
+          (edit) =>
+            edit.status === 'applied' &&
+            plan.pending_edits.some(
+              (old) => old.edit_id === edit.edit_id && old.status === 'pending',
+            ),
+        )
+        .map((edit) => ({ edit_id: edit.edit_id, task_ids: edit.task_ids })),
+    },
+  );
+  return gone.reduce((stored, note) => appendNote(ctx, stored, note, commandId), next);
 }
 
 /** Records the proposal's outcome on the plan its accepted ops reached, leaves the lead a note and reviews an accepted change. */
@@ -1107,14 +1149,23 @@ function userEdit(
 ): { edit_id: string; applied: boolean } {
   // Without a reason, the lead's next write to the task is refused when the path is not its tier's.
   const patches = ops
-    .filter((op): op is PatchOp => op.type !== 'resolve_edit')
+    .filter((op): op is PatchOp => op.type !== 'resolve_edit' && op.type !== 'refute_assumption')
     .map((op) =>
       op.type === 'set_task' && op.patch.path && !op.patch.flow_reason
         ? { ...op, patch: { ...op.patch, flow_reason: USER_FLOW_REASON } }
         : op,
     );
+  const refutes = ops.flatMap((op) => {
+    if (op.type !== 'refute_assumption') return [];
+    const assumption = plan.assumptions.find((entry) => entry.id === op.assumption_id);
+    requireThat(assumption, 'not_found', `Not found: assumption ${op.assumption_id} in the plan`);
+    return [{ assumption_id: op.assumption_id, text: assumption.text, instead: op.instead }];
+  });
+  const rested = refutes.flatMap(
+    (refute) => plan.assumptions.find((entry) => entry.id === refute.assumption_id)!.affects ?? [],
+  );
   requireThat(
-    patches.length === ops.length,
+    patches.length + refutes.length === ops.length,
     'permission_denied',
     'Only the lead resolves a pending edit',
   );
@@ -1140,20 +1191,27 @@ function userEdit(
       .map((session) => session.task!.id),
     ...(claimed ? [claimed] : []),
   ]);
-  const applied = !patches.some(
-    (op) =>
-      op.type !== 'add_task' &&
-      op.type !== 'move_task' &&
-      op.type !== 'lock_order' &&
-      op.type !== 'unlock_order' &&
-      op.type !== 'set_iterations' &&
-      op.type !== 'set_milestone' &&
-      unfinished.has(op.task_id) &&
-      (op.type !== 'set_task' || Object.keys(op.patch).some((key) => !RECORD_FIELDS.includes(key))),
-  );
+  // A refute always waits for the lead, which re-plans around the user's correction.
+  const applied =
+    !refutes.length &&
+    !patches.some(
+      (op) =>
+        op.type !== 'add_task' &&
+        op.type !== 'move_task' &&
+        op.type !== 'lock_order' &&
+        op.type !== 'unlock_order' &&
+        op.type !== 'set_iterations' &&
+        op.type !== 'set_milestone' &&
+        unfinished.has(op.task_id) &&
+        (op.type !== 'set_task' ||
+          Object.keys(op.patch).some((key) => !RECORD_FIELDS.includes(key))),
+    );
   const editId = id(),
-    taskIds = [...new Set(patches.flatMap(opTaskIds))];
-  const lines = patches.map((op) => `- ${opText(op)}`).join('\n');
+    taskIds = [...new Set([...patches.flatMap(opTaskIds), ...rested])];
+  const lines = [
+    ...patches.map((op) => `- ${opText(op)}`),
+    ...refutes.map((refute) => `- ${refuteText(plan, refute)}`),
+  ].join('\n');
   const note: LeadNote = {
     at: ctx.store.now(),
     session_id: '',
@@ -1162,7 +1220,7 @@ function userEdit(
     edit_state: applied ? 'applied' : 'pending',
     text: applied
       ? `The user changed your plan:\n${lines}`
-      : `The user asks to change tasks that have unfinished sessions; apply or reject it with edit_board resolve_edit, edit_id ${editId}:\n${lines}`,
+      : `${refutes.length ? 'The user says an assumption of your plan is wrong' : 'The user asks to change tasks that have unfinished sessions'}; apply or reject it with edit_board resolve_edit, edit_id ${editId}:\n${lines}`,
     edit: {
       edit_id: editId,
       ops: patches,
@@ -1197,6 +1255,7 @@ function userEdit(
                     canonical(edited.tasks.find((task) => task.id === op.task_id)?.[field]),
               )),
         ),
+      ...(refutes.length ? { refutes } : {}),
     },
   };
   if (applied) {
@@ -1229,7 +1288,8 @@ function userEdit(
     edit_id: editId,
     ops: heldOps,
     base_version: baseVersion,
-    task_ids: [...new Set(heldOps.flatMap(opTaskIds))],
+    task_ids: [...new Set([...heldOps.flatMap(opTaskIds), ...rested])],
+    ...(refutes.length ? { refutes } : {}),
     created_at: ctx.store.now(),
     status: 'pending',
   };
@@ -1263,11 +1323,11 @@ function withdrawEdit(
   const note: LeadNote = {
     at: ctx.store.now(),
     session_id: '',
-    task_id: edit.task_ids[0]!,
+    task_id: edit.task_ids[0] ?? '',
     kind: 'user_edit',
     edit_state: 'withdrawn',
     edit_id: editId,
-    text: `The user withdrew edit ${editId}, so your plan stays as it is; it no longer waits for you, so do not call edit_board resolve_edit for it:\n${edit.ops.map((op) => `- ${opText(op)}`).join('\n')}`,
+    text: `The user withdrew edit ${editId}, so your plan stays as it is; it no longer waits for you, so do not call edit_board resolve_edit for it:\n${[...edit.ops.map((op) => `- ${opText(op)}`), ...(edit.refutes ?? []).map((refute) => `- ${refuteText(plan, refute)}`)].join('\n')}`,
   };
   appendNote(ctx, { ...plan, pending_edits: pending }, note, commandId);
 }

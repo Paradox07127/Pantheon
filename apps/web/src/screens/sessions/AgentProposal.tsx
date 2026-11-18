@@ -202,7 +202,18 @@ export function AgentProposalCall(props: {
         <div className="ag-form ag-pform">
           {agentFieldRows({
             draft,
-            set: (patch) => setDraft((now) => now && { ...now, ...patch }),
+            // agent.proposal.resolve takes no precheck, so a routine added from a template drops its check.
+            set: ({ routines, ...patch }) =>
+              setDraft(
+                (now) =>
+                  now && {
+                    ...now,
+                    ...patch,
+                    ...(routines && {
+                      routines: routines.map(({ precheck: _check, ...routine }) => routine),
+                    }),
+                  },
+              ),
             id: `ag-${proposal.id}`,
             projectId: proposal.project_id,
             fields: shown,

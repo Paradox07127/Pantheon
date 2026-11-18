@@ -19,6 +19,7 @@ import {
   type BaselineFacts,
   type BaselineFolder,
   type BaselineQuestion,
+  type EnvironmentCheck,
   type ExtensionOverrides,
   type Principal,
   type Project,
@@ -61,6 +62,7 @@ import { queueTurn } from './task-tracking.js';
 import { readAppSettings } from './app-settings.js';
 import { visualHandlers } from './visual.js';
 import { rangeCommits, startRangeStory, type RangeCommit } from './range-story.js';
+import { startEnvironmentCheck } from './environment-check.js';
 
 export const BASELINE_WALL_TIME_MS = 30 * 60 * 1000;
 const FACTS_KEPT = 30;
@@ -863,6 +865,34 @@ function submit(
     { session_id: session.id, dropped: next.dropped },
     c.command_id,
   );
+  if (
+    next.environment?.fix_requested_at !== undefined &&
+    !ctx.store
+      .list<EnvironmentCheck>('environment_checks')
+      .some(
+        (row) =>
+          row.cause.kind === 'baseline' &&
+          row.cause.baseline_id === next.id &&
+          row.cause.attempt === 2,
+      )
+  )
+    for (const folder of result.folders) {
+      const commands = baselineCommands(folder);
+      if (!commands.length) continue;
+      try {
+        startEnvironmentCheck(ctx, {
+          project_id: project.id,
+          root: folder.root,
+          commands,
+          ...(folder.commands?.setup && { setup: { argv: folder.commands.setup.argv } }),
+          base_ref: 'HEAD',
+          cause: { kind: 'baseline', baseline_id: next.id, attempt: 2 },
+        });
+      } catch (error) {
+        // A folder Pantheon cannot make a worktree of gets no check; the submission still stands.
+        if (!(error instanceof DomainError)) throw error;
+      }
+    }
   const auto = [...(project.extension_auto ?? [])];
   const overrides = { ...project.extension_overrides };
   const changed = new Set<string>();
@@ -1229,6 +1259,115 @@ export function sessionEnded(ctx: ControlContext, sessionId: string): boolean {
     !ctx.store
       .list<SessionTurn>('session_turns')
       .some((turn) => turn.session_id === sessionId && ['queued', 'running'].includes(turn.state))
+  );
+}
+
+/** The commands an environment check of a folder runs: its gate, then build, test and lint not already in it. */
+function baselineCommands(folder: BaselineFolder): { name: string; argv: string[] }[] {
+  const same = (a: string[], b: string[]) => a.join('\0') === b.join('\0');
+  return [
+    ...folder.gate.map(({ name, argv }) => ({ name, argv })),
+    ...(['build', 'test', 'lint'] as const).flatMap((name) => {
+      const entry = folder.commands?.[name];
+      return entry && !folder.gate.some((gate) => same(gate.argv, entry.argv))
+        ? [{ name, argv: entry.argv }]
+        : [];
+    }),
+  ];
+}
+
+/**
+ * Records an ended check of a baseline's proposed commands. When every folder's first check has
+ * ended and one failed on its code, the submitted baseline goes back to its session once to fix
+ * the commands, without using a round. The caller owns the transaction.
+ */
+export function baselineChecked(ctx: ControlContext, row: EnvironmentCheck): void {
+  if (row.cause.kind !== 'baseline') return;
+  const { baseline_id, attempt } = row.cause;
+  const baseline = ctx.store.must<ProjectBaseline>('project_baselines', baseline_id);
+  const checks = ctx.store
+    .list<EnvironmentCheck>('environment_checks')
+    .filter(
+      (entry) =>
+        entry.cause.kind === 'baseline' &&
+        entry.cause.baseline_id === baseline_id &&
+        entry.cause.attempt === attempt,
+    );
+  const environment: NonNullable<ProjectBaseline['environment']> = {
+    ...baseline.environment,
+    check_ids: [
+      ...new Set([...(baseline.environment?.check_ids ?? []), ...checks.map((entry) => entry.id)]),
+    ],
+    commands: checks.flatMap((check) => {
+      const folder = baseline.result?.folders.find((entry) => entry.root === check.root);
+      return [
+        ...check.commands.map((command) => ({
+          root: check.root,
+          name: command.name,
+          state: command.exit_code === 0 ? ('passed' as const) : ('failed' as const),
+        })),
+        ...(folder ? baselineCommands(folder) : [])
+          .filter((command) => !check.commands.some((ran) => ran.name === command.name))
+          .map((command) => ({ root: check.root, name: command.name, state: 'not_run' as const })),
+      ];
+    }),
+  };
+  const failed = checks.filter((entry) => entry.state === 'failed');
+  let session: Session | undefined;
+  if (
+    attempt === 1 &&
+    failed.length &&
+    checks.every((entry) => entry.state !== 'running') &&
+    baseline.state === 'submitted' &&
+    baseline.result &&
+    environment.fix_requested_at === undefined
+  ) {
+    session = ctx.store.must<Session>('sessions', baseline.session_id!);
+    try {
+      acceptInput(ctx, session, session.state === 'running' ? 'steer' : 'send');
+    } catch (error) {
+      // A baseline session that no longer takes input leaves the failure on the card for the user.
+      if (!(error instanceof DomainError)) throw error;
+      session = undefined;
+    }
+  }
+  if (!session) {
+    ctx.store.update<ProjectBaseline>(
+      'project_baselines',
+      { ...baseline, environment },
+      baseline.revision,
+    );
+    return;
+  }
+  const now = ctx.store.now();
+  ctx.store.update<ProjectBaseline>(
+    'project_baselines',
+    {
+      ...baseline,
+      state: 'running',
+      folders: baseline.result!.folders,
+      deadline: now + BASELINE_WALL_TIME_MS,
+      environment: { ...environment, fix_requested_at: now },
+    },
+    baseline.revision,
+  );
+  queueTurn(
+    ctx,
+    session,
+    [
+      'Pantheon ran the commands you proposed in a fresh worktree, prepared the way a worker gets one, and these failed:',
+      ...failed.flatMap((check) =>
+        check.commands
+          .filter((command) => command.exit_code !== 0)
+          .map(
+            (command) =>
+              `- ${command.name} in ${check.root} (exit ${command.exit_code}):\n${command.output_tail}`,
+          ),
+      ),
+      'Fix the command with project_baseline_submit_folder and project_baseline_submit, or keep it and say in a finding why it cannot run here. You get this once: Pantheon checks the commands one more time after you submit and does not send them back again.',
+    ].join('\n'),
+    'baseline',
+    row.id,
   );
 }
 

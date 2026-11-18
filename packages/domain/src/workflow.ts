@@ -1,4 +1,4 @@
-import type { EffortLevel, Entity, TurnSkill } from './index.js';
+import type { EffortLevel, Entity, Project, TurnSkill } from './index.js';
 import type { FlowPath, GateFailureClass, TaskKind } from './board.js';
 /** Stored definition versions and the task generations enrolled in a bounded trial. */
 export interface StoredWorkflowDefinition extends Entity {
@@ -233,7 +233,26 @@ export interface Improvement extends Entity {
         procedure: string;
         /** When not to do it; absent when it always applies. */
         countercondition?: string;
+      }
+    | {
+        type: 'gate_command';
+        /** The root realpath whose gate commands change. */
+        root: string;
+        /** Absent until the change is applied. */
+        from?: NonNullable<Project['gates']>[string];
+        to: NonNullable<Project['gates']>[string];
+      }
+    | {
+        type: 'worktree_setup';
+        /** Absent until the change is applied. */
+        from?: Project['worktree'];
+        to: Project['worktree'];
       };
+  /** What the change rests on besides the retrospectives; absent when nothing else. */
+  evidence?: {
+    kind: 'retrospective' | 'signal_issue' | 'session' | 'gate_run' | 'eval_receipt';
+    id: string;
+  }[];
   /** Unix epoch milliseconds. */
   proposed_at: number;
   /** Unix epoch milliseconds; absent until its trial starts. */
@@ -250,4 +269,9 @@ export interface Improvement extends Entity {
   };
   /** Unix epoch milliseconds when it became active, reverted or rejected; absent before. */
   decided_at?: number;
+}
+/** How a learned change takes effect: at once, on trial, or only when the user confirms it. */
+export type LearnedGrade = 'auto' | 'trial' | 'confirm';
+export function learnedGrade(change: Improvement['change']): LearnedGrade {
+  return change.type === 'policy_change' || change.type === 'experience' ? 'trial' : 'confirm';
 }

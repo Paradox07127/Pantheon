@@ -19,6 +19,10 @@ export interface MemoryRecord extends Entity {
   based_on: string;
   source_signature?: string;
   created_at: number;
+  /** When a session last read it with memory.get, stamped at most once a day. */
+  last_used_at?: number;
+  /** HEAD of the project's first root when a session proposed it with a file reference. */
+  verified_commit?: string;
   expires_at?: number;
   committed_at?: number;
   archived_at?: number;

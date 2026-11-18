@@ -19,6 +19,7 @@ import { command, pantheonConfigSchema, type Command } from '@pantheon/protocol'
 import type {
   BaselineFacts,
   BoardPlan,
+  EnvironmentCheck,
   Principal,
   Project,
   ProjectBrief,
@@ -33,7 +34,15 @@ import type { ControlContext } from '../../packages/control/src/context.js';
 import { tickProjectBaselines } from '../../packages/control/src/baseline.js';
 import { renderScanSeed } from '../../packages/control/src/baseline-brief.js';
 import { purposeSessionInstructions } from '../../packages/control/src/context.js';
-import { awaitWorkspaceReady, eventually, fixture, registerWorkspace, user } from '../helpers.js';
+import { startEnvironmentCheck } from '@pantheon/control';
+import {
+  awaitWorkspaceReady,
+  eventually,
+  fixture,
+  insideSandbox,
+  registerWorkspace,
+  user,
+} from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 const gitEnv = {
@@ -2614,5 +2623,191 @@ it.each([true, false])(
     } finally {
       await f.close();
     }
+  },
+);
+
+const failing = ['sh', '-c', 'echo broken test >&2; exit 3'];
+const passing = ['sh', '-c', 'true'];
+
+/** A submitted baseline whose one folder proposes the gate command `test` with argv. */
+async function checkedBaseline(argv: string[]) {
+  const f = await setup({ managedWorkspaces: true });
+  const head = f.populate();
+  const baseline = await f.startBaseline();
+  const folder = (argv: string[]) => ({
+    ...f.folder(),
+    gate: [{ name: 'test', argv, sources: ['file:package.json'] }],
+    commands: {},
+  });
+  await f.submitFolder(baseline, folder(argv));
+  const submitted = await f.submit(baseline, f.result(head));
+  const checks = () =>
+    f.store
+      .list<EnvironmentCheck>('environment_checks')
+      .filter((row) => row.cause.kind === 'baseline' && row.cause.baseline_id === baseline.id);
+  const turns = () =>
+    f.store
+      .list<SessionTurn>('session_turns')
+      .filter((turn) => turn.session_id === baseline.session_id);
+  /** Checks the proposed command the way the user's check of a submitted baseline does. */
+  const check = () =>
+    f.ctx.store.transaction(() =>
+      startEnvironmentCheck(f.ctx, {
+        project_id: f.project.id,
+        root: f.project.roots[0]!,
+        commands: [{ name: 'test', argv }],
+        base_ref: 'HEAD',
+        cause: { kind: 'baseline', baseline_id: baseline.id, attempt: 1 },
+      }),
+    );
+  const ended = () =>
+    eventually(
+      () => checks().every((row) => row.state !== 'running'),
+      () => f.control.tick(),
+      20000,
+    );
+  /** Hands the folder in again with argv and submits the same assessment. */
+  const resubmit = async (argv: string[]) => {
+    const running = f.current(baseline);
+    await f.submitFolder(running, folder(argv));
+    return f.submit(running, f.result(head));
+  };
+  return { f, submitted, checks, turns, check, ended, resubmit };
+}
+
+it.skipIf(insideSandbox)(
+  'sends the baseline session one fix turn when a proposed command fails in a fresh worktree',
+  async () => {
+    const { f, submitted, checks, turns, check, ended } = await checkedBaseline(failing);
+    try {
+      const before = turns().length;
+      const row = check();
+      await ended();
+      expect(checks()).toEqual([
+        expect.objectContaining({ id: row.id, state: 'failed', reason_code: 'checks_failed' }),
+      ]);
+      expect(f.current(submitted)).toMatchObject({
+        state: 'running',
+        folders: submitted.result!.folders,
+        deadline: f.store.now() + 30 * 60 * 1000,
+        environment: {
+          check_ids: [row.id],
+          fix_requested_at: f.store.now(),
+          commands: [{ root: f.project.roots[0], name: 'test', state: 'failed' }],
+        },
+      });
+      expect(f.current(submitted).rounds).toEqual(submitted.rounds);
+      expect(turns()).toHaveLength(before + 1);
+      const turn = turns().at(-1)!;
+      expect(turn.origin).toBe('baseline');
+      for (const text of [
+        'fresh worktree',
+        'test',
+        'exit 3',
+        'broken test',
+        'project_baseline_submit_folder',
+      ])
+        expect(turn.input).toContain(text);
+      expect(() => continueBaseline(f, f.current(submitted), [])).toThrow(
+        expect.objectContaining({ code: 'invalid_state' }),
+      );
+      await expect(async () =>
+        f.call(
+          'project.baseline.confirm',
+          { baseline_id: submitted.id, answers: [] },
+          f.current(submitted).revision,
+        ),
+      ).rejects.toThrow(expect.objectContaining({ code: 'invalid_state' }));
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.skipIf(insideSandbox).each<[string, string[], 'passed' | 'failed']>([
+  ['passes', passing, 'passed'],
+  ['fails again', failing, 'failed'],
+])(
+  'checks the resubmitted baseline once more and sends no second fix turn when it %s',
+  async (_, argv, state) => {
+    const { f, submitted, checks, turns, check, ended, resubmit } = await checkedBaseline(failing);
+    try {
+      const first = check();
+      await ended();
+      const fixed = turns().length;
+      const resubmitted = await resubmit(argv);
+      expect(resubmitted.state).toBe('submitted');
+      expect(checks()).toEqual([
+        expect.objectContaining({ id: first.id }),
+        expect.objectContaining({
+          state: 'running',
+          cause: { kind: 'baseline', baseline_id: submitted.id, attempt: 2 },
+        }),
+      ]);
+      await ended();
+      const second = checks()[1]!;
+      expect(second.state).toBe(state);
+      expect(f.current(submitted)).toMatchObject({
+        state: 'submitted',
+        environment: {
+          check_ids: [first.id, second.id],
+          commands: [{ root: f.project.roots[0], name: 'test', state }],
+        },
+      });
+      expect(turns()).toHaveLength(fixed);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'sends no fix turn when a proposed command could not start in the fresh worktree',
+  async () => {
+    const { f, submitted, checks, turns, check, ended } = await checkedBaseline([
+      'pantheon-missing-tool',
+      'test',
+    ]);
+    try {
+      const before = turns().length;
+      check();
+      await ended();
+      expect(checks()).toEqual([
+        expect.objectContaining({ state: 'inconclusive', reason_code: 'checks_environment' }),
+      ]);
+      expect(f.current(submitted).state).toBe('submitted');
+      expect(f.current(submitted).environment?.fix_requested_at).toBeUndefined();
+      expect(turns()).toHaveLength(before);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'writes the same project configuration on confirm with or without an environment check',
+  async () => {
+    const written: string[] = [];
+    for (const checked of [false, true]) {
+      const { f, submitted, check, ended } = await checkedBaseline(passing);
+      try {
+        if (checked) {
+          check();
+          await ended();
+        }
+        const confirmed = await f.call<ProjectBaseline>(
+          'project.baseline.confirm',
+          { baseline_id: submitted.id, answers: [] },
+          f.current(submitted).revision,
+        );
+        expect(confirmed.environment?.commands).toEqual(
+          checked ? [{ root: f.project.roots[0], name: 'test', state: 'passed' }] : undefined,
+        );
+        written.push(readFileSync(path.join(f.projectRoot, '.pantheon', 'config.json'), 'utf8'));
+      } finally {
+        await f.close();
+      }
+    }
+    expect(written[1]).toBe(written[0]);
   },
 );

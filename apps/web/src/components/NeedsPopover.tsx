@@ -164,7 +164,7 @@ function listPopover(props: {
   );
 }
 
-function needsGlyph(item: NeedsYouItem): ReactNode {
+export function needsGlyph(item: NeedsYouItem): ReactNode {
   switch (item.kind) {
     case 'permission':
       return <StateGlyph name={item.questions?.length ? 'question' : 'approval'} />;

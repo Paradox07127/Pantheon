@@ -26,6 +26,7 @@ const item = (over: Partial<ImprovementListItem> = {}): ImprovementListItem => (
   source: 'daemon',
   retrospective_ids: [],
   status: 'candidate',
+  grade: 'trial',
   change: experience(),
   proposed_at: at(13, 14, 33),
   ...over,

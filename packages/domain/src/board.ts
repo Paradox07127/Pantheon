@@ -355,6 +355,8 @@ export interface PendingPlanEdit {
   base_version: number;
   /** The tasks the edit touches. */
   task_ids: string[];
+  /** Plan assumptions the user says are wrong, with the text they had and what holds instead. */
+  refutes?: { assumption_id: string; text: string; instead: string }[];
   created_at: number;
   /** withdrawn: the user took it back before the lead decided. */
   status: 'pending' | 'applied' | 'rejected' | 'withdrawn';
@@ -459,6 +461,7 @@ export interface LeadNote {
     applied: boolean;
     /** Whether this edit should wake the lead; absent on older notes. */
     wake?: boolean;
+    refutes?: PendingPlanEdit['refutes'];
   };
   /** What became of the user's edit or the lead's proposal a user_edit note tells of. */
   edit_state?: 'pending' | 'applied' | 'withdrawn' | 'proposal';

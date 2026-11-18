@@ -131,11 +131,11 @@
 .bd-now-top[hidden] {
   display: none;
 }
-/* A question being answered in the needs-you strip takes all the height the chart's least leaves. */
-.bd-now-body[data-graph] > .bd-now-top:has(.bd-needs .qc) {
+/* A question being answered, a plan approval's estimate, or a proposed change's commands, in the needs-you strip takes all the height the chart's least leaves. */
+.bd-now-body[data-graph] > .bd-now-top:has(.bd-needs :is(.qc, .bf-est, .lcd)) {
   max-height: calc(100% - 240px);
 }
-.bd-now-body[data-graph]:has(> .bd-now-top .bd-needs .qc) .bd-cv {
+.bd-now-body[data-graph]:has(> .bd-now-top .bd-needs :is(.qc, .bf-est, .lcd)) .bd-cv {
   min-height: 240px;
 }
 /* The now view's canvas: the height the bar and the strips leave. */

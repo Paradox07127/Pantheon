@@ -100,6 +100,33 @@ export const projectGoalHandlers: Handlers = {
     ctx.store.event('goal.archived', next, old.project_id, next, c.command_id);
     return next;
   },
+  'goal.restore': (ctx, p, c) => {
+    userOnly(p);
+    const input = inputSchemas['goal.restore'].parse(c.input);
+    const old = ctx.store.must<ProjectGoal>('project_goals', input.goal_id);
+    projectAccess(ctx, p, old.project_id, c.type);
+    revision(ctx, c, old);
+    requireThat(old.archived_at !== undefined, 'invalid_state', `Goal ${old.id} is not archived`);
+    const active = projectGoals(ctx, old.project_id);
+    requireThat(
+      active.length < MAX_ACTIVE_GOALS,
+      'invalid_state',
+      `A project has at most ${MAX_ACTIVE_GOALS} active goals; archive one first`,
+    );
+    // Without renumbering the others, a goal holding its order keeps it and this one goes after.
+    const order = active.some((goal) => goal.order === old.order)
+      ? (old.order +
+          Math.min(
+            old.order + 1,
+            ...active.filter((g) => g.order > old.order).map((g) => g.order),
+          )) /
+        2
+      : old.order;
+    const { archived_at: _, ...rest } = old;
+    const next = ctx.store.update('project_goals', { ...rest, order }, old.revision);
+    ctx.store.event('goal.restored', next, old.project_id, next, c.command_id);
+    return next;
+  },
   'goal.reorder': (ctx, p, c) => {
     userOnly(p);
     const input = inputSchemas['goal.reorder'].parse(c.input);

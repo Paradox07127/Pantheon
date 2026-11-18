@@ -11,6 +11,8 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { Clip } from '../../apps/web/src/components/Clip.js';
 import { QuestionCard } from '../../apps/web/src/components/QuestionCard.js';
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
+import { useBoard } from '../../apps/web/src/data/board.js';
+import { durationText } from '../../apps/web/src/lib/time-text.js';
 import { useDrafts } from '../../apps/web/src/data/drafts.js';
 import type { NeedItem } from '../../apps/web/src/screens/board/frame-model.js';
 import type {
@@ -509,5 +511,157 @@ describe('request card', () => {
     button(h.value, zh('board.needs.actions.gates')).props.onClick();
     await h.flush();
     expect(run).toHaveBeenCalledWith('session.gates.run', { session_id: 'worker-1' }, 7);
+  });
+
+  const gateProposal = (to: Record<string, unknown>[]) =>
+    ({
+      ...proposal,
+      change: { type: 'gate_command', root: '/repo/api', to },
+    }) as unknown as Improvement;
+  const setupProposal = (to: Record<string, unknown>) =>
+    ({ ...proposal, change: { type: 'worktree_setup', to } }) as unknown as Improvement;
+  const testGate = { gates: { '/repo/api': [{ name: 'test', argv: ['pnpm', 'test'] }] } };
+  const boardWith = (project: Record<string, unknown>) =>
+    useBoard.setState({
+      board: { cursor: 1, projects: [{ id: 'project-a', roots: ['/repo/api'], ...project }] },
+    } as never);
+  /** Text a screen reader reads, without what is hidden from it, its parts joined by spaces. */
+  const spoken = (tree: ReactNode): string => {
+    if (Array.isArray(tree)) return tree.map(spoken).filter(Boolean).join(' ');
+    if (tree && typeof tree === 'object' && 'props' in tree) {
+      const node = tree as ReactElement<any>;
+      return node.props['aria-hidden'] ? '' : spoken(node.props.children);
+    }
+    return typeof tree === 'string' || typeof tree === 'number' ? String(tree) : '';
+  };
+  /** The lines of each side of the before and after a learned change shows, by side name. */
+  const sides = (tree: ReactNode) => {
+    const diff = named(tree, 'LearnedChangeDiff');
+    const drawn = (diff.type as (props: unknown) => ReactNode)(diff.props);
+    return {
+      label: find(drawn, (n) => n.props.role === 'group').props['aria-label'],
+      all: spoken(drawn),
+      ...Object.fromEntries(
+        nodes(drawn)
+          .filter((n) => n.type === 'ul')
+          .map((n) => [
+            n.props['aria-label'],
+            nodes(n.props.children)
+              .filter((li) => li.type === 'li')
+              .map(spoken),
+          ]),
+      ),
+    };
+  };
+  afterEach(() => useBoard.setState({ board: null }));
+
+  it.each<[string, Record<string, unknown>, Improvement, Record<string, unknown>]>([
+    [
+      'shows the folder of a gate proposal with each command it has now and each proposed',
+      { gates: { '/repo/api': [{ name: 'test', argv: ['pnpm', 'vitest', 'run'] }] } },
+      gateProposal([
+        { name: 'test', argv: ['pnpm', 'test'] },
+        { name: 'lint', argv: ['pnpm', 'lint', '--max-warnings', '0'] },
+      ]),
+      {
+        label: '/repo/api 的门禁',
+        现在: ['− test pnpm vitest run'],
+        提议: ['+ test pnpm test', '+ lint pnpm lint --max-warnings 0'],
+      },
+    ],
+    [
+      'says there is no gate now when the folder has none',
+      {},
+      gateProposal([{ name: 'test', argv: ['pnpm', 'test'] }]),
+      { 现在: ['没有门禁'], 提议: ['+ test pnpm test'] },
+    ],
+    [
+      'says the proposed gate is none when the proposal removes every command',
+      testGate,
+      gateProposal([]),
+      { 现在: ['− test pnpm test'], 提议: ['没有门禁'] },
+    ],
+    [
+      'marks a command that becomes skippable as removed and added, saying a failure is skipped',
+      testGate,
+      gateProposal([{ name: 'test', argv: ['pnpm', 'test'], skippable: true }]),
+      { 现在: ['− test pnpm test'], 提议: ['+ test pnpm test 失败算跳过'] },
+    ],
+    [
+      'says a proposed command that is off does not run',
+      testGate,
+      gateProposal([{ name: 'test', argv: ['pnpm', 'test'], enabled: false }]),
+      { 现在: ['− test pnpm test'], 提议: ['+ test pnpm test 不运行'] },
+    ],
+    [
+      'shows the timeout of a command on each side when only the timeout changes',
+      { gates: { '/repo/api': [{ name: 'test', argv: ['pnpm', 'test'], timeout_ms: 60_000 }] } },
+      gateProposal([{ name: 'test', argv: ['pnpm', 'test'], timeout_ms: 300_000 }]),
+      {
+        现在: [`− test pnpm test ${durationText(60_000)}`],
+        提议: [`+ test pnpm test ${durationText(300_000)}`],
+      },
+    ],
+    [
+      'shows the worktree setup now and proposed, a line for each path',
+      { worktree: { copy_paths: ['.env'] } },
+      setupProposal({
+        copy_paths: ['.env', 'config/local.json'],
+        command: { argv: ['pnpm', 'install'] },
+      }),
+      {
+        label: '工作树 setup',
+        现在: ['.env'],
+        提议: ['.env', '+ config/local.json', '+ pnpm install'],
+      },
+    ],
+    [
+      'shows the timeout of the worktree setup command on each side',
+      { worktree: { copy_paths: [], command: { argv: ['pnpm', 'install'] } } },
+      setupProposal({
+        copy_paths: [],
+        command: { argv: ['pnpm', 'install'], timeout_ms: 300_000 },
+      }),
+      { 现在: ['− pnpm install'], 提议: [`+ pnpm install ${durationText(300_000)}`] },
+    ],
+  ])('%s', (_name, project, improvement, expected) => {
+    boardWith(project);
+    const { h } = mount({ item: proposalItem, improvement });
+    const shown = sides(h.value);
+    expect(shown).toMatchObject(expected);
+    if (improvement.change.type === 'gate_command') expect(shown.all).toContain('/repo/api');
+    expect(buttons(h.value)).toEqual([
+      zh('board.needs.actions.confirm'),
+      zh('board.needs.actions.decline'),
+    ]);
+  });
+
+  it.each<[string, Record<string, unknown>, Improvement, string]>([
+    [
+      'counts the commands before and after a gate proposal in its list row, over the commands',
+      { gates: { '/repo/api': [{ name: 'test', argv: ['pnpm', 'test'] }] } },
+      gateProposal([
+        { name: 'test', argv: ['pnpm', 'test'] },
+        { name: 'lint', argv: ['pnpm', 'lint'] },
+      ]),
+      '/repo/api 的门禁：1 条命令改为 2 条',
+    ],
+    [
+      'counts no commands after a proposal that removes the gate',
+      { gates: { '/repo/api': [{ name: 'test', argv: ['pnpm', 'test'] }] } },
+      gateProposal([]),
+      '/repo/api 的门禁：1 条命令改为 0 条',
+    ],
+    [
+      'counts no commands before for a folder without a gate',
+      {},
+      gateProposal([{ name: 'test', argv: ['pnpm', 'test'] }]),
+      '/repo/api 的门禁：0 条命令改为 1 条',
+    ],
+  ])('%s', (_name, project, improvement, row) => {
+    boardWith(project);
+    const { h } = mount({ item: proposalItem, improvement, size: 'compact' });
+    expect(text(h.value)).toContain(row);
+    expect(sides(h.value).label).toBe('/repo/api 的门禁');
   });
 });

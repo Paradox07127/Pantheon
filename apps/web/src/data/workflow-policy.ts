@@ -555,6 +555,19 @@ function valueText(param: WorkflowParam, value: unknown): string {
 /** What an improvement asks for: the procedure of an experience, or the parameter change. */
 export function changeText(change: Improvement['change']): string {
   if (change.type === 'experience') return change.procedure;
+  if (change.type === 'gate_command')
+    return t(
+      {
+        id: 'data.workflowPolicy.change.gate',
+        defaultMessage: 'Change the gate commands of {root}',
+      },
+      { root: change.root },
+    );
+  if (change.type === 'worktree_setup')
+    return t({
+      id: 'data.workflowPolicy.change.worktree',
+      defaultMessage: 'Change the worktree setup',
+    });
   const what = change.tier
     ? `${PARAM_LABEL.path} ${tierText(change.tier)}`
     : PARAM_LABEL[change.param];
@@ -566,8 +579,9 @@ export function changeText(change: Improvement['change']): string {
 
 /** Which tasks an improvement applies to. */
 export function scopeText(change: Improvement['change']): string {
-  if (change.type === 'policy_change')
-    return change.tier
+  if (change.type === 'gate_command') return change.root;
+  if (change.type !== 'experience')
+    return change.type === 'policy_change' && change.tier
       ? tierText(change.tier)
       : t({ id: 'data.workflowPolicy.wholeProject', defaultMessage: 'Whole project' });
   return (

@@ -67,6 +67,7 @@ it('types the goals with their progress and the goal of a milestone row', () => 
       milestone_ids: string[];
       milestones: { done: number; ready: number; total: number };
       tasks: { done: number; total: number };
+      needs: number;
     }[]
   >();
   expectTypeOf<BoardModel['milestones'][number]['goal_id']>().toEqualTypeOf<string | undefined>();

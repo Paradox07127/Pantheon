@@ -218,6 +218,25 @@ it('starts the trial of a lead experience at once in auto mode and holds it for 
   expect(stored(f, held).trial_started_at).toBeUndefined();
 });
 
+it.each([
+  [
+    'gate command',
+    { type: 'gate_command', root: '/repo', to: [{ name: 'test', argv: ['pnpm', 'test'] }] },
+  ],
+  ['worktree setup', { type: 'worktree_setup', to: { copy_paths: ['.env'] } }],
+])('holds a lead proposal of a %s change for the user', async (_, change) => {
+  const f = await opened();
+  setPolicy(f, { improvement_mode: 'confirm' });
+  expect(propose(f, change).status).toBe('candidate');
+  expect(f.store.list('improvements')).toHaveLength(1);
+});
+
+it('lists a policy improvement as tried before it stays', async () => {
+  const f = await opened();
+  propose(f, fewerParallel);
+  expect(f.control.improvementList(user, f.project.id)[0]?.grade).toBe('trial');
+});
+
 it('lets only a lead propose and only the user decide', async () => {
   const f = await opened();
   expect(refused(() => propose(f, fewerParallel, user)).code).toBe('permission_denied');

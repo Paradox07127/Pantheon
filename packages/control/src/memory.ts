@@ -26,6 +26,7 @@ import {
   sessionTaskScope,
   sessionFor,
   ensureProject,
+  expired,
 } from './memory-access.js';
 import {
   hash,
@@ -46,12 +47,21 @@ import {
 } from '@pantheon/domain';
 import {
   inputSchemas,
+  type Command,
   type MemoryArchiveResult,
   type MemoryUndoRetractionResult,
 } from '@pantheon/protocol';
 import { experienceMatchesSession } from './improvements.js';
 import { assignArm, taskArm } from './trial-arms.js';
-import { revision, userOnly, type ControlContext, type Handlers } from './context.js';
+import { runGit } from './git.js';
+import {
+  revision,
+  userOnly,
+  type ControlContext,
+  type Handler,
+  type Handlers,
+  type Preparers,
+} from './context.js';
 
 /** The memory text of a session that can read project memory but not write it. */
 export const MEMORY_READ_INSTRUCTIONS = `Project memory keeps what the code and git history do not show: the user's decisions and preferences, project facts and constraints, and analyses. Pantheon adds it to your turn as "[Pantheon current project memory]" when it changed since you last saw it and after your context is compacted, so you need not fetch it first.
@@ -139,7 +149,7 @@ function sweep(ctx: ControlContext, project: string): [string, MemoryRecord[]] |
   let archived = false;
   for (const r of records(ctx, project))
     if (r.state === 'active' && !valid.has(r.id)) {
-      archive(ctx, r, r.expires_at && r.expires_at <= ctx.store.now() ? 'expired' : 'stale');
+      archive(ctx, r, expired(ctx, r) ? 'expired' : 'stale');
       archived = true;
     }
   return archived ? undefined : [stamp, kept];
@@ -289,6 +299,86 @@ function activate(ctx: ControlContext, r: MemoryRecord, by: string, commandId: s
   return body(ctx, next);
 }
 
+function propose(ctx: ControlContext, p: Principal, c: Command, verifiedCommit?: string) {
+  const i = inputSchemas['memory.propose'].parse(c.input);
+  ensureProject(ctx, p, i.project_id, c.type);
+  const session = sessionFor(ctx, p);
+  const own = sessionTaskScope(session);
+  const task = taskScope(i.task) ?? own;
+  requireThat(
+    !session || !i.task || (!!own && hash(taskScope(i.task)) === hash(own)),
+    'permission_denied',
+    'A session may propose only in its own task scope',
+  );
+  requireThat(
+    taskCurrent(ctx, { project_id: i.project_id, task }),
+    'invalid_state',
+    'Task generation is no longer current',
+  );
+  const stamp = signature(ctx, i.project_id);
+  requireThat(
+    !session || !!i.based_on,
+    'invalid_input',
+    'Read memory_context and supply based_on before proposing',
+  );
+  requireThat(
+    !i.based_on || i.based_on === stamp,
+    'revision_conflict',
+    'Read current memory before proposing',
+  );
+  const active = current(ctx, i.project_id).filter((r) => visible(r, session));
+  requireThat(
+    i.dependencies.every((k) => active.some((r) => r.id === k)),
+    'invalid_input',
+    'Dependencies must be current visible memory versions',
+  );
+  requireThat(
+    !i.expires_at || i.expires_at > ctx.store.now(),
+    'invalid_input',
+    'Expiry must be in the future',
+  );
+  requireThat(
+    i.kind !== 'decision' || i.dependencies.length === 0,
+    'invalid_input',
+    'Decisions cannot derive authority from another memory',
+  );
+  const r: MemoryRecord = {
+    id: id(),
+    revision: 1,
+    project_id: i.project_id,
+    key: i.key,
+    title: i.title,
+    summary: i.summary,
+    tags: i.tags && [...new Set(i.tags)],
+    references: captureReferences(ctx, i.project_id, i.references),
+    kind: i.kind,
+    state: 'draft',
+    authority: p.role === 'user' && !p.session_id ? 'user' : 'agent_reported',
+    author: p.id,
+    author_session_id: p.session_id,
+    task,
+    body_hash: ctx.files.put(Buffer.from(i.text)).hash,
+    dependencies: i.dependencies,
+    based_on: stamp,
+    created_at: ctx.store.now(),
+    verified_commit: verifiedCommit,
+    expires_at: i.expires_at,
+  };
+  ctx.store.insert('memory_records', r);
+  indexMemory(ctx, r, i.text);
+  ctx.store.event(
+    'memory.proposed',
+    r,
+    r.project_id,
+    { memory_id: r.id, authority: r.authority, by: p.id },
+    c.command_id,
+  );
+  // An agent's report or note is current at once; only decisions wait for the user.
+  if (r.authority === 'agent_reported' && r.kind !== 'decision')
+    return activate(ctx, r, p.id, c.command_id);
+  return body(ctx, r);
+}
+
 export const memoryHandlers: Handlers = {
   'memory.maintain': (ctx, p, c) => {
     userOnly(p);
@@ -316,84 +406,7 @@ export const memoryHandlers: Handlers = {
     enqueue(ctx, i.project_id);
     return { queued: true };
   },
-  'memory.propose': (ctx, p, c) => {
-    const i = inputSchemas['memory.propose'].parse(c.input);
-    ensureProject(ctx, p, i.project_id, c.type);
-    const session = sessionFor(ctx, p);
-    const own = sessionTaskScope(session);
-    const task = taskScope(i.task) ?? own;
-    requireThat(
-      !session || !i.task || (!!own && hash(taskScope(i.task)) === hash(own)),
-      'permission_denied',
-      'A session may propose only in its own task scope',
-    );
-    requireThat(
-      taskCurrent(ctx, { project_id: i.project_id, task }),
-      'invalid_state',
-      'Task generation is no longer current',
-    );
-    const stamp = signature(ctx, i.project_id);
-    requireThat(
-      !session || !!i.based_on,
-      'invalid_input',
-      'Read memory_context and supply based_on before proposing',
-    );
-    requireThat(
-      !i.based_on || i.based_on === stamp,
-      'revision_conflict',
-      'Read current memory before proposing',
-    );
-    const active = current(ctx, i.project_id).filter((r) => visible(r, session));
-    requireThat(
-      i.dependencies.every((k) => active.some((r) => r.id === k)),
-      'invalid_input',
-      'Dependencies must be current visible memory versions',
-    );
-    requireThat(
-      !i.expires_at || i.expires_at > ctx.store.now(),
-      'invalid_input',
-      'Expiry must be in the future',
-    );
-    requireThat(
-      i.kind !== 'decision' || i.dependencies.length === 0,
-      'invalid_input',
-      'Decisions cannot derive authority from another memory',
-    );
-    const r: MemoryRecord = {
-      id: id(),
-      revision: 1,
-      project_id: i.project_id,
-      key: i.key,
-      title: i.title,
-      summary: i.summary,
-      tags: i.tags && [...new Set(i.tags)],
-      references: captureReferences(ctx, i.project_id, i.references),
-      kind: i.kind,
-      state: 'draft',
-      authority: p.role === 'user' && !p.session_id ? 'user' : 'agent_reported',
-      author: p.id,
-      author_session_id: p.session_id,
-      task,
-      body_hash: ctx.files.put(Buffer.from(i.text)).hash,
-      dependencies: i.dependencies,
-      based_on: stamp,
-      created_at: ctx.store.now(),
-      expires_at: i.expires_at,
-    };
-    ctx.store.insert('memory_records', r);
-    indexMemory(ctx, r, i.text);
-    ctx.store.event(
-      'memory.proposed',
-      r,
-      r.project_id,
-      { memory_id: r.id, authority: r.authority, by: p.id },
-      c.command_id,
-    );
-    // An agent's report or note is current at once; only decisions wait for the user.
-    if (r.authority === 'agent_reported' && r.kind !== 'decision')
-      return activate(ctx, r, p.id, c.command_id);
-    return body(ctx, r);
-  },
+  'memory.propose': (ctx, p, c) => propose(ctx, p, c),
   'memory.commit': (ctx, p, c) => {
     userOnly(p);
     const i = inputSchemas['memory.commit'].parse(c.input),
@@ -571,8 +584,17 @@ export const memoryHandlers: Handlers = {
       'not_found',
       'No current memory with this id',
     );
+    const now = ctx.store.now(),
+      used =
+        p.session_id && now - (r.last_used_at ?? -Infinity) >= 24 * 60 * 60 * 1000
+          ? ctx.store.update<MemoryRecord>(
+              'memory_records',
+              { ...r, last_used_at: now },
+              r.revision,
+            )
+          : r;
     return {
-      ...body(ctx, r),
+      ...body(ctx, used),
       reference_status: referenceStatus(ctx, r.project_id, r.references ?? []),
     };
   },
@@ -605,6 +627,22 @@ export const memoryHandlers: Handlers = {
         .map((r) => body(ctx, r)),
       historical: true,
     };
+  },
+};
+
+/** A session's proposal with a file reference reads HEAD of the first root before the transaction. */
+export const memoryPreparers: Preparers = {
+  'memory.propose': (ctx, p, c) => {
+    const i = inputSchemas['memory.propose'].parse(c.input);
+    const root = ctx.store.get<Project>('projects', i.project_id)?.roots[0];
+    if (!p.session_id || !root || !i.references?.some((ref) => ref.kind === 'file'))
+      return memoryHandlers['memory.propose']!;
+    return runGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD'], undefined, true).then(
+      (head): Handler => {
+        const commit = head.exit_code === 0 ? head.stdout.toString().trim() : undefined;
+        return (ctx, p, c) => propose(ctx, p, c, commit);
+      },
+    );
   },
 };
 

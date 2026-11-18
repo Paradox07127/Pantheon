@@ -36,6 +36,7 @@ it('accepts a plan edit of each kind of op', () => {
       },
     },
     { type: 'set_dependencies', task_id: 'ui', depends_on: ['api'] },
+    { type: 'refute_assumption', assumption_id: 'csv', instead: 'Exports are CSV and JSON.' },
     { type: 'resolve_edit', edit_id: 'edit-1', decision: 'apply' },
     { type: 'resolve_edit', edit_id: 'edit-1', decision: 'reject', reason: 'Wait for review' },
   ])

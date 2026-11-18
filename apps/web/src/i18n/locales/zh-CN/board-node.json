@@ -13,5 +13,19 @@
   "board.node.action.merge": "合并",
   "board.node.action.ask": "问 lead",
   "board.node.action.redispatch": "让 lead 重派",
-  "board.node.action.answer": "回答"
+  "board.node.action.answer": "回答",
+  "board.evidence.report": "仅有报告",
+  "board.evidence.report.label": "证据：仅有报告",
+  "board.evidence.gate": "门禁通过",
+  "board.evidence.gate.label": "证据：门禁通过",
+  "board.evidence.reviewed.otherVendor": "别家模型已审",
+  "board.evidence.reviewed.otherVendor.label": "证据：别家模型已审",
+  "board.evidence.reviewed.otherRuntime": "别的运行时已审",
+  "board.evidence.reviewed.otherRuntime.label": "证据：同一厂商的别的运行时已审",
+  "board.evidence.reviewed": "已审",
+  "board.evidence.reviewed.label": "证据：已审",
+  "board.evidence.verified": "验证通过",
+  "board.evidence.verified.label": "证据：验证通过",
+  "board.evidence.accepted": "已验收",
+  "board.evidence.accepted.label": "证据：你已验收"
 }

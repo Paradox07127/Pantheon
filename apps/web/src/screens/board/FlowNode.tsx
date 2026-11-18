@@ -39,6 +39,7 @@ import {
   taskBadges,
   type NodeReason,
 } from './activity';
+import { EvidenceMark } from './EvidenceMark';
 import { COMPACT_ZOOM, DOT_ZOOM } from './flow-layout';
 import { NodeActions, type NodeActionContext } from './NodeActions';
 import { durationText } from './panels-model';
@@ -651,7 +652,13 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
           )}
         </div>
         {task.parallel && task.parallel.length > 0 && <Parts parts={task.parallel} />}
-        <StageBar task={task} />
+        {task.evidence_level ? (
+          <div className="bd-nev">
+            <EvidenceMark level={task.evidence_level} reviewer={task.evidence_reviewer} />
+          </div>
+        ) : (
+          <StageBar task={task} />
+        )}
         <Amounts task={task} line={line} />
         {task.external_review && <ExternalReview review={task.external_review} now={now} />}
         {/* The needs-you strip shows the command waiting for approval. */}

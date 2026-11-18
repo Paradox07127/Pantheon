@@ -167,7 +167,7 @@ const button = (tree: ReactNode, label: string) =>
   find(tree, (n) => n.type === 'button' && text(n).includes(label));
 
 describe('board views', () => {
-  it('offers now, whole history and canvas in that order and opens now when nothing is stored', () => {
+  it('offers goals, now, whole history and canvas in that order and opens now without goals when nothing is stored', () => {
     const h = mount(() =>
       BoardView({
         model: null,
@@ -176,7 +176,7 @@ describe('board views', () => {
         onRetry: noop,
         range: 7,
         onRange: noop,
-        page: useBoardPage('refunds'),
+        page: useBoardPage('refunds', false),
         onPage: noop,
         projectId: 'refunds',
         onOpenSession: noop,
@@ -190,7 +190,14 @@ describe('board views', () => {
       nodes(views.props.children)
         .filter((n) => n.props.value !== undefined)
         .map(text),
-    ).toEqual(zhs('board.history.span.now', 'board.history.span.history', 'board.view.canvas'));
+    ).toEqual(
+      zhs(
+        'board.view.goals',
+        'board.history.span.now',
+        'board.history.span.history',
+        'board.view.canvas',
+      ),
+    );
     expect(readBoardPage('intro')).toBe('now');
     expect(readBoardPage(null)).toBe('now');
   });

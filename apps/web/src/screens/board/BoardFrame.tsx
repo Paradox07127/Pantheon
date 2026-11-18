@@ -3,6 +3,7 @@ import { Collapsible } from '@base-ui/react/collapsible';
 import { Mail } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { RequestCard, type RequestCardProps } from '../../components/RequestCard';
+import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
 import { nextKey } from '../../data/attention';
@@ -21,7 +22,13 @@ import {
   type BoardLead,
   type BoardNeed,
 } from './frame-model';
-import type { RunBoardCommand, SnapshotMilestone, SnapshotSession } from './panels-model';
+import {
+  durationText,
+  tokenText,
+  type RunBoardCommand,
+  type SnapshotMilestone,
+  type SnapshotSession,
+} from './panels-model';
 import './frame.css';
 
 /** Each lead's state in the headline bar; a lead opens its session. */
@@ -145,6 +152,150 @@ export function needContext(
 const FOLDED = 3;
 const NO_MILESTONES: readonly SnapshotMilestone[] = [];
 
+type Estimate = NonNullable<BoardModel['lanes'][number]['estimate']>;
+
+const tasksText = (count: number) =>
+  t(
+    {
+      id: 'board.needs.estimate.tasks',
+      defaultMessage: '{count, plural, one {# task} other {# tasks}}',
+    },
+    { count },
+  );
+
+/** One amount of an estimate, Unknown without a value, and the tasks it covers. */
+const amount = ({ value, source, tasks }: { value?: string; source?: string; tasks: number }) => (
+  <span className="bf-el">
+    <span className="bf-el-v" data-unknown={value === undefined || undefined}>
+      {value ?? t({ id: 'board.needs.estimate.unknown', defaultMessage: 'Unknown' })}
+    </span>
+    {source && <span>{source}</span>}
+    <span className="bf-el-n">{tasksText(tasks)}</span>
+  </span>
+);
+
+/** What a lane held for plan approval is expected to take; amounts from different sources are never added up. */
+function LaneEstimate({ lane, estimate }: { lane: string; estimate: Estimate }) {
+  const parts = estimate.sessions.by_part;
+  const { history, budget, unknown_tasks } = estimate.tokens;
+  const timed = estimate.wall_ms?.tasks ?? 0;
+  // Reviewer runtimes count the plan review sessions too, so they go only on the one row that has reviewers.
+  const rows = [
+    {
+      count: parts.tasks,
+      role: 'writer',
+      label: t({ id: 'board.needs.estimate.writers', defaultMessage: 'Writers' }),
+    },
+    {
+      count: parts.reviews,
+      role: parts.plan_review ? null : 'reviewer',
+      label: t({ id: 'board.needs.estimate.reviewers', defaultMessage: 'Reviewers' }),
+    },
+    {
+      count: parts.plan_review,
+      role: parts.reviews ? null : 'reviewer',
+      label: t({ id: 'board.needs.estimate.planReview', defaultMessage: 'Plan review' }),
+    },
+    {
+      count: parts.milestone_verify,
+      role: 'verifier',
+      label: t({ id: 'board.needs.estimate.verification', defaultMessage: 'Verification' }),
+    },
+  ].filter((row) => row.count > 0);
+  return (
+    <div
+      className="bf-est"
+      role="group"
+      aria-label={t(
+        { id: 'board.needs.estimate.label', defaultMessage: 'Estimate for {lane}' },
+        { lane },
+      )}
+    >
+      <div
+        className="bf-es"
+        role="group"
+        aria-label={t(
+          { id: 'board.needs.estimate.sessionsLabel', defaultMessage: 'Sessions: {count}' },
+          { count: estimate.sessions.total },
+        )}
+      >
+        <span className="cap">
+          {t({ id: 'board.needs.estimate.sessions', defaultMessage: 'Sessions' })}
+        </span>
+        <span className="bf-es-t">{estimate.sessions.total}</span>
+        {rows.map((row) => (
+          <span key={row.label} className="bf-el">
+            <span className="bf-el-v">{row.count}</span>
+            <span>{row.label}</span>
+            {row.role && (
+              <span className="bf-el-rt">
+                {estimate.runtimes
+                  .filter((r) => r.role === row.role)
+                  .map((r) => (
+                    <span key={r.runtime} className="bf-el-r">
+                      <span role="img" aria-label={runtimeName(r.runtime)}>
+                        <RuntimeGlyph runtime={r.runtime} size={16} />
+                      </span>
+                      <span className="bf-el-n">{r.count}</span>
+                    </span>
+                  ))}
+              </span>
+            )}
+          </span>
+        ))}
+      </div>
+      <div
+        className="bf-es"
+        role="group"
+        aria-label={t({ id: 'board.needs.estimate.tokens', defaultMessage: 'Tokens' })}
+      >
+        <span className="cap">
+          {t({ id: 'board.needs.estimate.tokens', defaultMessage: 'Tokens' })}
+        </span>
+        {history.tasks > 0 &&
+          amount({
+            value: tokenText(history.total),
+            source: t(
+              {
+                id: 'board.needs.estimate.history',
+                defaultMessage:
+                  '{runs, plural, one {In and out, from # past run} other {In and out, from # past runs}}',
+              },
+              { runs: history.min_n },
+            ),
+            tasks: history.tasks,
+          })}
+        {budget.tasks > 0 &&
+          amount({
+            value: tokenText(budget.total),
+            source: t({
+              id: 'board.needs.estimate.budgetTokens',
+              defaultMessage: 'Input, from the budget',
+            }),
+            tasks: budget.tasks,
+          })}
+        {unknown_tasks > 0 && amount({ tasks: unknown_tasks })}
+      </div>
+      <div
+        className="bf-es"
+        role="group"
+        aria-label={t({ id: 'board.needs.estimate.time', defaultMessage: 'Time' })}
+      >
+        <span className="cap">
+          {t({ id: 'board.needs.estimate.time', defaultMessage: 'Time' })}
+        </span>
+        {estimate.wall_ms &&
+          amount({
+            value: durationText(estimate.wall_ms.total),
+            source: t({ id: 'board.needs.estimate.budgetTime', defaultMessage: 'From the budget' }),
+            tasks: estimate.wall_ms.tasks,
+          })}
+        {estimate.tasks > timed && amount({ tasks: estimate.tasks - timed })}
+      </div>
+    </div>
+  );
+}
+
 /** The proposals the needs-you items point at, read only while the strip holds one. */
 export function useNeedImprovements(model: BoardModel | null) {
   // Kept as the strip keeps its items, so a strip folding away still finds its proposals.
@@ -164,6 +315,8 @@ export function NeedsStrip({
   improvements,
   hidden,
   onShow,
+  asked: stripAsked,
+  onAsked,
 }: {
   model: BoardModel;
   sessions: readonly SnapshotSession[];
@@ -175,6 +328,9 @@ export function NeedsStrip({
   /** Something else covers the strip; `onShow` uncovers it. */
   hidden?: boolean;
   onShow?: () => void;
+  /** Focuses the first row once, then calls `onAsked`. */
+  asked?: boolean;
+  onAsked?: () => void;
 }) {
   // useKept compares by identity.
   const listed = useMemo(() => boardNeeds(model), [model.needs]);
@@ -203,6 +359,13 @@ export function NeedsStrip({
     (primaries.current.get(key) ?? card?.querySelector('button'))?.focus();
     useShell.setState({ askedNeed: null });
   }, [asked, shown, hidden]);
+  useEffect(() => {
+    if (!stripAsked || !shown?.length) return;
+    const card = list.current?.children[0] as HTMLElement | undefined;
+    card?.scrollIntoView({ block: 'nearest' });
+    (primaries.current.get(needKey(shown[0]!)) ?? card?.querySelector('button'))?.focus();
+    onAsked?.();
+  }, [stripAsked, shown]);
   const on = needs?.some((item) => needKey(item) === current)
     ? current
     : needs?.[0] && needKey(needs[0]);
@@ -233,25 +396,35 @@ export function NeedsStrip({
           <span className="bf-strip-n">{needs?.length}</span>
         </div>
         <ul ref={list} className="bf-needs">
-          {shown?.map((item) => (
-            <li key={needKey(item)} className="bf-need">
-              <RequestCard
-                item={item}
-                size="compact"
-                now={model.now}
-                run={run}
-                onOpenSession={onOpenSession}
-                stale={stale}
-                selected={needKey(item) === on}
-                onActed={() => advance(needKey(item))}
-                primaryRef={(el) => {
-                  if (el) primaries.current.set(needKey(item), el);
-                  else primaries.current.delete(needKey(item));
-                }}
-                {...needContext(item, model, sessions, stored, improvements ?? null)}
-              />
-            </li>
-          ))}
+          {shown?.map((item) => {
+            // The board's lane ids are `<lead session id>:<lane id>`.
+            const lane =
+              item.kind === 'board.lane.approval'
+                ? model.lanes.find((l) => l.id === `${item.session_id}:${item.request_id}`)
+                : undefined;
+            return (
+              <li key={needKey(item)} className="bf-need">
+                <RequestCard
+                  item={item}
+                  size="compact"
+                  now={model.now}
+                  run={run}
+                  onOpenSession={onOpenSession}
+                  stale={stale}
+                  selected={needKey(item) === on}
+                  onActed={() => advance(needKey(item))}
+                  primaryRef={(el) => {
+                    if (el) primaries.current.set(needKey(item), el);
+                    else primaries.current.delete(needKey(item));
+                  }}
+                  {...needContext(item, model, sessions, stored, improvements ?? null)}
+                  {...(lane?.estimate && {
+                    sub: <LaneEstimate lane={lane.title} estimate={lane.estimate} />,
+                  })}
+                />
+              </li>
+            );
+          })}
         </ul>
         {needs && needs.length > FOLDED && !all && (
           <button

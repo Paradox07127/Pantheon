@@ -172,6 +172,9 @@ export function learnedEffect(item: Pick<Improvement, 'status' | 'change'>): Lea
     };
   return {
     label: t({ id: 'memory.learnedDetail.effect.applyLabel', defaultMessage: 'How it applies' }),
-    text: policyText(item.status, item.change),
+    text:
+      item.change.type === 'policy_change'
+        ? policyText(item.status, item.change)
+        : changeText(item.change),
   };
 }

@@ -303,7 +303,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `board.lane.approve` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string |  |
 | `board.lane.depth.set` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string<br>`depth`: "just_do" \| "plan_first" \| "spec_first" |  |
-| `board.plan.edit` | `project_id`: string<br>`lead_session_id?`: string<br>`base_version`: integer<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object \| object \| object)[] | edit_board (lead) |
+| `board.plan.edit` | `project_id`: string<br>`lead_session_id?`: string<br>`base_version`: integer<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object \| object \| object \| object)[] | edit_board (lead) |
 | `board.plan.edit.withdraw` | `project_id`: string<br>`lead_session_id`: string<br>`edit_id`: string |  |
 | `board.plan.proposal.resolve` | `project_id`: string<br>`lead_session_id`: string<br>`proposal_id`: string<br>`decision`: "accept" \| "reject"<br>`reason?`: string<br>`ops?`: (object \| object \| object \| object \| object \| object \| object \| object)[] |  |
 | `board.plan.proposal.withdraw` | `project_id`: string<br>`proposal_id`: string | withdraw_board_proposal (lead) |
@@ -353,6 +353,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `goal.archive` | `goal_id`: string |  |
 | `goal.reorder` | `project_id`: string<br>`goal_ids`: string[] |  |
+| `goal.restore` | `goal_id`: string |  |
 | `goal.set` | `project_id`: string<br>`goal_id?`: string<br>`text`: string |  |
 
 ### improvement
@@ -360,7 +361,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `improvement.decide` | `project_id`: string<br>`improvement_id`: string<br>`decision`: "reject"<br>`reject_reason?`: "duplicate" \| "not_useful"<br>`reject_note?`: string<br>或<br>`project_id`: string<br>`improvement_id`: string<br>`decision`: "confirm" \| "revert" \| "pin" |  |
-| `improvement.propose` | `project_id`: string<br>`retrospective_ids`: string[]<br>`change`: object \| object | propose_improvement (lead) |
+| `improvement.propose` | `project_id`: string<br>`retrospective_ids`: string[]<br>`change`: object \| object \| object \| object | propose_improvement (lead) |
 
 ### lead
 

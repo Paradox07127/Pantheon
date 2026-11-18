@@ -2,7 +2,9 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { Bot, Pencil, Plus, X } from 'lucide-react';
 import type { AgentRoutineInput } from '@pantheon/protocol';
+import { ROUTINE_TEMPLATES } from '@pantheon/protocol/routine-catalog';
 import { Clip } from '../../components/Clip';
+import { Menu, MenuItem, MenuSeparator } from '../../components/Menu';
 import { Select } from '../../components/Select';
 import { toast } from '../../components/Toast';
 import {
@@ -42,10 +44,15 @@ export interface RoutineDraft {
   from: string;
   to: string;
   enabled: boolean;
+  precheck?: AgentRoutineInput['precheck'];
 }
 
-/** A stored routine, with every_ms, or one as agent.create takes it, with every_minutes. */
-type RoutineSource = Omit<AgentRoutineInput, 'id'> & { id?: string; every_ms?: number };
+/** A stored routine, with every_ms and timeout_ms, or one as agent.create takes it, in minutes and seconds. */
+type RoutineSource = Omit<AgentRoutineInput, 'id' | 'precheck'> & {
+  id?: string;
+  every_ms?: number;
+  precheck?: { argv: string[]; timeout_seconds?: number; timeout_ms?: number };
+};
 
 export function routineDraft(routine: RoutineSource): RoutineDraft {
   const minutes =
@@ -68,6 +75,17 @@ export function routineDraft(routine: RoutineSource): RoutineDraft {
     from: routine.active_hours?.from ?? '09:00',
     to: routine.active_hours?.to ?? '18:00',
     enabled: routine.enabled,
+    ...(routine.precheck && {
+      precheck: {
+        argv: routine.precheck.argv,
+        ...(routine.precheck.timeout_ms !== undefined && {
+          timeout_seconds: routine.precheck.timeout_ms / 1000,
+        }),
+        ...(routine.precheck.timeout_seconds !== undefined && {
+          timeout_seconds: routine.precheck.timeout_seconds,
+        }),
+      },
+    }),
   };
 }
 
@@ -80,6 +98,7 @@ export function routineInput(draft: RoutineDraft): AgentRoutineInput {
       : { every_minutes: Math.round(Number(draft.amount) * UNIT_MINUTES[draft.unit]) }),
     ...(draft.active && { active_hours: { from: draft.from, to: draft.to } }),
     enabled: draft.enabled,
+    ...(draft.precheck && { precheck: draft.precheck }),
   };
 }
 
@@ -268,6 +287,16 @@ const UNITS: { value: Unit; readonly label: string }[] = [
     },
   },
 ];
+
+/** The name of each routine template, by its id; the ids stay literal so message extraction finds them. */
+const ROUTINE_TEMPLATE_NAMES: Readonly<Record<string, () => string>> = {
+  'bug-hunt': () =>
+    t({ id: 'sessions.agents.routineTemplate.bug-hunt', defaultMessage: 'Bug hunt' }),
+  'security-scan': () =>
+    t({ id: 'sessions.agents.routineTemplate.security-scan', defaultMessage: 'Security scan' }),
+  'test-coverage': () =>
+    t({ id: 'sessions.agents.routineTemplate.test-coverage', defaultMessage: 'Test coverage' }),
+};
 
 /** A radio button of a `.seg` group. */
 function segment(key: string, checked: boolean, label: string, pick: () => void, off?: boolean) {
@@ -477,6 +506,26 @@ export function agentFieldRows(props: {
           disabled={disabled}
           onChange={(e) => patch({ prompt: e.target.value })}
         />
+        {r.precheck && (
+          <div className="ag-rr" role="group" aria-labelledby={`${id}-check-${at}`}>
+            <span className="cap" id={`${id}-check-${at}`}>
+              {t({ id: 'sessions.agents.routine.check', defaultMessage: 'Runs only if' })}
+            </span>
+            <Clip className="mono ag-pk" text={r.precheck.argv.join(' ')} />
+            <button
+              type="button"
+              className="ib"
+              aria-label={t({
+                id: 'sessions.agents.routine.removeCheck',
+                defaultMessage: 'Remove the check',
+              })}
+              disabled={disabled}
+              onClick={() => patch({ precheck: undefined })}
+            >
+              <X aria-hidden="true" />
+            </button>
+          </div>
+        )}
         <div className="ag-rr">
           <label className="ag-ck">
             <input
@@ -587,15 +636,39 @@ export function agentFieldRows(props: {
       </span>,
       <div key="routines" className="ag-fc" role="group" aria-labelledby={`${id}-routines`}>
         {draft.routines.map(routine)}
-        <button
-          type="button"
-          className="btn sm ghost ag-add"
-          disabled={disabled || draft.routines.length >= 10}
-          onClick={() => set({ routines: [...draft.routines, NEW_ROUTINE] })}
+        <Menu
+          label={t({ id: 'sessions.agents.routine.add', defaultMessage: 'Add routine' })}
+          trigger={
+            <button
+              type="button"
+              className="btn sm ghost ag-add"
+              disabled={disabled || draft.routines.length >= 10}
+            >
+              <Plus aria-hidden="true" />
+              {t({ id: 'sessions.agents.routine.add', defaultMessage: 'Add routine' })}
+            </button>
+          }
         >
-          <Plus aria-hidden="true" />
-          {t({ id: 'sessions.agents.routine.add', defaultMessage: 'Add routine' })}
-        </button>
+          <MenuItem onClick={() => set({ routines: [...draft.routines, NEW_ROUTINE] })}>
+            {t({ id: 'sessions.agents.routine.blank', defaultMessage: 'Blank routine' })}
+          </MenuItem>
+          <MenuSeparator />
+          {ROUTINE_TEMPLATES.map(({ id: template, title, ...fields }) => (
+            <MenuItem
+              key={template}
+              onClick={() =>
+                set({
+                  routines: [
+                    ...draft.routines,
+                    routineDraft({ ...fields, enabled: NEW_ROUTINE.enabled }),
+                  ],
+                })
+              }
+            >
+              {ROUTINE_TEMPLATE_NAMES[template]?.() ?? title}
+            </MenuItem>
+          ))}
+        </Menu>
         {refusal('routines')}
       </div>,
     ],

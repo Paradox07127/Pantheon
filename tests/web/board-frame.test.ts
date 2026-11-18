@@ -1615,6 +1615,107 @@ describe('needs-you row', () => {
     expect(refused).not.toHaveBeenCalled();
   });
 
+  describe('the estimate under a plan approval row', () => {
+    const held = need({
+      source: { table: 'board_plans', id: 'lead-1', revision: 6 },
+      kind: 'board.lane.approval',
+      session_id: 'lead-1',
+      request_id: 'lane-pay',
+      reason: 'lane_plan_awaiting_approval',
+      decision: 'plan_change',
+      primary: 'board.lane.approve',
+      actions: [{ command: 'board.lane.approve', allowed: true }],
+      binding: undefined,
+    });
+    type Estimate = NonNullable<BoardModel['lanes'][number]['estimate']>;
+    const known: Estimate = {
+      tasks: 3,
+      milestones: 1,
+      sessions: {
+        total: 7,
+        by_part: { tasks: 3, reviews: 2, plan_review: 1, milestone_verify: 1 },
+      },
+      tokens: {
+        history: { total: 180_000, tasks: 1, min_n: 14 },
+        budget: { total: 400_000, tasks: 1 },
+        unknown_tasks: 1,
+      },
+      wall_ms: { total: 3_600_000, tasks: 1 },
+      runtimes: [
+        { role: 'writer', runtime: 'claude', count: 2 },
+        { role: 'writer', runtime: 'codex', count: 1 },
+        { role: 'reviewer', runtime: 'codex', count: 3 },
+        { role: 'verifier', runtime: 'codex', count: 1 },
+      ],
+    };
+    const blank: Estimate = {
+      tasks: 2,
+      milestones: 1,
+      sessions: {
+        total: 2,
+        by_part: { tasks: 2, reviews: 0, plan_review: 0, milestone_verify: 0 },
+      },
+      tokens: {
+        history: { total: 0, tasks: 0, min_n: 0 },
+        budget: { total: 0, tasks: 0 },
+        unknown_tasks: 2,
+      },
+      runtimes: [{ role: 'writer', runtime: 'claude', count: 2 }],
+    };
+    /** The estimate the strip hands the row's card, drawn; null when it hands none. */
+    const estimate = (lane: Partial<BoardModel['lanes'][number]>) => {
+      const strip = mount(() =>
+        NeedsStrip({
+          model: {
+            ...board([]),
+            lanes: [{ id: 'lead-1:lane-pay', title: 'Payouts', ...lane }],
+            needs: [held],
+          },
+          sessions: [],
+          run: async () => null,
+          onOpenSession: () => {},
+        }),
+      );
+      const sub = named(strip.value, 'RequestCard').props.sub as ReactNode;
+      const el = sub && named(sub, 'LaneEstimate');
+      return el ? (el.type as (props: unknown) => ReactNode)(el.props) : null;
+    };
+    const group = (tree: ReactNode, label: string) =>
+      find(tree, (n) => n.props.role === 'group' && n.props['aria-label'] === label);
+    const est = (key: string, values: Record<string, string | number> = {}) =>
+      zhf(`board.needs.estimate.${key}`, values);
+
+    it('counts the sessions, tokens and time the lane is expected to take, each by its source', () => {
+      const tree = estimate({ stop: { state: 'waiting', at: NOW }, estimate: known });
+      expect(() => group(tree, est('label', { lane: 'Payouts' }))).not.toThrow();
+      const sessions = group(tree, est('sessionsLabel', { count: 7 }));
+      for (const part of ['writers', 'reviewers', 'planReview', 'verification'])
+        expect(text(sessions)).toContain(est(part));
+      const tokens = text(group(tree, est('tokens')));
+      expect(tokens).toContain('180k');
+      expect(tokens).toContain(est('history', { runs: 14 }));
+      expect(tokens).toContain('400k');
+      expect(tokens).toContain(est('budgetTokens'));
+      expect(tokens).toContain(est('unknown'));
+      expect(tokens).not.toContain('580k');
+      const time = text(group(tree, est('time')));
+      expect(time).toContain(zhf('lib.time.hours', { hours: 1 }));
+      expect(time).toContain(est('budgetTime'));
+      expect(time).toContain(`${est('unknown')}${est('tasks', { count: 2 })}`);
+    });
+
+    it('says Unknown, not zero, for the amounts nothing backs', () => {
+      const tree = estimate({ stop: { state: 'waiting', at: NOW }, estimate: blank });
+      const unknown = `${est('unknown')}${est('tasks', { count: 2 })}`;
+      expect(text(group(tree, est('tokens')))).toBe(`${est('tokens')}${unknown}`);
+      expect(text(group(tree, est('time')))).toBe(`${est('time')}${unknown}`);
+    });
+
+    it('shows no estimate once the plan is approved', () => {
+      expect(estimate({ stop: { state: 'approved', at: NOW } })).toBeNull();
+    });
+  });
+
   it('names a failed session row by its reason, then by the session that failed', () => {
     const failed = need({
       source: { table: 'sessions', id: 'worker-1', revision: 7 },

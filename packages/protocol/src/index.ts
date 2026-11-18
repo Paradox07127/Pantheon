@@ -33,6 +33,7 @@ import type {
   FlowPath,
   Improvement,
   LaneDepth,
+  LearnedGrade,
   McpServerStatus,
   NeedsYouItem,
   TaskRungName,
@@ -930,6 +931,15 @@ const planEditOp = z.discriminatedUnion('type', [
   }),
   z.strictObject({
     type: z
+      .literal('refute_assumption')
+      .describe(
+        "refute_assumption: the user's own; says a plan assumption is wrong and waits for the lead to resolve the edit. A lead's call is refused.",
+      ),
+    assumption_id: planId.describe('The id of the plan assumption that is wrong.'),
+    instead: boardText.describe('What holds instead, in under 400 characters.'),
+  }),
+  z.strictObject({
+    type: z
       .literal('resolve_edit')
       .describe('resolve_edit: answer a user edit that still waits for you.'),
     edit_id: str.describe('The edit_id the board update named.'),
@@ -943,11 +953,23 @@ const planEditOp = z.discriminatedUnion('type', [
 const baseVersion = z.number().int().nonnegative();
 const argv = z.array(str.refine((value) => !value.includes('\0'))).min(1);
 const gateCommand = z.strictObject({
-  name: str,
-  argv,
-  timeout_ms: z.number().int().positive().max(2147483647).optional(),
-  enabled: z.boolean().optional(),
-  skippable: z.boolean().optional(),
+  name: str.describe('The name the gate shows for the command.'),
+  argv: argv.describe('The program and its arguments, run without a shell.'),
+  timeout_ms: z
+    .number()
+    .int()
+    .positive()
+    .max(2147483647)
+    .optional()
+    .describe('Optional: the most milliseconds the command may run; 20 minutes when absent.'),
+  enabled: z
+    .boolean()
+    .optional()
+    .describe('Optional: false keeps the command in the list without running it.'),
+  skippable: z
+    .boolean()
+    .optional()
+    .describe('Optional: true reports a failure as skipped, which does not fail the gate.'),
 });
 const worktreePath = str.refine(
   (value) => {
@@ -1462,6 +1484,33 @@ const improvementChange = z.discriminatedUnion('type', [
     countercondition: boardText
       .optional()
       .describe('Optional: when the procedure does not apply, under 400 characters.'),
+  }),
+  z.strictObject({
+    type: z
+      .literal('gate_command')
+      .describe(
+        "gate_command: replace one root's gate commands; it waits for the user to confirm.",
+      ),
+    root: str.describe('The project root whose gate commands change.'),
+    to: z.array(gateCommand).describe('The gate commands the root should run.'),
+  }),
+  z.strictObject({
+    type: z
+      .literal('worktree_setup')
+      .describe(
+        "worktree_setup: replace the project's worktree setup; it waits for the user to confirm.",
+      ),
+    to: z
+      .strictObject({
+        copy_paths: z
+          .array(worktreePath)
+          .describe('Paths relative to a root, copied into each new worktree.'),
+        command: gateCommand
+          .omit({ name: true })
+          .optional()
+          .describe('Optional: the command to run in each new worktree after the copy.'),
+      })
+      .describe('The paths to copy into a new worktree and the command to run there.'),
   }),
 ]);
 const boardNoteList = (text: string) => z.array(boardNote).max(16).describe(text);
@@ -2370,7 +2419,7 @@ export const inputSchemas = {
       .min(1)
       .max(32)
       .describe(
-        "1-32 changes applied in order, each with a `type`: add_task, remove_task, move_task, set_task, set_dependencies, set_milestone or set_iterations. lock_order and unlock_order are the user's own; a lead's call is refused.",
+        "1-32 changes applied in order, each with a `type`: add_task, remove_task, move_task, set_task, set_dependencies, set_milestone or set_iterations. lock_order, unlock_order and refute_assumption are the user's own; a lead's call is refused.",
       ),
   }),
   /** Takes back a user edit that still waits for the lead; the user only. */
@@ -2391,7 +2440,7 @@ export const inputSchemas = {
       .min(1)
       .max(32)
       .describe(
-        '1-32 changes, the same types as edit_board except lock_order, unlock_order and resolve_edit, and add_lane to add a lane.',
+        '1-32 changes, the same types as edit_board except lock_order, unlock_order, resolve_edit and refute_assumption, and add_lane to add a lane.',
       ),
   }),
   /** Takes back a proposal that still waits for the user; the lead only. */
@@ -2751,6 +2800,8 @@ export const inputSchemas = {
   }),
   /** The user only; archives a goal; milestones keep their link. */
   'goal.archive': z.strictObject({ goal_id: str }),
+  /** The user only; brings an archived goal back at its order while fewer than 7 are active. */
+  'goal.restore': z.strictObject({ goal_id: str }),
   /** The user only; the project's active goals in their new order. */
   'goal.reorder': z.strictObject({ project_id: str, goal_ids: z.array(str).min(1).max(7) }),
   'milestone.create': z.strictObject({ project_id: str, ...milestoneInput }),
@@ -3429,6 +3480,7 @@ export const querySchemas = {
 } as const;
 export type QueryMethod = keyof typeof querySchemas;
 export interface ImprovementListItem extends Omit<Improvement, 'trial_evaluation'> {
+  grade: LearnedGrade;
   /** Absent until the trial starts. Counts and values use the evaluator's task sample. */
   trial?: {
     tasks_seen: number;
@@ -4850,6 +4902,8 @@ export interface BoardModel {
     milestone_ids: string[];
     milestones: { done: number; ready: number; total: number };
     tasks: { done: number; total: number };
+    /** Items of needs on a task of one of its milestones or on one of its milestones. */
+    needs: number;
   }[];
   burnup: { day: string; scope: number; done: number }[];
   /** Lead plan tasks, each counted once however many sessions it had; a task is done once a session merged. */

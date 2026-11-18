@@ -34,6 +34,7 @@ import {
   memoryItemBytes,
   current,
   ensureProject,
+  expired,
   records,
   rows,
   sessionFor,
@@ -205,9 +206,7 @@ function view(
         ? {
             ...r,
             state: 'archived' as const,
-            reason: (r.expires_at && r.expires_at <= ctx.store.now()
-              ? 'expired'
-              : 'stale') as MemoryRecord['reason'],
+            reason: (expired(ctx, r) ? 'expired' : 'stale') as MemoryRecord['reason'],
           }
         : r,
     );

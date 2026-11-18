@@ -113,6 +113,27 @@ const tokenFrame = (
   },
 });
 
+const longInput = 'x'.repeat(5000);
+const needsItem = {
+  source: { table: 'sessions', id: 'needs-session', revision: 3 },
+  kind: 'session.gate_failed',
+  project_id: 'trace-project',
+  status: 'gate_failed',
+  created_at: 1000,
+  reason: 'gate_failed',
+  decision: 'repeated_failure',
+  blocks: 1,
+  actions: [{ command: 'session.retry', allowed: true }],
+};
+const needsJson = (length: number) => {
+  const items = [needsItem];
+  while (JSON.stringify({ items }).length < length) items.push(needsItem);
+  return JSON.stringify({ items });
+};
+// A needs-you list past the per-string limit, and one past the whole payload's.
+const needsList = needsJson(6000);
+const huge = needsJson(200000);
+
 describe('Codex trace events', () => {
   it('sums every request of a turn once, without leaking counts across turns', async () => {
     const foreign = tokenFrame([700, 800], [9700, 9800]);
@@ -257,6 +278,58 @@ describe('Codex trace events', () => {
       output: { result: { content: [{ text: long.slice(0, 4096) }] }, truncated: true },
     });
     expect(call.result.content[0]?.text).toBe(long);
+  });
+
+  it('keeps a long personal needs_you result whole and cuts the same result of another tool', async () => {
+    const mcpCall = (id: string, server: string, tool: string, text: string) => ({
+      id,
+      type: 'mcpToolCall',
+      server,
+      tool,
+      arguments: { project_id: longInput },
+      status: 'completed',
+      result: { content: [{ type: 'text', text }] },
+    });
+    const events = await codexTurns([
+      [
+        ...itemFrames(mcpCall('needs-call', 'pantheon', 'needs_you', needsList)),
+        ...itemFrames(mcpCall('other-call', 'pantheon', 'project_brief', needsList)),
+        ...itemFrames(mcpCall('huge-call', 'pantheon', 'needs_you', huge)),
+        {
+          method: 'rawResponseItem/completed',
+          params: {
+            item: {
+              type: 'function_call',
+              call_id: 'raw-call',
+              namespace: 'pantheon',
+              name: 'needs_you',
+              arguments: '{}',
+            },
+          },
+        },
+        {
+          method: 'rawResponseItem/completed',
+          params: {
+            item: { type: 'function_call_output', call_id: 'raw-call', output: needsList },
+          },
+        },
+      ],
+    ]);
+    const started = events.filter((event) => event.kind === 'tool.started');
+    const completed = events.filter((event) => event.kind === 'tool.completed');
+    const text = (output: unknown) =>
+      (output as { result: { content: { text: string }[] } }).result.content[0]!.text;
+    expect(JSON.parse(text(completed[0]?.output))).toEqual(JSON.parse(needsList));
+    expect(completed[0]?.output).not.toHaveProperty('truncated');
+    expect(started[0]?.input).toMatchObject({
+      arguments: { project_id: longInput.slice(0, 4096) },
+      truncated: true,
+    });
+    expect(text(completed[1]?.output)).toBe(needsList.slice(0, 4096));
+    expect(completed[1]?.output).toMatchObject({ truncated: true });
+    expect(text(completed[2]?.output).length).toBeLessThan(huge.length);
+    expect(completed[2]?.output).toMatchObject({ truncated: true });
+    expect(completed[3]).toMatchObject({ tool_call_id: 'raw-call', output: { text: needsList } });
   });
 
   it('caps command text and maps the remaining tool types conservatively', async () => {
@@ -496,6 +569,48 @@ describe('Claude trace events', () => {
       expect.objectContaining({ text: 'reading' }),
     ]);
     expect(JSON.stringify(messages)).toContain(long);
+  });
+
+  it('keeps a long personal needs_you result whole and cuts the same result of another tool', async () => {
+    const calls = [
+      ['needs-call', 'mcp__pantheon__needs_you', needsList],
+      ['other-call', 'mcp__pantheon__project_brief', needsList],
+      ['huge-call', 'mcp__pantheon__needs_you', huge],
+    ] as const;
+    const events = await claudeMessages([
+      {
+        type: 'assistant',
+        message: {
+          content: calls.map(([id, name]) => ({
+            type: 'tool_use',
+            id,
+            name,
+            input: { project_id: longInput },
+          })),
+        },
+      },
+      {
+        type: 'user',
+        message: {
+          content: calls.map(([id, , text]) => ({
+            type: 'tool_result',
+            tool_use_id: id,
+            content: [{ type: 'text', text }],
+          })),
+        },
+      },
+      result,
+    ]);
+    const started = events.filter((event) => event.kind === 'tool.started');
+    const completed = events.filter((event) => event.kind === 'tool.completed');
+    const text = (output: unknown) => (output as { content: { text: string }[] }).content[0]!.text;
+    expect(JSON.parse(text(completed[0]?.output))).toEqual(JSON.parse(needsList));
+    expect(completed[0]?.output).not.toHaveProperty('truncated');
+    expect(started[0]?.input).toEqual({ project_id: longInput.slice(0, 4096), truncated: true });
+    expect(text(completed[1]?.output)).toBe(needsList.slice(0, 4096));
+    expect(completed[1]?.output).toMatchObject({ truncated: true });
+    expect(text(completed[2]?.output).length).toBeLessThan(huge.length);
+    expect(completed[2]?.output).toMatchObject({ truncated: true });
   });
 
   it.each(['success', 'error_during_execution'])(

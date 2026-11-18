@@ -71,6 +71,7 @@ const improvement = (extra: Partial<ImprovementListItem> = {}): ImprovementListI
   signal: 'repeat_gate_failure',
   retrospective_ids: ['r1', 'r2', 'r3'],
   status: 'candidate',
+  grade: 'trial',
   change: {
     type: 'experience',
     domain: 'backend-logic',
@@ -443,6 +444,79 @@ describe('learned improvement detail', () => {
     const h = await mount({ item });
     expect(byClass(tree(h), 'mld-cmp')).toEqual([]);
     expect(all(h)).toContain(zh('memory.learnedDetail.noBaseline'));
+  });
+
+  /** Text a screen reader reads, without what is hidden from it, its parts joined by spaces. */
+  const spoken = (t: ReactNode): string => {
+    if (Array.isArray(t)) return t.map(spoken).filter(Boolean).join(' ');
+    if (t && typeof t === 'object' && 'props' in t) {
+      const node = t as { props: Record<string, any> };
+      return node.props['aria-hidden'] ? '' : spoken(node.props.children);
+    }
+    return typeof t === 'string' || typeof t === 'number' ? String(t) : '';
+  };
+  it.each([
+    [
+      'shows the folder and the commands before and after a gate change in effect',
+      improvement({
+        status: 'active',
+        change: {
+          type: 'gate_command',
+          root: '/repo/pay',
+          from: [{ name: 'test', argv: ['pnpm', 'test'] }],
+          to: [],
+        },
+      }),
+      { label: '/repo/pay 的门禁', 现在: ['− test pnpm test'], 提议: ['没有门禁'] },
+    ],
+    [
+      'marks a command in effect that became skippable and off on each side',
+      improvement({
+        status: 'active',
+        change: {
+          type: 'gate_command',
+          root: '/repo/pay',
+          from: [{ name: 'test', argv: ['pnpm', 'test'] }],
+          to: [{ name: 'test', argv: ['pnpm', 'test'], skippable: true, enabled: false }],
+        },
+      }),
+      {
+        label: '/repo/pay 的门禁',
+        现在: ['− test pnpm test'],
+        提议: ['+ test pnpm test 不运行 失败算跳过'],
+      },
+    ],
+    [
+      'reads the setup a worktree setup proposal would replace from the project',
+      improvement({
+        change: { type: 'worktree_setup', to: { copy_paths: ['.env', 'certs/dev.pem'] } },
+      }),
+      { label: '工作树 setup', 现在: ['.env'], 提议: ['.env', '+ certs/dev.pem'] },
+    ],
+  ])('%s', async (_name, item, expected) => {
+    useBoard.setState({
+      board: {
+        ...useBoard.getState().board!,
+        projects: [{ id: 'pay', roots: ['/repo/pay'], worktree: { copy_paths: ['.env'] } }],
+      },
+    } as never);
+    const h = await mount({ item });
+    const diff = named(tree(h), 'LearnedChangeDiff');
+    const drawn = (diff.type as (props: unknown) => ReactNode)(diff.props);
+    expect({
+      label: find(drawn, (n) => n.props.role === 'group').props['aria-label'],
+      ...Object.fromEntries(
+        nodes(drawn)
+          .filter((n) => n.type === 'ul')
+          .map((n) => [
+            n.props['aria-label'],
+            nodes(n.props.children)
+              .filter((li) => li.type === 'li')
+              .map(spoken),
+          ]),
+      ),
+    }).toEqual(expected);
+    if (item.change.type === 'gate_command') expect(spoken(drawn)).toContain('/repo/pay');
   });
 
   it('lists the sessions an experience on trial goes to and opens one', async () => {

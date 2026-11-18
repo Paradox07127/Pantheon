@@ -39,9 +39,9 @@ export function runCommands(commands, dir) {
 
 /**
  * Whether the task's hidden check fails on its base commit and passes on its source commit.
- * base is 'broken' when a command before the last one fails there.
+ * base is 'broken' when a command before the last one fails there. The commits are read from history.
  */
-export function checkTask(repoRoot, task) {
+export function checkTask(repoRoot, history, task) {
   // The trees stay out of the system temporary directory: the product refuses managed
   // workspaces there, and the tests under check create them below their working directory.
   const work = path.join(repoRoot, '.eval-work');
@@ -51,8 +51,8 @@ export function checkTask(repoRoot, task) {
     const run = (commit, side) => {
       const dir = path.join(temp, side);
       fs.mkdirSync(dir);
-      materialize(repoRoot, commit, dir);
-      overlayHidden(repoRoot, task, dir);
+      materialize(history, commit, dir);
+      overlayHidden(history, task, dir);
       // The last command is the check itself; one before it that fails means the check never ran.
       const setup = runCommands(task.hidden_check.slice(0, -1), dir);
       if (!setup.ok) return { ...setup, reached: false };

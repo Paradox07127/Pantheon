@@ -85,14 +85,41 @@ describe('board flow layout with measured card heights', () => {
       ]),
     );
     const [api, ui] = layout.lanes;
-    expect(api!.height).toBe(180 + 2 * 16);
-    expect(ui!.height).toBe(120 + 2 * 16);
+    // A plan lane's cards sit under its 28px head row.
+    expect(api!.height).toBe(180 + 2 * 16 + 28);
+    expect(ui!.height).toBe(120 + 2 * 16 + 28);
     expect(ui!.y).toBe(api!.y + api!.height + LANE_GAP);
     expect(layout.height).toBe(ui!.y + ui!.height);
   });
 
   it('takes the default card height for a card not measured yet', () => {
     const layout = flowLayout(stacked, 1200, 'lane', new Map([['tall', 200]]));
-    expect(layout.lanes[0]!.height).toBe(200 + 2 * NODE_HEIGHT + 2 * 16 + 2 * 16);
+    // One column leaves the lane too narrow for a one-row head.
+    expect(layout.lanes[0]!.height).toBe(200 + 2 * NODE_HEIGHT + 2 * 16 + 2 * 16 + 56);
+  });
+
+  it("gives a one-column lane's head two rows and moves its cards under them", () => {
+    const layout = flowLayout(board([task('a', 'api')]), 1200, 'lane', new Map([['a', 100]]));
+    expect(layout.width).toBe(340);
+    expect(layout.headRows).toBe(2);
+    const [api] = layout.lanes;
+    expect(api!.height).toBe(100 + 2 * 16 + 56);
+    expect(layout.nodes[0]!.y).toBe(api!.y + 16 + 56);
+  });
+
+  it("keeps a lane's head on one row when the lane is wide enough", () => {
+    const layout = flowLayout(
+      board([task('a', 'api'), task('b', 'api')], [{ from: 'a', to: 'b', state: 'pending' }]),
+      1200,
+      'lane',
+      new Map([
+        ['a', 100],
+        ['b', 100],
+      ]),
+    );
+    expect(layout.width).toBe(732);
+    expect(layout.headRows).toBe(1);
+    expect(layout.lanes[0]!.height).toBe(100 + 2 * 16 + 28);
+    expect(layout.nodes[0]!.y).toBe(layout.lanes[0]!.y + 16 + 28);
   });
 });

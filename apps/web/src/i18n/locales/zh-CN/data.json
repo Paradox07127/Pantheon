@@ -268,6 +268,8 @@
   "data.workflowPolicy.domain.docsChore": "文档与杂务",
   "data.workflowPolicy.noLimit": "不限",
   "data.workflowPolicy.change": "{what}从 {from} 改成 {to}",
+  "data.workflowPolicy.change.gate": "修改 {root} 的门禁命令",
+  "data.workflowPolicy.change.worktree": "修改工作树设置",
   "data.workflowPolicy.wholeProject": "整个项目",
   "data.workflowPolicy.allTasks": "全部任务",
   "data.workflowPolicy.source.lead": "lead 提出",

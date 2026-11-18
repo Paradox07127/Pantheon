@@ -76,12 +76,21 @@ export function taskCurrent(
     ) !== 'done'
   );
 }
-export function alive(ctx: ControlContext, r: MemoryRecord, sessions?: Session[]): boolean {
+export const NOTE_IDLE_MS = 90 * 24 * 60 * 60 * 1000;
+/** Past its expires_at, or an agent's own note no session read for NOTE_IDLE_MS. */
+export function expired(ctx: ControlContext, r: MemoryRecord): boolean {
+  const now = ctx.store.now();
   return (
-    r.state === 'active' &&
-    (!r.expires_at || r.expires_at > ctx.store.now()) &&
-    taskCurrent(ctx, r, sessions)
+    (!!r.expires_at && r.expires_at <= now) ||
+    (r.authority === 'agent_reported' &&
+      r.kind === 'note' &&
+      // Handoff notes and notes imported from files stay while their source does.
+      !r.tags?.some((t) => t === 'handoff' || t === 'imported') &&
+      now - (r.last_used_at ?? r.created_at) > NOTE_IDLE_MS)
   );
+}
+export function alive(ctx: ControlContext, r: MemoryRecord, sessions?: Session[]): boolean {
+  return r.state === 'active' && !expired(ctx, r) && taskCurrent(ctx, r, sessions);
 }
 export function sourceSignature(
   ctx: ControlContext,

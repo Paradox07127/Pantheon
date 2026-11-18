@@ -437,6 +437,19 @@ export function setProjectGate(
   gitRoots: ReadonlySet<string>,
 ): Project {
   const { project, root, commands } = gateTarget(ctx, p, c);
+  return writeProjectGate(ctx, project, root, commands, gitRoots, c.command_id);
+}
+
+/** Writes one root's gate; gitRoots as for setProjectGate. */
+export function writeProjectGate(
+  ctx: ControlContext,
+  project: Project,
+  root: string,
+  commands: NonNullable<Project['gates']>[string],
+  gitRoots: ReadonlySet<string>,
+  commandId: string,
+): Project {
+  requireThat(project.roots.includes(root), 'scope_violation', 'Gate root is not a project root');
   requireThat(gitRoots.has(root), 'invalid_input', 'Gate root is not a git folder');
   const { [root]: _previous, ...others } = project.gates ?? {};
   const gates = commands.length ? { ...others, [root]: commands } : others;
@@ -446,7 +459,26 @@ export function setProjectGate(
     Object.keys(gates).length ? { ...rest, gates } : rest,
     project.revision,
   );
-  ctx.store.event('project.gate_set', next, project.id, { root, commands }, c.command_id);
+  ctx.store.event('project.gate_set', next, project.id, { root, commands }, commandId);
+  return next;
+}
+
+/** Sets the project's worktree preparation, refusing a copy path outside a root. */
+export function setProjectWorktree(
+  ctx: ControlContext,
+  project: Project,
+  worktree: NonNullable<Project['worktree']>,
+  commandId: string,
+): Project {
+  for (const root of project.roots)
+    for (const entry of worktree.copy_paths)
+      requireThat(
+        inside(root, resolvedPath(path.resolve(root, entry))),
+        'scope_violation',
+        'Copy path escapes the project folder',
+      );
+  const next = ctx.store.update<Project>('projects', { ...project, worktree }, project.revision);
+  ctx.store.event('project.worktree_set', next, project.id, worktree, commandId);
   return next;
 }
 
@@ -550,16 +582,7 @@ export const projectHandlers: Handlers = {
     projectAccess(ctx, p, project_id, c.type);
     const project = ctx.store.must<Project>('projects', project_id);
     revision(ctx, c, project);
-    for (const root of project.roots)
-      for (const entry of worktree.copy_paths)
-        requireThat(
-          inside(root, resolvedPath(path.resolve(root, entry))),
-          'scope_violation',
-          'Copy path escapes the project folder',
-        );
-    const next = ctx.store.update<Project>('projects', { ...project, worktree }, project.revision);
-    ctx.store.event('project.worktree_set', next, project.id, worktree, c.command_id);
-    return next;
+    return setProjectWorktree(ctx, project, worktree, c.command_id);
   },
   'project.sessionDefaults.set': (ctx, p, c) => {
     requireThat(p.role === 'user', 'permission_denied', 'Only user can set the session defaults');

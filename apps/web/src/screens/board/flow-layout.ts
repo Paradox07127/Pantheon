@@ -15,6 +15,14 @@ const MIN_GAP = 48;
 const MAX_GAP = 160;
 const ROW_GAP = 16;
 const LANE_PADDING = 16;
+/** The row over a plan lane's cards that holds its title and depth; a narrow lane's head takes two. */
+const LANE_HEAD = 28;
+/**
+ * The narrowest lane frame whose head fits on one row: 12px insets on both sides, then in English text
+ * the title cut to 80, the depth choice 220, who chose 76, the reason cut to 64 and the plan state 204,
+ * 12px apart.
+ */
+const LANE_HEAD_ONE_ROW = 24 + 80 + 220 + 76 + 64 + 204 + 4 * 12;
 /** The cards' smallest text is 12px at 1:1; fitting the graph never shrinks it under 11px. */
 export const MIN_ZOOM = 11 / 12;
 /** The user may zoom out this far; below COMPACT_ZOOM a card is a capsule, below DOT_ZOOM a dot. */
@@ -90,6 +98,8 @@ export interface FlowLayout {
   edges: BoardModel['edges'];
   /** Space between columns. */
   gap: number;
+  /** Rows a plan lane's head takes, by the lanes' width. */
+  headRows: 1 | 2;
   width: number;
   height: number;
 }
@@ -144,6 +154,10 @@ export function flowLayout(
         )
       : MIN_GAP;
 
+  const laneWidth =
+    LANE_LABEL_WIDTH + columns * NODE_WIDTH + Math.max(0, columns - 1) * gap + LANE_PADDING;
+  const headRows = laneWidth >= LANE_HEAD_ONE_ROW ? 1 : 2;
+
   const groups = bands(model, group);
   const known = new Set(groups.map((l) => l.id));
   const nodes: FlowLayout['nodes'] = [];
@@ -179,8 +193,9 @@ export function flowLayout(
     const rowHeight = rows.map(() => 0);
     for (const t of tasks)
       rowHeight[rowOf.get(t.id)!] = Math.max(rowHeight[rowOf.get(t.id)!]!, heightOf(t.id));
+    const head = group === 'lane' && lane.id !== null ? headRows * LANE_HEAD : 0;
     const rowTop = rowHeight.map((_, i) =>
-      rowHeight.slice(0, i).reduce((sum, h) => sum + h + ROW_GAP, y + LANE_PADDING),
+      rowHeight.slice(0, i).reduce((sum, h) => sum + h + ROW_GAP, y + LANE_PADDING + head),
     );
     for (const t of tasks)
       nodes.push({
@@ -189,7 +204,10 @@ export function flowLayout(
         y: rowTop[rowOf.get(t.id)!]!,
       });
     const height =
-      2 * LANE_PADDING + rowHeight.reduce((sum, h) => sum + h, 0) + (rows.length - 1) * ROW_GAP;
+      2 * LANE_PADDING +
+      head +
+      rowHeight.reduce((sum, h) => sum + h, 0) +
+      (rows.length - 1) * ROW_GAP;
     lanes.push({
       id: lane.id,
       title: lane.title,
@@ -205,7 +223,8 @@ export function flowLayout(
     lanes,
     edges,
     gap,
-    width: LANE_LABEL_WIDTH + columns * NODE_WIDTH + Math.max(0, columns - 1) * gap + LANE_PADDING,
+    headRows,
+    width: laneWidth,
     height: Math.max(0, y - LANE_GAP),
   };
 }

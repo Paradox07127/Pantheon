@@ -187,4 +187,11 @@ export interface ProjectBaseline extends Entity {
   plan_session_id?: string;
   /** Rounds already answered that opened the next round, oldest first. */
   rounds?: { questions: BaselineQuestion[]; answers: BaselineAnswer[]; at: number }[];
+  /** The environment checks of the proposed commands; `commands` is of the newest attempt. */
+  environment?: {
+    check_ids: string[];
+    /** When a failed check sent the baseline session back to fix its commands, which it gets once. */
+    fix_requested_at?: number;
+    commands: { root: string; name: string; state: 'passed' | 'failed' | 'not_run' }[];
+  };
 }

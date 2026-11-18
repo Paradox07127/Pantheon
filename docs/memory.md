@@ -38,6 +38,7 @@ Pantheon 管理记忆的生效状态，agent 提交分析候选，改进闭环�
 - `memory.archive` 撤回；替代、过期、任务 generation 变化、依赖失效也会归档。普通 `get/search/related/context/project.read` 不返回已失效内容；带历史筛选的 search/related 仅允许用户凭据。
 - `memory.restore` 只生成新草稿，保留 `restored_from`。再次确认才可能取代现有版本，不自动恢复被撤回的规则。恢复保留原依赖；若依赖已失效，须重新评估并提交新提案，不能通过恢复绕过证据门禁。
 - 用户决定不按年龄、访问量衰减。显式 `expires_at` 才按时间失效；读取当场检查，不依赖后台定时器醒来。
+- agent 提交的 note(不带 `handoff`、`imported` 标签)90 天没有被会话用 `memory.get` 读过，即归档为 `expired`；随记忆包送达不算读过，同 key 提交新版本重新计时。决定、报告、交接笔记、导入的条目和用户条目不受影响。会话提交带文件引用的条目时，在提交前读一次项目第一个根的 HEAD，记为 `verified_commit`；读不到 HEAD 时不记，提交照常生效。
 - 任务记忆只能在其任务 generation 内读取。任务完成、被删除或 generation 改变即失效。任务例外不会替代项目级规则；冲突需要对照作用域解释。
 
 报告默认依赖生成时的项目来源签名；任务、brief、改进闭环或当前决定变化后保守失效。`dependencies` 指向不可变记忆版本，失效沿依赖传播。普通 note 不随无关任务进度失效，但显式依赖、任务作用域、有效期依然约束它。

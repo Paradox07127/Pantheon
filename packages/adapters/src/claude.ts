@@ -82,7 +82,7 @@ import {
 import { MIN_VERSIONS } from './capabilities.js';
 import { installedFields, notInstalled, readVersion, type Preflight } from './preflight.js';
 
-import { imageLimit, tracePayload } from './trace.js';
+import { imageLimit, needsYouLimit, tracePayload } from './trace.js';
 import { plannerInstructions } from './planner.js';
 import { nativeSessionTitle, prepareNativeState } from './native-state.js';
 
@@ -2715,6 +2715,7 @@ export class ClaudeAdapter implements HarnessAdapter {
     // Calls of tools with an interface whose result has not arrived.
     const appCalls = new Set<string>();
     const artifactCalls = new Set<string>();
+    const needsYouCalls = new Set<string>();
     let contextTokens: number | undefined;
     let contextReportedFor: string | undefined;
     let readingLimits = false;
@@ -3246,6 +3247,7 @@ export class ClaudeAdapter implements HarnessAdapter {
               const app = session.appTools.get(content.name);
               if (app) appCalls.add(content.id);
               if (content.name === 'Artifact') artifactCalls.add(content.id);
+              if (content.name === 'mcp__pantheon__needs_you') needsYouCalls.add(content.id);
               session.emit({
                 key: String(++session.sequence),
                 provider_sequence: session.sequence,
@@ -3288,7 +3290,10 @@ export class ClaudeAdapter implements HarnessAdapter {
                 kind: 'tool.completed',
                 tool_call_id: content.tool_use_id,
                 ok: !content.is_error,
-                output: tracePayload({ content: content.content }),
+                output: tracePayload(
+                  { content: content.content },
+                  needsYouCalls.delete(content.tool_use_id) ? needsYouLimit : undefined,
+                ),
                 ...(app_result ? { app_result } : {}),
                 ...(images.length ? { images } : {}),
                 ...(artifact ? { artifact } : {}),

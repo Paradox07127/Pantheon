@@ -185,5 +185,14 @@
   "components.clip.more": "展开",
   "components.clip.less": "收起",
   "components.sidebar.newAgent": "新建智能体",
-  "components.sidebar.agentProfile": "资料"
+  "components.sidebar.agentProfile": "资料",
+  "components.requestCard.gateCounts": "{root} 的门禁：{n, plural, other {#}} 条命令改为 {m, plural, other {#}} 条",
+  "components.learnedChange.gate": "{root} 的门禁",
+  "components.learnedChange.worktree": "工作树 setup",
+  "components.learnedChange.now": "现在",
+  "components.learnedChange.proposed": "提议",
+  "components.learnedChange.noGate": "没有门禁",
+  "components.learnedChange.noSetup": "没有 setup",
+  "components.learnedChange.off": "不运行",
+  "components.learnedChange.skippable": "失败算跳过"
 }

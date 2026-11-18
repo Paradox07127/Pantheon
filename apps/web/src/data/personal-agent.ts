@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from 'react';
-import type { PersonalKey } from '@pantheon/domain';
+import { useEffect, useSyncExternalStore } from 'react';
+import type { AgentProfile, PersonalKey } from '@pantheon/domain';
 import type { BoardSnapshot, WorkbenchSession } from '@pantheon/protocol';
 import { toast } from '../components/Toast';
 import { useShell } from '../store';
@@ -7,6 +7,7 @@ import { useBoard } from './board';
 import { runCommand } from './commands';
 import { failureText, type NeedsYouItem } from './needs-you';
 import type { DaemonEvent } from './sync';
+import type { ToolItem } from './transcript';
 import { useQuery } from './workbench-sessions';
 
 type Project = BoardSnapshot['projects'][number];
@@ -131,6 +132,89 @@ export function usePersonalKeys() {
     () => ({}),
     (value) => (Array.isArray(value) ? (value as PersonalKeyListed[]) : null),
     changed,
+  );
+}
+
+/** What a personal tool call showed once it ended well: the needs-you list it read, or where it sent a request. */
+export type PersonalCall =
+  | { kind: 'needs'; items: NeedsYouItem[]; at: number }
+  | { kind: 'sent'; project_id: string; session_id: string | null; assistant: boolean };
+
+// By tool call id: a call is read once when it ends, so a streaming reply does not parse it again.
+const personalCallsRead = new Map<string, PersonalCall | null>();
+
+/** The text of a tool result: the fixture's string, or the text of the runtime's content blocks. */
+const resultText = (value: unknown): string | null => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(resultText).join('');
+  if (!value || typeof value !== 'object') return null;
+  const result = value as { content?: unknown; text?: unknown; result?: unknown };
+  return resultText(result.content ?? result.text ?? result.result);
+};
+
+/**
+ * The needs_you or send_request call as the personal agent made it, once it ended well; null for any
+ * other call, one still running, or a result cut short and no longer JSON.
+ */
+export function personalCall(item: ToolItem): PersonalCall | null {
+  if (!item.ok || item.completed_at === undefined) return null;
+  const tool = item.name.replace(/^(mcp__pantheon__|pantheon\.)/, '');
+  if (tool !== 'needs_you' && tool !== 'send_request') return null;
+  if (personalCallsRead.has(item.id)) return personalCallsRead.get(item.id)!;
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(resultText(item.output) ?? '');
+  } catch {
+    // Left null: the call shows as a plain tool row.
+  }
+  const items = (parsed as { items?: unknown } | null)?.items;
+  const input = item.input as { project_id?: unknown; target?: { kind?: unknown } } | null;
+  const receipt = (parsed as { receipt?: { session_id?: unknown } } | null)?.receipt;
+  const call: PersonalCall | null =
+    tool === 'needs_you'
+      ? Array.isArray(items)
+        ? { kind: 'needs', items: items as NeedsYouItem[], at: item.completed_at }
+        : null
+      : typeof input?.project_id === 'string'
+        ? {
+            kind: 'sent',
+            project_id: input.project_id,
+            session_id: typeof receipt?.session_id === 'string' ? receipt.session_id : null,
+            assistant: input.target?.kind !== 'session',
+          }
+        : null;
+  personalCallsRead.set(item.id, call);
+  return call;
+}
+
+let builtInKey: string | null = null;
+let builtInKeyAsked = false;
+const builtInKeyListeners = new Set<() => void>();
+
+/** The built-in personal agent's key id, read from the home's agents once, when a thread first asks with the home. */
+export function useBuiltInPersonalKey(homeId: string | null): string | null {
+  useEffect(() => {
+    const bridge = window.pantheon;
+    if (!homeId || builtInKeyAsked || !bridge) return;
+    builtInKeyAsked = true;
+    void bridge.query('agent.list', { project_id: homeId }).then((result) => {
+      if (!result.ok || !Array.isArray(result.value)) {
+        builtInKeyAsked = false;
+        return;
+      }
+      builtInKey =
+        (result.value as AgentProfile[]).find((agent) => agent.template === 'personal')
+          ?.personal_key_id ?? null;
+      builtInKeyListeners.forEach((listener) => listener());
+    });
+  }, [homeId]);
+  return useSyncExternalStore(
+    (listener) => {
+      builtInKeyListeners.add(listener);
+      return () => void builtInKeyListeners.delete(listener);
+    },
+    () => builtInKey,
+    () => builtInKey,
   );
 }
 

@@ -203,6 +203,10 @@ node tests/acceptance/verify/run.mjs --boot [--out <dir>] [--size WxH] [entry id
 | `node scripts/eval.mjs run --runtime codex` or `claude` | Runs the frozen tasks with a real model.                                                |
 | `node scripts/eval.mjs report <run dir>`                | Writes the report again from a run directory.                                           |
 
+The commits the frozen tasks name are not in the public history of this repository.
+`node scripts/eval.mjs history <bundle> <dir>` fetches a git bundle that holds them into a new bare repository at `<dir>` and lists any commit it lacks.
+Set `PANTHEON_EVAL_HISTORY=<dir>` and `check` and `run` read the frozen commits from that repository.
+
 `run` also accepts `--task <name>` (more than once), `--repetitions <n>`, `--workspace <dir>` and `--out <dir>`.
 A `codex` or `claude` run uses the real home folder and a real model. Its workspace is `~/.pantheon-eval/` by default, and `--workspace` must be outside this checkout.
 

@@ -214,6 +214,33 @@ describe('flow node task type', () => {
   });
 });
 
+describe('flow node evidence', () => {
+  const marks = (root: ReactNode) =>
+    nodes(root)
+      .filter((n) => n.props.role === 'img' && String(n.props['aria-label']).startsWith('证据'))
+      .map((n) => [n.props['aria-label'], text(n)]);
+  const merged = { state: 'merged' as const, status: 'done' as const };
+
+  it.each([
+    ['report', undefined, 'report'],
+    ['gate', undefined, 'gate'],
+    ['reviewed', 'other_vendor', 'reviewed.otherVendor'],
+    ['reviewed', 'other_runtime', 'reviewed.otherRuntime'],
+  ] as const)('marks a merged task backed by %s %s', (level, reviewer, key) => {
+    const shown = tree(
+      task({ ...merged, evidence_level: level, ...(reviewer && { evidence_reviewer: reviewer }) }),
+    );
+    expect(marks(shown)).toEqual([
+      [zh(`board.evidence.${key}.label`), zh(`board.evidence.${key}`)],
+    ]);
+  });
+
+  it('marks no task without a level', () => {
+    expect(marks(tree(task(merged)))).toEqual([]);
+    expect(marks(tree(task()))).toEqual([]);
+  });
+});
+
 describe('flow node amounts', () => {
   it('counts the subagents beside the diff, and draws nothing for none', () => {
     const agents = byClass(byClass(tree(task({ subagents: 2 })), 'bd-nq'), 'bd-nagents')!;
