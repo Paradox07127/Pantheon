@@ -1263,7 +1263,7 @@ export function sessionEnded(ctx: ControlContext, sessionId: string): boolean {
 }
 
 /** The commands an environment check of a folder runs: its gate, then build, test and lint not already in it. */
-function baselineCommands(folder: BaselineFolder): { name: string; argv: string[] }[] {
+export function baselineCommands(folder: BaselineFolder): { name: string; argv: string[] }[] {
   const same = (a: string[], b: string[]) => a.join('\0') === b.join('\0');
   return [
     ...folder.gate.map(({ name, argv }) => ({ name, argv })),

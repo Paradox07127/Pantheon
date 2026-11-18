@@ -2338,6 +2338,35 @@ export function boardView(
   const runningReviews = new Set(
     reviews.filter((review) => review.state === 'running').map((review) => review.session_id),
   );
+  const milestoneIdOf = new Map(
+    facts.milestones.flatMap((view) =>
+      view.milestone.owner_session_id && view.milestone.key
+        ? [[`${view.milestone.owner_session_id}:${view.milestone.key}`, view.milestone.id]]
+        : [],
+    ),
+  );
+  // Edits are kept oldest first, so the newest refute of an assumption wins.
+  const refutedBy = new Map(
+    plans.map((plan) => [
+      plan.id,
+      new Map(
+        plan.pending_edits.flatMap((edit) =>
+          (edit.refutes ?? []).map(
+            (refute) =>
+              [
+                refute.assumption_id,
+                {
+                  edit_id: edit.edit_id,
+                  instead: refute.instead,
+                  state: edit.status,
+                  ...(edit.reason ? { reason: edit.reason } : {}),
+                },
+              ] as const,
+          ),
+        ),
+      ),
+    ]),
+  );
   const leads: NonNullable<BoardModel['leads']> = plans.map((plan) => {
     const lead = ctx.store.get<Session>('sessions', plan.id),
       request = requests.get(plan.id),
@@ -2418,6 +2447,15 @@ export function boardView(
       ...(request ? { waiting: waitingOf(request) } : {}),
       updated_at: plan.updated_at,
       plan_version: plan.plan_version,
+      assumptions: plan.assumptions.map((assumption) => {
+        const milestoneId = milestoneIdOf.get(`${plan.id}:${assumption.milestone}`);
+        return {
+          ...(assumption.id ? { id: assumption.id } : {}),
+          text: assumption.text,
+          affects: (assumption.affects ?? []).map((taskId) => boardTaskId(plan.id, taskId)),
+          ...(milestoneId ? { milestone: milestoneId } : {}),
+        };
+      }),
       recent_edits: (userEdits.get(plan.id) ?? [])
         .filter(
           (edit) =>
@@ -2492,6 +2530,7 @@ export function boardView(
           ops: edit.ops,
           base_version: edit.base_version,
           created_at: edit.created_at,
+          ...(edit.refutes ? { refutes: edit.refutes } : {}),
         })),
       // A user edit at or after the rejection that names one of its tasks supersedes it.
       rejected_edits: plan.pending_edits
@@ -2654,7 +2693,13 @@ export function boardView(
             owner_session_id: view.milestone.owner_session_id,
             tasks: view.tasks!,
             ...(view.milestone.due_on ? { due_on: view.milestone.due_on } : {}),
-            ...milestoneExtras(ctx, view, milestoneLevels.get(view.milestone.id) ?? []),
+            ...milestoneExtras(
+              ctx,
+              view,
+              milestoneLevels.get(view.milestone.id) ?? [],
+              planOf.get(view.milestone.owner_session_id),
+              refutedBy.get(view.milestone.owner_session_id),
+            ),
           }
         : {
             id: view.milestone.id,

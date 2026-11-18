@@ -54,14 +54,17 @@ const authorityText = (authority: MemoryRecord['authority']) =>
 const stateTone = (r: Pick<MemoryRecord, 'state'>): Tone =>
   r.state === 'active' ? 'ok' : r.state === 'draft' ? 'wait' : 'idle';
 
-const stateText = (r: Pick<MemoryRecord, 'state' | 'reason'>) =>
+const stateText = (r: Pick<MemoryRecord, 'state' | 'reason' | 'expires_at'>) =>
   r.state === 'active'
     ? t({ id: 'memory.detail.state.active', defaultMessage: 'Current' })
     : r.state === 'draft'
       ? t({ id: 'memory.detail.state.draft', defaultMessage: 'Pending review' })
       : r.reason === 'superseded'
         ? t({ id: 'memory.detail.state.superseded', defaultMessage: 'Replaced' })
-        : t({ id: 'memory.detail.state.archived', defaultMessage: 'Archived' });
+        : r.reason === 'expired' && r.expires_at === undefined
+          ? // The daemon's idle limit for an agent's note; web does not import control.
+            t({ id: 'memory.detail.state.unread', defaultMessage: 'Expired: not read in 90 days' })
+          : t({ id: 'memory.detail.state.archived', defaultMessage: 'Archived' });
 
 const sourceStates: Record<string, { tone: Tone | 'bad'; text: () => string }> = {
   unchanged: {
@@ -201,6 +204,12 @@ export function EntryDetail({
               <dd className="ed-num">{dayText(item.committed_at, Date.now(), { time: true })}</dd>
             </>
           )}
+          {item.last_used_at !== undefined && (
+            <>
+              <dt>{t({ id: 'memory.detail.lastRead', defaultMessage: 'Last read' })}</dt>
+              <dd className="ed-num">{dayText(item.last_used_at, Date.now(), { time: true })}</dd>
+            </>
+          )}
           {draft && (
             <>
               <dt>{t({ id: 'memory.detail.proposed', defaultMessage: 'Proposed' })}</dt>
@@ -272,6 +281,14 @@ export function EntryDetail({
               { count: sources.length },
             )}
           </h3>
+          {item.verified_commit && (
+            <dl className="ed-kv">
+              <dt>{t({ id: 'memory.detail.checkedAt', defaultMessage: 'Checked at' })}</dt>
+              <dd>
+                <span className="ed-sig">{item.verified_commit.slice(0, 7)}</span>
+              </dd>
+            </dl>
+          )}
           {sources.map((s, i) => {
             const state = sourceStates[s.status] ?? sourceStates.unverified!;
             return (

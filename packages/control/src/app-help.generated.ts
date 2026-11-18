@@ -446,6 +446,12 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'the user does this in the app',
       },
       { type: 'project.environment.set', tool: 'the user does this in the app' },
+      {
+        type: 'project.environment.verify',
+        about:
+          "The user only; runs the enabled gate of each root, or of the named root, in a fresh worktree and returns the started EnvironmentCheck rows. With baseline_id it runs the submitted baseline's proposed commands of each folder instead.",
+        tool: 'the user does this in the app',
+      },
       { type: 'project.extensions.set', tool: 'the user does this in the app' },
       { type: 'project.externalEvents.set', tool: 'the user does this in the app' },
       { type: 'project.facts.refresh', tool: 'the user does this in the app' },

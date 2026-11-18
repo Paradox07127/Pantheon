@@ -1,14 +1,18 @@
 import { rm } from 'node:fs/promises';
 import {
   id,
+  requireThat,
   type EnvironmentCheck,
+  type Principal,
   type Project,
+  type ProjectBaseline,
   type Session,
   type SignalIssue,
   type Workspace,
 } from '@pantheon/domain';
-import { baselineChecked } from './baseline.js';
-import type { ControlContext } from './context.js';
+import { inputSchemas } from '@pantheon/protocol';
+import { baselineChecked, baselineCommands } from './baseline.js';
+import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
 import { runGit } from './git.js';
 import { gateFailed, gateTemporary, runCandidateCommand } from './landing.js';
 import { noteSignalHistory } from './signals.js';
@@ -18,6 +22,20 @@ import { registerWorkspace } from './workspace.js';
 type CheckCommand = NonNullable<Project['gates']>[string][number];
 type SetupCommand = NonNullable<NonNullable<Workspace['provisioning']>['command']>;
 type Results = NonNullable<Awaited<ReturnType<typeof runCandidateCommand>>>[];
+
+/** Tells the app a check started or ended, so its views read the checks again. */
+function checkEvent(
+  ctx: ControlContext,
+  kind: 'started' | 'finished',
+  row: EnvironmentCheck,
+): void {
+  ctx.store.event(`environment.check_${kind}`, row, row.project_id, {
+    check_id: row.id,
+    root: row.root,
+    state: row.state,
+    ...(row.cause.kind === 'baseline' && { baseline_id: row.cause.baseline_id }),
+  });
+}
 
 /** Ends the row and queues the removal of its worktree; the caller owns the transaction. */
 function finish(
@@ -40,6 +58,7 @@ function finish(
     workspace_id: row.workspace_id!,
     reason: 'environment_check',
   });
+  checkEvent(ctx, 'finished', ended);
   if (ended.cause.kind === 'baseline') baselineChecked(ctx, ended);
   if (ended.cause.kind !== 'signal') return;
   const base = ended.commit?.slice(0, 7) ?? 'the base commit',
@@ -231,6 +250,7 @@ export function startEnvironmentCheck(
     commands: [],
     started_at: ctx.store.now(),
   });
+  checkEvent(ctx, 'started', row);
   checkEnvironment(ctx, row, input.commands, own ?? input.setup);
   return row;
 }
@@ -279,6 +299,89 @@ export function checkOnBase(
   } catch {
     // A root Pantheon cannot make a worktree of gets no check; the gate run is still recorded.
   }
+}
+
+export const environmentCheckHandlers: Handlers = {
+  'project.environment.verify': (ctx, p, c) => {
+    userOnly(p);
+    const input = inputSchemas['project.environment.verify'].parse(c.input);
+    projectAccess(ctx, p, input.project_id, c.type);
+    const project = ctx.store.must<Project>('projects', input.project_id);
+    requireThat(
+      input.root === undefined || project.roots.includes(input.root),
+      'invalid_input',
+      `${input.root} is not a root of this project`,
+    );
+    requireThat(
+      !ctx.store
+        .list<EnvironmentCheck>('environment_checks')
+        .some((row) => row.project_id === project.id && row.state === 'running'),
+      'resource_busy',
+      'An environment check of this project is running',
+    );
+    const roots = input.root === undefined ? project.roots : [input.root];
+    if (input.baseline_id !== undefined) {
+      const baseline = ctx.store.must<ProjectBaseline>('project_baselines', input.baseline_id);
+      requireThat(
+        baseline.project_id === project.id,
+        'invalid_input',
+        'The baseline is not of this project',
+      );
+      requireThat(
+        baseline.state === 'submitted' && baseline.result,
+        'invalid_state',
+        'Baseline must be submitted before its commands are checked',
+      );
+      const folders = baseline.result.folders.filter(
+        (folder) => roots.includes(folder.root) && baselineCommands(folder).length,
+      );
+      requireThat(folders.length, 'invalid_state', 'No folder of this baseline proposes commands');
+      return folders.map((folder) =>
+        startEnvironmentCheck(ctx, {
+          project_id: project.id,
+          root: folder.root,
+          commands: baselineCommands(folder),
+          ...(folder.commands?.setup && { setup: { argv: folder.commands.setup.argv } }),
+          base_ref: 'HEAD',
+          cause: { kind: 'baseline', baseline_id: baseline.id, attempt: 1 },
+        }),
+      );
+    }
+    const checked = roots.flatMap((root) => {
+      const commands = (project.gates?.[root] ?? []).filter((command) => command.enabled !== false);
+      return commands.length ? [{ root, commands }] : [];
+    });
+    requireThat(checked.length, 'invalid_state', 'No root of this project has gate commands');
+    return checked.map(({ root, commands }) =>
+      startEnvironmentCheck(ctx, {
+        project_id: project.id,
+        root,
+        commands,
+        base_ref: 'HEAD',
+        cause: { kind: 'user' },
+      }),
+    );
+  },
+};
+
+/** The project's checks, newest first; `baseline_id` keeps the checks of that baseline's commands. */
+export function environmentChecks(
+  ctx: ControlContext,
+  p: Principal,
+  input: { project_id: string; baseline_id?: string; limit?: number },
+): EnvironmentCheck[] {
+  userOnly(p);
+  projectAccess(ctx, p, input.project_id, 'project.environment.checks');
+  return ctx.store
+    .list<EnvironmentCheck>('environment_checks')
+    .filter(
+      (row) =>
+        row.project_id === input.project_id &&
+        (input.baseline_id === undefined ||
+          (row.cause.kind === 'baseline' && row.cause.baseline_id === input.baseline_id)),
+    )
+    .sort((a, b) => b.started_at - a.started_at)
+    .slice(0, input.limit ?? 20);
 }
 
 /** Startup ends checks that were running and queues the removal of their worktrees. */

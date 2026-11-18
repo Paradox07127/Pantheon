@@ -308,6 +308,7 @@ it('tells a lead to read before it plans, ask only what reading cannot settle, s
     'at most 3 questions',
     'call ask_user',
     "the plan's assumptions",
+    'a short id, the ids of the tasks that rest on it in affects, and its milestone',
     'a test reproducing the bug',
   ])
     expect(instructions).toContain(text);

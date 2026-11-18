@@ -2811,3 +2811,78 @@ it.skipIf(insideSandbox)(
     expect(written[1]).toBe(written[0]);
   },
 );
+
+it.skipIf(insideSandbox)(
+  "runs the user's check of a submitted baseline with its proposed commands, not the project gate",
+  async () => {
+    const f = await setup({ managedWorkspaces: true });
+    try {
+      const head = f.populate();
+      const lint = ['sh', '-c', 'test -f package.json'];
+      await f.call<Promise<Project>>(
+        'project.gate.set',
+        {
+          project_id: f.project.id,
+          root: f.project.roots[0],
+          commands: [{ name: 'project gate', argv: failing }],
+        },
+        f.store.must<Project>('projects', f.project.id).revision,
+      );
+      const baseline = await f.startBaseline();
+      const verify = () =>
+        f.call<EnvironmentCheck[]>('project.environment.verify', {
+          project_id: f.project.id,
+          baseline_id: baseline.id,
+        });
+      expect(verify).toThrow(expect.objectContaining({ code: 'invalid_state' }));
+      await f.submitFolder(baseline, {
+        ...f.folder(),
+        gate: [{ name: 'test', argv: passing, sources: ['file:package.json'] }],
+        commands: {
+          test: { argv: passing, sources: ['file:package.json'] },
+          lint: { argv: lint, sources: ['file:package.json'] },
+        },
+      });
+      const submitted = await f.submit(baseline, f.result(head));
+      const [row, ...more] = verify();
+      expect(more).toEqual([]);
+      expect(row).toMatchObject({
+        root: f.project.roots[0],
+        cause: { kind: 'baseline', baseline_id: baseline.id, attempt: 1 },
+      });
+      expect(
+        f.store
+          .kindEvents(f.project.id, ['environment.check_started'])
+          .map((event) => event.payload),
+      ).toEqual([
+        { check_id: row!.id, root: f.project.roots[0], state: 'running', baseline_id: baseline.id },
+      ]);
+      await eventually(
+        () => f.store.must<EnvironmentCheck>('environment_checks', row!.id).state !== 'running',
+        () => f.control.tick(),
+        20000,
+      );
+      expect(f.store.must<EnvironmentCheck>('environment_checks', row!.id)).toMatchObject({
+        state: 'passed',
+        commands: [
+          expect.objectContaining({ name: 'test', argv: passing, exit_code: 0 }),
+          expect.objectContaining({ name: 'lint', argv: lint, exit_code: 0 }),
+        ],
+      });
+      expect(f.current(submitted).environment).toEqual({
+        check_ids: [row!.id],
+        commands: [
+          { root: f.project.roots[0], name: 'test', state: 'passed' },
+          { root: f.project.roots[0], name: 'lint', state: 'passed' },
+        ],
+      });
+      expect(
+        f.control
+          .environmentChecks(user, { project_id: f.project.id, baseline_id: baseline.id })
+          .map((check) => check.id),
+      ).toEqual([row!.id]);
+    } finally {
+      await f.close();
+    }
+  },
+);

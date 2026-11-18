@@ -12,6 +12,7 @@ import { milestoneDueOp, planVersion } from '../../data/plan-edit';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { AcceptDialog, acceptEvidence, type MilestoneActions } from './Charts';
+import { MilestoneAssumptions } from './MilestoneAssumptions';
 import {
   durationText,
   milestoneCounts,
@@ -252,11 +253,13 @@ export function MilestoneCard({
   milestone,
   actions,
   onOpenTask,
+  onOpenSession,
 }: {
   model: BoardModel;
   milestone: BoardMilestone;
   actions?: MilestoneActions;
   onOpenTask: (taskId: string) => void;
+  onOpenSession?: (sessionId: string) => void;
 }) {
   const id = useId();
   const accepting = useDialogContent<{ stored: SnapshotMilestone }>();
@@ -441,6 +444,13 @@ export function MilestoneCard({
           </Popover.Portal>
         </Popover.Root>
       </div>
+      <MilestoneAssumptions
+        model={model}
+        milestone={milestone}
+        projectId={actions?.projectId}
+        onOpenTask={onOpenTask}
+        onOpenSession={onOpenSession}
+      />
       {verification && !verifying && verification.state !== 'skipped' && (
         <Collapsible.Root
           key={verification.id}

@@ -61,6 +61,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.collab',
     'project.decisions',
     'project.defaults',
+    'project.environment.checks',
     'project.facts.read',
     'project.gates.history',
     'project.head',

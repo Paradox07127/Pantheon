@@ -560,12 +560,16 @@ const planAssumption = z.strictObject({
   text: boardText.describe('The decision, at most 400 characters.'),
   id: planId
     .optional()
-    .describe(`Optional short id, unique among the assumptions. ${RECORDED_ONLY}`),
+    .describe(
+      'Optional short id, unique among the assumptions; the user can refute only an assumption with an id.',
+    ),
   affects: z
     .array(planId)
     .max(16)
     .optional()
-    .describe(`Optional: up to 16 ids of the tasks that rest on it. ${RECORDED_ONLY}`),
+    .describe(
+      'Optional: up to 16 ids of the tasks that rest on it; they show a pending edit while a refute of it waits for you.',
+    ),
   milestone: planId
     .optional()
     .describe(`Optional: the id of the milestone that rests on it. ${RECORDED_ONLY}`),
@@ -2846,6 +2850,12 @@ export const inputSchemas = {
     root: str,
     commands: z.array(gateCommand),
   }),
+  /** The user only; runs the enabled gate of each root, or of the named root, in a fresh worktree and returns the started EnvironmentCheck rows. With baseline_id it runs the submitted baseline's proposed commands of each folder instead. */
+  'project.environment.verify': z.strictObject({
+    project_id: str,
+    root: str.optional(),
+    baseline_id: str.optional(),
+  }),
   'project.worktree.set': z.strictObject({
     project_id: str,
     copy_paths: z.array(worktreePath),
@@ -3239,6 +3249,12 @@ export const querySchemas = {
     limit: z.coerce.number().int().min(1).max(50).default(10),
   }),
   'project.baseline.read': z.strictObject({ project_id: str }),
+  /** The user only; returns the project's EnvironmentCheck rows, newest first. */
+  'project.environment.checks': z.strictObject({
+    project_id: str,
+    baseline_id: str.optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  }),
   /** The user only; returns ProjectIntroRead. */
   'project.intro.read': z.strictObject({ project_id: str }),
   'project.facts.read': z.strictObject({ project_id: str }),
@@ -4481,6 +4497,22 @@ export interface BoardMilestoneExtras {
   verification?: MilestoneView['verification'];
   /** The goal its lead linked it to; it may name a goal archived since. */
   goal_id?: string;
+  /** The owner plan's assumptions with an id that name this milestone, in plan order; absent when none. */
+  assumptions?: {
+    id: string;
+    text: string;
+    /** Board task ids of the tasks that rest on it. */
+    affects: string[];
+    /** The newest user edit that refuted it; absent when none did. */
+    refuted?: {
+      edit_id: string;
+      /** The user's words. */
+      instead: string;
+      state: 'pending' | 'applied' | 'rejected' | 'withdrawn';
+      /** The lead's reason when it resolved the edit with one. */
+      reason?: string;
+    };
+  }[];
 }
 /** What the unfinished tasks of a lane are expected to take, each number with its source. */
 export interface BoardLaneEstimate {
@@ -4814,6 +4846,11 @@ export interface BoardModel {
     /** The plan's content version, which an edit names as its base; always set by the daemon. */
     plan_version?: number;
     /**
+     * The plan's assumptions in plan order; id is absent on assumptions written without one. affects:
+     * board task ids; milestone: the board id of its milestone. Always set by the daemon.
+     */
+    assumptions?: { id?: string; text: string; affects: string[]; milestone?: string }[];
+    /**
      * User edits waiting for the lead, oldest first; empty when none waits, and an edit leaves once the
      * lead applies or rejects it. summary: each op's type and target task id. Always set by the daemon.
      */
@@ -4828,6 +4865,8 @@ export interface BoardModel {
       base_version?: number;
       /** Epoch milliseconds. Always set by the daemon. */
       created_at?: number;
+      /** The assumptions the edit says are wrong, with the user's words; absent when it refutes none. */
+      refutes?: PendingPlanEdit['refutes'];
     }[];
     /** Lead proposals waiting for the user; always set by the daemon. */
     pending_proposals?: PlanProposalView[];

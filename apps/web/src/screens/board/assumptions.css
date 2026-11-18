@@ -1,0 +1,182 @@
+/* The selected milestone's assumptions: glyph, words, the tasks resting on it, then the refute. */
+.bma {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.bma-l {
+  list-style: none;
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bma-it {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  column-gap: var(--sp-2);
+  align-items: start;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bma-it:is(:hover, :focus-within) {
+  background: var(--sf2);
+}
+.bma-ic {
+  width: var(--icon);
+  height: var(--icon);
+  margin-top: calc((var(--lh-sm) - var(--icon)) / 2);
+  color: var(--mu);
+}
+.bma-b {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.bma-t {
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+  user-select: text;
+}
+.bma-k {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+}
+.bma-k > li {
+  display: flex;
+  min-width: 0;
+}
+.bma-tk {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  max-width: 240px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  transition: color var(--dur-1) var(--ease-std);
+}
+.bma-tk:hover {
+  color: var(--tx);
+}
+.bma-tk > svg {
+  flex: none;
+}
+.bma-a {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.bma-rf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.bma-w {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bma-w > svg {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+}
+.bma-w > del {
+  color: var(--mu);
+}
+.bma-rs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  color: var(--tx2);
+}
+.bma-rs > svg {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+  color: var(--mu);
+}
+.bma-at {
+  flex: none;
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.bma-why {
+  min-width: 0;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bma-fx {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.bma-fx > .field {
+  flex: 1;
+}
+.bma-err {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bma-err > svg {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+}
+.bma-more {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  padding: 0 var(--sp-2) 0 calc(var(--sp-2) + 16px + var(--sp-2));
+  margin: 0 calc(-1 * var(--sp-2));
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bma-more:hover {
+  background: var(--st-hov);
+}

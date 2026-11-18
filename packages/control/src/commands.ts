@@ -2,6 +2,7 @@ import { runtimeReviewHandlers } from './runtime-review.js';
 import { memoryHandlers, memoryPreparers } from './memory.js';
 import { projectIntroPreparers } from './project-intro.js';
 import { baselineHandlers, baselinePreparers } from './baseline.js';
+import { environmentCheckHandlers } from './environment-check.js';
 import { changeStoryHandlers } from './change-story.js';
 import { rangeStoryHandlers, rangeStoryPreparers } from './range-story.js';
 import type { Handlers, Preparers } from './context.js';
@@ -45,6 +46,7 @@ export const handlers: Handlers = {
   ...projectGoalHandlers,
   ...projectBoardHandlers,
   ...baselineHandlers,
+  ...environmentCheckHandlers,
   ...changeStoryHandlers,
   ...rangeStoryHandlers,
   ...sessionHandlers,

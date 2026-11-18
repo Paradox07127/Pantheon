@@ -1,6 +1,7 @@
 import { useState, type RefObject } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { ChevronRight } from 'lucide-react';
+import { EnvironmentCheck } from '../../components/EnvironmentCheck';
 import { Markdown } from '../../components/Markdown';
 import { PathText } from '../../components/PathText';
 import { QuestionCard } from '../../components/QuestionCard';
@@ -631,6 +632,31 @@ export function ReviewBaseline({
               })}
             </fieldset>
           ))}
+        </div>
+      )}
+      {baseline.state === 'submitted' && (
+        <div className="iv-pnl">
+          <div className="iv-cell">
+            <EnvironmentCheck
+              project_id={baseline.project_id}
+              baseline={baseline}
+              onOpenSession={onOpenSession}
+              // What the daemon checks of a folder: its gate, then build, test and lint not in it.
+              planned={(baseline.result?.folders ?? []).map((folder) => ({
+                root: folder.root,
+                commands: [
+                  ...folder.gate.map(({ name, argv }) => ({ name, argv })),
+                  ...(['build', 'test', 'lint'] as const).flatMap((name) => {
+                    const entry = folder.commands?.[name];
+                    return entry &&
+                      !folder.gate.some((gate) => gate.argv.join('\0') === entry.argv.join('\0'))
+                      ? [{ name, argv: entry.argv }]
+                      : [];
+                  }),
+                ],
+              }))}
+            />
+          </div>
         </div>
       )}
       {extensions.length > 0 && (

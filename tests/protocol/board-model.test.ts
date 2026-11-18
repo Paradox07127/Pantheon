@@ -73,6 +73,29 @@ it('types the goals with their progress and the goal of a milestone row', () => 
   expectTypeOf<BoardModel['milestones'][number]['goal_id']>().toEqualTypeOf<string | undefined>();
 });
 
+it("types a milestone's assumptions with the state of their refute, and each lead's own list", () => {
+  expectTypeOf<BoardModel['milestones'][number]['assumptions']>().toEqualTypeOf<
+    | {
+        id: string;
+        text: string;
+        affects: string[];
+        refuted?: {
+          edit_id: string;
+          instead: string;
+          state: 'pending' | 'applied' | 'rejected' | 'withdrawn';
+          reason?: string;
+        };
+      }[]
+    | undefined
+  >();
+  expectTypeOf<Lead['assumptions']>().toEqualTypeOf<
+    { id?: string; text: string; affects: string[]; milestone?: string }[] | undefined
+  >();
+  expectTypeOf<NonNullable<Lead['pending_edits']>[number]['refutes']>().toEqualTypeOf<
+    { assumption_id: string; text: string; instead: string }[] | undefined
+  >();
+});
+
 it('types what backs a done task and a ready or completed milestone, and the line a task set', () => {
   expectTypeOf<Task['evidence_level']>().toEqualTypeOf<
     'report' | 'gate' | 'reviewed' | undefined

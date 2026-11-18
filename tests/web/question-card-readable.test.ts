@@ -6,7 +6,9 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
 vi.mock('@/data/board', () => ({
-  useBoard: Object.assign((selector: any) => selector({}), { getState: () => ({}) }),
+  useBoard: Object.assign((selector: any) => selector({ events: [], status: {} }), {
+    getState: () => ({}),
+  }),
 }));
 vi.mock('@/store', () => ({ useShell: (selector: any) => selector({ openSession() {} }) }));
 vi.mock('@/data/baseline-read', () => ({ useBaselineRead: () => ({ read: mock.baseline }) }));

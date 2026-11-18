@@ -2,9 +2,9 @@ import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import { startEnvironmentCheck } from '@pantheon/control';
-import type { EnvironmentCheck, Project, Workspace } from '@pantheon/domain';
+import type { EnvironmentCheck, Principal, Project, Workspace } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
-import { eventually, gateFolder, insideSandbox } from '../helpers.js';
+import { eventually, gateFolder, insideSandbox, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -177,9 +177,103 @@ it.skipIf(insideSandbox)(
       reason_code: 'daemon_restart',
       finished_at: expect.any(Number),
     });
+    expect(
+      f.store
+        .kindEvents(f.project.id, ['environment.check_finished'])
+        .map((event) => event.payload),
+    ).toEqual([{ check_id: row.id, root: row.root, state: 'inconclusive' }]);
     const workspace = await removed(f, row);
     expect(existsSync(workspace.path)).toBe(false);
     writeFileSync(release, '');
     await Promise.allSettled(checking);
   },
 );
+
+async function setGate(f: Fixture, argv: string[]) {
+  await f.call<Promise<Project>>(
+    'project.gate.set',
+    { project_id: f.project.id, root: f.source, commands: [{ name: 'Gate', argv }] },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+}
+
+const verify = (f: Fixture, principal?: Principal) =>
+  f.call<EnvironmentCheck[]>(
+    'project.environment.verify',
+    { project_id: f.project.id },
+    null,
+    principal,
+  );
+
+it.skipIf(insideSandbox)(
+  'runs the user check of each root with a gate and lists it newest first',
+  async () => {
+    const f = await workbenchFixture();
+    await setGate(f, ['sh', '-c', 'true']);
+    const [row, ...more] = verify(f);
+    expect(more).toEqual([]);
+    expect(row).toMatchObject({ root: f.source, state: 'running', cause: { kind: 'user' } });
+    await ended(f, row!);
+    const [again] = verify(f);
+    await ended(f, again!);
+    expect(
+      f.control
+        .environmentChecks(user, { project_id: f.project.id })
+        .map((check) => [check.id, check.state, check.cause]),
+    ).toEqual([
+      [again!.id, 'passed', { kind: 'user' }],
+      [row!.id, 'passed', { kind: 'user' }],
+    ]);
+    expect(f.control.environmentChecks(user, { project_id: f.project.id, limit: 1 })).toHaveLength(
+      1,
+    );
+    expect(
+      f.control.environmentChecks(user, { project_id: f.project.id, baseline_id: 'other' }),
+    ).toEqual([]);
+  },
+);
+
+it.skipIf(insideSandbox)('records one event when a check starts and one when it ends', async () => {
+  const f = await workbenchFixture();
+  await setGate(f, ['sh', '-c', 'exit 3']);
+  const [row] = verify(f);
+  const events = (kind: string) =>
+    f.store.kindEvents(f.project.id, [kind]).filter((event) => event.aggregate_id === row!.id);
+  expect(events('environment.check_started').map((event) => event.payload)).toEqual([
+    { check_id: row!.id, root: f.source, state: 'running' },
+  ]);
+  await ended(f, row!);
+  expect(events('environment.check_finished').map((event) => event.payload)).toEqual([
+    { check_id: row!.id, root: f.source, state: 'failed' },
+  ]);
+  expect(events('environment.check_started')).toHaveLength(1);
+});
+
+it.skipIf(insideSandbox)('refuses a second check while one of the project runs', async () => {
+  const f = await workbenchFixture();
+  await setGate(f, ['sh', '-c', 'true']);
+  const [row] = verify(f);
+  expect(() => verify(f)).toThrow(expect.objectContaining({ code: 'resource_busy' }));
+  await ended(f, row!);
+});
+
+it.each<[string, Principal]>([
+  ['a lead', { id: 'lead:planner', role: 'lead' }],
+  ['a personal agent', { id: 'personal:k1', role: 'personal' }],
+])('refuses the check and the list to %s', async (_, principal) => {
+  const f = await workbenchFixture();
+  await setGate(f, ['sh', '-c', 'true']);
+  expect(() => verify(f, principal)).toThrow(
+    expect.objectContaining({ code: 'permission_denied' }),
+  );
+  expect(() => f.control.environmentChecks(principal, { project_id: f.project.id })).toThrow(
+    expect.objectContaining({ code: 'permission_denied' }),
+  );
+  expect(f.store.list('environment_checks')).toEqual([]);
+});
+
+it('refuses a check of a project without gate commands', async () => {
+  const f = await workbenchFixture();
+  expect(() => verify(f)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
+  expect(f.store.list('environment_checks')).toEqual([]);
+});

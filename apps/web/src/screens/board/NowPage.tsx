@@ -182,6 +182,7 @@ export function NowPage({
                     milestone={current}
                     actions={scoped}
                     onOpenTask={selectFlow}
+                    onOpenSession={onOpenSession}
                   />
                 </PanelBoundary>
               ) : (

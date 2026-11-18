@@ -105,6 +105,7 @@ import {
   projectBaselineRead,
   projectFactsRead,
 } from './baseline.js';
+import { environmentChecks } from './environment-check.js';
 import {
   changeStoryDiff,
   changeStoryList,
@@ -841,6 +842,12 @@ export class Control extends EventEmitter {
   }
   projectBaselineRead(principal: Principal, projectId: string) {
     return projectBaselineRead(this.ctx, principal, projectId);
+  }
+  environmentChecks(
+    principal: Principal,
+    input: { project_id: string; baseline_id?: string; limit?: number },
+  ) {
+    return environmentChecks(this.ctx, principal, input);
   }
   projectFactsRead(principal: Principal, projectId: string) {
     return projectFactsRead(this.ctx, principal, projectId);

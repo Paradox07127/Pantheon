@@ -455,6 +455,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `project.environment.set` | `project_id`: string<br>`name`: string<br>`roots`: string[]<br>`env`: object |  |
+| `project.environment.verify` | `project_id`: string<br>`root?`: string<br>`baseline_id?`: string |  |
 
 ### project.extensions
 
@@ -760,6 +761,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `project.collab` | `project_id`: string<br>`since`: number<br>`until`: number |
 | `project.decisions` | `project_id`: string<br>`since?`: integer |
 | `project.defaults` | — |
+| `project.environment.checks` | `project_id`: string<br>`baseline_id?`: string<br>`limit?`: integer |
 | `project.facts.read` | `project_id`: string |
 | `project.gates.history` | `project_id`: string<br>`since?`: number<br>`limit?`: integer |
 | `project.head` | `project_id`: string |

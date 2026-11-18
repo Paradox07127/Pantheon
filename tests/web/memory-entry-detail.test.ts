@@ -123,6 +123,38 @@ describe('memory entry detail', () => {
     expect(text).toMatch(/\d\d:\d\d/);
   });
 
+  it.each([
+    [
+      'when a session last read it',
+      { last_used_at: now - 60_000 },
+      () => new RegExp(`${zh('memory.detail.lastRead')} 11:59`),
+      () => zh('memory.detail.lastRead'),
+    ],
+    [
+      'the commit its file sources were checked at',
+      { verified_commit: '9e4b7d1c'.padEnd(40, 'a') },
+      () => new RegExp(`${zh('memory.detail.checkedAt')} 9e4b7d1 `),
+      () => zh('memory.detail.checkedAt'),
+    ],
+    [
+      'an archived note no session read for 90 days as expired',
+      { state: 'archived', reason: 'expired', kind: 'note' },
+      () => new RegExp(zh('memory.detail.state.unread')),
+      () => zh('memory.detail.state.unread'),
+    ],
+  ] as const)('shows %s, and leaves it out without the field', (_, extra, shown, label) => {
+    const p = (item: MemoryItem) => props({ item, versions: [item] });
+    expect(plain(html(p({ ...third, ...extra } as MemoryItem)))).toMatch(shown());
+    expect(plain(html(p(third)))).not.toContain(label());
+  });
+
+  it('keeps the archived text for an entry that expired at its expiry time', () => {
+    const item = record('v1', { reason: 'expired', expires_at: now - hour });
+    const text = plain(html(props({ item, versions: [item] })));
+    expect(text).toContain(zh('memory.detail.state.archived'));
+    expect(text).not.toContain(zh('memory.detail.state.unread'));
+  });
+
   it('renders the body as markdown', () => {
     const out = html(props());
     expect(out).toContain('<strong>raw</strong>');

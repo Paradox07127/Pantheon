@@ -4,6 +4,7 @@ import { RadioGroup } from '@base-ui/react/radio-group';
 import { GripVertical, Plus, X } from 'lucide-react';
 import { create } from 'zustand';
 import type { BoardSnapshot } from '@pantheon/protocol';
+import { EnvironmentCheck } from '../../components/EnvironmentCheck';
 import { PathText } from '../../components/PathText';
 import { Select } from '../../components/Select';
 import { useBaselineRead } from '../../data/baseline-read';
@@ -77,6 +78,13 @@ export function ProjectGate({ project }: { project: Project }) {
   const named = project.roots.length > 1;
   return (
     <>
+      <EnvironmentCheck
+        project_id={project.id}
+        planned={project.roots.map((root) => ({
+          root,
+          commands: (project.gates?.[root] ?? []).filter((command) => command.enabled !== false),
+        }))}
+      />
       {project.roots.map((root) => (
         <FolderGate
           key={root}

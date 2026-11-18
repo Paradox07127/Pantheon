@@ -616,6 +616,7 @@ export async function startDaemon(options: DaemonOptions) {
       'project.review.metrics': (p, i) => control.projectReviewMetrics(p, i.project_id),
       'project.intro.read': (p, i) => control.projectIntroRead(p, i.project_id),
       'project.baseline.read': (p, i) => control.projectBaselineRead(p, i.project_id),
+      'project.environment.checks': (p, i) => control.environmentChecks(p, i),
       'project.facts.read': (p, i) => control.projectFactsRead(p, i.project_id),
       'change_story.list': (p, i) => control.changeStoryList(p, i.project_id),
       'change_story.diff': (p, i) => control.changeStoryDiff(p, i.story_id),

@@ -307,3 +307,62 @@ it("applies the edit's other changes and names the assumption the lead removed w
     `Assumption csv is no longer in your plan, so edit ${edit_id} did not change it; its other changes were applied.`,
   );
 });
+
+it('shows each assumption on its lead and its milestone with the state of the newest refute of it', async () => {
+  const f = await setup();
+  const lead = leadOf(f);
+  writePlan(f, lead, [CSV, LOOSE, { text: 'Exports need no sign-in.' }]);
+  const view = () => f.control.boardView(user, f.project.id, 1);
+  const release = () => view().milestones.find((row) => row.owner_session_id === lead.session_id)!;
+  const ui = `${lead.session_id}:ui`;
+  const refuted = () => release().assumptions![0]!.refuted;
+
+  expect(release().assumptions).toEqual([
+    { id: 'csv', text: 'Exports are CSV only.', affects: [ui] },
+  ]);
+  expect(view().leads![0]!.assumptions).toEqual([
+    { id: 'csv', text: 'Exports are CSV only.', affects: [ui], milestone: release().id },
+    { id: 'size', text: 'Exports stay under 10 MB.', affects: [] },
+    { text: 'Exports need no sign-in.', affects: [] },
+  ]);
+
+  const rejected = edit(f, user, lead, [refute('csv')]);
+  expect(refuted()).toEqual({
+    edit_id: rejected.edit_id,
+    instead: 'Exports are CSV and JSON.',
+    state: 'pending',
+  });
+  expect(view().leads![0]!.pending_edits![0]!.refutes).toEqual([
+    { assumption_id: 'csv', text: 'Exports are CSV only.', instead: 'Exports are CSV and JSON.' },
+  ]);
+  resolve(f, lead, rejected.edit_id, 'reject', 'JSON waits for the next release');
+  expect(refuted()).toEqual({
+    edit_id: rejected.edit_id,
+    instead: 'Exports are CSV and JSON.',
+    state: 'rejected',
+    reason: 'JSON waits for the next release',
+  });
+
+  const withdrawn = edit(f, user, lead, [refute('csv', 'Exports are JSON only.')]);
+  f.call('board.plan.edit.withdraw', {
+    project_id: f.project.id,
+    lead_session_id: lead.session_id,
+    edit_id: withdrawn.edit_id,
+  });
+  expect(refuted()).toEqual({
+    edit_id: withdrawn.edit_id,
+    instead: 'Exports are JSON only.',
+    state: 'withdrawn',
+  });
+
+  const applied = edit(f, user, lead, [refute('csv', 'Exports are CSV and XLSX.')]);
+  resolve(f, lead, applied.edit_id, 'apply');
+  expect(release().assumptions).toEqual([
+    {
+      id: 'csv',
+      text: 'Exports are CSV and XLSX.',
+      affects: [ui],
+      refuted: { edit_id: applied.edit_id, instead: 'Exports are CSV and XLSX.', state: 'applied' },
+    },
+  ]);
+});
