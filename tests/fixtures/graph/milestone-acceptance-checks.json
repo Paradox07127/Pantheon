@@ -1,0 +1,257 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "trigger",
+      "label": "Trigger (tracker tick)"
+    },
+    {
+      "id": "checks",
+      "label": "Checks on merged code"
+    },
+    {
+      "id": "review",
+      "label": "Verifier review"
+    },
+    {
+      "id": "result",
+      "label": "Result and acceptance"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "tick",
+      "label": "tickTaskTracking",
+      "group": "trigger",
+      "kind": "queue",
+      "sublabel": "calls advanceMilestoneVerifications",
+      "sources": [
+        "file:packages/control/src/task-tracking.ts:1136"
+      ]
+    },
+    {
+      "id": "ready",
+      "label": "milestone ready?",
+      "group": "trigger",
+      "kind": "policy",
+      "sublabel": "milestone_verify auto, ready_for_acceptance, one per project",
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:350"
+      ]
+    },
+    {
+      "id": "row",
+      "label": "verification row",
+      "group": "trigger",
+      "kind": "store",
+      "sublabel": "milestone_verifications, state running",
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:360"
+      ]
+    },
+    {
+      "id": "roots",
+      "label": "landedRoots",
+      "group": "checks",
+      "kind": "service",
+      "sublabel": "per source root: gates + task acceptance",
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:100"
+      ]
+    },
+    {
+      "id": "candidate",
+      "label": "checkCandidate",
+      "group": "checks",
+      "kind": "service",
+      "sublabel": "landing.ts: fresh clone of branch head",
+      "sources": [
+        "file:packages/control/src/landing.ts:447"
+      ]
+    },
+    {
+      "id": "diff",
+      "label": "milestone diff",
+      "group": "checks",
+      "kind": "service",
+      "sublabel": "git diff from merge-base of task bases"
+    },
+    {
+      "id": "vendor",
+      "label": "verifierRuntime",
+      "group": "review",
+      "kind": "policy",
+      "sublabel": "other vendor than writers, else other runtime",
+      "sources": [
+        "file:packages/control/src/runtime-vendor.ts:25"
+      ]
+    },
+    {
+      "id": "startReview",
+      "label": "startReview",
+      "group": "review",
+      "kind": "service",
+      "sublabel": "review.ts: read-only verifier, criteria + diff",
+      "sources": [
+        "file:packages/control/src/review.ts"
+      ]
+    },
+    {
+      "id": "verifier",
+      "label": "verifier session",
+      "group": "review",
+      "kind": "external",
+      "sublabel": "hands in verdict and findings"
+    },
+    {
+      "id": "settle",
+      "label": "settleVerification",
+      "group": "review",
+      "kind": "policy",
+      "sublabel": "verdict pass and no open blocking finding",
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:277"
+      ]
+    },
+    {
+      "id": "passed",
+      "label": "passed",
+      "group": "result",
+      "kind": "store"
+    },
+    {
+      "id": "failed",
+      "label": "failed",
+      "group": "result",
+      "kind": "store",
+      "sublabel": "checks_failed, verifier_failed"
+    },
+    {
+      "id": "inconclusive",
+      "label": "inconclusive",
+      "group": "result",
+      "kind": "store",
+      "sublabel": "checks_environment, no_verdict, review_failed, daemon_restart..."
+    },
+    {
+      "id": "lead",
+      "label": "lead inbox note",
+      "group": "result",
+      "kind": "queue",
+      "sublabel": "milestone_verified note wakes lead",
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:86"
+      ]
+    },
+    {
+      "id": "accept",
+      "label": "milestone.accept",
+      "group": "result",
+      "kind": "policy",
+      "sublabel": "lead needs charter; not passed needs override_reason",
+      "sources": [
+        "file:packages/control/src/project-facts.ts:484"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "tick",
+      "to": "ready",
+      "style": "main"
+    },
+    {
+      "from": "ready",
+      "to": "row",
+      "style": "main",
+      "label": "insert"
+    },
+    {
+      "from": "row",
+      "to": "roots",
+      "style": "main"
+    },
+    {
+      "from": "roots",
+      "to": "candidate",
+      "style": "main",
+      "label": "commands"
+    },
+    {
+      "from": "candidate",
+      "to": "failed",
+      "label": "a check fails"
+    },
+    {
+      "from": "candidate",
+      "to": "inconclusive",
+      "label": "environment failure, error"
+    },
+    {
+      "from": "candidate",
+      "to": "diff",
+      "style": "main",
+      "label": "all pass"
+    },
+    {
+      "from": "diff",
+      "to": "vendor",
+      "style": "main"
+    },
+    {
+      "from": "vendor",
+      "to": "inconclusive",
+      "label": "no runtime"
+    },
+    {
+      "from": "vendor",
+      "to": "startReview",
+      "style": "main"
+    },
+    {
+      "from": "startReview",
+      "to": "verifier",
+      "style": "async"
+    },
+    {
+      "from": "verifier",
+      "to": "settle",
+      "style": "return",
+      "label": "review ends"
+    },
+    {
+      "from": "settle",
+      "to": "passed",
+      "style": "main"
+    },
+    {
+      "from": "settle",
+      "to": "failed",
+      "label": "fail or blocking finding"
+    },
+    {
+      "from": "settle",
+      "to": "inconclusive",
+      "label": "no verdict, incomplete"
+    },
+    {
+      "from": "passed",
+      "to": "lead",
+      "style": "main"
+    },
+    {
+      "from": "failed",
+      "to": "lead",
+      "label": "propose fix tasks"
+    },
+    {
+      "from": "inconclusive",
+      "to": "lead"
+    },
+    {
+      "from": "lead",
+      "to": "accept",
+      "style": "main"
+    }
+  ]
+}

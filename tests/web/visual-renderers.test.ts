@@ -688,6 +688,15 @@ describe('graph diagram', () => {
     expect(fitZoom(layout, room)).toBeGreaterThanOrEqual(FLOOR);
   });
 
+  // Its widest wrap fits a card at full size, but bends more than a narrower one that fits too.
+  it('lays a long flow out in the least tangled of its wraps that fit a card at two thirds or more', async () => {
+    const room = { x: 1200, y: 612 };
+    const layout = await layoutGraph(fixture('composer-request'), room);
+    expect(fitZoom(layout, room)).toBeGreaterThanOrEqual(FLOOR);
+    const bends = layout.edges.reduce((sum, edge) => sum + edge.points.length - 2, 0);
+    expect(bends).toBeLessThanOrEqual(10);
+  });
+
   it('names each node by its label and kind and draws its kind and detail line', async () => {
     const h = await drawn(shop, 1200, 420);
     const named = Object.fromEntries(
@@ -923,22 +932,34 @@ describe('graph diagram', () => {
 
   // Crossings as measured with the layout settings in place.
   it.each([
-    ['a shop of seven nodes', shop, [1200, 420], 0],
-    ['a shop with detail lines', detailed, [1200, 420], 0],
-    ['a service map of twelve nodes in three groups', services, [1200, 720], 3],
-    ['a runtime architecture of twenty nodes', architecture, [1200, 680], 3],
-    ['an analytics data flow', fixture('analytics-dataflow'), [1200, 680], 0],
-    ['an agent workflow in nested groups', workflow, [1200, 680], 2],
-    ['a release state machine', fixture('release-lifecycle'), [1200, 680], 0],
-    ['a request from the composer to the agent', fixture('composer-request'), [1200, 640], 0],
-    ['a milestone verification', fixture('milestone-verification'), [1200, 640], 3],
-    ['a tool call through the MCP server', fixture('mcp-tool-call'), [1200, 640], 0],
-    ['the states of a board task', fixture('board-task-states'), [1200, 640], 3],
-    ['a session change landing', fixture('session-landing'), [1200, 640], 1],
-    ['the dependencies of a workspace', fixture('workspace-dependencies'), [1200, 640], 5],
+    ['a shop of seven nodes', 0, shop, [1200, 420]],
+    ['a shop with detail lines', 0, detailed, [1200, 420]],
+    ['a service map of twelve nodes in three groups', 3, services, [1200, 720]],
+    ['a runtime architecture of twenty nodes', 3, architecture, [1200, 680]],
+    ['an analytics data flow', 0, fixture('analytics-dataflow'), [1200, 680]],
+    ['an agent workflow in nested groups', 2, workflow, [1200, 680]],
+    ['a release state machine', 0, fixture('release-lifecycle'), [1200, 680]],
+    ['a request from the composer to the agent', 0, fixture('composer-request'), [1200, 640]],
+    [
+      'a message sent in the desktop app up to the agent turn',
+      1,
+      fixture('desktop-message-turn'),
+      [1200, 640],
+    ],
+    ['a milestone verification', 2, fixture('milestone-verification'), [1200, 640]],
+    [
+      'a milestone checked from the tracker tick to its acceptance',
+      4,
+      fixture('milestone-acceptance-checks'),
+      [1200, 640],
+    ],
+    ['a tool call through the MCP server', 0, fixture('mcp-tool-call'), [1200, 640]],
+    ['the states of a board task', 3, fixture('board-task-states'), [1200, 640]],
+    ['a session change landing', 1, fixture('session-landing'), [1200, 640]],
+    ['the dependencies of a workspace', 5, fixture('workspace-dependencies'), [1200, 640]],
   ] as const)(
     'lays %s out with no node over another, no edge through a node or a group label and no label over a node, a label or another route, crossing at most %i times',
-    async (_, spec, [width, height], most) => {
+    async (_, most, spec, [width, height]) => {
       const h = await drawn(spec, width, height);
       const laid = cards(h);
       expect(

@@ -733,6 +733,9 @@ function routeCost(drawing: Drawing, edge: LaidEdge) {
       ([p, q]) =>
         [Math.min(p.x, q.x), Math.min(p.y, q.y), Math.max(p.x, q.x), Math.max(p.y, q.y)] as const,
     );
+  // Flat, so that the many routes tried read them fast.
+  const boxes = Float64Array.from(blocks.flat());
+  const lines = Float64Array.from(others.flat());
   return (points: Point[], limit = Infinity): number => {
     let total = (points.length - 2) * 1e7;
     for (let k = 1; k < points.length; k++) {
@@ -740,9 +743,12 @@ function routeCost(drawing: Drawing, edge: LaidEdge) {
       const [x0, y0] = [Math.min(p.x, q.x), Math.min(p.y, q.y)];
       const [x1, y1] = [Math.max(p.x, q.x), Math.max(p.y, q.y)];
       total += x1 - x0 + y1 - y0;
-      for (const [a, b, c, d] of blocks) if (x0 < c && a < x1 && y0 < d && b < y1) return Infinity;
+      for (let i = 0; i < boxes.length; i += 4)
+        if (x0 < boxes[i + 2]! && boxes[i]! < x1 && y0 < boxes[i + 3]! && boxes[i + 1]! < y1)
+          return Infinity;
       const flat = y1 - y0 < 0.5;
-      for (const [a, b, c, d] of others) {
+      for (let i = 0; i < lines.length; i += 4) {
+        const [a, b, c, d] = [lines[i]!, lines[i + 1]!, lines[i + 2]!, lines[i + 3]!];
         if (flat === d - b < 0.5) {
           // Side by side closer than the space between edges, over a shared stretch.
           const gap = flat ? Math.abs(b - y0) : Math.abs(a - x0);
@@ -1779,12 +1785,12 @@ function wrapGap(edges: { label?: string }[], across: boolean): number {
  * The layout broken along its flow where no node or group spans the break, its parts side by side
  * across the flow in their order, so that its shape comes nearer the room's: rows when it runs
  * across, columns when it runs down. Each edge between two parts is routed anew through the gap
- * after the first of them. None when no break fits it larger, or the best few leave an edge with no
- * clear route, a label with no place, or more crossings than the wrap is worth.
+ * after the first of them. Of the best few breaks that fit it larger, those that leave every edge a
+ * clear route, every label a place and no more crossings than the wrap is worth.
  */
-function wrapped(layout: GraphLayout, room: Point): GraphLayout | undefined {
+function wrapped(layout: GraphLayout, room: Point): GraphLayout[] {
   const ids = new Set(layout.nodes.map((node) => node.id));
-  if (layout.edges.some((edge) => !ids.has(edge.from) || !ids.has(edge.to))) return undefined;
+  if (layout.edges.some((edge) => !ids.has(edge.from) || !ids.has(edge.to))) return [];
   const across = layout.direction === 'LR';
   const into = <T extends Box>(b: T): T => (across ? turnBox(b) : b);
   const boxes = [...layout.nodes, ...layout.groups].map(into);
@@ -1796,7 +1802,7 @@ function wrapped(layout: GraphLayout, room: Point): GraphLayout | undefined {
     else spans.push([b.y, b.y + b.height]);
   }
   const m = spans.length;
-  if (m < 2) return undefined;
+  if (m < 2) return [];
   const at = boxes.map((b) => spans.findIndex(([, end]) => b.y + b.height / 2 <= end));
   const span = new Map(layout.nodes.map((node, i) => [node.id, at[i]!]));
   const ends = layout.edges.map((edge) => [span.get(edge.from)!, span.get(edge.to)!] as const);
@@ -1871,15 +1877,12 @@ function wrapped(layout: GraphLayout, room: Point): GraphLayout | undefined {
     plans.push({ cuts, fit: fitZoom(across ? turnBox(size) : size, room), lanes: plan.lanes });
   }
   const now = fitZoom(layout, room);
-  for (const { cuts } of plans
+  const breaks = (cuts: number[]) => cuts.map((i) => (spans[i - 1]![1] + spans[i]![0]) / 2);
+  return plans
     .filter((plan) => plan.fit > now + 1e-3)
     .sort((a, b) => b.fit - a.fit || a.lanes - b.lanes)
-    .slice(0, 3)) {
-    const breaks = cuts.map((i) => (spans[i - 1]![1] + spans[i]![0]) / 2);
-    const done = wrapAt(layout, breaks);
-    if (done) return done;
-  }
-  return undefined;
+    .slice(0, 3)
+    .flatMap(({ cuts }) => wrapAt(layout, breaks(cuts)) ?? []);
 }
 
 /** The layout broken at `cuts` along the flow, in the frame where it runs down, parts side by side. */
@@ -1949,7 +1952,7 @@ function wrapAt(layout: GraphLayout, cuts: number[]): GraphLayout | undefined {
     left += gap(p);
   });
   const drawing: Drawing = { across, nodes, groups, edges };
-  const legs = (node: LaidNode, down: boolean): Point[][] => {
+  const legs = (node: LaidNode, down: boolean, cost: (points: Point[]) => number): Point[][] => {
     const from = down ? node.y + node.height : node.y;
     const xs = [node.x + node.width / 2];
     for (let x = node.x + EDGE_CLEAR; x <= node.x + node.width - EDGE_CLEAR; x += EDGE_GAP / 2)
@@ -1967,25 +1970,41 @@ function wrapAt(layout: GraphLayout, cuts: number[]): GraphLayout | undefined {
         (g) => Math.abs(y - g.y) > EDGE_GAP / 2 && Math.abs(y - g.y - g.height) > EDGE_GAP / 2,
       ),
     );
-    return xs.flatMap((x) =>
-      ys.map((y) => [
+    // A run that meets a node, a label or a route alongside, a longer one meets too.
+    return xs.flatMap((x) => {
+      const blocked = ys.findIndex(
+        (y) =>
+          cost([
+            { x, y: from },
+            { x, y },
+          ]) === Infinity,
+      );
+      return ys.slice(0, blocked < 0 ? ys.length : blocked).map((y) => [
         { x, y: from },
         { x, y },
-      ]),
-    );
+      ]);
+    });
   };
-  for (const edge of between) {
+  // What a route for `edge` costs among the others as they are.
+  const pricing = (edge: LaidEdge) => {
+    // Labels kept from the strip stay where they are, so a new route goes around them.
+    const labels = drawing.edges.flatMap((other) => other.label_box ?? []);
+    const clear = routeCost(drawing, edge);
+    return (points: Point[], limit?: number) => {
+      for (let k = 1; k < points.length; k++) {
+        const run = runBox([points[k - 1]!, points[k]!]);
+        if (labels.some((box) => overlaps(run, box, LABEL_CLEAR))) return Infinity;
+      }
+      return clear(points, limit);
+    };
+  };
+  // The cheapest clear route for `edge` through the gap after the first of its parts.
+  const reroute = (edge: LaidEdge) => {
     const [a, b] = ends(edge);
     const [source, target] = [byId.get(edge.from)!, byId.get(edge.to)!];
     const [lo, hi] = gaps[Math.min(a!, b!)]!;
     const mid = (lo + hi) / 2;
-    // Labels kept from the strip stay where they are, so a new route goes around them.
-    const labels = drawing.edges.flatMap((other) => other.label_box ?? []);
-    const clear = routeCost(drawing, edge);
-    const cost = (points: Point[], limit?: number) =>
-      runs(points).some((run) => labels.some((box) => overlaps(runBox(run), box, LABEL_CLEAR)))
-        ? Infinity
-        : clear(points, limit);
+    const cost = pricing(edge);
     const best = (options: Point[][]) =>
       options
         .map((leg) => ({ leg, cost: cost([...leg, { x: mid, y: leg[1]!.y }]) }))
@@ -1993,8 +2012,8 @@ function wrapAt(layout: GraphLayout, cuts: number[]): GraphLayout | undefined {
         .sort((p, q) => p.cost - q.cost)
         .slice(0, 6)
         .map((option) => option.leg);
-    const out = best(legs(source, a! < b!));
-    const back = best(legs(target, a! > b!));
+    const out = best(legs(source, a! < b!, cost));
+    const back = best(legs(target, a! > b!, cost));
     let route: { points: Point[]; cost: number } | undefined;
     for (let x = lo + EDGE_CLEAR; x <= hi - EDGE_CLEAR; x += EDGE_GAP / 2)
       for (const p of out)
@@ -2014,8 +2033,36 @@ function wrapAt(layout: GraphLayout, cuts: number[]): GraphLayout | undefined {
     const n = route.points.length;
     route.points[0] = onOutline(route.points[0]!, route.points[1]!, source);
     route.points[n - 1] = onOutline(route.points[n - 1]!, route.points[n - 2]!, target);
-    edge.points = route.points;
+    return route;
+  };
+  const crossed = (cost: number) => Math.floor((cost % 1e7) / 1e5) > 0;
+  // Routes the edges in `order`, then each that crosses another again among all the others, which
+  // one routed before it did not meet; what their routes cost, Infinity when one has none.
+  const routeAll = (order: LaidEdge[]) => {
+    for (const edge of between) edge.points = [];
+    for (const edge of order) {
+      const route = reroute(edge);
+      if (!route) return Infinity;
+      edge.points = route.points;
+    }
+    for (const edge of order) {
+      const now = pricing(edge)(edge.points);
+      if (!crossed(now)) continue;
+      const route = reroute(edge);
+      if (route && route.cost < now - 0.5) edge.points = route.points;
+    }
+    return between.reduce((sum, edge) => sum + pricing(edge)(edge.points), 0);
+  };
+  // An edge routed first takes the place that one after it needs; the other order may cross less.
+  let kept: { cost: number; points: Point[][] } | undefined;
+  for (const order of [between, [...between].reverse()]) {
+    if (kept && !between.some((edge) => crossed(pricing(edge)(edge.points)))) break;
+    const cost = routeAll(order);
+    if (cost < (kept?.cost ?? Infinity))
+      kept = { cost, points: between.map((edge) => edge.points) };
   }
+  if (!kept) return undefined;
+  between.forEach((edge, i) => (edge.points = kept!.points[i]!));
   placeLabels(drawing, across);
   const labelled = (edges: LaidEdge[]) => edges.filter((edge) => edge.label_box).length;
   if (labelled(drawing.edges) < labelled(layout.edges)) return undefined;
@@ -2043,11 +2090,10 @@ function wrapAt(layout: GraphLayout, cuts: number[]): GraphLayout | undefined {
       ...(edge.label_box && { label_box: out(edge.label_box) }),
     })),
   };
-  // Room opened for labels may have moved a node or a group's label onto a route; and past two
-  // crossings for each edge between parts, the wrap reads worse than the strip.
+  // Room opened for labels may have moved a node or a group's label onto a route; and past one
+  // crossing for each edge between parts, the wrap reads worse than the strip.
   const through = (l: GraphLayout) => Math.floor(tangle(l) / 1e6);
-  return through(result) > through(layout) ||
-    crossings(result) > crossings(layout) + 2 * between.length
+  return through(result) > through(layout) || crossings(result) > crossings(layout) + between.length
     ? undefined
     : result;
 }
@@ -2125,17 +2171,28 @@ async function compactLayout(
  * (the box's width and height) at `FLOOR` or more, else the other direction where that does;
  * without one it is laid out both ways and keeps the one that fits at the larger zoom. Only when
  * neither direction fits at `FLOOR` do the layouts both ways and those wrapped into rows or columns
- * compete: the one that fits at the largest zoom, then the least tangled.
+ * compete: of those that fit at `FLOOR` or more the least tangled, then the larger zoom; when none
+ * does, the one that fits at the largest zoom, then the least tangled.
  */
 export async function layoutGraph(spec: GraphSpec, room: Point): Promise<GraphLayout> {
   const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
   const elk = new ELK();
   const fittest = (layouts: GraphLayout[]) => {
-    const all = [...layouts, ...layouts.flatMap((layout) => wrapped(layout, room) ?? [])];
-    const top = Math.max(...all.map((layout) => fitZoom(layout, room)));
+    const all = [...layouts, ...layouts.flatMap((layout) => wrapped(layout, room))];
+    const zoom = new Map(all.map((layout) => [layout, fitZoom(layout, room)]));
+    const knot = new Map(all.map((layout) => [layout, tangle(layout)]));
+    const fit = all.filter((layout) => zoom.get(layout)! >= FLOOR);
+    if (fit.length)
+      return fit.reduce((best, layout) =>
+        knot.get(layout)! < knot.get(best)! ||
+        (knot.get(layout) === knot.get(best) && zoom.get(layout)! > zoom.get(best)!)
+          ? layout
+          : best,
+      );
+    const top = Math.max(...zoom.values());
     // Zooms a hundredth apart draw text the same size.
-    const near = all.filter((layout) => fitZoom(layout, room) > top - 0.01);
-    return near.reduce((best, layout) => (tangle(layout) < tangle(best) ? layout : best));
+    const near = all.filter((layout) => zoom.get(layout)! > top - 0.01);
+    return near.reduce((best, layout) => (knot.get(layout)! < knot.get(best)! ? layout : best));
   };
   if (spec.direction) {
     const given = await layoutOnce(spec, spec.direction, elk);

@@ -1,0 +1,257 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "web",
+      "label": "apps/web (renderer)"
+    },
+    {
+      "id": "desktop",
+      "label": "apps/desktop (Electron main)"
+    },
+    {
+      "id": "daemon",
+      "label": "apps/daemon"
+    },
+    {
+      "id": "control",
+      "label": "packages/control"
+    },
+    {
+      "id": "adapters",
+      "label": "packages/adapters"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "compose",
+      "label": "Composer submit",
+      "group": "web",
+      "kind": "client",
+      "sublabel": "session.send, or session.steer while running",
+      "sources": [
+        "file:apps/web/src/screens/sessions/compose.tsx:490"
+      ]
+    },
+    {
+      "id": "runCommand",
+      "label": "runCommand",
+      "group": "web",
+      "kind": "service",
+      "sublabel": "builds command envelope, window.pantheon",
+      "sources": [
+        "file:apps/web/src/data/commands.ts:10"
+      ]
+    },
+    {
+      "id": "preload",
+      "label": "preload bridge",
+      "group": "desktop",
+      "kind": "client",
+      "sublabel": "ipc invoke pantheon:command",
+      "sources": [
+        "file:apps/desktop/src/preload/index.ts:82"
+      ]
+    },
+    {
+      "id": "bridge",
+      "label": "DaemonBridge.command",
+      "group": "desktop",
+      "kind": "service",
+      "sublabel": "main/daemon.ts, 5 s timeout",
+      "sources": [
+        "file:apps/desktop/src/main/daemon.ts:228"
+      ]
+    },
+    {
+      "id": "route",
+      "label": "POST /v1/commands",
+      "group": "daemon",
+      "kind": "service",
+      "sublabel": "Hono route",
+      "sources": [
+        "file:apps/daemon/src/index.ts:496"
+      ]
+    },
+    {
+      "id": "execute",
+      "label": "Control.execute",
+      "group": "control",
+      "kind": "policy",
+      "sublabel": "validate, role scope, idempotency, one transaction",
+      "sources": [
+        "file:packages/control/src/index.ts:431"
+      ]
+    },
+    {
+      "id": "queueInput",
+      "label": "queueInput",
+      "group": "control",
+      "kind": "service",
+      "sublabel": "session.ts: access, revision, queue turn",
+      "sources": [
+        "file:packages/control/src/session.ts:495"
+      ]
+    },
+    {
+      "id": "db",
+      "label": "SQLite store",
+      "group": "control",
+      "kind": "store",
+      "sublabel": "session running, turn queued, events"
+    },
+    {
+      "id": "outbox",
+      "label": "outbox session.turn",
+      "group": "control",
+      "kind": "queue",
+      "sublabel": "{ turn_id }",
+      "sources": [
+        "file:packages/control/src/session.ts:564"
+      ]
+    },
+    {
+      "id": "tickloop",
+      "label": "daemon tick loop",
+      "group": "daemon",
+      "kind": "queue",
+      "sublabel": "every 50 ms when state changed",
+      "sources": [
+        "file:apps/daemon/src/index.ts:928"
+      ]
+    },
+    {
+      "id": "scheduler",
+      "label": "scheduler.tick",
+      "group": "control",
+      "kind": "service",
+      "sublabel": "pending outbox jobs",
+      "sources": [
+        "file:packages/control/src/scheduler.ts:70"
+      ]
+    },
+    {
+      "id": "startTurn",
+      "label": "startTurn",
+      "group": "control",
+      "kind": "service",
+      "sublabel": "workspace ready, start or resume process",
+      "sources": [
+        "file:packages/control/src/session.ts:1535"
+      ]
+    },
+    {
+      "id": "deliver",
+      "label": "turn queue send",
+      "group": "control",
+      "kind": "service",
+      "sublabel": "checkpoint, contract, turn.running",
+      "sources": [
+        "file:packages/control/src/session.ts:1044"
+      ]
+    },
+    {
+      "id": "adapter",
+      "label": "runtime adapter",
+      "group": "adapters",
+      "kind": "service",
+      "sublabel": "start/resume, then send(handle, input)"
+    },
+    {
+      "id": "agent",
+      "label": "native agent",
+      "group": "adapters",
+      "kind": "external",
+      "sublabel": "Claude SDK, Codex, ACP process"
+    }
+  ],
+  "edges": [
+    {
+      "from": "compose",
+      "to": "runCommand",
+      "style": "main"
+    },
+    {
+      "from": "runCommand",
+      "to": "preload",
+      "style": "main"
+    },
+    {
+      "from": "preload",
+      "to": "bridge",
+      "style": "main",
+      "label": "IPC"
+    },
+    {
+      "from": "bridge",
+      "to": "route",
+      "style": "main",
+      "label": "HTTP"
+    },
+    {
+      "from": "route",
+      "to": "execute",
+      "style": "main"
+    },
+    {
+      "from": "execute",
+      "to": "queueInput",
+      "style": "main"
+    },
+    {
+      "from": "queueInput",
+      "to": "db",
+      "style": "data",
+      "label": "update and insert"
+    },
+    {
+      "from": "queueInput",
+      "to": "outbox",
+      "style": "main",
+      "label": "enqueue"
+    },
+    {
+      "from": "execute",
+      "to": "runCommand",
+      "style": "return",
+      "label": "receipt"
+    },
+    {
+      "from": "tickloop",
+      "to": "scheduler",
+      "style": "async"
+    },
+    {
+      "from": "outbox",
+      "to": "scheduler",
+      "style": "main",
+      "label": "pending job"
+    },
+    {
+      "from": "scheduler",
+      "to": "startTurn",
+      "style": "main"
+    },
+    {
+      "from": "startTurn",
+      "to": "adapter",
+      "label": "start or resume"
+    },
+    {
+      "from": "startTurn",
+      "to": "deliver",
+      "style": "main"
+    },
+    {
+      "from": "deliver",
+      "to": "adapter",
+      "style": "main",
+      "label": "send turn input"
+    },
+    {
+      "from": "adapter",
+      "to": "agent",
+      "style": "main"
+    }
+  ]
+}
