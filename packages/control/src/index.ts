@@ -82,7 +82,7 @@ import { personalCommand } from './personal-scope.js';
 import { handlers, preparers } from './commands.js';
 import type { VisualDrawReceipt } from './visual.js';
 import { tick } from './scheduler.js';
-import { acceptInput, stopTurn } from './session.js';
+import { acceptInput, personalAgentFolder, stopTurn } from './session.js';
 import { recover, reconcile } from './recovery.js';
 import { snapshot, snapshotAccess } from './snapshot.js';
 import { projectRead } from './project-facts.js';
@@ -1055,7 +1055,7 @@ export class Control extends EventEmitter {
     const project = this.store.must<Project>('projects', projectId),
       adapter = this.adapters.get(runtime);
     requireThat(adapter?.models, 'unsupported_capability', 'Runtime does not list its models');
-    const models = await adapter.models(project.roots[0]!);
+    const models = await adapter.models(project.roots[0] ?? personalAgentFolder(this.ctx));
     this.ctx.runtimeModels.set(`${project.id}:${runtime}`, models);
     return models;
   }

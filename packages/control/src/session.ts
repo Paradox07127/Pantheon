@@ -1650,12 +1650,8 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
       }
       mkdirSync(analysisPath, { recursive: true, mode: 0o700 });
     }
-    // The personal agent's home has no roots, so it runs in an empty folder of its own.
     const personalPath =
-      session.resident?.kind === 'personal'
-        ? path.join(ctx.workspaceRoot ?? os.tmpdir(), 'personal-agent')
-        : undefined;
-    if (personalPath) mkdirSync(personalPath, { recursive: true, mode: 0o700 });
+      session.resident?.kind === 'personal' ? personalAgentFolder(ctx) : undefined;
     const spec: SessionSpec = session.workspace_id
       ? ctx.store.must<Workspace>('workspaces', session.workspace_id).kind === 'in_place'
         ? await inPlaceSessionSpec(ctx, session)
@@ -2183,4 +2179,11 @@ export async function stopConversations(ctx: ControlContext): Promise<void> {
   }
   // Let ready receipts free their slots before dispatch, without waiting for a pending stop.
   if (retried) await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+/** The personal agent's home has no roots, so the agent runs in an empty folder of its own, made on first use. */
+export function personalAgentFolder(ctx: ControlContext): string {
+  const folder = path.join(ctx.workspaceRoot ?? os.tmpdir(), 'personal-agent');
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  return folder;
 }

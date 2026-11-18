@@ -1,5 +1,13 @@
 import { expect, it, vi } from 'vitest';
-import type { HarnessAdapter, Session, SessionHandle, SessionSpec } from '@pantheon/domain';
+import { statSync } from 'node:fs';
+import path from 'node:path';
+import type {
+  HarnessAdapter,
+  Project,
+  Session,
+  SessionHandle,
+  SessionSpec,
+} from '@pantheon/domain';
 import { awaitWorkspaceReady, eventually, user, waitOutStatusReuse } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -198,6 +206,24 @@ it('lists the models of a runtime', async () => {
       default: true,
     },
   ]);
+});
+
+it('lists the models of a runtime for the personal home, which has no roots, in the personal agent folder', async () => {
+  const f = await workbenchFixture();
+  const home = f.store.transaction(() =>
+    f.store.insert<Project>('projects', {
+      id: 'personal-home',
+      revision: 1,
+      name: 'Personal',
+      roots: [],
+      kind: 'personal',
+    }),
+  );
+  const models = vi.spyOn(f.adapter, 'models');
+  await f.control.runtimeModels(user, home.id, f.adapter.name);
+  const cwd = models.mock.calls[0]![0];
+  expect(path.basename(cwd)).toBe('personal-agent');
+  expect(statSync(cwd).isDirectory()).toBe(true);
 });
 
 it('reads the branch and commit at the project HEAD', async () => {

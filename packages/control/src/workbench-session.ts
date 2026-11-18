@@ -141,6 +141,7 @@ import { ownWorkspaceOnly } from './workspace-files.js';
 import { failWorkbenchTurns, workspaceReady } from './provisioning.js';
 import {
   nativeTurnActive,
+  personalAgentFolder,
   queuedTurn,
   releaseIdleConversation,
   reviewsRoots,
@@ -4514,7 +4515,7 @@ export function prepareSessionModels(
   const adapter = ctx.adapters.get(runtime);
   requireThat(adapter?.models, 'unsupported_capability', 'Runtime does not list its models');
   const project = ctx.store.must<Project>('projects', projectId);
-  return adapter.models(project.roots[0]!).then((models) => {
+  return adapter.models(project.roots[0] ?? personalAgentFolder(ctx)).then((models) => {
     ctx.runtimeModels.set(`${projectId}:${runtime}`, models);
   });
 }
