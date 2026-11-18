@@ -318,10 +318,10 @@ it('tells the baseline session where each folder keeps its code', async () => {
   }
 });
 
-it('shows packages, at most 60 module edges and the languages not measured in the scan seed', () => {
-  const modules = Array.from({ length: 61 }, (_, index) => ({
+it('shows packages, at most 30 module edges and the languages not measured in the scan seed', () => {
+  const modules = Array.from({ length: 31 }, (_, index) => ({
     from: `module${index}`,
-    to: 'core',
+    to: `core${index}`,
     imports: 100 - index,
     sample: `file:module${index}/main.ts:1`,
   }));
@@ -344,10 +344,10 @@ it('shows packages, at most 60 module edges and the languages not measured in th
     },
   ]);
   expect(seed).toContain(
-    '## Measured code dependencies in /repo\nPantheon measured these from manifests and import statements, without a model.\nPackages:\n- packages/app (@acme/app) -> packages/lib\n- packages/lib (@acme/lib)\nModule edges, most imports first:\n- module0 -> core: 100 imports (file:module0/main.ts:1)\n',
+    '## Measured code dependencies in /repo\nPantheon measured these from manifests and import statements, without a model.\nPackages:\n- packages/app (@acme/app) -> packages/lib\n- packages/lib (@acme/lib)\nModule edges, most imports first:\n- module0 -> core0: 100 imports (file:module0/main.ts:1)\n',
   );
-  expect(seed).toContain('- module59 -> core: 41 imports (file:module59/main.ts:1)\n');
-  expect(seed).not.toContain('module60 ->');
+  expect(seed).toContain('- module29 -> core29: 71 imports (file:module29/main.ts:1)\n');
+  expect(seed).not.toContain('module30 ->');
   expect(seed).toContain(
     '- 1 more module edges with fewer imports are not listed.\nNot measured: Swift (2 files).\n',
   );

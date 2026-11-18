@@ -14,6 +14,8 @@ it.each([
   expect(skill).toContain('Do not draw in the conversation');
   expect(skill).toContain('measured code dependencies in the first message');
   expect(skill).toContain('draw no import edge the list lacks');
+  expect(skill).toContain('with no edge from every importer');
+  expect(skill).toContain('draw only the edges its block lists');
   expect(skill).toContain('HTTP, IPC, WebSocket, processes, stores, queues');
   expect(skill).toContain('read their imports yourself');
   if (settings.visuals) {

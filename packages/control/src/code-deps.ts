@@ -11,7 +11,8 @@ export interface FileEdge {
 }
 
 const SPLIT_ABOVE = 40;
-const EDGES_SHOWN = 60;
+const EDGES_SHOWN = 30;
+const PART_EDGES_SHOWN = 6;
 const MEASURED: Record<string, string> = {
   '.ts': 'TypeScript',
   '.tsx': 'TypeScript',
@@ -768,11 +769,107 @@ export function measureCodeDeps(
   };
 }
 
+type ModuleEdge = CodeDependencies['modules'][number];
+export interface Foundation {
+  module: string;
+  importers: number;
+}
+/** The measured dependencies a brief shows: package-level edges, foundations and the inner edges of each split package. */
+export interface ReducedCodeDeps {
+  modules: ModuleEdge[];
+  /** Main-list edges left out by the cap. */
+  omitted: number;
+  foundations: Foundation[];
+  parts: { package: string; foundations: Foundation[]; modules: ModuleEdge[] }[];
+}
+
+const byImports = (a: ModuleEdge, b: ModuleEdge) =>
+  b.imports - a.imports || a.from.localeCompare(b.from) || a.to.localeCompare(b.to);
+
+// A foundation is imported by at least half of the modules with an outgoing edge, and by at least 3.
+function withoutFoundations(edges: ModuleEdge[]): {
+  foundations: Foundation[];
+  edges: ModuleEdge[];
+} {
+  const importers = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    let from = importers.get(edge.to);
+    if (!from) importers.set(edge.to, (from = new Set()));
+    from.add(edge.from);
+  }
+  const sources = new Set(edges.map((edge) => edge.from)).size;
+  const candidates = [...importers]
+    .filter(([, from]) => from.size >= 3 && from.size * 2 >= sources)
+    .map(([module]) => module);
+  // Bottom up: a candidate is a foundation once everything it imports is one, so modules importing each other never are.
+  const named = new Set<string>();
+  for (let added = true; added;) {
+    added = false;
+    for (const module of candidates)
+      if (!named.has(module) && edges.every((edge) => edge.from !== module || named.has(edge.to))) {
+        named.add(module);
+        added = true;
+      }
+  }
+  const foundations = [...named]
+    .map((module) => ({ module, importers: importers.get(module)!.size }))
+    .sort((a, b) => b.importers - a.importers || a.module.localeCompare(b.module));
+  return {
+    foundations,
+    edges: edges.filter((edge) => !named.has(edge.to) || named.has(edge.from)).sort(byImports),
+  };
+}
+
+export function reduceCodeDeps(deps: CodeDependencies): ReducedCodeDeps {
+  // The root package holds everything, so folding into it would leave a single-package repository with no main list.
+  const dirs = deps.packages
+    .map((entry) => entry.dir)
+    .filter((dir) => dir !== '.')
+    .sort((a, b) => b.length - a.length);
+  const packageOf = (module: string) =>
+    dirs.find((dir) => module === dir || module.startsWith(`${dir}/`)) ?? module;
+  const main = new Map<string, ModuleEdge>();
+  const inside = new Map<string, ModuleEdge[]>();
+  for (const edge of [...deps.modules].sort(byImports)) {
+    const from = packageOf(edge.from),
+      to = packageOf(edge.to);
+    if (from === to) {
+      inside.set(from, [...(inside.get(from) ?? []), edge]);
+      continue;
+    }
+    const key = `${from}\0${to}`;
+    const entry = main.get(key);
+    if (entry) entry.imports += edge.imports;
+    else main.set(key, { from, to, imports: edge.imports, sample: edge.sample });
+  }
+  const reduced = withoutFoundations([...main.values()]);
+  return {
+    modules: reduced.edges.slice(0, EDGES_SHOWN),
+    omitted: Math.max(0, reduced.edges.length - EDGES_SHOWN),
+    foundations: reduced.foundations,
+    parts: [...inside]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([dir, edges]) => {
+        const part = withoutFoundations(edges);
+        return {
+          package: dir,
+          foundations: part.foundations,
+          modules: part.edges.slice(0, PART_EDGES_SHOWN),
+        };
+      }),
+  };
+}
+
+const edgeLine = (edge: ModuleEdge) =>
+  `- ${edge.from} -> ${edge.to}: ${edge.imports} imports (${edge.sample})`;
+const foundationList = (foundations: Foundation[], noun: string) =>
+  foundations.map((entry) => `${entry.module} (${entry.importers} ${noun})`).join(', ');
+
 /** The lines a brief shows for one root's measured code dependencies; none when nothing was measured. */
 export function renderCodeDeps(deps: CodeDependencies | undefined): string[] {
   if (!deps || (!deps.packages.length && !deps.modules.length && !deps.not_measured.length))
     return [];
-  const modules = [...deps.modules].sort((a, b) => b.imports - a.imports);
+  const reduced = reduceCodeDeps(deps);
   const lines = ['Pantheon measured these from manifests and import statements, without a model.'];
   if (deps.packages.length)
     lines.push(
@@ -782,17 +879,25 @@ export function renderCodeDeps(deps: CodeDependencies | undefined): string[] {
           `- ${entry.dir} (${entry.name})${entry.depends_on.length ? ` -> ${entry.depends_on.join(', ')}` : ''}`,
       ),
     );
-  if (modules.length)
+  if (reduced.modules.length)
+    lines.push('Module edges, most imports first:', ...reduced.modules.map(edgeLine));
+  if (reduced.omitted)
+    lines.push(`- ${reduced.omitted} more module edges with fewer imports are not listed.`);
+  if (reduced.foundations.length)
     lines.push(
-      'Module edges, most imports first:',
-      ...modules
-        .slice(0, EDGES_SHOWN)
-        .map((edge) => `- ${edge.from} -> ${edge.to}: ${edge.imports} imports (${edge.sample})`),
+      `Foundations, imported by most modules; edges into them are not listed: ${foundationList(reduced.foundations, 'modules')}.`,
     );
-  if (modules.length > EDGES_SHOWN)
-    lines.push(
-      `- ${modules.length - EDGES_SHOWN} more module edges with fewer imports are not listed.`,
-    );
+  for (const part of reduced.parts) {
+    if (part.modules.length)
+      lines.push(
+        `Edges inside ${part.package}, for drawing it as parts, most imports first:`,
+        ...part.modules.map(edgeLine),
+      );
+    if (part.foundations.length)
+      lines.push(
+        `Foundations of ${part.package}, imported by most of its parts; edges into them are not listed: ${foundationList(part.foundations, 'parts')}.`,
+      );
+  }
   if (deps.not_measured.length)
     lines.push(
       `Not measured: ${deps.not_measured.map((entry) => `${entry.language} (${entry.files} files)`).join(', ')}.`,

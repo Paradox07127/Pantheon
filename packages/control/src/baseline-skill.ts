@@ -36,9 +36,11 @@ pipes. To work in a folder, write its absolute path as given: \`git -C <folder> 
    - Docs say what was intended; code and git history say what is. Read both.
    - For each directory the first message lists with many files: its manifest
      and its entry file, so you know its role. What it depends on in code comes
-     from the measured code dependencies in the first message. Read the code for
-     the runtime edges imports cannot show (HTTP, IPC, WebSocket, processes,
-     stores, queues). For languages the list marks not measured, read their
+     from the measured code dependencies in the first message: draw each edge
+     of its main list, each foundation once with no edge from every importer,
+     and for a package drawn as parts only the edges its block lists. Read the
+     code for the runtime edges imports cannot show (HTTP, IPC, WebSocket,
+     processes, stores, queues). For languages the list marks not measured, read their
      imports yourself.
    - For each body of open or recent work: \`git show --stat\` of its commits
      and the code those commits changed.
@@ -93,8 +95,10 @@ pipes. To work in a folder, write its absolute path as given: \`git -C <folder> 
      edge with what passes along it. A package or app that the docs or its own
      subdirectories split into parts is drawn as those parts, one node each.
      Code-dependency edges between modules come from the measured list: draw
-     each listed edge between two modules you draw, and draw no import edge the
-     list lacks. Read the code to name and label them, and add the runtime
+     each edge of its main list between two modules you draw, and draw no
+     import edge the list lacks. Draw each foundation it names once as a node,
+     with no edge from every importer. When you draw a split package as parts,
+     draw only the edges its block lists. Read the code to name and label them, and add the runtime
      edges imports cannot show (HTTP, IPC, WebSocket, processes, stores,
      queues), each labelled with what passes along it.
    - body: one mermaid flowchart or sequence diagram for each main flow a

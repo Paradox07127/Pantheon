@@ -330,6 +330,8 @@ it('limits submission to assessment and introduction sessions and shares their a
       'kline',
       'project_intro_submit',
       'draw no import edge the list lacks',
+      'with no edge from every importer',
+      'draw only the edges its block lists',
       'HTTP, IPC, WebSocket, processes, stores, queues',
     ])
       expect(instructions).toContain(text);
@@ -408,10 +410,10 @@ it('sums git roots and uses baseline-scanned files for non-git roots, with at mo
   expect((await f.read()).intro!.languages.find((entry) => entry.name === 'other')?.lines).toBe(5);
 });
 
-it('shows each root its measured code dependencies, at most 60 module edges', () => {
-  const modules = Array.from({ length: 61 }, (_, index) => ({
+it('shows each root its measured code dependencies, at most 30 module edges', () => {
+  const modules = Array.from({ length: 31 }, (_, index) => ({
     from: `module${index}`,
-    to: 'core',
+    to: `core${index}`,
     imports: 100 - index,
     sample: `file:module${index}/main.ts:1`,
   }));
@@ -422,7 +424,7 @@ it('shows each root its measured code dependencies, at most 60 module edges', ()
     undefined,
     [
       {
-        packages: [{ dir: '.', name: 'fixture', depends_on: [] }],
+        packages: [{ dir: 'lib', name: 'fixture', depends_on: [] }],
         modules,
         languages: ['TypeScript'],
         not_measured: [{ language: 'Kotlin', files: 4 }],
@@ -431,10 +433,10 @@ it('shows each root its measured code dependencies, at most 60 module edges', ()
     ],
   );
   expect(brief).toContain(
-    '## Root /repo\nTop-level directories (measured lines):\n- core: 1\n\n### Measured code dependencies\nPantheon measured these from manifests and import statements, without a model.\nPackages:\n- . (fixture)\nModule edges, most imports first:\n- module0 -> core: 100 imports (file:module0/main.ts:1)\n',
+    '## Root /repo\nTop-level directories (measured lines):\n- core: 1\n\n### Measured code dependencies\nPantheon measured these from manifests and import statements, without a model.\nPackages:\n- lib (fixture)\nModule edges, most imports first:\n- module0 -> core0: 100 imports (file:module0/main.ts:1)\n',
   );
-  expect(brief).toContain('- module59 -> core: 41 imports');
-  expect(brief).not.toContain('module60 ->');
+  expect(brief).toContain('- module29 -> core29: 71 imports');
+  expect(brief).not.toContain('module30 ->');
   expect(brief).toContain(
     '- 1 more module edges with fewer imports are not listed.\nNot measured: Kotlin (4 files).',
   );

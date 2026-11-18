@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { measureCodeDeps } from '../../packages/control/dist/code-deps.js';
+import {
+  measureCodeDeps,
+  reduceCodeDeps,
+  renderCodeDeps,
+} from '../../packages/control/dist/code-deps.js';
 
 const READ_LIMIT = 256 * 1024;
 const bases: string[] = [];
@@ -430,5 +434,192 @@ describe('module edges', () => {
       imports: 2,
       sample: 'file:packages/small/src/main.ts:3',
     });
+  });
+});
+
+describe('the list a brief shows', () => {
+  const edge = (from: string, to: string, imports = 1, sample = `file:${from}/main.ts:1`) => ({
+    from,
+    to,
+    imports,
+    sample,
+  });
+  const deps = (
+    modules: ReturnType<typeof edge>[],
+    packages: string[] = [],
+  ): Parameters<typeof reduceCodeDeps>[0] => ({
+    packages: packages.map((dir) => ({ dir, name: dir, depends_on: [] })),
+    modules,
+    languages: ['TypeScript'],
+    not_measured: [],
+    external_imports: 0,
+  });
+  const chain = Array.from({ length: 7 }, (_, index) =>
+    edge(`apps/web/src/p${index + 1}`, `apps/web/src/p${index + 2}`, 10 - index),
+  );
+
+  it.each([
+    {
+      name: 'collapses the parts of a split package into it, summing imports and keeping the largest sample',
+      input: deps(
+        [
+          edge('apps/web/src/screens', 'packages/core', 5, 'file:apps/web/src/screens/a.ts:3'),
+          edge('apps/web/src/lib', 'packages/core', 7, 'file:apps/web/src/lib/b.ts:2'),
+          edge('apps/web', 'packages/core', 1),
+          edge('apps/web/src/screens', 'apps/web/src/lib', 4),
+          edge('scripts/tool', 'apps/web/src/lib', 2, 'file:scripts/tool/run.mjs:1'),
+        ],
+        ['apps/web', 'packages/core'],
+      ),
+      expected: {
+        modules: [
+          edge('apps/web', 'packages/core', 13, 'file:apps/web/src/lib/b.ts:2'),
+          edge('scripts/tool', 'apps/web', 2, 'file:scripts/tool/run.mjs:1'),
+        ],
+        omitted: 0,
+        foundations: [],
+        parts: [
+          {
+            package: 'apps/web',
+            foundations: [],
+            modules: [edge('apps/web/src/screens', 'apps/web/src/lib', 4)],
+          },
+        ],
+      },
+    },
+    {
+      name: 'names a module that at least half of the importing modules and at least 3 import a foundation',
+      input: deps([edge('a', 'core'), edge('b', 'core'), edge('c', 'core'), edge('d', 'other')]),
+      expected: {
+        modules: [edge('d', 'other')],
+        omitted: 0,
+        foundations: [{ module: 'core', importers: 3 }],
+        parts: [],
+      },
+    },
+    {
+      name: 'keeps a module that 2 of 3 import',
+      input: deps([edge('a', 'core'), edge('b', 'core'), edge('c', 'other')]),
+      expected: {
+        modules: [edge('a', 'core'), edge('b', 'core'), edge('c', 'other')],
+        omitted: 0,
+        foundations: [],
+        parts: [],
+      },
+    },
+    {
+      name: 'keeps a module that fewer than half import',
+      input: deps([
+        ...['a', 'b', 'c'].map((from) => edge(from, 'core')),
+        ...['d', 'e', 'f', 'g'].map((from) => edge(from, `${from}2`)),
+      ]),
+      expected: {
+        modules: [
+          ...['a', 'b', 'c'].map((from) => edge(from, 'core')),
+          ...['d', 'e', 'f', 'g'].map((from) => edge(from, `${from}2`)),
+        ],
+        omitted: 0,
+        foundations: [],
+        parts: [],
+      },
+    },
+    {
+      name: 'keeps the modules of a root package in the main list',
+      input: deps([edge('src/api', 'src/db', 3), edge('src/cli', 'src/api', 2)], ['.']),
+      expected: {
+        modules: [edge('src/api', 'src/db', 3), edge('src/cli', 'src/api', 2)],
+        omitted: 0,
+        foundations: [],
+        parts: [],
+      },
+    },
+    {
+      name: 'keeps a module that most import when it imports a module that is no foundation',
+      input: deps([
+        ...['a', 'b', 'c'].flatMap((from) => [edge(from, 'data'), edge(from, 'screens')]),
+        edge('data', 'screens'),
+        edge('screens', 'data'),
+      ]),
+      expected: {
+        modules: [
+          ...['a', 'b', 'c'].flatMap((from) => [edge(from, 'data'), edge(from, 'screens')]),
+          edge('data', 'screens'),
+          edge('screens', 'data'),
+        ],
+        omitted: 0,
+        foundations: [],
+        parts: [],
+      },
+    },
+    {
+      name: 'keeps an edge from one foundation into another',
+      input: deps([
+        ...['a', 'b', 'c', 'd'].flatMap((from) => [edge(from, 'domain'), edge(from, 'protocol')]),
+        edge('protocol', 'domain', 3),
+      ]),
+      expected: {
+        modules: [edge('protocol', 'domain', 3)],
+        omitted: 0,
+        foundations: [
+          { module: 'domain', importers: 5 },
+          { module: 'protocol', importers: 4 },
+        ],
+        parts: [],
+      },
+    },
+    {
+      name: 'gives a split package a block of at most 6 inner edges without its inner foundation',
+      input: deps(
+        [
+          ...Array.from({ length: 8 }, (_, index) =>
+            edge(`apps/web/src/p${index + 1}`, 'apps/web/src/lib'),
+          ),
+          ...chain,
+        ],
+        ['apps/web'],
+      ),
+      expected: {
+        modules: [],
+        omitted: 0,
+        foundations: [],
+        parts: [
+          {
+            package: 'apps/web',
+            foundations: [{ module: 'apps/web/src/lib', importers: 8 }],
+            modules: chain.slice(0, 6),
+          },
+        ],
+      },
+    },
+  ])('$name', ({ input, expected }) => {
+    expect(reduceCodeDeps(input)).toEqual(expected);
+  });
+
+  it('lists at most 30 main edges and renders foundations and blocks', () => {
+    const many = Array.from({ length: 31 }, (_, index) =>
+      edge(`m${index}`, `t${index}`, 100 - index),
+    );
+    const lines = renderCodeDeps(deps(many)).join('\n');
+    expect(lines).toContain('- m29 -> t29: 71 imports (file:m29/main.ts:1)\n');
+    expect(lines).not.toContain('m30 ->');
+    expect(lines).toContain('- 1 more module edges with fewer imports are not listed.');
+    expect(
+      renderCodeDeps(
+        deps(
+          [
+            ...['a', 'b', 'c'].map((from) => edge(from, 'core')),
+            edge('apps/web/src/screens', 'apps/web/src/lib', 4),
+          ],
+          ['apps/web'],
+        ),
+      ),
+    ).toEqual([
+      'Pantheon measured these from manifests and import statements, without a model.',
+      'Packages:',
+      '- apps/web (apps/web)',
+      'Foundations, imported by most modules; edges into them are not listed: core (3 modules).',
+      'Edges inside apps/web, for drawing it as parts, most imports first:',
+      '- apps/web/src/screens -> apps/web/src/lib: 4 imports (file:apps/web/src/screens/main.ts:1)',
+    ]);
   });
 });
