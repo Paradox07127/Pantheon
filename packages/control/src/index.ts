@@ -1042,7 +1042,8 @@ export class Control extends EventEmitter {
       'Runtime does not support extension inventory',
     );
     const read = adapter.inventory.bind(adapter);
-    const inventories = await Promise.all(project.roots.map((root) => read(root)));
+    const roots = project.roots.length ? project.roots : [personalAgentFolder(this.ctx)];
+    const inventories = await Promise.all(roots.map((root) => read(root)));
     return inventories.reduce(unionInventory);
   }
   async runtimeModels(

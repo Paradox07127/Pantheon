@@ -63,7 +63,7 @@ const inventory: ExtensionInventory = {
   hooks: [{ event: 'SessionStart', plugin: 'tracing@observability' }],
 };
 const inventoryAdapter = () =>
-  Object.assign(new FixtureAdapter(), { inventory: vi.fn(async () => inventory) });
+  Object.assign(new FixtureAdapter(), { inventory: vi.fn(async (_cwd: string) => inventory) });
 
 describe('project extension overrides', () => {
   it('defines strict overrides and inventory inputs without accepting extension configuration', () => {
@@ -232,6 +232,30 @@ describe('project extension overrides', () => {
         f.control.extensionsInventory(user, f.project.id, adapter.name),
       ).resolves.toEqual(inventory);
       expect(adapter.inventory).toHaveBeenCalledExactlyOnceWith(f.project.roots[0]!);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it('reads the inventory of the personal home, which has no roots, in the personal agent folder', async () => {
+    const adapter = inventoryAdapter(),
+      f = await fixture({ adapter });
+    try {
+      const home = f.store.transaction(() =>
+        f.store.insert<Project>('projects', {
+          id: 'personal-home',
+          revision: 1,
+          name: 'Personal',
+          roots: [],
+          kind: 'personal',
+        }),
+      );
+      await expect(f.control.extensionsInventory(user, home.id, adapter.name)).resolves.toEqual(
+        inventory,
+      );
+      expect(adapter.inventory.mock.calls.map(([cwd]) => path.basename(cwd))).toEqual([
+        'personal-agent',
+      ]);
     } finally {
       await f.close();
     }
