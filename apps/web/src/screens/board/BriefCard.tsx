@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { Popover } from '@base-ui/react/popover';
 import {
   Bot,
+  Crown,
   Ellipsis,
   Flag,
   GitMerge,
@@ -11,17 +12,21 @@ import {
   Workflow,
 } from 'lucide-react';
 import type { BoardModel, ProjectBrief, ProjectBriefItem } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { toast } from '../../components/Toast';
 import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
+import { useDecisionsAfter } from '../../data/decisions-for-user';
 import { reasonText } from '../../data/needs-you';
 import { markProjectSeen, useProjectBrief, writeBriefProse } from '../../data/project-brief';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { needSession } from './frame-model';
-import type { SnapshotSession } from './panels-model';
+import { verifyText } from './MilestoneCard';
+import { tellLeadDraft, type RunBoardCommand, type SnapshotSession } from './panels-model';
 import { StatusIcon } from './status';
+import { TellLead } from './TellLead';
 import './frame.css';
 
 type Of<K extends ProjectBriefItem['kind']> = Extract<ProjectBriefItem, { kind: K }>;
@@ -32,13 +37,20 @@ export function BriefCard({
   model,
   sessions,
   onOpenTask,
+  run,
 }: {
   projectId: string;
   model: BoardModel;
   sessions: readonly SnapshotSession[];
   onOpenTask: (taskId: string) => void;
+  /** Sends a message to a lead; absent where the board takes no commands. */
+  run?: RunBoardCommand;
 }) {
   const { read: brief, reload } = useProjectBrief(projectId);
+  const { read: decidedAfter } = useDecisionsAfter(
+    brief?.items.some((item) => item.kind === 'decided') ? projectId : null,
+    brief?.since ?? 0,
+  );
   const events = useBoard((s) => s.events);
   const openSession = useShell((s) => s.openSession);
   const openApproved = useShell((s) => s.openProjectApproved);
@@ -323,6 +335,61 @@ export function BriefCard({
                 ),
               ]
             : [],
+        )
+        .concat(
+          (decidedAfter?.items ?? []).flatMap((item) => {
+            if (
+              item.kind !== 'power_used' ||
+              item.power !== 'accept_milestone' ||
+              !item.verification ||
+              !item.reason
+            )
+              return [];
+            const milestone =
+              model.milestones.find((each) => each.id === item.subject)?.title ?? item.subject;
+            const title = t(
+              { id: 'board.brief.leadAccepted', defaultMessage: '{lead} accepted {milestone}' },
+              {
+                lead:
+                  sessionTitle(item.session_id) ||
+                  t({ id: 'board.brief.untitledSession', defaultMessage: 'Untitled session' }),
+                milestone,
+              },
+            );
+            return [
+              <div
+                key={`${item.subject}:${item.at}`}
+                className="bf-brief-it bf-brief-ov"
+                role="group"
+                aria-label={title}
+              >
+                <span className="bf-brief-lk">
+                  <Crown aria-hidden="true" />
+                  <span>{title}</span>
+                </span>
+                {/* The decision keeps the state the run had then, not when the run started. */}
+                <span className="bf-brief-n">
+                  {verifyText(
+                    { started_at: item.at, ...item.verification } as Parameters<
+                      typeof verifyText
+                    >[0],
+                    item.at,
+                  )}
+                </span>
+                <Clip as="div" lines={3} className="bf-brief-why" text={item.reason} />
+                {run && (
+                  <TellLead
+                    className="btn bf-brief-tell"
+                    lead={sessions.find((s) => s.id === item.session_id)}
+                    draft={tellLeadDraft('milestone', milestone, item.subject)}
+                    label={milestone}
+                    run={run}
+                    text={t({ id: 'board.verify.card.tellLead', defaultMessage: 'Tell lead' })}
+                  />
+                )}
+              </div>,
+            ];
+          }),
         ),
     });
   }

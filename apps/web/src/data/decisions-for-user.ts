@@ -50,6 +50,16 @@ export function useDecisionsForUser(projectId: string | null, range: DecisionRan
   );
 }
 
+/** What was decided for the user in the project after the time, as project.brief counts it, newest first. */
+export const useDecisionsAfter = (projectId: string | null, after: number) =>
+  useProjectQuery<DecisionsForUser>(
+    'project.decisions',
+    projectId,
+    isDecisions,
+    { since: String(after + 1) },
+    { kinds: DECISION_KINDS },
+  );
+
 function newestDecision(events: readonly DaemonEvent[]): number {
   for (let i = events.length - 1; i >= 0; i--)
     if (DECISION_KINDS.has(events[i]!.kind)) return events[i]!.sequence;

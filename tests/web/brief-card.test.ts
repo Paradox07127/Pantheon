@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
-import type { AppSettings, BoardModel, ProjectBrief } from '@pantheon/protocol';
-import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
+import type { AppSettings, BoardModel, DecisionForUser, ProjectBrief } from '@pantheon/protocol';
+import { find, HookHost, mount, nodes, text, unmountAll } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({
   board: {} as any,
   openSession: vi.fn(),
@@ -25,6 +25,7 @@ vi.mock('@/store', () => ({
 import { Popover } from '../../apps/web/node_modules/@base-ui/react/popover/index.mjs';
 import { BriefCard } from '@/screens/board/BriefCard';
 import { ProjectNeeds } from '@/screens/board/NowPage';
+import { TellLead } from '@/screens/board/TellLead';
 import type { SnapshotSession } from '@/screens/board/panels-model';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -77,7 +78,7 @@ const model = {
 
 const sessions = [
   { id: 'session-recon', title: 'Reconciliation report' },
-  { id: 'lead-1', title: 'Refunds rollout lead' },
+  { id: 'lead-1', title: 'Refunds rollout lead', state: 'open' },
 ] as unknown as SnapshotSession[];
 
 const waiting = {
@@ -138,10 +139,19 @@ const served: ProjectBrief = {
 let query: ReturnType<typeof vi.fn>;
 let command: ReturnType<typeof vi.fn>;
 
-const serve = (brief: ProjectBrief, settings: Partial<AppSettings> = {}) => {
+const serve = (
+  brief: ProjectBrief,
+  settings: Partial<AppSettings> = {},
+  decided: DecisionForUser[] = [],
+) => {
   query = vi.fn(async (method: string) => ({
     ok: true,
-    value: method === 'app.settings' ? settings : brief,
+    value:
+      method === 'app.settings'
+        ? settings
+        : method === 'project.decisions'
+          ? { items: decided }
+          : brief,
   }));
   command = vi.fn(async () => ({ ok: true, value: { project_id: 'x', at: NOW } }));
   vi.stubGlobal('window', {
@@ -175,8 +185,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const card = async (projectId: string, onOpenTask = vi.fn()) => {
-  const h = mount(() => BriefCard({ projectId, model, sessions, onOpenTask }));
+const card = async (projectId: string, onOpenTask = vi.fn(), shown = model) => {
+  const h = mount(() =>
+    BriefCard({ projectId, model: shown, sessions, onOpenTask, run: async () => null }),
+  );
   await h.flush();
   return h;
 };
@@ -435,6 +447,78 @@ describe('since you left card', () => {
       zhf('board.brief.decidedPermissions', { count: 3 }),
       zhf('board.brief.decidedAnswers', { count: 2 }),
     ]);
+  });
+
+  const decidedBrief: ProjectBrief = {
+    since: LEFT,
+    items: [
+      {
+        kind: 'decided',
+        ref: { kind: 'decided', id: 'project-brief-l' },
+        count: 4,
+        types: { permission: 2, answer: 0, plan_change: 0 },
+      },
+    ],
+  };
+  const WHY = 'The failing test pins a display format the criteria do not ask for.';
+  const accepted = (verified: boolean): DecisionForUser => ({
+    kind: 'power_used',
+    at: NOW - 120_000,
+    power: 'accept_milestone',
+    subject: 'ms-refund-ui',
+    session_id: 'lead-1',
+    reason: WHY,
+    ...(verified ? {} : { verification: { id: 'verification-1', state: 'failed' as const } }),
+  });
+  const withMilestone = {
+    ...model,
+    milestones: [{ id: 'ms-refund-ui', title: 'Refund UI' }],
+  } as unknown as BoardModel;
+
+  it('lists a milestone the lead accepted without a passed verification under the counts, with its reason, state and Tell lead', async () => {
+    serve(decidedBrief, {}, [accepted(false)]);
+    const h = await card('project-brief-l', vi.fn(), withMilestone);
+    expect(query).toHaveBeenCalledWith('project.decisions', {
+      project_id: 'project-brief-l',
+      since: String(LEFT + 1),
+    });
+    const label = zhf('board.brief.decidedCount', { count: 4 });
+    expect(text(cell(h.value, label))).toContain('4');
+    const popup = openCell(h, label);
+    expect(links(popup).map(text)).toEqual([
+      zhf('board.brief.decidedPermissions', { count: 2 }),
+      zhf('board.brief.decidedOther', { count: 2 }),
+    ]);
+    const entry = find(
+      popup,
+      (n) =>
+        n.props.role === 'group' &&
+        n.props['aria-label'] ===
+          zhf('board.brief.leadAccepted', { lead: 'Refunds rollout lead', milestone: 'Refund UI' }),
+    );
+    expect(text(entry)).toContain(WHY);
+    expect(text(entry)).toContain(zh('board.verify.badge.failed'));
+    const tell = find(entry, (n) => n.type === TellLead);
+    const drawnTell = new HookHost(() => TellLead(tell.props)).render();
+    expect(find(drawnTell, (b) => b.type === 'button').props['aria-label']).toBe(
+      zhf('board.lead.tell.buttonLabel', {
+        action: zh('board.verify.card.tellLead'),
+        label: 'Refund UI',
+      }),
+    );
+    expect(tell.props.lead).toBe(sessions[1]);
+    expect(tell.props.draft).toContain('Refund UI');
+  });
+
+  it('keeps the decided popover to its counts when the lead accepted only verified milestones', async () => {
+    serve(decidedBrief, {}, [accepted(true)]);
+    const h = await card('project-brief-l', vi.fn(), withMilestone);
+    const popup = openCell(h, zhf('board.brief.decidedCount', { count: 4 }));
+    expect(text(popup)).toBe(
+      zhf('board.brief.decidedPermissions', { count: 2 }) +
+        zhf('board.brief.decidedOther', { count: 2 }),
+    );
+    expect(nodes(popup).some((n) => n.type === TellLead)).toBe(false);
   });
 
   it('has no decided cell without decisions', async () => {

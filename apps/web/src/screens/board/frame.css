@@ -446,6 +446,19 @@ a.bf-brief-lk:hover {
   color: var(--mu);
   font-size: var(--fs-xs);
 }
+/* A milestone the lead accepted without a passed verification, under the counts. */
+.bf-brief-ov {
+  padding-top: var(--sp-2);
+  border-top: var(--hair) solid var(--bd2);
+}
+.bf-brief-why {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+.bf-brief-tell {
+  align-self: flex-start;
+}
 /* The side model's paragraph across the card, under the cells, so nothing in the card moves when it lands. */
 .bf-brief > .bf-brief-p {
   grid-column: 1 / -1;

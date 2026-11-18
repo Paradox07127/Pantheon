@@ -99,6 +99,7 @@ export function NowPage({
               model={model}
               sessions={actions?.sessions ?? []}
               onOpenTask={selectFlow}
+              run={actions?.run}
             />
           )}
           {model && projectId && actions && !!model.needs?.length && (

@@ -16,6 +16,7 @@
   "board.brief.decidedAnswers": "{count, plural, other {# 个回答}}",
   "board.brief.decidedPlanChanges": "{count, plural, other {# 个计划变更}}",
   "board.brief.decidedOther": "{count, plural, other {其他 # 项}}",
+  "board.brief.leadAccepted": "{lead} 验收了 {milestone}",
   "board.brief.assumptions": "新假设",
   "board.brief.assumptionsCount": "{count, plural, other {# 条新假设}}",
   "board.brief.proposals": "智能体提议",

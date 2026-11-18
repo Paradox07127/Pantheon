@@ -68,7 +68,8 @@ const TASK_STATUS_LABEL = {
   todo: '未开始',
   discarded: '已丢弃',
 };
-const CONNECTION_LABELS = ['已连接', '连接中', '已断开'];
+// The app draws no connection mark while it is connected.
+const CONNECTION_LABELS = ['连接中', '已断开'];
 const sessionLabel = (row) =>
   row.stopping
     ? '停止中'
@@ -77,6 +78,12 @@ const sessionLabel = (row) =>
       : row.state === 'waiting'
         ? WAITING_LABEL[row.waiting_kind ?? 'approval']
         : SESSION_LABEL[row.state];
+const STATE_LABELS = [
+  '停止中',
+  '待恢复',
+  ...Object.values(WAITING_LABEL),
+  ...Object.values(SESSION_LABEL),
+];
 const lastTurnLabel = (row) => {
   if (row.stopping || row.reconciling || !['idle', 'ready'].includes(row.state)) return null;
   if (row.last_turn?.state === 'failed') return '上回合失败';
@@ -92,7 +99,8 @@ const sessionShown = (sessionTitle) => `(() => {
     .find((b) => b.getAttribute('aria-label').startsWith(${JSON.stringify(`${sessionTitle}，`)}));
   if (!row) return null;
   return {
-    state: row.querySelector('[role="img"]')?.getAttribute('aria-label') ?? null,
+    // An idle row draws no state mark; its name always carries the state.
+    state: row.getAttribute('aria-label').split('，').find((part) => ${JSON.stringify(STATE_LABELS)}.includes(part)) ?? null,
     last_turn: row.getAttribute('aria-label').split('，').find((part) => part.startsWith('上回合')) ?? null,
     turns: document.querySelectorAll('[data-turn]').length,
   };
@@ -627,7 +635,7 @@ export async function run({ workspace, evidenceDir }) {
     });
 
     await step('disconnect', async () => {
-      await waitUi(`(${connectionState}) === '已连接'`, 'the connection mark to show 已连接');
+      await waitUi(`(${connectionState}) === null`, 'the connection mark to be absent');
       await read(recordConnection, 'record the connection mark');
       // Every connection the daemon accepted from the app, the event socket included, as a dropped network would end them.
       const port = Number(new URL(daemon.url).port);
@@ -639,8 +647,8 @@ export async function run({ workspace, evidenceDir }) {
       if (accepted.length === 0)
         throw new Error('The daemon had no connection from the app to drop');
       const seen = await waitUi(
-        `(() => { const seen = globalThis.__acceptanceConnection; return seen.includes('已断开') && seen.at(-1) === '已连接' ? seen : false; })()`,
-        'the connection mark to go 已断开 and back to 已连接',
+        `(() => { const seen = globalThis.__acceptanceConnection; return seen.includes('已断开') && seen.at(-1) === null ? seen : false; })()`,
+        'the connection mark to show 已断开 and go away',
         {},
       );
       timings.connection_marks = seen;
