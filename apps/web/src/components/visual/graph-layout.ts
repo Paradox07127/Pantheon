@@ -2098,14 +2098,41 @@ function wrapAt(layout: GraphLayout, cuts: number[]): GraphLayout | undefined {
     : result;
 }
 
-/** Lays the graph out in one direction: the compact layout, or ELK's own where that is less tangled. */
-async function layoutOnce(spec: GraphSpec, direction: Direction, elk: ELK): Promise<GraphLayout> {
-  const [compact, layered] = await Promise.all([
-    compactLayout(spec, direction, elk),
-    layeredLayout(spec, direction, elk),
-  ]);
-  return tangle(layered) < tangle(compact) ? layered : compact;
+/**
+ * Lays the graph out in one direction: the compact layout, or ELK's own where that is less tangled;
+ * where its routes cross, the less tangled of that and the same with the nodes declared the other
+ * way round, when that crosses no more and fits `room` as well.
+ */
+async function layoutOnce(
+  spec: GraphSpec,
+  direction: Direction,
+  elk: ELK,
+  room: Point,
+): Promise<GraphLayout> {
+  const both = (nodes: GraphSpec['nodes']) =>
+    Promise.all([
+      compactLayout({ ...spec, nodes }, direction, elk),
+      layeredLayout({ ...spec, nodes }, direction, elk),
+    ]);
+  const [compact, layered] = await both(spec.nodes);
+  const first = tangle(layered) < tangle(compact) ? layered : compact;
+  const fits = (layout: GraphLayout) => fitZoom(layout, room) >= FLOOR;
+  if (spec.nodes.length > REORDER_UP_TO || crossings(first) === 0 || !fits(first)) return first;
+  // Declared the other way round, ELK orders the nodes across the flow anew.
+  const turned = (await both([...spec.nodes].reverse())).filter(
+    (layout) => fits(layout) && crossings(layout) <= crossings(first),
+  );
+  const best = turned.reduce(
+    (most, layout) => (tangle(layout) < tangle(most) ? layout : most),
+    first,
+  );
+  if (best === first) return first;
+  const byId = new Map(best.nodes.map((node) => [node.id, node]));
+  return { ...best, nodes: spec.nodes.map((node) => byId.get(node.id)!) };
 }
+
+/** Graphs of up to this many nodes that fit but cross are laid out a second time, reordered. */
+const REORDER_UP_TO = 20;
 
 /** Lays the graph out in one direction, without groups first, then moved to keep them apart. */
 async function compactLayout(
@@ -2195,15 +2222,15 @@ export async function layoutGraph(spec: GraphSpec, room: Point): Promise<GraphLa
     return near.reduce((best, layout) => (knot.get(layout)! < knot.get(best)! ? layout : best));
   };
   if (spec.direction) {
-    const given = await layoutOnce(spec, spec.direction, elk);
+    const given = await layoutOnce(spec, spec.direction, elk, room);
     if (fitZoom(given, room) >= FLOOR) return given;
-    const other = await layoutOnce(spec, spec.direction === 'LR' ? 'TB' : 'LR', elk);
+    const other = await layoutOnce(spec, spec.direction === 'LR' ? 'TB' : 'LR', elk, room);
     if (fitZoom(other, room) >= FLOOR) return other;
     return fittest([given, other]);
   }
   const [across, down] = await Promise.all([
-    layoutOnce(spec, 'LR', elk),
-    layoutOnce(spec, 'TB', elk),
+    layoutOnce(spec, 'LR', elk, room),
+    layoutOnce(spec, 'TB', elk, room),
   ]);
   const [a, d] = [fitZoom(across, room), fitZoom(down, room)];
   if (Math.max(a, d) < FLOOR) return fittest([across, down]);

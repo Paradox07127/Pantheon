@@ -955,8 +955,14 @@ describe('graph diagram', () => {
     ],
     ['a tool call through the MCP server', 0, fixture('mcp-tool-call'), [1200, 640]],
     ['the states of a board task', 3, fixture('board-task-states'), [1200, 640]],
+    [
+      'the states of a board task with its held states nested',
+      1,
+      fixture('board-task-lifecycle'),
+      [1200, 640],
+    ],
     ['a session change landing', 1, fixture('session-landing'), [1200, 640]],
-    ['the dependencies of a workspace', 5, fixture('workspace-dependencies'), [1200, 640]],
+    ['the dependencies of a workspace', 4, fixture('workspace-dependencies'), [1200, 640]],
   ] as const)(
     'lays %s out with no node over another, no edge through a node or a group label and no label over a node, a label or another route, crossing at most %i times',
     async (_, most, spec, [width, height]) => {

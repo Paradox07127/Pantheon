@@ -1,0 +1,255 @@
+{
+  "direction": "TB",
+  "groups": [
+    {
+      "id": "plan",
+      "label": "In the plan, before work"
+    },
+    {
+      "id": "work",
+      "label": "Being worked"
+    },
+    {
+      "id": "held",
+      "label": "Held: someone must act",
+      "parent": "work"
+    },
+    {
+      "id": "end",
+      "label": "Ends"
+    }
+  ],
+  "colors": {
+    "gray": "dropped from the plan",
+    "violet": "waits on a lead or user decision"
+  },
+  "nodes": [
+    {
+      "id": "proposed",
+      "label": "proposed",
+      "kind": "policy",
+      "color": "violet",
+      "sublabel": "board.plan.propose: pending proposal",
+      "detail": ["at most 8 pending per plan", "charter on: applied at once"],
+      "sources": ["file:packages/control/src/project-board.ts:1233"]
+    },
+    {
+      "id": "todo",
+      "label": "todo",
+      "group": "plan",
+      "kind": "service",
+      "status": "waiting",
+      "sublabel": "in the plan, no session yet",
+      "sources": ["file:packages/control/src/board-view.ts:509"]
+    },
+    {
+      "id": "upstream",
+      "label": "waiting_upstream",
+      "group": "plan",
+      "kind": "service",
+      "status": "waiting",
+      "sublabel": "a depends_on task is not merged",
+      "sources": ["file:packages/control/src/board-view.ts:509"]
+    },
+    {
+      "id": "claimed",
+      "label": "claimed",
+      "group": "work",
+      "kind": "service",
+      "sublabel": "session opened, turn not yet delivered",
+      "sources": ["file:packages/control/src/board-view.ts:505"]
+    },
+    {
+      "id": "running",
+      "label": "running",
+      "group": "work",
+      "kind": "service",
+      "status": "running",
+      "sublabel": "a turn of a task session is under way",
+      "sources": ["file:packages/control/src/board-view.ts:504"]
+    },
+    {
+      "id": "approval",
+      "label": "waiting_approval",
+      "group": "held",
+      "kind": "policy",
+      "color": "violet",
+      "sublabel": "permission request or workflow approval",
+      "sources": ["file:packages/control/src/board-view.ts:459"]
+    },
+    {
+      "id": "blocked",
+      "label": "blocked",
+      "group": "held",
+      "kind": "service",
+      "status": "blocked",
+      "sublabel": "session reconciling or merge blocked",
+      "sources": ["file:packages/control/src/board-view.ts:467"]
+    },
+    {
+      "id": "attention",
+      "label": "needs_attention",
+      "group": "held",
+      "kind": "service",
+      "status": "blocked",
+      "sublabel": "turns ended, worktree not ready to merge",
+      "sources": ["file:packages/control/src/board-view.ts:496"]
+    },
+    {
+      "id": "awaitmerge",
+      "label": "awaiting_merge",
+      "group": "work",
+      "kind": "service",
+      "sublabel": "clean worktree with commits, idle",
+      "sources": ["file:packages/control/src/board-view.ts:485"]
+    },
+    {
+      "id": "gating",
+      "label": "gating",
+      "group": "work",
+      "kind": "service",
+      "status": "running",
+      "sublabel": "merge running: rebase, gates, land",
+      "sources": ["file:packages/control/src/board-view.ts:468"]
+    },
+    {
+      "id": "awaitaccept",
+      "label": "awaiting_acceptance",
+      "group": "work",
+      "kind": "policy",
+      "color": "violet",
+      "sublabel": "done_when report: reported done",
+      "sources": ["file:packages/control/src/board-view.ts:476"]
+    },
+    {
+      "id": "merged",
+      "label": "merged",
+      "group": "end",
+      "kind": "service",
+      "status": "done",
+      "sublabel": "taskState done: all sessions merged or accepted",
+      "sources": ["file:packages/control/src/board-plan.ts:128"]
+    },
+    {
+      "id": "failed",
+      "label": "failed",
+      "group": "end",
+      "kind": "service",
+      "status": "failed",
+      "sublabel": "all sessions closed, one not merged",
+      "sources": ["file:packages/control/src/board-view.ts:508"]
+    },
+    {
+      "id": "rejected",
+      "label": "rejected / withdrawn",
+      "group": "end",
+      "kind": "service",
+      "color": "gray",
+      "sublabel": "proposal.resolve reject, or lead withdraws",
+      "sources": [
+        "file:packages/control/src/project-board.ts:1298",
+        "file:packages/control/src/project-board.ts:1335"
+      ]
+    },
+    {
+      "id": "removed",
+      "label": "removed",
+      "group": "end",
+      "kind": "service",
+      "color": "gray",
+      "sublabel": "lead drops it from the plan; generation retired",
+      "detail": ["possible from any state before merged"],
+      "sources": ["file:packages/control/src/project-board.ts:626"]
+    }
+  ],
+  "edges": [
+    {
+      "from": "proposed",
+      "to": "todo",
+      "style": "main",
+      "label": "user applies"
+    },
+    {
+      "from": "todo",
+      "to": "claimed",
+      "style": "main",
+      "label": "task.start or auto dispatch"
+    },
+    {
+      "from": "claimed",
+      "to": "running",
+      "style": "main",
+      "label": "turn delivered"
+    },
+    {
+      "from": "running",
+      "to": "awaitmerge",
+      "style": "main",
+      "label": "commits ready"
+    },
+    {
+      "from": "awaitmerge",
+      "to": "gating",
+      "style": "main",
+      "label": "merge starts"
+    },
+    {
+      "from": "gating",
+      "to": "merged",
+      "style": "main",
+      "label": "landed"
+    },
+    {
+      "from": "proposed",
+      "to": "rejected",
+      "label": "rejected or withdrawn"
+    },
+    {
+      "from": "todo",
+      "to": "upstream",
+      "label": "dependency open"
+    },
+    {
+      "from": "upstream",
+      "to": "claimed",
+      "label": "dependency merged"
+    },
+    {
+      "from": "running",
+      "to": "approval"
+    },
+    {
+      "from": "running",
+      "to": "blocked"
+    },
+    {
+      "from": "running",
+      "to": "attention"
+    },
+    {
+      "from": "gating",
+      "to": "blocked",
+      "label": "gate failed"
+    },
+    {
+      "from": "running",
+      "to": "awaitaccept",
+      "label": "report task"
+    },
+    {
+      "from": "awaitaccept",
+      "to": "merged",
+      "label": "lead task.accept"
+    },
+    {
+      "from": "blocked",
+      "to": "failed",
+      "label": "sessions closed unmerged"
+    },
+    {
+      "from": "todo",
+      "to": "removed",
+      "label": "removed from plan"
+    }
+  ]
+}
