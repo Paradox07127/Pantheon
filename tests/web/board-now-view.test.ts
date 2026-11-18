@@ -428,6 +428,34 @@ describe('project board bar', () => {
     expect(strips()).toBe(false);
   });
 
+  it('tells the needs-you strip the expanded chart hides it, and collapses the chart when the strip asks', () => {
+    const actions = { milestones: [], sessions: [], run: async () => null };
+    const asking = {
+      source: { table: 'sessions', id: 'lead-1', revision: 1 },
+      kind: 'lead.question',
+      request_id: 'question-1',
+      project_id: 'project-a',
+      session_id: 'lead-1',
+      status: 'pending',
+      created_at: NOW - 60_000,
+      reason: 'question',
+      actions: [],
+      unblocks: 0,
+    } as unknown as NonNullable<BoardModel['needs']>[number];
+    const model = board({ needs: [asking] });
+    const h = mount(() => BoardView(viewProps({ model, projectId: 'project-a', actions })));
+    const expand = () => named(h.value, 'MainView').props.expand;
+    const strip = () => named(h.value, 'ProjectNeeds').props;
+    expect(strip().hidden).toBe(false);
+    expand().onToggle();
+    h.render();
+    expect(strip().hidden).toBe(true);
+    strip().onShow();
+    h.render();
+    expect(expand().on).toBe(false);
+    expect(strip().hidden).toBe(false);
+  });
+
   it('lists what needs the user under the requirement bar and the since-you-left card, and nothing when nothing does', () => {
     const actions = { milestones: [], sessions: [], run: async () => null };
     const waiting = {

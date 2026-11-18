@@ -162,6 +162,8 @@ export function NeedsStrip({
   onOpenSession,
   stale,
   improvements,
+  hidden,
+  onShow,
 }: {
   model: BoardModel;
   sessions: readonly SnapshotSession[];
@@ -170,6 +172,9 @@ export function NeedsStrip({
   stale?: boolean;
   /** The read of `useNeedImprovements`. */
   improvements?: readonly Improvement[] | null;
+  /** Something else covers the strip; `onShow` uncovers it. */
+  hidden?: boolean;
+  onShow?: () => void;
 }) {
   // useKept compares by identity.
   const listed = useMemo(() => boardNeeds(model), [model.needs]);
@@ -189,6 +194,7 @@ export function NeedsStrip({
   useEffect(() => {
     const at = asked === null ? -1 : (needs?.findIndex((item) => needsKey(item) === asked) ?? -1);
     if (at < 0) return;
+    if (hidden) return onShow?.();
     if (at >= FOLDED && !all) return setAll(true);
     const key = needKey(needs![at]!);
     setCurrent(key);
@@ -196,7 +202,7 @@ export function NeedsStrip({
     card?.scrollIntoView({ block: 'nearest' });
     (primaries.current.get(key) ?? card?.querySelector('button'))?.focus();
     useShell.setState({ askedNeed: null });
-  }, [asked, shown]);
+  }, [asked, shown, hidden]);
   const on = needs?.some((item) => needKey(item) === current)
     ? current
     : needs?.[0] && needKey(needs[0]);

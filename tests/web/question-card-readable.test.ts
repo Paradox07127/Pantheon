@@ -15,6 +15,11 @@ vi.mock('@/data/intro-read', () => ({ useIntroRead: () => ({ read: null }) }));
 vi.mock('@/data/app-settings', () => ({
   useAppSettings: () => ({ settings: { baseline_rounds: 3 } }),
 }));
+vi.mock('@/components/Clip', async (actual) => {
+  const { Clip } = (await actual()) as typeof import('@/components/Clip');
+  return { Clip: vi.fn(Clip) };
+});
+import { Clip } from '@/components/Clip';
 import { Markdown } from '@/components/Markdown';
 import { QuestionCard, type CardQuestion } from '@/components/QuestionCard';
 import { useDrafts } from '@/data/drafts';
@@ -111,6 +116,33 @@ it('draws a picked option of a multiple choice question as a ticked box, a picke
 it('marks only the questions still unanswered as open', () => {
   useDrafts.getState().answer('d', { picked: [[], ['GitHub issues']], typed: ['', ''] });
   expect(card([smoke, track]).match(/data-open=/g)).toHaveLength(1);
+});
+
+const LONG = Array.from({ length: 40 }, (_, n) => `Step ${n + 1} of the release checklist.`).join(
+  ' ',
+);
+it.each([
+  ['a list option', { ...track, options: [{ label: 'Pantheon board', description: LONG }] }],
+  [
+    'an option with a picture',
+    { ...direction, options: [{ ...direction.options[0]!, description: LONG }] },
+  ],
+])('cuts the description of %s to six lines outside the option, which it describes', (_, q) => {
+  const html = card([q as CardQuestion]);
+  const option = slice(html, 'role="radio"', '</button>');
+  expect(option).not.toContain('<button');
+  expect(option).not.toContain(LONG);
+  const name = option
+    .slice(option.indexOf('>') + 1)
+    .replace(/<span[^>]*aria-hidden="true"[^>]*>.*?<\/span>/g, '')
+    .replace(/<[^>]+>/g, '');
+  expect(name).toBe(q.options[0]!.label);
+  const about = option.match(/aria-describedby="([^"]+)"/)?.[1];
+  expect(about).toBeTruthy();
+  expect(slice(html, `id="${about}"`, '</')).toContain(LONG);
+  expect(vi.mocked(Clip).mock.calls.map(([props]) => props)).toContainEqual(
+    expect.objectContaining({ id: about, text: LONG, lines: 6 }),
+  );
 });
 
 const session = {

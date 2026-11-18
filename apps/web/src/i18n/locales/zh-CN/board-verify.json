@@ -1,5 +1,6 @@
 {
   "board.verify.badge.running": "验证中 {elapsed}",
+  "board.verify.badge.runningNoTime": "验证中",
   "board.verify.badge.passed": "已验证",
   "board.verify.badge.failed": "验证失败",
   "board.verify.badge.inconclusive": "没有结论",

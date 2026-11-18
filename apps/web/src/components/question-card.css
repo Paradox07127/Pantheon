@@ -70,11 +70,20 @@
 .qc-opts > * + * {
   border-top: var(--hair) solid var(--bd2);
 }
+/* An option: its button, then its description beside it, so the description's own button is not inside. */
+.qc-o {
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.qc-o:has(> .qc-opt:hover) {
+  background: var(--sf2);
+}
+.qc-o:has(> .qc-opt[aria-checked='true']) {
+  background: var(--sel);
+}
 .qc-opt {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
   column-gap: var(--sp-2);
-  row-gap: 2px;
   align-items: center;
   width: 100%;
   padding: var(--sp-2);
@@ -83,13 +92,9 @@
   color: var(--tx);
   font: inherit;
   text-align: left;
-  transition: background-color var(--dur-1) var(--ease-std);
 }
-.qc-opt:hover {
-  background: var(--sf2);
-}
-.qc-opt[aria-checked='true'] {
-  background: var(--sel);
+.qc-o:has(> .qc-d) > .qc-opt {
+  padding-bottom: var(--sp-1);
 }
 .qc-opt:focus-visible {
   outline: 1.5px solid var(--focus-ring);
@@ -138,7 +143,10 @@
   grid-row: 1;
 }
 .qc-d {
-  grid-column: 2 / 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0 var(--sp-2) var(--sp-2) calc(20px + 2 * var(--sp-2));
   color: var(--mu);
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);
@@ -224,32 +232,42 @@
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--sp-2);
 }
-.qc-dc {
+/* A card option: the button is its head row and reaches the card's top edge; the description and the picture follow outside it. */
+.qc-dw {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
-  padding: var(--sp-3);
+  padding: 0 var(--sp-3) var(--sp-3);
   border: var(--hair) solid var(--bd);
   border-radius: var(--r-sm);
-  background: none;
-  color: var(--tx);
-  font: inherit;
-  text-align: left;
   transition:
     background-color var(--dur-1) var(--ease-std),
     border-color var(--dur-1) var(--ease-std);
 }
-.qc-dc:hover {
+.qc-dw:has(> .qc-dc:hover) {
   background: var(--sf2);
 }
-.qc-dc[aria-checked='true'] {
+.qc-dw:has(> .qc-dc[aria-checked='true']) {
   border-color: var(--bd3);
   background: var(--sel);
 }
-.qc-dc:focus-visible {
+.qc-dw:has(> .qc-dc:focus-visible) {
   outline: 1.5px solid var(--focus-ring);
   outline-offset: -1.5px;
+}
+.qc-dc {
+  min-width: 0;
+  margin: 0 calc(-1 * var(--sp-3));
+  padding: var(--sp-3) var(--sp-3) 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+}
+.qc-dc:focus-visible {
+  outline: 0;
 }
 .qc-dc[aria-checked='true'] .qc-k {
   border-color: transparent;
@@ -266,6 +284,9 @@
   margin-left: auto;
 }
 .qc-dd {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   color: var(--mu);
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);

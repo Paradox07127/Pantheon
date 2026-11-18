@@ -359,6 +359,37 @@ describe('cards for what needs the user', () => {
     expect(cards()[1].props.selected).toBe(true);
   });
 
+  it('uncovers a strip the expanded chart hides before it jumps to the asked row, and not for a row it lacks', () => {
+    const needs = [{ ...leadQuestion, project_id: 'beta', unblocks: 0 }];
+    let hidden = true;
+    const onShow = vi.fn(() => {
+      hidden = false;
+    });
+    const h = mount(() =>
+      NeedsStrip({
+        model: { now: NOW, needs } as never,
+        sessions: [],
+        run: async () => null,
+        onOpenSession: () => {},
+        hidden,
+        onShow,
+      }),
+    );
+    const answer = { focus: vi.fn() };
+    const card = { scrollIntoView: vi.fn(), querySelector: vi.fn(() => answer) };
+    find(h.value, (n) => n.type === 'ul').props.ref.current = { children: [card] };
+    useShell.setState({ askedNeed: 'other-lead:question-1' });
+    h.render();
+    expect(onShow).not.toHaveBeenCalled();
+    useShell.setState({ askedNeed: 'beta-lead:question-1' });
+    h.render();
+    expect(onShow).toHaveBeenCalledTimes(1);
+    expect(answer.focus).not.toHaveBeenCalled();
+    h.render();
+    expect(answer.focus).toHaveBeenCalled();
+    expect(useShell.getState().askedNeed).toBeNull();
+  });
+
   it("gives no card for the session the user is looking at, nor for other needs, but one for a lead's question, which its thread does not answer", () => {
     const looking = {
       sessionId: 'beta-login',

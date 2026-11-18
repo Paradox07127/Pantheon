@@ -131,6 +131,13 @@
 .bd-now-top[hidden] {
   display: none;
 }
+/* A question being answered in the needs-you strip takes all the height the chart's least leaves. */
+.bd-now-body[data-graph] > .bd-now-top:has(.bd-needs .qc) {
+  max-height: calc(100% - 240px);
+}
+.bd-now-body[data-graph]:has(> .bd-now-top .bd-needs .qc) .bd-cv {
+  min-height: 240px;
+}
 /* The now view's canvas: the height the bar and the strips leave. */
 .bd-cv {
   display: flex;
@@ -151,6 +158,12 @@
 /* With no nodes to draw, the canvas keeps the height of what it shows and the strips take the rest. */
 .bd-now-body:not([data-graph]) > .bd-now-top {
   max-height: none;
+}
+/* With no chart to scroll past them, the notice cards' room is left at the strips' end. */
+.bd-now-body:not([data-graph]) > .bd-now-top::after {
+  content: '';
+  flex: none;
+  height: var(--toast-reserve);
 }
 .bd-now-body:not([data-graph]) > .bd-em-off > .bd-em-canvas > .bd-cv {
   flex: none;

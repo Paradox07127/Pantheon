@@ -13,10 +13,12 @@ interface ClipProps {
   lines?: number;
   className?: string;
   as?: 'span' | 'div';
+  /** The text's own id, for a control it describes. */
+  id?: string;
 }
 
 /** Text cut to its lines, with the rest in a tooltip (one line) or behind a show-more button. */
-export function Clip({ text, lines = 1, className, as: Tag = 'span' }: ClipProps) {
+export function Clip({ text, lines = 1, className, as: Tag = 'span', id }: ClipProps) {
   const [el, setEl] = useState<HTMLElement | null>(null);
   const [cut, setCut] = useState(false);
   const [open, setOpen] = useState(false);
@@ -52,6 +54,7 @@ export function Clip({ text, lines = 1, className, as: Tag = 'span' }: ClipProps
   const body = (
     <Tag
       ref={setEl}
+      id={id}
       className={className ? `${base} ${className}` : base}
       data-clip={cut ? 'cut' : ''}
       tabIndex={one && cut && !control ? 0 : undefined}

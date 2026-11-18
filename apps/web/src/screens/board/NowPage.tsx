@@ -152,6 +152,8 @@ export function NowPage({
               onOpenSession={onOpenSession}
               stale={stale}
               drawer={selectedIn('flow') !== null}
+              hidden={full}
+              onShow={onGraphFull}
             />
           )}
           {model && shown && (

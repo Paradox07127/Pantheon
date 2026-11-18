@@ -461,14 +461,17 @@ describe('since you left card', () => {
     ],
   };
   const WHY = 'The failing test pins a display format the criteria do not ask for.';
-  const accepted = (verified: boolean): DecisionForUser => ({
+  const accepted = (
+    verified: boolean,
+    state: 'failed' | 'running' | 'pending' = 'failed',
+  ): DecisionForUser => ({
     kind: 'power_used',
     at: NOW - 120_000,
     power: 'accept_milestone',
     subject: 'ms-refund-ui',
     session_id: 'lead-1',
     reason: WHY,
-    ...(verified ? {} : { verification: { id: 'verification-1', state: 'failed' as const } }),
+    ...(verified ? {} : { verification: { id: 'verification-1', state } }),
   });
   const withMilestone = {
     ...model,
@@ -509,6 +512,29 @@ describe('since you left card', () => {
     expect(tell.props.lead).toBe(sessions[1]);
     expect(tell.props.draft).toContain('Refund UI');
   });
+
+  it.each(['running', 'pending'] as const)(
+    'shows a verification still %s at the acceptance without a time, as the decision has none',
+    async (state) => {
+      serve(decidedBrief, {}, [accepted(false, state)]);
+      const h = await card('project-brief-l', vi.fn(), withMilestone);
+      const entry = find(
+        openCell(h, zhf('board.brief.decidedCount', { count: 4 })),
+        (n) =>
+          n.props.role === 'group' &&
+          n.props['aria-label'] ===
+            zhf('board.brief.leadAccepted', {
+              lead: 'Refunds rollout lead',
+              milestone: 'Refund UI',
+            }),
+      );
+      expect(
+        nodes(entry).some(
+          (n) => typeof n.type === 'string' && text(n) === zh('board.verify.badge.runningNoTime'),
+        ),
+      ).toBe(true);
+    },
+  );
 
   it('keeps the decided popover to its counts when the lead accepted only verified milestones', async () => {
     serve(decidedBrief, {}, [accepted(true)]);

@@ -369,12 +369,15 @@ export function BriefCard({
                 </span>
                 {/* The decision keeps the state the run had then, not when the run started. */}
                 <span className="bf-brief-n">
-                  {verifyText(
-                    { started_at: item.at, ...item.verification } as Parameters<
-                      typeof verifyText
-                    >[0],
-                    item.at,
-                  )}
+                  {/* The record has no start time to count a running verification from. */}
+                  {item.verification.state === 'pending' || item.verification.state === 'running'
+                    ? t({ id: 'board.verify.badge.runningNoTime', defaultMessage: 'Verifying' })
+                    : verifyText(
+                        { started_at: item.at, ...item.verification } as Parameters<
+                          typeof verifyText
+                        >[0],
+                        item.at,
+                      )}
                 </span>
                 <Clip as="div" lines={3} className="bf-brief-why" text={item.reason} />
                 {run && (

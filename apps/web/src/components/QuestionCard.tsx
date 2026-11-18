@@ -115,6 +115,9 @@ export function QuestionCard(props: QuestionCardProps) {
   const blank: Answers = { picked: questions.map(() => []), typed: questions.map(() => '') };
   // Unfinished answers outlive the card.
   const { picked, typed, decided = [] } = useDrafts((s) => s.answers[draft]) ?? blank;
+  // An option's description sits beside its button, so its "Show more" is no button in a button;
+  // a card shown twice holds the same text under the same id.
+  const about = `qc-${draft}`;
   const change = (next: (now: Answers) => Partial<Answers>) => {
     const now = useDrafts.getState().answers[draft] ?? blank;
     useDrafts.getState().answer(draft, { ...now, ...next(now) });
@@ -215,22 +218,28 @@ export function QuestionCard(props: QuestionCardProps) {
           <>
             <div className="qc-dir" role={multi ? 'group' : 'radiogroup'} aria-label={q.question}>
               {q.options.map((o, k) => (
-                <button
-                  key={o.label}
-                  type="button"
-                  className="qc-dc"
-                  role={role}
-                  aria-checked={picked[i]?.includes(o.label) ?? false}
-                  onClick={() => pick(i, o.label, multi)}
-                >
-                  <span className="qc-dh">
-                    {key(k, picked[i]?.includes(o.label))}
-                    <span className="qc-l">{o.label}</span>
-                    {recommended(q, o.label, 'chip qc-drec')}
-                  </span>
-                  {o.description && <span className="qc-dd">{o.description}</span>}
+                <div key={o.label} className="qc-dw">
+                  <button
+                    type="button"
+                    className="qc-dc"
+                    role={role}
+                    aria-checked={picked[i]?.includes(o.label) ?? false}
+                    aria-describedby={o.description ? `${about}-${i}-${k}` : undefined}
+                    onClick={() => pick(i, o.label, multi)}
+                  >
+                    <span className="qc-dh">
+                      {key(k, picked[i]?.includes(o.label))}
+                      <span className="qc-l">{o.label}</span>
+                      {recommended(q, o.label, 'chip qc-drec')}
+                    </span>
+                  </button>
+                  {o.description && (
+                    <div className="qc-dd">
+                      <Clip id={`${about}-${i}-${k}`} text={o.description} lines={6} />
+                    </div>
+                  )}
                   {o.preview && optionPreview(o.preview)}
-                </button>
+                </div>
               ))}
             </div>
             {other && <div className="qc-opts">{other}</div>}
@@ -238,19 +247,25 @@ export function QuestionCard(props: QuestionCardProps) {
         ) : q.options.length > 0 ? (
           <div className="qc-opts" role={multi ? 'group' : 'radiogroup'} aria-label={q.question}>
             {q.options.map((o, k) => (
-              <button
-                key={o.label}
-                type="button"
-                className="qc-opt"
-                role={role}
-                aria-checked={picked[i]?.includes(o.label) ?? false}
-                onClick={() => pick(i, o.label, multi)}
-              >
-                {key(k, picked[i]?.includes(o.label))}
-                <span className="qc-l">{o.label}</span>
-                {recommended(q, o.label, 'chip qc-rec')}
-                {o.description && <span className="qc-d">{o.description}</span>}
-              </button>
+              <div key={o.label} className="qc-o">
+                <button
+                  type="button"
+                  className="qc-opt"
+                  role={role}
+                  aria-checked={picked[i]?.includes(o.label) ?? false}
+                  aria-describedby={o.description ? `${about}-${i}-${k}` : undefined}
+                  onClick={() => pick(i, o.label, multi)}
+                >
+                  {key(k, picked[i]?.includes(o.label))}
+                  <span className="qc-l">{o.label}</span>
+                  {recommended(q, o.label, 'chip qc-rec')}
+                </button>
+                {o.description && (
+                  <div className="qc-d">
+                    <Clip id={`${about}-${i}-${k}`} text={o.description} lines={6} />
+                  </div>
+                )}
+              </div>
             ))}
             {other}
           </div>
