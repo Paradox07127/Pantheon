@@ -127,12 +127,12 @@ function planProblem(input: PlanInput): string | null {
   );
   const assumption = repeated(assumptionIds);
   if (assumption) return `assumptions: assumption id ${assumption} is repeated`;
-  for (const assumption of input.assumptions) {
+  for (const [index, assumption] of input.assumptions.entries()) {
+    const named = assumption.id ?? `${index + 1} (${assumption.text.slice(0, 60)})`;
     const unknown = assumption.affects?.find((taskId) => !tasks.has(taskId));
-    if (unknown)
-      return `assumptions: assumption ${assumption.id ?? assumption.text} affects unknown task ${unknown}`;
+    if (unknown) return `assumptions: assumption ${named} affects unknown task ${unknown}`;
     if (assumption.milestone && !milestones.has(assumption.milestone))
-      return `assumptions: assumption ${assumption.id ?? assumption.text} names unknown milestone ${assumption.milestone}`;
+      return `assumptions: assumption ${named} names unknown milestone ${assumption.milestone}`;
   }
   for (const lane of input.lanes) {
     const stop = lane.stops
@@ -877,22 +877,20 @@ function applyOps(plan: PlanInput, ops: PatchOp[]): PlanInput {
   // References to the tasks and milestones the ops removed go with them.
   const taskIds = new Set(tasks.map((task) => task.id)),
     milestoneIds = new Set(milestones.map((milestone) => milestone.id));
-  const lanes = plan.lanes.map((lane) =>
-    lane.stops
-      ? {
-          ...lane,
-          stops: lane.stops.filter(
-            (stop) =>
-              !stop.startsWith('milestone:') || milestoneIds.has(stop.slice('milestone:'.length)),
-          ),
-        }
-      : lane,
-  );
-  const assumptions = plan.assumptions.map(({ affects, milestone, ...assumption }) => ({
-    ...assumption,
-    ...(affects ? { affects: affects.filter((taskId) => taskIds.has(taskId)) } : {}),
-    ...(milestone && milestoneIds.has(milestone) ? { milestone } : {}),
-  }));
+  const lanes = plan.lanes.map(({ stops, ...lane }) => {
+    const kept = stops?.filter(
+      (stop) => !stop.startsWith('milestone:') || milestoneIds.has(stop.slice('milestone:'.length)),
+    );
+    return kept?.length ? { ...lane, stops: kept } : lane;
+  });
+  const assumptions = plan.assumptions.map(({ affects, milestone, ...assumption }) => {
+    const kept = affects?.filter((taskId) => taskIds.has(taskId));
+    return {
+      ...assumption,
+      ...(kept?.length ? { affects: kept } : {}),
+      ...(milestone && milestoneIds.has(milestone) ? { milestone } : {}),
+    };
+  });
   return { ...plan, lanes, tasks, milestones, iterations, order_lock, assumptions };
 }
 

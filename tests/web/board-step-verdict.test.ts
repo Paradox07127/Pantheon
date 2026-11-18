@@ -266,6 +266,19 @@ describe('the workflow step in the task drawer', () => {
     expect(imgNames(row)).toEqual([zh('board.task.step.unchecked')]);
   });
 
+  it.each([
+    ['passed', 'board.task.step.passed'],
+    ['failed', 'board.task.step.failed'],
+  ] as const)('keeps the section of a step counted as %s without a verdict', (state, chip) => {
+    const shown = section([stepRun({ state, expects: 'verdict' })])!;
+    expect(heading(shown.value)).toBe(zh('board.task.drawer.workflowStep'));
+    const all = text(shown.value);
+    expect(all).toContain('Check the export');
+    expect(all).toContain(zh(chip));
+    expect(all).not.toContain(zh('board.task.step.noVerdictLine'));
+    expect(buttons(shown.value)).toEqual([]);
+  });
+
   it('shows no section for a step that asks for no verdict and has none', () => {
     expect(section([stepRun({ kind: 'command', state: 'passed' })])).toBeUndefined();
     expect(

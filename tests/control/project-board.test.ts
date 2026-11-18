@@ -271,6 +271,16 @@ it.each([
     'assumptions: assumption csv affects unknown task search',
   ],
   [
+    'an assumption without an id that affects an unknown task',
+    {
+      assumptions: [
+        { text: 'Exports are CSV only.' },
+        { text: `Exports stay small${' x'.repeat(141)}`, affects: ['search'] },
+      ],
+    },
+    `assumptions: assumption 2 (Exports stay small${' x'.repeat(21)}) affects unknown task search`,
+  ],
+  [
     'an assumption that names an unknown milestone',
     { assumptions: [{ text: 'Exports are CSV only.', id: 'csv', milestone: 'm9' }] },
     'assumptions: assumption csv names unknown milestone m9',

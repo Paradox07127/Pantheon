@@ -3751,6 +3751,13 @@ it('copies the verdict of a step run and the reviewers of its review into the ta
   const { session_id: _, ...shown } = verdict;
   expect(runs.find((run) => run.id === 'check')!.verdict).toEqual(shown);
   expect(runs.find((run) => run.id === 'stale')).not.toHaveProperty('verdict');
+  expect(runs.map((run) => [run.id, run.expects])).toEqual([
+    ['check', 'verdict'],
+    ['stale', 'verdict'],
+    ['review', undefined],
+    ['pair', undefined],
+  ]);
+  expect(runs.find((run) => run.id === 'review')).not.toHaveProperty('expects');
   expect(runs.find((run) => run.id === 'review')!.reviewers).toEqual([
     { runtime: 'claude', verdict: 'pass', summary: 'Columns match.' },
     { runtime: 'codex' },

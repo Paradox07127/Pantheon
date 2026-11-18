@@ -556,10 +556,14 @@ const STEP_CHIP: Partial<Record<StepRunRow['state'], { dot: string; label: () =>
   },
 };
 
-/** The task's newest step run that is not skipped, when it has a verdict, lacks one it asks for, or has reviewers. */
+/** The task's newest step run that is not skipped, when it has a verdict, asks for one, or has reviewers. */
 export function shownStepRun(task: Pick<Task, 'step_runs'>): StepRunRow | undefined {
   const run = task.step_runs?.filter((r) => r.state !== 'skipped').at(-1);
-  return run && (run.verdict || run.state === 'inconclusive' || run.reviewers?.length)
+  return run &&
+    (run.verdict ||
+      run.expects === 'verdict' ||
+      run.state === 'inconclusive' ||
+      run.reviewers?.length)
     ? run
     : undefined;
 }

@@ -1730,6 +1730,9 @@ export function boardView(
                 workflow_id: run.workflow_id ?? projectId,
                 title: run.step.title,
                 kind: run.step.kind.type,
+                ...(run.step.kind.type === 'prompt' && run.step.kind.expects === 'verdict'
+                  ? { expects: 'verdict' as const }
+                  : {}),
                 state: run.state as Exclude<StepRun['state'], 'retired'>,
                 ...(run.reason === undefined ? {} : { reason: run.reason }),
                 ...(run.session_id === undefined ? {} : { session_id: run.session_id }),

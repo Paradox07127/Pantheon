@@ -544,7 +544,8 @@ const partSelector = z.union([z.number().int().min(1).max(4), z.string().min(1)]
 const boardNote = z.strictObject({
   text: boardText.describe('The note, at most 400 characters.'),
 });
-const planId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/);
+const planIdPattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
+const planId = z.string().regex(planIdPattern);
 const RECORDED_ONLY = 'Recorded only; Pantheon does not act on it yet.';
 const planAssumption = z.strictObject({
   text: boardText.describe('The decision, at most 400 characters.'),
@@ -1471,7 +1472,7 @@ export const boardPlanInputSchema = z.strictObject({
             z
               .union([
                 z.literal('plan'),
-                z.string().regex(/^milestone:[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/),
+                z.string().regex(new RegExp(`^milestone:${planIdPattern.source.slice(1)}`)),
               ])
               .describe('`plan`, or `milestone:` and the id of a milestone of this plan.'),
           )
@@ -4145,6 +4146,8 @@ export interface BoardModel {
       created_at: number;
       /** Absent until the run passed, failed or was rejected. */
       finished_at?: number;
+      /** verdict: the step passes only on a verdict the session hands in; absent otherwise. */
+      expects?: 'verdict';
       /** The verdict the session handed in for the run's current turn; absent without one. */
       verdict?: Omit<NonNullable<StepRun['verdict']>, 'session_id'>;
       /** On a review step that started its review: each reviewer runtime and the verdict it handed in, if any. */

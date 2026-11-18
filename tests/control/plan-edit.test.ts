@@ -354,6 +354,23 @@ it("drops a milestone that leaves with its last task from lane stops and an assu
   ).toBeDefined();
 });
 
+it('stores no stops and no affects once an edit removes every milestone and task they name', async () => {
+  const f = await setup();
+  const lead = leadOf(f);
+  writeRecordedPlan(f, lead, {
+    lanes: [{ id: 'core', title: 'Core', stops: ['milestone:release'] }],
+    milestones: [
+      { id: 'release', title: 'Release', criteria: ['Exports download'], tasks: ['ui'] },
+    ],
+    assumptions: [{ text: 'Exports are CSV only.', id: 'csv', affects: ['ui'] }],
+  });
+  expect(edit(f, user, lead, [{ type: 'remove_task', task_id: 'ui' }])).toMatchObject({
+    applied: true,
+  });
+  expect(planOf(f, lead).lanes).toStrictEqual([{ id: 'core', title: 'Core' }]);
+  expect(planOf(f, lead).assumptions).toStrictEqual([{ text: 'Exports are CSV only.', id: 'csv' }]);
+});
+
 it('takes a removed task out of the dependencies of the tasks after it', async () => {
   const f = await setup();
   const lead = leadOf(f);

@@ -27,6 +27,7 @@ import { listText } from '../lib/list-text';
 import {
   needActions,
   needCommand,
+  noVerdictKind,
   type NeedAction,
   type NeedItem,
 } from '../screens/board/frame-model';
@@ -283,7 +284,7 @@ export function NeedsPopover({
     const card = item.kind === 'lead.question' ? needsKey(item) : null;
     // An agent proposal is decided on its card in the proposing conversation.
     const proposal = item.kind === 'agent.proposal' ? item.agent_proposal : undefined;
-    const kind = decisionText(item.decision);
+    const kind = noVerdictKind(item as NeedItem) ?? decisionText(item.decision);
     const named = session && board ? sessionTitle(session, board) : undefined;
     const row: ListRow = {
       key,
