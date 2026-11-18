@@ -119,6 +119,25 @@ describe('needs-you list', () => {
     expect(text(groups(h.value)[1])).toContain(reasonText('session_failed'));
   });
 
+  it('lists two tasks of one plan that wait on a stuck upstream as two rows of their own', () => {
+    const waiting = (taskId: string) =>
+      item({
+        source: { table: 'board_plans', id: 'lead-1', revision: 2 },
+        kind: 'session.failed',
+        session_id: 'lead-1',
+        task_id: `lead-1:${taskId}`,
+        status: 'queued',
+        reason: 'task_upstream_stuck',
+        upstream: { task_id: 'lead-1:schema', stuck: 'stopped' },
+        actions: [],
+      });
+    const h = mount(() => NeedsPopover({ items: [waiting('api'), waiting('client')], trigger }));
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    const rows = nodes(groups(h.value)[0]).filter((n) => n.type === 'li');
+    expect(new Set(rows.map((n) => n.key)).size).toBe(2);
+  });
+
   it('puts the item that blocks the most tasks first, before the longer waits', () => {
     const h = mount(() =>
       NeedsPopover({

@@ -17,7 +17,14 @@ import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { useCurrentProject } from '../data/current-project';
 import { useDecisionsToday } from '../data/decisions-for-user';
-import { ageText, failureText, needReasonText, useNow, type NeedsYouItem } from '../data/needs-you';
+import {
+  ageText,
+  failureText,
+  needReasonText,
+  needRowKey,
+  useNow,
+  type NeedsYouItem,
+} from '../data/needs-you';
 import { focusRequest } from '../data/focus-request';
 import { needsKey } from '../data/notice-tiers';
 import { visibleProjects } from '../data/projects';
@@ -279,7 +286,7 @@ export function NeedsPopover({
     const sessionId = itemSession(item);
     const session = sessionId ? board?.sessions.find((s) => s.id === sessionId) : undefined;
     const reason = needReasonText(item);
-    const key = `${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}`;
+    const key = needRowKey(item);
     const failed = answers[key];
     // A lead's question is answered on its card, which the lead's thread does not show.
     const card = item.kind === 'lead.question' ? needsKey(item) : null;

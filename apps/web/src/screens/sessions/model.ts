@@ -56,6 +56,7 @@ export {
   turnStatusText,
   itemId,
   threadIds,
+  toldItem,
   NO_ARRIVALS,
   arrivals,
   messageCommand,

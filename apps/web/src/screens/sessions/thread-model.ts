@@ -14,7 +14,7 @@ import { reasonText } from '../../data/needs-you';
 import { listText } from '../../lib/list-text';
 import { durationText } from '../../lib/time-text';
 import type { DaemonEvent } from '../../data/sync';
-import { subagentCall, toolLabel } from '../../data/tool-calls';
+import { pantheonTool, subagentCall, toolLabel } from '../../data/tool-calls';
 import {
   isQuietEvent,
   type SessionTurn,
@@ -724,12 +724,22 @@ export function itemId(owner: string, items: readonly TranscriptItem[], index: n
   return `${item.kind}:${index === 0 ? owner : itemId(owner, items, index - 1)}`;
 }
 
+/** A tell_user call as the text it told the user, which reads as the agent's reply; any other item as it is. */
+export function toldItem(item: TranscriptItem): TranscriptItem {
+  if (item.kind !== 'tool' || pantheonTool(item.name) !== 'tell_user') return item;
+  const told = (item.input as { text?: unknown } | null)?.text;
+  return typeof told === 'string' ? { kind: 'text', text: told } : item;
+}
+
 /** The ids of everything the thread shows: turns, their items, loose items and waiting cards. */
 export function threadIds(transcript: Transcript, pending: readonly PendingPermission[]): string[] {
   const own = (owner: string, items: readonly TranscriptItem[]) =>
     items.map((_, i) => itemId(owner, items, i));
   return [
-    ...transcript.turns.flatMap((t) => [`turn:${t.turn.id}`, ...own(t.turn.id, t.items)]),
+    ...transcript.turns.flatMap((t) => [
+      `turn:${t.turn.id}`,
+      ...own(t.turn.id, t.items.map(toldItem)),
+    ]),
     ...own('loose', transcript.loose.items),
     ...pending.map((p) => `approval:${p.id}`),
   ];

@@ -45,6 +45,7 @@ import { runtimeName } from '@/components/RuntimeGlyph';
 import { buildTranscript } from '@/data/transcript';
 import { SessionListRow, SessionRowButton } from '@/screens/sessions/SessionRow';
 import { ThreadTurn } from '@/screens/sessions/Thread';
+import { Items } from '@/screens/sessions/items';
 import { WorkerStrip, workerCountsText } from '@/screens/sessions/WorkerStrip';
 
 const AT = '2026-11-16T10:00:00.000Z';
@@ -947,6 +948,8 @@ describe('resident conversation', () => {
       .filter((item) => !folded.includes(item));
     expect(folded.map((item: any) => item.name)).toEqual(['Bash']);
     expect(shown).toContainEqual({ kind: 'text', text: 'The runtime filter merged.' });
+    const drawn = named(h.value, 'Items').flatMap((n) => nodes(host(() => Items(n.props)).value));
+    expect(drawn.map((n) => n.props.text)).toContain('The runtime filter merged.');
   });
 
   it('shows the user’s own turn as it is, without folding it', () => {

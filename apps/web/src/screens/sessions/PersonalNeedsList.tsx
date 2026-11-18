@@ -6,7 +6,7 @@ import { ProjectMonogram } from '../../components/ProjectMonogram';
 import { blocksText, decisionText } from '../../data/attention';
 import { useBoard } from '../../data/board';
 import { focusRequest } from '../../data/focus-request';
-import { ageText, needReasonText, type NeedsYouItem } from '../../data/needs-you';
+import { ageText, needReasonText, needRowKey, type NeedsYouItem } from '../../data/needs-you';
 import { needsKey } from '../../data/notice-tiers';
 import { crossProjectWaiting, type PersonalCall } from '../../data/personal-agent';
 import { visibleProjects } from '../../data/projects';
@@ -90,7 +90,7 @@ function NeedsList({ items: read, at }: { items: readonly NeedsYouItem[]; at: nu
                 const kind = noVerdictKind(item as NeedItem) ?? decisionText(item.decision);
                 return (
                   <button
-                    key={`${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}`}
+                    key={needRowKey(item)}
                     type="button"
                     className="pn-r"
                     onClick={() => openNeed(item)}

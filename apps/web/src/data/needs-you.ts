@@ -633,6 +633,12 @@ function knownReason(code: string): string | null {
   }
 }
 
+/** A key unique to the item in a list of needs; a plan's items share their source and differ by request or task. */
+export const needRowKey = (
+  item: Pick<NeedsYouItem, 'source' | 'reason' | 'request_id' | 'task_id'>,
+): string =>
+  `${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}:${item.task_id ?? ''}`;
+
 const GIT_FAILED = 'git_failed:';
 
 /** Interface text for an error code, disabled reason or item reason; unknown codes show as they are. */
