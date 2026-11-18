@@ -431,3 +431,38 @@ a.bf-brief-lk:hover {
   color: var(--mu);
   font-size: var(--fs-xs);
 }
+/* The side model's paragraph across the card, under the cells, so nothing in the card moves when it lands. */
+.bf-brief > .bf-brief-p {
+  grid-column: 1 / -1;
+  gap: var(--sp-2);
+}
+.bf-brief-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.bf-brief-who > svg.lucide {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.bf-brief-prose {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.bf-brief-ref {
+  color: var(--tx);
+  text-decoration: underline;
+  text-decoration-color: var(--bd3);
+  text-underline-offset: 3px;
+}
+.bf-brief-ref:hover {
+  text-decoration-color: var(--tx);
+}

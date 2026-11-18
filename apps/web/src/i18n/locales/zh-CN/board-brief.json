@@ -15,5 +15,6 @@
   "board.brief.assumptions": "新假设",
   "board.brief.assumptionsCount": "{count, plural, other {# 条新假设}}",
   "board.brief.proposals": "智能体提议",
-  "board.brief.proposalsCount": "{count, plural, other {# 个智能体提议}}"
+  "board.brief.proposalsCount": "{count, plural, other {# 个智能体提议}}",
+  "board.brief.assistant": "助理"
 }

@@ -16,3 +16,7 @@ export const useProjectBrief = (projectId: string | null) =>
 /** Moves the user's seen cursor of the project to now, so the brief starts over. */
 export const markProjectSeen = (projectId: string): Promise<MutationResult> =>
   sendProjectCommand('project.seen', { project_id: projectId }, null);
+
+/** Asks the daemon to write the paragraph of the project's brief; it lands with a later read. */
+export const writeBriefProse = (projectId: string): Promise<MutationResult> =>
+  sendProjectCommand('project.brief.prose.write', { project_id: projectId }, null);

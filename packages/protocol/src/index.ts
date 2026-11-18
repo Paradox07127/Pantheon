@@ -1355,6 +1355,8 @@ export const userConfigSchema = z
     auto_archive_merged: z.boolean().optional(),
     /** Sessions keep a recap of where they stand; absent is on. */
     session_recap: z.boolean().optional(),
+    /** The brief of a project carries a paragraph from the side model; absent is on. */
+    brief_prose: z.boolean().optional(),
     /** How each attention kind reaches the user; an absent kind is its default. */
     attention_delivery: attentionDelivery.optional(),
     /** Local HH:MM range, possibly across midnight, in which now waits for the brief. */
@@ -2454,6 +2456,8 @@ export const inputSchemas = {
   }),
   /** {project_id, at}; moves the caller's seen cursor of the project to at, now by default. project.brief lists what happened after it. */
   'project.seen': z.strictObject({ project_id: str, at: z.number().int().min(0).optional() }),
+  /** The user only; asks the side model for the paragraph of the caller's project.brief, at most once per brief, and returns {started}. */
+  'project.brief.prose.write': z.strictObject({ project_id: str }),
   /** The user only; issues a personal agent key named label and returns {key_id, token_file}. The token is only in that file, readable by the user alone. */
   'personal.key.create': z.strictObject({ label: z.string().trim().min(1).max(80) }),
   /** The user only; revokes the personal agent key at once, and it stays revoked after a restart. */
@@ -2754,6 +2758,7 @@ export const inputSchemas = {
     auto_git_init: z.boolean().optional(),
     auto_archive_merged: z.boolean().optional(),
     session_recap: z.boolean().optional(),
+    brief_prose: z.boolean().optional(),
     /** Merges into the stored rules kind by kind. */
     attention_delivery: attentionDelivery.optional(),
     /** Null clears them. */
@@ -3060,6 +3065,8 @@ export interface AppSettings {
   auto_archive_merged: boolean;
   /** Absent is on. */
   session_recap?: boolean;
+  /** Absent is on. */
+  brief_prose?: boolean;
   /** Every attention kind; absent in the config is its default. */
   attention_delivery: Record<AttentionKind, AttentionDelivery>;
   /** Local HH:MM; inside it now waits for the brief. */
@@ -3262,10 +3269,17 @@ export type ProjectBriefItem =
   | { kind: 'merge'; ref: ProjectBriefRef; at: number }
   | { kind: 'assumption'; ref: ProjectBriefRef; at: number; text: string }
   | { kind: 'proposal'; ref: ProjectBriefRef; at: number };
+/** The side model's paragraph about a brief; each sentence cites the items it is about. */
+export interface ProjectBriefProse {
+  sentences: { text: string; refs: ProjectBriefRef[] }[];
+  at: number;
+}
 /** GET /v1/project.brief. */
 export interface ProjectBrief {
   since: number;
   items: ProjectBriefItem[];
+  /** Present when it was written for these items after this since. */
+  prose?: ProjectBriefProse;
 }
 /** One thing decided without the user; at is Unix milliseconds. */
 export type DecisionForUser =

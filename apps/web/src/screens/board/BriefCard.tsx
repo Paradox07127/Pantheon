@@ -1,10 +1,11 @@
-import { useState, type MouseEvent, type ReactNode } from 'react';
-import { Flag, GitMerge, Lightbulb } from 'lucide-react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { Bot, Flag, GitMerge, Lightbulb } from 'lucide-react';
 import type { BoardModel, ProjectBrief, ProjectBriefItem } from '@pantheon/protocol';
 import { toast } from '../../components/Toast';
+import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
 import { reasonText } from '../../data/needs-you';
-import { markProjectSeen, useProjectBrief } from '../../data/project-brief';
+import { markProjectSeen, useProjectBrief, writeBriefProse } from '../../data/project-brief';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
@@ -32,6 +33,17 @@ export function BriefCard({
   const openSession = useShell((s) => s.openSession);
   // The read the user marked read stays hidden until the brief is read again.
   const [seen, setSeen] = useState<ProjectBrief | null>(null);
+  const { settings } = useAppSettings();
+  const proseOn = settings !== null && settings.brief_prose !== false;
+  // The briefs the paragraph was asked for, by their items, so each is asked for once.
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    if (!brief || brief === seen || brief.prose || brief.items.length === 0 || !proseOn) return;
+    const key = JSON.stringify([projectId, brief.since, brief.items]);
+    if (asked.current.has(key)) return;
+    asked.current.add(key);
+    void writeBriefProse(projectId);
+  }, [brief, seen, proseOn, projectId]);
   if (!brief || brief === seen || brief.items.length === 0) return null;
 
   const of = <K extends ProjectBriefItem['kind']>(kind: K) =>
@@ -75,6 +87,72 @@ export function BriefCard({
     }
     if (!session) return row(key, icon, fallback);
     return link(key, icon, sessionTitle(session) || fallback, () => openSession(session));
+  };
+
+  /** Where a sentence that cites the item links to, as the item's own link in its cell. */
+  const proseTarget = (item: ProjectBriefItem) => {
+    const ref = item.ref;
+    if (ref.kind === 'task')
+      return {
+        title: model.tasks.find((task) => task.id === ref.id)?.title,
+        open: () => onOpenTask(ref.id),
+      };
+    const session =
+      item.kind === 'decisions'
+        ? needSession(item.top)
+        : item.kind === 'merge'
+          ? ref.id
+          : (item.kind === 'failure' || item.kind === 'assumption') && ref.kind === 'event'
+            ? eventSession(ref.id)
+            : undefined;
+    if (!session) return null;
+    return {
+      title: item.kind === 'assumption' ? item.text : sessionTitle(session),
+      open: () => openSession(session),
+    };
+  };
+  /** The sentence with each cited item's title as its link, or all of it as the first one's link when no title is in it. */
+  const sentence = (text: string, refs: ProjectBriefItem['ref'][], index: number) => {
+    const targets = refs.flatMap((ref) => {
+      const item = brief.items.find((each) => each.ref.kind === ref.kind && each.ref.id === ref.id);
+      const target = item && proseTarget(item);
+      return target ? [target] : [];
+    });
+    const found: { at: number; end: number; open: () => void }[] = [];
+    for (const { title, open } of targets) {
+      const at = title ? text.indexOf(title) : -1,
+        end = at + (title?.length ?? 0);
+      if (at >= 0 && found.every((part) => at >= part.end || end <= part.at))
+        found.push({ at, end, open });
+    }
+    if (!found.length && targets[0]) found.push({ at: 0, end: text.length, open: targets[0].open });
+    found.sort((a, b) => a.at - b.at);
+    const parts: ReactNode[] = [];
+    let from = 0;
+    for (const part of found) {
+      parts.push(text.slice(from, part.at));
+      parts.push(
+        <a
+          key={part.at}
+          className="bf-brief-ref"
+          href="#"
+          onClick={(e: MouseEvent) => {
+            e.preventDefault();
+            part.open();
+          }}
+        >
+          {text.slice(part.at, part.end)}
+        </a>,
+      );
+      from = part.end;
+    }
+    parts.push(text.slice(from));
+    return (
+      <span key={index}>
+        {index > 0 ? ' ' : null}
+        {parts}
+      </span>
+    );
   };
 
   const decisions = of('decisions')[0];
@@ -257,6 +335,17 @@ export function BriefCard({
           {cell.rows}
         </div>
       ))}
+      {brief.prose && (
+        <div className="cell bf-brief-p">
+          <span className="bf-brief-who">
+            <Bot aria-hidden="true" />
+            <span>{t({ id: 'board.brief.assistant', defaultMessage: 'Assistant' })}</span>
+          </span>
+          <p className="bf-brief-prose">
+            {brief.prose.sentences.map((each, i) => sentence(each.text, each.refs, i))}
+          </p>
+        </div>
+      )}
     </section>
   );
 }

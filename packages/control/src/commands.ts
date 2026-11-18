@@ -34,6 +34,7 @@ import { agentPromptPreparers } from './agent-prompts.js';
 import { agentProposalHandlers, agentProposalPreparers } from './agent-proposals.js';
 import { signalHandlers, signalPreparers } from './signals.js';
 import { projectBriefHandlers } from './project-brief.js';
+import { briefProseHandlers } from './project-brief-prose.js';
 import { personalKeyHandlers } from './personal-keys.js';
 
 export const handlers: Handlers = {
@@ -66,6 +67,7 @@ export const handlers: Handlers = {
   ...agentProposalHandlers,
   ...signalHandlers,
   ...projectBriefHandlers,
+  ...briefProseHandlers,
   ...personalKeyHandlers,
   ...visualHandlers,
   ...themeHandlers,

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
-import type { BoardModel, ProjectBrief } from '@pantheon/protocol';
+import type { AppSettings, BoardModel, ProjectBrief } from '@pantheon/protocol';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({ board: {} as any, openSession: vi.fn() }));
 vi.mock('react', async (actual) =>
@@ -124,8 +124,11 @@ const served: ProjectBrief = {
 let query: ReturnType<typeof vi.fn>;
 let command: ReturnType<typeof vi.fn>;
 
-const serve = (brief: ProjectBrief) => {
-  query = vi.fn(async () => ({ ok: true, value: brief }));
+const serve = (brief: ProjectBrief, settings: Partial<AppSettings> = {}) => {
+  query = vi.fn(async (method: string) => ({
+    ok: true,
+    value: method === 'app.settings' ? settings : brief,
+  }));
   command = vi.fn(async () => ({ ok: true, value: { project_id: 'x', at: NOW } }));
   vi.stubGlobal('window', {
     pantheon: { query, command },
@@ -165,6 +168,8 @@ const card = async (projectId: string, onOpenTask = vi.fn()) => {
 const group = (tree: unknown, label: string) =>
   find(tree as ReactElement, (n) => n.props.role === 'group' && n.props['aria-label'] === label);
 const links = (tree: unknown) => nodes(tree as ReactElement).filter((n) => n.type === 'a');
+const sent = (type: string) =>
+  command.mock.calls.map(([each]) => each).filter((each) => each.type === type);
 
 describe('since you left card', () => {
   it('reads the brief of its project and is a group named for the time away', async () => {
@@ -220,11 +225,9 @@ describe('since you left card', () => {
     read.props.onClick();
     await h.flush();
     await h.flush();
-    expect(command).toHaveBeenCalledOnce();
-    expect(command.mock.calls[0]![0]).toMatchObject({
-      type: 'project.seen',
-      input: { project_id: 'project-brief-d' },
-    });
+    expect(sent('project.seen')).toEqual([
+      expect.objectContaining({ input: { project_id: 'project-brief-d' } }),
+    ]);
     expect(h.value).toBeNull();
   });
 
@@ -233,5 +236,67 @@ describe('since you left card', () => {
     const h = await card('project-brief-e');
     expect(query).toHaveBeenCalled();
     expect(h.value).toBeNull();
+    expect(sent('project.brief.prose.write')).toEqual([]);
+  });
+
+  it('shows the paragraph under the cells with each cited item as its link', async () => {
+    serve({
+      ...served,
+      prose: {
+        sentences: [
+          {
+            text: 'Refund list filters merged, so Refund UI is complete.',
+            refs: [
+              { kind: 'merge', id: 'session-filters' },
+              { kind: 'milestone', id: 'ms-refund-ui' },
+            ],
+          },
+          {
+            text: 'Reconciliation report failed its gate.',
+            refs: [{ kind: 'event', id: 'event-recon-failed' }],
+          },
+          { text: 'The audit log waits on you.', refs: [{ kind: 'task', id: 'lead-1:audit' }] },
+        ],
+        at: NOW,
+      },
+    });
+    const onOpenTask = vi.fn();
+    const h = await card('project-brief-f', onOpenTask);
+    const paragraph = find(h.value, (n) => n.type === 'p');
+    expect(text(paragraph)).toBe(
+      'Refund list filters merged, so Refund UI is complete. Reconciliation report failed its gate. The audit log waits on you.',
+    );
+    const cited = links(paragraph);
+    expect(cited.map(text)).toEqual([
+      'Refund list filters',
+      'Reconciliation report',
+      'The audit log waits on you.',
+    ]);
+    cited.forEach((link) => link.props.onClick({ preventDefault() {} }));
+    expect(mock.openSession.mock.calls.map(([id]) => id)).toEqual([
+      'session-filters',
+      'session-recon',
+    ]);
+    expect(onOpenTask).toHaveBeenCalledWith('lead-1:audit');
+    expect(text(h.value)).toContain(zh('board.brief.assistant'));
+    expect(sent('project.brief.prose.write')).toEqual([]);
+  });
+
+  it('asks for the paragraph once for a brief without one', async () => {
+    serve(served);
+    const h = await card('project-brief-g');
+    h.render();
+    await h.flush();
+    expect(sent('project.brief.prose.write')).toEqual([
+      expect.objectContaining({ input: { project_id: 'project-brief-g' } }),
+    ]);
+  });
+
+  it('does not ask for the paragraph with the setting off', async () => {
+    serve(served, { brief_prose: false });
+    const h = await card('project-brief-h');
+    h.render();
+    await h.flush();
+    expect(sent('project.brief.prose.write')).toEqual([]);
   });
 });

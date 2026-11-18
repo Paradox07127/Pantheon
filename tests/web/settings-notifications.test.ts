@@ -107,6 +107,7 @@ const settingsWith = (
   auto_git_init: true,
   auto_archive_merged: false,
   session_recap: true,
+  brief_prose: true,
   attention_delivery: { ...DEFAULT_ATTENTION_DELIVERY, ...delivery },
   ...(quiet_hours && { quiet_hours }),
   baseline_rounds: 5,

@@ -373,7 +373,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'project',
     about:
-      "The user only; stores this round's answers and asks the baseline session for the next round; Removes a global value, so projects without their own follow the built-in default; the user only; Sets the ",
+      "The user only; stores this round's answers and asks the baseline session for the next round; The user only; asks the side model for the paragraph of the caller's project.brief, at most once per brief,",
     commands: [
       { type: 'project.autoMerge.set', tool: 'the user does this in the app' },
       { type: 'project.baseline.confirm', tool: 'the user does this in the app' },
@@ -386,6 +386,12 @@ export const appHelpGroups: AppHelpGroup[] = [
       { type: 'project.baseline.start', tool: 'rerun_baseline' },
       { type: 'project.baseline.submit', tool: 'the user does this in the app' },
       { type: 'project.baseline.submit_folder', tool: 'the user does this in the app' },
+      {
+        type: 'project.brief.prose.write',
+        about:
+          "The user only; asks the side model for the paragraph of the caller's project.brief, at most once per brief, and returns {started}.",
+        tool: 'the user does this in the app',
+      },
       { type: 'project.brief.set', tool: 'the user does this in the app' },
       {
         type: 'project.defaults.clear',

@@ -43,6 +43,7 @@ export function readAppSettings(ctx: ControlContext): AppSettings {
     auto_git_init: config.auto_git_init ?? true,
     auto_archive_merged: config.auto_archive_merged ?? false,
     session_recap: config.session_recap ?? true,
+    brief_prose: config.brief_prose ?? true,
     attention_delivery: Object.fromEntries(
       ATTENTION_KINDS.map((kind) => [
         kind,

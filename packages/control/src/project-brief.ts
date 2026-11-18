@@ -1,17 +1,19 @@
-import type {
-  BoardPlan,
-  Entity,
-  Event,
-  Milestone,
-  NeedsYouItem,
-  Principal,
-  Project,
-  Session,
+import {
+  hash,
+  type BoardPlan,
+  type Entity,
+  type Event,
+  type Milestone,
+  type NeedsYouItem,
+  type Principal,
+  type Project,
+  type Session,
 } from '@pantheon/domain';
 import {
   inputSchemas,
   type ProjectBrief,
   type ProjectBriefItem,
+  type ProjectBriefProse,
   type ProjectBriefRef,
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext, type Handlers } from './context.js';
@@ -20,14 +22,23 @@ import { itemTask, needsYou } from './needs-you.js';
 import { milestoneView } from './project-facts.js';
 
 /** One user's seen cursor of one project, keyed by JSON of [user id, project id]. */
-interface SeenCursor extends Entity {
+export interface SeenCursor extends Entity {
   user_id: string;
   project_id: string;
   at: number;
+  /** The side model's paragraph about the brief after since whose items hash to items_key. */
+  prose?: ProjectBriefProse & {
+    since: number;
+    items_key: string;
+    model?: string;
+    usage?: { input_tokens: number; output_tokens: number };
+  };
 }
 
-const cursorId = (principal: Principal, projectId: string) =>
+export const cursorId = (principal: Principal, projectId: string) =>
   JSON.stringify([principal.id, projectId]);
+
+export const briefItemsKey = (items: ProjectBriefItem[]) => hash(items);
 
 const FAILURES: NeedsYouItem['kind'][] = [
   'session.failed',
@@ -89,8 +100,8 @@ export function projectBrief(
 ): ProjectBrief {
   projectAccess(ctx, principal, projectId, 'project.brief');
   ctx.store.must<Project>('projects', projectId);
-  const after =
-    since ?? ctx.store.get<SeenCursor>('seen_cursors', cursorId(principal, projectId))?.at ?? 0;
+  const cursor = ctx.store.get<SeenCursor>('seen_cursors', cursorId(principal, projectId)),
+    after = since ?? cursor?.at ?? 0;
   const planOf = new Map(
     ctx.store
       .list<BoardPlan>('board_plans')
@@ -184,7 +195,10 @@ export function projectBrief(
         ref: { kind: 'proposal', id: event.aggregate_id },
         at: event.created_at,
       });
-  return { since: after, items };
+  const prose = cursor?.prose;
+  return prose && prose.since === after && prose.items_key === briefItemsKey(items)
+    ? { since: after, items, prose: { sentences: prose.sentences, at: prose.at } }
+    : { since: after, items };
 }
 
 export const projectBriefHandlers: Handlers = {
