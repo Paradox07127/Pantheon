@@ -458,7 +458,8 @@ b.bd-hs-sn {
   background: var(--ok);
 }
 .bd-hs-spark {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: visible;
 }
 .bd-hs-spark path {

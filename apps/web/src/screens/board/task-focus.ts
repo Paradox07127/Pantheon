@@ -15,19 +15,21 @@ export function taskFocus(model: BoardModel, selected: string | null) {
         (sessionId !== null && task.segments.some((segment) => segment.session_id === sessionId)),
     );
   };
+  // The needs strip already tells the tasks it asks about.
+  const asked = new Set(needs.map((need) => taskOf(need)?.id));
+  const unasked = model.tasks.filter((task) => !asked.has(task.id));
   const progressed = (task: Task) => Math.max(task.ended_at ?? 0, task.last_progress_at ?? 0);
-  const latestFinished = model.tasks.reduce<Task | undefined>(
+  const latestFinished = unasked.reduce<Task | undefined>(
     (latest, task) => (!latest || progressed(task) > progressed(latest) ? task : latest),
     undefined,
   );
   const task =
     model.tasks.find((task) => task.id === selected) ??
-    needs.map(taskOf).find(Boolean) ??
-    model.tasks.find(
+    unasked.find(
       (task) => task.blockers.length || task.status === 'failed' || task.status === 'waiting',
     ) ??
-    model.tasks.find((task) => task.status === 'ready') ??
-    model.tasks.find((task) => task.status !== 'done' && task.status !== 'discarded') ??
+    unasked.find((task) => task.status === 'ready') ??
+    unasked.find((task) => task.status !== 'done' && task.status !== 'discarded') ??
     latestFinished;
   if (!task) return null;
   const need = needs.find((need) => taskOf(need)?.id === task.id);

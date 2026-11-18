@@ -357,7 +357,7 @@
   margin: 2px 0 6px;
 }
 
-/* Since you left: a header across the card, then a cell per kind of change with its count and links. */
+/* Since you left: a header across the card, then a cell per kind of change with its count; a cell with items opens them in a popover. */
 .bf-brief {
   flex: none;
   margin: var(--sp-3) var(--sp-6) 0;
@@ -392,6 +392,28 @@
 .bf-brief > .bf-brief-c {
   gap: var(--sp-2);
 }
+.bf-brief > button.bf-brief-c {
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+.bf-brief > button.bf-brief-c:hover {
+  background: var(--st-hov);
+}
+.bf-brief > button.bf-brief-c[data-popup-open] {
+  background: var(--st-on);
+}
+.bf-brief-pop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(360px, calc(100vw - 32px));
+  max-height: 60vh;
+  padding: var(--sp-3);
+  overflow-y: auto;
+}
 .bf-brief-it {
   display: flex;
   flex-direction: column;
@@ -419,14 +441,6 @@ a.bf-brief-lk:hover {
   width: 14px;
   height: 14px;
   color: var(--mu);
-}
-.bf-brief-frac {
-  flex: none;
-  margin-left: auto;
-  color: var(--mu);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
 }
 .bf-brief-n {
   color: var(--mu);

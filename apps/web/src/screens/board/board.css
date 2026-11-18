@@ -94,12 +94,29 @@
   gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-6) 0;
 }
+/* The now view's strips and canvas share the height the bar and the summary leave. */
+.bd-now-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The strips above the canvas scroll as one block, and give way first in a short window. */
+.bd-now-top {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 45%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
 /* The now view's canvas: the height the bar and the strips leave. */
 .bd-cv {
   display: flex;
   flex: 1;
   flex-direction: column;
-  min-height: 0;
+  min-height: max(240px, 55%);
   box-sizing: border-box;
   padding: var(--sp-3) var(--sp-6) calc(var(--sp-6) + var(--toast-reserve));
   overflow-x: hidden;

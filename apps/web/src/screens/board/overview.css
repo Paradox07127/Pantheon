@@ -54,8 +54,14 @@
 /* Current milestone: title, merged over planned, a bar part per task state and the days left; the rest opens from the line's end. */
 .bms {
   display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.bms-ln {
+  display: flex;
   align-items: center;
   gap: var(--sp-3);
+  min-width: 0;
 }
 .bms-ic {
   flex: none;
@@ -72,6 +78,21 @@
   white-space: nowrap;
   font-size: var(--fs-sm);
   font-weight: 600;
+}
+/* The milestone's verification after its title: a glyph and its words. */
+.bms-vf {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bms-vf > [role='img'] {
+  display: inline-flex;
 }
 /* Merged tasks over planned tasks. */
 .bms-frac {
@@ -147,7 +168,16 @@
   flex-direction: column;
   gap: var(--sp-2);
   width: min(360px, calc(100vw - 32px));
+  max-height: 60vh;
   padding: var(--sp-3);
+}
+/* Under the title row and its Accept button, the rest scrolls. */
+.bms-pb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-height: 0;
+  overflow-y: auto;
 }
 .bms-hd {
   display: flex;
@@ -219,11 +249,164 @@
   color: var(--tx2);
 }
 .bms-crit li {
-  min-height: 28px;
-  line-height: 28px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+/* The verdict under the line: its result opens each check, the verifier and why. */
+.bms-vc {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+}
+.bms-vh {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--row);
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: start;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bms-vh:hover {
+  background: var(--sf2);
+}
+.bms-vh:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.bms-vt {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.bms-va {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.bms-vch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--tx2);
+  transition: transform var(--dur-1) var(--ease-std);
+}
+.bms-vh[data-panel-open] .bms-vch {
+  transform: rotate(180deg);
+}
+.bms-vp {
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  transition:
+    height var(--dur-2) var(--ease-in),
+    opacity var(--dur-2) var(--ease-in);
+}
+.bms-vp:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+  opacity: 0;
+}
+.bms-vp[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.bms-vb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3) var(--sp-3);
+}
+.bms-vl {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bms-vl li {
+  display: grid;
+  grid-template-columns: 12px 12px minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sp-2);
+  min-height: var(--h-ctl);
+}
+.bms-vl li > [role='img'] {
+  display: inline-flex;
+}
+.bms-vl li > svg {
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+}
+.bms-vn {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* A failed check's last output, about ten lines before it scrolls. */
+.bms-vo {
+  grid-column: 1 / -1;
+  max-height: calc(var(--lh-xs) * 10 + var(--sp-4));
+  overflow: auto;
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bms-vr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--tx2);
+}
+.bms-vw {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--tx);
+}
+/* A verifier on a writer's own runtime: the warning glyph in the waiting colour, the words in the text colour. */
+.bms-vs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--tx);
+}
+.bms-vs svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--wait);
+}
+.bms-vwhy {
+  margin: 0;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  user-select: text;
 }
 
 /* Leads: one line each, one under another. */
@@ -388,7 +571,10 @@
 }
 .btl-r {
   display: grid;
-  grid-template-columns: 12px minmax(min(160px, 40%), 1fr) fit-content(280px) minmax(0, 190px);
+  grid-template-columns: 12px minmax(min(160px, 40%), 1fr) fit-content(280px) 184px 88px minmax(
+      0,
+      190px
+    );
   column-gap: var(--sp-2);
   align-items: center;
   width: 100%;
@@ -404,18 +590,15 @@
   text-align: left;
   transition: background-color var(--dur-1) var(--ease-std);
 }
+.btl-g > .bf-more {
+  margin-left: var(--sp-2);
+}
 .btl-r:hover {
   background: var(--sf2);
 }
 .btl-r:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
-}
-.btl-t {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .btl-rx {
   display: inline-flex;

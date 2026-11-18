@@ -5,6 +5,7 @@ import { appErrors } from '../data/app-errors';
 import { useNow } from '../data/needs-you';
 import { t } from '../i18n';
 import { useShell } from '../store';
+import { Clip } from './Clip';
 import { DiffCounts } from './DiffCounts';
 import './toast.css';
 import './notice-card.css';
@@ -214,11 +215,11 @@ function noticeCard(item: ToastItem, card: NoticeCard, life: ReactNode) {
       />
       <div className="nc-row">
         <Toast.Title className="nc-title">
-          <span className="nc-name">{card.heading}</span>
+          <Clip text={card.heading} className="nc-name" />
           {card.event && (
             <>
               {' '}
-              <span className="nc-event">{card.event}</span>
+              <Clip text={card.event} className="nc-event" />
             </>
           )}
         </Toast.Title>
@@ -227,7 +228,11 @@ function noticeCard(item: ToastItem, card: NoticeCard, life: ReactNode) {
       </div>
       {card.tier === 'needs' ? (
         <>
-          {card.command && <code className="nc-cmd">{card.command}</code>}
+          {card.command && (
+            <code className="nc-cmd">
+              <Clip text={card.command} />
+            </code>
+          )}
           {card.summary && <p className="nc-text">{card.summary}</p>}
         </>
       ) : (

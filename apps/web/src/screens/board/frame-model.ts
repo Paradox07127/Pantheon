@@ -1,5 +1,5 @@
 import type { AgentProfile, ProjectBaseline } from '@pantheon/domain';
-import type { BoardModel, BoardSnapshot, CommandType } from '@pantheon/protocol';
+import type { BoardModel, BoardSnapshot, BoardTaskRung, CommandType } from '@pantheon/protocol';
 import type { GlyphName } from '../../components/SessionStateIcon';
 import { agentName, shownAgents, templateName } from '../../data/agents';
 import { shortId } from '../../data/format';
@@ -232,8 +232,24 @@ export const noVerdict = (item: Pick<NeedItem, 'kind' | 'status'>): boolean =>
 export const noVerdictKind = (item: Pick<NeedItem, 'kind' | 'status'>): string | null =>
   noVerdict(item) ? t({ id: 'board.needs.kind.noVerdict', defaultMessage: 'No verdict' }) : null;
 
-/** The inline buttons of one needs-you item, in the order they show; lead is the lead of the session's task. */
+/**
+ * The inline buttons of one needs-you item, in the order they show; lead is the lead of the
+ * session's task, rung its task's. A task Pantheon or its lead still holds gets nothing that starts
+ * its work again.
+ */
 export function needActions(
+  item: NeedItem,
+  session?: SnapshotSession,
+  lead?: SnapshotSession,
+  rung?: BoardTaskRung['rung'],
+): NeedAction[] {
+  const actions = itemActions(item, session, lead);
+  return rung && rung !== 'user'
+    ? actions.filter((a) => a.key !== 'merge' && a.key !== 'gates' && a.key !== 'continue')
+    : actions;
+}
+
+function itemActions(
   item: NeedItem,
   session?: SnapshotSession,
   lead?: SnapshotSession,

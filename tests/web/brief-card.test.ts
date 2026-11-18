@@ -22,6 +22,7 @@ vi.mock('@/store', () => ({
     { setState() {} },
   ),
 }));
+import { Popover } from '../../apps/web/node_modules/@base-ui/react/popover/index.mjs';
 import { BriefCard } from '@/screens/board/BriefCard';
 import { ProjectNeeds } from '@/screens/board/NowPage';
 import type { SnapshotSession } from '@/screens/board/panels-model';
@@ -124,6 +125,12 @@ const served: ProjectBrief = {
       at: NOW - 1_000_000,
       text: 'UTC is the day boundary',
     },
+    {
+      kind: 'failure',
+      ref: { kind: 'task', id: 'lead-1:audit' },
+      at: NOW - 400_000,
+      reason: 'gate_failed',
+    },
     { kind: 'proposal', ref: { kind: 'proposal', id: 'proposal-1' }, at: NOW - 500_000 },
   ],
 };
@@ -179,6 +186,36 @@ const needsList = (projectId: string) =>
   );
 const group = (tree: unknown, label: string) =>
   find(tree as ReactElement, (n) => n.props.role === 'group' && n.props['aria-label'] === label);
+/** The tree as drawn: a popover's portal only while its root is open. */
+const drawn = (tree: unknown): any => {
+  if (Array.isArray(tree)) return tree.map(drawn);
+  if (!tree || typeof tree !== 'object' || !('props' in tree)) return tree;
+  const node = tree as ReactElement<any>;
+  const closed = node.type === Popover.Root && !node.props.open;
+  const children = [node.props.children]
+    .flat()
+    .filter((child: any) => !(closed && child?.type === Popover.Portal))
+    .map(drawn);
+  return { ...node, props: { ...node.props, children } };
+};
+/** A cell of the card by its name, as a group or as the button that opens its list. */
+const cell = (tree: unknown, label: string) =>
+  find(drawn(tree), (n) => n.type !== Popover.Popup && n.props['aria-label'] === label);
+const rootOf = (tree: unknown, label: string) =>
+  find(
+    tree as ReactElement,
+    (n) =>
+      n.type === Popover.Root &&
+      nodes(n.props.children).some(
+        (c) => c.type === Popover.Trigger && c.props['aria-label'] === label,
+      ),
+  );
+/** Opens the cell's popover as a press on its button does, and returns the popup as drawn. */
+const openCell = (h: { value: unknown; render(): unknown }, label: string) => {
+  rootOf(h.value, label).props.onOpenChange(true);
+  h.render();
+  return find(drawn(h.value), (n) => n.type === Popover.Popup && n.props['aria-label'] === label);
+};
 const links = (tree: unknown) => nodes(tree as ReactElement).filter((n) => n.type === 'a');
 const sent = (type: string) =>
   command.mock.calls.map(([each]) => each).filter((each) => each.type === type);
@@ -259,37 +296,96 @@ describe('since you left card', () => {
   it('shows each count as the brief serves it', async () => {
     serve(served);
     const h = await card('project-brief-b');
-    expect(text(group(h.value, zhf('board.brief.waitingCount', { count: 7 })))).toContain('7');
-    expect(text(group(h.value, zhf('board.brief.milestonesCount', { count: 1 })))).toContain('1');
-    expect(text(group(h.value, zhf('board.brief.mergedCount', { count: 2 })))).toContain('2');
-    expect(text(group(h.value, zhf('board.brief.failedCount', { count: 1 })))).toContain('1');
-    expect(text(group(h.value, zhf('board.brief.assumptionsCount', { count: 1 })))).toContain('1');
-    expect(text(group(h.value, zhf('board.brief.proposalsCount', { count: 1 })))).toContain('1');
+    expect(text(cell(h.value, zhf('board.brief.waitingCount', { count: 7 })))).toContain('7');
+    expect(text(cell(h.value, zhf('board.brief.milestonesCount', { count: 1 })))).toContain('1');
+    expect(text(cell(h.value, zhf('board.brief.mergedCount', { count: 2 })))).toContain('2');
+    expect(text(cell(h.value, zhf('board.brief.failedCount', { count: 2 })))).toContain('2');
+    expect(text(cell(h.value, zhf('board.brief.assumptionsCount', { count: 1 })))).toContain('1');
+    expect(text(cell(h.value, zhf('board.brief.proposalsCount', { count: 1 })))).toContain('1');
   });
 
-  it('links each item to its task or session by title', async () => {
+  it('draws only the titles and counts until a cell is opened', async () => {
     serve(served);
-    const onOpenTask = vi.fn();
-    const h = await card('project-brief-c', onOpenTask);
-    const shown = links(h.value);
-    expect(shown.map(text)).toEqual([
+    const h = await card('project-brief-c');
+    const shown = drawn(h.value);
+    expect(links(shown)).toEqual([]);
+    for (const item of [
       'Add refund audit log',
       'Refund list filters',
       'Refund UI copy',
       'Reconciliation report',
       'UTC is the day boundary',
-    ]);
-    const prevented = { preventDefault: vi.fn() };
-    shown.forEach((link) => link.props.onClick(prevented));
-    expect(onOpenTask).toHaveBeenCalledWith('lead-1:audit');
-    expect(mock.openSession.mock.calls.map(([id]) => id)).toEqual([
-      'session-filters',
-      'session-copy',
-      'session-recon',
-      'lead-1',
-    ]);
-    expect(prevented.preventDefault).toHaveBeenCalledTimes(5);
-    expect(text(h.value)).toContain('Refund UI');
+      'Refund UI',
+    ])
+      expect(text(shown)).not.toContain(item);
+  });
+
+  it('keeps the waiting cell a count with no button, since the list under the card has its items', async () => {
+    serve(served);
+    const h = await card('project-brief-c');
+    const waitingCell = cell(h.value, zhf('board.brief.waitingCount', { count: 7 }));
+    expect(waitingCell.props.role).toBe('group');
+    expect(text(waitingCell)).toBe(`${zh('board.brief.waiting')}7`);
+    expect(
+      nodes(h.value).some(
+        (n) =>
+          n.type === Popover.Trigger &&
+          n.props['aria-label'] === zhf('board.brief.waitingCount', { count: 7 }),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    {
+      cellName: 'merged',
+      label: () => zhf('board.brief.mergedCount', { count: 2 }),
+      titles: ['Refund list filters', 'Refund UI copy'],
+      sessions: ['session-filters', 'session-copy'],
+      tasks: [],
+    },
+    {
+      cellName: 'failed',
+      label: () => zhf('board.brief.failedCount', { count: 2 }),
+      titles: ['Reconciliation report', 'Add refund audit log'],
+      sessions: ['session-recon'],
+      tasks: ['lead-1:audit'],
+    },
+    {
+      cellName: 'assumptions',
+      label: () => zhf('board.brief.assumptionsCount', { count: 1 }),
+      titles: ['UTC is the day boundary'],
+      sessions: ['lead-1'],
+      tasks: [],
+    },
+  ])(
+    'opens the $cellName cell to its items, each linking to its task or session',
+    async ({ label, titles, sessions: opened, tasks }) => {
+      serve(served);
+      const onOpenTask = vi.fn();
+      const h = await card('project-brief-c', onOpenTask);
+      const button = cell(h.value, label());
+      expect(button.type).toBe(Popover.Trigger);
+      expect(button.props['aria-haspopup']).toBe('dialog');
+      expect(button.props['aria-expanded']).toBe(false);
+      const popup = openCell(h, label());
+      expect(cell(h.value, label()).props['aria-expanded']).toBe(true);
+      const shown = links(popup);
+      expect(shown.map(text)).toEqual(titles);
+      const prevented = { preventDefault: vi.fn() };
+      shown.forEach((link) => link.props.onClick(prevented));
+      expect(prevented.preventDefault).toHaveBeenCalledTimes(titles.length);
+      expect(mock.openSession.mock.calls.map(([id]) => id)).toEqual(opened);
+      expect(onOpenTask.mock.calls.map(([id]) => id)).toEqual(tasks);
+      h.render();
+      expect(rootOf(h.value, label()).props.open).toBe(false);
+    },
+  );
+
+  it('lists the milestones that moved by title, without their score', async () => {
+    serve(served);
+    const h = await card('project-brief-c');
+    const popup = openCell(h, zhf('board.brief.milestonesCount', { count: 1 }));
+    expect(text(popup)).toBe('Refund UI');
   });
 
   it('counts what was decided for the user and links each type to the approved list filtered by it', async () => {
@@ -305,10 +401,10 @@ describe('since you left card', () => {
       ],
     });
     const h = await card('project-brief-j');
-    const cell = group(h.value, zhf('board.brief.decidedCount', { count: 6 }));
-    expect(text(cell)).toContain(zh('board.brief.decided'));
-    expect(text(cell)).toContain('6');
-    const shown = links(cell);
+    const label = zhf('board.brief.decidedCount', { count: 6 });
+    expect(text(cell(h.value, label))).toContain(zh('board.brief.decided'));
+    expect(text(cell(h.value, label))).toContain('6');
+    const shown = links(openCell(h, label));
     expect(shown.map(text)).toEqual([
       zhf('board.brief.decidedPermissions', { count: 3 }),
       zhf('board.brief.decidedAnswers', { count: 2 }),
@@ -335,8 +431,7 @@ describe('since you left card', () => {
       ],
     });
     const h = await card('project-brief-j');
-    const cell = group(h.value, zhf('board.brief.decidedCount', { count: 5 }));
-    expect(links(cell).map(text)).toEqual([
+    expect(links(openCell(h, zhf('board.brief.decidedCount', { count: 5 }))).map(text)).toEqual([
       zhf('board.brief.decidedPermissions', { count: 3 }),
       zhf('board.brief.decidedAnswers', { count: 2 }),
     ]);

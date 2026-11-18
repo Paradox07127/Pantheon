@@ -162,6 +162,10 @@ it('reads the changed paths of a step condition from the merge base with one sou
     when: { changed_paths: ['work.txt'] },
     kind: { type: 'approval' },
   };
+  // The search indexer runs git in the worktree while the session is pending; its run would be counted.
+  await eventually(
+    () => f.store.db.prepare('SELECT 1 FROM session_search_pending LIMIT 1').get() === undefined,
+  );
   const counter = countingGit();
   restores.push(counter.restore);
   await readConditions(contextOf(f), session.id, 'before_merge');

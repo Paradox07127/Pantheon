@@ -258,8 +258,8 @@ export function MainView({
           {flow && <FlowReplayer flow={flow} onMoment={setMoment} />}
         </>
       )}
-      {/* The focus tells the task as it is now. */}
-      {!states && (
+      {/* The focus tells the task as it is now; an open drawer already does. */}
+      {!states && !selected && (
         <TaskFocus
           model={model}
           selected={selected}

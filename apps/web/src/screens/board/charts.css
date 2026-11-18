@@ -141,7 +141,11 @@
   color: var(--tx);
   font: inherit;
   font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
   resize: vertical;
+  min-height: calc(3 * var(--lh-sm) + 14px);
+  max-height: calc(8 * var(--lh-sm) + 14px);
+  field-sizing: content;
 }
 .bp-ta:focus {
   outline: 3px solid var(--focus-ring);

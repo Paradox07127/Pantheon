@@ -78,6 +78,8 @@ const CHECKS: Record<BoardTask['checks'], string> = {
   },
 };
 const CHECK_ICON = { pass: 'done', fail: 'failed', running: 'running' } as const;
+/** Task rows shown before the rest fold behind a switch. */
+const FOLDED_ROWS = 12;
 
 const UpIcon = () => (
   <svg viewBox="0 0 10 10" aria-hidden="true">
@@ -207,6 +209,7 @@ export function ProgressTable({
 }) {
   const [sort, setSort] = useState<TaskSort | null>(null);
   const [drag, setDrag] = useState<{ id: string; over: string | null } | null>(null);
+  const [all, setAll] = useState(false);
   const [setTicksBox, ticksBox] = useSize();
   const tip = useFloatTip();
 
@@ -216,6 +219,15 @@ export function ProgressTable({
   const groups = groupTasks(model, sort, now).map((group) =>
     sort ? group : { ...group, tasks: inPlanOrder(group.tasks) },
   );
+  const rowCount = groups.reduce((n, group) => n + group.tasks.length, 0);
+  let room = all ? rowCount : FOLDED_ROWS;
+  const shown = groups
+    .map((group) => {
+      const rows = group.tasks.slice(0, room);
+      room -= rows.length;
+      return { ...group, rows };
+    })
+    .filter((group) => group.rows.length > 0);
   const ordered = (task: BoardTask) => !!projectId && !sort && planned(task);
   // A locked task keeps its place but still takes a task moved beside it.
   const movable = (task: BoardTask) => ordered(task) && !task.order_locked;
@@ -461,7 +473,7 @@ export function ProgressTable({
                 {nowLine}
               </div>
             </div>
-            {groups.map((group) => (
+            {shown.map((group) => (
               <div role="rowgroup" key={group.id ?? ''}>
                 <div className="bp-tg" role="row">
                   <span role="cell">{group.title}</span>
@@ -469,7 +481,7 @@ export function ProgressTable({
                     {group.done}/{group.total}
                   </span>
                 </div>
-                {group.tasks.map((task) => {
+                {group.rows.map((task) => {
                   const segments =
                     task.state && task.segments.length === 1
                       ? [{ ...task.segments[0]!, status: STATE_SEGMENT[task.state] }]
@@ -568,6 +580,21 @@ export function ProgressTable({
           </div>
           {tip.node}
         </div>
+      )}
+      {!children && rowCount > FOLDED_ROWS && (
+        <button
+          type="button"
+          className="bd-lnk bf-more"
+          aria-expanded={all}
+          onClick={() => setAll(!all)}
+        >
+          {all
+            ? t({ id: 'board.rows.less', defaultMessage: 'Show less' })
+            : t(
+                { id: 'board.rows.all', defaultMessage: 'Show all {count} rows' },
+                { count: rowCount },
+              )}
+        </button>
       )}
     </Panel>
   );

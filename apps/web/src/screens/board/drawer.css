@@ -168,6 +168,8 @@ aside.bd-drw {
 }
 .bd-tell textarea {
   min-height: 44px;
+  max-height: calc(8 * var(--lh-md));
+  field-sizing: content;
   padding: 0;
   border: 0;
   outline: 0;

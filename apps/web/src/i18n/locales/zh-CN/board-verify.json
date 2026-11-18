@@ -1,0 +1,21 @@
+{
+  "board.verify.badge.running": "验证中 {elapsed}",
+  "board.verify.badge.passed": "已验证",
+  "board.verify.badge.failed": "验证失败",
+  "board.verify.badge.inconclusive": "没有结论",
+  "board.verify.card.label": "{title} 的验证",
+  "board.verify.card.checksFailed": "{count, plural, other {# 项检查失败}}",
+  "board.verify.card.verifierFailed": "验证者判为不通过",
+  "board.verify.check.passed": "通过",
+  "board.verify.check.failed": "失败",
+  "board.verify.independence.otherVendor": "与编写者不同厂商",
+  "board.verify.independence.otherRuntime": "另一个运行时，厂商未知",
+  "board.verify.independence.sameRuntime": "编写者自己的运行时",
+  "board.verify.reason.noRuntime": "没有能验证它的运行时",
+  "board.verify.reason.daemonRestart": "检查运行时 Pantheon 重启了",
+  "board.verify.reason.noVerdict": "验证者没有给出结论",
+  "board.verify.reason.reviewFailed": "验证者的审查失败了",
+  "board.verify.reason.unreadable": "验证者读不到改动",
+  "board.verify.reason.noReply": "验证者结束时既没有发现也没有回复",
+  "board.verify.reason.turnEnded": "验证者的回合没有完成"
+}

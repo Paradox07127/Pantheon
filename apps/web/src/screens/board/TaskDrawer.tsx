@@ -1,8 +1,14 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
-import { Check, Crown, File, Terminal, X } from 'lucide-react';
-import type { BackendSummary, BoardModel, BoardTaskStatus } from '@pantheon/protocol';
+import { Check, Crown, File, RefreshCw, Terminal, X } from 'lucide-react';
+import type {
+  BackendSummary,
+  BoardModel,
+  BoardTaskRung,
+  BoardTaskStatus,
+} from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { Menu, MenuItem } from '../../components/Menu';
 import { PathText } from '../../components/PathText';
@@ -66,6 +72,7 @@ import {
   type SnapshotSession,
 } from './panels-model';
 import { STATUS, StatusIcon, TaskBadges, TaskRoute, TaskStateBadge, runtimeName } from './status';
+import { rungReason } from './TaskRecovery';
 import { TaskTimeline } from './TaskTimeline';
 import { TellLead, TellLeadBox, useDialogContent } from './TellLead';
 import { isPlanTask } from './view-rules';
@@ -102,6 +109,13 @@ const CHECKS: Record<Task['checks'], { icon: BoardTaskStatus | null; label: stri
       return noneText();
     },
   },
+};
+
+const RUNGS: Record<BoardTaskRung['rung'], () => string> = {
+  retry: () => t({ id: 'board.recovery.rung.retry', defaultMessage: 'Pantheon retries' }),
+  switch: () => t({ id: 'board.recovery.step.switch', defaultMessage: 'Another runtime' }),
+  lead: () => t({ id: 'board.recovery.step.lead', defaultMessage: 'Lead' }),
+  user: () => t({ id: 'board.recovery.step.user', defaultMessage: 'You' }),
 };
 
 /** The longest the drawer waits for its exit transition before it unmounts anyway. */
@@ -903,6 +917,43 @@ export function TaskDrawer({
   // task.handback finds only the task's own sessions, never its lead's.
   const handBack = !!tell && !!task.owner_session_id && hasOpenSession(task) && !leadClaimed(task);
   const step = shownStepRun(task);
+  const { budget, rung } = task;
+  const share = (used: number, limit: number) => (limit > 0 ? used / limit : 0);
+  const budgetRows = budget
+    ? [
+        {
+          key: 'tokens',
+          label: t({ id: 'board.recovery.budget.tokens', defaultMessage: 'Tokens' }),
+          meter: (percent: number) =>
+            t(
+              {
+                id: 'board.recovery.budget.tokensMeter',
+                defaultMessage: 'Tokens: {percent}% of the budget',
+              },
+              { percent },
+            ),
+          used: tokenText(budget.input_tokens),
+          limit: tokenText(budget.limit.input_tokens),
+          share: share(budget.input_tokens, budget.limit.input_tokens),
+        },
+        {
+          key: 'time',
+          label: t({ id: 'board.recovery.budget.time', defaultMessage: 'Time' }),
+          meter: (percent: number) =>
+            t(
+              {
+                id: 'board.recovery.budget.timeMeter',
+                defaultMessage: 'Time: {percent}% of the budget',
+              },
+              { percent },
+            ),
+          used: durationText(budget.wall_ms),
+          limit: durationText(budget.limit.wall_ms),
+          share: share(budget.wall_ms, budget.limit.wall_ms),
+        },
+      ]
+    : [];
+  const topShare = Math.max(...budgetRows.map((row) => row.share));
   return (
     <aside
       ref={ref}
@@ -925,7 +976,9 @@ export function TaskDrawer({
         }}
       />
       <div className="bd-dh">
-        <h2 id="bd-drw-title">{task.title}</h2>
+        <h2 id="bd-drw-title" aria-label={task.title}>
+          <Clip text={task.title} lines={3} />
+        </h2>
         <button
           ref={close}
           type="button"
@@ -1011,6 +1064,127 @@ export function TaskDrawer({
                 </li>
               ))}
             </ul>
+          )}
+          {budget && (
+            <section className="bd-dsec" aria-labelledby="bd-dbudget">
+              <div className="bd-dsh">
+                <h3 id="bd-dbudget">
+                  {t({ id: 'board.recovery.budget.heading', defaultMessage: 'Budget' })}
+                </h3>
+                <span className="bd-dsv">{Math.round(budget.ratio * 100)}%</span>
+              </div>
+              <div className="bd-bg">
+                {budgetRows.map((row) => {
+                  const percent = Math.round(row.share * 100);
+                  const max = row.share === topShare || undefined;
+                  return (
+                    <Fragment key={row.key}>
+                      <span data-max={max}>{row.label}</span>
+                      <span
+                        className="meter"
+                        role="img"
+                        aria-label={row.meter(percent)}
+                        data-max={max}
+                        style={{ '--v': `${Math.min(100, percent)}%` } as CSSProperties}
+                      >
+                        <i />
+                      </span>
+                      <span className="bd-bg-n" data-max={max}>
+                        {t(
+                          {
+                            id: 'board.recovery.budget.amount',
+                            defaultMessage: '{used} / {limit}',
+                          },
+                          { used: row.used, limit: row.limit },
+                        )}
+                      </span>
+                      <span className="bd-bg-n" data-max={max}>
+                        {percent}%
+                      </span>
+                    </Fragment>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+          {rung && (
+            <section className="bd-dsec" aria-labelledby="bd-drecovery">
+              <div className="bd-dsh">
+                <h3 id="bd-drecovery">
+                  {t({ id: 'board.recovery.heading', defaultMessage: 'Recovery' })}
+                </h3>
+                <span className="bd-dsv">{durationText(now - rung.since)}</span>
+              </div>
+              <ol
+                className="bd-lad"
+                aria-label={t({ id: 'board.recovery.ladder', defaultMessage: 'Who acts next' })}
+              >
+                {(Object.keys(RUNGS) as BoardTaskRung['rung'][]).map((level, i, levels) => {
+                  const at = levels.indexOf(rung.rung);
+                  // Tries Pantheon used, or runtime changes, of a rung already passed.
+                  const used =
+                    i >= at
+                      ? null
+                      : level === 'retry' && rung.used !== undefined && rung.limit !== undefined
+                        ? t(
+                            {
+                              id: 'board.recovery.budget.amount',
+                              defaultMessage: '{used} / {limit}',
+                            },
+                            { used: rung.used, limit: rung.limit },
+                          )
+                        : level === 'switch' && rung.switches.length > 0
+                          ? String(rung.switches.length)
+                          : null;
+                  return (
+                    <li key={level} aria-current={i === at ? 'step' : undefined}>
+                      {used ? (
+                        <Check
+                          role="img"
+                          aria-label={t({ id: 'board.recovery.step.done', defaultMessage: 'Done' })}
+                        />
+                      ) : (
+                        <span
+                          className="bd-lg"
+                          data-s={i === at ? 'now' : i < at ? 'skip' : undefined}
+                          role="img"
+                          aria-label={
+                            i === at
+                              ? t({ id: 'board.recovery.step.current', defaultMessage: 'Current' })
+                              : i < at
+                                ? t({
+                                    id: 'board.recovery.step.skipped',
+                                    defaultMessage: 'Skipped',
+                                  })
+                                : t({
+                                    id: 'board.recovery.step.ahead',
+                                    defaultMessage: 'Not reached',
+                                  })
+                          }
+                        />
+                      )}
+                      <span>{RUNGS[level]()}</span>
+                      <span className="bd-lad-r">
+                        {i === at ? rungReason(rung.reason) : i < at ? (used ?? noneText()) : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+              {task.activity?.repeated_failure && (
+                <ul className="bd-rf">
+                  <li>
+                    <RefreshCw aria-hidden="true" />
+                    <span>
+                      {t({
+                        id: 'board.recovery.repeated',
+                        defaultMessage: 'Same failure as the attempt before',
+                      })}
+                    </span>
+                  </li>
+                </ul>
+              )}
+            </section>
           )}
           {acceptance.length > 0 && (
             <section className="bd-dsec">

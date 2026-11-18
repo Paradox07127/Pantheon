@@ -169,7 +169,13 @@
   padding-left: 56px;
 }
 
-/* Risks and assumptions */
+/* Risks and assumptions: the panel grows with them, the page scrolling instead of the list. */
+.bp-listp:has(> .bp-rk) {
+  height: auto;
+}
+.bp-pb.bp-rk {
+  overflow-y: visible;
+}
 .bp-rk h3 {
   margin: 0 0 4px;
   font-size: var(--fs-xs);

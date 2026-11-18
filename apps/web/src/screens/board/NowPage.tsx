@@ -88,108 +88,112 @@ export function NowPage({
 }) {
   return (
     <>
-      {model && projectId && (
-        <BriefCard
-          projectId={projectId}
-          model={model}
-          sessions={actions?.sessions ?? []}
-          onOpenTask={selectFlow}
-        />
-      )}
-      {model && projectId && actions && !!model.needs?.length && (
-        <ProjectNeeds
-          projectId={projectId}
-          model={model}
-          sessions={actions.sessions}
-          run={actions.run}
-          onOpenSession={onOpenSession}
-          stale={stale}
-          drawer={selectedIn('flow') !== null}
-        />
-      )}
-      {model && shown && (
-        <section
-          className="bov"
-          aria-label={t({ id: 'board.strip.label', defaultMessage: 'Milestone and lead' })}
-        >
-          {current ? (
-            <PanelBoundary
-              title={t({
-                id: 'board.panels.currentMilestone',
-                defaultMessage: 'Current milestone',
-              })}
+      <div className="bd-now-body">
+        <div className="bd-now-top">
+          {model && projectId && (
+            <BriefCard
+              projectId={projectId}
               model={model}
-              onRetry={onRetry}
+              sessions={actions?.sessions ?? []}
+              onOpenTask={selectFlow}
+            />
+          )}
+          {model && projectId && actions && !!model.needs?.length && (
+            <ProjectNeeds
+              projectId={projectId}
+              model={model}
+              sessions={actions.sessions}
+              run={actions.run}
+              onOpenSession={onOpenSession}
+              stale={stale}
+              drawer={selectedIn('flow') !== null}
+            />
+          )}
+          {model && shown && (
+            <section
+              className="bov"
+              aria-label={t({ id: 'board.strip.label', defaultMessage: 'Milestone and lead' })}
             >
-              <MilestoneCard
-                model={model}
-                milestone={current}
-                actions={scoped}
-                onOpenTask={selectFlow}
-              />
-            </PanelBoundary>
-          ) : (
-            <TaskProgressStrip totals={model.task_progress.totals} />
+              {current ? (
+                <PanelBoundary
+                  title={t({
+                    id: 'board.panels.currentMilestone',
+                    defaultMessage: 'Current milestone',
+                  })}
+                  model={model}
+                  onRetry={onRetry}
+                >
+                  <MilestoneCard
+                    model={model}
+                    milestone={current}
+                    actions={scoped}
+                    onOpenTask={selectFlow}
+                  />
+                </PanelBoundary>
+              ) : (
+                <TaskProgressStrip totals={model.task_progress.totals} />
+              )}
+              {!!model.leads?.length && (
+                <PanelBoundary title="lead" model={model} onRetry={onRetry}>
+                  <LeadPanel
+                    model={shown}
+                    sessions={actions?.sessions ?? []}
+                    onOpenSession={onOpenSession}
+                    onOpenTask={selectFlow}
+                    run={actions?.run}
+                    stale={stale}
+                  />
+                </PanelBoundary>
+              )}
+            </section>
           )}
-          {!!model.leads?.length && (
-            <PanelBoundary title="lead" model={model} onRetry={onRetry}>
-              <LeadPanel
-                model={shown}
-                sessions={actions?.sessions ?? []}
-                onOpenSession={onOpenSession}
-                onOpenTask={selectFlow}
-                run={actions?.run}
-                stale={stale}
-              />
-            </PanelBoundary>
+          {model && projectId && (
+            <PlanProposals model={model} projectId={projectId} sessions={actions?.sessions ?? []} />
           )}
-        </section>
-      )}
-      {model && projectId && (
-        <PlanProposals model={model} projectId={projectId} sessions={actions?.sessions ?? []} />
-      )}
-      <EditMode
-        on={editing}
-        projectId={projectId ?? ''}
-        connecting={!!scoped}
-        onTask={() => setFocusTask((n) => n + 1)}
-        side={
-          editing &&
-          model &&
-          projectId && (
-            <>
-              <DraftTaskForm model={model} projectId={projectId} titleRef={taskTitle} />
-              <UnsentEdits model={model} projectId={projectId} />
-              <OrderLock model={model} projectId={projectId} />
-            </>
-          )
-        }
-      >
-        <div className="bd-cv">
-          {setupPanel ||
-            (empty ? null : !shown ? (
-              loadingPanel
-            ) : (
-              <PanelBoundary
-                title={t({ id: 'board.panels.main', defaultMessage: 'Main view' })}
-                model={model}
-                onRetry={onRetry}
-              >
-                <MainView
-                  model={shown}
-                  projectId={projectId}
-                  selected={selectedIn('flow')}
-                  onSelect={selectFlow}
-                  onOpenSession={onOpenSession}
-                  onOpenEvidence={onOpenEvidence}
-                  onStartTask={onStartTask}
-                  tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
-                  editing={editing}
-                />
-              </PanelBoundary>
-            ))}
         </div>
-      </EditMode>
+        <EditMode
+          on={editing}
+          projectId={projectId ?? ''}
+          connecting={!!scoped}
+          onTask={() => setFocusTask((n) => n + 1)}
+          side={
+            editing &&
+            model &&
+            projectId && (
+              <>
+                <DraftTaskForm model={model} projectId={projectId} titleRef={taskTitle} />
+                <UnsentEdits model={model} projectId={projectId} />
+                <OrderLock model={model} projectId={projectId} />
+              </>
+            )
+          }
+        >
+          <div className="bd-cv">
+            {setupPanel ||
+              (empty ? null : !shown ? (
+                loadingPanel
+              ) : (
+                <PanelBoundary
+                  title={t({ id: 'board.panels.main', defaultMessage: 'Main view' })}
+                  model={model}
+                  onRetry={onRetry}
+                >
+                  <MainView
+                    model={shown}
+                    projectId={projectId}
+                    selected={selectedIn('flow')}
+                    onSelect={selectFlow}
+                    onOpenSession={onOpenSession}
+                    onOpenEvidence={onOpenEvidence}
+                    onStartTask={onStartTask}
+                    tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
+                    editing={editing}
+                  />
+                </PanelBoundary>
+              ))}
+          </div>
+        </EditMode>
+      </div>
       {model && <NowSummary model={model} onOpenSession={onOpenSession} />}
     </>
   );

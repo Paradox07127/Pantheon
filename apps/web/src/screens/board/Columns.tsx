@@ -10,6 +10,7 @@ import { runtimeColor } from './Charts';
 import { boardColumns, pendingUpstream, type BoardColumn, type BoardTask } from './panels-model';
 import { STATUS, StatusIcon, TaskBadges, segmentText } from './status';
 import { TaskDrawer, type TaskDrawerProps } from './TaskDrawer';
+import { RungLabel } from './TaskRecovery';
 
 interface ColumnsPanelProps {
   model: BoardModel;
@@ -116,6 +117,7 @@ function TaskCard({
           )}
         </span>
       )}
+      {task.rung && <RungLabel rung={task.rung} />}
     </button>
   );
 }

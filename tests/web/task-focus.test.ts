@@ -49,22 +49,35 @@ const review: Pick<Review, 'id' | 'state' | 'executions' | 'range'> = {
   range: { source: '/work', from_sha: '1111111111', to_sha: '2222222222' },
 };
 
-it('prioritizes actionable needs and preserves an explicitly selected task', () => {
-  const model = board([task('failed', { status: 'failed' }), task('ask', { status: 'waiting' })], {
-    needs: [
-      {
-        task_id: 'ask',
-        reason: 'permission_requested',
-        source: { table: 'approvals', id: 'a', revision: 1 },
-        next_step: '回答具体请求',
-      } as any,
-    ],
-  });
-  expect(taskFocus(model, null)).toMatchObject({
-    task: { id: 'ask' },
+it('leaves a task the needs strip already asks about to the strip and keeps an explicit selection', () => {
+  const asked = task('asked', { status: 'waiting', last_progress_at: 100 });
+  const progressed = task('progressed', { status: 'running', last_progress_at: 200 });
+  const needs = [
+    {
+      task_id: 'asked',
+      reason: 'permission_requested',
+      source: { table: 'approvals', id: 'a', revision: 1 },
+      next_step: '回答具体请求',
+    } as any,
+  ];
+  const focus = (tasks: Task[], selected: string | null = null) =>
+    renderToStaticMarkup(
+      createElement(TaskFocus, {
+        model: board(tasks, { needs }),
+        selected,
+        onSelect() {},
+        onOpenSession() {},
+      }),
+    );
+  const html = focus([asked, progressed]);
+  expect(html).toContain(`aria-label="${zh('board.task.focus.label')}"`);
+  expect(html).toContain('>progressed</button>');
+  expect(html).not.toContain('>asked</button>');
+  expect(focus([asked])).toBe('');
+  expect(taskFocus(board([asked, progressed], { needs }), 'asked')).toMatchObject({
+    task: { id: 'asked' },
     next: expect.stringContaining('lead 自己的权限请求'),
   });
-  expect(taskFocus(model, 'failed')?.task.id).toBe('failed');
 });
 
 it('links a blocked task to its unmet upstream and uses its recorded dispatch reason', () => {

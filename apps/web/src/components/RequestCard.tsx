@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { Ellipsis, FlaskConical, Gauge, Lightbulb, Pencil } from 'lucide-react';
 import type { ApprovalQuestion, Improvement } from '@pantheon/domain';
+import type { BoardTaskRung } from '@pantheon/protocol';
 import { blocksText, decisionText, primaryAction } from '../data/attention';
 import {
   ageText,
@@ -74,6 +75,8 @@ export interface RequestCardProps {
   lead?: SnapshotSession;
   /** The title of the session's plan task. */
   task?: string;
+  /** Who acts next on that task. */
+  rung?: BoardTaskRung['rung'];
   milestone?: RequestMilestone;
   improvement?: Improvement;
   /** The data is old: commands wait for a refresh, opening a session still works. */
@@ -126,6 +129,7 @@ export function RequestCard({
   session,
   lead,
   task,
+  rung,
   milestone,
   improvement,
   stale,
@@ -158,7 +162,7 @@ export function RequestCard({
   const accepting = useDialogContent<{ stored: SnapshotMilestone }>();
   const full = size === 'full';
   const sessionId = needSession(item);
-  const actions = needActions(item, session, lead);
+  const actions = needActions(item, session, lead, rung);
   // A list row marks only its one primary action, and only while the user is on the row.
   const primary = full ? undefined : primaryAction(actions, item.primary);
   const marked = (action: NeedAction) =>

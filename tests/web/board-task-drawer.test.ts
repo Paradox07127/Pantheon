@@ -22,6 +22,7 @@ vi.mock('@/data/runtime-models', async (actual) => ({
     Object.fromEntries(runtimes.map((r) => [r, models[r] ?? { state: 'loading' }])),
 }));
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
+import { Clip } from '@/components/Clip';
 import { useDrafts } from '@/data/drafts';
 import { wantedRequest, focusRequest } from '@/data/focus-request';
 import { useQueued } from '@/screens/sessions/compose';
@@ -279,6 +280,16 @@ describe('the plan list in the task drawer', () => {
 });
 
 describe('the rest of the task drawer', () => {
+  it('names the drawer by its whole title, behind a three-line clip', () => {
+    const tree = drawer().value;
+    const name = find(tree, (n) => n.type === 'aside').props['aria-labelledby'];
+    const heading = find(tree, (n) => n.props.id === name);
+    expect(find(heading, (n) => n.type === Clip).props).toEqual({
+      text: waiting.title,
+      lines: 3,
+    });
+  });
+
   it('ticks each acceptance check the task met, read-only', () => {
     const boxes = nodes(drawer().value).filter((n) => n.props.type === 'checkbox');
     expect(boxes.map((n) => [n.props.checked, n.props.disabled])).toEqual([

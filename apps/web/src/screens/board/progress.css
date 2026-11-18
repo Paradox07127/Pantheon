@@ -16,6 +16,9 @@
   overflow-x: auto;
   border-radius: 0 0 max(calc(var(--r-lg) - 1px), 4px) max(calc(var(--r-lg) - 1px), 4px);
 }
+.bp-tblp > .bf-more {
+  margin: 8px 16px 12px;
+}
 .bp-tr {
   display: grid;
   grid-template-columns: minmax(140px, 1.2fr) 88px 112px 96px 48px 72px minmax(180px, 2.6fr);

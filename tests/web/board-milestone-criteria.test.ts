@@ -10,6 +10,7 @@ vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { useId: 'frame-id' }),
 );
 import { BoardView } from '@/screens/board/BoardScreen';
+import { Clip } from '@/components/Clip';
 import { Milestones, useFloatTip } from '@/screens/board/Charts';
 import { MilestoneCard } from '@/screens/board/MilestoneCard';
 import { TaskProgressStrip } from '@/screens/board/ProgressCharts';
@@ -432,6 +433,23 @@ describe('current milestone card', () => {
     expect(find(out, (n) => n.props.role === 'img').props['aria-label']).toBe(
       say('board.plan.milestone.merged', { done: 1, total: 3 }),
     );
+  });
+
+  it('keeps each criterion whole behind a two-line clip', () => {
+    const out = new HookHost(() =>
+      MilestoneCard({
+        model: firstScreen([current('active')]),
+        milestone: current('active'),
+        onOpenTask: noop,
+      }),
+    ).render();
+    const items = nodes(labelled(out, zh('board.plan.milestone.criteria'))).filter(
+      (n) => n.type === 'li',
+    );
+    expect(items.map((li) => find(li, (n) => n.type === Clip).props)).toEqual([
+      { text: 'Imports a CSV', lines: 2 },
+      { text: 'Reports bad rows', lines: 2 },
+    ]);
   });
 
   it('draws a cell for each task of the milestone in its state, each opening the task', () => {

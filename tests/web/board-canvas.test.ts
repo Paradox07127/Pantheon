@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { HookHost, find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true, useId: 'canvas' }),
 );
@@ -18,6 +18,8 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
 import { FlowChart } from '@/screens/board/FlowPanel';
 import { flowLayout } from '@/screens/board/flow-layout';
 import { FlowGroupControl, MainView } from '@/screens/board/MainView';
+import { ProgressTable } from '@/screens/board/ProgressTable';
+import { TaskGroups } from '@/screens/board/TaskGroups';
 
 type Task = BoardModel['tasks'][number];
 const NOW = Date.UTC(2026, 10, 12, 12);
@@ -184,6 +186,54 @@ describe('board now view canvas', () => {
     expect(nodes(tree).some((n) => n.type === 'h2')).toBe(false);
     expect(nodes(tree).some((n) => n.props.className === 'bd-ph')).toBe(false);
   });
+});
+
+describe('board canvas long lists', () => {
+  const todo = (n: number) =>
+    Array.from({ length: n }, (_, i) => task(`row-${i}`, { state: 'todo' }));
+  const toggles = (tree: ReactNode) =>
+    nodes(tree).filter((n) => n.type === 'button' && 'aria-expanded' in n.props);
+
+  it.each([
+    {
+      list: 'progress table',
+      limit: 12,
+      draw: (n: number) =>
+        mount(() =>
+          ProgressTable({
+            model: { ...board(todo(n)), counts: { median_ms: null } } as BoardModel,
+            onOpenTask() {},
+          }),
+        ),
+      rows: (tree: ReactNode) =>
+        nodes(tree).filter((n) => n.props.role === 'row' && n.props['aria-label']).length,
+    },
+    {
+      list: 'task group',
+      limit: 8,
+      draw: (n: number) =>
+        mount(() => TaskGroups({ model: { tasks: todo(n), needs: [] }, onOpenTask() {} })),
+      rows: (tree: ReactNode) => nodes(tree).filter((n) => n.props.task).length,
+    },
+  ])(
+    'shows the first $limit rows of a $list and a switch to all of them',
+    ({ limit, draw, rows }) => {
+      const h = draw(limit + 1);
+      const [more] = toggles(h.value);
+      expect(rows(h.value)).toBe(limit);
+      expect(text(more)).toBe(zhf('board.rows.all', { count: limit + 1 }));
+      expect(more!.props['aria-expanded']).toBe(false);
+      more!.props.onClick();
+      const open = h.render();
+      const [less] = toggles(open);
+      expect(rows(open)).toBe(limit + 1);
+      expect(less!.props['aria-expanded']).toBe(true);
+      expect(text(less)).toBe(zh('board.rows.less'));
+      const fits = draw(limit).value;
+      expect(rows(fits)).toBe(limit);
+      expect(toggles(fits)).toEqual([]);
+    },
+  );
 });
 
 describe('board canvas bands', () => {

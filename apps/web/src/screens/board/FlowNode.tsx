@@ -53,6 +53,7 @@ import {
   TaskBadges,
   runtimeName,
 } from './status';
+import { BudgetShare, RungLabel } from './TaskRecovery';
 import './node.css';
 
 type Task = BoardModel['tasks'][number];
@@ -660,6 +661,12 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
         <Amounts task={task} line={line} />
         {task.external_review && <ExternalReview review={task.external_review} now={now} />}
         {reason && <Reason reason={reason} />}
+        {(task.budget || task.rung) && (
+          <div className="bd-nrec">
+            {task.budget && <BudgetShare budget={task.budget} />}
+            {task.rung && <RungLabel rung={task.rung} />}
+          </div>
+        )}
         {open && actions && <NodeActions task={task} look={look} context={actions} />}
         {drafted && (
           <div className="bd-ntags">

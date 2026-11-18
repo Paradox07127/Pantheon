@@ -110,7 +110,10 @@ export function needContext(
   sessions: readonly SnapshotSession[],
   stored: readonly SnapshotMilestone[],
   improvements: readonly Improvement[] | null,
-): Pick<RequestCardProps, 'who' | 'session' | 'lead' | 'task' | 'milestone' | 'improvement'> {
+): Pick<
+  RequestCardProps,
+  'who' | 'session' | 'lead' | 'task' | 'rung' | 'milestone' | 'improvement'
+> {
   const session = sessions.find((s) => s.id === needSession(item));
   const lead = session?.task && sessions.find((s) => s.id === session.task!.lead_session_id);
   const task =
@@ -125,6 +128,7 @@ export function needContext(
     session,
     lead: lead || undefined,
     task: task ? task.title : undefined,
+    rung: task ? task.rung?.rung : undefined,
     milestone: milestone && {
       milestone,
       stored: stored.find((m) => m.id === milestone.id),

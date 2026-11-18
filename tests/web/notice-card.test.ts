@@ -10,6 +10,7 @@ import {
   toastManager,
 } from '../../apps/web/src/components/Toast.js';
 import { useShell } from '../../apps/web/src/store.js';
+import { Clip } from '../../apps/web/src/components/Clip.js';
 import { zh } from './i18n-setup.js';
 import { mount, named, nodes, text } from './web-hook-host.js';
 import { mountToastStore } from './web-toast-store.js';
@@ -74,6 +75,21 @@ describe('notice cards', () => {
     expect(byClass('nc-hit')).toEqual([]);
   });
 
+  it('keeps the whole session, what it waits for and the command of a card behind one-line clips', () => {
+    noticeNeeds({
+      heading: 'payments-webhook',
+      event: 'waiting for approval',
+      command: 'pnpm db:migrate --env staging',
+      open() {},
+    });
+    const clips = mounted.items().filter((n) => n.type === Clip);
+    expect(clips.map((n) => [n.props.text, n.props.lines ?? 1])).toEqual([
+      ['payments-webhook', 1],
+      ['waiting for approval', 1],
+      ['pnpm db:migrate --env staging', 1],
+    ]);
+  });
+
   it('keeps a card that needs the user, without a countdown, until it is closed by its id', () => {
     const id = noticeNeeds({
       id: 'approval-7',
@@ -121,13 +137,13 @@ describe('notice cards', () => {
   it('puts how long a card has waited after what it waits for, as separate elements', () => {
     noticeNeeds({ heading: 'lead', event: 'waiting for approval', since: NOW - 19 * 60_000 });
     const items = mounted.items();
-    const event = items.findIndex((n) => n.type === 'span' && text(n) === 'waiting for approval');
+    const event = items.findIndex((n) => n.type === Clip && text(n) === 'waiting for approval');
     const waited = items.findIndex(
       (n) => typeof n.type === 'function' && n.type.name === 'NoticeWaited',
     );
     expect(event).toBeGreaterThan(-1);
     expect(waited).toBeGreaterThan(event);
-    expect(nodes(items[event]).map((n) => n.type)).toEqual(['span']);
+    expect(nodes(items[event]).map((n) => n.type)).toEqual([Clip]);
   });
 
   it('opens where a result card points when the card is pressed', () => {

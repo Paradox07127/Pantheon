@@ -215,6 +215,8 @@
   "board.frame.lead.label": "{name} {state}，打开会话",
   "board.frame.needs": "需要你",
   "board.frame.needs.more": "还有 {count} 条",
+  "board.rows.all": "显示全部 {count} 行",
+  "board.rows.less": "收起",
   "board.plan.flow.ready": "可开工",
   "board.plan.flow.pendingEdit": "待 lead",
   "board.plan.flow.removeEdge": "删除依赖：{edge}",

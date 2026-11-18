@@ -37,21 +37,39 @@ const idle = (id) =>
   }, 30_000);
 await page.click({ role: 'button', name: '项目看板', exact: true });
 
-// The card as shown: its name, and per cell its label, caption, count and links.
+// The card as shown: its name, the item links it draws, and per cell its label, caption, count
+// and whether it is a button.
 const card = () =>
   page.evaluate(`(() => {
     const c = [...document.querySelectorAll('[role=group][aria-label="你离开后"]')].find((el) => el.getClientRects().length);
     if (!c) return null;
     return {
       read: !!c.querySelector('.bf-brief-read'),
+      links: [...c.querySelectorAll('a.bf-brief-lk')].map((a) => a.textContent.trim()),
       cells: [...c.querySelectorAll('.bf-brief-c')].map((cell) => ({
         label: cell.getAttribute('aria-label'),
         cap: cell.querySelector('.cap')?.textContent ?? null,
         count: cell.querySelector('.kpi')?.textContent ?? null,
-        links: [...cell.querySelectorAll('a.bf-brief-lk')].map((a) => a.textContent.trim()),
+        button: cell.tagName === 'BUTTON' && cell.getAttribute('aria-haspopup') === 'dialog',
       })),
     };
   })()`);
+// The item links in a cell's popover, which a press on the cell opens.
+const popoverLinks = (label) =>
+  page.evaluate(`(() => {
+    const d = [...document.querySelectorAll('[role=dialog]')].find((el) => el.getAttribute('aria-label') === ${JSON.stringify(label)} && el.getClientRects().length);
+    return d ? [...d.querySelectorAll('a.bf-brief-lk')].map((a) => a.textContent.trim()) : null;
+  })()`);
+const openCell = async (label) => {
+  await page.click({ role: 'button', name: label, exact: true });
+  return poll(() => popoverLinks(label), 3000);
+};
+const itemsOf = async (label) => {
+  const links = await openCell(label);
+  await page.press('Escape');
+  await poll(async () => (await popoverLinks(label)) === null, 3000);
+  return links;
+};
 
 // A lead plans one task in a milestone, so a failure of its worker links to that task.
 const task = {
@@ -186,11 +204,18 @@ check(
   '对照组：把合并数加一，同一读法判 false',
   !sameCounts(shown, now, (b, kind) => countOf(b, kind) + (kind === 'merge' ? 1 : 0)),
 );
-const mergedCell = shown?.cells?.find((c) => c.cap === '已合并');
+check('卡里默认不列条目链接', shown && shown.links.length === 0, shown?.links);
 check(
-  '已合并一格链到合并会话的标题',
-  mergedCell?.links.includes(`verify-brief-merge-${stamp}`),
-  mergedCell,
+  '"等你处理" 一格不是按钮，其余有条目的格是打开弹层的按钮',
+  shown?.cells?.every((c) => c.button === !['等你处理', '智能体提议'].includes(c.cap)),
+  shown?.cells,
+);
+const mergedCell = shown?.cells?.find((c) => c.cap === '已合并');
+const mergedLinks = mergedCell ? await itemsOf(mergedCell.label) : null;
+check(
+  '点开已合并一格，弹层链到合并会话的标题',
+  mergedLinks?.includes(`verify-brief-merge-${stamp}`),
+  { mergedCell, mergedLinks },
 );
 
 // The card comes before the needs-you list, and its title, time and "标为已读" share one row.
@@ -246,8 +271,8 @@ result.dark = await page.evaluate(`document.documentElement.classList.contains('
 result.shot = await page.screenshot('pair-brief');
 copyFileSync(path.join(runDir, result.shot.file), path.join(runDir, 'screens', 'pair-brief.png'));
 
-// A task item is a link that opens its task in the board's drawer.
-const taskItem = now.items.find((i) => i.ref.kind === 'task');
+// A task item is a link that opens its task in the board's drawer; the decisions cell lists none.
+const taskItem = now.items.find((i) => i.ref.kind === 'task' && i.kind !== 'decisions');
 check(
   '前置：project.brief 有指向任务的条目',
   taskItem,
@@ -256,22 +281,29 @@ check(
 const view = await query('board.view', { project_id, days: '7' });
 const taskTitle = view.tasks.find((t) => t.id === taskItem?.ref.id)?.title;
 const failedCell = shown?.cells?.find((c) => c.cap === CAPTION[taskItem?.kind]);
-check('任务条目显示为任务标题的链接', taskTitle && failedCell?.links.includes(taskTitle), {
-  links: failedCell?.links,
-  taskTitle,
-});
+const failedLinks = failedCell ? await itemsOf(failedCell.label) : null;
+check(
+  '点开那一格，弹层里任务条目显示为任务标题的链接',
+  taskTitle && failedLinks?.includes(taskTitle),
+  {
+    links: failedLinks,
+    taskTitle,
+  },
+);
 const drawer = () =>
   page.evaluate(
     `(() => { const d = document.querySelector('aside.bd-drw'); return d && d.getClientRects().length && !d.dataset.endingStyle ? document.getElementById('bd-drw-title')?.textContent ?? '' : null; })()`,
   );
 check('前置：抽屉未打开', (await drawer()) === null, await drawer());
-if (taskTitle)
+if (taskTitle) {
+  await openCell(failedCell.label);
   await page.click({
     role: 'link',
     name: taskTitle,
     exact: true,
-    within: { role: 'group', name: failedCell.label, exact: true },
+    within: { role: 'dialog', name: failedCell.label, exact: true },
   });
+}
 const opened = await poll(async () => {
   const d = await drawer();
   return d && d;

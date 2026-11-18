@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { Popover } from '@base-ui/react/popover';
 import {
   Bot,
   Ellipsis,
@@ -18,7 +19,7 @@ import { markProjectSeen, useProjectBrief, writeBriefProse } from '../../data/pr
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
-import { needSession, needWhat } from './frame-model';
+import { needSession } from './frame-model';
 import type { SnapshotSession } from './panels-model';
 import { StatusIcon } from './status';
 import './frame.css';
@@ -43,6 +44,8 @@ export function BriefCard({
   const openApproved = useShell((s) => s.openProjectApproved);
   // The read the user marked read stays hidden until the brief is read again.
   const [seen, setSeen] = useState<ProjectBrief | null>(null);
+  // The cell whose items show in its popover.
+  const [open, setOpen] = useState<string | null>(null);
   const { settings } = useAppSettings();
   const proseOn = settings !== null && settings.brief_prose !== false;
   // The briefs the paragraph was asked for, by their items, so each is asked for once.
@@ -73,6 +76,7 @@ export function BriefCard({
       href="#"
       onClick={(e: MouseEvent) => {
         e.preventDefault();
+        setOpen(null);
         open();
       }}
     >
@@ -183,28 +187,7 @@ export function BriefCard({
         { count: decisions.count },
       ),
       count: decisions.count,
-      rows: (
-        <>
-          {target(
-            'top',
-            <StatusIcon status="waiting" />,
-            decisions.ref,
-            needSession(decisions.top),
-            needWhat(decisions.top),
-          )}
-          {decisions.top.blocks > 0 && (
-            <span className="bf-brief-n">
-              {t(
-                {
-                  id: 'board.brief.blocks',
-                  defaultMessage: 'Blocks {count, plural, one {# task} other {# tasks}}',
-                },
-                { count: decisions.top.blocks },
-              )}
-            </span>
-          )}
-        </>
-      ),
+      rows: null,
     });
   const milestones = of('milestone');
   if (milestones.length)
@@ -223,12 +206,6 @@ export function BriefCard({
         <span key={item.ref.id} className="bf-brief-lk">
           <Flag aria-hidden="true" />
           <span>{item.title}</span>
-          <span className="bf-brief-frac">
-            {t(
-              { id: 'board.brief.milestoneDone', defaultMessage: '{done} / {total}' },
-              { done: item.done, total: item.total },
-            )}
-          </span>
         </span>
       )),
     });
@@ -414,13 +391,37 @@ export function BriefCard({
           {t({ id: 'board.brief.read', defaultMessage: 'Mark as read' })}
         </button>
       </div>
-      {cells.map((cell) => (
-        <div key={cell.key} className="cell bf-brief-c" role="group" aria-label={cell.label}>
-          <span className="cap">{cell.cap}</span>
-          <span className="kpi">{cell.count}</span>
-          {cell.rows}
-        </div>
-      ))}
+      {cells.map((cell) =>
+        cell.rows === null ? (
+          <div key={cell.key} className="cell bf-brief-c" role="group" aria-label={cell.label}>
+            <span className="cap">{cell.cap}</span>
+            <span className="kpi">{cell.count}</span>
+          </div>
+        ) : (
+          <Popover.Root
+            key={cell.key}
+            open={open === cell.key}
+            onOpenChange={(next) => setOpen(next ? cell.key : null)}
+          >
+            <Popover.Trigger
+              className="cell bf-brief-c"
+              aria-label={cell.label}
+              aria-haspopup="dialog"
+              aria-expanded={open === cell.key}
+            >
+              <span className="cap">{cell.cap}</span>
+              <span className="kpi">{cell.count}</span>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Positioner side="bottom" align="start" sideOffset={4} style={{ zIndex: 40 }}>
+                <Popover.Popup className="pop bf-brief-pop" aria-label={cell.label}>
+                  {cell.rows}
+                </Popover.Popup>
+              </Popover.Positioner>
+            </Popover.Portal>
+          </Popover.Root>
+        ),
+      )}
       {brief.prose && (
         <div className="cell bf-brief-p">
           <span className="bf-brief-who">

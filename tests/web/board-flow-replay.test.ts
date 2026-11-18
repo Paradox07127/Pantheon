@@ -218,8 +218,13 @@ describe('the main view under replay', () => {
     expect(named(h.value, 'FlowChart').props.states).toBeUndefined();
   });
 
-  it('leaves the focus of the selected task out at a past moment', () => {
+  it('leaves the focus out while a task drawer is open', () => {
     const h = mount(() => MainView({ ...props(model(planned(tasks))), selected: 'lead:build' }));
+    expect(names(h.value)).not.toContain('TaskFocus');
+  });
+
+  it('leaves the focus out at a past moment', () => {
+    const h = mount(() => MainView(props(model(planned(tasks)))));
     expect(names(h.value)).toContain('TaskFocus');
     named(h.value, 'FlowReplayer').props.onMoment(at(20));
     h.render();

@@ -1,13 +1,15 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { ArrowRight, ChevronDown } from 'lucide-react';
 import type { BoardModel, BoardTaskState } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { ModelMark, RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { t } from '../../i18n';
 import { blockerTexts } from '../../lib/daemon-text';
 import { boardNeeds } from './frame-model';
 import type { BoardTask } from './panels-model';
 import { StateIcon } from './status';
+import { BudgetShare, RungLabel } from './TaskRecovery';
 import './overview.css';
 
 type Board = Pick<BoardModel, 'tasks' | 'needs'>;
@@ -87,6 +89,9 @@ const GROUPS: readonly GroupRule[] = [
   },
 ];
 
+/** Rows a group shows before the rest fold behind a switch; the merged group folds whole instead. */
+const FOLDED_ROWS = 8;
+
 export interface TaskGroup extends GroupRule {
   tasks: BoardTask[];
 }
@@ -119,7 +124,7 @@ function TaskRow({ task, onOpenTask }: { task: BoardTask; onOpenTask: (taskId: s
     <li>
       <button type="button" className="btl-r" onClick={() => onOpenTask(task.id)}>
         <StateIcon state={task.state!} />
-        <span className="btl-t">{task.title}</span>
+        <Clip text={task.title} />
         <span className="btl-rx">
           {device && device !== 'local' && <span className="chip mono">{device}</span>}
           {held && <span className="btl-why">{blockerTexts(task)[0]}</span>}
@@ -131,6 +136,8 @@ function TaskRow({ task, onOpenTask }: { task: BoardTask; onOpenTask: (taskId: s
             </>
           )}
         </span>
+        <span>{task.rung && <RungLabel rung={task.rung} />}</span>
+        <span>{task.budget && <BudgetShare budget={task.budget} />}</span>
         <span className="btl-who">
           {runtime && <RuntimeGlyph runtime={runtime} size={14} />}
           <ModelMark model={model} beside={runtime} size={14} />
@@ -160,6 +167,7 @@ export function TaskGroups({
   onOpenTask: (taskId: string) => void;
 }) {
   const id = useId();
+  const [open, setOpen] = useState<readonly TaskGroup['key'][]>([]);
   const groups = taskGroups(model);
   return (
     <section className="bd-pn" aria-labelledby={id} data-debug-region="board.task-groups">
@@ -167,9 +175,10 @@ export function TaskGroups({
         <h2 id={id}>{t({ id: 'board.task.group.heading', defaultMessage: 'Tasks' })}</h2>
       </div>
       {groups.map((group) => {
+        const all = group.key === 'merged' || open.includes(group.key);
         const rows = (
           <ul className="btl-l" aria-label={group.label}>
-            {group.tasks.map((task) => (
+            {(all ? group.tasks : group.tasks.slice(0, FOLDED_ROWS)).map((task) => (
               <TaskRow key={task.id} task={task} onOpenTask={onOpenTask} />
             ))}
           </ul>
@@ -181,6 +190,23 @@ export function TaskGroups({
                 <GroupHead group={group} />
               </div>
               {rows}
+              {group.tasks.length > FOLDED_ROWS && (
+                <button
+                  type="button"
+                  className="bd-lnk bf-more"
+                  aria-expanded={all}
+                  onClick={() =>
+                    setOpen(all ? open.filter((key) => key !== group.key) : [...open, group.key])
+                  }
+                >
+                  {all
+                    ? t({ id: 'board.rows.less', defaultMessage: 'Show less' })
+                    : t(
+                        { id: 'board.rows.all', defaultMessage: 'Show all {count} rows' },
+                        { count: group.tasks.length },
+                      )}
+                </button>
+              )}
             </div>
           );
         return (
