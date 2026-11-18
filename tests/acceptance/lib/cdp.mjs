@@ -235,6 +235,16 @@ function installLocator() {
         const parent = chain[chain.indexOf(outer) + 1];
         return `; outermost moving box ${sketch(outer.node)} ${then?.key} -> ${outer.key}${parent ? `, parent scrollTop ${parent.scroll}` : ''}`;
       };
+      // The nearest ancestor that clips overflow and leaves the point (x, y) outside its box.
+      const clippedBy = (node, x, y) => {
+        for (let n = node.parentElement; n; n = n.parentElement) {
+          const style = getComputedStyle(n);
+          if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
+          const b = n.getBoundingClientRect();
+          if (x < b.left || x >= b.right || y < b.top || y >= b.bottom) return n;
+        }
+        return null;
+      };
       const tick = () => {
         try {
           if (!el?.isConnected) {
@@ -273,8 +283,16 @@ function installLocator() {
             return retry(`${describe(locator)} centre (${x}, ${y}) is outside the viewport`);
           }
           const hit = document.elementFromPoint(x, y);
-          if (hit !== el && !el.contains(hit))
-            return retry(`${describe(locator)} is covered at (${x}, ${y}) by ${sketch(hit)}`);
+          if (hit !== el && !el.contains(hit)) {
+            const clip = clippedBy(el, x, y);
+            // Opening focus can scroll a list back to its top after the first scroll.
+            if (clip) el.scrollIntoView({ block: 'center', inline: 'center' });
+            return retry(
+              clip
+                ? `${describe(locator)} centre (${x}, ${y}) is outside the visible box of ${sketch(clip)}`
+                : `${describe(locator)} is covered at (${x}, ${y}) by ${sketch(hit)}`,
+            );
+          }
           armed = el;
           resolve({ x, y });
         } catch (error) {

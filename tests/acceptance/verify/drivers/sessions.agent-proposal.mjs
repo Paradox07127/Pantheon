@@ -63,14 +63,16 @@ if (pending) {
     page.evaluate(`(() => {
       const pop = document.querySelector('.pop.np');
       if (!pop) return null;
-      return [...pop.querySelectorAll('button.np-open')].map((b) => ({
+      const rows = [...pop.querySelectorAll('button.np-open')].map((b) => ({
         title: b.querySelector('.np-t')?.textContent ?? '',
         detail: b.querySelector('.np-d')?.textContent ?? '',
       }));
+      // An empty array is truthy: wait for this proposal's row, not for the first rows.
+      return rows.some((r) => r.detail.includes(${JSON.stringify(`新智能体：${NAME}`)})) && rows;
     })()`),
   );
   result.popover = rows;
-  const row = rows?.find((r) => r.detail.includes(`新智能体：${NAME}`));
+  const row = (rows || []).find((r) => r.detail.includes(`新智能体：${NAME}`));
   check('需要你的列表里有这条提议，带智能体名字', row, rows);
   check(
     '对照组：列表里没有不存在的名字',

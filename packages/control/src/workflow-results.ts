@@ -4,6 +4,7 @@ import type { ControlContext } from './context.js';
 import { boardTaskId } from './board-plan.js';
 import { midnight } from './board-view.js';
 import { gateFirstPass, latestRetrospectives } from './retrospective.js';
+import { reviewerVerdict } from './review.js';
 
 interface Attempt {
   at: number;
@@ -99,7 +100,11 @@ export function workflowResults(
           review.state === 'completed' &&
           !review.incomplete &&
           !review.findings.some((finding) => finding.blocking && finding.status !== 'rejected') &&
-          !review.verdicts?.some((verdict) => verdict.verdict === 'fail'),
+          !review.verdicts?.some((verdict) => verdict.verdict === 'fail') &&
+          // Reviewer sessions open in runtime order, so a row without a session id matches by index.
+          review.session_ids.every((id, index) =>
+            reviewerVerdict(review, id, review.runtimes[index]),
+          ),
       });
     }
   }

@@ -12,6 +12,7 @@ import type {
   Review,
   Session,
   SessionHandle,
+  SessionTurn,
   StepRun,
   UserTurn,
   WorkflowDefinition,
@@ -399,6 +400,7 @@ it('reviews on another runtime, returns blocking findings to the task session, a
   const reviewer = new FixtureAdapter(1);
   reviewer.name = 'reviewer';
   f.control.adapters.set(reviewer.name, reviewer);
+  passReviews(f, reviewer);
   const worker = await build(f, lead);
   await eventually(
     () => !!runs(f)[0]?.review_id,
@@ -485,6 +487,7 @@ it("reviews on the writer's runtime in a new read-only session when no other run
     { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
   ];
   const { f, lead } = await setup(definition);
+  passReviews(f, f.adapter);
   const worker = await build(f, lead);
   await merged(f, worker);
   const run = runs(f)[0]!,
@@ -696,11 +699,27 @@ it('stops reviewing at the round limit of the definition and hands the task back
   ).toBe(true);
 });
 
-/** Adds a reviewer runtime besides the writer's fixture runtime. */
+/** Adds a reviewer runtime besides the writer's fixture runtime; its reviews find nothing and pass. */
 function addReviewer(f: Fixture) {
   const reviewer = new FixtureAdapter(1);
   reviewer.name = 'reviewer';
   f.control.adapters.set(reviewer.name, reviewer);
+  passReviews(f, reviewer);
+}
+/** Each reviewer session on this adapter hands in a pass verdict as its turn starts, as review_verdict does. */
+function passReviews(f: Fixture, adapter: FixtureAdapter) {
+  const send = adapter.send.bind(adapter);
+  adapter.send = async (handle, turn) => {
+    const session = current(f, f.store.must<SessionTurn>('session_turns', turn.turn_id).session_id);
+    if (session.review_id)
+      f.call(
+        'review.verdict',
+        { verdict: 'pass', summary: 'No findings: checked answer.txt against the goal' },
+        null,
+        { ...principal(f, session.id), role: 'reviewer' },
+      );
+    return send(handle, turn);
+  };
 }
 function addBlockingFinding(f: Fixture, reviewId: string) {
   const review = f.store.must<Review>('reviews', reviewId);
@@ -788,6 +807,7 @@ it('merges a review loop task whose review has no blocking findings and records 
 it("reviews a review loop task on the writer's runtime when no other runtime can review", async () => {
   vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(validationResult());
   const { f, lead } = await setup(empty(), [], { path: 'review_loop' });
+  passReviews(f, f.adapter);
   const worker = await build(f, lead);
   await merged(f, worker);
   const run = runs(f)[0]!;

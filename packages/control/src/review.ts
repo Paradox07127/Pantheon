@@ -50,7 +50,7 @@ import {
 } from './board-plan.js';
 import { appendNote, contractLines } from './lead-inbox.js';
 import { wakeLead } from './task-tracking.js';
-import { sessionWorkflow, taskWorkflow } from './workflow-engine.js';
+import { reopenReviewStep, sessionWorkflow, taskWorkflow } from './workflow-engine.js';
 
 export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
 export const reviewInstruction =
@@ -131,6 +131,8 @@ export function prepareReviewRequest(
     return (ctx: ControlContext, principal: Principal, command: Command) => {
       const { input, session, requester, goal } = reviewTarget(ctx, principal, command);
       if (requester) {
+        const reopened = reopenReviewStep(ctx, session);
+        if (reopened) return { reopened };
         const duplicate = ctx.store
           .list<Review>('reviews')
           .find(
@@ -198,13 +200,20 @@ export const reviewHandlers: Handlers = {
       'invalid_state',
       'Review is not accepting verdicts',
     );
-    const verdict = { runtime: session.runtime, ...input, at: ctx.store.now() };
+    const verdict = {
+      session_id: session.id,
+      runtime: session.runtime,
+      ...input,
+      at: ctx.store.now(),
+    };
     const next = ctx.store.update<Review>(
       'reviews',
       {
         ...review,
         verdicts: [
-          ...(review.verdicts ?? []).filter((given) => given.runtime !== session.runtime),
+          ...(review.verdicts ?? []).filter(
+            (given) => given !== reviewerVerdict(review, session.id, session.runtime),
+          ),
           verdict,
         ],
       },
@@ -416,6 +425,19 @@ export function reviewerRuntime(
   return (
     [...ctx.adapters.keys()].find((name) => name !== writerRuntime && admitted(name)) ??
     (admitted(writerRuntime) ? writerRuntime : undefined)
+  );
+}
+
+/** The verdict a reviewer session handed in last. */
+export function reviewerVerdict(
+  review: Review,
+  sessionId: string,
+  runtime: string | undefined,
+): NonNullable<Review['verdicts']>[number] | undefined {
+  return review.verdicts?.find((verdict) =>
+    verdict.session_id === undefined
+      ? verdict.runtime === runtime
+      : verdict.session_id === sessionId,
   );
 }
 
@@ -881,7 +903,7 @@ function notifyRequestingLead(ctx: ControlContext, review: Review, turns: Sessio
       const turn = turns.find((turn) => turn.session_id === sessionId);
       const runtime = session?.runtime ?? sessionId,
         state = turn?.state ?? 'failed',
-        given = review.verdicts?.find((verdict) => verdict.runtime === runtime);
+        given = reviewerVerdict(review, sessionId, runtime);
       return `Reviewer ${runtime}: ${state}.${given ? ` Verdict ${given.verdict}: ${given.summary}` : state === 'completed' ? ' No verdict given.' : ''}`;
     }),
     ...(review.incomplete ? [`Incomplete: ${review.incomplete}.`] : []),

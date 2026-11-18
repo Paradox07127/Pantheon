@@ -443,11 +443,16 @@ class SilentReviewer extends FixtureAdapter {
   }
 }
 
-/** A blocking review step before the merge, once its reviewer on another runtime is running. */
-async function reviewing(Reviewer: typeof FixtureAdapter = ReplyingReviewer) {
+/** A review step before the merge, once its reviewer on another runtime is running. */
+async function reviewing(
+  Reviewer: typeof FixtureAdapter = ReplyingReviewer,
+  blocking = true,
+  maxRounds = 3,
+) {
   const definition = empty();
+  definition.review.max_rounds = maxRounds;
   definition.slots.before_merge = [
-    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
+    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking } },
   ];
   const { f, lead } = await setup(definition);
   const reviewer = new Reviewer(1);
@@ -460,7 +465,7 @@ async function reviewing(Reviewer: typeof FixtureAdapter = ReplyingReviewer) {
     () => f.control.tick(),
     10000,
   );
-  return { f, worker, review, reviewerId: review().session_ids[0]! };
+  return { f, lead, worker, review, reviewerId: review().session_ids[0]! };
 }
 
 it("fails a blocking review step on a reviewer's fail verdict without findings and quotes its summary to the lead", async () => {
@@ -489,8 +494,140 @@ it("fails a blocking review step on a reviewer's fail verdict without findings a
   expect(current(f, worker.id).outcome).toBeUndefined();
 });
 
-it('passes a blocking review step whose review completes with a reply and no verdict, as before', async () => {
-  const { f, worker, review } = await reviewing();
+it('fails a blocking review step whose reviewer hands in no verdict and wakes the lead with its name', async () => {
+  const { f, lead, worker, review } = await reviewing();
+  await eventually(
+    () => ['passed', 'failed'].includes(runs(f)[0]?.state ?? ''),
+    () => f.control.tick(),
+    10000,
+  );
+  expect(runs(f)[0]!.state).toBe('failed');
+  expect(review()).toMatchObject({ state: 'completed', findings: [] });
+  expect(review()).not.toHaveProperty('incomplete');
+  expect(
+    f.store.kindEvents(f.project.id, ['lead.note_added']).map((e) => e.payload as LeadNote),
+  ).toContainEqual(
+    expect.objectContaining({
+      kind: 'blocked',
+      text: expect.stringContaining(`Review ${review().id}: reviewer handed in no verdict`),
+    }),
+  );
+  await eventually(
+    () => f.turns(lead.id).some((turn) => turn.origin === 'tracker'),
+    () => f.control.tick(),
+    10000,
+  );
+  expect(current(f, worker.id).outcome).toBeUndefined();
+});
+
+/** The lead's request_review for its task session. */
+const requestReview = (f: Fixture, lead: Session, worker: Session) =>
+  f.call<Promise<Record<string, unknown>>>(
+    'review.request',
+    { session_id: worker.id, runtimes: ['reviewer'] },
+    null,
+    principal(f, lead.id, 'lead'),
+  );
+const notes = (f: Fixture) =>
+  f.store.kindEvents(f.project.id, ['lead.note_added']).map((e) => e.payload as LeadNote);
+const stepFailed = (f: Fixture) =>
+  eventually(
+    () => runs(f)[0]?.state === 'failed',
+    () => f.control.tick(),
+    10000,
+  );
+
+it("runs a review step whose reviewer handed in no verdict again on the lead's request_review, and merges once it passes", async () => {
+  const { f, lead, worker, review } = await reviewing();
+  await stepFailed(f);
+  const failed = runs(f)[0]!,
+    first = review();
+  expect(notes(f)).toContainEqual(
+    expect.objectContaining({
+      kind: 'blocked',
+      text: expect.stringContaining(
+        `Review ${first.id}: reviewer handed in no verdict.\nCall request_review for this task to run the review again.`,
+      ),
+    }),
+  );
+  expect(await requestReview(f, lead, worker)).toEqual({ reopened: failed.id });
+  expect(runs(f)[0]).toMatchObject({ id: failed.id, state: 'pending' });
+  expect(runs(f)[0]).not.toHaveProperty('review_id');
+  await eventually(
+    () =>
+      !!runs(f)[0]?.review_id &&
+      review().id !== first.id &&
+      f.turns(review().session_ids[0]!)[0]?.state === 'running',
+    () => f.control.tick(),
+    10000,
+  );
+  f.call(
+    'review.verdict',
+    { verdict: 'pass', summary: 'Checked answer.txt against the goal' },
+    null,
+    principal(f, review().session_ids[0]!, 'reviewer'),
+  );
+  await merged(f, worker);
+  expect(runs(f)[0]).toMatchObject({ id: failed.id, state: 'passed' });
+  expect(f.store.list<Review>('reviews').map((r) => r.requester?.step_run_id)).toEqual([
+    failed.id,
+    failed.id,
+  ]);
+});
+
+it('keeps a review step a reviewer failed by verdict failed and held when the lead requests a review', async () => {
+  const { f, lead, worker, reviewerId } = await reviewing();
+  f.call(
+    'review.verdict',
+    { verdict: 'fail', summary: 'The export drops the header row' },
+    null,
+    principal(f, reviewerId, 'reviewer'),
+  );
+  await stepFailed(f);
+  const failed = runs(f)[0]!;
+  expect(failed.reason).not.toContain('request_review');
+  const separate = await requestReview(f, lead, worker);
+  expect(separate).toMatchObject({
+    review_id: expect.any(String),
+    requester: { lead_session_id: lead.id, task_id: 'export' },
+  });
+  expect(separate.requester).not.toHaveProperty('step_run_id');
+  for (let i = 0; i < 3; i++) await f.control.tick();
+  expect(runs(f)[0]).toMatchObject({
+    id: failed.id,
+    state: 'failed',
+    review_id: failed.review_id,
+  });
+  expect(current(f, worker.id).merge).toMatchObject({
+    state: 'blocked',
+    reason: 'workflow_approval',
+  });
+  expect(current(f, worker.id).outcome).toBeUndefined();
+});
+
+it('fails a review step the lead ran again at the round limit and tells the lead', async () => {
+  const { f, lead, worker } = await reviewing(ReplyingReviewer, true, 1);
+  await stepFailed(f);
+  const failed = runs(f)[0]!;
+  expect(await requestReview(f, lead, worker)).toEqual({ reopened: failed.id });
+  await stepFailed(f);
+  expect(runs(f)[0]).toMatchObject({
+    id: failed.id,
+    reason: 'Code review limit reached: at most 1 rounds per reviewed session',
+  });
+  expect(f.store.list<Review>('reviews')).toHaveLength(1);
+  expect(notes(f)).toContainEqual(
+    expect.objectContaining({
+      kind: 'blocked',
+      text: expect.stringContaining('Code review limit reached'),
+    }),
+  );
+  await expect(() => requestReview(f, lead, worker)).rejects.toThrow('Code review limit reached');
+  expect(current(f, worker.id).outcome).toBeUndefined();
+});
+
+it('passes a non-blocking review step whose review completes with a reply and no verdict', async () => {
+  const { f, worker, review } = await reviewing(ReplyingReviewer, false);
   await merged(f, worker);
   expect(runs(f)[0]!.state).toBe('passed');
   expect(review()).toMatchObject({ state: 'completed', findings: [] });
@@ -517,4 +654,48 @@ it("gives both the incomplete reason and the reviewer's fail verdict when a bloc
   );
   expect(reason).toContain('failed by verdict:\nreviewer: The export drops the header row');
   expect(reason.indexOf('incomplete')).toBeLessThan(reason.indexOf('failed by verdict'));
+});
+
+it('keeps the verdicts of two reviewers on the same runtime and fails the step by the fail verdict', async () => {
+  const { f, review, reviewerId } = await reviewing();
+  const first = review();
+  const second = f.store.insert<Session>('sessions', {
+    id: 'second-reviewer',
+    revision: 1,
+    project_id: f.project.id,
+    runtime: 'reviewer',
+    review_id: first.id,
+    state: 'running',
+    turn_count: 1,
+  });
+  f.store.update<Review>(
+    'reviews',
+    { ...first, session_ids: [...first.session_ids, second.id] },
+    first.revision,
+  );
+  f.call(
+    'review.verdict',
+    { verdict: 'fail', summary: 'The export drops the header row' },
+    null,
+    principal(f, reviewerId, 'reviewer'),
+  );
+  f.call(
+    'review.verdict',
+    { verdict: 'pass', summary: 'The export matches the goal' },
+    null,
+    principal(f, second.id, 'reviewer'),
+  );
+  expect(review().verdicts).toEqual([
+    expect.objectContaining({ session_id: reviewerId, runtime: 'reviewer', verdict: 'fail' }),
+    expect.objectContaining({ session_id: second.id, runtime: 'reviewer', verdict: 'pass' }),
+  ]);
+  await eventually(
+    () => ['passed', 'failed'].includes(runs(f)[0]?.state ?? ''),
+    () => f.control.tick(),
+    10000,
+  );
+  expect(runs(f)[0]!.state).toBe('failed');
+  expect(runs(f)[0]!.reason).toContain(
+    'failed by verdict:\nreviewer: The export drops the header row',
+  );
 });

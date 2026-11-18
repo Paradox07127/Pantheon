@@ -31,7 +31,11 @@ for (const file of fs
   }
 }
 
-const tools = new Map(Object.entries(sessionTools.lead).map(([tool, type]) => [type, tool]));
+// Each command's tool and the session role that has it, the lead's first.
+const tools = new Map();
+for (const role of ['lead', ...Object.keys(sessionTools).filter((role) => role !== 'lead')])
+  for (const [tool, type] of Object.entries(sessionTools[role]))
+    if (!tools.has(type)) tools.set(type, role === 'lead' ? { tool } : { tool, role });
 // The first sentence of each documented command, as the group's purpose.
 const firstSentence = (doc) =>
   doc
@@ -46,7 +50,7 @@ const groups = [...new Set(names.map((name) => name.split('.')[0]))].map((group)
     .map((type) => ({
       type,
       ...(docs.has(type) ? { about: docs.get(type) } : {}),
-      tool: tools.get(type) ?? USER_ONLY,
+      ...(tools.get(type) ?? { tool: USER_ONLY }),
     }));
   const about = [...new Set(commands.filter((c) => c.about).map((c) => firstSentence(c.about)))]
     .join('; ')

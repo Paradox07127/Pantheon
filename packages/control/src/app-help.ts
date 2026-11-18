@@ -5,8 +5,8 @@ export interface AppHelpGroup {
   group: string;
   /** The first sentence of each documented command of the group. */
   about: string;
-  /** tool is the lead tool that sends the command, or APP_HELP_USER_ONLY. */
-  commands: { type: string; about?: string; tool: string }[];
+  /** tool is the session tool that sends the command, or APP_HELP_USER_ONLY; role names a session other than the lead that has it. */
+  commands: { type: string; about?: string; tool: string; role?: string }[];
 }
 
 /** The screens of the app where the user does what no lead tool does. */
@@ -46,7 +46,9 @@ export function appHelp(topic?: string): AppHelp {
     return {
       groups: appHelpGroups.map(({ group, about, commands }) => {
         const leadTools = [
-          ...new Set(commands.map((c) => c.tool).filter((t) => t !== APP_HELP_USER_ONLY)),
+          ...new Set(
+            commands.flatMap((c) => (c.tool === APP_HELP_USER_ONLY || c.role ? [] : [c.tool])),
+          ),
         ];
         return `${group}: ${about || commands.map((c) => c.type).join(', ')} (lead tools: ${leadTools.join(', ') || 'none'})`;
       }),

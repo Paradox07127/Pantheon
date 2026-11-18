@@ -37,7 +37,7 @@ import { doneReported, queueStepTurn, wakeLead } from './task-tracking.js';
 import { causeTurn } from './progress.js';
 import { unsnooze } from './session.js';
 import { runValidationCommand } from './validation-executor.js';
-import { reviewInstruction, reviewerRuntime, startReview } from './review.js';
+import { reviewInstruction, reviewerRuntime, reviewerVerdict, startReview } from './review.js';
 import { sessionRangeAsync } from './landing-diff.js';
 import { runGit } from './git.js';
 import { workflowResults } from './workflow-results.js';
@@ -971,13 +971,22 @@ function settleReviewStep(ctx: ControlContext, run: StepRun): void {
   if (review.state === 'running') return;
   const kind = run.step.kind as Extract<WorkflowStep['kind'], { type: 'review' }>,
     blocking = review.findings.filter((f) => f.status === 'open' && f.blocking),
-    failed =
+    reviewers =
       review.state === 'completed'
-        ? (review.verdicts ?? []).filter((verdict) => verdict.verdict === 'fail')
-        : [];
+        ? review.session_ids.map((id) => {
+            const name = ctx.store.get<Session>('sessions', id)?.runtime;
+            return { name: name ?? id, given: reviewerVerdict(review, id, name) };
+          })
+        : [],
+    failed = reviewers.flatMap(({ given }) => (given?.verdict === 'fail' ? [given] : [])),
+    silent = reviewers.filter(({ given }) => !given);
   if (
     !kind.blocking ||
-    (review.state === 'completed' && !review.incomplete && !blocking.length && !failed.length)
+    (review.state === 'completed' &&
+      !review.incomplete &&
+      !blocking.length &&
+      !failed.length &&
+      !silent.length)
   ) {
     changeRun(ctx, run, 'passed');
     return;
@@ -986,7 +995,7 @@ function settleReviewStep(ctx: ControlContext, run: StepRun): void {
     return failStep(
       ctx,
       run,
-      review.incomplete || failed.length
+      review.incomplete || failed.length || silent.length
         ? [
             ...(review.incomplete ? [`Review ${review.id} incomplete: ${review.incomplete}`] : []),
             ...(failed.length
@@ -994,6 +1003,10 @@ function settleReviewStep(ctx: ControlContext, run: StepRun): void {
                   `Review ${review.id} failed by verdict:`,
                   ...failed.map((verdict) => `${verdict.runtime}: ${verdict.summary}`),
                 ]
+              : []),
+            ...silent.map(({ name }) => `Review ${review.id}: ${name} handed in no verdict.`),
+            ...(silent.length && !failed.length
+              ? ['Call request_review for this task to run the review again.']
               : []),
           ].join('\n')
         : `Review ${review.id} ${review.state}`,
@@ -1064,26 +1077,55 @@ function followRun(ctx: ControlContext, run: StepRun, answers: ConditionAnswers)
     }
   }
   if (run.state === 'running' && run.review_id) settleReviewStep(ctx, run);
-  if (run.state === 'failed' && run.review_id && run.slot === 'before_merge' && turn) {
-    if (turn.state !== 'completed') return;
-    const plan = ctx.store.must<BoardPlan>('board_plans', run.lead_session_id),
-      children = childRuns(ctx),
-      others = liveRuns(ctx, plan, run.task_id, 'before_merge').filter(
-        (other) => other.step.kind.type !== 'command' && other.session_id === run.session_id,
-      );
-    const applies = (other: StepRun) =>
-      workflowCondition(ctx, other.step, other.session_id, 'before_merge', other.task_id, answers);
-    // The slot runs again once every condition has its answer.
-    if (others.some((other) => applies(other) === undefined)) return;
-    for (const other of others) {
-      for (const child of children.get(other.id) ?? [])
-        if (child.state !== 'retired') changeRun(ctx, child, 'retired');
-      const { turn_id: _, review_id: __, reason: ___, finished_at: ____, ...rest } = other;
-      const again = applies(other);
-      changeRun(ctx, rest, again ? 'pending' : 'skipped', again ? undefined : 'condition');
-    }
-    resumeMerge(ctx, run);
+  if (
+    run.state === 'failed' &&
+    run.review_id &&
+    run.slot === 'before_merge' &&
+    turn?.state === 'completed'
+  )
+    rerunSlot(ctx, run, answers);
+}
+
+/** Sets the session's steps before the merge back to pending; false while a condition waits for its answer. */
+function rerunSlot(ctx: ControlContext, run: StepRun, answers: ConditionAnswers): boolean {
+  const plan = ctx.store.must<BoardPlan>('board_plans', run.lead_session_id),
+    children = childRuns(ctx),
+    others = liveRuns(ctx, plan, run.task_id, 'before_merge').filter(
+      (other) => other.step.kind.type !== 'command' && other.session_id === run.session_id,
+    );
+  const applies = (other: StepRun) =>
+    workflowCondition(ctx, other.step, other.session_id, 'before_merge', other.task_id, answers);
+  if (others.some((other) => applies(other) === undefined)) return false;
+  for (const other of others) {
+    for (const child of children.get(other.id) ?? [])
+      if (child.state !== 'retired') changeRun(ctx, child, 'retired');
+    const { turn_id: _, review_id: __, reason: ___, finished_at: ____, ...rest } = other;
+    const again = applies(other);
+    changeRun(ctx, rest, again ? 'pending' : 'skipped', again ? undefined : 'condition');
   }
+  resumeMerge(ctx, run);
+  return true;
+}
+
+/**
+ * Runs again the failed review step before the merge of a held task session, unless a reviewer
+ * failed it by verdict; the reopened run's id.
+ */
+export function reopenReviewStep(ctx: ControlContext, session: Session): string | undefined {
+  const plan =
+    session.task && ctx.store.get<BoardPlan>('board_plans', session.task.lead_session_id);
+  if (!plan || !heldForSteps(session)) return;
+  const run = liveRuns(ctx, plan, session.task!.id, 'before_merge').find(
+    (r) => r.session_id === session.id && r.state === 'failed' && r.review_id && !r.turn_id,
+  );
+  if (
+    !run ||
+    ctx.store
+      .must<Review>('reviews', run.review_id!)
+      .verdicts?.some((given) => given.verdict === 'fail')
+  )
+    return;
+  if (rerunSlot(ctx, run, decidedConditions(ctx))) return run.id;
 }
 
 /** Runs a slot command in the source repository; a restart fails it as recoverWorkflowSteps does. */

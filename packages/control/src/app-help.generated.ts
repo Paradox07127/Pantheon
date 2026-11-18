@@ -529,14 +529,15 @@ export const appHelpGroups: AppHelpGroup[] = [
     about:
       "Hands in the calling reviewer's verdict on the running review it belongs to, replacing its earlier one, and returns it",
     commands: [
-      { type: 'review.finding', tool: 'the user does this in the app' },
+      { type: 'review.finding', tool: 'review_finding', role: 'reviewer' },
       { type: 'review.finding.resolve', tool: 'the user does this in the app' },
       { type: 'review.request', tool: 'request_review' },
       {
         type: 'review.verdict',
         about:
           "Hands in the calling reviewer's verdict on the running review it belongs to, replacing its earlier one, and returns it. Reviewer sessions only.",
-        tool: 'the user does this in the app',
+        tool: 'review_verdict',
+        role: 'reviewer',
       },
     ],
   },

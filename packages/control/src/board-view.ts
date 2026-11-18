@@ -55,7 +55,7 @@ import {
 } from './task-dispatch.js';
 import { cachedReady, sessionList } from './workbench-session.js';
 import { ITERATION_DAYS } from './project-board.js';
-import { reviewExecutionReader, reviewTimeReader } from './review.js';
+import { reviewExecutionReader, reviewTimeReader, reviewerVerdict } from './review.js';
 import { runGit } from './git.js';
 import { gateFailed } from './landing.js';
 import { doneReported } from './task-tracking.js';
@@ -1541,8 +1541,9 @@ export function boardView(
   };
   const reviewersOf = (reviewId: string) => {
     const review = ctx.store.get<Review>('reviews', reviewId);
-    return (review?.runtimes ?? []).map((runtime) => {
-      const given = review!.verdicts?.find((verdict) => verdict.runtime === runtime);
+    return (review?.session_ids ?? []).map((id, index) => {
+      const runtime = ctx.store.get<Session>('sessions', id)?.runtime ?? review!.runtimes[index]!;
+      const given = reviewerVerdict(review!, id, runtime);
       return given ? { runtime, verdict: given.verdict, summary: given.summary } : { runtime };
     });
   };

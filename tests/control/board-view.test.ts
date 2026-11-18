@@ -3697,12 +3697,53 @@ it('copies the verdict of a step run and the reviewers of its review into the ta
     state: 'completed',
     findings: [],
     verdicts: [{ runtime: 'claude', verdict: 'pass', summary: 'Columns match.', at: 1 }],
-    session_ids: [],
+    session_ids: ['claude-reviewer', 'codex-reviewer'],
   });
   step('review', {
     step: { id: 'review', title: 'Review', kind: { type: 'review' } },
     state: 'passed',
     review_id: 'export-review',
+  });
+  for (const id of ['first-reviewer', 'second-reviewer'])
+    f.store.insert<Session>('sessions', {
+      id,
+      revision: 1,
+      project_id: f.project.id,
+      runtime: 'claude',
+      review_id: 'pair-review',
+      state: 'closed',
+      turn_count: 1,
+    });
+  f.store.insert<Review>('reviews', {
+    id: 'pair-review',
+    revision: 1,
+    project_id: f.project.id,
+    round: 1,
+    runtimes: ['claude'],
+    state: 'completed',
+    findings: [],
+    verdicts: [
+      {
+        session_id: 'first-reviewer',
+        runtime: 'claude',
+        verdict: 'pass',
+        summary: 'Columns match.',
+        at: 1,
+      },
+      {
+        session_id: 'second-reviewer',
+        runtime: 'claude',
+        verdict: 'fail',
+        summary: 'Totals drift.',
+        at: 2,
+      },
+    ],
+    session_ids: ['first-reviewer', 'second-reviewer'],
+  });
+  step('pair', {
+    step: { id: 'pair', title: 'Review twice', kind: { type: 'review' } },
+    state: 'failed',
+    review_id: 'pair-review',
   });
   const runs = f.control
     .boardView(user, f.project.id, 1)
@@ -3713,5 +3754,9 @@ it('copies the verdict of a step run and the reviewers of its review into the ta
   expect(runs.find((run) => run.id === 'review')!.reviewers).toEqual([
     { runtime: 'claude', verdict: 'pass', summary: 'Columns match.' },
     { runtime: 'codex' },
+  ]);
+  expect(runs.find((run) => run.id === 'pair')!.reviewers).toEqual([
+    { runtime: 'claude', verdict: 'pass', summary: 'Columns match.' },
+    { runtime: 'claude', verdict: 'fail', summary: 'Totals drift.' },
   ]);
 });

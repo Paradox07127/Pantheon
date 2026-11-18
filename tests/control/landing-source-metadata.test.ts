@@ -43,11 +43,12 @@ it('refuses to land into a source whose .git/commondir points git at configurati
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'merged\n');
   git(workspace.path, 'add', '--', 'answer.txt');
   git(workspace.path, 'commit', '--quiet', '-m', 'Update answer.txt');
-  f.call<Session>(
+  const admitted = await f.call<Promise<Session>>(
     'session.merge',
     { session_id: session.id },
     f.store.must<Session>('sessions', session.id).revision,
   );
+  expect(admitted.merge?.state).toBe('running');
   // Written after the merge was admitted, whose own source reads would refuse the commondir.
   writeFileSync(path.join(metadata, 'commondir'), 'planted\n');
   await eventually(
