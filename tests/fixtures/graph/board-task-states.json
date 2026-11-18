@@ -1,0 +1,252 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "plan",
+      "label": "In the plan"
+    },
+    {
+      "id": "work",
+      "label": "Sessions at work"
+    },
+    {
+      "id": "land",
+      "label": "Landing"
+    },
+    {
+      "id": "end",
+      "label": "Ends"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "proposed",
+      "label": "proposed",
+      "group": "plan",
+      "kind": "policy",
+      "sublabel": "plan proposal pending, charter says ask",
+      "sources": [
+        "file:packages/control/src/project-board.ts:1254",
+        "file:packages/domain/src/board.ts:336"
+      ]
+    },
+    {
+      "id": "todo",
+      "label": "todo",
+      "group": "plan",
+      "kind": "queue",
+      "sublabel": "in the plan, no session yet",
+      "sources": [
+        "file:packages/control/src/board-view.ts:518"
+      ]
+    },
+    {
+      "id": "waiting_upstream",
+      "label": "waiting_upstream",
+      "group": "plan",
+      "kind": "queue",
+      "sublabel": "dispatch waits on a dependency",
+      "sources": [
+        "file:packages/control/src/task-dispatch.ts:63"
+      ]
+    },
+    {
+      "id": "claimed",
+      "label": "claimed",
+      "group": "work",
+      "kind": "service",
+      "sublabel": "session opened, no turn yet"
+    },
+    {
+      "id": "running",
+      "label": "running",
+      "group": "work",
+      "kind": "service",
+      "sublabel": "a turn queued or running"
+    },
+    {
+      "id": "waiting_approval",
+      "label": "waiting_approval",
+      "group": "work",
+      "kind": "policy",
+      "sublabel": "permission, question or workflow approval"
+    },
+    {
+      "id": "needs_attention",
+      "label": "needs_attention",
+      "group": "work",
+      "kind": "policy",
+      "sublabel": "turns ended, nothing ready to merge"
+    },
+    {
+      "id": "blocked",
+      "label": "blocked",
+      "group": "work",
+      "kind": "policy",
+      "sublabel": "merge blocked or session reconciling"
+    },
+    {
+      "id": "awaiting_merge",
+      "label": "awaiting_merge",
+      "group": "land",
+      "kind": "queue",
+      "sublabel": "worktree clean with commits past base"
+    },
+    {
+      "id": "gating",
+      "label": "gating",
+      "group": "land",
+      "kind": "policy",
+      "sublabel": "merge running: gates, then land",
+      "sources": [
+        "file:packages/control/src/landing.ts"
+      ]
+    },
+    {
+      "id": "awaiting_acceptance",
+      "label": "awaiting_acceptance",
+      "group": "land",
+      "kind": "policy",
+      "sublabel": "done_when report, report filed"
+    },
+    {
+      "id": "merged",
+      "label": "merged",
+      "group": "end",
+      "kind": "store",
+      "sublabel": "all sessions merged, or lead accepted",
+      "sources": [
+        "file:packages/control/src/board-plan.ts:128"
+      ]
+    },
+    {
+      "id": "failed",
+      "label": "failed",
+      "group": "end",
+      "kind": "external",
+      "sublabel": "sessions closed, a part did not merge"
+    },
+    {
+      "id": "dropped",
+      "label": "dropped",
+      "group": "end",
+      "kind": "external",
+      "sublabel": "removed from plan, id retired, sessions stopped",
+      "sources": [
+        "file:packages/control/src/project-board.ts:626"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "proposed",
+      "to": "todo",
+      "style": "main",
+      "label": "user accepts"
+    },
+    {
+      "from": "proposed",
+      "to": "dropped",
+      "label": "rejected or withdrawn"
+    },
+    {
+      "from": "todo",
+      "to": "waiting_upstream",
+      "label": "dependency open"
+    },
+    {
+      "from": "waiting_upstream",
+      "to": "claimed",
+      "label": "upstream merged"
+    },
+    {
+      "from": "todo",
+      "to": "claimed",
+      "style": "main",
+      "label": "task.start or auto dispatch"
+    },
+    {
+      "from": "claimed",
+      "to": "running",
+      "style": "main",
+      "label": "first turn"
+    },
+    {
+      "from": "running",
+      "to": "waiting_approval",
+      "label": "asks"
+    },
+    {
+      "from": "waiting_approval",
+      "to": "running",
+      "style": "return",
+      "label": "answered"
+    },
+    {
+      "from": "running",
+      "to": "needs_attention",
+      "label": "stalls"
+    },
+    {
+      "from": "needs_attention",
+      "to": "running",
+      "style": "return",
+      "label": "task.message"
+    },
+    {
+      "from": "running",
+      "to": "awaiting_merge",
+      "style": "main",
+      "label": "commits, turn ends"
+    },
+    {
+      "from": "running",
+      "to": "awaiting_acceptance",
+      "label": "task.report"
+    },
+    {
+      "from": "awaiting_merge",
+      "to": "gating",
+      "style": "main",
+      "label": "session.merge"
+    },
+    {
+      "from": "gating",
+      "to": "merged",
+      "style": "main",
+      "label": "gates pass, lands"
+    },
+    {
+      "from": "gating",
+      "to": "blocked",
+      "label": "gate fail, conflict, out of scope"
+    },
+    {
+      "from": "blocked",
+      "to": "running",
+      "style": "return",
+      "label": "handed back to fix"
+    },
+    {
+      "from": "awaiting_acceptance",
+      "to": "merged",
+      "label": "task.accept"
+    },
+    {
+      "from": "running",
+      "to": "failed",
+      "label": "sessions close unmerged"
+    },
+    {
+      "from": "failed",
+      "to": "claimed",
+      "style": "return",
+      "label": "redispatch"
+    },
+    {
+      "from": "running",
+      "to": "dropped",
+      "label": "board.plan.edit removes, task.stop"
+    }
+  ]
+}

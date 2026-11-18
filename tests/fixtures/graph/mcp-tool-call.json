@@ -1,0 +1,239 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "setup",
+      "label": "Turn start (control)"
+    },
+    {
+      "id": "native",
+      "label": "Native runtime"
+    },
+    {
+      "id": "cli",
+      "label": "pantheon mcp (apps/cli)"
+    },
+    {
+      "id": "daemon",
+      "label": "apps/daemon"
+    },
+    {
+      "id": "control",
+      "label": "packages/control"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "issue",
+      "label": "sessionMcp",
+      "group": "setup",
+      "kind": "policy",
+      "icon": "key",
+      "sublabel": "context.ts: session credential per role",
+      "detail": [
+        "env PANTHEON_DAEMON_URL, TOKEN_FILE",
+        "lead: costly tools set to ask"
+      ],
+      "sources": [
+        "file:packages/control/src/context.ts:464"
+      ]
+    },
+    {
+      "id": "agent",
+      "label": "Agent",
+      "group": "native",
+      "kind": "external",
+      "icon": "bot",
+      "sublabel": "Claude, Codex or ACP, via adapters",
+      "detail": [
+        "MCP server named pantheon over stdio"
+      ],
+      "sources": [
+        "file:packages/adapters/src/claude.ts:504",
+        "file:packages/adapters/src/codex.ts:2509"
+      ]
+    },
+    {
+      "id": "server",
+      "label": "MCP stdio server",
+      "group": "cli",
+      "kind": "service",
+      "icon": "terminal",
+      "sublabel": "index.ts reads the token file",
+      "detail": [
+        "tools = sessionTools[role]"
+      ],
+      "sources": [
+        "file:apps/cli/src/index.ts:41",
+        "file:apps/cli/src/mcp.ts:382"
+      ]
+    },
+    {
+      "id": "call",
+      "label": "CallTool handler",
+      "group": "cli",
+      "kind": "policy",
+      "sublabel": "mcp.ts",
+      "detail": [
+        "re-auth via /v1/session-principal",
+        "tool allowed? zod parse, bind project_id",
+        "idempotency key from the tool call id"
+      ],
+      "sources": [
+        "file:apps/cli/src/mcp.ts:494"
+      ]
+    },
+    {
+      "id": "http",
+      "label": "daemonClient",
+      "group": "cli",
+      "kind": "service",
+      "icon": "globe",
+      "sublabel": "POST /v1/commands, Bearer token",
+      "detail": [
+        "loopback only; retries daemon_unavailable"
+      ],
+      "sources": [
+        "file:apps/cli/src/mcp.ts:338"
+      ]
+    },
+    {
+      "id": "auth",
+      "label": "Token check",
+      "group": "daemon",
+      "kind": "policy",
+      "icon": "lock",
+      "sublabel": "registry.authenticate -> session principal",
+      "sources": [
+        "file:apps/daemon/src/index.ts:447"
+      ]
+    },
+    {
+      "id": "route",
+      "label": "POST /v1/commands",
+      "group": "daemon",
+      "kind": "service",
+      "icon": "server",
+      "sublabel": "Hono route",
+      "sources": [
+        "file:apps/daemon/src/index.ts:496"
+      ]
+    },
+    {
+      "id": "execute",
+      "label": "Control.execute",
+      "group": "control",
+      "kind": "policy",
+      "sublabel": "index.ts",
+      "detail": [
+        "sessionAction: command in role's scope",
+        "actor matches, schema, idempotency"
+      ],
+      "sources": [
+        "file:packages/control/src/index.ts:443"
+      ]
+    },
+    {
+      "id": "handler",
+      "label": "Command handler",
+      "group": "control",
+      "kind": "service",
+      "sublabel": "commands.ts table, one transaction",
+      "detail": [
+        "e.g. task.report, board.plan.update"
+      ],
+      "sources": [
+        "file:packages/control/src/index.ts:511"
+      ]
+    },
+    {
+      "id": "db",
+      "label": "SQLite",
+      "group": "control",
+      "kind": "store",
+      "sublabel": "state, events, receipts",
+      "sources": [
+        "file:packages/store/package.json"
+      ]
+    },
+    {
+      "id": "relay",
+      "label": "BrowserRelay",
+      "group": "control",
+      "kind": "queue",
+      "sublabel": "browser.* tools; no receipt kept",
+      "detail": [
+        "waits for the desktop window's answer"
+      ],
+      "sources": [
+        "file:packages/control/src/index.ts:471"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "issue",
+      "to": "agent",
+      "label": "spec.pantheon_mcp"
+    },
+    {
+      "from": "agent",
+      "to": "server",
+      "style": "main",
+      "label": "tools/call"
+    },
+    {
+      "from": "server",
+      "to": "call",
+      "style": "main"
+    },
+    {
+      "from": "call",
+      "to": "http",
+      "style": "main",
+      "label": "command envelope"
+    },
+    {
+      "from": "http",
+      "to": "auth",
+      "style": "main"
+    },
+    {
+      "from": "auth",
+      "to": "route",
+      "style": "main"
+    },
+    {
+      "from": "route",
+      "to": "execute",
+      "style": "main"
+    },
+    {
+      "from": "execute",
+      "to": "handler",
+      "style": "main"
+    },
+    {
+      "from": "handler",
+      "to": "db",
+      "style": "data"
+    },
+    {
+      "from": "execute",
+      "to": "relay",
+      "label": "browser tools"
+    },
+    {
+      "from": "route",
+      "to": "http",
+      "style": "return",
+      "label": "receipt or error"
+    },
+    {
+      "from": "call",
+      "to": "agent",
+      "style": "return",
+      "label": "text result, isError if refused"
+    }
+  ]
+}

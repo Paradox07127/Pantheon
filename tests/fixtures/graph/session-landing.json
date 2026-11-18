@@ -1,0 +1,276 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "ask",
+      "label": "Merge requested"
+    },
+    {
+      "id": "admit",
+      "label": "Admission (in the command)"
+    },
+    {
+      "id": "land",
+      "label": "landWorkspace (landing.ts)"
+    },
+    {
+      "id": "after",
+      "label": "Afterwards"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "user",
+      "label": "user session.merge",
+      "group": "ask",
+      "kind": "client",
+      "sublabel": "mergeRequest",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:3960"
+      ]
+    },
+    {
+      "id": "lead",
+      "label": "lead task merge",
+      "group": "ask",
+      "kind": "external",
+      "sublabel": "leadTaskMerge",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:4088"
+      ]
+    },
+    {
+      "id": "auto",
+      "label": "merge after turn",
+      "group": "ask",
+      "kind": "queue",
+      "sublabel": "mergeAfterTurn when auto-merge is on",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:4253"
+      ]
+    },
+    {
+      "id": "admitMerge",
+      "label": "admitMerge",
+      "group": "admit",
+      "kind": "policy",
+      "sublabel": "requireMergeReady, task scope",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:3739"
+      ]
+    },
+    {
+      "id": "outbox",
+      "label": "outbox session.merge",
+      "group": "admit",
+      "kind": "queue",
+      "sublabel": "run by scheduler.tick",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:3786"
+      ]
+    },
+    {
+      "id": "mergeSession",
+      "label": "mergeSession",
+      "group": "land",
+      "kind": "service",
+      "sublabel": "gate commands, task scope, saved progress",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:3028"
+      ]
+    },
+    {
+      "id": "precheck",
+      "label": "worktree checks",
+      "group": "land",
+      "kind": "policy",
+      "sublabel": "no half rebase, clean, target branch unchanged",
+      "sources": [
+        "file:packages/control/src/landing.ts:615"
+      ]
+    },
+    {
+      "id": "paths",
+      "label": "path checks",
+      "group": "land",
+      "kind": "policy",
+      "sublabel": "AGENT_CONFIGURATION, verification files, scope",
+      "sources": [
+        "file:packages/control/src/landing.ts:672"
+      ]
+    },
+    {
+      "id": "rebase",
+      "label": "rebase onto source HEAD",
+      "group": "land",
+      "kind": "service",
+      "sublabel": "when the branch moved; base_sha updated",
+      "sources": [
+        "file:packages/control/src/landing.ts:747"
+      ]
+    },
+    {
+      "id": "gates",
+      "label": "checkGates",
+      "group": "land",
+      "kind": "policy",
+      "sublabel": "gate_runner: candidate clone or worktree",
+      "sources": [
+        "file:packages/control/src/landing.ts:491"
+      ]
+    },
+    {
+      "id": "hold",
+      "label": "beforeLand",
+      "group": "land",
+      "kind": "policy",
+      "sublabel": "workflow approval before merge may hold it",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:3306"
+      ]
+    },
+    {
+      "id": "ff",
+      "label": "fast-forward source",
+      "group": "land",
+      "kind": "service",
+      "sublabel": "fetch to refs/pantheon/landing, merge --ff-only",
+      "sources": [
+        "file:packages/control/src/landing.ts:881"
+      ]
+    },
+    {
+      "id": "branch",
+      "label": "project branch",
+      "group": "after",
+      "kind": "store",
+      "sublabel": "source checkout HEAD"
+    },
+    {
+      "id": "merged",
+      "label": "session.merged",
+      "group": "after",
+      "kind": "service",
+      "sublabel": "session closed, outcome merged",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:3379"
+      ]
+    },
+    {
+      "id": "remove",
+      "label": "workspace.remove",
+      "group": "after",
+      "kind": "queue",
+      "sublabel": "worktree deleted later",
+      "sources": [
+        "file:packages/control/src/workbench-session.ts:3391"
+      ]
+    },
+    {
+      "id": "blocked",
+      "label": "merge blocked",
+      "group": "after",
+      "kind": "policy",
+      "sublabel": "reason: conflict, gate_failed, out_of_scope...; needs you or hand back"
+    }
+  ],
+  "edges": [
+    {
+      "from": "user",
+      "to": "admitMerge",
+      "style": "main"
+    },
+    {
+      "from": "lead",
+      "to": "admitMerge"
+    },
+    {
+      "from": "auto",
+      "to": "admitMerge"
+    },
+    {
+      "from": "admitMerge",
+      "to": "outbox",
+      "style": "main",
+      "label": "merge running"
+    },
+    {
+      "from": "outbox",
+      "to": "mergeSession",
+      "style": "async"
+    },
+    {
+      "from": "mergeSession",
+      "to": "precheck",
+      "style": "main"
+    },
+    {
+      "from": "precheck",
+      "to": "paths",
+      "style": "main"
+    },
+    {
+      "from": "paths",
+      "to": "rebase",
+      "style": "main"
+    },
+    {
+      "from": "rebase",
+      "to": "gates",
+      "style": "main",
+      "label": "candidate commit"
+    },
+    {
+      "from": "gates",
+      "to": "hold",
+      "style": "main",
+      "label": "all pass"
+    },
+    {
+      "from": "hold",
+      "to": "ff",
+      "style": "main"
+    },
+    {
+      "from": "ff",
+      "to": "branch",
+      "style": "data",
+      "label": "new HEAD"
+    },
+    {
+      "from": "ff",
+      "to": "merged",
+      "style": "main",
+      "label": "landed"
+    },
+    {
+      "from": "merged",
+      "to": "remove",
+      "style": "async"
+    },
+    {
+      "from": "ff",
+      "to": "rebase",
+      "style": "return",
+      "label": "source moved: retry onto head"
+    },
+    {
+      "from": "precheck",
+      "to": "blocked"
+    },
+    {
+      "from": "paths",
+      "to": "blocked"
+    },
+    {
+      "from": "rebase",
+      "to": "blocked",
+      "label": "rebase_conflict"
+    },
+    {
+      "from": "gates",
+      "to": "blocked",
+      "label": "gate_failed"
+    }
+  ]
+}

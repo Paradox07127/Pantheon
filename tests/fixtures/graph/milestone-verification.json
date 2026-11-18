@@ -1,0 +1,271 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "trigger",
+      "label": "Start"
+    },
+    {
+      "id": "checks",
+      "label": "Checks on merged code"
+    },
+    {
+      "id": "review",
+      "label": "Independent review"
+    },
+    {
+      "id": "result",
+      "label": "Result"
+    }
+  ],
+  "colors": {
+    "orange": "inconclusive: could not decide"
+  },
+  "nodes": [
+    {
+      "id": "ready",
+      "label": "Milestone ready",
+      "group": "trigger",
+      "kind": "service",
+      "sublabel": "milestoneView status ready_for_acceptance",
+      "detail": [
+        "its tasks are done; lead owns it"
+      ],
+      "sources": [
+        "file:packages/control/src/project-facts.ts:123"
+      ]
+    },
+    {
+      "id": "policy",
+      "label": "milestone_verify = auto",
+      "group": "trigger",
+      "kind": "policy",
+      "icon": "settings",
+      "sublabel": "workflow policy; one run per project",
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:346"
+      ]
+    },
+    {
+      "id": "row",
+      "label": "Verification row",
+      "group": "trigger",
+      "kind": "store",
+      "sublabel": "milestone_verifications, state running",
+      "detail": [
+        "keyed by the commitment hash"
+      ],
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:360"
+      ]
+    },
+    {
+      "id": "roots",
+      "label": "landedRoots",
+      "group": "checks",
+      "kind": "service",
+      "sublabel": "per source root: branch and bases",
+      "detail": [
+        "enabled gate commands",
+        "plus each landed task's acceptance"
+      ],
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:100"
+      ]
+    },
+    {
+      "id": "clone",
+      "label": "checkCandidate",
+      "group": "checks",
+      "kind": "service",
+      "icon": "test-tube",
+      "sublabel": "landing.ts: fresh clone at branch head",
+      "detail": [
+        "then diff from merge-base of the bases"
+      ],
+      "sources": [
+        "file:packages/control/src/landing.ts:447",
+        "file:packages/control/src/milestone-verify.ts:187"
+      ]
+    },
+    {
+      "id": "pick",
+      "label": "verifierRuntime",
+      "group": "review",
+      "kind": "service",
+      "sublabel": "runtime-vendor.ts",
+      "detail": [
+        "prefers a vendor no writer session used"
+      ],
+      "sources": [
+        "file:packages/control/src/runtime-vendor.ts:25"
+      ]
+    },
+    {
+      "id": "verifier",
+      "label": "Verifier review",
+      "group": "review",
+      "kind": "external",
+      "icon": "bot",
+      "sublabel": "review.ts startReview, read-only",
+      "detail": [
+        "criteria, task contracts, check exits",
+        "artifact milestone.diff"
+      ],
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:135"
+      ]
+    },
+    {
+      "id": "settle",
+      "label": "settleVerification",
+      "group": "review",
+      "kind": "policy",
+      "sublabel": "verdict and open blocking findings",
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:277"
+      ]
+    },
+    {
+      "id": "passed",
+      "label": "passed",
+      "group": "result",
+      "kind": "service",
+      "status": "done",
+      "sublabel": "pass verdict, no blocking finding"
+    },
+    {
+      "id": "failed",
+      "label": "failed",
+      "group": "result",
+      "kind": "service",
+      "status": "failed",
+      "sublabel": "checks_failed or verifier_failed"
+    },
+    {
+      "id": "inconclusive",
+      "label": "inconclusive",
+      "group": "result",
+      "kind": "service",
+      "color": "orange",
+      "sublabel": "reason_code says why",
+      "detail": [
+        "checks_environment, check_error",
+        "no_verifier_runtime, review_not_started",
+        "review_failed, no_verdict, daemon_restart"
+      ]
+    },
+    {
+      "id": "note",
+      "label": "Lead note + wake",
+      "group": "result",
+      "kind": "queue",
+      "icon": "bell",
+      "sublabel": "milestone.verified event, milestone_verified note",
+      "sources": [
+        "file:packages/control/src/milestone-verify.ts:69"
+      ]
+    },
+    {
+      "id": "accept",
+      "label": "milestone.accept",
+      "group": "result",
+      "kind": "policy",
+      "sublabel": "user on the card, or lead if the charter allows",
+      "detail": [
+        "lead needs override_reason unless passed"
+      ],
+      "sources": [
+        "file:packages/control/src/project-facts.ts:484"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "ready",
+      "to": "policy",
+      "style": "main"
+    },
+    {
+      "from": "policy",
+      "to": "row",
+      "style": "main",
+      "label": "advanceMilestoneVerifications"
+    },
+    {
+      "from": "row",
+      "to": "roots",
+      "style": "main"
+    },
+    {
+      "from": "roots",
+      "to": "clone",
+      "style": "main",
+      "label": "commands"
+    },
+    {
+      "from": "clone",
+      "to": "pick",
+      "style": "main",
+      "label": "all checks pass"
+    },
+    {
+      "from": "pick",
+      "to": "verifier",
+      "style": "main"
+    },
+    {
+      "from": "verifier",
+      "to": "settle",
+      "style": "main",
+      "label": "review ends"
+    },
+    {
+      "from": "settle",
+      "to": "passed",
+      "style": "main"
+    },
+    {
+      "from": "passed",
+      "to": "note",
+      "style": "main"
+    },
+    {
+      "from": "note",
+      "to": "accept",
+      "style": "main"
+    },
+    {
+      "from": "clone",
+      "to": "failed",
+      "label": "a check fails"
+    },
+    {
+      "from": "clone",
+      "to": "inconclusive",
+      "label": "environment or error"
+    },
+    {
+      "from": "pick",
+      "to": "inconclusive",
+      "label": "no runtime"
+    },
+    {
+      "from": "settle",
+      "to": "failed",
+      "label": "fail or blocking"
+    },
+    {
+      "from": "settle",
+      "to": "inconclusive"
+    },
+    {
+      "from": "failed",
+      "to": "note"
+    },
+    {
+      "from": "inconclusive",
+      "to": "note"
+    }
+  ]
+}

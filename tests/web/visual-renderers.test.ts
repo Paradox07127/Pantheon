@@ -76,6 +76,7 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', () => xy
 vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.js', () => xy);
 
 import { GraphDiagram, GraphNodeInfo } from '@/components/visual/GraphDiagram';
+import { FLOOR, fitZoom, layoutGraph } from '@/components/visual/graph-layout';
 import { KlineChart } from '@/components/visual/KlineChart';
 import { MermaidDiagram } from '@/components/visual/MermaidDiagram';
 import { SandboxFrame } from '@/components/visual/SandboxFrame';
@@ -427,6 +428,11 @@ describe('graph diagram', () => {
     edges: Array.from({ length: count - 1 }, (_, i) => ({ from: `n${i}`, to: `n${i + 1}` })),
     ...(direction && { direction }),
   });
+  // A chain in one group, which no break into rows or columns keeps whole, so it stays one strip.
+  const strip = (count: number, direction: 'LR' | 'TB'): Spec => {
+    const spec = chain(count, direction);
+    return { ...spec, nodes: spec.nodes.map((n) => ({ ...n, group: 'steps' })) };
+  };
   const fan = (count: number): Spec => ({
     nodes: [
       { id: 'root', label: 'root' },
@@ -668,6 +674,20 @@ describe('graph diagram', () => {
     },
   );
 
+  // Flows of 12 to 16 steps in stage groups, written across, that run four times wider than a card.
+  // The board task's states are not among them: its running state links to every group, so each
+  // break between groups cuts three to eight edges and wrapping tangles it.
+  it.each([
+    ['a request from the composer to the agent', 'composer-request'],
+    ['a milestone verification', 'milestone-verification'],
+    ['a tool call through the MCP server', 'mcp-tool-call'],
+    ['a session change landing', 'session-landing'],
+  ])('lays %s out to fit a card at two thirds or more', async (_, name) => {
+    const room = { x: 1200, y: 612 };
+    const layout = await layoutGraph(fixture(name), room);
+    expect(fitZoom(layout, room)).toBeGreaterThanOrEqual(FLOOR);
+  });
+
   it('names each node by its label and kind and draws its kind and detail line', async () => {
     const h = await drawn(shop, 1200, 420);
     const named = Object.fromEntries(
@@ -908,8 +928,13 @@ describe('graph diagram', () => {
     ['a service map of twelve nodes in three groups', services, [1200, 720], 3],
     ['a runtime architecture of twenty nodes', architecture, [1200, 680], 3],
     ['an analytics data flow', fixture('analytics-dataflow'), [1200, 680], 0],
-    ['an agent workflow in nested groups', workflow, [1200, 680], 0],
+    ['an agent workflow in nested groups', workflow, [1200, 680], 2],
     ['a release state machine', fixture('release-lifecycle'), [1200, 680], 0],
+    ['a request from the composer to the agent', fixture('composer-request'), [1200, 640], 0],
+    ['a milestone verification', fixture('milestone-verification'), [1200, 640], 3],
+    ['a tool call through the MCP server', fixture('mcp-tool-call'), [1200, 640], 0],
+    ['the states of a board task', fixture('board-task-states'), [1200, 640], 3],
+    ['a session change landing', fixture('session-landing'), [1200, 640], 1],
   ] as const)(
     'lays %s out with no node over another, no edge through a node or a group label and no label over a node, a label or another route, crossing at most %i times',
     async (_, spec, [width, height], most) => {
@@ -1094,7 +1119,7 @@ describe('graph diagram', () => {
   it.each([
     ['a short chain at full size', chain(3, 'LR'), 1200, {}, 'one'],
     ['a long chain at the zoom that fits it', chain(10, 'LR'), 1200, {}, 'fit'],
-    ['a chain too long for two thirds at two thirds', chain(10, 'LR'), 600, {}, 'floor'],
+    ['a chain too long for two thirds at two thirds', strip(10, 'LR'), 600, {}, 'floor'],
     ['the same chain enlarged at full size', chain(10, 'LR'), 600, { full: true }, 'one'],
   ] as const)('shows %s', async (_, spec, width, more, zoom) => {
     const h = await drawn(spec, width, 280, more);
@@ -1106,11 +1131,11 @@ describe('graph diagram', () => {
   });
 
   it.each([
-    ['an across chain wider than its card at its left end', chain(14, 'LR'), [600, 280], {}],
-    ['a down chain taller than its card at its top', chain(14, 'TB'), [360, 400], {}],
+    ['an across chain wider than its card at its left end', strip(14, 'LR'), [600, 280], {}],
+    ['a down chain taller than its card at its top', strip(14, 'TB'), [360, 400], {}],
     [
       'a column taller than a card grows to at its top',
-      chain(24, 'TB'),
+      strip(24, 'TB'),
       [1200, 280],
       { grows: true },
     ],
@@ -1191,10 +1216,10 @@ describe('graph diagram', () => {
   });
 
   it.each([
-    ['600px wide', true, chain(10, 'LR'), 600, {}],
+    ['600px wide', true, strip(10, 'LR'), 600, {}],
     ['1200px wide', false, chain(10, 'LR'), 1200, {}],
     ['that grows to a twelve-step column', false, chain(12, 'TB'), 1200, { grows: true }],
-    ['that cannot grow to a 24-step column', true, chain(24, 'TB'), 1200, { grows: true }],
+    ['that cannot grow to a 24-step column', true, strip(24, 'TB'), 1200, { grows: true }],
   ] as const)(
     'in a card %s, a graph shows a map of the whole only when it overflows: %s',
     async (_, map, spec, width, more) => {
@@ -1221,7 +1246,7 @@ describe('graph diagram', () => {
     expect(zoom).toBeLessThan(1);
     expect(flowOf(wide).props.defaultViewport.zoom).toBeCloseTo(zoom, 3);
     expect(tallOf(wide)).toBeCloseTo(extent(wide).height * zoom + 32, 0);
-    expect(tallOf(await drawn(chain(24, 'TB'), 1200, 280, { grows: true }))).toBe(1200);
+    expect(tallOf(await drawn(strip(24, 'TB'), 1200, 280, { grows: true }))).toBe(1200);
     // A pinned card keeps the size picked for it.
     expect(tallOf(await drawn(chain(12, 'TB'), 1200, 280))).toBe(280);
   });

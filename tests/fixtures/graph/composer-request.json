@@ -1,0 +1,259 @@
+{
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "web",
+      "label": "apps/web (renderer)"
+    },
+    {
+      "id": "desktop",
+      "label": "apps/desktop (main process)"
+    },
+    {
+      "id": "daemon",
+      "label": "apps/daemon"
+    },
+    {
+      "id": "control",
+      "label": "packages/control"
+    },
+    {
+      "id": "runtime",
+      "label": "packages/adapters"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "compose",
+      "label": "Composer submit",
+      "group": "web",
+      "kind": "client",
+      "icon": "message-square",
+      "sublabel": "screens/sessions/compose.tsx",
+      "detail": [
+        "session.send, or session.steer while running"
+      ],
+      "sources": [
+        "file:apps/web/src/screens/sessions/compose.tsx:490"
+      ]
+    },
+    {
+      "id": "bridge",
+      "label": "bridge.command",
+      "group": "web",
+      "kind": "client",
+      "sublabel": "data/commands.ts builds the envelope",
+      "sources": [
+        "file:apps/web/src/data/commands.ts:22"
+      ]
+    },
+    {
+      "id": "ipc",
+      "label": "IPC pantheon:command",
+      "group": "desktop",
+      "kind": "client",
+      "sublabel": "preload/index.ts -> main/index.ts",
+      "sources": [
+        "file:apps/desktop/src/preload/index.ts:82",
+        "file:apps/desktop/src/main/index.ts:503"
+      ]
+    },
+    {
+      "id": "client",
+      "label": "Daemon client",
+      "group": "desktop",
+      "kind": "client",
+      "icon": "globe",
+      "sublabel": "main/daemon.ts command()",
+      "detail": [
+        "POST /v1/commands, 5 s timeout"
+      ],
+      "sources": [
+        "file:apps/desktop/src/main/daemon.ts:227"
+      ]
+    },
+    {
+      "id": "auth",
+      "label": "Origin + token check",
+      "group": "daemon",
+      "kind": "policy",
+      "sublabel": "registry.authenticate",
+      "sources": [
+        "file:apps/daemon/src/index.ts:445"
+      ]
+    },
+    {
+      "id": "route",
+      "label": "POST /v1/commands",
+      "group": "daemon",
+      "kind": "service",
+      "icon": "server",
+      "sublabel": "Hono route",
+      "sources": [
+        "file:apps/daemon/src/index.ts:496"
+      ]
+    },
+    {
+      "id": "execute",
+      "label": "Control.execute",
+      "group": "control",
+      "kind": "service",
+      "sublabel": "index.ts",
+      "detail": [
+        "schema, role scope, idempotency key",
+        "runs the handler in one SQLite transaction"
+      ],
+      "sources": [
+        "file:packages/control/src/index.ts:511"
+      ]
+    },
+    {
+      "id": "queue",
+      "label": "queueInput",
+      "group": "control",
+      "kind": "service",
+      "sublabel": "session.ts session.send handler",
+      "detail": [
+        "adds lead inbox digest, queues the turn",
+        "session state -> running, turn.queued event"
+      ],
+      "sources": [
+        "file:packages/control/src/session.ts:495"
+      ]
+    },
+    {
+      "id": "outbox",
+      "label": "outbox",
+      "group": "control",
+      "kind": "store",
+      "sublabel": "job session.turn {turn_id}",
+      "sources": [
+        "file:packages/control/src/session.ts:564"
+      ]
+    },
+    {
+      "id": "scheduler",
+      "label": "scheduler",
+      "group": "control",
+      "kind": "queue",
+      "icon": "clock",
+      "sublabel": "scheduler.ts takes pending jobs",
+      "detail": [
+        "skips while the runtime is held"
+      ],
+      "sources": [
+        "file:packages/control/src/scheduler.ts:70"
+      ]
+    },
+    {
+      "id": "start",
+      "label": "startTurn",
+      "group": "control",
+      "kind": "service",
+      "sublabel": "session.ts",
+      "detail": [
+        "waits for worktree and handoff",
+        "start or resume the native session"
+      ],
+      "sources": [
+        "file:packages/control/src/session.ts:1535"
+      ]
+    },
+    {
+      "id": "adapter",
+      "label": "adapter.send",
+      "group": "runtime",
+      "kind": "service",
+      "icon": "plug",
+      "sublabel": "claude.ts, codex.ts, acp.ts",
+      "detail": [
+        "turn.running event, delivery recorded"
+      ],
+      "sources": [
+        "file:packages/adapters/src/claude.ts:2426",
+        "file:packages/control/src/session.ts:1017"
+      ]
+    },
+    {
+      "id": "agent",
+      "label": "Agent runtime",
+      "kind": "external",
+      "icon": "bot",
+      "sublabel": "Agent SDK, Codex app-server, ACP agent"
+    }
+  ],
+  "edges": [
+    {
+      "from": "compose",
+      "to": "bridge",
+      "style": "main",
+      "label": "session.send"
+    },
+    {
+      "from": "bridge",
+      "to": "ipc",
+      "style": "main"
+    },
+    {
+      "from": "ipc",
+      "to": "client",
+      "style": "main"
+    },
+    {
+      "from": "client",
+      "to": "auth",
+      "style": "main",
+      "label": "HTTP + bearer"
+    },
+    {
+      "from": "auth",
+      "to": "route",
+      "style": "main"
+    },
+    {
+      "from": "route",
+      "to": "execute",
+      "style": "main"
+    },
+    {
+      "from": "execute",
+      "to": "queue",
+      "style": "main"
+    },
+    {
+      "from": "queue",
+      "to": "outbox",
+      "style": "main",
+      "label": "enqueue"
+    },
+    {
+      "from": "outbox",
+      "to": "scheduler",
+      "style": "main",
+      "label": "pending job"
+    },
+    {
+      "from": "scheduler",
+      "to": "start",
+      "style": "main"
+    },
+    {
+      "from": "start",
+      "to": "adapter",
+      "style": "main",
+      "label": "UserTurn"
+    },
+    {
+      "from": "adapter",
+      "to": "agent",
+      "style": "main",
+      "label": "turn begins"
+    },
+    {
+      "from": "route",
+      "to": "client",
+      "style": "return",
+      "label": "receipt"
+    }
+  ]
+}
