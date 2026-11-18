@@ -1028,6 +1028,8 @@ export interface Review extends Entity {
   /** Set on a completed review that does not pass: why a reviewer gave no full result. */
   incomplete?: string;
   findings: ReviewFinding[];
+  /** The verdict each reviewer runtime handed in last; `at` is epoch milliseconds. */
+  verdicts?: { runtime: string; verdict: 'pass' | 'fail'; summary: string; at: number }[];
   session_ids: string[];
   /** Review request and completion times, epoch milliseconds; read from review events. */
   started_at?: number;

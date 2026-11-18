@@ -310,6 +310,7 @@ it.each([
       'memory_get',
       'memory_propose',
       'review_finding',
+      'review_verdict',
     ],
   ],
   [

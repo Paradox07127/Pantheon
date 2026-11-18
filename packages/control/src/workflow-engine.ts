@@ -970,8 +970,15 @@ function settleReviewStep(ctx: ControlContext, run: StepRun): void {
   const review = ctx.store.must<Review>('reviews', run.review_id!);
   if (review.state === 'running') return;
   const kind = run.step.kind as Extract<WorkflowStep['kind'], { type: 'review' }>,
-    blocking = review.findings.filter((f) => f.status === 'open' && f.blocking);
-  if (!kind.blocking || (review.state === 'completed' && !review.incomplete && !blocking.length)) {
+    blocking = review.findings.filter((f) => f.status === 'open' && f.blocking),
+    failed =
+      review.state === 'completed'
+        ? (review.verdicts ?? []).filter((verdict) => verdict.verdict === 'fail')
+        : [];
+  if (
+    !kind.blocking ||
+    (review.state === 'completed' && !review.incomplete && !blocking.length && !failed.length)
+  ) {
     changeRun(ctx, run, 'passed');
     return;
   }
@@ -981,7 +988,12 @@ function settleReviewStep(ctx: ControlContext, run: StepRun): void {
       run,
       review.incomplete
         ? `Review ${review.id} incomplete: ${review.incomplete}`
-        : `Review ${review.id} ${review.state}`,
+        : failed.length
+          ? [
+              `Review ${review.id} failed by verdict:`,
+              ...failed.map((verdict) => `${verdict.runtime}: ${verdict.summary}`),
+            ].join('\n')
+          : `Review ${review.id} ${review.state}`,
     );
   const findings = blocking.map(
     (f) =>

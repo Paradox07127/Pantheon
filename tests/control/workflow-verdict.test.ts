@@ -1,13 +1,17 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
+import { FixtureAdapter } from '@pantheon/adapters';
 import type {
   BoardPlan,
   LeadNote,
   Principal,
   Project,
+  Review,
   Session,
+  SessionHandle,
   StepRun,
+  UserTurn,
   WorkflowDefinition,
   WorkflowStep,
   Workspace,
@@ -24,7 +28,7 @@ const empty = (): WorkflowDefinition => ({
 });
 const current = (f: Fixture, id: string) => f.store.must<Session>('sessions', id);
 const runs = (f: Fixture) => f.store.list<StepRun>('workflow_step_runs');
-const principal = (f: Fixture, id: string, role: 'lead' | 'worker'): Principal => ({
+const principal = (f: Fixture, id: string, role: 'lead' | 'worker' | 'reviewer'): Principal => ({
   id: `session:${id}`,
   role,
   session_id: id,
@@ -326,4 +330,69 @@ it.each([
   expect(f.turns(lead.id).find((t) => t.id === runs(f)[0]!.turn_id)!.input).toBe(
     'Brief the lead on the export',
   );
+});
+
+/** A reviewer that replies with one line, then stays running long enough to hand in a verdict. */
+class ReplyingReviewer extends FixtureAdapter {
+  override send(handle: SessionHandle, turn: UserTurn) {
+    return super.send(handle, {
+      ...turn,
+      input: script({ say: 'Checked answer.txt against the goal' }, { wait: 2000 }),
+    });
+  }
+}
+
+/** A blocking review step before the merge, once its reviewer on another runtime is running. */
+async function reviewing() {
+  const definition = empty();
+  definition.slots.before_merge = [
+    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
+  ];
+  const { f, lead } = await setup(definition);
+  const reviewer = new ReplyingReviewer(1);
+  reviewer.name = 'reviewer';
+  f.control.adapters.set(reviewer.name, reviewer);
+  const worker = await build(f, lead);
+  const review = () => f.store.must<Review>('reviews', runs(f)[0]!.review_id!);
+  await eventually(
+    () => !!runs(f)[0]?.review_id && f.turns(review().session_ids[0]!)[0]?.state === 'running',
+    () => f.control.tick(),
+    10000,
+  );
+  return { f, worker, review, reviewerId: review().session_ids[0]! };
+}
+
+it("fails a blocking review step on a reviewer's fail verdict without findings and quotes its summary to the lead", async () => {
+  const { f, worker, review, reviewerId } = await reviewing();
+  f.call(
+    'review.verdict',
+    { verdict: 'fail', summary: 'The export drops the header row' },
+    null,
+    principal(f, reviewerId, 'reviewer'),
+  );
+  await eventually(
+    () => ['passed', 'failed'].includes(runs(f)[0]?.state ?? ''),
+    () => f.control.tick(),
+    10000,
+  );
+  expect(runs(f)[0]!.state).toBe('failed');
+  expect(review()).toMatchObject({ state: 'completed', findings: [] });
+  expect(
+    f.store.kindEvents(f.project.id, ['lead.note_added']).map((e) => e.payload as LeadNote),
+  ).toContainEqual(
+    expect.objectContaining({
+      kind: 'blocked',
+      text: expect.stringContaining('reviewer: The export drops the header row'),
+    }),
+  );
+  expect(current(f, worker.id).outcome).toBeUndefined();
+});
+
+it('passes a blocking review step whose review completes with a reply and no verdict, as before', async () => {
+  const { f, worker, review } = await reviewing();
+  await merged(f, worker);
+  expect(runs(f)[0]!.state).toBe('passed');
+  expect(review()).toMatchObject({ state: 'completed', findings: [] });
+  expect(review()).not.toHaveProperty('incomplete');
+  expect(review()).not.toHaveProperty('verdicts');
 });

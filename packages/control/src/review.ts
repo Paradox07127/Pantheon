@@ -54,9 +54,9 @@ import { sessionWorkflow, taskWorkflow } from './workflow-engine.js';
 
 export const REVIEW_WALL_TIME_MS = 2 * 60 * 60 * 1000;
 export const reviewInstruction =
-  'Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly. When you find nothing, reply with one line naming what you checked.';
+  'Review these changes against the task goal. Record each problem with review_finding; quote the diff exactly. End the review with one review_verdict call, pass or fail, with a summary of what you checked.';
 const planInstruction = (listed: string) =>
-  `Review this board plan before its high-risk tasks start: ${listed}. Record each problem with review_finding, with the task id as location and a quote copied exactly from plan.json. When you find nothing, reply with one line naming what you checked.`;
+  `Review this board plan before its high-risk tasks start: ${listed}. Record each problem with review_finding, with the task id as location and a quote copied exactly from plan.json. End the review with one review_verdict call, pass or fail, with a summary of what you checked.`;
 
 /** The session, requester and goal of a review.request, once its permissions are checked. */
 function reviewTarget(ctx: ControlContext, principal: Principal, command: Command) {
@@ -183,6 +183,41 @@ export const reviewHandlers: Handlers = {
     return finding.status === 'rejected'
       ? { error: finding.reason ?? finding.artifact_error, finding }
       : finding;
+  },
+  'review.verdict': (ctx, principal, command) => {
+    requireThat(principal.role === 'reviewer', 'permission_denied', 'Reviewer session required');
+    const session = sessionPrincipal(ctx, principal);
+    projectAccess(ctx, principal, session.project_id, command.type);
+    revision(ctx, command);
+    const input = inputSchemas['review.verdict'].parse(command.input);
+    const review = session.review_id
+      ? ctx.store.must<Review>('reviews', session.review_id)
+      : undefined;
+    requireThat(
+      review?.state === 'running' && review.session_ids.includes(session.id),
+      'invalid_state',
+      'Review is not accepting verdicts',
+    );
+    const verdict = { runtime: session.runtime, ...input, at: ctx.store.now() };
+    const next = ctx.store.update<Review>(
+      'reviews',
+      {
+        ...review,
+        verdicts: [
+          ...(review.verdicts ?? []).filter((given) => given.runtime !== session.runtime),
+          verdict,
+        ],
+      },
+      review.revision,
+    );
+    ctx.store.event(
+      'review.verdict_recorded',
+      next,
+      review.project_id,
+      verdict,
+      command.command_id,
+    );
+    return verdict;
   },
   'review.finding.resolve': (ctx, principal, command) => {
     requireThat(
@@ -844,8 +879,12 @@ function notifyRequestingLead(ctx: ControlContext, review: Review, turns: Sessio
     ...review.session_ids.map((sessionId) => {
       const session = ctx.store.get<Session>('sessions', sessionId);
       const turn = turns.find((turn) => turn.session_id === sessionId);
-      return `Reviewer ${session?.runtime ?? sessionId}: ${turn?.state ?? 'failed'}.`;
+      const runtime = session?.runtime ?? sessionId,
+        state = turn?.state ?? 'failed',
+        given = review.verdicts?.find((verdict) => verdict.runtime === runtime);
+      return `Reviewer ${runtime}: ${state}.${given ? ` Verdict ${given.verdict}: ${given.summary}` : state === 'completed' ? ' No verdict given.' : ''}`;
     }),
+    ...(review.incomplete ? [`Incomplete: ${review.incomplete}.`] : []),
     'Only findings whose quotes match the supplied artifact follow. Failed or cancelled reviewers are not a clean review.',
     ...review.findings
       .filter((finding) => finding.status === 'open')

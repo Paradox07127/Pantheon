@@ -166,6 +166,43 @@ it('lets an owning lead request a read-only cross-review and returns evidence-bo
   ).toHaveLength(1);
 });
 
+it.each([
+  [
+    "shows a reviewer's pass verdict and its summary in the lead's note",
+    { verdict: 'pass', summary: 'Checked answer.txt against the goal' },
+    'Reviewer cross-reviewer: completed. Verdict pass: Checked answer.txt against the goal',
+  ],
+  [
+    "says in the lead's note that a reviewer that replied with neither findings nor a verdict gave no verdict",
+    undefined,
+    'Reviewer cross-reviewer: completed. No verdict given.',
+  ],
+] as const)('%s', async (_, given, line) => {
+  const { f, reviewer, request, ready } = await reviewFixture();
+  const review = await request();
+  await ready();
+  reviewer.emit({ kind: 'message.delta', text: 'Checked answer.txt against the goal.' });
+  if (given)
+    f.call('review.verdict', given, null, {
+      id: `session:${review.session_ids[0]}`,
+      role: 'reviewer',
+      session_id: review.session_ids[0],
+      project_id: f.project.id,
+      expires_at: f.store.now() + 60000,
+    });
+  reviewer.emit({ kind: 'turn.completed', status: 'completed' });
+  await eventually(
+    () => f.store.must<Review>('reviews', review.id).state === 'completed',
+    () => f.control.tick(),
+  );
+  expect(f.store.must<Review>('reviews', review.id)).not.toHaveProperty('incomplete');
+  const note = f.store
+    .kindEvents(f.project.id, ['lead.note_added'])
+    .map((event) => event.payload as { kind: string; text: string })
+    .find((note) => note.kind === 'review_completed');
+  expect(note?.text.split('\n')).toContain(line);
+});
+
 it('refuses workers, another lead, old task generations, writer runtimes and duplicate running reviews', async () => {
   const { f, lead, worker, reviewer, principal, request } = await reviewFixture();
   const input = { session_id: worker.id, runtimes: [reviewer.name] };

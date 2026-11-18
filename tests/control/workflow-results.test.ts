@@ -259,11 +259,20 @@ it('counts first review rounds without an upheld change request and preserves fa
     },
     dismissed.revision,
   );
+  const refused = record('refused', 1, 3, 'completed');
+  f.store.update(
+    'reviews',
+    {
+      ...refused,
+      verdicts: [{ runtime: 'fixture', verdict: 'fail' as const, summary: 'Wrong answer', at: 1 }],
+    },
+    refused.revision,
+  );
   const planReview = record('plan', 1, 0, 'completed');
   const { session_id: _, ...plan } = planReview;
   f.store.update('reviews', plan, plan.revision);
   expect(view(f).fixed_steps.find((step) => step.id === 'review')?.result).toEqual({
-    tasks: 4,
+    tasks: 5,
     passed: 2,
     buckets: [
       { tasks: 1, passed: 1 },
@@ -271,7 +280,7 @@ it('counts first review rounds without an upheld change request and preserves fa
       { tasks: 0, passed: 0 },
       { tasks: 0, passed: 0 },
       { tasks: 0, passed: 0 },
-      { tasks: 2, passed: 1 },
+      { tasks: 3, passed: 1 },
     ],
   });
 });

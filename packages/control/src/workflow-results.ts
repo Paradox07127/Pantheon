@@ -98,7 +98,8 @@ export function workflowResults(
         passed:
           review.state === 'completed' &&
           !review.incomplete &&
-          !review.findings.some((finding) => finding.blocking && finding.status !== 'rejected'),
+          !review.findings.some((finding) => finding.blocking && finding.status !== 'rejected') &&
+          !review.verdicts?.some((verdict) => verdict.verdict === 'fail'),
       });
     }
   }

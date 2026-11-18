@@ -72,6 +72,8 @@ const descriptions: Record<ToolCommand, string> = {
     'Show a chart or diagram in the conversation when a result is easier to see than to read, or when the user asks for one. Give title, kind and spec; the spec shape depends on kind (see its field description). Prefer vega-lite, graph, mermaid or table; use html only when none of these fits. All data must be inline. Returns visual_id and revision. Use replaces to redraw an earlier chart in place, and pin only when the user asks for it on the board. When a spec is invalid the error names the part; fix it and call again.',
   'review.finding':
     'Record one problem in the artifact under review, including code it deletes. location: file and line, or the task id for a plan. quote: text copied exactly from your first message. evidence: what you saw. impact: what goes wrong, for whom. blocking true only for what must be fixed before merge, and then reproduction is required. Call once per problem; when you find none, do not call it. Refused "quote_not_in_artifact": copy the quote again from your first message, once. Rejected with artifact_unavailable: retrying will not help; say what you could not record.',
+  'review.verdict':
+    'End your review with one call: verdict pass when nothing you found must be fixed before merge, otherwise fail, and a summary of what you checked and found. Call it after your review_finding calls. A later call replaces your verdict. Refused invalid_state once the review has ended.',
   'review.request':
     "Ask for an independent read-only review of a committed task session in your plan: session_id from project_read, runtimes naming the reviewers (a runtime other than the writer's when one is available). Use it when a change is risky and its path has no review step. Findings come back as a board update; send concrete ones to the session with message_task. A review is evidence for your decision: it never accepts or merges a task, and a failed reviewer is not a clean review. Refused when the round limit is reached or the same reviewer is already reviewing that session.",
   'project.read':
@@ -283,6 +285,7 @@ const boundRevision = (type: CommandType) =>
   type === 'agent.agents' ||
   type === 'agent.guide' ||
   type === 'workflow.step.verdict' ||
+  type === 'review.verdict' ||
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
   type === 'app.logs' ||

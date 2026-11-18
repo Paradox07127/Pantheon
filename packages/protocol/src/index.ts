@@ -13,6 +13,7 @@ import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './alwa
 import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
 import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
 import {
+  reviewerTools,
   workflowInputSchemas,
   workflowToolEffects,
   workflowToolGroups,
@@ -253,7 +254,7 @@ export const appDebugTools = {
   style_set: 'style.set',
 } as const;
 export const sessionTools = {
-  reviewer: { ...memoryTools, review_finding: 'review.finding' },
+  reviewer: { ...memoryTools, review_finding: 'review.finding', ...reviewerTools },
   planner: {
     ...memoryTools,
     project_read: 'project.read',

@@ -556,6 +556,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `review.finding` | `location`: string<br>`quote`: string<br>`evidence`: string<br>`impact`: string<br>`blocking`: boolean<br>`reproduction?`: object | review_finding (reviewer) |
 | `review.finding.resolve` | `review_id`: string<br>`finding_id`: string<br>`outcome`: "adopted" \| "dismissed"<br>`note?`: string |  |
 | `review.request` | `session_id`: string<br>`runtimes`: string[] | request_review (lead) |
+| `review.verdict` | `verdict`: "pass" \| "fail"<br>`summary`: string | review_verdict (reviewer) |
 
 ### routing
 

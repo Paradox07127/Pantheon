@@ -138,7 +138,7 @@ it('gives the reviewer its guide as instructions and only the job and the artifa
   expect(spec.control_instructions).toContain('You are a reviewer in a read-only session.');
   expect(spec.control_instructions).toContain(REVIEWER_BASE);
   expect(turn!.input).toMatch(
-    /^Review these changes against the task goal\. Record each problem with review_finding; quote the diff exactly\. When you find nothing, reply with one line naming what you checked\.\n\nTask goal:\n/,
+    /^Review these changes against the task goal\. Record each problem with review_finding; quote the diff exactly\. End the review with one review_verdict call, pass or fail, with a summary of what you checked\.\n\nTask goal:\n/,
   );
 });
 
