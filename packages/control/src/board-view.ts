@@ -62,6 +62,7 @@ import { doneReported } from './task-tracking.js';
 import { cacheReadShare } from './trace-view.js';
 import { gateFirstPass, latestRetrospectives } from './retrospective.js';
 import { taskBudgetUse } from './task-budget.js';
+import { taskRung, taskRungFacts } from './task-rung.js';
 
 const TASK_STATUS: Record<WorkbenchSession['state'], BoardTaskStatus> = {
   starting: 'running',
@@ -1632,6 +1633,21 @@ export function boardView(
         state === 'merged' || state === 'failed'
           ? undefined
           : taskBudgetUse(ctx, plan, task.id, now);
+      const rung =
+        state === 'merged'
+          ? undefined
+          : taskRung(
+              taskRungFacts(
+                ctx,
+                plan,
+                task.id,
+                live
+                  .filter((row) => row.id !== plan.id)
+                  .sort((a, b) => (a.started_at ?? 0) - (b.started_at ?? 0))
+                  .map((row) => stored.get(row.id)!),
+                now,
+              ),
+            );
       const unmetTitles = unmetOf(plan, task).map(
         (dependency) => plan.tasks.find((each) => each.id === dependency)?.title ?? dependency,
       );
@@ -1689,6 +1705,7 @@ export function boardView(
               },
             }
           : {}),
+        ...(rung ? { rung } : {}),
         scope: task.scope,
         ...(task.route_reason ? { route_reason: task.route_reason } : {}),
         ...(task.device ? { device: task.device } : {}),

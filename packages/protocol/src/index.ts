@@ -3959,6 +3959,26 @@ export interface BoardActivity {
   causal_depth?: number;
 }
 /**
+ * Who acts next on a board task with a problem. retry: Pantheon gives the session another turn
+ * with the failure, or opens it again; switch: the task moved to another runtime; lead: the lead
+ * was told and owns the next move; user: it waits for the user.
+ */
+export interface BoardTaskRung {
+  rung: 'retry' | 'switch' | 'lead' | 'user';
+  by: 'pantheon' | 'lead' | 'user';
+  /** A merge problem, review_findings, dispatch_failed, a needs-you reason, a tracked state, stalled, looping or runtime_changed. */
+  reason: string;
+  /** Tries of reason used so far: hand-backs, review rounds or attempts to open the session. */
+  used?: number;
+  limit?: number;
+  /** The retry waits for the usage limit to reset or for the user to raise the project budget. */
+  held?: 'usage_limit' | 'project_budget';
+  /** When the fact behind the rung was recorded, epoch milliseconds. */
+  since: number;
+  /** The runtime changes of the task's current sessions, oldest first. */
+  switches: { from: string; to: string; at: number; by: 'pantheon' | 'lead' }[];
+}
+/**
  * One board blocker: queued waits for the task's dispatch_wait, error is why its session did not
  * open; upstream names an unmet dependency by title; merge_blocked and turn_failed are the
  * newest session's.
@@ -4163,6 +4183,8 @@ export interface BoardModel {
       wall_ms: number;
       limit: { input_tokens: number; wall_ms: number };
     };
+    /** Who acts next on an unmerged task with a problem; absent without one. */
+    rung?: BoardTaskRung;
     subagents?: number;
     route_reason?: string;
     device?: string;

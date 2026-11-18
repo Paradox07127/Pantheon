@@ -1663,6 +1663,42 @@ it('counts every session of a task in its attempts and lists the problems handed
   });
 });
 
+it('shows a failed gate handed back once as a retry by Pantheon with its tries used', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);
+  const session = await idleTaskSession(f, lead.id, 'a');
+  f.store.event('session.merge_started', current(f, session.id), f.project.id, { auto: true });
+  const stored = current(f, session.id);
+  f.store.update<Session>(
+    'sessions',
+    {
+      ...stored,
+      merge: {
+        state: 'blocked',
+        reason: 'gate_failed',
+        gate: { name: 'Unit tests', output: 'expected 1' },
+      },
+    },
+    stored.revision,
+  );
+  await f.control.tick();
+  expect(f.store.must<BoardPlan>('board_plans', lead.id).handed_back).toEqual({
+    [session.id]: ['gate_failed'],
+  });
+
+  const row = f.control
+    .boardView(user, f.project.id, 1)
+    .tasks.find((each) => each.id === `${lead.id}:a`);
+  expect(row?.rung).toMatchObject({
+    rung: 'retry',
+    by: 'pantheon',
+    reason: 'gate_failed',
+    used: 1,
+    limit: 3,
+    switches: [],
+  });
+});
+
 it('lists each lead that wrote a plan with its state, unread notes and request', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithPlan(f, [{ id: 'a', title: 'Serve exports', depends_on: [] }]);

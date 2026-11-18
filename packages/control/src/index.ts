@@ -230,6 +230,8 @@ export {
 export { TraceIndex } from './trace-index.js';
 export { RUNTIME_EVENT_KINDS } from './runtime-findings.js';
 export { runtimeConfig } from './user-config.js';
+export { taskRung, type TaskRungFacts } from './task-rung.js';
+export type { HandBackCheck } from './task-tracking.js';
 
 const USAGE_LIMIT_RESUME_TEXT =
   '[Pantheon] Your last turn stopped because the usage limit was used up. The limit has reset. Check where your work stopped, then continue.';

@@ -82,6 +82,19 @@ it('types task drawer facts and optional attempt facts', () => {
   expectTypeOf<NonNullable<Task['retrospective']>['budget_ratio']>().toEqualTypeOf<
     number | undefined
   >();
+  expectTypeOf<Task['rung']>().toEqualTypeOf<
+    | {
+        rung: 'retry' | 'switch' | 'lead' | 'user';
+        by: 'pantheon' | 'lead' | 'user';
+        reason: string;
+        used?: number;
+        limit?: number;
+        held?: 'usage_limit' | 'project_budget';
+        since: number;
+        switches: { from: string; to: string; at: number; by: 'pantheon' | 'lead' }[];
+      }
+    | undefined
+  >();
   expectTypeOf<Task['subagents']>().toEqualTypeOf<number | undefined>();
   expectTypeOf<BoardActivity['repeated_failure']>().toEqualTypeOf<boolean | undefined>();
   expectTypeOf<BoardWaiting['options']>().toEqualTypeOf<string[] | undefined>();

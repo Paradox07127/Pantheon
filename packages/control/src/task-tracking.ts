@@ -344,9 +344,8 @@ function skippedMerge(
   ctx: ControlContext,
   plan: BoardPlan,
   session: Session,
-  latestTurns: ReadonlyMap<string, SessionTurn>,
+  turn: SessionTurn | undefined,
 ): string | undefined {
-  const turn = latestTurns.get(session.id);
   if (
     !turn ||
     turn.state !== 'completed' ||
@@ -365,6 +364,68 @@ function skippedMerge(
 function startedByDaemon(ctx: ControlContext, session: Session): boolean {
   const started = latestEvent(ctx, session.id, 'session.merge_started');
   return !!started && (started.payload as { auto?: boolean }).auto === true;
+}
+
+/** The merge the automatic merge skipped after the latest turn, and the problem the tracker follows up: that skip or a block of the merge it started. */
+export function mergeProblem(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  session: Session,
+  latestTurn: SessionTurn | undefined,
+): { skipped: string | undefined; problem: string | undefined } {
+  const skipped = skippedMerge(ctx, plan, session, latestTurn);
+  return {
+    skipped,
+    problem:
+      session.merge?.state === 'blocked' && !session.outcome && startedByDaemon(ctx, session)
+        ? session.merge.reason
+        : skipped,
+  };
+}
+
+export interface HandBackCheck {
+  allowed: boolean;
+  /** Hand-backs of this problem to the session so far. */
+  used: number;
+  limit: number;
+  held?: 'usage_limit' | 'project_budget';
+}
+
+/** Whether the tracker hands the merge problem back to the session; an allowed one is held while a turn would fail or spend over the budget. */
+export function handBackAllowed(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  session: Session,
+  problem: string,
+  lastHandBackText: string | undefined,
+  latestTurn: SessionTurn | undefined,
+): HandBackCheck {
+  const policy = workflowPolicy(ctx, plan.project_id),
+    used = (ownEntry(plan.handed_back, session.id) ?? []).filter(
+      (reason) => reason === problem,
+    ).length,
+    limit = policy.handback_limit;
+  const allowed =
+    HANDED_BACK.includes(problem) &&
+    !(problem === 'gate_failed' && policy.gate_on_fail === 'stop') &&
+    used < limit &&
+    !(
+      (problem === 'no_changes' || problem === 'uncommitted_changes') &&
+      reportedRequirement(ctx, plan, session, latestTurn)
+    ) &&
+    // A gate that failed because of its environment is no fault of the session's change.
+    !(problem === 'gate_failed' && session.merge?.failure_class === 'environment') &&
+    // The same text again means the last hand-back made no progress.
+    handBackText(ctx, session, problem) !== lastHandBackText;
+  if (!allowed) return { allowed, used, limit };
+  // A turn before the usage limit resets would fail the same way, and one over the project
+  // budget would spend more, so the hand-back waits.
+  const held = usageLimitWaiting(ctx, session.id)
+    ? 'usage_limit'
+    : projectOverBudget(ctx, plan.project_id)
+      ? 'project_budget'
+      : undefined;
+  return held ? { allowed, used, limit, held } : { allowed, used, limit };
 }
 
 /** The task session reported a requirement after its turn started, so it waits for the lead's answer. */
@@ -925,31 +986,19 @@ export function tickTaskTracking(ctx: ControlContext): void {
         );
         changed = true;
       }
-      const skipped = skippedMerge(ctx, plan, session, latestTurns),
-        problem =
-          session.merge?.state === 'blocked' && !session.outcome && startedByDaemon(ctx, session)
-            ? session.merge.reason
-            : skipped;
-      if (
-        problem &&
-        HANDED_BACK.includes(problem) &&
-        !(
-          problem === 'gate_failed' && workflowPolicy(ctx, plan.project_id).gate_on_fail === 'stop'
-        ) &&
-        (ownEntry(handedBack, session.id) ?? []).filter((reason) => reason === problem).length <
-          workflowPolicy(ctx, plan.project_id).handback_limit &&
-        !(
-          (problem === 'no_changes' || problem === 'uncommitted_changes') &&
-          reportedRequirement(ctx, plan, session, latestTurns.get(session.id))
-        ) &&
-        // A gate that failed because of its environment is no fault of the session's change.
-        !(problem === 'gate_failed' && session.merge?.failure_class === 'environment') &&
-        // The same text again means the last hand-back made no progress.
-        handBackText(ctx, session, problem) !== lastHandBack.get(session.id)
-      ) {
-        // A turn before the usage limit resets would fail the same way, and one over the project
-        // budget would spend more, so the hand-back waits.
-        if (usageLimitWaiting(ctx, session.id) || projectOverBudget(ctx, plan.project_id)) continue;
+      const { skipped, problem } = mergeProblem(ctx, plan, session, latestTurns.get(session.id));
+      const check = problem
+        ? handBackAllowed(
+            ctx,
+            plan,
+            session,
+            problem,
+            lastHandBack.get(session.id),
+            latestTurns.get(session.id),
+          )
+        : undefined;
+      if (problem && check?.allowed) {
+        if (check.held) continue;
         if (handBack(ctx, session, problem)) {
           handedBack[session.id] = [...(ownEntry(handedBack, session.id) ?? []), problem];
           changed = true;
