@@ -1,6 +1,7 @@
 import {
   DomainError,
   requireThat,
+  type AgentProfile,
   type Approval,
   type BackgroundTask,
   type BoardPlan,
@@ -91,6 +92,7 @@ import { finishingMerge } from './project-facts.js';
 import { advanceMilestoneVerifications } from './milestone-verify.js';
 import { finishStops } from './workbench-session.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
+import { wakeHold } from './agent-contract.js';
 import {
   advanceSteps,
   afterMergeHolds,
@@ -191,8 +193,19 @@ const wakingNote = (plan: BoardPlan, note: LeadNote) =>
   note.kind === 'plan_review_failed' ||
   note.kind === 'milestone_verified' ||
   note.kind === 'runtime_switched' ||
+  note.kind === 'personal_attention' ||
   (note.kind === 'user_edit' && (note.edit?.wake === true || note.edit?.applied === false)) ||
   reportDone(plan, note);
+
+/** True when a note is the user's own act or urgent, which wakes an agent its contract holds. */
+const heldNoteBypass = (notes: LeadNote[]) =>
+  notes.some(
+    (note) =>
+      note.bypass_hold !== undefined ||
+      note.kind === 'answer' ||
+      note.kind === 'agent_proposal' ||
+      (note.kind === 'user_edit' && (note.edit?.wake === true || note.edit?.applied === false)),
+  );
 
 /** True while the task waits for a session, or has one that has neither merged nor been discarded. */
 function taskUnderWay(ctx: ControlContext, plan: BoardPlan, taskId: string): boolean {
@@ -1324,6 +1337,36 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
   if (usageLimitWaiting(ctx, lead.id)) return;
   // The notes wait in the inbox; a later tick wakes the lead once the user raises or clears the budget.
   if (projectOverBudget(ctx, lead.project_id)) return;
+  const profile =
+    lead.resident?.agent_id && ctx.store.get<AgentProfile>('agents', lead.resident.agent_id);
+  const hold =
+    profile && !heldNoteBypass(plan.inbox) ? wakeHold(ctx, profile, ctx.store.now()) : undefined;
+  // The notes wait in the inbox; the first tick after the hold ends wakes the agent with all of them.
+  if (profile && hold) {
+    // One event per hold: a new one only after a wake since the last, or for another reason.
+    const held = ctx.store.db
+      .prepare(
+        "SELECT sequence, json_extract(payload,'$.reason') AS reason FROM events WHERE aggregate_id=? AND kind='agent.wake_held' ORDER BY sequence DESC LIMIT 1",
+      )
+      .get(profile.id) as { sequence: number; reason: string } | undefined;
+    // Only events after the last hold are read, so a long hold costs no scan of the project's turns.
+    const wokenSince =
+      held?.reason === hold &&
+      ctx.store.db
+        .prepare(
+          "SELECT 1 FROM events WHERE project_id=? AND kind='turn.queued' AND sequence>? AND json_extract(payload,'$.origin')='tracker' AND json_extract(payload,'$.session_id') IN (SELECT id FROM sessions WHERE json_extract(data,'$.resident.agent_id')=?) LIMIT 1",
+        )
+        .get(profile.project_id, held.sequence, profile.id);
+    if (!held || held.reason !== hold || wokenSince)
+      ctx.store.event(
+        'agent.wake_held',
+        profile,
+        profile.project_id,
+        { agent_id: profile.id, reason: hold, since: ctx.store.now() },
+        cause,
+      );
+    return;
+  }
   const running = lead.state === 'running';
   try {
     acceptInput(ctx, lead, running ? 'steer' : 'send');

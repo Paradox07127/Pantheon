@@ -978,6 +978,80 @@ it('computes tasks, edges and milestones from lead plans and their sessions', as
   expect(board.risks).toEqual([{ text: 'The export format may change', kind: 'risk' }]);
 });
 
+it('lists the active goals in order with their progress and links the milestone to its goal', async () => {
+  const f = await workbenchFixture();
+  expect(f.control.boardView(user, f.project.id, 1).goals).toEqual([]);
+  const lead = await f.create('Plan the export feature');
+  const [first, second] = ['Ship export', 'Keep data local'].map((text) =>
+    f.call<{ id: string; revision: number }>('goal.set', { project_id: f.project.id, text }),
+  );
+  f.call('goal.reorder', { project_id: f.project.id, goal_ids: [second!.id, first!.id] });
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [
+        {
+          id: 'a',
+          title: 'Serve exports',
+          goal: 'Exports download',
+          lane: 'core',
+          milestone: 'm1',
+          depends_on: [],
+          source: ['Plan the export feature'],
+          scope: ['src/export'],
+          acceptance: ['pnpm test'],
+        },
+      ],
+      milestones: [
+        {
+          id: 'm1',
+          title: 'Export',
+          criteria: ['Exports download'],
+          tasks: ['a'],
+          goal: first!.id,
+        },
+      ],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    {
+      id: `session:${lead.id}`,
+      role: 'lead',
+      project_id: f.project.id,
+      session_id: lead.id,
+      expires_at: f.store.now() + 60000,
+    },
+  );
+  const board = f.control.boardView(user, f.project.id, 1);
+  const milestone = f.store.list<Milestone>('milestones')[0]!;
+  expect(board.goals).toEqual([
+    {
+      id: second!.id,
+      text: 'Keep data local',
+      order: 0,
+      revision: expect.any(Number),
+      milestone_ids: [],
+      milestones: { done: 0, ready: 0, total: 0 },
+      tasks: { done: 0, total: 0 },
+    },
+    {
+      id: first!.id,
+      text: 'Ship export',
+      order: 1,
+      revision: expect.any(Number),
+      milestone_ids: [milestone.id],
+      milestones: { done: 0, ready: 0, total: 1 },
+      tasks: { done: 0, total: 1 },
+    },
+  ]);
+  expect(board.milestones[0]).toMatchObject({ id: milestone.id, goal_id: first!.id });
+});
+
 it('carries the verification of a ready lead milestone, and nothing before one ran', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');

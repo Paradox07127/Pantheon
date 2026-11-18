@@ -233,6 +233,7 @@ export { TraceIndex } from './trace-index.js';
 export { RUNTIME_EVENT_KINDS } from './runtime-findings.js';
 export { runtimeConfig } from './user-config.js';
 export { taskRung, type TaskRungFacts } from './task-rung.js';
+export { startEnvironmentCheck } from './environment-check.js';
 export type { HandBackCheck } from './task-tracking.js';
 
 const USAGE_LIMIT_RESUME_TEXT =

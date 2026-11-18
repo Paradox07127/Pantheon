@@ -170,6 +170,7 @@ describe('main progress on the first screen', () => {
       edges: [],
       milestones,
       burnup: [],
+      goals: [],
       task_progress: {
         totals: {
           done: 0,

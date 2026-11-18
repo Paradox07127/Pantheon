@@ -34,6 +34,7 @@ const board = (over: Partial<BoardModel> = {}): BoardModel => ({
   edges: [],
   milestones: [],
   burnup: [],
+  goals: [],
   task_progress: {
     totals: {
       done: 0,

@@ -256,6 +256,13 @@ export function afterResidentTurn(ctx: ControlContext, sessionId: string, turnId
         return;
       }
       if (!contextFull(session)) return;
+      // The personal agent keeps no memory to hand off; its next session reads live state again.
+      if (profile.template === 'personal') {
+        residentPlan(ctx, session);
+        closeResident(ctx, session, 'context_full', cause);
+        openAgent(ctx, profile, cause);
+        return;
+      }
       acceptInput(ctx, session, 'send');
       const turn = queueTurn(ctx, session, handoffText(session, profile), 'tracker', cause);
       const queued = ctx.store.must<Session>('sessions', session.id);

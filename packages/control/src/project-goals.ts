@@ -2,6 +2,7 @@ import {
   id,
   requireThat,
   type Project,
+  type MilestoneView,
   type ProjectGoal,
   type ProjectGoalView,
 } from '@pantheon/domain';
@@ -19,8 +20,28 @@ export function projectGoals(ctx: ControlContext, projectId: string): ProjectGoa
     .sort((a, b) => a.order - b.order || a.created_at - b.created_at);
 }
 
-export function goalViews(ctx: ControlContext, projectId: string): ProjectGoalView[] {
-  return projectGoals(ctx, projectId).map((goal) => ({ goal }));
+/** Progress only: nothing reads these counts to allow or refuse anything. */
+export function goalViews(
+  ctx: ControlContext,
+  projectId: string,
+  milestones: MilestoneView[],
+): ProjectGoalView[] {
+  return projectGoals(ctx, projectId).map((goal) => {
+    const linked = milestones.filter((view) => view.milestone.goal_id === goal.id);
+    return {
+      goal,
+      milestone_ids: linked.map((view) => view.milestone.id),
+      milestones: {
+        done: linked.filter((view) => view.status === 'completed').length,
+        ready: linked.filter((view) => view.status === 'ready_for_acceptance').length,
+        total: linked.length,
+      },
+      tasks: {
+        done: linked.reduce((sum, view) => sum + (view.tasks?.done ?? 0), 0),
+        total: linked.reduce((sum, view) => sum + (view.tasks?.total ?? 0), 0),
+      },
+    };
+  });
 }
 
 export const projectGoalHandlers: Handlers = {

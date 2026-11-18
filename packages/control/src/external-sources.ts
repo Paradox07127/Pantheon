@@ -36,7 +36,12 @@ export async function pollExternalSources(ctx: ControlContext): Promise<void> {
   if (!due.length) return;
   const projects = ctx.store
     .list<Project>('projects')
-    .filter((project) => externalEvents(ctx, project) !== 'off' && !project.removed_at);
+    .filter(
+      (project) =>
+        externalEvents(ctx, project) !== 'off' &&
+        !project.removed_at &&
+        project.kind !== 'personal',
+    );
   await Promise.all(
     due.map(async (source) => {
       const polling = pollingOf(ctx, source.id);

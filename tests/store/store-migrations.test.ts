@@ -343,6 +343,41 @@ it('adds the milestone verification and project goal tables with their indexes t
   });
 });
 
+it('adds the environment check table with its project and baseline indexes to a database without it', () => {
+  const file = databaseFile();
+  const behind = open(
+    file,
+    migrations.filter((migration) => migration.version < 13),
+  );
+  behind.insert('projects', row);
+  close(behind);
+  const store = open(file);
+  expect(tableList(store.db)).toEqual(expect.arrayContaining([{ name: 'environment_checks' }]));
+  const plan = (sql: string) =>
+    store.db
+      .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+      .all('value')
+      .map((step) => String(step.detail));
+  for (const field of ['$.project_id', '$.cause.baseline_id'])
+    expect(
+      plan(`SELECT data FROM environment_checks WHERE json_extract(data,'${field}')=?`),
+    ).toEqual([expect.stringMatching(/^SEARCH environment_checks USING INDEX /)]);
+  const check = {
+    id: 'check',
+    revision: 1,
+    project_id: row.id,
+    root: '/project',
+    workspace_id: 'workspace',
+    cause: { kind: 'baseline', baseline_id: 'baseline', attempt: 1 },
+    state: 'running',
+    commands: [],
+    started_at: 1,
+  };
+  store.insert('environment_checks', check);
+  expect(store.get('environment_checks', check.id)).toEqual(check);
+  expect(store.get('projects', row.id)).toEqual(row);
+});
+
 it('indexes the per-project plan and improvement reads and the active turn read on a database one version behind', () => {
   const file = databaseFile();
   close(open(file, migrations.slice(0, -1)));

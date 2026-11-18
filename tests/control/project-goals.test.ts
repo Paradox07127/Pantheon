@@ -346,6 +346,109 @@ describe('milestone goal links', () => {
       await f.close();
     }
   });
+  it('counts the milestones and tasks linked to each active goal', async () => {
+    const f = await fixture({ managedWorkspaces: true });
+    try {
+      const goal = add(f, 'Ship export');
+      const archived = add(f, 'Old goal');
+      const p = exportLead(f);
+      const task = (id: string, milestone: string) => ({
+        id,
+        title: id,
+        goal: 'Serve exports',
+        lane: 'core',
+        depends_on: [],
+        source: ['Ship the export API'],
+        scope: [],
+        acceptance: [],
+        done_when: 'report',
+        milestone,
+      });
+      const send = (withSecond: boolean) =>
+        f.call(
+          'board.plan.update',
+          {
+            project_id: f.project.id,
+            base_version: f.store.get<BoardPlan>('board_plans', p.session_id!)?.plan_version ?? 0,
+            headline: 'Export ships this week',
+            lanes: [{ id: 'core', title: 'Core' }],
+            tasks: [
+              task('api', 'm1'),
+              ...(withSecond ? [task('csv', 'm2'), task('pdf', 'm2'), task('zip', 'm2')] : []),
+              task('old', 'm3'),
+            ],
+            milestones: [
+              { id: 'm1', title: 'Release', criteria: ['Exports download'], tasks: ['api'] },
+              ...(withSecond
+                ? [
+                    {
+                      id: 'm2',
+                      title: 'Formats',
+                      criteria: ['All formats'],
+                      tasks: ['csv', 'pdf', 'zip'],
+                    },
+                  ]
+                : []),
+              {
+                id: 'm3',
+                title: 'Legacy',
+                criteria: ['Old path'],
+                tasks: ['old'],
+                goal: archived.id,
+              },
+            ],
+            risks: [],
+            assumptions: [],
+          },
+          null,
+          p,
+        );
+      send(true);
+      editMilestone(f, p, { goal: goal.id });
+      f.call(
+        'board.plan.edit',
+        {
+          project_id: f.project.id,
+          base_version: planOf(f, p).plan_version,
+          ops: [{ type: 'set_milestone', milestone_id: 'm2', patch: { goal: goal.id } }],
+        },
+        null,
+        p,
+      );
+      const plan = planOf(f, p);
+      const accepted = { at: f.store.now(), evidence: 'The report answers it', generation: 1 };
+      f.store.update<BoardPlan>(
+        'board_plans',
+        { ...plan, accepted: { api: accepted, csv: accepted } },
+        plan.revision,
+      );
+      const rows = f.store.list<Milestone>('milestones');
+      const row = (key: string) => rows.find((m) => m.key === key)!;
+      f.call(
+        'milestone.accept',
+        { milestone_id: row('m1').id, evidence_refs: ['task:api'] },
+        row('m1').revision,
+      );
+      f.call('goal.archive', { goal_id: archived.id }, archived.revision);
+      const views = () => f.call<ProjectRead>('project.read', { project_id: f.project.id }).goals;
+      expect(views()).toEqual([
+        {
+          goal: expect.objectContaining({ id: goal.id }),
+          milestone_ids: [row('m1').id, row('m2').id],
+          milestones: { done: 1, ready: 0, total: 2 },
+          tasks: { done: 2, total: 4 },
+        },
+      ]);
+      send(false);
+      expect(views()[0]).toMatchObject({
+        milestone_ids: [row('m1').id],
+        milestones: { done: 1, ready: 0, total: 1 },
+        tasks: { done: 1, total: 1 },
+      });
+    } finally {
+      await f.close();
+    }
+  });
   it('keeps the link when another lead takes over the plan', async () => {
     const f = await fixture({ managedWorkspaces: true });
     try {

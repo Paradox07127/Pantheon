@@ -4403,6 +4403,8 @@ export interface BoardTaskExtras {}
 export interface BoardMilestoneExtras {
   /** The milestone's current verification; absent when none ran. */
   verification?: MilestoneView['verification'];
+  /** The goal its lead linked it to; it may name a goal archived since. */
+  goal_id?: string;
 }
 
 export interface BoardModel {
@@ -4777,6 +4779,16 @@ export interface BoardModel {
     /** Calendar day; only on lead milestones that have one. */
     due_on?: string;
   } & BoardMilestoneExtras)[];
+  /** The project's active goals by order; progress only. */
+  goals: {
+    id: string;
+    text: string;
+    order: number;
+    revision: number;
+    milestone_ids: string[];
+    milestones: { done: number; ready: number; total: number };
+    tasks: { done: number; total: number };
+  }[];
   burnup: { day: string; scope: number; done: number }[];
   /** Lead plan tasks, each counted once however many sessions it had; a task is done once a session merged. */
   task_progress: {

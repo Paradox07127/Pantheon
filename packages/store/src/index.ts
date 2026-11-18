@@ -63,6 +63,7 @@ export const tables = [
   'personal_keys',
   'milestone_verifications',
   'project_goals',
+  'environment_checks',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -273,6 +274,16 @@ export const migrations: readonly Migration[] = [
     version: 12,
     up(db) {
       db.exec("CREATE INDEX session_turns_project ON session_turns(data->>'$.project_id');");
+    },
+  },
+  {
+    version: 13,
+    up(db) {
+      db.exec(`
+        CREATE TABLE environment_checks (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
+        CREATE INDEX environment_check_project ON environment_checks(json_extract(data,'$.project_id'));
+        CREATE INDEX environment_check_baseline ON environment_checks(json_extract(data,'$.cause.baseline_id'));
+      `);
     },
   },
 ];

@@ -1,4 +1,31 @@
+import type { GateFailureClass } from './board.js';
 import type { Entity } from './index.js';
+/** One run of a project root's commands in a throwaway worktree provisioned as a worker's is. */
+export interface EnvironmentCheck extends Entity {
+  project_id: string;
+  root: string;
+  /** The throwaway worktree; every end of the check queues its removal. */
+  workspace_id?: string;
+  commit?: string;
+  cause:
+    | { kind: 'user' }
+    | { kind: 'baseline'; baseline_id: string; attempt: 1 | 2 }
+    | { kind: 'signal'; issue_id: string };
+  state: 'running' | 'passed' | 'failed' | 'inconclusive';
+  reason_code?:
+    'setup_failed' | 'checks_failed' | 'checks_environment' | 'check_error' | 'daemon_restart';
+  /** In run order; the worktree's preparation is the command named `setup`. */
+  commands: {
+    name: string;
+    argv: string[];
+    exit_code: number;
+    duration_ms: number;
+    output_tail: string;
+    failure_class?: GateFailureClass;
+  }[];
+  started_at: number;
+  finished_at?: number;
+}
 export interface BaselineTag {
   baseline_id: string;
 }

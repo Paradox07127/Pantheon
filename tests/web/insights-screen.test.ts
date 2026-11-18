@@ -39,6 +39,7 @@ const board = (): BoardModel => ({
   edges: [],
   milestones: [],
   burnup: [],
+  goals: [],
   task_progress: {
     totals: {
       done: 0,

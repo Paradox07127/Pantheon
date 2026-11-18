@@ -74,6 +74,7 @@ const board = (tasks: Task[], edges: Edge[] = []): BoardModel => ({
   edges,
   milestones: [],
   burnup: [],
+  goals: [],
   task_progress: {
     totals: {
       done: 0,

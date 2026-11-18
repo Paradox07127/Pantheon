@@ -521,7 +521,7 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       startTag([...own, ['routine', note.routine_id]]),
       `What happened: your routine${note.routine_id ? ` "${note.routine_id}"` : ''} is due. Its prompt: "${text}"`,
       `Last run: ${note.last_run_at === undefined ? 'never' : new Date(note.last_run_at).toISOString()}.`,
-      'How to handle: read the last result first, so you report only what changed since then. Do the routine and write its result back under the same key if it keeps one.',
+      `How to handle: read the last result first, so you report only what changed since then. Do the routine${ctx.store.get<Session>('sessions', plan.id)?.resident?.kind === 'personal' ? '.' : ' and write its result back under the same key if it keeps one.'}`,
     ];
   else if (kind === 'agent_proposal')
     lines = [
@@ -540,6 +540,12 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       startTag(own),
       `What happened: ${text}`,
       "How to handle: start the lane's tasks as you planned; they open once the user approves the plan, so tell the user it waits for them.",
+    ];
+  else if (kind === 'personal_attention')
+    lines = [
+      startTag(own),
+      `What happened: ${text}`,
+      'How to handle: read needs_you and the project_brief of each named project, then tell the user in two lines what needs them. Answer nothing the user has not allowed you to answer.',
     ];
   else if (kind === 'other_plan')
     lines = [

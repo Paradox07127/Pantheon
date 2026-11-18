@@ -20,6 +20,7 @@ import { tickChangeStories } from './change-story.js';
 import { tickRangeStories } from './range-story.js';
 import { tickProjectBaselines } from './baseline.js';
 import { tickTaskTracking } from './task-tracking.js';
+import { tickPersonalAttention } from './personal-agent.js';
 import { readDispatchOpenings } from './task-dispatch.js';
 import { forgetRetrospectiveScan, recordRetrospectives } from './retrospective.js';
 import { evaluateTrials, proposeFromSignals } from './improvements.js';
@@ -45,6 +46,7 @@ export async function tick(ctx: ControlContext): Promise<void> {
     try {
       rollbackTransaction(ctx, () => {
         tickTaskTracking(ctx);
+        tickPersonalAttention(ctx);
         recordRetrospectives(ctx);
         proposeFromSignals(ctx);
         evaluateTrials(ctx);

@@ -608,6 +608,8 @@ export interface Workspace extends Entity {
     /** Last 4000 characters of preparation command output, stdout and stderr combined. */
     output?: string;
     stop?: CancelReceipt;
+    /** Runs in place of the project's worktree preparation command. */
+    command?: { argv: string[]; timeout_ms?: number };
   };
   project_id: string;
   path: string;

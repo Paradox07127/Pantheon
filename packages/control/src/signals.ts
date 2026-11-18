@@ -13,6 +13,7 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import { callingResident, residentPlan } from './agent-always-on.js';
+import { urgentIssue } from './agent-contract.js';
 import { residentProfile } from './agent-templates.js';
 import { ensureAgents } from './agents.js';
 import {
@@ -410,17 +411,25 @@ function deliver(
   ctx: ControlContext,
   profile: AgentProfile,
   issues: SignalIssue[],
-  texts: string[],
+  notes: { text: string; urgent?: boolean }[],
   via: 'interrupt' | 'digest',
   cause: string,
 ): void {
   const now = ctx.store.now();
   let plan = residentPlan(ctx, openAgent(ctx, profile, cause));
-  for (const text of texts)
+  for (const { text, urgent } of notes)
     plan = appendNote(
       ctx,
       plan,
-      { at: now, session_id: '', task_id: '', kind: 'signal', text, signal: via },
+      {
+        at: now,
+        session_id: '',
+        task_id: '',
+        kind: 'signal',
+        text,
+        signal: via,
+        ...(urgent && { bypass_hold: 'urgent' as const }),
+      },
       cause,
     );
   for (const issue of issues)
@@ -468,7 +477,17 @@ timerHandlers.set(INTERRUPT, (ctx, timer) => {
     }
   }
   if (due.length)
-    deliver(ctx, profile, due, due.map(interruptText), 'interrupt', `timer:${timer.id}`);
+    deliver(
+      ctx,
+      profile,
+      due,
+      due.map((issue) => ({
+        text: interruptText(issue),
+        urgent: urgentIssue(ctx, profile.project_id, issue),
+      })),
+      'interrupt',
+      `timer:${timer.id}`,
+    );
   return retry;
 });
 
@@ -483,13 +502,15 @@ timerHandlers.set(DIGEST, (ctx, timer) => {
       profile,
       due,
       [
-        [
-          'Signal issues that changed since your last digest; call signal_read with an id for details:',
-          ...due.map(
-            (issue) =>
-              `- ${issue.state}: ${issue.source}, ${issue.title}, ${issue.count} signals, issue ${issue.id}`,
-          ),
-        ].join('\n'),
+        {
+          text: [
+            'Signal issues that changed since your last digest; call signal_read with an id for details:',
+            ...due.map(
+              (issue) =>
+                `- ${issue.state}: ${issue.source}, ${issue.title}, ${issue.count} signals, issue ${issue.id}`,
+            ),
+          ].join('\n'),
+        },
       ],
       'digest',
       `timer:${timer.id}`,

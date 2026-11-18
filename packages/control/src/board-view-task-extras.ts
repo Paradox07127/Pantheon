@@ -17,5 +17,8 @@ export function milestoneExtras(
   _ctx: ControlContext,
   milestone: MilestoneView,
 ): BoardMilestoneExtras {
-  return milestone.verification ? { verification: milestone.verification } : {};
+  return {
+    ...(milestone.verification ? { verification: milestone.verification } : {}),
+    ...(milestone.milestone.goal_id ? { goal_id: milestone.milestone.goal_id } : {}),
+  };
 }

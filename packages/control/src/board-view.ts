@@ -2598,6 +2598,15 @@ export function boardView(
             ...milestoneExtras(ctx, view),
           };
     }),
+    goals: facts.goals.map(({ goal, milestone_ids, milestones, tasks }) => ({
+      id: goal.id,
+      text: goal.text,
+      order: goal.order,
+      revision: goal.revision,
+      milestone_ids,
+      milestones,
+      tasks,
+    })),
     burnup,
     task_progress: {
       totals,

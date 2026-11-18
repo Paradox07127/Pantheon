@@ -386,7 +386,7 @@ export async function sourceCommitter(
 }
 
 /** A new directory for one gate run's clone and index. */
-async function gateTemporary(ctx: ControlContext): Promise<string> {
+export async function gateTemporary(ctx: ControlContext): Promise<string> {
   // Candidate tests may create managed workspaces, which refuse temporary directories.
   const gates = ctx.workspaceRoot ? path.join(ctx.workspaceRoot, '.gates') : os.tmpdir();
   await mkdir(gates, { recursive: true, mode: 0o700 });
@@ -439,6 +439,7 @@ async function runChecked(
     });
   return result;
 }
+export { runChecked as runCandidateCommand };
 
 /**
  * Runs commands on commit in a fresh clone of source as the gate does, without the gate's events

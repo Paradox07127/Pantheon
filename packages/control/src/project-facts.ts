@@ -408,7 +408,7 @@ export function projectFacts(ctx: ControlContext, projectId: string): ProjectRea
     milestones,
     cursor: ctx.store.cursor(),
     plans: planViews(ctx, projectId),
-    goals: goalViews(ctx, projectId),
+    goals: goalViews(ctx, projectId, milestones),
   };
 }
 

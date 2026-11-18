@@ -333,41 +333,41 @@ export function startWorkspaceProvisioning(ctx: ControlContext, workspaceId: str
           });
         }
         check();
-        if (preparation.command) {
-          const command = preparation.command;
-          record(ctx, workspaceId, { phase: 'prepare', output: '' });
-          clearTimeout(timer);
-          timer = setTimeout(() => {
-            job.timedOut = true;
-            stop(job);
-          }, command.timeout_ms ?? 1200000);
-          let output = '';
-          const exitCode = await new Promise<number | null>((resolve, reject) => {
-            const child = spawn(command.argv[0]!, command.argv.slice(1), {
-              cwd: workspace.path,
-              env: { ...nativeEnvironment(), ...project.env },
-              detached: true,
-              stdio: ['ignore', 'pipe', 'pipe'],
-              shell: false,
-            });
-            ownChild(child);
-            const collect = (chunk: Buffer) => {
-              output = (output + chunk.toString()).slice(-4000);
-            };
-            child.stdout.on('data', collect);
-            child.stderr.on('data', collect);
-            child.once('error', reject);
-            child.once('close', resolve);
+      }
+      const command = workspace.provisioning!.command ?? preparation?.command;
+      if (command) {
+        record(ctx, workspaceId, { phase: 'prepare', output: '' });
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          job.timedOut = true;
+          stop(job);
+        }, command.timeout_ms ?? 1200000);
+        let output = '';
+        const exitCode = await new Promise<number | null>((resolve, reject) => {
+          const child = spawn(command.argv[0]!, command.argv.slice(1), {
+            cwd: workspace.path,
+            env: { ...nativeEnvironment(), ...project.env },
+            detached: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: false,
           });
-          record(ctx, workspaceId, { output });
-          if (job.stopping) await job.stopping;
-          check();
-          requireThat(
-            exitCode === 0,
-            'invalid_workspace',
-            `Worktree preparation command failed (exit ${exitCode})`,
-          );
-        }
+          ownChild(child);
+          const collect = (chunk: Buffer) => {
+            output = (output + chunk.toString()).slice(-4000);
+          };
+          child.stdout.on('data', collect);
+          child.stderr.on('data', collect);
+          child.once('error', reject);
+          child.once('close', resolve);
+        });
+        record(ctx, workspaceId, { output });
+        if (job.stopping) await job.stopping;
+        check();
+        requireThat(
+          exitCode === 0,
+          'invalid_workspace',
+          `Worktree preparation command failed (exit ${exitCode})`,
+        );
       }
       check();
       ctx.store.transaction(() => {

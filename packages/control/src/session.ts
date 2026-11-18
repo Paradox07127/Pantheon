@@ -1772,11 +1772,13 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
     // Only a session with memory tools hears about memory, and only one that can write about writing.
     const tools = purposeSessionTools(session, sessionWorkspaceKind(ctx, session));
     const memoryText =
-      !tools || tools.includes('memory.propose')
-        ? MEMORY_INSTRUCTIONS
-        : tools.includes('memory.context')
-          ? MEMORY_READ_INSTRUCTIONS
-          : undefined;
+      session.resident?.kind === 'personal'
+        ? undefined
+        : !tools || tools.includes('memory.propose')
+          ? MEMORY_INSTRUCTIONS
+          : tools.includes('memory.context')
+            ? MEMORY_READ_INSTRUCTIONS
+            : undefined;
     spec.control_instructions = [memoryText, spec.control_instructions]
       .filter(Boolean)
       .join('\n\n');

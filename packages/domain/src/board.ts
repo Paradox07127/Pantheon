@@ -286,6 +286,8 @@ export interface BoardPlan extends Entity {
   generations?: Record<string, { generation: number; contract: string }>;
   /** The last generation of each task id removed from the plan, so a reused id starts after it. */
   retired?: Record<string, number>;
+  /** On the personal agent's inbox: the keys of the waiting items it last read, and when it read them. */
+  personal_seen?: { keys: string[]; at: number };
   updated_at: number;
 }
 /** One change to a board plan, by task id; only the lead resolves a pending edit. */
@@ -429,7 +431,9 @@ export interface LeadNote {
     /** Pantheon moved a task whose hand-backs ran out to another runtime; wakes the lead. */
     | 'runtime_switched'
     /** A lane the lead added waits for the user to approve its plan; does not wake the lead. */
-    | 'plan_held';
+    | 'plan_held'
+    /** New items wait for the user in other projects; wakes the personal agent. */
+    | 'personal_attention';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;
@@ -471,6 +475,8 @@ export interface LeadNote {
   source?: string;
   /** Whether a signal note is an interrupt for one issue or the periodic digest. */
   signal?: 'interrupt' | 'digest';
+  /** Wakes the agent even while its contract holds its wakes: an urgent signal or the user's own act. */
+  bypass_hold?: 'urgent' | 'user';
 }
 export interface MilestoneView {
   milestone: Milestone;
@@ -590,4 +596,9 @@ export interface ProjectGoal extends Entity {
 }
 export interface ProjectGoalView {
   goal: ProjectGoal;
+  /** Row ids of the lead milestones linked to it that are not removed, in plan order. */
+  milestone_ids: string[];
+  milestones: { done: number; ready: number; total: number };
+  /** Summed over those milestones. */
+  tasks: { done: number; total: number };
 }

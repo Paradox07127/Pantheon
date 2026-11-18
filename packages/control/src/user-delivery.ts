@@ -6,9 +6,9 @@ import {
   type SignalIssue,
 } from '@pantheon/domain';
 import { wakeAgent } from './agent-always-on.js';
+import { urgentIssue } from './agent-contract.js';
 import { ensureAgents } from './agents.js';
 import type { ControlContext } from './context.js';
-import { workflowPolicy } from './workflow-policy.js';
 
 type Sender = { profile: AgentProfile; session: Session };
 type MessageInput = Pick<AgentMessage, 'text' | 'urgency'> & { signal_issue_id?: string };
@@ -50,11 +50,7 @@ function urgent(ctx: ControlContext, projectId: string, input: MessageInput): bo
     input.signal_issue_id !== undefined
       ? ctx.store.get<SignalIssue>('signal_issues', input.signal_issue_id)
       : undefined;
-  return (
-    issue?.project_id === projectId &&
-    issue.scope === 'default_branch' &&
-    (workflowPolicy(ctx, projectId).urgent_direct ?? []).includes('main_gate_failed')
-  );
+  return urgentIssue(ctx, projectId, issue);
 }
 
 /**
