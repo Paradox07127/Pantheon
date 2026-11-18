@@ -1,0 +1,130 @@
+/* A timeline: events in lanes over a waterfall of spans, on one time axis. */
+.vis-tl {
+  position: relative;
+  width: 100%;
+  overflow: auto;
+}
+.vis-tl-sub {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4) 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+  overflow-wrap: anywhere;
+}
+.vis-tl-lg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4) 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--tx2);
+}
+.vis-tl-lg li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.vis-tl-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--k);
+}
+.vis-tl-n {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Series colours paint points, bars and legend dots; text stays neutral. */
+.vis-tl [data-series] {
+  --k: var(--mu);
+}
+.vis-tl [data-series='1'] {
+  --k: var(--series-1);
+}
+.vis-tl [data-series='2'] {
+  --k: var(--series-2);
+}
+.vis-tl [data-series='3'] {
+  --k: var(--series-3);
+}
+.vis-tl [data-series='4'] {
+  --k: var(--series-4);
+}
+.vis-tl [data-series='5'] {
+  --k: var(--series-5);
+}
+.vis-tl [data-series='6'] {
+  --k: var(--series-6);
+}
+
+.vis-tl-plot {
+  position: relative;
+}
+.vis-tl-svg {
+  display: block;
+  font-family: var(--font-sans);
+}
+.vis-tl-svg text {
+  font-size: var(--fs-xs);
+  dominant-baseline: central;
+}
+.vis-tl-grid,
+.vis-tl-lane {
+  fill: none;
+  stroke: var(--bd2);
+  stroke-width: var(--hair);
+}
+.vis-tl-ax,
+.vis-tl-du {
+  fill: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.vis-tl-at {
+  fill: var(--tx2);
+  font-weight: 600;
+}
+.vis-tl-lb,
+.vis-tl-ed {
+  fill: var(--mu);
+}
+.vis-tl-et {
+  fill: var(--tx2);
+}
+.vis-tl-pt,
+.vis-tl-bar {
+  fill: var(--k);
+}
+/* A duration inside its bar reads on the series colour. */
+.vis-tl-du[data-inside] {
+  fill: var(--sf);
+}
+.vis-tl-i {
+  transition: opacity var(--dur-2) var(--ease-std);
+}
+.vis-tl-i[data-focus='dim'] {
+  opacity: 0.35;
+}
+.vis-tl-i[data-focus='on'] :is(.vis-tl-et, .vis-tl-lb) {
+  fill: var(--tx);
+}
+
+/* Each item's keyboard stop and pointer target, over its marks. */
+.vis-tl-hits {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vis-tl-hits li {
+  position: absolute;
+  border-radius: var(--r-sm);
+}

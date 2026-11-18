@@ -4,6 +4,7 @@ import {
   Braces,
   ChartCandlestick,
   ChartColumn,
+  ChartGantt,
   CodeXml,
   Maximize2,
   MessageSquare,
@@ -36,6 +37,7 @@ import { nativeType } from './mermaid-model';
 import { SandboxFrame } from './SandboxFrame';
 import { Drawing } from './shared';
 import { TableVisual } from './TableVisual';
+import { TimelineChart } from './TimelineChart';
 import { VegaChart } from './VegaChart';
 import { VisualError } from './VisualError';
 import '../state-icon.css';
@@ -65,6 +67,9 @@ const KIND_NAME: Record<VisualContent['kind'], string> = {
   get table() {
     return t({ id: 'visual.kind.table', defaultMessage: 'Table' });
   },
+  get timeline() {
+    return t({ id: 'visual.timeline.kind', defaultMessage: 'Timeline' });
+  },
 };
 
 const KIND_ICON: Record<VisualContent['kind'], ReactNode> = {
@@ -74,6 +79,7 @@ const KIND_ICON: Record<VisualContent['kind'], ReactNode> = {
   graph: <Network />,
   html: <CodeXml />,
   table: <Table />,
+  timeline: <ChartGantt />,
 };
 
 const points = (count: number) =>
@@ -120,6 +126,16 @@ function facts(content: VisualContent): string[] {
             defaultMessage: '{count, plural, one {# column} other {# columns}}',
           },
           { count: content.spec.columns.length },
+        ),
+      ];
+    case 'timeline':
+      return [
+        t(
+          {
+            id: 'visual.timeline.items',
+            defaultMessage: '{count, plural, one {# item} other {# items}}',
+          },
+          { count: content.spec.items.length },
         ),
       ];
     case 'mermaid':
@@ -236,6 +252,8 @@ function picture(
       );
     case 'table':
       return <TableVisual spec={content.spec} />;
+    case 'timeline':
+      return <TimelineChart spec={content.spec} height={height} grows={grows} />;
   }
 }
 
@@ -309,14 +327,15 @@ export function VisualFrame({
     const host = new URL(url).host;
     setBlocked((hosts) => (hosts.includes(host) ? hosts : [...hosts, host]));
   };
-  // The candlestick chart holds its range control, a table its rows and a graph its focusable
-  // nodes, which a picture would hide.
+  // The candlestick chart holds its range control, a table its rows, and a graph and a timeline
+  // their focusable items, which a picture would hide.
   const role =
     inline ||
     invalid ||
     content.kind === 'kline' ||
     content.kind === 'table' ||
     content.kind === 'graph' ||
+    content.kind === 'timeline' ||
     (content.kind === 'mermaid' &&
       /^(?:flowchart|state)$/.test(nativeType(content.spec.source) ?? ''))
       ? 'group'
@@ -349,7 +368,8 @@ export function VisualFrame({
         aria-label={label}
         data-stale={stale || undefined}
         style={
-          grows && (content.kind === 'graph' || content.kind === 'mermaid')
+          grows &&
+          (content.kind === 'graph' || content.kind === 'mermaid' || content.kind === 'timeline')
             ? { minHeight: height }
             : { height }
         }

@@ -1819,6 +1819,130 @@ export const visualSpecs = {
         }
       });
     }),
+  timeline: z
+    .strictObject({
+      subtitle: z.string().optional().describe('One line under the title.'),
+      unit: z
+        .enum(['time', 'ms'])
+        .optional()
+        .describe(
+          'time for a clock axis of ISO date-times or Unix ms; ms for durations from 0. Absent: ms when every time is a number, else time.',
+        ),
+      timezone: z
+        .string()
+        .refine((zone) => {
+          try {
+            new Intl.DateTimeFormat('en', { timeZone: zone });
+            return true;
+          } catch {
+            return false;
+          }
+        }, 'timezone must be an IANA time zone, such as Asia/Shanghai')
+        .optional()
+        .describe('The IANA time zone the clock axis reads in, such as Asia/Shanghai.'),
+      lanes: z
+        .array(z.strictObject({ id: z.string(), label: z.string() }))
+        .max(50)
+        .optional()
+        .describe('Rows for events; absent puts every event on one row.'),
+      groups: z
+        .array(z.strictObject({ id: z.string(), label: z.string() }))
+        .max(50)
+        .optional()
+        .describe('Legend entries; an item of a group takes its colour, in declared order.'),
+      items: z
+        .array(
+          z.strictObject({
+            id: z.string(),
+            label: z.string(),
+            detail: z.string().optional().describe('Up to two short lines under an event.'),
+            lane: z.string().optional(),
+            group: z.string().optional(),
+            at: visualTime.describe('The instant of an event or the start of a span.'),
+            end: visualTime.optional().describe('Present for a span, drawn as a bar.'),
+            parent: z
+              .string()
+              .optional()
+              .describe('For a span: the id of the span it is part of, drawn indented under it.'),
+          }),
+        )
+        .min(1)
+        .max(200),
+    })
+    .superRefine((spec, ctx) => {
+      const unit =
+        spec.unit ??
+        (spec.items.some((item) => typeof item.at === 'string' || typeof item.end === 'string')
+          ? 'time'
+          : 'ms');
+      const declared = (list: { id: string }[] | undefined, name: string, field: string) => {
+        const ids = new Set<string>();
+        list?.forEach((entry, index) => {
+          if (ids.has(entry.id))
+            ctx.addIssue({
+              code: 'custom',
+              path: [field, index, 'id'],
+              message: `Duplicate ${name} id: ${entry.id}`,
+            });
+          ids.add(entry.id);
+        });
+        return ids;
+      };
+      const lanes = declared(spec.lanes, 'lane', 'lanes');
+      const groups = declared(spec.groups, 'group', 'groups');
+      const items = new Map<string, (typeof spec.items)[number]>();
+      spec.items.forEach((item, index) => {
+        if (items.has(item.id))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['items', index, 'id'],
+            message: `Duplicate item id: ${item.id}`,
+          });
+        else items.set(item.id, item);
+      });
+      const time = (value: string | number) =>
+        typeof value === 'number' ? value : Date.parse(value);
+      spec.items.forEach((item, index) => {
+        const issue = (field: string, message: string) =>
+          ctx.addIssue({
+            code: 'custom',
+            path: ['items', index, field],
+            message: `Item ${item.id}: ${message}`,
+          });
+        if (item.lane !== undefined && !lanes.has(item.lane))
+          issue('lane', `missing lane id: ${item.lane}`);
+        if (item.group !== undefined && !groups.has(item.group))
+          issue('group', `missing group id: ${item.group}`);
+        for (const field of ['at', 'end'] as const)
+          if (unit === 'ms' && typeof item[field] === 'string')
+            issue(field, 'unit ms takes numbers of ms');
+        if (item.end !== undefined && time(item.end) < time(item.at))
+          issue('end', 'end is before at');
+        if (item.parent === undefined) return;
+        if (item.end === undefined) {
+          issue('parent', 'only a span, an item with end, takes a parent');
+          return;
+        }
+        const parent = items.get(item.parent);
+        if (!parent) issue('parent', `missing parent id: ${item.parent}`);
+        else if (parent.end === undefined)
+          issue('parent', `parent ${item.parent} is an event; only spans nest`);
+        else {
+          const seen = new Set([item.id]);
+          for (
+            let at = items.get(item.parent);
+            at;
+            at = at.parent ? items.get(at.parent) : undefined
+          ) {
+            if (seen.has(at.id)) {
+              issue('parent', 'its parents form a cycle');
+              return;
+            }
+            seen.add(at.id);
+          }
+        }
+      });
+    }),
   html: z.strictObject({ html: z.string().min(1).max(524288) }),
   table: z
     .strictObject({
@@ -1886,12 +2010,12 @@ export const visualSpecs = {
 export const visualDrawInputSchema = z.strictObject({
   title: z.string().min(1).max(120).describe('1-120 characters; the question the chart answers.'),
   kind: z
-    .enum(['vega-lite', 'kline', 'mermaid', 'graph', 'html', 'table'])
-    .describe('vega-lite, graph, mermaid, table, kline or html.'),
+    .enum(['vega-lite', 'kline', 'mermaid', 'graph', 'html', 'table', 'timeline'])
+    .describe('vega-lite, graph, mermaid, table, timeline, kline or html.'),
   spec: z
     .unknown()
     .describe(
-      'Depends on kind. vega-lite: a Vega-Lite JSON object, at most 512 KB, data inline (no data.url), transparent background, units labelled. graph: { nodes: [{ id, label, group?, kind?, sublabel?, sources? }], edges: [{ from, to, label?, style? }], groups?: [{ id, label, parent? }], direction?: "LR" or "TB" }, 1-200 nodes with unique ids, at most 400 edges between existing nodes; leave direction out to let the board pick the one that fits. mermaid: { source }, 1-20000 characters. table: { columns: [{ key, title, type: text, number or date }], rows: [{ key: value }], sort?: { key, direction } }. kline: { candles: [{ time, open, high, low, close, volume? }], lines?: [{ name, points: [{ time, value }] }] }, 1-5000 candles, at most 8 lines, time strictly increasing in one form (ISO date, ISO date-time or Unix seconds). html: { html }, one self-contained document with scripts, styles and data inline, no network; only when no other kind fits.',
+      'Depends on kind. vega-lite: a Vega-Lite JSON object, at most 512 KB, data inline (no data.url), transparent background, units labelled. graph: { nodes: [{ id, label, group?, kind?, sublabel?, sources? }], edges: [{ from, to, label?, style? }], groups?: [{ id, label, parent? }], direction?: "LR" or "TB" }, 1-200 nodes with unique ids, at most 400 edges between existing nodes; leave direction out to let the board pick the one that fits. mermaid: { source }, 1-20000 characters. table: { columns: [{ key, title, type: text, number or date }], rows: [{ key: value }], sort?: { key, direction } }. timeline: { subtitle?, unit?: "time" or "ms", timezone?, lanes?: [{ id, label }], groups?: [{ id, label }], items: [{ id, label, detail?, lane?, group?, at, end?, parent? }] }, 1-200 items with unique ids; an item with end is a span (a bar), one without an event (a point); at and end are ISO date-times or Unix ms for unit time, ms from 0 for unit ms, which is the default when every time is a number; lane and group name declared ids; parent nests a span under another span. kline: { candles: [{ time, open, high, low, close, volume? }], lines?: [{ name, points: [{ time, value }] }] }, 1-5000 candles, at most 8 lines, time strictly increasing in one form (ISO date, ISO date-time or Unix seconds). html: { html }, one self-contained document with scripts, styles and data inline, no network; only when no other kind fits.',
     ),
   source: z
     .string()

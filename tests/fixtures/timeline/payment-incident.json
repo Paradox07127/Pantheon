@@ -1,0 +1,58 @@
+{
+  "subtitle": "Illustrative incident: release, monitoring, and response events on one clock.",
+  "unit": "time",
+  "timezone": "Asia/Shanghai",
+  "lanes": [
+    { "id": "release", "label": "Release" },
+    { "id": "monitoring", "label": "Monitoring" },
+    { "id": "response", "label": "Response" }
+  ],
+  "groups": [
+    { "id": "action", "label": "action" },
+    { "id": "alert", "label": "alert" },
+    { "id": "change", "label": "change" },
+    { "id": "recovery", "label": "recovery" }
+  ],
+  "items": [
+    {
+      "id": "deploy",
+      "label": "Deploy v2.4",
+      "detail": "New version starts serving payment requests.",
+      "lane": "release",
+      "group": "change",
+      "at": "2026-11-18T10:00:00+08:00"
+    },
+    {
+      "id": "alert",
+      "label": "Payment failure alert",
+      "detail": "Error rate on /pay rises above the paging threshold.",
+      "lane": "monitoring",
+      "group": "alert",
+      "at": "2026-11-18T10:05:00+08:00"
+    },
+    {
+      "id": "rollback",
+      "label": "Start rollback",
+      "detail": "On-call decides to return to v2.3.",
+      "lane": "response",
+      "group": "action",
+      "at": "2026-11-18T10:10:00+08:00"
+    },
+    {
+      "id": "recovered",
+      "label": "Metrics recovered",
+      "detail": "Payment success rate back to baseline.",
+      "lane": "monitoring",
+      "group": "recovery",
+      "at": "2026-11-18T10:15:00+08:00"
+    },
+    {
+      "id": "closed",
+      "label": "Incident closed",
+      "detail": "Stability confirmed; response ends.",
+      "lane": "response",
+      "group": "action",
+      "at": "2026-11-18T10:20:00+08:00"
+    }
+  ]
+}

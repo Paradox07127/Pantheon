@@ -1,0 +1,53 @@
+{
+  "subtitle": "Illustrative timing: inventory lookup and discount calculation run concurrently; payment follows.",
+  "unit": "ms",
+  "groups": [
+    { "id": "checkout-api", "label": "checkout-api" },
+    { "id": "identity", "label": "identity" },
+    { "id": "inventory", "label": "inventory" },
+    { "id": "payments", "label": "payments" }
+  ],
+  "items": [
+    { "id": "checkout", "label": "POST /checkout", "group": "checkout-api", "at": 0, "end": 1200 },
+    {
+      "id": "authenticate",
+      "label": "Authenticate caller",
+      "group": "identity",
+      "at": 0,
+      "end": 100,
+      "parent": "checkout"
+    },
+    {
+      "id": "inventory",
+      "label": "Look up inventory",
+      "group": "inventory",
+      "at": 100,
+      "end": 400,
+      "parent": "checkout"
+    },
+    {
+      "id": "discount",
+      "label": "Calculate discount",
+      "group": "checkout-api",
+      "at": 100,
+      "end": 300,
+      "parent": "checkout"
+    },
+    {
+      "id": "payment",
+      "label": "Charge payment",
+      "group": "payments",
+      "at": 400,
+      "end": 1050,
+      "parent": "checkout"
+    },
+    {
+      "id": "order",
+      "label": "Write order",
+      "group": "checkout-api",
+      "at": 1050,
+      "end": 1200,
+      "parent": "checkout"
+    }
+  ]
+}

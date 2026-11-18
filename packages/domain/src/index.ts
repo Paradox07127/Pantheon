@@ -111,6 +111,27 @@ export type VisualContent =
     }
   | { kind: 'html'; spec: { html: string } }
   | {
+      kind: 'timeline';
+      spec: {
+        subtitle?: string;
+        unit?: 'time' | 'ms';
+        timezone?: string;
+        lanes?: { id: string; label: string }[];
+        groups?: { id: string; label: string }[];
+        /** An item with `end` is a span, drawn as a bar; one without is an event, a point. */
+        items: {
+          id: string;
+          label: string;
+          detail?: string;
+          lane?: string;
+          group?: string;
+          at: string | number;
+          end?: string | number;
+          parent?: string;
+        }[];
+      };
+    }
+  | {
       kind: 'table';
       spec: {
         columns: { key: string; title: string; type: 'text' | 'number' | 'date' }[];

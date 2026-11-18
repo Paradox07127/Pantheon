@@ -678,7 +678,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `visual.arrange` | `project_id`: string<br>`order`: string[] |  |
-| `visual.draw` | `title`: string<br>`kind`: "vega-lite" \| "kline" \| "mermaid" \| "graph" \| "html" \| "table"<br>`spec`: object<br>`source?`: string<br>`size?`: "S" \| "M" \| "L"<br>`replaces?`: string<br>`pin?`: "S" \| "M" \| "L" | draw (planner), draw (lead), draw (worker) |
+| `visual.draw` | `title`: string<br>`kind`: "vega-lite" \| "kline" \| "mermaid" \| "graph" \| "html" \| "table" \| "timeline"<br>`spec`: object<br>`source?`: string<br>`size?`: "S" \| "M" \| "L"<br>`replaces?`: string<br>`pin?`: "S" \| "M" \| "L" | draw (planner), draw (lead), draw (worker) |
 | `visual.list` | `project_id`: string<br>`pinned?`: boolean<br>`session_id?`: string |  |
 | `visual.pin` | `visual_id`: string<br>`size`: "S" \| "M" \| "L"<br>`width?`: 4 \| 6 \| 8 \| 12 |  |
 | `visual.read` | `visual_id`: string |  |
