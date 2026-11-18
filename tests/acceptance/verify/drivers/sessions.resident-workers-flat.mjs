@@ -82,7 +82,7 @@ const layout = await poll(() =>
       inResidents: group.contains(row),
       residentButtons: group.querySelectorAll('button').length,
       residentExpandable: [...group.querySelectorAll('button')].some((b) => b.hasAttribute('aria-expanded')),
-      nextAfterResidents: group.nextElementSibling?.className,
+      nextAfterResidents: [group.nextElementSibling, group.nextElementSibling?.nextElementSibling].map((el) => el?.className).join(),
       rowName: row.getAttribute('aria-label'),
       residentName: resident?.getAttribute('aria-label'),
     };
@@ -92,10 +92,10 @@ result.layout = layout;
 check('worker 行在 会话 区标题之后', layout?.zone === '会话' && layout.afterZone, layout?.zone);
 check('worker 行不在常驻组里', layout && !layout.inResidents);
 check(
-  '常驻组只有两行，没有展开按钮，下面紧接 会话 区标题',
+  '常驻组只有两行，没有展开按钮，下面是个人级入口，再下面是 会话 区标题',
   layout?.residentButtons === 2 &&
     !layout.residentExpandable &&
-    layout.nextAfterResidents === 'ss-zh',
+    layout.nextAfterResidents === 'ss-grp ss-pa,ss-zh',
   layout && [layout.residentButtons, layout.residentExpandable, layout.nextAfterResidents],
 );
 // The counts the row should carry, read from the same session.list.
