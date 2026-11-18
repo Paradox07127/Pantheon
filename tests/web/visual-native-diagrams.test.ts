@@ -382,6 +382,25 @@ describe('mermaid model', () => {
     expect(model.direction).toBe(direction);
   });
 
+  it.each([
+    [
+      'a state diagram',
+      'stateDiagram-v2\n  [*] --> Draft\n  Draft --> Live\n  class Live done\n  class Draft orange',
+      'state',
+    ],
+    ['a flowchart', 'flowchart LR\n  Draft:::orange --> Live\n  class Live done', 'flowchart'],
+  ] as const)(
+    'reads a status class and a colour class of %s as the status and colour of its nodes',
+    async (_name, source, type) => {
+      const { model } = (await parseMermaid(mermaid, source, type)) as any;
+      const of = (id: string) => model.nodes.find((n: { id: string }) => n.id === id);
+      expect(of('Live')).toMatchObject({ status: 'done' });
+      expect(of('Live').color).toBeUndefined();
+      expect(of('Draft')).toMatchObject({ color: 'orange' });
+      expect(of('Draft').status).toBeUndefined();
+    },
+  );
+
   it('reads classes with their generic, annotation and members, and the namespace they sit in', async () => {
     const { model } = (await parseMermaid(mermaid, SHAPES, 'class')) as any;
     const member = (visibility: string, name: string, type: string, more = {}) => ({

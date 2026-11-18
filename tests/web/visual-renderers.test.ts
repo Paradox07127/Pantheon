@@ -517,6 +517,18 @@ describe('graph diagram', () => {
     ],
   };
 
+  // The shop with two detail lines under its API and one under its database.
+  const detailed: Spec = {
+    ...shop,
+    nodes: shop.nodes.map((n) =>
+      n.id === 'api'
+        ? { ...n, detail: ['validates the cart and the coupon', 'writes the order'] }
+        : n.id === 'db'
+          ? { ...n, detail: ['postgres 16'] }
+          : n,
+    ),
+  };
+
   const fixture = (name: string): Spec =>
     JSON.parse(readFileSync(new URL(`../fixtures/graph/${name}.json`, import.meta.url), 'utf8'));
   const architecture = fixture('service-architecture');
@@ -671,6 +683,64 @@ describe('graph diagram', () => {
     expect(api.props['data-kind']).toBe('service');
     expect(text(api)).toBe('Orders APIsrc/api');
     expect(drawnNode(h, 'pay').props['data-kind']).toBeUndefined();
+  });
+
+  it('draws detail lines as text under the label and grows the node box to hold them', async () => {
+    const plain = await drawn(shop, 1200, 420);
+    const h = await drawn(detailed, 1200, 420);
+    expect(text(drawnNode(h, 'api'))).toBe(
+      'Orders APIsrc/apivalidates the cart and the couponwrites the order',
+    );
+    expect(at(h, 'api').width).toBeGreaterThan(at(plain, 'api').width);
+    expect(at(h, 'api').height).toBe(at(plain, 'api').height + 32);
+    expect(at(h, 'db').height).toBe(at(plain, 'db').height + 16);
+  });
+
+  it('names a node by its status, lists statuses and the colours given a meaning in the legend, and shows status and detail in the inspector', async () => {
+    const spec: Spec = {
+      nodes: [
+        {
+          id: 'deploy',
+          label: 'Deploy',
+          kind: 'service',
+          status: 'failed',
+          detail: ['exit code 2'],
+        },
+        { id: 'scan', label: 'Scan', color: 'orange', icon: 'search' },
+        { id: 'store', label: 'Store', color: 'blue' },
+      ],
+      edges: [
+        { from: 'deploy', to: 'scan' },
+        { from: 'scan', to: 'store' },
+      ],
+      colors: { orange: 'PII path' },
+    };
+    const h = await drawn(spec, 1200, 420);
+    const named = Object.fromEntries(
+      cards(h).map((n) => [n.id, (n as Laid & { ariaLabel: string }).ariaLabel]),
+    );
+    expect(named).toEqual({
+      deploy: `Deploy，服务，${zh('visual.graph.status.failed')}`,
+      scan: 'Scan',
+      store: 'Store',
+    });
+    const legend = find(h.value, (n) => n.props['aria-label'] === zh('visual.graph.legend'));
+    expect(
+      nodes(legend)
+        .filter((n) => n.type === 'li')
+        .map(text),
+    ).toEqual(['服务1', 'PII path1', `${zh('visual.graph.status.failed')}1`]);
+    const info = GraphNodeInfo({ spec, id: 'deploy' });
+    expect(text(info)).toContain(zh('visual.graph.status.failed'));
+    expect(
+      nodes(info)
+        .filter((n) => n.type === 'ul' && n.props['aria-label'] === zh('visual.graph.detail'))
+        .flatMap((ul) =>
+          nodes(ul)
+            .filter((n) => n.type === 'li')
+            .map(text),
+        ),
+    ).toEqual(['exit code 2']);
   });
 
   it('draws each edge in its style, a data edge in its target kind, a two-way edge with two heads', async () => {
@@ -834,6 +904,7 @@ describe('graph diagram', () => {
   // Crossings as measured with the layout settings in place.
   it.each([
     ['a shop of seven nodes', shop, [1200, 420], 0],
+    ['a shop with detail lines', detailed, [1200, 420], 0],
     ['a service map of twelve nodes in three groups', services, [1200, 720], 3],
     ['a runtime architecture of twenty nodes', architecture, [1200, 680], 3],
     ['an analytics data flow', fixture('analytics-dataflow'), [1200, 680], 0],

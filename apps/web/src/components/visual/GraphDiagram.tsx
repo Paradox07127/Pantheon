@@ -1,16 +1,51 @@
 import { useRef, useState, type ComponentType } from 'react';
 import {
+  AppWindow,
   ArrowLeft,
   ArrowRight,
+  Bell,
+  Bot,
   Box,
+  Calendar,
+  ChartColumn,
+  Clock,
+  Cloud,
+  Code,
+  Cpu,
+  CreditCard,
   Database,
+  FileIcon,
+  Folder,
+  GitBranch,
   Globe,
   Group,
+  HardDrive,
+  Key,
+  Layers,
   ListOrdered,
+  Lock,
+  Mail,
+  MapIcon,
+  MessageSquare,
   Monitor,
+  Package,
+  Plug,
+  Rocket,
+  Search,
+  Server,
+  Settings,
   Shield,
+  ShoppingCart,
+  Smartphone,
+  Terminal,
+  TestTube,
+  User,
+  Users,
+  Webhook,
+  Zap,
   type LucideProps,
 } from 'lucide-react';
+import type { GraphColor, GraphIcon, GraphStatus } from '@pantheon/domain';
 import type {
   Edge,
   EdgeProps,
@@ -72,6 +107,76 @@ const KIND_ICON: Record<NodeKind, ComponentType<LucideProps>> = {
   policy: Shield,
 };
 
+const ICON: Record<GraphIcon, ComponentType<LucideProps>> = {
+  monitor: Monitor,
+  smartphone: Smartphone,
+  globe: Globe,
+  server: Server,
+  box: Box,
+  database: Database,
+  'hard-drive': HardDrive,
+  'list-ordered': ListOrdered,
+  shield: Shield,
+  key: Key,
+  lock: Lock,
+  user: User,
+  users: Users,
+  bot: Bot,
+  cpu: Cpu,
+  cloud: Cloud,
+  'git-branch': GitBranch,
+  file: FileIcon,
+  folder: Folder,
+  terminal: Terminal,
+  mail: Mail,
+  bell: Bell,
+  search: Search,
+  settings: Settings,
+  'chart-column': ChartColumn,
+  clock: Clock,
+  zap: Zap,
+  package: Package,
+  layers: Layers,
+  'message-square': MessageSquare,
+  'credit-card': CreditCard,
+  'shopping-cart': ShoppingCart,
+  plug: Plug,
+  webhook: Webhook,
+  calendar: Calendar,
+  map: MapIcon,
+  'app-window': AppWindow,
+  code: Code,
+  'test-tube': TestTube,
+  rocket: Rocket,
+};
+
+const COLORS: readonly GraphColor[] = ['blue', 'teal', 'orange', 'violet', 'gray', 'green'];
+const STATUSES: readonly GraphStatus[] = ['waiting', 'running', 'done', 'failed', 'blocked'];
+
+// The colour and status tones of graph-diagram.css, for the map's node shapes.
+const COLOR_TONE = Object.fromEntries(
+  COLORS.map((color, i) => [color, `var(--series-${i + 1})`]),
+) as Record<GraphColor, string>;
+const STATUS_TONE: Record<GraphStatus, string> = {
+  waiting: 'var(--wait)',
+  running: 'var(--run)',
+  done: 'var(--ok)',
+  failed: 'var(--bad)',
+  blocked: 'var(--bad)',
+};
+
+/** A node's tone: its status's, else its colour's, else its kind's. */
+const toneOf = (node: LaidNode): string | undefined =>
+  node.status
+    ? STATUS_TONE[node.status]
+    : node.color
+      ? COLOR_TONE[node.color]
+      : node.kind && KIND_TONE[node.kind];
+
+/** The icon drawn for a node: the one it names, else its kind's. */
+const iconOf = (node: { icon?: GraphIcon; kind?: NodeKind }) =>
+  node.icon ? ICON[node.icon] : node.kind && KIND_ICON[node.kind];
+
 // Getters, so each name is read in the language loaded by then.
 const KIND_NAME: Record<NodeKind, string> = {
   get client() {
@@ -109,15 +214,76 @@ const STYLE_NAME: Record<EdgeStyle, string> = {
   },
 };
 
-/** Counts of the node kinds and edge styles the spec uses, in legend order. */
+const STATUS_NAME: Record<GraphStatus, string> = {
+  get waiting() {
+    return t({ id: 'visual.graph.status.waiting', defaultMessage: 'Waiting' });
+  },
+  get running() {
+    return t({ id: 'visual.graph.status.running', defaultMessage: 'Running' });
+  },
+  get done() {
+    return t({ id: 'visual.graph.status.done', defaultMessage: 'Done' });
+  },
+  get failed() {
+    return t({ id: 'visual.graph.status.failed', defaultMessage: 'Failed' });
+  },
+  get blocked() {
+    return t({ id: 'visual.graph.status.blocked', defaultMessage: 'Blocked' });
+  },
+};
+
+/** A status's dot; each status has a shape of its own besides its colour. */
+function StatusDot({ status, className }: { status: GraphStatus; className: string }) {
+  return (
+    <svg className={className} data-status={status} viewBox="0 0 8 8" aria-hidden="true">
+      {status === 'waiting' && <circle cx={4} cy={4} r={3.25} />}
+      {status === 'running' && <path d="M4 0.5A3.5 3.5 0 0 1 4 7.5Z" />}
+      {status === 'done' && <circle cx={4} cy={4} r={4} />}
+      {status === 'failed' && <path d="M1 1L7 7M7 1L1 7" />}
+      {status === 'blocked' && <rect x={0.5} y={0.5} width={7} height={7} rx={1} />}
+    </svg>
+  );
+}
+
+/**
+ * Counts of the node kinds, the colours given a meaning, the statuses and the edge styles the spec
+ * uses, in legend order.
+ */
 export function legendItems(spec: GraphSpec) {
-  const kinds = KINDS.map(
-    (kind) => [kind, spec.nodes.filter((node) => node.kind === kind).length] as const,
-  ).filter(([, count]) => count > 0);
+  const count = <T,>(
+    values: readonly T[],
+    of: (node: GraphSpec['nodes'][number]) => T | undefined,
+  ) =>
+    values
+      .map((value) => [value, spec.nodes.filter((node) => of(node) === value).length] as const)
+      .filter(([, n]) => n > 0);
+  const kinds = count(KINDS, (node) => node.kind);
+  const colors = count(
+    COLORS.filter((color) => spec.colors?.[color] !== undefined),
+    (node) => node.color,
+  );
+  const statuses = count(STATUSES, (node) => node.status);
   const styles = STYLES.map(
     (style) => [style, spec.edges.filter((edge) => edge.style === style).length] as const,
-  ).filter(([, count]) => count > 0);
-  return { kinds, styles, shown: kinds.length + styles.length >= 2 };
+  ).filter(([, n]) => n > 0);
+  const shown = kinds.length + colors.length + statuses.length + styles.length >= 2;
+  return { kinds, colors, statuses, styles, shown };
+}
+
+/** A node's accessible name: its label, then its kind and its status in words. */
+function nodeName(node: LaidNode): string {
+  const named = node.kind
+    ? t(
+        { id: 'visual.graph.node', defaultMessage: '{label}, {kind}' },
+        { label: node.label, kind: KIND_NAME[node.kind] },
+      )
+    : node.label;
+  return node.status
+    ? t(
+        { id: 'visual.graph.nodeStatus', defaultMessage: '{name}, {status}' },
+        { name: named, status: STATUS_NAME[node.status] },
+      )
+    : named;
 }
 
 /** Hover focus: the hovered node's edges stand out, nodes off them dim. */
@@ -222,7 +388,7 @@ function flowTypes(flow: typeof import('@xyflow/react')) {
     </>
   );
   function Card({ data: { node, focus }, selected }: NodeProps<Node<CardData>>) {
-    const Icon = !node.shape && node.kind && KIND_ICON[node.kind];
+    const Icon = !node.shape && iconOf(node);
     // A start or end dot has no text; its label names it.
     const dot = node.shape === 'start' || node.shape === 'end';
     const { width: w, height: h } = node;
@@ -230,6 +396,8 @@ function flowTypes(flow: typeof import('@xyflow/react')) {
       <div
         className="vis-gn"
         data-kind={node.kind}
+        data-color={node.color}
+        data-status={node.status}
         data-shape={node.shape}
         data-focus={focus}
         data-selected={selected || undefined}
@@ -241,8 +409,16 @@ function flowTypes(flow: typeof import('@xyflow/react')) {
           </svg>
         )}
         {Icon && <Icon className="vis-gn-ic" aria-hidden="true" />}
-        {!dot && <Clip className="vis-gn-t" text={node.label} />}
+        {!dot && node.status ? (
+          <span className="vis-gn-r">
+            <StatusDot status={node.status} className="vis-gn-st" />
+            <Clip className="vis-gn-t" text={node.label} />
+          </span>
+        ) : (
+          !dot && <Clip className="vis-gn-t" text={node.label} />
+        )}
         {!dot && node.sublabel !== undefined && <Clip className="vis-gn-s" text={node.sublabel} />}
+        {!dot && node.detail?.map((line, i) => <Clip key={i} className="vis-gn-d" text={line} />)}
       </div>
     );
   }
@@ -269,7 +445,7 @@ export function GraphNodeInfo({ spec, id }: { spec: GraphSpec; id: string }) {
     node.group === undefined
       ? undefined
       : (spec.groups?.find((g) => g.id === node.group)?.label ?? node.group);
-  const Icon = node.kind && KIND_ICON[node.kind];
+  const Icon = iconOf(node);
   const ends = (end: 'from' | 'to', name: string, Arrow: ComponentType<LucideProps>) => {
     const edges = spec.edges.filter((edge) => edge[end === 'from' ? 'to' : 'from'] === id);
     return (
@@ -288,13 +464,24 @@ export function GraphNodeInfo({ spec, id }: { spec: GraphSpec; id: string }) {
   };
   return (
     <section className="vis-gi">
-      <h2 className="vis-gi-t" data-kind={node.kind}>
+      <h2
+        className="vis-gi-t"
+        data-kind={node.kind}
+        data-color={node.color}
+        data-status={node.status}
+      >
         {Icon && <Icon className="vis-gi-ic" aria-hidden="true" />}
         {node.label}
       </h2>
-      {(node.kind !== undefined || group !== undefined) && (
+      {(node.kind !== undefined || node.status !== undefined || group !== undefined) && (
         <div className="vis-gi-m">
           {node.kind !== undefined && <span>{KIND_NAME[node.kind]}</span>}
+          {node.status !== undefined && (
+            <span>
+              <StatusDot status={node.status} className="vis-gi-st" />
+              {STATUS_NAME[node.status]}
+            </span>
+          )}
           {group !== undefined && (
             <span>
               <Group className="vis-gi-ic" aria-hidden="true" />
@@ -304,6 +491,16 @@ export function GraphNodeInfo({ spec, id }: { spec: GraphSpec; id: string }) {
         </div>
       )}
       {node.sublabel !== undefined && <code className="vis-gi-s">{node.sublabel}</code>}
+      {node.detail && node.detail.length > 0 && (
+        <ul
+          className="vis-gi-l"
+          aria-label={t({ id: 'visual.graph.detail', defaultMessage: 'Detail' })}
+        >
+          {node.detail.map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
+      )}
       {ends(
         'from',
         t({ id: 'visual.graph.incoming', defaultMessage: 'Incoming edges' }),
@@ -448,12 +645,7 @@ export function GraphDiagram({
           height: node.height,
           className: 'vis-gw',
           selected: node.id === chosen,
-          ariaLabel: node.kind
-            ? t(
-                { id: 'visual.graph.node', defaultMessage: '{label}, {kind}' },
-                { label: node.label, kind: KIND_NAME[node.kind] },
-              )
-            : node.label,
+          ariaLabel: nodeName(node),
         })),
       ]
     : [];
@@ -541,8 +733,7 @@ export function GraphDiagram({
                 style={{ width: 144, height: 96 }}
                 nodeColor={(node) => {
                   if (node.type === 'group') return 'transparent';
-                  const kind = (node.data as CardData).node.kind;
-                  return kind ? KIND_TONE[kind] : 'var(--mu)';
+                  return toneOf((node.data as CardData).node) ?? 'var(--mu)';
                 }}
                 nodeBorderRadius={2}
                 maskStrokeWidth={1}
@@ -568,6 +759,22 @@ export function GraphDiagram({
               </li>
             );
           })}
+          {legend.colors.map(([color, count]) => (
+            <li key={color} data-color={color}>
+              <svg className="vis-gl-sw" viewBox="0 0 10 10" aria-hidden="true">
+                <rect width={10} height={10} rx={2} />
+              </svg>
+              <span>{spec.colors?.[color]}</span>
+              <span className="vis-gl-n">{count}</span>
+            </li>
+          ))}
+          {legend.statuses.map(([status, count]) => (
+            <li key={status}>
+              <StatusDot status={status} className="vis-gl-st" />
+              <span>{STATUS_NAME[status]}</span>
+              <span className="vis-gl-n">{count}</span>
+            </li>
+          ))}
           {legend.styles.map(([style, count]) => (
             <li key={style} data-style={style}>
               <svg className="vis-gl-ln" viewBox="0 0 20 8" aria-hidden="true">

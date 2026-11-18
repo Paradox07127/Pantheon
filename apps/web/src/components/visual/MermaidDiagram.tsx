@@ -13,6 +13,7 @@ import {
   type SeqLayout,
 } from './mermaid-layout';
 import { nativeType, parseMermaid } from './mermaid-model';
+import { GRAPH_COLORS } from '@pantheon/protocol';
 import { NativeLegend } from './NativeLegend';
 import { SequenceDiagram } from './SequenceDiagram';
 import { Drawing, token, useDraw, useThemeTick } from './shared';
@@ -38,8 +39,19 @@ type Native = { id: string; room: number } & (
 
 // The node kinds a model may give with `A:::store` or `class A store`, and their series colours.
 const KINDS = { client: 1, service: 2, store: 4, queue: 3, external: 5, policy: 6 };
-const KIND_NAMES = Object.keys(KINDS).join('|');
-const KIND_USED = new RegExp(`:::(?:${KIND_NAMES})\\b|^\\s*class\\s.*\\b(?:${KIND_NAMES})\\b`, 'm');
+// The colours and statuses given the same way, after the kinds, and their tokens.
+const MARKS: Record<string, string> = {
+  ...Object.fromEntries(GRAPH_COLORS.map((name, i) => [name, `--series-${i + 1}`])),
+  waiting: '--wait',
+  running: '--run',
+  done: '--ok',
+  failed: '--bad',
+  blocked: '--bad',
+};
+const used = (names: string[]) =>
+  new RegExp(`:::(?:${names.join('|')})\\b|^\\s*class\\s.*\\b(?:${names.join('|')})\\b`, 'm');
+const KIND_USED = used(Object.keys(KINDS));
+const MARK_USED = used(Object.keys(MARKS));
 const KIND_HEADER = /^\s*(?:flowchart|graph|stateDiagram(?:-v2)?)\b/;
 
 let paint: CanvasRenderingContext2D | undefined;
@@ -52,9 +64,12 @@ function painted(colour: string): string {
   return `#${[...paint.getImageData(0, 0, 1, 1).data].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** A flowchart or state diagram that uses a node kind gets the kinds' classDefs after its header. */
+/**
+ * A flowchart or state diagram that uses a node kind gets the kinds' classDefs after its header,
+ * and one that uses a colour or status those classDefs after them.
+ */
 function withKinds(source: string, color: (name: string) => string): string {
-  if (!KIND_USED.test(source)) return source;
+  if (!KIND_USED.test(source) && !MARK_USED.test(source)) return source;
   const lines = source.split('\n');
   // Front matter ends at its second `---` line.
   let at = lines[0]?.trim() === '---' ? lines.findIndex((l, i) => i > 0 && l.trim() === '---') : -1;
@@ -62,11 +77,17 @@ function withKinds(source: string, color: (name: string) => string): string {
   at++;
   while (at < lines.length && (!lines[at]!.trim() || lines[at]!.trim().startsWith('%%'))) at++;
   if (!KIND_HEADER.test(lines[at] ?? '')) return source;
-  const defs = Object.entries(KINDS).map(([kind, n]) => {
-    const series = color(`--series-${n}`);
-    const fill = painted(`color-mix(in srgb, ${series} 8%, ${color('--sf2')})`);
-    const stroke = painted(`color-mix(in srgb, ${series} 45%, ${color('--bd')})`);
-    return `  classDef ${kind} fill:${fill},stroke:${stroke}`;
+  const tones: [string, string][] = [
+    ...(KIND_USED.test(source)
+      ? Object.entries(KINDS).map(([kind, n]): [string, string] => [kind, `--series-${n}`])
+      : []),
+    ...(MARK_USED.test(source) ? Object.entries(MARKS) : []),
+  ];
+  const defs = tones.map(([name, token]) => {
+    const tone = color(token);
+    const fill = painted(`color-mix(in srgb, ${tone} 8%, ${color('--sf2')})`);
+    const stroke = painted(`color-mix(in srgb, ${tone} 45%, ${color('--bd')})`);
+    return `  classDef ${name} fill:${fill},stroke:${stroke}`;
   });
   return [...lines.slice(0, at + 1), ...defs, ...lines.slice(at + 1)].join('\n');
 }

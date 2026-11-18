@@ -41,6 +41,67 @@
 .vis-gi [data-kind='policy'] {
   --k: var(--series-6);
 }
+/* A named colour paints in place of the kind's, and a status in place of both. */
+.vis-gd [data-color='blue'],
+.vis-gi [data-color='blue'] {
+  --k: var(--series-1);
+}
+.vis-gd [data-color='teal'],
+.vis-gi [data-color='teal'] {
+  --k: var(--series-2);
+}
+.vis-gd [data-color='orange'],
+.vis-gi [data-color='orange'] {
+  --k: var(--series-3);
+}
+.vis-gd [data-color='violet'],
+.vis-gi [data-color='violet'] {
+  --k: var(--series-4);
+}
+.vis-gd [data-color='gray'],
+.vis-gi [data-color='gray'] {
+  --k: var(--series-5);
+}
+.vis-gd [data-color='green'],
+.vis-gi [data-color='green'] {
+  --k: var(--series-6);
+}
+.vis-gd [data-status='waiting'],
+.vis-gi [data-status='waiting'] {
+  --k: var(--wait);
+}
+.vis-gd [data-status='running'],
+.vis-gi [data-status='running'] {
+  --k: var(--run);
+}
+.vis-gd [data-status='done'],
+.vis-gi [data-status='done'] {
+  --k: var(--ok);
+}
+.vis-gd [data-status='failed'],
+.vis-gi [data-status='failed'] {
+  --k: var(--bad);
+}
+.vis-gd [data-status='blocked'],
+.vis-gi [data-status='blocked'] {
+  --k: var(--bad);
+}
+
+/* A status dot, its shape told apart besides its colour. */
+.vis-gn-st,
+.vis-gl-st,
+.vis-gi-st {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  overflow: visible;
+  fill: var(--k);
+}
+:is(.vis-gn-st, .vis-gl-st, .vis-gi-st):is([data-status='waiting'], [data-status='failed']) {
+  fill: none;
+  stroke: var(--k);
+  stroke-width: 1.5px;
+}
 
 /* Edge styles, read by the edges and the legend's line samples. */
 .vis-gd [data-style] {
@@ -84,8 +145,10 @@
     background-color var(--dur-2) var(--ease-std),
     border-color var(--dur-2) var(--ease-std);
 }
-.vis-gn[data-kind] {
+.vis-gn:has(> .vis-gn-ic) {
   padding-left: 28px;
+}
+.vis-gn:is([data-kind], [data-color], [data-status]) {
   border-color: color-mix(in srgb, var(--k) 45%, var(--bd));
   background-color: color-mix(in srgb, var(--k) 8%, var(--sf2));
 }
@@ -120,7 +183,18 @@
   color: var(--mu);
 }
 /* --mu on a kind tint is under 4.5:1 in the light theme. */
-.vis-gn[data-kind] .vis-gn-s {
+.vis-gn:is([data-kind], [data-color], [data-status]) .vis-gn-s {
+  color: var(--tx2);
+}
+.vis-gn-r {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.vis-gn-d {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
   color: var(--tx2);
 }
 
@@ -152,7 +226,7 @@
     fill var(--dur-2) var(--ease-std),
     stroke var(--dur-2) var(--ease-std);
 }
-.vis-gn[data-kind] .vis-gn-dm path {
+.vis-gn:is([data-kind], [data-color], [data-status]) .vis-gn-dm path {
   fill: color-mix(in srgb, var(--k) 8%, var(--sf2));
   stroke: color-mix(in srgb, var(--k) 45%, var(--bd));
 }
@@ -281,6 +355,11 @@
   width: 14px;
   height: 14px;
   color: var(--k);
+}
+.vis-gl-sw {
+  width: 10px;
+  height: 10px;
+  fill: var(--k);
 }
 .vis-gl-ln {
   width: 20px;

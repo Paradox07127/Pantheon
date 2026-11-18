@@ -71,6 +71,51 @@ export interface PersonalKey extends Entity {
   created_at: number;
   revoked_at?: number;
 }
+/** The lucide icons a graph node may name in place of its kind's icon. */
+export type GraphIcon =
+  | 'monitor'
+  | 'smartphone'
+  | 'globe'
+  | 'server'
+  | 'box'
+  | 'database'
+  | 'hard-drive'
+  | 'list-ordered'
+  | 'shield'
+  | 'key'
+  | 'lock'
+  | 'user'
+  | 'users'
+  | 'bot'
+  | 'cpu'
+  | 'cloud'
+  | 'git-branch'
+  | 'file'
+  | 'folder'
+  | 'terminal'
+  | 'mail'
+  | 'bell'
+  | 'search'
+  | 'settings'
+  | 'chart-column'
+  | 'clock'
+  | 'zap'
+  | 'package'
+  | 'layers'
+  | 'message-square'
+  | 'credit-card'
+  | 'shopping-cart'
+  | 'plug'
+  | 'webhook'
+  | 'calendar'
+  | 'map'
+  | 'app-window'
+  | 'code'
+  | 'test-tube'
+  | 'rocket';
+/** In the order of the series colours they paint with. */
+export type GraphColor = 'blue' | 'teal' | 'orange' | 'violet' | 'gray' | 'green';
+export type GraphStatus = 'waiting' | 'running' | 'done' | 'failed' | 'blocked';
 export type VisualContent =
   | { kind: 'vega-lite'; spec: Record<string, unknown> }
   | {
@@ -97,6 +142,10 @@ export type VisualContent =
           group?: string;
           kind?: 'client' | 'service' | 'store' | 'queue' | 'external' | 'policy';
           sublabel?: string;
+          icon?: GraphIcon;
+          color?: GraphColor;
+          status?: GraphStatus;
+          detail?: string[];
           sources?: string[];
         }[];
         edges: {
@@ -107,6 +156,7 @@ export type VisualContent =
         }[];
         groups?: { id: string; label: string; parent?: string }[];
         direction?: 'LR' | 'TB';
+        colors?: Partial<Record<GraphColor, string>>;
       };
     }
   | { kind: 'html'; spec: { html: string } }

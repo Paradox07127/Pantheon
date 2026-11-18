@@ -23,6 +23,9 @@ import type {
   AgentToolGroup,
   ApprovalQuestion,
   BaselineWorkstream,
+  GraphColor,
+  GraphIcon,
+  GraphStatus,
   BoardPlan,
   CharterMode,
   CharterPower,
@@ -65,6 +68,9 @@ import type {
 export type {
   AgentFields,
   AgentProfile,
+  GraphColor,
+  GraphIcon,
+  GraphStatus,
   AgentProposal,
   AgentRoutineInput,
   AgentToolGroup,
@@ -1625,6 +1631,68 @@ const visualTime = z.union([
   z.iso.datetime({ offset: true, local: true }),
   z.number(),
 ]);
+/** The icons a graph node may name in place of its kind's icon, lucide's names. */
+export const GRAPH_ICONS = [
+  'monitor',
+  'smartphone',
+  'globe',
+  'server',
+  'box',
+  'database',
+  'hard-drive',
+  'list-ordered',
+  'shield',
+  'key',
+  'lock',
+  'user',
+  'users',
+  'bot',
+  'cpu',
+  'cloud',
+  'git-branch',
+  'file',
+  'folder',
+  'terminal',
+  'mail',
+  'bell',
+  'search',
+  'settings',
+  'chart-column',
+  'clock',
+  'zap',
+  'package',
+  'layers',
+  'message-square',
+  'credit-card',
+  'shopping-cart',
+  'plug',
+  'webhook',
+  'calendar',
+  'map',
+  'app-window',
+  'code',
+  'test-tube',
+  'rocket',
+] as const satisfies readonly GraphIcon[];
+export const GRAPH_COLORS = [
+  'blue',
+  'teal',
+  'orange',
+  'violet',
+  'gray',
+  'green',
+] as const satisfies readonly GraphColor[];
+export const GRAPH_STATUSES = [
+  'waiting',
+  'running',
+  'done',
+  'failed',
+  'blocked',
+] as const satisfies readonly GraphStatus[];
+const GRAPH_DETAIL = { lines: 3, length: 48 } as const;
+/** A name from a list, checked by the graph's refinement so its error names the node. */
+const graphName = <T extends string>(names: readonly T[]) =>
+  z.string().meta({ enum: [...names] }) as unknown as z.ZodType<T>;
 export const visualSpecs = {
   'vega-lite': z.record(z.string(), z.json()).superRefine((spec, ctx) => {
     if (new TextEncoder().encode(JSON.stringify(spec)).byteLength > 512 * 1024)
@@ -1730,6 +1798,25 @@ export const visualSpecs = {
               .max(80)
               .optional()
               .describe('One short detail line under the label, such as a path or a technology.'),
+            icon: graphName(GRAPH_ICONS)
+              .optional()
+              .describe("A lucide icon drawn in place of the kind's icon."),
+            color: graphName(GRAPH_COLORS)
+              .optional()
+              .describe(
+                "Paints the node in place of its kind's colour; give its meaning in colors.",
+              ),
+            status: graphName(GRAPH_STATUSES)
+              .optional()
+              .describe(
+                'A status dot named in words; it paints the node in place of color and kind.',
+              ),
+            detail: z
+              .array(z.string())
+              .optional()
+              .describe(
+                `Up to ${GRAPH_DETAIL.lines} short lines of at most ${GRAPH_DETAIL.length} characters under the sublabel.`,
+              ),
             sources: sources
               .optional()
               .describe(
@@ -1766,6 +1853,10 @@ export const visualSpecs = {
         .optional()
         .describe('Named boundaries for layers or subsystems; nodes join one by its id in group.'),
       direction: z.enum(['LR', 'TB']).optional(),
+      colors: z
+        .partialRecord(z.enum(GRAPH_COLORS), z.string())
+        .optional()
+        .describe('What each node color means, shown in the legend; a color left out is not.'),
     })
     .superRefine((spec, ctx) => {
       const ids = new Set<string>();
@@ -1777,6 +1868,33 @@ export const visualSpecs = {
             message: `Duplicate node id: ${node.id}`,
           });
         ids.add(node.id);
+        for (const [field, names] of [
+          ['icon', GRAPH_ICONS],
+          ['color', GRAPH_COLORS],
+          ['status', GRAPH_STATUSES],
+        ] as const) {
+          const value = node[field];
+          if (value !== undefined && !(names as readonly string[]).includes(value))
+            ctx.addIssue({
+              code: 'custom',
+              path: ['nodes', index, field],
+              message: `Node ${node.id}: ${field} ${value} is not one of ${names.join(', ')}`,
+            });
+        }
+        if ((node.detail?.length ?? 0) > GRAPH_DETAIL.lines)
+          ctx.addIssue({
+            code: 'custom',
+            path: ['nodes', index, 'detail'],
+            message: `Node ${node.id}: detail has at most ${GRAPH_DETAIL.lines} lines`,
+          });
+        node.detail?.forEach((line, at) => {
+          if (line.length > GRAPH_DETAIL.length)
+            ctx.addIssue({
+              code: 'custom',
+              path: ['nodes', index, 'detail', at],
+              message: `Node ${node.id}: detail line ${at + 1} is longer than ${GRAPH_DETAIL.length} characters`,
+            });
+        });
       });
       spec.edges.forEach((edge, index) => {
         for (const field of ['from', 'to'] as const)
@@ -2017,7 +2135,7 @@ export const visualDrawInputSchema = z.strictObject({
   spec: z
     .unknown()
     .describe(
-      'Depends on kind. vega-lite: a Vega-Lite JSON object, at most 512 KB, data inline (no data.url), transparent background, units labelled. graph: { nodes: [{ id, label, group?, kind?, sublabel?, sources? }], edges: [{ from, to, label?, style? }], groups?: [{ id, label, parent? }], direction?: "LR" or "TB" }, 1-200 nodes with unique ids, at most 400 edges between existing nodes; leave direction out to let the board pick the one that fits. mermaid: { source }, 1-20000 characters. table: { columns: [{ key, title, type: text, number or date }], rows: [{ key: value }], sort?: { key, direction } }. timeline: { subtitle?, unit?: "time" or "ms", timezone?, lanes?: [{ id, label }], groups?: [{ id, label }], items: [{ id, label, detail?, lane?, group?, at, end?, parent? }] }, 1-200 items with unique ids; an item with end is a span (a bar), one without an event (a point); at and end are ISO date-times or Unix ms for unit time, ms from 0 for unit ms, which is the default when every time is a number; lane and group name declared ids; parent nests a span under another span. kline: { candles: [{ time, open, high, low, close, volume? }], lines?: [{ name, points: [{ time, value }] }] }, 1-5000 candles, at most 8 lines, time strictly increasing in one form (ISO date, ISO date-time or Unix seconds). html: { html }, one self-contained document with scripts, styles and data inline, no network; only when no other kind fits.',
+      'Depends on kind. vega-lite: a Vega-Lite JSON object, at most 512 KB, data inline (no data.url), transparent background, units labelled. graph: { nodes: [{ id, label, group?, kind?, sublabel?, icon?, color?, status?, detail?, sources? }], edges: [{ from, to, label?, style? }], groups?: [{ id, label, parent? }], direction?: "LR" or "TB", colors?: { color: meaning } }, 1-200 nodes with unique ids, at most 400 edges between existing nodes; leave direction out to let the board pick the one that fits. mermaid: { source }, 1-20000 characters. table: { columns: [{ key, title, type: text, number or date }], rows: [{ key: value }], sort?: { key, direction } }. timeline: { subtitle?, unit?: "time" or "ms", timezone?, lanes?: [{ id, label }], groups?: [{ id, label }], items: [{ id, label, detail?, lane?, group?, at, end?, parent? }] }, 1-200 items with unique ids; an item with end is a span (a bar), one without an event (a point); at and end are ISO date-times or Unix ms for unit time, ms from 0 for unit ms, which is the default when every time is a number; lane and group name declared ids; parent nests a span under another span. kline: { candles: [{ time, open, high, low, close, volume? }], lines?: [{ name, points: [{ time, value }] }] }, 1-5000 candles, at most 8 lines, time strictly increasing in one form (ISO date, ISO date-time or Unix seconds). html: { html }, one self-contained document with scripts, styles and data inline, no network; only when no other kind fits.',
     ),
   source: z
     .string()

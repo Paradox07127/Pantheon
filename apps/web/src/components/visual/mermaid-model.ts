@@ -1,4 +1,5 @@
 import type { Mermaid } from 'mermaid';
+import { GRAPH_COLORS, GRAPH_STATUSES } from '@pantheon/protocol';
 import { t } from '../../i18n';
 import type { EdgeStyle, GraphSpec, NodeKind, NodeShape } from './graph-layout';
 
@@ -531,6 +532,13 @@ const KINDS: readonly string[] = [
 ] satisfies NodeKind[];
 const kindOf = (classes: string[]) =>
   classes.find((c) => KINDS.includes(c)) as NodeKind | undefined;
+/** The first class that names one of `names`, which Pantheon defines as it does the kinds. */
+const namedBy =
+  <T extends string>(names: readonly T[]) =>
+  (classes: string[]) =>
+    classes.find((c): c is T => (names as readonly string[]).includes(c));
+const statusOf = namedBy(GRAPH_STATUSES);
+const colorOf = namedBy(GRAPH_COLORS);
 
 // Mermaid's names for the diamond and for the cylinder shapes.
 const DIAMONDS = new Set(['diamond', 'diam', 'decision', 'question']);
@@ -558,8 +566,15 @@ const directionOf = (dir: string | undefined): GraphSpec['direction'] =>
 function graphNode(
   id: string,
   lines: string[],
-  more: { kind?: NodeKind | undefined; shape?: NodeShape | undefined; group?: string | undefined },
+  more: {
+    kind?: NodeKind | undefined;
+    shape?: NodeShape | undefined;
+    group?: string | undefined;
+    classes: string[];
+  },
 ): GraphSpec['nodes'][number] {
+  const status = statusOf(more.classes);
+  const color = colorOf(more.classes);
   const [label = id, ...rest] = lines;
   return {
     id,
@@ -567,6 +582,8 @@ function graphNode(
     ...(rest.length > 0 && { sublabel: rest.join(' ') }),
     ...(more.kind && { kind: more.kind }),
     ...(more.shape && { shape: more.shape }),
+    ...(status && { status }),
+    ...(color && { color }),
     ...(more.group !== undefined && { group: more.group }),
   };
 }
@@ -614,6 +631,7 @@ function flowModel(db: FlowDb): GraphSpec {
         kind: kindOf(vertex.classes) ?? (CYLINDERS.has(vertex.type ?? '') ? 'store' : undefined),
         shape: DIAMONDS.has(vertex.type ?? '') ? 'decision' : undefined,
         group: groupOf.get(vertex.id),
+        classes: vertex.classes,
       }),
     );
   const edges = db.getEdges().flatMap((link): GraphSpec['edges'] => {
@@ -680,10 +698,12 @@ function stateModel(db: StateDb): GraphSpec {
           : shape === 'end'
             ? [t({ id: 'visual.graph.end', defaultMessage: 'End' })]
             : [...text(node.label), ...text(node.description)].flatMap(labelLines);
+      const classes = node.cssClasses.split(/\s+/);
       return graphNode(node.id, lines, {
-        kind: kindOf(node.cssClasses.split(/\s+/)),
+        kind: kindOf(classes),
         shape,
         group: node.parentId,
+        classes,
       });
     });
   const groups = shown

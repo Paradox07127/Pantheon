@@ -134,6 +134,28 @@ describe('mermaid node kinds', () => {
     expect(spec.source).toBe(source);
   });
 
+  it('defines the node colours and statuses, and no kinds, for a diagram that uses only a status', async () => {
+    const { rendered } = await drawn('flowchart LR\n  a[fa:fa-globe Web]:::done --> b');
+    expect(
+      rendered
+        .split('\n')
+        .filter((line) => line.trim().startsWith('classDef '))
+        .map((line) => line.trim().split(/\s+/)[1]),
+    ).toEqual([
+      'blue',
+      'teal',
+      'orange',
+      'violet',
+      'gray',
+      'green',
+      'waiting',
+      'running',
+      'done',
+      'failed',
+      'blocked',
+    ]);
+  });
+
   it('fills and edges each kind with its series colour mixed into the node surface and edge', async () => {
     const { rendered } = await drawn('flowchart LR\n  a[fa:fa-box A]:::store --> b:::client');
     const styles = Object.fromEntries(

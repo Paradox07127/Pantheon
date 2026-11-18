@@ -8,7 +8,8 @@ export type NodeShape = 'decision' | 'start' | 'end';
 export type GraphSpec = Omit<DrawnSpec, 'nodes'> & {
   nodes: (DrawnSpec['nodes'][number] & { shape?: NodeShape })[];
 };
-export type NodeKind = NonNullable<GraphSpec['nodes'][number]['kind']>;
+type GraphNode = GraphSpec['nodes'][number];
+export type NodeKind = NonNullable<GraphNode['kind']>;
 export type EdgeStyle = NonNullable<GraphSpec['edges'][number]['style']>;
 export type Direction = NonNullable<GraphSpec['direction']>;
 
@@ -26,6 +27,10 @@ export interface LaidNode extends Box {
   kind?: NodeKind;
   shape?: NodeShape;
   sublabel?: string;
+  icon?: GraphNode['icon'];
+  color?: GraphNode['color'];
+  status?: GraphNode['status'];
+  detail?: string[];
   /** The id of the innermost group the node is drawn in. */
   group?: string;
   sources?: string[];
@@ -80,13 +85,24 @@ const LABEL_END = 10;
 const textWidth = (text: string, size: number, narrow: number): number =>
   [...text].reduce((width, c) => width + (c.charCodeAt(0) > 0x2e7f ? size : narrow), 0);
 
+/** A detail line's height, and the room a status dot and its gap take before the title. */
+export const DETAIL_LINE = 16;
+const STATUS_DOT = 8 + 4;
+
+/** The title's width, with the status dot before it. */
+const titleWidth = (node: GraphSpec['nodes'][number]): number =>
+  textWidth(node.label, 13, 7.6) + (node.status ? STATUS_DOT : 0);
+
 const nodeWidth = (node: GraphSpec['nodes'][number]): number => {
-  const title = textWidth(node.label, 13, 7.6);
+  const title = titleWidth(node);
   const sub = node.sublabel ? textWidth(node.sublabel, 12, 7.2) : 0;
-  const at = node.kind ? TEXT_AT.icon : TEXT_AT.plain;
+  const detail = (node.detail ?? []).map((line) => textWidth(line, 12, 6.8));
+  const at = node.kind || node.icon ? TEXT_AT.icon : TEXT_AT.plain;
   // The right padding, the hairline border on both sides and a pixel for rounding.
   const rest = 12 + 1 + 1;
-  return Math.ceil(Math.min(NODE.max, Math.max(NODE.min, at + Math.max(title, sub) + rest)));
+  return Math.ceil(
+    Math.min(NODE.max, Math.max(NODE.min, at + Math.max(title, sub, ...detail) + rest)),
+  );
 };
 
 /** The widest an edge label's pill grows, and how far apart its lines are. */
@@ -143,12 +159,12 @@ const DIAMOND = { one: 48, two: 64, lines: { one: 20, two: 36 } } as const;
 const nodeSize = (node: GraphSpec['nodes'][number]): { width: number; height: number } => {
   if (node.shape === 'start' || node.shape === 'end') return { width: DOT, height: DOT };
   if (node.shape !== 'decision')
-    return { width: nodeWidth(node), height: node.sublabel ? NODE.two : NODE.one };
+    return {
+      width: nodeWidth(node),
+      height: (node.sublabel ? NODE.two : NODE.one) + (node.detail?.length ?? 0) * DETAIL_LINE,
+    };
   const lines = node.sublabel ? 'two' : 'one';
-  const text = Math.max(
-    textWidth(node.label, 13, 7.6),
-    node.sublabel ? textWidth(node.sublabel, 12, 7.2) : 0,
-  );
+  const text = Math.max(titleWidth(node), node.sublabel ? textWidth(node.sublabel, 12, 7.2) : 0);
   // The label's box, with 8px each side, keeps inside the diamond: its share of the diamond's
   // width and its share of the height add up to at most 1.
   const width = (text + 16) / (1 - DIAMOND.lines[lines] / DIAMOND[lines]);
@@ -373,6 +389,10 @@ function read(
       ...(node.kind !== undefined && { kind: node.kind }),
       ...(node.shape !== undefined && { shape: node.shape }),
       ...(node.sublabel !== undefined && { sublabel: node.sublabel }),
+      ...(node.icon !== undefined && { icon: node.icon }),
+      ...(node.color !== undefined && { color: node.color }),
+      ...(node.status !== undefined && { status: node.status }),
+      ...(node.detail !== undefined && { detail: node.detail }),
       ...(node.group !== undefined && { group: node.group }),
       ...(node.sources !== undefined && { sources: node.sources }),
     };
@@ -1437,6 +1457,10 @@ async function layeredLayout(
     ...(node.kind !== undefined && { kind: node.kind }),
     ...(node.shape !== undefined && { shape: node.shape }),
     ...(node.sublabel !== undefined && { sublabel: node.sublabel }),
+    ...(node.icon !== undefined && { icon: node.icon }),
+    ...(node.color !== undefined && { color: node.color }),
+    ...(node.status !== undefined && { status: node.status }),
+    ...(node.detail !== undefined && { detail: node.detail }),
     ...(node.group !== undefined && { group: node.group }),
     ...(node.sources !== undefined && { sources: node.sources }),
   }));

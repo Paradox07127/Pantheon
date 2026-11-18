@@ -355,6 +355,24 @@ it('accepts a graph with node kinds, detail lines, sources, edge styles and nest
   expect(visualSpecs.graph.safeParse(spec).success).toBe(true);
 });
 
+it('accepts a graph node with an icon, a color, a status and detail lines, and color meanings', () => {
+  const spec = {
+    nodes: [
+      {
+        id: 'api',
+        label: 'API',
+        icon: 'server',
+        color: 'orange',
+        status: 'failed',
+        detail: ['retries 3 times', 'x'.repeat(48), 'owned by payments'],
+      },
+    ],
+    edges: [],
+    colors: { orange: 'PII path', blue: 'public' },
+  };
+  expect(visualSpecs.graph.safeParse(spec).success).toBe(true);
+});
+
 it.each([
   [
     'an unknown node kind',
@@ -414,6 +432,36 @@ it.each([
     'a source that is not a file or commit',
     { nodes: [{ id: 'a', label: 'A', sources: ['README.md'] }], edges: [] },
     'sources',
+  ],
+  [
+    'an unknown icon',
+    { nodes: [{ id: 'api', label: 'API', icon: 'spaceship' }], edges: [] },
+    'Node api: icon spaceship is not one of monitor, smartphone, globe',
+  ],
+  [
+    'an unknown color',
+    { nodes: [{ id: 'api', label: 'API', color: 'pink' }], edges: [] },
+    'Node api: color pink is not one of blue, teal, orange, violet, gray, green',
+  ],
+  [
+    'an unknown status',
+    { nodes: [{ id: 'api', label: 'API', status: 'paused' }], edges: [] },
+    'Node api: status paused is not one of waiting, running, done, failed, blocked',
+  ],
+  [
+    'a fourth detail line',
+    { nodes: [{ id: 'api', label: 'API', detail: ['a', 'b', 'c', 'd'] }], edges: [] },
+    'Node api: detail has at most 3 lines',
+  ],
+  [
+    'a detail line of 49 characters',
+    { nodes: [{ id: 'api', label: 'API', detail: ['ok', 'x'.repeat(49)] }], edges: [] },
+    'Node api: detail line 2 is longer than 48 characters',
+  ],
+  [
+    'a meaning for an unknown color',
+    { nodes: [{ id: 'api', label: 'API' }], edges: [], colors: { pink: 'hot' } },
+    'colors',
   ],
 ])('rejects a graph with %s', (_, spec, issue) => {
   const result = visualSpecs.graph.safeParse(spec);
