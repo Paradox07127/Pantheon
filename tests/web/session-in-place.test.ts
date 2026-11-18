@@ -351,6 +351,27 @@ describe('a session in its own folder on screen', () => {
     expect(tabLabels(h.value)).toEqual([tab.changes, tab.checks, tab.plan]);
   });
 
+  it('reads no gates for a session the list does not hold yet, which may have no worktree', async () => {
+    const card = mount(() =>
+      SessionCard({ sessionId: 'session-a', listed: null, session: boardSession, onTab() {} }),
+    );
+    await card.flush();
+    const h = mount(() =>
+      SessionInspector({
+        sessionId: 'session-a',
+        listed: null,
+        session: boardSession,
+        panels: ['changes', 'checks', 'plan'],
+        onOpen() {},
+        onClose() {},
+        onView: () => {},
+      }),
+    );
+    await h.flush();
+    expect(queried()).not.toContain('session.gates');
+    expect(queried()).not.toContain('session.gates.history');
+  });
+
   it('offers only its uncommitted changes, not each turn', () => {
     mock.board.board.session_turns = [
       { id: 'turn-a', session_id: 'session-a', kind: 'send', state: 'completed' },

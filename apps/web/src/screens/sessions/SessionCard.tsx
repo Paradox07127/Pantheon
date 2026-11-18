@@ -161,8 +161,8 @@ export function useSessionCard(
   session: Session | null,
 ) {
   const worktree = inspectorTabs(listed).includes('changes');
-  // A session in its own folder is never gated or merged.
-  const mergeable = inspectorTabs(listed).includes('checks');
+  // A session in its own folder is never gated or merged; one not listed yet may have no worktree.
+  const mergeable = listed !== null && inspectorTabs(listed).includes('checks');
   const ended = endedText(listed);
   const live = listed !== null && !ended;
   // A merged session's diff is read from its source.
