@@ -884,8 +884,8 @@ function incompleteReason(
 /** Durable review results return to the owning plan; a transfer routes them to its new lead. */
 function notifyRequestingLead(ctx: ControlContext, review: Review, turns: SessionTurn[]): void {
   const requester = review.requester;
-  // The workflow engine settles its own review step.
-  if (!requester || requester.step_run_id) return;
+  // The workflow engine settles its own review step, and a milestone verification its review.
+  if (!requester || requester.step_run_id || requester.milestone_id) return;
   let lead = requester.lead_session_id;
   const visited = new Set<string>();
   const transfers = ctx.store.kindEvents(review.project_id, ['board.plan_transferred']);

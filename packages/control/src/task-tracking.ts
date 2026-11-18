@@ -85,6 +85,7 @@ import {
 } from './task-dispatch.js';
 import { executed, stuckMerge } from './needs-you.js';
 import { finishingMerge } from './project-facts.js';
+import { advanceMilestoneVerifications } from './milestone-verify.js';
 import { finishStops } from './workbench-session.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import {
@@ -1131,6 +1132,7 @@ export function tickTaskTracking(ctx: ControlContext): void {
   }
   tellChangedContracts(ctx);
   advanceSteps(ctx);
+  advanceMilestoneVerifications(ctx);
   dispatchTasks(ctx);
 }
 

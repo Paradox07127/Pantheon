@@ -1032,6 +1032,8 @@ export interface Review extends Entity {
     generation?: number;
     /** The workflow step run that started this review; its result goes to that step, not the lead. */
     step_run_id?: string;
+    /** The milestone row whose verification started this review; its result goes to that verification. */
+    milestone_id?: string;
   };
   /** On a plan review, the high-risk task generations it reviews. */
   plan?: { tasks: { task_id: string; generation: number }[] };

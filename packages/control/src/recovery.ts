@@ -21,6 +21,7 @@ import { returnNotes } from './lead-inbox.js';
 import { finishRollback, restoreCheckpoint } from './checkpoint.js';
 import { recoverQueuedHandoff, unsnooze } from './session.js';
 import { recoverWorkflowSteps } from './workflow-engine.js';
+import { recoverMilestoneVerifications } from './milestone-verify.js';
 import { reconciledStates } from './non-writer-audit.js';
 
 const CONTINUE_TEXT =
@@ -109,6 +110,7 @@ export async function recover(ctx: ControlContext): Promise<void> {
     recoverChildProcesses(ctx);
     recoverGateRuns(ctx);
     recoverWorkflowSteps(ctx);
+    recoverMilestoneVerifications(ctx);
     for (const workspace of ctx.store
       .list<Workspace>('workspaces')
       .filter((workspace) => workspace.owner.startsWith('landing:')))

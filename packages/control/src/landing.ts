@@ -150,15 +150,15 @@ function failureClass(result: ValidationResult): GateFailureClass | undefined {
 
 async function runGateCommand(
   ctx: ControlContext,
-  owner: LandingOwner,
-  workspace: Workspace,
+  owner: Pick<LandingOwner, 'projectId' | 'cancelled'>,
+  key: string,
   command: GateCommands[number],
   candidate: string,
   disposable: boolean,
 ): Promise<NonNullable<LandingItem['gate_results']>[number]> {
   const result = await runValidationCommand({
     ctx,
-    key: `gate-process:${owner.key}:${workspace.id}`,
+    key,
     argv: command.argv,
     cwd: candidate,
     root: candidate,
@@ -385,6 +385,108 @@ export async function sourceCommitter(
   return name && email ? { name, email } : undefined;
 }
 
+/** A new directory for one gate run's clone and index. */
+async function gateTemporary(ctx: ControlContext): Promise<string> {
+  // Candidate tests may create managed workspaces, which refuse temporary directories.
+  const gates = ctx.workspaceRoot ? path.join(ctx.workspaceRoot, '.gates') : os.tmpdir();
+  await mkdir(gates, { recursive: true, mode: 0o700 });
+  return mkdtemp(path.join(gates, 'pantheon-gate-'));
+}
+
+/** A clone of repository at commit with the dependency folders of source; undefined when stopped. */
+async function cloneCandidate(
+  ctx: ControlContext,
+  key: string,
+  repository: string,
+  source: string,
+  commit: string,
+  temporary: string,
+  cancelled: () => boolean,
+): Promise<string | undefined> {
+  const candidate = path.join(temporary, 'repository');
+  await git(temporary, ['clone', '--no-hardlinks', '--quiet', '--', repository, candidate]);
+  await git(candidate, ['checkout', '--quiet', '--detach', commit]);
+  return (await copyCandidateDependencies(ctx, key, source, candidate, cancelled))
+    ? candidate
+    : undefined;
+}
+
+/** Runs one command on the candidate, failed when it changed tracked files; undefined when stopped. */
+async function runChecked(
+  ctx: ControlContext,
+  owner: Pick<LandingOwner, 'projectId' | 'cancelled'>,
+  key: string,
+  command: GateCommands[number],
+  candidate: string,
+  commit: string,
+  temporary: string,
+  disposable: boolean,
+) {
+  const result = await runGateCommand(ctx, owner, key, command, candidate, disposable);
+  if (ctx.closing || owner.cancelled()) return;
+  // Later commands would check another tree than the commit that lands.
+  const changed = await changedTracked(candidate, commit, path.join(temporary, 'index'));
+  if (changed)
+    Object.assign(result, {
+      exit_code: null,
+      state: 'failed',
+      failure_class: 'code',
+      output:
+        `The command changed tracked files of the candidate, so it did not check the commit:\n${changed}`.slice(
+          0,
+          4000,
+        ),
+    });
+  return result;
+}
+
+/**
+ * Runs commands on commit in a fresh clone of source as the gate does, without the gate's events
+ * or its recorded run; undefined when it stopped early.
+ */
+export async function checkCandidate(
+  ctx: ControlContext,
+  input: {
+    key: string;
+    projectId: string;
+    source: string;
+    commit: string;
+    commands: GateCommands;
+    cancelled(): boolean;
+  },
+): Promise<NonNullable<LandingItem['gate_results']> | undefined> {
+  if (ctx.closing || input.cancelled()) return;
+  const key = `gate-process:${input.key}`,
+    results: NonNullable<LandingItem['gate_results']> = [];
+  const temporary = await gateTemporary(ctx);
+  try {
+    const { source, commit } = input;
+    const candidate = await cloneCandidate(
+      ctx,
+      key,
+      source,
+      source,
+      commit,
+      temporary,
+      input.cancelled,
+    );
+    if (!candidate) return;
+    for (const command of input.commands.filter((command) => command.enabled !== false)) {
+      if (ctx.closing || input.cancelled()) return;
+      const run = () => runChecked(ctx, input, key, command, candidate, commit, temporary, true);
+      let result = await run();
+      // A failure of the machine may not repeat, so the same candidate runs the command once more.
+      if (result?.failure_class === 'environment') result = await run();
+      if (!result) return;
+      results.push(result);
+      if (gateFailed(result)) break;
+    }
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+  return ctx.closing || input.cancelled() ? undefined : results;
+}
+
 /** Runs the gate on commit in a fresh clone of the workspace; undefined when it stopped early. */
 export async function checkGates(
   ctx: ControlContext,
@@ -407,28 +509,14 @@ export async function checkGates(
   );
   const results: NonNullable<LandingItem['gate_results']> = [];
   if (ctx.closing || owner.cancelled()) return;
-  // Candidate tests may create managed workspaces, which refuse temporary directories.
-  const gates = ctx.workspaceRoot ? path.join(ctx.workspaceRoot, '.gates') : os.tmpdir();
-  await mkdir(gates, { recursive: true, mode: 0o700 });
-  const temporary = await mkdtemp(path.join(gates, 'pantheon-gate-'));
+  const temporary = await gateTemporary(ctx);
   try {
     const inSession = policy.gate_runner === 'session' && !!session;
-    const candidate = inSession ? workspace.path : path.join(temporary, 'repository');
-    if (!inSession) {
-      await git(temporary, ['clone', '--no-hardlinks', '--quiet', '--', workspace.path, candidate]);
-      await git(candidate, ['checkout', '--quiet', '--detach', commit]);
-    }
-    if (
-      !inSession &&
-      !(await copyCandidateDependencies(
-        ctx,
-        `gate-process:${owner.key}:${workspace.id}`,
-        source,
-        candidate,
-        owner.cancelled,
-      ))
-    )
-      return;
+    const key = `gate-process:${owner.key}:${workspace.id}`;
+    const candidate = inSession
+      ? workspace.path
+      : await cloneCandidate(ctx, key, workspace.path, source, commit, temporary, owner.cancelled);
+    if (!candidate) return;
     owner.event('gate_started', {
       workspace_id: workspace.id,
       candidate_path: candidate,
@@ -436,24 +524,8 @@ export async function checkGates(
       check_spec_hash: hash(commands),
       commands,
     });
-    const run = async (command: GateCommands[number]) => {
-      const result = await runGateCommand(ctx, owner, workspace, command, candidate, !inSession);
-      if (ctx.closing || owner.cancelled()) return;
-      // Later commands would check another tree than the commit that lands.
-      const changed = await changedTracked(candidate, commit, path.join(temporary, 'index'));
-      if (changed)
-        Object.assign(result, {
-          exit_code: null,
-          state: 'failed',
-          failure_class: 'code',
-          output:
-            `The command changed tracked files of the candidate, so it did not check the commit:\n${changed}`.slice(
-              0,
-              4000,
-            ),
-        });
-      return result;
-    };
+    const run = (command: GateCommands[number]) =>
+      runChecked(ctx, owner, key, command, candidate, commit, temporary, !inSession);
     for (const [index, command] of commands.entries()) {
       if (ctx.closing || owner.cancelled()) return;
       // A fresh clone lacks the ignored outputs of earlier steps, so only the worktree carries them.

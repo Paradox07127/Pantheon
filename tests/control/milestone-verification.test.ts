@@ -1,17 +1,37 @@
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
+import { FixtureAdapter } from '@pantheon/adapters';
 import {
   id,
+  type AgentEvent,
+  type AgentEventSink,
   type BoardPlan,
   type Milestone,
   type MilestoneVerification,
   type Principal,
+  type Project,
   type ProjectRead,
+  type Review,
+  type Session,
+  type SessionHandle,
+  type SessionSpec,
+  type UserTurn,
   type WorkflowPolicy,
+  type Workspace,
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { commitmentHash } from '../../packages/control/dist/project-facts.js';
 import { workflowPolicy } from '../../packages/control/dist/workflow-policy.js';
-import { fixture, insertSession } from '../helpers.js';
+import {
+  awaitWorkspaceReady,
+  eventually,
+  fixture,
+  gateFolder,
+  insertSession,
+  insideSandbox,
+} from '../helpers.js';
+import { git, workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 const fixtures: Fixture[] = [];
@@ -217,3 +237,309 @@ it('reads milestone verification off by default and stores the user turning it o
     'auto',
   );
 });
+
+/** A reviewer whose turn stays open until the test ends it. */
+class HeldReviewer extends FixtureAdapter {
+  starts: { emit: AgentEventSink; handle: SessionHandle; turn?: UserTurn }[] = [];
+  sequence = 1;
+  constructor() {
+    super();
+    this.name = 'cross-reviewer';
+  }
+  override async start(spec: SessionSpec, emit: AgentEventSink) {
+    const handle = await super.start(spec, emit);
+    this.starts.push({ emit, handle });
+    return handle;
+  }
+  override async send(handle: SessionHandle, turn: UserTurn) {
+    this.starts.find((entry) => entry.handle === handle)!.turn = turn;
+    return { turn_id: turn.turn_id, status: 'delivered' as const };
+  }
+  emit(event: Record<string, unknown>) {
+    const entry = this.starts[0]!;
+    entry.emit({
+      key: String(++this.sequence),
+      provider_sequence: this.sequence,
+      turn_id: entry.turn!.turn_id,
+      ...event,
+    } as AgentEvent);
+  }
+}
+
+type Workbench = Awaited<ReturnType<typeof workbenchFixture>>;
+
+/**
+ * A lead milestone whose one task merged a commit on main, with a project gate and a task
+ * acceptance that print the directory they run in, and a reviewer runtime besides the writer's.
+ */
+async function mergedMilestone(
+  options: {
+    acceptance?: string[];
+    gate?: (dir: string) => string;
+    policy?: 'off' | 'auto';
+  } = {},
+) {
+  const f = await workbenchFixture();
+  const reviewer = new HeldReviewer();
+  f.control.adapters.set(reviewer.name, reviewer);
+  const gate = gateFolder(f.root);
+  await f.call(
+    'project.gate.set',
+    {
+      project_id: f.project.id,
+      root: f.source,
+      commands: [
+        {
+          name: 'Gate',
+          argv: gate.argv(options.gate?.(gate.dir) ?? 'console.log(process.cwd())'),
+        },
+      ],
+    },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  const lead = await f.create('Ship the export API this week.');
+  await awaitWorkspaceReady(f.control, lead.workspace_id!);
+  await eventually(
+    () =>
+      f.turns(lead.id)[0]?.state === 'completed' &&
+      f.store.must<Session>('sessions', lead.id).state === 'open',
+    () => f.control.tick(),
+  );
+  const principal: Principal = {
+    id: `session:${lead.id}`,
+    role: 'lead',
+    project_id: f.project.id,
+    session_id: lead.id,
+    expires_at: f.store.now() + 60_000,
+  };
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [
+        {
+          id: 'api',
+          title: 'API',
+          goal: 'Serve exports',
+          lane: 'core',
+          depends_on: [],
+          source: ['Ship the export API'],
+          scope: ['export.txt'],
+          acceptance: options.acceptance ?? ['pwd'],
+          milestone: 'release',
+        },
+      ],
+      milestones: [
+        { id: 'release', title: 'Release', criteria: ['Exports download'], tasks: ['api'] },
+      ],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    principal,
+  );
+  const base = git(f.source, 'rev-parse', 'HEAD');
+  writeFileSync(path.join(f.source, 'export.txt'), 'exported rows\n');
+  git(f.source, 'add', 'export.txt');
+  git(f.source, 'commit', '--quiet', '-m', 'Serve exports');
+  const head = git(f.source, 'rev-parse', 'HEAD');
+  const workspace = f.store.insert<Workspace>('workspaces', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    kind: 'linked_worktree',
+    path: path.join(f.root, 'managed', 'merged-api'),
+    source: f.source,
+    source_branch: 'main',
+    base_sha: base,
+    owner: 'none',
+    ownership_epoch: 0,
+    removed_at: f.store.now(),
+  });
+  f.store.insert<Session>('sessions', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    workspace_id: workspace.id,
+    state: 'closed',
+    outcome: 'merged',
+    turn_count: 1,
+    task: { lead_session_id: lead.id, id: 'api', generation: 1 },
+  });
+  if (options.policy !== 'off')
+    f.call('workflow.policy.set', { project_id: f.project.id, milestone_verify: 'auto' }, null);
+  const milestone = f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
+  return { f, reviewer, gate, lead, milestone, head };
+}
+type Merged = Awaited<ReturnType<typeof mergedMilestone>>;
+
+const rowsOf = (f: Workbench) => f.store.list<MilestoneVerification>('milestone_verifications');
+
+async function ended(f: Workbench) {
+  await eventually(
+    () => rowsOf(f).some((row) => row.state !== 'running'),
+    () => f.control.tick(),
+    20000,
+  );
+  return rowsOf(f)[0]!;
+}
+
+/** Ticks until the checks passed and the verifier's turn reached the reviewer. */
+async function reviewing({ f, reviewer }: Merged) {
+  await eventually(
+    () => reviewer.starts[0]?.turn !== undefined,
+    () => f.control.tick(),
+    20000,
+  );
+  const row = rowsOf(f)[0]!;
+  return { row, review: f.store.must<Review>('reviews', row.review_id!) };
+}
+
+function endReview(
+  { f, reviewer }: Merged,
+  review: Review,
+  verdict?: { verdict: 'pass' | 'fail'; summary: string },
+) {
+  reviewer.emit({ kind: 'message.delta', text: 'Checked the export against the criteria.' });
+  if (verdict)
+    f.call('review.verdict', verdict, null, {
+      id: `session:${review.session_ids[0]}`,
+      role: 'reviewer',
+      session_id: review.session_ids[0],
+      project_id: f.project.id,
+      expires_at: f.store.now() + 60_000,
+    });
+  reviewer.emit({ kind: 'turn.completed', status: 'completed' });
+}
+
+const reviewNotes = (f: Workbench) =>
+  f.store
+    .kindEvents(f.project.id, ['lead.note_added'])
+    .filter((event) => (event.payload as { kind: string }).kind.startsWith('review_'));
+
+it('starts no verification of a ready lead milestone while verification is off', async () => {
+  const { f, milestone } = await mergedMilestone({ policy: 'off' });
+  for (let tick = 0; tick < 3; tick++) await f.control.tick();
+  expect(
+    f
+      .call<ProjectRead>('project.read', { project_id: f.project.id })
+      .milestones.find((view) => view.milestone.id === milestone.id)?.status,
+  ).toBe('ready_for_acceptance');
+  expect(rowsOf(f)).toEqual([]);
+});
+
+it.skipIf(insideSandbox)(
+  'reruns the gate and the acceptance in a fresh clone of the merged head, then passes on the pass verdict of another runtime',
+  async () => {
+    const setup = await mergedMilestone();
+    const { f, lead, milestone, head } = setup;
+    const { row, review } = await reviewing(setup);
+    expect(row).toMatchObject({
+      milestone_id: milestone.id,
+      state: 'running',
+      runtime: 'cross-reviewer',
+      independence: 'other_runtime',
+      commits: [{ source: f.source, commit: head }],
+      commands: [
+        { name: 'Gate', exit_code: 0, hidden: false },
+        { name: 'pwd', exit_code: 0, hidden: false },
+      ],
+    });
+    for (const command of row.commands) {
+      expect(command.output_tail).toContain(`${path.sep}.gates${path.sep}pantheon-gate-`);
+      expect(command.output_tail).not.toContain(f.source);
+    }
+    expect(review).toMatchObject({
+      runtimes: ['cross-reviewer'],
+      requester: { lead_session_id: lead.id, milestone_id: milestone.id },
+    });
+    const input = setup.reviewer.starts[0]!.turn!.input;
+    expect(input).toContain('Exports download');
+    expect(input).toContain('Goal: Serve exports');
+    expect(input).toContain('+exported rows');
+
+    endReview(setup, review, { verdict: 'pass', summary: 'Exports download in the clone' });
+    const settled = await ended(f);
+    expect(settled).toMatchObject({
+      state: 'passed',
+      independence: 'other_runtime',
+      verdict: { verdict: 'pass', summary: 'Exports download in the clone' },
+    });
+    expect(settled.finished_at).toBeTypeOf('number');
+    expect(
+      f.store.kindEvents(f.project.id, ['milestone.verified']).map((event) => event.payload),
+    ).toEqual([settled]);
+    expect(reviewNotes(f)).toEqual([]);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'fails the verification on a failing acceptance command and starts no review',
+  async () => {
+    const { f, reviewer } = await mergedMilestone({ acceptance: ['echo broken export; exit 3'] });
+    const row = await ended(f);
+    expect(row).toMatchObject({
+      state: 'failed',
+      commands: [
+        { name: 'Gate', exit_code: 0 },
+        {
+          name: 'echo broken export; exit 3',
+          exit_code: 3,
+          failure_class: 'code',
+          output_tail: expect.stringContaining('broken export'),
+        },
+      ],
+    });
+    expect(row).not.toHaveProperty('review_id');
+    expect(f.store.list<Review>('reviews')).toEqual([]);
+    expect(reviewer.starts).toEqual([]);
+  },
+);
+
+it.skipIf(insideSandbox)('starts no second verification of the same commitment', async () => {
+  const { f } = await mergedMilestone({ acceptance: ['exit 3'] });
+  await ended(f);
+  for (let tick = 0; tick < 3; tick++) await f.control.tick();
+  expect(rowsOf(f)).toHaveLength(1);
+});
+
+it.skipIf(insideSandbox)(
+  'ends the verification inconclusive when the verifier hands in no verdict',
+  async () => {
+    const setup = await mergedMilestone();
+    const { review } = await reviewing(setup);
+    endReview(setup, review);
+    const row = await ended(setup.f);
+    expect(row).toMatchObject({ state: 'inconclusive', review_id: review.id });
+    expect(row).not.toHaveProperty('verdict');
+    expect(reviewNotes(setup.f)).toEqual([]);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'ends a verification whose checks were running at a restart inconclusive',
+  async () => {
+    // The gate waits for the release file, and ends on its own after 8 s.
+    const setup = await mergedMilestone({
+      gate: (dir) =>
+        `const fs=require('node:fs');const end=Date.now()+8000;const t=setInterval(()=>{if(fs.existsSync(${JSON.stringify(path.join(dir, 'release'))})||Date.now()>end)clearInterval(t)},20)`,
+    });
+    const { f } = setup;
+    // The restart leaves the old control's check running; it must end before the store closes.
+    const { completions } = (f.control as unknown as { ctx: ControlContext }).ctx;
+    const earlier = new Set(completions);
+    await eventually(
+      () => rowsOf(f).length === 1,
+      () => f.control.tick(),
+    );
+    const checking = [...completions].filter((completion) => !earlier.has(completion));
+    await f.restart();
+    expect(rowsOf(f)).toMatchObject([{ state: 'inconclusive', reason: 'daemon_restart' }]);
+    writeFileSync(path.join(setup.gate.dir, 'release'), '');
+    await Promise.allSettled(checking);
+  },
+);
