@@ -23,6 +23,7 @@ import { checkAgentFields, ensureAgents } from './agents.js';
 import { usageLimitWaiting } from './continuation.js';
 import { transferPlan } from './board-plan.js';
 import {
+  actsAsUser,
   projectAccess,
   sessionAdapter,
   userOnly,
@@ -79,8 +80,9 @@ export function openResident(
   kind: BuiltInKind,
   cause: string,
 ): Session {
-  userOnly(p);
-  projectAccess(ctx, p, projectId, 'resident.open');
+  actsAsUser(p);
+  // A personal principal opens a resident only to send it a request.
+  projectAccess(ctx, p, projectId, p.role === 'personal' ? 'request.send' : 'resident.open');
   return openAgent(
     ctx,
     ensureAgents(ctx, projectId).find((agent) => agent.template === kind)!,

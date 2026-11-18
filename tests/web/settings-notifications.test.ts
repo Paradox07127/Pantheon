@@ -112,6 +112,7 @@ const settingsWith = (
   baseline_rounds: 5,
   baseline_visuals: true,
   baseline_range_story: true,
+  personal_answers: [],
 });
 
 let notify: ReturnType<typeof vi.fn>;

@@ -283,7 +283,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `app.errors` | — | app_errors (planner), app_errors (lead), app_errors (worker) |
 | `app.logs` | `lines?`: integer<br>`grep?`: string | app_logs (planner), app_logs (lead), app_logs (worker) |
 | `app.screenshot` | — | app_screenshot (planner), app_screenshot (lead), app_screenshot (worker) |
-| `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`attention_delivery?`: object<br>`quiet_hours?`: object \| null<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean<br>`baseline_range_story?`: boolean |  |
+| `app.settings.set` | `auto_git_init?`: boolean<br>`auto_archive_merged?`: boolean<br>`session_recap?`: boolean<br>`attention_delivery?`: object<br>`quiet_hours?`: object \| null<br>`baseline_rounds?`: integer<br>`baseline_visuals?`: boolean<br>`baseline_range_story?`: boolean<br>`personal_answers?`: ("question" \| "plan_change" \| "milestone_accept")[] |  |
 
 ### approval
 

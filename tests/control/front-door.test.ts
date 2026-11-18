@@ -21,6 +21,8 @@ const leadOf = (f: Fixture, sessionId: string): Principal => ({
   expires_at: f.store.now() + 60000,
 });
 
+const personal: Principal = { id: 'personal:k1', role: 'personal' };
+
 const assistants = (f: Fixture) =>
   f.store.list<Session>('sessions').filter((session) => session.resident?.kind === 'assistant');
 
@@ -137,4 +139,64 @@ it('refuses an archived session and a session of another project', async () => {
     request(f, { input: 'Over there', target: { kind: 'session', session_id: foreign.id } }),
   ).toThrow(expect.objectContaining({ code: 'permission_denied' }));
   expect(f.turns(foreign.id)).toEqual([]);
+});
+
+it("sends a personal agent's request to the assistant as the user's request, marked with its key", async () => {
+  const f = await workbenchFixture();
+  const routed = f.call<Routed>(
+    'request.send',
+    { project_id: f.project.id, input: 'Plan the release' },
+    null,
+    personal,
+  );
+
+  expect(assistants(f).map((session) => session.id)).toEqual([routed.session_id]);
+  const turn = f.turns(routed.session_id).find((each) => each.id === routed.turn_id);
+  expect(turn).toMatchObject({
+    input: 'Plan the release',
+    kind: 'send',
+    via: { kind: 'personal', key_id: 'k1' },
+  });
+  expect(turn?.origin).toBeUndefined();
+});
+
+it.each<[string, (f: Fixture, sessionId: string) => () => unknown]>([
+  [
+    'a request to a session',
+    (f, sessionId) => () =>
+      f.call(
+        'request.send',
+        {
+          project_id: f.project.id,
+          input: 'Now rename it',
+          target: { kind: 'session', session_id: sessionId },
+        },
+        null,
+        personal,
+      ),
+  ],
+  [
+    'a reroute of its request',
+    (f) => {
+      const routed = f.call<Routed>(
+        'request.send',
+        { project_id: f.project.id, input: 'Plan the release' },
+        null,
+        personal,
+      );
+      return () =>
+        f.call('request.reroute', { turn_id: routed.turn_id, to: 'new_plan' }, null, personal);
+    },
+  ],
+])('refuses a personal agent %s', async (_case, attempt) => {
+  const f = await workbenchFixture();
+  const direct = await f.create('Explain the answer file');
+  await idle(f, direct.id);
+  const send = attempt(f, direct.id),
+    before = f.store.list<Session>('sessions').map((session) => f.turns(session.id).length);
+
+  expect(send).toThrow(expect.objectContaining({ code: 'permission_denied' }));
+  expect(f.store.list<Session>('sessions').map((session) => f.turns(session.id).length)).toEqual(
+    before,
+  );
 });

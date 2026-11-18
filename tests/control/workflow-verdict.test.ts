@@ -293,6 +293,100 @@ it('refuses evidence naming a command its turn did not run', async () => {
   expect(runs(f)[0]).not.toHaveProperty('verdict');
 });
 
+it('lists only the last ten commands of the turn in a refusal and counts the earlier ones', async () => {
+  const commands = Array.from(
+    { length: 12 },
+    (_, i) => `echo step-${String(i + 1).padStart(2, '0')}`,
+  );
+  const definition = empty();
+  definition.slots.before_dispatch = [
+    verdictStep(
+      script(...commands.map((command) => ({ trace: { tool: 'Bash', input: { command } } })), {
+        wait: 2000,
+      }),
+      'lead',
+    ),
+  ];
+  const { f, lead } = await setup(definition);
+  startTask(f, lead);
+  await eventually(
+    () => {
+      const run = runs(f)[0];
+      return (
+        run?.state === 'running' &&
+        (
+          f.store.db
+            .prepare(
+              "SELECT count(*) AS n FROM events WHERE aggregate_id=? AND kind='agent.tool.started' AND payload ->> '$.turn_id'=?",
+            )
+            .get(lead.id, run.turn_id!) as { n: number }
+        ).n === 12
+      );
+    },
+    () => f.control.tick(),
+    10000,
+  );
+  let message = '';
+  try {
+    verdict(f, lead.id, 'lead', {
+      verdict: 'fail',
+      summary: 'Lint reports two errors',
+      evidence: [{ kind: 'command', ref: 'pnpm lint' }],
+    });
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  expect(message).toContain(`(2 earlier commands not shown) ${commands.slice(2).join('; ')}`);
+  expect(message).not.toContain('echo step-02');
+});
+
+it('treats a shell call without command text as no command, so a pass with an unchecked item is accepted', async () => {
+  const definition = empty();
+  definition.slots.before_dispatch = [
+    verdictStep(script({ trace: { tool: 'Bash', input: {} } }, { wait: 2000 }), 'lead'),
+  ];
+  const { f, lead } = await setup(definition);
+  startTask(f, lead);
+  await shellRan(f, lead.id);
+  expect(
+    verdict(f, lead.id, 'lead', {
+      verdict: 'pass',
+      summary: 'The tests pass',
+      evidence: [{ kind: 'command', ref: 'pnpm test' }],
+    }),
+  ).toMatchObject({ evidence: [{ kind: 'command', ref: 'pnpm test', checked: false }] });
+});
+
+it.each([
+  ['without expects', {}],
+  ['expecting its turn', { expects: 'turn' as const }],
+])('refuses a verdict for a running prompt step %s', async (_, fields) => {
+  const definition = empty();
+  definition.slots.before_dispatch = [
+    {
+      id: 'brief',
+      title: 'Brief the lead',
+      kind: { type: 'prompt', prompt: shellTurn('pnpm test'), target: 'lead', ...fields },
+    },
+  ];
+  const { f, lead } = await setup(definition);
+  startTask(f, lead);
+  await shellRan(f, lead.id);
+  expect(() =>
+    verdict(f, lead.id, 'lead', {
+      verdict: 'pass',
+      summary: 'The tests pass',
+      evidence: [{ kind: 'command', ref: 'pnpm test' }],
+    }),
+  ).toThrowError(
+    expect.objectContaining({
+      code: 'invalid_state',
+      message: expect.stringContaining('does not ask for a verdict'),
+    }),
+  );
+  expect(runs(f)[0]).not.toHaveProperty('verdict');
+});
+
 it('refuses a verdict from a session that is not the step target', async () => {
   const definition = empty();
   definition.slots.before_merge = [verdictStep(shellTurn('pnpm test'))];
@@ -342,14 +436,21 @@ class ReplyingReviewer extends FixtureAdapter {
   }
 }
 
+/** A reviewer that stays running long enough to hand in a verdict, then ends with no reply. */
+class SilentReviewer extends FixtureAdapter {
+  override send(handle: SessionHandle, turn: UserTurn) {
+    return super.send(handle, { ...turn, input: script({ wait: 2000 }) });
+  }
+}
+
 /** A blocking review step before the merge, once its reviewer on another runtime is running. */
-async function reviewing() {
+async function reviewing(Reviewer: typeof FixtureAdapter = ReplyingReviewer) {
   const definition = empty();
   definition.slots.before_merge = [
     { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
   ];
   const { f, lead } = await setup(definition);
-  const reviewer = new ReplyingReviewer(1);
+  const reviewer = new Reviewer(1);
   reviewer.name = 'reviewer';
   f.control.adapters.set(reviewer.name, reviewer);
   const worker = await build(f, lead);
@@ -395,4 +496,25 @@ it('passes a blocking review step whose review completes with a reply and no ver
   expect(review()).toMatchObject({ state: 'completed', findings: [] });
   expect(review()).not.toHaveProperty('incomplete');
   expect(review()).not.toHaveProperty('verdicts');
+});
+
+it("gives both the incomplete reason and the reviewer's fail verdict when a blocking review step fails", async () => {
+  const { f, reviewerId } = await reviewing(SilentReviewer);
+  f.call(
+    'review.verdict',
+    { verdict: 'fail', summary: 'The export drops the header row' },
+    null,
+    principal(f, reviewerId, 'reviewer'),
+  );
+  await eventually(
+    () => ['passed', 'failed'].includes(runs(f)[0]?.state ?? ''),
+    () => f.control.tick(),
+    10000,
+  );
+  const reason = runs(f)[0]!.reason!;
+  expect(reason).toContain(
+    'incomplete: reviewer reviewer ended its turn with no finding and no reply',
+  );
+  expect(reason).toContain('failed by verdict:\nreviewer: The export drops the header row');
+  expect(reason.indexOf('incomplete')).toBeLessThan(reason.indexOf('failed by verdict'));
 });

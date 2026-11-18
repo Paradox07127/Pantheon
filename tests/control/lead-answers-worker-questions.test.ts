@@ -63,11 +63,28 @@ async function running(f: Fixture, session: Session) {
   return { turn, handle: f.control.handles.get(turn.id)! };
 }
 
-/** A lead with a one-task plan and a worker of that task running a turn. */
-async function workerFixture(policy?: Record<string, unknown>) {
+/**
+ * A lead with a one-task plan and a worker of that task running a turn; with a requester, the task
+ * quotes a request it sent to the Assistant instead of the lead's first message.
+ */
+async function workerFixture(policy?: Record<string, unknown>, requester?: Principal) {
   const f = await workbenchFixture();
-  const lead = await f.create(request);
+  const lead = await f.create(requester ? 'Plan the export feature' : request);
   await settle(f, lead);
+  if (requester) {
+    const sent = f.call<{ session_id: string }>(
+      'request.send',
+      { project_id: f.project.id, input: request },
+      null,
+      requester,
+    );
+    await eventually(
+      () =>
+        f.store.must<Session>('sessions', sent.session_id).state === 'open' &&
+        f.turns(sent.session_id).every((turn) => !['queued', 'running'].includes(turn.state)),
+      () => f.control.tick(),
+    );
+  }
   f.call(
     'board.plan.update',
     {
@@ -294,6 +311,27 @@ it.each<[string, Record<string, unknown> | undefined, Cite, string]>([
   expect(powerUses(f)).toHaveLength(0);
   expect(questionItems(f).map((item) => item.request_id)).toEqual([card.id]);
 });
+
+it.each<[string, Principal, boolean]>([
+  ['the user', user, true],
+  ["the user's personal agent", { id: 'personal:k1', role: 'personal' }, false],
+])(
+  'lets the lead cite the words of a request %s sent only when the user sent it',
+  async (_label, requester, resolves) => {
+    const { f, lead, prompt } = await workerFixture(undefined, requester);
+    const approval = prompt('AskUserQuestion', question);
+    const card = boardQuestion(f, lead.id, approval.id);
+    const send = () => leadAnswers(f, lead.id, card.id, userWords(f, lead.id));
+    if (resolves) send();
+    else
+      expect(send).toThrow(
+        'Citation user_words "finance opens the files in spreadsheets" does not resolve',
+      );
+    expect(f.store.must<Approval>('approvals', approval.id).state).toBe(
+      resolves ? 'approved' : 'pending',
+    );
+  },
+);
 
 it("tells the lead of a task session's question at once and keeps it listed for the user", async () => {
   const { f, lead, worker, prompt } = await workerFixture();

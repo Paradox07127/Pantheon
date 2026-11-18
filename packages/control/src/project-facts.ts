@@ -17,7 +17,15 @@ import {
   type Session,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
-import { insert, projectAccess, revision, type ControlContext, type Handlers } from './context.js';
+import {
+  actsAsUser,
+  insert,
+  projectAccess,
+  revision,
+  type ControlContext,
+  type Handlers,
+} from './context.js';
+import { personalAnswer, personalCalled } from './personal-scope.js';
 import { projectRoutingTable } from './routing-table.js';
 import { runtimeReviewHistory } from './runtime-review.js';
 import { RUNTIME_LOOKBACK_MS, runtimeDiagnostics } from './runtime-findings.js';
@@ -454,12 +462,14 @@ export const projectFactHandlers: Handlers = {
       );
       old = owned;
     } else {
-      userOnly(p);
+      actsAsUser(p);
       old = ctx.store.must<Milestone>('milestones', input.milestone_id);
       projectAccess(ctx, p, old.project_id, c.type);
       revision(ctx, c, old);
+      personalAnswer(ctx, p, 'milestone.accept', old.project_id);
+      personalCalled(ctx, p, c, old.project_id);
     }
-    const view = projectRead(ctx, p, old.project_id).milestones.find(
+    const view = projectFacts(ctx, old.project_id).milestones.find(
       (m) => m.milestone.id === old.id,
     )!;
     requireThat(

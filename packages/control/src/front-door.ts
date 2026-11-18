@@ -8,6 +8,7 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas, type Command } from '@pantheon/protocol';
 import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
+import { personalCalled } from './personal-scope.js';
 import { openAgent, openResident } from './resident.js';
 import { sessionHandlers, userWords } from './session.js';
 
@@ -114,7 +115,7 @@ export function recordRouting(ctx: ControlContext, turnId: string): void {
 export const frontDoorHandlers: Handlers = {
   'request.send': (ctx, p, c) => {
     const input = inputSchemas['request.send'].parse(c.input);
-    return deliver(
+    const routed = deliver(
       ctx,
       p,
       c,
@@ -122,6 +123,8 @@ export const frontDoorHandlers: Handlers = {
       input.input,
       input.attachments,
     );
+    personalCalled(ctx, p, c, input.project_id);
+    return routed;
   },
   'request.reroute': (ctx, p, c) => {
     userOnly(p);

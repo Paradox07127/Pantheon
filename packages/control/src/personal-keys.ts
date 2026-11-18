@@ -15,7 +15,6 @@ export function personalKeyList(
 
 export const personalKeyHandlers: Handlers = {
   'personal.key.create': (ctx, p, c) => {
-    userOnly(p);
     const input = inputSchemas['personal.key.create'].parse(c.input);
     requireThat(
       ctx.issuePersonalKey,
@@ -25,7 +24,7 @@ export const personalKeyHandlers: Handlers = {
     const keyId = id(),
       issued = ctx.issuePersonalKey(keyId);
     // The token file and its principal live outside the transaction.
-    ctx.rollback?.push(() => ctx.revokePersonalKey?.(keyId));
+    ctx.rollback?.push(() => ctx.discardPersonalKey?.(keyId));
     const key = ctx.store.insert<PersonalKey>('personal_keys', {
       id: keyId,
       revision: 1,
@@ -37,7 +36,6 @@ export const personalKeyHandlers: Handlers = {
     return { key_id: keyId, token_file: issued.token_file };
   },
   'personal.key.revoke': (ctx, p, c) => {
-    userOnly(p);
     const input = inputSchemas['personal.key.revoke'].parse(c.input),
       key = ctx.store.must<PersonalKey>('personal_keys', input.key_id);
     requireThat(key.revoked_at === undefined, 'invalid_state', 'The key is revoked already');
@@ -47,6 +45,7 @@ export const personalKeyHandlers: Handlers = {
       key.revision,
     );
     ctx.store.event('personal_key.revoked', revoked, '', {}, c.command_id);
+    ctx.rollback?.push(() => ctx.restorePersonalKey?.(key.id, key.digest));
     ctx.revokePersonalKey?.(key.id);
     return { key_id: key.id, revoked_at: revoked.revoked_at };
   },

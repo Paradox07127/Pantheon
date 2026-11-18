@@ -112,6 +112,55 @@ it('times the wait for a workflow approval as its own stage, outside the budget 
   expect(row.budget_ratio).toBeLessThan(1);
 });
 
+it('times the wait for the user on an inconclusive verdict step as approval time', async () => {
+  const f = await workbenchFixture();
+  let skew = 0;
+  vi.spyOn(f.store, 'now').mockImplementation(() => Date.now() + skew);
+  f.call('workflow.definition.set', {
+    project_id: f.project.id,
+    base_version: 0,
+    definition: {
+      slots: {
+        before_dispatch: [
+          {
+            id: 'check',
+            title: 'Check the plan',
+            kind: { type: 'prompt', prompt: 'Check the plan', target: 'lead', expects: 'verdict' },
+          },
+        ],
+        before_merge: [],
+        after_merge: [],
+      },
+      plan_review: { tiers: ['t3'] },
+      review: { max_rounds: 3 },
+    },
+  });
+  const lead = await f.create('Plan the export feature');
+  await awaitWorkspaceReady(f.control, lead.workspace_id!);
+  await settled(f, lead.id);
+  writePlan(f, lead.id, [task('a'), task('b')]);
+  f.call('task.start', { project_id: f.project.id, task_ids: ['a'] }, null, leadOf(f, lead.id));
+  await eventually(
+    () => f.store.list<StepRun>('workflow_step_runs')[0]?.state === 'inconclusive',
+    () => f.control.tick(),
+  );
+  const run = f.store.list<StepRun>('workflow_step_runs')[0]!;
+  skew += 60 * MINUTE;
+  f.call('workflow.step.decide', { step_run_id: run.id, decision: 'approve' });
+  await f.control.tick();
+  const worker = f.store.list<Session>('sessions').find((s) => s.task?.id === 'a')!;
+  await awaitWorkspaceReady(f.control, worker.workspace_id!);
+  await settled(f, worker.id);
+  writePlan(f, lead.id, [task('b')]);
+  await eventually(
+    () => f.store.list<Retrospective>('retrospectives').some((row) => row.task_id === 'a'),
+    () => f.control.tick(),
+  );
+  const row = f.store.list<Retrospective>('retrospectives').find((r) => r.task_id === 'a')!;
+  expect(row.stage_ms?.step_approval).toBeGreaterThanOrEqual(60 * MINUTE);
+  expect(row.stage_ms?.dispatch_wait).toBeLessThan(MINUTE);
+});
+
 it('times concurrent approval leaves of a parallel step by their union', async () => {
   const f = await workbenchFixture();
   let skew = 0;

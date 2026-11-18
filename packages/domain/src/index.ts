@@ -931,6 +931,8 @@ export interface SessionTurn extends Entity {
   wake?: { causes: LeadNote['kind'][]; routine_ids?: string[] };
   /** The MCP server whose interface sent this input. */
   app?: { server: string };
+  /** The user's personal agent sent this request with the key of this id; the words are still the user's. */
+  via?: { kind: 'personal'; key_id: string };
   /** Latest reported usage totals for this turn, in tokens and USD. */
   usage?: Usage;
   /**

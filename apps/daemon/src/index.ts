@@ -6,6 +6,9 @@ import {
   renameSync,
   rmSync,
   readFileSync,
+  readdirSync,
+  existsSync,
+  statSync,
   unlinkSync,
   linkSync,
   lstatSync,
@@ -318,13 +321,40 @@ export async function startDaemon(options: DaemonOptions) {
     const registry = (auth = new AuthRegistry(token, openedStore.now));
     // Personal keys outlive the daemon, so their folder is kept.
     const personalKeys = path.join(directory, 'personal-keys');
+    const keysEntry = lstatSync(personalKeys, { throwIfNoEntry: false });
+    requireThat(
+      !keysEntry || keysEntry.isDirectory(),
+      'invalid_state',
+      `Personal key folder is not a directory: ${personalKeys}`,
+    );
     mkdirSync(personalKeys, { recursive: true, mode: 0o700 });
+    chmodSync(personalKeys, 0o700);
     const personalPrincipal = (keyId: string): Principal => ({
       id: `personal:${keyId}`,
       role: 'personal',
     });
-    for (const key of openedStore.list<PersonalKey>('personal_keys'))
-      if (key.revoked_at === undefined) registry.addDigest(key.digest, personalPrincipal(key.id));
+    // A file set aside by a revoke whose commit never happened still names a live row.
+    for (const name of readdirSync(personalKeys)) {
+      const key =
+        name.endsWith('.revoked') &&
+        openedStore.get<PersonalKey>('personal_keys', name.slice(0, -'.revoked'.length));
+      if (key && key.revoked_at === undefined)
+        openedStore.transaction(() => {
+          const revoked = openedStore.update(
+            'personal_keys',
+            { ...key, revoked_at: openedStore.now() },
+            key.revision,
+          );
+          openedStore.event('personal_key.revoked', revoked, '', {});
+        });
+    }
+    const liveKeys = openedStore
+      .list<PersonalKey>('personal_keys')
+      .filter((key) => key.revoked_at === undefined);
+    const liveIds = new Set(liveKeys.map((key) => key.id));
+    for (const name of readdirSync(personalKeys))
+      if (!liveIds.has(name)) rmSync(path.join(personalKeys, name), { force: true });
+    for (const key of liveKeys) registry.addDigest(key.digest, personalPrincipal(key.id));
     const protectionPaths = options.protectionPaths;
     if (protectionPaths)
       trace = new TraceIndex({
@@ -377,7 +407,21 @@ export async function startDaemon(options: DaemonOptions) {
           registry.addDigest(tokenDigest, personalPrincipal(keyId));
           return { token_file: tokenFile, digest: tokenDigest };
         },
+        // Set aside, not deleted, so a revoke that rolls back can put the file back.
         revokePersonalKey: (keyId) => {
+          registry.revokePrincipal(personalPrincipal(keyId).id);
+          const tokenFile = path.join(personalKeys, keyId);
+          // An empty marker stands in for a token file the user already deleted.
+          if (existsSync(tokenFile)) renameSync(tokenFile, `${tokenFile}.revoked`);
+          else writeFileSync(`${tokenFile}.revoked`, '', { mode: 0o600, flag: 'wx' });
+        },
+        restorePersonalKey: (keyId, tokenDigest) => {
+          registry.addDigest(tokenDigest, personalPrincipal(keyId));
+          const tokenFile = path.join(personalKeys, keyId);
+          if (statSync(`${tokenFile}.revoked`).size) renameSync(`${tokenFile}.revoked`, tokenFile);
+          else unlinkSync(`${tokenFile}.revoked`);
+        },
+        discardPersonalKey: (keyId) => {
           registry.revokePrincipal(personalPrincipal(keyId).id);
           rmSync(path.join(personalKeys, keyId), { force: true });
         },

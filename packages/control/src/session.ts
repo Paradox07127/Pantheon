@@ -109,6 +109,7 @@ import { residentInstructions } from './agent-prompts.js';
 import { residentProfile } from './agent-templates.js';
 import { afterResidentTurn } from './resident.js';
 import { recordRouting } from './front-door.js';
+import { personalKeyId } from './personal-scope.js';
 import {
   applyModel,
   applyPermissionMode,
@@ -436,6 +437,7 @@ export function queuedTurn(
     | 'lead_note_ids'
     | 'wake'
     | 'app'
+    | 'via'
   > = {},
 ): SessionTurn {
   return {
@@ -496,7 +498,8 @@ const queueInput: Handler = (ctx, p, c) => {
     kind = c.type === 'session.steer' ? 'steer' : 'send',
     input = inputSchemas['session.send'].parse(c.input),
     sent = ctx.store.must<Session>('sessions', input.session_id);
-  projectAccess(ctx, p, sent.project_id, c.type);
+  // A personal principal reaches a session only through request.send.
+  projectAccess(ctx, p, sent.project_id, p.role === 'personal' ? 'request.send' : c.type);
   requireThat(!sent.review_id, 'permission_denied', 'Reviewer input is fixed by its artifact');
   if (sent.runtime_review) {
     userOnly(p);
@@ -543,6 +546,7 @@ const queueInput: Handler = (ctx, p, c) => {
       handoff,
       ...(digest ? { lead_note_ids: digest.note_ids } : {}),
       ...(input.app ? { app: input.app } : {}),
+      ...(p.role === 'personal' ? { via: { kind: 'personal', key_id: personalKeyId(p) } } : {}),
     },
   );
   const { archived_at, ...rest } = session;
@@ -561,7 +565,7 @@ const queueInput: Handler = (ctx, p, c) => {
   insert(ctx, 'session_turns', turn, 'turn.queued', session.project_id, cause);
   ctx.store.event('session.turn.delivery', turn, turn.project_id, { delivery: 'pending' }, cause);
   if (p.role === 'user' && session.task) noteUserMessage(ctx, session, turn.id, input.input, cause);
-  if (p.role === 'user') unsnooze(ctx, session.id, 'user_message', cause);
+  if (p.role === 'user' || p.role === 'personal') unsnooze(ctx, session.id, 'user_message', cause);
   return turn;
 };
 

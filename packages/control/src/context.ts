@@ -54,6 +54,8 @@ export interface ControlContext {
   readonly revokeSessionCredential?: ControlOptions['revokeSessionCredential'];
   readonly issuePersonalKey?: ControlOptions['issuePersonalKey'];
   readonly revokePersonalKey?: ControlOptions['revokePersonalKey'];
+  readonly restorePersonalKey?: ControlOptions['restorePersonalKey'];
+  readonly discardPersonalKey?: ControlOptions['discardPersonalKey'];
   readonly adapters: Map<string, HarnessAdapter>;
   readonly createRuntimeAdapter?: ControlOptions['createRuntimeAdapter'];
   // handles, cancelling and endTurns are keyed by session turn id.
@@ -263,6 +265,15 @@ export function sessionPrincipal(
 export function userOnly(p: Principal) {
   requireThat(
     p.role === 'user' && !p.session_id,
+    'permission_denied',
+    'Authenticated user required',
+  );
+}
+
+/** The user, or the user's personal agent where the personal scope lets it act for the user. */
+export function actsAsUser(p: Principal) {
+  requireThat(
+    (p.role === 'user' || p.role === 'personal') && !p.session_id,
     'permission_denied',
     'Authenticated user required',
   );

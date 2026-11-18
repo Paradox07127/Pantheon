@@ -1,4 +1,16 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
@@ -11,12 +23,20 @@ import { user } from '../helpers.js';
 let root: string;
 let daemon: Awaited<ReturnType<typeof startDaemon>>;
 let project: Project;
+// The failpoint that throws, and what runs just before it throws.
+let failing: { name: string; before?: () => void } | undefined;
 
 const start = async () =>
   (daemon = await startDaemon({
     directory: path.join(root, 'state'),
     adapters: [new FixtureAdapter()],
+    failpoint: (name) => {
+      if (name !== failing?.name) return;
+      failing.before?.();
+      throw new Error(`failpoint ${name}`);
+    },
   }));
+const keysFolder = () => path.join(root, 'state', 'personal-keys');
 
 beforeAll(async () => {
   root = mkdtempSync(path.join(os.tmpdir(), 'pantheon-personal-keys-'));
@@ -115,6 +135,113 @@ it('keeps a live key working and a revoked key refused after a restart on the sa
   const refused = await summary(revoked.token);
   expect(refused.status).toBe(403);
   expect(refused.body.error).toBe('permission_denied');
+});
+
+it('revokes a key whose token file the user already deleted', async () => {
+  const { receipt, token } = await createKey('deleted file');
+  rmSync(receipt.token_file);
+  const revoked = await send(daemon.token, user.id, 'personal.key.revoke', {
+    key_id: receipt.key_id,
+  });
+  expect(revoked.status).toBe(200);
+  expect((await summary(token)).status).toBe(403);
+});
+
+it('keeps a key live and its file in place when its revoke rolls back', async () => {
+  const { receipt, token } = await createKey('rolled back revoke');
+  failing = { name: 'before_transaction_commit' };
+  try {
+    const revoked = await send(daemon.token, user.id, 'personal.key.revoke', {
+      key_id: receipt.key_id,
+    });
+    expect(revoked.status).not.toBe(200);
+  } finally {
+    failing = undefined;
+  }
+  const listed = await call(daemon.token, 'GET', '/v1/personal.key.list');
+  expect(listed.body).toContainEqual({
+    id: receipt.key_id,
+    label: 'rolled back revoke',
+    created_at: expect.any(Number),
+  });
+  expect((await summary(token)).status).toBe(200);
+  expect(readFileSync(receipt.token_file, 'utf8')).toBe(token);
+});
+
+it('leaves no row, file or working token when a create rolls back', async () => {
+  const filesBefore = readdirSync(keysFolder()).sort(),
+    rowsBefore = daemon.store.list('personal_keys').length;
+  let token = '';
+  failing = {
+    name: 'before_transaction_commit',
+    before: () => {
+      const added = readdirSync(keysFolder()).find((name) => !filesBefore.includes(name))!;
+      token = readFileSync(path.join(keysFolder(), added), 'utf8');
+    },
+  };
+  try {
+    const created = await send(daemon.token, user.id, 'personal.key.create', { label: 'lost' });
+    expect(created.status).not.toBe(200);
+  } finally {
+    failing = undefined;
+  }
+  expect(token.length).toBeGreaterThan(0);
+  expect(daemon.store.list('personal_keys')).toHaveLength(rowsBefore);
+  expect(readdirSync(keysFolder()).sort()).toEqual(filesBefore);
+  expect((await summary(token)).status).toBe(403);
+});
+
+it('finishes at start a revoke whose file was set aside but whose row is still live', async () => {
+  const { receipt, token } = await createKey('interrupted revoke');
+  await daemon.close();
+  renameSync(receipt.token_file, `${receipt.token_file}.revoked`);
+  await start();
+  const listed = await call(daemon.token, 'GET', '/v1/personal.key.list');
+  expect(listed.body).toContainEqual({
+    id: receipt.key_id,
+    label: 'interrupted revoke',
+    created_at: expect.any(Number),
+    revoked_at: expect.any(Number),
+  });
+  expect((await summary(token)).status).toBe(403);
+  expect(existsSync(receipt.token_file)).toBe(false);
+  expect(existsSync(`${receipt.token_file}.revoked`)).toBe(false);
+});
+
+it('removes partial files and files of unknown keys at start and keeps live key files', async () => {
+  const live = await createKey('kept');
+  await daemon.close();
+  const partial = path.join(keysFolder(), `${id()}.0123456789ab.tmp`),
+    unknown = path.join(keysFolder(), id());
+  writeFileSync(partial, 'partial', { mode: 0o600 });
+  writeFileSync(unknown, 'unknown', { mode: 0o600 });
+  await start();
+  expect(existsSync(partial)).toBe(false);
+  expect(existsSync(unknown)).toBe(false);
+  expect(readFileSync(live.receipt.token_file, 'utf8')).toBe(live.token);
+});
+
+it('refuses to start when the key folder is a symlink', async () => {
+  const directory = path.join(root, 'linked'),
+    elsewhere = path.join(root, 'elsewhere');
+  mkdirSync(directory);
+  mkdirSync(elsewhere, { mode: 0o700 });
+  symlinkSync(elsewhere, path.join(directory, 'personal-keys'));
+  await expect(startDaemon({ directory, adapters: [new FixtureAdapter()] })).rejects.toThrow(
+    path.join(directory, 'personal-keys'),
+  );
+});
+
+it('makes an existing key folder private at start', async () => {
+  const directory = path.join(root, 'open');
+  mkdirSync(path.join(directory, 'personal-keys'), { recursive: true });
+  chmodSync(path.join(directory, 'personal-keys'), 0o755);
+  const other = await startDaemon({ directory, adapters: [new FixtureAdapter()] });
+  try {
+    expect(statSync(path.join(directory, 'personal-keys')).mode & 0o777).toBe(0o700);
+  } finally {
+    await other.close();
+  }
 });
 
 const callers = {

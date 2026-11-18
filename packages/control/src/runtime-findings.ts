@@ -471,7 +471,8 @@ export function runtimeDiagnostics(
       if (inScope(id, text(p.turn_id))) background.set(id, event);
     } else if (event.kind === 'workflow.step_changed') {
       const key = pairKey('step', id);
-      if (p.state !== 'waiting' && p.state !== 'running') end(key, event);
+      if (p.state !== 'waiting' && p.state !== 'inconclusive' && p.state !== 'running')
+        end(key, event);
       else {
         const step = ctx.store.get<StepRun>('workflow_step_runs', id);
         if (
@@ -557,7 +558,7 @@ export function runtimeDiagnostics(
             : session?.merge?.state === 'running';
         })()) ||
       (kind === 'workflow_step' &&
-        ['waiting', 'running'].includes(
+        ['waiting', 'inconclusive', 'running'].includes(
           ctx.store.get<StepRun>('workflow_step_runs', event.aggregate_id)?.state ?? '',
         )) ||
       (kind === 'dispatch_queue' &&

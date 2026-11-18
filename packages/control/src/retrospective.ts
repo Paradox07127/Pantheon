@@ -521,7 +521,7 @@ function record(
         gate_and_merge: span(mergeStartedAt, mergedAt),
         merge_to_acceptance: span(mergedAt, acceptedAt),
       };
-  // Each wait of an approval step leaves the stage it fell in.
+  // Each wait for the user on an approval or an inconclusive prompt leaves the stage it fell in.
   const runIds = new Set(
     ctx.store
       .list<StepRun>('workflow_step_runs')
@@ -530,7 +530,7 @@ function record(
           run.lead_session_id === plan.id &&
           run.task_id === taskId &&
           run.generation === generation &&
-          run.step.kind.type === 'approval',
+          (run.step.kind.type === 'approval' || run.step.kind.type === 'prompt'),
       )
       .map((run) => run.id),
   );
@@ -540,7 +540,8 @@ function record(
     if (!runIds.has(event.aggregate_id)) continue;
     const payload = event.payload as { state: StepRun['state']; slot: StepRun['slot'] };
     const since = waitingSince.get(event.aggregate_id);
-    if (payload.state === 'waiting') waitingSince.set(event.aggregate_id, event.created_at);
+    if (payload.state === 'waiting' || payload.state === 'inconclusive')
+      waitingSince.set(event.aggregate_id, event.created_at);
     else if (since !== undefined) {
       waitingSince.delete(event.aggregate_id);
       waits.push({ from: since, to: event.created_at, slot: payload.slot });

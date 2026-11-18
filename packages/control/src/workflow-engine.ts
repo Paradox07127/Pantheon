@@ -986,14 +986,17 @@ function settleReviewStep(ctx: ControlContext, run: StepRun): void {
     return failStep(
       ctx,
       run,
-      review.incomplete
-        ? `Review ${review.id} incomplete: ${review.incomplete}`
-        : failed.length
-          ? [
-              `Review ${review.id} failed by verdict:`,
-              ...failed.map((verdict) => `${verdict.runtime}: ${verdict.summary}`),
-            ].join('\n')
-          : `Review ${review.id} ${review.state}`,
+      review.incomplete || failed.length
+        ? [
+            ...(review.incomplete ? [`Review ${review.id} incomplete: ${review.incomplete}`] : []),
+            ...(failed.length
+              ? [
+                  `Review ${review.id} failed by verdict:`,
+                  ...failed.map((verdict) => `${verdict.runtime}: ${verdict.summary}`),
+                ]
+              : []),
+          ].join('\n')
+        : `Review ${review.id} ${review.state}`,
     );
   const findings = blocking.map(
     (f) =>
@@ -1876,6 +1879,11 @@ export const workflowEngineHandlers: Handlers = {
       turn && run,
       'invalid_state',
       'No running workflow prompt step waits on this turn of this session',
+    );
+    requireThat(
+      run.step.kind.type === 'prompt' && run.step.kind.expects === 'verdict',
+      'invalid_state',
+      'This workflow step does not ask for a verdict',
     );
     const verdict: NonNullable<StepRun['verdict']> = {
       verdict: input.verdict,

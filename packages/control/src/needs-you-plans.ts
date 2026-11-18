@@ -9,6 +9,7 @@ import { projectAccess, type ControlContext } from './context.js';
 import { acceptInput } from './session.js';
 import { currentAcceptance, currentDirectMerge } from './board-plan.js';
 import { milestoneView } from './project-facts.js';
+import { personalAnswer } from './personal-scope.js';
 import { blockedReport } from './lead-inbox.js';
 import { stuckUpstream } from './task-dispatch.js';
 import {
@@ -43,9 +44,10 @@ export function planItems(
         decision: 'plan_change',
         primary: 'board.plan.proposal.resolve',
         actions: [
-          action('board.plan.proposal.resolve', () =>
-            projectAccess(ctx, principal, plan.project_id, 'board.plan.proposal.resolve'),
-          ),
+          action('board.plan.proposal.resolve', () => {
+            projectAccess(ctx, principal, plan.project_id, 'board.plan.proposal.resolve');
+            personalAnswer(ctx, principal, 'board.plan.proposal.resolve', plan.project_id);
+          }),
         ],
         next_step: NEXT_STEP.plan_proposal_awaiting_decision,
       });
@@ -90,9 +92,10 @@ export function planItems(
         primary: 'lead.question.answer',
         question,
         actions: [
-          action('lead.question.answer', () =>
-            projectAccess(ctx, principal, plan.project_id, 'lead.question.answer'),
-          ),
+          action('lead.question.answer', () => {
+            projectAccess(ctx, principal, plan.project_id, 'lead.question.answer');
+            personalAnswer(ctx, principal, 'lead.question.answer', plan.project_id, question);
+          }),
         ],
       });
     }
@@ -240,9 +243,10 @@ export function milestoneItems(
       decision: 'milestone_accept',
       primary: 'milestone.accept',
       actions: [
-        action('milestone.accept', () =>
-          projectAccess(ctx, principal, milestone.project_id, 'milestone.accept'),
-        ),
+        action('milestone.accept', () => {
+          projectAccess(ctx, principal, milestone.project_id, 'milestone.accept');
+          personalAnswer(ctx, principal, 'milestone.accept', milestone.project_id);
+        }),
       ],
       next_step: NEXT_STEP.milestone_ready_for_acceptance,
     });

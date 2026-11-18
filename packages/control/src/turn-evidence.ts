@@ -41,11 +41,10 @@ export function turnEvidence(ctx: ControlContext, sessionId: string, turnId: str
     files = new Set<string>();
   for (const row of rows) {
     const payload = record(JSON.parse(row.payload));
-    if (row.kind === 'agent.tool.started' && shell(String(payload.name)))
-      commands.set(payload.tool_call_id, {
-        text: collapsed(commandText(record(payload.input).command)),
-      });
-    else if (row.kind === 'agent.tool.started')
+    if (row.kind === 'agent.tool.started' && shell(String(payload.name))) {
+      const text = collapsed(commandText(record(payload.input).command));
+      if (text) commands.set(payload.tool_call_id, { text });
+    } else if (row.kind === 'agent.tool.started')
       for (const file of stepFiles(String(payload.name), payload.input))
         files.add(
           root && path.isAbsolute(file.path)
@@ -70,7 +69,11 @@ export function checkEvidence(
   verdict: 'pass' | 'fail',
   items: { kind: 'command' | 'file'; ref: string }[],
 ): NonNullable<StepRun['verdict']>['evidence'] {
-  const ran = `This turn ran: ${found.commands.map((command) => command.text).join('; ')}`;
+  const earlier = Math.max(0, found.commands.length - 10);
+  const ran = `This turn ran: ${earlier ? `(${earlier} earlier commands not shown) ` : ''}${found.commands
+    .slice(earlier)
+    .map((command) => command.text.slice(0, 200))
+    .join('; ')}`;
   const evidence = items.map((item) => {
     if (item.kind === 'file')
       return { ...item, checked: found.files.includes(path.normalize(item.ref)) };

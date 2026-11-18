@@ -68,17 +68,20 @@ it.each([
     expect(((await response.json()) as { error: string }).error).toBe('permission_denied');
 });
 
-it('accepts project.seen and refuses every other command from a personal principal', async () => {
+it('accepts project.seen and refuses commands off its list from a personal principal', async () => {
   const seen = await request(
     'POST',
     '/v1/commands',
     command(personal.id, 'project.seen', { project_id: project.id }),
   );
   expect(seen.status).toBe(200);
-  for (const type of ['app.logs', 'style.read', 'project.open', 'request.send'] as const) {
+  for (const type of ['app.logs', 'style.read', 'project.open', 'request.reroute'] as const) {
     const refused = await request('POST', '/v1/commands', command(personal.id, type, {}));
     expect(refused.status).toBe(403);
   }
+  // On the list, request.send reaches its input check.
+  const send = await request('POST', '/v1/commands', command(personal.id, 'request.send', {}));
+  expect(send.status).toBe(400);
 });
 
 it('starts no reads it may not make when a personal principal lists the summary', async () => {

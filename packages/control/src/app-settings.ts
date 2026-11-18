@@ -53,5 +53,6 @@ export function readAppSettings(ctx: ControlContext): AppSettings {
     baseline_rounds: config.baseline_rounds ?? 5,
     baseline_visuals: config.baseline_visuals ?? true,
     baseline_range_story: config.baseline_range_story ?? true,
+    personal_answers: config.personal_answers ?? [],
   };
 }

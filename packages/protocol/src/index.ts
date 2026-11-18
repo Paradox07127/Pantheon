@@ -1332,6 +1332,14 @@ const attentionDelivery = z.partialRecord(
   z.enum(ATTENTION_KINDS),
   z.enum(['now', 'brief', 'never']),
 );
+/** The decisions the user can let the personal agent answer; none until the user turns one on. */
+export const PERSONAL_ANSWER_KINDS = [
+  'question',
+  'plan_change',
+  'milestone_accept',
+] as const satisfies readonly NeedsYouItem['decision'][];
+export type PersonalAnswerKind = (typeof PERSONAL_ANSWER_KINDS)[number];
+const personalAnswers = z.array(z.enum(PERSONAL_ANSWER_KINDS));
 const quietHours = z.strictObject({
   from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -1357,6 +1365,8 @@ export const userConfigSchema = z
     baseline_visuals: z.boolean().optional(),
     /** Confirming a baseline explains the last 30 days of commits as a range story; absent is on. */
     baseline_range_story: z.boolean().optional(),
+    /** The decisions the personal agent may answer for the user; absent is none. */
+    personal_answers: personalAnswers.optional(),
     /** The binary and extra arguments each runtime starts with; absent uses the one on PATH. */
     runtimes: z
       .record(
@@ -2751,6 +2761,8 @@ export const inputSchemas = {
     baseline_rounds: z.number().int().min(1).max(5).optional(),
     baseline_visuals: z.boolean().optional(),
     baseline_range_story: z.boolean().optional(),
+    /** Replaces the decisions the personal agent may answer. */
+    personal_answers: personalAnswers.optional(),
   }),
   /** The user only; replaces the device of this id in `~/.pantheon/config.json`. */
   'device.save': z.strictObject({ id: deviceId, ...deviceConfigSchema.shape }),
@@ -3055,6 +3067,8 @@ export interface AppSettings {
   baseline_rounds: number;
   baseline_visuals: boolean;
   baseline_range_story: boolean;
+  /** The decisions the personal agent may answer for the user; empty unless the user turned one on. */
+  personal_answers: PersonalAnswerKind[];
 }
 export interface ThemeSetReceipt {
   theme_id: string;

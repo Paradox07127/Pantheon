@@ -19,6 +19,7 @@ import {
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
 import {
+  actsAsUser,
   projectAccess,
   sessionWorkspaceKind,
   userOnly,
@@ -26,6 +27,7 @@ import {
   type ControlContext,
   type Handlers,
 } from './context.js';
+import { personalAnswer, personalCalled } from './personal-scope.js';
 import { sessionDefaults } from './user-config.js';
 import { runtime } from './admission.js';
 import { ownEntry, planUnfinished, planViews, retiredBinding } from './board-plan.js';
@@ -1333,8 +1335,15 @@ export const projectBoardHandlers: Handlers = {
   },
   'board.plan.proposal.resolve': (ctx, p, c) => {
     const input = inputSchemas['board.plan.proposal.resolve'].parse(c.input);
-    userOnly(p);
+    actsAsUser(p);
     projectAccess(ctx, p, input.project_id, c.type);
+    personalAnswer(ctx, p, 'board.plan.proposal.resolve', input.project_id);
+    requireThat(
+      p.role !== 'personal' || !input.ops,
+      'permission_denied',
+      'Only the user edits a plan change while accepting it',
+    );
+    personalCalled(ctx, p, c, input.project_id);
     requireThat(
       input.decision !== 'reject' || !input.ops,
       'invalid_input',

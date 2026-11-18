@@ -26,6 +26,15 @@ describe('a personal principal at the command entry and the project check', () =
     expect(() => f.control.execute(personal, command(personal.id, type, {}))).toThrow(outside);
   });
 
+  it.each(PERSONAL_COMMANDS)(
+    'lets %s from a personal principal past the command entry to its input check',
+    (type) => {
+      expect(() => f.control.execute(personal, command(personal.id, type, {}))).toThrow(
+        expect.objectContaining({ name: 'ZodError' }),
+      );
+    },
+  );
+
   it('moves only its own seen cursor with project.seen', () => {
     f.call('project.seen', { project_id: f.project.id, at: 1000 });
     expect(f.call('project.seen', { project_id: f.project.id, at: 2000 }, null, personal)).toEqual({

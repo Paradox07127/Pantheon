@@ -279,6 +279,10 @@ export interface ControlOptions {
   revokeSessionCredential?: (sessionId: string) => void;
   issuePersonalKey?: (keyId: string) => { token_file: string; digest: string };
   revokePersonalKey?: (keyId: string) => void;
+  /** Undoes revokePersonalKey: the token file and its principal come back. */
+  restorePersonalKey?: (keyId: string, digest: string) => void;
+  /** Removes for good a key whose row never committed. */
+  discardPersonalKey?: (keyId: string) => void;
   /** Native transcript index the trace queries merge with the event log. */
   trace?: TraceIndex;
   /** Directory holding the user's config.json; absent means no user configuration. */
@@ -394,6 +398,8 @@ export class Control extends EventEmitter {
       revokeSessionCredential: options.revokeSessionCredential,
       issuePersonalKey: options.issuePersonalKey,
       revokePersonalKey: options.revokePersonalKey,
+      restorePersonalKey: options.restorePersonalKey,
+      discardPersonalKey: options.discardPersonalKey,
       adapters: this.adapters,
       createRuntimeAdapter: options.createRuntimeAdapter,
       handles: this.handles,

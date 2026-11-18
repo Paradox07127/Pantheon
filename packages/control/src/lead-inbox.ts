@@ -12,7 +12,13 @@ import {
   type SessionTurn,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
-import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
+import {
+  actsAsUser,
+  projectAccess,
+  userOnly,
+  type ControlContext,
+  type Handlers,
+} from './context.js';
 import { runtime } from './admission.js';
 import { residentPlan } from './agent-always-on.js';
 import { ensureAgents } from './agents.js';
@@ -20,6 +26,7 @@ import { answerApproval, settleApproval } from './approvals.js';
 import { charterMode, chartered } from './charter.js';
 import { current, visible } from './memory-access.js';
 import { buildHandoff } from './handoff.js';
+import { personalAnswer, personalCalled } from './personal-scope.js';
 import { openOf } from './resident.js';
 import {
   nativeTurnActive,
@@ -713,7 +720,7 @@ export const leadInboxHandlers: Handlers = {
   },
   'lead.question.answer': (ctx, p, c) => {
     const input = inputSchemas['lead.question.answer'].parse(c.input);
-    userOnly(p);
+    actsAsUser(p);
     projectAccess(ctx, p, input.project_id, c.type);
     const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
     requireThat(
@@ -724,6 +731,8 @@ export const leadInboxHandlers: Handlers = {
     const question = plan.questions?.find((question) => question.id === input.question_id);
     requireThat(question, 'not_found', `Not found: question ${input.question_id}`);
     requireThat(!question.answer, 'invalid_state', 'This question has already been answered');
+    personalAnswer(ctx, p, 'lead.question.answer', input.project_id, question);
+    personalCalled(ctx, p, c, input.project_id);
     const { plan: next, question: answered } = answerQuestion(
       ctx,
       plan,
@@ -854,7 +863,13 @@ export const leadInboxHandlers: Handlers = {
       user_words: (ref) =>
         !!plan.tasks
           .find((task) => task.id === asking.task!.id)
-          ?.source.some((quote) => quote.includes(ref)),
+          ?.source.some((quote) => quote.includes(ref)) &&
+        // Words the personal agent sent do not answer a permission prompt.
+        !ctx.store
+          .list<SessionTurn>('session_turns')
+          .some(
+            (turn) => turn.project_id === plan.project_id && turn.via && turn.input.includes(ref),
+          ),
       assumption: (ref) => plan.assumptions.some((entry) => entry.text === ref),
       memory: (ref) =>
         current(ctx, plan.project_id).some((record) => record.id === ref && visible(record, lead)),
