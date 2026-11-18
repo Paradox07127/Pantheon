@@ -83,16 +83,18 @@ export const fitZoom = (layout: { width: number; height: number }, room: Point):
 const OPTIONS: Record<string, string> = {
   'elk.algorithm': 'layered',
   'elk.edgeRouting': 'ORTHOGONAL',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '56',
-  'elk.spacing.nodeNode': '24',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '40',
+  'elk.spacing.nodeNode': '16',
   'elk.spacing.edgeEdge': '12',
   'elk.layered.spacing.edgeEdgeBetweenLayers': '12',
   'elk.spacing.edgeNode': '8',
   'elk.layered.spacing.edgeNodeBetweenLayers': '8',
-  'elk.edgeLabels.inline': 'false',
   'elk.edgeLabels.placement': 'CENTER',
-  // In the layer next to the edge's target, the nearest to an end of the strategies measured.
-  'org.eclipse.elk.layered.edgeLabels.centerLabelPlacementStrategy': 'HEAD_LAYER',
+  // A label's own layer is the one where labels side by side take the least room.
+  'org.eclipse.elk.layered.edgeLabels.centerLabelPlacementStrategy': 'SPACE_EFFICIENT_LAYER',
+  // A cycle turns back at the edge that closes it on a walk from the sources, not at a path's start.
+  'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
+  'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
   'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
   'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
   'org.eclipse.elk.json.shapeCoords': 'ROOT',
@@ -192,6 +194,8 @@ async function layoutOnce(spec: GraphSpec, direction: Direction, elk: ELK): Prom
           text: edge.label,
           width: Math.round(Math.min(NODE.max, textWidth(edge.label, 12, 6.8) + 14)),
           height: LABEL_HEIGHT,
+          // On its edge, the route running under it.
+          layoutOptions: { 'elk.edgeLabels.inline': 'true' },
         },
       ],
     }),

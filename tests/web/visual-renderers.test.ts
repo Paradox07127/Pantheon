@@ -474,6 +474,49 @@ describe('graph diagram', () => {
     ],
   };
 
+  // Twelve services in three groups, with calls, events, writes and two callbacks back up.
+  const services: Spec = {
+    nodes: [
+      { id: 'app', label: 'Mobile app', kind: 'client', group: 'edge' },
+      { id: 'web', label: 'Web app', kind: 'client', group: 'edge' },
+      { id: 'gateway', label: 'API gateway', kind: 'policy', group: 'edge' },
+      { id: 'auth', label: 'Auth', kind: 'policy', group: 'core' },
+      { id: 'orders', label: 'Orders', kind: 'service', group: 'core' },
+      { id: 'billing', label: 'Billing', kind: 'service', group: 'core' },
+      { id: 'catalog', label: 'Catalog', kind: 'service', group: 'core' },
+      { id: 'notify', label: 'Notifier', kind: 'service', group: 'core' },
+      { id: 'bus', label: 'Event bus', kind: 'queue', group: 'data' },
+      { id: 'db', label: 'Orders DB', kind: 'store', group: 'data' },
+      { id: 'search', label: 'Search index', kind: 'store', group: 'data' },
+      { id: 'psp', label: 'Payment provider', kind: 'external' },
+    ],
+    edges: [
+      { from: 'app', to: 'gateway', style: 'main', label: 'HTTPS' },
+      { from: 'web', to: 'gateway', style: 'main', label: 'HTTPS' },
+      { from: 'gateway', to: 'auth', label: 'verify token' },
+      { from: 'gateway', to: 'orders', style: 'main', label: 'place order' },
+      { from: 'gateway', to: 'catalog', label: 'browse' },
+      { from: 'orders', to: 'billing', style: 'main', label: 'charge' },
+      { from: 'billing', to: 'psp', label: 'card payment' },
+      { from: 'psp', to: 'billing', style: 'return', label: 'webhook' },
+      { from: 'orders', to: 'db', style: 'data', label: 'write' },
+      { from: 'orders', to: 'bus', style: 'async', label: 'order placed' },
+      { from: 'bus', to: 'notify', style: 'async', label: 'deliver' },
+      { from: 'bus', to: 'billing', style: 'async' },
+      { from: 'catalog', to: 'search', style: 'data', label: 'query' },
+      { from: 'notify', to: 'app', style: 'return', label: 'push' },
+      { from: 'orders', to: 'catalog', label: 'reserve stock' },
+      { from: 'billing', to: 'db', style: 'data', label: 'invoice' },
+      { from: 'auth', to: 'bus', style: 'async', label: 'audit' },
+      { from: 'bus', to: 'search', style: 'async', label: 'reindex' },
+    ],
+    groups: [
+      { id: 'edge', label: 'Edge' },
+      { id: 'core', label: 'Core services' },
+      { id: 'data', label: 'Data' },
+    ],
+  };
+
   // ELK runs for real; a layout takes more turns than the other renderers' draws.
   async function drawn(spec: Spec, width: number, height: number, more: object = {}) {
     const h = mount(() => GraphDiagram({ spec, height, ...more }));
@@ -584,7 +627,7 @@ describe('graph diagram', () => {
     },
   );
 
-  // A five-step chain is about 704px long and 96px wide; down it fits a box 420px high at full size.
+  // A five-step chain is about 640px long and 96px wide; down it fits a box 420px high at full size.
   it.each([
     [
       'an across chain the down layout fits less than 1.25 times larger',
@@ -657,6 +700,78 @@ describe('graph diagram', () => {
             Math.abs(points[i]!.y - points[i - 1]!.y) < 0.5,
         ).toBe(true);
     }
+  });
+
+  type Point = { x: number; y: number };
+  type Route = {
+    points: Point[];
+    label_box?: { x: number; y: number; width: number; height: number };
+  };
+  const routes = (h: HookHost<any>): Route[] => flowOf(h).props.edges.map((e: any) => e.data.edge);
+  const runs = (points: Point[]) => points.slice(1).map((q, i) => [points[i]!, q] as const);
+  const boxed = (b: NonNullable<Route['label_box']>): Laid => ({
+    id: '',
+    position: { x: b.x, y: b.y },
+    width: b.width,
+    height: b.height,
+  });
+  // Whether a straight run goes into the box, not only along its border.
+  const through = ([p, q]: readonly [Point, Point], b: Laid) =>
+    Math.min(p.x, q.x) < b.position.x + b.width &&
+    Math.max(p.x, q.x) > b.position.x &&
+    Math.min(p.y, q.y) < b.position.y + b.height &&
+    Math.max(p.y, q.y) > b.position.y;
+  // A level run and an upright one that cross inside both.
+  const crosses = (a: readonly [Point, Point], b: readonly [Point, Point]) => {
+    const level = (r: readonly [Point, Point]) => Math.abs(r[0].y - r[1].y) < 0.5;
+    if (level(a) === level(b)) return false;
+    const [h, v] = level(a) ? [a, b] : [b, a];
+    const [x, y] = [v[0].x, h[0].y];
+    return (
+      x > Math.min(h[0].x, h[1].x) + 0.5 &&
+      x < Math.max(h[0].x, h[1].x) - 0.5 &&
+      y > Math.min(v[0].y, v[1].y) + 0.5 &&
+      y < Math.max(v[0].y, v[1].y) - 0.5
+    );
+  };
+
+  // Crossings as measured with the layout settings in place.
+  it.each([
+    ['a shop of seven nodes', shop, [1200, 420], 0],
+    ['a service map of twelve nodes in three groups', services, [1200, 720], 3],
+  ] as const)(
+    'lays %s out with no label over a node, a label or another route, crossing at most %i times',
+    async (_, spec, [width, height], most) => {
+      const h = await drawn(spec, width, height);
+      const all = routes(h);
+      const labels = all.filter((r) => r.label_box);
+      expect(labels).toHaveLength(spec.edges.filter((e) => e.label).length);
+      for (const route of labels) {
+        const box = boxed(route.label_box!);
+        expect(cards(h).filter((n) => overlap(box, n))).toEqual([]);
+        expect(labels.filter((o) => o !== route && overlap(box, boxed(o.label_box!)))).toEqual([]);
+        expect(
+          all.filter((o) => o !== route && runs(o.points).some((r) => through(r, box))),
+        ).toEqual([]);
+      }
+      const crossings = all.flatMap((a, i) =>
+        all
+          .slice(i + 1)
+          .flatMap((b) =>
+            runs(a.points).flatMap((r) => runs(b.points).filter((s) => crosses(r, s))),
+          ),
+      );
+      expect(crossings.length).toBeLessThanOrEqual(most);
+    },
+  );
+
+  it('puts each edge label on its own route', async () => {
+    const h = await drawn(services, 1200, 720);
+    const labels = routes(h).filter((r) => r.label_box);
+    expect(labels.length).toBeGreaterThan(0);
+    expect(
+      labels.filter((r) => !runs(r.points).some((run) => through(run, boxed(r.label_box!)))),
+    ).toEqual([]);
   });
 
   it('lists the kinds and edge styles in use with their counts under the plot', async () => {
