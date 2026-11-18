@@ -27,7 +27,14 @@ export interface WorkflowLeafStep {
   kind:
     | { type: 'command'; command: string; timeout_seconds: number }
     | { type: 'approval' }
-    | { type: 'prompt'; prompt: string; target?: 'task' | 'lead'; skill?: TurnSkill }
+    | {
+        type: 'prompt';
+        prompt: string;
+        target?: 'task' | 'lead';
+        skill?: TurnSkill;
+        /** verdict: the step passes only on a pass the session hands in; absent means turn, which passes when the turn completes. */
+        expects?: 'verdict' | 'turn';
+      }
     /** Without a runtime, the first admitted reviewer other than the writer's runtime reviews. */
     | {
         type: 'review';
@@ -64,8 +71,17 @@ export interface StepRun extends Entity {
   failure_class?: GateFailureClass;
   slot: keyof WorkflowDefinition['slots'];
   step: WorkflowStep;
+  /** inconclusive: a prompt step that expects a verdict ended its turn without one, and waits for the user. */
   state:
-    'pending' | 'running' | 'waiting' | 'passed' | 'failed' | 'rejected' | 'retired' | 'skipped';
+    | 'pending'
+    | 'running'
+    | 'waiting'
+    | 'inconclusive'
+    | 'passed'
+    | 'failed'
+    | 'rejected'
+    | 'retired'
+    | 'skipped';
   created_at: number;
   finished_at?: number;
   session_id?: string;
@@ -73,6 +89,17 @@ export interface StepRun extends Entity {
   /** The turn a prompt step queued, or the turn that carries a failed review's findings. */
   turn_id?: string;
   review_id?: string;
+  /** The last verdict a prompt step's session handed in; it counts only while turn_id is the run's turn. */
+  verdict?: {
+    verdict: 'pass' | 'fail';
+    summary: string;
+    /** checked: the turn ran the command or edited the file; false when the turn recorded nothing to check against. */
+    evidence: { kind: 'command' | 'file'; ref: string; checked: boolean; exit_code?: number }[];
+    session_id: string;
+    turn_id: string;
+    /** Unix epoch milliseconds. */
+    at: number;
+  };
 }
 
 /** A workflow policy parameter an improvement may change, unless the user pinned it. */

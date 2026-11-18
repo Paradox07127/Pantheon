@@ -12,6 +12,12 @@ import { themeInputSchema, type ThemeInput } from './theme.js';
 import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
 import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
 import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
+import {
+  workflowInputSchemas,
+  workflowToolEffects,
+  workflowToolGroups,
+  workflowTools,
+} from './workflow-tools.js';
 import type {
   AgentToolGroup,
   ApprovalQuestion,
@@ -22,6 +28,7 @@ import type {
   EffortLevel,
   FlowPath,
   Improvement,
+  LaneDepth,
   McpServerStatus,
   NeedsYouItem,
   MilestoneView,
@@ -213,6 +220,10 @@ const flowPaths = [
 ] as const satisfies readonly FlowPath[];
 // Fails to compile when flowPaths misses a value of FlowPath.
 const flowPathsComplete: [FlowPath] extends [(typeof flowPaths)[number]] ? true : false = true;
+// The values of domain's LANE_DEPTHS, kept here for the same reason as sessionRole.
+const laneDepths = ['just_do', 'plan_first', 'spec_first'] as const satisfies readonly LaneDepth[];
+// Fails to compile when laneDepths misses a value of LaneDepth.
+const laneDepthsComplete: [LaneDepth] extends [(typeof laneDepths)[number]] ? true : false = true;
 // Fails to compile when either list misses a value of TaskKind.
 const taskKindComplete: [TaskKind] extends [
   { domain: (typeof taskDomains)[number]; tier: (typeof taskTiers)[number] },
@@ -281,6 +292,7 @@ export const sessionTools = {
     ...alwaysOnTools,
     ...appTools,
     ...agentTools,
+    ...workflowTools,
     guide: 'agent.guide',
   },
   worker: {
@@ -291,6 +303,7 @@ export const sessionTools = {
     theme: 'theme.set',
     ...browserTools,
     ...appDebugTools,
+    ...workflowTools,
   },
 } as const;
 
@@ -336,6 +349,7 @@ export const leadToolEffects = {
   ...alwaysOnToolEffects,
   ...appToolEffects,
   ...agentToolEffects,
+  ...workflowToolEffects,
   guide: 'read',
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
 
@@ -360,6 +374,7 @@ export const leadToolGroups: Record<
   ...inGroup(alwaysOnTools, 'always_on'),
   ...appToolGroups,
   ...agentToolGroups,
+  ...workflowToolGroups,
   project_read: 'board',
   update_board: 'board',
   edit_board: 'board',
@@ -529,6 +544,21 @@ const boardNote = z.strictObject({
   text: boardText.describe('The note, at most 400 characters.'),
 });
 const planId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/);
+const RECORDED_ONLY = 'Recorded only; Pantheon does not act on it yet.';
+const planAssumption = z.strictObject({
+  text: boardText.describe('The decision, at most 400 characters.'),
+  id: planId
+    .optional()
+    .describe(`Optional short id, unique among the assumptions. ${RECORDED_ONLY}`),
+  affects: z
+    .array(planId)
+    .max(16)
+    .optional()
+    .describe(`Optional: up to 16 ids of the tasks that rest on it. ${RECORDED_ONLY}`),
+  milestone: planId
+    .optional()
+    .describe(`Optional: the id of the milestone that rests on it. ${RECORDED_ONLY}`),
+});
 const planTitle = z.string().min(1).max(80);
 const taskPriority = z.enum(['high', 'normal', 'low']);
 const runtimeChoice = z.strictObject({
@@ -1417,6 +1447,27 @@ export const boardPlanInputSchema = z.strictObject({
         fanout_reason: boardText
           .optional()
           .describe('One sentence on why tasks of this lane run at the same time.'),
+        depth: z
+          .enum(laneDepths)
+          .optional()
+          .describe(
+            `Optional: just_do to start its tasks at once, plan_first to plan before they start, spec_first to write a spec first. ${RECORDED_ONLY}`,
+          ),
+        stops: z
+          .array(
+            z
+              .union([
+                z.literal('plan'),
+                z.string().regex(/^milestone:[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/),
+              ])
+              .describe('`plan`, or `milestone:` and the id of a milestone of this plan.'),
+          )
+          .max(4)
+          .optional()
+          .describe(`Optional: up to 4 points where the lane waits for the user. ${RECORDED_ONLY}`),
+        depth_reason: boardText
+          .optional()
+          .describe(`Optional: one sentence on why the lane has this depth. ${RECORDED_ONLY}`),
       }),
     )
     .min(1)
@@ -1443,6 +1494,45 @@ export const boardPlanInputSchema = z.strictObject({
           .describe('1-12 checkable statements of what must hold.'),
         tasks: z.array(planId).min(1).max(64).describe('The ids of its tasks.'),
         due_on: calendarDay.optional().describe('Optional due day, YYYY-MM-DD.'),
+        replan_if: z
+          .array(
+            z.discriminatedUnion('type', [
+              z.strictObject({
+                type: z
+                  .literal('handbacks')
+                  .describe('handbacks: after this many tasks of the milestone are handed back.'),
+                count: z.number().int().min(1).max(10).describe('1-10 handbacks.'),
+              }),
+              z.strictObject({
+                type: z
+                  .literal('budget_ratio')
+                  .describe(
+                    "budget_ratio: once the milestone's tasks spend this share of their token budget.",
+                  ),
+                at: z
+                  .number()
+                  .gt(0)
+                  .max(2)
+                  .describe('Tokens spent over budgeted, above 0 and at most 2.'),
+              }),
+              z.strictObject({
+                type: z
+                  .literal('stall')
+                  .describe('stall: when the milestone stops making progress.'),
+              }),
+              z.strictObject({
+                type: z
+                  .literal('assumption_false')
+                  .describe('assumption_false: when the named assumption turns out false.'),
+                assumption_id: planId.describe('The id of an assumption of this plan.'),
+              }),
+            ]),
+          )
+          .max(4)
+          .optional()
+          .describe(
+            `Optional: up to 4 conditions on which you re-plan the milestone. ${RECORDED_ONLY}`,
+          ),
       }),
     )
     .max(16)
@@ -1450,9 +1540,12 @@ export const boardPlanInputSchema = z.strictObject({
   risks: boardNoteList(
     'Up to 16 `{ text }`, each at most 400 characters: what could go wrong, and its effect.',
   ),
-  assumptions: boardNoteList(
-    'Up to 16 `{ text }`: each decision you made for the user on an open point, so they can correct it.',
-  ),
+  assumptions: z
+    .array(planAssumption)
+    .max(16)
+    .describe(
+      'Up to 16 `{ text }`: each decision you made for the user on an open point, so they can correct it.',
+    ),
 });
 
 const workflowLeafStep = z.strictObject({
@@ -1477,6 +1570,7 @@ const workflowLeafStep = z.strictObject({
       prompt: str,
       target: z.enum(['task', 'lead']).optional(),
       skill: z.strictObject({ name: str, path: str }).optional(),
+      expects: z.enum(['verdict', 'turn']).optional(),
     }),
     z.strictObject({
       type: z.literal('review'),
@@ -1778,6 +1872,7 @@ export const inputSchemas = {
   ...alwaysOnInputSchemas,
   ...appInputSchemas,
   ...agentInputSchemas,
+  ...workflowInputSchemas,
   'terminal.open': z.strictObject({
     project_id: z.string(),
     session_id: z.string().optional(),

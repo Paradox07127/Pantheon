@@ -793,7 +793,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'workflow',
     about:
-      "Removes the project's own workflow policy values, so it follows the global ones; the user only; Changes the given workflow policy parameters of a project; the user only",
+      "Removes the project's own workflow policy values, so it follows the global ones; the user only; Changes the given workflow policy parameters of a project; the user only; Hands in the verdict of the wo",
     commands: [
       { type: 'workflow.definition.save_as', tool: 'the user does this in the app' },
       { type: 'workflow.definition.set', tool: 'the user does this in the app' },
@@ -811,6 +811,12 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'the user does this in the app',
       },
       { type: 'workflow.step.decide', tool: 'the user does this in the app' },
+      {
+        type: 'workflow.step.verdict',
+        about:
+          "Hands in the verdict of the workflow prompt step the calling session's running turn works on, replacing an earlier one of the same turn, and returns it. Command evidence must name a command the turn ran when it ran any. Task and lead sessions only.",
+        tool: 'step_verdict',
+      },
     ],
   },
   {

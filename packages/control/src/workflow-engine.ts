@@ -20,7 +20,13 @@ import {
   type Workspace,
 } from '@pantheon/domain';
 import { inputSchemas, type WorkflowDefinitionView } from '@pantheon/protocol';
-import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
+import {
+  projectAccess,
+  sessionPrincipal,
+  userOnly,
+  type ControlContext,
+  type Handlers,
+} from './context.js';
 import { autoMerge } from './user-config.js';
 import { workflowPolicy } from './workflow-policy.js';
 import { currentBinding, currentDirectMerge, taskGeneration, taskSessions } from './board-plan.js';
@@ -37,6 +43,7 @@ import { runGit } from './git.js';
 import { workflowResults } from './workflow-results.js';
 import { checkGates, gateFailed } from './landing.js';
 import { recordMergedCheck } from './signal-sources.js';
+import { checkEvidence, turnEvidence } from './turn-evidence.js';
 
 const EMPTY_WORKFLOW_DEFINITION: WorkflowDefinition = {
   slots: { before_dispatch: [], before_merge: [], after_merge: [] },
@@ -641,7 +648,7 @@ export function waitingStep(ctx: ControlContext, plan: BoardPlan, task: PlanTask
         r.lead_session_id === plan.id &&
         r.task_id === task.id &&
         r.generation === taskGeneration(plan, task.id) &&
-        ['waiting', 'running', 'failed', 'rejected'].includes(r.state),
+        ['waiting', 'inconclusive', 'running', 'failed', 'rejected'].includes(r.state),
     );
   return run
     ? { id: run.step.id, title: run.step.title, kind: run.step.kind.type }
@@ -682,7 +689,8 @@ function changeRun(
     },
     cause,
   );
-  if (state === 'waiting') unsnooze(ctx, run.session_id ?? run.lead_session_id, 'needs_you', cause);
+  if (state === 'waiting' || state === 'inconclusive')
+    unsnooze(ctx, run.session_id ?? run.lead_session_id, 'needs_you', cause);
   return next;
 }
 
@@ -854,7 +862,9 @@ function startPrompt(ctx: ControlContext, run: StepRun): void {
     ctx,
     session,
     run.task_id,
-    kind.prompt,
+    kind.expects === 'verdict'
+      ? `${kind.prompt}\n\nBefore you end this turn, call step_verdict: pass or fail, a summary, and as evidence each command you ran to check it, copied exactly.`
+      : kind.prompt,
     kind.skill ? [kind.skill] : undefined,
   );
   if (turn) changeRun(ctx, { ...run, turn_id: turn.id }, 'running');
@@ -1014,7 +1024,22 @@ function followRun(ctx: ControlContext, run: StepRun, answers: ConditionAnswers)
   const turn = run.turn_id ? ctx.store.get<SessionTurn>('session_turns', run.turn_id) : undefined;
   if (run.state === 'running' && run.step.kind.type === 'prompt' && turn) {
     if (turn.state === 'completed') {
-      changeRun(ctx, run, 'passed');
+      const verdict = run.verdict?.turn_id === turn.id ? run.verdict : undefined;
+      if (run.step.kind.expects !== 'verdict' || verdict?.verdict === 'pass')
+        changeRun(ctx, run, 'passed');
+      else if (verdict)
+        failStep(
+          ctx,
+          run,
+          [
+            verdict.summary,
+            ...verdict.evidence.map(
+              (item) =>
+                `${item.kind}: ${item.ref}${item.exit_code === undefined ? '' : ` (exit ${item.exit_code})`}`,
+            ),
+          ].join('\n'),
+        );
+      else changeRun(ctx, run, 'inconclusive');
       if (run.slot === 'before_merge' && run.step.kind.target !== 'lead') resumeMerge(ctx, run);
     } else if (turn.state === 'failed' || turn.state === 'cancelled') {
       failStep(ctx, run, `The prompt turn ${turn.state}`);
@@ -1322,7 +1347,10 @@ export function recordWorkflowGates(
         .list<StepRun>('workflow_step_runs')
         .filter((run) => run.parent_run_id === group.id))
         // Like a top-level prompt, a started prompt keeps its turn; rerunning it would queue another.
-        if (child.step.kind.type !== 'prompt' || !['running', 'passed'].includes(child.state))
+        if (
+          child.step.kind.type !== 'prompt' ||
+          !['running', 'passed', 'inconclusive'].includes(child.state)
+        )
           changeRun(ctx, child, 'retired');
       const applies =
         workflowCondition(ctx, group.step, session.id, undefined, undefined, answers) !== false;
@@ -1796,15 +1824,19 @@ export const workflowEngineHandlers: Handlers = {
     requireThat(
       plan.tasks.some((t) => t.id === run.task_id) &&
         taskGeneration(plan, run.task_id) === run.generation &&
-        run.state === 'waiting' &&
-        run.step.kind.type === 'approval',
+        ((run.state === 'waiting' && run.step.kind.type === 'approval') ||
+          run.state === 'inconclusive'),
       'invalid_state',
       'Workflow approval is no longer waiting',
     );
     const next = changeRun(
       ctx,
       run,
-      input.decision === 'approve' ? 'passed' : 'rejected',
+      input.decision === 'approve'
+        ? 'passed'
+        : run.state === 'inconclusive'
+          ? 'failed'
+          : 'rejected',
       input.reason,
       c.command_id,
     );
@@ -1812,6 +1844,48 @@ export const workflowEngineHandlers: Handlers = {
       reportFailure(ctx, next, input.reason ?? 'Rejected by the user', c.command_id);
     advanceSteps(ctx);
     return next;
+  },
+  'workflow.step.verdict': (ctx, p, c) => {
+    const session = sessionPrincipal(ctx, p);
+    projectAccess(ctx, p, session.project_id, c.type);
+    const input = inputSchemas['workflow.step.verdict'].parse(c.input);
+    // The turn is the session's own, so a matching run is one whose target is this session.
+    const turn = causeTurn(ctx, session.id),
+      run =
+        turn?.state === 'running'
+          ? ctx.store
+              .list<StepRun>('workflow_step_runs')
+              .find(
+                (r) =>
+                  r.state === 'running' && r.step.kind.type === 'prompt' && r.turn_id === turn.id,
+              )
+          : undefined;
+    requireThat(
+      turn && run,
+      'invalid_state',
+      'No running workflow prompt step waits on this turn of this session',
+    );
+    const verdict: NonNullable<StepRun['verdict']> = {
+      verdict: input.verdict,
+      summary: input.summary,
+      evidence: checkEvidence(
+        turnEvidence(ctx, session.id, turn.id),
+        input.verdict,
+        input.evidence,
+      ),
+      session_id: session.id,
+      turn_id: turn.id,
+      at: ctx.store.now(),
+    };
+    const next = ctx.store.update('workflow_step_runs', { ...run, verdict }, run.revision);
+    ctx.store.event(
+      'workflow.step_verdict',
+      next,
+      run.project_id,
+      { task_id: run.task_id, slot: run.slot, step_id: run.step.id, verdict: input.verdict },
+      c.command_id,
+    );
+    return verdict;
   },
   'workflow.definition.set': (ctx, p, c) => {
     userOnly(p);

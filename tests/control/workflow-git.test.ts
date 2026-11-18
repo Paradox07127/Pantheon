@@ -176,7 +176,7 @@ it('reads the changed paths of a step condition from the merge base with one sou
   // The range's worktree HEAD, then the source HEAD with its objects path.
   expect(gitRunsOf(runs, 'rev-parse')).toHaveLength(2);
   expect(gitRunsOf(runs, 'diff')).toHaveLength(1);
-  expect(runs).toHaveLength(4);
+  expect(runs, runs.join('\n')).toHaveLength(4);
 });
 
 it('starts a review step while the event loop runs', async () => {

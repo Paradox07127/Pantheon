@@ -37,6 +37,12 @@ function signature(file: string): string | undefined {
     // Discovery checks search permission on objects and refs, so mode and owner count.
     if (stat.isDirectory())
       return `directory ${stat.dev} ${stat.ino} ${stat.mode} ${stat.uid} ${stat.gid}`;
+    // Discovery only checks that HEAD is a symbolic ref or an object name; only `onbranch:` reads the branch.
+    if (stat.isFile() && path.basename(file) === 'HEAD') {
+      const head = readFileSync(file, 'latin1');
+      if (head.startsWith('ref:')) return `head ${head}`;
+      if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})\n?$/.test(head)) return 'head detached';
+    }
     // Content too: an in-place rewrite of equal size can keep every timestamp within their resolution.
     if (stat.isFile())
       return `file ${stat.dev} ${stat.ino} ${stat.size} ${stat.mtimeNs} ${stat.ctimeNs} ${readFileSync(file, 'latin1')}`;

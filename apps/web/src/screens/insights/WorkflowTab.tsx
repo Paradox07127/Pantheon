@@ -223,6 +223,9 @@ const RUN_STATE_LABEL: Record<Exclude<StepRun['state'], 'passed' | 'pending'>, s
   get waiting() {
     return t({ id: 'insights.workflow.run.waiting', defaultMessage: 'Waiting' });
   },
+  get inconclusive() {
+    return t({ id: 'insights.workflow.run.inconclusive', defaultMessage: 'Inconclusive' });
+  },
   get failed() {
     return t({ id: 'insights.workflow.run.failed', defaultMessage: 'Failed' });
   },

@@ -273,6 +273,58 @@ it('accepts a milestone due day as a calendar day and edits it with set_mileston
   expect(valid([setMilestone({ criteria: ['More'] })])).toBe(false);
 });
 
+it("takes a lane's depth and stops, a milestone's re-plan triggers and an assumption's links, and refuses them out of bounds", () => {
+  const lane = { id: 'core', title: 'Core' };
+  const milestone = {
+    id: 'release',
+    title: 'Release',
+    criteria: ['Exports download'],
+    tasks: ['api'],
+  };
+  const plan = (fields: {
+    lane?: Record<string, unknown>;
+    milestone?: Record<string, unknown>;
+    assumption?: Record<string, unknown>;
+    risk?: Record<string, unknown>;
+  }) =>
+    inputSchemas['board.plan.update'].safeParse({
+      project_id: 'project',
+      base_version: 0,
+      headline: 'Export',
+      lanes: [{ ...lane, ...fields.lane }],
+      tasks: [{ ...task, milestone: 'release' }],
+      milestones: [{ ...milestone, ...fields.milestone }],
+      risks: [{ text: 'The API may be slow.', ...fields.risk }],
+      assumptions: [{ text: 'Exports are CSV only.', ...fields.assumption }],
+    }).success;
+  const trigger = { type: 'handbacks', count: 2 };
+  for (const fields of [
+    { lane: { depth: 'just_do' } },
+    { lane: { depth: 'spec_first', depth_reason: 'The format needs the user first.' } },
+    { lane: { stops: ['plan', 'milestone:release'] } },
+    {
+      milestone: {
+        replan_if: [
+          trigger,
+          { type: 'budget_ratio', at: 2 },
+          { type: 'stall' },
+          { type: 'assumption_false', assumption_id: 'csv' },
+        ],
+      },
+    },
+    { assumption: { id: 'csv', affects: ['api'], milestone: 'release' } },
+  ])
+    expect(plan(fields), JSON.stringify(fields)).toBe(true);
+  for (const fields of [
+    { lane: { depth: 'deep' } },
+    { lane: { stops: ['milestone:'] } },
+    { milestone: { replan_if: Array(5).fill(trigger) } },
+    { milestone: { replan_if: [{ type: 'handbacks', count: 0 }] } },
+    { risk: { id: 'slow' } },
+  ])
+    expect(plan(fields), JSON.stringify(fields)).toBe(false);
+});
+
 it('accepts user order lock and unlock operations', () => {
   expect.soft(valid([{ type: 'lock_order', task_ids: ['api', 'ui'] }])).toBe(true);
   expect.soft(valid([{ type: 'unlock_order' }])).toBe(true);

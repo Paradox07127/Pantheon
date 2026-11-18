@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { runGit } from '@pantheon/control';
+import { countingGit, gitRunsOf } from '../helpers.js';
 
 const roots: string[] = [];
 // Moved past the interval within which the cache does not check the repository config again.
@@ -146,6 +147,59 @@ it('neutralizes a filter included for a branch after switching to that branch', 
   ).toBe(0);
   await expectNeutralized(repo, marker);
 });
+
+it.each([
+  {
+    change: 'a commit on its detached HEAD',
+    detached: true,
+    args: ['commit', '--quiet', '--allow-empty', '-m', 'Later work'],
+    probes: 0,
+  },
+  {
+    change: 'a switch to another branch',
+    detached: false,
+    args: ['checkout', '-b', 'other'],
+    probes: 1,
+  },
+  {
+    change: 'a switch from its branch to a detached HEAD',
+    detached: false,
+    args: ['checkout', '--detach'],
+    probes: 1,
+  },
+  {
+    change: 'a switch from a detached HEAD back to its branch',
+    detached: true,
+    args: ['checkout', 'linked'],
+    probes: 1,
+  },
+])(
+  'probes the config of a linked worktree $probes times after $change',
+  async ({ detached, args, probes }) => {
+    const { root, repo } = setup();
+    const linked = path.join(root, 'linked');
+    plainGit(repo, ['worktree', 'add', '--quiet', '-b', 'linked', linked]);
+    if (detached) plainGit(linked, ['checkout', '--quiet', '--detach']);
+    await warm(linked);
+    plainGit(linked, args);
+    elapsed += 1000;
+    const git = countingGit();
+    try {
+      expect((await runGit(linked, ['status', '--porcelain'], undefined, true)).exit_code).toBe(0);
+      const runs = git.runs();
+      expect(
+        gitRunsOf(runs, 'rev-parse').filter((run) => run.includes('--path-format=absolute')),
+        runs.join('\n'),
+      ).toHaveLength(probes);
+      expect(
+        gitRunsOf(runs, 'config').filter((run) => run.includes('--show-origin --list')),
+        runs.join('\n'),
+      ).toHaveLength(probes);
+    } finally {
+      git.restore();
+    }
+  },
+);
 
 it('neutralizes a filter included only for another worktree of the same repository', async () => {
   const { root, repo, marker, drivers } = setup();

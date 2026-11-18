@@ -6,6 +6,7 @@ import type {
   BoardPlanView,
   Milestone,
   Principal,
+  ProjectRead,
   Session,
   SessionTurn,
 } from '@pantheon/domain';
@@ -184,6 +185,117 @@ it('refuses a plan whose tasks, lanes or milestones do not line up', async () =>
     expect(error.code, JSON.stringify(value)).toBe('invalid_input');
     expect(error.message).toContain(named);
   }
+  expect(f.store.list<BoardPlan>('board_plans')).toEqual([]);
+});
+
+const EXPORT_MILESTONE = plan().milestones[0]!;
+const leadMilestone = (f: Awaited<ReturnType<typeof setup>>, lead: Principal) =>
+  f.store.list<Milestone>('milestones').find((row) => row.owner_session_id === lead.session_id)!;
+
+it("keeps a lane's depth and stops, a milestone's re-plan triggers and an assumption's tasks through a whole-plan write", async () => {
+  const f = await setup();
+  const lead = leadOf(f);
+  const lanes = [
+    {
+      id: 'core',
+      title: 'Core',
+      depth: 'plan_first',
+      stops: ['plan', 'milestone:m1'],
+      depth_reason: 'The export format is still open.',
+    },
+  ];
+  const replanIf = [
+    { type: 'handbacks', count: 2 },
+    { type: 'budget_ratio', at: 1.5 },
+    { type: 'stall' },
+    { type: 'assumption_false', assumption_id: 'csv' },
+  ];
+  const assumptions = [
+    { text: 'Exports are CSV only.', id: 'csv', affects: ['api', 'ui'], milestone: 'm1' },
+  ];
+  const recorded = plan({
+    lanes,
+    milestones: [{ ...EXPORT_MILESTONE, replan_if: replanIf }],
+    assumptions,
+  });
+  writePlan(f, lead, recorded);
+  const stored = f.store.must<BoardPlan>('board_plans', lead.session_id!);
+  expect(stored.lanes).toEqual(lanes);
+  expect(stored.assumptions).toEqual(assumptions);
+  expect(leadMilestone(f, lead).replan_if).toEqual(replanIf);
+  const read = f.call<ProjectRead>('project.read', { project_id: f.project.id }, null, lead);
+  expect(read.plans[0]).toMatchObject({ lanes, assumptions });
+  expect(read.milestones.map((view) => view.milestone.replan_if)).toEqual([replanIf]);
+
+  const row = leadMilestone(f, lead);
+  writePlan(f, lead, recorded);
+  expect(f.store.must<BoardPlan>('board_plans', lead.session_id!).plan_version).toBe(1);
+  expect(leadMilestone(f, lead)).toEqual(row);
+  const fewer = replanIf.slice(1);
+  writePlan(
+    f,
+    lead,
+    plan({ ...recorded, milestones: [{ ...EXPORT_MILESTONE, replan_if: fewer }] }),
+  );
+  expect(f.store.must<BoardPlan>('board_plans', lead.session_id!).plan_version).toBe(2);
+  expect(leadMilestone(f, lead).replan_if).toEqual(fewer);
+});
+
+it('reads and resends a plan written without the new fields unchanged', async () => {
+  const f = await setup();
+  const lead = leadOf(f);
+  const assumptions = [{ text: 'Exports are CSV only.' }];
+  writePlan(f, lead, plan({ assumptions }));
+  const stored = f.store.must<BoardPlan>('board_plans', lead.session_id!);
+  expect(stored.lanes).toStrictEqual([{ id: 'core', title: 'Core' }]);
+  expect(stored.assumptions).toStrictEqual(assumptions);
+  expect(leadMilestone(f, lead)).not.toHaveProperty('replan_if');
+  writePlan(f, lead, plan({ assumptions }));
+  expect(f.store.must<BoardPlan>('board_plans', lead.session_id!).plan_version).toBe(1);
+});
+
+it.each([
+  [
+    'a repeated assumption id',
+    {
+      assumptions: [
+        { text: 'Exports are CSV only.', id: 'csv' },
+        { text: 'Exports stay under 10 MB.', id: 'csv' },
+      ],
+    },
+    'assumptions: assumption id csv is repeated',
+  ],
+  [
+    'an assumption that affects an unknown task',
+    { assumptions: [{ text: 'Exports are CSV only.', id: 'csv', affects: ['api', 'search'] }] },
+    'assumptions: assumption csv affects unknown task search',
+  ],
+  [
+    'an assumption that names an unknown milestone',
+    { assumptions: [{ text: 'Exports are CSV only.', id: 'csv', milestone: 'm9' }] },
+    'assumptions: assumption csv names unknown milestone m9',
+  ],
+  [
+    'a lane stop at an unknown milestone',
+    { lanes: [{ id: 'core', title: 'Core', stops: ['plan', 'milestone:m9'] }] },
+    'lanes: lane core stops at unknown milestone m9',
+  ],
+  [
+    'a re-plan trigger that names an unknown assumption',
+    {
+      milestones: [
+        { ...EXPORT_MILESTONE, replan_if: [{ type: 'assumption_false', assumption_id: 'csv' }] },
+      ],
+    },
+    'milestones: milestone m1 names unknown assumption csv',
+  ],
+])('refuses a plan with %s', async (_, extra, message) => {
+  const f = await setup();
+  const lead = leadOf(f);
+  expect(failure(() => writePlan(f, lead, plan(extra)))).toMatchObject({
+    code: 'invalid_input',
+    message,
+  });
   expect(f.store.list<BoardPlan>('board_plans')).toEqual([]);
 });
 

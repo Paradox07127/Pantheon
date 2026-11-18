@@ -12,7 +12,7 @@ import { taskGeneration } from './board-plan.js';
 import { projectBudgetUse, workflowPolicy } from './workflow-policy.js';
 import { NEXT_STEP, action, type NeedsYouDraft, type NeedsYouScope } from './needs-you.js';
 
-/** Workflow approval steps waiting for a decision. */
+/** Workflow approval steps waiting for a decision, and steps that ended with no verdict. */
 export function stepRunItems(
   ctx: ControlContext,
   scope: NeedsYouScope,
@@ -22,8 +22,10 @@ export function stepRunItems(
   const items: NeedsYouDraft[] = [];
   for (const run of ctx.store.list<StepRun>('workflow_step_runs')) {
     if (
-      run.state !== 'waiting' ||
-      run.step.kind.type !== 'approval' ||
+      !(
+        (run.state === 'waiting' && run.step.kind.type === 'approval') ||
+        run.state === 'inconclusive'
+      ) ||
       removed.has(run.project_id) ||
       (projectId && run.project_id !== projectId)
     )
@@ -39,7 +41,7 @@ export function stepRunItems(
       task_id: `${run.lead_session_id}:${run.task_id}`,
       task_title: task.title,
       step_title: run.step.title,
-      status: 'waiting',
+      status: run.state,
       created_at: run.created_at,
       reason: 'workflow_approval',
       decision: 'other',
@@ -50,7 +52,10 @@ export function stepRunItems(
         ),
         decision,
       })),
-      next_step: `Approve or reject “${run.step.title}” for “${task.title}”.`,
+      next_step:
+        run.state === 'inconclusive'
+          ? `“${run.step.title}” for “${task.title}” ended with no verdict. Count it as passed or failed.`
+          : `Approve or reject “${run.step.title}” for “${task.title}”.`,
     });
   }
   return items;

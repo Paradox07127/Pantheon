@@ -34,7 +34,15 @@ export interface Milestone extends Entity {
   removed_at?: number;
   /** Calendar day the lead or the user set for it. */
   due_on?: string;
+  /** When its lead means to re-plan it. */
+  replan_if?: ReplanTrigger[];
 }
+/** `budget_ratio.at` is spent over budget tokens; `assumption_false` names a plan assumption id. */
+export type ReplanTrigger =
+  | { type: 'handbacks'; count: number }
+  | { type: 'budget_ratio'; at: number }
+  | { type: 'stall' }
+  | { type: 'assumption_false'; assumption_id: string };
 export interface BoardClaim {
   text: string;
   /** `decision:<id>` or `session:<id>` in this project. */
@@ -76,6 +84,9 @@ export interface TaskKind {
 /** The lead makes the task itself, dispatches a task session, or dispatches one whose work another runtime reviews until it passes. */
 export const FLOW_PATHS = ['direct', 'dispatch', 'review_loop', 'parallel'] as const;
 export type FlowPath = (typeof FLOW_PATHS)[number];
+/** How much the lead plans a lane before its tasks start. */
+export const LANE_DEPTHS = ['just_do', 'plan_first', 'spec_first'] as const;
+export type LaneDepth = (typeof LANE_DEPTHS)[number];
 /** Whether a failed gate failed because of the machine it ran on or because of the change. */
 export type GateFailureClass = 'environment' | 'code';
 /** A lead's question card and the user's eventual answer. */
@@ -106,6 +117,15 @@ export interface LeadQuestion {
    */
   citations?: { kind: 'user_words' | 'assumption' | 'memory' | 'earlier_answer'; ref: string }[];
 }
+/** A decision the lead made for the user; plans written before ids existed have none. */
+export interface PlanAssumption {
+  text: string;
+  id?: string;
+  /** Task ids of the plan that rest on it. */
+  affects?: string[];
+  /** A milestone id of the plan. */
+  milestone?: string;
+}
 /** One lead session's part of the project board, keyed by that session's id. */
 export interface BoardPlan extends Entity {
   project_id: string;
@@ -115,6 +135,10 @@ export interface BoardPlan extends Entity {
     title: string;
     /** Why tasks of the lane run at the same time, in one sentence from the lead; absent when it gave none. */
     fanout_reason?: string;
+    depth?: LaneDepth;
+    /** Each `plan` or `milestone:<plan milestone id>`. */
+    stops?: string[];
+    depth_reason?: string;
   }[];
   iterations?: { id: string; title: string; starts_on: string; ends_on: string }[];
   /** Task ids whose relative order the user locked, in plan order. */
@@ -173,7 +197,7 @@ export interface BoardPlan extends Entity {
   /** Lead proposals waiting for the user, with resolved records retained like user edits. */
   pending_proposals?: PlanProposal[];
   risks: { text: string }[];
-  assumptions: { text: string }[];
+  assumptions: PlanAssumption[];
   questions?: LeadQuestion[];
   /** Tasks the lead asked Pantheon to open a session for, by task id, until one opens. */
   dispatch?: Record<

@@ -170,6 +170,8 @@ const descriptions: Record<ToolCommand, string> = {
     "Read one Pantheon guide by name: the steps for a task that comes up rarely, such as writing a handoff note. Your instructions list the guides with when to read each; read the matching guide before you start that task, not after it. A guide holds procedure, not project facts or the user's decisions. Returns the guide's text. An unknown name returns the list of guides instead; pick a name from it and call again.",
   'agent.agents':
     "List this project's agents: id, name, template, role, tool groups, routines, and archived_at for an archived one. Call it before propose_agent so you do not propose an agent that already exists.",
+  'workflow.step.verdict':
+    'Hand in the verdict of the workflow step your current turn works on, when its prompt asks for one: verdict pass or fail, a summary of what you checked, and 1-8 evidence items, each a command you ran in this turn copied exactly or a file you changed. Call it before the turn ends; without a verdict the step waits for the user. A later call in the same turn replaces the verdict. Refused invalid_input for a command this turn did not run, and for a pass with nothing this turn shows; the error lists the commands that ran. Refused invalid_state when no step waits on this turn.',
   'agent.propose':
     "Propose a new agent, or a change to one, for the user to approve on a card. New: template (ideas, goals or custom), name, role (a short label) and instructions (what it owns, how it works, when it speaks to the user), optionally brief, tools, listens, routines, runtime, model and effort. Change: agent_id and only the fields that change. Use it when the user asks for a standing helper or a kind of request keeps coming back. Fields the agent cannot take are refused now; the user's answer reaches you as a note.",
 };
@@ -280,6 +282,7 @@ const boundRevision = (type: CommandType) =>
   type === 'agent.propose' ||
   type === 'agent.agents' ||
   type === 'agent.guide' ||
+  type === 'workflow.step.verdict' ||
   type === 'board.sync' ||
   type === 'project.baseline.start' ||
   type === 'app.logs' ||

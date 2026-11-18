@@ -120,6 +120,29 @@ function planProblem(input: PlanInput): string | null {
           ? `milestones: milestone ${milestone.id} lists task ${taskId}, which names another milestone`
           : `milestones: milestone ${milestone.id} lists unknown task ${taskId}`;
   }
+  const assumptionIds = input.assumptions.flatMap((assumption) =>
+    assumption.id ? [assumption.id] : [],
+  );
+  const assumption = repeated(assumptionIds);
+  if (assumption) return `assumptions: assumption id ${assumption} is repeated`;
+  for (const assumption of input.assumptions) {
+    const unknown = assumption.affects?.find((taskId) => !tasks.has(taskId));
+    if (unknown)
+      return `assumptions: assumption ${assumption.id ?? assumption.text} affects unknown task ${unknown}`;
+    if (assumption.milestone && !milestones.has(assumption.milestone))
+      return `assumptions: assumption ${assumption.id ?? assumption.text} names unknown milestone ${assumption.milestone}`;
+  }
+  for (const lane of input.lanes) {
+    const stop = lane.stops
+      ?.filter((stop) => stop.startsWith('milestone:'))
+      .map((stop) => stop.slice('milestone:'.length))
+      .find((milestoneId) => !milestones.has(milestoneId));
+    if (stop) return `lanes: lane ${lane.id} stops at unknown milestone ${stop}`;
+  }
+  for (const milestone of input.milestones)
+    for (const trigger of milestone.replan_if ?? [])
+      if (trigger.type === 'assumption_false' && !assumptionIds.includes(trigger.assumption_id))
+        return `milestones: milestone ${milestone.id} names unknown assumption ${trigger.assumption_id}`;
   const cycle = dependencyCycle(input.tasks);
   if (cycle) return `tasks: tasks ${cycle.join(' -> ')} form a dependency cycle`;
   return null;
@@ -215,6 +238,7 @@ function writeLeadMilestones(
       criteria: input.criteria,
       task_ids: input.tasks,
       due_on: input.due_on,
+      replan_if: input.replan_if,
     };
     const old = rows.find((row) => row.key === input.id);
     if (!old) {
@@ -242,6 +266,7 @@ function writeLeadMilestones(
           criteria: old.criteria,
           task_ids: old.task_ids,
           due_on: old.due_on,
+          replan_if: old.replan_if,
         })
     )
       continue;
@@ -467,6 +492,7 @@ function planContent(ctx: ControlContext, plan: BoardPlan, lanes: Lane[] = []): 
         criteria: row.criteria,
         tasks: row.task_ids ?? [],
         ...(row.due_on ? { due_on: row.due_on } : {}),
+        ...(row.replan_if ? { replan_if: row.replan_if } : {}),
       })),
     risks: plan.risks,
     assumptions: plan.assumptions,
@@ -846,7 +872,26 @@ function applyOps(plan: PlanInput, ops: PatchOp[]): PlanInput {
     'invalid_input',
     'Task iteration must name an iteration in the plan',
   );
-  return { ...plan, tasks, milestones, iterations, order_lock };
+  // References to the tasks and milestones the ops removed go with them.
+  const taskIds = new Set(tasks.map((task) => task.id)),
+    milestoneIds = new Set(milestones.map((milestone) => milestone.id));
+  const lanes = plan.lanes.map((lane) =>
+    lane.stops
+      ? {
+          ...lane,
+          stops: lane.stops.filter(
+            (stop) =>
+              !stop.startsWith('milestone:') || milestoneIds.has(stop.slice('milestone:'.length)),
+          ),
+        }
+      : lane,
+  );
+  const assumptions = plan.assumptions.map(({ affects, milestone, ...assumption }) => ({
+    ...assumption,
+    ...(affects ? { affects: affects.filter((taskId) => taskIds.has(taskId)) } : {}),
+    ...(milestone && milestoneIds.has(milestone) ? { milestone } : {}),
+  }));
+  return { ...plan, lanes, tasks, milestones, iterations, order_lock, assumptions };
 }
 
 const opTaskIds = (op: PatchOp): string[] =>

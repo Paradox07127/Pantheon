@@ -610,6 +610,7 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'browser_open',
     'browser_read',
     'browser_screenshot',
+    'step_verdict',
     'guide',
   ]);
   const plan = {
@@ -658,6 +659,7 @@ it('mounts a lead credential on a workbench session and a worker credential on a
     'browser_open',
     'browser_read',
     'browser_screenshot',
+    'step_verdict',
   ]);
   expect(text(await workerClient.callTool({ name: 'update_board', arguments: plan }))).toBe(
     'Refused update_board: permission_denied',
