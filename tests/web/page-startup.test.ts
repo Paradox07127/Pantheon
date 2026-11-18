@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import { HookHost, nodes } from './web-hook-host.js';
@@ -96,6 +97,12 @@ describe('the page start', () => {
     expect(readies).toBe(0);
     await vi.advanceTimersByTimeAsync(0);
     expect(readies).toBe(1);
+  });
+
+  it('defines no component in the entry, so a hot update reloads the page instead of mounting a second root', () => {
+    // React Refresh makes a file that defines a component accept hot updates, and running this one again calls createRoot again.
+    const entry = readFileSync(new URL('../../apps/web/src/main.tsx', import.meta.url), 'utf8');
+    expect(entry).not.toMatch(/^(?:export )?(?:function|const|let|class) [A-Z]/m);
   });
 
   it('hands the desktop shell the theme at start and each time it changes', async () => {

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
@@ -12,7 +12,7 @@ import { MiniWindow } from './shell/MiniWindow';
 import { QuitDialog } from './shell/QuitDialog';
 import { ConnectionGate, RecoverBoundary } from './shell/RecoverScreen';
 import { TrayPopover } from './shell/TrayPopover';
-import { readyAfterPaint, refuseStrayFiles } from './shell/window-kind';
+import { FirstContent, refuseStrayFiles } from './shell/window-kind';
 import { useShell } from './store';
 import './index.css';
 
@@ -45,12 +45,6 @@ if (window.pantheon) {
 }
 
 const kind = window.pantheon?.windowContext().kind ?? 'main';
-
-/** The app shell, or the page drawn in its place, is the first content of these windows. */
-function FirstContent() {
-  useEffect(readyAfterPaint, []);
-  return null;
-}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

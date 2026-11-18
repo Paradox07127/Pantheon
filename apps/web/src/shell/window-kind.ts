@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 /** What this window shows: the whole app, one project, or one session alone. */
 export type ShownWindow =
   { kind: 'main' | 'project' } | { kind: 'session'; project_id: string; session_id: string };
@@ -23,4 +25,10 @@ export function readyAfterPaint(): () => void {
   // A frame's callbacks run before it is painted; the task they queue runs after.
   const frame = requestAnimationFrame(() => setTimeout(() => window.pantheon?.ready()));
   return () => cancelAnimationFrame(frame);
+}
+
+/** The app shell, or the page drawn in its place, is the first content of the main and project windows. */
+export function FirstContent() {
+  useEffect(readyAfterPaint, []);
+  return null;
 }
