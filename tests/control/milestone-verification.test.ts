@@ -152,6 +152,7 @@ it('shows the newest verification of the current commitment on a ready lead mile
       state: 'passed',
       independence: 'other_vendor',
       runtime: 'codex',
+      started_at: 3,
       finished_at: 4,
       failed: [],
     },
@@ -192,13 +193,19 @@ it('lists the failed commands of a failed verification with their output tails',
         hidden: false,
         failure_class: 'code',
       },
+      { name: 'hidden-check', exit_code: 0, output_tail: 'checked', hidden: true },
     ],
   });
   expect(viewOf(f, milestone).verification).toMatchObject({
     state: 'failed',
     reason: 'A check failed',
     failed: [{ name: 'test', output_tail: '1 test failed' }],
+    commands: [
+      { name: 'build', exit_code: 0 },
+      { name: 'test', exit_code: 1 },
+    ],
   });
+  expect(viewOf(f, milestone).verification!.commands[0]).not.toHaveProperty('output_tail');
 });
 
 it('never shows a verification on a milestone the user created', async () => {

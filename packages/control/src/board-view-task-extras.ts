@@ -15,7 +15,7 @@ export function taskExtras(
 /** Fields of a milestone's board row beyond those the board view builds itself. */
 export function milestoneExtras(
   _ctx: ControlContext,
-  _milestone: MilestoneView,
+  milestone: MilestoneView,
 ): BoardMilestoneExtras {
-  return {};
+  return milestone.verification ? { verification: milestone.verification } : {};
 }

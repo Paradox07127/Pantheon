@@ -3982,7 +3982,7 @@ export interface BoardActivity {
 export interface BoardTaskRung {
   rung: 'retry' | 'switch' | 'lead' | 'user';
   by: 'pantheon' | 'lead' | 'user';
-  /** A merge problem, review_findings, dispatch_failed, a needs-you reason, a tracked state, stalled, looping or runtime_changed. */
+  /** A merge problem, review_findings, dispatch_failed, a needs-you reason such as workflow_approval, a tracked state, stalled, looping or runtime_changed. */
   reason: string;
   /** Tries of reason used so far: hand-backs, review rounds or attempts to open the session. */
   used?: number;
@@ -4104,7 +4104,10 @@ export interface BoardSessionTime {
 /** Fields of a plan task's board row that packages/control/src/board-view-task-extras.ts fills. */
 export interface BoardTaskExtras {}
 /** Fields of a milestone's board row that packages/control/src/board-view-task-extras.ts fills. */
-export interface BoardMilestoneExtras {}
+export interface BoardMilestoneExtras {
+  /** The milestone's current verification; absent when none ran. */
+  verification?: MilestoneView['verification'];
+}
 
 export interface BoardModel {
   /** Commands failing at least twice in the range, ordered by failed runs then name, at most ten. */

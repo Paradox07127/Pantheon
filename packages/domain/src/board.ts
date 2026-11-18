@@ -449,8 +449,12 @@ export interface MilestoneView {
   /** The newest verification of the current commitment of a ready or completed lead milestone; absent when none ran. */
   verification?: Pick<
     MilestoneVerification,
-    'id' | 'state' | 'independence' | 'runtime' | 'reason' | 'finished_at'
-  > & { failed: { name: string; output_tail: string }[] };
+    'id' | 'state' | 'independence' | 'runtime' | 'reason' | 'started_at' | 'finished_at'
+  > & {
+    failed: { name: string; output_tail: string }[];
+    /** The commands the run went through, in order; hidden checks are left out. */
+    commands: { name: string; exit_code: number }[];
+  };
 }
 export interface BoardPlanView {
   lead_session_id: string;

@@ -7,6 +7,7 @@ import type {
   BoardPlan,
   ChangeStory,
   Milestone,
+  MilestoneVerification,
   Principal,
   Project,
   ProjectBoard,
@@ -19,6 +20,7 @@ import type {
   Usage,
   Workspace,
 } from '@pantheon/domain';
+import { commitmentHash } from '../../packages/control/dist/project-facts.js';
 import { awaitWorkspaceReady, eventually, gateFolder, insideSandbox, user } from '../helpers.js';
 import { boundTaskSession, git, workbenchFixture } from './workbench-fixture.js';
 
@@ -974,6 +976,71 @@ it('computes tasks, edges and milestones from lead plans and their sessions', as
     by_session: lead.id,
   });
   expect(board.risks).toEqual([{ text: 'The export format may change', kind: 'risk' }]);
+});
+
+it('carries the verification of a ready lead milestone, and nothing before one ran', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [
+        {
+          id: 'report',
+          title: 'Research exports',
+          goal: 'Exports are understood',
+          lane: 'core',
+          milestone: 'release',
+          depends_on: [],
+          source: ['Plan the export feature'],
+          scope: [],
+          acceptance: [],
+          done_when: 'report',
+        },
+      ],
+      milestones: [
+        { id: 'release', title: 'Release', criteria: ['Report reviewed'], tasks: ['report'] },
+      ],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    {
+      id: `session:${lead.id}`,
+      role: 'lead',
+      project_id: f.project.id,
+      session_id: lead.id,
+      expires_at: f.store.now() + 60000,
+    },
+  );
+  const plan = patchPlan(f, lead.id, {
+    accepted: { report: { at: f.store.now(), evidence: 'Report reviewed', generation: 1 } },
+  });
+  const milestone = f.store.list<Milestone>('milestones')[0]!;
+  const boardMilestone = () => f.control.boardView(user, f.project.id, 1).milestones[0]!;
+  expect(boardMilestone().status).toBe('ready_for_acceptance');
+  expect(boardMilestone()).not.toHaveProperty('verification');
+  const verification = f.store.insert<MilestoneVerification>('milestone_verifications', {
+    id: 'release-verification',
+    revision: 1,
+    project_id: f.project.id,
+    milestone_id: milestone.id,
+    commitment_hash: commitmentHash(milestone, [], plan),
+    state: 'running',
+    commands: [{ name: 'build', exit_code: 0, output_tail: 'built', hidden: false }],
+    started_at: 5,
+  });
+  expect(boardMilestone().verification).toEqual({
+    id: verification.id,
+    state: 'running',
+    started_at: 5,
+    failed: [],
+    commands: [{ name: 'build', exit_code: 0 }],
+  });
 });
 
 it('carries the reason a lead gave for running a lane in parallel, and nothing for a lane without one', async () => {

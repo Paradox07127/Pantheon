@@ -12,6 +12,15 @@ import { taskGeneration } from './board-plan.js';
 import { projectBudgetUse, workflowPolicy } from './workflow-policy.js';
 import { NEXT_STEP, action, type NeedsYouDraft, type NeedsYouScope } from './needs-you.js';
 
+/** The step run waits for the user's decision: an approval step, or a step that ended with no verdict. */
+export function awaitsDecision(run: StepRun, plan: BoardPlan | undefined): boolean {
+  return (
+    ((run.state === 'waiting' && run.step.kind.type === 'approval') ||
+      run.state === 'inconclusive') &&
+    taskGeneration(plan, run.task_id) === run.generation
+  );
+}
+
 /** Workflow approval steps waiting for a decision, and steps that ended with no verdict. */
 export function stepRunItems(
   ctx: ControlContext,
@@ -21,18 +30,10 @@ export function stepRunItems(
   const { principal, projectId, removed } = scope;
   const items: NeedsYouDraft[] = [];
   for (const run of ctx.store.list<StepRun>('workflow_step_runs')) {
-    if (
-      !(
-        (run.state === 'waiting' && run.step.kind.type === 'approval') ||
-        run.state === 'inconclusive'
-      ) ||
-      removed.has(run.project_id) ||
-      (projectId && run.project_id !== projectId)
-    )
-      continue;
+    if (removed.has(run.project_id) || (projectId && run.project_id !== projectId)) continue;
     const plan = planOf.get(run.lead_session_id),
       task = plan?.tasks.find((t) => t.id === run.task_id);
-    if (!task || taskGeneration(plan, run.task_id) !== run.generation) continue;
+    if (!task || !awaitsDecision(run, plan)) continue;
     items.push({
       source: { table: 'workflow_step_runs', id: run.id, revision: run.revision },
       kind: 'workflow.approval',
