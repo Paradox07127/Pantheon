@@ -272,3 +272,148 @@ aside.bd-drw {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* The workflow step: its title and status, summary, evidence, reviewers and what follows. */
+.bd-vs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.bd-vsh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.bd-vst {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.bd-vsum {
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bd-vnone {
+  margin: 0;
+  color: var(--tx2);
+}
+.bd-vev {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0 -8px;
+  padding: 0;
+}
+.bd-vev > li {
+  display: grid;
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--ctl);
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bd-vev > li:hover {
+  background: var(--sf2);
+}
+.bd-vev svg {
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.bd-vev .bd-vck {
+  color: var(--tx2);
+}
+.bd-vunck {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+.bd-vunck::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border: 1.5px dashed var(--mu);
+  border-radius: 50%;
+}
+.bd-vref {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bd-vexit {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--mu);
+}
+.bd-vexit[data-bad] {
+  color: var(--tx2);
+}
+.bd-vnote {
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.bd-vback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.bd-vback svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.bd-vbt {
+  flex: 1;
+  min-width: 0;
+}
+.bd-vrv {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bd-vrv > li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+}
+.bd-vrn {
+  min-width: 0;
+  font-weight: 500;
+}
+.bd-vrd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+}
+.bd-vrs {
+  grid-column: 2 / 4;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.bd-vsa {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}

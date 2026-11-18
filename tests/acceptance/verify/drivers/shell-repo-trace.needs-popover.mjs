@@ -1,7 +1,7 @@
 import { copyFileSync } from 'node:fs';
 import path from 'node:path';
 import { open } from '../page.mjs';
-const { page, query, call, errors, poll, names, newProject } = await open(process.argv[2], {
+const { run, page, query, call, errors, poll, names, newProject } = await open(process.argv[2], {
   ms: 300_000,
 });
 const result = { id: 'shell-repo-trace.needs-popover', checks: [] };
@@ -21,14 +21,18 @@ const DECISION = {
 };
 const blocksText = (n) => (n > 0 ? `阻塞 ${n} 个任务` : null);
 
-// Settles what an earlier run of this driver left waiting, so the counts below are this run's.
-const earlier = new Set(
-  (await query('board')).projects
-    .filter((p) => p.name.startsWith('verify-needs-'))
-    .map((p) => p.id),
-);
-for (const item of (await query('needs_you.list')).items.filter((i) => earlier.has(i.project_id))) {
-  if (item.kind === 'permission')
+// The title bar counts every project's waits: settle what earlier drivers left waiting anywhere,
+// so the counts below are this run's.
+const sessionsNow = (await query('board')).sessions;
+for (const item of (await query('needs_you.list')).items) {
+  if (item.kind === 'session.failed') {
+    // A lead whose turn failed stays open; the daemon archives only an ended session.
+    const session = sessionsNow.find((s) => s.id === (item.session_id ?? item.source.id));
+    if (['failed', 'idle', 'ready', 'done', 'merged', 'discarded'].includes(session?.state))
+      await call('session.archive', { session_id: session.id }, session.revision);
+  } else if (item.kind === 'agent.proposal')
+    await call('agent.proposal.resolve', { proposal_id: item.source.id, decision: 'decline' });
+  else if (item.kind === 'permission')
     await call(
       'approval.respond',
       { approval_id: item.source.id, decision: 'reject' },
@@ -49,6 +53,25 @@ for (const item of (await query('needs_you.list')).items.filter((i) => earlier.h
       decision: 'reject',
     });
 }
+// A wait no command settles, such as a lead's failed turn, leaves with its project.
+const unsettled = (await query('needs_you.list')).items;
+result.removed = [];
+for (const id of new Set(unsettled.map((i) => i.project_id))) {
+  if (id === run.project_id) continue;
+  const project = (await query('board')).projects.find((p) => p.id === id);
+  try {
+    await call('project.remove', { project_id: id }, project?.revision);
+    result.removed.push(project?.name);
+  } catch (error) {
+    result.removed.push(`${project?.name}: ${error.message.slice(0, 200)}`);
+  }
+}
+const cleared = await poll(async () => (await query('needs_you.list')).items.length === 0);
+check(
+  '前置：开始时 needs_you.list 为空（全部项目）',
+  cleared,
+  (await query('needs_you.list')).items.map((i) => [i.kind, i.reason]),
+);
 
 const stamp = Date.now();
 const { project_id, name: projectName } = await newProject(`verify-needs-${stamp}`, {

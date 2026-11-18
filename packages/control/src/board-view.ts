@@ -1533,6 +1533,19 @@ export function boardView(
     .list<StepRun>('workflow_step_runs')
     .filter((run) => run.project_id === projectId && run.state !== 'retired')
     .sort((a, b) => a.created_at - b.created_at);
+  // A verdict counts only while it belongs to the run's current turn.
+  const verdictOf = (run: StepRun) => {
+    if (!run.verdict || run.verdict.turn_id !== run.turn_id) return {};
+    const { session_id: _, ...verdict } = run.verdict;
+    return { verdict };
+  };
+  const reviewersOf = (reviewId: string) => {
+    const review = ctx.store.get<Review>('reviews', reviewId);
+    return (review?.runtimes ?? []).map((runtime) => {
+      const given = review!.verdicts?.find((verdict) => verdict.runtime === runtime);
+      return given ? { runtime, verdict: given.verdict, summary: given.summary } : { runtime };
+    });
+  };
   const total = (values: (number | null)[]) => {
     const known = values.filter((value) => value !== null);
     return known.length ? known.reduce((sum, value) => sum + value, 0) : null;
@@ -1721,6 +1734,8 @@ export function boardView(
                 ...(run.session_id === undefined ? {} : { session_id: run.session_id }),
                 created_at: run.created_at,
                 ...(run.finished_at === undefined ? {} : { finished_at: run.finished_at }),
+                ...verdictOf(run),
+                ...(run.review_id ? { reviewers: reviewersOf(run.review_id) } : {}),
               })),
             }
           : {}),

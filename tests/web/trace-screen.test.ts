@@ -699,6 +699,23 @@ describe('trace screen tabs', () => {
     ]);
   });
 
+  it("follows the approved-for-you tab's name with what was approved today", async () => {
+    const query = vi.fn(async (method: string) =>
+      method === 'project.decisions'
+        ? { ok: true, value: { items: [{ kind: 'prompt_approved' }, { kind: 'prompt_by_rule' }] } }
+        : { ok: false, error: { code: 'not_found', message: method } },
+    );
+    vi.stubGlobal('window', { ...window, pantheon: { query } });
+    const h = screen();
+    await h.flush();
+    expect(query).toHaveBeenCalledWith(
+      'project.decisions',
+      expect.objectContaining({ project_id: 'project-a' }),
+    );
+    const approved = tabs(h.value).find(([tab]) => tab === 'approved')!;
+    expect(text(approved[1])).toBe(`${zh('trace.tab.approved')}2`);
+  });
+
   it('shows the tab the shell asks for and writes a picked tab back to the shell', () => {
     mock.events = [];
     const h = screen();

@@ -2,6 +2,13 @@
 .afy {
   overflow-y: auto;
 }
+.afy-type {
+  flex: none;
+  align-self: flex-start;
+}
+.afy-type [role='radio'] {
+  gap: var(--sp-1);
+}
 .afy-t {
   display: flex;
   flex-direction: column;

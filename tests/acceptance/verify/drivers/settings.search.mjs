@@ -49,7 +49,7 @@ result.checks.push({
 });
 const after = await page.evaluate(`(() => ({
   query: document.querySelector('input[role=combobox][aria-label="搜索设置"]').value,
-  current: document.querySelector('[aria-current=page]')?.textContent ?? null,
+  current: document.querySelector('nav[aria-label="设置分区"] [aria-current=page]')?.textContent ?? null,
   checked: document.querySelector('input[type=checkbox][aria-label="绘制解释图"]')?.checked,
 }))()`);
 result.after = after;
@@ -57,6 +57,10 @@ const s = await query('app.settings');
 result.checks.push({
   what: '跳转后搜索框清空、导航停在 通用',
   ok: after.query === '' && (after.current ?? '').includes('通用'),
+});
+result.checks.push({
+  what: '对照组：同一读法判导航不停在 外观',
+  ok: !(after.current ?? '').includes('外观'),
 });
 result.checks.push({
   what: '跳转到的 绘制解释图 开关等于 app.settings.baseline_visuals',

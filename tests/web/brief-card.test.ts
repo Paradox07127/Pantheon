@@ -17,6 +17,7 @@ vi.mock('@/store', () => ({
   }),
 }));
 import { BriefCard } from '@/screens/board/BriefCard';
+import { ProjectNeeds } from '@/screens/board/NowPage';
 import type { SnapshotSession } from '@/screens/board/panels-model';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -165,11 +166,40 @@ const card = async (projectId: string, onOpenTask = vi.fn()) => {
   await h.flush();
   return h;
 };
+const needsList = (projectId: string) =>
+  mount(() =>
+    ProjectNeeds({ projectId, model, sessions, run: async () => null, onOpenSession() {} }),
+  );
 const group = (tree: unknown, label: string) =>
   find(tree as ReactElement, (n) => n.props.role === 'group' && n.props['aria-label'] === label);
 const links = (tree: unknown) => nodes(tree as ReactElement).filter((n) => n.type === 'a');
 const sent = (type: string) =>
   command.mock.calls.map(([each]) => each).filter((each) => each.type === type);
+
+describe('needs-you list under the card', () => {
+  it('stays out until the brief read lands, so the card does not push it down', async () => {
+    let land!: (answer: unknown) => void;
+    serve(served);
+    query.mockImplementation(() => new Promise((resolve) => (land = resolve)));
+    const h = needsList('project-brief-g');
+    await h.flush();
+    expect(h.value).toBeNull();
+    land({ ok: true, value: served });
+    await h.flush();
+    expect(h.value).not.toBeNull();
+  });
+
+  it('shows when the brief read fails', async () => {
+    serve(served);
+    query.mockImplementation(async () => ({
+      ok: false,
+      error: { code: 'daemon_unavailable', message: 'The daemon is not running' },
+    }));
+    const h = needsList('project-brief-h');
+    await h.flush();
+    expect(h.value).not.toBeNull();
+  });
+});
 
 describe('since you left card', () => {
   it('reads the brief of its project and is a group named for the time away', async () => {
@@ -179,6 +209,21 @@ describe('since you left card', () => {
     const root = group(h.value, zh('board.brief.label'));
     expect(text(root)).toContain(zh('board.brief.label'));
     expect(text(root)).toContain(zh('board.brief.read'));
+  });
+
+  it('heads the card with its title, the time the user left and Mark as read in one row', async () => {
+    serve(served);
+    const h = await card('project-brief-f');
+    const root = group(h.value, zh('board.brief.label'));
+    const header = find(root, (n) =>
+      [n.props.children].flat().some((c: any) => c?.type === 'button'),
+    );
+    expect(
+      [header.props.children]
+        .flat()
+        .filter(Boolean)
+        .map((c: any) => (c.type === 'time' ? 'time' : text(c))),
+    ).toEqual([zh('board.brief.label'), 'time', zh('board.brief.read')]);
   });
 
   it('shows each count as the brief serves it', async () => {

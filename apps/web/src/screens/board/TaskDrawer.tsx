@@ -1,14 +1,16 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
-import { X } from 'lucide-react';
+import { Check, Crown, File, Terminal, X } from 'lucide-react';
 import type { BackendSummary, BoardModel, BoardTaskStatus } from '@pantheon/protocol';
 import { DiffCounts } from '../../components/DiffCounts';
 import { Menu, MenuItem } from '../../components/Menu';
 import { PathText } from '../../components/PathText';
-import { ModelMark } from '../../components/RuntimeGlyph';
+import { ModelMark, RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { Select } from '../../components/Select';
 import { Splitter } from '../../components/Splitter';
+import { Tip } from '../../components/Tip';
+import { toast } from '../../components/Toast';
 import { useBackends } from '../../data/backends';
 import { useDevices } from '../../data/devices';
 import { focusRequest } from '../../data/focus-request';
@@ -21,7 +23,7 @@ import {
   useLayout,
   useViewportWidth,
 } from '../../data/layout';
-import { useNow } from '../../data/needs-you';
+import { ageText, useNow } from '../../data/needs-you';
 import { needsKey } from '../../data/notice-tiers';
 import { useRuntimeModels, type ModelsState } from '../../data/runtime-models';
 import { useRuntimeStatus } from '../../data/runtime-status';
@@ -46,7 +48,13 @@ import { defaultModel } from '../sessions/thread-model';
 import { openBoardTab } from '../settings/settings-jump';
 import { quotaResetsAt, resumesText, taskBadges, taskTokens } from './activity';
 import { DeviceDot, DeviceFacts, DeviceState, ResourceMeter } from './BoardDevices';
-import { requestNeed } from './frame-model';
+import {
+  needActions,
+  needCommand,
+  requestNeed,
+  type NeedAction,
+  type NeedItem,
+} from './frame-model';
 import { PlanEdit } from './PlanEdit';
 import { PlanList } from './PlanList';
 import { dayText } from '../../lib/time-text';
@@ -527,6 +535,204 @@ function ParallelParts({
   );
 }
 
+type StepRunRow = NonNullable<Task['step_runs']>[number];
+
+const STEP_CHIP: Partial<Record<StepRunRow['state'], { dot: string; label: () => string }>> = {
+  inconclusive: {
+    dot: 'wait',
+    label: () => t({ id: 'board.task.step.noVerdict', defaultMessage: 'No verdict' }),
+  },
+  passed: {
+    dot: 'ok',
+    label: () => t({ id: 'board.task.step.passed', defaultMessage: 'Passed' }),
+  },
+  failed: {
+    dot: 'bad',
+    label: () => t({ id: 'board.task.step.failed', defaultMessage: 'Failed' }),
+  },
+  rejected: {
+    dot: 'bad',
+    label: () => t({ id: 'board.task.step.failed', defaultMessage: 'Failed' }),
+  },
+};
+
+/** The task's newest step run that is not skipped, when it has a verdict, lacks one it asks for, or has reviewers. */
+export function shownStepRun(task: Pick<Task, 'step_runs'>): StepRunRow | undefined {
+  const run = task.step_runs?.filter((r) => r.state !== 'skipped').at(-1);
+  return run && (run.verdict || run.state === 'inconclusive' || run.reviewers?.length)
+    ? run
+    : undefined;
+}
+
+/** A step run's verdict, or the decision a step that ended without one waits for. */
+function WorkflowStep({
+  step,
+  need,
+  run,
+  now,
+}: {
+  step: StepRunRow;
+  /** The needs-you item that counts a step without a verdict; its actions send the decision. */
+  need: NeedItem | undefined;
+  run: RunBoardCommand | undefined;
+  now: number;
+}) {
+  const [busy, setBusy] = useState(false);
+  const chip = STEP_CHIP[step.state];
+  const decide =
+    step.state === 'inconclusive' && need && run
+      ? needActions(need).filter((a) => a.key === 'approve' || a.key === 'reject')
+      : [];
+  const press = async (action: NeedAction) => {
+    const command = need && run && needCommand(need, action.key);
+    if (!command || busy || action.reason !== null) return;
+    setBusy(true);
+    const failure = await run!(command.type, command.input, command.revision);
+    // A decision taken keeps the buttons off until the step leaves the needs-you list.
+    if (!failure) return;
+    setBusy(false);
+    toast({ title: failure, kind: 'failure' });
+  };
+  // A failed step before the merge hands its task back to the lead.
+  const wentBack =
+    (step.state === 'failed' || step.state === 'rejected') &&
+    step.slot !== 'after_merge' &&
+    step.kind === 'prompt';
+  return (
+    <section className="bd-dsec" aria-labelledby="bd-dstep">
+      <h3 id="bd-dstep">
+        {t({ id: 'board.task.drawer.workflowStep', defaultMessage: 'Workflow step' })}
+      </h3>
+      <div className="bd-vs">
+        <div className="bd-vsh">
+          <span className="bd-vst">{step.title}</span>
+          {chip && (
+            <span className="bd-pchip" data-dot={chip.dot}>
+              {chip.label()}
+            </span>
+          )}
+        </div>
+        {step.state === 'inconclusive' && !step.verdict && (
+          <p className="bd-vnone">
+            {t({
+              id: 'board.task.step.noVerdictLine',
+              defaultMessage: 'The turn ended without a verdict.',
+            })}
+          </p>
+        )}
+        {step.verdict?.summary && <p className="bd-vsum">{step.verdict.summary}</p>}
+        {step.verdict && step.verdict.evidence.length > 0 && (
+          <ul className="bd-vev">
+            {step.verdict.evidence.map((item, i) => (
+              <li key={i}>
+                {item.checked ? (
+                  <Check
+                    className="bd-vck"
+                    role="img"
+                    aria-label={t({ id: 'board.task.step.checked', defaultMessage: 'Checked' })}
+                  />
+                ) : (
+                  <span
+                    className="bd-vunck"
+                    role="img"
+                    aria-label={t({ id: 'board.task.step.unchecked', defaultMessage: 'Unchecked' })}
+                  />
+                )}
+                {item.kind === 'command' ? (
+                  <Terminal aria-hidden="true" />
+                ) : (
+                  <File aria-hidden="true" />
+                )}
+                <span className="bd-vref">{item.ref}</span>
+                {!item.checked ? (
+                  <span className="bd-vnote">
+                    {t({ id: 'board.task.step.notChecked', defaultMessage: 'Not checked' })}
+                  </span>
+                ) : item.exit_code !== undefined ? (
+                  <span className="bd-vexit" data-bad={item.exit_code !== 0 || undefined}>
+                    {t(
+                      { id: 'board.task.step.exit', defaultMessage: 'exit {code}' },
+                      { code: item.exit_code },
+                    )}
+                  </span>
+                ) : (
+                  <span />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {step.reviewers && step.reviewers.length > 0 && (
+          <ul className="bd-vrv">
+            {step.reviewers.map((reviewer) => (
+              <li key={reviewer.runtime}>
+                <RuntimeGlyph runtime={reviewer.runtime} />
+                <span className="bd-vrn">{runtimeName(reviewer.runtime)}</span>
+                <span className="bd-vrd">
+                  <StatusIcon
+                    status={
+                      reviewer.verdict === 'pass'
+                        ? 'done'
+                        : reviewer.verdict === 'fail'
+                          ? 'failed'
+                          : 'idle'
+                    }
+                  />
+                  {reviewer.verdict === 'pass'
+                    ? t({ id: 'board.task.step.reviewPass', defaultMessage: 'Pass' })
+                    : reviewer.verdict === 'fail'
+                      ? t({ id: 'board.task.step.reviewFail', defaultMessage: 'Fail' })
+                      : t({
+                          id: 'board.task.step.reviewNone',
+                          defaultMessage: 'No verdict given',
+                        })}
+                </span>
+                {reviewer.summary && <span className="bd-vrs">{reviewer.summary}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+        {wentBack && (
+          <div className="bd-vback">
+            <Crown aria-hidden="true" />
+            <span className="bd-vbt">
+              {t({ id: 'board.task.step.wentBack', defaultMessage: 'Went back to the lead' })}
+            </span>
+            {step.finished_at !== undefined && (
+              <span className="bd-vexit">{ageText(step.finished_at, now)}</span>
+            )}
+          </div>
+        )}
+        {decide.length > 0 && (
+          <div className="bd-vsa">
+            {decide.map((action) => {
+              const button = (
+                <button
+                  key={action.key}
+                  type="button"
+                  className={action.key === 'approve' ? 'btn pri' : 'btn'}
+                  aria-disabled={busy || action.reason !== null || undefined}
+                  aria-busy={busy || undefined}
+                  onClick={() => void press(action)}
+                >
+                  {action.label}
+                </button>
+              );
+              return action.reason ? (
+                <Tip key={action.key} content={action.reason}>
+                  {button}
+                </Tip>
+              ) : (
+                button
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /**
  * Task details sliding in from the right, sized by the box it is placed in; Esc or a click outside
  * closes it. Closing from inside the drawer puts focus back on the card or node that opened it.
@@ -691,6 +897,7 @@ export function TaskDrawer({
   const start = !!onStartTask && !!task.owner_session_id && startable(task);
   // task.handback finds only the task's own sessions, never its lead's.
   const handBack = !!tell && !!task.owner_session_id && hasOpenSession(task) && !leadClaimed(task);
+  const step = shownStepRun(task);
   return (
     <aside
       ref={ref}
@@ -1004,6 +1211,16 @@ export function TaskDrawer({
               <span>{check.label}</span>
             </span>
           </section>
+          {step && (
+            <WorkflowStep
+              step={step}
+              need={model.needs?.find(
+                (n) => n.kind === 'workflow.approval' && n.source.id === step.id,
+              )}
+              run={tell?.run}
+              now={now}
+            />
+          )}
           {!plan && (
             <section className="bd-dsec">
               <h3>{t({ id: 'board.task.drawer.merge', defaultMessage: 'Merge' })}</h3>

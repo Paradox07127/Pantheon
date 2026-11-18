@@ -1428,6 +1428,57 @@ describe('needs-you row', () => {
     expect(text(free.value)).not.toContain(blocks);
   });
 
+  it('keeps a plan change row to one line, without who acts next under it', () => {
+    const h = row(
+      need({
+        source: { table: 'board_plans', id: 'lead-1', revision: 6 },
+        kind: 'board.plan.proposal',
+        session_id: 'lead-1',
+        reason: 'plan_proposal_awaiting_decision',
+        decision: 'plan_change',
+        actions: [{ command: 'board.plan.proposal.resolve', allowed: true }],
+        next_step: 'plan_proposal_awaiting_decision',
+      }),
+      async () => null,
+      () => {},
+    );
+    expect(text(h.value)).toContain(zh('data.attention.decision.planChange'));
+    expect(text(h.value)).not.toContain(zh('daemon.nextStep.planProposalAwaitingDecision'));
+    expect(nodes(h.value).filter((n) => n.type === 'p')).toEqual([]);
+  });
+
+  it('names a failed session row by its reason, then by the session that failed', () => {
+    const failed = need({
+      source: { table: 'sessions', id: 'worker-1', revision: 7 },
+      kind: 'session.failed',
+      reason: 'session_failed',
+      decision: 'other',
+      actions: [],
+    });
+    const strip = mount(() =>
+      NeedsStrip({
+        model: { ...board([]), needs: [failed] },
+        sessions: [{ id: 'worker-1', title: 'Serve exports' } as SnapshotSession],
+        run: async () => null,
+        onOpenSession: () => {},
+      }),
+    );
+    const el = named(strip.value, 'RequestCard');
+    const h = mount(() => (el.type as (props: unknown) => ReactNode)(el.props));
+    const shown = nodes(h.value)
+      .filter((n) => n.type === 'span' || n.type === 'b')
+      .map((n) => text(n));
+    expect(text(h.value).split(reason('sessionFailed'))).toHaveLength(2);
+    expect(text(h.value).indexOf(reason('sessionFailed'))).toBeLessThan(
+      text(h.value).indexOf('Serve exports'),
+    );
+    expect(shown).toContain(reason('sessionFailed'));
+    expect(shown).toContain('Serve exports');
+    expect(
+      shown.filter((s) => s.includes(reason('sessionFailed')) && s.includes('Serve exports')),
+    ).toEqual([]);
+  });
+
   it("opens a question row's card in place from its one action", () => {
     const asked = need({
       source: { table: 'board_plans', id: 'lead-1', revision: 6 },

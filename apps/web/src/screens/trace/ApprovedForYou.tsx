@@ -11,9 +11,11 @@ import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
 import {
   decisionRow,
+  decisionType,
   useDecisionsForUser,
   type DecisionRange,
   type DecisionRow,
+  type DecisionType,
 } from '../../data/decisions-for-user';
 import { shortId } from '../../data/format';
 import { sendProjectCommand } from '../../data/project-read';
@@ -47,6 +49,35 @@ const RANGES: { range: DecisionRange; label: string }[] = [
   },
 ];
 
+type TypeFilter = DecisionType | 'all';
+
+const TYPES: { type: TypeFilter; label: string }[] = [
+  {
+    type: 'all',
+    get label() {
+      return t({ id: 'trace.approved.type.all', defaultMessage: 'All' });
+    },
+  },
+  {
+    type: 'permission',
+    get label() {
+      return t({ id: 'trace.approved.type.permission', defaultMessage: 'Permissions' });
+    },
+  },
+  {
+    type: 'answer',
+    get label() {
+      return t({ id: 'trace.approved.type.answer', defaultMessage: 'Answers' });
+    },
+  },
+  {
+    type: 'plan_change',
+    get label() {
+      return t({ id: 'trace.approved.type.planChange', defaultMessage: 'Plan changes' });
+    },
+  },
+];
+
 /** The delivery rules by decision, as the notifications settings page has them. */
 function DeliveryRules() {
   const { settings, save } = useAppSettings();
@@ -59,6 +90,7 @@ function DeliveryRules() {
  */
 export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; tabs: ReactNode }) {
   const [range, setRange] = useState<DecisionRange>('today');
+  const [type, setType] = useState<TypeFilter>('all');
   const [notifying, setNotifying] = useState(false);
   // The open overrule dialog: its row, the typed answer, and the last failure.
   const [overruling, setOverruling] = useState<{
@@ -69,7 +101,15 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
   } | null>(null);
   const read = useDecisionsForUser(projectId, range);
   const board = useBoard((s) => s.board);
-  const rows = read.read?.items.map(decisionRow) ?? null;
+  const items = read.read?.items ?? null;
+  const counts = items && {
+    all: items.length,
+    permission: items.filter((item) => decisionType(item) === 'permission').length,
+    answer: items.filter((item) => decisionType(item) === 'answer').length,
+    plan_change: items.filter((item) => decisionType(item) === 'plan_change').length,
+  };
+  const rows =
+    items?.filter((item) => type === 'all' || decisionType(item) === type).map(decisionRow) ?? null;
   const now = Date.now();
   const titleOf = (sessionId: string) => {
     const session = board?.sessions.find((s) => s.id === sessionId);
@@ -125,6 +165,32 @@ export function ApprovedForYou({ projectId, tabs }: { projectId: string | null; 
       <main className="trc">
         <Tabs.Panel className="trc-body" value="approved">
           <div className="trc-main afy">
+            <RadioGroup<TypeFilter>
+              className="tb-seg afy-type"
+              aria-label={t({ id: 'trace.approved.type', defaultMessage: 'Type' })}
+              aria-busy={counts === null || undefined}
+              disabled={counts === null}
+              value={type}
+              onValueChange={(value) => setType(value)}
+            >
+              {TYPES.map((k) => (
+                <Radio.Root
+                  key={k.type}
+                  value={k.type}
+                  aria-label={
+                    counts
+                      ? t(
+                          { id: 'trace.approved.type.count', defaultMessage: '{type}: {count}' },
+                          { type: k.label, count: counts[k.type] },
+                        )
+                      : k.label
+                  }
+                >
+                  {k.label}
+                  {counts && <span className="tb-ct">{counts[k.type]}</span>}
+                </Radio.Root>
+              ))}
+            </RadioGroup>
             {read.error && <Failure error={read.error} onRetry={read.reload} />}
             {rows === null ? (
               !read.error && <Skeleton />

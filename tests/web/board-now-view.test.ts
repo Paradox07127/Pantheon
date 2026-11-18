@@ -393,7 +393,7 @@ describe('project board bar', () => {
     expect(names(canvas)).not.toContain('BriefCard');
   });
 
-  it('lists what needs the user under the requirement bar and above the since-you-left card, and nothing when nothing does', () => {
+  it('lists what needs the user under the requirement bar and the since-you-left card, and nothing when nothing does', () => {
     const actions = { milestones: [], sessions: [], run: async () => null };
     const waiting = {
       source: { table: 'approvals', id: 'approval-1', revision: 1 },
@@ -413,8 +413,8 @@ describe('project board bar', () => {
     const listed = view([waiting]);
     const parts = names(listed);
     expect(parts.indexOf('PublishBar')).toBeGreaterThanOrEqual(0);
-    expect(parts.indexOf('PublishBar')).toBeLessThan(parts.indexOf('ProjectNeeds'));
-    expect(parts.indexOf('ProjectNeeds')).toBeLessThan(parts.indexOf('BriefCard'));
+    expect(parts.indexOf('PublishBar')).toBeLessThan(parts.indexOf('BriefCard'));
+    expect(parts.indexOf('BriefCard')).toBeLessThan(parts.indexOf('ProjectNeeds'));
     const strip = named(listed, 'ProjectNeeds');
     expect(strip.props.model.needs).toEqual([waiting]);
     expect(strip.props.run).toBe(actions.run);

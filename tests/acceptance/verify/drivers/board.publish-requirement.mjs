@@ -329,6 +329,95 @@ const afterSend = await poll(async () => {
 check('发送后不再是 "发送给新 lead"', afterSend, afterSend || (await targetButton()));
 result.after_new_lead = afterSend;
 
+// A long menu: thirty more direct sessions; the menu stays inside the window and its last entry scrolls into view.
+const MANY = Array.from(
+  { length: 30 },
+  (_, n) => `verify-many-${stamp}-${String(n).padStart(2, '0')}`,
+);
+const many = [];
+for (const title of MANY)
+  many.push(
+    await call('session.create', {
+      project_id,
+      runtime: 'fixture',
+      input: `${title}\nfixture-script\n${JSON.stringify([{ say: 'ready' }])}`,
+    }),
+  );
+for (const s of many) await idle(s.id);
+await poll(async () => (await names('发送给')).some((c) => c.role === 'button'));
+await page.click({ role: 'button', name: (await targetButton())[0], exact: true });
+const longMenu = (await menuItems()) || [];
+const lastName = MANY.at(-1);
+check(
+  '前置：长菜单里有最后一个直接会话',
+  longMenu.some((m) => m.name === lastName),
+  {
+    count: longMenu.length,
+    tail: longMenu.slice(-3).map((m) => m.name),
+  },
+);
+// The visible part of the menu and of its last entry, clipped by every scrolling ancestor.
+const geometry = () =>
+  page.evaluate(`(() => {
+    const items = [...document.querySelectorAll('[role=menuitemradio]')].filter((el) => el.getClientRects().length);
+    const last = items.find((el) => el.textContent.trim() === ${JSON.stringify(lastName)});
+    const menu = last?.closest('[role=menu]');
+    if (!last || !menu) return null;
+    let scroller = last.parentElement;
+    while (scroller && scroller !== document.body && !(scroller.scrollHeight > scroller.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+    if (scroller === document.body) scroller = null;
+    const m = menu.getBoundingClientRect(), l = last.getBoundingClientRect();
+    const clip = scroller ? scroller.getBoundingClientRect() : m;
+    return {
+      window: innerHeight,
+      menu: { top: Math.round(m.top), bottom: Math.round(m.bottom) },
+      last: { top: Math.round(l.top), bottom: Math.round(l.bottom) },
+      scrollable: !!scroller,
+      lastVisible: l.top >= Math.max(0, clip.top) - 1 && l.bottom <= Math.min(innerHeight, clip.bottom) + 1,
+    };
+  })()`);
+const atOpen = await geometry();
+result.long_menu_at_open = atOpen;
+check(
+  '长菜单的下沿在窗口内',
+  atOpen && atOpen.menu.top >= 0 && atOpen.menu.bottom <= atOpen.window,
+  atOpen,
+);
+check(
+  '对照组：打开时最后一项在可见区外（长菜单确实要滚动）',
+  atOpen && !atOpen.lastVisible,
+  atOpen,
+);
+// Scroll with the mouse wheel over the menu, as the user would.
+const menuPoint = await page.evaluate(`(() => {
+  const menu = [...document.querySelectorAll('[role=menu]')].find((el) => el.querySelector('[role=menuitemradio]') && el.getClientRects().length);
+  const r = menu?.getBoundingClientRect();
+  return r && { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + Math.min(r.height, innerHeight - r.top) / 2) };
+})()`);
+let scrolled = null;
+for (let n = 0; n < 30 && menuPoint && !scrolled?.lastVisible; n++) {
+  await page.send('Input.dispatchMouseEvent', {
+    type: 'mouseWheel',
+    ...menuPoint,
+    deltaX: 0,
+    deltaY: 300,
+  });
+  scrolled = await geometry();
+}
+scrolled ??= await geometry();
+result.long_menu_scrolled = scrolled;
+check('滚动菜单后最后一项在窗口内可见', scrolled?.scrollable && scrolled.lastVisible, scrolled);
+// Every entry of the long menu is a resident, this project's lead or session (session.list), or the new lead.
+const ownTitles = new Set((await sessions()).map((s) => s.title));
+const known = (name) => ownTitles.has(name) || expectedMenu.includes(name) || name === leadTitle;
+const strangers = longMenu.map((m) => m.name).filter((name) => !known(name));
+check('长菜单的每一项都属于本项目（session.list）', longMenu.length > 0 && strangers.length === 0, {
+  strangers,
+  count: longMenu.length,
+});
+check('对照组：别的项目的会话标题判为不属于本项目', !known(ELSEWHERE));
+await page.press('Escape');
+
 result.errors = await errors();
 console.log(JSON.stringify(result, null, 2));
 page.close();

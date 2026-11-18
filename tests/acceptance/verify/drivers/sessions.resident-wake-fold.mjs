@@ -1,5 +1,8 @@
 import { open } from '../page.mjs';
-const { page, query, call, errors, poll, newProject } = await open(process.argv[2]);
+// The merge poll below waits up to 120 s; the page's deadline must outlast it.
+const { page, query, call, errors, poll, newProject } = await open(process.argv[2], {
+  ms: 300_000,
+});
 const result = { id: 'sessions.resident-wake-fold', checks: [] };
 const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got });
 

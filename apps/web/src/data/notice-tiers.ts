@@ -74,8 +74,9 @@ export const waitInView = (
   },
 ) =>
   watching(view, wait.session) ||
-  (wait.approval && view.focused && (view.queue === wait.project || view.listed?.has(wait.id))) ||
-  (wait.strip && view.focused && view.queue === wait.project);
+  ((wait.approval || wait.strip) &&
+    view.focused &&
+    (view.queue === wait.project || !!view.listed?.has(wait.id)));
 
 const opener = (projectId: string, sessionId: string) => () =>
   useShell.getState().openProjectSession(projectId, sessionId);

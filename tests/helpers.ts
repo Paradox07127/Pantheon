@@ -269,7 +269,8 @@ export function countingGit() {
     slowOn: (text: string) => writeFileSync(slow, text),
     restore: () => {
       process.env.PATH = PATH;
-      rmSync(bin, { recursive: true, force: true });
+      // A git the test left running can still append its log line while the folder is removed.
+      rmSync(bin, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     },
   };
 }

@@ -224,6 +224,14 @@ export function outOfScopeFiles(session: SnapshotSession | undefined): string[] 
     : null;
 }
 
+/** A workflow step whose turn ended without the verdict it asks for, which the user counts as passed or failed. */
+export const noVerdict = (item: Pick<NeedItem, 'kind' | 'status'>): boolean =>
+  item.kind === 'workflow.approval' && item.status === 'inconclusive';
+
+/** The row's kind label for a step that ended without a verdict; null for every other item. */
+export const noVerdictKind = (item: Pick<NeedItem, 'kind' | 'status'>): string | null =>
+  noVerdict(item) ? t({ id: 'board.needs.kind.noVerdict', defaultMessage: 'No verdict' }) : null;
+
 /** The inline buttons of one needs-you item, in the order they show; lead is the lead of the session's task. */
 export function needActions(
   item: NeedItem,
@@ -301,15 +309,20 @@ export function needActions(
     ];
   if (item.kind === 'workflow.approval') {
     const reason = offReason(item, 'workflow.step.decide');
+    const counted = noVerdict(item);
     return [
       {
         key: 'approve',
-        label: t({ id: 'board.needs.actions.approveStep', defaultMessage: 'Approve' }),
+        label: counted
+          ? t({ id: 'board.needs.actions.countPassed', defaultMessage: 'Count as passed' })
+          : t({ id: 'board.needs.actions.approveStep', defaultMessage: 'Approve' }),
         reason,
       },
       {
         key: 'reject',
-        label: t({ id: 'board.needs.actions.rejectStep', defaultMessage: 'Reject' }),
+        label: counted
+          ? t({ id: 'board.needs.actions.countFailed', defaultMessage: 'Count as failed' })
+          : t({ id: 'board.needs.actions.rejectStep', defaultMessage: 'Reject' }),
         reason,
       },
       open,

@@ -7,6 +7,7 @@ import {
   ageText,
   blockedReasonText,
   failureClassText,
+  reasonText,
   resetsText,
   type NeedsYouItem,
 } from '../data/needs-you';
@@ -20,6 +21,8 @@ import {
   needCommand,
   needSession,
   needWhat,
+  noVerdict,
+  noVerdictKind,
   outOfScopeFiles,
   type NeedAction,
   type NeedActionKey,
@@ -422,7 +425,10 @@ export function RequestCard({
   );
   if (full && card) return card;
 
-  const kind = decisionText(item.decision);
+  // A decision without a name of its own goes by the item's reason.
+  const kind = noVerdictKind(item) ?? decisionText(item.decision) ?? reasonText(item.reason);
+  // Beside its kind label a step without a verdict needs only its title.
+  const rowWhat = noVerdict(item) && item.step_title ? item.step_title : what;
   const blocks = blocksText(item.blocks ?? item.unblocks);
   const more = t(
     { id: 'components.requestCard.more', defaultMessage: 'More actions: {name}' },
@@ -541,14 +547,16 @@ export function RequestCard({
     <>
       <div className="rq-hd">
         {MARK[item.kind]}
-        <span className="rq-kind">{kind && <Clip text={kind} />}</span>
+        <span className="rq-kind">
+          <Clip text={kind} />
+        </span>
         <span className="rq-what">
           {summary ? (
             <span className="rq-cmd" title={summary}>
               {summary}
             </span>
           ) : (
-            <Clip text={what} />
+            rowWhat !== kind && <Clip text={rowWhat} />
           )}
           {onSelect ? (
             <Tip content={who}>
@@ -602,7 +610,6 @@ export function RequestCard({
       </div>
       <div className="rq-sub">
         {!card && factRow}
-        {!card && next && <p className="rq-next">{next}</p>}
         {files.length > 0 && (
           <ul
             className="rq-files"

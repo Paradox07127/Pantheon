@@ -4145,6 +4145,10 @@ export interface BoardModel {
       created_at: number;
       /** Absent until the run passed, failed or was rejected. */
       finished_at?: number;
+      /** The verdict the session handed in for the run's current turn; absent without one. */
+      verdict?: Omit<NonNullable<StepRun['verdict']>, 'session_id'>;
+      /** On a review step that started its review: each reviewer runtime and the verdict it handed in, if any. */
+      reviewers?: { runtime: string; verdict?: 'pass' | 'fail'; summary?: string }[];
     }[];
     dispatch_wait?:
       | 'upstream'

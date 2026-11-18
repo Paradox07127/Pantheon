@@ -1,5 +1,13 @@
-import type { ComponentProps, Dispatch, ReactNode, RefObject, SetStateAction } from 'react';
+import {
+  useRef,
+  type ComponentProps,
+  type Dispatch,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import type { BoardModel } from '@pantheon/protocol';
+import { useProjectBrief } from '../../data/project-brief';
 import { t } from '../../i18n';
 import { NeedsStrip, useNeedImprovements } from './BoardFrame';
 import { PanelBoundary, type BoardViewProps } from './BoardScreen';
@@ -14,12 +22,24 @@ import { TaskProgressStrip } from './ProgressCharts';
 import { UnsentEdits } from './UnsentEdits';
 
 /** The needs-you list with the proposals its items point at; the hooks sit here, as the page holds none. */
-function ProjectNeeds(props: Omit<ComponentProps<typeof NeedsStrip>, 'improvements'>) {
+export function ProjectNeeds({
+  projectId,
+  ...props
+}: Omit<ComponentProps<typeof NeedsStrip>, 'improvements'> & { projectId: string }) {
   const improvements = useNeedImprovements(props.model);
-  return <NeedsStrip {...props} improvements={improvements.read} />;
+  const brief = useProjectBrief(projectId);
+  // The since-you-left card above lands with its own read; shown before it, the list would move down.
+  const landed = useRef<string | null>(null);
+  if (brief.read !== null || !brief.loading) landed.current = projectId;
+  if (landed.current !== projectId) return null;
+  return (
+    <div className="bd-needs">
+      <NeedsStrip {...props} improvements={improvements.read} />
+    </div>
+  );
 }
 
-/** The now view's body: what needs the user, what happened since the user left, milestone and lead, plan proposals, the main view and the summary. */
+/** The now view's body: what happened since the user left, what needs the user, milestone and lead, plan proposals, the main view and the summary. */
 export function NowPage({
   model,
   shown,
@@ -63,23 +83,22 @@ export function NowPage({
 }) {
   return (
     <>
-      {model && projectId && actions && !!model.needs?.length && (
-        <div className="bd-needs">
-          <ProjectNeeds
-            model={model}
-            sessions={actions.sessions}
-            run={actions.run}
-            onOpenSession={onOpenSession}
-            stale={stale}
-          />
-        </div>
-      )}
       {model && projectId && (
         <BriefCard
           projectId={projectId}
           model={model}
           sessions={actions?.sessions ?? []}
           onOpenTask={selectFlow}
+        />
+      )}
+      {model && projectId && actions && !!model.needs?.length && (
+        <ProjectNeeds
+          projectId={projectId}
+          model={model}
+          sessions={actions.sessions}
+          run={actions.run}
+          onOpenSession={onOpenSession}
+          stale={stale}
         />
       )}
       {model && shown && (

@@ -368,7 +368,8 @@
     opacity: 0;
   }
 }
-.bf-brief > .bf-brief-h {
+/* Outranks `.panel > .cell`, which index.css sets later as a column. */
+.bf-brief > .cell.bf-brief-h {
   grid-column: 1 / -1;
   flex-direction: row;
   align-items: center;

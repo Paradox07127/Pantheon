@@ -180,7 +180,7 @@ export function NoticeFeed({
       };
       // The board reads its own list, which can land after this one.
       if (
-        wait.approval &&
+        (wait.approval || wait.strip) &&
         view.focused &&
         useShell.getState().screen === 'board' &&
         item.project_id === projectId

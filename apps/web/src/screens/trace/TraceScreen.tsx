@@ -44,6 +44,7 @@ import {
   type StateInterval,
 } from '../../data/trace';
 import { runCommand } from '../../data/commands';
+import { useDecisionsToday } from '../../data/decisions-for-user';
 import { reasonText, useNow } from '../../data/needs-you';
 import { useSessionList } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
@@ -883,6 +884,7 @@ function TraceView({
   const traceSlow = useDelayed(traceReading);
   const heatSlow = useDelayed(heatReading);
   const lineSlow = useDelayed(lineReading);
+  const approvedToday = useDecisionsToday(projectId ? [projectId] : [])[projectId ?? ''] ?? 0;
 
   const tabList = (
     <Tabs.List
@@ -891,7 +893,14 @@ function TraceView({
     >
       {TABS.map((v) => (
         <Tabs.Tab key={v.tab} className="tb-tab" value={v.tab}>
-          {v.label}
+          {v.tab === 'approved' && approvedToday > 0 ? (
+            <>
+              {v.label}
+              <span className="tb-ct">{approvedToday}</span>
+            </>
+          ) : (
+            v.label
+          )}
         </Tabs.Tab>
       ))}
     </Tabs.List>

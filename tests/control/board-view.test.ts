@@ -3651,3 +3651,67 @@ it('keeps only the newest two hundred collaboration events in time order', async
   expect(events[0]).toEqual({ at: now - 200, kind: 'handback', session_id: worker.id });
   expect(events.at(-1)).toEqual({ at: now - 1, kind: 'handback', session_id: worker.id });
 });
+
+it('copies the verdict of a step run and the reviewers of its review into the task row', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'exports', title: 'Export data', depends_on: [] }]);
+  const step = (id: string, extra: Partial<StepRun>) =>
+    f.store.insert<StepRun>('workflow_step_runs', {
+      id,
+      revision: 1,
+      project_id: f.project.id,
+      lead_session_id: lead.id,
+      task_id: 'exports',
+      generation: 1,
+      definition_version: 0,
+      slot: 'before_merge',
+      step: {
+        id,
+        title: id,
+        kind: { type: 'prompt', prompt: 'Check the export', expects: 'verdict' },
+      },
+      state: 'failed',
+      created_at: f.store.now(),
+      ...extra,
+    });
+  const verdict = {
+    verdict: 'fail' as const,
+    summary: 'The CSV header misses the currency column.',
+    evidence: [
+      { kind: 'command' as const, ref: 'node scripts/export.mjs', checked: true, exit_code: 1 },
+      { kind: 'file' as const, ref: 'src/export.ts', checked: false },
+    ],
+    session_id: 'export-worker',
+    turn_id: 'check-turn',
+    at: f.store.now(),
+  };
+  step('check', { turn_id: 'check-turn', verdict });
+  // A run sent back to pending keeps the verdict of a turn that is no longer its own.
+  step('stale', { state: 'pending', verdict });
+  f.store.insert<Review>('reviews', {
+    id: 'export-review',
+    revision: 1,
+    project_id: f.project.id,
+    round: 1,
+    runtimes: ['claude', 'codex'],
+    state: 'completed',
+    findings: [],
+    verdicts: [{ runtime: 'claude', verdict: 'pass', summary: 'Columns match.', at: 1 }],
+    session_ids: [],
+  });
+  step('review', {
+    step: { id: 'review', title: 'Review', kind: { type: 'review' } },
+    state: 'passed',
+    review_id: 'export-review',
+  });
+  const runs = f.control
+    .boardView(user, f.project.id, 1)
+    .tasks.find((task) => task.id === `${lead.id}:exports`)!.step_runs!;
+  const { session_id: _, ...shown } = verdict;
+  expect(runs.find((run) => run.id === 'check')!.verdict).toEqual(shown);
+  expect(runs.find((run) => run.id === 'stale')).not.toHaveProperty('verdict');
+  expect(runs.find((run) => run.id === 'review')!.reviewers).toEqual([
+    { runtime: 'claude', verdict: 'pass', summary: 'Columns match.' },
+    { runtime: 'codex' },
+  ]);
+});

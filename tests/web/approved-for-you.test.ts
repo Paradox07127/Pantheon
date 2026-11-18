@@ -205,6 +205,118 @@ describe('approved for you', () => {
     });
   });
 
+  describe('the type filter', () => {
+    const milestone: DecisionForUser = {
+      kind: 'power_used',
+      at: AT - 360_000,
+      power: 'accept_milestone',
+      subject: 'milestone-2',
+      session_id: 'session-lead',
+    };
+    const filter = (tree: unknown) =>
+      find(
+        tree as ReactElement,
+        (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.type'),
+      );
+    const segments = (tree: unknown) =>
+      nodes(filter(tree).props.children).filter((n) => n.props.value !== undefined);
+    const pick = (h: Awaited<ReturnType<typeof page>>, type: string) => {
+      filter(h.value).props.onValueChange(type);
+      h.render();
+    };
+    const actions = (tree: unknown) =>
+      rows(tree).map((r) => text(nodes(r).find((n) => n.props.role === 'cell')!));
+
+    beforeEach(() => {
+      decisions.alpha = [byLead, byRule, power, deleted, answered, milestone];
+    });
+
+    it('names each type with its count in the range read', async () => {
+      const h = await page();
+      expect(segments(h.value).map((s) => s.props['aria-label'])).toEqual([
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.all'), count: 6 }),
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.permission'), count: 3 }),
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.answer'), count: 1 }),
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.planChange'), count: 1 }),
+      ]);
+      expect(query).toHaveBeenCalledTimes(1);
+    });
+
+    it('is the same arrow-key radio group as the time range', async () => {
+      const h = await page();
+      const range = find(
+        h.value,
+        (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.range'),
+      );
+      expect(filter(h.value).type).toBe(range.type);
+      expect(segments(h.value).map((s) => s.type)).toEqual(
+        Array(4).fill(segments(h.value)[0]!.type),
+      );
+      expect(filter(h.value).props.value).toBe('all');
+    });
+
+    it('shows its segments without counts while the rows load', async () => {
+      query.mockImplementation(() => new Promise(() => {}));
+      const h = mount(() => ApprovedForYou({ projectId: 'never-read', tabs: null }));
+      await h.flush();
+      expect(filter(h.value).props['aria-busy']).toBe(true);
+      expect(segments(h.value).map((s) => [s.props['aria-label'], text(s)])).toEqual(
+        ['all', 'permission', 'answer', 'planChange'].map((k) => [
+          zh(`trace.approved.type.${k}`),
+          zh(`trace.approved.type.${k}`),
+        ]),
+      );
+    });
+
+    it.each([
+      [
+        'permissions',
+        'permission',
+        3,
+        ['git push origin refund-list', 'pnpm test', zh('trace.approved.prompt')],
+      ],
+      ['answers', 'answer', 1, [answered.question]],
+      ['plan changes', 'plan_change', 1, [zh('trace.approved.power.planChange')]],
+      [
+        'all, with a power that has no type of its own',
+        'all',
+        6,
+        [zh('trace.approved.power.acceptMilestone'), answered.question, 'pnpm test'],
+      ],
+    ])('narrows the table to %s', async (_name, type, count, words) => {
+      const h = await page();
+      pick(h, type);
+      const shown = actions(h.value);
+      expect(shown).toHaveLength(count);
+      for (const word of words) expect(shown.some((a) => a.includes(word))).toBe(true);
+    });
+
+    it('keeps a type with no rows selectable and shows the empty state', async () => {
+      decisions.alpha = [byLead];
+      const h = await page();
+      expect(segments(h.value)[2]!.props['aria-label']).toBe(
+        zhf('trace.approved.type.count', { type: zh('trace.approved.type.answer'), count: 0 }),
+      );
+      expect(filter(h.value).props.disabled).toBe(false);
+      pick(h, 'answer');
+      expect(text(h.value)).toContain(zh('trace.approved.empty'));
+      expect(() => table(h.value)).toThrow();
+    });
+
+    it('keeps the picked type when the range changes', async () => {
+      const h = await page();
+      pick(h, 'answer');
+      find(
+        h.value,
+        (n) => n.props.role !== 'radio' && n.props['aria-label'] === zh('trace.approved.range'),
+      ).props.onValueChange('week');
+      h.render();
+      await h.flush();
+      expect(filter(h.value).props.value).toBe('answer');
+      expect(actions(h.value)).toEqual([expect.stringContaining(answered.question)]);
+    });
+  });
+
   it('says so when nothing was decided without the user', async () => {
     decisions.alpha = [];
     const h = await page();

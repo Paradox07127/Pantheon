@@ -412,7 +412,11 @@ function ProjectMenu({
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" sideOffset={4} style={{ zIndex: 40 }}>
-          <Menu.Popup className="wmenu pjm pop">
+          <Menu.Popup
+            className="wmenu pjm pop"
+            // Base UI sets --available-height on the positioner; a long project list scrolls inside the window.
+            style={{ maxHeight: 'var(--available-height)', overflowY: 'auto' }}
+          >
             <label className="pjm-q">
               <Search className="ic-sm" aria-hidden="true" />
               <input
