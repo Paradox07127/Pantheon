@@ -73,14 +73,76 @@ export interface SequenceModel {
   autonumber: boolean;
 }
 
+export interface UmlMember {
+  visibility: '' | '+' | '-' | '#' | '~';
+  /** A method's name has its parameters in parentheses. */
+  name: string;
+  /** An attribute's type, a method's return type; empty when the source gives none. */
+  type: string;
+  classifier?: 'static' | 'abstract';
+}
+export interface UmlClass {
+  id: string;
+  label: string;
+  generic?: string;
+  /** Such as `interface`, without the guillemets. */
+  annotations: string[];
+  attributes: UmlMember[];
+  methods: UmlMember[];
+  namespace?: string;
+}
+/** The mark where a relation meets a class. */
+export type RelationEnd = 'inheritance' | 'composition' | 'aggregation' | 'arrow';
+export type RelationKind =
+  | 'inheritance'
+  | 'realization'
+  | 'composition'
+  | 'aggregation'
+  | 'association'
+  | 'dependency'
+  | 'link';
+export interface UmlRelation {
+  /** A triangle or diamond is at `from`: the parent or the whole. */
+  from: string;
+  to: string;
+  kind: RelationKind;
+  fromEnd?: RelationEnd;
+  toEnd?: RelationEnd;
+  dashed: boolean;
+  label: string;
+  fromCardinality?: string;
+  toCardinality?: string;
+}
+export interface UmlNote {
+  lines: string[];
+  /** The class it is attached to; a note without one stands alone. */
+  for?: string;
+  namespace?: string;
+}
+export interface UmlNamespace {
+  id: string;
+  label: string;
+  parent?: string;
+}
+export interface ClassModel {
+  classes: UmlClass[];
+  relations: UmlRelation[];
+  notes: UmlNote[];
+  namespaces: UmlNamespace[];
+  /** Only when the source sets one. */
+  direction?: 'LR' | 'RL' | 'TB' | 'BT';
+}
+
 export type MermaidModel =
   | { type: 'er'; model: ErModel }
   | { type: 'sequence'; model: SequenceModel }
+  | { type: 'class'; model: ClassModel }
   | { type: 'flowchart' | 'state'; model: GraphSpec };
 
 const HEADERS: Record<string, MermaidModel['type']> = {
   erDiagram: 'er',
   sequenceDiagram: 'sequence',
+  classDiagram: 'class',
   flowchart: 'flowchart',
   graph: 'flowchart',
   stateDiagram: 'state',
@@ -95,6 +157,8 @@ const UNSHOWN: readonly RegExp[] = [
   /\bfa[bklrs]?:fa-[\w-]/,
   /@\{[^}]*\b(?:icon|img)\s*:/,
 ];
+/** What a class diagram may use that Pantheon's class cards cannot show: lollipop interfaces. */
+const CLASS_UNSHOWN: readonly RegExp[] = [/\(\)[ \t]*(?:--|\.\.)|(?:--|\.\.)[ \t]*\(\)/];
 
 /** The diagram's type when its first statement is a header Pantheon draws itself. */
 export function nativeType(source: string): MermaidModel['type'] | undefined {
@@ -105,12 +169,13 @@ export function nativeType(source: string): MermaidModel['type'] | undefined {
     if (at === 0) return undefined;
   }
   while (at < lines.length && (!lines[at]!.trim() || lines[at]!.trim().startsWith('%%'))) at++;
-  const header = /^\s*(erDiagram|sequenceDiagram|flowchart|graph|stateDiagram)\b/.exec(
+  const header = /^\s*(erDiagram|sequenceDiagram|classDiagram|flowchart|graph|stateDiagram)\b/.exec(
     lines[at] ?? '',
   )?.[1];
   const type = header === undefined ? undefined : HEADERS[header];
-  const graph = type === 'flowchart' || type === 'state';
-  return graph && UNSHOWN.some((feature) => feature.test(source)) ? undefined : type;
+  const unshown =
+    type === 'class' ? CLASS_UNSHOWN : type === 'flowchart' || type === 'state' ? UNSHOWN : [];
+  return unshown.some((feature) => feature.test(source)) ? undefined : type;
 }
 
 /** A label's lines: mermaid breaks lines with `<br>`; other markup is dropped. */
@@ -312,6 +377,150 @@ function sequenceModel(db: SequenceDb): SequenceModel {
   };
 }
 
+interface ClassDbMember {
+  memberType: 'method' | 'attribute';
+  visibility: UmlMember['visibility'];
+  /** An attribute's whole text, a method's name. */
+  id: string;
+  classifier: string;
+  parameters?: string;
+  returnType?: string;
+}
+type ClassDbEnd = number | 'none';
+interface ClassDb {
+  relationType: { AGGREGATION: number; EXTENSION: number; COMPOSITION: number; DEPENDENCY: number };
+  lineType: { DOTTED_LINE: number };
+  getDirection(): string;
+  getClasses(): Map<
+    string,
+    {
+      id: string;
+      label: string;
+      type: string;
+      annotations: string[];
+      members: ClassDbMember[];
+      methods: ClassDbMember[];
+      parent?: string;
+    }
+  >;
+  getRelations(): {
+    id1: string;
+    id2: string;
+    relationTitle1: string;
+    relationTitle2: string;
+    title?: string;
+    relation: { type1: ClassDbEnd; type2: ClassDbEnd; lineType: number };
+  }[];
+  getNotes(): Map<string, { class?: string; text: string; parent?: string }>;
+  getNamespaces(): Map<string, { id: string; label: string; parent?: string }>;
+}
+
+const CLASSIFIERS: Record<string, UmlMember['classifier']> = { $: 'static', '*': 'abstract' };
+/** Mermaid writes a generic between tildes. */
+const generics = (text: string) => text.replace(/~([^~]*)~/g, '<$1>');
+
+/** An attribute is `type name` or `name: type`. */
+function umlMember(member: ClassDbMember): UmlMember {
+  let [name, type] = [`${member.id}(${member.parameters ?? ''})`, member.returnType ?? ''];
+  if (member.memberType === 'attribute') {
+    const text = member.id.trim();
+    const colon = text.indexOf(':');
+    const space = text.lastIndexOf(' ');
+    [name, type] =
+      colon >= 0
+        ? [text.slice(0, colon).trim(), text.slice(colon + 1).trim()]
+        : space >= 0
+          ? [text.slice(space + 1), text.slice(0, space).trim()]
+          : [text, ''];
+  }
+  const classifier = CLASSIFIERS[member.classifier];
+  return {
+    visibility: member.visibility,
+    name: generics(name),
+    type: generics(type),
+    ...(classifier && { classifier }),
+  };
+}
+
+/** Styles, class definitions, clicks and links are left out. */
+function classModel(db: ClassDb, source: string): ClassModel {
+  const R = db.relationType;
+  const ends: Record<number, RelationEnd> = {
+    [R.EXTENSION]: 'inheritance',
+    [R.COMPOSITION]: 'composition',
+    [R.AGGREGATION]: 'aggregation',
+    [R.DEPENDENCY]: 'arrow',
+  };
+  const endOf = (type: ClassDbEnd) => (type === 'none' ? undefined : ends[type]);
+  const cardinality = (title: string) => (title && title !== 'none' ? title : undefined);
+  const classes = [...db.getClasses().values()];
+  const parents = new Map(classes.map((c) => [c.id, c.parent]));
+  return {
+    classes: classes.map((c) => ({
+      id: c.id,
+      label: labelLines(c.label).join(' ') || c.id,
+      ...(c.type && { generic: generics(c.type) }),
+      annotations: [...c.annotations],
+      attributes: c.members.map(umlMember),
+      methods: c.methods.map(umlMember),
+      ...(c.parent !== undefined && { namespace: c.parent }),
+    })),
+    relations: db.getRelations().map((r) => {
+      let ends = [
+        { id: r.id1, end: endOf(r.relation.type1), cardinality: cardinality(r.relationTitle1) },
+        { id: r.id2, end: endOf(r.relation.type2), cardinality: cardinality(r.relationTitle2) },
+      ];
+      // A relation runs from its triangle or diamond, so a parent or whole lays out first.
+      if (!ends[0]!.end && ends[1]!.end && ends[1]!.end !== 'arrow') ends = ends.reverse();
+      const [from, to] = ends as [(typeof ends)[number], (typeof ends)[number]];
+      const dashed = r.relation.lineType === db.lineType.DOTTED_LINE;
+      const marks = [from.end, to.end];
+      const kind: RelationKind = marks.includes('inheritance')
+        ? dashed
+          ? 'realization'
+          : 'inheritance'
+        : marks.includes('composition')
+          ? 'composition'
+          : marks.includes('aggregation')
+            ? 'aggregation'
+            : marks.includes('arrow')
+              ? dashed
+                ? 'dependency'
+                : 'association'
+              : 'link';
+      return {
+        from: from.id,
+        to: to.id,
+        kind,
+        ...(from.end && { fromEnd: from.end }),
+        ...(to.end && { toEnd: to.end }),
+        dashed,
+        label: labelLines(r.title ?? '').join(' '),
+        ...(from.cardinality && { fromCardinality: from.cardinality }),
+        ...(to.cardinality && { toCardinality: to.cardinality }),
+      };
+    }),
+    notes: [...db.getNotes().values()].map((note) => {
+      const namespace = note.parent ?? (note.class && parents.get(note.class));
+      return {
+        // Mermaid breaks a note's lines at a written `\n`.
+        lines: labelLines(note.text.replace(/\\n/g, '\n')),
+        ...(note.class && { for: note.class }),
+        ...(namespace && { namespace }),
+      };
+    }),
+    namespaces: [...db.getNamespaces().values()].map((namespace) => ({
+      id: namespace.id,
+      label: labelLines(namespace.label).join(' ') || namespace.id,
+      ...(namespace.parent !== undefined && { parent: namespace.parent }),
+    })),
+    // Mermaid gives a direction whether or not the source sets one.
+    ...(/^\s*direction\s/m.test(source) && {
+      direction: db.getDirection() as NonNullable<ClassModel['direction']>,
+    }),
+  };
+}
+
 const KINDS: readonly string[] = [
   'client',
   'service',
@@ -435,6 +644,7 @@ function flowModel(db: FlowDb): GraphSpec {
 
 interface StateDb {
   getDirection(): string;
+  getRootDocV2(): { doc?: { stmt: string }[] };
   getData(): {
     nodes: {
       id: string;
@@ -487,7 +697,9 @@ function stateModel(db: StateDb): GraphSpec {
     const label = labelLines(edge.label ?? '').join(' ');
     return { from: edge.start, to: edge.end, ...(label && { label }) };
   });
-  return graphOf(nodes, edges, groups, directionOf(db.getDirection()));
+  // Mermaid gives a direction whether or not the source sets one at the top.
+  const set = db.getRootDocV2().doc?.some((statement) => statement.stmt === 'dir');
+  return graphOf(nodes, edges, groups, set ? directionOf(db.getDirection()) : undefined);
 }
 
 /**
@@ -505,6 +717,8 @@ export async function parseMermaid(
       return { type, model: erModel(db as unknown as ErDb) };
     case 'sequence':
       return { type, model: sequenceModel(db as unknown as SequenceDb) };
+    case 'class':
+      return { type, model: classModel(db as unknown as ClassDb, source) };
     case 'flowchart':
       return { type, model: flowModel(db as unknown as FlowDb) };
     case 'state':

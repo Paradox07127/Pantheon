@@ -1,10 +1,15 @@
-/* ER and sequence diagrams Pantheon draws from mermaid's parse, on a dot grid. */
+/* ER, sequence and class diagrams Pantheon draws from mermaid's parse, on a dot grid. */
+.vis-nw {
+  display: flex;
+  flex-direction: column;
+}
 .vis-nd {
   display: grid;
+  flex: 1;
+  min-height: 0;
   /* A diagram larger than the box starts at its top-left corner. */
   place-items: safe center;
   width: 100%;
-  height: 100%;
   overflow: auto;
 }
 .vis-nd-svg {
@@ -261,4 +266,119 @@
   font-size: var(--fs-xs);
   fill: var(--tx2);
   text-anchor: middle;
+}
+
+/* Class cards: the ER table card, members in mono, annotations as a tag in the header. */
+.vis-cl-v {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  fill: var(--mu);
+}
+.vis-cl-mn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  fill: var(--tx);
+}
+.vis-cl-mn[data-classifier='static'] {
+  text-decoration: underline;
+}
+.vis-cl-mn[data-classifier='abstract'] {
+  font-style: italic;
+}
+.vis-cl-tag rect {
+  fill: var(--sf);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-cl-tag text {
+  font-size: var(--fs-xs);
+  fill: var(--tx2);
+  text-anchor: middle;
+}
+
+/* Relations: dashed for realization and dependency; hollow, filled and open UML marks. */
+.vis-cl-r {
+  --ge: var(--mu);
+}
+.vis-cl-p {
+  fill: none;
+  stroke: var(--ge);
+  stroke-width: 1px;
+}
+.vis-cl-r[data-dashed='true'] .vis-cl-p {
+  stroke-dasharray: 4 3;
+}
+.vis-cl-m {
+  fill: var(--sf);
+  stroke: var(--ge);
+  stroke-width: 1px;
+  stroke-linejoin: round;
+}
+.vis-cl-m[data-end='composition'] {
+  fill: var(--ge);
+}
+.vis-cl-m[data-end='arrow'] {
+  fill: none;
+}
+/* Cardinalities mask the lines they cross. */
+.vis-cl-c {
+  font-size: var(--fs-xs);
+  fill: var(--tx2);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--sf);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.vis-cl-nl {
+  fill: none;
+  stroke: var(--bd3);
+  stroke-width: 1px;
+  stroke-dasharray: 1 3;
+}
+
+/* The legend row under the drawing: what it uses, with icons and samples. */
+.vis-nl {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-4);
+  margin: 0;
+  padding: var(--sp-1) var(--sp-4) var(--sp-2);
+  list-style: none;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--tx2);
+}
+.vis-nl > li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.vis-nl-ic {
+  width: 14px;
+  height: 14px;
+  color: var(--k);
+}
+.vis-nl-ln {
+  width: 20px;
+  height: 8px;
+  overflow: visible;
+}
+.vis-nl-sm {
+  width: 32px;
+  height: 16px;
+  overflow: visible;
+}
+.vis-nl-n {
+  font-variant-numeric: tabular-nums;
+  color: var(--mu);
+}
+.vis-nl-k {
+  padding: 0 5px;
+  border: var(--hair) solid var(--bd);
+  border-radius: calc(var(--r-sm) - 2px);
+  background: var(--sf2);
+  font-family: var(--font-mono);
 }

@@ -11,14 +11,14 @@ import {
 import './native-diagram.css';
 
 /** The table card's corner, `--r-md`. */
-const RADIUS = 10;
+export const RADIUS = 10;
 const BADGE = { inset: 8, height: TABLE.badge } as const;
 
 /** Hover focus: the hovered table's relationships stand out, tables off them dim. */
 type Focus = 'on' | 'dim' | undefined;
 
 /** A band `height` high at `y` with its top or bottom corners rounded to the card's. */
-function band(x: number, y: number, width: number, height: number, round: 'top' | 'bottom') {
+export function band(x: number, y: number, width: number, height: number, round: 'top' | 'bottom') {
   const r = RADIUS;
   return round === 'top'
     ? `M${x} ${y + height}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + width - r}Q${x + width} ${y} ${x + width} ${y + r}V${y + height}Z`

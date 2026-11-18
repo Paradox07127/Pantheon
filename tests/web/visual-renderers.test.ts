@@ -365,13 +365,13 @@ describe('Vega-Lite chart', () => {
 
 describe('Mermaid diagram', () => {
   it('renders in strict security mode and shows the SVG it returns', async () => {
-    const spec = { source: 'classDiagram\nA <|-- B' };
+    const spec = { source: 'classDiagram\nA --() B' };
     const h = mount(() => MermaidDiagram({ spec, height: 280 }));
     await settle(h);
     expect(mm.initialize).toHaveBeenCalledWith(
       expect.objectContaining({ startOnLoad: false, securityLevel: 'strict', theme: 'base' }),
     );
-    expect(mm.render).toHaveBeenCalledWith(expect.any(String), 'classDiagram\nA <|-- B');
+    expect(mm.render).toHaveBeenCalledWith(expect.any(String), 'classDiagram\nA --() B');
     const svg = find(h.value, (n) => n.props.dangerouslySetInnerHTML);
     expect(svg.props.dangerouslySetInnerHTML.__html).toBe('<svg data-drawn="yes"></svg>');
   });
@@ -386,7 +386,7 @@ describe('Mermaid diagram', () => {
     ['never enlarges a small diagram', '0 0 300 150', [300, 150]],
   ])('%s', async (_name, viewBox, [width, height]) => {
     mm.render.mockResolvedValueOnce({ svg: `<svg viewBox="${viewBox}"></svg>` });
-    const spec = { source: 'classDiagram\nA <|-- B' };
+    const spec = { source: 'classDiagram\nA --() B' };
     const h = mount(() => MermaidDiagram({ spec, height: 720 }));
     sized(h, 1200, 720);
     await settle(h);
@@ -395,7 +395,7 @@ describe('Mermaid diagram', () => {
   });
 
   it('colours notes, table rows, actors and labels from the app tokens', async () => {
-    const spec = { source: 'classDiagram\nA <|-- B' };
+    const spec = { source: 'classDiagram\nA --() B' };
     const h = mount(() => MermaidDiagram({ spec, height: 280 }));
     await settle(h);
     const { themeVariables } = mm.initialize.mock.calls[0]![0];

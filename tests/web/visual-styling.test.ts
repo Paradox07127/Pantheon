@@ -159,7 +159,10 @@ describe('mermaid node kinds', () => {
       'a state diagram that uses no kind',
       'stateDiagram-v2\n  state split <<fork>>\n  store --> split : client call',
     ],
-    ['a class diagram', 'classDiagram\n  class Store\n  class Queue:::store'],
+    [
+      'a class diagram with a lollipop interface',
+      'classDiagram\n  class Store\n  class Queue:::store\n  Store --() Queue',
+    ],
     ['a flowchart that uses no kind', 'flowchart LR\n  a[fa:fa-user A] --> b'],
   ])('leaves the source of %s as written', async (_name, source) => {
     const { rendered } = await drawn(source);

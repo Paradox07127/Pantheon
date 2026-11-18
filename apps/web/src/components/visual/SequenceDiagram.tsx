@@ -1,18 +1,7 @@
-import type { ComponentType } from 'react';
-import {
-  AppWindow,
-  Box,
-  Cog,
-  Database,
-  Layers,
-  ListOrdered,
-  User,
-  type LucideProps,
-} from 'lucide-react';
 import { t } from '../../i18n';
-import type { ParticipantType } from './mermaid-model';
 import {
   CARD,
+  PARTICIPANT_KIND,
   chipWidth,
   segmentWord,
   type SeqLayout,
@@ -20,40 +9,22 @@ import {
   type SeqParticipant,
   type SeqSegment,
 } from './mermaid-layout';
+import { KIND_ICON } from './NativeLegend';
 import './native-diagram.css';
 
 const HEAD = 6;
 const LINE = 16;
 const ICON = 14;
 
-const TYPE_ICON: Record<ParticipantType, ComponentType<LucideProps>> = {
-  actor: User,
-  boundary: AppWindow,
-  collections: Layers,
-  control: Cog,
-  database: Database,
-  entity: Box,
-  queue: ListOrdered,
-};
-/** The graph node kind whose colour a participant type takes. */
-const TYPE_KIND: Record<ParticipantType, string> = {
-  actor: 'external',
-  boundary: 'client',
-  collections: 'store',
-  control: 'service',
-  database: 'store',
-  entity: 'service',
-  queue: 'queue',
-};
-
 function Card({ at, top, height }: { at: SeqParticipant; top: number; height: number }) {
   const { participant, x, width } = at;
-  const Icon = participant.type && TYPE_ICON[participant.type];
+  const kind = participant.type && PARTICIPANT_KIND[participant.type];
+  const Icon = kind && KIND_ICON[kind];
   const left = x - width / 2;
   const textAt = left + (Icon ? CARD.icon : CARD.plain);
   const described = participant.description !== undefined;
   return (
-    <g className="vis-sq-n" data-kind={participant.type && TYPE_KIND[participant.type]}>
+    <g className="vis-sq-n" data-kind={kind}>
       <rect className="vis-sq-nb" x={left} y={top} width={width} height={height} rx={7} />
       {Icon && (
         <Icon

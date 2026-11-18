@@ -1,15 +1,23 @@
 import type { ElkNode } from 'elkjs/lib/elk-api';
+import type { NodeKind } from './graph-layout';
 import {
   labelLines,
   type Cardinality,
+  type ClassModel,
   type ErEntity,
   type ErModel,
   type ErRelationship,
+  type KeyKind,
   type MessageKind,
   type Participant,
+  type ParticipantType,
+  type RelationEnd,
+  type RelationKind,
   type SegmentKind,
   type SequenceItem,
   type SequenceModel,
+  type UmlClass,
+  type UmlRelation,
 } from './mermaid-model';
 
 export interface Point {
@@ -38,6 +46,40 @@ const title = (text: string) => textWidth(text, 13, 7.6);
 /** The width of a label pill or chip around 12px text. */
 export const pillWidth = (text: string) => Math.ceil(xs(text) + 14);
 
+/** The legend row's height under the drawing. */
+export const LEGEND = 28;
+
+/** What a legend lists: what the drawing uses, each kind once. */
+export type LegendEntry =
+  | { item: 'kind'; kind: NodeKind; count: number }
+  | { item: 'message'; kind: MessageKind }
+  | { item: 'key'; key: KeyKind }
+  | { item: 'end'; cardinality: Cardinality }
+  | { item: 'relation'; kind: RelationKind };
+
+/** A legend of fewer than two entries is not shown. */
+const legendOf = (entries: LegendEntry[]) => (entries.length >= 2 ? entries : []);
+/** The room a drawing has above its legend. */
+const above = (room: Point, legend: LegendEntry[]) => ({
+  x: room.x,
+  y: room.y - (legend.length ? LEGEND : 0),
+});
+
+const KEYS: readonly KeyKind[] = ['PK', 'FK', 'UK'];
+const CARDINALITIES: readonly Cardinality[] = ['one', 'zero-or-one', 'one-or-more', 'zero-or-more'];
+
+function erLegend(model: ErModel): LegendEntry[] {
+  const keys = new Set(model.entities.flatMap((e) => e.attributes.flatMap((a) => a.keys)));
+  const ends = new Set(model.relationships.flatMap((r) => [r.fromCardinality, r.toCardinality]));
+  return legendOf([
+    ...KEYS.filter((key) => keys.has(key)).map((key): LegendEntry => ({ item: 'key', key })),
+    ...CARDINALITIES.filter((c) => ends.has(c)).map((cardinality): LegendEntry => ({
+      item: 'end',
+      cardinality,
+    })),
+  ]);
+}
+
 // ER tables: a header band, then a row per attribute.
 export const TABLE = { head: 32, row: 24, min: 208, side: 12, badge: 18 } as const;
 
@@ -57,6 +99,7 @@ export interface ErLayout {
   height: number;
   tables: ErTable[];
   lines: ErLine[];
+  legend: LegendEntry[];
 }
 
 const keyText = (keys: readonly string[]) => keys.join(',');
@@ -101,13 +144,14 @@ export const fitZoom = (size: { width: number; height: number }, room: Point): n
 
 /**
  * Lays the tables out with ELK's layered algorithm across and down, and keeps the one that fits
- * `room` at the larger zoom. Coordinates include `PAD` on every side.
+ * `room` above its legend at the larger zoom. Coordinates include `PAD` on every side.
  */
 export async function layoutEr(model: ErModel, room: Point): Promise<ErLayout> {
   const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
   const elk = new ELK();
   const index = new Map(model.entities.map((entity, i) => [entity.id, i]));
   const sizes = model.entities.map(tableSize);
+  const legend = erLegend(model);
   const once = async (direction: 'RIGHT' | 'DOWN'): Promise<ErLayout> => {
     const root: ElkNode = {
       id: 'root',
@@ -157,10 +201,12 @@ export async function layoutEr(model: ErModel, room: Point): Promise<ErLayout> {
           }),
         };
       }),
+      legend,
     };
   };
   const [across, down] = await Promise.all([once('RIGHT'), once('DOWN')]);
-  return fitZoom(down, room) > fitZoom(across, room) + 1e-3 ? down : across;
+  const plot = above(room, legend);
+  return fitZoom(down, plot) > fitZoom(across, plot) + 1e-3 ? down : across;
 }
 
 /**
@@ -245,6 +291,42 @@ export interface SeqLayout {
   activations: Box[];
   messages: SeqMessage[];
   notes: SeqNote[];
+  legend: LegendEntry[];
+}
+
+/** The graph node kind whose colour and icon a participant type takes. */
+export const PARTICIPANT_KIND: Record<ParticipantType, NodeKind> = {
+  actor: 'client',
+  boundary: 'service',
+  control: 'service',
+  entity: 'service',
+  database: 'store',
+  collections: 'store',
+  queue: 'queue',
+};
+const NODE_KINDS: readonly NodeKind[] = [
+  'client',
+  'service',
+  'store',
+  'queue',
+  'external',
+  'policy',
+];
+const MESSAGE_KINDS: readonly MessageKind[] = ['sync', 'async', 'reply', 'dotted'];
+
+function sequenceLegend(participants: Participant[], messages: SeqMessage[]): LegendEntry[] {
+  const kinds = participants.flatMap((p) => (p.type ? [PARTICIPANT_KIND[p.type]] : []));
+  const used = new Set(messages.map((m) => m.kind));
+  return legendOf([
+    ...NODE_KINDS.flatMap((kind): LegendEntry[] => {
+      const count = kinds.filter((k) => k === kind).length;
+      return count ? [{ item: 'kind', kind, count }] : [];
+    }),
+    ...MESSAGE_KINDS.filter((kind) => used.has(kind)).map((kind): LegendEntry => ({
+      item: 'message',
+      kind,
+    })),
+  ]);
 }
 
 const cardWidth = (p: Participant) =>
@@ -510,5 +592,243 @@ export function layoutSequence(model: SequenceModel): SeqLayout {
     activations,
     messages,
     notes,
+    legend: sequenceLegend(model.participants, messages),
   };
 }
+
+// Class diagrams: the ER table card with a header, then a section of attributes and of methods.
+
+export const CLASS = { head: 32, row: 20, pad: 4, side: 12, min: 120, visibility: 14 } as const;
+/** Room above a namespace's members for its label. */
+const NAMESPACE_HEAD = 32;
+
+export interface ClassCard extends Box {
+  uml: UmlClass;
+  /** The annotations in guillemets, a tag in the header. */
+  tag: string;
+  /** Where member names start; visibility glyphs sit before it. */
+  nameAt: number;
+}
+export interface ClassLine {
+  relation: UmlRelation;
+  /** The orthogonal route from the `from` class's border to the `to` class's. */
+  points: Point[];
+  label_box?: Box;
+}
+export interface ClassNamespace extends Box {
+  label: string;
+  /** 0 for a top-level namespace. */
+  depth: number;
+}
+export interface ClassLayout {
+  width: number;
+  height: number;
+  classes: ClassCard[];
+  notes: SeqNote[];
+  /** The routes from notes to the classes they are for. */
+  attachments: Point[][];
+  lines: ClassLine[];
+  namespaces: ClassNamespace[];
+  legend: LegendEntry[];
+}
+
+const sectionHeight = (rows: number) => (rows ? CLASS.pad * 2 + rows * CLASS.row : 0);
+
+function classSize(uml: UmlClass) {
+  const tag = uml.annotations.map((a) => `«${a}»`).join(' ');
+  const members = [...uml.attributes, ...uml.methods];
+  const nameAt = CLASS.side + (members.some((m) => m.visibility) ? CLASS.visibility : 0);
+  const head =
+    CLASS.side +
+    title(uml.label) +
+    (uml.generic ? 4 + xs(`<${uml.generic}>`) : 0) +
+    (tag ? 12 + pillWidth(tag) : 0) +
+    CLASS.side;
+  const rows = members.map(
+    (m) => nameAt + mono(m.name) + (m.type ? 16 + mono(m.type) : 0) + CLASS.side,
+  );
+  return {
+    tag,
+    nameAt,
+    width: Math.ceil(Math.max(CLASS.min, head, ...rows)),
+    height: CLASS.head + sectionHeight(uml.attributes.length) + sectionHeight(uml.methods.length),
+  };
+}
+
+const ELK_DIRECTION = { LR: 'RIGHT', RL: 'LEFT', TB: 'DOWN', BT: 'UP' } as const;
+const RELATION_KINDS: readonly RelationKind[] = [
+  'inheritance',
+  'realization',
+  'composition',
+  'aggregation',
+  'association',
+  'dependency',
+  'link',
+];
+
+/**
+ * Lays the classes out with ELK's layered algorithm, namespaces as nested boxes, in the source's
+ * direction; without one, across and down, keeping the one that fits `room` above its legend at
+ * the larger zoom. Coordinates include `PAD` on every side.
+ */
+export async function layoutClass(model: ClassModel, room: Point): Promise<ClassLayout> {
+  const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
+  const elk = new ELK();
+  const index = new Map(model.classes.map((c, i) => [c.id, i]));
+  const sizes = model.classes.map(classSize);
+  const namespaces = new Map(model.namespaces.map((n) => [n.id, n]));
+  const used = new Set(model.relations.map((r) => r.kind));
+  const legend = legendOf(
+    RELATION_KINDS.filter((kind) => used.has(kind)).map((kind): LegendEntry => ({
+      item: 'relation',
+      kind,
+    })),
+  );
+  const once = async (direction: string): Promise<ClassLayout> => {
+    const root: ElkNode = {
+      id: 'root',
+      layoutOptions: {
+        ...ER_OPTIONS,
+        'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+        'elk.direction': direction,
+      },
+      children: [],
+    };
+    const groups = new Map<string, ElkNode>();
+    const inside = (id: string | undefined): ElkNode => {
+      const namespace = id === undefined ? undefined : namespaces.get(id);
+      if (!namespace) return root;
+      let group = groups.get(namespace.id);
+      if (!group) {
+        group = {
+          id: `g:${namespace.id}`,
+          layoutOptions: {
+            'elk.padding': `[top=${NAMESPACE_HEAD},left=12,bottom=12,right=12]`,
+          },
+          children: [],
+        };
+        groups.set(namespace.id, group);
+        inside(namespace.parent).children!.push(group);
+      }
+      return group;
+    };
+    sizes.forEach((size, i) =>
+      inside(model.classes[i]!.namespace).children!.push({
+        id: `c${i}`,
+        width: size.width,
+        height: size.height,
+      }),
+    );
+    model.notes.forEach((note, i) =>
+      inside(note.namespace).children!.push({
+        id: `n${i}`,
+        width: noteWidth(note.lines),
+        height: Math.max(CARD.one, note.lines.length * LINE + NOTE_PAD * 2),
+      }),
+    );
+    root.edges = [
+      ...model.relations.map((r, i) => ({
+        id: `r${i}`,
+        sources: [`c${index.get(r.from)}`],
+        targets: [`c${index.get(r.to)}`],
+        ...(r.label && {
+          labels: [{ id: `l${i}`, text: r.label, width: pillWidth(r.label), height: 18 }],
+        }),
+      })),
+      ...model.notes.flatMap((note, i) =>
+        note.for === undefined
+          ? []
+          : [{ id: `a${i}`, sources: [`n${i}`], targets: [`c${index.get(note.for)}`] }],
+      ),
+    ];
+    const laid = await elk.layout(root);
+    const shapes = new Map<string, ElkNode>();
+    const depths = new Map<string, number>();
+    const walk = (shape: ElkNode, depth: number) => {
+      for (const child of shape.children ?? []) {
+        shapes.set(child.id, child);
+        depths.set(child.id, depth);
+        walk(child, depth + 1);
+      }
+    };
+    walk(laid, 0);
+    const routes = new Map((laid.edges ?? []).map((edge) => [edge.id, edge]));
+    const at = (p: Point) => ({ x: p.x + PAD, y: p.y + PAD });
+    const box = (shape: Partial<Box>): Box => ({
+      ...at({ x: shape.x ?? 0, y: shape.y ?? 0 }),
+      width: shape.width ?? 0,
+      height: shape.height ?? 0,
+    });
+    const route = (id: string) => {
+      const section = routes.get(id)?.sections?.[0];
+      return section
+        ? [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map(at)
+        : [];
+    };
+    return {
+      width: (laid.width ?? 0) + PAD * 2,
+      height: (laid.height ?? 0) + PAD * 2,
+      classes: model.classes.map((uml, i) => ({
+        uml,
+        tag: sizes[i]!.tag,
+        nameAt: sizes[i]!.nameAt,
+        ...box(shapes.get(`c${i}`)!),
+      })),
+      notes: model.notes.map((note, i) => ({ lines: note.lines, ...box(shapes.get(`n${i}`)!) })),
+      attachments: model.notes.flatMap((note, i) =>
+        note.for === undefined ? [] : [route(`a${i}`)],
+      ),
+      lines: model.relations.map((relation, i) => {
+        const label = routes.get(`r${i}`)?.labels?.[0];
+        return { relation, points: route(`r${i}`), ...(label && { label_box: box(label) }) };
+      }),
+      namespaces: model.namespaces
+        .filter((namespace) => groups.has(namespace.id))
+        .map((namespace) => ({
+          label: namespace.label,
+          depth: depths.get(`g:${namespace.id}`)!,
+          ...box(shapes.get(`g:${namespace.id}`)!),
+        }))
+        .sort((a, b) => a.depth - b.depth),
+      legend,
+    };
+  };
+  if (model.direction) return once(ELK_DIRECTION[model.direction]);
+  const [across, down] = await Promise.all([once('RIGHT'), once('DOWN')]);
+  const plot = above(room, legend);
+  return fitZoom(down, plot) > fitZoom(across, plot) + 1e-3 ? down : across;
+}
+
+/** A point `d` back from `end` toward `from`, and `side` across the line. */
+const backFrom = (end: Point, from: Point) => {
+  const length = Math.hypot(from.x - end.x, from.y - end.y) || 1;
+  const [ux, uy] = [(from.x - end.x) / length, (from.y - end.y) / length];
+  return (d: number, side: number) => ({
+    x: end.x + ux * d - uy * side,
+    y: end.y + uy * d + ux * side,
+  });
+};
+
+/**
+ * The UML mark for the end of a line at `end`, coming from `from`: a triangle for inheritance, a
+ * diamond for composition and aggregation, an open arrow for association and dependency.
+ */
+export function relationMark(end: Point, from: Point, mark: RelationEnd): string {
+  const along = backFrom(end, from);
+  const at = (d: number, side: number) => {
+    const p = along(d, side);
+    return `${p.x} ${p.y}`;
+  };
+  switch (mark) {
+    case 'inheritance':
+      return `M${at(0, 0)}L${at(12, 6)}L${at(12, -6)}Z`;
+    case 'composition':
+    case 'aggregation':
+      return `M${at(0, 0)}L${at(8, 5)}L${at(16, 0)}L${at(8, -5)}Z`;
+    case 'arrow':
+      return `M${at(9, 5)}L${at(0, 0)}L${at(9, -5)}`;
+  }
+}
+
+/** Where a cardinality reads at the end of a line at `end`: past the mark, beside the line. */
+export const cardinalityAt = (end: Point, from: Point): Point => backFrom(end, from)(26, 12);

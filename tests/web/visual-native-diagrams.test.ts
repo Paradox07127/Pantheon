@@ -90,6 +90,19 @@ const words = (node: ReactElement<any>): string =>
     .filter((c) => typeof c === 'string' || typeof c === 'number')
     .join(' ');
 
+/** The words of each entry in the legend under a diagram Pantheon draws; none without one. */
+function legend(h: HookHost<any>): string[] {
+  const shown = nodes(h.value).find(
+    (n) => typeof n.type === 'function' && n.type.name === 'NativeLegend',
+  );
+  if (!shown) return [];
+  const list = drawn(shown).find((n) => n.type === 'ul')!;
+  expect(list.props['aria-label']).toBe(zh('visual.graph.legend'));
+  return drawn(list.props.children)
+    .filter((n) => n.type === 'li')
+    .map(words);
+}
+
 /** Draws a source in a box of the given size and returns what the diagram component drew. */
 async function picture(source: string, component: string, box = { width: 1200, height: 720 }) {
   const spec = { source };
@@ -194,6 +207,37 @@ const ORDER = `stateDiagram-v2
   note right of Idle : waits for a cart
   class Idle queue`;
 
+const SHAPES = `classDiagram
+  direction TB
+  namespace Geometry {
+    class Shape {
+      <<interface>>
+      +area() double
+    }
+    class Square~T~ {
+      -int side
+      label: String
+      +area() double
+      +resize(int factor)$ void
+    }
+  }
+  class Canvas["Drawing canvas"] {
+    #List~Shape~ shapes
+    +draw()*
+  }
+  class Base
+  <<abstract>> Base
+  Shape <|.. Square : implements
+  Base <|-- Canvas
+  Canvas "1" *-- "many" Shape : holds
+  Square --o Canvas
+  Canvas --> Base
+  Square ..> Base
+  Base -- Shape
+  note for Canvas "draws in order\\nback to front"
+  click Canvas href "https://example.com"
+  style Base fill:#f00`;
+
 describe('mermaid model', () => {
   it.each([
     ['a flowchart', 'flowchart LR\n  a --> b', 'flowchart'],
@@ -231,7 +275,10 @@ describe('mermaid model', () => {
       'flowchart LR\n  a@{ img: "https://example.com/a.png" } --> b',
       undefined,
     ],
-    ['a class diagram', 'classDiagram\n  A <|-- B', undefined],
+    ['a class diagram', 'classDiagram\n  A <|-- B', 'class'],
+    ['a newer class diagram', 'classDiagram-v2\n  A <|-- B', 'class'],
+    ['a class diagram with a lollipop interface', 'classDiagram\n  A --() B', undefined],
+    ['a class diagram with a lollipop on the left', 'classDiagram\n  B ()-- A', undefined],
   ])('draws %s as Pantheon type %s', (_name, source, type) => {
     expect(nativeType(source)).toBe(type);
   });
@@ -276,7 +323,6 @@ describe('mermaid model', () => {
     expect(await parseMermaid(mermaid, ORDER, 'state')).toEqual({
       type: 'state',
       model: {
-        direction: 'TB',
         nodes: [
           { id: 'root_start', label: start, shape: 'start' },
           { id: 'Idle', label: 'Idle', kind: 'queue' },
@@ -301,6 +347,126 @@ describe('mermaid model', () => {
         groups: [{ id: 'Checkout', label: 'Checkout' }],
       },
     });
+  });
+
+  it.each([
+    ['a flowchart written left to right', 'flowchart LR\n  a --> b', 'flowchart', 'LR'],
+    ['a graph written bottom to top', 'graph BT\n  a --> b', 'flowchart', 'TB'],
+    [
+      'a state diagram set left to right',
+      'stateDiagram-v2\n  direction LR\n  a --> b',
+      'state',
+      'LR',
+    ],
+    [
+      'a state diagram set right to left',
+      'stateDiagram-v2\n  direction RL\n  a --> b',
+      'state',
+      'LR',
+    ],
+    [
+      'a state diagram set bottom to top',
+      'stateDiagram-v2\n  a --> b\n  direction BT',
+      'state',
+      'TB',
+    ],
+    ['a state diagram that sets no direction', 'stateDiagram-v2\n  a --> b', 'state', undefined],
+    [
+      'a state diagram that sets one only inside a composite state',
+      'stateDiagram-v2\n  state c {\n    direction LR\n    a --> b\n  }',
+      'state',
+      undefined,
+    ],
+  ] as const)('reads the direction of %s', async (_name, source, type, direction) => {
+    const { model } = (await parseMermaid(mermaid, source, type)) as any;
+    expect(model.direction).toBe(direction);
+  });
+
+  it('reads classes with their generic, annotation and members, and the namespace they sit in', async () => {
+    const { model } = (await parseMermaid(mermaid, SHAPES, 'class')) as any;
+    const member = (visibility: string, name: string, type: string, more = {}) => ({
+      visibility,
+      name,
+      type,
+      ...more,
+    });
+    expect(model.classes).toEqual([
+      {
+        id: 'Shape',
+        label: 'Shape',
+        annotations: ['interface'],
+        attributes: [],
+        methods: [member('+', 'area()', 'double')],
+        namespace: 'Geometry',
+      },
+      {
+        id: 'Square',
+        label: 'Square',
+        generic: 'T',
+        annotations: [],
+        attributes: [member('-', 'side', 'int'), member('', 'label', 'String')],
+        methods: [
+          member('+', 'area()', 'double'),
+          member('+', 'resize(int factor)', 'void', { classifier: 'static' }),
+        ],
+        namespace: 'Geometry',
+      },
+      {
+        id: 'Canvas',
+        label: 'Drawing canvas',
+        annotations: [],
+        attributes: [member('#', 'shapes', 'List<Shape>')],
+        methods: [member('+', 'draw()', '', { classifier: 'abstract' })],
+      },
+      { id: 'Base', label: 'Base', annotations: ['abstract'], attributes: [], methods: [] },
+    ]);
+    expect(model.namespaces).toEqual([{ id: 'Geometry', label: 'Geometry' }]);
+    expect(model.notes).toEqual([{ lines: ['draws in order', 'back to front'], for: 'Canvas' }]);
+    expect(model.direction).toBe('TB');
+  });
+
+  it('reads each relation with its kind, the UML end at each class, its cardinalities and label', async () => {
+    const { model } = (await parseMermaid(mermaid, SHAPES, 'class')) as any;
+    expect(model.relations).toEqual([
+      {
+        from: 'Shape',
+        to: 'Square',
+        kind: 'realization',
+        fromEnd: 'inheritance',
+        dashed: true,
+        label: 'implements',
+      },
+      {
+        from: 'Base',
+        to: 'Canvas',
+        kind: 'inheritance',
+        fromEnd: 'inheritance',
+        dashed: false,
+        label: '',
+      },
+      {
+        from: 'Canvas',
+        to: 'Shape',
+        kind: 'composition',
+        fromEnd: 'composition',
+        dashed: false,
+        label: 'holds',
+        fromCardinality: '1',
+        toCardinality: 'many',
+      },
+      // The diamond is at the whole, which the relation then starts from.
+      {
+        from: 'Canvas',
+        to: 'Square',
+        kind: 'aggregation',
+        fromEnd: 'aggregation',
+        dashed: false,
+        label: '',
+      },
+      { from: 'Canvas', to: 'Base', kind: 'association', toEnd: 'arrow', dashed: false, label: '' },
+      { from: 'Square', to: 'Base', kind: 'dependency', toEnd: 'arrow', dashed: true, label: '' },
+      { from: 'Base', to: 'Shape', kind: 'link', dashed: false, label: '' },
+    ]);
   });
 
   it('reads tables with their attribute types, keys and comments, and the alias after the name', async () => {
@@ -441,6 +607,19 @@ describe('ER diagram', () => {
     });
   });
 
+  it('lists the key badges and cardinality ends it uses in a legend', async () => {
+    const { h } = await picture(ORDERS, 'ErDiagram');
+    const ends = ['one', 'zeroOrOne', 'oneOrMore', 'zeroOrMore'];
+    expect(legend(h)).toEqual([
+      `PK ${zh('visual.mermaid.key.primary')}`,
+      `FK ${zh('visual.mermaid.key.foreign')}`,
+      `UK ${zh('visual.mermaid.key.unique')}`,
+      ...ends.map((end) => zh(`visual.mermaid.cardinality.${end}`)),
+    ]);
+    const one = await picture('erDiagram\n  a ||--|| b : has', 'ErDiagram');
+    expect(legend(one.h)).toEqual([]);
+  });
+
   it('shows the error mermaid gives for a source it cannot parse, and draws nothing', async () => {
     const render = vi.spyOn(mermaid, 'render');
     const source = 'erDiagram\n  customer ||--o order : places';
@@ -464,6 +643,49 @@ describe('sequence diagram', () => {
     const shown = elements.map(words).join(' ');
     for (const word of ['User', 'browser session', 'slow disk', 'handshake', 'ping'])
       expect(shown).toContain(word);
+  });
+
+  it('colours each participant by the node kind of its type', async () => {
+    const source = `sequenceDiagram
+  actor user
+  participant web@{ "type": "boundary" }
+  participant jobs@{ "type": "queue" }
+  participant db@{ "type": "database" }
+  participant log
+  user->>web: go`;
+    const { elements } = await picture(source, 'SequenceDiagram');
+    const kinds = Object.fromEntries(
+      ['user', 'web', 'jobs', 'db', 'log'].map((title) => [
+        title,
+        elements.find((n) => n.type === 'g' && words(n) === title)?.props['data-kind'],
+      ]),
+    );
+    expect(kinds).toEqual({
+      user: 'client',
+      web: 'service',
+      jobs: 'queue',
+      db: 'store',
+      log: undefined,
+    });
+  });
+
+  it('lists the participant kinds and message styles it uses in a legend', async () => {
+    const { h } = await picture(CHECKOUT, 'SequenceDiagram');
+    const kind = (name: string) => `${zh(`visual.graph.kind.${name}`)} 1`;
+    const message = (name: string) => zh(`visual.mermaid.message.${name}`);
+    expect(legend(h)).toEqual([
+      kind('client'),
+      kind('store'),
+      message('sync'),
+      message('async'),
+      message('reply'),
+      message('dotted'),
+    ]);
+    const plain = await picture(
+      'sequenceDiagram\n  participant a\n  participant b\n  a->>b: hi',
+      'SequenceDiagram',
+    );
+    expect(legend(plain.h)).toEqual([]);
   });
 
   it('labels each segment and branch with its keyword and text', async () => {
@@ -499,6 +721,92 @@ describe('sequence diagram', () => {
     const small = await picture(CHECKOUT, 'SequenceDiagram', { width: 4000, height: 4000 });
     const [, , natural] = (small.svg.props.viewBox as string).split(' ').map(Number);
     expect(small.svg.props.width).toBe(natural);
+  });
+});
+
+describe('class diagram', () => {
+  it('draws its own class cards, namespace and note instead of mermaid picture, named by its counts', async () => {
+    const render = vi.spyOn(mermaid, 'render');
+    const { svg, elements } = await picture(SHAPES, 'ClassDiagram');
+    expect(render).not.toHaveBeenCalled();
+    expect(svg.props.role).toBe('img');
+    expect(svg.props['aria-label']).toBe(zhf('visual.mermaid.class', { classes: 4, relations: 7 }));
+    const texts = elements.filter((n) => n.type === 'text').map(words);
+    for (const word of [
+      'Shape',
+      'Square <T>',
+      'Drawing canvas',
+      'Base',
+      '«interface»',
+      '«abstract»',
+      'area()',
+      'double',
+      'side',
+      'int',
+      'label',
+      'String',
+      'resize(int factor)',
+      'void',
+      'shapes',
+      'List<Shape>',
+      'draw()',
+      'implements',
+      'holds',
+      '1',
+      'many',
+      'Geometry',
+      'draws in order',
+      'back to front',
+    ])
+      expect(texts).toContain(word);
+  });
+
+  it('ends each relation with its UML mark, dashed for realization and dependency', async () => {
+    const { elements } = await picture(SHAPES, 'ClassDiagram');
+    const relations = elements
+      .filter((n) => n.props['data-relation'])
+      .map((n) => [
+        n.props['data-relation'],
+        n.props['data-dashed'],
+        drawn(n.props.children)
+          .filter((part) => part.props['data-end'])
+          .map((part) => part.props['data-end']),
+      ]);
+    expect(relations).toEqual([
+      ['realization', true, ['inheritance']],
+      ['inheritance', false, ['inheritance']],
+      ['composition', false, ['composition']],
+      ['aggregation', false, ['aggregation']],
+      ['association', false, ['arrow']],
+      ['dependency', true, ['arrow']],
+      ['link', false, []],
+    ]);
+  });
+
+  it('lists the relation kinds it uses in a legend', async () => {
+    const { h } = await picture(SHAPES, 'ClassDiagram');
+    expect(legend(h)).toEqual(
+      [
+        'inheritance',
+        'realization',
+        'composition',
+        'aggregation',
+        'association',
+        'dependency',
+        'link',
+      ].map((kind) => zh(`visual.mermaid.relation.${kind}`)),
+    );
+  });
+
+  it('leaves a class diagram with a lollipop interface to mermaid', async () => {
+    const render = vi.spyOn(mermaid, 'render').mockResolvedValue({ svg: '<svg></svg>' } as never);
+    const source = 'classDiagram\n  class Shape\n  Shape --() Drawable';
+    const h = mount(() => MermaidDiagram({ spec: { source }, height: 280 }));
+    await settle(h);
+    expect(render).toHaveBeenCalledWith(expect.any(String), source);
+    expect(
+      nodes(h.value).some((n) => typeof n.type === 'function' && n.type.name === 'ClassDiagram'),
+    ).toBe(false);
   });
 });
 

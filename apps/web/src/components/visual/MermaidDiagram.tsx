@@ -1,8 +1,19 @@
 import { useRef, useState } from 'react';
+import { ClassDiagram } from './ClassDiagram';
 import { ErDiagram } from './ErDiagram';
 import { GraphDiagram, type GraphSpec } from './GraphDiagram';
-import { fitZoom, layoutEr, layoutSequence, type ErLayout, type SeqLayout } from './mermaid-layout';
+import {
+  LEGEND,
+  fitZoom,
+  layoutClass,
+  layoutEr,
+  layoutSequence,
+  type ClassLayout,
+  type ErLayout,
+  type SeqLayout,
+} from './mermaid-layout';
 import { nativeType, parseMermaid } from './mermaid-model';
+import { NativeLegend } from './NativeLegend';
 import { SequenceDiagram } from './SequenceDiagram';
 import { Drawing, token, useDraw, useThemeTick } from './shared';
 import './mermaid.css';
@@ -15,12 +26,13 @@ const FLOOR = 2 / 3;
 const MAX_HEIGHT = 640;
 
 /**
- * A diagram Pantheon draws, and the box width it was laid out for: an ER or sequence diagram
- * laid out here, or a flowchart or state diagram the graph lays out.
+ * A diagram Pantheon draws, and the box width it was laid out for: an ER, sequence or class
+ * diagram laid out here, or a flowchart or state diagram the graph lays out.
  */
 type Native = { id: string; room: number } & (
   | { type: 'er'; layout: ErLayout }
   | { type: 'sequence'; layout: SeqLayout }
+  | { type: 'class'; layout: ClassLayout }
   | { type: 'graph'; spec: GraphSpec }
 );
 
@@ -206,7 +218,14 @@ export function MermaidDiagram({
             ? { id, room, type: 'er', layout: await layoutEr(parsed.model, { x: room, y: tall }) }
             : parsed.type === 'sequence'
               ? { id, room, type: 'sequence', layout: layoutSequence(parsed.model) }
-              : { id, room, type: 'graph', spec: parsed.model };
+              : parsed.type === 'class'
+                ? {
+                    id,
+                    room,
+                    type: 'class',
+                    layout: await layoutClass(parsed.model, { x: room, y: tall }),
+                  }
+                : { id, room, type: 'graph', spec: parsed.model };
         if (live()) setNative(laid);
         return undefined;
       }
@@ -237,19 +256,23 @@ export function MermaidDiagram({
     );
   if (native) {
     const { layout } = native;
+    const below = layout.legend.length ? LEGEND : 0;
     const shown = grows
-      ? Math.min(Math.max(height, layout.height), Math.max(height, MAX_HEIGHT))
+      ? Math.min(Math.max(height, layout.height + below), Math.max(height, MAX_HEIGHT))
       : height;
-    const scale = Math.max(FLOOR, fitZoom(layout, { x: native.room, y: shown }));
+    const scale = Math.max(FLOOR, fitZoom(layout, { x: native.room, y: shown - below }));
     return (
-      <div ref={box} className="vis-fill" style={{ height: shown }}>
+      <div ref={box} className="vis-fill vis-nw" style={{ height: shown }}>
         <div className="vis-nd">
           {native.type === 'er' ? (
             <ErDiagram id={native.id} layout={native.layout} scale={scale} />
-          ) : (
+          ) : native.type === 'sequence' ? (
             <SequenceDiagram id={native.id} layout={native.layout} scale={scale} />
+          ) : (
+            <ClassDiagram id={native.id} layout={native.layout} scale={scale} />
           )}
         </div>
+        {below > 0 && <NativeLegend entries={layout.legend} />}
         {!ready && <Drawing />}
       </div>
     );
