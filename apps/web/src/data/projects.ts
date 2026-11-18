@@ -5,11 +5,14 @@ import { failureText, reasonText } from './needs-you';
 
 type Project = BoardSnapshot['projects'][number];
 
-/** The projects not removed; a removed project comes back when its folder is opened again. */
-export function visibleProjects<T extends Pick<Project, 'removed_at'>>(
+/**
+ * The projects not removed, without the personal agent's home; a removed project comes back when
+ * its folder is opened again.
+ */
+export function visibleProjects<T extends Pick<Project, 'removed_at' | 'kind'>>(
   projects: readonly T[],
 ): T[] {
-  return projects.filter((p) => p.removed_at === undefined);
+  return projects.filter((p) => p.removed_at === undefined && p.kind !== 'personal');
 }
 
 /** Projects whose name or any root contains the query, without case; an empty query keeps all. */

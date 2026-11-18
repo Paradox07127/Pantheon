@@ -466,6 +466,29 @@ describe('projects screen', () => {
     ).toEqual(['alpha']);
   });
 
+  it('lists no row for the personal agent’s home and opens the personal agent from the bar', async () => {
+    mock.board.board.projects.push({ ...project('home'), roots: [], kind: 'personal' });
+    mock.board.refresh = () => {};
+    mock.shell.openPersonal = vi.fn();
+    const command = vi.fn(async () => ({ ok: true, value: { id: 'personal-1' } }));
+    window.pantheon!.command = command as never;
+    const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
+    await h.flush();
+    const table = find(h.value, (n) => n.props.role === 'table');
+    expect(
+      nodes(table)
+        .filter((n) => typeof n.type === 'function' && n.type.name === 'ProjectRow')
+        .map((r) => r.props.project.id),
+    ).toEqual(['alpha', 'beta']);
+    expect(zh('projects.personalAgent')).toBe('个人级智能体');
+    byLabel(h.value, zh('projects.personalAgent')).props.onClick();
+    await h.flush();
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'resident.open', input: { kind: 'personal' } }),
+    );
+    expect(mock.shell.openPersonal).toHaveBeenCalledWith('personal-1');
+  });
+
   it('moves the focus between the rows with the up and down keys', async () => {
     const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
     await h.flush();
@@ -493,15 +516,21 @@ describe('projects screen', () => {
   it.each([
     ['with no project yet', []],
     ['with projects', [project('alpha')]],
-  ])('puts import and open in the bar and no filter %s', async (_name, projects) => {
-    mock.board = { ...mock.board, board: { cursor: 1, projects, project_briefs: [] } };
-    const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
-    await h.flush();
-    expect(nodes(h.value).some((n) => n.type === 'input')).toBe(false);
-    const bar = named(h.value, 'TopBar');
-    expect(buttons(bar).map(text)).toEqual([zh('projects.import.open')]);
-    expect(named(bar, 'OpenProjectButton')).toBeTruthy();
-  });
+  ])(
+    'puts the personal agent, import and open in the bar and no filter %s',
+    async (_name, projects) => {
+      mock.board = { ...mock.board, board: { cursor: 1, projects, project_briefs: [] } };
+      const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
+      await h.flush();
+      expect(nodes(h.value).some((n) => n.type === 'input')).toBe(false);
+      const bar = named(h.value, 'TopBar');
+      expect(buttons(bar).map(text)).toEqual([
+        zh('projects.personalAgent'),
+        zh('projects.import.open'),
+      ]);
+      expect(named(bar, 'OpenProjectButton')).toBeTruthy();
+    },
+  );
 
   const candidate = (name: string, extra: Partial<ImportCandidate> = {}): ImportCandidate => ({
     root: `/work/${name}`,

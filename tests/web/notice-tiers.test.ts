@@ -338,6 +338,13 @@ describe('cards for what needs the user', () => {
       runsView: 'now',
       askedNeed: 'board_plans:beta-docs:lane-docs',
     });
+    const titled = needsCard(
+      { ...lane, lane_title: 'Docs lane' },
+      board,
+      { ...away, sessionId: 'beta-docs' },
+      noRespond,
+    );
+    expect(titled?.options.heading).toBe('Docs lane');
   });
 
   it('makes the asked question the current row of the needs-you strip, brings it into view and focuses its primary button, unfolding the strip for it', () => {

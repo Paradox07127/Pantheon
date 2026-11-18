@@ -337,6 +337,9 @@ describe('needs-you strip buttons', () => {
       revision: null,
     });
     const lanes = [{ id: 'lead-1:lane-docs', title: 'Write the docs' }];
+    expect(
+      needWho(held(true, { lane_title: 'Docs lane' }), { tasks: [], milestones: [], lanes }, []),
+    ).toBe('Docs lane');
     expect(needWho(held(true), { tasks: [], milestones: [], lanes }, [])).toBe('Write the docs');
     expect(needWho(held(true), { tasks: [], milestones: [], lanes: [] }, [])).toBe('lane-docs');
     expect(needWhat(held(true))).toBe(reason('lanePlanAwaitingApproval'));

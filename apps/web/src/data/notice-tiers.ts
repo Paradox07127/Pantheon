@@ -131,7 +131,7 @@ export function needsCard(
     strip,
   };
   if (waitInView(view, wait)) return null;
-  const name = heading(board, item.project_id, needsSession(item));
+  const name = item.lane_title ?? heading(board, item.project_id, needsSession(item));
   const base = {
     id,
     heading: name,

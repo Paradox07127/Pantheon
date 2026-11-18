@@ -152,7 +152,7 @@ if (settled) {
   );
 
   // The sidebar's Assistant row opens the new session.
-  const RESIDENTS = { role: 'group', name: '常驻智能体', exact: true };
+  const RESIDENTS = { role: 'group', name: '本项目', exact: true };
   await page.click({ role: 'button', name: '助理，', exact: false, within: RESIDENTS });
   const shown = await poll(() =>
     page.evaluate(`(() => {

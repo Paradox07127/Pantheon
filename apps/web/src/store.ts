@@ -14,7 +14,16 @@ import { navPage, useSettingsView } from './screens/settings/view';
 import { shownWindow } from './shell/window-kind';
 
 export type Screen =
-  'sessions' | 'board' | 'insights' | 'repo' | 'runtime' | 'flow' | 'trace' | 'memory' | 'projects';
+  | 'sessions'
+  | 'board'
+  | 'insights'
+  | 'repo'
+  | 'runtime'
+  | 'flow'
+  | 'trace'
+  | 'memory'
+  | 'projects'
+  | 'personal';
 
 export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved';
 export type MemoryTab = 'overview' | 'entries' | 'graph' | 'learned';
@@ -31,7 +40,7 @@ export interface SessionTask {
 }
 
 /** A screen that belongs to one project. */
-export type ProjectScreen = Exclude<Screen, 'projects'>;
+export type ProjectScreen = Exclude<Screen, 'projects' | 'personal'>;
 
 /** Where the viewer last was in one project. */
 export interface ProjectPlace {
@@ -182,6 +191,8 @@ interface ShellState {
   clearSessionTask: () => void;
   // null opens the app settings, or the only project's when there is exactly one.
   openSettings: (projectId: string | null) => void;
+  // Shows the personal agent's session over the current project, which stays current.
+  openPersonal: (sessionId: string) => void;
   // Makes the project current and returns to where the viewer was in it.
   openProject: (projectId: string) => void;
   // Makes the project current and opens one of its sessions, in one switch.
@@ -224,7 +235,12 @@ function arrive(fromHistory: boolean) {
     sessionTask: s.sessionId === '' ? s.sessionTask : null,
   };
   // The places are the main window's; a window of one project leaves them.
-  if (here.screen !== 'projects' && here.projectId && !windowProjectId())
+  if (
+    here.screen !== 'projects' &&
+    here.screen !== 'personal' &&
+    here.projectId &&
+    !windowProjectId()
+  )
     writePlace(here.projectId, {
       screen: here.screen,
       sessionId: here.sessionId,
@@ -422,6 +438,16 @@ export const useShell = create<ShellState>((set) => ({
         page,
         ...(projectId && navPage(page) === 'projects' && { detail: projectId }),
       };
+    }),
+  openPersonal: (sessionId) =>
+    navigate({
+      screen: 'personal',
+      sessionId,
+      sessionRestored: false,
+      sessionTab: null,
+      sessionRun: null,
+      sessionGroup: null,
+      sessionTask: null,
     }),
   openProject: (projectId) => navigate(restore({ projectId, ...readPlace(projectId) }), projectId),
   openProjectSession: (projectId, sessionId) =>

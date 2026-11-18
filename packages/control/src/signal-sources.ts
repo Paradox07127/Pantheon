@@ -1,6 +1,7 @@
 import type { AgentEvent, LandingItem, Session, SignalIssue, SignalSource } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { usageLimitWaiting } from './continuation.js';
+import { checkOnBase } from './environment-check.js';
 import { gateFailed } from './landing.js';
 import { inhibit, recordSignal, resolveSignal } from './signals.js';
 
@@ -159,6 +160,7 @@ export function recordGateRun(
       title: `${failed.length} of ${checks.length} gate checks failed in one run`,
       sample: failed.map((result) => `${result.name}: ${errorLine(result)}`).join('\n'),
     });
+    checkOnBase(ctx, cause, input.session_id);
     for (const result of failed)
       inhibit(ctx, {
         project_id: projectId,
@@ -184,17 +186,19 @@ export function recordGateRun(
         )
         .map((other) => other.task),
     );
-    if (result.failure_class === 'environment' || tasks.size >= REPEAT_TASKS)
-      recordSignal(ctx, {
-        project_id: projectId,
-        source: 'gate_failures',
-        fingerprint,
-        title:
-          result.failure_class === 'environment'
-            ? `${result.name} failed because of its environment: ${errorLine(result)}`
-            : `${result.name} failed the same way in ${tasks.size} tasks: ${errorLine(result)}`,
-        sample: result.output,
-      });
+    if (result.failure_class !== 'environment' && tasks.size < REPEAT_TASKS) continue;
+    const issue = recordSignal(ctx, {
+      project_id: projectId,
+      source: 'gate_failures',
+      fingerprint,
+      title:
+        result.failure_class === 'environment'
+          ? `${result.name} failed because of its environment: ${errorLine(result)}`
+          : `${result.name} failed the same way in ${tasks.size} tasks: ${errorLine(result)}`,
+      sample: result.output,
+    });
+    if (result.failure_class === 'environment')
+      checkOnBase(ctx, issue, input.session_id, result.name);
   }
   const passed = new Set(checks.filter((result) => !gateFailed(result)).map(({ name }) => name));
   if (!passed.size) return;

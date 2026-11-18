@@ -413,20 +413,24 @@ export function Thread(props: {
                 {spoken}
               </div>
               {history.error && <LoadError message={history.error} onRetry={history.reload} />}
-              {listed?.resident && view?.turns.length === 0 && (
-                <p className="ss-emp">
-                  {t(
-                    {
-                      id: 'sessions.residents.empty',
-                      defaultMessage: 'Tell {name} what {project} should do next.',
-                    },
-                    {
-                      name: RESIDENTS.find((r) => r.kind === listed.resident!.kind)?.name ?? title,
-                      project: board.projects.find((p) => p.id === session?.project_id)?.name ?? '',
-                    },
-                  )}
-                </p>
-              )}
+              {listed?.resident &&
+                listed.resident.kind !== 'personal' &&
+                view?.turns.length === 0 && (
+                  <p className="ss-emp">
+                    {t(
+                      {
+                        id: 'sessions.residents.empty',
+                        defaultMessage: 'Tell {name} what {project} should do next.',
+                      },
+                      {
+                        name:
+                          RESIDENTS.find((r) => r.kind === listed.resident!.kind)?.name ?? title,
+                        project:
+                          board.projects.find((p) => p.id === session?.project_id)?.name ?? '',
+                      },
+                    )}
+                  </p>
+                )}
               {!view
                 ? !history.error && (
                     <div className="tr-typing" aria-busy="true">

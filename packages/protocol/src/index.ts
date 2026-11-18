@@ -4398,9 +4398,24 @@ export interface BoardSessionTime {
 }
 
 /** Fields of a plan task's board row that packages/control/src/board-view-task-extras.ts fills. */
-export interface BoardTaskExtras {}
+export interface BoardTaskExtras {
+  /**
+   * What backs a merged task: only the agent's report, a gate with a passed step and none failed,
+   * or a pass handed in by a reviewer on another runtime than its writers; absent before merge.
+   */
+  evidence_level?: 'report' | 'gate' | 'reviewed';
+  /** The most independent reviewer that passed it; set only when `evidence_level` is `reviewed`. */
+  evidence_reviewer?: 'other_vendor' | 'other_runtime';
+  /** The line the task's session last set in its newest turn; `at` is epoch milliseconds. */
+  status_line?: { text: string; at: number };
+}
 /** Fields of a milestone's board row that packages/control/src/board-view-task-extras.ts fills. */
 export interface BoardMilestoneExtras {
+  /**
+   * What backs a ready or completed milestone: the user's acceptance, a passed verification, or
+   * else the weakest level of its merged plan tasks; absent otherwise.
+   */
+  evidence_level?: 'report' | 'gate' | 'reviewed' | 'verified' | 'accepted';
   /** The milestone's current verification; absent when none ran. */
   verification?: MilestoneView['verification'];
   /** The goal its lead linked it to; it may name a goal archived since. */

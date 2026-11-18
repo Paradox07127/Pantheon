@@ -63,6 +63,7 @@ export function planItems(
         project_id: plan.project_id,
         session_id: plan.id,
         request_id: laneId,
+        lane_title: plan.lanes.find((lane) => lane.id === laneId)?.title,
         status: 'pending',
         created_at: stop.held_at,
         reason: 'lane_plan_awaiting_approval',

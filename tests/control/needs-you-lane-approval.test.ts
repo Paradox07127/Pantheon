@@ -90,6 +90,7 @@ it('lists a lane waiting for plan approval as one item the user approves', async
       source: { table: 'board_plans', id: lead.id, revision: plan.revision },
       session_id: lead.id,
       request_id: 'core',
+      lane_title: 'Core',
       created_at: plan.lane_stops!.core!.held_at,
       reason: 'lane_plan_awaiting_approval',
       decision: 'plan_change',
@@ -113,7 +114,9 @@ it.each<[PersonalAnswerKind[], boolean]>([
   [['question', 'milestone_accept'], false],
 ])('lets a personal agent with %j allowed approve the plan: %s', async (answers, allowed) => {
   const { f, lead } = await heldLane(answers);
-  expect(laneItems(f, personal).map((item) => item.actions[0]!.allowed)).toEqual([allowed]);
+  expect(laneItems(f, personal).map((item) => [item.lane_title, item.actions[0]!.allowed])).toEqual(
+    [['Core', allowed]],
+  );
   const recorded = () =>
     (
       f.store.db.prepare("SELECT payload FROM events WHERE kind='personal.called'").all() as {

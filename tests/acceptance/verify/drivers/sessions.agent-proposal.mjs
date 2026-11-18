@@ -133,7 +133,7 @@ if (pending) {
   check('卡片换成 你创建了{名字} 一行', line);
   const sidebar = await poll(() =>
     page.evaluate(
-      `document.querySelector('nav.ss-list [role=group][aria-label="常驻智能体"] .ss-rr[data-stop="resident:${made?.id}"]')?.getAttribute('aria-label') ?? null`,
+      `document.querySelector('nav.ss-list [role=group][aria-label="本项目"] .ss-rr[data-stop="resident:${made?.id}"]')?.getAttribute('aria-label') ?? null`,
     ),
   );
   check('侧栏出现新智能体的行', sidebar?.startsWith(`${NAME}，`), sidebar);

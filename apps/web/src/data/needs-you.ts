@@ -151,6 +151,8 @@ export interface NeedsYouItem {
     /** The request can be allowed for every session of the project. */
     project_rule_supported?: boolean;
   };
+  /** The title of the lane a `board.lane.approval` item holds; no other item has it. */
+  lane_title?: string;
   /** The title of the workflow step that waits for approval. */
   step_title?: string;
   /** Who acts next and how. */

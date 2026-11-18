@@ -47,6 +47,7 @@ import {
   type Look,
 } from './data/layout';
 import { failureText, reasonText, useNeedsYou } from './data/needs-you';
+import { personalHomeOf, personalSessionOf } from './data/personal-agent';
 import { visibleProjects } from './data/projects';
 import { applySessionDisplay, useSessionDisplay } from './data/session-display';
 import { useSystemReducedMotion, windowColours, windowDark } from './data/theme';
@@ -65,6 +66,7 @@ import { ProjectsScreen } from './screens/projects/ProjectsScreen';
 import { useAppDisplay } from './screens/sessions/app-display';
 import { answerBrowser } from './screens/sessions/BrowserPanel';
 import { groupWorkbenchSessions, sessionRow } from './screens/sessions/model';
+import { PersonalAgentScreen } from './screens/sessions/PersonalAgentScreen';
 import { RepoScreen } from './screens/repo/RepoScreen';
 import { SessionsScreen } from './screens/sessions/SessionsScreen';
 import { openBoardTab } from './screens/settings/settings-jump';
@@ -88,11 +90,12 @@ const KEPT: readonly Screen[] = [
   'trace',
   'memory',
   'projects',
+  'personal',
 ];
 
 /** Whether the screen belongs to a project that is not there. */
 export function showsMissingProject(screen: Screen, current: string | null): boolean {
-  if (screen === 'projects') return false;
+  if (screen === 'projects' || screen === 'personal') return false;
   return current === null;
 }
 
@@ -357,6 +360,9 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
   const needs = useNeedsYou(current);
   const allNeeds = useNeedsYou(null);
   const list = useSessionList(current);
+  const home = personalHomeOf(allProjects);
+  const homeList = useSessionList(home?.id ?? null);
+  const personal = home ? personalSessionOf(homeList.data ?? []) : null;
   const layout = useSidebarLayout();
   const look = useLook();
   const [palette, setPalette] = useState(false);
@@ -586,6 +592,7 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
         onChooseProject={openProject}
         list={list}
         allNeeds={allNeeds}
+        personal={personal}
       />
       <div className="app-main" ref={main}>
         <RuntimeBanner />
@@ -605,8 +612,21 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
                 <TraceScreen projectId={current} sessions={list.data} />
               ) : s === 'memory' ? (
                 <MemoryScreen projectId={current} />
+              ) : s === 'personal' ? (
+                <PersonalAgentScreen
+                  // Every project's needs hold the home's, so they take no read of their own.
+                  needs={{
+                    ...allNeeds,
+                    items: allNeeds.items?.filter((i) => i.project_id === home?.id) ?? null,
+                  }}
+                  list={homeList}
+                />
               ) : (
-                <ProjectsScreen onOpenSettings={openSettings} onOpenProject={openProject} />
+                <ProjectsScreen
+                  onOpenSettings={openSettings}
+                  onOpenProject={openProject}
+                  personal={personal}
+                />
               )}
             </PanelBoundary>
           </Activity>

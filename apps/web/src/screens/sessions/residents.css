@@ -40,6 +40,11 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+/* The personal agent's group, past a hairline under this project's agents. */
+.ss-grp + .ss-pa {
+  padding-top: var(--sp-1);
+  border-top: var(--hair) solid var(--bd2);
+}
 /* The title of the list under the residents, with the new session button at its end. */
 .ss-zh {
   display: flex;

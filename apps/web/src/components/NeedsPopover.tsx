@@ -286,7 +286,7 @@ export function NeedsPopover({
     // An agent proposal is decided on its card in the proposing conversation.
     const proposal = item.kind === 'agent.proposal' ? item.agent_proposal : undefined;
     const kind = noVerdictKind(item as NeedItem) ?? decisionText(item.decision);
-    const named = session && board ? sessionTitle(session, board) : undefined;
+    const named = item.lane_title ?? (session && board ? sessionTitle(session, board) : undefined);
     const row: ListRow = {
       key,
       projectId: item.project_id,

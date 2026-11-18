@@ -63,6 +63,16 @@ it('restores the screen and session each project was left on', () => {
   });
 });
 
+it('opens the personal agent over the current project without making it the project’s place', () => {
+  shell().openProject('alpha');
+  shell().setScreen('trace');
+  shell().openPersonal('personal-1');
+  expect(here()).toEqual({ project: 'alpha', screen: 'personal', session: 'personal-1' });
+  shell().openProject('beta');
+  shell().openProject('alpha');
+  expect(here()).toEqual({ project: 'alpha', screen: 'trace', session: null });
+});
+
 it('lands a project opened for the first time on its board', () => {
   shell().openProject('alpha');
   shell().setScreen('trace');

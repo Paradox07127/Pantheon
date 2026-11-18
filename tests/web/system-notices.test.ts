@@ -432,6 +432,23 @@ describe('system notifications and in-app cards', () => {
     expect(openProjectSession).not.toHaveBeenCalled();
   });
 
+  it('names a lane whose plan waits for approval by its lane title in the notice and on its card', async () => {
+    const lane = need('beta-docs', {
+      source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
+      kind: 'board.lane.approval',
+      reason: 'lane_plan_awaiting_approval',
+      session_id: 'beta-docs',
+      request_id: 'lane-docs',
+      lane_title: 'Docs lane',
+      binding: undefined,
+      actions: [{ command: 'board.lane.approve', allowed: true }],
+    });
+    render({ items: [lane] });
+    await settle();
+    expect(sent().map((n) => n.title)).toEqual(['Docs lane 等你审批']);
+    expect(cards.shown()).toEqual(['Docs lane']);
+  });
+
   it("reads every project's session list again when the stream comes back live", async () => {
     const query = vi.fn(async (_method: string) => ({
       ok: false,

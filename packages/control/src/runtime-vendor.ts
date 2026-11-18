@@ -17,6 +17,19 @@ export function runtimeVendor(name: string): string {
 const INDEPENDENCE = ['other_vendor', 'other_runtime', 'same_runtime'] as const;
 type Independence = (typeof INDEPENDENCE)[number];
 
+/** How far a reviewer runtime stands from every writer runtime. */
+export function runtimeIndependence(writers: string[], name: string): Independence {
+  const vendor = runtimeVendor(name);
+  // A writer of unknown vendor may run any vendor's model, so no runtime counts as another vendor.
+  if (
+    writers.length > 0 &&
+    vendor !== 'unknown' &&
+    writers.map(runtimeVendor).every((writer) => writer !== 'unknown' && writer !== vendor)
+  )
+    return 'other_vendor';
+  return writers.includes(name) ? 'same_runtime' : 'other_runtime';
+}
+
 /**
  * The first admitted reviewer runtime of another vendor than every writer, else one that is not a
  * writer, else a writer's own. The reviewer default, then its fallback, wins when it is admitted
@@ -36,18 +49,7 @@ export function verifierRuntime(
       throw error;
     }
   };
-  const writerVendors = writers.map(runtimeVendor);
-  // A writer of unknown vendor may run any vendor's model, so no runtime counts as another vendor.
-  const independence = (name: string): Independence => {
-    const vendor = runtimeVendor(name);
-    if (
-      writers.length > 0 &&
-      vendor !== 'unknown' &&
-      writerVendors.every((writer) => writer !== 'unknown' && writer !== vendor)
-    )
-      return 'other_vendor';
-    return writers.includes(name) ? 'same_runtime' : 'other_runtime';
-  };
+  const independence = (name: string) => runtimeIndependence(writers, name);
   const rank = (name: string) => INDEPENDENCE.indexOf(independence(name));
   let best: string | undefined;
   for (const name of ctx.adapters.keys())

@@ -67,7 +67,7 @@ const closed = await poll(() =>
 check('创建后对话框关闭', closed);
 const row = await poll(() =>
   page.evaluate(`(() => {
-    const b = document.querySelector('nav.ss-list [role=group][aria-label="常驻智能体"] .ss-rr[data-stop="resident:${made?.id}"]');
+    const b = document.querySelector('nav.ss-list [role=group][aria-label="本项目"] .ss-rr[data-stop="resident:${made?.id}"]');
     return b ? b.getAttribute('aria-label') : null;
   })()`),
 );

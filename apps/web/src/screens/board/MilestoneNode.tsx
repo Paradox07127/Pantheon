@@ -157,7 +157,7 @@ export function MilestoneNode({ data }: NodeProps<MilestoneFlowNode>) {
             <span className="bd-na" title={next.title}>
               {next.title}
             </span>
-            {onStart && (
+            {onStart && next.dispatch_wait !== 'plan_approval' && (
               <button
                 type="button"
                 className="btn sm nodrag nopan"

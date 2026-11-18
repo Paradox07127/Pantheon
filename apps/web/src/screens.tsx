@@ -30,6 +30,9 @@ export const SCREEN_NAMES: Record<Screen | 'settings', string> = {
   get projects() {
     return t({ id: 'app.screenName.projects', defaultMessage: 'All projects' });
   },
+  get personal() {
+    return t({ id: 'app.screenName.personal', defaultMessage: 'Personal agent' });
+  },
   get settings() {
     return t({ id: 'app.screenName.settings', defaultMessage: 'Settings' });
   },

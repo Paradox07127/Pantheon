@@ -6,14 +6,19 @@ import {
   type SignalIssue,
 } from '@pantheon/domain';
 import { wakeAgent } from './agent-always-on.js';
-import { urgentIssue } from './agent-contract.js';
+import { messageDelivery, urgentIssue } from './agent-contract.js';
 import { ensureAgents } from './agents.js';
 import type { ControlContext } from './context.js';
 
 type Sender = { profile: AgentProfile; session: Session };
 type MessageInput = Pick<AgentMessage, 'text' | 'urgency'> & { signal_issue_id?: string };
 
-const insertMessage = (ctx: ControlContext, from: Sender, input: MessageInput, routedTo?: string) =>
+const insertMessage = (
+  ctx: ControlContext,
+  from: Sender,
+  input: MessageInput,
+  fields: Pick<AgentMessage, 'routed_to' | 'delivery'>,
+) =>
   ctx.store.insert<AgentMessage>('agent_messages', {
     id: id(),
     revision: 1,
@@ -23,17 +28,23 @@ const insertMessage = (ctx: ControlContext, from: Sender, input: MessageInput, r
     text: input.text,
     urgency: input.urgency,
     at: ctx.store.now(),
-    ...(routedTo && { routed_to: routedTo }),
+    ...fields,
   });
 
-/** Leaves the user the agent's message and notifies them; the only producer of agent_message.created. */
+/**
+ * Leaves the user the agent's message, stamped with how loudly its contract lets it reach them;
+ * the only producer of agent_message.created.
+ */
 export function deliverToUser(
   ctx: ControlContext,
   from: Sender,
   input: MessageInput,
+  urgent: boolean,
   cause: string,
 ): AgentMessage {
-  const message = insertMessage(ctx, from, input);
+  // Only feed is stored; an absent field reads as notify.
+  const delivery = messageDelivery(ctx, from.profile, ctx.store.now(), urgent);
+  const message = insertMessage(ctx, from, input, delivery === 'feed' ? { delivery } : {});
   ctx.store.event(
     'agent_message.created',
     message,
@@ -64,10 +75,11 @@ export function tellUser(
   cause: string,
 ): AgentMessage {
   const projectId = from.session.project_id;
-  if (from.profile.template === 'assistant' || urgent(ctx, projectId, input))
-    return deliverToUser(ctx, from, input, cause);
+  const urgentMessage = urgent(ctx, projectId, input);
+  if (from.profile.template === 'assistant' || urgentMessage)
+    return deliverToUser(ctx, from, input, urgentMessage, cause);
   const assistant = ensureAgents(ctx, projectId).find((agent) => agent.template === 'assistant')!;
-  const message = insertMessage(ctx, from, input, assistant.id);
+  const message = insertMessage(ctx, from, input, { routed_to: assistant.id });
   ctx.store.event(
     'agent_message.routed',
     message,

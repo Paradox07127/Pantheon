@@ -215,6 +215,17 @@ describe('event notices', () => {
     expect(eventNotice(given, residentBoard)).toMatchObject(expected);
   });
 
+  it('gives no notice for a message the agent left only in the feed', () => {
+    const message = event('agent_message.created', 'message-2', {
+      session_id: 'beta-assistant',
+      text: 'The login fix merged; nothing waits on you.',
+      urgency: 'high',
+      agent_name: 'Assistant',
+      delivery: 'feed',
+    });
+    expect(eventNotice(message, residentBoard)).toBeNull();
+  });
+
   it('leaves a request to the needs-you list', () => {
     const requested = event('approval.requested', 'approval-2', {
       session_id: 'beta-login',

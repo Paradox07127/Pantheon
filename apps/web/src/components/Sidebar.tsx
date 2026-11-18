@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Columns3,
   GitBranch,
+  Globe,
   IdCard,
   LayoutDashboard,
   LayoutGrid,
@@ -39,6 +40,7 @@ import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { saveLayout, setLayout, SIDEBAR, sidebarDrag, useLayout } from '../data/layout';
 import { failureText, useNow, type NeedsYouState } from '../data/needs-you';
+import { openPersonalAgent, usePersonalOpening } from '../data/personal-agent';
 import { projectIdle, sortProjects, useProjectsSummary } from '../data/projects-summary';
 import { markRead, markUnread, useUnread } from '../data/unread';
 import type { useSessionList } from '../data/workbench-sessions';
@@ -360,6 +362,7 @@ const CONNECTION = {
 
 /** The list stop an element is: a session row or a group header. */
 const stopOf = (el: HTMLElement): string | undefined => el.dataset?.session ?? el.dataset?.stop;
+const PERSONAL_STOP = 'resident:personal';
 
 function Connection({ side }: { side: 'top' | 'right' }) {
   const status = useBoard((s) => s.status);
@@ -598,6 +601,8 @@ interface SidebarProps {
   list: ReturnType<typeof useSessionList>;
   // The needs-you items of every project.
   allNeeds: NeedsYouState;
+  // The personal agent's open session; absent until it is first opened.
+  personal?: WorkbenchSession | null;
 }
 
 export function Sidebar({
@@ -607,6 +612,7 @@ export function Sidebar({
   onChooseProject,
   list,
   allNeeds,
+  personal = null,
 }: SidebarProps) {
   const screen = useShell((s) => s.screen);
   const sessionId = useShell((s) => s.sessionId);
@@ -725,6 +731,7 @@ export function Sidebar({
       bare: true,
       session: null,
     })),
+    { key: PERSONAL_STOP, group: 'tree' as const, shut: false, bare: true, session: null },
     ...groups.flatMap((group) => {
       const shut = !group.bare && folded(group.key, group.folded);
       const rows = shut ? [] : group.rows.flatMap((r) => [r.session, ...r.children]);
@@ -1131,6 +1138,40 @@ export function Sidebar({
       </ContextMenu.Root>
     );
   };
+  const personalOpening = usePersonalOpening();
+  const personalName = t({
+    id: 'components.sidebar.personalAgent',
+    defaultMessage: 'Personal agent',
+  });
+  const personalState = personalOpening
+    ? t({ id: 'components.sessionState.starting', defaultMessage: 'Starting' })
+    : personal
+      ? sessionStateLabel(personal)
+      : t({ id: 'components.sidebar.residentNotStarted', defaultMessage: 'Not started' });
+  const personalRow = (
+    <button
+      type="button"
+      className="ss-rr"
+      aria-current={screen === 'personal' || undefined}
+      aria-busy={personalOpening || undefined}
+      aria-label={[personalName, personalState].join(
+        t({ id: 'sessions.screen.separator', defaultMessage: ', ' }),
+      )}
+      data-stop={PERSONAL_STOP}
+      tabIndex={PERSONAL_STOP === tabStop ? 0 : -1}
+      onClick={() => void openPersonalAgent()}
+    >
+      {personalOpening ? (
+        <StateGlyph name="starting" place="list" />
+      ) : personal ? (
+        <SessionStateIcon session={personal} place="list" />
+      ) : (
+        <StateGlyph name="idle" place="list" />
+      )}
+      <span className="ss-ttl">{personalName}</span>
+      <Globe className="ic-sm mu" aria-hidden="true" />
+    </button>
+  );
   const newAgentLabel = t({ id: 'components.sidebar.newAgent', defaultMessage: 'New agent' });
   // Outside the content, so the rail's floating panel closing on the click keeps it.
   const newAgent = currentProjectId && (
@@ -1315,12 +1356,22 @@ export function Sidebar({
                   role="group"
                   aria-label={t({
                     id: 'components.sidebar.residents',
-                    defaultMessage: 'Residents',
+                    defaultMessage: 'This project',
                   })}
                 >
                   {residents.map(residentRow)}
                 </div>
               )}
+              <div
+                className="ss-grp ss-pa"
+                role="group"
+                aria-label={t({
+                  id: 'components.sidebar.personalGroup',
+                  defaultMessage: 'Personal',
+                })}
+              >
+                {personalRow}
+              </div>
               <div className="ss-zh">
                 <span>{SCREEN_NAMES.sessions}</span>
                 <Tip

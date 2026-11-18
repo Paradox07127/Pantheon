@@ -10,5 +10,6 @@
   "sessions.residents.wake.tracker": "Worker 报告",
   "sessions.residents.wake.external": "外部事件",
   "sessions.residents.wake.sync": "计划已同步",
-  "sessions.residents.wake.signals": "信号"
+  "sessions.residents.wake.signals": "信号",
+  "sessions.residents.allProjects": "全部项目"
 }

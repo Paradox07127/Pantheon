@@ -6,7 +6,7 @@ import type { BoardSnapshot, ProjectSummary, WorkbenchSession } from '@pantheon/
 import { NeedsPopover, SessionsPopover } from '../../components/NeedsPopover';
 import { PathText } from '../../components/PathText';
 import { ProjectMonogram } from '../../components/ProjectMonogram';
-import { StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
+import { SessionStateIcon, StateGlyph, type GlyphName } from '../../components/SessionStateIcon';
 import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { TopBar } from '../../components/TopBar';
@@ -14,6 +14,7 @@ import { useBoard } from '../../data/board';
 import { useCurrentProject } from '../../data/current-project';
 import { useImportCandidates } from '../../data/import';
 import { ageText, useNeedsYou, useNow, type NeedsYouItem } from '../../data/needs-you';
+import { openPersonalAgent, usePersonalOpening } from '../../data/personal-agent';
 import {
   findProjectByRoots,
   removeProject,
@@ -77,9 +78,15 @@ interface ProjectsScreenProps {
   onOpenSettings: (projectId: string) => void;
   /** Makes the project current and shows its sessions. */
   onOpenProject: (projectId: string) => void;
+  /** The personal agent's open session; absent until it is first opened. */
+  personal?: WorkbenchSession | null;
 }
 
-export function ProjectsScreen({ onOpenSettings, onOpenProject }: ProjectsScreenProps) {
+export function ProjectsScreen({
+  onOpenSettings,
+  onOpenProject,
+  personal = null,
+}: ProjectsScreenProps) {
   const board = useBoard((s) => s.board);
   const summary = useProjectsSummary();
   const needs = useNeedsYou(null);
@@ -90,6 +97,7 @@ export function ProjectsScreen({ onOpenSettings, onOpenProject }: ProjectsScreen
   // An import's failures stay on screen after the projects it did open appear.
   const [welcomeHeld, setWelcomeHeld] = useState(false);
   const now = useNow(30_000);
+  const personalOpening = usePersonalOpening();
 
   const projects = board ? visibleProjects(board.projects) : [];
   const summaries = summary.data ?? [];
@@ -112,6 +120,22 @@ export function ProjectsScreen({ onOpenSettings, onOpenProject }: ProjectsScreen
     <div className="tb-pg">
       <TopBar title={SCREEN_NAMES.projects} count={board ? projects.length : undefined}>
         <div className="tb-end">
+          <button
+            type="button"
+            className="btn"
+            aria-label={t({ id: 'projects.personalAgent', defaultMessage: 'Personal agent' })}
+            aria-busy={personalOpening || undefined}
+            onClick={() => void openPersonalAgent()}
+          >
+            {personalOpening ? (
+              <StateGlyph name="starting" />
+            ) : personal ? (
+              <SessionStateIcon session={personal} place="list" />
+            ) : (
+              <StateGlyph name="idle" />
+            )}
+            {t({ id: 'projects.personalAgent', defaultMessage: 'Personal agent' })}
+          </button>
           <button type="button" className="btn" onClick={() => setImporting(true)}>
             <Import className="ic-sm" aria-hidden="true" />
             {t({ id: 'projects.import.open', defaultMessage: 'Import' })}

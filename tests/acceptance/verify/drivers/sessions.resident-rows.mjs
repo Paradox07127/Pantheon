@@ -49,7 +49,7 @@ await page.click({
   role: 'button',
   name: '助理，',
   exact: false,
-  within: { role: 'group', name: '常驻智能体', exact: true },
+  within: { role: 'group', name: '本项目', exact: true },
 });
 const first = await poll(async () => {
   const list = await residentsOf('assistant');
@@ -80,7 +80,7 @@ await page.click({
   role: 'button',
   name: '助理，',
   exact: false,
-  within: { role: 'group', name: '常驻智能体', exact: true },
+  within: { role: 'group', name: '本项目', exact: true },
 });
 // Gives a second session the time to show up before deciding none was added.
 const settled =

@@ -320,6 +320,12 @@ export function resolveSignal(ctx: ControlContext, issueId: string, cause = ''):
   return next;
 }
 
+/** Adds a line to the issue's history without changing its state. */
+export function noteSignalHistory(ctx: ControlContext, issueId: string, text: string): SignalIssue {
+  const issue = ctx.store.must<SignalIssue>('signal_issues', issueId);
+  return transition(ctx, issue, issue, text);
+}
+
 /** Mutes the issue for the user: it keeps counting and reaches no agent. */
 export function muteSignal(ctx: ControlContext, issueId: string, cause = ''): SignalIssue {
   const issue = ctx.store.must<SignalIssue>('signal_issues', issueId);

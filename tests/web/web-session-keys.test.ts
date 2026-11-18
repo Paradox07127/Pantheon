@@ -96,6 +96,7 @@ const LIST = [
 const STOPS = [
   'resident:assistant',
   'resident:triage',
+  'resident:personal',
   'group:waiting',
   'w1',
   'group:working',
@@ -294,7 +295,8 @@ describe('session list keys', () => {
     expect(listKey(h, 'w1', 'ArrowDown').focused).toBe('group:working');
     expect(listKey(h, 'w1', 'ArrowUp').focused).toBe('group:waiting');
     expect(listKey(h, 'r2', 'Home').focused).toBe('resident:assistant');
-    expect(listKey(h, 'resident:triage', 'ArrowDown').focused).toBe('group:waiting');
+    expect(listKey(h, 'resident:triage', 'ArrowDown').focused).toBe('resident:personal');
+    expect(listKey(h, 'resident:personal', 'ArrowDown').focused).toBe('group:waiting');
     expect(listKey(h, 'r2', 'End').focused).toBe('group:ended');
     expect(listKey(h, 'group:ended', 'ArrowDown')).toEqual({ focused: null, handled: true });
   });

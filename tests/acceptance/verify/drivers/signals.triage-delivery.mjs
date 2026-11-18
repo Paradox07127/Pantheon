@@ -132,7 +132,7 @@ await page.click({
   role: 'button',
   name: '问题处理，',
   exact: false,
-  within: { role: 'group', name: '常驻智能体', exact: true },
+  within: { role: 'group', name: '本项目', exact: true },
 });
 const convo = await poll(() =>
   page.evaluate(`(() => {

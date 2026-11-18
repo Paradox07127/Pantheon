@@ -102,7 +102,7 @@ if (settled) {
     role: 'button',
     name: '助理，',
     exact: false,
-    within: { role: 'group', name: '常驻智能体', exact: true },
+    within: { role: 'group', name: '本项目', exact: true },
   });
   const folded = await poll(() =>
     page.evaluate(`(() => {

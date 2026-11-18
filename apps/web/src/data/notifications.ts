@@ -416,9 +416,10 @@ function messageNotice(
     urgency?: string;
     session_id?: string;
     agent_name?: string;
+    delivery?: string;
   };
   const project = board.projects.find((p) => p.id === event.project_id);
-  if (!project || !message.session_id) return null;
+  if (!project || !message.session_id || message.delivery === 'feed') return null;
   return {
     title: listText(project.name, message.agent_name),
     body: message.text ?? '',
@@ -548,7 +549,7 @@ export function requestNotices(
       item.kind === 'lead.question' ? item.question?.question : item.questions?.[0]?.question;
     const kind = question !== undefined ? 'question_asked' : 'approval_requested';
     if (!noticeNow(item, r)) continue;
-    const session = heading(board, item.project_id, sessionId);
+    const session = item.lane_title ?? heading(board, item.project_id, sessionId);
     notices.push({
       title:
         question !== undefined

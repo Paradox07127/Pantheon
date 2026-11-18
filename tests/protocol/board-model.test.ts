@@ -72,6 +72,19 @@ it('types the goals with their progress and the goal of a milestone row', () => 
   expectTypeOf<BoardModel['milestones'][number]['goal_id']>().toEqualTypeOf<string | undefined>();
 });
 
+it('types what backs a done task and a ready or completed milestone, and the line a task set', () => {
+  expectTypeOf<Task['evidence_level']>().toEqualTypeOf<
+    'report' | 'gate' | 'reviewed' | undefined
+  >();
+  expectTypeOf<Task['evidence_reviewer']>().toEqualTypeOf<
+    'other_vendor' | 'other_runtime' | undefined
+  >();
+  expectTypeOf<Task['status_line']>().toEqualTypeOf<{ text: string; at: number } | undefined>();
+  expectTypeOf<BoardModel['milestones'][number]['evidence_level']>().toEqualTypeOf<
+    'report' | 'gate' | 'reviewed' | 'verified' | 'accepted' | undefined
+  >();
+});
+
 it('accepts three days as a board range and requires a supported range', () => {
   const schema = querySchemas['board.view'];
   expect(schema.parse({ project_id: 'project', days: '3' }).days).toBe('3');

@@ -28,9 +28,9 @@ const assistantId = (await query('agent.list', { project_id })).find(
   (a) => a.template === 'assistant',
 ).id;
 
-const ZONE = { role: 'group', name: '常驻智能体', exact: true };
+const ZONE = { role: 'group', name: '本项目', exact: true };
 const rowSel = (id) =>
-  `nav.ss-list [role=group][aria-label="常驻智能体"] .ss-rr[data-stop="resident:${id}"]`;
+  `nav.ss-list [role=group][aria-label="本项目"] .ss-rr[data-stop="resident:${id}"]`;
 const rowShown = (id) => page.evaluate(`!!document.querySelector(${JSON.stringify(rowSel(id))})`);
 /** Opens the row's context menu with a right press, as a user's right click does. */
 const rightClick = async (id) => {

@@ -724,6 +724,7 @@ export function needWho(
   // The board's lane ids are `<lead session id>:<lane id>`.
   if (item.kind === 'board.lane.approval')
     return (
+      item.lane_title ??
       model.lanes?.find((lane) => lane.id === `${item.session_id}:${item.request_id}`)?.title ??
       item.request_id ??
       item.project_id

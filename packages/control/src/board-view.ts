@@ -31,6 +31,7 @@ import type {
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 import { milestoneExtras, taskExtras } from './board-view-task-extras.js';
+import { taskEvidenceLevel } from './evidence-level.js';
 import {
   awaitingChange,
   boardTaskId,
@@ -1922,6 +1923,12 @@ export function boardView(
       failures.set(session.id, `turn:${session.last_turn.error_code}`);
     }
   }
+  const reviewFailed = (review: Review) =>
+    review.state === 'failed' ||
+    executions(review).some((execution) => ['failed', 'cancelled'].includes(execution.state)) ||
+    review.findings.some(
+      (finding) => finding.status === 'open' && finding.blocking && !finding.resolution,
+    );
   for (const task of tasks) {
     const sessionId = task.owner_session_id
       ? currentSessions.get(task.id)
@@ -1989,14 +1996,7 @@ export function boardView(
         });
       }
       if (review) {
-        const failed =
-          review.state === 'failed' ||
-          executions(review).some((execution) =>
-            ['failed', 'cancelled'].includes(execution.state),
-          ) ||
-          review.findings.some(
-            (finding) => finding.status === 'open' && finding.blocking && !finding.resolution,
-          );
+        const failed = reviewFailed(review);
         const open = review.findings.filter(
           (finding) =>
             finding.round === review.round && finding.status === 'open' && !finding.resolution,
@@ -2026,6 +2026,31 @@ export function boardView(
           }
         : {}),
     };
+  }
+  // Read after the pass above, which sets the gate steps a level stands on.
+  const milestoneLevels = new Map<string, NonNullable<Task['evidence_level']>[]>();
+  for (const task of tasks) {
+    if (!task.owner_session_id) continue;
+    const sessionId = currentSessions.get(task.id),
+      review = sessionId === undefined ? undefined : latestReviews.get(sessionId);
+    Object.assign(
+      task,
+      taskEvidenceLevel({
+        merged: task.state === 'merged',
+        gate_steps: task.gate_steps,
+        ...(review
+          ? { review: { failed: reviewFailed(review), verdicts: review.verdicts ?? [] } }
+          : {}),
+        writers: task.segments.flatMap((segment) =>
+          segment.status !== 'discarded' && segment.runtime ? [segment.runtime] : [],
+        ),
+      }),
+    );
+    if (task.evidence_level && task.milestone_id)
+      milestoneLevels.set(task.milestone_id, [
+        ...(milestoneLevels.get(task.milestone_id) ?? []),
+        task.evidence_level,
+      ]);
   }
   const byId = new Map(tasks.map((task) => [task.id, task]));
   const edgeBetween = (
@@ -2586,7 +2611,7 @@ export function boardView(
             owner_session_id: view.milestone.owner_session_id,
             tasks: view.tasks!,
             ...(view.milestone.due_on ? { due_on: view.milestone.due_on } : {}),
-            ...milestoneExtras(ctx, view),
+            ...milestoneExtras(ctx, view, milestoneLevels.get(view.milestone.id) ?? []),
           }
         : {
             id: view.milestone.id,
@@ -2595,7 +2620,7 @@ export function boardView(
             merged: view.merged_total,
             status: view.status,
             criteria,
-            ...milestoneExtras(ctx, view),
+            ...milestoneExtras(ctx, view, milestoneLevels.get(view.milestone.id) ?? []),
           };
     }),
     goals: facts.goals.map(({ goal, milestone_ids, milestones, tasks }) => ({

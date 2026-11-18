@@ -20,7 +20,7 @@ const residentOf = async () =>
   (await query('session.list', { project_id })).find((s) => s.resident?.agent_id === agentId);
 check('前置：这个智能体没有会话', !(await residentOf()));
 
-const rowSel = `nav.ss-list [role=group][aria-label="常驻智能体"] .ss-rr[data-stop="resident:${agentId}"]`;
+const rowSel = `nav.ss-list [role=group][aria-label="本项目"] .ss-rr[data-stop="resident:${agentId}"]`;
 const row = await poll(() =>
   page.evaluate(
     `document.querySelector(${JSON.stringify(rowSel)})?.getAttribute('aria-label') ?? null`,

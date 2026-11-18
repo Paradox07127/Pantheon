@@ -57,6 +57,18 @@ export function wakeHold(
   return undefined;
 }
 
+/** How loudly the agent's message reaches the user at `now`; loudest feed wins over urgency. */
+export function messageDelivery(
+  ctx: ControlContext,
+  profile: AgentProfile,
+  now: number,
+  urgent: boolean,
+): 'feed' | 'notify' {
+  if (profile.contract?.loudest === 'feed') return 'feed';
+  const quiet = contractQuietHours(ctx, profile);
+  return quiet && withinHours(quiet, now) && !urgent ? 'feed' : 'notify';
+}
+
 /** True when the issue is the project's and of a class the project's urgent list names. */
 export function urgentIssue(
   ctx: ControlContext,

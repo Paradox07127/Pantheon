@@ -522,6 +522,8 @@ export interface NeedsYouItem {
     decision?: 'approve' | 'reject' | 'keep' | 'revert';
   }[];
   task_title?: string;
+  /** The title of the lane a `board.lane.approval` item holds; no other item has it. */
+  lane_title?: string;
   step_title?: string;
   question?: LeadQuestion;
   blocked?: LeadNote;
@@ -959,6 +961,8 @@ export interface AgentMessage extends Entity {
   read_at?: number;
   /** The main agent the message went to instead of the user. */
   routed_to?: string;
+  /** How a message to the user reaches them: feed without a notification; absent: notify. */
+  delivery?: 'feed' | 'notify';
 }
 /**
  * The Pantheon MCP role a session's credential carries; a session in the user's own folder is never

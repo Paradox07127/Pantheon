@@ -51,7 +51,7 @@ const expected = agents
   .map((a) => `resident:${a.id}`);
 
 const rowsJs = `(() => {
-  const group = document.querySelector('nav.ss-list [role=group][aria-label="常驻智能体"]');
+  const group = document.querySelector('nav.ss-list [role=group][aria-label="本项目"]');
   if (!group) return null;
   return [...group.querySelectorAll('button.ss-rr')].map((b) => ({
     stop: b.getAttribute('data-stop'),
@@ -100,7 +100,7 @@ await page.click({
   role: 'button',
   name: `${ALPHA}，`,
   exact: false,
-  within: { role: 'group', name: '常驻智能体', exact: true },
+  within: { role: 'group', name: '本项目', exact: true },
 });
 const opened = await poll(async () => {
   const list = await sessionsOf(alpha);

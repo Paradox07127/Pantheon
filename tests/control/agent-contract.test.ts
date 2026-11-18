@@ -1,7 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type {
   AgentContract,
+  AgentMessage,
   AgentProfile,
+  BoardPlan,
   LeadNote,
   LeadQuestion,
   Principal,
@@ -13,6 +15,7 @@ import type {
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { wakeHold } from '../../packages/control/dist/agent-contract.js';
+import { residentPlan } from '../../packages/control/dist/agent-always-on.js';
 import { recordSignal } from '../../packages/control/dist/signals.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { eventually } from '../helpers.js';
@@ -330,4 +333,78 @@ it('keeps a held agent held for a digest note, even one naming a gate failure on
   await ticks(f);
   expect(notesOf(f, 'signal').filter((note) => note.signal === 'digest')).toHaveLength(1);
   expect(trackerTurns(f, triage.id)).toHaveLength(1);
+});
+
+it.each([
+  ['feed with loudest feed', { loudest: 'feed' }, false, 'feed'],
+  [
+    'feed in its quiet hours',
+    { loudest: 'notify', quiet_hours: { from: '09:00', to: '12:00' } },
+    false,
+    'feed',
+  ],
+  [
+    'notify for an urgent message in its quiet hours',
+    { quiet_hours: { from: '09:00', to: '12:00' } },
+    true,
+    'notify',
+  ],
+  ['feed for an urgent message with loudest feed', { loudest: 'feed' }, true, 'feed'],
+  ['notify without a contract', undefined, false, 'notify'],
+] as const)(
+  "stamps the assistant's message to the user %s",
+  async (_case, contract, urgent, delivery) => {
+    const { f, as, setContract } = await clockFixture();
+    if (contract) setContract(contract);
+    const issue = urgent ? gateFailure(f, 'typecheck', 'default_branch') : undefined;
+    const message = as<AgentMessage>('agent.tell_user', {
+      text: 'The export task merged.',
+      urgency: 'normal',
+      ...(issue && { signal_issue_id: issue.id }),
+    });
+    expect(f.store.must<AgentMessage>('agent_messages', message.id).delivery ?? 'notify').toBe(
+      delivery,
+    );
+    expect(
+      f.store
+        .events(0, f.project.id, 1000, ['agent_message.created'])
+        .map((event) => (event.payload as AgentMessage).delivery ?? 'notify'),
+    ).toEqual([delivery]);
+  },
+);
+
+const askInput = {
+  question: 'Which export format comes first?',
+  options: ['CSV', 'JSON'],
+  recommended: 'CSV',
+  assumption: 'CSV comes first',
+  blocks: [],
+};
+
+it.each(['feed', 'notify'] as const)(
+  'refuses lead.ask from a resident whose loudest is %s',
+  async (loudest) => {
+    const { f, assistant, as, setContract } = await clockFixture();
+    setContract({ loudest });
+    residentPlan(f.control['ctx'] as ControlContext, assistant);
+    expect(() => as('lead.ask', askInput)).toThrow(
+      expect.objectContaining({
+        code: 'permission_denied',
+        message: 'Your contract lets you reach the user only with tell_user',
+      }),
+    );
+  },
+);
+
+it.each([
+  ['loudest ask', { loudest: 'ask' }],
+  ['no contract', undefined],
+] as const)('lets a resident with %s ask the user', async (_case, contract) => {
+  const { f, assistant, as, setContract } = await clockFixture();
+  if (contract) setContract(contract);
+  residentPlan(f.control['ctx'] as ControlContext, assistant);
+  const question = as<LeadQuestion>('lead.ask', askInput);
+  expect(f.store.must<BoardPlan>('board_plans', assistant.id).questions).toEqual([
+    expect.objectContaining({ id: question.id }),
+  ]);
 });

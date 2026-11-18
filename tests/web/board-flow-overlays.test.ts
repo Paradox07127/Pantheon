@@ -387,6 +387,23 @@ describe('the flow chart overlays', () => {
   });
 
   it.each([
+    [undefined, true],
+    ['plan_approval' as const, false],
+  ])('names the next task waiting on %s and offers its start: %s', (wait, offered) => {
+    const model = board();
+    model.tasks[3] = { ...model.tasks[3]!, state: 'todo' };
+    model.tasks = model.tasks.map((t) =>
+      t.id === 'lead-1:c' && wait ? { ...t, dispatch_wait: wait } : t,
+    );
+    const milestone = canvas({ model }).node('milestone:m1');
+    expect(milestone.data.next.id).toBe('lead-1:c');
+    const host = mount(() => MilestoneNode({ data: milestone.data } as never));
+    expect(text(host.value)).toContain('task c');
+    const start = flowText('milestone.startLabel', { task: 'task c' });
+    expect(nodes(host.value).some((n) => n.props['aria-label'] === start)).toBe(offered);
+  });
+
+  it.each([
     ['passed', 'board.verify.badge.passed'],
     ['failed', 'board.verify.badge.failed'],
     ['inconclusive', 'board.verify.badge.inconclusive'],

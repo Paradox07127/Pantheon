@@ -199,6 +199,30 @@ describe('what needs you, by the decision it asks', () => {
     expect(rows(h.value)).toHaveLength(0);
   });
 
+  it.each([
+    ['Docs lane', 'Docs lane', 'Lead plan'],
+    [undefined, 'Lead plan', 'Docs lane'],
+  ])(
+    'names a lane waiting for plan approval with lane title %s as %s',
+    (laneTitle, shown, hidden) => {
+      mock.board.board.sessions.push({ id: 'lead-1', project_id: 'alpha', title: 'Lead plan' });
+      const lane = need({
+        source: { table: 'board_plans', id: 'lead-1', revision: 4 },
+        kind: 'board.lane.approval',
+        session_id: 'lead-1',
+        request_id: 'lane-docs',
+        reason: 'lane_plan_awaiting_approval',
+        decision: 'plan_change',
+        primary: 'board.lane.approve',
+        actions: [{ command: 'board.lane.approve', allowed: true }],
+        ...(laneTitle && { lane_title: laneTitle }),
+      });
+      const said = text(buttons(rows(open([lane]).value)[0]!)[0]!);
+      expect(said).toBe(zh('data.attention.decision.planChange') + shown);
+      expect(said).not.toContain(hidden);
+    },
+  );
+
   it('holds the approve button of a lane whose approval the backend refuses', () => {
     const lane = need({
       source: { table: 'board_plans', id: 'lead-1', revision: 4 },

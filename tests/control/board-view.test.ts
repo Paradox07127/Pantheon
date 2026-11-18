@@ -1117,6 +1117,66 @@ it('carries the verification of a ready lead milestone, and nothing before one r
   });
 });
 
+it("backs a report task the lead accepted by its report alone, and its milestone by the user's acceptance once given", async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [
+        {
+          id: 'report',
+          title: 'Research exports',
+          goal: 'Exports are understood',
+          lane: 'core',
+          milestone: 'release',
+          depends_on: [],
+          source: ['Plan the export feature'],
+          scope: [],
+          acceptance: [],
+          done_when: 'report',
+        },
+      ],
+      milestones: [
+        { id: 'release', title: 'Release', criteria: ['Report reviewed'], tasks: ['report'] },
+      ],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    {
+      id: `session:${lead.id}`,
+      role: 'lead',
+      project_id: f.project.id,
+      session_id: lead.id,
+      expires_at: f.store.now() + 60000,
+    },
+  );
+  patchPlan(f, lead.id, {
+    accepted: { report: { at: f.store.now(), evidence: 'Report reviewed', generation: 1 } },
+  });
+  const board = () => f.control.boardView(user, f.project.id, 1);
+  expect(board().tasks.find((task) => task.id === `${lead.id}:report`)).toMatchObject({
+    done_by: 'accepted',
+    evidence_level: 'report',
+  });
+  expect(board().milestones[0]).toMatchObject({
+    status: 'ready_for_acceptance',
+    evidence_level: 'report',
+  });
+  const milestone = f.store.list<Milestone>('milestones')[0]!;
+  f.call(
+    'milestone.accept',
+    { milestone_id: milestone.id, evidence_refs: ['task:report'] },
+    milestone.revision,
+  );
+  expect(board().milestones[0]).toMatchObject({ status: 'completed', evidence_level: 'accepted' });
+});
+
 it('carries the reason a lead gave for running a lane in parallel, and nothing for a lane without one', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');
@@ -3175,6 +3235,40 @@ it('shows the gate steps a run checked so far, and keeps them once the run is ca
   expect(steps()).toEqual(checked);
   f.store.event('session.gate_run_cancelled', current(f, session.id), f.project.id, {});
   expect(steps()).toEqual(checked);
+});
+
+it('backs a merged task by its gate only once a gate step passed, not by a run whose steps were all skipped', async () => {
+  const f = await workbenchFixture();
+  const lead = await leadWithPlan(f, [{ id: 'export', title: 'Build exports', depends_on: [] }]);
+  const session = await idleTaskSession(f, lead.id, 'export');
+  const row = () =>
+    f.control
+      .boardView(user, f.project.id, 1)
+      .tasks.find((task) => task.id === `${lead.id}:export`)!;
+  f.store.event('session.gate_checked', current(f, session.id), f.project.id, {
+    results: [{ name: 'Lint', exit_code: 1, state: 'skipped' }],
+  });
+  const stored = current(f, session.id);
+  const merged = f.store.update<Session>(
+    'sessions',
+    { ...stored, state: 'closed', outcome: 'merged' },
+    stored.revision,
+  );
+  f.store.event('session.merged', merged, f.project.id, { to_sha: 'merged-sha' });
+  expect(row()).toMatchObject({
+    state: 'merged',
+    checks: 'pass',
+    gate_steps: [{ name: 'Lint', state: 'skipped' }],
+    evidence_level: 'report',
+  });
+  f.store.event('session.gate_checked', merged, f.project.id, {
+    results: [
+      { name: 'Lint', exit_code: 1, state: 'skipped' },
+      { name: 'Test', exit_code: 0 },
+    ],
+  });
+  expect(row()).toMatchObject({ state: 'merged', evidence_level: 'gate' });
+  expect(row()).not.toHaveProperty('evidence_reviewer');
 });
 
 it('projects external review rounds and verdict without treating a failed reviewer as a pass', async () => {

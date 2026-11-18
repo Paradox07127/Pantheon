@@ -1,5 +1,6 @@
 import {
   type AgentEvent,
+  type AgentProfile,
   type Approval,
   DomainError,
   id,
@@ -730,6 +731,13 @@ export const leadInboxHandlers: Handlers = {
     );
     projectAccess(ctx, p, input.project_id, c.type);
     requireThat(p.role === 'lead', 'permission_denied', 'Lead session required');
+    const agentId = ctx.store.get<Session>('sessions', p.session_id!)?.resident?.agent_id;
+    const loudest = agentId && ctx.store.get<AgentProfile>('agents', agentId)?.contract?.loudest;
+    requireThat(
+      loudest !== 'feed' && loudest !== 'notify',
+      'permission_denied',
+      'Your contract lets you reach the user only with tell_user',
+    );
     const plan = ctx.store.get<BoardPlan>('board_plans', p.session_id!);
     requireThat(plan, 'not_found', 'Write a plan with update_board first');
     for (const taskId of input.blocks)
