@@ -120,6 +120,11 @@ const NEXT_STEP: Partial<Record<NeedsYouItem['reason'], () => string>> = {
       defaultMessage:
         'The plan proposal awaits the user; the user accepts it, changes its ops before accepting, or rejects it.',
     }),
+  lane_plan_awaiting_approval: () =>
+    t({
+      id: 'daemon.nextStep.lanePlanAwaitingApproval',
+      defaultMessage: 'Approve the plan to let its tasks start, or tell the lead what to change.',
+    }),
   background_task_long: () =>
     t({
       id: 'daemon.nextStep.backgroundTaskLong',
@@ -199,6 +204,11 @@ const QUEUED: Record<Wait, (planned: Planned) => string> = {
     t({
       id: 'daemon.blocker.queued.approval',
       defaultMessage: 'Queued: waiting for your approval',
+    }),
+  plan_approval: () =>
+    t({
+      id: 'daemon.blocker.queued.planApproval',
+      defaultMessage: 'Queued: waiting for your plan approval',
     }),
   runtime_limited: () =>
     t({

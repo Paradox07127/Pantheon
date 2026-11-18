@@ -31,6 +31,7 @@ export interface NeedsYouItem {
     | 'workflow.definition.trial'
     | 'improvement.candidate'
     | 'board.plan.proposal'
+    | 'board.lane.approval'
     | 'project.over_budget'
     | 'lead.question'
     | 'workflow.approval'
@@ -78,6 +79,7 @@ export interface NeedsYouItem {
     | 'workflow_definition_trial_completed'
     | 'improvement_awaiting_decision'
     | 'plan_proposal_awaiting_decision'
+    | 'lane_plan_awaiting_approval'
     | 'project_over_budget'
     | 'lead_question'
     | 'task_blocked'
@@ -129,6 +131,8 @@ export interface NeedsYouItem {
   failure_class?: GateFailureClass;
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
+  /** On a lane waiting for plan approval: whether the automatic plan review of its tasks still runs. */
+  plan_review_running?: boolean;
   /** The agent a pending proposal creates or changes, and how long it has waited in milliseconds. */
   agent_proposal?: {
     id: string;
@@ -457,6 +461,11 @@ function knownReason(code: string): string | null {
         id: 'data.reason.planProposalAwaitingDecision',
         defaultMessage: 'Plan change proposal awaiting a decision',
       });
+    case 'lane_plan_awaiting_approval':
+      return t({
+        id: 'data.reason.lanePlanAwaitingApproval',
+        defaultMessage: 'Plan waits for your approval',
+      });
     case 'project_over_budget':
       return t({ id: 'data.reason.projectOverBudget', defaultMessage: 'Project over budget' });
     case 'workflow_approval':
@@ -632,6 +641,16 @@ export function reasonText(code: string): string {
       { detail: code.slice(GIT_FAILED.length).trim() },
     );
   return knownReason(code) ?? code;
+}
+
+/** Interface text of an item's reason, with what the item adds to it. */
+export function needReasonText(item: Pick<NeedsYouItem, 'reason' | 'plan_review_running'>): string {
+  if (item.reason === 'lane_plan_awaiting_approval' && item.plan_review_running)
+    return t({
+      id: 'data.reason.lanePlanAwaitingApprovalReviewing',
+      defaultMessage: 'Plan waits for your approval; its review is still running',
+    });
+  return reasonText(item.reason);
 }
 
 /** Interface reason of a failed command, followed by the daemon's message. */

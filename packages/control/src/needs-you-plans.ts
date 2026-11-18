@@ -12,6 +12,9 @@ import { milestoneView } from './project-facts.js';
 import { personalAnswer } from './personal-scope.js';
 import { blockedReport } from './lead-inbox.js';
 import { stuckUpstream } from './task-dispatch.js';
+import { laneHeld } from './lane-stops.js';
+import { runningPlanReview } from './review.js';
+import { taskWorkflow } from './workflow-engine.js';
 import {
   NEXT_STEP,
   action,
@@ -20,7 +23,7 @@ import {
   type NeedsYouScope,
 } from './needs-you.js';
 
-/** The plans' proposals, external holds, lead questions, blocked and undispatched tasks and lead wake failures. */
+/** The plans' proposals, lanes waiting for plan approval, external holds, lead questions, blocked and undispatched tasks and lead wake failures. */
 export function planItems(
   ctx: ControlContext,
   scope: NeedsYouScope,
@@ -50,6 +53,37 @@ export function planItems(
           }),
         ],
         next_step: NEXT_STEP.plan_proposal_awaiting_decision,
+      });
+    }
+    for (const [laneId, stop] of Object.entries(plan.lane_stops ?? {})) {
+      if (!laneHeld(plan, laneId)) continue;
+      items.push({
+        source: { table: 'board_plans', id: plan.id, revision: plan.revision },
+        kind: 'board.lane.approval',
+        project_id: plan.project_id,
+        session_id: plan.id,
+        request_id: laneId,
+        status: 'pending',
+        created_at: stop.held_at,
+        reason: 'lane_plan_awaiting_approval',
+        decision: 'plan_change',
+        primary: 'board.lane.approve',
+        actions: [
+          action('board.lane.approve', () => {
+            projectAccess(ctx, principal, plan.project_id, 'board.lane.approve');
+            personalAnswer(ctx, principal, 'board.lane.approve', plan.project_id);
+          }),
+        ],
+        plan_review_running: plan.tasks.some(
+          (task) =>
+            task.lane === laneId &&
+            !!task.kind &&
+            taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(
+              task.kind.tier,
+            ) &&
+            !!runningPlanReview(ctx, plan, task.id),
+        ),
+        next_step: NEXT_STEP.lane_plan_awaiting_approval,
       });
     }
     for (const [subject, hold] of Object.entries(plan.external_holds ?? {})) {

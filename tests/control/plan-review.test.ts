@@ -91,6 +91,14 @@ function writePlan(f: Fixture, leadId: string, tasks: PlanTask[]) {
   );
 }
 
+// A lead's new lane with a high-risk task waits for the user's plan approval as well.
+const approveLane = (f: Fixture, leadId: string) =>
+  f.call('board.lane.approve', {
+    project_id: f.project.id,
+    lead_session_id: leadId,
+    lane_id: 'core',
+  });
+
 const planReviews = (f: Fixture) => f.store.list<Review>('reviews').filter((review) => review.plan);
 const notes = (f: Fixture, kind: LeadNote['kind']) =>
   f.store
@@ -177,6 +185,7 @@ it('reviews each high-risk task generation once and again after its contract cha
 it('holds the session of a high-risk task until its plan review ends and opens other tasks', async () => {
   const { f, lead, reviewer, ready, ended } = await planFixture();
   writePlan(f, lead.id, [task('risky', 't3'), task('small', 't1')]);
+  approveLane(f, lead.id);
   const [review] = planReviews(f);
   await ready();
   f.call(
@@ -326,6 +335,7 @@ it('does not review or hold tasks when no runtime can review and tells the lead'
       .kindEvents(f.project.id, ['lead.note_added'])
       .filter((event) => (event.payload as LeadNote).text.includes('did not review the plan')),
   ).toHaveLength(1);
+  approveLane(f, lead.id);
   f.call('task.start', { project_id: f.project.id, task_ids: ['risky'] }, null, leadOf(f, lead.id));
   await f.control.tick();
   expect(sessionsOf(f, lead.id, 'risky')).toHaveLength(1);
@@ -369,6 +379,7 @@ it('leaves a done high-risk task out of the plan review', async () => {
   // No runtime reviews the first plan, so its task runs to done unreviewed.
   f.adapter.report.capabilities.read_isolation = { status: 'unsupported', evidence: 'Not here' };
   writePlan(f, lead.id, [task('risky', 't3', { done_when: 'report' })]);
+  approveLane(f, lead.id);
   f.call('task.start', { project_id: f.project.id, task_ids: ['risky'] }, null, leadOf(f, lead.id));
   await f.control.tick();
   const [session] = sessionsOf(f, lead.id, 'risky');
@@ -402,6 +413,7 @@ it('leaves a done high-risk task out of the plan review', async () => {
 it('holds a high-risk task written during a running plan review until its own review ends', async () => {
   const { f, lead, reviewer, ready, ended } = await planFixture();
   writePlan(f, lead.id, [task('risky', 't3')]);
+  approveLane(f, lead.id);
   const [first] = planReviews(f);
   writePlan(f, lead.id, [task('risky', 't3'), task('later', 't3')]);
   f.call('task.start', { project_id: f.project.id, task_ids: ['later'] }, null, leadOf(f, lead.id));

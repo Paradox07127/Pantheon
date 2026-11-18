@@ -4,6 +4,7 @@ import { constants, lstatSync, readdirSync, readlinkSync, realpathSync, statSync
 import {
   credentialRole,
   requireThat,
+  type AgentProfile,
   type Principal,
   type RuntimeModel,
   type Entity,
@@ -56,6 +57,7 @@ export interface ControlContext {
   readonly revokePersonalKey?: ControlOptions['revokePersonalKey'];
   readonly restorePersonalKey?: ControlOptions['restorePersonalKey'];
   readonly discardPersonalKey?: ControlOptions['discardPersonalKey'];
+  readonly personalKeyFile?: ControlOptions['personalKeyFile'];
   readonly adapters: Map<string, HarnessAdapter>;
   readonly createRuntimeAdapter?: ControlOptions['createRuntimeAdapter'];
   // handles, cancelling and endTurns are keyed by session turn id.
@@ -483,6 +485,27 @@ export function sessionMcp(
         .filter(([, effect]) => effect === 'costly')
         .map(([name]) => name),
     }),
+  };
+}
+
+/** The personal tools on the personal agent's own key, without a session credential. */
+export function personalSessionMcp(
+  ctx: ControlContext,
+  profile: AgentProfile,
+): SessionSpec['pantheon_mcp'] {
+  const credential = ctx.personalKeyFile?.(profile.personal_key_id!);
+  if (!credential) return;
+  return {
+    command: process.execPath,
+    args: [
+      ctx.mcpEntry ?? fileURLToPath(new URL('../../../apps/cli/dist/index.js', import.meta.url)),
+      'mcp',
+      '--personal',
+    ],
+    env: {
+      PANTHEON_DAEMON_URL: credential.daemon_url,
+      PANTHEON_PERSONAL_TOKEN_FILE: credential.token_file,
+    },
   };
 }
 

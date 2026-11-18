@@ -1,7 +1,21 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
-import type { AgentProfile, PersonalKey, Principal, Project, Timer } from '@pantheon/domain';
+import { readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { afterEach, beforeEach, expect, it, vi, type MockInstance } from 'vitest';
+import { FixtureAdapter } from '@pantheon/adapters';
+import type {
+  AgentProfile,
+  BoardPlan,
+  PersonalKey,
+  Principal,
+  Project,
+  Session,
+  SessionSpec,
+  SessionTurn,
+  Timer,
+} from '@pantheon/domain';
 import { personalHome } from '@pantheon/control';
-import { fixture, user } from '../helpers.js';
+import { residentPlan } from '../../packages/control/dist/agent-always-on.js';
+import { eventually, fixture, user } from '../helpers.js';
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
@@ -10,15 +24,28 @@ const personal: Principal = { id: 'personal:k1', role: 'personal' };
 const NOON = new Date(2026, 10, 18, 12, 0, 0, 0).getTime();
 
 let f: Fixture;
+let starts: MockInstance<FixtureAdapter['start']>;
 beforeEach(async () => {
+  const adapter = new FixtureAdapter();
+  starts = vi.spyOn(adapter, 'start');
   f = await fixture({
+    adapter,
     now: () => NOON,
+    managedWorkspaces: true,
     controlOptions: {
+      readProcess: () => undefined,
       issuePersonalKey: (keyId) => ({ token_file: `/keys/${keyId}`, digest: `digest-${keyId}` }),
+      personalKeyFile: (keyId) => ({
+        token_file: `/keys/${keyId}`,
+        daemon_url: 'http://127.0.0.1:4321',
+      }),
     },
   });
 });
-afterEach(() => f.close());
+afterEach(async () => {
+  await f.close();
+  vi.restoreAllMocks();
+});
 
 const home = () => f.store.transaction(() => personalHome(f.control['ctx'], 'personal-agent-test'));
 
@@ -109,4 +136,76 @@ it('lists the built-in key with its label', () => {
   expect(f.control.personalKeyList(user)).toEqual([
     expect.objectContaining({ id: profile.personal_key_id, label: 'Built-in personal agent' }),
   ]);
+});
+
+const openPersonal = (principal = user) =>
+  f.call<Session>('resident.open', { kind: 'personal' }, null, principal);
+
+/** The spec of the session's first turn, started by a message from the user. */
+async function firstTurnSpec(session: Session): Promise<SessionSpec> {
+  f.call('session.send', { session_id: session.id, input: 'What waits for me?' }, session.revision);
+  const spec = () =>
+    starts.mock.calls.map(([each]) => each).find((each) => each.platform_session_id === session.id);
+  await eventually(
+    () => spec() !== undefined,
+    () => f.control.tick(),
+  );
+  return spec()!;
+}
+
+it('opens one conversation in the home, made on the first open', () => {
+  const first = openPersonal(),
+    second = openPersonal();
+  const home = f.store.list<Project>('projects').find((project) => project.kind === 'personal')!;
+  const profile = f.store
+    .list<AgentProfile>('agents')
+    .find((agent) => agent.project_id === home.id)!;
+  expect(second.id).toBe(first.id);
+  expect(first).toMatchObject({
+    project_id: home.id,
+    resident: { kind: 'personal', agent_id: profile.id },
+  });
+});
+
+it('runs the personal tools on the built-in key in an empty folder of its own', async () => {
+  const session = openPersonal();
+  const { profile } = home();
+  const spec = await firstTurnSpec(session);
+  expect(spec.pantheon_mcp!.args.slice(-2)).toEqual(['mcp', '--personal']);
+  expect(spec.pantheon_mcp!.env).toEqual({
+    PANTHEON_DAEMON_URL: 'http://127.0.0.1:4321',
+    PANTHEON_PERSONAL_TOKEN_FILE: `/keys/${profile.personal_key_id}`,
+  });
+  expect(spec.pantheon_mcp!.ask_tools).toBeUndefined();
+  const folder = path.join(f.controlOptions!.workspaceRoot!, 'personal-agent');
+  expect(spec.cwd).toBe(folder);
+  expect(statSync(folder).mode & 0o777).toBe(0o700);
+  expect(readdirSync(folder)).toEqual([]);
+});
+
+it('refuses resident.open of the personal agent from a personal principal', () => {
+  expect(refusal(() => openPersonal(personal))).toMatchObject({ code: 'permission_denied' });
+  expect(f.store.list<Project>('projects').some((project) => project.kind === 'personal')).toBe(
+    false,
+  );
+});
+
+it('moves the inbox to the next session of the personal agent without a takeover turn', () => {
+  const session = openPersonal();
+  const { profile } = home();
+  f.store.transaction(() => residentPlan(f.control['ctx'], session));
+  const other = new FixtureAdapter();
+  other.name = 'other-runtime';
+  f.control.adapters.set(other.name, other);
+  f.call('agent.update', {
+    agent_id: profile.id,
+    revision: profile.revision,
+    runtime: other.name,
+  });
+  const next = openPersonal();
+  expect(next.id).not.toBe(session.id);
+  expect(f.store.get<BoardPlan>('board_plans', next.id)).toBeDefined();
+  expect(
+    f.store.list<SessionTurn>('session_turns').filter((turn) => turn.session_id === next.id),
+  ).toEqual([]);
 });

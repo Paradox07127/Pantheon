@@ -887,8 +887,17 @@ const planChangeOps = [
           .nullable()
           .optional()
           .describe('The due day, YYYY-MM-DD; null removes the day.'),
+        goal: z
+          .string()
+          .min(1)
+          .max(64)
+          .nullable()
+          .optional()
+          .describe(
+            'Optional: the id of a goal in project_read.goals that this milestone serves; null removes the link; left out keeps it.',
+          ),
       })
-      .describe('`title` and/or `due_on`.'),
+      .describe('`title`, `due_on` and/or `goal`.'),
   }),
 ] as const;
 const planLane = z.strictObject({
@@ -1516,6 +1525,15 @@ export const boardPlanInputSchema = z.strictObject({
           .describe('1-12 checkable statements of what must hold.'),
         tasks: z.array(planId).min(1).max(64).describe('The ids of its tasks.'),
         due_on: calendarDay.optional().describe('Optional due day, YYYY-MM-DD.'),
+        goal: z
+          .string()
+          .min(1)
+          .max(64)
+          .nullable()
+          .optional()
+          .describe(
+            'Optional: the id of a goal in project_read.goals that this milestone serves; null removes the link; left out keeps it.',
+          ),
         replan_if: z
           .array(
             z.discriminatedUnion('type', [
@@ -2388,6 +2406,12 @@ export const inputSchemas = {
     reason: z.string().optional(),
     ops: z.array(planPatchOp).min(1).max(32).optional(),
   }),
+  /** Lets the tasks of a lane that waits for the user's plan approval start; the user only. */
+  'board.lane.approve': z.strictObject({
+    project_id: str,
+    lead_session_id: str,
+    lane_id: str,
+  }),
   'board.sync': z.strictObject({ project_id: str }),
   /** Ids of tasks in the calling lead's plan. */
   'task.start': z.strictObject({
@@ -2710,6 +2734,16 @@ export const inputSchemas = {
     goals: strings,
     non_goals: strings,
   }),
+  /** The user only; adds a goal of the project in the user's words, or rewrites one by goal_id. */
+  'goal.set': z.strictObject({
+    project_id: str,
+    goal_id: str.optional(),
+    text: z.string().trim().min(1).max(280),
+  }),
+  /** The user only; archives a goal; milestones keep their link. */
+  'goal.archive': z.strictObject({ goal_id: str }),
+  /** The user only; the project's active goals in their new order. */
+  'goal.reorder': z.strictObject({ project_id: str, goal_ids: z.array(str).min(1).max(7) }),
   'milestone.create': z.strictObject({ project_id: str, ...milestoneInput }),
   'milestone.revise': z.strictObject({ milestone_id: str, ...milestoneInput }),
   'milestone.accept': z.strictObject({
@@ -2824,10 +2858,11 @@ export const inputSchemas = {
     reason: z.string().min(1).max(200).optional(),
     exit_code: z.number().int().optional(),
   }),
-  /** The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none. */
+  /** The user only; returns the open session of the agent, by agent_id, by the kind of a built-in one or as the personal agent, opening one when there is none. */
   'resident.open': z.union([
     z.strictObject({ project_id: str, kind: z.enum(['assistant', 'triage']) }),
     z.strictObject({ agent_id: str }),
+    z.strictObject({ kind: z.literal('personal') }),
   ]),
   /** The user only; sends the user's request to the project's Assistant, or to the target session, steering it while it runs; returns {session_id, turn_id}. */
   'request.send': z.strictObject({
@@ -4590,7 +4625,8 @@ export interface BoardModel {
       | 'device_resource'
       | 'paused'
       | 'answer'
-      | 'approval';
+      | 'approval'
+      | 'plan_approval';
     /**
      * Plan ids of the tasks the plan makes it wait for, the ones the range leaves out of `tasks`
      * included. Absent on rows of sessions not opened from a task.

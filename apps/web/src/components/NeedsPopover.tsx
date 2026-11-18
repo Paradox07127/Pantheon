@@ -17,7 +17,7 @@ import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { useCurrentProject } from '../data/current-project';
 import { useDecisionsToday } from '../data/decisions-for-user';
-import { ageText, failureText, reasonText, useNow, type NeedsYouItem } from '../data/needs-you';
+import { ageText, failureText, needReasonText, useNow, type NeedsYouItem } from '../data/needs-you';
 import { focusRequest } from '../data/focus-request';
 import { needsKey } from '../data/notice-tiers';
 import { visibleProjects } from '../data/projects';
@@ -181,6 +181,7 @@ function needsGlyph(item: NeedsYouItem): ReactNode {
       return <StateGlyph name="ready" />;
     case 'workflow.approval':
     case 'external.approval':
+    case 'board.lane.approval':
       return <StateGlyph name="approval" />;
     default:
       return <StateGlyph name="baseline_review" />;
@@ -277,7 +278,7 @@ export function NeedsPopover({
   const listed = items.map((item) => {
     const sessionId = itemSession(item);
     const session = sessionId ? board?.sessions.find((s) => s.id === sessionId) : undefined;
-    const reason = reasonText(item.reason);
+    const reason = needReasonText(item);
     const key = `${item.source.table}:${item.source.id}:${item.reason}:${item.request_id ?? ''}`;
     const failed = answers[key];
     // A lead's question is answered on its card, which the lead's thread does not show.
@@ -291,6 +292,9 @@ export function NeedsPopover({
       projectId: item.project_id,
       sessionId,
       ...(card && { open: () => useShell.getState().openProjectNeed(item.project_id, card) }),
+      ...(item.kind === 'board.lane.approval' && {
+        open: () => useShell.getState().openProjectBoard(item.project_id),
+      }),
       ...(proposal &&
         sessionId && {
           open: () => {

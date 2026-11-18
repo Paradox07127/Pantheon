@@ -287,6 +287,8 @@ export interface ControlOptions {
   restorePersonalKey?: (keyId: string, digest: string) => void;
   /** Removes for good a key whose row never committed. */
   discardPersonalKey?: (keyId: string) => void;
+  /** The token file of a live personal key and the daemon address a personal MCP server uses. */
+  personalKeyFile?: (keyId: string) => { token_file: string; daemon_url: string };
   /** Native transcript index the trace queries merge with the event log. */
   trace?: TraceIndex;
   /** Directory holding the user's config.json; absent means no user configuration. */
@@ -404,6 +406,7 @@ export class Control extends EventEmitter {
       revokePersonalKey: options.revokePersonalKey,
       restorePersonalKey: options.restorePersonalKey,
       discardPersonalKey: options.discardPersonalKey,
+      personalKeyFile: options.personalKeyFile,
       adapters: this.adapters,
       createRuntimeAdapter: options.createRuntimeAdapter,
       handles: this.handles,

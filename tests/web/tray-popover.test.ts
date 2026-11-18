@@ -341,6 +341,33 @@ describe('tray popover waiting group', () => {
       session_id: 'lead-2',
     });
   });
+
+  it('lists a lane whose plan waits for approval, says while its review still runs, and opens its lead', async () => {
+    const lane = (request_id: string, plan_review_running?: boolean): NeedsYouItem => ({
+      source: { table: 'board_plans', id: 'lead-2', revision: 1 },
+      kind: 'board.lane.approval',
+      project_id: 'beta',
+      session_id: 'lead-2',
+      request_id,
+      status: 'pending',
+      created_at: NOW - 3 * MINUTE,
+      reason: 'lane_plan_awaiting_approval',
+      actions: [{ command: 'board.lane.approve', allowed: true }],
+      ...(plan_review_running === undefined ? {} : { plan_review_running }),
+    });
+    needs = [lane('lane-docs'), failedSession];
+    const tree = (await popover()).value;
+    const waiting = group(tree, WAITING);
+    expect(waiting.count).toBe('1');
+    button(waiting.section, zh('data.reason.lanePlanAwaitingApproval')).props.onClick();
+    expect(bridge.showInMainWindow).toHaveBeenCalledWith({
+      project_id: 'beta',
+      session_id: 'lead-2',
+    });
+    needs = [lane('lane-api', true)];
+    const reviewing = group((await popover()).value, WAITING);
+    expect(text(reviewing.section)).toContain(zh('data.reason.lanePlanAwaitingApprovalReviewing'));
+  });
 });
 
 describe('tray popover other groups', () => {

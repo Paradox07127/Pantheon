@@ -304,6 +304,47 @@ describe('needs-you strip buttons', () => {
       ['open', OPEN, null],
     ]);
   });
+
+  it('approves the plan of a lane that waits for the user, named by the lane and else by its id', () => {
+    const held = (allowed: boolean, over: Partial<BoardNeed> = {}) =>
+      need({
+        source: { table: 'board_plans', id: 'lead-1', revision: 6 },
+        kind: 'board.lane.approval',
+        session_id: 'lead-1',
+        request_id: 'lane-docs',
+        reason: 'lane_plan_awaiting_approval',
+        decision: 'plan_change',
+        primary: 'board.lane.approve',
+        actions: [
+          allowed
+            ? { command: 'board.lane.approve', allowed: true }
+            : {
+                command: 'board.lane.approve',
+                allowed: false,
+                disabled_reason: 'permission_denied',
+              },
+        ],
+        binding: undefined,
+        ...over,
+      });
+    expect(keys(held(true))).toEqual([['approve', act('approvePlan'), null]]);
+    expect(keys(held(false))).toEqual([
+      ['approve', act('approvePlan'), reason('permissionDenied')],
+    ]);
+    expect(needCommand(held(true), 'approve')).toEqual({
+      type: 'board.lane.approve',
+      input: { project_id: 'project-a', lead_session_id: 'lead-1', lane_id: 'lane-docs' },
+      revision: null,
+    });
+    const lanes = [{ id: 'lead-1:lane-docs', title: 'Write the docs' }];
+    expect(needWho(held(true), { tasks: [], milestones: [], lanes }, [])).toBe('Write the docs');
+    expect(needWho(held(true), { tasks: [], milestones: [], lanes: [] }, [])).toBe('lane-docs');
+    expect(needWhat(held(true))).toBe(reason('lanePlanAwaitingApproval'));
+    expect(needWhat(held(true, { plan_review_running: true }))).toBe(
+      reason('lanePlanAwaitingApprovalReviewing'),
+    );
+    expect(needKey(held(true))).not.toBe(needKey(held(true, { request_id: 'lane-api' })));
+  });
 });
 
 const lead = (session_id: string, state: BoardLead['state'], updated_at: number): BoardLead => ({
@@ -1504,6 +1545,71 @@ describe('needs-you row', () => {
     expect(card.scrollIntoView).toHaveBeenCalled();
     expect(card.focus).toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it('shows a lane waiting for plan approval by the lane title, approves its plan in place, and holds the button the backend refuses', async () => {
+    const held = (allowed: boolean) =>
+      need({
+        source: { table: 'board_plans', id: 'lead-1', revision: 6 },
+        kind: 'board.lane.approval',
+        session_id: 'lead-1',
+        request_id: 'lane-docs',
+        reason: 'lane_plan_awaiting_approval',
+        decision: 'plan_change',
+        primary: 'board.lane.approve',
+        actions: [
+          allowed
+            ? { command: 'board.lane.approve', allowed: true }
+            : {
+                command: 'board.lane.approve',
+                allowed: false,
+                disabled_reason: 'permission_denied',
+              },
+        ],
+        binding: undefined,
+      });
+    const laneRow = (item: BoardNeed, run: RunBoardCommand) => {
+      const strip = mount(() =>
+        NeedsStrip({
+          model: {
+            ...board([]),
+            lanes: [{ id: 'lead-1:lane-docs', title: 'Write the docs' }],
+            needs: [item],
+          },
+          sessions: [],
+          run,
+          onOpenSession: () => {},
+        }),
+      );
+      const el = named(strip.value, 'RequestCard');
+      return mount(() => (el.type as (props: unknown) => ReactNode)(el.props));
+    };
+    const approve = `${act('approvePlan')} Write the docs`;
+    const run = vi.fn<RunBoardCommand>(async () => null);
+    const h = laneRow(held(true), run);
+    const article = find(h.value, (n) => n.type === 'article');
+    expect(article.props['aria-label']).toBe('Write the docs');
+    expect(text(article)).toContain(reason('lanePlanAwaitingApproval'));
+    const pressed = find(h.value, (n) => n.type === 'button' && n.props['aria-label'] === approve);
+    expect(pressed.props['aria-disabled']).toBeUndefined();
+    pressed.props.onClick();
+    await h.flush();
+    expect(run).toHaveBeenCalledWith(
+      'board.lane.approve',
+      { project_id: 'project-a', lead_session_id: 'lead-1', lane_id: 'lane-docs' },
+      null,
+    );
+
+    const refused = vi.fn<RunBoardCommand>(async () => null);
+    const off = laneRow(held(false), refused);
+    const offButton = find(
+      off.value,
+      (n) => n.type === 'button' && n.props['aria-label'] === approve,
+    );
+    expect(offButton.props['aria-disabled']).toBe(true);
+    offButton.props.onClick();
+    await off.flush();
+    expect(refused).not.toHaveBeenCalled();
   });
 
   it('names a failed session row by its reason, then by the session that failed', () => {

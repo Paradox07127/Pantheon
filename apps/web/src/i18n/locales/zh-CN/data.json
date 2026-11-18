@@ -46,6 +46,8 @@
   "data.reason.milestoneReadyForAcceptance": "里程碑待验收",
   "data.reason.improvementAwaitingDecision": "改进提案等待决定",
   "data.reason.planProposalAwaitingDecision": "计划改动提议等待决定",
+  "data.reason.lanePlanAwaitingApproval": "计划等你批准",
+  "data.reason.lanePlanAwaitingApprovalReviewing": "计划等你批准，评审还在进行",
   "data.reason.projectOverBudget": "项目超出预算",
   "data.reason.workflowApproval": "工作流步骤等你审批",
   "data.reason.externalApproval": "外部请求等你批准",

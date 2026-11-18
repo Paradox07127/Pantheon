@@ -45,7 +45,7 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 | 会话记录 | 读自己项目的会话 | 不能 |  |  |
 | 写计划、派发、开始或停止任务 | 对自己项目的计划和任务可以 | 不能 |  | `board.plan.edit`、`task.start` |
 | 给项目的助理发请求 | 不经这个命令 | 可以，请求算用户原话，回合带 `via` 标记 | `request.send` |  |
-| 回答提问、计划变更、里程碑验收 | 按章程回答自己 worker 的提问，验收自己的里程碑 | 默认都不能，用户在设置里逐类打开；转述的 worker 提问和超预算时的计划变更始终留给用户 | `lead.question.answer`、`board.plan.proposal.resolve`、`milestone.accept` |  |
+| 回答提问、计划变更、里程碑验收 | 按章程回答自己 worker 的提问，验收自己的里程碑 | 默认都不能，用户在设置里逐类打开；转述的 worker 提问和超预算时的计划变更始终留给用户 | `lead.question.answer`、`board.plan.proposal.resolve`、`board.lane.approve`、`milestone.accept` |  |
 | 权限请求、建 agent、外部事件开工、预算项 | 按章程代批自己 worker 的权限请求，可以提议新建 agent | 不能，始终留给用户 |  | `approval.respond`、`agent.create`、`agent.propose`、`agent.proposal.resolve`、`external.approve`、`workflow.policy.set` |
 | 记忆和学到的改动 | 可以提议 | 不能 |  | `memory.propose`、`improvement.decide` |
 | 什么时候醒 | 自己项目的备注、例行任务、信号 | 外部个人 agent 由它自己的程序决定什么时候调用 |  |  |

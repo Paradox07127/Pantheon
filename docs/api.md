@@ -301,6 +301,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `board.lane.approve` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string |  |
 | `board.plan.edit` | `project_id`: string<br>`lead_session_id?`: string<br>`base_version`: integer<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object \| object \| object)[] | edit_board (lead) |
 | `board.plan.edit.withdraw` | `project_id`: string<br>`lead_session_id`: string<br>`edit_id`: string |  |
 | `board.plan.proposal.resolve` | `project_id`: string<br>`lead_session_id`: string<br>`proposal_id`: string<br>`decision`: "accept" \| "reject"<br>`reason?`: string<br>`ops?`: (object \| object \| object \| object \| object \| object \| object \| object)[] |  |
@@ -344,6 +345,14 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `github.pr.create` | `session_id`: string<br>`title?`: string<br>`draft?`: boolean |  |
+
+### goal
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `goal.archive` | `goal_id`: string |  |
+| `goal.reorder` | `project_id`: string<br>`goal_ids`: string[] |  |
+| `goal.set` | `project_id`: string<br>`goal_id?`: string<br>`text`: string |  |
 
 ### improvement
 
@@ -554,7 +563,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
-| `resident.open` | `project_id`: string<br>`kind`: "assistant" \| "triage"<br>或<br>`agent_id`: string |  |
+| `resident.open` | `project_id`: string<br>`kind`: "assistant" \| "triage"<br>或<br>`agent_id`: string<br>或<br>`kind`: "personal" |  |
 
 ### review
 

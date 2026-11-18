@@ -18,6 +18,7 @@ export const PERSONAL_COMMANDS = [
   'request.send',
   'lead.question.answer',
   'board.plan.proposal.resolve',
+  'board.lane.approve',
   'milestone.accept',
 ] as const satisfies readonly CommandType[];
 
@@ -26,6 +27,7 @@ export const OUTSIDE_PERSONAL_SCOPE = "Outside the personal agent's scope";
 const ANSWER_KINDS = {
   'lead.question.answer': 'question',
   'board.plan.proposal.resolve': 'plan_change',
+  'board.lane.approve': 'plan_change',
   'milestone.accept': 'milestone_accept',
 } as const satisfies Partial<Record<CommandType, PersonalAnswerKind>>;
 
@@ -76,7 +78,7 @@ export function personalAnswer(
   );
   // mustAsk's plan_change rule; importing must-ask.ts here loops back through context.ts at load.
   requireThat(
-    type !== 'board.plan.proposal.resolve' || !projectOverBudget(ctx, projectId),
+    ANSWER_KINDS[type] !== 'plan_change' || !projectOverBudget(ctx, projectId),
     'permission_denied',
     'Over budget, only the user decides a plan change',
   );

@@ -13,6 +13,7 @@ import {
   type PlanProposal,
   type Principal,
   type Project,
+  type ProjectGoal,
   type Session,
   type SessionTurn,
   type TaskKind,
@@ -46,6 +47,7 @@ import {
 import { wakeLead } from './task-tracking.js';
 import { kindOfPaths, risky, scopeTierReason } from './task-kind.js';
 import { chartered } from './charter.js';
+import { approveLane, firstPlanHolds } from './lane-stops.js';
 import { workflowPolicy } from './workflow-policy.js';
 
 /** The longest iteration in days, so a mistyped year cannot make the board count each day of centuries. */
@@ -223,6 +225,45 @@ function dependencyCycle(tasks: PlanInput['tasks']): string[] | null {
   return null;
 }
 
+/** The plan with a left-out milestone goal taken from the lead's stored row, and a null goal left out. */
+function withStoredGoals(ctx: ControlContext, leadId: string, input: PlanInput): PlanInput {
+  const rows = ctx.store
+    .list<Milestone>('milestones')
+    .filter((row) => row.owner_session_id === leadId);
+  return {
+    ...input,
+    milestones: input.milestones.map(({ goal, ...milestone }) => {
+      const kept =
+        goal === undefined ? rows.find((row) => row.key === milestone.id)?.goal_id : goal;
+      return kept ? { ...milestone, goal: kept } : milestone;
+    }),
+  };
+}
+
+/** A milestone goal that names no goal of the project, or newly names an archived one, or null. */
+function goalLinkProblem(
+  ctx: ControlContext,
+  projectId: string,
+  leadId: string,
+  milestones: PlanInput['milestones'],
+): string | null {
+  for (const milestone of milestones) {
+    if (!milestone.goal) continue;
+    const goal = ctx.store.get<ProjectGoal>('project_goals', milestone.goal);
+    if (goal?.project_id !== projectId)
+      return `milestones: milestone ${milestone.id} names unknown goal ${milestone.goal}; use an id from project_read.goals`;
+    const held = ctx.store
+      .list<Milestone>('milestones')
+      .some(
+        (row) =>
+          row.owner_session_id === leadId && row.key === milestone.id && row.goal_id === goal.id,
+      );
+    if (goal.archived_at && !held)
+      return `milestones: milestone ${milestone.id} names archived goal ${goal.id}; use an id from project_read.goals`;
+  }
+  return null;
+}
+
 /** Upserts the lead's milestones by key; acceptance stays and its hash decides whether it holds. */
 function writeLeadMilestones(
   ctx: ControlContext,
@@ -242,6 +283,7 @@ function writeLeadMilestones(
       task_ids: input.tasks,
       due_on: input.due_on,
       replan_if: input.replan_if,
+      goal_id: input.goal ?? undefined,
     };
     const old = rows.find((row) => row.key === input.id);
     if (!old) {
@@ -270,6 +312,7 @@ function writeLeadMilestones(
           task_ids: old.task_ids,
           due_on: old.due_on,
           replan_if: old.replan_if,
+          goal_id: old.goal_id,
         })
     )
       continue;
@@ -496,6 +539,7 @@ function planContent(ctx: ControlContext, plan: BoardPlan, lanes: Lane[] = []): 
         tasks: row.task_ids ?? [],
         ...(row.due_on ? { due_on: row.due_on } : {}),
         ...(row.replan_if ? { replan_if: row.replan_if } : {}),
+        ...(row.goal_id ? { goal: row.goal_id } : {}),
       })),
     risks: plan.risks,
     assumptions: plan.assumptions,
@@ -541,6 +585,9 @@ function storePlan(
     userEdits?: { edit_id: string; task_ids: string[] }[];
   } = {},
 ): BoardPlan {
+  input = withStoredGoals(ctx, leadId, input);
+  const problem = goalLinkProblem(ctx, input.project_id, leadId, input.milestones);
+  requireThat(!problem, 'invalid_input', problem ?? '');
   refuseInvalid(ctx, input, options.quoted);
   const current = ctx.store.get<BoardPlan>('board_plans', leadId);
   const orderLock = Object.hasOwn(input, 'order_lock') ? input.order_lock : current?.order_lock;
@@ -634,6 +681,16 @@ function storePlan(
       .filter((old) => !input.tasks.some((task) => task.id === old.id))
       .map((old) => [old.id, kept(old.id)!.generation] as const),
   ]);
+  const planVersion =
+    (current?.plan_version ?? 0) +
+    (current && contentKey(planContent(ctx, current)) === contentKey(input) ? 0 : 1);
+  const holds = firstPlanHolds(ctx, current, input, p);
+  const laneStops = Object.fromEntries([
+    ...Object.entries(current?.lane_stops ?? {}).filter(([laneId]) =>
+      input.lanes.some((lane) => lane.id === laneId),
+    ),
+    ...holds.map((laneId) => [laneId, { held_at: ctx.store.now(), plan_version: planVersion }]),
+  ]);
   const value: BoardPlan = {
     id: leadId,
     revision: 1,
@@ -643,9 +700,7 @@ function storePlan(
     iterations: input.iterations,
     order_lock: orderLock,
     tasks: input.tasks,
-    plan_version:
-      (current?.plan_version ?? 0) +
-      (current && contentKey(planContent(ctx, current)) === contentKey(input) ? 0 : 1),
+    plan_version: planVersion,
     pending_edits: options.pendingEdits ?? current?.pending_edits ?? [],
     pending_proposals: current?.pending_proposals ?? [],
     ...(current?.questions ? { questions: current.questions } : {}),
@@ -664,6 +719,7 @@ function storePlan(
     notified: current?.notified ?? {},
     ...(current?.wake_failed ? { wake_failed: current.wake_failed } : {}),
     ...(current?.external_holds ? { external_holds: current.external_holds } : {}),
+    ...(Object.keys(laneStops).length ? { lane_stops: laneStops } : {}),
     ...(current?.last_told ? { last_told: current.last_told } : {}),
     contract_changed: [...new Set([...(current?.contract_changed ?? []), ...told])],
     ...(current?.handed_back ? { handed_back: current.handed_back } : {}),
@@ -700,9 +756,24 @@ function storePlan(
     retired,
     updated_at: ctx.store.now(),
   };
-  const next = current
+  let next = current
     ? ctx.store.update('board_plans', value, current.revision)
     : ctx.store.insert('board_plans', value);
+  for (const laneId of holds) {
+    ctx.store.event('board.lane_held', next, input.project_id, { lane_id: laneId }, commandId);
+    next = appendNote(
+      ctx,
+      next,
+      {
+        at: ctx.store.now(),
+        session_id: '',
+        task_id: '',
+        kind: 'plan_held',
+        text: `Lane ${laneId} waits for the user to approve its plan; start_task queues its tasks until then.`,
+      },
+      commandId,
+    );
+  }
   writeLeadMilestones(ctx, p, leadId, input.project_id, input.milestones, commandId);
   ctx.store.event('board.plan_updated', next, input.project_id, next, commandId);
   noteOtherPlan(ctx, next, commandId);
@@ -802,6 +873,7 @@ function applyOps(plan: PlanInput, ops: PatchOp[]): PlanInput {
               ...milestone,
               title: op.patch.title ?? milestone.title,
               due_on: op.patch.due_on === null ? undefined : (op.patch.due_on ?? milestone.due_on),
+              ...(Object.hasOwn(op.patch, 'goal') ? { goal: op.patch.goal } : {}),
             },
       );
       continue;
@@ -1430,5 +1502,20 @@ export const projectBoardHandlers: Handlers = {
     );
     withdrawEdit(ctx, plan, input.edit_id, c.command_id);
     return planView(ctx, input.project_id, input.lead_session_id);
+  },
+  'board.lane.approve': (ctx, p, c) => {
+    const input = inputSchemas['board.lane.approve'].parse(c.input);
+    actsAsUser(p);
+    projectAccess(ctx, p, input.project_id, c.type);
+    personalAnswer(ctx, p, 'board.lane.approve', input.project_id);
+    personalCalled(ctx, p, c, input.project_id);
+    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
+    requireThat(
+      plan?.project_id === input.project_id,
+      'not_found',
+      `Not found: board plan ${input.lead_session_id}`,
+    );
+    approveLane(ctx, p, plan, input.lane_id, c.command_id);
+    return planView(ctx, input.project_id, plan.id);
   },
 };

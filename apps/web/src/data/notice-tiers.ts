@@ -5,7 +5,7 @@ import { sessionRow } from '../screens/sessions/model';
 import type { SessionGroupKey } from '../screens/sessions/session-groups';
 import { useShell } from '../store';
 import { useCurrentProject } from './current-project';
-import { failureText, reasonText, type NeedsYouItem } from './needs-you';
+import { failureText, needReasonText, reasonText, type NeedsYouItem } from './needs-you';
 import type { NoticeCursor, NoticeEvent } from './notifications';
 import type { DaemonEvent, SyncView } from './sync';
 import { sessionTitle } from './transcript';
@@ -94,8 +94,8 @@ export function needsKey(item: NeedsYouItem): string | null {
   if (item.kind === 'permission' && item.reason === 'permission_requested') return item.source.id;
   if (item.kind === 'lead.question') return `${item.source.id}:${item.request_id ?? ''}`;
   if (item.kind === 'workflow.approval') return `${item.source.table}:${item.source.id}`;
-  // One plan holds every held external request of its lead.
-  if (item.kind === 'external.approval')
+  // One plan holds every held external request and held lane of its lead.
+  if (item.kind === 'external.approval' || item.kind === 'board.lane.approval')
     return `${item.source.table}:${item.source.id}:${item.request_id ?? ''}`;
   return null;
 }
@@ -104,7 +104,8 @@ export function needsKey(item: NeedsYouItem): string | null {
 export const answeredInStrip = (item: NeedsYouItem): boolean =>
   item.kind === 'lead.question' ||
   item.kind === 'workflow.approval' ||
-  item.kind === 'external.approval';
+  item.kind === 'external.approval' ||
+  item.kind === 'board.lane.approval';
 
 /** The session the item waits in; a session item's source is the session itself. */
 export const needsSession = (item: NeedsYouItem): string | undefined =>
@@ -162,7 +163,7 @@ export function needsCard(
       ...base,
       event: t({ id: 'data.noticeTiers.waitsApproval', defaultMessage: 'waiting for approval' }),
       ...(command ? { command } : {}),
-      ...(strip ? { summary: reasonText(item.reason) } : {}),
+      ...(strip ? { summary: needReasonText(item) } : {}),
       ...(allowed
         ? {
             actions: [

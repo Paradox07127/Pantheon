@@ -164,6 +164,30 @@ it('does not tell a new goals session that takes over to rewrite the plan with u
   expect(takeover!.input).not.toContain('update_board');
 });
 
+it('tells the assistant resident and a lead to give each milestone a goal from project_read.goals', async () => {
+  const f = await workbenchFixture();
+  const { prompt } = await resident(f, 'assistant');
+  for (const text of [prompt, LEAD_INSTRUCTIONS])
+    expect(text).toContain(
+      'When project_read.goals is not empty, give each milestone the goal it serves in goal',
+    );
+});
+
+it('tells the goals resident to report goals without milestones and milestones without a goal', async () => {
+  const f = await workbenchFixture();
+  const { prompt } = await resident(f, 'goals');
+  expect(prompt).toContain('a milestone with no goal, or a goal with no milestone');
+  for (const name of DISPATCH_AND_PLAN_WRITES)
+    expect(prompt).not.toMatch(new RegExp(`\\b${name}\\b`));
+});
+
+it('has a goals session read project_read.goals in the milestone_review guide', async () => {
+  const f = await workbenchFixture();
+  const { session } = await resident(f, 'goals');
+  const review = await guide<{ text: string }>(f, session.id, 'milestone_review');
+  expect(review.text).toContain('project_read.goals');
+});
+
 it('tells a lead to answer a worker question only from a cited source and otherwise leave it to the user', () => {
   expect(LEAD_INSTRUCTIONS).toContain('answer_worker_question');
   for (const source of ['quoted user words', 'plan assumption', 'memory entry', 'earlier answer'])

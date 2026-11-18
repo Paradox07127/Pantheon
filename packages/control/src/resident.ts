@@ -31,6 +31,7 @@ import {
   type Handlers,
 } from './context.js';
 import { returnNotes } from './lead-inbox.js';
+import { personalHome } from './personal-agent.js';
 import { acceptInput, nativeTurnActive, releaseIdleConversation, unsnooze } from './session.js';
 import { queueTurn, syncBrief, TAKEOVER_TEXT } from './task-tracking.js';
 import { sessionDefaults } from './user-config.js';
@@ -143,6 +144,8 @@ export function openAgent(
   );
   transferPlan(ctx, ctx.store.must<BoardPlan>('board_plans', ended.id), session.id, cause);
   takeOverReferences(ctx, ended.id, session.id);
+  // The personal agent keeps no board or memory to take over; it reads live state again.
+  if (profile.template === 'personal') return ctx.store.must<Session>('sessions', session.id);
   queueTurn(
     ctx,
     ctx.store.must<Session>('sessions', session.id),
@@ -388,6 +391,10 @@ function userAgent(ctx: ControlContext, p: Principal, agentId: string, action: s
 export const residentHandlers: Handlers = {
   'resident.open': (ctx, p, c) => {
     const input = inputSchemas['resident.open'].parse(c.input);
+    if ('kind' in input && input.kind === 'personal') {
+      userOnly(p);
+      return openAgent(ctx, personalHome(ctx, c.command_id).profile, c.command_id);
+    }
     if ('kind' in input) return openResident(ctx, p, input.project_id, input.kind, c.command_id);
     return openAgent(ctx, userAgent(ctx, p, input.agent_id, c.type), c.command_id);
   },

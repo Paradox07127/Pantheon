@@ -427,6 +427,10 @@ export async function startDaemon(options: DaemonOptions) {
           registry.revokePrincipal(personalPrincipal(keyId).id);
           rmSync(path.join(personalKeys, keyId), { force: true });
         },
+        personalKeyFile: (keyId) => {
+          requireThat(daemonUrl, 'daemon_unavailable', 'Daemon address is not ready');
+          return { token_file: path.join(personalKeys, keyId), daemon_url: daemonUrl };
+        },
       },
     ));
     await control.recover();

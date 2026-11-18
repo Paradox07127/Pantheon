@@ -441,6 +441,7 @@ export interface NeedsYouItem {
     | 'workflow.definition.trial'
     | 'improvement.candidate'
     | 'board.plan.proposal'
+    | 'board.lane.approval'
     | 'project.over_budget'
     | 'lead.question'
     | 'workflow.approval'
@@ -491,6 +492,7 @@ export interface NeedsYouItem {
     | 'workflow_definition_trial_completed'
     | 'improvement_awaiting_decision'
     | 'plan_proposal_awaiting_decision'
+    | 'lane_plan_awaiting_approval'
     | 'project_over_budget'
     | 'lead_question'
     | 'task_blocked'
@@ -539,6 +541,8 @@ export interface NeedsYouItem {
   failure_class?: GateFailureClass;
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
+  /** On a lane waiting for plan approval: whether the automatic plan review of its tasks still runs. */
+  plan_review_running?: boolean;
   /** The agent a pending proposal creates or changes, and how long it has waited in milliseconds. */
   agent_proposal?: {
     id: string;
@@ -1910,6 +1914,8 @@ export interface ProjectRead {
   milestones: MilestoneView[];
   cursor: number;
   plans: BoardPlanView[];
+  /** The project's active goals by order; the user writes them, leads link milestones to them. */
+  goals: import('./board.js').ProjectGoalView[];
   /** The calling session; absent for the user. */
   you?: { session_id: string; role: Role; task: Session['task'] | null };
   /** What a lead plans with; present only when a lead session reads. */

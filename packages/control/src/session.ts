@@ -28,6 +28,7 @@ import {
   type HarnessAdapter,
   type ProcessIdentity,
   type Principal,
+  type AgentProfile,
 } from '@pantheon/domain';
 import { inputSchemas, type Command } from '@pantheon/protocol';
 import { checkRuntimeConnection, isRuntimeHeld, updateRuntimeQuota } from './runtime-status.js';
@@ -42,6 +43,7 @@ import {
   projectFolders,
   resolvedPath,
   sessionMcp,
+  personalSessionMcp,
   purposeSessionInstructions,
   purposeSessionTools,
   sessionWorkspaceKind,
@@ -1648,6 +1650,12 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
       }
       mkdirSync(analysisPath, { recursive: true, mode: 0o700 });
     }
+    // The personal agent's home has no roots, so it runs in an empty folder of its own.
+    const personalPath =
+      session.resident?.kind === 'personal'
+        ? path.join(ctx.workspaceRoot ?? os.tmpdir(), 'personal-agent')
+        : undefined;
+    if (personalPath) mkdirSync(personalPath, { recursive: true, mode: 0o700 });
     const spec: SessionSpec = session.workspace_id
       ? ctx.store.must<Workspace>('workspaces', session.workspace_id).kind === 'in_place'
         ? await inPlaceSessionSpec(ctx, session)
@@ -1675,7 +1683,7 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
                 }),
           account_ref: session.account_ref,
           role: session.review_id || session.runtime_review ? 'reviewer' : 'planner',
-          cwd: analysisPath ?? reviewerPath ?? project.roots[0]!,
+          cwd: analysisPath ?? reviewerPath ?? personalPath ?? project.roots[0]!,
           ...(analysisPath
             ? { workspace: { id: session.id, path: analysisPath } }
             : reviewerPath
@@ -1741,7 +1749,13 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
           env_allowlist: NATIVE_ENV_ALLOWLIST,
           skills: [],
           mcp_servers: [],
-          pantheon_mcp: sessionMcp(ctx, session, credentialRole(session)),
+          pantheon_mcp:
+            session.resident?.kind === 'personal'
+              ? personalSessionMcp(
+                  ctx,
+                  ctx.store.must<AgentProfile>('agents', session.resident.agent_id!),
+                )
+              : sessionMcp(ctx, session, credentialRole(session)),
           extensions: { mode: 'none' },
           device_id: session.device_id ?? 'local',
           budget: {

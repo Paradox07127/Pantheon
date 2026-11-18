@@ -159,8 +159,14 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'board',
     about:
-      "Patches a lead's plan by task id; the same command serves the lead and the user; Takes back a user edit that still waits for the lead; the user only",
+      "Lets the tasks of a lane that waits for the user's plan approval start; the user only; Patches a lead's plan by task id; the same command serves the lead and the user",
     commands: [
+      {
+        type: 'board.lane.approve',
+        about:
+          "Lets the tasks of a lane that waits for the user's plan approval start; the user only.",
+        tool: 'the user does this in the app',
+      },
       {
         type: 'board.plan.edit',
         about: "Patches a lead's plan by task id; the same command serves the lead and the user.",
@@ -252,6 +258,29 @@ export const appHelpGroups: AppHelpGroup[] = [
     group: 'github',
     about: '',
     commands: [{ type: 'github.pr.create', tool: 'the user does this in the app' }],
+  },
+  {
+    group: 'goal',
+    about:
+      "The user only; archives a goal; milestones keep their link; The user only; the project's active goals in their new order",
+    commands: [
+      {
+        type: 'goal.archive',
+        about: 'The user only; archives a goal; milestones keep their link.',
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'goal.reorder',
+        about: "The user only; the project's active goals in their new order.",
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'goal.set',
+        about:
+          "The user only; adds a goal of the project in the user's words, or rewrites one by goal_id.",
+        tool: 'the user does this in the app',
+      },
+    ],
   },
   {
     group: 'improvement',
@@ -514,12 +543,12 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'resident',
     about:
-      'The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none',
+      'The user only; returns the open session of the agent, by agent_id, by the kind of a built-in one or as the personal agent, opening one when there is none',
     commands: [
       {
         type: 'resident.open',
         about:
-          'The user only; returns the open session of the agent, by agent_id or by the kind of a built-in one, opening one when there is none.',
+          'The user only; returns the open session of the agent, by agent_id, by the kind of a built-in one or as the personal agent, opening one when there is none.',
         tool: 'the user does this in the app',
       },
     ],

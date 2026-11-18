@@ -49,6 +49,7 @@ import { interruptSession, stopBackground } from './session.js';
 import { continueInterruptedLead, queueTurn } from './task-tracking.js';
 import { backgroundTasks, nextDepth } from './progress.js';
 import { runningPlanReview } from './review.js';
+import { laneHeld } from './lane-stops.js';
 import { projectOverBudget, workflowPolicy } from './workflow-policy.js';
 import { slotWait, startSlot, taskWorkflow } from './workflow-engine.js';
 import { listDevices } from './devices.js';
@@ -75,7 +76,8 @@ export type DispatchWait =
   | 'device_resource'
   | 'paused'
   | 'answer'
-  | 'approval';
+  | 'approval'
+  | 'plan_approval';
 
 const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 } as const;
 const priorityOrder = (task: PlanTask) => PRIORITY_ORDER[task.priority ?? 'normal'];
@@ -425,6 +427,7 @@ export function dispatchQueue(
     const wait: DispatchWait | undefined =
       (policy.dispatch_paused ? 'paused' : undefined) ??
       (externalHeld(plan, task) ? 'approval' : undefined) ??
+      (laneHeld(plan, task.lane) ? 'plan_approval' : undefined) ??
       taskWaits(ctx, plan, task, held)?.wait ??
       (task.kind &&
       taskWorkflow(ctx, plan, task.id).definition.plan_review.tiers.includes(task.kind.tier) &&
@@ -1173,6 +1176,11 @@ function claimDirectTask(
     !review,
     'invalid_state',
     `Task ${task.id} waits for the plan review ${review?.id}; start it once the review ends`,
+  );
+  requireThat(
+    !laneHeld(plan, task.lane),
+    'invalid_state',
+    `Task ${task.id} is in lane ${task.lane}, which waits for the user to approve its plan; start it once the user approves`,
   );
   startSlot(ctx, plan, task, 'before_dispatch');
   const step = slotWait(ctx, plan, task, 'before_dispatch');

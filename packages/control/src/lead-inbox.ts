@@ -535,6 +535,12 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       `What happened: ${text}`,
       "How to handle: a verification that did not pass is yours to handle, not the user's. Prefer proposing fix tasks under the milestone with propose_board; to accept it anyway, call milestone_accept with override_reason, which the user sees. After a passed one, accept the milestone once you have checked its criteria.",
     ];
+  else if (kind === 'plan_held')
+    lines = [
+      startTag(own),
+      `What happened: ${text}`,
+      "How to handle: start the lane's tasks as you planned; they open once the user approves the plan, so tell the user it waits for them.",
+    ];
   else if (kind === 'other_plan')
     lines = [
       startTag([...own, ['session', note.session_id]]),

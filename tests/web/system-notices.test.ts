@@ -405,6 +405,33 @@ describe('system notifications and in-app cards', () => {
     expect(cards.shown()).toEqual(['Write docs', 'Fix login']);
   });
 
+  it('notifies a lane whose plan waits for approval, counts it on the badge and opens it where it is answered', async () => {
+    const openProjectNeed = vi.fn<(projectId: string, needKey: string) => void>();
+    useShell.setState({ openProjectNeed });
+    const lane = need('beta-docs', {
+      source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
+      kind: 'board.lane.approval',
+      reason: 'lane_plan_awaiting_approval',
+      session_id: 'beta-docs',
+      request_id: 'lane-docs',
+      binding: undefined,
+      actions: [{ command: 'board.lane.approve', allowed: true }],
+    });
+    expect(badgeCount([lane])).toBe(1);
+    render({ items: [lane] });
+    await settle();
+    expect(sent()).toEqual([
+      {
+        title: 'Write docs 等你审批',
+        body: zh('data.reason.lanePlanAwaitingApproval'),
+        target: { project_id: expect.stringMatching(/^beta\n/), session_id: '' },
+      },
+    ]);
+    click!(sent()[0]!.target);
+    expect(openProjectNeed.mock.calls).toEqual([['beta', 'board_plans:beta-docs:lane-docs']]);
+    expect(openProjectSession).not.toHaveBeenCalled();
+  });
+
   it("reads every project's session list again when the stream comes back live", async () => {
     const query = vi.fn(async (_method: string) => ({
       ok: false,

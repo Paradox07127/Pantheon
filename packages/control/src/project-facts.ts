@@ -45,8 +45,9 @@ import {
   taskSessions,
   taskState,
 } from './board-plan.js';
+import { goalViews } from './project-goals.js';
 
-function userOnly(principal: Principal): void {
+export function userOnly(principal: Principal): void {
   requireThat(
     principal.role === 'user',
     'permission_denied',
@@ -407,6 +408,7 @@ export function projectFacts(ctx: ControlContext, projectId: string): ProjectRea
     milestones,
     cursor: ctx.store.cursor(),
     plans: planViews(ctx, projectId),
+    goals: goalViews(ctx, projectId),
   };
 }
 

@@ -6,6 +6,7 @@ import { changeStoryHandlers } from './change-story.js';
 import { rangeStoryHandlers, rangeStoryPreparers } from './range-story.js';
 import type { Handlers, Preparers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
+import { projectGoalHandlers } from './project-goals.js';
 import { projectBoardHandlers } from './project-board.js';
 import { projectHandlers, projectPreparers } from './project.js';
 import { prepareResolve, sessionHandlers } from './session.js';
@@ -41,6 +42,7 @@ export const handlers: Handlers = {
   ...memoryHandlers,
   ...projectHandlers,
   ...projectFactHandlers,
+  ...projectGoalHandlers,
   ...projectBoardHandlers,
   ...baselineHandlers,
   ...changeStoryHandlers,

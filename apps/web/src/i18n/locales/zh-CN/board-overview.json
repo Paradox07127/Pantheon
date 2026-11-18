@@ -57,6 +57,7 @@
   "board.needs.actions.board": "在看板查看",
   "board.needs.actions.proposal": "查看提议",
   "board.needs.actions.approveStep": "通过",
+  "board.needs.actions.approvePlan": "批准计划",
   "board.needs.actions.rejectStep": "驳回",
   "board.needs.actions.countPassed": "算通过",
   "board.needs.actions.countFailed": "算失败",

@@ -21,7 +21,7 @@ import { useAppSettings, type AppSettingsPatch } from './app-settings';
 import { useBoard } from './board';
 import { focusRequest } from './focus-request';
 import { answeredInStrip, becameReady, needsKey, needsSession, turnEndHold } from './notice-tiers';
-import { reasonText, type NeedsYouItem } from './needs-you';
+import { needReasonText, reasonText, type NeedsYouItem } from './needs-you';
 import { visibleProjects } from './projects';
 import type { DaemonEvent, SyncView } from './sync';
 import { sessionTitle } from './transcript';
@@ -500,7 +500,8 @@ export const waitsForAnswer = (item: NeedsYouItem) =>
   (item.source.table === 'approvals' && item.status === 'pending') ||
   item.kind === 'lead.question' ||
   item.kind === 'workflow.approval' ||
-  item.kind === 'external.approval';
+  item.kind === 'external.approval' ||
+  item.kind === 'board.lane.approval';
 
 /**
  * The dock badge: the items of every project that wait for the user's answer; null while the
@@ -559,8 +560,7 @@ export function requestNotices(
               },
               { session },
             ),
-      body:
-        question ?? item.binding?.input_summary ?? item.binding?.action ?? reasonText(item.reason),
+      body: question ?? item.binding?.input_summary ?? item.binding?.action ?? needReasonText(item),
       target: { project_id: item.project_id, session_id: sessionId },
       ...(item.source.table === 'approvals'
         ? { request: item.source.id }

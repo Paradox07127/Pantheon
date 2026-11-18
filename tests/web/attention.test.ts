@@ -169,6 +169,56 @@ describe('what needs you, by the decision it asks', () => {
     expect(rows(h.value)).toHaveLength(0);
   });
 
+  it('approves the plan of a lane that waits for it, and opens the board from the row', async () => {
+    const lane = need({
+      source: { table: 'board_plans', id: 'lead-1', revision: 4 },
+      kind: 'board.lane.approval',
+      session_id: 'lead-1',
+      request_id: 'lane-docs',
+      reason: 'lane_plan_awaiting_approval',
+      decision: 'plan_change',
+      primary: 'board.lane.approve',
+      actions: [{ command: 'board.lane.approve', allowed: true }],
+    });
+    const h = open([lane]);
+    const [row] = rows(h.value);
+    expect(buttons(row!).map((b) => text(b))).toEqual([
+      zh('data.attention.decision.planChange') + zh('data.reason.lanePlanAwaitingApproval'),
+      zh('board.needs.actions.approvePlan'),
+    ]);
+    buttons(row!)[0]!.props.onClick();
+    expect(mock.shell.openProjectBoard).toHaveBeenCalledWith('alpha');
+    expect(mock.shell.openProjectSession).not.toHaveBeenCalled();
+    buttons(row!)[1]!.props.onClick();
+    await h.flush();
+    expect(runCommand).toHaveBeenCalledWith(
+      'board.lane.approve',
+      { project_id: 'alpha', lead_session_id: 'lead-1', lane_id: 'lane-docs' },
+      null,
+    );
+    expect(rows(h.value)).toHaveLength(0);
+  });
+
+  it('holds the approve button of a lane whose approval the backend refuses', () => {
+    const lane = need({
+      source: { table: 'board_plans', id: 'lead-1', revision: 4 },
+      kind: 'board.lane.approval',
+      session_id: 'lead-1',
+      request_id: 'lane-docs',
+      reason: 'lane_plan_awaiting_approval',
+      decision: 'plan_change',
+      primary: 'board.lane.approve',
+      actions: [
+        { command: 'board.lane.approve', allowed: false, disabled_reason: 'permission_denied' },
+      ],
+    });
+    const h = open([lane]);
+    const approve = buttons(rows(h.value)[0]!)[1]!;
+    expect(approve.props['aria-disabled']).toBe(true);
+    approve.props.onClick();
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
   it('says in one sentence that nothing needs you', () => {
     const h = open([]);
     expect(text(find(h.value, (n) => !!n.props.onKeyDown))).toBe(

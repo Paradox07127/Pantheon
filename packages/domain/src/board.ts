@@ -45,6 +45,8 @@ export interface Milestone extends Entity {
   due_on?: string;
   /** When its lead means to re-plan it. */
   replan_if?: ReplanTrigger[];
+  /** The goal of the project its lead linked it to; shown as progress, never checked. */
+  goal_id?: string;
 }
 /** `budget_ratio.at` is spent over budget tokens; `assumption_false` names a plan assumption id. */
 export type ReplanTrigger =
@@ -137,6 +139,15 @@ export interface PlanAssumption {
   /** A milestone id of the plan. */
   milestone?: string;
 }
+/** A lane whose tasks wait until the user approves its plan; approved_at absent while it waits. */
+export interface LaneStop {
+  held_at: number;
+  /** The plan version that held it. */
+  plan_version: number;
+  approved_at?: number;
+  approved_by?: 'user' | 'personal';
+  via?: 'approve' | 'depth';
+}
 /** One lead session's part of the project board, keyed by that session's id. */
 export interface BoardPlan extends Entity {
   project_id: string;
@@ -227,6 +238,8 @@ export interface BoardPlan extends Entity {
   wake_failed?: { reason: 'lead_closed' | 'wake_limit'; at: number };
   /** External subjects the user has not approved, by subject key: their tasks do not start until then. */
   external_holds?: Record<string, { at: number }>;
+  /** Lanes held for the user's plan approval, by lane id; daemon-kept, lead input never writes it. */
+  lane_stops?: Record<string, LaneStop>;
   /** Notes for the lead's next message. */
   inbox: LeadNote[];
   /** The last task session state the lead was told of, by session id. */
@@ -414,7 +427,9 @@ export interface LeadNote {
     /** A verification of one of the lead's milestones ended; wakes the lead. */
     | 'milestone_verified'
     /** Pantheon moved a task whose hand-backs ran out to another runtime; wakes the lead. */
-    | 'runtime_switched';
+    | 'runtime_switched'
+    /** A lane the lead added waits for the user to approve its plan; does not wake the lead. */
+    | 'plan_held';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;
@@ -517,7 +532,8 @@ export interface BoardPlanView {
       | 'device_resource'
       | 'paused'
       | 'answer'
-      | 'approval';
+      | 'approval'
+      | 'plan_approval';
   })[];
   risks: BoardPlan['risks'];
   assumptions: BoardPlan['assumptions'];
@@ -571,4 +587,7 @@ export interface ProjectGoal extends Entity {
   order: number;
   created_at: number;
   archived_at?: number;
+}
+export interface ProjectGoalView {
+  goal: ProjectGoal;
 }

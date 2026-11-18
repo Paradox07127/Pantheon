@@ -95,6 +95,7 @@ export interface RequestCardProps {
 const MARK: Record<NeedItem['kind'], ReactNode> = {
   'workflow.approval': <span className="ss-dot waiting" aria-hidden="true" />,
   'external.approval': <span className="ss-dot waiting" aria-hidden="true" />,
+  'board.lane.approval': <span className="ss-dot waiting" aria-hidden="true" />,
   'agent.proposal': <span className="ss-dot waiting" aria-hidden="true" />,
   permission: <span className="ss-dot waiting" aria-hidden="true" />,
   'lead.question': <span className="ss-dot waiting" aria-hidden="true" />,

@@ -63,6 +63,7 @@ export const NEXT_STEP: Record<
   | 'milestone_ready_for_acceptance'
   | 'improvement_awaiting_decision'
   | 'plan_proposal_awaiting_decision'
+  | 'lane_plan_awaiting_approval'
   | 'agent_proposal_awaiting_decision',
   string
 > = {
@@ -102,6 +103,8 @@ export const NEXT_STEP: Record<
     'The improvement proposal awaits the user; the user confirms it to start a trial, or rejects it.',
   plan_proposal_awaiting_decision:
     'The plan proposal awaits the user; the user accepts it, changes its ops before accepting, or rejects it.',
+  lane_plan_awaiting_approval:
+    'Approve the plan to let its tasks start, or tell the lead what to change.',
   agent_proposal_awaiting_decision:
     'An agent proposes to create or change an agent; the user creates it, edits its fields before creating it, or declines it.',
   background_task_long:

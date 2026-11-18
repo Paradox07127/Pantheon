@@ -3,7 +3,7 @@ import type { BoardModel, BoardSnapshot, BoardTaskRung, CommandType } from '@pan
 import type { GlyphName } from '../../components/SessionStateIcon';
 import { agentName, shownAgents, templateName } from '../../data/agents';
 import { shortId } from '../../data/format';
-import { reasonText } from '../../data/needs-you';
+import { needReasonText, reasonText } from '../../data/needs-you';
 import { proposalTitle } from '../../data/plan-edit';
 import { ASSISTANT, choiceKey, type RequestChoice } from '../../data/request-target';
 import { t } from '../../i18n';
@@ -381,6 +381,14 @@ function itemActions(
       },
       open,
     ];
+  if (item.kind === 'board.lane.approval')
+    return [
+      {
+        key: 'approve',
+        label: t({ id: 'board.needs.actions.approvePlan', defaultMessage: 'Approve plan' }),
+        reason: offReason(item, 'board.lane.approve'),
+      },
+    ];
   if (item.kind === 'permission') {
     // A voided request or an undelivered answer takes no answer here.
     if (!item.actions.length) return [open];
@@ -604,6 +612,16 @@ export function needCommand(
       input: { project_id: item.project_id, subject_key: item.request_id },
       revision: null,
     };
+  if (item.kind === 'board.lane.approval' && key === 'approve')
+    return {
+      type: 'board.lane.approve',
+      input: {
+        project_id: item.project_id,
+        lead_session_id: item.session_id,
+        lane_id: item.request_id,
+      },
+      revision: null,
+    };
   if (key === 'approve' || key === 'approve_session' || key === 'reject')
     return {
       type: 'approval.respond',
@@ -657,8 +675,8 @@ export function needCommand(
 export const needKey = (
   item: Pick<NeedItem, 'source' | 'task_id' | 'kind' | 'request_id'>,
 ): string =>
-  // One plan holds every proposal and held external request of its lead, so their ids tell them apart.
-  `${item.source.table}:${item.source.id}:${item.kind === 'board.plan.proposal' || item.kind === 'external.approval' ? item.request_id : (item.task_id ?? '')}`;
+  // One plan holds every proposal, held external request and held lane of its lead, so their ids tell them apart.
+  `${item.source.table}:${item.source.id}:${item.kind === 'board.plan.proposal' || item.kind === 'external.approval' || item.kind === 'board.lane.approval' ? item.request_id : (item.task_id ?? '')}`;
 
 /**
  * The session the item is about; none for a milestone or a proposal, whose session_id is the lead
@@ -689,7 +707,7 @@ export const requestNeed = <T extends NeedItem>(
 /** Who waits: the milestone's title, the session's title, else its task's title. */
 export function needWho(
   item: NeedItem,
-  model: Pick<BoardModel, 'tasks' | 'milestones'>,
+  model: Pick<BoardModel, 'tasks' | 'milestones'> & Partial<Pick<BoardModel, 'lanes'>>,
   sessions: readonly SnapshotSession[],
 ): string {
   if (item.source.table === 'milestones')
@@ -703,6 +721,13 @@ export function needWho(
   const title = sessions.find((s) => s.id === id)?.title?.trim();
   if (item.kind === 'board.plan.proposal')
     return proposalTitle(title || (id ? shortId(id) : item.project_id));
+  // The board's lane ids are `<lead session id>:<lane id>`.
+  if (item.kind === 'board.lane.approval')
+    return (
+      model.lanes?.find((lane) => lane.id === `${item.session_id}:${item.request_id}`)?.title ??
+      item.request_id ??
+      item.project_id
+    );
   if (title) return title;
   return (
     task?.title ??
@@ -725,7 +750,7 @@ export function needWhat(item: NeedItem, session?: SnapshotSession): string {
   if (item.background) return reasonDetail(reasonText(item.reason), item.background.description);
   if (item.step_title) return reasonDetail(reasonText(item.reason), item.step_title);
   if (item.kind !== 'permission' || item.reason !== 'permission_requested')
-    return reasonText(item.reason);
+    return needReasonText(item);
   if (asksQuestion(item))
     return t({ id: 'board.needs.answerQuestion', defaultMessage: 'Answer the question' });
   return t(

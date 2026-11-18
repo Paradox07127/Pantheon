@@ -314,6 +314,32 @@ describe('cards for what needs the user', () => {
     });
   });
 
+  it('gives a lane whose plan waits for approval a card that opens it in the needs-you strip, saying while its review still runs', () => {
+    const lane = approval('beta-docs', 'beta-docs', {
+      source: { table: 'board_plans', id: 'beta-docs', revision: 1 },
+      kind: 'board.lane.approval',
+      reason: 'lane_plan_awaiting_approval',
+      request_id: 'lane-docs',
+      plan_review_running: true,
+      binding: undefined,
+      actions: [{ command: 'board.lane.approve', allowed: true }],
+    });
+    const card = needsCard(lane, board, { ...away, sessionId: 'beta-docs' }, noRespond);
+    expect(card && shape(card.options)).toEqual({
+      id: 'board_plans:beta-docs:lane-docs',
+      heading: 'Write docs',
+      event: zh('data.noticeTiers.waitsApproval'),
+      summary: zh('data.reason.lanePlanAwaitingApprovalReviewing'),
+      since: NOW - 2 * 60_000,
+    });
+    card!.options.open!();
+    expect(useShell.getState()).toMatchObject({
+      screen: 'trace',
+      runsView: 'now',
+      askedNeed: 'board_plans:beta-docs:lane-docs',
+    });
+  });
+
   it('makes the asked question the current row of the needs-you strip, brings it into view and focuses its primary button, unfolding the strip for it', () => {
     const asked = (n: number) => ({
       ...leadQuestion,

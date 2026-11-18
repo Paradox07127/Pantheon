@@ -249,6 +249,7 @@ const QUEUED_TEXT: Record<DispatchWait, string> = {
   paused: 'Queued: dispatch is paused',
   answer: 'Queued: waiting for an answer',
   approval: 'Queued: waiting for your approval',
+  plan_approval: 'Queued: waiting for your plan approval',
 };
 
 const PLANNED_FIELDS = [
