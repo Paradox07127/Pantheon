@@ -1,7 +1,13 @@
 import type { ELK, ElkNode } from 'elkjs/lib/elk-api';
 import type { VisualContent } from '@pantheon/domain';
 
-export type GraphSpec = Extract<VisualContent, { kind: 'graph' }>['spec'];
+type DrawnSpec = Extract<VisualContent, { kind: 'graph' }>['spec'];
+/** A node drawn as other than a card; only diagrams read from mermaid give one. */
+export type NodeShape = 'decision' | 'start' | 'end';
+/** An edge may also end on a group, at its boundary. */
+export type GraphSpec = Omit<DrawnSpec, 'nodes'> & {
+  nodes: (DrawnSpec['nodes'][number] & { shape?: NodeShape })[];
+};
 export type NodeKind = NonNullable<GraphSpec['nodes'][number]['kind']>;
 export type EdgeStyle = NonNullable<GraphSpec['edges'][number]['style']>;
 export type Direction = NonNullable<GraphSpec['direction']>;
@@ -18,6 +24,7 @@ export interface LaidNode extends Box {
   id: string;
   label: string;
   kind?: NodeKind;
+  shape?: NodeShape;
   sublabel?: string;
   /** The id of the innermost group the node is drawn in. */
   group?: string;
@@ -75,6 +82,47 @@ const nodeWidth = (node: GraphSpec['nodes'][number]): number => {
   const rest = 12 + 1 + 1;
   return Math.ceil(Math.min(NODE.max, Math.max(NODE.min, at + Math.max(title, sub) + rest)));
 };
+
+/** A start or end dot's diameter. */
+const DOT = 10;
+/** A decision diamond's height around one and two lines, and the height of those lines. */
+const DIAMOND = { one: 48, two: 64, lines: { one: 20, two: 36 } } as const;
+
+const nodeSize = (node: GraphSpec['nodes'][number]): { width: number; height: number } => {
+  if (node.shape === 'start' || node.shape === 'end') return { width: DOT, height: DOT };
+  if (node.shape !== 'decision')
+    return { width: nodeWidth(node), height: node.sublabel ? NODE.two : NODE.one };
+  const lines = node.sublabel ? 'two' : 'one';
+  const text = Math.max(
+    textWidth(node.label, 13, 7.6),
+    node.sublabel ? textWidth(node.sublabel, 12, 7.2) : 0,
+  );
+  // The label's box, with 8px each side, keeps inside the diamond: its share of the diamond's
+  // width and its share of the height add up to at most 1.
+  const width = (text + 16) / (1 - DIAMOND.lines[lines] / DIAMOND[lines]);
+  return {
+    width: Math.ceil(Math.min(NODE.max, Math.max(NODE.min, width))),
+    height: DIAMOND[lines],
+  };
+};
+
+/**
+ * Moves a route's end along its last run onto the outline of the diamond or dot it ends on; ELK
+ * ends it on the node's box.
+ */
+function onOutline(end: Point, next: Point, node: LaidNode | undefined): Point {
+  if (!node?.shape) return end;
+  const [a, b] = [node.width / 2, node.height / 2];
+  const [cx, cy] = [node.x + a, node.y + b];
+  const level = Math.abs(end.y - next.y) < 0.5;
+  // How far off the centre the run comes in, as a share of the half size across it, and how far
+  // the outline reaches there.
+  const off = Math.min(1, level ? Math.abs(end.y - cy) / b : Math.abs(end.x - cx) / a);
+  const reach = node.shape === 'decision' ? 1 - off : Math.sqrt(1 - off * off);
+  return level
+    ? { x: cx + Math.sign(end.x - cx) * a * reach, y: end.y }
+    : { x: end.x, y: cy + Math.sign(end.y - cy) * b * reach };
+}
 
 /** The largest zoom, at most 1, that shows the whole layout inside the box. */
 export const fitZoom = (layout: { width: number; height: number }, room: Point): number =>
@@ -176,17 +224,15 @@ async function layoutOnce(spec: GraphSpec, direction: Direction, elk: ELK): Prom
     return shape;
   };
   for (const node of spec.nodes) {
-    const shape: ElkNode = {
-      id: `n:${node.id}`,
-      width: nodeWidth(node),
-      height: node.sublabel ? NODE.two : NODE.one,
-    };
+    const shape: ElkNode = { id: `n:${node.id}`, ...nodeSize(node) };
     (node.group === undefined ? root : groupShape(node.group)).children!.push(shape);
   }
+  const ids = new Set(spec.nodes.map((node) => node.id));
+  const end = (id: string) => (ids.has(id) ? `n:${id}` : `g:${id}`);
   root.edges = edges.map((edge) => ({
     id: `e:${edge.id}`,
-    sources: [`n:${edge.from}`],
-    targets: [`n:${edge.to}`],
+    sources: [end(edge.from)],
+    targets: [end(edge.to)],
     ...(edge.label !== undefined && {
       labels: [
         {
@@ -218,19 +264,22 @@ async function layoutOnce(spec: GraphSpec, direction: Direction, elk: ELK): Prom
     height: shape.height ?? 0,
   });
   const routes = new Map((laid.edges ?? []).map((edge) => [edge.id, edge]));
+  const nodes: LaidNode[] = spec.nodes.map((node) => ({
+    ...box(at.get(`n:${node.id}`)!),
+    id: node.id,
+    label: node.label,
+    ...(node.kind !== undefined && { kind: node.kind }),
+    ...(node.shape !== undefined && { shape: node.shape }),
+    ...(node.sublabel !== undefined && { sublabel: node.sublabel }),
+    ...(node.group !== undefined && { group: node.group }),
+    ...(node.sources !== undefined && { sources: node.sources }),
+  }));
+  const shaped = new Map(nodes.filter((node) => node.shape).map((node) => [node.id, node]));
   return {
     direction,
     width: laid.width ?? 0,
     height: laid.height ?? 0,
-    nodes: spec.nodes.map((node) => ({
-      ...box(at.get(`n:${node.id}`)!),
-      id: node.id,
-      label: node.label,
-      ...(node.kind !== undefined && { kind: node.kind }),
-      ...(node.sublabel !== undefined && { sublabel: node.sublabel }),
-      ...(node.group !== undefined && { group: node.group }),
-      ...(node.sources !== undefined && { sources: node.sources }),
-    })),
+    nodes,
     groups: [...groups.values()]
       .filter((group) => at.has(`g:${group.id}`))
       .map((group) => ({
@@ -245,11 +294,17 @@ async function layoutOnce(spec: GraphSpec, direction: Direction, elk: ELK): Prom
       const route = routes.get(`e:${edge.id}`);
       const section = route?.sections?.[0];
       const label = route?.labels?.[0];
+      const points = section
+        ? [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
+        : [];
+      if (points.length > 1) {
+        const n = points.length;
+        points[0] = onOutline(points[0]!, points[1]!, shaped.get(edge.from));
+        points[n - 1] = onOutline(points[n - 1]!, points[n - 2]!, shaped.get(edge.to));
+      }
       return {
         ...edge,
-        points: section
-          ? [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
-          : [],
+        points,
         ...(label && { label_box: box(label) }),
       };
     }),

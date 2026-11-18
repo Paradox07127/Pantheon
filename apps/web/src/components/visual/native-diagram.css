@@ -165,10 +165,11 @@
   font-weight: 600;
   fill: var(--tx);
 }
+/* The muted colour reads under 4.5:1 on a kind's tint. */
 .vis-sq-s {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  fill: var(--mu);
+  fill: var(--tx2);
 }
 .vis-sq-life {
   fill: none;

@@ -62,6 +62,8 @@ export function VegaChart({ spec, height }: { spec: Record<string, unknown>; hei
               titleFontWeight: 600,
             },
             axisDiscrete: { grid: false },
+            // Vega-Lite already hides labels that overlap; this hides those that would touch.
+            axisXQuantitative: { labelSeparation: 8 },
             legend: {
               orient: 'top',
               symbolType: 'circle',

@@ -1,14 +1,50 @@
+import { realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
-import { HookHost, named, nodes } from './web-hook-host.js';
+import { HookHost, find, named, nodes, text } from './web-hook-host.js';
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true }),
 );
 
+const xy = vi.hoisted(() => ({
+  ReactFlow: function ReactFlow() {
+    return null;
+  },
+  MiniMap: function MiniMap() {
+    return null;
+  },
+  Background: function Background() {
+    return null;
+  },
+  Handle: function Handle() {
+    return null;
+  },
+  BackgroundVariant: { Dots: 'dots' },
+  Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
+}));
+vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', () => xy);
+vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.js', () => xy);
+
 import { MermaidDiagram } from '@/components/visual/MermaidDiagram';
-import { parseMermaid } from '@/components/visual/mermaid-model';
+import { nativeType, parseMermaid } from '@/components/visual/mermaid-model';
 import type { Mermaid } from '../../apps/web/node_modules/mermaid/dist/mermaid.js';
-import { zhf } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
+
+// Mermaid cleans flowchart and state labels with DOMPurify, which finds no DOM here to clean
+// with; mermaid's own copy lets labels through as written.
+const purify = createRequire(
+  realpathSync(
+    fileURLToPath(new URL('../../apps/web/node_modules/mermaid/package.json', import.meta.url)),
+  ),
+)
+  .resolve('dompurify')
+  .replace(/purify\.cjs\.js$/, 'purify.es.mjs');
+Object.assign((await import(pathToFileURL(purify).href)).default, {
+  sanitize: (label: string) => label,
+  addHook() {},
+});
 
 // The real parser: these tests read what mermaid itself makes of a source.
 const { default: mermaid } = await vi.importActual<{ default: Mermaid }>(
@@ -122,7 +158,151 @@ const CHECKOUT = `sequenceDiagram
   end
   api-->db: ping`;
 
+const SHOP = `flowchart LR
+  subgraph shop [Shop]
+    web[Storefront]:::client
+    api["Orders API<br>src/api"]
+    subgraph data [Data]
+      db[(Orders DB)]
+      jobs[(Jobs)]:::queue
+    end
+  end
+  check{Paid?}
+  web ==> api
+  api --> check
+  check -->|yes| db
+  check -.->|later| jobs
+  api <--> auth[Auth]
+  class auth policy
+  classDef slow fill:#f00
+  style api fill:#0f0
+  linkStyle 0 stroke:#f00
+  click web "https://example.com"`;
+
+const ORDER = `stateDiagram-v2
+  [*] --> Idle
+  Idle --> Checkout : buy
+  state Checkout {
+    state paid <<choice>>
+    [*] --> Paying
+    Paying --> paid
+    paid --> Done : ok
+    paid --> Paying : retry
+    Done --> [*]
+  }
+  Checkout --> [*]
+  note right of Idle : waits for a cart
+  class Idle queue`;
+
 describe('mermaid model', () => {
+  it.each([
+    ['a flowchart', 'flowchart LR\n  a --> b', 'flowchart'],
+    [
+      'a graph after front matter and a comment',
+      '---\ntitle: x\n---\n%% c\ngraph TD\n  a --> b',
+      'flowchart',
+    ],
+    ['a state diagram', 'stateDiagram-v2\n  [*] --> a', 'state'],
+    ['an older state diagram', 'stateDiagram\n  [*] --> a', 'state'],
+    ['an ER diagram', 'erDiagram\n  a ||--o{ b : has', 'er'],
+    [
+      'a state diagram with a fork',
+      'stateDiagram-v2\n  state split <<fork>>\n  [*] --> split\n  split --> a\n  split --> b',
+      undefined,
+    ],
+    [
+      'a state diagram with a join',
+      'stateDiagram-v2\n  state merge <<join>>\n  a --> merge\n  b --> merge',
+      undefined,
+    ],
+    [
+      'a state diagram with concurrent regions',
+      'stateDiagram-v2\n  state Active {\n    a --> b\n    --\n    c --> d\n  }',
+      undefined,
+    ],
+    ['a flowchart with an icon in a label', 'flowchart LR\n  a[fa:fa-user Web] --> b', undefined],
+    [
+      'a flowchart with an icon node',
+      'flowchart LR\n  a@{ icon: "fa:user", label: "Web" } --> b',
+      undefined,
+    ],
+    [
+      'a flowchart with an image node',
+      'flowchart LR\n  a@{ img: "https://example.com/a.png" } --> b',
+      undefined,
+    ],
+    ['a class diagram', 'classDiagram\n  A <|-- B', undefined],
+  ])('draws %s as Pantheon type %s', (_name, source, type) => {
+    expect(nativeType(source)).toBe(type);
+  });
+
+  it('reads a flowchart as a graph with its groups, kinds, decisions and edge styles', async () => {
+    expect(await parseMermaid(mermaid, SHOP, 'flowchart')).toEqual({
+      type: 'flowchart',
+      model: {
+        direction: 'LR',
+        nodes: [
+          { id: 'web', label: 'Storefront', kind: 'client', group: 'shop' },
+          { id: 'api', label: 'Orders API', sublabel: 'src/api', group: 'shop' },
+          { id: 'db', label: 'Orders DB', kind: 'store', group: 'data' },
+          { id: 'jobs', label: 'Jobs', kind: 'queue', group: 'data' },
+          { id: 'check', label: 'Paid?', shape: 'decision' },
+          { id: 'auth', label: 'Auth', kind: 'policy' },
+        ],
+        edges: [
+          { from: 'web', to: 'api', style: 'main' },
+          { from: 'api', to: 'check' },
+          { from: 'check', to: 'db', label: 'yes' },
+          { from: 'check', to: 'jobs', label: 'later', style: 'async' },
+          // Both ways: the graph draws one edge with a head at each end.
+          { from: 'api', to: 'auth' },
+          { from: 'auth', to: 'api' },
+        ],
+        groups: [
+          { id: 'data', label: 'Data', parent: 'shop' },
+          { id: 'shop', label: 'Shop' },
+        ],
+      },
+    });
+  });
+
+  it('reads a state diagram with start and end dots in each scope, a choice and a composite state', async () => {
+    const [start, end] = [zh('visual.graph.start'), zh('visual.graph.end')];
+    const step = (from: string, to: string, label?: string) => ({
+      from,
+      to,
+      ...(label && { label }),
+    });
+    expect(await parseMermaid(mermaid, ORDER, 'state')).toEqual({
+      type: 'state',
+      model: {
+        direction: 'TB',
+        nodes: [
+          { id: 'root_start', label: start, shape: 'start' },
+          { id: 'Idle', label: 'Idle', kind: 'queue' },
+          { id: 'paid', label: 'paid', shape: 'decision', group: 'Checkout' },
+          { id: 'Checkout_start', label: start, shape: 'start', group: 'Checkout' },
+          { id: 'Paying', label: 'Paying', group: 'Checkout' },
+          { id: 'Done', label: 'Done', group: 'Checkout' },
+          { id: 'Checkout_end', label: end, shape: 'end', group: 'Checkout' },
+          { id: 'root_end', label: end, shape: 'end' },
+        ],
+        // The note and its line are left out.
+        edges: [
+          step('root_start', 'Idle'),
+          step('Idle', 'Checkout', 'buy'),
+          step('Checkout_start', 'Paying'),
+          step('Paying', 'paid'),
+          step('paid', 'Done', 'ok'),
+          step('paid', 'Paying', 'retry'),
+          step('Done', 'Checkout_end'),
+          step('Checkout', 'root_end'),
+        ],
+        groups: [{ id: 'Checkout', label: 'Checkout' }],
+      },
+    });
+  });
+
   it('reads tables with their attribute types, keys and comments, and the alias after the name', async () => {
     const { model } = (await parseMermaid(mermaid, ORDERS, 'er')) as any;
     expect(model.entities).toEqual([
@@ -319,5 +499,59 @@ describe('sequence diagram', () => {
     const small = await picture(CHECKOUT, 'SequenceDiagram', { width: 4000, height: 4000 });
     const [, , natural] = (small.svg.props.viewBox as string).split(' ').map(Number);
     expect(small.svg.props.width).toBe(natural);
+  });
+});
+
+describe('flowchart and state diagram', () => {
+  // The graph the diagram hands its parse to, laid out by ELK in a box of the given size.
+  async function graph(source: string, more: object = {}) {
+    const h = mount(() => MermaidDiagram({ spec: { source }, height: 420, ...more }));
+    await settle(h);
+    const shown = named(h.value, 'GraphDiagram');
+    const g = mount(() => (shown.type as (props: unknown) => ReactNode)(shown.props));
+    Object.defineProperties(find(g.value, (n) => n.props.ref?.current).props.ref.current, {
+      clientWidth: { value: 1200 },
+      clientHeight: { value: 420 },
+    });
+    for (let i = 0; i < 10 && !nodes(g.value).some((n) => n.type === xy.ReactFlow); i++)
+      await settle(g);
+    return { shown, flow: find(g.value, (n) => n.type === xy.ReactFlow) };
+  }
+  const kind = (label: string, name: string) =>
+    zhf('visual.graph.node', { label, kind: zh(`visual.graph.kind.${name}`) });
+
+  it("draws a flowchart with Pantheon's node cards, named by their labels, instead of mermaid's picture", async () => {
+    const render = vi.spyOn(mermaid, 'render');
+    const { flow } = await graph(SHOP);
+    expect(render).not.toHaveBeenCalled();
+    const cards = flow.props.nodes.filter((n: { type: string }) => n.type === 'card');
+    expect(cards.map((n: { ariaLabel: string }) => n.ariaLabel)).toEqual([
+      kind('Storefront', 'client'),
+      'Orders API',
+      kind('Orders DB', 'store'),
+      kind('Jobs', 'queue'),
+      'Paid?',
+      kind('Auth', 'policy'),
+    ]);
+    const api = cards.find((n: { id: string }) => n.id === 'api');
+    expect(text(flow.props.nodeTypes.card({ ...api, selected: false }))).toBe('Orders APIsrc/api');
+    const groups = flow.props.nodes.filter((n: { type: string }) => n.type === 'group');
+    expect(groups.map((n: { id: string }) => n.id).sort()).toEqual(['group:data', 'group:shop']);
+  });
+
+  it('draws a state diagram whose transitions start and end on a composite state', async () => {
+    const { flow } = await graph(ORDER);
+    const ends = flow.props.edges.map((e: any) => `${e.source}>${e.target}`);
+    expect(ends).toEqual(
+      expect.arrayContaining(['Idle>group:Checkout', 'group:Checkout>root_end']),
+    );
+    expect(flow.props.edges.map((e: any) => e.ariaLabel)).toContain(
+      zhf('visual.graph.edge', { from: 'Idle', to: 'Checkout' }),
+    );
+  });
+
+  it('keeps growing the card and drawing at full size in the enlarged view', async () => {
+    expect((await graph(SHOP, { grows: true })).shown.props).toMatchObject({ grows: true });
+    expect((await graph(SHOP, { full: true })).shown.props).toMatchObject({ full: true });
   });
 });

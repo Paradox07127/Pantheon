@@ -108,6 +108,7 @@ The turn menu has "Fork from here", "Roll back" (files only, conversation only, 
 Pantheon keeps a checkpoint before each turn, so a roll back can restore the files.
 
 The session view has panels: changes, checks, plan, files and browser.
+A session can draw charts, graphs, Mermaid diagrams, tables and sandboxed pages in the conversation. "Pin to the canvas" puts one on the "Canvas" view of the project board.
 The desktop app also shows a terminal under the conversation.
 On macOS, voice input uses the built-in speech engine.
 
@@ -148,17 +149,30 @@ Pantheon reads the native history of Claude Code and Codex.
 
 If a process outside Pantheon holds the native session, Pantheon refuses to continue it. Close the session in that terminal first.
 
+## Assistant and Triage
+
+Each project has two resident agents. The sidebar lists them under "Agents". Click one to open its session.
+
+- "Assistant" is the main agent of the project. It answers your requests, plans the work and hands the changes to task sessions. It reads code but does not change it.
+- "Triage" handles the problems that come from outside the conversation: GitHub issues and pull requests, gate failures on main, flaky tests, app errors, failing sessions and trace findings. It plans a fix task for each real problem, or tells you what you must decide.
+- "New agent" next to "Agents" adds another agent from a template: "Ideas", "Goals" or "Custom". Right-click an agent and choose "Profile" to change or archive it.
+
 ## Project board
 
-The "Project board" shows the work of a project.
+The "Project board" shows the work of a project. "Now", "Whole history" and "Canvas" switch the view.
 
-- "New lead" starts a lead session. The lead writes a plan of tasks and milestones.
-- Write a requirement in the bar at the top. Pantheon sends it to the newest lead. A receipt shows the steps: received, queued, planning and creating tasks.
+- Write a requirement in the bar at the top. By default Pantheon sends it to the "Assistant". In the "Send to" menu you can choose another agent, the lead of a plan or a session. "New lead" starts a lead session with the requirement. The lead writes a plan of tasks and milestones.
+- A receipt shows the steps: received, queued, planning and creating tasks. When an agent such as the "Assistant" ends its turn, the receipt says what it did: "Answered here", "New plan", "Added to" a lane, or "Asked you". "Route differently" sends the request again: "Answer here", "New plan", "Add to a plan" or "Send to" another agent.
+- "Since you left" counts what happened since you last clicked "Mark as read": "Waiting on you", "Milestones moved", "Merged", "Failed", "New assumptions" and "Agent proposals". It can also show a short summary paragraph.
 - Each task runs in its own task session and worktree, and merges through the gate.
 - The current milestone card shows the merged and planned tasks, the acceptance criteria and "Accept".
 - "Needs you" lists the items that need your action, such as approvals.
+- A lead decides some things for you: it approves the permission requests and answers the questions of its task sessions, changes the plan, accepts milestones and merges changes outside a task's scope. It asks you before it adds an agent. To approve each plan change yourself, set "Settings" > "Workflow" > "Plan changes" to "Wait for my approval".
+- Some decisions always reach you: destructive git commands (such as a force push or `git reset --hard`), network and credential tools, writes outside the worktree, and plan changes when the project is over its budget.
 - The flow chart shows the tasks and their dependencies. To add a dependency, drag a connection.
 - The task drawer shows the route, the changes, the checks and the dependencies of a task. You can change the runtime, model and effort, or stop, restart or delete the task.
+- "Workflow step" in the task drawer shows the verdict of the newest workflow step: its summary, the commands and files it checked, and the verdict of each reviewer. A reviewer that gives no verdict fails a blocking review step. A failed step before the merge goes back to the lead. When a step ends without a verdict, click "Count as passed" or "Count as failed".
+- The summary at the bottom shows the sessions that ended today, the gates, the usage and the merges.
 - You can choose the time range of the board: 1, 3, 7, 14 or 30 days, or all time.
 
 ## Engineering board
@@ -173,10 +187,11 @@ The "Engineering board" has three tabs:
 
 ## Trace
 
-"Trace" shows what the sessions of a project did. It has four tabs: "Timeline", "Runs", "Activity" and "Diagnose".
+"Trace" shows what the sessions of a project did. It has five tabs: "Timeline", "Runs", "Activity", "Diagnose" and "Approved for you".
 The timeline shows one lane for each session, including external sessions.
 You can replay a turn and see the file changes of one step.
 "Diagnose" starts a separate read-only analysis session on the recorded evidence.
+"Approved for you" lists what a lead, a stored rule or your own agent approved without you, with the reason and the rule. You can filter by "Permissions", "Answers" and "Plan changes". "Overrule" replaces a lead's answer with yours. "Notifications" opens the delivery choices of each kind of decision.
 
 ## Memory
 
@@ -203,7 +218,7 @@ You can replay a turn and see the file changes of one step.
 | "Open with"             | Editor, terminal and browser.                                                    |
 | "Connections"           | Sign-in state of GitHub (`gh`), Hugging Face (`hf`) and Cloudflare (`wrangler`). |
 | "Devices"               | This computer and other machines over SSH.                                       |
-| "Notifications"         | Which events notify you, and quiet hours.                                        |
+| "Notifications"         | How each kind of decision reaches you, quiet hours, sound, app icon count.       |
 | "Shortcuts"             | Keyboard shortcuts.                                                              |
 | "Data"                  | Data folder, diagnostic log, import and export of personal settings.             |
 | "About"                 | Versions, daemon state, logs folder.                                             |
@@ -219,6 +234,7 @@ You can replay a turn and see the file changes of one step.
 
 - **Themes.** Choose a built-in theme: "Travertine", "Dusk", "Lapis" or "Terracotta". You can also ask a session to make a theme. The session calls the `theme.set` tool, and Pantheon applies the theme. You can delete a theme.
 - **Shortcuts.** Search by name or by keys. Click "Record keys" to change a shortcut. "Restore all defaults" resets all shortcuts.
+- **Notifications.** Each kind of decision, and merges, has "Now", "Brief only" or "Never". During quiet hours, "Now" works as "Brief only". A question that has waited over 4 hours always notifies you.
 - **Devices.** Click "Add device" and enter a host name from `~/.ssh/config`. Pantheon checks the system, the runtime versions and the sign-in state over SSH. You can set labels, resources and the session limit of each device, and probe it again.
 
 ## Data and security

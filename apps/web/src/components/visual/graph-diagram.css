@@ -119,6 +119,72 @@
   line-height: var(--lh-xs);
   color: var(--mu);
 }
+/* --mu on a kind tint is under 4.5:1 in the light theme. */
+.vis-gn[data-kind] .vis-gn-s {
+  color: var(--tx2);
+}
+
+/* A decision is a diamond around its label, which keeps inside the diamond's sides. */
+.vis-gn[data-shape='decision'] {
+  isolation: isolate;
+  justify-items: center;
+  padding: 0 21%;
+  border: none;
+  background: none;
+  text-align: center;
+}
+.vis-gn[data-shape='decision']:has(.vis-gn-s) {
+  padding: 0 28%;
+}
+.vis-gn-dm {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.vis-gn-dm path {
+  fill: var(--sf2);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+  transition:
+    fill var(--dur-2) var(--ease-std),
+    stroke var(--dur-2) var(--ease-std);
+}
+.vis-gn[data-kind] .vis-gn-dm path {
+  fill: color-mix(in srgb, var(--k) 8%, var(--sf2));
+  stroke: color-mix(in srgb, var(--k) 45%, var(--bd));
+}
+.vis-gn[data-selected] .vis-gn-dm path {
+  stroke: var(--k, var(--tx2));
+  stroke-width: 1px;
+}
+
+/* Start is a filled dot, end a ring around one. */
+.vis-gn[data-shape='start'],
+.vis-gn[data-shape='end'] {
+  padding: 0;
+  border: 1px solid var(--tx2);
+  border-radius: 50%;
+  background: var(--tx2);
+}
+.vis-gn[data-shape='end'] {
+  background: var(--sf);
+}
+.vis-gn[data-shape='end']::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--tx2);
+}
+@supports (corner-shape: superellipse(1.25)) {
+  .pt .vis-gn:is([data-shape='start'], [data-shape='end']),
+  .pt .vis-gn[data-shape='end']::after {
+    corner-shape: round;
+  }
+}
 
 .vis-gg {
   box-sizing: border-box;

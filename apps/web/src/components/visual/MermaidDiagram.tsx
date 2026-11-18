@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { ErDiagram } from './ErDiagram';
+import { GraphDiagram, type GraphSpec } from './GraphDiagram';
 import { fitZoom, layoutEr, layoutSequence, type ErLayout, type SeqLayout } from './mermaid-layout';
 import { nativeType, parseMermaid } from './mermaid-model';
 import { SequenceDiagram } from './SequenceDiagram';
@@ -13,9 +14,14 @@ const FLOOR = 2 / 3;
 // A tall diagram Pantheon draws grows its card to this, the height of the zoomed visual view.
 const MAX_HEIGHT = 640;
 
-/** An ER or sequence diagram laid out by Pantheon, and the box width it was laid out for. */
+/**
+ * A diagram Pantheon draws, and the box width it was laid out for: an ER or sequence diagram
+ * laid out here, or a flowchart or state diagram the graph lays out.
+ */
 type Native = { id: string; room: number } & (
-  { type: 'er'; layout: ErLayout } | { type: 'sequence'; layout: SeqLayout }
+  | { type: 'er'; layout: ErLayout }
+  | { type: 'sequence'; layout: SeqLayout }
+  | { type: 'graph'; spec: GraphSpec }
 );
 
 // The node kinds a model may give with `A:::store` or `class A store`, and their series colours.
@@ -94,11 +100,14 @@ export function MermaidDiagram({
   spec,
   height,
   grows = false,
+  full = false,
 }: {
   spec: { source: string };
   height: number;
-  /** An ER or sequence diagram taller than the height grows past it, up to the zoomed view's. */
+  /** A diagram Pantheon draws taller than the height grows past it, up to the zoomed view's. */
   grows?: boolean;
+  /** A flowchart or state diagram draws at full size and pans, as the Enlarge dialog does. */
+  full?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const theme = useThemeTick();
@@ -195,7 +204,9 @@ export function MermaidDiagram({
         const laid: Native =
           parsed.type === 'er'
             ? { id, room, type: 'er', layout: await layoutEr(parsed.model, { x: room, y: tall }) }
-            : { id, room, type: 'sequence', layout: layoutSequence(parsed.model) };
+            : parsed.type === 'sequence'
+              ? { id, room, type: 'sequence', layout: layoutSequence(parsed.model) }
+              : { id, room, type: 'graph', spec: parsed.model };
         if (live()) setNative(laid);
         return undefined;
       }
@@ -217,6 +228,13 @@ export function MermaidDiagram({
     },
     [spec, theme, grows, height],
   );
+  if (native?.type === 'graph')
+    return (
+      <div ref={box} className="vis-fill">
+        <GraphDiagram spec={native.spec} height={height} grows={grows} full={full} />
+        {!ready && <Drawing />}
+      </div>
+    );
   if (native) {
     const { layout } = native;
     const shown = grows

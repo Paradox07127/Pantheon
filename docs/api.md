@@ -1,6 +1,6 @@
 # Pantheon 接口
 
-daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 桥)、CLI(`apps/cli`)和原生会话里的 MCP 工具(`pantheon mcp`,stdio)。所有写操作走同一个 `Control.execute`(`packages/control/src/index.ts`)。
+daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 桥)、CLI(`apps/cli`)、原生会话里的 MCP 工具(`pantheon mcp`,stdio)和用户自己的 agent 用的个人级 MCP 服务器(`pantheon mcp --personal`,stdio)。所有写操作走同一个 `Control.execute`(`packages/control/src/index.ts`)。
 
 本页后半部分(`api-doc` 标记之间)由 `node scripts/api-doc.mjs` 从 `packages/protocol` 的 schema 生成，不手改。改了协议后先 `pnpm build`,再跑这个脚本；`tests/protocol/api-doc.test.ts` 在文档过期时变红。
 
@@ -10,6 +10,8 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 - `user.token`:本机用户凭证。除 `GET /health` 外，HTTP 请求都要带 `Authorization: Bearer <token>`。
 - 带 `Origin` 头的请求只接受 daemon 启动时配置的来源，否则 403 `origin_denied`。
 - 会话凭证：daemon 给挂 Pantheon MCP 的会话发凭证，24 小时到期，daemon 重启后失效。
+- 个人密钥：`personal.key.create {label}` 返回 `{key_id, token_file}`,daemon 把 token 写进状态目录下的 `personal-keys/<key_id>`(权限 0600)。对应的 principal 是 `personal:<key_id>`(role `personal`),不过期,daemon 重启后仍有效；`personal.key.revoke {key_id}` 立即吊销。`personal.key.list` 列出密钥，不含 token。
+- 个人 principal 只能用 `POST /v1/commands` 和四个查询(`projects.summary`、`needs_you.list`、`project.brief`、`project.decisions`),命令只限 `request.send`、`project.seen`、`lead.question.answer`、`board.plan.proposal.resolve`、`milestone.accept`;其余返回 403 `permission_denied`。三种回答命令只放行 `app.settings.set` 的 `personal_answers` 列出的种类(省略时一种都不放行),转来的任务会话提问和超预算时的计划变更只由用户回答。每次写操作记一条 `personal.called` 事件。
 - `GET /v1/session-principal`:当前凭证对应的 principal。
 
 ## HTTP 端点
@@ -63,6 +65,8 @@ daemon 只监听 `127.0.0.1`。客户端有桌面端(`apps/desktop`,经 preload 
 ## MCP 工具
 
 工作台会话也挂 Pantheon MCP:看板任务的会话拿 worker 凭证，其余工作台会话都拿 lead 凭证(`packages/domain` 的 `credentialRole`)。daemon 自己起的会话也通过 `pantheon mcp` 拿到工具：交叉审查的 reviewer 会话，以及摸底、简介和改动解读会话。工具名和命令的对应写在 `packages/protocol` 的 `sessionTools`(按会话角色)和 `coordinationTools`(摸底、简介和改动解读会话，只放行该用途列出的命令)里，下方命令表的"MCP 工具"列由它们生成。会话凭证只能调它角色允许的命令。
+
+用户自己的 agent 用 `pantheon mcp --personal`:token 从 `PANTHEON_PERSONAL_TOKEN_FILE` 读，文件名就是 key id;daemon 地址取 `PANTHEON_DAEMON_URL`,没有时读数据目录的 `daemon.json`。工具定义在 `apps/cli/src/personal-tools.ts`,共六个:`projects_overview`(`projects.summary`)、`needs_you`(`needs_you.list`)、`project_brief`(`project.brief`)、`project_decisions`(`project.decisions`)、`send_request`(`request.send`,不带附件)和 `answer_decision`(按 `kind` 发 `lead.question.answer`、`board.plan.proposal.resolve` 或 `milestone.accept`)。
 
 ## 命令语义要点
 
@@ -167,9 +171,11 @@ pnpm cli events --after 0 --project PROJECT_ID
 pnpm cli command --file /absolute/path/command.json
 pnpm cli command --json '{"type":"…"}'
 pnpm cli trace.time --project PROJECT_ID --param lane_key=LANE
+pnpm cli mcp
+pnpm cli mcp --personal
 ```
 
-CLI 从状态目录读 `daemon.json` 和凭证。第一个参数是查询名时，它发 `GET /v1/<查询名>`;`--param KEY=VALUE` 可重复，重复的键按多值发送。
+CLI 从状态目录读 `daemon.json` 和凭证；`mcp` 读 `PANTHEON_SESSION_TOKEN_FILE`,`mcp --personal` 读 `PANTHEON_PERSONAL_TOKEN_FILE`。第一个参数是查询名时，它发 `GET /v1/<查询名>`;`--param KEY=VALUE` 可重复，重复的键按多值发送。
 
 <!-- prettier-ignore-start -->
 

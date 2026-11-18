@@ -198,33 +198,48 @@ function Route({ data }: EdgeProps<Edge<RouteData>>) {
   );
 }
 
-function GroupBox({ data: { group } }: NodeProps<Node<GroupData>>) {
-  return (
-    <div className="vis-gg" data-depth={group.depth}>
-      <span className="vis-gg-h">
-        <Clip text={group.label} />
-        <span className="vis-gg-n">{group.members}</span>
-      </span>
-    </div>
-  );
-}
-
 /** Node and edge components, made once the flow library has loaded. */
 function flowTypes(flow: typeof import('@xyflow/react')) {
+  // The flow attaches an edge only to a node with handles; edges are drawn along their routes.
+  const ends = (
+    <>
+      <flow.Handle type="target" position={flow.Position.Left} isConnectable={false} />
+      <flow.Handle type="source" position={flow.Position.Right} isConnectable={false} />
+    </>
+  );
   function Card({ data: { node, focus }, selected }: NodeProps<Node<CardData>>) {
-    const Icon = node.kind && KIND_ICON[node.kind];
+    const Icon = !node.shape && node.kind && KIND_ICON[node.kind];
+    // A start or end dot has no text; its label names it.
+    const dot = node.shape === 'start' || node.shape === 'end';
+    const { width: w, height: h } = node;
     return (
       <div
         className="vis-gn"
         data-kind={node.kind}
+        data-shape={node.shape}
         data-focus={focus}
         data-selected={selected || undefined}
       >
-        <flow.Handle type="target" position={flow.Position.Left} isConnectable={false} />
+        {ends}
+        {node.shape === 'decision' && (
+          <svg className="vis-gn-dm" viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+            <path d={`M${w / 2} 0L${w} ${h / 2}L${w / 2} ${h}L0 ${h / 2}Z`} />
+          </svg>
+        )}
         {Icon && <Icon className="vis-gn-ic" aria-hidden="true" />}
-        <Clip className="vis-gn-t" text={node.label} />
-        {node.sublabel !== undefined && <Clip className="vis-gn-s" text={node.sublabel} />}
-        <flow.Handle type="source" position={flow.Position.Right} isConnectable={false} />
+        {!dot && <Clip className="vis-gn-t" text={node.label} />}
+        {!dot && node.sublabel !== undefined && <Clip className="vis-gn-s" text={node.sublabel} />}
+      </div>
+    );
+  }
+  function GroupBox({ data: { group } }: NodeProps<Node<GroupData>>) {
+    return (
+      <div className="vis-gg" data-depth={group.depth}>
+        {ends}
+        <span className="vis-gg-h">
+          <Clip text={group.label} />
+          <span className="vis-gg-n">{group.members}</span>
+        </span>
       </div>
     );
   }
@@ -428,14 +443,18 @@ export function GraphDiagram({
         })),
       ]
     : [];
+  const groupNames = new Map(laid?.layout.groups.map((group) => [group.id, group.label]));
+  // An end that is no node is a group.
+  const end = (id: string) => (names.has(id) ? id : `group:${id}`);
   const edges: Edge[] = laid
     ? laid.layout.edges.map((edge): Edge<RouteData> => {
-        const values = { from: names.get(edge.from), to: names.get(edge.to) };
+        const name = (id: string) => names.get(id) ?? groupNames.get(id);
+        const values = { from: name(edge.from), to: name(edge.to) };
         const tone = kinds.get(edge.to);
         return {
           id: edge.id,
-          source: edge.from,
-          target: edge.to,
+          source: end(edge.from),
+          target: end(edge.to),
           type: 'route',
           data: {
             edge,

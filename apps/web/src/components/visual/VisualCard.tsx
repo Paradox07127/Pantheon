@@ -32,6 +32,7 @@ import { Tip } from '../Tip';
 import { GraphDiagram, GraphNodeInfo } from './GraphDiagram';
 import { KlineChart } from './KlineChart';
 import { MermaidDiagram } from './MermaidDiagram';
+import { nativeType } from './mermaid-model';
 import { SandboxFrame } from './SandboxFrame';
 import { Drawing } from './shared';
 import { TableVisual } from './TableVisual';
@@ -205,7 +206,14 @@ function picture(
     case 'vega-lite':
       return <VegaChart spec={content.spec} height={height} />;
     case 'mermaid':
-      return <MermaidDiagram spec={content.spec} height={height} grows={grows} />;
+      return (
+        <MermaidDiagram
+          spec={content.spec}
+          height={height}
+          grows={grows}
+          {...(onInspect && { full: true })}
+        />
+      );
     case 'graph':
       return (
         <GraphDiagram
@@ -308,7 +316,9 @@ export function VisualFrame({
     invalid ||
     content.kind === 'kline' ||
     content.kind === 'table' ||
-    content.kind === 'graph'
+    content.kind === 'graph' ||
+    (content.kind === 'mermaid' &&
+      /^(?:flowchart|state)$/.test(nativeType(content.spec.source) ?? ''))
       ? 'group'
       : 'img';
   const viewSpecOpen = () => setSpecOpen(true);

@@ -365,13 +365,13 @@ describe('Vega-Lite chart', () => {
 
 describe('Mermaid diagram', () => {
   it('renders in strict security mode and shows the SVG it returns', async () => {
-    const spec = { source: 'graph LR\na-->b' };
+    const spec = { source: 'classDiagram\nA <|-- B' };
     const h = mount(() => MermaidDiagram({ spec, height: 280 }));
     await settle(h);
     expect(mm.initialize).toHaveBeenCalledWith(
       expect.objectContaining({ startOnLoad: false, securityLevel: 'strict', theme: 'base' }),
     );
-    expect(mm.render).toHaveBeenCalledWith(expect.any(String), 'graph LR\na-->b');
+    expect(mm.render).toHaveBeenCalledWith(expect.any(String), 'classDiagram\nA <|-- B');
     const svg = find(h.value, (n) => n.props.dangerouslySetInnerHTML);
     expect(svg.props.dangerouslySetInnerHTML.__html).toBe('<svg data-drawn="yes"></svg>');
   });
@@ -386,7 +386,7 @@ describe('Mermaid diagram', () => {
     ['never enlarges a small diagram', '0 0 300 150', [300, 150]],
   ])('%s', async (_name, viewBox, [width, height]) => {
     mm.render.mockResolvedValueOnce({ svg: `<svg viewBox="${viewBox}"></svg>` });
-    const spec = { source: 'graph LR\na-->b' };
+    const spec = { source: 'classDiagram\nA <|-- B' };
     const h = mount(() => MermaidDiagram({ spec, height: 720 }));
     sized(h, 1200, 720);
     await settle(h);
@@ -687,6 +687,97 @@ describe('graph diagram', () => {
     expect(names).toContain('Orders API 和 Cache 双向');
     expect(names).toContain('Storefront 到 Orders API');
     expect(text(by('web>api'))).toBe('checkout');
+  });
+
+  // A state machine as a diagram converted from mermaid gives it.
+  const machine: Spec = {
+    nodes: [
+      { id: 'in', label: 'Start', shape: 'start' },
+      { id: 'ask', label: 'Paid?', shape: 'decision' },
+      { id: 'pay', label: 'Paying', group: 'checkout' },
+      { id: 'ship', label: 'Shipped', group: 'checkout' },
+      { id: 'out', label: 'End', shape: 'end' },
+    ],
+    edges: [
+      { from: 'in', to: 'ask' },
+      { from: 'ask', to: 'checkout', label: 'yes' },
+      { from: 'ask', to: 'out', label: 'no' },
+      { from: 'pay', to: 'ship' },
+      { from: 'checkout', to: 'out' },
+    ],
+    groups: [{ id: 'checkout', label: 'Checkout' }],
+    direction: 'TB',
+  };
+
+  it('draws a decision as a diamond around its label, and start and end as dots named by their label', async () => {
+    const h = await drawn(machine, 1200, 420);
+    for (const id of ['in', 'out']) {
+      expect([at(h, id).width, at(h, id).height]).toEqual([10, 10]);
+      expect(text(drawnNode(h, id))).toBe('');
+    }
+    expect(drawnNode(h, 'in').props['data-shape']).toBe('start');
+    expect(drawnNode(h, 'out').props['data-shape']).toBe('end');
+    const named = Object.fromEntries(
+      cards(h).map((n) => [n.id, (n as Laid & { ariaLabel: string }).ariaLabel]),
+    );
+    expect([named.in, named.out]).toEqual(['Start', 'End']);
+    const ask = drawnNode(h, 'ask');
+    expect(ask.props['data-shape']).toBe('decision');
+    expect(text(ask)).toBe('Paid?');
+    // The diamond's four corners touch the middle of each side of the node's box.
+    const { width, height } = at(h, 'ask');
+    const corners = (nodes(ask).find((n) => n.type === 'path')!.props.d as string)
+      .match(/-?[\d.]+ -?[\d.]+/g)!
+      .map((pair) => pair.split(' ').map((v) => Math.round(+v)));
+    expect(corners).toEqual(
+      expect.arrayContaining(
+        [
+          [width / 2, 0],
+          [width, height / 2],
+          [width / 2, height],
+          [0, height / 2],
+        ].map(([x, y]) => [Math.round(x!), Math.round(y!)]),
+      ),
+    );
+    expect(width).toBeGreaterThan(height);
+  });
+
+  it('ends each edge on the outline of a diamond or dot, not on its box', async () => {
+    const h = await drawn(machine, 1200, 420);
+    const outline = (id: string, p: { x: number; y: number }) => {
+      const n = at(h, id);
+      const [a, b] = [n.width / 2, n.height / 2];
+      const [dx, dy] = [Math.abs(p.x - n.position.x - a) / a, Math.abs(p.y - n.position.y - b) / b];
+      return n.width === 10 ? Math.hypot(dx, dy) : dx + dy;
+    };
+    for (const edge of flowOf(h).props.edges) {
+      const points: { x: number; y: number }[] = edge.data.edge.points;
+      for (const [id, p] of [
+        [edge.source, points[0]!],
+        [edge.target, points.at(-1)!],
+      ] as const)
+        if (['in', 'ask', 'out'].includes(id)) expect(outline(id, p)).toBeCloseTo(1, 2);
+    }
+  });
+
+  it('routes an edge to and from a group to its boundary, named by the group', async () => {
+    const h = await drawn(machine, 1200, 420);
+    const flow = flowOf(h);
+    const group = flow.props.nodes.find((n: { id: string }) => n.id === 'group:checkout');
+    const ends = flow.props.edges.map((e: any) => `${e.source}>${e.target}`);
+    expect(ends).toEqual(expect.arrayContaining(['ask>group:checkout', 'group:checkout>out']));
+    const on = (p: { x: number; y: number }) =>
+      [group.position.y, group.position.y + group.height].some((y) => Math.abs(p.y - y) < 0.5) ||
+      [group.position.x, group.position.x + group.width].some((x) => Math.abs(p.x - x) < 0.5);
+    const into = flow.props.edges[ends.indexOf('ask>group:checkout')];
+    const out = flow.props.edges[ends.indexOf('group:checkout>out')];
+    expect(on(into.data.edge.points.at(-1))).toBe(true);
+    expect(on(out.data.edge.points[0])).toBe(true);
+    expect(into.ariaLabel).toBe('Paid? 到 Checkout');
+    // The flow attaches edges to a node's handles; a group has them too.
+    expect(nodes(drawnNode(h, 'group:checkout')).filter((n) => n.type === xy.Handle)).toHaveLength(
+      2,
+    );
   });
 
   it('routes every edge in right angles from node to node', async () => {

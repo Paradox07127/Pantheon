@@ -1,4 +1,6 @@
 import type { Mermaid } from 'mermaid';
+import { t } from '../../i18n';
+import type { EdgeStyle, GraphSpec, NodeKind, NodeShape } from './graph-layout';
 
 export type Cardinality = 'one' | 'zero-or-one' | 'one-or-more' | 'zero-or-more';
 export type KeyKind = 'PK' | 'FK' | 'UK';
@@ -72,9 +74,29 @@ export interface SequenceModel {
 }
 
 export type MermaidModel =
-  { type: 'er'; model: ErModel } | { type: 'sequence'; model: SequenceModel };
+  | { type: 'er'; model: ErModel }
+  | { type: 'sequence'; model: SequenceModel }
+  | { type: 'flowchart' | 'state'; model: GraphSpec };
 
-/** `erDiagram` or `sequenceDiagram` when the source's first statement is that header. */
+const HEADERS: Record<string, MermaidModel['type']> = {
+  erDiagram: 'er',
+  sequenceDiagram: 'sequence',
+  flowchart: 'flowchart',
+  graph: 'flowchart',
+  stateDiagram: 'state',
+};
+
+/** What a flowchart or state diagram may use that Pantheon's graph cannot show; mermaid draws it. */
+const UNSHOWN: readonly RegExp[] = [
+  // State forks and joins, and concurrent regions.
+  /<<(?:fork|join)>>|\[\[(?:fork|join)\]\]/,
+  /^\s*--\s*$/m,
+  // Icons and images on flowchart nodes.
+  /\bfa[bklrs]?:fa-[\w-]/,
+  /@\{[^}]*\b(?:icon|img)\s*:/,
+];
+
+/** The diagram's type when its first statement is a header Pantheon draws itself. */
 export function nativeType(source: string): MermaidModel['type'] | undefined {
   const lines = source.split('\n');
   let at = 0;
@@ -83,8 +105,12 @@ export function nativeType(source: string): MermaidModel['type'] | undefined {
     if (at === 0) return undefined;
   }
   while (at < lines.length && (!lines[at]!.trim() || lines[at]!.trim().startsWith('%%'))) at++;
-  const header = /^\s*(erDiagram|sequenceDiagram)\b/.exec(lines[at] ?? '')?.[1];
-  return header === 'erDiagram' ? 'er' : header === 'sequenceDiagram' ? 'sequence' : undefined;
+  const header = /^\s*(erDiagram|sequenceDiagram|flowchart|graph|stateDiagram)\b/.exec(
+    lines[at] ?? '',
+  )?.[1];
+  const type = header === undefined ? undefined : HEADERS[header];
+  const graph = type === 'flowchart' || type === 'state';
+  return graph && UNSHOWN.some((feature) => feature.test(source)) ? undefined : type;
 }
 
 /** A label's lines: mermaid breaks lines with `<br>`; other markup is dropped. */
@@ -286,17 +312,202 @@ function sequenceModel(db: SequenceDb): SequenceModel {
   };
 }
 
+const KINDS: readonly string[] = [
+  'client',
+  'service',
+  'store',
+  'queue',
+  'external',
+  'policy',
+] satisfies NodeKind[];
+const kindOf = (classes: string[]) =>
+  classes.find((c) => KINDS.includes(c)) as NodeKind | undefined;
+
+// Mermaid's names for the diamond and for the cylinder shapes.
+const DIAMONDS = new Set(['diamond', 'diam', 'decision', 'question']);
+const CYLINDERS = new Set([
+  'cylinder',
+  'cyl',
+  'db',
+  'database',
+  'h-cyl',
+  'das',
+  'horizontal-cylinder',
+  'lin-cyl',
+  'disk',
+  'lined-cylinder',
+]);
+
+const directionOf = (dir: string | undefined): GraphSpec['direction'] =>
+  dir === 'LR' || dir === 'RL'
+    ? 'LR'
+    : dir === 'TB' || dir === 'TD' || dir === 'BT'
+      ? 'TB'
+      : undefined;
+
+/** A node with its first label line as its title and the others as its detail. */
+function graphNode(
+  id: string,
+  lines: string[],
+  more: { kind?: NodeKind | undefined; shape?: NodeShape | undefined; group?: string | undefined },
+): GraphSpec['nodes'][number] {
+  const [label = id, ...rest] = lines;
+  return {
+    id,
+    label,
+    ...(rest.length > 0 && { sublabel: rest.join(' ') }),
+    ...(more.kind && { kind: more.kind }),
+    ...(more.shape && { shape: more.shape }),
+    ...(more.group !== undefined && { group: more.group }),
+  };
+}
+
+/** The graph, with only the edges that end on a node or on a group with a node in it. */
+function graphOf(
+  nodes: GraphSpec['nodes'],
+  edges: GraphSpec['edges'],
+  groups: NonNullable<GraphSpec['groups']>,
+  direction: GraphSpec['direction'],
+): GraphSpec {
+  const parents = new Map(groups.map((group) => [group.id, group.parent]));
+  const ends = new Set(nodes.map((node) => node.id));
+  for (const node of nodes)
+    for (let at = node.group; at !== undefined && !ends.has(at); at = parents.get(at)) ends.add(at);
+  return {
+    nodes,
+    edges: edges.filter((edge) => ends.has(edge.from) && ends.has(edge.to)),
+    ...(groups.length > 0 && { groups }),
+    ...(direction && { direction }),
+  };
+}
+
+interface FlowDb {
+  getDirection(): string | undefined;
+  getVertices(): Map<string, { id: string; text?: string; type?: string; classes: string[] }>;
+  getEdges(): { start: string; end: string; type?: string; stroke?: string; text: string }[];
+  getSubGraphs(): { id: string; title: string; nodes: string[] }[];
+}
+
+const STROKES: Record<string, EdgeStyle> = { thick: 'main', dotted: 'async' };
+
+/** Styles, link styles, clicks and class definitions other than the kinds are left out. */
+function flowModel(db: FlowDb): GraphSpec {
+  const subgraphs = db.getSubGraphs();
+  const groupOf = new Map<string, string>();
+  for (const subgraph of subgraphs)
+    for (const member of subgraph.nodes) if (!groupOf.has(member)) groupOf.set(member, subgraph.id);
+  const named = new Set(subgraphs.map((subgraph) => subgraph.id));
+  const nodes = [...db.getVertices().values()]
+    // An edge to a subgraph makes a vertex of its name too.
+    .filter((vertex) => !named.has(vertex.id))
+    .map((vertex) =>
+      graphNode(vertex.id, labelLines(vertex.text ?? vertex.id), {
+        kind: kindOf(vertex.classes) ?? (CYLINDERS.has(vertex.type ?? '') ? 'store' : undefined),
+        shape: DIAMONDS.has(vertex.type ?? '') ? 'decision' : undefined,
+        group: groupOf.get(vertex.id),
+      }),
+    );
+  const edges = db.getEdges().flatMap((link): GraphSpec['edges'] => {
+    if (link.stroke === 'invisible') return [];
+    const label = labelLines(link.text).join(' ');
+    const style = STROKES[link.stroke ?? ''];
+    const edge = {
+      from: link.start,
+      to: link.end,
+      ...(label && { label }),
+      ...(style && { style }),
+    };
+    // A link with a head at each end is the edge both ways, which the graph draws as one.
+    return link.type?.startsWith('double_')
+      ? [edge, { ...edge, from: link.end, to: link.start }]
+      : [edge];
+  });
+  const groups = subgraphs.map((subgraph) => {
+    const parent = groupOf.get(subgraph.id);
+    return {
+      id: subgraph.id,
+      label: labelLines(subgraph.title).join(' ') || subgraph.id,
+      ...(parent !== undefined && { parent }),
+    };
+  });
+  return graphOf(nodes, edges, groups, directionOf(db.getDirection()));
+}
+
+interface StateDb {
+  getDirection(): string;
+  getData(): {
+    nodes: {
+      id: string;
+      shape: string;
+      label?: string | string[];
+      description?: string | string[];
+      cssClasses: string;
+      parentId?: string;
+      isGroup?: boolean;
+    }[];
+    edges: { start: string; end: string; label?: string }[];
+  };
+}
+
+const STATE_SHAPES: Record<string, NodeShape> = {
+  stateStart: 'start',
+  stateEnd: 'end',
+  choice: 'decision',
+};
+
+/** Notes are left out; a composite state is a group. */
+function stateModel(db: StateDb): GraphSpec {
+  const data = db.getData();
+  const shown = data.nodes.filter((node) => node.shape !== 'note' && node.shape !== 'noteGroup');
+  const text = (value: string | string[] | undefined) => [value ?? []].flat();
+  const nodes = shown
+    .filter((node) => !node.isGroup)
+    .map((node) => {
+      const shape = STATE_SHAPES[node.shape];
+      const lines =
+        shape === 'start'
+          ? [t({ id: 'visual.graph.start', defaultMessage: 'Start' })]
+          : shape === 'end'
+            ? [t({ id: 'visual.graph.end', defaultMessage: 'End' })]
+            : [...text(node.label), ...text(node.description)].flatMap(labelLines);
+      return graphNode(node.id, lines, {
+        kind: kindOf(node.cssClasses.split(/\s+/)),
+        shape,
+        group: node.parentId,
+      });
+    });
+  const groups = shown
+    .filter((node) => node.isGroup)
+    .map((node) => ({
+      id: node.id,
+      label: text(node.label).flatMap(labelLines).join(' ') || node.id,
+      ...(node.parentId !== undefined && { parent: node.parentId }),
+    }));
+  const edges = data.edges.map((edge) => {
+    const label = labelLines(edge.label ?? '').join(' ');
+    return { from: edge.start, to: edge.end, ...(label && { label }) };
+  });
+  return graphOf(nodes, edges, groups, directionOf(db.getDirection()));
+}
+
 /**
- * Parses an ER or sequence diagram with mermaid's own parser into a plain model. A source
- * mermaid cannot parse throws mermaid's error.
+ * Parses a diagram with mermaid's own parser into a plain model. A source mermaid cannot parse
+ * throws mermaid's error.
  */
 export async function parseMermaid(
   mermaid: Mermaid,
   source: string,
   type: MermaidModel['type'],
 ): Promise<MermaidModel> {
-  const diagram = await mermaid.mermaidAPI.getDiagramFromText(source);
-  return type === 'er'
-    ? { type, model: erModel(diagram.db as unknown as ErDb) }
-    : { type, model: sequenceModel(diagram.db as unknown as SequenceDb) };
+  const { db } = await mermaid.mermaidAPI.getDiagramFromText(source);
+  switch (type) {
+    case 'er':
+      return { type, model: erModel(db as unknown as ErDb) };
+    case 'sequence':
+      return { type, model: sequenceModel(db as unknown as SequenceDb) };
+    case 'flowchart':
+      return { type, model: flowModel(db as unknown as FlowDb) };
+    case 'state':
+      return { type, model: stateModel(db as unknown as StateDb) };
+  }
 }
