@@ -1361,6 +1361,41 @@ it('pauses dispatch and direct claims while running task sessions continue', asy
   expect(startTasks(f, lead.id, ['direct'])).toMatchObject({ claimed: 'direct' });
 });
 
+it('reads the routing statistics no more often when more tasks queue', async () => {
+  const f = await workbenchFixture();
+  const kind = { domain: 'backend-logic', tier: 't1' } as const;
+  const lead = await leadWithPlan(f, [
+    reportTask('one', { kind }),
+    reportTask('two', { kind }),
+    reportTask('three', { kind }),
+  ]);
+  f.call(
+    'workflow.policy.set',
+    { project_id: f.project.id, dispatch_paused: true },
+    f.store.must('workflow_policies', f.project.id).revision,
+  );
+  const list = f.store.list.bind(f.store);
+  let statsReads = 0;
+  vi.spyOn(f.store, 'list').mockImplementation(((table: string) => {
+    if (table === 'retrospectives' && new Error().stack!.includes('routingStats')) statsReads++;
+    return list(table as never);
+  }) as typeof f.store.list);
+  const paused = () =>
+    f.control
+      .boardView(user, f.project.id, 1)
+      .tasks.filter((row) => row.dispatch_wait === 'paused');
+  startTasks(f, lead.id, ['one']);
+  // The first read after a plan change also fills what later reads reuse.
+  paused();
+  statsReads = 0;
+  expect(paused()).toHaveLength(1);
+  const readsForOne = statsReads;
+  startTasks(f, lead.id, ['two', 'three']);
+  statsReads = 0;
+  expect(paused()).toHaveLength(3);
+  expect(statsReads).toBe(readsForOne);
+});
+
 it.each(
   (['records', 'writer', 'user'] as const).flatMap((source) =>
     ['dispatch', 'composer'].map((entry) => ({ source, entry })),

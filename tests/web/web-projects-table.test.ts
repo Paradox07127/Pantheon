@@ -82,10 +82,15 @@ const event = (sequence: number, project_id: string, kind: string): DaemonEvent 
   payload: {},
 });
 
-const row = (s: ProjectSummary | undefined, oldestWait: number | null = null) =>
+const row = (
+  s: ProjectSummary | undefined,
+  oldestWait: number | null = null,
+  needs: NeedsYouItem[] = [],
+) =>
   ProjectRow({
     project: project(s?.project_id ?? 'p') as any,
     summary: s,
+    needs,
     oldestWait,
     now: NOW,
     onOpenSettings: () => {},
@@ -304,6 +309,77 @@ describe('project table row', () => {
     expect(text(cells(row(full))[4])).toBe('4');
   });
 
+  const need = (
+    decision: NeedsYouItem['decision'],
+    blocks: number,
+    extra: Partial<NeedsYouItem> = {},
+  ): NeedsYouItem => ({
+    source: { table: 'approvals', id: `${decision}-${blocks}`, revision: 1 },
+    kind: 'permission',
+    project_id: 'project-b',
+    status: 'pending',
+    created_at: NOW - 5 * MINUTE,
+    reason: 'permission_requested',
+    decision,
+    blocks,
+    actions: [],
+    ...extra,
+  });
+  const kindName = (key: string) => zh(`data.attention.decision.${key}`);
+  const byKind = (tree: any) => byLabel(cells(tree)[4], zh('projects.row.byKind'));
+
+  it('shows the item blocking the most and what waits by kind, the kind blocking the most first', () => {
+    const tree = row(full, null, [
+      need('question', 2),
+      need('plan_change', 3, {
+        kind: 'board.lane.approval',
+        reason: 'lane_plan_awaiting_approval',
+        lane_title: 'Refund audit log',
+      }),
+    ]);
+    const group = byKind(tree);
+    expect(group.props.role).toBe('group');
+    expect(buttons(group).map((b) => b.props['aria-label'])).toEqual([
+      zhf('projects.row.kindCount', { kind: kindName('planChange'), count: 1, blocks: 3 }),
+      zhf('projects.row.kindCount', { kind: kindName('question'), count: 1, blocks: 2 }),
+    ]);
+    const needs = text(cells(tree)[4]);
+    expect(needs).toContain('Refund audit log');
+    expect(needs).toContain(zhf('data.attention.blocks', { count: 3 }));
+    buttons(group)[1]!.props.onClick();
+    expect(mock.current.choose).toHaveBeenCalledWith('project-b');
+    expect(mock.shell.openSessionGroup).toHaveBeenCalledWith('inbox');
+  });
+
+  it('shows four kinds and names the rest in one count', () => {
+    const tree = row(
+      full,
+      null,
+      (
+        [
+          'plan_change',
+          'question',
+          'repeated_failure',
+          'permission',
+          'budget',
+          'agent_proposal',
+        ] as const
+      ).map((decision, i) => need(decision, 6 - i)),
+    );
+    const labels = buttons(byKind(tree)).map((b) => b.props['aria-label']);
+    expect(labels).toHaveLength(5);
+    expect(labels[3]).toBe(
+      zhf('projects.row.kindCount', { kind: kindName('permission'), count: 1, blocks: 3 }),
+    );
+    expect(labels[4]).toBe(
+      zhf('projects.row.otherKinds', {
+        count: 2,
+        kinds: [kindName('budget'), kindName('agentProposal')].join('，'),
+      }),
+    );
+    expect(text(buttons(byKind(tree))[4])).toBe(zhf('projects.row.other', { count: 2 }));
+  });
+
   it('leaves the wait out until the oldest item has waited a minute', () => {
     expect(text(cells(row(full, NOW - 20_000))[4])).toBe('4');
     expect(text(cells(row(full, NOW - MINUTE))[4])).toBe('41 分钟');
@@ -481,13 +557,45 @@ describe('projects screen', () => {
         .map((r) => r.props.project.id),
     ).toEqual(['alpha', 'beta']);
     expect(zh('projects.personalAgent')).toBe('个人级智能体');
-    byLabel(h.value, zh('projects.personalAgent')).props.onClick();
+    // Two items wait in alpha; the one of a project not listed is not counted.
+    const entry = byLabel(
+      h.value,
+      [zh('projects.personalAgent'), zhf('projects.personalAgentWaits', { count: 2 })].join(
+        zh('sessions.screen.separator'),
+      ),
+    );
+    expect(text(entry)).toBe(`${zh('projects.personalAgent')}2`);
+    entry.props.onClick();
     await h.flush();
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'resident.open', input: { kind: 'personal' } }),
     );
     expect(mock.shell.openPersonal).toHaveBeenCalledWith('personal-1');
   });
+
+  it.each([
+    [14, 12, true],
+    [12, 12, false],
+  ])(
+    'with %i projects shows %i rows and a switch to the rest: %s',
+    async (total, first, folded) => {
+      mock.board.board.projects = Array.from({ length: total }, (_, i) => project(`p${i}`));
+      const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
+      await h.flush();
+      const rows = () =>
+        nodes(h.value).filter((n) => typeof n.type === 'function' && n.type.name === 'ProjectRow');
+      expect(rows()).toHaveLength(first);
+      const label = zhf('projects.showAll', { count: total });
+      const toggle = () => nodes(h.value).find((n) => n.type === 'button' && text(n) === label);
+      if (!folded) return expect(toggle()).toBeUndefined();
+      expect(toggle()!.props['aria-expanded']).toBe(false);
+      toggle()!.props.onClick();
+      h.render();
+      expect(rows()).toHaveLength(total);
+      const less = find(h.value, (n) => n.type === 'button' && text(n) === zh('projects.showLess'));
+      expect(less.props['aria-expanded']).toBe(true);
+    },
+  );
 
   it('moves the focus between the rows with the up and down keys', async () => {
     const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
@@ -524,8 +632,9 @@ describe('projects screen', () => {
       await h.flush();
       expect(nodes(h.value).some((n) => n.type === 'input')).toBe(false);
       const bar = named(h.value, 'TopBar');
+      // The personal agent's button counts the two items waiting in alpha once alpha is listed.
       expect(buttons(bar).map(text)).toEqual([
-        zh('projects.personalAgent'),
+        `${zh('projects.personalAgent')}${projects.length ? '2' : ''}`,
         zh('projects.import.open'),
       ]);
       expect(named(bar, 'OpenProjectButton')).toBeTruthy();
@@ -644,6 +753,136 @@ describe('summary refresh', () => {
     await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
     await h.flush();
     expect(reads).toHaveLength(3);
+  });
+});
+
+describe('projects screen while it is open', () => {
+  let summaries: ProjectSummary[];
+  let items: NeedsYouItem[];
+  let reads: string[];
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    forgetQuery('projects.summary', 'all');
+    reads = [];
+    items = [];
+    summaries = [
+      summary('alpha', { last_activity_at: '2026-11-03T11:00:00.000Z' }),
+      summary('beta', { last_activity_at: '2026-11-03T10:00:00.000Z' }),
+    ];
+    mock.board = {
+      board: { cursor: 1, projects: [project('alpha'), project('beta')], project_briefs: [] },
+      events: [],
+      status: { state: 'live' },
+      resync: 0,
+    };
+    vi.stubGlobal('window', {
+      addEventListener() {},
+      removeEventListener() {},
+      pantheon: {
+        query: vi.fn(async (method: string) => {
+          reads.push(method);
+          return method === 'needs_you.list'
+            ? { ok: true, value: { items } }
+            : method === 'import.candidates'
+              ? { ok: true, value: { indexing: null, candidates: [] } }
+              : { ok: true, value: { projects: summaries } };
+        }),
+      },
+    });
+  });
+  afterEach(() => {
+    unmountAll();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('keeps its order while the summary changes, and takes it anew when opened again', async () => {
+    const open = async () => {
+      const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
+      await h.flush();
+      return h;
+    };
+    const order = (tree: any) =>
+      nodes(tree)
+        .filter((n) => typeof n.type === 'function' && n.type.name === 'ProjectRow')
+        .map((r) => r.props.project.id);
+    const h = await open();
+    expect(order(h.value)).toEqual(['alpha', 'beta']);
+
+    summaries = [summaries[0]!, { ...summaries[1]!, needs_you: 1 }];
+    vi.setSystemTime(NOW + 5 * MINUTE);
+    mock.board = { ...mock.board, events: [event(1, 'beta', 'session.merged')] };
+    h.render();
+    await vi.advanceTimersByTimeAsync(2_500);
+    await h.flush();
+    expect(reads.filter((m) => m === 'projects.summary')).toHaveLength(2);
+    expect(order(h.value)).toEqual(['alpha', 'beta']);
+
+    unmountAll();
+    const again = await open();
+    expect(order(again.value)).toEqual(['beta', 'alpha']);
+  });
+
+  it('shows what needs you as it is now while the rows keep their places', async () => {
+    const wait = (id: string, project_id: string) =>
+      ({
+        source: { table: 'approvals', id, revision: 1 },
+        kind: 'permission',
+        project_id,
+        status: 'pending',
+        created_at: NOW - 5 * MINUTE,
+        reason: 'permission_requested',
+        decision: 'permission',
+        blocks: 0,
+        actions: [],
+      }) as NeedsYouItem;
+    mock.board.board.projects.push(project('gamma'));
+    items = [wait('a1', 'alpha'), wait('a2', 'alpha'), wait('g1', 'gamma')];
+    summaries = [
+      { ...summaries[0]!, needs_you: 2 },
+      summaries[1]!,
+      summary('gamma', { needs_you: 1, last_activity_at: '2026-11-03T09:00:00.000Z' }),
+    ];
+    const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
+    await h.flush();
+    const rowNodes = () =>
+      nodes(h.value).filter((n) => typeof n.type === 'function' && n.type.name === 'ProjectRow');
+    const rowOf = (id: string) =>
+      ProjectRow(rowNodes().find((r) => r.props.project.id === id)!.props);
+    const asks = () =>
+      find(SummaryPanel(named(h.value, 'SummaryPanel').props), (n) => n.type === NeedsPopover);
+    const permissions = (n: number) =>
+      zhf('projects.row.kindCount', {
+        kind: zh('data.attention.decision.permission'),
+        count: n,
+        blocks: 0,
+      });
+    expect(rowNodes().map((r) => r.props.project.id)).toEqual(['alpha', 'gamma', 'beta']);
+    expect(text(byLabel(rowOf('alpha'), zhf('projects.row.needsYou', { count: 2 })))).toBe('2');
+    expect(text(asks().props.trigger)).toBe(
+      `${zh('projects.summary.needsYou')}3${zhf('projects.summary.across', { count: 2 })}`,
+    );
+
+    items = [wait('a2', 'alpha')];
+    summaries = [
+      { ...summaries[0]!, needs_you: 1 },
+      summaries[1]!,
+      { ...summaries[2]!, needs_you: 0 },
+    ];
+    mock.board = { ...mock.board, events: [event(1, 'gamma', 'approval.resolved')] };
+    h.render();
+    await vi.advanceTimersByTimeAsync(2_500);
+    await h.flush();
+    expect(rowNodes().map((r) => r.props.project.id)).toEqual(['alpha', 'gamma', 'beta']);
+    const alpha = rowOf('alpha');
+    expect(text(byLabel(alpha, zhf('projects.row.needsYou', { count: 1 })))).toBe('1');
+    expect(text(byLabel(alpha, permissions(1)))).toBe('1');
+    expect(text(cells(rowOf('gamma'))[4])).toBe('—');
+    expect(text(asks().props.trigger)).toBe(
+      `${zh('projects.summary.needsYou')}1${zhf('projects.summary.across', { count: 1 })}`,
+    );
+    expect(asks().props.items.map((i: NeedsYouItem) => i.source.id)).toEqual(['a2']);
   });
 });
 

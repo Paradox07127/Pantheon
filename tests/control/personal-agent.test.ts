@@ -185,6 +185,14 @@ it('opens one conversation in the home, made on the first open', () => {
   });
 });
 
+it('leaves the home out of the projects the settings list', () => {
+  openPersonal();
+  const home = f.store.list<Project>('projects').find((project) => project.kind === 'personal')!;
+  const listed = f.control.projectDefaults(user).projects.map((project) => project.project_id);
+  expect(listed).toContain(f.project.id);
+  expect(listed).not.toContain(home.id);
+});
+
 it('runs the personal tools on the built-in key in an empty folder of its own', async () => {
   const session = openPersonal();
   const { profile } = home();
@@ -443,6 +451,103 @@ it('is not woken once its built-in key is revoked', async () => {
   await f.control.tick();
   expect(homeNotes('personal_attention')).toEqual([]);
   expect(personalItemReads()).toBe(reads);
+});
+
+/** Revokes the built-in key of the open personal agent and returns its profile. */
+function revokeBuiltIn(session: Session): AgentProfile {
+  const profile = f.store.must<AgentProfile>('agents', session.resident!.agent_id!);
+  const key = f.store.must<PersonalKey>('personal_keys', profile.personal_key_id!);
+  f.call('personal.key.revoke', { key_id: key.id }, key.revision);
+  return profile;
+}
+
+it('gets a new built-in key when the user opens it after the key was revoked', () => {
+  const profile = revokeBuiltIn(openPersonal());
+  openPersonal();
+  const keyId = f.store.must<AgentProfile>('agents', profile.id).personal_key_id!;
+  expect(keyId).not.toBe(profile.personal_key_id);
+  expect(f.control.personalKeyList(user)).toEqual([
+    expect.objectContaining({ id: profile.personal_key_id, revoked_at: expect.any(Number) }),
+    { id: keyId, label: 'Built-in personal agent', created_at: expect.any(Number) },
+  ]);
+  expect(
+    f.control
+      .projectsSummary({ id: `personal:${keyId}`, role: 'personal' })
+      .projects.map((each) => each.project_id),
+  ).toEqual([f.project.id]);
+});
+
+it('runs the next turn of its open conversation on the new key', async () => {
+  const resumes = vi.spyOn(FixtureAdapter.prototype, 'resume');
+  const session = openPersonal();
+  await firstTurnSpec(session);
+  await eventually(
+    () => f.control['ctx'].idleConversations.has(session.id),
+    () => f.control.tick(),
+  );
+  const profile = revokeBuiltIn(session);
+  const reopened = openPersonal();
+  expect(reopened.id).toBe(session.id);
+  const keyId = f.store.must<AgentProfile>('agents', profile.id).personal_key_id!;
+  expect(keyId).not.toBe(profile.personal_key_id);
+  await eventually(() => !f.control['ctx'].idleConversations.has(session.id));
+  const before = resumes.mock.calls.length;
+  f.call(
+    'session.send',
+    { session_id: session.id, input: 'And now?' },
+    f.store.must<Session>('sessions', session.id).revision,
+  );
+  await eventually(
+    () =>
+      resumes.mock.calls
+        .slice(before)
+        .some(
+          ([spec]) =>
+            spec.platform_session_id === session.id &&
+            spec.pantheon_mcp?.env.PANTHEON_PERSONAL_TOKEN_FILE === `/keys/${keyId}`,
+        ),
+    () => f.control.tick(),
+  );
+});
+
+it('neither wakes nor gets a new key on ticks after the built-in key is revoked', async () => {
+  const profile = revokeBuiltIn(openPersonal());
+  request(f.project.id, 'first');
+  await f.control.tick();
+  clock += 31 * MINUTE;
+  request(f.project.id, 'second');
+  await f.control.tick();
+  expect(homeNotes('personal_attention')).toEqual([]);
+  expect(f.store.must<AgentProfile>('agents', profile.id).personal_key_id).toBe(
+    profile.personal_key_id,
+  );
+  expect(f.store.list<PersonalKey>('personal_keys')).toHaveLength(1);
+});
+
+it('keeps its built-in key when it is opened again while the key is live', () => {
+  const session = openPersonal();
+  const { profile } = home();
+  openPersonal();
+  expect(f.store.must<AgentProfile>('agents', session.resident!.agent_id!).personal_key_id).toBe(
+    profile.personal_key_id,
+  );
+  expect(f.store.list<PersonalKey>('personal_keys')).toHaveLength(1);
+});
+
+it('keeps its built-in key when another personal key is revoked', () => {
+  const session = openPersonal();
+  const { profile } = home();
+  const other = f.call<{ key_id: string }>('personal.key.create', { label: 'Phone' });
+  const key = f.store.must<PersonalKey>('personal_keys', other.key_id);
+  f.call('personal.key.revoke', { key_id: key.id }, key.revision);
+  openPersonal();
+  expect(f.store.must<AgentProfile>('agents', session.resident!.agent_id!).personal_key_id).toBe(
+    profile.personal_key_id,
+  );
+  expect(f.store.list<PersonalKey>('personal_keys').map((each) => each.id)).toEqual([
+    profile.personal_key_id,
+    key.id,
+  ]);
 });
 
 it('runs its daily routine at 09:00 without a memory key to write back', async () => {

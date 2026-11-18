@@ -159,12 +159,17 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'board',
     about:
-      "Lets the tasks of a lane that waits for the user's plan approval start; the user only; Patches a lead's plan by task id; the same command serves the lead and the user",
+      "Lets the tasks of a lane that waits for the user's plan approval start; the user only; Sets the user's depth of a lane, which the lead's plan writes keep; the user only",
     commands: [
       {
         type: 'board.lane.approve',
         about:
           "Lets the tasks of a lane that waits for the user's plan approval start; the user only.",
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'board.lane.depth.set',
+        about: "Sets the user's depth of a lane, which the lead's plan writes keep; the user only.",
         tool: 'the user does this in the app',
       },
       {

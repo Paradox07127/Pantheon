@@ -27,11 +27,15 @@ import type {
   BoardTaskState,
   BoardTaskStatus,
   BoardWaiting,
+  RoutingTable,
   WorkbenchSession,
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 import { milestoneExtras, taskExtras } from './board-view-task-extras.js';
 import { taskEvidenceLevel } from './evidence-level.js';
+import { effectiveDepth, laneHeld } from './lane-stops.js';
+import { estimateLane } from './plan-estimate.js';
+import { projectRoutingTable } from './routing-table.js';
 import {
   awaitingChange,
   boardTaskId,
@@ -2552,6 +2556,7 @@ export function boardView(
           };
         });
     });
+  let routing: RoutingTable | undefined;
   return {
     since,
     now,
@@ -2571,11 +2576,49 @@ export function boardView(
     counts,
     ...(gateFailures.length ? { gate_failures: gateFailures } : {}),
     lanes: plans.flatMap((plan) =>
-      plan.lanes.map((lane) => ({
-        id: `${plan.id}:${lane.id}`,
-        title: lane.title,
-        ...(lane.fanout_reason ? { fanout_reason: lane.fanout_reason } : {}),
-      })),
+      plan.lanes.map((lane) => {
+        const stop = ownEntry(plan.lane_stops, lane.id),
+          depth = effectiveDepth(plan, lane),
+          held = laneHeld(plan, lane.id);
+        return {
+          id: `${plan.id}:${lane.id}`,
+          title: lane.title,
+          ...(lane.fanout_reason ? { fanout_reason: lane.fanout_reason } : {}),
+          ...(depth
+            ? {
+                depth,
+                depth_by: stop?.user_depth
+                  ? ('user' as const)
+                  : lane.depth
+                    ? ('lead' as const)
+                    : ('pantheon' as const),
+              }
+            : {}),
+          ...(lane.depth_reason ? { depth_reason: lane.depth_reason } : {}),
+          ...(stop?.held_at === undefined
+            ? {}
+            : held
+              ? { stop: { state: 'waiting' as const, at: stop.held_at } }
+              : {
+                  stop: {
+                    state: 'approved' as const,
+                    at: stop.approved_at!,
+                    ...(stop.approved_by ? { by: stop.approved_by } : {}),
+                  },
+                }),
+          // The routing table is read once per board, and only while a lane waits.
+          ...(held
+            ? {
+                estimate: estimateLane(
+                  ctx,
+                  plan,
+                  lane.id,
+                  (routing ??= projectRoutingTable(ctx, projectId)),
+                ),
+              }
+            : {}),
+        };
+      }),
     ),
     tasks,
     iterations,

@@ -47,7 +47,7 @@ import {
 import { wakeLead } from './task-tracking.js';
 import { kindOfPaths, risky, scopeTierReason } from './task-kind.js';
 import { chartered } from './charter.js';
-import { approveLane, firstPlanHolds } from './lane-stops.js';
+import { approveLane, firstPlanHolds, setLaneDepth } from './lane-stops.js';
 import { workflowPolicy } from './workflow-policy.js';
 
 /** The longest iteration in days, so a mistyped year cannot make the board count each day of centuries. */
@@ -1516,6 +1516,19 @@ export const projectBoardHandlers: Handlers = {
       `Not found: board plan ${input.lead_session_id}`,
     );
     approveLane(ctx, p, plan, input.lane_id, c.command_id);
+    return planView(ctx, input.project_id, plan.id);
+  },
+  'board.lane.depth.set': (ctx, p, c) => {
+    const input = inputSchemas['board.lane.depth.set'].parse(c.input);
+    userOnly(p);
+    projectAccess(ctx, p, input.project_id, c.type);
+    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
+    requireThat(
+      plan?.project_id === input.project_id,
+      'not_found',
+      `Not found: board plan ${input.lead_session_id}`,
+    );
+    setLaneDepth(ctx, plan, input.lane_id, input.depth, c.command_id);
     return planView(ctx, input.project_id, plan.id);
   },
 };

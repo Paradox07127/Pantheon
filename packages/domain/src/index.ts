@@ -874,6 +874,8 @@ export interface AgentRoutine {
   /** Local HH:MM times the routine may run between. */
   active_hours?: { from: string; to: string };
   enabled: boolean;
+  /** A command that must exit 0 in the project folder before each run wakes the agent. */
+  precheck?: { argv: string[]; timeout_ms?: number };
 }
 /** The lasting record behind a resident session: its role prompt, tools and model. */
 export interface AgentProfile extends Entity {
@@ -917,6 +919,7 @@ export interface AgentRoutineInput {
   at?: string;
   active_hours?: { from: string; to: string };
   enabled: boolean;
+  precheck?: { argv: string[]; timeout_seconds?: number };
 }
 /** The fields agent.create takes besides the project. */
 export interface AgentFields {
@@ -1907,6 +1910,8 @@ export interface Retrospective extends Entity {
   policy_version?: number;
   /** The experiences in force when the task started, by id. */
   experience_ids?: string[];
+  /** The arm the task took of each experience trial, by improvement id: old ran without it. */
+  trial_arms?: Record<string, 'old' | 'new'>;
   /**
    * What the row records: a task of a lead's plan, or a session the user opened that landed its
    * work, whose lead_session_id is the session's own id and task_id 'session'. Absent means plan_task.

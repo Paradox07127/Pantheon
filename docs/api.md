@@ -302,6 +302,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | type | input | MCP 工具 |
 |---|---|---|
 | `board.lane.approve` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string |  |
+| `board.lane.depth.set` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string<br>`depth`: "just_do" \| "plan_first" \| "spec_first" |  |
 | `board.plan.edit` | `project_id`: string<br>`lead_session_id?`: string<br>`base_version`: integer<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object \| object \| object)[] | edit_board (lead) |
 | `board.plan.edit.withdraw` | `project_id`: string<br>`lead_session_id`: string<br>`edit_id`: string |  |
 | `board.plan.proposal.resolve` | `project_id`: string<br>`lead_session_id`: string<br>`proposal_id`: string<br>`decision`: "accept" \| "reject"<br>`reason?`: string<br>`ops?`: (object \| object \| object \| object \| object \| object \| object \| object)[] |  |

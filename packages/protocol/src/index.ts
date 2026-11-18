@@ -1482,7 +1482,7 @@ export const boardPlanInputSchema = z.strictObject({
           .enum(laneDepths)
           .optional()
           .describe(
-            `Optional: just_do to start its tasks at once, plan_first to plan before they start, spec_first to write a spec first. ${RECORDED_ONLY}`,
+            `Optional: just_do to start its tasks at once, plan_first to plan before they start, spec_first to write a spec first. Shown to the user beside the lane; a lane with a t3 task waits for the user's plan approval whatever depth you give.`,
           ),
         stops: z
           .array(
@@ -1498,7 +1498,9 @@ export const boardPlanInputSchema = z.strictObject({
           .describe(`Optional: up to 4 points where the lane waits for the user. ${RECORDED_ONLY}`),
         depth_reason: boardText
           .optional()
-          .describe(`Optional: one sentence on why the lane has this depth. ${RECORDED_ONLY}`),
+          .describe(
+            `Optional: one sentence on why the lane has this depth. Shown to the user beside the lane; a lane with a t3 task waits for the user's plan approval whatever depth you give.`,
+          ),
       }),
     )
     .min(1)
@@ -2411,6 +2413,13 @@ export const inputSchemas = {
     project_id: str,
     lead_session_id: str,
     lane_id: str,
+  }),
+  /** Sets the user's depth of a lane, which the lead's plan writes keep; the user only. */
+  'board.lane.depth.set': z.strictObject({
+    project_id: str,
+    lead_session_id: str,
+    lane_id: str,
+    depth: z.enum(laneDepths),
   }),
   'board.sync': z.strictObject({ project_id: str }),
   /** Ids of tasks in the calling lead's plan. */
@@ -4421,6 +4430,31 @@ export interface BoardMilestoneExtras {
   /** The goal its lead linked it to; it may name a goal archived since. */
   goal_id?: string;
 }
+/** What the unfinished tasks of a lane are expected to take, each number with its source. */
+export interface BoardLaneEstimate {
+  tasks: number;
+  /** Plan milestones of those tasks. */
+  milestones: number;
+  /**
+   * tasks: one per task, one per part of a parallel task, none for a direct task; reviews: the
+   * review round limit of each review-loop task; plan_review: one when a task's tier gets a plan
+   * review; milestone_verify: one per milestone when verification is on.
+   */
+  sessions: {
+    total: number;
+    by_part: { tasks: number; reviews: number; plan_review: number; milestone_verify: number };
+  };
+  tokens: {
+    /** Median input plus output tokens of gated tasks of the same kind on the same model; min_n is the fewest such tasks behind one median, 0 without any. */
+    history: { total: number; tasks: number; min_n: number };
+    /** Input tokens of the policy budget, for the tasks without history. */
+    budget: { total: number; tasks: number };
+    unknown_tasks: number;
+  };
+  /** The policy budget's wall time, for the tasks whose budget has one; absent when none has. */
+  wall_ms?: { total: number; tasks: number };
+  runtimes: { role: 'writer' | 'reviewer' | 'verifier'; runtime: string; count: number }[];
+}
 
 export interface BoardModel {
   /** Commands failing at least twice in the range, ordered by failed runs then name, at most ten. */
@@ -4476,7 +4510,20 @@ export interface BoardModel {
     cost_usd: number | null;
   };
   /** fanout_reason is absent when the lead gave none. */
-  lanes: { id: string; title: string; fanout_reason?: string }[];
+  lanes: {
+    id: string;
+    title: string;
+    fanout_reason?: string;
+    /** The user's depth, else the lead's, else plan_first once Pantheon held the lane; absent with none. */
+    depth?: LaneDepth;
+    depth_by?: 'user' | 'lead' | 'pantheon';
+    /** The lead's reason for its depth; absent when it gave none. */
+    depth_reason?: string;
+    /** Absent for a lane never held for the user's plan approval. */
+    stop?: { state: 'waiting' | 'approved'; at: number; by?: 'user' | 'personal' };
+    /** Present only while the lane waits for the user's plan approval. */
+    estimate?: BoardLaneEstimate;
+  }[];
   iterations?: {
     id: string;
     title: string;

@@ -103,7 +103,8 @@ export type MenuAction =
   | 'forward'
   | 'shortcuts'
   | 'debug-view'
-  | 'disable-user-style';
+  | 'disable-user-style'
+  | 'personal-agent';
 /** The session a notification is about. */
 export interface NotificationTarget {
   project_id: string;

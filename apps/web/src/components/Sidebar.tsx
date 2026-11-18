@@ -40,7 +40,12 @@ import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { saveLayout, setLayout, SIDEBAR, sidebarDrag, useLayout } from '../data/layout';
 import { failureText, useNow, type NeedsYouState } from '../data/needs-you';
-import { openPersonalAgent, usePersonalOpening } from '../data/personal-agent';
+import {
+  crossProjectWaiting,
+  openPersonalAgent,
+  showPersonalProfile,
+  usePersonalOpening,
+} from '../data/personal-agent';
 import { projectIdle, sortProjects, useProjectsSummary } from '../data/projects-summary';
 import { markRead, markUnread, useUnread } from '../data/unread';
 import type { useSessionList } from '../data/workbench-sessions';
@@ -1004,8 +1009,13 @@ export function Sidebar({
   }, [askedGroup, list.data, groups, view, layout.collapsed, waitingIn]);
 
   const { openSession, openSettings, setScreen, startNewSession } = useShell.getState();
-  // The count of every project's needs-you items; null when the read failed.
-  const attention = allNeeds.error ? null : (allNeeds.items?.length ?? 0);
+  // The count of the visible projects' needs-you items; null when the read failed.
+  const attention = allNeeds.error
+    ? null
+    : crossProjectWaiting(
+        allNeeds.items ?? [],
+        projects.map((p) => p.id),
+      ).length;
   const menu = { projects, currentProjectId, onChooseProject, attention };
   // A failed read keeps the last list, so the error goes below it rather than in its place.
   const listError = list.error && <LoadError message={list.error} onRetry={list.reload} />;
@@ -1148,15 +1158,32 @@ export function Sidebar({
     : personal
       ? sessionStateLabel(personal)
       : t({ id: 'components.sidebar.residentNotStarted', defaultMessage: 'Not started' });
+  const personalWaits = crossProjectWaiting(
+    allNeeds.items ?? [],
+    projects.map((p) => p.id),
+  ).length;
   const personalRow = (
     <button
       type="button"
       className="ss-rr"
       aria-current={screen === 'personal' || undefined}
       aria-busy={personalOpening || undefined}
-      aria-label={[personalName, personalState].join(
-        t({ id: 'sessions.screen.separator', defaultMessage: ', ' }),
-      )}
+      aria-label={[
+        personalName,
+        personalState,
+        ...(personalWaits > 0
+          ? [
+              t(
+                {
+                  id: 'components.sidebar.personalWaits',
+                  defaultMessage:
+                    '{count, plural, one {# thing waits across projects} other {# things wait across projects}}',
+                },
+                { count: personalWaits },
+              ),
+            ]
+          : []),
+      ].join(t({ id: 'sessions.screen.separator', defaultMessage: ', ' }))}
       data-stop={PERSONAL_STOP}
       tabIndex={PERSONAL_STOP === tabStop ? 0 : -1}
       onClick={() => void openPersonalAgent()}
@@ -1170,7 +1197,35 @@ export function Sidebar({
       )}
       <span className="ss-ttl">{personalName}</span>
       <Globe className="ic-sm mu" aria-hidden="true" />
+      {personalWaits > 0 && (
+        <span className="ss-rct" aria-hidden="true">
+          {personalWaits}
+        </span>
+      )}
     </button>
+  );
+  const personalEntry = (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>{personalRow}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Positioner
+          style={{ zIndex: 40 }}
+          collisionAvoidance={{ side: 'flip', fallbackAxisSide: 'none' }}
+        >
+          <ContextMenu.Popup className="mn mn-menu pop">
+            <MenuItem
+              icon={<IdCard aria-hidden="true" />}
+              onClick={() => {
+                showPersonalProfile(true);
+                void openPersonalAgent();
+              }}
+            >
+              {t({ id: 'components.sidebar.agentProfile', defaultMessage: 'Profile' })}
+            </MenuItem>
+          </ContextMenu.Popup>
+        </ContextMenu.Positioner>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
   const newAgentLabel = t({ id: 'components.sidebar.newAgent', defaultMessage: 'New agent' });
   // Outside the content, so the rail's floating panel closing on the click keeps it.
@@ -1370,7 +1425,7 @@ export function Sidebar({
                   defaultMessage: 'Personal',
                 })}
               >
-                {personalRow}
+                {personalEntry}
               </div>
               <div className="ss-zh">
                 <span>{SCREEN_NAMES.sessions}</span>

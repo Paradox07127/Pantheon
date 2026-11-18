@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   id,
   requireThat,
@@ -7,21 +8,26 @@ import {
   type BoardPlan,
   type LeadNote,
   type Principal,
+  type Project,
   type Session,
   type Timer,
 } from '@pantheon/domain';
 import { inputSchemas, withinHours } from '@pantheon/protocol';
-import { projectAccess, type ControlContext, type Handlers } from './context.js';
+import { gitFolderAsync, projectAccess, type ControlContext, type Handlers } from './context.js';
 import { appendNote } from './lead-inbox.js';
 import { openAgent } from './resident.js';
 import { wakeLead } from './task-tracking.js';
 import { cancelTimer, scheduleTimer, timerHandlers } from './timers.js';
 import { tellUser } from './user-delivery.js';
+import { runValidationCommand } from './validation-executor.js';
+import { afterCommit } from './workbench-session.js';
 
 const FOLLOW_UP = 'agent-follow-up';
 const ROUTINE = 'agent-routine';
 const ROUTINE_LIMIT = 10;
 const MINUTE_MS = 60_000;
+/** Routine timer subjects whose precheck is running. */
+const prechecking = new Set<string>();
 
 /** The calling resident session and its agent profile; any other caller is refused. */
 export function callingResident(
@@ -89,6 +95,14 @@ export const routineOf = (input: AgentRoutineInput): AgentRoutine => ({
   ...(input.at !== undefined && { at: input.at }),
   ...(input.active_hours && { active_hours: input.active_hours }),
   enabled: input.enabled,
+  ...(input.precheck && {
+    precheck: {
+      argv: input.precheck.argv,
+      ...(input.precheck.timeout_seconds !== undefined && {
+        timeout_ms: input.precheck.timeout_seconds * 1000,
+      }),
+    },
+  }),
 });
 
 /** The resident's plan; an empty one while it has written none. */
@@ -155,10 +169,69 @@ timerHandlers.set(ROUTINE, (ctx, timer) => {
     .map((event) => event.payload as LeadNote)
     .filter((note) => note.kind === 'routine' && note.routine_id === routine.id)
     .at(-1);
-  wakeAgent(ctx, profile, 'routine', routine.prompt, `timer:${timer.id}`, {
-    routine_id: routine.id,
-    ...(last ? { last_run_at: last.at } : {}),
-  });
+  const cause = `timer:${timer.id}`,
+    fields = { routine_id: routine.id, ...(last ? { last_run_at: last.at } : {}) };
+  const precheck = routine.precheck;
+  if (!precheck) wakeAgent(ctx, profile, 'routine', routine.prompt, cause, fields);
+  else if (!prechecking.has(timer.subject_id)) {
+    // The command runs after this transaction commits; its end re-reads the routine.
+    prechecking.add(timer.subject_id);
+    const settle = (exitCode: number | null, output: string) =>
+      ctx.store.transaction(() => {
+        const current = ctx.store.get<AgentProfile>('agents', profile.id),
+          now = current?.routines.find((each) => each.id === routine.id);
+        if (!current || current.archived_at || !now?.enabled) return;
+        if (!isDeepStrictEqual(now.precheck, precheck)) return;
+        if (exitCode === 0) return wakeAgent(ctx, current, 'routine', now.prompt, cause, fields);
+        ctx.store.event(
+          'agent.routine_skipped',
+          current,
+          current.project_id,
+          {
+            agent_id: current.id,
+            routine_id: routine.id,
+            exit_code: exitCode,
+            output_tail: output.slice(-600),
+          },
+          cause,
+        );
+      });
+    const committed = afterCommit(ctx);
+    const work: Promise<void> = Promise.resolve()
+      .then(async () => {
+        if (!committed() || ctx.closing) return;
+        const project = ctx.store.must<Project>('projects', profile.project_id);
+        const git = await Promise.all(project.roots.map(gitFolderAsync));
+        const root = project.roots.find((_, index) => git[index]);
+        requireThat(root, 'invalid_state', 'The project has no git folder to run the precheck in');
+        const result = await runValidationCommand({
+          ctx,
+          key: `routine-precheck:${timer.subject_id}`,
+          argv: precheck.argv,
+          cwd: root,
+          root,
+          env: {
+            ...project.env,
+            PATH: process.env.PATH ?? '/usr/bin:/bin',
+            LANG: 'en_US.UTF-8',
+            pnpm_config_verify_deps_before_run: 'false',
+            ...(last && { ROUTINE_LAST_RUN_AT: new Date(last.at).toISOString() }),
+          },
+          timeoutMs: precheck.timeout_ms ?? MINUTE_MS,
+          cancelled: () => ctx.closing,
+        });
+        if (!ctx.closing) settle(result.exit_code, result.error ?? result.tail);
+      })
+      .catch((error: unknown) => {
+        if (!ctx.closing) settle(null, error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        prechecking.delete(timer.subject_id);
+        ctx.completions.delete(work);
+        if (!ctx.closing) ctx.changed();
+      });
+    ctx.completions.add(work);
+  }
   return nextRun(routine, ctx.store.now());
 });
 
@@ -193,8 +266,13 @@ export const agentAlwaysOnHandlers: Handlers = {
     );
     const { profile } = callingResident(ctx, p, input.project_id, c.type);
     const { project_id: _project, ...fields } = input;
-    const routine = routineOf(fields);
-    const replaced = profile.routines.some((each) => each.id === routine.id);
+    const previous = profile.routines.find((each) => each.id === fields.id);
+    // A resident cannot set a precheck, so replacing a routine keeps the user's.
+    const routine = {
+      ...routineOf(fields),
+      ...(previous?.precheck && { precheck: previous.precheck }),
+    };
+    const replaced = previous !== undefined;
     requireThat(
       replaced || profile.routines.length < ROUTINE_LIMIT,
       'invalid_input',

@@ -13,9 +13,30 @@ import { AGENT_TEMPLATES } from './agent-templates.js';
 import type { ControlContext } from './context.js';
 import { needsYou } from './needs-you.js';
 import { openOf } from './resident.js';
+import { releaseIdleConversation } from './session.js';
+import { afterCommit } from './workbench-session.js';
+
+/** Issues and records a new built-in key; the caller owns the transaction. */
+function builtInKey(ctx: ControlContext, cause: string): string {
+  requireThat(ctx.issuePersonalKey, 'daemon_unavailable', 'Personal keys are issued by the daemon');
+  const keyId = id(),
+    issued = ctx.issuePersonalKey(keyId);
+  // The token file and its principal live outside the transaction.
+  ctx.rollback?.push(() => ctx.discardPersonalKey?.(keyId));
+  const key = ctx.store.insert<PersonalKey>('personal_keys', {
+    id: keyId,
+    revision: 1,
+    label: 'Built-in personal agent',
+    digest: issued.digest,
+    created_at: ctx.store.now(),
+  });
+  ctx.store.event('personal_key.created', key, '', { label: key.label }, cause);
+  return keyId;
+}
 
 /**
  * The personal agent's home project and profile, created with its own personal key on first use.
+ * Called when the user opens the agent, it replaces a revoked built-in key with a new one.
  * The caller owns the transaction.
  */
 export function personalHome(
@@ -37,20 +58,29 @@ export function personalHome(
   const found = ctx.store
     .list<AgentProfile>('agents')
     .find((agent) => agent.project_id === homeId && agent.template === 'personal');
-  if (found) return { project, profile: found };
-  requireThat(ctx.issuePersonalKey, 'daemon_unavailable', 'Personal keys are issued by the daemon');
-  const keyId = id(),
-    issued = ctx.issuePersonalKey(keyId);
-  // The token file and its principal live outside the transaction.
-  ctx.rollback?.push(() => ctx.discardPersonalKey?.(keyId));
-  const key = ctx.store.insert<PersonalKey>('personal_keys', {
-    id: keyId,
-    revision: 1,
-    label: 'Built-in personal agent',
-    digest: issued.digest,
-    created_at: ctx.store.now(),
-  });
-  ctx.store.event('personal_key.created', key, '', { label: key.label }, cause);
+  if (found && !ctx.store.get<PersonalKey>('personal_keys', found.personal_key_id!)?.revoked_at)
+    return { project, profile: found };
+  const keyId = builtInKey(ctx, cause);
+  if (found) {
+    const next = ctx.store.update<AgentProfile>(
+      'agents',
+      { ...found, personal_key_id: keyId },
+      found.revision,
+    );
+    ctx.store.event('agent_profile.updated', next, homeId, { personal_key_id: keyId }, cause);
+    const open = openOf(ctx, next);
+    if (open) {
+      // An idle process holds the revoked key's file; the next input resumes it on the new one.
+      const committed = afterCommit(ctx);
+      const completion = Promise.resolve()
+        .then(() => {
+          if (committed()) releaseIdleConversation(ctx, open);
+        })
+        .finally(() => ctx.completions.delete(completion));
+      ctx.completions.add(completion);
+    }
+    return { project, profile: next };
+  }
   const defaults = AGENT_TEMPLATES.personal;
   const profile = ctx.store.insert<AgentProfile>('agents', {
     id: id(),

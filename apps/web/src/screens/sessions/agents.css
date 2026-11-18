@@ -329,3 +329,60 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+/* The personal agent's profile: its scope and runtime, then lists of an icon, a name and an end cell. */
+.pa-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.pa-rt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--mu);
+}
+.pa-cl {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.pa-cl > li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--sp-2);
+  min-height: var(--row);
+  min-width: 0;
+}
+.pa-cl > li > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pa-no {
+  color: var(--mu);
+}
+.pa-n {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.pa-key {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.pa-warn {
+  grid-column: 2 / -1;
+  margin: 0 0 var(--sp-1);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}

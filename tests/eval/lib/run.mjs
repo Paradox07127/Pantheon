@@ -54,7 +54,7 @@ export async function runOne(spec) {
     await fixture.call('workflow.definition.set', {
       project_id: project.id,
       definition: {
-        slots: { before_dispatch: [], before_merge: spec.beforeMerge, after_merge: [] },
+        slots: { before_dispatch: [], before_merge: spec.condition.before_merge, after_merge: [] },
       },
       base_version: 0,
     });
@@ -76,6 +76,7 @@ export async function runOne(spec) {
           scope: spec.task.scope,
           acceptance: spec.task.acceptance,
           ...(spec.task.runtime ? { runtime: spec.task.runtime } : {}),
+          ...(spec.task.model ? { model: spec.task.model } : {}),
           path: 'dispatch',
           flow_reason: 'The task runs in a session of its own',
         },
@@ -148,6 +149,7 @@ export async function runOne(spec) {
     const usage = taskTurns.map((turn) => turn.usage).filter(Boolean);
     const sum = (field) =>
       usage.length ? usage.reduce((total, row) => total + (row[field] ?? 0), 0) : null;
+    const costs = usage.map((row) => row.cost_usd).filter((cost) => cost !== undefined);
     const hidden = async () => {
       const tree = fs.mkdtempSync(path.join(workspace, 'main-tree-'));
       materialize(repo, 'main', tree);
@@ -161,6 +163,11 @@ export async function runOne(spec) {
       hiddenUnstable = first !== hiddenPassed;
     }
     return {
+      mode: spec.condition.mode,
+      model_asked: spec.task.model ?? null,
+      model_reported: [
+        ...new Set(board.session_turns.map((turn) => turn.reported_model).filter(Boolean)),
+      ],
       // blocked: the product refused or skipped a merge of the task session and none landed.
       outcome: merged ? 'merged' : blocked || skipped ? 'blocked' : 'failed',
       hidden_passed: hiddenPassed,
@@ -184,6 +191,8 @@ export async function runOne(spec) {
       gate_runs: of('session.gate_checked').length,
       needs_you: needsYou.length,
       needs_you_kinds: needsYou,
+      // What a person would have had to answer: the needs-you items left at settle.
+      human_touches: needsYou.length,
       // true: a file outside the source trees (product state, native transcripts) names the eval checkout.
       read_checkout: spec.checkout
         ? fs
@@ -198,6 +207,7 @@ export async function runOne(spec) {
       input_tokens: sum('input_tokens'),
       cached_input_tokens: sum('cached_input_tokens'),
       output_tokens: sum('output_tokens'),
+      cost_usd: costs.length ? costs.reduce((total, cost) => total + cost, 0) : null,
       wall_ms: changed - started,
     };
   } finally {

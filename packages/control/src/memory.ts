@@ -50,6 +50,7 @@ import {
   type MemoryUndoRetractionResult,
 } from '@pantheon/protocol';
 import { experienceMatchesSession } from './improvements.js';
+import { assignArm, taskArm } from './trial-arms.js';
 import { revision, userOnly, type ControlContext, type Handlers } from './context.js';
 
 /** The memory text of a session that can read project memory but not write it. */
@@ -171,7 +172,13 @@ function assertDecisionBudget(ctx: ControlContext, project: string): void {
     );
 }
 
-export function memoryContents(ctx: ControlContext, project: string, session?: Session) {
+/** With assign, a task session without an arm of a matching trial takes one. */
+export function memoryContents(
+  ctx: ControlContext,
+  project: string,
+  session?: Session,
+  assign = false,
+) {
   const eligible = current(ctx, project).filter((r) => visible(r, session));
   eligible.sort(
     (a, b) =>
@@ -179,12 +186,20 @@ export function memoryContents(ctx: ControlContext, project: string, session?: S
   );
   const items = eligible.map((record) => ({ record, bytes: memoryItemBytes(ctx, record) }));
   const experiences: { item: MemoryContext['experiences'][number]; bytes: number }[] = [];
+  const scope = taskScope(session?.task),
+    task = scope && {
+      lead_session_id: scope.lead_session_id,
+      task_id: scope.id,
+      generation: scope.generation,
+    };
   for (const i of rows<Improvement>(ctx, 'improvements', project)) {
     const c = i.change;
     if (
       (i.status !== 'trial' && i.status !== 'active') ||
       c.type !== 'experience' ||
-      !experienceMatchesSession(ctx, c, session)
+      !experienceMatchesSession(ctx, c, session) ||
+      // Every other task of a trial runs without the experience, to compare on the same days.
+      (i.status === 'trial' && task && (assign ? assignArm : taskArm)(ctx, i, task) === 'old')
     )
       continue;
     const item = {
@@ -208,8 +223,9 @@ export function memoryContext(
   session?: Session,
   budget = 12000,
   strictDecisions = true,
+  assign = false,
 ): MemoryContext {
-  const contents = memoryContents(ctx, project, session);
+  const contents = memoryContents(ctx, project, session, assign);
   const items: MemoryItem[] = [];
   let bytes = 0;
   for (const { record, bytes: size } of contents.items) {
@@ -608,7 +624,15 @@ export function prepareMemoryDelivery(
     )
   )
     return;
-  const packet = memoryContext(ctx, session.project_id, session);
+  // A task session takes its trial arms once, with its first packet.
+  const packet = memoryContext(
+    ctx,
+    session.project_id,
+    session,
+    undefined,
+    undefined,
+    !session.memory_delivery,
+  );
   if (
     !session.memory_delivery &&
     !packet.epoch &&

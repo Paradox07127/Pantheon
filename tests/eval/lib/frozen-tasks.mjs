@@ -40,12 +40,13 @@ export const createRepo = (repoRoot, task) => (dir) => {
   if (!install.ok) throw new Error(`pnpm install failed in ${dir}:\n${install.output}`);
 };
 
-/** The plan task of the frozen task, run on the runtime. */
-export const planTask = (task, runtime) => ({
+/** The plan task of the frozen task, run on the runtime and, when given, the model. */
+export const planTask = (task, runtime, model) => ({
   goal: task.goal,
   scope: task.scope,
   acceptance: task.acceptance,
   runtime,
+  ...(model ? { model } : {}),
 });
 
 export const hiddenCheck = (repoRoot, task) => (tree) => {

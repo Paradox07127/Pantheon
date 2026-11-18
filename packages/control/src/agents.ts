@@ -161,12 +161,21 @@ export function checkAgentFields(
     'invalid_input',
     `An agent has at most ${ROUTINE_LIMIT} routines`,
   );
-  for (const routine of fields.routines)
+  for (const routine of fields.routines) {
     requireThat(
       (routine.every_minutes === undefined) !== (routine.at === undefined),
       'invalid_input',
       'Give each routine exactly one of every_minutes or at',
     );
+    const timeout = routine.precheck?.timeout_seconds;
+    requireThat(
+      !routine.precheck ||
+        (routine.precheck.argv.length > 0 &&
+          (timeout === undefined || (timeout >= 1 && timeout <= 300))),
+      'invalid_input',
+      'Give a precheck a command and a timeout of 1-300 seconds',
+    );
+  }
   const ids = fields.routines.flatMap((routine) => (routine.id === undefined ? [] : [routine.id]));
   requireThat(new Set(ids).size === ids.length, 'invalid_input', 'Give each routine its own id');
 }

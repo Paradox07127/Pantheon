@@ -12,7 +12,12 @@ import {
   type SessionTurn,
   type Workspace,
 } from '@pantheon/domain';
-import { inputSchemas, type DeviceListItem, type DeviceStatus } from '@pantheon/protocol';
+import {
+  inputSchemas,
+  type DeviceListItem,
+  type DeviceStatus,
+  type RoutingTable,
+} from '@pantheon/protocol';
 import {
   projectAccess,
   userOnly,
@@ -105,14 +110,20 @@ export function runtimeSwitch(plan: BoardPlan, task: PlanTask): RuntimeChoice | 
     : undefined;
 }
 
-function taskChoice(ctx: ControlContext, plan: BoardPlan, task: PlanTask): RuntimeChoice {
+/** The runtime the task's session opens on; pass `table` when the caller reads it for many tasks. */
+export function taskChoice(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  task: PlanTask,
+  table: RoutingTable | (() => RoutingTable) = () => projectRoutingTable(ctx, plan.project_id),
+): RuntimeChoice {
   const switched = runtimeSwitch(plan, task);
   if (switched) return switched;
   const defaults = sessionDefaults(ctx, ctx.store.must<Project>('projects', plan.project_id));
   const selected =
     defaults?.writer ??
     (task.kind
-      ? projectRoutingTable(ctx, plan.project_id).cells.find(
+      ? (typeof table === 'function' ? table() : table).cells.find(
           (cell) => cell.domain === task.kind!.domain && cell.tier === task.kind!.tier,
         )?.first
       : undefined) ??
@@ -412,10 +423,13 @@ export function dispatchQueue(
   const loads = deviceLoads(ctx, rows),
     devices = listDevices(ctx),
     localLimit = readUserConfig(ctx.userConfigDir).local_device?.max_sessions;
+  // Read at most once for the whole queue: each read lists every retrospective.
+  let table: RoutingTable | undefined;
+  const routing = () => (table ??= projectRoutingTable(ctx, projectId));
   return queued.map(({ plan, task }) => {
     const count = taskPath(ctx, projectId, task) === 'parallel' ? task.parallel!.length : 1;
     const error = ownEntry(plan.dispatch, task.id)!.error,
-      runtimeId = taskRuntime(ctx, plan, task),
+      runtimeId = taskChoice(ctx, plan, task, routing).runtime,
       runtimeLimit = ownEntry(policy.runtime_parallel, runtimeId);
     const deviceId = task.device ?? 'local',
       device = devices.find((entry) => entry.id === deviceId),

@@ -57,6 +57,35 @@ export const AGENT_EVENT_SOURCES = ['github', ...SIGNAL_SOURCES] as const;
 
 // The daemon checks that a routine has exactly one of every_minutes and at.
 const routineInput = z.strictObject(routineFields);
+// Only the user sets a precheck: agents propose and replace routines without one.
+const userRoutines = z
+  .array(
+    z.strictObject({
+      ...routineFields,
+      precheck: z
+        .strictObject({
+          argv: z
+            .array(str)
+            .min(1)
+            .max(32)
+            .describe('The command and its arguments, 1-32 strings.'),
+          timeout_seconds: z
+            .number()
+            .int()
+            .min(1)
+            .max(300)
+            .optional()
+            .describe('Stop the command after this many seconds, 1-300; absent means 60.'),
+        })
+        .optional()
+        .describe(
+          'A command run in the project folder before each run; the agent wakes only when it exits 0. It gets ROUTINE_LAST_RUN_AT, the ISO time of the last run, once the routine has run.',
+        ),
+    }),
+  )
+  .max(10)
+  .optional()
+  .describe('Up to 10 routines; a change replaces the whole list.');
 
 /** The fields of an agent profile that agent.update changes and agent.propose may propose. */
 const changeFields = {
@@ -118,6 +147,7 @@ const contract = z
 
 const createFields = {
   ...changeFields,
+  routines: userRoutines,
   contract: contract.optional(),
   template: z.enum(AGENT_TEMPLATE_NAMES),
   name: z.string().min(1).max(80),
@@ -132,6 +162,7 @@ export const agentInputSchemas = {
     agent_id: str,
     revision: z.number().int().positive(),
     ...changeFields,
+    routines: userRoutines,
     contract: contract
       .nullable()
       .optional()

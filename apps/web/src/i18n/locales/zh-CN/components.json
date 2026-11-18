@@ -123,6 +123,7 @@
   "components.sidebar.residents": "本项目",
   "components.sidebar.personalGroup": "个人级",
   "components.sidebar.personalAgent": "个人级智能体",
+  "components.sidebar.personalWaits": "{count, plural, other {各项目共 # 项等你处理}}",
   "components.sidebar.residentAssistant": "助理",
   "components.sidebar.residentTriage": "问题处理",
   "components.sidebar.residentNotStarted": "尚未开始",

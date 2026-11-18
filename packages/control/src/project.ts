@@ -281,7 +281,7 @@ export function projectDefaultsRead(ctx: ControlContext): ProjectDefaultsRead {
   const defaults = projectDefaults(ctx.userConfigDir),
     projects = ctx.store
       .list<Project>('projects')
-      .filter((project) => project.removed_at === undefined);
+      .filter((project) => project.removed_at === undefined && project.kind !== 'personal');
   const settings = PROJECT_SETTING_KEYS.map((key) => ({
     key,
     ...(defaults[key] !== undefined && { global: defaults[key] }),

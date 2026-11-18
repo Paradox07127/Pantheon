@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Client } from '../../apps/cli/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
@@ -15,7 +15,7 @@ import type {
   SessionSpec,
   Timer,
 } from '@pantheon/domain';
-import { command } from '@pantheon/protocol';
+import { command, inputSchemas } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { TOOL_GROUP_MODULES } from '../../packages/control/dist/agent-prompts.js';
 import { eventually, user } from '../helpers.js';
@@ -194,6 +194,184 @@ it('gives each routine note its routine id and the time the routine last ran', a
     { routine_id: routine.id, last_run_at: start + 60 * MINUTE },
   ]);
   expect(notes[0]!.last_run_at).toBeUndefined();
+});
+
+/** A clock fixture whose assistant has one hourly routine with the precheck the user gave it. */
+async function precheckFixture(argv: string[]) {
+  const fixture = await clockFixture();
+  const { f, assistant } = fixture;
+  const profile = () => f.store.must<AgentProfile>('agents', assistant.resident!.agent_id!);
+  const setRoutine = (fields: Record<string, unknown> = {}) =>
+    f.call<AgentProfile>('agent.update', {
+      agent_id: profile().id,
+      revision: profile().revision,
+      routines: [
+        {
+          id: 'gated',
+          prompt: 'Look for stalled tasks',
+          every_minutes: 60,
+          enabled: true,
+          precheck: { argv },
+          ...fields,
+        },
+      ],
+    });
+  setRoutine();
+  const skipped = () =>
+    f.store
+      .events(0, f.project.id, 1000, ['agent.routine_skipped'])
+      .map(
+        (event) =>
+          event.payload as { routine_id: string; exit_code: number | null; output_tail: string },
+      );
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  const settled = () =>
+    eventually(
+      () => ctx.completions.size === 0,
+      () => f.control.tick(),
+      20_000,
+    );
+  return { ...fixture, profile, setRoutine, skipped, settled, root: f.project.roots[0]! };
+}
+
+it('wakes the agent on a routine whose precheck exits 0', async () => {
+  const { f, assistant, advance, skipped } = await precheckFixture(['sh', '-c', 'exit 0']);
+  advance(60 * MINUTE);
+  await f.control.tick();
+  await eventually(
+    () => trackerTurns(f, assistant.id).length === 1,
+    () => f.control.tick(),
+    20_000,
+  );
+  expect(notesOf(f, 'routine')).toMatchObject([
+    { routine_id: 'gated', text: 'Look for stalled tasks' },
+  ]);
+  expect(trackerTurns(f, assistant.id)[0]!.wake?.causes).toContain('routine');
+  expect(skipped()).toEqual([]);
+});
+
+it('records a run its precheck skips, and opens no turn for it', async () => {
+  const { f, assistant, advance, skipped, start } = await precheckFixture([
+    'sh',
+    '-c',
+    'echo nothing new; exit 1',
+  ]);
+  const sessions = f.store.list<Session>('sessions').length;
+  advance(60 * MINUTE);
+  await f.control.tick();
+  await eventually(
+    () => skipped().length === 1,
+    () => f.control.tick(),
+    20_000,
+  );
+  expect(skipped()).toEqual([
+    {
+      agent_id: assistant.resident!.agent_id,
+      routine_id: 'gated',
+      exit_code: 1,
+      output_tail: expect.stringContaining('nothing new'),
+    },
+  ]);
+  expect(notesOf(f, 'routine')).toEqual([]);
+  expect(trackerTurns(f, assistant.id)).toEqual([]);
+  expect(f.store.list<Session>('sessions')).toHaveLength(sessions);
+  expect(timersOf(f, 'agent-routine').find((timer) => timer.state === 'pending')!.due_at).toBe(
+    start + 120 * MINUTE,
+  );
+});
+
+it("keeps the user's precheck when the resident replaces the routine, and takes none from an agent", async () => {
+  const { as, profile } = await precheckFixture(['sh', '-c', 'test -f ready']);
+  as('agent.routine.set', {
+    id: 'gated',
+    prompt: 'Look for stale branches',
+    at: '18:00',
+    enabled: true,
+  });
+  expect(profile().routines).toEqual([
+    {
+      id: 'gated',
+      prompt: 'Look for stale branches',
+      at: '18:00',
+      enabled: true,
+      precheck: { argv: ['sh', '-c', 'test -f ready'] },
+    },
+  ]);
+  const precheck = { argv: ['sh', '-c', 'exit 0'] };
+  expect(() =>
+    as('agent.routine.set', { id: 'gated', prompt: 'Check', at: '18:00', enabled: true, precheck }),
+  ).toThrow(/Unrecognized key.*precheck/);
+  expect(() =>
+    as('agent.propose', {
+      template: 'custom',
+      name: 'Watcher',
+      role: 'Watches',
+      instructions: 'Watch the gates.',
+      routines: [{ prompt: 'Check', every_minutes: 60, enabled: true, precheck }],
+    }),
+  ).toThrow(/Unrecognized key.*precheck/);
+  expect(
+    inputSchemas['agent.proposal.resolve'].safeParse({
+      proposal_id: 'proposal',
+      decision: 'create',
+      fields: { routines: [{ prompt: 'Check', every_minutes: 60, enabled: true, precheck }] },
+    }).success,
+  ).toBe(false);
+});
+
+it('neither wakes nor records a routine disabled while its precheck runs, and runs one precheck at a time', async () => {
+  const { f, assistant, advance, setRoutine, skipped, settled, root } = await precheckFixture([
+    'sh',
+    '-c',
+    'echo run >> started; while [ ! -f go ]; do sleep 0.05; done',
+  ]);
+  const started = () =>
+    existsSync(path.join(root, 'started'))
+      ? readFileSync(path.join(root, 'started'), 'utf8').split('\n').filter(Boolean).length
+      : 0;
+  advance(60 * MINUTE);
+  await f.control.tick();
+  await eventually(
+    () => started() === 1,
+    () => f.control.tick(),
+    20_000,
+  );
+  advance(60 * MINUTE);
+  await f.control.tick();
+  setRoutine({ enabled: false });
+  writeFileSync(path.join(root, 'go'), '');
+  await settled();
+  expect(started()).toBe(1);
+  expect(notesOf(f, 'routine')).toEqual([]);
+  expect(skipped()).toEqual([]);
+  expect(trackerTurns(f, assistant.id)).toEqual([]);
+});
+
+it("gives the precheck the time of the routine's last run, not of a skipped one", async () => {
+  const { f, advance, skipped, start } = await precheckFixture([
+    'sh',
+    '-c',
+    'echo "last=$ROUTINE_LAST_RUN_AT"; test -z "$ROUTINE_LAST_RUN_AT"',
+  ]);
+  advance(60 * MINUTE);
+  await f.control.tick();
+  await eventually(
+    () => notesOf(f, 'routine').length === 1,
+    () => f.control.tick(),
+    20_000,
+  );
+  for (const runs of [1, 2]) {
+    advance(60 * MINUTE);
+    await f.control.tick();
+    await eventually(
+      () => skipped().length === runs,
+      () => f.control.tick(),
+      20_000,
+    );
+  }
+  const ran = new Date(start + 60 * MINUTE).toISOString();
+  expect(skipped().map((run) => run.output_tail.trim())).toEqual([`last=${ran}`, `last=${ran}`]);
+  expect(notesOf(f, 'routine')).toHaveLength(1);
 });
 
 it('stores what the resident tells the user as a message with its event', async () => {

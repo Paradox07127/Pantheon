@@ -505,6 +505,86 @@ describe('tray popover session lists', () => {
   });
 });
 
+describe('tray popover personal agent row', () => {
+  const OPEN = zh('trayPopover.personalAgent.open');
+  const delta = (sequence: number, turn_id: string, text: string) => ({
+    event_id: `e-${sequence}`,
+    sequence,
+    kind: 'agent.message.delta',
+    aggregate_id: 'personal-1',
+    project_id: 'home',
+    causation_id: '',
+    created_at: NOW - 10 * MINUTE + sequence,
+    payload: { turn_id, text },
+  });
+  const turn = (id: string, state: string) => ({
+    id,
+    revision: 1,
+    project_id: 'home',
+    session_id: 'personal-1',
+    state,
+  });
+  const withHome = () => {
+    mock.board.board.projects.push({ id: 'home', name: 'Personal', roots: [], kind: 'personal' });
+    mock.board.board.sessions.push({
+      id: 'personal-1',
+      project_id: 'home',
+      resident: { kind: 'personal' },
+    });
+  };
+  const entry = (tree: ReactElement) =>
+    find(tree, (n) => n.type === 'button' && n.props['aria-label'] === OPEN);
+
+  it('opens the personal agent from the first row, with its newest reply', async () => {
+    withHome();
+    mock.board.board.session_turns = [turn('t-1', 'completed'), turn('t-2', 'completed')];
+    mock.board.events = [
+      delta(1, 't-1', 'An older answer'),
+      delta(2, 't-2', 'Ten things in two projects. '),
+      delta(3, 't-2', 'The plan change holds the most.\nThe rest wait on answers.'),
+    ];
+    needs = [approval('ap-1')];
+    const tree = (await popover()).value;
+    expect(OPEN).toBe('打开个人级智能体');
+    const content = find(tree, (n) => n.props.className === 'tp');
+    expect(nodes(content.props.children)[0]!.props.className).toBe('tp-pa');
+    const row = entry(tree);
+    expect(text(row)).toContain(zh('trayPopover.personalAgent.name'));
+    const reply = find(tree, (n) => n.props.id === row.props['aria-describedby']);
+    expect(reply.props.text).toBe('Ten things in two projects. The plan change holds the most.');
+    expect(reply.props.lines).toBe(2);
+    row.props.onClick();
+    expect(bridge.revealMain).toHaveBeenCalledWith('personal-agent');
+  });
+
+  it('shows only the icon and name while no finished turn has a reply', async () => {
+    withHome();
+    mock.board.board.session_turns = [turn('t-1', 'running')];
+    mock.board.events = [delta(1, 't-1', 'Still reading')];
+    const tree = (await popover()).value;
+    const row = entry(tree);
+    expect(row.props['aria-describedby']).toBeUndefined();
+    expect(nodes(row).some((n) => n.type === 'time')).toBe(false);
+    expect(text(tree)).not.toContain('Still reading');
+  });
+
+  it('leaves what waits in the home out of the waiting group', async () => {
+    withHome();
+    needs = [
+      approval('ap-1'),
+      approval('ap-home', { project_id: 'home', session_id: 'personal-1' }),
+    ];
+    const waiting = group((await popover()).value, WAITING);
+    expect(waiting.count).toBe('1');
+    expect(nodes(waiting.section).filter((n) => n.props.className === 'tp-ask').length).toBe(1);
+  });
+
+  it('has no personal agent row before the personal agent has a home', async () => {
+    const tree = (await popover()).value;
+    expect(nodes(tree).some((n) => n.props['aria-label'] === OPEN)).toBe(false);
+  });
+});
+
 describe('tray popover actions and size', () => {
   it('starts a new session and opens Pantheon through the main window', async () => {
     const tree = (await popover()).value;

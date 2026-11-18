@@ -77,7 +77,10 @@ function mount(list: WorkbenchSession[], collapsed = false, attention: number | 
       list: { data: list, loading: false, error: null, reload() {} } as any,
       allNeeds: (attention === null
         ? { items: null, error: 'read failed' }
-        : { items: Array.from({ length: attention }, () => ({})), error: null }) as any,
+        : {
+            items: Array.from({ length: attention }, () => ({ project_id: 'alpha' })),
+            error: null,
+          }) as any,
     }),
   );
 }

@@ -9,7 +9,7 @@ import {
   text,
   unmountAll,
 } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true }),
@@ -108,7 +108,10 @@ describe('the personal agent’s home project', () => {
   });
 });
 
-const sidebar = (personal?: WorkbenchSession) =>
+const sidebar = (
+  personal?: WorkbenchSession,
+  { projects = [ALPHA], items = [] as unknown[] } = {},
+) =>
   host(() =>
     Sidebar({
       layout: {
@@ -119,11 +122,11 @@ const sidebar = (personal?: WorkbenchSession) =>
         reset: () => {},
         toggle: () => {},
       },
-      projects: [ALPHA],
+      projects,
       currentProjectId: 'alpha',
       onChooseProject: () => {},
       list: { data: [], loading: false, error: null, reload() {} } as any,
-      allNeeds: { items: [], error: null } as any,
+      allNeeds: { items, error: null } as any,
       ...(personal ? { personal } : {}),
     }),
   );
@@ -201,6 +204,61 @@ describe('personal agent entry in a project’s sidebar', () => {
     expect(mock.shell.openPersonal).not.toHaveBeenCalled();
     h.render();
     expect(personalRow(h).props['aria-busy']).toBeUndefined();
+  });
+});
+
+describe('the number on the personal agent’s sidebar row', () => {
+  const BETA = { id: 'beta', revision: 1, name: 'Beta', roots: ['/work/beta'] };
+  const waiting = (project_id: string, id: string) => ({
+    source: { table: 'approvals', id, revision: 1 },
+    kind: 'permission',
+    project_id,
+    session_id: `${id}-session`,
+    status: 'pending',
+    created_at: 0,
+    reason: 'permission_requested',
+    actions: [],
+  });
+  const count = (h: HookHost<any>) =>
+    nodes(personalRow(h).props.children).find((n) => n.props.className === 'ss-rct');
+
+  it('counts what waits in every visible project and leaves the home’s items out', () => {
+    const h = sidebar(undefined, {
+      projects: [ALPHA, BETA],
+      items: [
+        waiting('alpha', 'a-1'),
+        waiting('alpha', 'a-2'),
+        waiting('beta', 'b-1'),
+        waiting('home', 'h-1'),
+      ],
+    });
+    expect(personalRow(h).props['aria-label']).toBe(
+      [
+        PERSONAL,
+        zh('components.sidebar.residentNotStarted'),
+        zhf('components.sidebar.personalWaits', { count: 3 }),
+      ].join(zh('sessions.screen.separator')),
+    );
+    expect(personalRow(h).props['aria-label'].endsWith('各项目共 3 项等你处理')).toBe(true);
+    expect(text(count(h))).toBe('3');
+  });
+
+  it('shows no number when only the home has something waiting', () => {
+    const h = sidebar(undefined, { items: [waiting('home', 'h-1')] });
+    expect(count(h)).toBeUndefined();
+    expect(personalRow(h).props['aria-label']).toBe(
+      [PERSONAL, zh('components.sidebar.residentNotStarted')].join(zh('sessions.screen.separator')),
+    );
+  });
+
+  it('marks the project menu only for what waits in a visible project', () => {
+    const dot = (h: HookHost<any>) =>
+      nodes(h.value).some(
+        (n) => n.props.className === 'sb-dot' && n.props['aria-label'] === ATTENTION,
+      );
+    const ATTENTION = zh('components.sidebar.attention');
+    expect(dot(sidebar(undefined, { items: [waiting('home', 'h-1')] }))).toBe(false);
+    expect(dot(sidebar(undefined, { items: [waiting('alpha', 'a-1')] }))).toBe(true);
   });
 });
 

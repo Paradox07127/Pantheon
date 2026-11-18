@@ -47,7 +47,7 @@ import {
   type Look,
 } from './data/layout';
 import { failureText, reasonText, useNeedsYou } from './data/needs-you';
-import { personalHomeOf, personalSessionOf } from './data/personal-agent';
+import { crossProjectWaiting, personalHomeOf, personalSessionOf } from './data/personal-agent';
 import { visibleProjects } from './data/projects';
 import { applySessionDisplay, useSessionDisplay } from './data/session-display';
 import { useSystemReducedMotion, windowColours, windowDark } from './data/theme';
@@ -359,6 +359,15 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
   // The sessions page answers a pending request through its needs-you item.
   const needs = useNeedsYou(current);
   const allNeeds = useNeedsYou(null);
+  // The title bar counts what its popover lists, which leaves out the home's items.
+  const shownNeeds = useMemo(
+    () =>
+      crossProjectWaiting(
+        allNeeds.items ?? [],
+        projects.map((p) => p.id),
+      ),
+    [allNeeds.items, projects],
+  );
   const list = useSessionList(current);
   const home = personalHomeOf(allProjects);
   const homeList = useSessionList(home?.id ?? null);
@@ -642,7 +651,7 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
         onToggle={layout.toggle}
         onSearch={() => setPalette(true)}
       />
-      <TitleBarEnd needs={allNeeds.items ?? []} />
+      <TitleBarEnd needs={shownNeeds} />
       <CommandPalette
         open={palette}
         onOpenChange={setPalette}

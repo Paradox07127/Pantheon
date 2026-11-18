@@ -1878,7 +1878,8 @@ handle('pantheon:revealMain', async (action: unknown) => {
     action !== 'open-project' &&
     action !== 'settings' &&
     action !== 'about' &&
-    action !== 'copy-diagnostics'
+    action !== 'copy-diagnostics' &&
+    action !== 'personal-agent'
   )
     return { ok: false, error: { code: 'invalid_input', message: 'action must be a menu action' } };
   const main = reveal();

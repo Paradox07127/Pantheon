@@ -4093,3 +4093,106 @@ it('copies the verdict of a step run and the reviewers of its review into the ta
     { runtime: 'claude', verdict: 'fail', summary: 'Totals drift.' },
   ]);
 });
+
+it('gives a lane its depth and plan stop, and an estimate only while it waits for approval', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  const leadPrincipal: Principal = {
+    id: `session:${lead.id}`,
+    role: 'lead',
+    project_id: f.project.id,
+    session_id: lead.id,
+    expires_at: f.store.now() + 60000,
+  };
+  const task = (id: string, lane: string, tier: 't1' | 't3') => ({
+    id,
+    title: `Task ${id}`,
+    goal: `Finish task ${id}`,
+    lane,
+    depends_on: [],
+    source: ['Plan the export feature'],
+    scope: [`src/${id}`],
+    acceptance: ['pnpm test'],
+    kind: { domain: 'backend-logic' as const, tier },
+  });
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [
+        { id: 'core', title: 'Core', depth: 'plan_first', depth_reason: 'It touches the API' },
+        { id: 'docs', title: 'Docs' },
+        { id: 'misc', title: 'Misc' },
+      ],
+      tasks: [task('api', 'core', 't3'), task('guide', 'docs', 't3'), task('typo', 'misc', 't1')],
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    leadPrincipal,
+  );
+  // Each read of the routing statistics lists the retrospectives from routingStats.
+  const list = f.store.list.bind(f.store);
+  let statsReads = 0;
+  vi.spyOn(f.store, 'list').mockImplementation(((table: string) => {
+    if (table === 'retrospectives' && new Error().stack!.includes('routingStats')) statsReads++;
+    return list(table as never);
+  }) as typeof f.store.list);
+
+  const waiting = f.control.boardView(user, f.project.id, 1).lanes;
+  expect(statsReads).toBe(1);
+  expect(waiting).toEqual([
+    {
+      id: `${lead.id}:core`,
+      title: 'Core',
+      depth: 'plan_first',
+      depth_by: 'lead',
+      depth_reason: 'It touches the API',
+      stop: { state: 'waiting', at: expect.any(Number) },
+      estimate: expect.objectContaining({ tasks: 1 }),
+    },
+    {
+      id: `${lead.id}:docs`,
+      title: 'Docs',
+      depth: 'plan_first',
+      depth_by: 'pantheon',
+      stop: { state: 'waiting', at: expect.any(Number) },
+      estimate: expect.objectContaining({ tasks: 1 }),
+    },
+    { id: `${lead.id}:misc`, title: 'Misc' },
+  ]);
+
+  f.call(
+    'board.lane.approve',
+    { project_id: f.project.id, lead_session_id: lead.id, lane_id: 'core' },
+    null,
+  );
+  f.call(
+    'board.lane.depth.set',
+    { project_id: f.project.id, lead_session_id: lead.id, lane_id: 'docs', depth: 'just_do' },
+    null,
+  );
+  statsReads = 0;
+  expect(f.control.boardView(user, f.project.id, 1).lanes).toEqual([
+    {
+      id: `${lead.id}:core`,
+      title: 'Core',
+      depth: 'plan_first',
+      depth_by: 'lead',
+      depth_reason: 'It touches the API',
+      stop: { state: 'approved', at: expect.any(Number), by: 'user' },
+    },
+    {
+      id: `${lead.id}:docs`,
+      title: 'Docs',
+      depth: 'just_do',
+      depth_by: 'user',
+      stop: { state: 'approved', at: expect.any(Number), by: 'user' },
+    },
+    { id: `${lead.id}:misc`, title: 'Misc' },
+  ]);
+  expect(statsReads).toBe(0);
+});

@@ -1,4 +1,6 @@
 {
+  "trayPopover.personalAgent.name": "个人级智能体",
+  "trayPopover.personalAgent.open": "打开个人级智能体",
   "trayPopover.waiting.title": "等你",
   "trayPopover.waiting.step": "「{step}」等你审批",
   "trayPopover.waiting.asked": "{name} 问了一个问题",

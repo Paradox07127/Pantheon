@@ -1,8 +1,24 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Menu } from '@base-ui/react/menu';
-import { Ellipsis, Folder, Import } from 'lucide-react';
+import {
+  Bot,
+  CircleDot,
+  Ellipsis,
+  Flag,
+  Folder,
+  Globe,
+  Import,
+  Lightbulb,
+  MessageSquare,
+  ShieldCheck,
+  TriangleAlert,
+  Wallet,
+  Workflow,
+  type LucideIcon,
+} from 'lucide-react';
 import type { BoardSnapshot, ProjectSummary, WorkbenchSession } from '@pantheon/protocol';
+import { Clip } from '../../components/Clip';
 import { NeedsPopover, SessionsPopover } from '../../components/NeedsPopover';
 import { PathText } from '../../components/PathText';
 import { ProjectMonogram } from '../../components/ProjectMonogram';
@@ -10,21 +26,39 @@ import { SessionStateIcon, StateGlyph, type GlyphName } from '../../components/S
 import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { TopBar } from '../../components/TopBar';
+import { blocksText, decisionText } from '../../data/attention';
 import { useBoard } from '../../data/board';
 import { useCurrentProject } from '../../data/current-project';
 import { useImportCandidates } from '../../data/import';
-import { ageText, useNeedsYou, useNow, type NeedsYouItem } from '../../data/needs-you';
-import { openPersonalAgent, usePersonalOpening } from '../../data/personal-agent';
+import {
+  ageText,
+  needReasonText,
+  useNeedsYou,
+  useNow,
+  type NeedsYouItem,
+} from '../../data/needs-you';
+import {
+  crossProjectWaiting,
+  openPersonalAgent,
+  usePersonalOpening,
+} from '../../data/personal-agent';
 import {
   findProjectByRoots,
   removeProject,
   removeRejectText,
   visibleProjects,
 } from '../../data/projects';
-import { projectIdle, sortProjects, useProjectsSummary } from '../../data/projects-summary';
+import {
+  needsByKind,
+  projectIdle,
+  sortProjects,
+  topNeed,
+  useProjectsSummary,
+} from '../../data/projects-summary';
 import { storedUnread } from '../../data/unread';
 import { readQuery } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
+import { listText } from '../../lib/list-text';
 import { keyText, shortcutKeys } from '../../lib/shortcuts';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
@@ -71,6 +105,23 @@ const COUNTS: readonly {
   },
 ];
 
+// The icon of each decision the user makes on what waits.
+const KIND_ICONS: Record<NonNullable<NeedsYouItem['decision']>, LucideIcon> = {
+  plan_change: Workflow,
+  question: MessageSquare,
+  milestone_accept: Flag,
+  repeated_failure: TriangleAlert,
+  agent_proposal: Bot,
+  permission: ShieldCheck,
+  budget: Wallet,
+  improvement: Lightbulb,
+  external: Globe,
+  other: CircleDot,
+};
+
+// The rows shown before the switch to show all.
+const FOLDED_ROWS = 12;
+
 const SPARK_W = 120;
 const SPARK_H = 24;
 
@@ -98,19 +149,38 @@ export function ProjectsScreen({
   const [welcomeHeld, setWelcomeHeld] = useState(false);
   const now = useNow(30_000);
   const personalOpening = usePersonalOpening();
+  const [all, setAll] = useState(false);
+  // Taken once per opening when both reads are in, so the rows keep their places while it is open.
+  const held = useRef<string[] | null>(null);
 
   const projects = board ? visibleProjects(board.projects) : [];
+  const personalWaits = crossProjectWaiting(
+    needs.items ?? [],
+    projects.map((p) => p.id),
+  ).length;
+  const personalName = t({ id: 'projects.personalAgent', defaultMessage: 'Personal agent' });
   const summaries = summary.data ?? [];
-  const shown = sortProjects(projects, summaries);
+  const needItems = needs.items ?? [];
+  const sorted = sortProjects(projects, summaries);
+  if (!held.current && board && !summary.loading && !summary.refreshing && !needs.loading)
+    held.current = sorted.map((p) => p.id);
+  const order = held.current;
+  // A project opened since the order was taken comes last.
+  const place = (id: string) => {
+    const at = order!.indexOf(id);
+    return at < 0 ? projects.length : at;
+  };
+  const shown = order ? [...sorted].sort((a, b) => place(a.id) - place(b.id)) : sorted;
+  const listed = all ? shown : shown.slice(0, FOLDED_ROWS);
   const importable = (candidates.data?.candidates ?? []).filter(
     (c) => !findProjectByRoots(projects, [c.root]),
   );
   const fresh = importable.filter((c) => !c.excluded).length;
   // The summary decides the order, so until it lands the rows stand empty in the places they take.
-  const pending = !board || summary.loading;
+  const pending = !order;
   const openDialog = () => setOpening(true);
   const oldestWait = new Map<string, number>();
-  for (const item of needs.items ?? [])
+  for (const item of needItems)
     oldestWait.set(
       item.project_id,
       Math.min(item.created_at, oldestWait.get(item.project_id) ?? Infinity),
@@ -123,7 +193,21 @@ export function ProjectsScreen({
           <button
             type="button"
             className="btn"
-            aria-label={t({ id: 'projects.personalAgent', defaultMessage: 'Personal agent' })}
+            aria-label={
+              personalWaits > 0
+                ? [
+                    personalName,
+                    t(
+                      {
+                        id: 'projects.personalAgentWaits',
+                        defaultMessage:
+                          '{count, plural, one {# thing waits across projects} other {# things wait across projects}}',
+                      },
+                      { count: personalWaits },
+                    ),
+                  ].join(t({ id: 'sessions.screen.separator', defaultMessage: ', ' }))
+                : personalName
+            }
             aria-busy={personalOpening || undefined}
             onClick={() => void openPersonalAgent()}
           >
@@ -134,7 +218,12 @@ export function ProjectsScreen({
             ) : (
               <StateGlyph name="idle" />
             )}
-            {t({ id: 'projects.personalAgent', defaultMessage: 'Personal agent' })}
+            {personalName}
+            {personalWaits > 0 && (
+              <span className="ss-rct" aria-hidden="true">
+                {personalWaits}
+              </span>
+            )}
           </button>
           <button type="button" className="btn" onClick={() => setImporting(true)}>
             <Import className="ic-sm" aria-hidden="true" />
@@ -161,9 +250,7 @@ export function ProjectsScreen({
                       ? null
                       : summaries.filter((s) => projects.some((p) => p.id === s.project_id))
                   }
-                  needs={(needs.items ?? []).filter((i) =>
-                    projects.some((p) => p.id === i.project_id),
-                  )}
+                  needs={needItems.filter((i) => projects.some((p) => p.id === i.project_id))}
                 />
               )}
               <div
@@ -190,7 +277,7 @@ export function ProjectsScreen({
                   <span role="columnheader" />
                 </div>
                 {pending
-                  ? Array.from({ length: board ? shown.length : 3 }, (_, i) => (
+                  ? Array.from({ length: board ? listed.length : 3 }, (_, i) => (
                       <div key={i} role="row" className="pr-row">
                         <span role="cell" />
                         <span role="cell" className="pr-name">
@@ -198,11 +285,12 @@ export function ProjectsScreen({
                         </span>
                       </div>
                     ))
-                  : shown.map((project) => (
+                  : listed.map((project) => (
                       <ProjectRow
                         key={project.id}
                         project={project}
                         summary={summaries.find((s) => s.project_id === project.id)}
+                        needs={needItems.filter((i) => i.project_id === project.id)}
                         oldestWait={oldestWait.get(project.id) ?? null}
                         now={now}
                         onOpenSettings={onOpenSettings}
@@ -210,6 +298,27 @@ export function ProjectsScreen({
                       />
                     ))}
               </div>
+              {shown.length > FOLDED_ROWS && (
+                <div className="pr-more">
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    aria-expanded={all}
+                    onClick={() => setAll(!all)}
+                  >
+                    {all
+                      ? t({ id: 'projects.showLess', defaultMessage: 'Show less' })
+                      : t(
+                          {
+                            id: 'projects.showAll',
+                            defaultMessage:
+                              '{count, plural, one {Show all # project} other {Show all # projects}}',
+                          },
+                          { count: shown.length },
+                        )}
+                  </button>
+                </div>
+              )}
               {fresh > 0 && (
                 <div className="pr-imp">
                   <Import className="ic-sm" aria-hidden="true" />
@@ -432,6 +541,8 @@ function milestoneBar(milestone: NonNullable<ProjectSummary['milestone']>) {
 export function ProjectRow(props: {
   project: Project;
   summary: ProjectSummary | undefined;
+  /** The project's needs-you items. */
+  needs: readonly NeedsYouItem[];
   /** Unix milliseconds of the project's oldest needs-you item; null without one. */
   oldestWait: number | null;
   now: number;
@@ -444,6 +555,15 @@ export function ProjectRow(props: {
   const last = summary?.last_activity_at ? Date.parse(summary.last_activity_at) : null;
   const active = summary ? COUNTS.filter(({ key }) => summary.counts[key] > 0) : [];
   const idle = projectIdle(summary);
+  const top = topNeed(props.needs);
+  const kinds = needsByKind(props.needs);
+  const rest = kinds.slice(4);
+  const restCount = rest.reduce((n, kind) => n + kind.count, 0);
+  const kindName = (item: NeedsYouItem) => decisionText(item.decision) ?? needReasonText(item);
+  const kindIcon = (item: NeedsYouItem) => {
+    const Icon = KIND_ICONS[item.decision ?? 'other'];
+    return <Icon className="ic-sm" aria-hidden="true" />;
+  };
 
   return (
     <div role="row" className={idle ? 'pr-row pr-idle' : 'pr-row'}>
@@ -521,25 +641,90 @@ export function ProjectRow(props: {
         {!summary ? (
           <Skeleton className="pr-sk-c" />
         ) : summary.needs_you > 0 ? (
-          <>
-            <button
-              type="button"
-              className="pr-n"
-              aria-label={t(
-                { id: 'projects.row.needsYou', defaultMessage: 'Needs you {count}' },
-                { count: summary.needs_you },
+          <span className="pr-nd">
+            <span className="pr-top">
+              <button
+                type="button"
+                className="pr-n"
+                aria-label={t(
+                  { id: 'projects.row.needsYou', defaultMessage: 'Needs you {count}' },
+                  { count: summary.needs_you },
+                )}
+                // The sidebar takes the inbox group as its only-waiting filter.
+                onClick={() => openGroup(project.id, 'inbox')}
+              >
+                <StateGlyph name="approval" />
+                {summary.needs_you}
+              </button>
+              {top && (
+                <>
+                  {kindIcon(top)}
+                  <Clip
+                    className="pr-tt"
+                    text={
+                      top.question?.question ??
+                      top.lane_title ??
+                      top.step_title ??
+                      needReasonText(top)
+                    }
+                  />
+                  {blocksText(top.blocks) && (
+                    <span className="pr-age">{blocksText(top.blocks)}</span>
+                  )}
+                </>
               )}
-              // The sidebar takes the inbox group as its only-waiting filter.
-              onClick={() => openGroup(project.id, 'inbox')}
-            >
-              <StateGlyph name="approval" />
-              {summary.needs_you}
-            </button>
-            {/* Under a minute the notice card shows no wait either. */}
-            {props.oldestWait !== null && props.now - props.oldestWait >= 60_000 && (
-              <span className="pr-age">{durationText(props.now - props.oldestWait)}</span>
+              {/* Under a minute the notice card shows no wait either. */}
+              {props.oldestWait !== null && props.now - props.oldestWait >= 60_000 && (
+                <span className="pr-age">{durationText(props.now - props.oldestWait)}</span>
+              )}
+            </span>
+            {kinds.length > 0 && (
+              <span
+                className="pr-c"
+                role="group"
+                aria-label={t({ id: 'projects.row.byKind', defaultMessage: 'Needs you by kind' })}
+              >
+                {kinds.slice(0, 4).map((kind) => (
+                  <button
+                    key={kind.item.source.id}
+                    type="button"
+                    className="pr-n"
+                    aria-label={t(
+                      {
+                        id: 'projects.row.kindCount',
+                        defaultMessage:
+                          '{blocks, plural, =0 {{kind} {count}} one {{kind} {count}, blocks # task} other {{kind} {count}, blocks # tasks}}',
+                      },
+                      { kind: kindName(kind.item), count: kind.count, blocks: kind.blocks },
+                    )}
+                    onClick={() => openGroup(project.id, 'inbox')}
+                  >
+                    {kindIcon(kind.item)}
+                    {kind.count}
+                  </button>
+                ))}
+                {rest.length > 0 && (
+                  <button
+                    type="button"
+                    className="pr-n"
+                    aria-label={t(
+                      { id: 'projects.row.otherKinds', defaultMessage: '{count} other: {kinds}' },
+                      {
+                        count: restCount,
+                        kinds: listText(...rest.map((kind) => kindName(kind.item))),
+                      },
+                    )}
+                    onClick={() => openGroup(project.id, 'inbox')}
+                  >
+                    {t(
+                      { id: 'projects.row.other', defaultMessage: '{count} other' },
+                      { count: restCount },
+                    )}
+                  </button>
+                )}
+              </span>
             )}
-          </>
+          </span>
         ) : (
           <span className="pr-none">—</span>
         )}

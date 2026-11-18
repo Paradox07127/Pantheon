@@ -82,7 +82,7 @@
 .pr-row {
   position: relative;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1.3fr) minmax(0, 1fr) 168px 104px var(--ctl);
+  grid-template-columns: 16px minmax(0, 1.3fr) minmax(0, 1fr) 168px minmax(0, 1.5fr) var(--ctl);
   align-items: center;
   gap: 12px;
   min-height: 52px;
@@ -248,6 +248,37 @@
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.pr-nd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 0;
+}
+.pr-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--mu);
+}
+.pr-tt {
+  flex: 1;
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.pr-c {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.pr-more {
+  display: flex;
+  padding: 0 8px;
 }
 .pr-sk-c {
   width: 64px;

@@ -238,6 +238,7 @@ describe('project monogram', () => {
     const card = ProjectRow({
       project: { id: 'project-a', revision: 1, name: 'Alpha', roots: ['/work/a'] } as any,
       summary: undefined,
+      needs: [],
       oldestWait: null,
       now: 0,
       onOpenSettings: () => {},

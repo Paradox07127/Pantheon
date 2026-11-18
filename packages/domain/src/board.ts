@@ -139,14 +139,20 @@ export interface PlanAssumption {
   /** A milestone id of the plan. */
   milestone?: string;
 }
-/** A lane whose tasks wait until the user approves its plan; approved_at absent while it waits. */
+/**
+ * A lane whose tasks wait until the user approves its plan; approved_at absent while it waits.
+ * Without held_at it only keeps the user's depth.
+ */
 export interface LaneStop {
-  held_at: number;
+  held_at?: number;
   /** The plan version that held it. */
-  plan_version: number;
+  plan_version?: number;
   approved_at?: number;
   approved_by?: 'user' | 'personal';
   via?: 'approve' | 'depth';
+  /** The depth the user chose; it replaces the lead's. */
+  user_depth?: LaneDepth;
+  user_depth_at?: number;
 }
 /** One lead session's part of the project board, keyed by that session's id. */
 export interface BoardPlan extends Entity {

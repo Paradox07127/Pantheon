@@ -46,17 +46,8 @@ export const behaviours = {
   turn_fails: () => [{ fail: 'Usage limit reached' }],
 };
 
-/** Steps of the before_merge slot; the task's own acceptance command (`test -f`) is in both. */
-export const conditions = {
-  acceptance_only: [],
-  independent_check: [
-    {
-      id: 'content-check',
-      title: 'Content check',
-      kind: { type: 'command', command: `grep -qx ${EXPECTED} ${FILE}`, timeout_seconds: 30 },
-    },
-  ],
-};
+/** The conditions a fixture run compares when none is named; the task's acceptance (`test -f`) is in both. */
+export const conditions = ['acceptance_only', 'independent_check'];
 
 /** What the runs of each condition must come to; a difference means the runner or the report is wrong. */
 export const knownAnswers = {
