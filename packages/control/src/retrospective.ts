@@ -11,6 +11,7 @@ import {
   type Session,
   type SessionTurn,
   type StepRun,
+  type TaskBudget,
   type TaskKind,
 } from '@pantheon/domain';
 import type { GateFirstPass } from '@pantheon/protocol';
@@ -96,6 +97,24 @@ function eventsOf(ctx: ControlContext, aggregates: string[], kinds: string[]): E
 const generationIn = (plan: Partial<BoardPlan>, taskId: string) =>
   ownEntry(plan.generations, taskId)?.generation ?? 1;
 
+/** The task as the plan write holds it in the generation; undefined when it holds another or none. */
+function writtenTask(event: EventRow, taskId: string, generation: number): PlanTask | undefined {
+  const written = (event.payload.tasks as PlanTask[]).find((task) => task.id === taskId);
+  return written && generationIn(event.payload, taskId) === generation ? written : undefined;
+}
+
+/** When a plan write first held the generation of the task; undefined before one did. */
+export function firstPlannedAt(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  taskId: string,
+  generation: number,
+): number | undefined {
+  return eventsOf(ctx, [plan.id], ['board.plan_updated']).find((event) =>
+    writtenTask(event, taskId, generation),
+  )?.created_at;
+}
+
 function tokens(turns: SessionTurn[]): Tokens {
   const sum: Tokens = { input_tokens: 0, output_tokens: 0 };
   for (const { usage } of turns) {
@@ -135,7 +154,12 @@ function tierAfter(kind: TaskKind, executionMs: number | undefined): TaskKind {
  * The lead turns that woke it with notes, the first of them about the task: a wake that carried
  * notes about several tasks counts for one of them. Any lead turn takes the notes before it.
  */
-function leadWakes(ctx: ControlContext, plan: BoardPlan, taskId: string, since: number): string[] {
+export function leadWakes(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  taskId: string,
+  since: number,
+): string[] {
   let first: { task_id: string; at: number } | undefined;
   const wakes: string[] = [];
   for (const event of ctx.store.kindEvents(plan.project_id, ['lead.note_added', 'turn.queued'])) {
@@ -357,7 +381,7 @@ function directEvents(
 }
 
 /** The lead's turns that ended within the events, and how many turns queued within them were hand-backs. */
-function leadTurnsWithin(
+export function leadTurnsWithin(
   ctx: ControlContext,
   leadId: string,
   allTurns: SessionTurn[],
@@ -388,6 +412,12 @@ function leadTurnsWithin(
   };
 }
 
+/** The ratio of the spending to the budget. */
+export function ratioToBudget(inputTokens: number, wallMs: number, budget: TaskBudget): number {
+  // Either limit alone makes the task over budget, so the larger ratio decides.
+  return Math.max(inputTokens / budget.input_tokens, wallMs / budget.wall_ms);
+}
+
 /** The task's ratio to the budget of its tier and path; undefined when that cell has none. */
 function budgetRatio(ctx: ControlContext, row: Retrospective): number | undefined {
   const kind = row.measured_kind ?? row.planned_kind;
@@ -399,8 +429,56 @@ function budgetRatio(ctx: ControlContext, row: Retrospective): number | undefine
   const wall = Object.entries(row.stage_ms ?? {})
     .filter(([stage]) => stage !== 'step_approval')
     .reduce((sum, [, ms]) => sum + ms, 0);
-  // Either limit alone makes the task over budget, so the larger ratio decides.
-  return Math.max(input / budget.input_tokens, wall / budget.wall_ms);
+  return ratioToBudget(input, wall, budget);
+}
+
+/**
+ * The generation's waits for the user on an approval or an inconclusive prompt, oldest first, each
+ * from where the earlier waits of its slot end; a wait still open lasts until `until`, or is left out.
+ */
+export function stepWaits(
+  ctx: ControlContext,
+  plan: BoardPlan,
+  taskId: string,
+  generation: number,
+  until?: number,
+): { from: number; to: number; slot: StepRun['slot'] }[] {
+  const runIds = new Set(
+    ctx.store
+      .list<StepRun>('workflow_step_runs')
+      .filter(
+        (run) =>
+          run.lead_session_id === plan.id &&
+          run.task_id === taskId &&
+          run.generation === generation &&
+          (run.step.kind.type === 'approval' || run.step.kind.type === 'prompt'),
+      )
+      .map((run) => run.id),
+  );
+  const waitingSince = new Map<string, { at: number; slot: StepRun['slot'] }>(),
+    waits: { from: number; to: number; slot: StepRun['slot'] }[] = [];
+  for (const event of ctx.store.kindEvents(plan.project_id, ['workflow.step_changed'])) {
+    if (!runIds.has(event.aggregate_id)) continue;
+    const payload = event.payload as { state: StepRun['state']; slot: StepRun['slot'] };
+    const since = waitingSince.get(event.aggregate_id);
+    if (payload.state === 'waiting' || payload.state === 'inconclusive')
+      waitingSince.set(event.aggregate_id, { at: event.created_at, slot: payload.slot });
+    else if (since !== undefined) {
+      waitingSince.delete(event.aggregate_id);
+      waits.push({ from: since.at, to: event.created_at, slot: payload.slot });
+    }
+  }
+  if (until !== undefined)
+    for (const { at, slot } of waitingSince.values()) waits.push({ from: at, to: until, slot });
+  // Waits that overlap in one slot count once.
+  waits.sort((a, b) => a.from - b.from);
+  return waits.map((wait, i) => {
+    const covered = Math.max(
+      wait.from,
+      ...waits.slice(0, i).flatMap((each) => (each.slot === wait.slot ? [each.to] : [])),
+    );
+    return { from: Math.min(covered, wait.to), to: wait.to, slot: wait.slot };
+  });
 }
 
 function record(
@@ -437,8 +515,8 @@ function record(
     const p = event.payload;
     if (event.kind === 'board.plan_updated') {
       // A removed task is planned only in the plans written before its removal.
-      const written = (p.tasks as PlanTask[]).find((task) => task.id === taskId);
-      if (!written || generationIn(p, taskId) !== generation) continue;
+      const written = writtenTask(event, taskId, generation);
+      if (!written) continue;
       plannedAt ??= event.created_at;
       if (outcome === 'removed') planned = written;
     } else if (event.created_at < (plannedAt ?? 0)) continue;
@@ -522,39 +600,8 @@ function record(
         merge_to_acceptance: span(mergedAt, acceptedAt),
       };
   // Each wait for the user on an approval or an inconclusive prompt leaves the stage it fell in.
-  const runIds = new Set(
-    ctx.store
-      .list<StepRun>('workflow_step_runs')
-      .filter(
-        (run) =>
-          run.lead_session_id === plan.id &&
-          run.task_id === taskId &&
-          run.generation === generation &&
-          (run.step.kind.type === 'approval' || run.step.kind.type === 'prompt'),
-      )
-      .map((run) => run.id),
-  );
-  const waitingSince = new Map<string, number>(),
-    waits: { from: number; to: number; slot: StepRun['slot'] }[] = [];
-  for (const event of ctx.store.kindEvents(plan.project_id, ['workflow.step_changed'])) {
-    if (!runIds.has(event.aggregate_id)) continue;
-    const payload = event.payload as { state: StepRun['state']; slot: StepRun['slot'] };
-    const since = waitingSince.get(event.aggregate_id);
-    if (payload.state === 'waiting' || payload.state === 'inconclusive')
-      waitingSince.set(event.aggregate_id, event.created_at);
-    else if (since !== undefined) {
-      waitingSince.delete(event.aggregate_id);
-      waits.push({ from: since, to: event.created_at, slot: payload.slot });
-    }
-  }
-  // Waits that overlap in one slot count once.
-  waits.sort((a, b) => a.from - b.from);
-  for (const [i, wait] of waits.entries()) {
-    const covered = Math.max(
-      wait.from,
-      ...waits.slice(0, i).flatMap((each) => (each.slot === wait.slot ? [each.to] : [])),
-    );
-    const ms = Math.max(0, wait.to - covered),
+  for (const wait of stepWaits(ctx, plan, taskId, generation)) {
+    const ms = wait.to - wait.from,
       stage = SLOT_STAGES[wait.slot];
     stages.step_approval = (stages.step_approval ?? 0) + ms;
     if (stages[stage] !== undefined) stages[stage] = Math.max(0, stages[stage] - ms);

@@ -70,6 +70,18 @@ it('types task drawer facts and optional attempt facts', () => {
   >();
   expectTypeOf<Task['scope']>().toEqualTypeOf<string[]>();
   expectTypeOf<Task['token_budget']>().toEqualTypeOf<number | undefined>();
+  expectTypeOf<Task['budget']>().toEqualTypeOf<
+    | {
+        ratio: number;
+        input_tokens: number;
+        wall_ms: number;
+        limit: { input_tokens: number; wall_ms: number };
+      }
+    | undefined
+  >();
+  expectTypeOf<NonNullable<Task['retrospective']>['budget_ratio']>().toEqualTypeOf<
+    number | undefined
+  >();
   expectTypeOf<Task['subagents']>().toEqualTypeOf<number | undefined>();
   expectTypeOf<BoardActivity['repeated_failure']>().toEqualTypeOf<boolean | undefined>();
   expectTypeOf<BoardWaiting['options']>().toEqualTypeOf<string[] | undefined>();

@@ -61,6 +61,7 @@ import { gateFailed } from './landing.js';
 import { doneReported } from './task-tracking.js';
 import { cacheReadShare } from './trace-view.js';
 import { gateFirstPass, latestRetrospectives } from './retrospective.js';
+import { taskBudgetUse } from './task-budget.js';
 
 const TASK_STATUS: Record<WorkbenchSession['state'], BoardTaskStatus> = {
   starting: 'running',
@@ -1627,6 +1628,10 @@ export function boardView(
       const claim = claimRow && stored.get(claimRow.id)!;
       const recap = newestLive && stored.get(newestLive.id)!.recap;
       const retrospective = retrospectives.get(boardTaskId(plan.id, task.id));
+      const budget =
+        state === 'merged' || state === 'failed'
+          ? undefined
+          : taskBudgetUse(ctx, plan, task.id, now);
       const unmetTitles = unmetOf(plan, task).map(
         (dependency) => plan.tasks.find((each) => each.id === dependency)?.title ?? dependency,
       );
@@ -1674,6 +1679,16 @@ export function boardView(
         ...(task.kind ? { kind: task.kind } : {}),
         ...(task.task_type ? { task_type: task.task_type } : {}),
         ...(task.token_budget !== undefined ? { token_budget: task.token_budget } : {}),
+        ...(budget
+          ? {
+              budget: {
+                ratio: budget.ratio,
+                input_tokens: budget.input_tokens,
+                wall_ms: budget.wall_ms,
+                limit: budget.limit,
+              },
+            }
+          : {}),
         scope: task.scope,
         ...(task.route_reason ? { route_reason: task.route_reason } : {}),
         ...(task.device ? { device: task.device } : {}),
@@ -1785,6 +1800,9 @@ export function boardView(
                         retrospective.task_usage.output_tokens,
                     }
                   : {}),
+                ...(retrospective.budget_ratio === undefined
+                  ? {}
+                  : { budget_ratio: retrospective.budget_ratio }),
               },
             }
           : {}),

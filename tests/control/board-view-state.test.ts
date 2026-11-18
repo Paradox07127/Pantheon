@@ -327,6 +327,7 @@ it.skipIf(insideSandbox)(
       handbacks: 0,
       lead_wakes: expect.any(Number),
       tokens: expect.any(Number),
+      budget_ratio: expect.any(Number),
     });
   },
 );

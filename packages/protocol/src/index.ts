@@ -4152,6 +4152,17 @@ export interface BoardModel {
     task_type?: BoardPlan['tasks'][number]['task_type'];
     scope: string[];
     token_budget?: number;
+    /**
+     * What an unfinished started task spent so far of its tier and path's budget, counted as its
+     * retrospective counts it; tokens of a running turn count once it ends. ratio is the larger of
+     * the token and wall-time shares. Absent when that cell has no budget.
+     */
+    budget?: {
+      ratio: number;
+      input_tokens: number;
+      wall_ms: number;
+      limit: { input_tokens: number; wall_ms: number };
+    };
     subagents?: number;
     route_reason?: string;
     device?: string;
@@ -4318,6 +4329,8 @@ export interface BoardModel {
       lead_wakes?: number;
       /** Input plus output tokens of the task sessions; absent when the task had no session. */
       tokens?: number;
+      /** The recorded ratio to the task's budget; absent when its cell has none. */
+      budget_ratio?: number;
     };
   } & BoardTaskExtras)[];
   /** Each lead session that wrote a plan. */
