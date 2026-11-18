@@ -140,8 +140,7 @@ describe('mermaid node kinds', () => {
   });
 
   it.each([
-    ['a sequence diagram', 'sequenceDiagram\n  participant store\n  store->>store: client call'],
-    ['an ER diagram', 'erDiagram\n  store ||--o{ queue : feeds'],
+    ['a state diagram that uses no kind', 'stateDiagram-v2\n  store --> queue : client call'],
     ['a class diagram', 'classDiagram\n  class Store\n  class Queue:::store'],
     ['a flowchart that uses no kind', 'flowchart LR\n  a --> b'],
   ])('leaves the source of %s as written', async (_name, source) => {

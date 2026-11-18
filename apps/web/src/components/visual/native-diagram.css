@@ -1,0 +1,263 @@
+/* ER and sequence diagrams Pantheon draws from mermaid's parse, on a dot grid. */
+.vis-nd {
+  display: grid;
+  /* A diagram larger than the box starts at its top-left corner. */
+  place-items: safe center;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+.vis-nd-svg {
+  display: block;
+  font-family: var(--font-sans);
+}
+.vis-nd-svg text {
+  dominant-baseline: central;
+}
+.vis-nd-dot {
+  fill: var(--bd2);
+}
+
+/* Kind colours paint card shapes and icons; text stays neutral. */
+.vis-sq-n {
+  --k: var(--mu);
+}
+.vis-sq-n[data-kind='client'] {
+  --k: var(--series-1);
+}
+.vis-sq-n[data-kind='service'] {
+  --k: var(--series-2);
+}
+.vis-sq-n[data-kind='store'] {
+  --k: var(--series-4);
+}
+.vis-sq-n[data-kind='queue'] {
+  --k: var(--series-3);
+}
+.vis-sq-n[data-kind='external'] {
+  --k: var(--series-5);
+}
+
+/* Group boundaries: sequence segments and boxes. */
+.vis-nd-g rect {
+  fill: color-mix(in srgb, var(--tx) 2%, transparent);
+  stroke: var(--bd3);
+  stroke-width: var(--hair);
+  stroke-dasharray: 4 3;
+}
+.vis-nd-gl {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  fill: var(--tx2);
+}
+
+/* Label pills on lines. */
+.vis-nd-lb rect {
+  fill: var(--sf);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-nd-lb text {
+  font-size: var(--fs-xs);
+  fill: var(--tx2);
+  text-anchor: middle;
+}
+
+/* ER tables: a header band, rows in alternating surfaces, a key badge column, mono types. */
+.vis-er-t {
+  transition: opacity var(--dur-2) var(--ease-std);
+}
+.vis-er-t[data-focus='dim'] {
+  opacity: 0.35;
+}
+.vis-er-bg {
+  fill: var(--sf);
+}
+.vis-er-hd,
+.vis-er-z {
+  fill: var(--sf2);
+}
+.vis-er-ln {
+  fill: none;
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-er-sep {
+  stroke: var(--bd2);
+  stroke-width: var(--hair);
+}
+.vis-er-n {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  fill: var(--tx);
+}
+.vis-er-al {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  fill: var(--mu);
+}
+.vis-er-c {
+  font-size: var(--fs-sm);
+  fill: var(--tx);
+}
+.vis-er-ty {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  fill: var(--mu);
+  text-anchor: end;
+}
+.vis-er-k {
+  fill: var(--sf2);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-er-kt {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  fill: var(--tx2);
+  text-anchor: middle;
+}
+
+/* Relationships: a solid line when identifying, dashed when not; crow's-foot marks at both ends. */
+.vis-er-r {
+  --ge: var(--mu);
+  --gw: 1px;
+  transition: opacity var(--dur-2) var(--ease-std);
+}
+.vis-er-r[data-focus='on'] {
+  --ge: var(--tx);
+  --gw: 1.5px;
+}
+.vis-er-r[data-focus='dim'] {
+  opacity: 0.35;
+}
+.vis-er-p,
+.vis-er-m {
+  fill: none;
+  stroke: var(--ge);
+  stroke-width: var(--gw);
+  transition: stroke var(--dur-2) var(--ease-std);
+}
+.vis-er-r[data-identifying='false'] .vis-er-p {
+  stroke-dasharray: 4 3;
+}
+.vis-er-o {
+  fill: var(--sf);
+  stroke: var(--ge);
+  stroke-width: var(--gw);
+}
+
+/* Sequence participants: node cards. */
+.vis-sq-nb {
+  fill: var(--sf2);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-sq-n[data-kind] .vis-sq-nb {
+  fill: color-mix(in srgb, var(--k) 8%, var(--sf2));
+  stroke: color-mix(in srgb, var(--k) 45%, var(--bd));
+}
+.vis-sq-ic {
+  color: var(--k);
+}
+.vis-sq-t {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  fill: var(--tx);
+}
+.vis-sq-s {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  fill: var(--mu);
+}
+.vis-sq-life {
+  fill: none;
+  stroke: var(--bd2);
+  stroke-width: 1px;
+  stroke-dasharray: 4 3;
+}
+.vis-sq-act {
+  fill: var(--sf2);
+  stroke: var(--bd3);
+  stroke-width: var(--hair);
+}
+
+/* Messages: a call solid with a filled head, async and dotted dashed, a reply dotted and open. */
+.vis-sq-e {
+  --ge: var(--mu);
+  --gd: none;
+}
+.vis-sq-e[data-kind='async'],
+.vis-sq-e[data-kind='dotted'] {
+  --gd: 4 3;
+}
+.vis-sq-e[data-kind='reply'] {
+  --ge: var(--bd3);
+  --gd: 1 3;
+}
+.vis-sq-ln {
+  fill: none;
+  stroke: var(--ge);
+  stroke-width: 1px;
+  stroke-dasharray: var(--gd);
+}
+.vis-sq-ah {
+  fill: var(--ge);
+}
+.vis-sq-e[data-kind='reply'] .vis-sq-ah {
+  fill: var(--sf);
+  stroke: var(--ge);
+  stroke-width: 1px;
+  stroke-linejoin: round;
+}
+/* Labels mask the lifelines they cross. */
+.vis-sq-msg {
+  font-size: var(--fs-xs);
+  fill: var(--tx2);
+  paint-order: stroke;
+  stroke: var(--sf);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.vis-sq-no circle {
+  fill: var(--sf2);
+  stroke: var(--bd3);
+  stroke-width: var(--hair);
+}
+.vis-sq-no text {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  fill: var(--tx2);
+  text-anchor: middle;
+}
+
+/* Segment labels: a chip at the top-left of the segment and of each later branch. */
+.vis-sq-chip rect {
+  fill: var(--sf);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-sq-chip text {
+  font-size: var(--fs-xs);
+  fill: var(--mu);
+}
+.vis-sq-kw {
+  font-weight: 600;
+  fill: var(--tx2);
+}
+.vis-sq-div {
+  fill: none;
+  stroke: var(--bd3);
+  stroke-width: var(--hair);
+  stroke-dasharray: 4 3;
+}
+.vis-sq-note rect {
+  fill: var(--sf2);
+  stroke: var(--bd);
+  stroke-width: var(--hair);
+}
+.vis-sq-note text {
+  font-size: var(--fs-xs);
+  fill: var(--tx2);
+  text-anchor: middle;
+}

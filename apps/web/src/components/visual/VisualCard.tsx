@@ -205,7 +205,7 @@ function picture(
     case 'vega-lite':
       return <VegaChart spec={content.spec} height={height} />;
     case 'mermaid':
-      return <MermaidDiagram spec={content.spec} height={height} />;
+      return <MermaidDiagram spec={content.spec} height={height} grows={grows} />;
     case 'graph':
       return (
         <GraphDiagram
@@ -338,7 +338,11 @@ export function VisualFrame({
         role={role}
         aria-label={label}
         data-stale={stale || undefined}
-        style={grows && content.kind === 'graph' ? { minHeight: height } : { height }}
+        style={
+          grows && (content.kind === 'graph' || content.kind === 'mermaid')
+            ? { minHeight: height }
+            : { height }
+        }
       >
         {drawn(height, grows, onInspect)}
       </div>

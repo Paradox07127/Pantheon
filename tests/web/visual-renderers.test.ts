@@ -395,7 +395,7 @@ describe('Mermaid diagram', () => {
   });
 
   it('colours notes, table rows, actors and labels from the app tokens', async () => {
-    const spec = { source: 'erDiagram\nA ||--o{ B : has' };
+    const spec = { source: 'classDiagram\nA <|-- B' };
     const h = mount(() => MermaidDiagram({ spec, height: 280 }));
     await settle(h);
     const { themeVariables } = mm.initialize.mock.calls[0]![0];

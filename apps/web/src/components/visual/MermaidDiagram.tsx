@@ -1,4 +1,8 @@
 import { useRef, useState } from 'react';
+import { ErDiagram } from './ErDiagram';
+import { fitZoom, layoutEr, layoutSequence, type ErLayout, type SeqLayout } from './mermaid-layout';
+import { nativeType, parseMermaid } from './mermaid-model';
+import { SequenceDiagram } from './SequenceDiagram';
 import { Drawing, token, useDraw, useThemeTick } from './shared';
 import './mermaid.css';
 
@@ -6,6 +10,13 @@ import './mermaid.css';
 let renders = 0;
 // A diagram shrinks to fit no further than this, where its text reads; a larger one scrolls.
 const FLOOR = 2 / 3;
+// A tall diagram Pantheon draws grows its card to this, the height of the zoomed visual view.
+const MAX_HEIGHT = 640;
+
+/** An ER or sequence diagram laid out by Pantheon, and the box width it was laid out for. */
+type Native = { id: string; room: number } & (
+  { type: 'er'; layout: ErLayout } | { type: 'sequence'; layout: SeqLayout }
+);
 
 // The node kinds a model may give with `A:::store` or `class A store`, and their series colours.
 const KINDS = { client: 1, service: 2, store: 4, queue: 3, external: 5, policy: 6 };
@@ -79,12 +90,22 @@ function restyled(svg: string, id: string): string {
     );
 }
 
-export function MermaidDiagram({ spec, height }: { spec: { source: string }; height: number }) {
+export function MermaidDiagram({
+  spec,
+  height,
+  grows = false,
+}: {
+  spec: { source: string };
+  height: number;
+  /** An ER or sequence diagram taller than the height grows past it, up to the zoomed view's. */
+  grows?: boolean;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const theme = useThemeTick();
   const [drawn, setDrawn] = useState<{ svg: string; size?: { width: number; height: number } }>({
     svg: '',
   });
+  const [native, setNative] = useState<Native | null>(null);
   const ready = useDraw(
     async (live) => {
       const { default: mermaid } = await import('mermaid');
@@ -165,6 +186,19 @@ export function MermaidDiagram({ spec, height }: { spec: { source: string }; hei
         er: { entityPadding: 4.5 },
       });
       const id = `vis-mermaid-${++renders}`;
+      const type = nativeType(spec.source);
+      if (type) {
+        // A source mermaid cannot parse throws its error here, and mermaid draws nothing.
+        const parsed = await parseMermaid(mermaid, spec.source, type);
+        const room = at.clientWidth;
+        const tall = grows ? Math.max(height, MAX_HEIGHT) : at.clientHeight;
+        const laid: Native =
+          parsed.type === 'er'
+            ? { id, room, type: 'er', layout: await layoutEr(parsed.model, { x: room, y: tall }) }
+            : { id, room, type: 'sequence', layout: layoutSequence(parsed.model) };
+        if (live()) setNative(laid);
+        return undefined;
+      }
       const drawing = await mermaid.render(id, withKinds(spec.source, color));
       if (!live()) return undefined;
       const svg = restyled(drawing.svg, id);
@@ -178,10 +212,30 @@ export function MermaidDiagram({ spec, height }: { spec: { source: string }; hei
       const fit = Math.min(at.clientWidth / width, at.clientHeight / tall);
       const scale = Math.min(1, Math.max(FLOOR, fit));
       setDrawn({ svg, ...(view && { size: { width: width * scale, height: tall * scale } }) });
+      setNative(null);
       return undefined;
     },
-    [spec, theme],
+    [spec, theme, grows, height],
   );
+  if (native) {
+    const { layout } = native;
+    const shown = grows
+      ? Math.min(Math.max(height, layout.height), Math.max(height, MAX_HEIGHT))
+      : height;
+    const scale = Math.max(FLOOR, fitZoom(layout, { x: native.room, y: shown }));
+    return (
+      <div ref={box} className="vis-fill" style={{ height: shown }}>
+        <div className="vis-nd">
+          {native.type === 'er' ? (
+            <ErDiagram id={native.id} layout={native.layout} scale={scale} />
+          ) : (
+            <SequenceDiagram id={native.id} layout={native.layout} scale={scale} />
+          )}
+        </div>
+        {!ready && <Drawing />}
+      </div>
+    );
+  }
   return (
     <div ref={box} className="vis-fill" style={{ height }}>
       <div className="vis-mermaid">

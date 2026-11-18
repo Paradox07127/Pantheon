@@ -72,6 +72,8 @@
   "visual.markdown.noCandles": "K 线需要一个 candles 数组",
   "visual.markdown.notObject": "Vega-Lite 代码块必须是一个 JSON 对象",
   "visual.markdown.source": "看源码",
+  "visual.mermaid.er": "{tables, plural, other {# 张表}}，{relationships, plural, other {# 条关系}}",
+  "visual.mermaid.sequence": "{participants, plural, other {# 个参与者}}，{messages, plural, other {# 条消息}}，{segments, plural, other {# 个分段}}",
   "visual.sandbox.allowOnce": "允许一次",
   "visual.sandbox.ask": "页面要联网",
   "visual.sandbox.failed": "页面脚本报错，图没有画出来",
