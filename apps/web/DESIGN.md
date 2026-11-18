@@ -82,10 +82,13 @@ Read this before changing `apps/web/src`. Tokens live in `src/index.css`: the sh
 ## Motion
 
 - Durations `--dur-1`..`--dur-4` (120/180/260/420ms). Curves: `--ease-std` default, `--ease-in` for entering (decelerate), `--ease-out` for exiting (accelerate). Exits are one step shorter than entries.
-- Animate `transform`, `opacity` and colours only, plus `grid-template-rows` on `-grow` wrappers (rows growing in) and `filter: blur()` of at most 4px on entering `-in` elements; no `transition: all`. Enter and exit through Base UI `data-starting-style` / `data-ending-style` or `@starting-style`. No JS animation library.
-- A one-shot entrance is a transition, not a keyframe animation: `.app-main[data-switching]` switches transitions off for the frame in which a kept screen shows again, and a keyframe animation would replay there.
-- Infinite loops only on decorative elements that hold no control. `prefers-reduced-motion` keeps fades and colour changes and stops movement.
-- Guards: `tests/web/web-motion-css.test.ts`, `tests/web/web-shell-tokens.test.ts`, `tests/web/web-css-classes.test.ts`, `tests/web/web-interaction-states.test.ts`.
+- Animate `transform`, `opacity` and colours only (`color`, `background-color`, `border-color`, `fill`, `stroke`), plus `stroke-dashoffset`, `background-position`, `grid-template-rows` on `-grow` wrappers (rows growing in), `filter: blur()` of at most 4px on entering `-in` elements, `height` in a rule that uses `--collapsible-panel-height`, and `width` on a `-bar` selector or in a rule that uses `--active-tab-width`; no `transition: all`. Enter and exit through Base UI `data-starting-style` / `data-ending-style` or `@starting-style`. No JS animation library.
+- A one-shot entrance is a transition, not a keyframe animation: `.app-main[data-switching]` switches transitions off for the frame in which a kept screen shows again, and a keyframe animation would replay there. So `.bd-pop` takes no `animation`, and `.ss.ss-max>.ss-panel` enters through `@starting-style`. A `.skel` bar stays `visibility: hidden` until `src/components/Skeleton.tsx` marks it `data-shown` after its `useDelayed(true)` wait.
+- Keyframes animate `transform`, `opacity` and colours only. Exceptions: `tr-shine`, `ct-sweep` and `mef-sweep`, whose light is clipped to the letters by `background-clip: text`, so moving a layer would move the letters; `bd-flow`, whose dashes run along a curved edge path that only `stroke-dashoffset` follows.
+- Infinite loops only on decorative elements that hold no control.
+- Reduced motion follows the motion choice in Appearance: no stylesheet rule uses `prefers-reduced-motion`. `applyLook` (`src/data/layout.ts`) sets `data-motion` to `reduced` when the choice says so, or, when it is "system", when the system asks for it (`useSystemReducedMotion` in `src/data/theme.ts`). `.pt[data-motion=reduced]` stops animations and keeps fades and colour changes. Scripted motion, such as smooth scrolling, asks `reducedMotion()` (`src/lib/motion.ts`).
+- The "Status animation" setting sets `data-state-motion` (`applySessionDisplay` in `src/data/session-display.ts`): `waiting` stops the status icons' loops except those of items waiting on you, `off` stops those too.
+- Guards: `tests/web/web-motion-css.test.ts`, `tests/web/web-motion.test.ts`, `tests/web/web-shell-tokens.test.ts`, `tests/web/web-css-classes.test.ts`, `tests/web/web-interaction-states.test.ts`.
 
 ## Review
 

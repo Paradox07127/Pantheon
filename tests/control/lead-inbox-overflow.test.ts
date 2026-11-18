@@ -174,6 +174,50 @@ it('keeps one budget when wakes are folded into the queued lead turn', async () 
   for (const note of notes) expect(delivered(inputs.join('\n'), note)).toBe(true);
 });
 
+it('records an event of the queued lead turn a tick folds notes into, and none without notes', async () => {
+  const f = await workbenchFixture({ delay: 1500 });
+  const { lead, worker } = await leadWithTask(f);
+  const running = f.call<SessionTurn>(
+    'session.send',
+    { session_id: lead.id, input: 'Check the plan again' },
+    current(f, lead.id).revision,
+  );
+  await eventually(
+    () => f.store.must<SessionTurn>('session_turns', running.id).state === 'running',
+    () => f.control.tick(),
+  );
+  requirement(f, worker.id, 'Task a needs the import path too');
+  const [queued] = told(f, lead.id);
+  expect(queued).toMatchObject({ state: 'queued', delivery: 'pending' });
+  const last = () => f.store.events(0, undefined, 100000).at(-1)!.sequence;
+  const turnEvents = (after: number) =>
+    f.store
+      .events(after, lead.project_id, 100000)
+      .filter((event) => event.aggregate_id === queued!.id);
+
+  const before = last();
+  setInbox(f, lead.id, [
+    {
+      id: 'note-export-path',
+      at: 1,
+      session_id: worker.id,
+      task_id: 'a',
+      kind: 'requirement',
+      text: 'Task a needs the export path too',
+    },
+  ]);
+  await f.control.tick();
+  expect(f.store.must<SessionTurn>('session_turns', queued!.id).input).toContain(
+    'Task a needs the export path too',
+  );
+  expect(planOf(f, lead.id).inbox).toEqual([]);
+  expect(turnEvents(before)).toHaveLength(1);
+
+  const folded = last();
+  await f.control.tick();
+  expect(turnEvents(folded)).toEqual([]);
+});
+
 it('counts the notes folded into the queued lead turn in its one wake line', async () => {
   const f = await workbenchFixture({ delay: 1500 });
   const { lead, worker } = await leadWithTask(f);

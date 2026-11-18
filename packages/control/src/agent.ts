@@ -48,7 +48,7 @@ export function saveSessionHandle(ctx: ControlContext, handle: SessionHandle): v
       handle.device_id === session.device_id
     )
       return;
-    ctx.store.update(
+    const next = ctx.store.update(
       'sessions',
       {
         ...session,
@@ -63,6 +63,11 @@ export function saveSessionHandle(ctx: ControlContext, handle: SessionHandle): v
       },
       session.revision,
     );
+    ctx.store.event('session.handle_changed', next, next.project_id, {
+      reported_model: next.reported_model,
+      native_title: next.native_title,
+      device_id: next.device_id,
+    });
   });
 }
 

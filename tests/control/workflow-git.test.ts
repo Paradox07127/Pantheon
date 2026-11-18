@@ -203,6 +203,30 @@ it('starts a review step while the event loop runs', async () => {
   expect(stall()).toBeLessThan(500);
 });
 
+it('records the merge a review step before the merge holds as a session event', async () => {
+  const { f, worker } = await workflowTask([
+    { id: 'second-look', title: 'Review the diff', kind: { type: 'review', blocking: true } },
+  ]);
+  const reviewer = new FixtureAdapter(1);
+  reviewer.name = 'reviewer';
+  f.control.adapters.set(reviewer.name, reviewer);
+  await eventually(
+    () => current(f, worker.id).merge?.reason === 'workflow_approval',
+    () => f.control.tick(),
+    10000,
+  );
+  const started = f.store
+    .kindEvents(f.project.id, ['session.merge_started'])
+    .filter((event) => event.aggregate_id === worker.id)
+    .at(-1)!;
+  expect(
+    f.store
+      .events(started.sequence, f.project.id, 100000)
+      .filter((event) => event.aggregate_id === worker.id && event.kind === 'session.merge_held')
+      .map((event) => event.payload),
+  ).toMatchObject([{ state: 'blocked', reason: 'workflow_approval' }]);
+});
+
 it('admits the merge after an approval before the merge while the event loop runs', async () => {
   const { f, worker } = await workflowTask([
     { id: 'signoff', title: 'Approve the result', kind: { type: 'approval' } },

@@ -348,6 +348,39 @@ it('reads the session and turn diffs again after one of its turns ends', async (
   ]);
 });
 
+it('reads the session diff again once a new board lists the turn of an earlier event', async () => {
+  answers['session.diff'] = { files: [], truncated: false };
+  const h = mount(() => useSessionDiff('session-a'));
+  await h.flush();
+  await deliver(h, event(1, 'turn.completed', 'turn-a'));
+  expect(reads).toEqual(['session.diff']);
+  mock.board = {
+    ...mock.board,
+    board: { sessions: [], session_turns: [turn('turn-a')], workspaces: [] },
+  };
+  h.render();
+  await vi.advanceTimersByTimeAsync(2_500);
+  await h.flush();
+  expect(reads).toEqual(['session.diff', 'session.diff']);
+});
+
+it('follows the newest event of the session after the oldest events are trimmed', async () => {
+  answers['session.diff'] = { files: [], truncated: false };
+  const h = mount(() => useSessionDiff('session-a'));
+  await h.flush();
+  const own = event(2, 'session.renamed', 'session-a');
+  const other = event(3, 'session.renamed', 'session-b');
+  await deliver(h, event(1, 'session.renamed', 'session-b'), own, other);
+  expect(reads).toEqual(['session.diff', 'session.diff']);
+  mock.board = { ...mock.board, events: [own, other, event(4, 'session.renamed', 'session-b')] };
+  h.render();
+  await vi.advanceTimersByTimeAsync(2_500);
+  await h.flush();
+  expect(reads).toEqual(['session.diff', 'session.diff']);
+  await deliver(h, event(5, 'session.renamed', 'session-a'));
+  expect(reads).toEqual(['session.diff', 'session.diff', 'session.diff']);
+});
+
 it('reads nothing when the event stream drops and reads again once it is back', async () => {
   answers['session.diff'] = { files: [], truncated: false };
   const h = mount(() => useSessionDiff('session-a'));

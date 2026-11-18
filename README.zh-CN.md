@@ -35,10 +35,12 @@ Pantheon 是一个本机运行的原生编码 agent 会话工作台。
 - **项目门禁。** Pantheon 对会话做 rebase,跑项目的门禁命令，再用 `git merge --ff-only` 合并。
 - **导入。** 在原目录续接外部的 Claude Code 或 Codex 会话。
 - **项目看板。** lead 会话写计划，任务会话做任务。看板显示里程碑、任务和需要你处理的事项。
+- **助理。** 每个项目的助理(Assistant)是它的默认入口：[项目看板](docs/usage.zh-CN.md#项目看板)上写的需求默认发给它。
 - **工程看板。** 迭代、协作和命名工作流。
 - **轨迹。** 每个会话的时间轴、工具调用和单步回放。
 - **记忆。** agent 提交、由你确认的项目决定、报告和笔记。
 - **设备。** 经 SSH 在别的机器上跑会话。
+- **你自己的 agent。** 用个人级密钥和 `pnpm cli mcp --personal` 把[你自己的 agent](docs/usage.zh-CN.md#接入你自己的-agent)接到你的项目上。
 
 [使用说明](docs/usage.zh-CN.md)逐项介绍这些功能。
 

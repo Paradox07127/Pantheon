@@ -48,9 +48,18 @@ export function durationText(ms: number): string {
 
 const CLOCK = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } as const;
 
+const formats = new Map<string, Intl.DateTimeFormat>();
+function dateFormat(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const locale = currentLocale();
+  const key = `${locale} ${JSON.stringify(options)}`;
+  let format = formats.get(key);
+  if (!format) formats.set(key, (format = new Intl.DateTimeFormat(locale, options)));
+  return format;
+}
+
 /** The one time of day text, 24-hour, in the interface language. */
 export function clockText(at: number, opts?: { seconds?: boolean }): string {
-  return new Intl.DateTimeFormat(currentLocale(), {
+  return dateFormat({
     ...CLOCK,
     ...(opts?.seconds ? { second: '2-digit' } : {}),
   }).format(at);
@@ -71,7 +80,7 @@ export function dayText(at: number, now: number, opts?: { time?: boolean }): str
           { time: clockText(at) },
         )
       : t({ id: 'lib.time.yesterday', defaultMessage: 'Yesterday' });
-  return new Intl.DateTimeFormat(currentLocale(), {
+  return dateFormat({
     ...(day.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' }),
     month: 'short',
     day: 'numeric',

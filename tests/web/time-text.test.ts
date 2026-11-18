@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { setLocaleSync } from '@/i18n';
+import { setLocaleSync, type Locale } from '@/i18n';
 import { clockText, dayText, durationText } from '../../apps/web/src/lib/time-text.js';
 import { zhCatalog } from './i18n-setup.js';
 
@@ -29,11 +29,22 @@ const THIS_YEAR = new Date(2026, 10, 2, 14, 5, 9).getTime();
 const LAST_YEAR = new Date(2025, 10, 16, 14, 5, 9).getTime();
 
 describe('clockText', () => {
+  afterEach(() => setLocaleSync('zh-CN', zhCatalog()));
+
   it.each([
     [false, '14:05'],
     [true, '14:05:09'],
   ])('with seconds %s writes %s', (seconds, text) => {
     expect(clockText(TODAY, { seconds })).toBe(text);
+  });
+
+  it('writes the time in the language the interface switched to', () => {
+    expect(clockText(TODAY)).toBe('14:05');
+    // Both interface languages write the same digits; one with its own numerals shows the switch.
+    setLocaleSync('ar-EG' as Locale, {});
+    expect(clockText(TODAY)).toBe('١٤:٠٥');
+    setLocaleSync('zh-CN', zhCatalog());
+    expect(clockText(TODAY)).toBe('14:05');
   });
 });
 

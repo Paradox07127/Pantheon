@@ -54,13 +54,46 @@ const TURN_DIFF_TEXT: Record<string, string> = Object.defineProperties(
 const field = (payload: unknown, key: string): unknown =>
   payload && typeof payload === 'object' ? (payload as Record<string, unknown>)[key] : undefined;
 
-function newest(
-  events: readonly DaemonEvent[],
-  keep: (event: DaemonEvent) => boolean,
-): DaemonEvent | undefined {
-  for (let i = events.length - 1; i >= 0; i--) if (keep(events[i]!)) return events[i];
-  return undefined;
+interface NewestSeen {
+  sessionId: string | null;
+  board: BoardSnapshot | null;
+  events: readonly DaemonEvent[];
+  /** Index of the newest kept event in `events`, -1 for none. */
+  at: number;
 }
+
+/**
+ * The newest event `keep` accepts. `keep` may read only the session and the board, as a new
+ * board or session alone scans every event again; otherwise only events appended since are read.
+ */
+export function useNewestEvent(
+  sessionId: string | null,
+  keep: (event: DaemonEvent, board: BoardSnapshot | null) => boolean,
+): DaemonEvent | undefined {
+  const seen = useRef<NewestSeen | null>(null);
+  return useBoard((s) => {
+    const before = seen.current;
+    const same = before !== null && before.sessionId === sessionId && before.board === s.board;
+    if (same && before.events === s.events) return before.events[before.at];
+    // The store appends events and trims them from the front, so the last one read marks where new ones start.
+    const last = same ? before.events.at(-1) : undefined;
+    let i = s.events.length - 1,
+      at = -1;
+    for (; i >= 0 && s.events[i] !== last; i--)
+      if (at < 0 && keep(s.events[i]!, s.board)) {
+        at = i;
+        if (last === undefined) break;
+      }
+    if (at < 0 && i >= 0 && before!.at >= 0) {
+      const moved = before!.at - (before!.events.length - 1 - i);
+      if (moved >= 0) at = moved;
+    }
+    seen.current = { sessionId, board: s.board, events: s.events, at };
+    return s.events[at];
+  });
+}
+
+const turnSessions = new WeakMap<BoardSnapshot['session_turns'], Map<string, string>>();
 
 /**
  * Whether the event is the session's own, one of its turns' or one of its approvals'. Turn events
@@ -70,12 +103,19 @@ export const touchesSession = (
   event: DaemonEvent,
   sessionId: string,
   board?: Pick<BoardSnapshot, 'session_turns'> | null,
-): boolean =>
-  event.aggregate_id === sessionId ||
-  field(event.payload, 'session_id') === sessionId ||
-  board?.session_turns.some(
-    (turn) => turn.id === event.aggregate_id && turn.session_id === sessionId,
-  ) === true;
+): boolean => {
+  if (event.aggregate_id === sessionId || field(event.payload, 'session_id') === sessionId)
+    return true;
+  if (!board) return false;
+  let sessions = turnSessions.get(board.session_turns);
+  if (!sessions) {
+    sessions = new Map();
+    for (const turn of board.session_turns)
+      if (!sessions.has(turn.id)) sessions.set(turn.id, turn.session_id);
+    turnSessions.set(board.session_turns, sessions);
+  }
+  return sessions.get(event.aggregate_id) === sessionId;
+};
 
 /** The shortest gap between two reads while events keep arriving. */
 const REFETCH_GAP_MS = 500;
@@ -595,10 +635,12 @@ const acceptDiff = (value: unknown): SessionDiff | null => {
 
 /** The worktree's changes of one session; read again after the session's events and on focus. */
 export function useSessionDiff(sessionId: string | null): QueryState<SessionDiff> {
-  const keep = (board: BoardSnapshot | null) => (e: DaemonEvent) =>
-    sessionId !== null && touchesSession(e, sessionId, board);
-  const sequence = useBoard((s) => newest(s.events, keep(s.board))?.sequence ?? 0);
-  const stream = useBoard((s) => STREAM_KINDS.has(newest(s.events, keep(s.board))?.kind ?? ''));
+  const last = useNewestEvent(
+    sessionId,
+    (e, board) => sessionId !== null && touchesSession(e, sessionId, board),
+  );
+  const sequence = last?.sequence ?? 0;
+  const stream = STREAM_KINDS.has(last?.kind ?? '');
   const tick = useRefetchTick(sequence, stream, ['session.diff', sessionId]) + useFocusTick();
   return useQuery('session.diff', sessionId, diffParams, acceptDiff, tick, DIFF_TEXT);
 }
@@ -620,10 +662,12 @@ export function useTurnDiff(
   sessionId: string | null,
   turnId: string | null,
 ): QueryState<SessionTurnDiff> {
-  const keep = (board: BoardSnapshot | null) => (e: DaemonEvent) =>
-    sessionId !== null && touchesSession(e, sessionId, board);
-  const sequence = useBoard((s) => newest(s.events, keep(s.board))?.sequence ?? 0);
-  const stream = useBoard((s) => STREAM_KINDS.has(newest(s.events, keep(s.board))?.kind ?? ''));
+  const last = useNewestEvent(
+    sessionId,
+    (e, board) => sessionId !== null && touchesSession(e, sessionId, board),
+  );
+  const sequence = last?.sequence ?? 0;
+  const stream = STREAM_KINDS.has(last?.kind ?? '');
   const key = sessionId !== null && turnId !== null ? `${sessionId}\n${turnId}` : null;
   const tick = useRefetchTick(sequence, stream, ['session.turn_diff', key]) + useFocusTick();
   return useQuery('session.turn_diff', key, turnDiffParams, acceptTurnDiff, tick, TURN_DIFF_TEXT);

@@ -35,10 +35,12 @@ You can also import a session that you started outside Pantheon. An imported ses
 - **Project gate.** Pantheon rebases the session, runs the gate commands of the project and merges with `git merge --ff-only`.
 - **Import.** Continue an external Claude Code or Codex session in its own folder.
 - **Project board.** A lead session writes a plan. Task sessions do the tasks. The board shows milestones, tasks and the items that need you.
+- **Assistant.** Each project's Assistant is its default entry point: requests you write on the [project board](docs/usage.md#project-board) go to it.
 - **Engineering board.** Iterations, collaboration and named workflows.
 - **Trace.** Timelines, tool calls and step replay for each session.
 - **Memory.** Project decisions, reports and notes that agents propose and you confirm.
 - **Devices.** Run sessions on other machines over SSH.
+- **Your own agent.** [Connect your own agent](docs/usage.md#connect-your-own-agent) to your projects with a personal key and `pnpm cli mcp --personal`.
 
 The [usage guide](docs/usage.md) describes each feature.
 

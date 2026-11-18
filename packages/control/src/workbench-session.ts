@@ -2009,6 +2009,13 @@ export function stopWorktreeSession(
     { ...session, stop_requested: { ...stop, at: ctx.store.now() } },
     session.revision,
   );
+  ctx.store.event(
+    'session.stop_requested',
+    marked,
+    marked.project_id,
+    marked.stop_requested,
+    cause,
+  );
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   if (['queued', 'running'].includes(workspace.provisioning?.state ?? '')) {
     // Provisioning removes the worktree once its cancellation has stopped Git.
@@ -3301,7 +3308,7 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
                 if (!waitBeforeMerge(ctx, bound(), conditions)) return true;
                 // Read after the wait, which may bring the snoozed session back.
                 const current = bound();
-                ctx.store.update(
+                const next = ctx.store.update(
                   'sessions',
                   {
                     ...current,
@@ -3313,6 +3320,8 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
                   },
                   current.revision,
                 );
+                // Not session.merge_blocked: that one notifies the user and counts as a failed merge.
+                ctx.store.event('session.merge_held', next, next.project_id, next.merge);
                 ctx.store.mark(jobId, 'done');
                 return false;
               }),

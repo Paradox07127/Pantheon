@@ -1241,7 +1241,7 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
   );
   if (digest === undefined) return;
   if (waiting) {
-    ctx.store.update(
+    const folded = ctx.store.update(
       'session_turns',
       {
         ...waiting,
@@ -1251,6 +1251,13 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
         wake: wakeOf(digest.notes, waiting.wake),
       },
       waiting.revision,
+    );
+    ctx.store.event(
+      'session.turn.notes_folded',
+      folded,
+      folded.project_id,
+      { session_id: lead.id, note_ids: digest.note_ids },
+      cause,
     );
     return;
   }

@@ -7,15 +7,13 @@ import type {
 } from '@pantheon/protocol';
 import { useBoard } from './board';
 import { STREAM_KINDS, type DaemonEvent } from './sync';
-import { touchesSession, useFocusTick, useQuery, useRefetchTick } from './workbench-sessions';
-
-function newest(
-  events: readonly DaemonEvent[],
-  keep: (event: DaemonEvent) => boolean,
-): DaemonEvent | undefined {
-  for (let i = events.length - 1; i >= 0; i--) if (keep(events[i]!)) return events[i];
-  return undefined;
-}
+import {
+  touchesSession,
+  useFocusTick,
+  useNewestEvent,
+  useQuery,
+  useRefetchTick,
+} from './workbench-sessions';
 
 export interface SessionRead<T> {
   /** null until a read succeeds and after a read fails. */
@@ -64,15 +62,16 @@ const sourceMerged = (e: DaemonEvent, sessionId: string, board: BoardSnapshot | 
 
 /** Counts up after the session's events, its lead's plan changes, merges into its source and gate changes. */
 function useGateTick(sessionId: string | null): number {
-  const keep = (board: BoardSnapshot | null) => (e: DaemonEvent) =>
-    sessionId !== null &&
-    (touchesSession(e, sessionId, board) ||
-      leadPlanUpdated(e, sessionId, board) ||
-      sourceMerged(e, sessionId, board) ||
-      e.kind === 'project.gate_set');
-  const sequence = useBoard((s) => newest(s.events, keep(s.board))?.sequence ?? 0);
-  const stream = useBoard((s) => STREAM_KINDS.has(newest(s.events, keep(s.board))?.kind ?? ''));
-  return useRefetchTick(sequence, stream);
+  const last = useNewestEvent(
+    sessionId,
+    (e, board) =>
+      sessionId !== null &&
+      (touchesSession(e, sessionId, board) ||
+        leadPlanUpdated(e, sessionId, board) ||
+        sourceMerged(e, sessionId, board) ||
+        e.kind === 'project.gate_set'),
+  );
+  return useRefetchTick(last?.sequence ?? 0, STREAM_KINDS.has(last?.kind ?? ''));
 }
 
 /** The session's newest gate result; read again after the session's events and gate changes. */
@@ -95,17 +94,19 @@ export function useSessionPreflight(sessionId: string | null): SessionRead<Sessi
   const workspaceId = useBoard(
     (s) => s.board?.sessions.find((session) => session.id === sessionId)?.workspace_id ?? null,
   );
-  const keep = (board: BoardSnapshot | null) => (e: DaemonEvent) =>
-    sessionId !== null &&
-    (touchesSession(e, sessionId) ||
-      board?.session_turns.find((turn) => turn.id === e.aggregate_id)?.session_id === sessionId ||
-      (workspaceId !== null && e.aggregate_id === workspaceId) ||
-      leadPlanUpdated(e, sessionId, board) ||
-      sourceMerged(e, sessionId, board) ||
-      e.kind === 'project.gate_set');
-  const sequence = useBoard((s) => newest(s.events, keep(s.board))?.sequence ?? 0);
-  const stream = useBoard((s) => STREAM_KINDS.has(newest(s.events, keep(s.board))?.kind ?? ''));
-  const tick = useRefetchTick(sequence, stream) + useFocusTick();
+  // workspaceId follows the board, so the newest event is still scanned again only on a new board.
+  const last = useNewestEvent(
+    sessionId,
+    (e, board) =>
+      sessionId !== null &&
+      (touchesSession(e, sessionId, board) ||
+        (workspaceId !== null && e.aggregate_id === workspaceId) ||
+        leadPlanUpdated(e, sessionId, board) ||
+        sourceMerged(e, sessionId, board) ||
+        e.kind === 'project.gate_set'),
+  );
+  const tick =
+    useRefetchTick(last?.sequence ?? 0, STREAM_KINDS.has(last?.kind ?? '')) + useFocusTick();
   return useQuery('session.preflight', sessionId, sessionParams, acceptPreflight, tick);
 }
 

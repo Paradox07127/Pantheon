@@ -259,6 +259,20 @@ it('flags a session whose discard waits for its native process to close', async 
   expect(listed(f, session.id).stopping).toBe(false);
 });
 
+it('records the stop of a session whose discard waits for its native process', async () => {
+  const f = await workbenchFixture();
+  const session = await idleSession(f);
+  const before = f.store.events(0, undefined, 100000).at(-1)!.sequence;
+  f.call('session.discard', { session_id: session.id }, current(f, session.id).revision);
+  expect(current(f, session.id).outcome).toBeUndefined();
+  expect(
+    f.store
+      .events(before, f.project.id, 100000)
+      .filter((event) => event.aggregate_id === session.id)
+      .map((event) => event.kind),
+  ).toEqual(['session.stop_requested']);
+});
+
 it('lists a clean worktree whose commits change no file as ready', async () => {
   const f = await workbenchFixture();
   const session = await idleSession(f);

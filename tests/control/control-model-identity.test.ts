@@ -116,6 +116,31 @@ it('persists vendor reports from handles and startup events and clears stale rep
   }
 });
 
+it('records a session event when a saved handle changes the session and none when it does not', async () => {
+  const f = await setup();
+  const session = await open(f);
+  const last = () => f.store.events(0, undefined, 100000).at(-1)?.sequence ?? 0;
+  const sessionEvents = (after: number) =>
+    f.store
+      .events(after, session.project_id, 100000)
+      .filter((event) => event.aggregate_id === session.id);
+  const handle: SessionHandle = {
+    platform_session_id: session.id,
+    native_session_id: 'native-handle-session',
+    adapter_version: '1',
+    device_id: 'local',
+    requested_model: 'requested-model',
+    reported_model: 'resolved-model',
+    native_title: 'Export the report',
+  };
+  const before = last();
+  saveSessionHandle(f.ctx, handle);
+  expect(sessionEvents(before)).toHaveLength(1);
+  const saved = last();
+  saveSessionHandle(f.ctx, handle);
+  expect(sessionEvents(saved)).toEqual([]);
+});
+
 function firstTurn(f: Awaited<ReturnType<typeof setup>>, session: Session) {
   return f.store.list<SessionTurn>('session_turns').find((turn) => turn.session_id === session.id)!;
 }
