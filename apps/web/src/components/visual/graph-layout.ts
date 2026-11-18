@@ -91,6 +91,8 @@ const OPTIONS: Record<string, string> = {
   'elk.layered.spacing.edgeNodeBetweenLayers': '8',
   'elk.edgeLabels.inline': 'false',
   'elk.edgeLabels.placement': 'CENTER',
+  // In the layer next to the edge's target, the nearest to an end of the strategies measured.
+  'org.eclipse.elk.layered.edgeLabels.centerLabelPlacementStrategy': 'HEAD_LAYER',
   'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
   'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
   'org.eclipse.elk.json.shapeCoords': 'ROOT',
@@ -250,19 +252,24 @@ async function layoutOnce(spec: GraphSpec, direction: Direction, elk: ELK): Prom
   };
 }
 
+/** The other direction replaces the spec's when it fits the box at this many times the zoom. */
+const OVERRIDE = 1.25;
+
 /**
- * Lays the graph out with ELK's layered algorithm. Without a direction it lays it out both ways
- * and keeps the one that fits `room` (the box's width and height) at the larger zoom.
+ * Lays the graph out with ELK's layered algorithm, both ways. Without a direction it keeps the one
+ * that fits `room` (the box's width and height) at the larger zoom; with one, the other only when
+ * that fits at `OVERRIDE` times the zoom or more.
  */
 export async function layoutGraph(spec: GraphSpec, room: Point): Promise<GraphLayout> {
   const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
   const elk = new ELK();
-  if (spec.direction) return layoutOnce(spec, spec.direction, elk);
   const [across, down] = await Promise.all([
     layoutOnce(spec, 'LR', elk),
     layoutOnce(spec, 'TB', elk),
   ]);
   const [a, d] = [fitZoom(across, room), fitZoom(down, room)];
+  if (spec.direction === 'LR') return d >= a * OVERRIDE ? down : across;
+  if (spec.direction === 'TB') return a >= d * OVERRIDE ? across : down;
   if (Math.abs(a - d) > 1e-3) return a > d ? across : down;
   // Both fit as well: the one shaped more like the box.
   const misfit = (layout: GraphLayout) =>

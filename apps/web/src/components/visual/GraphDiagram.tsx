@@ -1,5 +1,16 @@
 import { useRef, useState, type ComponentType } from 'react';
-import { Box, Database, Globe, ListOrdered, Monitor, Shield, type LucideProps } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Box,
+  Database,
+  Globe,
+  Group,
+  ListOrdered,
+  Monitor,
+  Shield,
+  type LucideProps,
+} from 'lucide-react';
 import type {
   Edge,
   EdgeProps,
@@ -27,8 +38,10 @@ import './graph-diagram.css';
 
 export type { GraphSpec } from './graph-layout';
 
-// A tall graph grows its card to this, the height of the zoomed visual view, then pans.
-const MAX_HEIGHT = 640;
+// A tall graph grows its card to this, then pans.
+const MAX_HEIGHT = 1200;
+// A growing card picks the graph's direction for a box this high.
+const CHOICE_HEIGHT = 640;
 // Fitting shrinks a graph no further than this, where 12px labels still read at 8px.
 const FLOOR = 2 / 3;
 /** The legend row's height under the plot. */
@@ -38,6 +51,16 @@ const HEAD = 6;
 
 const KINDS: readonly NodeKind[] = ['client', 'service', 'store', 'queue', 'external', 'policy'];
 const STYLES: readonly EdgeStyle[] = ['main', 'async', 'data', 'return'];
+
+// The kind colours of graph-diagram.css, for the map's node shapes.
+const KIND_TONE: Record<NodeKind, string> = {
+  client: 'var(--series-1)',
+  service: 'var(--series-2)',
+  store: 'var(--series-4)',
+  queue: 'var(--series-3)',
+  external: 'var(--series-5)',
+  policy: 'var(--series-6)',
+};
 
 const KIND_ICON: Record<NodeKind, ComponentType<LucideProps>> = {
   client: Monitor,
@@ -208,6 +231,72 @@ function flowTypes(flow: typeof import('@xyflow/react')) {
   return { nodeTypes: { card: Card, group: GroupBox }, edgeTypes: { route: Route } };
 }
 
+/** The node's kind, sublabel, group, edges in and out and sources, for the inspector. */
+export function GraphNodeInfo({ spec, id }: { spec: GraphSpec; id: string }) {
+  const node = spec.nodes.find((n) => n.id === id);
+  if (!node) return null;
+  const names = new Map(spec.nodes.map((n) => [n.id, n.label]));
+  const group =
+    node.group === undefined
+      ? undefined
+      : (spec.groups?.find((g) => g.id === node.group)?.label ?? node.group);
+  const Icon = node.kind && KIND_ICON[node.kind];
+  const ends = (end: 'from' | 'to', name: string, Arrow: ComponentType<LucideProps>) => {
+    const edges = spec.edges.filter((edge) => edge[end === 'from' ? 'to' : 'from'] === id);
+    return (
+      edges.length > 0 && (
+        <ul className="vis-gi-l" aria-label={name}>
+          {edges.map((edge, i) => (
+            <li key={i}>
+              <Arrow className="vis-gi-ic" aria-hidden="true" />
+              <span>{names.get(edge[end])}</span>
+              {edge.label !== undefined && <span className="vis-gi-el">{edge.label}</span>}
+            </li>
+          ))}
+        </ul>
+      )
+    );
+  };
+  return (
+    <section className="vis-gi">
+      <h2 className="vis-gi-t" data-kind={node.kind}>
+        {Icon && <Icon className="vis-gi-ic" aria-hidden="true" />}
+        {node.label}
+      </h2>
+      {(node.kind !== undefined || group !== undefined) && (
+        <div className="vis-gi-m">
+          {node.kind !== undefined && <span>{KIND_NAME[node.kind]}</span>}
+          {group !== undefined && (
+            <span>
+              <Group className="vis-gi-ic" aria-hidden="true" />
+              {group}
+            </span>
+          )}
+        </div>
+      )}
+      {node.sublabel !== undefined && <code className="vis-gi-s">{node.sublabel}</code>}
+      {ends(
+        'from',
+        t({ id: 'visual.graph.incoming', defaultMessage: 'Incoming edges' }),
+        ArrowLeft,
+      )}
+      {ends('to', t({ id: 'visual.graph.outgoing', defaultMessage: 'Outgoing edges' }), ArrowRight)}
+      {node.sources && node.sources.length > 0 && (
+        <ul
+          className="vis-gi-l"
+          aria-label={t({ id: 'visual.graph.sources', defaultMessage: 'Sources' })}
+        >
+          {node.sources.map((source) => (
+            <li key={source}>
+              <code className="vis-gi-s">{source}</code>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 interface Laid {
   ReactFlow: typeof Flow;
   MiniMap: typeof FlowMap;
@@ -225,13 +314,17 @@ export function GraphDiagram({
   selected,
   onSelect,
   grows = false,
+  full = false,
 }: {
   spec: GraphSpec;
   height: number;
   selected?: string;
-  /** Grows past the height to fit a taller graph, up to the zoomed view's height. */
+  /** Grows past the height to the graph at the zoom that fits its width, up to `MAX_HEIGHT`. */
   grows?: boolean;
-  onSelect?: (id: string) => void;
+  /** Draws at full size and pans, as the Enlarge dialog does. */
+  full?: boolean;
+  /** A node was picked, or `undefined` once it is let go. */
+  onSelect?: (id: string | undefined) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [laid, setLaid] = useState<Laid | null>(null);
@@ -248,7 +341,7 @@ export function GraphDiagram({
       const at = box.current;
       if (!live() || !at) return undefined;
       const room = at.clientWidth;
-      const tall = (grows ? Math.max(height, MAX_HEIGHT) : height) - below;
+      const tall = (grows ? Math.max(height, CHOICE_HEIGHT) : height) - below;
       const layout = await layoutGraph(spec, { x: room, y: tall });
       if (!live()) return undefined;
       setLaid({
@@ -264,17 +357,31 @@ export function GraphDiagram({
     },
     [spec, grows, height],
   );
+  const clamp = (zoom: number) => Math.min(1, Math.max(FLOOR, zoom));
+  const zoom =
+    !laid || full
+      ? 1
+      : grows
+        ? clamp((laid.room - PAD * 2) / laid.layout.width)
+        : clamp(fitZoom(laid.layout, { x: laid.room, y: height - below }));
   const shown =
     grows && laid
       ? Math.min(
-          Math.max(height, laid.layout.height + PAD * 2 + below),
+          Math.max(height, laid.layout.height * zoom + PAD * 2 + below),
           Math.max(height, MAX_HEIGHT),
         )
       : height;
-  // Past the card even at the floor, the graph pans and a map shows the whole and the view.
-  const overflows = !!laid && fitZoom(laid.layout, { x: laid.room, y: shown - below }) < FLOOR;
+  // A pixel of slack, so a card grown to the drawing does not count as cutting it.
+  const over = (size: number, room: number) => size > room - PAD * 2 + 1;
+  // Centred where it fits; where it does not, the view opens at its start and the graph pans.
+  const start = (size: number, room: number) => (over(size, room) ? PAD : (room - size) / 2);
+  const drawing = { x: (laid?.layout.width ?? 0) * zoom, y: (laid?.layout.height ?? 0) * zoom };
+  const plot = { x: laid?.room ?? 0, y: shown - below };
+  const viewport = { x: start(drawing.x, plot.x), y: start(drawing.y, plot.y), zoom };
+  // A map shows the whole and the view while the graph pans.
+  const overflows = !!laid && (over(drawing.x, plot.x) || over(drawing.y, plot.y));
   const chosen = selected ?? picked;
-  const pick = (id: string) => {
+  const pick = (id: string | undefined) => {
     setPicked(id);
     onSelect?.(id);
   };
@@ -353,7 +460,7 @@ export function GraphDiagram({
       onKeyDown={(event) => {
         if (event.key === 'Escape' && chosen !== undefined) {
           event.stopPropagation();
-          setPicked(undefined);
+          pick(undefined);
           return;
         }
         if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -372,8 +479,7 @@ export function GraphDiagram({
             edges={edges}
             nodeTypes={laid.types.nodeTypes}
             edgeTypes={laid.types.edgeTypes}
-            fitView
-            fitViewOptions={{ minZoom: FLOOR, maxZoom: 1, padding: `${PAD}px` }}
+            defaultViewport={viewport}
             minZoom={FLOOR / 2}
             nodesDraggable={false}
             nodesConnectable={false}
@@ -381,6 +487,9 @@ export function GraphDiagram({
             nodesFocusable
             onNodeClick={(_, node) => {
               if (node.type === 'card') pick(node.id);
+            }}
+            onPaneClick={() => {
+              if (chosen !== undefined) pick(undefined);
             }}
             onNodeMouseEnter={(_, node) => setHover(node.type === 'card' ? node.id : null)}
             onNodeMouseLeave={() => setHover(null)}
@@ -396,7 +505,14 @@ export function GraphDiagram({
               <laid.MiniMap
                 pannable
                 zoomable={false}
-                nodeColor={(node) => (node.type === 'group' ? 'transparent' : '')}
+                style={{ width: 144, height: 96 }}
+                nodeColor={(node) => {
+                  if (node.type === 'group') return 'transparent';
+                  const kind = (node.data as CardData).node.kind;
+                  return kind ? KIND_TONE[kind] : 'var(--mu)';
+                }}
+                nodeBorderRadius={2}
+                maskStrokeWidth={1}
                 ariaLabel={t({ id: 'visual.graph.overview', defaultMessage: 'Whole graph' })}
               />
             )}

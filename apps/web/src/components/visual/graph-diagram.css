@@ -5,6 +5,10 @@
   flex-direction: column;
   width: 100%;
   --xy-background-pattern-color: var(--bd2);
+  --xy-minimap-background-color: var(--bg);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--tx) 6%, transparent);
+  --xy-minimap-mask-stroke-color: var(--bd3);
+  --xy-minimap-node-stroke-color: transparent;
 }
 .vis-gp {
   position: relative;
@@ -13,22 +17,28 @@
 }
 
 /* Kind colours paint shapes only; text stays neutral. */
-.vis-gd [data-kind='client'] {
+.vis-gd [data-kind='client'],
+.vis-gi [data-kind='client'] {
   --k: var(--series-1);
 }
-.vis-gd [data-kind='service'] {
+.vis-gd [data-kind='service'],
+.vis-gi [data-kind='service'] {
   --k: var(--series-2);
 }
-.vis-gd [data-kind='store'] {
+.vis-gd [data-kind='store'],
+.vis-gi [data-kind='store'] {
   --k: var(--series-4);
 }
-.vis-gd [data-kind='queue'] {
+.vis-gd [data-kind='queue'],
+.vis-gi [data-kind='queue'] {
   --k: var(--series-3);
 }
-.vis-gd [data-kind='external'] {
+.vis-gd [data-kind='external'],
+.vis-gi [data-kind='external'] {
   --k: var(--series-5);
 }
-.vis-gd [data-kind='policy'] {
+.vis-gd [data-kind='policy'],
+.vis-gi [data-kind='policy'] {
   --k: var(--series-6);
 }
 
@@ -172,6 +182,17 @@
   dominant-baseline: central;
 }
 
+/* The map of a graph that pans: its nodes in their kind colours, faint, under a light mask. */
+.vis-gd .react-flow__minimap {
+  margin: var(--sp-2);
+  overflow: hidden;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+}
+.vis-gd .react-flow__minimap-node {
+  fill-opacity: 0.45;
+}
+
 .vis-gl {
   display: flex;
   flex: none;
@@ -208,5 +229,71 @@
 }
 .vis-gl-n {
   font-variant-numeric: tabular-nums;
+  color: var(--mu);
+}
+
+/* A node picked in the Enlarge dialog, in the inspector above the spec. */
+.vis-gi-t {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+  color: var(--tx);
+}
+.vis-gi-t .vis-gi-ic {
+  color: var(--k);
+}
+.vis-gi-ic {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.vis-gi-m {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--tx2);
+}
+.vis-gi-m > span {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.vis-gi-s {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+}
+.vis-gi-l {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--tx2);
+}
+.vis-gi-l > li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.vis-gi-el {
   color: var(--mu);
 }

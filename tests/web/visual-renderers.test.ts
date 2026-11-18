@@ -75,12 +75,13 @@ const xy = vi.hoisted(() => ({
 vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', () => xy);
 vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.js', () => xy);
 
-import { GraphDiagram } from '@/components/visual/GraphDiagram';
+import { GraphDiagram, GraphNodeInfo } from '@/components/visual/GraphDiagram';
 import { KlineChart } from '@/components/visual/KlineChart';
 import { MermaidDiagram } from '@/components/visual/MermaidDiagram';
 import { SandboxFrame } from '@/components/visual/SandboxFrame';
 import { TableVisual, type TableSpec } from '@/components/visual/TableVisual';
 import { VegaChart } from '@/components/visual/VegaChart';
+import { VisualFrame } from '@/components/visual/VisualCard';
 import { currentLocale } from '@/i18n';
 import { zh } from './i18n-setup.js';
 
@@ -433,6 +434,20 @@ describe('graph diagram', () => {
     ],
     edges: Array.from({ length: count }, (_, i) => ({ from: 'root', to: `leaf${i}` })),
   });
+  // A root over `width` chains, each `depth` steps long.
+  const comb = (width: number, depth: number, direction: 'LR' | 'TB'): Spec => {
+    const id = (i: number, j: number) => `c${i}s${j}`;
+    const ids = Array.from({ length: width }, (_, i) =>
+      Array.from({ length: depth }, (_, j) => id(i, j)),
+    );
+    return {
+      nodes: [{ id: 'root', label: 'root' }, ...ids.flat().map((n) => ({ id: n, label: n }))],
+      edges: ids.flatMap((line) =>
+        line.map((n, j) => ({ from: j === 0 ? 'root' : line[j - 1]!, to: n })),
+      ),
+      direction,
+    };
+  };
   const shop: Spec = {
     nodes: [
       { id: 'web', label: 'Storefront', kind: 'client', group: 'edge' },
@@ -488,6 +503,30 @@ describe('graph diagram', () => {
   };
   const drawnEdges = (h: HookHost<any>) =>
     flowOf(h).props.edges.map((edge: any) => flowOf(h).props.edgeTypes[edge.type](edge));
+  const tallOf = (h: HookHost<any>) =>
+    find(h.value, (n) => n.props['data-direction']).props.style.height;
+  // The size of the drawing at full size: its nodes and its routes.
+  const extent = (h: HookHost<any>) => {
+    const points: { x: number; y: number }[] = flowOf(h).props.edges.flatMap(
+      (e: any) => e.data.edge.points,
+    );
+    return {
+      width: Math.max(...cards(h).map((n) => n.position.x + n.width), ...points.map((p) => p.x)),
+      height: Math.max(...cards(h).map((n) => n.position.y + n.height), ...points.map((p) => p.y)),
+    };
+  };
+  // Whether the whole node is inside the plot in the view the graph opens with.
+  const inView = (h: HookHost<any>, id: string, width: number, height: number) => {
+    const { x, y, zoom } = flowOf(h).props.defaultViewport;
+    const node = at(h, id);
+    const [left, top] = [node.position.x * zoom + x, node.position.y * zoom + y];
+    return (
+      left >= 0 &&
+      top >= 0 &&
+      left + node.width * zoom <= width &&
+      top + node.height * zoom <= height
+    );
+  };
 
   it('gives every node a box of its own, read-only, none overlapping another', async () => {
     const h = await drawn(shop, 1200, 420);
@@ -545,10 +584,29 @@ describe('graph diagram', () => {
     },
   );
 
-  it('follows the direction the spec gives', async () => {
-    const h = await drawn(chain(8, 'TB'), 1200, 280);
-    expect(find(h.value, (n) => n.props['data-direction']).props['data-direction']).toBe('TB');
-  });
+  // A five-step chain is about 704px long and 96px wide; down it fits a box 420px high at full size.
+  it.each([
+    [
+      'an across chain the down layout fits less than 1.25 times larger',
+      chain(5, 'LR'),
+      [640, 420],
+      'LR',
+    ],
+    [
+      'an across chain the down layout fits 1.25 times larger or more',
+      chain(5, 'LR'),
+      [520, 420],
+      'TB',
+    ],
+    ['a down chain in a wide short box', chain(8, 'TB'), [1200, 280], 'LR'],
+    ['a down chain in a narrow tall box', chain(8, 'TB'), [360, 900], 'TB'],
+  ] as const)(
+    'with a direction lays %s out the way given unless the other fits 1.25 times larger',
+    async (_, spec, [width, height], way) => {
+      const h = await drawn(spec, width, height);
+      expect(find(h.value, (n) => n.props['data-direction']).props['data-direction']).toBe(way);
+    },
+  );
 
   it('names each node by its label and kind and draws its kind and detail line', async () => {
     const h = await drawn(shop, 1200, 420);
@@ -671,9 +729,95 @@ describe('graph diagram', () => {
     expect(drawnNode(h, 'api').props['data-selected']).toBe(true);
   });
 
-  it('fits the view between two thirds and full size', async () => {
-    const h = await drawn(shop, 1200, 420);
-    expect(flowOf(h).props.fitViewOptions).toMatchObject({ minZoom: 2 / 3, maxZoom: 1 });
+  it.each([
+    ['a short chain at full size', chain(3, 'LR'), 1200, {}, 'one'],
+    ['a long chain at the zoom that fits it', chain(10, 'LR'), 1200, {}, 'fit'],
+    ['a chain too long for two thirds at two thirds', chain(10, 'LR'), 600, {}, 'floor'],
+    ['the same chain enlarged at full size', chain(10, 'LR'), 600, { full: true }, 'one'],
+  ] as const)('shows %s', async (_, spec, width, more, zoom) => {
+    const h = await drawn(spec, width, 280, more);
+    const fit = (width - 32) / extent(h).width;
+    expect(flowOf(h).props.defaultViewport.zoom).toBeCloseTo(
+      { one: 1, fit, floor: 2 / 3 }[zoom],
+      3,
+    );
+  });
+
+  it.each([
+    ['an across chain wider than its card at its left end', chain(14, 'LR'), [600, 280], {}],
+    ['a down chain taller than its card at its top', chain(14, 'TB'), [360, 400], {}],
+    [
+      'a column taller than a card grows to at its top',
+      chain(24, 'TB'),
+      [1200, 280],
+      { grows: true },
+    ],
+  ] as const)('opens %s', async (_, spec, [width, height], more) => {
+    const h = await drawn(spec, width, height, more);
+    const plot = tallOf(h);
+    expect(inView(h, 'n0', width, plot)).toBe(true);
+    expect(inView(h, `n${spec.nodes.length - 1}`, width, plot)).toBe(false);
+  });
+
+  it('shows a node clicked in the enlarged graph with its edges and sources, and the spec again on Esc or a click off it', async () => {
+    const sourced: Spec = {
+      ...shop,
+      nodes: shop.nodes.map((n) =>
+        n.id === 'api' ? { ...n, sources: ['src/api/orders.ts', 'src/api/routes.ts'] } : n,
+      ),
+    };
+    const frame = mount(() =>
+      VisualFrame({ content: { kind: 'graph', spec: sourced }, size: 'M' }),
+    );
+    const graphs = nodes(frame.value).filter((n) => n.type === GraphDiagram);
+    // The card in the conversation selects; only the enlarged one fills the inspector.
+    expect(graphs.map((g) => typeof g.props.onSelect)).toEqual(['undefined', 'function']);
+    const h = await drawn(sourced, 1200, 640, graphs[1]!.props);
+    expect(flowOf(h).props.defaultViewport.zoom).toBe(1);
+    const aside = () =>
+      find(
+        frame.value,
+        (n) => n.type === 'aside' && n.props['aria-label'] === zh('visual.card.inspector'),
+      );
+    // The picked node's part of the inspector, drawn.
+    const picked = () =>
+      nodes(aside())
+        .filter((n) => n.type === GraphNodeInfo)
+        .map((n) => GraphNodeInfo(n.props));
+    const list = (name: string) =>
+      nodes(picked())
+        .filter((n) => n.type === 'ul' && n.props['aria-label'] === zh(name))
+        .flatMap((ul) =>
+          nodes(ul)
+            .filter((n) => n.type === 'li')
+            .map(text),
+        );
+    flowOf(h).props.onNodeClick({}, { id: 'api', type: 'card' });
+    h.render();
+    frame.render();
+    expect(picked()).toHaveLength(1);
+    expect(text(picked())).toContain('Orders API');
+    expect(text(picked())).toContain('服务');
+    expect(text(picked())).toContain('src/api');
+    expect(text(picked())).toContain('Core');
+    expect(list('visual.graph.incoming')).toEqual(['Storefrontcheckout', 'Payments', 'Cache']);
+    expect(list('visual.graph.outgoing')).toEqual(['Auth gate', 'Orders DB', 'Job queue', 'Cache']);
+    expect(list('visual.graph.sources')).toEqual(['src/api/orders.ts', 'src/api/routes.ts']);
+    expect(text(aside())).toContain('"nodes"');
+    find(h.value, (n) => n.props['data-direction']).props.onKeyDown({
+      key: 'Escape',
+      stopPropagation() {},
+    });
+    frame.render();
+    expect(list('visual.graph.incoming')).toEqual([]);
+    expect(text(aside())).toContain('"nodes"');
+    flowOf(h).props.onNodeClick({}, { id: 'db', type: 'card' });
+    h.render();
+    frame.render();
+    expect(list('visual.graph.incoming')).toEqual(['Orders API']);
+    flowOf(h).props.onPaneClick({});
+    frame.render();
+    expect(list('visual.graph.incoming')).toEqual([]);
   });
 
   it('shows the error in place of the picture when the layout fails, with no other layout', async () => {
@@ -685,12 +829,14 @@ describe('graph diagram', () => {
   });
 
   it.each([
-    [600, true],
-    [1200, false],
-  ])(
-    'in a card %ipx wide, a graph that outgrows it at two thirds shows a map of the whole: %s',
-    async (width, map) => {
-      const h = await drawn(chain(10, 'LR'), width, 280);
+    ['600px wide', true, chain(10, 'LR'), 600, {}],
+    ['1200px wide', false, chain(10, 'LR'), 1200, {}],
+    ['that grows to a twelve-step column', false, chain(12, 'TB'), 1200, { grows: true }],
+    ['that cannot grow to a 24-step column', true, chain(24, 'TB'), 1200, { grows: true }],
+  ] as const)(
+    'in a card %s, a graph shows a map of the whole only when it overflows: %s',
+    async (_, map, spec, width, more) => {
+      const h = await drawn(spec, width, 280, more);
       const maps = nodes(h.value).filter((n) => n.type === xy.MiniMap);
       expect(maps.length).toBe(map ? 1 : 0);
       if (map)
@@ -702,14 +848,18 @@ describe('graph diagram', () => {
     },
   );
 
-  it('grows a card to a graph taller than it, up to the zoomed view, and keeps a short one at its size', async () => {
-    const tallOf = (h: HookHost<any>) =>
-      find(h.value, (n) => n.props['data-direction']).props.style.height;
+  it('grows a card to the graph at the zoom that fits its width, up to 1200px, and keeps a short one at its size', async () => {
     expect(tallOf(await drawn(chain(2, 'TB'), 1200, 280, { grows: true }))).toBe(280);
-    const mid = tallOf(await drawn(chain(5, 'TB'), 1200, 280, { grows: true }));
-    expect(mid).toBeGreaterThan(280);
-    expect(mid).toBeLessThan(640);
-    expect(tallOf(await drawn(chain(12, 'TB'), 1200, 280, { grows: true }))).toBe(640);
+    const column = await drawn(chain(12, 'TB'), 1200, 280, { grows: true });
+    expect(tallOf(column)).toBeCloseTo(extent(column).height + 32, 0);
+    // Eight chains side by side, wider than the card.
+    const wide = await drawn(comb(8, 7, 'TB'), 800, 280, { grows: true });
+    const zoom = (800 - 32) / extent(wide).width;
+    expect(zoom).toBeGreaterThan(2 / 3);
+    expect(zoom).toBeLessThan(1);
+    expect(flowOf(wide).props.defaultViewport.zoom).toBeCloseTo(zoom, 3);
+    expect(tallOf(wide)).toBeCloseTo(extent(wide).height * zoom + 32, 0);
+    expect(tallOf(await drawn(chain(24, 'TB'), 1200, 280, { grows: true }))).toBe(1200);
     // A pinned card keeps the size picked for it.
     expect(tallOf(await drawn(chain(12, 'TB'), 1200, 280))).toBe(280);
   });

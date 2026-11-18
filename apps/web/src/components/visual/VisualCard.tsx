@@ -29,7 +29,7 @@ import { askFix } from '../../screens/sessions/panel';
 import { useShell } from '../../store';
 import { noticeResult, toast } from '../Toast';
 import { Tip } from '../Tip';
-import { GraphDiagram } from './GraphDiagram';
+import { GraphDiagram, GraphNodeInfo } from './GraphDiagram';
 import { KlineChart } from './KlineChart';
 import { MermaidDiagram } from './MermaidDiagram';
 import { SandboxFrame } from './SandboxFrame';
@@ -196,6 +196,8 @@ function picture(
   onBlocked: (url: string) => void,
   onViewSpec: () => void,
   onFix: ((error: string) => Promise<string | null>) | undefined,
+  /** Set in the Enlarge dialog: a graph draws at full size and reports the node picked. */
+  onInspect?: (id: string | undefined) => void,
 ): ReactNode {
   switch (content.kind) {
     case 'kline':
@@ -205,7 +207,14 @@ function picture(
     case 'mermaid':
       return <MermaidDiagram spec={content.spec} height={height} />;
     case 'graph':
-      return <GraphDiagram spec={content.spec} height={height} grows={grows} />;
+      return (
+        <GraphDiagram
+          spec={content.spec}
+          height={height}
+          grows={grows}
+          {...(onInspect && { full: true, onSelect: onInspect })}
+        />
+      );
     case 'html':
       return (
         <SandboxFrame
@@ -287,6 +296,7 @@ export function VisualFrame({
   const [blocked, setBlocked] = useState<string[]>([]);
   const [offline, setOffline] = useState(false);
   const [specOpen, setSpecOpen] = useState(false);
+  const [inspected, setInspected] = useState<string | undefined>(undefined);
   const onBlocked = (url: string) => {
     const host = new URL(url).host;
     setBlocked((hosts) => (hosts.includes(host) ? hosts : [...hosts, host]));
@@ -305,7 +315,7 @@ export function VisualFrame({
   const spec = specText(content, invalid);
   // The fix sends every issue, though the card shows the first.
   const issueText = issues?.map((issue) => `${pathText(issue.path)}: ${issue.message}`).join('\n');
-  const drawn = (height: number, grows: boolean) =>
+  const drawn = (height: number, grows: boolean, onInspect?: (id: string | undefined) => void) =>
     first ? (
       <VisualError
         message={t(
@@ -318,10 +328,10 @@ export function VisualFrame({
       />
     ) : (
       <VisualBoundary content={content} onViewSpec={viewSpecOpen} onFix={onFix}>
-        {picture(content, height, grows, network, onBlocked, viewSpecOpen, onFix)}
+        {picture(content, height, grows, network, onBlocked, viewSpecOpen, onFix, onInspect)}
       </VisualBoundary>
     );
-  const body = (height: number, grows = false) =>
+  const body = (height: number, grows = false, onInspect?: (id: string | undefined) => void) =>
     replace ?? (
       <div
         className="vis-body"
@@ -330,14 +340,18 @@ export function VisualFrame({
         data-stale={stale || undefined}
         style={grows && content.kind === 'graph' ? { minHeight: height } : { height }}
       >
-        {drawn(height, grows)}
+        {drawn(height, grows, onInspect)}
       </div>
     );
   const zoom = t({ id: 'visual.card.zoom', defaultMessage: 'Enlarge' });
   const viewSpec = t({ id: 'visual.card.viewSpec', defaultMessage: 'View spec' });
   const close = t({ id: 'visual.card.close', defaultMessage: 'Close' });
   return (
-    <Dialog.Root>
+    <Dialog.Root
+      onOpenChange={(open) => {
+        if (!open) setInspected(undefined);
+      }}
+    >
       <section className="vis" data-inline={inline || undefined} aria-label={name}>
         <div className="vis-h">
           <span className="vis-ic" aria-hidden="true">
@@ -455,12 +469,15 @@ export function VisualFrame({
             </span>
           </div>
           <div className="vis-zoom">
-            {body(ZOOM_HEIGHT)}
+            {body(ZOOM_HEIGHT, false, setInspected)}
             <aside
               className="vis-insp"
               style={{ height: ZOOM_HEIGHT }}
               aria-label={t({ id: 'visual.card.inspector', defaultMessage: 'Spec and source' })}
             >
+              {inspected !== undefined && content.kind === 'graph' && (
+                <GraphNodeInfo spec={content.spec} id={inspected} />
+              )}
               <section>
                 <h2 className="cap">{t({ id: 'visual.card.spec', defaultMessage: 'Spec' })}</h2>
                 <pre className="vis-spec">{spec}</pre>
