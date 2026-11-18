@@ -243,5 +243,33 @@ In a checkout, run the CLI with `pnpm cli`. The CLI reads `daemon.json` and the 
 | `pnpm cli events --after 0 --project PROJECT_ID`      | Stored events after a cursor.            |
 | `pnpm cli command --file /absolute/path/command.json` | Runs one command envelope.               |
 | `pnpm cli mcp`                                        | MCP tool server for a native session.    |
+| `pnpm cli mcp --personal`                             | MCP tool server for your own agent.      |
 
 Each command accepts `--data-dir DIR`. The [API reference](api.md) describes the command envelope and the queries.
+
+## Connect your own agent
+
+Your everyday agent (Claude Code, Codex, Claude Desktop or any agent that runs a local stdio MCP server) can work across your Pantheon projects with a personal key. Only local agents can connect: the daemon listens only on `127.0.0.1`.
+
+1. Create a key. Send a `personal.key.create` command with `pnpm cli command --file key.json`, with `"actor": "local-user"` and `"input": {"label": "My agent"}` in the [command envelope](api.md). The receipt gives `key_id` and `token_file`. The daemon writes the token to `token_file`, which only you can read.
+2. Add the server to the agent's MCP configuration. Use the `token_file` path as it is: the server reads the key id from the file name.
+
+```json
+{
+  "mcpServers": {
+    "pantheon": {
+      "command": "node",
+      "args": ["/absolute/path/to/pantheon/apps/cli/dist/index.js", "mcp", "--personal"],
+      "env": { "PANTHEON_PERSONAL_TOKEN_FILE": "/absolute/path/of/token_file" }
+    }
+  }
+}
+```
+
+The agent can:
+
+- read the summary of every project (`projects_overview`), what needs you (`needs_you`), a project's brief (`project_brief`) and the decisions made without you (`project_decisions`);
+- send a request to a project's assistant or one of its sessions (`send_request`);
+- answer a decision from needs-you (`answer_decision`), only for the kinds you allow. Set them with the `app.settings.set` command: `personal_answers` lists `question`, `plan_change` and `milestone_accept`. None is allowed by default.
+
+The agent cannot read the whole plan, change the board, start or stop tasks, answer a task session's question or a permission prompt, or upload attachments. Revoke the key with `personal.key.revoke`; the agent loses access at once.

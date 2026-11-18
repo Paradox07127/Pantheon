@@ -25,7 +25,7 @@ import {
   type CommandType,
 } from '@pantheon/protocol';
 
-class CommandError extends Error {
+export class CommandError extends Error {
   constructor(
     readonly code: string,
     readonly daemonMessage?: string,
@@ -310,7 +310,7 @@ const accepted = (type: CommandType, receipt: unknown) => {
   return `Accepted ${type}${fields.length ? `: ${fields.join(', ')}` : ''}${typeof next === 'string' ? `. ${next}` : ''}`;
 };
 
-const refused = (type: string, code: string, message?: string) =>
+export const refused = (type: string, code: string, message?: string) =>
   `Refused ${type}: ${code}${message === undefined ? '' : ` — ${message}`}`;
 
 /** The runtime's id of one tool call: Claude Code sends claudecode/toolUseId, Codex callId. */
@@ -322,7 +322,8 @@ const toolCallId = (meta: Record<string, unknown> | undefined) => {
 // Pauses before each resend of a daemon request whose reply did not arrive.
 const RESEND_DELAYS = [100, 300, 900];
 
-export async function createMcpServer(daemonUrl: string, token: string): Promise<Server> {
+/** Requests to the local daemon with token, resending those whose reply did not arrive. */
+export function daemonClient(daemonUrl: string, token: string) {
   const address = new URL(daemonUrl);
   if (
     address.protocol !== 'http:' ||
@@ -375,6 +376,11 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
   };
   // The daemon answers a resent command with the receipt it kept for the command's idempotency key.
   const send = (sent: Command) => retried(() => request('/v1/commands', sent));
+  return { request, retried, send };
+}
+
+export async function createMcpServer(daemonUrl: string, token: string): Promise<Server> {
+  const { request, retried, send } = daemonClient(daemonUrl, token);
   const authenticate = async (): Promise<Identity> => {
     const identity = (await retried(() => request('/v1/session-principal'))) as Identity;
     const principal = identity.principal;

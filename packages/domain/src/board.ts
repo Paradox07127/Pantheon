@@ -1,4 +1,4 @@
-import type { ApprovalQuestion, EffortLevel, Entity, PersonalVia } from './index.js';
+import type { ApprovalQuestion, EffortLevel, Entity, PersonalVia, Review } from './index.js';
 import type { WorkflowStep } from './workflow.js';
 export interface ProjectBrief extends Entity {
   project_id: string;
@@ -446,6 +446,11 @@ export interface MilestoneView {
   required_sessions: string[];
   /** Absent on milestones that name sessions. */
   tasks?: { done: number; total: number };
+  /** The newest verification of the current commitment of a ready or completed lead milestone; absent when none ran. */
+  verification?: Pick<
+    MilestoneVerification,
+    'id' | 'state' | 'independence' | 'runtime' | 'reason' | 'finished_at'
+  > & { failed: { name: string; output_tail: string }[] };
 }
 export interface BoardPlanView {
   lead_session_id: string;
@@ -492,9 +497,23 @@ export interface MilestoneVerification extends Entity {
   milestone_id: string;
   commitment_hash: string;
   state: 'pending' | 'running' | 'passed' | 'failed' | 'inconclusive' | 'skipped';
-  commands: { name: string; exit_code: number; output_tail: string; hidden: boolean }[];
+  commands: {
+    name: string;
+    exit_code: number;
+    output_tail: string;
+    hidden: boolean;
+    failure_class?: GateFailureClass;
+  }[];
   review_id?: string;
   runtime?: string;
+  /** How the verifier's runtime relates to the writers': another vendor, another runtime, or a writer's own. */
+  independence?: 'other_vendor' | 'other_runtime' | 'same_runtime';
+  /** Why the run ended as it did, when its state and commands do not say. */
+  reason?: string;
+  /** The commit of each source root the checks ran on. */
+  commits?: { source: string; commit: string }[];
+  /** The verdict the verifier handed in, as its review records it. */
+  verdict?: NonNullable<Review['verdicts']>[number];
   started_at: number;
   finished_at?: number;
 }

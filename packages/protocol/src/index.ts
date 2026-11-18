@@ -2270,6 +2270,12 @@ export const inputSchemas = {
     runtime_quota_threshold: z.number().optional(),
     gate_on_fail: z.enum(['handback', 'retry', 'stop']).optional(),
     gate_runner: z.enum(['daemon', 'session']).optional(),
+    milestone_verify: z
+      .enum(['off', 'auto'])
+      .optional()
+      .describe(
+        'auto runs the checks and a verifier review of a lead milestone once it is ready; off runs neither.',
+      ),
     handback_limit: z.union([z.literal(0), z.number().int().min(2).max(5)]).optional(),
     /** null clears the hint. */
     task_size_hint: z.number().int().nullable().optional(),

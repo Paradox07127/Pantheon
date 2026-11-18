@@ -235,13 +235,41 @@ Pantheon 读取 Claude Code 和 Codex 的原生历史。
 
 在检出目录里用 `pnpm cli` 运行 CLI。CLI 从数据目录读 `daemon.json` 和凭证。
 
-| 命令                                                  | 结果                          |
-| ----------------------------------------------------- | ----------------------------- |
-| `pnpm cli health`                                     | 服务名、协议版本、版本。      |
-| `pnpm cli capabilities`                               | 每个适配器的能力报告。        |
-| `pnpm cli board --project PROJECT_ID`                 | 看板快照。                    |
-| `pnpm cli events --after 0 --project PROJECT_ID`      | 某个游标之后的持久事件。      |
-| `pnpm cli command --file /absolute/path/command.json` | 执行一个命令信封。            |
-| `pnpm cli mcp`                                        | 给原生会话用的 MCP 工具服务。 |
+| 命令                                                  | 结果                                 |
+| ----------------------------------------------------- | ------------------------------------ |
+| `pnpm cli health`                                     | 服务名、协议版本、版本。             |
+| `pnpm cli capabilities`                               | 每个适配器的能力报告。               |
+| `pnpm cli board --project PROJECT_ID`                 | 看板快照。                           |
+| `pnpm cli events --after 0 --project PROJECT_ID`      | 某个游标之后的持久事件。             |
+| `pnpm cli command --file /absolute/path/command.json` | 执行一个命令信封。                   |
+| `pnpm cli mcp`                                        | 给原生会话用的 MCP 工具服务。        |
+| `pnpm cli mcp --personal`                             | 给你自己的 agent 用的 MCP 工具服务。 |
 
 每条命令都接受 `--data-dir DIR`。命令信封和查询见[接口](api.md)。
+
+## 接入你自己的 agent
+
+你日常用的 agent(Claude Code、Codex、Claude Desktop,或任何能跑本地 stdio MCP 服务的 agent)拿一把个人密钥，就能跨你的 Pantheon 项目工作。只有本机的 agent 能接入:daemon 只监听 `127.0.0.1`。
+
+1. 创建密钥。用 `pnpm cli command --file key.json` 发一条 `personal.key.create` 命令，[命令信封](api.md)里写 `"actor": "local-user"` 和 `"input": {"label": "My agent"}`。回执给出 `key_id` 和 `token_file`。daemon 把 token 写进 `token_file`,只有你能读。
+2. 把服务加进 agent 的 MCP 配置。`token_file` 路径原样使用：服务从文件名读出密钥 id。
+
+```json
+{
+  "mcpServers": {
+    "pantheon": {
+      "command": "node",
+      "args": ["/absolute/path/to/pantheon/apps/cli/dist/index.js", "mcp", "--personal"],
+      "env": { "PANTHEON_PERSONAL_TOKEN_FILE": "/absolute/path/of/token_file" }
+    }
+  }
+}
+```
+
+agent 能做的：
+
+- 读每个项目的概况(`projects_overview`)、等你处理的事(`needs_you`)、一个项目的简报(`project_brief`)和没经过你做出的决定(`project_decisions`);
+- 给项目的助手或它的某个会话发请求(`send_request`);
+- 回答等你处理里的决定(`answer_decision`),只限你允许的种类。用 `app.settings.set` 命令设置:`personal_answers` 列出 `question`、`plan_change`、`milestone_accept`。默认一种都不允许。
+
+agent 不能读整份计划、改看板、启动或停止任务、回答任务会话的提问或权限请求，也不能上传附件。用 `personal.key.revoke` 吊销密钥,agent 立刻失去访问。

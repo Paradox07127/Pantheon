@@ -4,15 +4,17 @@ import { parseArgs } from 'node:util';
 import { defaultDataDirectory } from '@pantheon/protocol/paths';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createMcpServer } from './mcp.js';
+import { createPersonalMcpServer } from './personal-tools.js';
 
 const usage =
-  'Usage: pnpm cli mcp|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]';
+  'Usage: pnpm cli mcp [--personal]|health|command (--file FILE|--json JSON)|<query method> [--project ID] [--after N] [--param KEY=VALUE]... [--data-dir DIR]';
 let parsed;
 try {
   parsed = parseArgs({
     allowPositionals: true,
     options: {
       help: { type: 'boolean', short: 'h' },
+      personal: { type: 'boolean' },
       'data-dir': { type: 'string' },
       file: { type: 'string' },
       json: { type: 'string' },
@@ -38,14 +40,20 @@ if (!positionals[0]) {
 }
 try {
   if (positionals[0] === 'mcp') {
-    const tokenFile = process.env.PANTHEON_SESSION_TOKEN_FILE;
-    if (!tokenFile) throw new Error('permission_denied: PANTHEON_SESSION_TOKEN_FILE required');
+    const variable = values.personal
+      ? 'PANTHEON_PERSONAL_TOKEN_FILE'
+      : 'PANTHEON_SESSION_TOKEN_FILE';
+    const tokenFile = process.env[variable];
+    if (!tokenFile) throw new Error(`permission_denied: ${variable} required`);
     const token = readFileSync(tokenFile, 'utf8');
     const url =
       process.env.PANTHEON_DAEMON_URL ??
       (JSON.parse(readFileSync(path.join(directory, 'daemon.json'), 'utf8')) as { url: string })
         .url;
-    const server = await createMcpServer(url, token);
+    // The daemon names each personal key's token file by the key id.
+    const server = values.personal
+      ? await createPersonalMcpServer(url, token, path.basename(tokenFile))
+      : await createMcpServer(url, token);
     await server.connect(new StdioServerTransport());
   } else {
     const manifest = JSON.parse(readFileSync(path.join(directory, 'daemon.json'), 'utf8')) as {

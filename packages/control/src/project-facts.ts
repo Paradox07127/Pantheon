@@ -10,6 +10,7 @@ import {
   type Project,
   type ProjectBrief,
   type Milestone,
+  type MilestoneVerification,
   type MilestoneView,
   type ProjectRead,
   type Principal,
@@ -89,7 +90,7 @@ function sessionReferences(ctx: ControlContext, projectId: string, sessionIds: s
 const outcome = (ctx: ControlContext, sessionId: string) =>
   ctx.store.get<Session>('sessions', sessionId)?.outcome ?? 'open';
 // task_ids is absent on user milestones, so their hash is unchanged.
-function commitmentHash(
+export function commitmentHash(
   milestone: Milestone,
   requiredSessions: string[],
   plan?: BoardPlan,
@@ -146,11 +147,13 @@ function leadMilestoneView(ctx: ControlContext, milestone: Milestone): Milestone
       .map((task) => `task:${task.taskId}:${task.state}`),
     ...open.map((session) => `session:${session.id}:open`),
   ];
+  const current = commitmentHash(milestone, required, plan);
+  const verification = reasons.length ? undefined : currentVerification(ctx, milestone, current);
   return {
     milestone,
     status: reasons.length
       ? 'active'
-      : milestone.acceptance?.commitment_hash === commitmentHash(milestone, required, plan)
+      : milestone.acceptance?.commitment_hash === current
         ? 'completed'
         : 'ready_for_acceptance',
     required_total: required.length,
@@ -161,7 +164,38 @@ function leadMilestoneView(ctx: ControlContext, milestone: Milestone): Milestone
       done: tasks.filter((task) => task.state === 'done').length,
       total: tasks.length,
     },
+    ...(verification && {
+      verification: {
+        id: verification.id,
+        state: verification.state,
+        independence: verification.independence,
+        runtime: verification.runtime,
+        reason: verification.reason,
+        finished_at: verification.finished_at,
+        failed: verification.commands
+          .filter((command) => command.exit_code !== 0)
+          .map(({ name, output_tail }) => ({ name, output_tail })),
+      },
+    }),
   };
+}
+/** The newest verification run against the milestone's commitment with this hash. */
+function currentVerification(
+  ctx: ControlContext,
+  milestone: Milestone,
+  hash: string,
+): MilestoneVerification | undefined {
+  return ctx.store
+    .statement(
+      "SELECT data FROM milestone_verifications WHERE json_extract(data,'$.milestone_id')=? ORDER BY rowid",
+    )
+    .all(milestone.id)
+    .map((row) => JSON.parse(String(row.data)) as MilestoneVerification)
+    .filter((row) => row.commitment_hash === hash)
+    .reduce<MilestoneVerification | undefined>(
+      (newest, row) => (newest && newest.started_at >= row.started_at ? newest : row),
+      undefined,
+    );
 }
 
 /** The milestone's progress as project.read shows it. */

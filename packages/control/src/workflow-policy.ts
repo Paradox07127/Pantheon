@@ -56,6 +56,7 @@ export const DEFAULT_WORKFLOW_POLICY: PolicySettings & {
   handback_limit: 3,
   gate_on_fail: 'handback',
   gate_runner: 'daemon',
+  milestone_verify: 'off',
   // The largest of the simple-task baselines on each path; tiers without a baseline have none.
   budget: {
     t1: {
