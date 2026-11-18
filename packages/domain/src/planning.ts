@@ -126,6 +126,14 @@ export interface ChecklistItem {
   section?: string;
   hash: string;
 }
+/** Module dependencies measured from manifests and import statements; directories are relative to the root, "." for the root itself. */
+export interface CodeDependencies {
+  packages: { dir: string; name: string; depends_on: string[] }[];
+  modules: { from: string; to: string; imports: number; sample: string }[];
+  languages: string[];
+  not_measured: { language: string; files: number }[];
+  external_imports: number;
+}
 export interface FolderFacts {
   root: string;
   git: boolean;
@@ -147,6 +155,7 @@ export interface FolderFacts {
   tests: { files: number; configs: string[] };
   ci: { path: string; commands: string[] }[];
   truncated: string[];
+  code_deps?: CodeDependencies;
 }
 export interface ProjectFacts {
   collected_at: number;

@@ -22,7 +22,8 @@ import {
   type Preparers,
 } from './context.js';
 import { baselineRuntime, sourceReasons } from './baseline.js';
-import { collectTextCounts } from './baseline-facts.js';
+import { collectTextCounts, READ_LIMIT } from './baseline-facts.js';
+import { measureCodeDeps } from './code-deps.js';
 import { runtime } from './admission.js';
 import { runGit } from './git.js';
 import { renderIntroBrief } from './project-intro-brief.js';
@@ -233,6 +234,14 @@ export const projectIntroPreparers: Preparers = {
     const counts = await collectTextCounts(
       target.roots.map((root, index) => ({ path: root, git: git[index]! })),
     );
+    const deps = counts.map(
+      (folder) =>
+        measureCodeDeps(
+          folder.root,
+          folder.files.map((file) => file.path),
+          READ_LIMIT,
+        ).deps,
+    );
     return (ctx, p, c) => {
       const { project, runtimeName } = startTarget(ctx, p, c);
       const baseline = ctx.store
@@ -256,7 +265,13 @@ export const projectIntroPreparers: Preparers = {
         project_id: project.id,
         session_id: session.id,
         model: session.reported_model ?? session.requested_model ?? null,
-        input: renderIntroBrief(project, counts, baseline, ctx.store.projectIntro(project.id)),
+        input: renderIntroBrief(
+          project,
+          counts,
+          baseline,
+          ctx.store.projectIntro(project.id),
+          deps,
+        ),
         kind: 'send',
         delivery: 'pending',
         state: 'queued',

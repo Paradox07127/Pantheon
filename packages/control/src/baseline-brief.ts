@@ -1,4 +1,5 @@
 import type { BaselineResult, FolderFacts } from '@pantheon/domain';
+import { renderCodeDeps } from './code-deps.js';
 
 const PREVIOUS_LIMIT = 1_500;
 const ENTRIES_SHOWN = 24;
@@ -6,7 +7,7 @@ const ENTRIES_SHOWN = 24;
 /** The first message of a baseline session: the folders to scan, where their code is and the last confirmed result. */
 export function renderScanSeed(
   project: { name: string; roots: string[] },
-  folders: Pick<FolderFacts, 'root' | 'git' | 'directories' | 'manifests'>[],
+  folders: Pick<FolderFacts, 'root' | 'git' | 'directories' | 'manifests' | 'code_deps'>[],
   previous?: { result: BaselineResult; commits_since: Record<string, number> },
 ): string {
   const lines = [
@@ -19,8 +20,8 @@ export function renderScanSeed(
     const directories = [...folder.directories]
       .sort((a, b) => b.files - a.files || a.path.localeCompare(b.path))
       .slice(0, ENTRIES_SHOWN);
-    if (!directories.length && !folder.manifests.length) continue;
-    lines.push('', `## Code in ${folder.root}`);
+    const measured = renderCodeDeps(folder.code_deps);
+    if (directories.length || folder.manifests.length) lines.push('', `## Code in ${folder.root}`);
     if (directories.length)
       lines.push(
         'Directories (tracked files):',
@@ -33,6 +34,8 @@ export function renderScanSeed(
           .map((entry) => entry.path)
           .join(', ')}`,
       );
+    if (measured.length)
+      lines.push('', `## Measured code dependencies in ${folder.root}`, ...measured);
   }
   if (previous) {
     const lists = previous.result.folders.filter((folder) => folder.context?.task_lists.length);

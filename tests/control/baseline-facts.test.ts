@@ -256,6 +256,13 @@ describe('baseline facts', () => {
       { path: '.github/workflows/ci.yml', commands: ['pnpm install', 'pnpm build', 'pnpm test'] },
     ]);
     expect(repo.truncated).toEqual([]);
+    expect(repo.code_deps).toEqual({
+      packages: [{ dir: '.', name: 'fixture', depends_on: [] }],
+      modules: [],
+      languages: ['TypeScript'],
+      not_measured: [],
+      external_imports: 0,
+    });
   });
 
   it('collects only file facts in a folder without git and records read limits', () => {

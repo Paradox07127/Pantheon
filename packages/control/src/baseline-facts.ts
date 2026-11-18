@@ -14,11 +14,12 @@ import path from 'node:path';
 import type { ChecklistItem, FolderFacts, ProjectFacts } from '@pantheon/domain';
 import { runGit } from './git.js';
 import { inside } from './context.js';
+import { measureCodeDeps } from './code-deps.js';
 
 export type { ChecklistItem, FolderFacts, ProjectFacts };
 
 const FILE_LIMIT = 20_000;
-const READ_LIMIT = 256 * 1024;
+export const READ_LIMIT = 256 * 1024;
 const DAY = 24 * 60 * 60 * 1000;
 const SKIPPED = new Set([
   'node_modules',
@@ -508,6 +509,11 @@ async function collectFolder(
     const { items } = outline(text);
     if (items.length) facts.checklists.push({ path: relative, modified_at: mtime, items });
   }
+  facts.code_deps = measureCodeDeps(
+    root,
+    files.filter((relative) => !tracked || tracked.has(relative)),
+    READ_LIMIT,
+  ).deps;
   facts.file_types = top(types, 12, (ext, count) => ({ ext, count }));
   facts.directories = [...directories]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))

@@ -7,6 +7,7 @@ import {
   purposeSessionInstructions,
   purposeSessionTools,
 } from '../../packages/control/dist/context.js';
+import { renderIntroBrief } from '../../packages/control/dist/project-intro-brief.js';
 import { eventually, fixture, user } from '../helpers.js';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -249,6 +250,9 @@ it('starts a read-only introduction session with baseline runtime selection, fac
     },
     baseline.revision,
   );
+  f.write('lib/store.ts', 'export const store = 1;\n');
+  f.write('src/cli.ts', "import { store } from '../lib/store.js';\nread();\nwrite();");
+  f.git(['add', 'lib/store.ts', 'src/cli.ts']);
   const starts = vi.spyOn(f.adapter, 'resume');
   const { session_id } = await f.call<Promise<{ session_id: string }>>('project.intro.start', {
     project_id: f.project.id,
@@ -284,6 +288,7 @@ it('starts a read-only introduction session with baseline runtime selection, fac
     'pnpm',
     'Reads and writes notes.',
     'file:',
+    '### Measured code dependencies\nPantheon measured these from manifests and import statements, without a model.\nModule edges, most imports first:\n- src -> lib: 1 imports (file:src/cli.ts:1)\n',
   ])
     expect(brief).toContain(text);
   await eventually(
@@ -324,6 +329,8 @@ it('limits submission to assessment and introduction sessions and shares their a
       'vega-lite',
       'kline',
       'project_intro_submit',
+      'draw no import edge the list lacks',
+      'HTTP, IPC, WebSocket, processes, stores, queues',
     ])
       expect(instructions).toContain(text);
   }
@@ -399,4 +406,36 @@ it('sums git roots and uses baseline-scanned files for non-git roots, with at mo
   await f.submit();
   expect((await f.read()).intro!.languages).toHaveLength(8);
   expect((await f.read()).intro!.languages.find((entry) => entry.name === 'other')?.lines).toBe(5);
+});
+
+it('shows each root its measured code dependencies, at most 60 module edges', () => {
+  const modules = Array.from({ length: 61 }, (_, index) => ({
+    from: `module${index}`,
+    to: 'core',
+    imports: 100 - index,
+    sample: `file:module${index}/main.ts:1`,
+  }));
+  const brief = renderIntroBrief(
+    { name: 'fixture' } as Project,
+    [{ root: '/repo', files: [{ path: 'core/main.ts', lines: 1, language: 'TypeScript' }] }],
+    undefined,
+    undefined,
+    [
+      {
+        packages: [{ dir: '.', name: 'fixture', depends_on: [] }],
+        modules,
+        languages: ['TypeScript'],
+        not_measured: [{ language: 'Kotlin', files: 4 }],
+        external_imports: 0,
+      },
+    ],
+  );
+  expect(brief).toContain(
+    '## Root /repo\nTop-level directories (measured lines):\n- core: 1\n\n### Measured code dependencies\nPantheon measured these from manifests and import statements, without a model.\nPackages:\n- . (fixture)\nModule edges, most imports first:\n- module0 -> core: 100 imports (file:module0/main.ts:1)\n',
+  );
+  expect(brief).toContain('- module59 -> core: 41 imports');
+  expect(brief).not.toContain('module60 ->');
+  expect(brief).toContain(
+    '- 1 more module edges with fewer imports are not listed.\nNot measured: Kotlin (4 files).',
+  );
 });

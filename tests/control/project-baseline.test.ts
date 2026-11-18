@@ -31,6 +31,7 @@ import type {
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/src/context.js';
 import { tickProjectBaselines } from '../../packages/control/src/baseline.js';
+import { renderScanSeed } from '../../packages/control/src/baseline-brief.js';
 import { purposeSessionInstructions } from '../../packages/control/src/context.js';
 import { awaitWorkspaceReady, eventually, fixture, registerWorkspace, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
@@ -299,6 +300,7 @@ it('tells the baseline session where each folder keeps its code', async () => {
     f.populate();
     mkdirSync(path.join(f.projectRoot, 'src/parser'));
     writeFileSync(path.join(f.projectRoot, 'src/parser/csv.ts'), 'export {};\n');
+    writeFileSync(path.join(f.projectRoot, 'src/index.ts'), "export * from './parser/csv.js';\n");
     gitIn(f.projectRoot, 'add', '.');
     gitIn(f.projectRoot, 'commit', '--quiet', '-m', 'Add the CSV parser');
     const baseline = await f.startBaseline();
@@ -308,9 +310,47 @@ it('tells the baseline session where each folder keeps its code', async () => {
     expect(turn.input).toContain(
       `## Code in ${f.project.roots[0]}\nDirectories (tracked files):\n- src: 2\n- src/parser: 1\nManifests: package.json\n`,
     );
+    expect(turn.input).toContain(
+      `## Measured code dependencies in ${f.project.roots[0]}\nPantheon measured these from manifests and import statements, without a model.\nModule edges, most imports first:\n- src -> src/parser: 1 imports (file:src/index.ts:1)\n`,
+    );
   } finally {
     await f.close();
   }
+});
+
+it('shows packages, at most 60 module edges and the languages not measured in the scan seed', () => {
+  const modules = Array.from({ length: 61 }, (_, index) => ({
+    from: `module${index}`,
+    to: 'core',
+    imports: 100 - index,
+    sample: `file:module${index}/main.ts:1`,
+  }));
+  const seed = renderScanSeed({ name: 'fixture', roots: ['/repo'] }, [
+    {
+      root: '/repo',
+      git: true,
+      directories: [],
+      manifests: [],
+      code_deps: {
+        packages: [
+          { dir: 'packages/app', name: '@acme/app', depends_on: ['packages/lib'] },
+          { dir: 'packages/lib', name: '@acme/lib', depends_on: [] },
+        ],
+        modules: [...modules].reverse(),
+        languages: ['TypeScript'],
+        not_measured: [{ language: 'Swift', files: 2 }],
+        external_imports: 3,
+      },
+    },
+  ]);
+  expect(seed).toContain(
+    '## Measured code dependencies in /repo\nPantheon measured these from manifests and import statements, without a model.\nPackages:\n- packages/app (@acme/app) -> packages/lib\n- packages/lib (@acme/lib)\nModule edges, most imports first:\n- module0 -> core: 100 imports (file:module0/main.ts:1)\n',
+  );
+  expect(seed).toContain('- module59 -> core: 41 imports (file:module59/main.ts:1)\n');
+  expect(seed).not.toContain('module60 ->');
+  expect(seed).toContain(
+    '- 1 more module edges with fewer imports are not listed.\nNot measured: Swift (2 files).\n',
+  );
 });
 
 it('keeps each workstream its modules inside a project folder, its known dependencies and its risks', async () => {

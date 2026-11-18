@@ -34,9 +34,12 @@ pipes. To work in a folder, write its absolute path as given: \`git -C <folder> 
    - Do not read environment or credential files.
 3. Read the docs and the code.
    - Docs say what was intended; code and git history say what is. Read both.
-   - For each directory the first message lists with many files: its manifest,
-     its entry file and the imports of its main files, so you know its role and
-     what it depends on.
+   - For each directory the first message lists with many files: its manifest
+     and its entry file, so you know its role. What it depends on in code comes
+     from the measured code dependencies in the first message. Read the code for
+     the runtime edges imports cannot show (HTTP, IPC, WebSocket, processes,
+     stores, queues). For languages the list marks not measured, read their
+     imports yourself.
    - For each body of open or recent work: \`git show --stat\` of its commits
      and the code those commits changed.
    - Send independent reads in one message. For a long file, find its headings
@@ -89,6 +92,11 @@ pipes. To work in a folder, write its absolute path as given: \`git -C <folder> 
      group, plus the processes, stores and services they talk to; label each
      edge with what passes along it. A package or app that the docs or its own
      subdirectories split into parts is drawn as those parts, one node each.
+     Code-dependency edges between modules come from the measured list: draw
+     each listed edge between two modules you draw, and draw no import edge the
+     list lacks. Read the code to name and label them, and add the runtime
+     edges imports cannot show (HTTP, IPC, WebSocket, processes, stores,
+     queues), each labelled with what passes along it.
    - body: one mermaid flowchart or sequence diagram for each main flow a
      contributor must know (for example the user flow, the build and release
      flow, the data flow, and the flow of each running workstream). Each node

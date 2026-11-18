@@ -12,6 +12,10 @@ it.each([
   expect(skill).toContain('left to you');
   expect(skill).toMatch(/project_intro_submit[\s\S]*before[\s\S]*project_baseline_submit/);
   expect(skill).toContain('Do not draw in the conversation');
+  expect(skill).toContain('measured code dependencies in the first message');
+  expect(skill).toContain('draw no import edge the list lacks');
+  expect(skill).toContain('HTTP, IPC, WebSocket, processes, stores, queues');
+  expect(skill).toContain('read their imports yourself');
   if (settings.visuals) {
     expect(skill).toContain('Call draw');
     expect(skill).not.toContain('Do not call draw');
