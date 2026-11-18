@@ -1034,6 +1034,7 @@ svg.lucide.lead-crown{width:12px;height:12px;margin-left:var(--sp-1);color:var(-
 .ss-req{display:flex;flex-direction:column;min-width:0}
 .ss-cfold{height:var(--collapsible-panel-height);overflow:clip;overflow-clip-margin:4px;transition:height var(--dur-2) var(--ease-std),opacity var(--dur-2) var(--ease-std)}
 .ss-cfold:is([data-starting-style],[data-ending-style]){height:0;opacity:0}
+.ss-cfold[data-ending-style]{transition-duration:var(--dur-1);transition-timing-function:var(--ease-out)}
 .ss-req>.ss-resolved:focus-visible{border-radius:var(--r-sm)}
 .ss-acts{display:flex;flex-wrap:wrap;gap:6px;margin-left:16px}
 .ss-cmp{position:absolute;left:0;right:0;bottom:calc(100% + 4px);z-index:40}

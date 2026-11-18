@@ -162,6 +162,39 @@ describe('routing receipt', () => {
       { kind: 'added', lane_id: 'lane-a', task_ids: ['task-1', 'task-2'] },
       '已加入 Refunds v2 rollout，任务 Reconciliation CSV export, Refund audit log',
     ],
+    [
+      'new_plan on a lane the board view does not have yet',
+      {
+        kind: 'new_plan',
+        lane_id: 'lane-new',
+        task_ids: ['task-new'],
+        lane_title: 'Payout reports',
+        task_titles: ['Payout CSV'],
+      },
+      '新计划 Payout reports',
+    ],
+    [
+      'added with tasks the board view does not have yet',
+      {
+        kind: 'added',
+        lane_id: 'lane-new',
+        task_ids: ['task-new', 'task-next'],
+        lane_title: 'Payout reports',
+        task_titles: ['Payout CSV', 'Payout audit'],
+      },
+      '已加入 Payout reports，任务 Payout CSV, Payout audit',
+    ],
+    [
+      'added to a lane and task renamed since the receipt',
+      {
+        kind: 'added',
+        lane_id: 'lane-a',
+        task_ids: ['task-1'],
+        lane_title: 'Refunds rollout',
+        task_titles: ['CSV export'],
+      },
+      '已加入 Refunds v2 rollout，任务 Reconciliation CSV export',
+    ],
     ['sent', { kind: 'sent', agent_id: 'agent-ledger' }, '已转给 Ledger keeper'],
     ['asked', { kind: 'asked' }, '已询问你'],
   ])('says what the resident did with a request it %s', async (_kind, routing, said) => {

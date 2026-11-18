@@ -977,6 +977,10 @@ export interface SessionTurn extends Entity {
     kind: 'answered' | 'new_plan' | 'added' | 'sent' | 'asked';
     lane_id?: string;
     task_ids?: string[];
+    /** The title lane_id had when the receipt was written. */
+    lane_title?: string;
+    /** The titles task_ids had when the receipt was written, in the same order. */
+    task_titles?: string[];
     agent_id?: string;
   };
 }

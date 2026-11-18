@@ -126,7 +126,13 @@ it('marks a turn that added a lane as a new plan with that lane', async () => {
     writePlan(f, sessionId, [lanes.export], [task('csv', 'export')]),
   );
 
-  expect(turn.routing).toEqual({ kind: 'new_plan', lane_id: 'export', task_ids: ['csv'] });
+  expect(turn.routing).toEqual({
+    kind: 'new_plan',
+    lane_id: 'export',
+    task_ids: ['csv'],
+    lane_title: 'Export',
+    task_titles: ['Task csv'],
+  });
 });
 
 it('marks a turn that added tasks to an existing lane as added with their ids', async () => {
@@ -143,7 +149,13 @@ it('marks a turn that added tasks to an existing lane as added with their ids', 
     ),
   );
 
-  expect(turn.routing).toEqual({ kind: 'added', lane_id: 'core', task_ids: ['b', 'c'] });
+  expect(turn.routing).toEqual({
+    kind: 'added',
+    lane_id: 'core',
+    task_ids: ['b', 'c'],
+    lane_title: 'Core',
+    task_titles: ['Task b', 'Task c'],
+  });
 });
 
 it('marks a turn that asked the user a question as asked', async () => {
@@ -245,7 +257,13 @@ it('counts only the lane and tasks the assistant added when the user adds a task
     );
   });
 
-  expect(turn.routing).toEqual({ kind: 'new_plan', lane_id: 'export', task_ids: ['csv'] });
+  expect(turn.routing).toEqual({
+    kind: 'new_plan',
+    lane_id: 'export',
+    task_ids: ['csv'],
+    lane_title: 'Export',
+    task_titles: ['Task csv'],
+  });
 });
 
 it('steers the assistant once with a message that names the lane the user routes to', async () => {

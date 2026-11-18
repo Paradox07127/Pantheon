@@ -24,6 +24,10 @@
 .ss-sheet:is([data-starting-style], [data-ending-style]) {
   transform: translateX(100%);
 }
+.ss-sheet[data-ending-style] {
+  transition-duration: var(--dur-2);
+  transition-timing-function: var(--ease-out);
+}
 .pt[data-motion='reduced'] .ss-sheet:is([data-starting-style], [data-ending-style]) {
   transform: none;
   opacity: 0;

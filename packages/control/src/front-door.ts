@@ -100,14 +100,25 @@ export function routingReceipt(
     tasks = (now?.tasks ?? []).filter(
       (task) => ownTasks.has(task.id) && !was?.tasks.some((old) => old.id === task.id),
     ),
-    taskIds = tasks.map((task) => task.id);
+    taskIds = tasks.map((task) => task.id),
+    taskTitles = tasks.map((task) => task.title);
   if (lanes.length)
     return {
       kind: 'new_plan',
       lane_id: lanes[0]!.id,
-      ...(taskIds.length ? { task_ids: taskIds } : {}),
+      lane_title: lanes[0]!.title,
+      ...(taskIds.length ? { task_ids: taskIds, task_titles: taskTitles } : {}),
     };
-  if (tasks.length) return { kind: 'added', lane_id: tasks[0]!.lane, task_ids: taskIds };
+  if (tasks.length) {
+    const laneTitle = now!.lanes.find((lane) => lane.id === tasks[0]!.lane)?.title;
+    return {
+      kind: 'added',
+      lane_id: tasks[0]!.lane,
+      ...(laneTitle === undefined ? {} : { lane_title: laneTitle }),
+      task_ids: taskIds,
+      task_titles: taskTitles,
+    };
+  }
   if (
     ctx.store.db
       .prepare(

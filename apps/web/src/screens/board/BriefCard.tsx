@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Bot, Flag, GitMerge, KeyRound, Lightbulb, MessageSquare, Workflow } from 'lucide-react';
+import {
+  Bot,
+  Ellipsis,
+  Flag,
+  GitMerge,
+  KeyRound,
+  Lightbulb,
+  MessageSquare,
+  Workflow,
+} from 'lucide-react';
 import type { BoardModel, ProjectBrief, ProjectBriefItem } from '@pantheon/protocol';
 import { toast } from '../../components/Toast';
 import { useAppSettings } from '../../data/app-settings';
@@ -268,7 +277,9 @@ export function BriefCard({
       }),
     });
   const decided = of('decided')[0];
-  if (decided)
+  if (decided) {
+    const other =
+      decided.count - (decided.types.permission + decided.types.answer + decided.types.plan_change);
     cells.push({
       key: 'decided',
       cap: t({ id: 'board.brief.decided', defaultMessage: 'Decided for you' }),
@@ -317,8 +328,27 @@ export function BriefCard({
         .filter(([type]) => decided.types[type] > 0)
         .map(([type, icon, title]) =>
           link(type, icon, title, () => openApproved(projectId, type, brief.since)),
+        )
+        .concat(
+          other > 0
+            ? [
+                link(
+                  'other',
+                  <Ellipsis aria-hidden="true" />,
+                  t(
+                    {
+                      id: 'board.brief.decidedOther',
+                      defaultMessage: '{count, plural, one {# other} other {# others}}',
+                    },
+                    { count: other },
+                  ),
+                  () => openApproved(projectId, undefined, brief.since),
+                ),
+              ]
+            : [],
         ),
     });
+  }
   const assumptions = of('assumption');
   if (assumptions.length)
     cells.push({

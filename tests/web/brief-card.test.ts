@@ -312,11 +312,33 @@ describe('since you left card', () => {
     expect(shown.map(text)).toEqual([
       zhf('board.brief.decidedPermissions', { count: 3 }),
       zhf('board.brief.decidedAnswers', { count: 2 }),
+      zhf('board.brief.decidedOther', { count: 1 }),
     ]);
     shown.forEach((link) => link.props.onClick({ preventDefault() {} }));
     expect(mock.openProjectApproved.mock.calls).toEqual([
       ['project-brief-j', 'permission', LEFT],
       ['project-brief-j', 'answer', LEFT],
+      ['project-brief-j', undefined, LEFT],
+    ]);
+  });
+
+  it('has no other row when the types add up to the count', async () => {
+    serve({
+      since: LEFT,
+      items: [
+        {
+          kind: 'decided',
+          ref: { kind: 'decided', id: 'project-brief-j' },
+          count: 5,
+          types: { permission: 3, answer: 2, plan_change: 0 },
+        },
+      ],
+    });
+    const h = await card('project-brief-j');
+    const cell = group(h.value, zhf('board.brief.decidedCount', { count: 5 }));
+    expect(links(cell).map(text)).toEqual([
+      zhf('board.brief.decidedPermissions', { count: 3 }),
+      zhf('board.brief.decidedAnswers', { count: 2 }),
     ]);
   });
 

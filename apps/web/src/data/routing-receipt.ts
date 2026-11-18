@@ -29,7 +29,12 @@ export function routingText(
 ): string {
   const lane = () => {
     const id = `${turn.session_id}:${routing.lane_id}`;
-    return names.lanes.find((each) => each.id === id)?.title ?? routing.lane_id ?? '';
+    return (
+      names.lanes.find((each) => each.id === id)?.title ??
+      routing.lane_title ??
+      routing.lane_id ??
+      ''
+    );
   };
   switch (routing.kind) {
     case 'answered':
@@ -42,7 +47,10 @@ export function routingText(
     case 'added': {
       const ids = routing.task_ids ?? [];
       const titles = ids.map(
-        (id) => names.tasks.find((task) => task.id === `${turn.session_id}:${id}`)?.title ?? id,
+        (id, i) =>
+          names.tasks.find((task) => task.id === `${turn.session_id}:${id}`)?.title ??
+          routing.task_titles?.[i] ??
+          id,
       );
       return t(
         {

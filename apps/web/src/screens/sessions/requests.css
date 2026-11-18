@@ -119,6 +119,10 @@ button.rq-obj:hover {
   height: 0;
   opacity: 0;
 }
+.rq-in[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
 
 /* The consequence on the left, the answers at the right end */
 .rq-note {
