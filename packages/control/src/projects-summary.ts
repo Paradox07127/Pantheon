@@ -21,6 +21,7 @@ export const summaryProjects = (ctx: ControlContext, principal: Principal) =>
     .filter(
       (project) =>
         project.removed_at === undefined &&
+        project.kind !== 'personal' &&
         (principal.role === 'user' ||
           principal.role === 'personal' ||
           project.id === principal.project_id),

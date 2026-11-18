@@ -18,6 +18,8 @@ export interface SyncView {
   cursor: number;
   /** Sequence of the newest event that can change the board that an applied board read covers. */
   changed: number;
+  /** `changed` and the board cursor after the last applied read of each project, '' for every project. */
+  reads: Record<string, { changed: number; cursor: number }>;
   status: SyncStatus;
   /** Message of the last failed board read; null once a board is applied. */
   error: string | null;
@@ -141,6 +143,7 @@ export function startSync(
     boardCursor = 0,
     // The boardCursor of the newest applied board read; streamed events leave it.
     changed = 0,
+    reads: SyncView['reads'] = {},
     status: SyncStatus = { state: 'connecting' },
     error: string | null = null,
     resync = 0,
@@ -175,6 +178,8 @@ export function startSync(
     readWhole = false,
     // When the last read of every project was sent.
     wholeReadAt = 0,
+    // When the last event arrived.
+    eventAt = 0,
     // Events received since the last notice; the notice appends them in one copy.
     arrived: DaemonEvent[] = [],
     frame: number | undefined,
@@ -202,6 +207,7 @@ export function startSync(
       events,
       cursor,
       changed,
+      reads,
       status,
       error,
       resync,
@@ -278,6 +284,7 @@ export function startSync(
       cursor = streamed === issued ? Math.min(cursor, board.cursor) : board.cursor;
       boardCursor = board.cursor;
       changed = Math.max(changed, boardCursor);
+      reads = { '': { changed, cursor: board.cursor } };
       error = null;
       applied();
       emit();
@@ -366,6 +373,7 @@ export function startSync(
     if (gap) resync++;
     arrived.push(event);
     cursor = event.sequence;
+    eventAt = Date.now();
     emit();
     if (gap) readWhole = true;
     pending.set(event.project_id, event.sequence);
@@ -405,7 +413,9 @@ export function startSync(
       !board ||
       boardGeneration !== generation ||
       pending.has('') ||
-      (pending.size > 0 && Date.now() - wholeReadAt >= WHOLE_READ_MS);
+      (pending.size > 0 &&
+        Date.now() - wholeReadAt >= WHOLE_READ_MS &&
+        (globalThis.document?.visibilityState ?? 'visible') === 'visible');
     const asked = pending;
     if (!whole && !asked.size) return;
     pending = new Map();
@@ -469,6 +479,10 @@ export function startSync(
             refreshBackoff = FIRST_BACKOFF_MS;
             if (board.cursor < boardCursor) scheduleRefresh();
           }
+          const read = { changed, cursor: board.cursor };
+          reads = whole
+            ? { '': read }
+            : { ...reads, ...Object.fromEntries(answered.map((project) => [project, read])) };
           emit();
         }
         if (failed && !failed.ok) {
@@ -503,6 +517,18 @@ export function startSync(
     scheduleRefresh();
   };
   globalThis.addEventListener?.('focus', onFocus);
+  // A hidden window skips the read of every project after WHOLE_READ_MS; showing it catches up.
+  const onVisible = () => {
+    if (
+      globalThis.document?.visibilityState === 'visible' &&
+      eventAt > wholeReadAt &&
+      Date.now() - wholeReadAt >= WHOLE_READ_MS
+    ) {
+      readWhole = true;
+      scheduleRefresh();
+    }
+  };
+  globalThis.document?.addEventListener?.('visibilitychange', onVisible);
   connect();
   // The starting view replaces the previous one at once.
   notify();
@@ -523,6 +549,7 @@ export function startSync(
       stopped = true;
       globalThis.removeEventListener?.('storage', onStorage);
       globalThis.removeEventListener?.('focus', onFocus);
+      globalThis.document?.removeEventListener?.('visibilitychange', onVisible);
       end?.();
       clearTimeout(retryTimer);
       clearTimeout(livenessTimer);

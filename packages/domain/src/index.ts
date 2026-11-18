@@ -340,6 +340,8 @@ export interface Project extends Entity {
   external_events?: 'off' | 'approve' | 'auto';
   /** Hidden from project lists while its history is kept; reopening the root clears it. */
   removed_at?: number;
+  /** The personal agent's home: no roots, in no project list, refuses project commands. */
+  kind?: 'personal';
 }
 export interface Approval extends Entity {
   project_id: string;
@@ -541,7 +543,7 @@ export interface NeedsYouItem {
   agent_proposal?: {
     id: string;
     name: string;
-    template: AgentProfile['template'];
+    template: Exclude<AgentProfile['template'], 'personal'>;
     agent_id?: string;
     waited_ms: number;
   };
@@ -868,8 +870,8 @@ export interface AgentRoutine {
 /** The lasting record behind a resident session: its role prompt, tools and model. */
 export interface AgentProfile extends Entity {
   project_id: string;
-  /** assistant and triage are one per project; the others may repeat. */
-  template: 'assistant' | 'triage' | 'ideas' | 'goals' | 'custom';
+  /** assistant and triage are one per project; the others may repeat; personal lives only in the personal home. */
+  template: 'assistant' | 'triage' | 'ideas' | 'goals' | 'custom' | 'personal';
   name: string;
   /** A label of two to four characters. */
   role: string;
@@ -887,6 +889,8 @@ export interface AgentProfile extends Entity {
   listens?: ('github' | SignalSource)[];
   /** Limits on when its wakes may reach the user; absent: none. */
   contract?: AgentContract;
+  /** The personal key the personal agent reads with. */
+  personal_key_id?: string;
   created_by: { kind: 'user' } | { kind: 'agent'; session_id: string };
   created_at: number;
   archived_at?: number;

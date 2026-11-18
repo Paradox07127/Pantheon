@@ -671,6 +671,51 @@ it('reads every project when the window gains focus', async () => {
   t.sync.stop();
 });
 
+it('skips the 30 s read of every project while hidden and reads every project once on showing', async () => {
+  const listeners = new Map<string, () => void>();
+  const listen = (type: string, listener: () => void) => void listeners.set(type, listener);
+  vi.stubGlobal('addEventListener', listen);
+  vi.stubGlobal('removeEventListener', () => {});
+  const page = { visibilityState: 'hidden', addEventListener: listen, removeEventListener() {} };
+  vi.stubGlobal('document', page);
+  const t = setup();
+  await t.live(0);
+  const asked = () => t.queries.slice(1).map((q) => q.params);
+  for (const seq of [1, 2]) {
+    t.subs[0]!.push({ type: 'event', event: event(seq) });
+    await vi.advanceTimersByTimeAsync(100);
+    await t.queries.at(-1)!.answer({ ok: true, value: board(seq) });
+    await vi.advanceTimersByTimeAsync(WHOLE_READ_MS);
+  }
+  expect(asked()).toEqual([{ project_id: 'p' }, { project_id: 'p' }]);
+
+  page.visibilityState = 'visible';
+  listeners.get('visibilitychange')?.();
+  await vi.advanceTimersByTimeAsync(STREAM_REFRESH_MS);
+  expect(asked()).toEqual([{ project_id: 'p' }, { project_id: 'p' }, undefined]);
+  await t.queries.at(-1)!.answer({ ok: true, value: board(2) });
+
+  t.subs[0]!.push({ type: 'heartbeat', cursor: 2 });
+  await vi.advanceTimersByTimeAsync(WHOLE_READ_MS);
+  t.subs[0]!.push({ type: 'event', event: event(3) });
+  await vi.advanceTimersByTimeAsync(STREAM_REFRESH_MS);
+  expect(asked().slice(3)).toEqual([undefined]);
+  await t.queries.at(-1)!.answer({ ok: true, value: board(3) });
+
+  page.visibilityState = 'hidden';
+  listeners.get('visibilitychange')?.();
+  t.subs[0]!.push({ type: 'event', event: event(4) });
+  await vi.advanceTimersByTimeAsync(100);
+  await t.queries.at(-1)!.answer({ ok: true, value: board(4) });
+  await vi.advanceTimersByTimeAsync(WHOLE_READ_MS);
+  page.visibilityState = 'visible';
+  listeners.get('visibilitychange')?.();
+  listeners.get('focus')?.();
+  await vi.advanceTimersByTimeAsync(STREAM_REFRESH_MS);
+  expect(asked().slice(4)).toEqual([{ project_id: 'p' }, undefined]);
+  t.sync.stop();
+});
+
 it('ignores frames and results after stop and never sends commands', async () => {
   const t = setup();
   await t.live(0);

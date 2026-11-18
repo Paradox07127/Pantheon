@@ -116,7 +116,7 @@ it('reads a stored-state query again after an event that changes the board, not 
   await h.flush();
 
   at.cursor = 6;
-  push({ type: 'event', event: event(6, 'agent.message.delta') });
+  push({ type: 'event', event: event(6, 'agent.message.delta', 'project-stream') });
   await vi.advanceTimersByTimeAsync(2_500);
   expect(mock.board.board.cursor).toBe(6);
   h.render();
@@ -124,7 +124,7 @@ it('reads a stored-state query again after an event that changes the board, not 
   expect(reads.map((r) => r.method)).toEqual(['workflow.policy']);
 
   at.cursor = 7;
-  push({ type: 'event', event: event(7, 'session.renamed') });
+  push({ type: 'event', event: event(7, 'session.renamed', 'project-stream') });
   await vi.advanceTimersByTimeAsync(200);
   expect(mock.board.board.cursor).toBe(7);
   h.render();
@@ -198,7 +198,7 @@ it('reads a project query once for a burst of events that one board read covers'
 
   at.cursor = 8;
   for (const sequence of [6, 7, 8]) {
-    push({ type: 'event', event: event(sequence, 'session.renamed') });
+    push({ type: 'event', event: event(sequence, 'session.renamed', 'project-burst') });
     await vi.advanceTimersByTimeAsync(20);
     h.render();
     await h.flush();
@@ -210,6 +210,52 @@ it('reads a project query once for a burst of events that one board read covers'
   expect(reads.map((r) => r.method)).toEqual(['project.facts.read', 'project.facts.read']);
   sync.stop();
 });
+
+it.each([
+  ['after events that change the board', { events: true }],
+  ['after board reads', undefined],
+] as const)(
+  'reads a project query %s only once its own project or every project is read',
+  async (_, options) => {
+    const { at, sync, push } = await connected();
+    const a = mount(() =>
+      useProjectQuery('workflow.policy', 'project-a', isFacts, undefined, options),
+    );
+    const b = mount(() =>
+      useProjectQuery('workflow.policy', 'project-b', isFacts, undefined, options),
+    );
+    const step = async (sequence: number, project_id: string) => {
+      at.cursor = sequence;
+      push({ type: 'event', event: event(sequence, 'session.renamed', project_id) });
+      await vi.advanceTimersByTimeAsync(200);
+      a.render();
+      b.render();
+      await a.flush();
+      await b.flush();
+      for (const r of reads) r.answer({ ok: true, value: {} });
+      await a.flush();
+      await b.flush();
+    };
+    const asked = () =>
+      vi
+        .mocked(window.pantheon!.query)
+        .mock.calls.map(([, params]) => (params as { project_id: string }).project_id);
+    await a.flush();
+    await b.flush();
+    expect(asked()).toEqual(['project-a', 'project-b']);
+    for (const r of reads) r.answer({ ok: true, value: {} });
+    await a.flush();
+    await b.flush();
+
+    await step(6, 'project-b');
+    expect(asked()).toEqual(['project-a', 'project-b', 'project-b']);
+    await step(7, 'project-a');
+    expect(asked()).toEqual(['project-a', 'project-b', 'project-b', 'project-a']);
+    await step(8, '');
+    expect(asked().slice(4).sort()).toEqual(['project-a', 'project-b']);
+    sync.stop();
+  },
+);
 
 it('reads again once the board lands after a remount joined a read sent before an event', async () => {
   const { at, sync, push } = await connected();

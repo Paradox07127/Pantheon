@@ -412,13 +412,18 @@ export function FolderGate({
   );
 }
 
-type GatePolicyPatch = Pick<PolicyPatch, 'handback_limit' | 'gate_on_fail' | 'gate_runner'>;
+type GatePolicyPatch = Pick<
+  PolicyPatch,
+  'handback_limit' | 'gate_on_fail' | 'gate_runner' | 'recovery_switch' | 'milestone_verify'
+>;
 
 /** The gate fields of a policy; those it stores none of read as the daemon's defaults. */
 const gatePolicyOf = (policy: WorkflowPolicy): Required<GatePolicyPatch> => ({
   handback_limit: policy.handback_limit,
   gate_on_fail: policy.gate_on_fail ?? 'handback',
   gate_runner: policy.gate_runner ?? 'daemon',
+  recovery_switch: policy.recovery_switch ?? 'off',
+  milestone_verify: policy.milestone_verify ?? 'off',
 });
 
 const useGatePolicySave = create<{
@@ -522,6 +527,14 @@ export function GatePolicy({ project }: { project: Project }) {
     void saveGatePolicy(policy, patch);
   const onFail = t({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' });
   const runner = t({ id: 'settings.gate.runner', defaultMessage: 'Where gates run' });
+  const recovery = t({
+    id: 'settings.gate.recoverySwitch',
+    defaultMessage: 'Switch runtime when hand-backs run out',
+  });
+  const verify = t({
+    id: 'settings.gate.milestoneVerify',
+    defaultMessage: 'Verify milestones automatically',
+  });
   return (
     <div className="ps-grp">
       <div className="ps-rows" aria-busy={pending || undefined}>
@@ -569,6 +582,19 @@ export function GatePolicy({ project }: { project: Project }) {
                 onChange={(count) => save({ handback_limit: Number(count) })}
               />
             )}
+            {current.gate_on_fail === 'handback' && (
+              <label className="ps-tg" data-setting-id="gates.recoverySwitch">
+                <span aria-hidden="true">{recovery}</span>
+                <input
+                  type="checkbox"
+                  className="ps-sw"
+                  aria-label={recovery}
+                  checked={current.recovery_switch === 'auto'}
+                  disabled={disabled}
+                  onChange={(e) => save({ recovery_switch: e.target.checked ? 'auto' : 'off' })}
+                />
+              </label>
+            )}
           </span>
           {pinButton({
             param: PARAM_LABEL.handback_limit,
@@ -592,6 +618,18 @@ export function GatePolicy({ project }: { project: Project }) {
             disabled,
             onChange: (gate_runner) => save({ gate_runner }),
           })}
+          <span />
+        </div>
+        <div className="ps-row wf-pr" data-setting-id="gates.milestoneVerify">
+          <span className="wf-nm">{verify}</span>
+          <input
+            type="checkbox"
+            className="ps-sw"
+            aria-label={verify}
+            checked={current.milestone_verify === 'auto'}
+            disabled={disabled}
+            onChange={(e) => save({ milestone_verify: e.target.checked ? 'auto' : 'off' })}
+          />
           <span />
         </div>
       </div>

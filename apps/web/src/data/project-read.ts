@@ -97,7 +97,8 @@ function checked<T>(
 }
 
 /**
- * A per-project GET query, read again after each board read, on reconnect and on resync; a failure
+ * A per-project GET query, read again after each read of its project's board or of every project's,
+ * on reconnect and on resync; a failure
  * keeps the last read. A project read before shows its cached read while it
  * reads again. Queries of the same input asked for the same reason share one read.
  */
@@ -120,9 +121,12 @@ export function useProjectQuery<T>(
   const ready = useBoard((s) => s.board !== null);
   const events = options?.events ?? false;
   const kinds = options?.kinds;
-  const changed = useBoard((s) =>
-    kinds ? newestOf(s.events, project_id, kinds) : events ? s.changed : (s.board?.cursor ?? 0),
-  );
+  const changed = useBoard((s) => {
+    if (kinds) return newestOf(s.events, project_id, kinds);
+    // A read of other projects' boards leaves this project's answer as it was.
+    const read = (project_id !== null && s.reads?.[project_id]) || s.reads?.[''];
+    return events ? (read?.changed ?? s.changed) : (read?.cursor ?? s.board?.cursor ?? 0);
+  });
   const [focused, setFocused] = useState(0);
   const followsFocus = kinds !== undefined;
   useEffect(() => {

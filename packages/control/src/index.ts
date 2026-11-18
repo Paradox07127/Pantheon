@@ -228,6 +228,7 @@ export {
   personalCommand,
 } from './personal-scope.js';
 export { AGENT_SCOPE, agentScopeMarkdown, type AgentScopeRow } from './agent-scope.js';
+export { personalHome } from './personal-agent.js';
 export { TraceIndex } from './trace-index.js';
 export { RUNTIME_EVENT_KINDS } from './runtime-findings.js';
 export { runtimeConfig } from './user-config.js';
@@ -456,6 +457,13 @@ export class Control extends EventEmitter {
     );
     const input = inputSchemas[command.type as CommandType].parse(command.input);
     command.input = input;
+    const projectId = (input as { project_id?: unknown }).project_id;
+    requireThat(
+      typeof projectId !== 'string' ||
+        this.store.get<Project>('projects', projectId)?.kind !== 'personal',
+      'invalid_input',
+      "The personal agent's home takes no project commands",
+    );
     if (sessionChoice) {
       const choice = input as { permission_mode?: Session['permission_mode']; fast?: boolean };
       requireThat(

@@ -68,12 +68,28 @@ export const CUSTOM_TEMPLATE: AgentTemplate = {
   listens: [],
 };
 
+export const PERSONAL_TEMPLATE: AgentTemplate = {
+  name: 'Personal',
+  role: 'Me',
+  tools: [],
+  listens: [],
+  routines: [
+    {
+      id: 'daily',
+      prompt: 'Check every project and tell me what waits for me.',
+      at: '09:00',
+      enabled: true,
+    },
+  ],
+};
+
 export const AGENT_TEMPLATES: Record<AgentProfile['template'], AgentTemplate> = {
   assistant: ASSISTANT_TEMPLATE,
   triage: TRIAGE_TEMPLATE,
   ideas: IDEAS_TEMPLATE,
   goals: GOALS_TEMPLATE,
   custom: CUSTOM_TEMPLATE,
+  personal: PERSONAL_TEMPLATE,
 };
 
 /** The templates of which each project has exactly one agent, created with the project. */

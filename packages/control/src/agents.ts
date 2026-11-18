@@ -4,6 +4,7 @@ import {
   type AgentFields,
   type AgentProfile,
   type Principal,
+  type Project,
   type Session,
 } from '@pantheon/domain';
 import { runtime } from './admission.js';
@@ -24,6 +25,7 @@ export function ensureAgents(ctx: ControlContext, projectId: string): AgentProfi
   const existing = ctx.store
     .list<AgentProfile>('agents')
     .filter((agent) => agent.project_id === projectId);
+  if (ctx.store.get<Project>('projects', projectId)?.kind === 'personal') return existing;
   const profiles = BUILT_IN_TEMPLATES.map((template) => {
     const found = existing.find((agent) => agent.template === template);
     if (found) return found;

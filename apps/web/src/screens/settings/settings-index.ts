@@ -1189,6 +1189,15 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     options: () => [t({ id: 'settings.gate.onFail', defaultMessage: 'When a gate fails' })],
   },
   {
+    id: 'gates.recoverySwitch',
+    page: 'gates',
+    section: gate,
+    label: defineMessage({
+      id: 'settings.gate.recoverySwitch',
+      defaultMessage: 'Switch runtime when hand-backs run out',
+    }),
+  },
+  {
     id: 'gates.runner',
     page: 'gates',
     section: gate,
@@ -1201,6 +1210,15 @@ export const SETTINGS_INDEX: SettingRecord[] = [
       t({ id: 'settings.gate.runner.daemon', defaultMessage: 'daemon' }),
       t({ id: 'settings.gate.runner.session', defaultMessage: 'Session worktree' }),
     ],
+  },
+  {
+    id: 'gates.milestoneVerify',
+    page: 'gates',
+    section: gate,
+    label: defineMessage({
+      id: 'settings.gate.milestoneVerify',
+      defaultMessage: 'Verify milestones automatically',
+    }),
   },
   {
     id: 'gates.name',

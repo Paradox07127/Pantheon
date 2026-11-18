@@ -114,6 +114,8 @@
   "settings.gate.addStep": "加一步",
   "settings.gate.fixTimes": "{count, plural, other {# 次}}",
   "settings.gate.fixOff": "不修",
+  "settings.gate.recoverySwitch": "交回用完后换备选 runtime",
+  "settings.gate.milestoneVerify": "里程碑就绪后自动验证",
   "settings.gate.onFail": "门禁失败时",
   "settings.gate.onFail.handback": "交回修",
   "settings.gate.onFail.retry": "先重跑一次",

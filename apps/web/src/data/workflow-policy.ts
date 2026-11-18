@@ -49,6 +49,8 @@ export interface PolicyPatch {
   handback_limit?: number;
   gate_on_fail?: WorkflowPolicy['gate_on_fail'];
   gate_runner?: WorkflowPolicy['gate_runner'];
+  recovery_switch?: WorkflowPolicy['recovery_switch'];
+  milestone_verify?: WorkflowPolicy['milestone_verify'];
   /** null clears the hint. */
   task_size_hint?: number | null;
   /** null clears the budget. */

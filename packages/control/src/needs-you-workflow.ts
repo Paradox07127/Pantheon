@@ -154,7 +154,11 @@ export function agentProposalItems(ctx: ControlContext, scope: NeedsYouScope): N
       agent_proposal: {
         id: proposal.id,
         name: proposal.fields.name ?? target!.name,
-        template: target?.template ?? proposal.fields.template!,
+        // A proposal names an agent of its own project, which is never the personal home.
+        template: (target?.template ?? proposal.fields.template!) as Exclude<
+          AgentProfile['template'],
+          'personal'
+        >,
         ...(target && { agent_id: target.id }),
         waited_ms: ctx.store.now() - proposal.at,
       },

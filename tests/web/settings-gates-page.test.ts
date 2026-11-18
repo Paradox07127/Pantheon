@@ -81,6 +81,8 @@ const LINE = gate('line');
 const ON_FAIL = gate('onFail');
 const RUNNER = gate('runner');
 const HANDBACK_LIMIT = zh('data.workflowPolicy.param.handbackLimit');
+const RECOVERY_SWITCH = zh('settings.gate.recoverySwitch');
+const MILESTONE_VERIFY = zh('settings.gate.milestoneVerify');
 async function folder(named = false, git = false) {
   const h = mount(() => FolderGate({ project, root: ROOT, named, git, runs }));
   await h.flush();
@@ -375,6 +377,69 @@ describe('the handback count after a failed gate', () => {
       bridge.answers['workflow.policy'] = policy({ gate_on_fail });
       const h = await fixLimit();
       expect(nodes(tree(h)).some((n) => n.props['aria-label'] === HANDBACK_LIMIT)).toBe(false);
+    }
+  });
+
+  it.each([
+    [
+      'turns on the runtime switch after the count when the policy has none',
+      'gates.handbackLimit',
+      RECOVERY_SWITCH,
+      {},
+      false,
+      { recovery_switch: 'auto' },
+    ],
+    [
+      'turns off the runtime switch after the count when the policy has it on',
+      'gates.handbackLimit',
+      RECOVERY_SWITCH,
+      { recovery_switch: 'auto' },
+      true,
+      { recovery_switch: 'off' },
+    ],
+    [
+      'turns on milestone verification in its own row when the policy has none',
+      'gates.milestoneVerify',
+      MILESTONE_VERIFY,
+      {},
+      false,
+      { milestone_verify: 'auto' },
+    ],
+    [
+      'turns off milestone verification in its own row when the policy has it on',
+      'gates.milestoneVerify',
+      MILESTONE_VERIFY,
+      { milestone_verify: 'auto' },
+      true,
+      { milestone_verify: 'off' },
+    ],
+    [
+      'turns on milestone verification while a failed gate stops the work',
+      'gates.milestoneVerify',
+      MILESTONE_VERIFY,
+      { gate_on_fail: 'stop' },
+      false,
+      { milestone_verify: 'auto' },
+    ],
+  ] as const)('%s', async (_, anchor, label, stored, checked, input) => {
+    bridge.answers['workflow.policy'] = policy(stored);
+    const h = await fixLimit();
+    const toggle = labelled(
+      find(tree(h), (n) => n.props['data-setting-id'] === anchor),
+      label,
+    );
+    expect(toggle.props.type).toBe('checkbox');
+    expect(toggle.props.checked).toBe(checked);
+    toggle.props.onChange({ target: { checked: !checked } });
+    await h.flush();
+    expect(bridge.commands.map((c) => c.input)).toEqual([{ project_id: 'alpha', ...input }]);
+  });
+
+  it('shows no runtime switch when the work reruns or stops', async () => {
+    for (const gate_on_fail of ['retry', 'stop'] as const) {
+      bridge.answers['workflow.policy'] = policy({ gate_on_fail });
+      const h = await fixLimit();
+      expect(nodes(tree(h)).some((n) => n.props['aria-label'] === RECOVERY_SWITCH)).toBe(false);
     }
   });
 
