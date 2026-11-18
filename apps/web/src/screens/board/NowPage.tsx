@@ -2,6 +2,7 @@ import {
   useRef,
   type ComponentProps,
   type Dispatch,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
   type SetStateAction,
@@ -9,12 +10,13 @@ import {
 import type { BoardModel } from '@pantheon/protocol';
 import { useProjectBrief } from '../../data/project-brief';
 import { t } from '../../i18n';
+import { reducedMotion } from '../../lib/motion';
 import { NeedsStrip, useNeedImprovements } from './BoardFrame';
 import { PanelBoundary, type BoardViewProps } from './BoardScreen';
 import { BriefCard } from './BriefCard';
 import { DraftTaskForm, EditMode, OrderLock } from './EditMode';
 import { LeadPanel } from './LeadPanel';
-import { MainView } from './MainView';
+import { MainView, hasPlanTasks } from './MainView';
 import { MilestoneCard, type currentMilestone } from './MilestoneCard';
 import { NowSummary } from './NowSummary';
 import { PlanProposals } from './PlanProposals';
@@ -44,6 +46,37 @@ export function ProjectNeeds({
   );
 }
 
+/** Scrolls a fold the click opened in the strips fully into their view once its height has grown, keeping its button in view. */
+function revealOpened(e: MouseEvent<HTMLDivElement>) {
+  const strips = e.currentTarget;
+  const trigger = (e.target as Element).closest('[aria-expanded]');
+  if (!trigger || !strips.contains(trigger)) return;
+  const reveal = () => {
+    if (!trigger.isConnected || trigger.getAttribute('aria-expanded') !== 'true') return;
+    const fold =
+      document.getElementById(trigger.getAttribute('aria-controls') ?? '') ??
+      trigger.closest('li') ??
+      trigger;
+    const view = strips.getBoundingClientRect();
+    const by = Math.min(
+      fold.getBoundingClientRect().bottom - view.bottom,
+      trigger.getBoundingClientRect().top - view.top,
+    );
+    if (by > 0) strips.scrollBy({ top: by, behavior: reducedMotion() ? 'auto' : 'smooth' });
+  };
+  // A fold starts growing a frame or two after the click; wait until a frame passes with nothing
+  // growing. Loops never finish, so only finite animations count.
+  const settle = () =>
+    requestAnimationFrame(() => {
+      const growing = strips
+        .getAnimations({ subtree: true })
+        .filter((a) => a.effect?.getTiming().iterations !== Infinity);
+      if (!growing.length) return reveal();
+      void Promise.allSettled(growing.map((a) => a.finished)).then(settle);
+    });
+  settle();
+}
+
 /** The now view's body: what happened since the user left, what needs the user, milestone and lead, plan proposals, the main view and the summary. */
 export function NowPage({
   model,
@@ -66,6 +99,8 @@ export function NowPage({
   setupPanel,
   empty,
   loadingPanel,
+  graphFull,
+  onGraphFull,
 }: {
   model: BoardModel | null;
   shown: BoardModel | null;
@@ -88,11 +123,17 @@ export function NowPage({
   setupPanel: ReactNode;
   empty: boolean;
   loadingPanel: ReactNode;
+  /** The user expanded the chart over the strips. */
+  graphFull: boolean;
+  onGraphFull: () => void;
 }) {
+  // Only a chart with nodes to draw holds its share of the height or takes the strips' place.
+  const graph = !setupPanel && !empty && !!shown && hasPlanTasks(shown);
+  const full = graphFull && graph;
   return (
     <>
-      <div className="bd-now-body">
-        <div className="bd-now-top">
+      <div className="bd-now-body" data-graph={graph ? '' : undefined}>
+        <div className="bd-now-top" hidden={full} onClick={revealOpened}>
           {model && projectId && (
             <BriefCard
               projectId={projectId}
@@ -192,6 +233,7 @@ export function NowPage({
                     tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
                     editing={editing}
                     onAskNeed={onAskNeed}
+                    expand={{ on: full, onToggle: onGraphFull }}
                   />
                 </PanelBoundary>
               ))}

@@ -5,6 +5,7 @@ import { useDrafts, type Answers } from '../data/drafts';
 import { t } from '../i18n';
 import { listText } from '../lib/list-text';
 import { archLayout } from '../screens/board/intro-model';
+import { Clip } from './Clip';
 import { StateGlyph } from './SessionStateIcon';
 import { Tip } from './Tip';
 import { MermaidDiagram } from './visual/MermaidDiagram';
@@ -206,7 +207,9 @@ export function QuestionCard(props: QuestionCardProps) {
       >
         <p className="qc-q">
           <StateGlyph name="question" />
-          <span>{q.question}</span>
+          <span>
+            <Clip text={q.question} lines={6} />
+          </span>
         </p>
         {q.options.some((o) => o.preview) ? (
           <>

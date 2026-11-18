@@ -6,7 +6,7 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Maximize2, Minimize2 } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { Tip } from '../../components/Tip';
@@ -149,7 +149,7 @@ export function NeedsCount({ onNext }: { onNext?: () => void }) {
     defaultMessage: 'Jump to the next task waiting for you',
   });
   return (
-    <div className="bd-fo bd-fo-needs">
+    <div className="bd-fo-needs">
       <span className="bd-fo-dot" data-c="wait" aria-hidden="true" />
       <Tip content={nextText}>
         <button
@@ -163,6 +163,26 @@ export function NeedsCount({ onNext }: { onNext?: () => void }) {
         </button>
       </Tip>
     </div>
+  );
+}
+
+export interface GraphExpand {
+  on: boolean;
+  onToggle: () => void;
+}
+
+/** A button that lets the chart take the height of the strips above it, and gives it back. */
+export function ExpandGraph({ on, onToggle }: GraphExpand) {
+  const label = on
+    ? t({ id: 'board.flow.collapse', defaultMessage: 'Collapse graph' })
+    : t({ id: 'board.flow.expand', defaultMessage: 'Expand graph' });
+  const Icon = on ? Minimize2 : Maximize2;
+  return (
+    <Tip content={label}>
+      <button type="button" className="ib" aria-label={label} aria-pressed={on} onClick={onToggle}>
+        <Icon aria-hidden="true" />
+      </button>
+    </Tip>
   );
 }
 

@@ -596,10 +596,13 @@ export function BoardView(props: BoardViewProps) {
   );
   const headline = model?.headline ?? null;
   const [selected, setSelected] = useState<{ taskId: string; panel: TaskPanel } | null>(null);
+  // The now view's chart expanded over the strips above it; held for this project while the page lives.
+  const [graphFull, setGraphFull] = useState(false);
   const [selectedProject, setSelectedProject] = useState(projectId);
   if (selectedProject !== projectId) {
     setSelectedProject(projectId);
     setSelected(null);
+    setGraphFull(false);
   }
   // The more menu's baseline start opens the model popover at the menu button.
   const [choosing, setChoosing] = useState(false);
@@ -652,7 +655,11 @@ export function BoardView(props: BoardViewProps) {
     setFocusTask((n) => n + 1);
   };
   // The task the now or canvas view picked, docked as the body's second column.
-  const askNeed = (key: string) => useShell.setState({ askedNeed: key });
+  // The asked row is in the needs-you strip, which the expanded chart hides.
+  const askNeed = (key: string) => {
+    setGraphFull(false);
+    useShell.setState({ askedNeed: key });
+  };
   const drawer = model && (
     <TaskDrawer
       model={model}
@@ -949,6 +956,8 @@ export function BoardView(props: BoardViewProps) {
                     setupPanel,
                     empty,
                     loadingPanel,
+                    graphFull,
+                    onGraphFull: () => setGraphFull((on) => !on),
                   })
                 : shown && (page === 'canvas' || !projectId)
                   ? CanvasPage({

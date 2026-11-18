@@ -262,7 +262,7 @@ function blockerText(
             {
               id: 'daemon.blocker.mergeBlockedFor',
               defaultMessage:
-                '{count, plural, one {Merge blocked: {reason}, # conflicting file} other {Merge blocked: {reason}, # conflicting files}}',
+                '{count, plural, =0 {Merge blocked: {reason}} one {Merge blocked: {reason}, # conflicting file} other {Merge blocked: {reason}, # conflicting files}}',
             },
             { reason: reasonText(blocker.reason), count: blocker.conflicts },
           )
@@ -270,7 +270,7 @@ function blockerText(
             {
               id: 'daemon.blocker.mergeBlocked',
               defaultMessage:
-                '{count, plural, one {Merge blocked, # conflicting file} other {Merge blocked, # conflicting files}}',
+                '{count, plural, =0 {Merge blocked} one {Merge blocked, # conflicting file} other {Merge blocked, # conflicting files}}',
             },
             { count: blocker.conflicts },
           );

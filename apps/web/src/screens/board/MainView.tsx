@@ -9,6 +9,7 @@ import { Empty } from './Charts';
 import type { FlowGroup } from './flow-layout';
 import { flowReplay, momentAt, statusesAt, type FlowReplay } from './flow-replay';
 import { FlowChart } from './FlowPanel';
+import type { GraphExpand } from './FlowOverlays';
 import { dayText } from '../../lib/time-text';
 import type { TaskDrawerProps } from './TaskDrawer';
 import { isPlanTask } from './view-rules';
@@ -197,6 +198,7 @@ interface MainViewProps {
   /** The board is in edit mode: changes on the chart go into the draft. */
   editing?: boolean;
   onAskNeed?: (key: string) => void;
+  expand?: GraphExpand;
 }
 
 /** The plan as one flow chart, banded the way the user picked in the board bar. */
@@ -211,6 +213,7 @@ export function MainView({
   tell,
   editing,
   onAskNeed,
+  expand,
 }: MainViewProps) {
   const group = useGroup(projectId);
   const plan = useMemo(() => ({ ...model, tasks: model.tasks.filter(isPlanTask) }), [model]);
@@ -257,6 +260,7 @@ export function MainView({
             editing={editing}
             states={states}
             onAskNeed={onAskNeed}
+            expand={expand}
           />
           {flow && <FlowReplayer flow={flow} onMoment={setMoment} />}
         </>

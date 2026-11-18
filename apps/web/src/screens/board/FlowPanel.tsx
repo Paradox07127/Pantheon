@@ -51,6 +51,7 @@ import { TaskCard, type TaskNode } from './FlowNode';
 import {
   ConnectionLine,
   DraftCard,
+  ExpandGraph,
   FlowLegend,
   NeedsCount,
   chartProject,
@@ -60,6 +61,7 @@ import {
   overlayTitle,
   withDrafts,
   type DraftNode,
+  type GraphExpand,
 } from './FlowOverlays';
 import { MergedStack, STACK_WIDTH, type StackNode } from './MergedStack';
 import { currentMilestone, verifyText } from './MilestoneCard';
@@ -351,6 +353,8 @@ interface FlowCanvasProps {
   states?: ReadonlyMap<string, Task['status']>;
   /** Present while the board's needs-you strip sits beside the chart. */
   onAskNeed?: (key: string) => void;
+  /** The now view's switch between the chart under its strips and the chart in their place. */
+  expand?: GraphExpand;
 }
 
 // A card at a past moment keeps its plan facts and that moment's status.
@@ -408,6 +412,7 @@ function FlowCanvas({
   editing = false,
   states,
   onAskNeed,
+  expand,
 }: FlowCanvasProps) {
   // A past moment takes no command and no draft.
   const tell = states ? undefined : liveTell;
@@ -860,7 +865,12 @@ function FlowCanvas({
             </>
           )}
         </div>
-        {needs.length > 0 && <NeedsCount onNext={jump} />}
+        {(needs.length > 0 || expand) && (
+          <div className="bd-fo bd-fo-tr">
+            {needs.length > 0 && <NeedsCount onNext={jump} />}
+            {expand && <ExpandGraph {...expand} />}
+          </div>
+        )}
         <div className="bd-fo-bar">
           <FlowLegend />
           <div

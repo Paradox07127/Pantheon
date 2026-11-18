@@ -246,7 +246,7 @@ check(
   item?.status === 'inconclusive',
   item && { kind: item.kind, status: item.status },
 );
-// While the step waits on the user its merge holds, and the task reads 待批准.
+// While the step waits on the user its merge holds, and the task's state is waiting_approval.
 const holdOf = async (key) => {
   const task = stepOf(await view(), key).task;
   const run = stepOf(last, key).run;

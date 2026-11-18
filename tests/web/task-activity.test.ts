@@ -141,6 +141,24 @@ describe('activity line', () => {
       task('idle', { activity: activity({ phase: 'idle', turn_error: 'rate limited' }), recap }),
       '回合失败：rate limited',
     ],
+    [
+      'says a merge its gates failed is blocked without naming conflicts it has none of',
+      task('ready', {
+        activity: activity({ phase: 'idle' }),
+        blockers: ['Merge blocked: gate_failed, 0 conflicting files'],
+        blocker_codes: [{ code: 'merge_blocked', reason: 'gate_failed', conflicts: 0 }],
+      }),
+      `合并受阻：${zh('data.reason.gateFailed')}`,
+    ],
+    [
+      'counts the conflicting files of a blocked merge that has some',
+      task('ready', {
+        activity: activity({ phase: 'idle' }),
+        blockers: ['Merge blocked: gate_failed, 2 conflicting files'],
+        blocker_codes: [{ code: 'merge_blocked', reason: 'gate_failed', conflicts: 2 }],
+      }),
+      `合并受阻：${zh('data.reason.gateFailed')}，2 个冲突文件`,
+    ],
   ])('%s', (_, t, line) => {
     expect(activityLine(t, NOW)).toBe(line);
   });

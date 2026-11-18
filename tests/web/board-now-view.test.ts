@@ -393,6 +393,41 @@ describe('project board bar', () => {
     expect(names(canvas)).not.toContain('BriefCard');
   });
 
+  it('lets the flow chart take the height of the strips above and give it back, collapsed again on another project', () => {
+    let projectId = 'project-a';
+    const model = board({ milestones: [milestone], leads: [lead('lead-1')] });
+    const h = mount(() => BoardView(viewProps({ model, projectId })));
+    const expand = () => named(h.value, 'MainView').props.expand;
+    // The element that holds the since-you-left card and the strip of the milestone and the leads.
+    const strips = () =>
+      find(
+        h.value,
+        (n) =>
+          typeof n.type === 'string' &&
+          [n.props.children].flat().some((c) => c?.type?.name === 'BriefCard') &&
+          [n.props.children]
+            .flat()
+            .some((c) => c?.props?.['aria-label'] === zh('board.strip.label')),
+      ).props.hidden;
+    expect(expand().on).toBe(false);
+    expect(strips()).toBe(false);
+    expand().onToggle();
+    h.render();
+    expect(expand().on).toBe(true);
+    expect(strips()).toBe(true);
+    expect(names(h.value)).toContain('NowSummary');
+    expand().onToggle();
+    h.render();
+    expect(expand().on).toBe(false);
+    expect(strips()).toBe(false);
+    expand().onToggle();
+    h.render();
+    projectId = 'project-b';
+    h.render();
+    expect(expand().on).toBe(false);
+    expect(strips()).toBe(false);
+  });
+
   it('lists what needs the user under the requirement bar and the since-you-left card, and nothing when nothing does', () => {
     const actions = { milestones: [], sessions: [], run: async () => null };
     const waiting = {

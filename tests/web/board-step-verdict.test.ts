@@ -9,8 +9,15 @@ vi.mock('react', async (actual) =>
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
+vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (actual) => ({
+  ...(await actual<object>()),
+  useStore: (select: (s: { transform: [number, number, number] }) => unknown) =>
+    select({ transform: [0, 0, 1] }),
+}));
 import { RequestCard } from '@/components/RequestCard';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
+import { TaskCard } from '@/screens/board/FlowNode';
+import { activityLine } from '@/screens/board/activity';
 import { needActions, needCommand, type BoardNeed } from '@/screens/board/frame-model';
 import type { SnapshotSession } from '@/screens/board/panels-model';
 import { runtimeName } from '@/components/RuntimeGlyph';
@@ -342,5 +349,57 @@ describe('a needs-you row for a step without a verdict', () => {
       (n) => typeof n.type === 'function' && n.type.name === 'MenuItem',
     );
     expect(menu.map(text)).toContain(zh('board.needs.actions.countFailed'));
+  });
+});
+
+describe('a task whose step waits on the user to count it', () => {
+  it('names the same state in the drawer head and on its canvas node', () => {
+    const waiting = {
+      ...task([stepRun({ state: 'inconclusive' })]),
+      rung: {
+        rung: 'user',
+        by: 'user',
+        reason: 'workflow_approval',
+        since: NOW - 60_000,
+        switches: [],
+      },
+    } as Task;
+    const drawer = mount(() =>
+      TaskDrawer({
+        model: {
+          since: NOW - 86_400_000,
+          now: NOW,
+          lanes: [],
+          edges: [],
+          merges: [],
+          tasks: [waiting],
+          needs: [need('inconclusive')],
+        } as unknown as BoardModel,
+        taskId: waiting.id,
+        onSelect: noop,
+        onOpenSession: noop,
+        onOpenStory: noop,
+        tell: { sessions: [lead], run },
+      }),
+    ).value;
+    const badge = find(
+      drawer,
+      (n) => typeof n.type === 'function' && n.type.name === 'TaskStateBadge',
+    );
+    const head = text((badge.type as (p: object) => ReactNode)(badge.props as object));
+    const node = mount(() =>
+      TaskCard({
+        data: {
+          task: waiting,
+          selected: false,
+          now: NOW,
+          critical: false,
+          ready: false,
+          line: activityLine(waiting, NOW),
+        },
+      } as unknown as Parameters<typeof TaskCard>[0]),
+    ).value;
+    expect(head).toBe(zh('board.frame.needs'));
+    expect(nodes(node).some((n) => n.type === 'span' && text(n) === head)).toBe(true);
   });
 });

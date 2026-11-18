@@ -43,7 +43,6 @@ import { COMPACT_ZOOM, DOT_ZOOM } from './flow-layout';
 import { NodeActions, type NodeActionContext } from './NodeActions';
 import { durationText } from './panels-model';
 import {
-  STATE,
   STATUS,
   StateIcon,
   StatusIcon,
@@ -52,6 +51,7 @@ import {
   TASK_TYPE,
   TaskBadges,
   runtimeName,
+  taskStateLabel,
 } from './status';
 import { BudgetShare, RungLabel } from './TaskRecovery';
 import './node.css';
@@ -643,7 +643,7 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
             {said !== null && task.dispatch_wait === 'runtime_limited' ? (
               <QuotaLine task={task} now={now} line={said} />
             ) : (
-              (said ?? (task.state ? STATE[task.state].label : phaseText(task, now)))
+              (said ?? (task.state ? taskStateLabel(task) : phaseText(task, now)))
             )}
           </span>
           {since !== null && (

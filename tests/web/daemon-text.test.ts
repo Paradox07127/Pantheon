@@ -105,7 +105,7 @@ describe('board blockers the daemon writes', () => {
           [{ code: 'merge_blocked', reason: 'odd_code', conflicts: 0 }],
         ),
       ),
-    ).toEqual(['合并受阻：odd_code，0 个冲突文件']);
+    ).toEqual(['合并受阻：odd_code']);
   });
 });
 

@@ -18,7 +18,7 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
 const { runCommand } = vi.hoisted(() => ({ runCommand: vi.fn() }));
 vi.mock('@/data/commands', () => ({ runCommand }));
 import { FlowChart } from '@/screens/board/FlowPanel';
-import { ConnectionLine, DraftCard, FlowLegend } from '@/screens/board/FlowOverlays';
+import { ConnectionLine, DraftCard, FlowLegend, NeedsCount } from '@/screens/board/FlowOverlays';
 import { NODE_HEIGHT } from '@/screens/board/flow-layout';
 import { MergedStack, stackMerged } from '@/screens/board/MergedStack';
 import { MilestoneNode } from '@/screens/board/MilestoneNode';
@@ -454,6 +454,37 @@ describe('the flow chart overlays', () => {
     const shown = nodes(h.value).filter((n) => (n.type as { name?: string }).name === 'NeedsCount');
     expect(shown).toHaveLength(count);
     expect(shown.every((n) => typeof n.props.onNext === 'function')).toBe(true);
+  });
+
+  it.each<[string, boolean, string]>([
+    ['collapsed', false, 'board.flow.expand'],
+    ['expanded', true, 'board.flow.collapse'],
+  ])('offers one icon button that expands the graph and collapses it again: %s', (_, on, label) => {
+    const onToggle = vi.fn();
+    const { h } = canvas({ expand: { on, onToggle } });
+    const toggle = named(h.value, 'ExpandGraph');
+    const drawn = mount(() => (toggle.type as (p: object) => ReactElement)(toggle.props)).value;
+    const button = find(drawn, (n) => n.type === 'button');
+    expect(button.props['aria-label']).toBe(zh(label));
+    expect(button.props['aria-pressed']).toBe(on);
+    expect(nodes(drawn).some((n) => n.props.content === zh(label))).toBe(true);
+    expect(text(drawn)).toBe('');
+    button.props.onClick();
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    // The jump to the next waiting task stays in the same corner beside it.
+    const corner = find(h.value, (n) =>
+      [n.props.children].flat().some((c) => c?.type?.name === 'ExpandGraph'),
+    );
+    expect(
+      [corner.props.children].flat().some((c: ReactElement<any>) => c?.type === NeedsCount),
+    ).toBe(true);
+  });
+
+  it('offers no expand button on a chart that is not the now view’s', () => {
+    const { h } = canvas();
+    expect(nodes(h.value).some((n) => (n.type as { name?: string }).name === 'ExpandGraph')).toBe(
+      false,
+    );
   });
 
   it('centres the jumped-to task in the chart as tall as it is shown, not as the graph is drawn', () => {

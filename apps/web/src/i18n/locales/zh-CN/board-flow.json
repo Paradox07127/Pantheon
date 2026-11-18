@@ -1,5 +1,7 @@
 {
   "board.flow.needs.next": "跳到下一个等你的节点",
+  "board.flow.expand": "展开节点图",
+  "board.flow.collapse": "收起节点图",
   "board.flow.legend.label": "图例",
   "board.flow.legend.merged": "已合并",
   "board.flow.legend.running": "运行中",

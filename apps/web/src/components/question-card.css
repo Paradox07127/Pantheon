@@ -10,6 +10,7 @@
   background: var(--sf);
   font-size: var(--fs-sm);
   line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
 }
 .qc-src {
   display: flex;

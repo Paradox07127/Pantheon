@@ -14,6 +14,7 @@
 }
 /* Project board: the edit strip stays above; the page under it takes the rest. */
 .bd.bd-paged {
+  container: bd-page / inline-size;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -56,6 +57,7 @@
 }
 /* The page, and an open task drawer docked as its second column. */
 .bd-split {
+  position: relative;
   display: grid;
   flex: 1;
   grid-template-columns: minmax(0, 1fr);
@@ -78,6 +80,21 @@
 }
 .bd-split > .bd-drw > .split {
   display: none;
+}
+/* Beside the drawer the page column would be narrower than the drawer; the drawer lies over it instead. */
+@container bd-page (width < 800px) {
+  .bd-split:has(> .bd-drw) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bd-split > .bd-drw {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    min-width: min(400px, 100% - var(--sp-8));
+    max-width: min(400px, 100% - var(--sp-8));
+  }
 }
 .bd-pub {
   flex: none;
@@ -111,6 +128,9 @@
   overflow-x: hidden;
   overflow-y: auto;
 }
+.bd-now-top[hidden] {
+  display: none;
+}
 /* The now view's canvas: the height the bar and the strips leave. */
 .bd-cv {
   display: flex;
@@ -118,9 +138,31 @@
   flex-direction: column;
   min-height: max(240px, 55%);
   box-sizing: border-box;
-  padding: var(--sp-3) var(--sp-6) calc(var(--sp-6) + var(--toast-reserve));
+  padding: var(--sp-3) var(--sp-6) var(--sp-6);
   overflow-x: hidden;
   overflow-y: auto;
+}
+/* The notice cards' room is scrolled past at the canvas's end, so it never makes the canvas taller. */
+.bd-cv::after {
+  content: '';
+  flex: none;
+  height: var(--toast-reserve);
+}
+/* With no nodes to draw, the canvas keeps the height of what it shows and the strips take the rest. */
+.bd-now-body:not([data-graph]) > .bd-now-top {
+  max-height: none;
+}
+.bd-now-body:not([data-graph]) > .bd-em-off > .bd-em-canvas > .bd-cv {
+  flex: none;
+  min-height: 0;
+  max-height: max(240px, 55%);
+}
+.bd-now-body:not([data-graph]) .bd-cv > .bd-main {
+  min-height: 0;
+  grid-template-rows: auto auto auto;
+}
+.bd-now-body:not([data-graph]) .bd-cv::after {
+  display: none;
 }
 /* Out of edit mode the edit body's boxes drop out, so the canvas lays out as on its own. */
 .bd-em-off,
@@ -133,6 +175,9 @@
 }
 .bd-em .bd-cv {
   padding: 0;
+}
+.bd-em .bd-cv::after {
+  display: none;
 }
 /* A dot on the more button while an action of its menu runs. */
 .bd-more {

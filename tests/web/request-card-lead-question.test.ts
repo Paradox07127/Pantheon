@@ -116,6 +116,21 @@ describe('request card for a lead question', () => {
     },
   );
 
+  it.each(['full', 'compact'] as const)(
+    'cuts a long question to six lines with its whole text behind Show more in the %s card',
+    (size) => {
+      const long = `${'Where do the sessions of every project live once the store moves? '.repeat(12)}${'x'.repeat(300)}`;
+      const item = { ...asked, question: { ...asked.question!, question: long } } as NeedItem;
+      const shown = card(mount({ item, size }).h.value).value;
+      const clipped = find(
+        shown,
+        (n) => typeof n.type === 'function' && n.type.name === 'Clip' && n.props.text === long,
+      );
+      expect(clipped.props.lines).toBe(6);
+      expect(find(shown, (n) => n.props.role === 'radiogroup').props['aria-label']).toBe(long);
+    },
+  );
+
   it('answers with the picked option, or with typed words that replace the pick', async () => {
     const picked = mount({ item: asked });
     const choosing = card(picked.h.value);

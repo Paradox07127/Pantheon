@@ -374,8 +374,15 @@ export function StateIcon({ state }: { state: BoardTaskState }) {
 }
 
 /** The plan task's state name; a session row without a state goes by its status. */
-export const taskStateLabel = (task: Pick<BoardModel['tasks'][number], 'state' | 'status'>) =>
-  task.state ? STATE[task.state].label : STATUS[task.status].label;
+export const taskStateLabel = (
+  task: Pick<BoardModel['tasks'][number], 'state' | 'status' | 'rung'>,
+) =>
+  // A step the user has to count as passed or failed waits on the user, not on an approval.
+  task.rung?.rung === 'user' && task.rung.reason === 'workflow_approval'
+    ? t({ id: 'board.frame.needs', defaultMessage: 'Needs you' })
+    : task.state
+      ? STATE[task.state].label
+      : STATUS[task.status].label;
 
 /** The task state's icon; a session row without a state shows its status. */
 export function TaskStateIcon({ task }: { task: BoardModel['tasks'][number] }) {
@@ -388,7 +395,7 @@ export function TaskStateBadge({ task }: { task: BoardModel['tasks'][number] }) 
   return (
     <span className="bd-stc">
       <StateIcon state={task.state} />
-      <span className="bd-stw">{STATE[task.state].label}</span>
+      <span className="bd-stw">{taskStateLabel(task)}</span>
     </span>
   );
 }
