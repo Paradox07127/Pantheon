@@ -196,6 +196,7 @@ interface MainViewProps {
   tell?: TaskDrawerProps['tell'];
   /** The board is in edit mode: changes on the chart go into the draft. */
   editing?: boolean;
+  onAskNeed?: (key: string) => void;
 }
 
 /** The plan as one flow chart, banded the way the user picked in the board bar. */
@@ -209,6 +210,7 @@ export function MainView({
   onStartTask,
   tell,
   editing,
+  onAskNeed,
 }: MainViewProps) {
   const group = useGroup(projectId);
   const plan = useMemo(() => ({ ...model, tasks: model.tasks.filter(isPlanTask) }), [model]);
@@ -254,6 +256,7 @@ export function MainView({
             tell={tell}
             editing={editing}
             states={states}
+            onAskNeed={onAskNeed}
           />
           {flow && <FlowReplayer flow={flow} onMoment={setMoment} />}
         </>
@@ -262,7 +265,6 @@ export function MainView({
       {!states && !selected && (
         <TaskFocus
           model={model}
-          selected={selected}
           onSelect={onSelect}
           onOpenSession={onOpenSession}
           onOpenEvidence={onOpenEvidence}

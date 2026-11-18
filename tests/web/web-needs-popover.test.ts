@@ -228,6 +228,31 @@ describe('needs-you list', () => {
     ).toBeTruthy();
   });
 
+  it.each([
+    ['lead', []],
+    ['user', [zh('board.needs.actions.merge'), zh('board.needs.actions.gates')]],
+  ] as const)('a failed gate on the %s rung offers %j', (rung, expected) => {
+    const gate = item({
+      source: { table: 'sessions', id: 'session-gate', revision: 1 },
+      kind: 'session.gate_failed',
+      reason: 'gate_failed',
+      rung,
+      actions: [
+        { command: 'session.merge', allowed: true },
+        { command: 'session.gates.run', allowed: true },
+      ],
+    });
+    const h = mount(() => NeedsPopover({ items: [gate], trigger }));
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    const retries = [zh('board.needs.actions.merge'), zh('board.needs.actions.gates')];
+    expect(
+      nodes(h.value)
+        .filter((n) => !!n.props.onClick && retries.includes(text(n)))
+        .map(text),
+    ).toEqual(expected);
+  });
+
   it('lists an agent proposal by the agent’s name and opens the proposing conversation at its card', () => {
     const proposal = item({
       source: { table: 'agent_proposals', id: 'proposal-a', revision: 1 },

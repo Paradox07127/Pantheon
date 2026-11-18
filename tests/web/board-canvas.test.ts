@@ -154,7 +154,7 @@ describe('board now view canvas', () => {
     const tree = main().value;
     expect(() => labelled(tree, '视图')).toThrow();
     expect(() => labelled(tree, '按形状自动')).toThrow();
-    for (const name of ['PhaseList', 'MetroLine', 'AgentLanes', 'ColumnsPanel'])
+    for (const name of ['PhaseList', 'MetroLine', 'AgentLanes'])
       expect(() => named(tree, name)).toThrow();
     expect(named(tree, 'FlowChart').props.model.tasks).toHaveLength(4);
     expect(() => labelled(tree, groupLabel)).toThrow();

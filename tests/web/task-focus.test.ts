@@ -49,7 +49,7 @@ const review: Pick<Review, 'id' | 'state' | 'executions' | 'range'> = {
   range: { source: '/work', from_sha: '1111111111', to_sha: '2222222222' },
 };
 
-it('leaves a task the needs strip already asks about to the strip and keeps an explicit selection', () => {
+it('leaves a task the needs strip already asks about to the strip', () => {
   const asked = task('asked', { status: 'waiting', last_progress_at: 100 });
   const progressed = task('progressed', { status: 'running', last_progress_at: 200 });
   const needs = [
@@ -60,11 +60,10 @@ it('leaves a task the needs strip already asks about to the strip and keeps an e
       next_step: '回答具体请求',
     } as any,
   ];
-  const focus = (tasks: Task[], selected: string | null = null) =>
+  const focus = (tasks: Task[]) =>
     renderToStaticMarkup(
       createElement(TaskFocus, {
         model: board(tasks, { needs }),
-        selected,
         onSelect() {},
         onOpenSession() {},
       }),
@@ -74,10 +73,6 @@ it('leaves a task the needs strip already asks about to the strip and keeps an e
   expect(html).toContain('>progressed</button>');
   expect(html).not.toContain('>asked</button>');
   expect(focus([asked])).toBe('');
-  expect(taskFocus(board([asked, progressed], { needs }), 'asked')).toMatchObject({
-    task: { id: 'asked' },
-    next: expect.stringContaining('lead 自己的权限请求'),
-  });
 });
 
 it('links a blocked task to its unmet upstream and uses its recorded dispatch reason', () => {
@@ -85,7 +80,7 @@ it('links a blocked task to its unmet upstream and uses its recorded dispatch re
     edges: [{ from: 'up', to: 'down', state: 'pending' }],
   });
   const select = vi.fn();
-  const tree = TaskFocus({ model, selected: 'down', onSelect: select, onOpenSession() {} });
+  const tree = TaskFocus({ model, onSelect: select, onOpenSession() {} });
   expect(text(tree)).toContain('并发容量已满');
   find(
     tree,
@@ -94,7 +89,7 @@ it('links a blocked task to its unmet upstream and uses its recorded dispatch re
   expect(select).toHaveBeenCalledWith('up');
 });
 
-it('focuses the latest delivery evidence once all tasks end and keeps manual selection authoritative', () => {
+it('focuses the latest delivery evidence once all tasks end', () => {
   const model = board([
     task('earlier', { status: 'done', ended_at: 100 }),
     task('latest', {
@@ -103,12 +98,11 @@ it('focuses the latest delivery evidence once all tasks end and keeps manual sel
       evidence: { session_id: 'latest-worker', review },
     }),
   ]);
-  expect(taskFocus(model, null)).toMatchObject({
+  expect(taskFocus(model)).toMatchObject({
     task: { id: 'latest' },
     sessionId: 'latest-worker',
   });
-  expect(taskFocus(model, 'earlier')?.task.id).toBe('earlier');
-  expect(taskFocus(board([]), null)).toBeNull();
+  expect(taskFocus(board([]))).toBeNull();
 });
 
 it('keeps evidence on the newest attempt and opens the exact evidence tab', () => {
@@ -125,7 +119,6 @@ it('keeps evidence on the newest attempt and opens the exact evidence tab', () =
   const open = vi.fn();
   const tree = TaskFocus({
     model,
-    selected: 'work',
     onSelect() {},
     onOpenSession() {},
     onOpenEvidence: open,
@@ -137,7 +130,7 @@ it('keeps evidence on the newest attempt and opens the exact evidence tab', () =
   ).props.onClick();
   expect(open).toHaveBeenCalledWith('retry-session', 'review');
   const html = renderToStaticMarkup(
-    createElement(TaskFocus, { model, selected: 'work', onSelect() {}, onOpenSession() {} }),
+    createElement(TaskFocus, { model, onSelect() {}, onOpenSession() {} }),
   );
   expect(html).toContain(zh('components.reviewCoverage.partlyFailed'));
   expect(html).toContain('1 / 2 位完成');
@@ -149,7 +142,6 @@ it('reports absent evidence explicitly and does not offer a start while dispatch
     model: board([
       task('queued', { activity: { phase: 'queued', health: 'fresh', since: 0, attempt: 1 } }),
     ]),
-    selected: null,
     onSelect() {},
     onOpenSession() {},
     onStartTask() {},
@@ -181,7 +173,6 @@ it.each<[string, Partial<Task>, string[]]>([
 ])('%s', (_, extra, links) => {
   const tree = TaskFocus({
     model: board([task('work', extra)]),
-    selected: 'work',
     onSelect() {},
     onOpenSession() {},
   });
@@ -208,14 +199,13 @@ it.each<[string, Task[], string, number]>([
   ],
   [
     'keeps the next step that names the dependency the button does not',
-    [task('up'), task('down')],
+    [task('down'), task('up')],
     zh('board.task.focus.nextUpstream').replace('{title}', 'up'),
     1,
   ],
 ])('%s', (_, tasks, phrase, count) => {
   const tree = TaskFocus({
     model: board(tasks, { edges: [{ from: 'up', to: 'down', state: 'pending' }] }),
-    selected: tasks.at(-1)!.id,
     onSelect() {},
     onOpenSession() {},
     onStartTask() {},

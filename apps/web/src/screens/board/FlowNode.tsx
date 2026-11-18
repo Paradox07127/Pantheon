@@ -499,14 +499,8 @@ const REASON_ICON: Partial<Record<NodeReason['kind'], ComponentType<LucideProps>
   basis: Check,
 };
 
-/** The fifth layer: the command or question waiting, else the one fact to look at. */
+/** The fifth layer: the question waiting, else the one fact to look at. */
 function Reason({ reason }: { reason: NodeReason }) {
-  if (reason.kind === 'command')
-    return (
-      <code className="bd-ninl" title={reason.text}>
-        {reason.text}
-      </code>
-    );
   if (reason.kind === 'question') return <p className="bd-nwhy bd-nask">{reason.text}</p>;
   const Icon = REASON_ICON[reason.kind]!;
   return (
@@ -549,7 +543,7 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
   const context = task.context?.window_tokens ? task.context : null;
   const open = selected || look === 'approval' || look === 'answer';
   const reason = open ? nodeReason(task, look) : null;
-  // The fifth layer then holds the waiting command or question.
+  // The line then says only the phase; the fifth layer or the needs-you strip holds what waits.
   const said =
     reason?.kind === 'command'
       ? PHASE.waiting_approval
@@ -660,7 +654,8 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
         <StageBar task={task} />
         <Amounts task={task} line={line} />
         {task.external_review && <ExternalReview review={task.external_review} now={now} />}
-        {reason && <Reason reason={reason} />}
+        {/* The needs-you strip shows the command waiting for approval. */}
+        {reason && reason.kind !== 'command' && <Reason reason={reason} />}
         {(task.budget || task.rung) && (
           <div className="bd-nrec">
             {task.budget && <BudgetShare budget={task.budget} />}

@@ -97,15 +97,9 @@ const composerValue = `${byLabel('textarea', '新会话的第一条消息')}?.va
 // The trigger's name is "模型：" and its choices; its text starts with the runtime's display name.
 // Scoped to the new-session composer: the closed settings dialog keeps a model menu in the document.
 const modelText = `(document.querySelector('section[aria-label="新会话"] button[aria-label^="模型"]')?.textContent ?? '').trim().toLowerCase()`;
-/** The titles of the cards in the board column headed by the status label. */
-const columnTitles = (label) => `(() => {
-  const column = [...document.querySelectorAll('.bd-col')].find(
-    (col) => col.querySelector('.bd-col-h')?.textContent.includes(${JSON.stringify(label)}),
-  );
-  return column
-    ? [...column.querySelectorAll('[data-task-card] .bd-col-t')].map((t) => t.textContent.trim())
-    : null;
-})()`;
+const TABLE = { role: 'table', name: '进度表', exact: true };
+/** The progress table's task rows as [title, state], from their names "title，state". */
+const tableRows = `[...document.querySelectorAll('[role="table"][aria-label="进度表"] [role="row"][aria-label]')].map((row) => row.getAttribute('aria-label').split('，'))`;
 const nextFrames =
   'new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))';
 
@@ -280,20 +274,15 @@ export async function run({ workspace, evidenceDir }) {
     }
   };
 
-  /** Board › 画布 › 近 7 天 › 任务列; opening a task session resets the progress table to its table. */
-  const openColumns = async () => {
+  /** Board › 画布 › 近 7 天, where the progress table lists the tasks. */
+  const openTable = async () => {
     await click(button('项目看板', { within: NAV }));
     const canvas = { role: 'radio', name: '画布', exact: true };
     await appear(canvas);
     await click(canvas);
-    // The board opens on the unfinished tasks; the columns here also hold the finished ones.
+    // The board opens on the unfinished tasks; the table here also holds the finished ones.
     await click({ role: 'radio', name: '近 7 天', exact: true });
-    const columns = { role: 'radio', name: '任务列', exact: true };
-    await click(columns);
-    await waitUi(
-      `[...document.querySelectorAll('[role="radiogroup"][aria-label="进度表视图"] [role="radio"]')].some((r) => r.textContent.trim() === '任务列' && r.getAttribute('aria-checked') === 'true')`,
-      'the progress table to show the task columns',
-    );
+    await appear(TABLE);
   };
 
   try {
@@ -445,11 +434,10 @@ export async function run({ workspace, evidenceDir }) {
     });
 
     await step('plan-cards', async () => {
-      await openColumns();
-      const cards = `[...document.querySelectorAll('button.bd-col-card[data-task-card]')].map((card) => (card.querySelector('.bd-col-t')?.textContent ?? '').trim())`;
+      await openTable();
       const titles = await waitUi(
-        `(() => { const t = ${cards}; return t.length === 2 ? t : false; })()`,
-        'two task cards',
+        `(() => { const t = ${tableRows}.map(([title]) => title); return t.length === 2 ? t : false; })()`,
+        'two task rows',
       );
       observations.plan = { cards: sorted(titles) };
       await shot('plan-cards');
@@ -458,9 +446,9 @@ export async function run({ workspace, evidenceDir }) {
     observations.work = { sessions_match_tasks: [] };
     for (const task of plan.tasks) {
       await step(`task-${task.id}`, async () => {
-        await openColumns();
-        // The main view above shows the same task as another card.
-        await click(button(task.title, { within: { role: 'group', name: '任务列', exact: true } }));
+        await openTable();
+        // The task groups beside show the same task as another row.
+        await click({ role: 'row', name: `${task.title}，`, within: TABLE });
         await click(button(`开会话做它 ${task.title}`));
         await appear(COMPOSER);
         await waitUi(
@@ -575,15 +563,15 @@ export async function run({ workspace, evidenceDir }) {
       observations.work.auto_merged = which('auto_merged');
       observations.work.reported = which('reported');
 
-      await openColumns();
+      await openTable();
       const titles = await waitUi(
-        `(() => { const t = ${columnTitles('完成')}; return t && ${JSON.stringify(plan.tasks.map((task) => task.title))}.every((title) => t.includes(title)) ? t : false; })()`,
-        'the done column to hold both tasks',
+        `(() => { const t = ${tableRows}.filter(([, state]) => state === '已合并' || state === '已完成').map(([title]) => title); return ${JSON.stringify(plan.tasks.map((task) => task.title))}.every((title) => t.includes(title)) ? t : false; })()`,
+        'the progress table to show both tasks done',
       );
       observations.board = { done_cards: sorted(titles) };
       await read(
-        `(() => { const column = [...document.querySelectorAll('.bd-col')].find((col) => col.querySelector('.bd-col-h')?.textContent.includes('完成')); column.scrollIntoView({ block: 'center', inline: 'center' }); return ${nextFrames}; })()`,
-        'scroll the done column into view',
+        `(() => { document.querySelector('[role="table"][aria-label="进度表"]').scrollIntoView({ block: 'center' }); return ${nextFrames}; })()`,
+        'scroll the progress table into view',
       );
       await shot('done-cards');
 

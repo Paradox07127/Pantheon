@@ -1,4 +1,4 @@
-/* A task's budget share and recovery rung, on flow nodes, task rows, column cards and the drawer */
+/* A task's budget share and recovery rung, on flow nodes, task rows and the drawer */
 .bd-bu {
   display: inline-grid;
   grid-template-columns: 48px 32px;
@@ -83,9 +83,6 @@
   align-items: center;
   gap: var(--sp-1) var(--sp-2);
   min-width: 0;
-}
-.bd-col-card > .bd-rg {
-  align-self: flex-start;
 }
 
 /* The drawer's budget and recovery sections */

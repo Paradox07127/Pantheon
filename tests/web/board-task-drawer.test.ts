@@ -28,7 +28,7 @@ import { wantedRequest, focusRequest } from '@/data/focus-request';
 import { useQueued } from '@/screens/sessions/compose';
 import type { SnapshotSession } from '@/screens/board/panels-model';
 import type { ModelsState } from '@/data/runtime-models';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 type Task = BoardModel['tasks'][number];
 
@@ -374,6 +374,48 @@ describe('the rest of the task drawer', () => {
     ).toBe(false);
   });
 
+  it('jumps to the approval in the needs-you strip beside it, and offers no jump without the strip or the item', () => {
+    const approval = {
+      source: { table: 'approvals', id: 'approval-1', revision: 2 },
+      kind: 'permission',
+      project_id: 'project-a',
+      session_id: 'session-b',
+      status: 'pending',
+      created_at: NOW,
+      reason: 'permission_requested',
+      actions: [{ command: 'approval.respond', allowed: true }],
+      unblocks: 0,
+    } as unknown as NonNullable<BoardModel['needs']>[number];
+    const onAskNeed = vi.fn();
+    const shown = (needs: BoardModel['needs'], ask?: (key: string) => void) =>
+      mount(() =>
+        TaskDrawer({
+          model: { ...board(), needs },
+          taskId: waiting.id,
+          onSelect: noop,
+          onOpenSession: openSession,
+          onOpenStory: noop,
+          tell: { sessions: [lead, worker], run },
+          onAskNeed: ask,
+        }),
+      ).value;
+    const inNeeds = (tree: unknown) =>
+      nodes(tree as never).filter(
+        (n) => n.type === 'button' && text(n) === zh('board.drawer.inNeeds'),
+      );
+    const jump = inNeeds(shown([approval], onAskNeed));
+    expect(jump).toHaveLength(1);
+    jump[0]!.props.onClick();
+    expect(onAskNeed).toHaveBeenCalledWith('approval-1');
+    expect(openSession).not.toHaveBeenCalled();
+    expect(inNeeds(shown([approval]))).toEqual([]);
+    expect(inNeeds(shown([], onAskNeed))).toEqual([]);
+    // Allowing or denying stays in the strip.
+    const all = nodes(shown([approval], onAskNeed) as never).filter((n) => n.type === 'button');
+    expect(all.map((n) => text(n))).not.toContain(zh('board.needs.actions.approve'));
+    expect(all.map((n) => text(n))).not.toContain(zh('board.needs.actions.reject'));
+  });
+
   const asking = row('b', {
     ...waiting,
     state: 'running',
@@ -520,7 +562,7 @@ describe('the rest of the task drawer', () => {
     expect(section(drawer(open.id, [open]).value)).toBeUndefined();
   });
 
-  it('measures the tokens used against the task budget, full and in the warning colour past it', () => {
+  it('measures the tokens used against the plan budget in the one budget section, full past it', () => {
     const spent = (id: string, tokens: number, budget?: number) =>
       row(id, {
         ...(budget !== undefined && { token_budget: budget }),
@@ -540,17 +582,33 @@ describe('the rest of the task drawer', () => {
       });
     const budget = (task: Task) => {
       const tree = drawer(task.id, [task]).value;
-      const meter = nodes(tree).find((n) => n.props.className === 'meter');
-      const words = nodes(tree).find((n) => n.props.className === 'bd-dbud');
-      return meter
-        ? [meter.props.style['--v'], meter.props['data-over'] ?? false, text(words)]
-        : null;
+      const sections = nodes(tree).filter(
+        (n) => n.type === 'section' && text(n).startsWith(zh('board.recovery.budget.heading')),
+      );
+      const meters = nodes(sections).filter((n) => n.props.role === 'img');
+      return {
+        sections: sections.length,
+        meters: meters.map((n) => [n.props['aria-label'], n.props.style['--v']]),
+        said: text(sections[0] ?? null),
+        all: text(tree),
+      };
     };
-    expect(budget(spent('under', 30_000, 100_000))).toEqual(['30%', false, '30k / 100k token']);
-    expect(budget(spent('over', 150_000, 100_000))).toEqual(['100%', true, '150k / 100k token']);
-    const plain = spent('plain', 30_000);
-    expect(budget(plain)).toBeNull();
-    expect(text(drawer(plain.id, [plain]).value)).toContain('30k tokens');
+    const under = budget(spent('under', 30_000, 100_000));
+    expect(under.sections).toBe(1);
+    expect(under.meters).toEqual([
+      [zhf('board.recovery.budget.planMeter', { percent: 30 }), '30%'],
+    ]);
+    expect(under.said).toContain(`${zh('board.recovery.budget.plan')}30k / 100k30%`);
+    expect(under.all).not.toContain('100k token');
+    const over = budget(spent('over', 150_000, 100_000));
+    expect(over.sections).toBe(1);
+    expect(over.meters).toEqual([
+      [zhf('board.recovery.budget.planMeter', { percent: 150 }), '100%'],
+    ]);
+    expect(over.said).toContain('150k / 100k150%');
+    const plain = budget(spent('plain', 30_000));
+    expect(plain.sections).toBe(0);
+    expect(plain.all).toContain('30k tokens');
   });
 
   it('stays open for a click or Esc in a select list it opened, and closes for one elsewhere', () => {

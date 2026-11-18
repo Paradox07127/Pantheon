@@ -408,6 +408,10 @@
   white-space: pre-line;
   user-select: text;
 }
+.bms-vact {
+  display: flex;
+  gap: var(--sp-2);
+}
 
 /* Leads: one line each, one under another. */
 .bld-l,

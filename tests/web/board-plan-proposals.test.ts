@@ -6,6 +6,7 @@ vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMoc
 const { runCommand } = vi.hoisted(() => ({ runCommand: vi.fn() }));
 vi.mock('@/data/commands', () => ({ runCommand }));
 import { PlanProposals } from '@/screens/board/PlanProposals';
+import { proposalCardId } from '@/screens/board/frame-model';
 import { RuntimeGlyph } from '@/components/RuntimeGlyph';
 import { toastManager } from '@/components/Toast';
 import { failureText } from '@/data/needs-you';
@@ -120,6 +121,12 @@ describe('lead plan proposals on the board', () => {
     expect(text(title)).toBe(zhf('board.plan.proposal.title', { lead: 'Refunds lead' }));
     expect(why!.props.className).toBe('bd-pp-why');
     expect(text(why)).toBe('The diff report failed its gate three times');
+  });
+
+  it('marks each card by its proposal, so a needs-you row can bring it into view and focus it', () => {
+    const article = find(card().value, (n) => n.type === 'article');
+    expect(article.props.id).toBe(proposalCardId('p-1'));
+    expect(article.props.tabIndex).toBe(-1);
   });
 
   it('lists each op in order: removed and added tasks with their signs, others as changes', () => {

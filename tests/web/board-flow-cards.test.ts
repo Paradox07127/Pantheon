@@ -16,7 +16,6 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
 import { FlowChart } from '@/screens/board/FlowPanel';
 import { TaskCard as FlowNode } from '@/screens/board/FlowNode';
 import { activityLine } from '@/screens/board/activity';
-import { ColumnsPanel } from '@/screens/board/Columns';
 
 type Task = BoardModel['tasks'][number];
 const NOW = Date.UTC(2026, 10, 7, 12);
@@ -529,85 +528,5 @@ describe('flow chart status line', () => {
       merges: [{ session_id: 's1', sha: '3e1c9a0f00d', additions: 212, deletions: 40 }],
     } as unknown as BoardModel;
     expect(activityLine(merged, NOW, board)).toBe('3e1c9a0 +212 −40');
-  });
-});
-
-/** Calls function components down to the host element they render. */
-const rendered = (el: ReactElement<any>): ReactElement<any> => {
-  while (typeof el.type === 'function')
-    el = (el.type as (p: unknown) => ReactElement<any>)(el.props);
-  return el;
-};
-
-describe('column task card', () => {
-  const card = (t: Task) => {
-    const h = mount(() =>
-      ColumnsPanel({
-        model: model([t], []),
-        selected: null,
-        onSelect() {},
-        onOpenSession() {},
-        onOpenStory() {},
-      }),
-    );
-    const el = named(h.value, 'TaskCard');
-    return mount(() => rendered(el)).value;
-  };
-
-  it('keeps the same task button when the shown status changes', () => {
-    const before = card(task('build', 'running', { ...runningTool, health: 'fresh' }));
-    const after = card(task('build', 'running', runningTool));
-    expect(before.type).toBe('button');
-    expect(after.type).toBe('button');
-    expect(after.props['data-status']).not.toBe(before.props['data-status']);
-    expect(after.key).toBe(before.key);
-  });
-
-  it('takes focus back when a status change moves the focused card to another column', () => {
-    let tasks = [task('build', 'running')];
-    const panel = new HookHost(() =>
-      ColumnsPanel({
-        model: model(tasks, []),
-        selected: null,
-        onSelect() {},
-        onOpenSession() {},
-        onOpenStory() {},
-      }),
-    );
-    hosts.push(panel);
-    const columnOf = (tree: unknown) =>
-      find(
-        tree as any,
-        (n) =>
-          /^bd-col( |$)/.test(n.props.className ?? '') &&
-          nodes(n.props.children).some((c) => c.key === 'build'),
-      ).key;
-    /** Mounts the card the panel last rendered, its button standing in for the DOM node. */
-    const mountCard = (button: { focus: () => void }) => {
-      const card = named(panel.value, 'TaskCard');
-      const h = new HookHost(
-        () => (card.type as (p: unknown) => ReactElement<any>)(card.props),
-        (el) => (el.props.ref.current = button),
-      );
-      hosts.push(h);
-      h.render();
-      return h;
-    };
-    const before = { focus: vi.fn() };
-    vi.stubGlobal('document', { activeElement: before });
-    panel.render();
-    const running = mountCard(before);
-    const from = columnOf(panel.value);
-
-    tasks = [task('build', 'done')];
-    panel.render();
-    expect(columnOf(panel.value)).not.toBe(from);
-    // In one commit React drops the focused card from its old column, then mounts it in the new one.
-    running.unmount();
-    const after = { focus: vi.fn() };
-    vi.stubGlobal('document', { activeElement: null });
-    mountCard(after);
-    expect(after.focus).toHaveBeenCalled();
-    expect(before.focus).not.toHaveBeenCalled();
   });
 });

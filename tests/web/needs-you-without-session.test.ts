@@ -64,6 +64,6 @@ describe('needs-you items that are not about a session', () => {
       edges: [],
       needs: [{ ...milestone, unblocks: 0 }],
     } as unknown as BoardModel;
-    expect(taskFocus(model, null)?.task.id).toBe('lead:next');
+    expect(taskFocus(model)?.task.id).toBe('lead:next');
   });
 });

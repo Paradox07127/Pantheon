@@ -268,37 +268,6 @@ export function tickLabels(
   return kept.reverse();
 }
 
-/* Board columns */
-
-const COLUMN_ORDER: readonly BoardTaskStatus[] = [
-  'todo',
-  'running',
-  'waiting',
-  'idle',
-  'ready',
-  'done',
-  'failed',
-  'discarded',
-];
-
-export interface BoardColumn {
-  status: BoardTaskStatus;
-  tasks: BoardTask[];
-}
-
-/** One column per status in a fixed order, empty ones included; tasks keep the board order. */
-export function boardColumns(model: Pick<BoardModel, 'tasks'>): BoardColumn[] {
-  return COLUMN_ORDER.map((status) => ({
-    status,
-    tasks: model.tasks.filter((task) => task.status === status),
-  }));
-}
-
-/** Upstream edges of a task that are not met yet. */
-export function pendingUpstream(model: Pick<BoardModel, 'edges'>, taskId: string): number {
-  return model.edges.filter((edge) => edge.to === taskId && edge.state !== 'met').length;
-}
-
 /* Milestones */
 
 export const MILESTONE_ROWS = 4;

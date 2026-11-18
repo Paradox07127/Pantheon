@@ -1,5 +1,4 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import type { ReactElement } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { named, nodes, mount, unmountAll } from './web-hook-host.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
@@ -103,42 +102,21 @@ const laid = (tree: unknown): any => [
 ];
 const has = (tree: unknown, name: string) =>
   nodes(laid(tree)).some((n) => typeof n.type === 'function' && n.type.name === name);
-const tableSwitch = (tree: unknown): ReactElement<any> =>
-  named(laid(tree), 'ProgressTable').props.tools;
 
 it('shows the progress table in the canvas view, the table by default, and the flow chart in the now view', () => {
   const tree = board().value;
   expect(has(tree, 'MainView')).toBe(false);
   expect(has(tree, 'ProgressTable')).toBe(true);
   expect(has(tree, 'TrendPanel')).toBe(true);
-  expect(has(tree, 'ColumnsPanel')).toBe(false);
-  expect(tableSwitch(tree).props.value).toBe('table');
   const now = board('now').value;
   expect(has(now, 'MainView')).toBe(true);
   expect(has(now, 'ProgressTable')).toBe(false);
 });
 
-it('swaps the table for the task columns inside the progress table panel', () => {
+it('opens the task drawer of a task picked in the progress table', () => {
   const h = board();
-  tableSwitch(h.value).props.onValueChange('columns');
-  h.render();
-  const table = named(laid(h.value), 'ProgressTable');
-  expect(tableSwitch(h.value).props.value).toBe('columns');
-  expect(has(table.props.children, 'ColumnsPanel')).toBe(true);
-  expect(has(h.value, 'TrendPanel')).toBe(true);
-});
-
-it('opens the task drawer of only the panel the task was picked in', () => {
-  const h = board();
-  tableSwitch(h.value).props.onValueChange('columns');
-  h.render();
-  named(laid(h.value), 'ColumnsPanel').props.onSelect('importer');
-  h.render();
-  expect(named(laid(h.value), 'ColumnsPanel').props.selected).toBe('importer');
   expect(named(laid(h.value), 'TaskDrawer').props.taskId).toBeNull();
-
   named(laid(h.value), 'ProgressTable').props.onOpenTask('importer');
   h.render();
   expect(named(laid(h.value), 'TaskDrawer').props.taskId).toBe('importer');
-  expect(named(laid(h.value), 'ColumnsPanel').props.selected).toBeNull();
 });

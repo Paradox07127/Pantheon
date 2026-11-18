@@ -59,6 +59,7 @@ export function NowPage({
   onStartTask,
   selectedIn,
   selectFlow,
+  onAskNeed,
   editing,
   taskTitle,
   setFocusTask,
@@ -79,6 +80,8 @@ export function NowPage({
   onStartTask: BoardViewProps['onStartTask'];
   selectedIn: (panel: 'flow') => string | null;
   selectFlow: (taskId: string | null) => void;
+  /** Jumps to a row of the needs-you strip; absent without the strip. */
+  onAskNeed?: (key: string) => void;
   editing: boolean;
   taskTitle: RefObject<HTMLInputElement | null>;
   setFocusTask: Dispatch<SetStateAction<number>>;
@@ -141,7 +144,6 @@ export function NowPage({
                     onOpenSession={onOpenSession}
                     onOpenTask={selectFlow}
                     run={actions?.run}
-                    stale={stale}
                   />
                 </PanelBoundary>
               )}
@@ -188,6 +190,7 @@ export function NowPage({
                     onStartTask={onStartTask}
                     tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
                     editing={editing}
+                    onAskNeed={onAskNeed}
                   />
                 </PanelBoundary>
               ))}

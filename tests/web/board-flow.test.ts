@@ -356,9 +356,6 @@ describe('board view', () => {
     expect(html).not.toContain(main);
     expect(table).toBeGreaterThan(-1);
     expect(trend).toBeGreaterThan(table);
-    expect(html).toContain(`aria-label="${zh('board.panels.tableView')}"`);
-    expect(html).toContain(zh('board.columns.label'));
-    expect(html).not.toContain('bd-col-row');
   });
 
   it('offers the project setup when the project has no tasks and no counts', () => {

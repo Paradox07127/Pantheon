@@ -13,6 +13,7 @@ import {
 } from '../../data/plan-edit';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { proposalCardId } from './frame-model';
 import type { SnapshotSession } from './panels-model';
 import { changeList, PLAN_TITLE_MAX } from './PlanEdit';
 import { TASK_TYPE } from './status';
@@ -239,7 +240,12 @@ function ProposalCard({
   );
   const rejectText = t({ id: 'board.plan.proposal.reject', defaultMessage: 'Reject' });
   return (
-    <article className="bd-pp-card" aria-label={title}>
+    <article
+      id={proposalCardId(proposal.id)}
+      className="bd-pp-card"
+      aria-label={title}
+      tabIndex={-1}
+    >
       <div className="bd-pp-h">
         {runtime && <RuntimeGlyph runtime={runtime} />}
         <b className="bd-pp-t">{title}</b>

@@ -1,7 +1,6 @@
-import { useRef, useState, type SyntheticEvent } from 'react';
+import { useState, type SyntheticEvent } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { Tip } from '../../components/Tip';
-import { toast } from '../../components/Toast';
 import { useBoard } from '../../data/board';
 import { needsKey } from '../../data/notice-tiers';
 import { useSessionPreflight } from '../../data/session-panel';
@@ -10,14 +9,7 @@ import { useShell } from '../../store';
 import { blockedText, MergeDialog } from '../sessions/panel';
 import type { PanelTab } from '../sessions/inspector-model';
 import type { NodeLook } from './FlowNode';
-import {
-  needActions,
-  needCommand,
-  needSession,
-  requestNeed,
-  type NeedAction,
-  type NeedItem,
-} from './frame-model';
+import { requestNeed, type NeedItem } from './frame-model';
 import { tellLeadDraft } from './panels-model';
 import type { TaskDrawerProps } from './TaskDrawer';
 import { TellLead } from './TellLead';
@@ -27,8 +19,10 @@ type Task = BoardModel['tasks'][number];
 export interface NodeActionContext {
   /** Snapshot sessions and the command runner behind the actions. */
   tell: NonNullable<TaskDrawerProps['tell']>;
-  /** The board's needs-you items; an approval is answered at the revision its item names. */
+  /** The board's needs-you items; a question opens the item that answers it. */
   needs: readonly NeedItem[];
+  /** Present while the board's needs-you strip lists these needs; a question jumps to its row there. */
+  onAskNeed?: (key: string) => void;
 }
 
 export interface NodeActionsProps {
@@ -39,7 +33,6 @@ export interface NodeActionsProps {
 
 type OpenKey = 'open' | 'review' | 'failure' | 'session';
 type Action =
-  | { key: 'answer'; need: NeedItem; answers: NeedAction[] }
   | { key: 'question'; need: NeedItem }
   | { key: OpenKey; sessionId: string; tab?: PanelTab }
   | { key: 'merge'; sessionId: string }
@@ -60,27 +53,15 @@ const sessionOf = (task: Task): string | null =>
   task.claim?.session_id ?? (task.owner_session_id === undefined ? task.id : null);
 
 /** What the user can do on the node in its state: at most three buttons. */
-function nodeActions(task: Task, look: NodeLook, { tell, needs }: NodeActionContext): Action[] {
+function nodeActions(task: Task, look: NodeLook, { needs }: NodeActionContext): Action[] {
   const sessionId = sessionOf(task);
   const open = (key: OpenKey, tab?: PanelTab): Action[] =>
     sessionId ? [{ key, sessionId, ...(tab && { tab }) }] : [];
   const lead = task.owner_session_id;
   switch (look) {
-    case 'approval': {
-      const id = task.activity?.waiting?.approval_id;
-      const need = needs.find((n) => n.source.table === 'approvals' && n.source.id === id);
-      const answers = need
-        ? needActions(
-            need,
-            tell.sessions.find((s) => s.id === needSession(need)),
-            tell.sessions.find((s) => s.id === lead),
-          ).filter((a) => a.key === 'approve' || a.key === 'reject')
-        : [];
-      return [
-        ...(need && answers.length ? [{ key: 'answer' as const, need, answers }] : []),
-        ...open('open'),
-      ];
-    }
+    // The needs-you strip allows or denies it.
+    case 'approval':
+      return open('open');
     case 'answer': {
       // The question card answers it, on the lead's board when the lead relays it.
       const need = requestNeed(needs, task.activity?.waiting?.approval_id);
@@ -104,57 +85,6 @@ function nodeActions(task: Task, look: NodeLook, { tell, needs }: NodeActionCont
     default:
       return [];
   }
-}
-
-/** Allow once and deny, sent like the needs-you strip sends them; an accepted answer keeps both off. */
-function Answer({
-  task,
-  need,
-  answers,
-  run,
-}: {
-  task: Task;
-  need: NeedItem;
-  answers: NeedAction[];
-  run: NodeActionContext['tell']['run'];
-}) {
-  const [busy, setBusy] = useState(false);
-  // A second press before the next render still sees the first.
-  const sent = useRef(false);
-  const press = async (action: NeedAction) => {
-    const command = needCommand(need, action.key);
-    if (sent.current || action.reason || !command) return;
-    sent.current = true;
-    setBusy(true);
-    const failure = await run(command.type, command.input, command.revision);
-    if (!failure) return;
-    sent.current = false;
-    setBusy(false);
-    toast({ title: failure, kind: 'failure' });
-  };
-  return answers.map((action) => {
-    const off = busy || action.reason !== null;
-    const button = (
-      <button
-        key={action.key}
-        type="button"
-        className={action.key === 'approve' ? 'btn sm pri' : 'btn sm'}
-        aria-label={actionLabel(action.label, task.title)}
-        aria-disabled={off || undefined}
-        aria-busy={busy || undefined}
-        onClick={() => void press(action)}
-      >
-        {action.label}
-      </button>
-    );
-    return action.reason ? (
-      <Tip key={action.key} content={action.reason}>
-        {button}
-      </Tip>
-    ) : (
-      button
-    );
-  });
 }
 
 /** Merges after the session panel's confirmation, off with the reason while the preflight refuses. */
@@ -217,16 +147,6 @@ export function NodeActions({ task, look, context }: NodeActionsProps) {
     <div className="bd-nrow bd-nact nodrag nopan" onClick={keep} onKeyDown={keep}>
       {shown.map((action) => {
         switch (action.key) {
-          case 'answer':
-            return (
-              <Answer
-                key={`answer:${action.need.source.id}`}
-                task={task}
-                need={action.need}
-                answers={action.answers}
-                run={run}
-              />
-            );
           case 'question': {
             const label = t({ id: 'board.node.action.answer', defaultMessage: 'Answer' });
             const key = needsKey(action.need);
@@ -237,7 +157,10 @@ export function NodeActions({ task, look, context }: NodeActionsProps) {
                 className="btn sm pri"
                 aria-label={actionLabel(label, task.title)}
                 onClick={() =>
-                  key && useShell.getState().openProjectNeed(action.need.project_id, key)
+                  key &&
+                  (context.onAskNeed
+                    ? context.onAskNeed(key)
+                    : useShell.getState().openProjectNeed(action.need.project_id, key))
                 }
               >
                 {label}

@@ -204,7 +204,7 @@ const NO_KEYS: ReadonlySet<string> = new Set();
 
 /** Allow and deny for a request answered here; else the item's own buttons. */
 function itemActions(item: NeedsYouItem): NeedAction[] {
-  if (!answerable(item)) return needActions(item as NeedItem);
+  if (!answerable(item)) return needActions(item as NeedItem, undefined, undefined, item.rung);
   return [
     {
       key: 'approve',

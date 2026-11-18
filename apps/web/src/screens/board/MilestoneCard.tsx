@@ -16,11 +16,12 @@ import {
   durationText,
   milestoneCounts,
   milestoneFinished,
+  tellLeadDraft,
   type BoardMilestone,
   type SnapshotMilestone,
 } from './panels-model';
 import { StateIcon, StatusIcon, taskStateLabel } from './status';
-import { useDialogContent } from './TellLead';
+import { TellLead, useDialogContent } from './TellLead';
 import './overview.css';
 
 /** The first milestone not yet accepted; null when there is none. */
@@ -139,58 +140,108 @@ const PARTS: {
   },
 ];
 
-// What a verification run records as its reason, each in words; other reasons are not for the user.
-const VERIFY_REASONS: [RegExp, () => string][] = [
-  [
-    /^no runtime can verify$/,
-    () => t({ id: 'board.verify.reason.noRuntime', defaultMessage: 'No runtime could verify it' }),
-  ],
-  [
-    /^daemon_restart$/,
-    () =>
-      t({
-        id: 'board.verify.reason.daemonRestart',
-        defaultMessage: 'Pantheon restarted while the checks ran',
-      }),
-  ],
-  [
-    /^The verifier handed in no verdict$/,
-    () =>
-      t({
-        id: 'board.verify.reason.noVerdict',
-        defaultMessage: 'The verifier handed in no verdict',
-      }),
-  ],
-  [
-    /^Review \S+ failed$/,
-    () =>
-      t({ id: 'board.verify.reason.reviewFailed', defaultMessage: "The verifier's review failed" }),
-  ],
-  [
-    /^reviewer \S+ could not read the review input$/,
-    () =>
-      t({
-        id: 'board.verify.reason.unreadable',
-        defaultMessage: 'The verifier could not read the changes',
-      }),
-  ],
-  [
-    /^reviewer \S+ ended its turn with no finding and no reply$/,
-    () =>
-      t({
-        id: 'board.verify.reason.noReply',
-        defaultMessage: 'The verifier ended with no finding and no reply',
-      }),
-  ],
-  [
-    /^reviewer \S+ \w+$/,
-    () =>
-      t({
-        id: 'board.verify.reason.turnEnded',
-        defaultMessage: "The verifier's turn did not finish",
-      }),
-  ],
-];
+type Verification = NonNullable<BoardMilestone['verification']>;
+
+// Each reason code in words; a failed check is listed instead, and a verifier's failing gives its own words.
+const VERIFY_REASONS: Record<
+  Exclude<NonNullable<Verification['reason_code']>, 'checks_failed' | 'verifier_failed'>,
+  () => string
+> = {
+  checks_environment: () =>
+    t({
+      id: 'board.verify.reason.checksEnvironment',
+      defaultMessage: 'A check failed for a reason outside the code',
+    }),
+  check_error: () =>
+    t({
+      id: 'board.verify.reason.checkError',
+      defaultMessage: 'Pantheon could not run the checks',
+    }),
+  no_verifier_runtime: () =>
+    t({ id: 'board.verify.reason.noRuntime', defaultMessage: 'No runtime could verify it' }),
+  review_not_started: () =>
+    t({
+      id: 'board.verify.reason.reviewNotStarted',
+      defaultMessage: "The verifier's review could not start",
+    }),
+  review_failed: () =>
+    t({ id: 'board.verify.reason.reviewFailed', defaultMessage: "The verifier's review failed" }),
+  review_incomplete: () =>
+    t({
+      id: 'board.verify.reason.reviewIncomplete',
+      defaultMessage: 'The verifier stopped before finishing its review',
+    }),
+  no_verdict: () =>
+    t({
+      id: 'board.verify.reason.noVerdict',
+      defaultMessage: 'The verifier handed in no verdict',
+    }),
+  daemon_restart: () =>
+    t({
+      id: 'board.verify.reason.daemonRestart',
+      defaultMessage: 'Pantheon restarted while the checks ran',
+    }),
+};
+
+/** The verification's state in words, as its badge shows them. */
+export function verifyText(verification: Verification, now: number): string {
+  if (verification.state === 'pending' || verification.state === 'running')
+    return t(
+      { id: 'board.verify.badge.running', defaultMessage: 'Verifying {elapsed}' },
+      { elapsed: durationText(now - verification.started_at) },
+    );
+  if (verification.state === 'passed')
+    return t({ id: 'board.verify.badge.passed', defaultMessage: 'Verified' });
+  if (verification.state === 'failed')
+    return t({ id: 'board.verify.badge.failed', defaultMessage: 'Verification failed' });
+  return t({ id: 'board.verify.badge.inconclusive', defaultMessage: 'Not verified' });
+}
+
+/**
+ * The verification's glyph and words; `glyphOnly` keeps just the glyph, named by the words, with the
+ * words in a tooltip. Nothing for a skipped run.
+ */
+export function VerifyBadge({
+  verification,
+  now,
+  glyphOnly = false,
+}: {
+  verification: Verification;
+  now: number;
+  glyphOnly?: boolean;
+}) {
+  if (verification.state === 'skipped') return null;
+  const words = verifyText(verification, now);
+  const glyph =
+    verification.state === 'pending' || verification.state === 'running' ? (
+      <StatusIcon status="running" />
+    ) : verification.state === 'passed' ? (
+      <StatusIcon status="done" />
+    ) : verification.state === 'failed' ? (
+      <StatusIcon status="failed" />
+    ) : (
+      <StateIcon state="waiting_upstream" />
+    );
+  if (glyphOnly)
+    return (
+      <Tip content={words}>
+        <span className="bms-vf" role="img" aria-label={words}>
+          {glyph}
+        </span>
+      </Tip>
+    );
+  return (
+    <span className="bms-vf">
+      {glyph}
+      {words}
+      {verification.state === 'passed' && verification.runtime && (
+        <span role="img" aria-label={runtimeName(verification.runtime)}>
+          <RuntimeGlyph runtime={verification.runtime} size={12} />
+        </span>
+      )}
+    </span>
+  );
+}
 
 /**
  * The current milestone on one line: merged over planned tasks, the milestone's tasks by state and
@@ -218,11 +269,13 @@ export function MilestoneCard({
   const verifying = verification?.state === 'pending' || verification?.state === 'running';
   const now = Math.max(model.now, useNow(verifying ? 1000 : 60_000));
   const failedChecks = verification?.commands.filter((c) => c.exit_code !== 0).length ?? 0;
+  const code = verification?.reason_code;
   const reason =
-    verification?.reason &&
-    (verification.state === 'failed' && verification.runtime
-      ? verification.reason
-      : VERIFY_REASONS.find(([shape]) => shape.test(verification.reason!))?.[1]());
+    !code || code === 'checks_failed'
+      ? null
+      : code === 'verifier_failed'
+        ? verification.reason
+        : VERIFY_REASONS[code]();
   // Only a lead's milestone has a plan key to edit it by.
   const lead = stored?.owner_session_id;
   const key = stored?.key;
@@ -252,39 +305,7 @@ export function MilestoneCard({
         <h2 id={id} className="bms-h" title={milestone.title}>
           {milestone.title}
         </h2>
-        {verification && verification.state !== 'skipped' && (
-          <span className="bms-vf">
-            {verifying ? (
-              <>
-                <StatusIcon status="running" />
-                {t(
-                  { id: 'board.verify.badge.running', defaultMessage: 'Verifying {elapsed}' },
-                  { elapsed: durationText(now - verification.started_at) },
-                )}
-              </>
-            ) : verification.state === 'passed' ? (
-              <>
-                <StatusIcon status="done" />
-                {t({ id: 'board.verify.badge.passed', defaultMessage: 'Verified' })}
-                {verification.runtime && (
-                  <span role="img" aria-label={runtimeName(verification.runtime)}>
-                    <RuntimeGlyph runtime={verification.runtime} size={12} />
-                  </span>
-                )}
-              </>
-            ) : verification.state === 'failed' ? (
-              <>
-                <StatusIcon status="failed" />
-                {t({ id: 'board.verify.badge.failed', defaultMessage: 'Verification failed' })}
-              </>
-            ) : (
-              <>
-                <StateIcon state="waiting_upstream" />
-                {t({ id: 'board.verify.badge.inconclusive', defaultMessage: 'Not verified' })}
-              </>
-            )}
-          </span>
-        )}
+        {verification && <VerifyBadge verification={verification} now={now} />}
         <span
           className="bms-frac"
           role="img"
@@ -520,6 +541,18 @@ export function MilestoneCard({
                 </div>
               )}
               {reason && <p className="bms-vwhy">{reason}</p>}
+              {actions && lead && verification.state !== 'passed' && (
+                <div className="bms-vact">
+                  <TellLead
+                    className="btn ghost"
+                    lead={actions.sessions.find((s) => s.id === lead)}
+                    draft={tellLeadDraft('milestone', milestone.title, key ?? milestone.id)}
+                    label={milestone.title}
+                    run={actions.run}
+                    text={t({ id: 'board.verify.card.tellLead', defaultMessage: 'Tell lead' })}
+                  />
+                </div>
+              )}
             </div>
           </Collapsible.Panel>
         </Collapsible.Root>

@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useState, type DragEvent, type KeyboardEvent } from 'react';
 import { Menu } from '@base-ui/react/menu';
 import { Ellipsis } from 'lucide-react';
 import type { BoardModel, BoardTaskState, BoardTaskStatus } from '@pantheon/protocol';
@@ -195,17 +195,12 @@ function inPlanOrder(tasks: BoardTask[]): BoardTask[] {
 export function ProgressTable({
   model,
   onOpenTask,
-  tools,
   projectId,
-  children,
 }: {
   model: BoardModel;
   onOpenTask: (taskId: string) => void;
-  tools?: ReactNode;
   /** The project whose plans the rows reorder; absent, the rows do not move. */
   projectId?: string;
-  /** Shown in place of the table when given. */
-  children?: ReactNode;
 }) {
   const [sort, setSort] = useState<TaskSort | null>(null);
   const [drag, setDrag] = useState<{ id: string; over: string | null } | null>(null);
@@ -413,11 +408,8 @@ export function ProgressTable({
           <NumText text={median == null ? '—' : durationText(median)} />
         </span>
       }
-      tools={tools}
     >
-      {children ? (
-        children
-      ) : model.tasks.length === 0 ? (
+      {model.tasks.length === 0 ? (
         <Empty text={t({ id: 'board.progress.empty', defaultMessage: 'No tasks yet' })} />
       ) : (
         <div className="bp-tscroll">
@@ -581,7 +573,7 @@ export function ProgressTable({
           {tip.node}
         </div>
       )}
-      {!children && rowCount > FOLDED_ROWS && (
+      {rowCount > FOLDED_ROWS && (
         <button
           type="button"
           className="bd-lnk bf-more"

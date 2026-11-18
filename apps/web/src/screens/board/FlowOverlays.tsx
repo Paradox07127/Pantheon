@@ -142,8 +142,8 @@ export function nextWaiting(waiting: readonly string[], last: string | null): st
   return waiting[(waiting.indexOf(last ?? '') + 1) % waiting.length];
 }
 
-/** How many items wait for the user, with a button that brings the next waiting task into view. */
-export function NeedsCount({ count, onNext }: { count: number; onNext?: () => void }) {
+/** A button that brings the next task waiting for the user into view; the needs-you strip counts them. */
+export function NeedsCount({ onNext }: { onNext?: () => void }) {
   const nextText = t({
     id: 'board.flow.needs.next',
     defaultMessage: 'Jump to the next task waiting for you',
@@ -151,8 +151,6 @@ export function NeedsCount({ count, onNext }: { count: number; onNext?: () => vo
   return (
     <div className="bd-fo bd-fo-needs">
       <span className="bd-fo-dot" data-c="wait" aria-hidden="true" />
-      <span>{t({ id: 'board.flow.needs.label', defaultMessage: 'Needs you' })}</span>
-      <span className="bd-fo-n">{count}</span>
       <Tip content={nextText}>
         <button
           type="button"

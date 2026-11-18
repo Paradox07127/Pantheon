@@ -62,7 +62,7 @@ import {
   type DraftNode,
 } from './FlowOverlays';
 import { MergedStack, STACK_WIDTH, type StackNode } from './MergedStack';
-import { currentMilestone } from './MilestoneCard';
+import { currentMilestone, verifyText } from './MilestoneCard';
 import { MilestoneNode, type MilestoneFlowNode } from './MilestoneNode';
 import { taskStateLabel } from './status';
 import type { TaskDrawerProps } from './TaskDrawer';
@@ -349,6 +349,8 @@ interface FlowCanvasProps {
   editing?: boolean;
   /** Statuses at a past moment by task id; while set, the cards show them and nothing that holds only now. */
   states?: ReadonlyMap<string, Task['status']>;
+  /** Present while the board's needs-you strip sits beside the chart. */
+  onAskNeed?: (key: string) => void;
 }
 
 // A card at a past moment keeps its plan facts and that moment's status.
@@ -405,6 +407,7 @@ function FlowCanvas({
   tell: liveTell,
   editing = false,
   states,
+  onAskNeed,
 }: FlowCanvasProps) {
   // A past moment takes no command and no draft.
   const tell = states ? undefined : liveTell;
@@ -592,11 +595,15 @@ function FlowCanvas({
             model.tasks.find((t) => t.milestone_id === overlay.milestone.id && ready.has(t.id)) ??
             null;
           const target = next && tell && editTarget(next, tell.sessions);
+          const verification = overlay.milestone.verification;
           return {
             ...place(NODE_WIDTH),
             type: 'milestone',
             focusable: false,
-            ariaLabel: overlay.milestone.title,
+            ariaLabel: listText(
+              overlay.milestone.title,
+              verification && verification.state !== 'skipped' && verifyText(verification, now),
+            ),
             data: {
               milestone: overlay.milestone,
               now,
@@ -634,7 +641,7 @@ function FlowCanvas({
             editable,
             tall: heights.get(n.id) ?? NODE_HEIGHT,
             ...(marks.has(n.id) && { drafted: marks.get(n.id) }),
-            ...(tell && { actions: { tell, needs: model.needs ?? [] } }),
+            ...(tell && { actions: { tell, needs: model.needs ?? [], onAskNeed } }),
           },
         };
       }),
@@ -654,6 +661,7 @@ function FlowCanvas({
       opened,
       states,
       marks,
+      onAskNeed,
     ],
   );
   const edges = useMemo(() => {
@@ -852,7 +860,7 @@ function FlowCanvas({
             </>
           )}
         </div>
-        {needs.length > 0 && <NeedsCount count={needs.length} onNext={jump} />}
+        {needs.length > 0 && <NeedsCount onNext={jump} />}
         <div className="bd-fo-bar">
           <FlowLegend />
           <div

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { BoardModel, BoardTaskRung } from '@pantheon/protocol';
-import { named, nodes, text, mount, unmountAll } from './web-hook-host.js';
+import { nodes, text, mount, unmountAll } from './web-hook-host.js';
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true, useId: 'card' }),
 );
@@ -24,7 +24,6 @@ import { TaskCard as FlowNode } from '@/screens/board/FlowNode';
 import { TaskGroups } from '@/screens/board/TaskGroups';
 import { Clip } from '@/components/Clip';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
-import { ColumnsPanel } from '@/screens/board/Columns';
 import { needActions, type BoardNeed } from '@/screens/board/frame-model';
 import { needContext } from '@/screens/board/BoardFrame';
 import type { SnapshotSession } from '@/screens/board/panels-model';
@@ -188,20 +187,6 @@ const taskRows = (tasks: Task[]) => {
     .map((row) => render(row));
 };
 
-const columnCard = (t: Task) => {
-  const panel = mount(() =>
-    ColumnsPanel({
-      model: board([t]),
-      selected: null,
-      onSelect: noop,
-      onOpenSession: noop,
-      onOpenStory: noop,
-    }),
-  ).value;
-  const card = named(panel, 'TaskCard');
-  return mount(() => render(card)).value;
-};
-
 describe('the four places', () => {
   const both = task('a', { budget: budget(0.41), rung: rung('user') });
   const none = task('b');
@@ -238,12 +223,12 @@ describe('the four places', () => {
   });
 
   it.each(['retry', 'switch', 'lead', 'user'] as const)(
-    'puts the %s rung at the foot of a column card, which holds no button of its own',
+    'puts the %s rung on a task row, which holds no button of its own',
     (level) => {
-      const card = columnCard(task('a', { rung: rung(level) }));
-      expect(has(card, 'RungLabel')).toBe(true);
-      expect(nodes(card).filter((n) => n.type === 'button')).toHaveLength(1);
-      expect(has(columnCard(none), 'RungLabel')).toBe(false);
+      const [row] = taskRows([task('a', { rung: rung(level) })]);
+      expect(has(row, 'RungLabel')).toBe(true);
+      expect(nodes(row).filter((n) => n.type === 'button')).toHaveLength(1);
+      expect(has(taskRows([none])[0], 'RungLabel')).toBe(false);
     },
   );
 });

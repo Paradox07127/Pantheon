@@ -15,7 +15,9 @@
   "board.verify.reason.daemonRestart": "检查运行时 Pantheon 重启了",
   "board.verify.reason.noVerdict": "验证者没有给出结论",
   "board.verify.reason.reviewFailed": "验证者的审查失败了",
-  "board.verify.reason.unreadable": "验证者读不到改动",
-  "board.verify.reason.noReply": "验证者结束时既没有发现也没有回复",
-  "board.verify.reason.turnEnded": "验证者的回合没有完成"
+  "board.verify.reason.checksEnvironment": "一项检查因代码之外的原因失败",
+  "board.verify.reason.checkError": "Pantheon 没能运行这些检查",
+  "board.verify.reason.reviewNotStarted": "验证者的审查没能开始",
+  "board.verify.reason.reviewIncomplete": "验证者没做完审查就停了",
+  "board.verify.card.tellLead": "告诉主会话"
 }

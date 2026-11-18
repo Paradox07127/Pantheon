@@ -314,7 +314,7 @@ describe('cards for what needs the user', () => {
     });
   });
 
-  it('brings the asked question into view in the needs-you strip and focuses its first answer, unfolding the strip for it', () => {
+  it('makes the asked question the current row of the needs-you strip, brings it into view and focuses its primary button, unfolding the strip for it', () => {
     const asked = (n: number) => ({
       ...leadQuestion,
       source: { ...leadQuestion.source, id: `beta-lead-${n}` },
@@ -340,6 +340,23 @@ describe('cards for what needs the user', () => {
     expect(card.scrollIntoView).toHaveBeenCalled();
     expect(answer.focus).toHaveBeenCalled();
     expect(useShell.getState().askedNeed).toBeNull();
+    const cards = () => list().props.children.map((li: ReactElement<any>) => li.props.children);
+    expect(cards().map((c: ReactElement<any>) => c.props.selected)).toEqual([
+      false,
+      false,
+      false,
+      true,
+    ]);
+    // Once the row has handed over its primary button, the jump focuses that one.
+    const primary = { focus: vi.fn() };
+    cards()[1].props.primaryRef(primary);
+    answer.focus.mockClear();
+    list().props.ref.current = { children: [{}, card, {}, {}] };
+    useShell.setState({ askedNeed: 'beta-lead-2:question-1' });
+    h.render();
+    expect(primary.focus).toHaveBeenCalled();
+    expect(answer.focus).not.toHaveBeenCalled();
+    expect(cards()[1].props.selected).toBe(true);
   });
 
   it("gives no card for the session the user is looking at, nor for other needs, but one for a lead's question, which its thread does not answer", () => {

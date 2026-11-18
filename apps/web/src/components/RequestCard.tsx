@@ -18,13 +18,14 @@ import { t } from '../i18n';
 import { nextStepText } from '../lib/daemon-text';
 import { AcceptDialog } from '../screens/board/Charts';
 import {
-  needActions,
   needCommand,
   needSession,
   needWhat,
   noVerdict,
   noVerdictKind,
   outOfScopeFiles,
+  proposalCardId,
+  stripActions,
   type NeedAction,
   type NeedActionKey,
   type NeedItem,
@@ -162,7 +163,7 @@ export function RequestCard({
   const accepting = useDialogContent<{ stored: SnapshotMilestone }>();
   const full = size === 'full';
   const sessionId = needSession(item);
-  const actions = needActions(item, session, lead, rung);
+  const actions = stripActions(item, session, lead, rung);
   // A list row marks only its one primary action, and only while the user is on the row.
   const primary = full ? undefined : primaryAction(actions, item.primary);
   const marked = (action: NeedAction) =>
@@ -192,8 +193,15 @@ export function RequestCard({
       openSettingsPage(item.project_id, 'projects');
       return;
     }
-    if (action.key === 'board') {
-      useShell.getState().openProjectBoard(item.project_id);
+    if (action.key === 'proposal') {
+      const card = document.getElementById(proposalCardId(item.request_id ?? ''));
+      // Without the board's now view drawn there is no proposals panel to show it in.
+      if (!card) {
+        useShell.getState().openProjectBoard(item.project_id);
+        return;
+      }
+      card.scrollIntoView({ block: 'nearest' });
+      card.focus();
       return;
     }
     const command = needCommand(item, action.key, { answers: answered, session, lead });
@@ -213,7 +221,6 @@ export function RequestCard({
         command.type === 'improvement.decide' ||
         command.type === 'workflow.step.decide' ||
         command.type === 'workflow.definition.trial.decide' ||
-        command.type === 'board.plan.proposal.resolve' ||
         command.type === 'lead.question.answer')
     )
       return;

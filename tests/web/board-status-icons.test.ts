@@ -9,7 +9,6 @@ import {
   type GlyphName,
 } from '../../apps/web/src/components/SessionStateIcon.js';
 import { LeadStates } from '../../apps/web/src/screens/board/BoardFrame.js';
-import { ColumnsPanel } from '../../apps/web/src/screens/board/Columns.js';
 import { LeadPanel } from '../../apps/web/src/screens/board/LeadPanel.js';
 import { FindingRow } from '../../apps/web/src/screens/board/Lists.js';
 import type { BoardLead } from '../../apps/web/src/screens/board/frame-model.js';
@@ -211,25 +210,6 @@ describe('board headline and cards', () => {
     expect(shapes(states)).toEqual([shapes(glyph('idle'))[0]]);
     expect(states).not.toContain('ss-dot');
   });
-
-  it('counts unfinished upstream tasks under a network mark, not the git branch', () => {
-    const model = board([task('up', 'running'), task('down', 'todo')], {
-      edges: [{ from: 'up', to: 'down', state: 'pending' }] as unknown as BoardModel['edges'],
-    });
-    const markup = html(
-      createElement(ColumnsPanel, {
-        model,
-        selected: null,
-        onSelect() {},
-        onOpenSession() {},
-        onOpenStory() {},
-      }),
-    );
-    const count = /<span class="bd-col-up"[^>]*>[\s\S]*?<\/span>/.exec(markup)![0];
-    expect(count).toContain('aria-label="未完成的依赖任务 1 个"');
-    expect(count).toContain('lucide-network');
-    expect(count).not.toContain('lucide-git-branch');
-  });
 });
 
 describe('small lucide strokes on the board', () => {
@@ -240,7 +220,6 @@ describe('small lucide strokes on the board', () => {
 
   it.each([
     ['status.css', '.bd-bdg svg.lucide'],
-    ['board.css', '.bd-col-up svg'],
     ['overview.css', '.bms-due svg'],
     ['frame.css', '.bf-inbox svg'],
     ['retro.css', '.ret-n svg.lucide'],

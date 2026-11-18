@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApprovalQuestion, GateFailureClass, LeadNote, LeadQuestion } from '@pantheon/domain';
-import type { BridgeResult, DesktopBridge } from '@pantheon/protocol';
+import type { BoardTaskRung, BridgeResult, DesktopBridge } from '@pantheon/protocol';
 import { currentLocale, t } from '../i18n';
 import { useBoard } from './board';
 import type { DaemonEvent } from './sync';
@@ -41,6 +41,8 @@ export interface NeedsYouItem {
   session_id?: string;
   /** The plan task, `<lead session id>:<task id>`, of a task item. */
   task_id?: string;
+  /** The rung of the item's task, as its board row has it; absent on items of no task. */
+  rung?: BoardTaskRung['rung'];
   /** The turn and native request of a lost request or an undelivered answer. */
   turn_id?: string;
   request_id?: string;

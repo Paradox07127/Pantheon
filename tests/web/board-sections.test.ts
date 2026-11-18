@@ -4,11 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readBoardPage } from '../../apps/web/src/data/board-page.js';
 import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import { changesBoard } from '../../apps/web/src/data/board-view.js';
-import {
-  acceptanceEvidence,
-  boardColumns,
-  pendingUpstream,
-} from '../../apps/web/src/screens/board/panels-model.js';
+import { acceptanceEvidence } from '../../apps/web/src/screens/board/panels-model.js';
 import { TaskGroups, taskGroups } from '../../apps/web/src/screens/board/TaskGroups.js';
 import type { BoardModel, BoardTaskState, BoardTaskStatus } from '@pantheon/protocol';
 import { zh } from './i18n-setup.js';
@@ -55,51 +51,6 @@ const board = (
   tasks: BoardModel['tasks'],
   edges: BoardModel['edges'] = [],
 ): Pick<BoardModel, 'tasks' | 'edges'> => ({ tasks, edges });
-
-describe('board columns', () => {
-  const order: BoardTaskStatus[] = [
-    'todo',
-    'running',
-    'waiting',
-    'idle',
-    'ready',
-    'done',
-    'failed',
-    'discarded',
-  ];
-
-  it('returns every status column in a fixed order, empty ones included', () => {
-    expect(boardColumns(board([])).map((c) => c.status)).toEqual(order);
-    expect(boardColumns(board([])).every((c) => c.tasks.length === 0)).toBe(true);
-  });
-
-  it('puts each task into the column of its status', () => {
-    const tasks = [...order].reverse().map((status) => task(`t-${status}`, status));
-    for (const column of boardColumns(board(tasks)))
-      expect(column.tasks.map((t) => t.id)).toEqual([`t-${column.status}`]);
-  });
-
-  it('keeps the board order inside a column', () => {
-    const tasks = [task('b', 'running'), task('x', 'done'), task('a', 'running')];
-    const running = boardColumns(board(tasks)).find((c) => c.status === 'running')!;
-    expect(running.tasks.map((t) => t.id)).toEqual(['b', 'a']);
-  });
-
-  it('counts only the unmet upstream edges of a task', () => {
-    const model = board(
-      [task('a', 'done'), task('b', 'running'), task('c', 'todo'), task('d', 'todo')],
-      [
-        { from: 'a', to: 'd', state: 'met' },
-        { from: 'b', to: 'd', state: 'active' },
-        { from: 'c', to: 'd', state: 'pending' },
-        { from: 'a', to: 'c', state: 'pending' },
-      ],
-    );
-    expect(pendingUpstream(model, 'd')).toBe(2);
-    expect(pendingUpstream(model, 'c')).toBe(1);
-    expect(pendingUpstream(model, 'a')).toBe(0);
-  });
-});
 
 const planTask = (
   id: string,

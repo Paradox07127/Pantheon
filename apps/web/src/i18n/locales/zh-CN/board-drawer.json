@@ -5,6 +5,7 @@
   "board.drawer.plan.move": "移动 {title}",
   "board.drawer.acceptance": "验收",
   "board.drawer.approve": "去审批",
+  "board.drawer.inNeeds": "在需要你里处理",
   "board.drawer.redo.open": "换人重做",
   "board.drawer.redo.menu": "换到哪个后端重做",
   "board.drawer.tell.send": "主会话会把这条当作下一条消息",

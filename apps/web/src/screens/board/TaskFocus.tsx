@@ -1,7 +1,7 @@
 import type { BoardModel } from '@pantheon/protocol';
 import { ReviewCoverage } from '../../components/ReviewCoverage';
 import { currentLocale, t } from '../../i18n';
-import { blockerTexts, nextStepText } from '../../lib/daemon-text';
+import { blockerTexts } from '../../lib/daemon-text';
 import { StatusBadge } from './status';
 import { taskFocus } from './task-focus';
 import './task-focus.css';
@@ -30,20 +30,18 @@ const GATE = {
 
 export function TaskFocus({
   model,
-  selected,
   onSelect,
   onOpenSession,
   onOpenEvidence,
   onStartTask,
 }: {
   model: BoardModel;
-  selected: string | null;
   onSelect: (id: string | null) => void;
   onOpenSession: (id: string) => void;
   onOpenEvidence?: (id: string, tab: EvidenceTab) => void;
   onStartTask?: (task: BoardModel['tasks'][number]) => void;
 }) {
-  const focus = taskFocus(model, selected);
+  const focus = taskFocus(model);
   if (!focus) return null;
   const { task, upstream, sessionId, reason, next } = focus;
   const gate = task.evidence?.gate;
@@ -56,10 +54,8 @@ export function TaskFocus({
     : !sessionId && task.status === 'todo' && task.activity?.phase !== 'queued' && onStartTask
       ? 'start'
       : (sessionId || task.owner_session_id) && 'session';
-  // The status's own next step goes unsaid when the button says it; a request's next step stays.
-  const restated =
-    !(focus.need && nextStepText(focus.need)) &&
-    (action === 'start' || (action === 'session' && task.status === 'waiting'));
+  // The status's own next step goes unsaid when the button says it.
+  const restated = action === 'start' || (action === 'session' && task.status === 'waiting');
   const diff = !!merge || task.additions != null || task.deletions != null;
   return (
     <section
@@ -81,9 +77,6 @@ export function TaskFocus({
             .map((blocker) => (
               <dd key={blocker}>{blocker}</dd>
             ))}
-          {focus.need?.binding?.input_summary && (
-            <dd className="mono">{focus.need.binding.input_summary}</dd>
-          )}
         </div>
         <div>
           <dt>{t({ id: 'board.task.focus.next', defaultMessage: 'Next step' })}</dt>

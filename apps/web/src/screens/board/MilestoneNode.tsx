@@ -6,7 +6,7 @@ import { Clip } from '../../components/Clip';
 import { t } from '../../i18n';
 import type { FlowOverlay } from './FlowOverlays';
 import { placeholder } from './MergedStack';
-import { daysLeft, dueText } from './MilestoneCard';
+import { daysLeft, dueText, VerifyBadge } from './MilestoneCard';
 import { milestoneCounts, type BoardMilestone } from './panels-model';
 
 type Task = BoardModel['tasks'][number];
@@ -86,6 +86,9 @@ export function MilestoneNode({ data }: NodeProps<MilestoneFlowNode>) {
         <div className="bd-nrow bd-nh">
           <Flag className="bd-ms-ic" aria-hidden="true" />
           <Clip className="bd-nt" text={milestone.title} />
+          {milestone.verification && (
+            <VerifyBadge verification={milestone.verification} now={now} glyphOnly />
+          )}
         </div>
         <div className="bd-ms-p">
           <svg

@@ -180,20 +180,23 @@ export function NeedsStrip({
   useEffect(() => {
     useShell.setState({ stripWaits: new Set(shown?.flatMap((item) => needsKey(item) ?? [])) });
   }, [shown]);
-  // The wait a notice card opened: unfolded to, scrolled into view and its first answer focused.
+  // The row the user is on: the first until they settle one, then the one after it.
+  const [current, setCurrent] = useState<string | null>(null);
+  // The wait a notice card or another part of the board asked for: unfolded to, made the current
+  // row, scrolled into view and its primary button focused.
   const asked = useShell((s) => s.askedNeed);
   const list = useRef<HTMLUListElement>(null);
   useEffect(() => {
     const at = asked === null ? -1 : (needs?.findIndex((item) => needsKey(item) === asked) ?? -1);
     if (at < 0) return;
     if (at >= FOLDED && !all) return setAll(true);
+    const key = needKey(needs![at]!);
+    setCurrent(key);
     const card = list.current?.children[at] as HTMLElement | undefined;
     card?.scrollIntoView({ block: 'nearest' });
-    card?.querySelector('button')?.focus();
+    (primaries.current.get(key) ?? card?.querySelector('button'))?.focus();
     useShell.setState({ askedNeed: null });
   }, [asked, shown]);
-  // The row the user is on: the first until they settle one, then the one after it.
-  const [current, setCurrent] = useState<string | null>(null);
   const on = needs?.some((item) => needKey(item) === current)
     ? current
     : needs?.[0] && needKey(needs[0]);

@@ -3,20 +3,6 @@
   height: auto;
   min-height: 100%;
 }
-.bd-ninl {
-  display: block;
-  overflow: hidden;
-  padding: 1px var(--sp-1);
-  border-radius: max(calc(var(--r-sm) - 2px), 4px);
-  background: var(--sf2);
-  color: var(--tx);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  user-select: text;
-}
 /* Under .bd-nd to win over the row height and gap of .bd-nrow. */
 .bd-nd .bd-nwhy {
   gap: var(--sp-1);

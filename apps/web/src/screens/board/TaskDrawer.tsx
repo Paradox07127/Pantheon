@@ -458,6 +458,8 @@ export interface TaskDrawerProps {
   onStartTask?: (task: Task) => void;
   /** Snapshot sessions and the command runner behind the message to a task's lead. */
   tell?: { sessions: readonly SnapshotSession[]; run: RunBoardCommand };
+  /** Brings a needs-you item, by notice card id, into view in the strip beside the drawer. */
+  onAskNeed?: (key: string) => void;
 }
 
 function TaskLinks({
@@ -763,6 +765,7 @@ export function TaskDrawer({
   onOpenStory,
   onStartTask,
   tell,
+  onAskNeed,
 }: TaskDrawerProps) {
   const ref = useRef<HTMLElement>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -898,6 +901,13 @@ export function TaskDrawer({
   // A session row's activity is its own; a plan task's is its newest session's.
   const approvalIn =
     waiting?.kind === 'approval' ? (task.claim?.session_id ?? (plan ? null : task.id)) : null;
+  // The approval's row in the needs-you strip beside the drawer, which allows or denies it.
+  const approvalKey =
+    onAskNeed &&
+    waiting?.kind === 'approval' &&
+    model.needs?.some((n) => needsKey(n) === waiting.approval_id)
+      ? waiting.approval_id
+      : undefined;
   // A question opens its card, on the lead's board when the lead relays it.
   const question =
     waiting?.kind === 'input' ? requestNeed(model.needs ?? [], waiting.approval_id) : undefined;
@@ -919,40 +929,61 @@ export function TaskDrawer({
   const step = shownStepRun(task);
   const { budget, rung } = task;
   const share = (used: number, limit: number) => (limit > 0 ? used / limit : 0);
-  const budgetRows = budget
-    ? [
-        {
-          key: 'tokens',
-          label: t({ id: 'board.recovery.budget.tokens', defaultMessage: 'Tokens' }),
-          meter: (percent: number) =>
-            t(
-              {
-                id: 'board.recovery.budget.tokensMeter',
-                defaultMessage: 'Tokens: {percent}% of the budget',
-              },
-              { percent },
-            ),
-          used: tokenText(budget.input_tokens),
-          limit: tokenText(budget.limit.input_tokens),
-          share: share(budget.input_tokens, budget.limit.input_tokens),
-        },
-        {
-          key: 'time',
-          label: t({ id: 'board.recovery.budget.time', defaultMessage: 'Time' }),
-          meter: (percent: number) =>
-            t(
-              {
-                id: 'board.recovery.budget.timeMeter',
-                defaultMessage: 'Time: {percent}% of the budget',
-              },
-              { percent },
-            ),
-          used: durationText(budget.wall_ms),
-          limit: durationText(budget.limit.wall_ms),
-          share: share(budget.wall_ms, budget.limit.wall_ms),
-        },
-      ]
-    : [];
+  const budgetRows = [
+    ...(budget
+      ? [
+          {
+            key: 'tokens',
+            label: t({ id: 'board.recovery.budget.tokens', defaultMessage: 'Tokens' }),
+            meter: (percent: number) =>
+              t(
+                {
+                  id: 'board.recovery.budget.tokensMeter',
+                  defaultMessage: 'Tokens: {percent}% of the budget',
+                },
+                { percent },
+              ),
+            used: tokenText(budget.input_tokens),
+            limit: tokenText(budget.limit.input_tokens),
+            share: share(budget.input_tokens, budget.limit.input_tokens),
+          },
+          {
+            key: 'time',
+            label: t({ id: 'board.recovery.budget.time', defaultMessage: 'Time' }),
+            meter: (percent: number) =>
+              t(
+                {
+                  id: 'board.recovery.budget.timeMeter',
+                  defaultMessage: 'Time: {percent}% of the budget',
+                },
+                { percent },
+              ),
+            used: durationText(budget.wall_ms),
+            limit: durationText(budget.limit.wall_ms),
+            share: share(budget.wall_ms, budget.limit.wall_ms),
+          },
+        ]
+      : []),
+    ...(task.token_budget !== undefined
+      ? [
+          {
+            key: 'plan',
+            label: t({ id: 'board.recovery.budget.plan', defaultMessage: 'Plan budget' }),
+            meter: (percent: number) =>
+              t(
+                {
+                  id: 'board.recovery.budget.planMeter',
+                  defaultMessage: 'Plan budget: {percent}% of the budget',
+                },
+                { percent },
+              ),
+            used: tokenText(taskTokens(task)),
+            limit: tokenText(task.token_budget),
+            share: share(taskTokens(task), task.token_budget),
+          },
+        ]
+      : []),
+  ];
   const topShare = Math.max(...budgetRows.map((row) => row.share));
   return (
     <aside
@@ -1010,31 +1041,8 @@ export function TaskDrawer({
                 )}
               </span>
             )}
-            {task.token_budget !== undefined ? (
-              <span className="bd-dbud">
-                <span
-                  className="meter"
-                  aria-hidden="true"
-                  data-over={taskTokens(task) > task.token_budget || undefined}
-                  style={
-                    {
-                      '--v': `${Math.min(100, (taskTokens(task) / task.token_budget) * 100)}%`,
-                    } as CSSProperties
-                  }
-                >
-                  <i />
-                </span>
-                <span className="mono mu">
-                  {t(
-                    { id: 'board.task.drawer.budget', defaultMessage: '{used} / {budget} tokens' },
-                    { used: tokenText(taskTokens(task)), budget: tokenText(task.token_budget) },
-                  )}
-                </span>
-              </span>
-            ) : (
-              taskTokens(task) > 0 && (
-                <span className="mu">{tokenText(taskTokens(task))} tokens</span>
-              )
+            {task.token_budget === undefined && taskTokens(task) > 0 && (
+              <span className="mu">{tokenText(taskTokens(task))} tokens</span>
             )}
           </div>
           {badges.length > 0 && (
@@ -1065,13 +1073,13 @@ export function TaskDrawer({
               ))}
             </ul>
           )}
-          {budget && (
+          {budgetRows.length > 0 && (
             <section className="bd-dsec" aria-labelledby="bd-dbudget">
               <div className="bd-dsh">
                 <h3 id="bd-dbudget">
                   {t({ id: 'board.recovery.budget.heading', defaultMessage: 'Budget' })}
                 </h3>
-                <span className="bd-dsv">{Math.round(budget.ratio * 100)}%</span>
+                {budget && <span className="bd-dsv">{Math.round(budget.ratio * 100)}%</span>}
               </div>
               <div className="bd-bg">
                 {budgetRows.map((row) => {
@@ -1504,6 +1512,7 @@ export function TaskDrawer({
         )}
       </div>
       {(approvalIn ||
+        approvalKey ||
         questionKey ||
         redo.length > 0 ||
         reassign ||
@@ -1521,6 +1530,11 @@ export function TaskDrawer({
               }}
             >
               {t({ id: 'board.drawer.approve', defaultMessage: 'Go to approval' })}
+            </button>
+          )}
+          {approvalKey && (
+            <button type="button" className="bd-lnk" onClick={() => onAskNeed!(approvalKey)}>
+              {t({ id: 'board.drawer.inNeeds', defaultMessage: 'Handle in Needs you' })}
             </button>
           )}
           {question && questionKey && (

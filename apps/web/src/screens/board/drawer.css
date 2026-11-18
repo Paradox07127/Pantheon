@@ -257,24 +257,6 @@ aside.bd-drw {
   color: var(--tx2);
 }
 
-.bd-dbud {
-  display: flex;
-  flex: 1 1 160px;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.bd-dbud .meter {
-  flex: 1;
-}
-.bd-dbud .meter[data-over] {
-  --c: var(--wait);
-}
-.bd-dbud .mono {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 /* The workflow step: its title and status, summary, evidence, reviewers and what follows. */
 .bd-vs {
   display: flex;

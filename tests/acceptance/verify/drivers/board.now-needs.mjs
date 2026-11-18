@@ -270,7 +270,23 @@ check(
   questionRow,
 );
 const planRow = all.find((r) => r.kind === '计划变更');
-check('计划变更行按钮是 "接受"', planRow?.primary[0]?.text === '接受', planRow);
+check(
+  '计划变更行只有一个按钮 "查看提议"，没有 "接受"、"拒绝" 和 "更多操作"',
+  planRow?.primary.length === 1 &&
+    planRow.primary[0].text === '查看提议' &&
+    planRow.more.length === 0,
+  planRow,
+);
+// The row's one button brings the proposal's card in the plan proposals panel into view and focus.
+await page.click({ role: 'button', name: planRow.primary[0].label, exact: true });
+const proposalFocus = await poll(
+  () =>
+    page.evaluate(
+      `(() => { const el = document.activeElement; return el?.tagName === 'ARTICLE' && !!el.closest('section[aria-label="计划改动提议"]') && el.getAttribute('aria-label'); })()`,
+    ),
+  3000,
+);
+check('"查看提议" 把焦点移到 "计划改动提议" 面板里那张提议卡', proposalFocus, proposalFocus);
 
 // No floating notice card for a wait the list shows. Only wait cards count: a result card such as
 // "Assistant 回合完成" names the same session but tells a turn end, not a wait.

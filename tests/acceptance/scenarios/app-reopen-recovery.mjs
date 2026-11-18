@@ -97,16 +97,12 @@ const sessionShown = (sessionTitle) => `(() => {
     turns: document.querySelectorAll('[data-turn]').length,
   };
 })()`;
-/** The status column holding the task card of this title, as the board shows it. */
-const cardShown = (taskTitle) => `(() => {
-  const group = [...document.querySelectorAll('[role="group"][aria-label="任务列"]')].find(
-    (el) => el.getClientRects().length > 0,
+/** The status the progress table's row of this task title names, as the board shows it. */
+const rowShown = (taskTitle) => `(() => {
+  const row = [...document.querySelectorAll('[role="table"][aria-label="进度表"] [role="row"][aria-label]')].find(
+    (el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(`${taskTitle}，`)}),
   );
-  const card = group && [...group.querySelectorAll('button[aria-labelledby]')].find(
-    (b) => document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() === ${JSON.stringify(taskTitle)},
-  );
-  const head = card?.closest('.bd-col')?.querySelector('.bd-col-h');
-  return head ? { column: head.textContent.replace(/[0-9]+$/, '').trim() } : null;
+  return row ? { status: row.getAttribute('aria-label').slice(${JSON.stringify(`${taskTitle}，`)}.length) } : null;
 })()`;
 const connectionState = `[...document.querySelectorAll('[role="img"]')].find((el) => ${JSON.stringify(CONNECTION_LABELS)}.includes(el.getAttribute('aria-label')) && el.getClientRects().length > 0)?.getAttribute('aria-label') ?? null`;
 /** Records every change of the connection mark from now on. */
@@ -663,13 +659,12 @@ export async function run({ workspace, evidenceDir }) {
       const canvas = { role: 'radio', name: '画布', exact: true };
       await appear(canvas);
       await click(canvas);
-      await click({ role: 'radio', name: '任务列', exact: true });
       const until = Math.min(deadline, Date.now() + 15000);
       let row, shown, expected;
       for (;;) {
         row = (await boardView()).tasks.find((task) => task.id === sessionId) ?? null;
-        expected = row ? { column: TASK_STATUS_LABEL[row.status] } : null;
-        shown = await read(cardShown(row?.title ?? sessionTitle), 'the task card column');
+        expected = row ? { status: TASK_STATUS_LABEL[row.status] } : null;
+        shown = await read(rowShown(row?.title ?? sessionTitle), 'the progress table row status');
         if ((expected && isDeepStrictEqual(shown, expected)) || Date.now() >= until) break;
         await delay(200);
       }

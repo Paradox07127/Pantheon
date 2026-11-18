@@ -13,13 +13,7 @@ import {
   Zap,
   type LucideProps,
 } from 'lucide-react';
-import type {
-  BoardModel,
-  BoardSegment,
-  BoardTaskState,
-  BoardTaskStatus,
-  RuntimeModel,
-} from '@pantheon/protocol';
+import type { BoardModel, BoardTaskState, BoardTaskStatus, RuntimeModel } from '@pantheon/protocol';
 import { ModelMark, RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { toast } from '../../components/Toast';
@@ -179,19 +173,6 @@ export const TASK_TYPE: Record<TaskType, { label: string; icon: ComponentType<Lu
     icon: File,
   },
 };
-
-/** Runtime, model and status of one segment, for its hover text. */
-export const segmentText = (segment: BoardSegment): string =>
-  t(
-    { id: 'board.task.segment.summary', defaultMessage: '{runtime}, {model}, {status}' },
-    {
-      runtime: runtimeName(segment.runtime),
-      model:
-        segment.model ??
-        t({ id: 'board.task.segment.unknownModel', defaultMessage: 'Unknown model' }),
-      status: STATUS[segment.status].label,
-    },
-  );
 
 /**
  * Each status's colour token: its icon and every bar, dot or node that stands for a task in that

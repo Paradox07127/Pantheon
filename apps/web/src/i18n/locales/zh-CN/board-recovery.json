@@ -3,6 +3,8 @@
   "board.recovery.budget.heading": "预算",
   "board.recovery.budget.label": "预算已用 {percent}%",
   "board.recovery.budget.overLabel": "预算已用 {percent}%，已超出预算",
+  "board.recovery.budget.plan": "计划预算",
+  "board.recovery.budget.planMeter": "计划预算：预算的 {percent}%",
   "board.recovery.budget.time": "时间",
   "board.recovery.budget.timeMeter": "时间：预算的 {percent}%",
   "board.recovery.budget.tokens": "Token",

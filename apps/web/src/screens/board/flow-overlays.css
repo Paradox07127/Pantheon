@@ -23,10 +23,6 @@
 .bd-fo-needs .ib {
   border-radius: max(calc(var(--r-lg) - 4px), 4px);
 }
-.bd-fo-n {
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
 /* The legend and the zoom panel in a row under the graph; on a narrow chart the legend moves above. */
 .bd-fo-bar {
   flex: none;

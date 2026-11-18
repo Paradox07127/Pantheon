@@ -157,7 +157,7 @@ describe('board first draw', () => {
     expect(useShell.getState().boardWaits).toEqual(new Set());
   });
 
-  it("tells the notice cards the approvals the main view's chart answers on their task nodes", () => {
+  it('tells the notice cards every approval its needs-you list holds, on the chart or not, on the now view only', () => {
     const approval = {
       source: { table: 'approvals', id: 'approval-1', revision: 1 },
       kind: 'permission',
@@ -209,12 +209,21 @@ describe('board first draw', () => {
           },
         },
       ],
-      needs: [proposal, approval],
+      needs: [
+        proposal,
+        approval,
+        {
+          ...approval,
+          source: { table: 'approvals', id: 'approval-2', revision: 1 },
+          session_id: 'direct-1',
+          task_id: undefined,
+        },
+      ],
     } as unknown as BoardModel;
     const actions = { milestones: [], sessions: [], run: async () => null };
     let page: 'now' | 'history' = 'now';
     const h = mount(() => view({ model, actions, page }));
-    expect(useShell.getState().boardWaits).toEqual(new Set(['approval-1']));
+    expect(useShell.getState().boardWaits).toEqual(new Set(['approval-1', 'approval-2']));
     page = 'history';
     h.render();
     expect(useShell.getState().boardWaits).toEqual(new Set());

@@ -42,6 +42,7 @@ import {
   needWhat,
   needWho,
   outOfScopeFiles,
+  proposalCardId,
   requirementSessionInput,
   requirementTarget,
   requirementTargets,
@@ -522,10 +523,7 @@ describe('lead panel', () => {
     ).toEqual([`${zh('runs.table.verb.run')} pnpm test`, leadLabel('idle')]);
   });
 
-  it.each([
-    ['names the task a relayed question came from', 'Export rows', true],
-    ['leaves out a task named like its session', 'Serve exports', false],
-  ])("shows the lead's relayed question as a card under its source: %s", (_, title, named_) => {
+  it("jumps from a lead's question line to its row in the needs-you strip, answering nothing in place", () => {
     const relayed = need({
       source: { table: 'board_plans', id: 'lead-1', revision: 6 },
       kind: 'lead.question',
@@ -546,38 +544,32 @@ describe('lead panel', () => {
         source: { session_id: 'worker-1', approval_id: 'approval-9' },
       },
     });
-    const onOpenSession = vi.fn();
+    useShell.setState({ askedNeed: null });
     const out = mount(() =>
       LeadPanel({
         model: {
-          ...board([task('lead-1:exports', 'running', { title })]),
+          ...board([task('lead-1:exports', 'running')]),
           leads: [lead('lead-1', 'idle', NOW)],
           needs: [relayed],
         } as BoardModel,
-        sessions: [
-          session('lead-1', 'running', { title: 'Plan exports' }),
-          session('worker-1', 'running', {
-            title: 'Serve exports',
-            task: { lead_session_id: 'lead-1', id: 'exports' },
-          } as Partial<SnapshotSession>),
-        ],
-        onOpenSession,
+        sessions: [session('lead-1', 'running', { title: 'Plan exports' })],
+        onOpenSession: vi.fn(),
         onOpenTask: vi.fn(),
         run: vi.fn<RunBoardCommand>(async () => null),
       }),
     ).value;
-    const shown = mount(() => RequestCard(named(out, 'RequestCard').props)).value;
-    const source: ReactNode = named(shown, 'QuestionCard').props.source;
-    expect(named(source, 'RuntimeGlyph').props.runtime).toBe('fixture');
-    expect(text(source)).toContain('Serve exports');
-    expect(text(source).includes('Export rows')).toBe(named_);
-    expect(text(source)).toContain(
-      say('components.requestCard.waited', {
-        duration: say('lib.time.minutesSeconds', { minutes: 1, seconds: 30 }),
-      }),
+    expect(nodes(out).some((n) => n.type === RequestCard)).toBe(false);
+    expect(text(out)).not.toContain('Server');
+    const jump = find(
+      out,
+      (n) =>
+        n.type === 'button' &&
+        n.props['aria-label'] ===
+          say('board.lead.line.toQuestion', { question: 'Which side wins?' }),
     );
-    find(source, (n) => n.type === 'button' && text(n) === act('viewThread')).props.onClick();
-    expect(onOpenSession).toHaveBeenCalledWith('worker-1');
+    expect(text(jump)).toBe('Which side wins?');
+    jump.props.onClick();
+    expect(useShell.getState().askedNeed).toBe('lead-1:question-1');
   });
 
   it('says what a waiting lead asked', () => {
@@ -1449,27 +1441,28 @@ describe('needs-you row', () => {
     expect(nodes(h.value).filter((n) => n.type === 'p')).toEqual([]);
   });
 
-  it('accepts a plan change from its row with the ops the lead proposed, and keeps reject and the board in its menu', async () => {
-    const proposal = (allowed: boolean) =>
-      need({
-        source: { table: 'board_plans', id: 'lead-1', revision: 6 },
-        kind: 'board.plan.proposal',
-        session_id: 'lead-1',
-        request_id: 'proposal-1',
-        reason: 'plan_proposal_awaiting_decision',
-        decision: 'plan_change',
-        primary: 'board.plan.proposal.resolve',
-        actions: [
-          allowed
-            ? { command: 'board.plan.proposal.resolve', allowed: true }
-            : {
-                command: 'board.plan.proposal.resolve',
-                allowed: false,
-                disabled_reason: 'permission_denied',
-              },
-        ],
-        binding: undefined,
-      });
+  const proposal = (allowed: boolean) =>
+    need({
+      source: { table: 'board_plans', id: 'lead-1', revision: 6 },
+      kind: 'board.plan.proposal',
+      session_id: 'lead-1',
+      request_id: 'proposal-1',
+      reason: 'plan_proposal_awaiting_decision',
+      decision: 'plan_change',
+      primary: 'board.plan.proposal.resolve',
+      actions: [
+        allowed
+          ? { command: 'board.plan.proposal.resolve', allowed: true }
+          : {
+              command: 'board.plan.proposal.resolve',
+              allowed: false,
+              disabled_reason: 'permission_denied',
+            },
+      ],
+      binding: undefined,
+    });
+
+  it('decides a plan change with the ops the lead proposed where no proposals panel is beside the list', () => {
     const accept = zh('board.plan.proposal.accept');
     const reject = zh('board.plan.proposal.reject');
     expect(keys(proposal(false))).toEqual([
@@ -1477,34 +1470,40 @@ describe('needs-you row', () => {
       ['reject', reject, reason('permissionDenied')],
       ['board', act('board'), null],
     ]);
+    const resolve = {
+      project_id: 'project-a',
+      lead_session_id: 'lead-1',
+      proposal_id: 'proposal-1',
+    };
+    expect(needCommand(proposal(true), 'approve')).toEqual({
+      type: 'board.plan.proposal.resolve',
+      input: { ...resolve, decision: 'accept' },
+      revision: null,
+    });
+    expect(needCommand(proposal(true), 'reject')).toEqual({
+      type: 'board.plan.proposal.resolve',
+      input: { ...resolve, decision: 'reject' },
+      revision: null,
+    });
+  });
+
+  it('gives a plan change row one button, which brings its card in the plan proposals panel into view, and neither accepts nor rejects it', () => {
     const run = vi.fn(async () => null);
     const h = row(proposal(true), run, () => {});
     expect(
       nodes(h.value)
         .filter((n) => n.type === 'button')
         .map((n) => text(n)),
-    ).toEqual([accept]);
-    expect(moreItems(h.value).map((n) => text(n))).toEqual([reject, act('board')]);
-    button(h.value, accept).props.onClick();
-    await h.flush();
-    const resolve = {
-      project_id: 'project-a',
-      lead_session_id: 'lead-1',
-      proposal_id: 'proposal-1',
-    };
-    expect(run).toHaveBeenCalledWith(
-      'board.plan.proposal.resolve',
-      { ...resolve, decision: 'accept' },
-      null,
-    );
-    const rejected = row(proposal(true), run, () => {});
-    moreItem(rejected.value, reject).props.onClick();
-    await rejected.flush();
-    expect(run).toHaveBeenLastCalledWith(
-      'board.plan.proposal.resolve',
-      { ...resolve, decision: 'reject' },
-      null,
-    );
+    ).toEqual([act('proposal')]);
+    expect(nodes(h.value).some((n) => n.type === MenuItem)).toBe(false);
+    const card = { scrollIntoView: vi.fn(), focus: vi.fn() };
+    const getElementById = vi.fn(() => card);
+    vi.stubGlobal('document', { getElementById });
+    button(h.value, act('proposal')).props.onClick();
+    expect(getElementById).toHaveBeenCalledWith(proposalCardId('proposal-1'));
+    expect(card.scrollIntoView).toHaveBeenCalled();
+    expect(card.focus).toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('names a failed session row by its reason, then by the session that failed', () => {

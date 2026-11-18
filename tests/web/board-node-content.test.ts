@@ -16,7 +16,7 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
 import { DOMAIN_LABEL } from '@/data/workflow-policy';
 import { TaskCard } from '@/screens/board/FlowNode';
 import { COMPACT_ZOOM, MIN_USER_ZOOM } from '@/screens/board/flow-layout';
-import { NodeActions, type NodeActionContext } from '@/screens/board/NodeActions';
+import type { NodeActionContext } from '@/screens/board/NodeActions';
 import type { NeedItem } from '@/screens/board/frame-model';
 import { TASK_STATE_TONE } from '@/screens/board/status';
 import { useShell } from '@/store';
@@ -305,10 +305,10 @@ describe('flow node size by zoom', () => {
 
 describe('flow node reason layer', () => {
   const said = (t: Task) => text(byClass(tree(t, { selected: true }), 'bd-nwhy'));
-  it('shows the command waiting for approval without being selected, and once only', () => {
+  it('says a task awaits approval without the command, which the needs-you strip shows', () => {
     const shown = tree(approving, { line: 'Awaiting approval pnpm db:migrate --env staging' });
-    expect(text(byClass(shown, 'bd-ninl'))).toBe('pnpm db:migrate --env staging');
-    expect(text(byClass(shown, 'bd-nw'))).not.toContain('pnpm');
+    expect(text(shown)).not.toContain('pnpm');
+    expect(text(shown)).toContain(zh('board.task.phase.waitingApproval'));
   });
 
   it('shows the question a task waits to have answered', () => {
@@ -356,25 +356,15 @@ describe('flow node reason layer', () => {
 });
 
 describe('flow node actions', () => {
-  it('answers an approval in place and opens its session', async () => {
+  it('leaves allowing and denying an approval to the needs-you strip, and opens its session', () => {
+    run.mockClear();
     const openSession = vi.fn();
     useShell.setState({ openSession });
-    const h = render(approving, { actions: context([permission]) });
-    const shown = h.render();
-    expect(labels(shown)).toEqual([
-      zh('board.needs.actions.approve'),
-      zh('board.needs.actions.reject'),
-      OPEN,
-    ]);
+    const shown = tree(approving, { actions: context([permission]) });
+    expect(labels(shown)).toEqual([OPEN]);
     buttons(shown)[0]!.props.onClick();
-    await h.flush();
-    expect(run).toHaveBeenCalledWith(
-      'approval.respond',
-      { approval_id: 'ap1', decision: 'approve' },
-      4,
-    );
-    buttons(h.render())[2]!.props.onClick();
     expect(openSession).toHaveBeenCalledWith('worker', undefined);
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('keeps button presses and keys from selecting the node', () => {
@@ -483,57 +473,30 @@ describe('flow node actions', () => {
   } as NeedItem;
 
   it.each([
-    ['its own request', question, 'q1'],
-    ['the lead question relaying it', relayed, 'lead:question-1'],
+    ['its own request', question, 'q1', false],
+    ['the lead question relaying it', relayed, 'lead:question-1', false],
+    ['its own request, in the needs-you strip on the board', question, 'q1', true],
+    ['the lead question, in the needs-you strip on the board', relayed, 'lead:question-1', true],
   ])(
     'opens the question card of %s instead of answering the request from the node',
-    (_, need, key) => {
+    (_, need, key, onBoard) => {
       run.mockClear();
       const opened = vi.spyOn(useShell.getState(), 'openProjectNeed').mockImplementation(() => {});
-      const shown = tree(asking(['Two endpoints', 'One endpoint']), { actions: context([need]) });
+      const asked = vi.fn();
+      const shown = tree(asking(['Two endpoints', 'One endpoint']), {
+        actions: { ...context([need]), ...(onBoard && { onAskNeed: asked }) },
+      });
       expect(labels(shown)).toEqual([action('answer'), OPEN]);
       buttons(shown)[0]!.props.onClick();
-      expect(opened).toHaveBeenCalledWith('p', key);
+      expect([asked.mock.calls, opened.mock.calls]).toEqual(
+        onBoard ? [[[key]], []] : [[], [['p', key]]],
+      );
       expect(run).not.toHaveBeenCalled();
       opened.mockRestore();
     },
   );
 
-  it('sends one answer when Allow is pressed twice before the next render', async () => {
-    run.mockClear();
-    const allowing = render(approving, { actions: context([permission]) });
-    const allow = buttons(allowing.render())[0]!;
-    allow.props.onClick();
-    allow.props.onClick();
-    await allowing.flush();
-    expect(run).toHaveBeenCalledTimes(1);
-  });
-
-  it('gives a new request its own answer buttons rather than the answered one’s', () => {
-    const keyOf = (t: Task, look: 'approval', need: NeedItem) =>
-      nodes(NodeActions({ task: t, look, context: context([need]) })).find(
-        (n) => typeof n.type === 'function' && n.type.name === 'Answer',
-      )!.key;
-    const waitingOn = (t: Task, id: string): Task => ({
-      ...t,
-      activity: { ...t.activity!, waiting: { ...t.activity!.waiting!, approval_id: id } },
-    });
-    const needOf = (need: NeedItem, id: string) =>
-      ({ ...need, source: { ...need.source, id } }) as NeedItem;
-    expect(keyOf(waitingOn(approving, 'ap2'), 'approval', needOf(permission, 'ap2'))).not.toBe(
-      keyOf(approving, 'approval', permission),
-    );
-  });
-
   it('only opens the session of a question the board has no item for', () => {
     expect(labels(tree(asking(), { actions: context([]) }))).toEqual([OPEN]);
-  });
-
-  it('never offers more than three actions', () => {
-    const withSession: NeedItem = {
-      ...permission,
-      binding: { ...permission.binding!, rule: 'Bash(pnpm *)' },
-    } as NeedItem;
-    expect(buttons(tree(approving, { actions: context([withSession]) }))).toHaveLength(3);
   });
 });

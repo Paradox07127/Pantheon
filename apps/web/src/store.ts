@@ -156,7 +156,7 @@ interface ShellState {
   // The one session the trace's runs tab shows; null shows them all.
   runsSession: string | null;
   runsView: 'now' | 'history';
-  /** The approvals the board's chart answers on their task's node, by notice card id; null until the board has drawn. */
+  /** The approvals the board's needs-you strip lists, by notice card id; null until the board has drawn. */
   boardWaits: ReadonlySet<string> | null;
   /** The waits the rows of a needs-you list show, by notice card id; null before one has rendered. */
   stripWaits: ReadonlySet<string> | null;

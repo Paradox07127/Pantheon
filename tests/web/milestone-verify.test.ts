@@ -9,7 +9,8 @@ vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { useId: 'card-id' }),
 );
 import { RuntimeGlyph, runtimeName } from '@/components/RuntimeGlyph';
-import { MilestoneCard } from '@/screens/board/MilestoneCard';
+import { MilestoneCard, VerifyBadge } from '@/screens/board/MilestoneCard';
+import { TellLead } from '@/screens/board/TellLead';
 import type { BoardMilestone, SnapshotMilestone } from '@/screens/board/panels-model';
 
 type Verification = NonNullable<BoardMilestone['verification']>;
@@ -51,14 +52,14 @@ const stored = {
 } as unknown as SnapshotMilestone;
 const board = (ms: BoardMilestone) =>
   ({ now: NOW, tasks: [], merges: [], milestones: [ms] }) as unknown as BoardModel;
-const card = (ms: BoardMilestone) =>
+const card = (ms: BoardMilestone, row: SnapshotMilestone = stored) =>
   new HookHost(() =>
     MilestoneCard({
       model: board(ms),
       milestone: ms,
       actions: {
         projectId: 'project-a',
-        milestones: [stored],
+        milestones: [row],
         sessions: [],
         run: async () => null,
       },
@@ -70,11 +71,11 @@ const children = (n: ReactElement<any>): ReactElement<any>[] =>
   [n.props.children]
     .flat(Infinity)
     .filter((c): c is ReactElement<any> => !!c && typeof c === 'object' && 'props' in c);
-/** The parts of the card's line beside its title. */
+/** The parts of the card's line beside its title, the verification badge drawn. */
 const line = (out: ReactElement) =>
-  children(find(out, (n) => children(n).some((c) => c.type === 'h2'))).filter(
-    (n) => n.type !== 'h2',
-  );
+  children(find(out, (n) => children(n).some((c) => c.type === 'h2')))
+    .filter((n) => n.type !== 'h2')
+    .flatMap((n) => (n.type === VerifyBadge ? [VerifyBadge(n.props)].filter((b) => !!b) : [n]));
 const badgeTexts = () => [
   say('board.verify.badge.running', { elapsed: durationText(3 * 60_000) }),
   zh('board.verify.badge.passed'),
@@ -209,6 +210,7 @@ describe('verdict of a milestone verification', () => {
           runtime: 'codex',
           independence: 'other_vendor',
           reason: 'The export drops the header row.',
+          reason_code: 'verifier_failed',
           finished_at: NOW,
           commands: [{ name: 'pnpm test', exit_code: 0 }],
         }),
@@ -218,16 +220,68 @@ describe('verdict of a milestone verification', () => {
     expect(text(shown)).toContain('The export drops the header row.');
   });
 
-  it('words a known reason and leaves an unknown one out', () => {
-    const restarted = verdict(
+  it.each([
+    ['checks_environment', 'inconclusive', 'board.verify.reason.checksEnvironment'],
+    ['check_error', 'inconclusive', 'board.verify.reason.checkError'],
+    ['no_verifier_runtime', 'inconclusive', 'board.verify.reason.noRuntime'],
+    ['review_not_started', 'inconclusive', 'board.verify.reason.reviewNotStarted'],
+    ['review_failed', 'inconclusive', 'board.verify.reason.reviewFailed'],
+    ['review_incomplete', 'inconclusive', 'board.verify.reason.reviewIncomplete'],
+    ['no_verdict', 'inconclusive', 'board.verify.reason.noVerdict'],
+    ['daemon_restart', 'inconclusive', 'board.verify.reason.daemonRestart'],
+    ['checks_failed', 'failed', null],
+  ] as const)('words the reason %s by its code', (code, state, id) => {
+    const shown = verdict(
+      card(
+        milestone({
+          state,
+          reason: 'spawn git ENOENT',
+          reason_code: code,
+          finished_at: NOW,
+          commands: [{ name: 'pnpm test', exit_code: state === 'failed' ? 1 : 0 }],
+        }),
+      ),
+    )!;
+    const why = nodes(shown).filter((n) => n.type === 'p');
+    expect(why.map(text)).toEqual(id === null ? [] : [zh(id)]);
+    expect(text(shown)).not.toContain('ENOENT');
+  });
+
+  it('gives no reason for a run recorded without a reason code', () => {
+    const shown = verdict(
       card(milestone({ state: 'inconclusive', reason: 'daemon_restart', finished_at: NOW })),
     )!;
-    expect(text(restarted)).toContain(zh('board.verify.badge.inconclusive'));
-    expect(text(restarted)).toContain(zh('board.verify.reason.daemonRestart'));
-    expect(text(restarted)).not.toContain('daemon_restart');
-    const unknown = verdict(
-      card(milestone({ state: 'inconclusive', reason: 'spawn git ENOENT', finished_at: NOW })),
-    )!;
-    expect(text(unknown)).not.toContain('ENOENT');
+    expect(text(shown)).toContain(zh('board.verify.badge.inconclusive'));
+    expect(nodes(shown).some((n) => n.type === 'p')).toBe(false);
+  });
+});
+
+describe('telling the lead from the verdict', () => {
+  /** The name of each Tell lead button in the verdict. */
+  const tells = (out: ReactElement) =>
+    nodes(verdict(out)!)
+      .filter((n) => n.type === TellLead)
+      .map((n) => {
+        const drawn = new HookHost(() => TellLead(n.props)).render();
+        return find(drawn, (b) => b.type === 'button').props['aria-label'];
+      });
+  const named = say('board.lead.tell.buttonLabel', {
+    action: zh('board.verify.card.tellLead'),
+    label: 'importer ready',
+  });
+
+  it.each([
+    ['failed', [named]],
+    ['inconclusive', [named]],
+    ['passed', []],
+  ] as const)('a %s verification of a lead milestone offers %j', (state, expected) => {
+    expect(tells(card(milestone({ state, finished_at: NOW })))).toEqual(expected);
+  });
+
+  it('offers no Tell lead on a milestone without a lead', () => {
+    const { owner_session_id: _lead, ...mine } = stored;
+    expect(
+      tells(card(milestone({ state: 'failed', finished_at: NOW }), mine as SnapshotMilestone)),
+    ).toEqual([]);
   });
 });

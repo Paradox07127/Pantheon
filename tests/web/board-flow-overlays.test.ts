@@ -22,6 +22,7 @@ import { ConnectionLine, DraftCard, FlowLegend } from '@/screens/board/FlowOverl
 import { NODE_HEIGHT } from '@/screens/board/flow-layout';
 import { MergedStack, stackMerged } from '@/screens/board/MergedStack';
 import { MilestoneNode } from '@/screens/board/MilestoneNode';
+import { VerifyBadge } from '@/screens/board/MilestoneCard';
 import { addDraftEdit, discardDraftEdits, draftEdits } from '@/data/plan-draft';
 import type { SnapshotSession } from '@/screens/board/panels-model';
 
@@ -385,6 +386,32 @@ describe('the flow chart overlays', () => {
     ]);
   });
 
+  it.each([
+    ['passed', 'board.verify.badge.passed'],
+    ['failed', 'board.verify.badge.failed'],
+    ['inconclusive', 'board.verify.badge.inconclusive'],
+  ] as const)('names the milestone node with its %s verification', (state, id) => {
+    const model = board();
+    model.milestones[0] = {
+      ...model.milestones[0]!,
+      verification: {
+        id: 'verify-1',
+        state,
+        started_at: NOW - 60_000,
+        finished_at: NOW,
+        failed: [],
+        commands: [],
+      },
+    };
+    const milestone = canvas({ model }).node('milestone:m1');
+    expect(milestone.ariaLabel).toContain('ship refunds');
+    expect(milestone.ariaLabel).toContain(zh(id));
+    const host = mount(() => MilestoneNode({ data: milestone.data } as never));
+    const badge = find(host.value, (n) => n.type === VerifyBadge);
+    const drawn = VerifyBadge(badge.props)!;
+    expect(find(drawn, (n) => n.props.role === 'img').props['aria-label']).toBe(zh(id));
+  });
+
   it('draws the link from merged work into the milestone as met', () => {
     const model = board();
     model.tasks = model.tasks.map((t) =>
@@ -397,10 +424,16 @@ describe('the flow chart overlays', () => {
     ).toEqual([['stack:lead-1:main', 'met']]);
   });
 
-  it('counts what waits for the user and jumps to the next waiting task', () => {
+  it('offers a jump to the next task waiting for the user, without a count of its own', () => {
     const { h, focused } = canvas();
     const count = named(h.value, 'NeedsCount');
-    expect(count.props.count).toBe(1);
+    const drawn = mount(() => (count.type as (p: object) => ReactElement)(count.props)).value;
+    expect(text(drawn)).toBe('');
+    expect(
+      nodes(drawn)
+        .map((n) => n.props['aria-label'] ?? null)
+        .filter(Boolean),
+    ).toEqual([zh('board.flow.needs.next')]);
     view.setViewport.mockClear();
     count.props.onNext();
     expect(view.setViewport).toHaveBeenCalledTimes(1);
@@ -409,17 +442,17 @@ describe('the flow chart overlays', () => {
   });
 
   const leadQuestion = { kind: 'lead.question', session_id: 'lead-1', unblocks: 0 };
-  it.each<[string, unknown[], number[]]>([
+  it.each<[string, unknown[], number]>([
     [
       'leaves out a lead question, which has no task on the chart',
       [board().needs![0], leadQuestion],
-      [1],
+      1,
     ],
-    ['shows no count while only lead questions wait', [leadQuestion], []],
-  ])('counts only what the jump reaches: %s', (_, needs, counts) => {
+    ['offers no jump while only lead questions wait', [leadQuestion], 0],
+  ])('offers the jump only to what it reaches: %s', (_, needs, count) => {
     const { h } = canvas({ model: board({ needs } as Partial<BoardModel>) });
     const shown = nodes(h.value).filter((n) => (n.type as { name?: string }).name === 'NeedsCount');
-    expect(shown.map((n) => n.props.count)).toEqual(counts);
+    expect(shown).toHaveLength(count);
     expect(shown.every((n) => typeof n.props.onNext === 'function')).toBe(true);
   });
 

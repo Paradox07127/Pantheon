@@ -35,7 +35,6 @@ import { BaselinePopover } from '../projects/BaselineBlocks';
 import { BoardDevices } from './BoardDevices';
 import { CanvasPage } from './CanvasPage';
 import { Milestones } from './Charts';
-import { ColumnsPanel } from './Columns';
 import { EditBar, EditButton, setBoardEditing, useBoardEditing } from './EditMode';
 import { baselineSyncReason, type SessionDefaults } from './frame-model';
 import { leadLine } from './LeadPanel';
@@ -79,15 +78,13 @@ import { CyclePanel, StallPanel, TrendPanel } from './ProgressCharts';
 import { ProgressTable } from './ProgressTable';
 import { PublishBar } from './PublishBar';
 import { TaskDrawer } from './TaskDrawer';
-import { isPlanTask } from './view-rules';
 import './board.css';
 
 export type BoardDays = 1 | 7 | 30 | 'all';
 /** The canvas view's panel groups, each a tab of the stored layout. */
 export type OverviewSection = 'progress' | 'milestones';
-type TableView = 'table' | 'columns';
 /** The progress panel whose task drawer is open. */
-type TaskPanel = 'flow' | 'columns';
+type TaskPanel = 'flow';
 
 const CANVAS_TABS: readonly OverviewSection[] = ['progress', 'milestones'];
 const NO_TASKS: Pick<BoardModel, 'tasks' | 'leads'> = { tasks: [] };
@@ -604,16 +601,11 @@ export function BoardView(props: BoardViewProps) {
     setSelectedProject(projectId);
     setSelected(null);
   }
-  const [tableView, setTableView] = useState<TableView>('table');
   // The more menu's baseline start opens the model popover at the menu button.
   const [choosing, setChoosing] = useState(false);
   const moreButton = useRef<HTMLButtonElement>(null);
   const selectFlow = useCallback(
     (taskId: string | null) => setSelected(taskId === null ? null : { taskId, panel: 'flow' }),
-    [],
-  );
-  const selectColumns = useCallback(
-    (taskId: string | null) => setSelected(taskId === null ? null : { taskId, panel: 'columns' }),
     [],
   );
   const selectedIn = (panel: TaskPanel) => (selected?.panel === panel ? selected.taskId : null);
@@ -625,22 +617,17 @@ export function BoardView(props: BoardViewProps) {
   const drawnBefore = drawnProject !== null && drawnProject.projectId === projectId;
   if (settled && !drawnBefore) setDrawnProject({ projectId });
   const drawn = settled || drawnBefore;
-  // The approvals the main view's chart answers on their task's node.
-  const charted =
+  // The approvals the now view's needs-you strip lists, folded away or not.
+  const listed =
     page === 'now' && scoped && shown
-      ? shown.tasks.flatMap((task) => {
-          const waiting = task.activity?.waiting;
-          return isPlanTask(task) &&
-            waiting?.kind === 'approval' &&
-            shown.needs?.some((n) => needsKey(n) === waiting.approval_id)
-            ? [waiting.approval_id]
-            : [];
-        })
+      ? (shown.needs ?? []).flatMap((n) =>
+          n.source.table === 'approvals' ? (needsKey(n) ?? []) : [],
+        )
       : [];
-  // The notice cards hold an approval until the board is drawn; the board lists those of its chart.
+  // The notice cards hold an approval until the board is drawn; the board lists those of its strip.
   useEffect(() => {
-    useShell.setState({ boardWaits: drawn ? new Set(charted) : null });
-  }, [drawn, charted.join('\n')]);
+    useShell.setState({ boardWaits: drawn ? new Set(listed) : null });
+  }, [drawn, listed.join('\n')]);
   const pending =
     !model && (error ? <Failure error={error} onRetry={onRetry} /> : loading && <Skeleton />);
   const current = model && currentMilestone(model.milestones);
@@ -665,6 +652,7 @@ export function BoardView(props: BoardViewProps) {
     setFocusTask((n) => n + 1);
   };
   // The task the now or canvas view picked, docked as the body's second column.
+  const askNeed = (key: string) => useShell.setState({ askedNeed: key });
   const drawer = model && (
     <TaskDrawer
       model={model}
@@ -674,6 +662,7 @@ export function BoardView(props: BoardViewProps) {
       onOpenStory={onOpenStory}
       onStartTask={onStartTask}
       tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
+      onAskNeed={page === 'now' && actions ? askNeed : undefined}
     />
   );
   const panels: BoardPanels =
@@ -682,44 +671,7 @@ export function BoardView(props: BoardViewProps) {
           table: {
             title: t({ id: 'board.progress.title', defaultMessage: 'Progress table' }),
             node: (
-              <ProgressTable
-                model={shown}
-                onOpenTask={selectFlow}
-                projectId={scoped?.projectId}
-                tools={
-                  <RadioGroup<TableView>
-                    className="seg"
-                    aria-label={t({
-                      id: 'board.panels.tableView',
-                      defaultMessage: 'Progress table view',
-                    })}
-                    value={tableView}
-                    onValueChange={(value) => {
-                      setTableView(value);
-                      setSelected((now) => (now?.panel === 'columns' ? null : now));
-                    }}
-                  >
-                    <Radio.Root value="table">
-                      {t({ id: 'board.progress.title', defaultMessage: 'Progress table' })}
-                    </Radio.Root>
-                    <Radio.Root value="columns">
-                      {t({ id: 'board.columns.label', defaultMessage: 'Task columns' })}
-                    </Radio.Root>
-                  </RadioGroup>
-                }
-              >
-                {tableView === 'columns' && (
-                  <ColumnsPanel
-                    model={shown}
-                    selected={selectedIn('columns')}
-                    onSelect={selectColumns}
-                    onOpenSession={onOpenSession}
-                    onOpenStory={onOpenStory}
-                    onStartTask={onStartTask}
-                    tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
-                  />
-                )}
-              </ProgressTable>
+              <ProgressTable model={shown} onOpenTask={selectFlow} projectId={scoped?.projectId} />
             ),
           },
           trend: {
@@ -990,6 +942,7 @@ export function BoardView(props: BoardViewProps) {
                     onStartTask,
                     selectedIn,
                     selectFlow,
+                    onAskNeed: actions ? askNeed : undefined,
                     editing,
                     taskTitle,
                     setFocusTask,

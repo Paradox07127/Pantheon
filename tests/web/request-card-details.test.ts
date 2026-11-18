@@ -207,7 +207,7 @@ describe('request card details', () => {
     expect(text(h.value)).not.toContain('The task has no running turn');
   });
 
-  it('marks a lead plan proposal with the plan edit icon and offers to accept it, reject it or open the board', () => {
+  it('marks a lead plan proposal with the plan edit icon and offers only to show it, on the board when no proposals panel is drawn', () => {
     const openProjectBoard = vi.fn();
     useShell.setState({ openProjectBoard });
     const leadSession = { ...worker, id: 'lead-1', title: 'Refunds lead', task: undefined };
@@ -221,13 +221,10 @@ describe('request card details', () => {
     );
     expect(text(find(h.value, (n) => n.props.className === 'rq-who'))).toBe(who);
     expect(text(h.value)).toContain(zh('data.reason.planProposalAwaitingDecision'));
-    expect(labels(h.value)).toEqual([
-      zh('board.plan.proposal.accept'),
-      zh('board.plan.proposal.reject'),
-      zh('board.needs.actions.board'),
-    ]);
-    expect(button(h.value, zh('board.plan.proposal.accept')).props.className).toBe('btn pri');
-    button(h.value, zh('board.needs.actions.board')).props.onClick();
+    expect(labels(h.value)).toEqual([zh('board.needs.actions.proposal')]);
+    vi.stubGlobal('document', { getElementById: () => null });
+    button(h.value, zh('board.needs.actions.proposal')).props.onClick();
+    vi.unstubAllGlobals();
     expect(openProjectBoard).toHaveBeenCalledWith('project-a');
     expect(run).not.toHaveBeenCalled();
   });

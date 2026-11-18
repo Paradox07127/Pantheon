@@ -1,12 +1,11 @@
-import { Fragment } from 'react';
 import type { BoardActivity, BoardModel } from '@pantheon/protocol';
-import { RequestCard } from '../../components/RequestCard';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { StateGlyph } from '../../components/SessionStateIcon';
+import { needsKey } from '../../data/notice-tiers';
 import { t } from '../../i18n';
+import { useShell } from '../../store';
 import { PHASE, toolText } from './activity';
-import { needContext } from './BoardFrame';
-import { leadState, needKey, type BoardLead } from './frame-model';
+import { leadState, type BoardLead } from './frame-model';
 import type { RunBoardCommand, SnapshotSession } from './panels-model';
 import './overview.css';
 
@@ -22,8 +21,9 @@ export const leadLine = (lead: BoardLead): string =>
 
 /**
  * Each lead on one line: its runtime, its state, with several leads its plan title, what it is
- * doing and a button opening its session; under it, the questions it waits on the user for, those
- * relayed from its tasks' sessions included; below, the tasks each lead planned onto another device.
+ * doing and a button opening its session; while a question of it, relayed ones included, waits on
+ * the user, what it is doing jumps to that question in the needs-you strip; below, the tasks each
+ * lead planned onto another device.
  */
 export function LeadPanel({
   model,
@@ -31,15 +31,13 @@ export function LeadPanel({
   onOpenSession,
   onOpenTask,
   run,
-  stale,
 }: {
   model: BoardModel;
   sessions: readonly SnapshotSession[];
   onOpenSession: (sessionId: string) => void;
   onOpenTask: (taskId: string) => void;
-  /** Answers the questions; without it they are not shown. */
+  /** Present while the needs-you strip beside answers the questions; without it no line jumps there. */
   run?: RunBoardCommand;
-  stale?: boolean;
 }) {
   const sent = model.tasks.filter((task) => {
     const device = task.planned?.device;
@@ -64,52 +62,57 @@ export function LeadPanel({
           const session = sessions.find((s) => s.id === lead.session_id);
           const name = lead.title || t({ id: 'board.lead.untitled', defaultMessage: 'Lead' });
           const line = asked?.question ?? leadLine(lead);
-          const questions = (model.needs ?? []).filter(
-            (n) => n.kind === 'lead.question' && n.session_id === lead.session_id,
-          );
+          const question = run
+            ? model.needs?.find(
+                (n) => n.kind === 'lead.question' && n.session_id === lead.session_id,
+              )
+            : undefined;
+          const questionKey = question && needsKey(question);
           return (
-            <Fragment key={lead.session_id}>
-              <li className="bld-i">
-                {session && <RuntimeGlyph runtime={session.runtime} />}
-                <StateGlyph name={state.glyph} />
-                {titled && (
-                  <span className="bld-t" title={name}>
-                    {name}
-                  </span>
-                )}
+            <li key={lead.session_id} className="bld-i">
+              {session && <RuntimeGlyph runtime={session.runtime} />}
+              <StateGlyph name={state.glyph} />
+              {titled && (
+                <span className="bld-t" title={name}>
+                  {name}
+                </span>
+              )}
+              {questionKey ? (
+                <button
+                  type="button"
+                  className="bd-lnk bld-do"
+                  title={line}
+                  aria-label={t(
+                    {
+                      id: 'board.lead.line.toQuestion',
+                      defaultMessage: 'Jump to this question in Needs you: {question}',
+                    },
+                    { question: question.question?.question ?? line },
+                  )}
+                  onClick={() => useShell.setState({ askedNeed: questionKey })}
+                >
+                  {line}
+                </button>
+              ) : (
                 <span className="bld-do" title={line}>
                   {line}
                 </span>
-                <button
-                  type="button"
-                  className="btn bld-r"
-                  aria-label={t(
-                    {
-                      id: 'board.frame.lead.label',
-                      defaultMessage: '{name} {state}, open session',
-                    },
-                    { name, state: state.label },
-                  )}
-                  onClick={() => onOpenSession(lead.session_id)}
-                >
-                  {t({ id: 'board.lead.line.open', defaultMessage: 'Open lead' })}
-                </button>
-              </li>
-              {run &&
-                questions.map((need) => (
-                  <li key={needKey(need)}>
-                    <RequestCard
-                      item={need}
-                      size="full"
-                      now={model.now}
-                      run={run}
-                      onOpenSession={onOpenSession}
-                      stale={stale}
-                      {...needContext(need, model, sessions, [], null)}
-                    />
-                  </li>
-                ))}
-            </Fragment>
+              )}
+              <button
+                type="button"
+                className="btn bld-r"
+                aria-label={t(
+                  {
+                    id: 'board.frame.lead.label',
+                    defaultMessage: '{name} {state}, open session',
+                  },
+                  { name, state: state.label },
+                )}
+                onClick={() => onOpenSession(lead.session_id)}
+              >
+                {t({ id: 'board.lead.line.open', defaultMessage: 'Open lead' })}
+              </button>
+            </li>
           );
         })}
       </ul>
