@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Bot, Check, CircleDashed, Crown, Flag, Square, X } from 'lucide-react';
+import { Bot, Check, CircleDashed, Crown, Flag, Route, Square, X } from 'lucide-react';
 import {
   decisionType,
   type BoardModel,
@@ -14,6 +14,8 @@ import { toast } from '../../components/Toast';
 import { useAgentProposal } from '../../data/agents';
 import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
+import { useBoardHistory } from '../../data/board-history';
+import { pickBoardPage, pickTaskScope, pickTaskView } from '../../data/board-page';
 import { decisionRow, useDecisionsAfter } from '../../data/decisions-for-user';
 import { reasonText } from '../../data/needs-you';
 import { markProjectSeen, useProjectBrief, writeBriefProse } from '../../data/project-brief';
@@ -22,9 +24,11 @@ import { listText } from '../../lib/list-text';
 import { clockText, dayText, durationText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { needSession } from './frame-model';
+import { askReplan } from './HistoryView';
 import { verifyText } from './MilestoneCard';
 import { tellLeadDraft, type RunBoardCommand, type SnapshotSession } from './panels-model';
-import { StatusIcon } from './status';
+import { changesText, firedText, unansweredText } from './replan-text';
+import { StateIcon, StatusIcon } from './status';
 import { RungLabel } from './TaskRecovery';
 import { TellLead } from './TellLead';
 import './brief-lanes.css';
@@ -53,7 +57,7 @@ function hourMarks(from: number, to: number): number[] {
 interface LanePoint {
   key: string;
   at: number;
-  kind: 'merge' | 'failure' | 'decided' | 'assumption' | 'proposal';
+  kind: 'merge' | 'failure' | 'decided' | 'assumption' | 'proposal' | 'replan' | 'replanMet';
   glyph: ReactNode;
   type: string;
   title: string;
@@ -134,6 +138,7 @@ export function BriefCard({
     brief?.since ?? 0,
   );
   const events = useBoard((s) => s.events);
+  const { data: history } = useBoardHistory(projectId);
   const openSession = useShell((s) => s.openSession);
   const openApproved = useShell((s) => s.openProjectApproved);
   // The read the user marked read stays hidden until the brief is read again.
@@ -162,7 +167,21 @@ export function BriefCard({
       (started) => started && setWriting({ projectId, at: Date.now() }),
     );
   }, [brief, seen, proseOn, projectId]);
-  if (!brief || brief === seen || brief.items.length === 0) return null;
+  if (!brief || brief === seen) return null;
+  // The brief keeps no re-plans, so the history gives those made since leaving and the conditions still waiting.
+  const replans = (history?.decisions ?? []).filter(
+    (d): d is typeof d & { replan: NonNullable<typeof d.replan> } =>
+      d.kind === 'replan' && !!d.replan && d.at > brief.since,
+  );
+  const waitingReplans = history?.pending_replans ?? [];
+  if (brief.items.length === 0 && replans.length === 0 && waitingReplans.length === 0) return null;
+  /** Shows the whole history, with the re-plan made at `at` open. */
+  const toTimeline = (at?: number) => {
+    if (at !== undefined) askReplan(at);
+    pickTaskScope(projectId, 'all');
+    pickTaskView(projectId, 'timeline');
+    pickBoardPage(projectId, 'tasks');
+  };
 
   const of = <K extends ProjectBriefItem['kind']>(kind: K) =>
     brief.items.filter((item): item is Of<K> => item.kind === kind);
@@ -347,6 +366,59 @@ export function BriefCard({
       type: t({ id: 'board.brief.type.proposal', defaultMessage: 'Agent proposal' }),
       title: t({ id: 'board.brief.untitledProposal', defaultMessage: 'Untitled proposal' }),
     })),
+    ...replans.map((d): LanePoint => ({
+      key: `replan:${d.at}`,
+      at: d.at,
+      kind: 'replan',
+      glyph: (
+        <svg className="bl-rp" viewBox="0 0 12 12" aria-hidden="true">
+          <rect
+            x={1.5}
+            y={1.5}
+            width={9}
+            height={9}
+            transform="rotate(45 6 6)"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.2}
+          />
+          <rect
+            x={3.75}
+            y={3.75}
+            width={4.5}
+            height={4.5}
+            transform="rotate(45 6 6)"
+            fill="currentColor"
+          />
+        </svg>
+      ),
+      type: t({ id: 'board.brief.type.replan', defaultMessage: 'Re-planned' }),
+      title: d.replan.triggers[0]!.text,
+      open: () => toTimeline(d.at),
+    })),
+    ...waitingReplans.map((item): LanePoint => ({
+      key: `replanMet:${item.event_id}`,
+      at: item.at,
+      kind: 'replanMet',
+      glyph: (
+        <svg className="bl-rp" viewBox="0 0 12 12" aria-hidden="true">
+          <rect
+            x={2.5}
+            y={2.5}
+            width={7}
+            height={7}
+            transform="rotate(45 6 6)"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.2}
+            strokeDasharray="2 1.5"
+          />
+        </svg>
+      ),
+      type: t({ id: 'board.brief.type.replanMet', defaultMessage: 'Condition met' }),
+      title: firedText(item),
+      open: () => toTimeline(),
+    })),
   ];
 
   const times = [...delivered, ...decided, ...planned].map((point) => point.at);
@@ -430,6 +502,23 @@ export function BriefCard({
               defaultMessage: '{count, plural, one {# agent proposal} other {# agent proposals}}',
             },
             { count: proposals.length },
+          ),
+        replans.length > 0 &&
+          t(
+            {
+              id: 'board.brief.replansCount',
+              defaultMessage: '{count, plural, one {# re-plan} other {# re-plans}}',
+            },
+            { count: replans.length },
+          ),
+        waitingReplans.length > 0 &&
+          t(
+            {
+              id: 'board.brief.replanMetCount',
+              defaultMessage:
+                '{count, plural, one {# re-plan condition met} other {# re-plan conditions met}}',
+            },
+            { count: waitingReplans.length },
           ),
       ],
       points: planned.map((point) =>
@@ -651,6 +740,46 @@ export function BriefCard({
           </div>
         </div>
         {rows.length > 0 && <div className="bf-brief-rows">{rows}</div>}
+        {(replans.length > 0 || waitingReplans.length > 0) && (
+          <div className="bf-brief-rows">
+            {replans.map((d) => {
+              const counts = changesText(d.replan);
+              return (
+                <button
+                  key={d.at}
+                  type="button"
+                  className="bf-brief-rp"
+                  onClick={() => toTimeline(d.at)}
+                >
+                  <time className="bf-brief-at" dateTime={new Date(d.at).toISOString()}>
+                    {dayText(d.at, model.now, { time: true })}
+                  </time>
+                  <Route aria-hidden="true" />
+                  <span className="bf-brief-n">
+                    {t({ id: 'board.brief.type.replan', defaultMessage: 'Re-planned' })}
+                  </span>
+                  <span className="bf-brief-fn">{d.replan.triggers[0]!.text}</span>
+                  {counts && <span className="bf-brief-n">{counts}</span>}
+                </button>
+              );
+            })}
+            {waitingReplans.map((item) => (
+              <span key={item.event_id} className="bf-brief-rp">
+                <time className="bf-brief-at" dateTime={new Date(item.at).toISOString()}>
+                  {dayText(item.at, model.now, { time: true })}
+                </time>
+                <StateIcon state="waiting_upstream" />
+                <span className="bf-brief-n">
+                  {t({ id: 'board.brief.type.replanMet', defaultMessage: 'Condition met' })}
+                </span>
+                <span className="bf-brief-fn">{firedText(item)}</span>
+                <span className="bf-brief-n">
+                  {listText(unansweredText(), durationText(model.now - item.at))}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
         {failures.length > 0 && <div className="bf-brief-rows">{failures.map(failRow)}</div>}
       </div>
     </section>

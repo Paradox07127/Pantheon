@@ -6,6 +6,7 @@ import { t } from '../../i18n';
 import { HistoryTab, PanelBoundary, type BoardViewProps } from './BoardScreen';
 import { DraftTaskForm, EditMode, OrderLock } from './EditMode';
 import { MainView, hasPlanTasks } from './MainView';
+import { ReplaySwitch } from './PlanReplay';
 import { PublishBar } from './PublishBar';
 import { TaskList } from './TaskList';
 import { TaskTimelineView } from './TaskTimelineView';
@@ -69,20 +70,25 @@ export function TasksPage({
       <div className="bd-body">
         {!model ? (
           loadingPanel
-        ) : !projectId ? null : shown !== model ? (
-          // The board cuts the read to the current milestone only in that scope.
-          setupPanel || (empty ? null : <TaskTimelineView model={shown!} projectId={projectId} />)
-        ) : (
-          <HistoryTab
-            projectId={projectId}
-            empty={setupPanel}
-            lanes={model.lanes}
-            now={model.now}
-            milestones={model.milestones}
-            onOpenSession={onOpenSession}
-            onOpenTask={onOpenTask}
-            bar={historyBar}
-          />
+        ) : !projectId ? null : (
+          <ReplaySwitch model={model} bar={historyBar}>
+            {shown !== model ? (
+              // The board cuts the read to the current milestone only in that scope.
+              setupPanel ||
+              (empty ? null : <TaskTimelineView model={shown!} projectId={projectId} />)
+            ) : (
+              <HistoryTab
+                projectId={projectId}
+                empty={setupPanel}
+                lanes={model.lanes}
+                now={model.now}
+                milestones={model.milestones}
+                onOpenSession={onOpenSession}
+                onOpenTask={onOpenTask}
+                bar={historyBar}
+              />
+            )}
+          </ReplaySwitch>
         )}
       </div>
     );

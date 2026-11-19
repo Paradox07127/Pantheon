@@ -176,8 +176,9 @@ await page.click({ role: 'button', name: '切换项目', exact: true });
 await page.click({ role: 'menuitem', name: '全部项目', exact: true });
 const tableRows = () =>
   page.evaluate(`(() => {
-    const t = [...document.querySelectorAll('[role="table"][aria-label="全部项目"]')].find((x) => x.getClientRects().length);
-    return t ? [...t.querySelectorAll('[role="row"]:not(.pr-head)')].map((r) => r.textContent.replace(/\\s+/g, ' ').trim().slice(0, 160)) : null;
+    // Each project is a region named after it, with no header row.
+    const t = [...document.querySelectorAll('[role="group"][aria-label="全部项目"]')].find((x) => x.getClientRects().length);
+    return t ? [...t.querySelectorAll('[role="region"]')].map((r) => r.textContent.replace(/\\s+/g, ' ').trim().slice(0, 160)) : null;
   })()`);
 const rows = await poll(async () => {
   const r = await tableRows();

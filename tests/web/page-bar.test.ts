@@ -145,6 +145,7 @@ describe('app top bar', () => {
   it.each([
     ['names the project board in its one top bar', 'board'],
     ['names the memory page in its one top bar', 'memory'],
+    ['names the automations page in its one top bar', 'automations'],
   ] as const)('%s', (_name, screen) => {
     const html = app(screen);
     expect(html.match(/<header class="tb">/g)).toHaveLength(1);

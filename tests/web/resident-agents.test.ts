@@ -204,7 +204,12 @@ describe('resident zone', () => {
     ];
     const h = sidebar([resident('res-assistant', 'assistant')]);
     const rows = agentRows(h);
-    expect(rows.map(rowName)).toEqual([ASSISTANT, TRIAGE, 'Idea box']);
+    expect(rows.map(rowName)).toEqual([
+      ASSISTANT,
+      TRIAGE,
+      'Idea box',
+      zh('app.screenName.automations'),
+    ]);
     const ideas = rows[2]!;
     expect(ideas.props['aria-label']).toContain(zh('components.sidebar.residentNotStarted'));
     ideas.props.onClick();
@@ -564,9 +569,21 @@ describe('agent profile', () => {
       shown: { 'sessions.agents.routine.interval': '7', 'sessions.agents.routine.unit': 'days' },
       schedule: { every_minutes: 10080 },
     },
-  ])(
+    {
+      template: 'weekly-self-review',
+      shown: { 'sessions.agents.routine.interval': '7', 'sessions.agents.routine.unit': 'days' },
+      schedule: { every_minutes: 10080 },
+      enabled: false,
+    },
+  ] as {
+    template: string;
+    shown: Record<string, string>;
+    schedule: object;
+    precheck?: { argv: string[] };
+    enabled?: boolean;
+  }[])(
     'adds a row from the $template routine template and saves it through agent.update',
-    async ({ template, shown, schedule, precheck }) => {
+    async ({ template, shown, schedule, precheck, enabled = true }) => {
       const { prompt } = ROUTINE_TEMPLATES.find((each) => each.id === template)!;
       agentMock.agents = [agent('agent-ideas', 'ideas', { revision: 2 })];
       const h = profile('agent-ideas');
@@ -589,7 +606,7 @@ describe('agent profile', () => {
         {
           agent_id: 'agent-ideas',
           revision: 2,
-          routines: [{ prompt, ...schedule, enabled: true, ...(precheck && { precheck }) }],
+          routines: [{ prompt, ...schedule, enabled, ...(precheck && { precheck }) }],
         },
         null,
       );

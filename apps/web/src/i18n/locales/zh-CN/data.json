@@ -362,5 +362,7 @@
   "data.askDebug.sent": "已发给调试会话",
   "data.askDebug.open": "打开",
   "data.toolCalls.action.proposeAgent": "提议智能体",
-  "data.transcript.busy.archived": "会话已归档，恢复后才能发送或插话"
+  "data.transcript.busy.archived": "会话已归档，恢复后才能发送或插话",
+  "data.reason.settingProposalAwaitingDecision": "设置改动等你决定",
+  "data.reason.planReassessmentReady": "lead 重估了暂停的计划"
 }

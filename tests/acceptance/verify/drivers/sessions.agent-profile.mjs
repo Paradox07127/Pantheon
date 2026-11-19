@@ -118,8 +118,8 @@ check('资料头部显示新角色', chip === ROLE, chip ?? (await page.evaluate
 check('对照组：头部不再是旧角色', chip && chip !== before.role);
 
 check(
-  '自定义智能体的资料只有 你的指令，没有 内置角色',
-  panel?.sections.join() === '你的指令',
+  '自定义智能体的资料第一段是 你的指令，没有 内置角色',
+  panel?.sections[0] === '你的指令' && !panel.sections.includes('内置角色'),
   panel?.sections,
 );
 check(
@@ -141,6 +141,24 @@ const ownShown = await poll(() =>
 );
 check('保存后 你的指令 显示新值', ownShown);
 
+// New instructions roll the agent's session: its handoff turn runs, then a successor opens.
+// The daemon refuses an archive during a turn, so the roll is waited out first.
+const rolled = await poll(async () => {
+  const mine = (await query('session.list', { project_id })).filter(
+    (s) => s.resident?.agent_id === agentId && !s.archived_at,
+  );
+  return (
+    mine.length === 2 &&
+    mine.some((s) => s.state === 'done') &&
+    mine.some((s) => s.state === 'idle') &&
+    mine
+  );
+}, 30_000);
+check(
+  '改指令后会话轮换落定：旧会话 done、新会话 idle',
+  rolled,
+  rolled && rolled.map((s) => s.state),
+);
 await page.click({ role: 'button', name: '归档', exact: true, within: PANEL(NAME) });
 const archived = await poll(async () => {
   const now = await agentOf(agentId);
@@ -176,8 +194,8 @@ check('助理的资料打开了', assistant, assistant);
 check('助理的资料没有 归档', assistant && !assistant.buttons.includes('归档'), assistant?.buttons);
 const assistantListed = await agentOf(assistantId);
 check(
-  '助理的资料有 内置角色 和 你的指令 两段',
-  assistant?.sections.join() === '内置角色,你的指令',
+  '助理的资料前两段是 内置角色 和 你的指令',
+  assistant?.sections.slice(0, 2).join() === '内置角色,你的指令',
   assistant?.sections,
 );
 check(

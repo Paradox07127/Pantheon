@@ -2,15 +2,17 @@ import { useId, useState } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Dialog } from '@base-ui/react/dialog';
 import { Popover } from '@base-ui/react/popover';
-import { ChevronDown, Clock, Diamond, SquareTerminal, TriangleAlert } from 'lucide-react';
+import { ChevronDown, Clock, Diamond, Route, SquareTerminal, TriangleAlert } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { Tip } from '../../components/Tip';
+import { useBoardHistory } from '../../data/board-history';
 import { ageText, useNow } from '../../data/needs-you';
 import { milestoneDueOp, planVersion } from '../../data/plan-edit';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { useShell } from '../../store';
 import { AcceptDialog, acceptEvidence, type MilestoneActions } from './Charts';
 import {
   durationText,
@@ -20,6 +22,13 @@ import {
   type BoardMilestone,
   type SnapshotMilestone,
 } from './panels-model';
+import {
+  conditionText,
+  firedText,
+  openLeadText,
+  unansweredText,
+  type ReplanCondition,
+} from './replan-text';
 import { StateIcon, StatusIcon, TaskStateIcon, taskStateLabel } from './status';
 import { TellLead, useDialogContent } from './TellLead';
 import './overview.css';
@@ -179,6 +188,145 @@ export function VerifyBadge({
 }
 
 /**
+ * The re-plan conditions the milestone's lead declared, behind a button with their count that turns
+ * into a chip with the wait while a met one waits for the lead.
+ */
+function ReplanConditions({
+  projectId,
+  milestone,
+  conditions,
+  lead,
+  now,
+}: {
+  projectId: string;
+  milestone: BoardMilestone;
+  conditions: readonly ReplanCondition[];
+  lead: string | undefined;
+  now: number;
+}) {
+  const history = useBoardHistory(projectId);
+  const met = history.data?.pending_replans?.filter((p) => p.milestone_id === milestone.id) ?? [];
+  const firstMet = met[0];
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        className="bms-rc"
+        data-met={firstMet ? '' : undefined}
+        aria-label={
+          firstMet
+            ? t(
+                {
+                  id: 'board.plan.milestone.replanMetLabel',
+                  defaultMessage:
+                    'Re-plan condition met {wait} ago, {count, plural, one {# re-plan condition} other {# re-plan conditions}} of {title}',
+                },
+                {
+                  wait: durationText(now - firstMet.at),
+                  count: conditions.length,
+                  title: milestone.title,
+                },
+              )
+            : t(
+                {
+                  id: 'board.plan.milestone.replanCount',
+                  defaultMessage:
+                    '{count, plural, one {# re-plan condition} other {# re-plan conditions}} of {title}',
+                },
+                { count: conditions.length, title: milestone.title },
+              )
+        }
+      >
+        {firstMet ? (
+          <>
+            <StateIcon state="waiting_upstream" />
+            {t({
+              id: 'board.plan.milestone.replanMet',
+              defaultMessage: 'Re-plan condition met',
+            })}
+            <span className="bms-rn">{durationText(now - firstMet.at)}</span>
+          </>
+        ) : (
+          <>
+            <Route aria-hidden="true" />
+            {conditions.length}
+          </>
+        )}
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="bottom" align="start" sideOffset={4} style={{ zIndex: 40 }}>
+          <Popover.Popup
+            className="pop bms-rpop"
+            aria-label={t(
+              {
+                id: 'board.plan.milestone.replanPopup',
+                defaultMessage: 'Re-plan conditions of {title}',
+              },
+              { title: milestone.title },
+            )}
+          >
+            <h3 className="bms-pt">
+              {t({
+                id: 'board.plan.milestone.replanTitle',
+                defaultMessage: 'The lead re-plans when',
+              })}
+            </h3>
+            <ul className="bms-rl">
+              {conditions.map((condition, index) => {
+                const fired = met.find((p) => p.type === condition.type);
+                const assumption =
+                  condition.type === 'assumption_false'
+                    ? milestone.assumptions?.find((a) => a.id === condition.assumption_id)?.text
+                    : undefined;
+                return (
+                  <li key={index}>
+                    {fired ? (
+                      <span
+                        className="bms-rg"
+                        role="img"
+                        aria-label={t({
+                          id: 'board.plan.milestone.replanWaiting',
+                          defaultMessage: 'Met, waiting for the lead',
+                        })}
+                      >
+                        <StateIcon state="waiting_upstream" />
+                      </span>
+                    ) : (
+                      <Route aria-hidden="true" />
+                    )}
+                    <span className="bms-rm">
+                      <span>{conditionText(condition)}</span>
+                      {assumption && <span className="bms-rs">{assumption}</span>}
+                      {fired && (
+                        <>
+                          <span>{firedText(fired)}</span>
+                          <span className="bms-rw">
+                            <span>{unansweredText()}</span>
+                            <span className="bms-rn">{durationText(now - fired.at)}</span>
+                          </span>
+                          {lead && (
+                            <button
+                              type="button"
+                              className="btn sm"
+                              onClick={() => useShell.getState().openSession(lead)}
+                            >
+                              {openLeadText()}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/**
  * The current milestone, unfolded under its goal: a line with its verification, the days left and
  * merged over planned tasks, its acceptance, criteria and due day behind the button that ends it;
  * below, a cell per task opening it.
@@ -219,6 +367,7 @@ export function MilestoneCard({
   // Only a lead's milestone has a plan key to edit it by.
   const lead = stored?.owner_session_id;
   const key = stored?.key;
+  const conditions = stored?.replan_if ?? [];
   const setDue = async (dueOn: string | null) => {
     if (!actions || !lead || !key) return;
     setFailure(null);
@@ -249,6 +398,15 @@ export function MilestoneCard({
             <Clock aria-hidden="true" />
             {dueText(days)}
           </span>
+        )}
+        {conditions.length > 0 && actions && (
+          <ReplanConditions
+            projectId={actions.projectId}
+            milestone={milestone}
+            conditions={conditions}
+            lead={lead}
+            now={now}
+          />
         )}
         <span
           className="bms-frac"

@@ -10,7 +10,7 @@ import { kindIcon, kindText } from '../memory/GraphLegend';
 import './memory-used.css';
 
 /** Opens the memory entries, with `memoryId` selected when given. */
-function openMemory(memoryId: string | null) {
+export function openMemory(memoryId: string | null) {
   const shell = useShell.getState();
   shell.setMemoryTab('entries');
   if (memoryId !== null) useMemoryView.getState().select(memoryId);

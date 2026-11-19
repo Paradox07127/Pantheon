@@ -8,13 +8,27 @@ import {
   Terminal,
   type LucideIcon,
 } from 'lucide-react';
-import type { AgentProfile, AgentProposal, AgentToolGroup } from '@pantheon/protocol';
+import type {
+  AgentLedgerWeek,
+  AgentProfile,
+  AgentProposal,
+  AgentRoutineRow,
+  AgentToolGroup,
+  AgentWake,
+} from '@pantheon/protocol';
 import { t } from '../i18n';
 import { useBoard } from './board';
 import { useProjectQuery } from './project-read';
 import { useQuery } from './workbench-sessions';
 
-export type { AgentProfile, AgentProposal, AgentToolGroup };
+export type {
+  AgentLedgerWeek,
+  AgentProfile,
+  AgentProposal,
+  AgentRoutineRow,
+  AgentToolGroup,
+  AgentWake,
+};
 export type AgentRoutine = AgentProfile['routines'][number];
 export type EventSource = NonNullable<AgentProfile['listens']>[number];
 /** A profile as agent.list returns it, with the built-in role prompt of its template and what it works with. */
@@ -128,6 +142,77 @@ export function useAgents(projectId: string | null): AgentListed[] | null {
   return useProjectQuery<AgentListed[]>('agent.list', projectId, Array.isArray, undefined, {
     kinds: AGENT_KINDS,
   }).read;
+}
+
+/** A read of an agent's activity; data is null until read. */
+export interface AgentRead<T> {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
+}
+
+/** A wake is a turn: these change what the wakes, routine runs and the week's ledger show. */
+const TURN_KINDS: ReadonlySet<string> = new Set([
+  'turn.queued',
+  'turn.running',
+  'turn.completed',
+  'turn.failed',
+  'turn.cancelled',
+]);
+const LEDGER_KINDS: ReadonlySet<string> = new Set([...TURN_KINDS, 'session.merged']);
+const ROUTINE_KINDS: ReadonlySet<string> = new Set([...TURN_KINDS, ...AGENT_KINDS]);
+
+/** Sequence of the project's newest event of one of `kinds`; 0 when none. */
+const useNewest = (projectId: string, kinds: ReadonlySet<string>) =>
+  useBoard(
+    (s) => s.events.findLast((e) => e.project_id === projectId && kinds.has(e.kind))?.sequence ?? 0,
+  );
+
+/** The agent's newest wakes, newest first; read again when one of the project's turns moves. */
+export function useAgentWakes(
+  projectId: string,
+  agentId: string,
+  limit: number,
+): AgentRead<AgentWake[]> {
+  return useQuery<AgentWake[]>(
+    'agent.wakes',
+    agentId,
+    (agent_id) => ({ agent_id, limit: String(limit) }),
+    (value) => (Array.isArray(value) ? (value as AgentWake[]) : null),
+    useNewest(projectId, TURN_KINDS),
+  );
+}
+
+/** What the agent did in the last seven days, read again when a turn moves or a session merges. */
+export function useAgentLedger(projectId: string, agentId: string): AgentRead<AgentLedgerWeek> {
+  const read = useQuery<AgentLedgerWeek[]>(
+    'agent.ledger',
+    agentId,
+    (agent_id) => ({ agent_id, weeks: '1' }),
+    (value) => (Array.isArray(value) && value.length > 0 ? (value as AgentLedgerWeek[]) : null),
+    useNewest(projectId, LEDGER_KINDS),
+  );
+  return { ...read, data: read.data?.[0] ?? null };
+}
+
+/** The routines of one agent with their next and last runs. */
+export function useAgentRoutines(projectId: string, agentId: string): AgentRead<AgentRoutineRow[]> {
+  const read = useProjectQuery<AgentRoutineRow[]>(
+    'agent.routines',
+    projectId,
+    Array.isArray,
+    undefined,
+    {
+      kinds: ROUTINE_KINDS,
+    },
+  );
+  return {
+    data: read.read?.filter((row) => row.agent_id === agentId) ?? null,
+    loading: read.loading,
+    error: read.error,
+    reload: read.reload,
+  };
 }
 
 /** The proposal as the daemon stores it, read again once it is decided; null until read. */

@@ -26,6 +26,7 @@ const runtime = [
   /^--main-x$/,
   /^--transform-origin$/,
   /^--anchor-width$/,
+  /^--available-height$/,
   /^--available-width$/,
   /^--collapsible-panel-height$/,
   /^--active-tab-/,

@@ -483,6 +483,198 @@ b.bd-hs-sn {
   border-radius: 2px;
   background: var(--bad);
 }
+/* A re-plan on the plot: the decision diamond inside a second outline, a button that opens its row. */
+.bd-hs-rpk {
+  outline: none;
+}
+.bd-hs-rpo {
+  fill: transparent;
+  stroke: var(--tx);
+  stroke-width: 1.5;
+  transition:
+    fill var(--dur-1) var(--ease-std),
+    stroke var(--dur-1) var(--ease-std);
+}
+.bd-hs-rpi {
+  fill: var(--tx);
+}
+.bd-hs-rpk:is(:hover, [aria-expanded='true']) .bd-hs-rpo {
+  fill: var(--sel);
+}
+.bd-hs-rpk:focus-visible .bd-hs-rpo {
+  stroke: var(--focus-ring);
+}
+/* A condition that waits for the lead: the diamond hollow and dashed. */
+.bd-hs-pdm {
+  fill: none;
+  stroke: var(--tx2);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 2;
+}
+/* Re-plans under the plot, newest first, with the conditions that wait for the lead above them. */
+.bd-hs-rps {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: var(--hair) solid var(--bd2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  user-select: text;
+}
+.bd-hs-rps button {
+  user-select: none;
+}
+.bd-hs-rph {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+.bd-hs-rpl {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-md);
+}
+.bd-hs-rpl > * + * {
+  border-top: var(--hair) solid var(--bd2);
+}
+.bd-hs-rpw {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 12px;
+}
+.bd-hs-rpg {
+  display: inline-flex;
+  flex: none;
+}
+.bd-hs-rpg .bd-sti {
+  width: 12px;
+  height: 12px;
+}
+.bd-hs-rpt {
+  flex: 1;
+  min-width: 0;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+.bd-hs-rpt > .bd-hs-sn {
+  margin-left: 8px;
+}
+.bd-hs-rp {
+  min-width: 0;
+}
+.bd-hs-rpb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bd-hs-rpb:hover {
+  background: var(--sf2);
+}
+.bd-hs-rpb:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.bd-hs-rpc {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--tx2);
+  transition: transform var(--dur-1) var(--ease-std);
+}
+.bd-hs-rpb[data-panel-open] .bd-hs-rpc {
+  transform: rotate(90deg);
+}
+.bd-hs-rpp {
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  transition:
+    height var(--dur-2) var(--ease-in),
+    opacity var(--dur-2) var(--ease-in);
+}
+.bd-hs-rpp:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+  opacity: 0;
+}
+.bd-hs-rpp[data-ending-style] {
+  transition-duration: var(--dur-1);
+  transition-timing-function: var(--ease-out);
+}
+.bd-hs-rpd {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 12px 12px 34px;
+}
+.bd-hs-rpd > h3 {
+  margin: 0;
+  font-size: inherit;
+}
+.bd-hs-rptr,
+.bd-hs-pc {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bd-hs-rptr li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+.bd-hs-pc li {
+  display: grid;
+  grid-template-columns: 12px 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+.bd-hs-pc svg {
+  width: 12px;
+  height: 12px;
+  color: var(--mu);
+}
+.bd-hs-pct {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bd-hs-pc li[data-k='removed'] .bd-hs-pct {
+  color: var(--mu);
+  text-decoration: line-through;
+}
+.bd-hs-none {
+  margin: 0;
+  color: var(--mu);
+}
 .pt[data-motion='reduced'] .bd-hs-c {
   transition:
     opacity var(--dur-2) var(--ease-in),

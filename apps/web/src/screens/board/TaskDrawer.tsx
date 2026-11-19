@@ -78,7 +78,7 @@ import {
 } from './panels-model';
 import { STATUS, StatusIcon, TaskBadges, TaskRoute, TaskStateBadge, runtimeName } from './status';
 import { rungReason } from './TaskRecovery';
-import { TaskTimeline } from './TaskTimeline';
+import { TaskThread } from './TaskThread';
 import { TellLead, TellLeadBox, useDialogContent } from './TellLead';
 import { isPlanTask } from './view-rules';
 import './flow.css';
@@ -877,7 +877,7 @@ export function TaskDrawer({
   const badges = taskBadges(task).filter(
     (b) => !(b.waits === 'approval' && task.state === 'waiting_approval'),
   );
-  // A plan task's merges show in its timeline; a session without a task has no timeline.
+  // A plan task's merges show in its thread; a session without a task has no thread.
   const plan = isPlanTask(task);
   const merges = model.merges.filter((m) =>
     task.segments.some((s) => s.session_id === m.session_id),
@@ -1386,7 +1386,7 @@ export function TaskDrawer({
             />
           )}
           {plan && (
-            <TaskTimeline
+            <TaskThread
               model={model}
               task={task}
               onOpenSession={onOpenSession}

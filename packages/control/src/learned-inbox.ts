@@ -36,7 +36,7 @@ export function learnedList(
   projectId: string,
 ): LearnedItem[] {
   projectAccess(ctx, principal, projectId, 'learned.list');
-  ctx.store.must<Project>('projects', projectId);
+  const project = ctx.store.must<Project>('projects', projectId);
   const items: LearnedItem[] = [];
 
   for (const row of improvementList(ctx, principal, projectId)) {
@@ -71,7 +71,15 @@ export function learnedList(
               from: '',
               to: [change.procedure, change.countercondition].filter(Boolean).join('\n'),
             }
-          : { from: text(change.from), to: text(change.to) },
+          : {
+              // A gate change records what it replaced only once confirmed; until then that is today's gate.
+              from: text(
+                change.type === 'gate_command' && row.status === 'candidate'
+                  ? project.gates?.[change.root]
+                  : change.from,
+              ),
+              to: text(change.to),
+            },
       evidence: [
         ...row.retrospective_ids.map((id) => ({ kind: 'retrospective', id })),
         ...(row.evidence ?? []).map((entry) =>
@@ -174,6 +182,7 @@ export function learnedList(
       kind: 'memory_note',
       id: r.id,
       title: r.title ?? r.key,
+      revision: r.revision,
       grade: 'auto',
       status: r.state,
       group: memoryGroup[r.state],

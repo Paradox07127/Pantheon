@@ -191,6 +191,7 @@ export type NeedActionKey =
   | 'board'
   | 'keep'
   | 'revert'
+  | 'resume'
   | 'open';
 
 export interface NeedAction {
@@ -335,6 +336,29 @@ function itemActions(
       },
     ];
   }
+  if (item.kind === 'setting.proposal') {
+    const reason = offReason(item, 'setting.proposal.resolve');
+    return [
+      {
+        key: 'approve',
+        label: t({ id: 'board.needs.actions.applySetting', defaultMessage: 'Apply' }),
+        reason,
+      },
+      {
+        key: 'reject',
+        label: t({ id: 'board.needs.actions.declineSetting', defaultMessage: 'Decline' }),
+        reason,
+      },
+    ];
+  }
+  if (item.kind === 'board.plan.reassessment')
+    return [
+      {
+        key: 'resume',
+        label: t({ id: 'board.needs.actions.resumePlan', defaultMessage: 'Resume' }),
+        reason: offReason(item, 'board.plan.resume'),
+      },
+    ];
   if (item.kind === 'lead.question')
     return [
       {
@@ -605,6 +629,22 @@ export function needCommand(
       },
       revision: null,
     };
+  // The item's reject stands for the command's decline.
+  if (item.kind === 'setting.proposal' && (key === 'approve' || key === 'reject'))
+    return {
+      type: 'setting.proposal.resolve',
+      input: {
+        proposal_id: item.setting_proposal?.id ?? item.source.id,
+        decision: key === 'approve' ? 'approve' : 'decline',
+      },
+      revision: null,
+    };
+  if (key === 'resume')
+    return {
+      type: 'board.plan.resume',
+      input: { project_id: item.project_id, lead_session_id: item.session_id },
+      revision: null,
+    };
   if (item.kind === 'external.approval' && key === 'approve')
     return {
       type: 'external.approve',
@@ -702,6 +742,25 @@ export const requestNeed = <T extends NeedItem>(
           ? n.question?.source?.approval_id === approvalId
           : n.source.table === 'approvals' && n.source.id === approvalId,
       );
+
+/**
+ * The lead's own questions of each plan that has two or more, as one row where its first question
+ * stands; `rows` leaves out the other questions of a batch.
+ */
+export function questionBatches<T extends NeedItem>(
+  items: readonly T[],
+): { rows: T[]; batches: Map<T, T[]> } {
+  const byLead = new Map<string, T[]>();
+  for (const item of items)
+    if (item.kind === 'lead.question' && item.question && !item.question.source && item.session_id)
+      byLead.set(item.session_id, [...(byLead.get(item.session_id) ?? []), item]);
+  const batches = new Map<T, T[]>();
+  // lead.questions.answer_batch takes at most 10 answers.
+  for (const questions of byLead.values())
+    if (questions.length > 1) batches.set(questions[0]!, questions.slice(0, 10));
+  const rest = new Set([...batches.values()].flatMap((batch) => batch.slice(1)));
+  return { rows: items.filter((item) => !rest.has(item)), batches };
+}
 
 /** Who waits: the milestone's title, the session's title, else its task's title. */
 export function needWho(

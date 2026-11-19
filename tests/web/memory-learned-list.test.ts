@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { Improvement } from '@pantheon/domain';
+import type { LearnedItem } from '@pantheon/protocol';
 import { find, HookHost, nodes, text } from './web-hook-host.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 import { LearnedList, type LearnedListProps } from '@/screens/memory/LearnedList';
@@ -13,50 +13,60 @@ const NOW = new Date(2026, 10, 13, 15, 0).getTime();
 const at = (day: number, hour: number, minute: number) =>
   new Date(2026, 10, day, hour, minute).getTime();
 
-const item = (over: Partial<Improvement> & { id: string }): Improvement => ({
-  revision: 1,
-  project_id: 'p1',
-  source: 'daemon',
-  retrospective_ids: ['r1', 'r2', 'r3'],
+const item = (over: Partial<LearnedItem> & { id: string }): LearnedItem => ({
+  kind: 'experience',
+  grade: 'trial',
   status: 'candidate',
-  change: { type: 'experience', procedure: `rule ${over.id}` },
-  proposed_at: at(13, 14, 33),
+  group: 'needs_you',
+  diff: { from: '', to: `rule ${over.id}` },
+  evidence: [],
+  actions: [],
+  at: at(13, 14, 33),
   ...over,
 });
 
-const items: Improvement[] = [
+const items: LearnedItem[] = [
   item({
     id: 'c1',
-    change: {
-      type: 'experience',
-      domain: 'backend-logic',
-      tier: 't2',
-      runtime: 'codex',
-      procedure: 'run `pnpm test webhook` first',
-    },
+    diff: { from: '', to: 'Run `pnpm test webhook` first.\nNot for docs.' },
   }),
-  item({ id: 'a1', status: 'active', decided_at: at(6, 9, 0) }),
+  item({ id: 'a1', status: 'active', group: 'in_force', at: at(6, 9, 0) }),
   item({
     id: 't1',
+    kind: 'policy_change',
+    title: 'max_parallel',
     status: 'trial',
-    trial_started_at: at(11, 9, 0),
-    change: { type: 'policy_change', param: 'max_parallel', from: 3, to: 4 },
+    group: 'on_trial',
+    diff: { from: '3', to: '4' },
+    n: 2,
+    tasks_required: 5,
+    at: at(11, 9, 0),
   }),
   item({
     id: 'a2',
+    kind: 'policy_change',
+    title: 'path',
     status: 'active',
-    decided_at: at(2, 9, 0),
-    retrospective_ids: ['r1'],
-    change: { type: 'policy_change', param: 'path', tier: 't1', from: 'dispatch', to: 'direct' },
+    group: 'in_force',
+    diff: { from: 'dispatch', to: 'direct' },
+    verdict: 'better',
+    n: 8,
+    at: at(2, 9, 0),
   }),
-  item({ id: 'x1', status: 'reverted', status_reason: 'not_better', decided_at: at(10, 9, 0) }),
+  item({
+    id: 'x1',
+    status: 'reverted',
+    group: 'reverted',
+    verdict: 'not_enough_evidence',
+    n: 2,
+    at: at(10, 9, 0),
+  }),
   item({ id: 'c2' }),
-  item({ id: 'x2', status: 'rejected', decided_at: at(9, 9, 0) }),
+  item({ id: 'x2', status: 'rejected', group: 'reverted', at: at(9, 9, 0) }),
 ];
 
 const props = (over: Partial<LearnedListProps> = {}): LearnedListProps => ({
   items,
-  pinned: [],
   selected: null,
   onSelect: vi.fn(),
   ...over,
@@ -71,6 +81,9 @@ const listboxes = (tree: ReactElement<any>) =>
   nodes(tree).filter((n) => n.props.role === 'listbox');
 const rows = (tree: ReactElement<any>) => nodes(tree).filter((n) => n.props.role === 'option');
 const fold = (tree: ReactElement<any>) => find(tree, (n) => 'aria-expanded' in n.props);
+const part = (row: ReactElement<any>, name: string) => find(row, (n) => n.props.className === name);
+const shape = (row: ReactElement<any>) =>
+  renderToStaticMarkup(part(row, 'lr-st')).match(/data-shape="([^"]+)"/)?.[1];
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -79,12 +92,10 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('learned list', () => {
-  it('heads the columns and groups the rows awaiting you, on trial and in force', () => {
+  it('groups the rows needing you, on trial and in force, each under its name and count', () => {
     const tree = mount(props()).value;
-    const out = renderToStaticMarkup(tree);
-    expect(out).toContain(`aria-label="${zh('memory.learned.label')}"`);
-    expect(out).toMatch(
-      /class="lr-head"><span><\/span><span>规则<\/span><span>适用范围<\/span><span>状态<\/span><span class="lr-n">依据<\/span><\/div>/,
+    expect(find(tree, (n) => n.type === 'section').props['aria-label']).toBe(
+      zh('memory.learned.label'),
     );
     expect(listboxes(tree).map((n) => n.props['aria-label'])).toEqual([
       zh('memory.learned.group.candidate'),
@@ -96,56 +107,58 @@ describe('learned list', () => {
       ['t1'],
       ['a1', 'a2'],
     ]);
-    for (const [name, count] of [
-      [zh('memory.learned.group.candidate'), 2],
-      [zh('memory.learned.group.trial'), 1],
-      [zh('memory.learned.group.active'), 2],
-    ])
-      expect(out).toContain(
-        `<div class="lr-gh"><span class="lr-gn">${name}</span><span class="lr-ct">${count}</span></div>`,
-      );
+    expect(
+      nodes(tree)
+        .filter((n) => n.props.className === 'lr-gh')
+        .map((n) => text(n)),
+    ).toEqual([
+      `${zh('memory.learned.group.candidate')}2`,
+      `${zh('memory.learned.group.trial')}1`,
+      `${zh('memory.learned.group.active')}2`,
+    ]);
   });
 
   it('leaves out a group with no rows', () => {
-    const tree = mount(props({ items: items.filter((i) => i.status !== 'trial') })).value;
+    const tree = mount(props({ items: items.filter((i) => i.group !== 'on_trial') })).value;
     expect(listboxes(tree).map((n) => n.props['aria-label'])).toEqual([
       zh('memory.learned.group.candidate'),
       zh('memory.learned.group.active'),
     ]);
-    expect(renderToStaticMarkup(tree)).not.toContain(zh('memory.learned.group.trial'));
+    expect(text(tree)).not.toContain(zh('memory.learned.group.trial'));
   });
 
-  it('draws a row with its state glyph, rule, scope, status and how many retrospectives back it', () => {
+  it('draws a row with its state glyph, title, kind, trial and age', () => {
     const tree = mount(props()).value;
-    const out = renderToStaticMarkup(rows(tree)[0]!);
-    expect(out).toMatch(
-      /^<button type="button" role="option" aria-selected="false" class="lr-row"/,
-    );
-    expect(out).toMatch(/<span class="lr-st" aria-hidden="true"><svg [^>]*data-shape="clipboard"/);
-    expect(out).toContain(
-      '<span class="lr-rule">run <span class="lr-inl">pnpm test webhook</span> first</span>',
-    );
-    expect(out).toMatch(
-      /<span class="lr-sc"><span>后端逻辑<\/span><span class="lr-mono">T2<\/span><span class="lr-rt"><svg [^>]*>.*?<\/svg>Codex<\/span><\/span>/,
-    );
-    expect(out).toContain('<span class="lr-tm">27 分钟</span><span class="lr-n">3 次复盘</span>');
-    const shapes = rows(tree).map(
-      (r) => renderToStaticMarkup(r).match(/data-shape="([^"]+)"/)?.[1],
-    );
-    expect(shapes).toEqual([
+    const [first, , trial, , set] = rows(tree);
+    expect(first!.props.className).toBe('lr-row');
+    expect(first!.props['aria-selected']).toBe(false);
+    expect(part(first!, 'lr-st').props['aria-hidden']).toBe('true');
+    expect(text(part(first!, 'lr-tt'))).toBe('Run `pnpm test webhook` first.');
+    expect(text(part(first!, 'lr-kind'))).toBe(zh('memory.learned.kind.experience'));
+    expect(text(part(first!, 'lr-tr'))).toBe('');
+    expect(text(part(first!, 'lr-tm'))).toBe('27 分钟');
+    expect(rows(tree).map(shape)).toEqual([
       'clipboard',
       'clipboard',
       'hollow-diamond',
       'circle-check',
       'circle-check',
     ]);
-    const trial = renderToStaticMarkup(rows(tree)[2]!);
-    expect(trial).toContain('<span class="lr-rule">并发上限从 3 改成 4</span>');
-    expect(trial).toContain(
-      `<span class="lr-sc"><span>${zh('data.workflowPolicy.wholeProject')}</span></span>`,
+    expect(
+      nodes(part(trial!, 'lr-tt'))
+        .filter((n) => n.props.className)
+        .map((n) => [n.props.className, text(n)]),
+    ).toEqual([
+      ['lr-tt', '并发上限34'],
+      ['lr-what', '并发上限'],
+      ['lr-from', '3'],
+      ['lr-to', '4'],
+    ]);
+    expect(text(part(trial!, 'lr-tr'))).toBe(
+      `${zh('memory.learned.verdict.notEnoughEvidence')}2 / 5 个任务`,
     );
-    expect(trial).toContain('<span class="lr-tm">第 3 天</span>');
-    expect(renderToStaticMarkup(rows(tree)[3]!)).toContain('<span class="lr-tm">11月6日起</span>');
+    expect(text(part(trial!, 'lr-tm'))).toBe('2 天');
+    expect(text(part(set!, 'lr-tr'))).toBe(`${zh('memory.learned.verdict.better')}8 个任务`);
   });
 
   it('marks the selected row and selects the row that is clicked', () => {
@@ -162,32 +175,10 @@ describe('learned list', () => {
     expect(p.onSelect).toHaveBeenCalledWith('a1');
   });
 
-  it('marks a pinned parameter on the policy change in force that set it', () => {
-    const tree = mount(props({ pinned: ['path'] })).value;
-    const marked = rows(tree).filter((r) =>
-      renderToStaticMarkup(r).includes(zh('memory.learned.pinned')),
-    );
-    expect(marked.map((r) => r.key)).toEqual(['a2']);
-    expect(renderToStaticMarkup(marked[0]!)).toMatch(
-      /<span class="lr-rw"><span class="lr-rule">任务路径 T1从 派任务会话 改成 主会话直接做<\/span><span class="chip lr-pin"><svg [^>]*>.*?<\/svg>已钉住<\/span><\/span>/,
-    );
-    const reverted = item({
-      id: 'x3',
-      status: 'reverted',
-      change: { type: 'policy_change', param: 'path', from: 'dispatch', to: 'direct' },
-    });
-    const folded = mount(props({ items: [reverted], pinned: ['path'] }));
-    fold(folded.value).props.onClick();
-    folded.render();
-    expect(renderToStaticMarkup(folded.value)).not.toContain(zh('memory.learned.pinned'));
-  });
-
-  it('folds the reverted and rejected rows under a button that opens them', () => {
+  it('folds the reverted rows under a button that opens them', () => {
     const host = mount(props());
-    const closed = renderToStaticMarkup(host.value);
-    expect(closed).toMatch(
-      /<button type="button" class="lr-gh lr-fold" aria-expanded="false"><svg [^>]*>.*?<\/svg><span class="lr-gn">已撤回和已拒绝<\/span><span class="lr-ct">2<\/span><\/button>/,
-    );
+    expect(fold(host.value).props['aria-expanded']).toBe(false);
+    expect(text(fold(host.value))).toBe(`${zh('memory.learned.group.closed')}2`);
     expect(listboxes(host.value)).toHaveLength(3);
     fold(host.value).props.onClick();
     host.render();
@@ -196,19 +187,16 @@ describe('learned list', () => {
     expect(old.props['aria-label']).toBe(zh('memory.learned.group.closed'));
     expect(old.props.className).toBe('lr-old');
     expect(rows(old).map((r) => r.key)).toEqual(['x1', 'x2']);
-    expect(rows(old).map((r) => text(r.props.children))).toEqual([
-      expect.stringContaining('撤回：没变好'),
-      expect.stringContaining(zh('memory.learned.rejected')),
-    ]);
-    expect(
-      rows(old).map((r) => renderToStaticMarkup(r).match(/data-shape="([^"]+)"/)?.[1]),
-    ).toEqual(['hollow-circle', 'hollow-circle']);
+    expect(text(part(rows(old)[0]!, 'lr-tr'))).toBe(
+      `${zh('memory.learned.verdict.notEnoughEvidence')}2 个任务`,
+    );
+    expect(rows(old).map(shape)).toEqual(['hollow-circle', 'hollow-circle']);
     fold(host.value).props.onClick();
     host.render();
     expect(listboxes(host.value)).toHaveLength(3);
   });
 
-  it('shows no fold when nothing was reverted or rejected', () => {
+  it('shows no fold when nothing was reverted', () => {
     const tree = mount(props({ items: items.filter((i) => i.id[0] !== 'x') })).value;
     expect(nodes(tree).some((n) => 'aria-expanded' in n.props)).toBe(false);
   });
@@ -261,18 +249,15 @@ describe('learned list columns', () => {
     return sizes;
   }
 
-  it('keeps the rule readable beside the details at the narrowest window', () => {
+  it('keeps the title readable beside the details at the narrowest window', () => {
     // 1100px window, 248px sidebar, 8px inset, 400px details, then the list and row paddings.
     const width = 1100 - 248 - 8 - 400 - 32 - 16;
-    for (const selector of ['.lr-row', '.lr-head']) {
-      expect(columns(selector)).toBe(columns('.lr-row'));
-      expect(trackWidths(columns(selector), width)[1]).toBeGreaterThanOrEqual(160);
-    }
+    expect(trackWidths(columns('.lr-row'), width)[1]).toBeGreaterThanOrEqual(160);
   });
 
-  it('gives the rule the room the other columns leave in a wide list', () => {
-    const [, rule, scope, status, basis] = trackWidths(columns('.lr-row'), 900);
-    expect([scope, status, basis]).toEqual([184, 104, 64]);
-    expect(rule).toBe(900 - 32 - 14 - 184 - 104 - 64);
+  it('gives the title the room the other columns leave in a wide list', () => {
+    const [, title, kind, trial, age] = trackWidths(columns('.lr-row'), 900);
+    expect([kind, trial, age]).toEqual([128, 176, 48]);
+    expect(title).toBe(900 - 32 - 16 - 128 - 176 - 48);
   });
 });

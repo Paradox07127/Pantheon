@@ -84,7 +84,7 @@
   display: grid;
   grid-template-columns: 16px minmax(0, 1.3fr) minmax(0, 1fr) 168px minmax(0, 1.5fr) var(--ctl);
   align-items: center;
-  gap: 12px;
+  gap: 0 12px;
   min-height: 52px;
   padding: 0 16px 0 8px;
   transition: background-color var(--dur-1) var(--ease-std);
@@ -92,15 +92,31 @@
 .pr-row + .pr-row {
   border-top: var(--hair) solid var(--bd2);
 }
-.pr-row.pr-head {
-  min-height: 32px;
+.pr-row:hover {
   background: var(--sf2);
-  color: var(--mu);
-  font-size: var(--fs-xs);
-  font-weight: 500;
 }
-.pr-row:not(.pr-head):hover {
-  background: var(--sf2);
+/* The second line of the region, under every cell but the mark. */
+.pr-brief {
+  grid-column: 2 / -1;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  margin: -4px 0 0;
+  padding: 0 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.pr-brief:hover {
+  color: var(--tx);
+}
+.pr-brief:focus-visible {
+  outline: 3px solid var(--focus-ring);
 }
 .pr-mark {
   display: flex;

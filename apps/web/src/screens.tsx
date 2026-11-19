@@ -27,6 +27,9 @@ export const SCREEN_NAMES: Record<Screen | 'settings', string> = {
   get memory() {
     return t({ id: 'app.screenName.memory', defaultMessage: 'Memory' });
   },
+  get automations() {
+    return t({ id: 'app.screenName.automations', defaultMessage: 'Automations' });
+  },
   get projects() {
     return t({ id: 'app.screenName.projects', defaultMessage: 'All projects' });
   },

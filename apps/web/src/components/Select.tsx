@@ -41,7 +41,7 @@ export function Select<V extends string>({
           style={{ zIndex: 60 }}
         >
           <BaseSelect.Popup className="mn mn-list pop">
-            <BaseSelect.List>
+            <BaseSelect.List className="mn-scroll">
               {options.map((o) => (
                 <BaseSelect.Item
                   key={o.value}

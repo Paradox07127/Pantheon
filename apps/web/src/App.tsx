@@ -58,6 +58,7 @@ import { useHeldModifier } from './lib/held-keys';
 import { listText } from './lib/list-text';
 import { runShortcut, shortcutKeys, SHORTCUTS, useShortcut } from './lib/shortcuts';
 import { SCREEN_NAMES } from './screens';
+import { AutomationsScreen } from './screens/automations/AutomationsScreen';
 import { BoardScreen, PanelBoundary } from './screens/board/BoardScreen';
 import { startBaseline } from './screens/board/project-setup';
 import { InsightsScreen } from './screens/insights/InsightsScreen';
@@ -89,6 +90,7 @@ const KEPT: readonly Screen[] = [
   'repo',
   'trace',
   'memory',
+  'automations',
   'projects',
   'personal',
 ];
@@ -484,6 +486,15 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
               : []),
             ...(current
               ? [
+                  page(
+                    'screen-automations',
+                    t({ id: 'app.palette.automations', defaultMessage: 'Open automations' }),
+                    () => setScreen('automations'),
+                  ),
+                ]
+              : []),
+            ...(current
+              ? [
                   action('recent-activity', recentActivityTitle(), () => {
                     setTraceTab('activity');
                     setScreen('trace');
@@ -621,6 +632,8 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
                 <TraceScreen projectId={current} sessions={list.data} />
               ) : s === 'memory' ? (
                 <MemoryScreen projectId={current} />
+              ) : s === 'automations' ? (
+                <AutomationsScreen projectId={current} />
               ) : s === 'personal' ? (
                 <PersonalAgentScreen
                   // Every project's needs hold the home's, so they take no read of their own.

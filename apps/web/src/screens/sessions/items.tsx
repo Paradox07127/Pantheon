@@ -23,14 +23,24 @@ import {
   Unplug,
   X,
 } from 'lucide-react';
-import type { FilesReadResult, SessionToolImage } from '@pantheon/protocol';
+import { Popover } from '@base-ui/react/popover';
+import type {
+  AgentChapterStartedPayload,
+  FilesReadResult,
+  SessionToolImage,
+} from '@pantheon/protocol';
 import { appToolName } from '../../components/mcp-app/AppFrame';
+import { DiffCounts } from '../../components/DiffCounts';
 import { Equalizer } from '../../components/Equalizer';
+import { LoadError } from '../../components/LoadError';
 import { Markdown } from '../../components/Markdown';
+import { Skeleton } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { toast } from '../../components/Toast';
 import { VisualById, VisualsDrawing } from '../../components/visual/VisualCard';
 import { useBoard } from '../../data/board';
+import { runCommand } from '../../data/commands';
+import { diffLines, type DiffLine } from '../../lib/text-diff';
 import { useLook } from '../../data/layout';
 import { eventSummary } from '../../data/logs';
 import { failureText } from '../../data/needs-you';
@@ -77,6 +87,7 @@ import { showUrl } from './BrowserPanel';
 import { showFile } from './FilesPanel';
 import { hasBrowser } from './inspector-model';
 import { itemId } from './model';
+import { openMemory } from './MemoryUsed';
 import { clockText } from '../../lib/time-text';
 import { OrchestrationRow } from './orchestration';
 import { SubagentFan } from './SubagentFan';
@@ -906,6 +917,108 @@ function McpStartNotice(props: { event: DaemonEvent; enter: string }) {
         <span className="ss-marki" title={error}>
           {error}
         </span>
+      )}
+    </ThreadMark>
+  );
+}
+
+/** A resident session took over from the one before it; its button shows how the handoff note changed. */
+export function ChapterMark({ event }: { event: DaemonEvent }) {
+  const {
+    chapter,
+    handoff_memory_id: handoff,
+    previous_memory_id: previous,
+  } = event.payload as AgentChapterStartedPayload;
+  const [notes, setNotes] = useState<{ lines: DiffLine[] } | { error: string } | null>(null);
+  // The note it replaced is no longer current, so memory.get refuses it; the key's history has it.
+  const load = async () => {
+    setNotes(null);
+    const note = await runCommand('memory.get', { memory_id: handoff }, null);
+    if (!note.ok) return setNotes({ error: failureText(note.error) });
+    const { key, text } = note.value as { key: string; text: string };
+    const history = await runCommand(
+      'memory.history',
+      { project_id: event.project_id, key, limit: 50 },
+      null,
+    );
+    if (!history.ok) return setNotes({ error: failureText(history.error) });
+    const before = (history.value as { items: { id: string; text: string }[] }).items.find(
+      (item) => item.id === previous,
+    );
+    setNotes({ lines: diffLines(before?.text ?? '', text) });
+  };
+  const lines = notes && 'lines' in notes ? notes.lines : null;
+  const noteLabel = t({ id: 'sessions.thread.handoffNote', defaultMessage: 'Handoff note' });
+  return (
+    <ThreadMark glyph={<span className="ss-gmile" />} at={event.created_at}>
+      <span>
+        {t(
+          { id: 'sessions.thread.chapter', defaultMessage: 'Chapter {chapter} started' },
+          { chapter },
+        )}
+      </span>
+      {handoff && previous ? (
+        <Popover.Root
+          onOpenChange={(open) => {
+            if (open && !lines) void load();
+          }}
+        >
+          <Popover.Trigger className="btn sm">
+            {t({ id: 'sessions.thread.handoffChanges', defaultMessage: 'Handoff changes' })}
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Positioner side="bottom" sideOffset={6} style={{ zIndex: 40 }}>
+              <Popover.Popup
+                className="pop ss-hop"
+                aria-label={t({
+                  id: 'sessions.thread.handoffDiff',
+                  defaultMessage: 'Handoff note changes',
+                })}
+              >
+                <div className="ss-hoh">
+                  <span>{noteLabel}</span>
+                  {lines && (
+                    <span className="ss-hoc">
+                      <DiffCounts
+                        additions={lines.filter((line) => line.kind === 'add').length}
+                        deletions={lines.filter((line) => line.kind === 'del').length}
+                      />
+                    </span>
+                  )}
+                  <Popover.Close
+                    className="ib"
+                    aria-label={t({ id: 'sessions.thread.handoffClose', defaultMessage: 'Close' })}
+                  >
+                    <X aria-hidden="true" />
+                  </Popover.Close>
+                </div>
+                {lines ? (
+                  <div className="ss-hod">
+                    {lines.map((line, i) => (
+                      <div key={i} data-kind={line.kind}>
+                        <span>{line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ''}</span>
+                        <span>{line.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : notes && 'error' in notes ? (
+                  <LoadError message={notes.error} onRetry={() => void load()} />
+                ) : (
+                  <div className="ss-hod" aria-busy="true">
+                    <Skeleton style={{ height: 10, width: '70%' }} />
+                    <Skeleton style={{ height: 10, width: '45%' }} />
+                  </div>
+                )}
+              </Popover.Popup>
+            </Popover.Positioner>
+          </Popover.Portal>
+        </Popover.Root>
+      ) : (
+        handoff && (
+          <button type="button" className="btn sm" onClick={() => openMemory(handoff)}>
+            {noteLabel}
+          </button>
+        )
       )}
     </ThreadMark>
   );

@@ -212,10 +212,17 @@ export function decisionRow(item: DecisionForUser): DecisionRow {
       subject: null,
       by: lead,
       reason: listText(...item.citations.map((citation) => citation.ref)),
-      rule: t({
-        id: 'trace.approved.rule.answerWorkerQuestions',
-        defaultMessage: 'Charter: answer worker questions',
-      }),
+      // The lead's own question no one answered in time took its recommended answer.
+      rule:
+        item.answered_by === 'default'
+          ? t({
+              id: 'trace.approved.rule.defaultAnswer',
+              defaultMessage: 'Recommended answer applied at its deadline',
+            })
+          : t({
+              id: 'trace.approved.rule.answerWorkerQuestions',
+              defaultMessage: 'Charter: answer worker questions',
+            }),
       sessionId: item.session_id ?? null,
       answer: {
         text: item.overruled?.answer ?? item.answer,

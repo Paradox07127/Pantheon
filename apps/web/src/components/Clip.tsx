@@ -29,10 +29,10 @@ export function Clip({ text, lines = 1, className, as: Tag = 'span', id }: ClipP
   useLayoutEffect(() => {
     // Unfolded text is not cut; the button stays so the user can fold it again.
     if (!el || open) return;
-    const measure = () =>
-      setCut(one ? el.scrollWidth > el.clientWidth : el.scrollHeight > el.clientHeight);
-    measure();
-    const observer = new ResizeObserver(measure);
+    // The observer's first report comes after layout, so mounting forces no layout of its own.
+    const observer = new ResizeObserver(() =>
+      setCut(one ? el.scrollWidth > el.clientWidth : el.scrollHeight > el.clientHeight),
+    );
     observer.observe(el);
     return () => observer.disconnect();
   }, [el, open, one, text, lines]);

@@ -10,6 +10,7 @@ import { t } from '../../i18n';
 export {
   AnsweredRequest,
   CALL_STATE,
+  ChapterMark,
   Items,
   json,
   StateMark,

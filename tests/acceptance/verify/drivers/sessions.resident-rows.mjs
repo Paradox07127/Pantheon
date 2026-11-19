@@ -29,7 +29,8 @@ const zone = await poll(() =>
       heading: document.querySelector('.sb-sh > span')?.textContent ?? null,
       group: group.getAttribute('aria-label'),
       firstInList: nav.firstElementChild === group,
-      rows: [...group.querySelectorAll('button')].map((b) => b.getAttribute('aria-label')),
+      // The automations entry closes the group; it is not a resident row.
+      rows: [...group.querySelectorAll('button[data-stop^="resident:"]')].map((b) => b.getAttribute('aria-label')),
     };
   })()`),
 );

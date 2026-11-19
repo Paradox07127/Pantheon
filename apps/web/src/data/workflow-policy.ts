@@ -38,6 +38,8 @@ export type {
 export interface PolicyPatch {
   improvement_mode?: WorkflowPolicy['improvement_mode'];
   plan_changes?: WorkflowPolicy['plan_changes'];
+  /** null turns it off. */
+  question_defaults?: WorkflowPolicy['question_defaults'] | null;
   path?: WorkflowPolicy['path'];
   acceptance_wake?: WorkflowPolicy['acceptance_wake'];
   max_parallel?: number;
@@ -290,6 +292,7 @@ export const PARAM_LABEL: Record<
   | 'runtime_quota_threshold'
   | 'improvement_mode'
   | 'plan_changes'
+  | 'question_defaults'
   | 'project_budget'
   | 'budget'
   | 'gate_on_fail',
@@ -339,6 +342,12 @@ export const PARAM_LABEL: Record<
   },
   get plan_changes() {
     return t({ id: 'settings.workflow.planChanges', defaultMessage: 'Plan changes' });
+  },
+  get question_defaults() {
+    return t({
+      id: 'settings.workflow.questionDefaults',
+      defaultMessage: "Apply the lead's recommended answer to reversible questions after N hours",
+    });
   },
   get project_budget() {
     return t({

@@ -1,9 +1,20 @@
-import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { Collapsible } from '@base-ui/react/collapsible';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { ChevronDown, ChevronRight, Flag, RotateCcw, Route, Undo2 } from 'lucide-react';
-import type { BoardHistory, BoardTaskState } from '@pantheon/protocol';
+import {
+  ChevronDown,
+  ChevronRight,
+  Flag,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Route,
+  Undo2,
+  X,
+} from 'lucide-react';
+import type { BoardHistory, BoardTaskState, PendingReplan } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { ModelMark, RuntimeGlyph } from '../../components/RuntimeGlyph';
@@ -11,6 +22,7 @@ import { useBoard } from '../../data/board';
 import { currentProject, useCurrentProject } from '../../data/current-project';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import { reducedMotion } from '../../lib/motion';
 import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import {
@@ -26,6 +38,7 @@ import {
   type HistoryTask,
 } from './history-model';
 import { durationText } from './panels-model';
+import { changesText, firedText, openLeadText, unansweredText } from './replan-text';
 import {
   runtimeName,
   STATE,
@@ -139,6 +152,33 @@ function decisionText({ kind, title }: HistoryDecision): string {
     : t({ id: 'board.history.decision.accept', defaultMessage: 'Accept {title}' }, { title });
 }
 
+type Replan = HistoryDecision & { replan: NonNullable<HistoryDecision['replan']> };
+
+const replannedText = (d: Replan) =>
+  t(
+    { id: 'board.history.replan.title', defaultMessage: 'Re-planned: {text}' },
+    { text: d.replan.triggers[0]!.text },
+  );
+
+const metText = (item: PendingReplan) =>
+  t(
+    { id: 'board.history.replan.met', defaultMessage: 'Re-plan condition met: {text}' },
+    { text: firedText(item) },
+  );
+
+const replanRowId = (at: number) => `bd-hs-rp-${at}`;
+
+/** The re-plans the list shows before its show-all switch. */
+const REPLAN_ROWS = 8;
+
+// The re-plan another page asked the next whole history to open, by its time.
+let askedReplan: number | null = null;
+
+/** Asks the whole history to open the re-plan made at `at` once it shows. */
+export function askReplan(at: number): void {
+  askedReplan = at;
+}
+
 /** How often the task was handed back, and why when that is known. */
 function reworkText(task: HistoryTask): string {
   const total = t(
@@ -197,8 +237,8 @@ interface HistoryViewProps {
   history: BoardHistory;
   lanes: readonly { id: string; title: string }[];
   now: number;
-  /** The board's milestones, for the due days of the ones not reached yet. */
-  milestones: readonly { id: string; due_on?: string }[];
+  /** The board's milestones, for the due days of the ones not reached yet and their leads. */
+  milestones: readonly { id: string; due_on?: string; owner_session_id?: string }[];
   onOpenSession: (sessionId: string) => void;
   /** Shows the task in the now view. */
   onOpenTask: (taskId: string) => void;
@@ -228,6 +268,36 @@ export function HistoryView({
   const [card, setCard] = useState<{ id: string; pinned: boolean } | null>(null);
   const [titleWidth, setTitleWidth] = useState(0);
   const cardBox = useRef<HTMLDivElement>(null);
+  // Newest first.
+  const replans = useMemo(
+    () => history.decisions.filter((d): d is Replan => d.kind === 'replan' && !!d.replan).reverse(),
+    [history],
+  );
+  const pending = history.pending_replans ?? [];
+  const [opened, setOpened] = useState<ReadonlySet<number>>(
+    () => new Set(askedReplan === null ? [] : [askedReplan]),
+  );
+  const [allReplans, setAllReplans] = useState(
+    () => replans.findIndex((d) => d.at === askedReplan) >= REPLAN_ROWS,
+  );
+  /** The re-plan whose row takes focus once it is drawn. */
+  const [jump, setJump] = useState<number | null>(askedReplan);
+  const replanHeads = useRef(new Map<number, HTMLElement>());
+  useEffect(() => {
+    askedReplan = null;
+  }, []);
+  useLayoutEffect(() => {
+    if (jump === null) return;
+    const head = replanHeads.current.get(jump);
+    setJump(null);
+    head?.focus();
+    head?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }, [jump]);
+  const openReplan = (at: number) => {
+    setOpened((now) => new Set(now).add(at));
+    if (replans.findIndex((d) => d.at === at) >= REPLAN_ROWS) setAllReplans(true);
+    setJump(at);
+  };
 
   useLayoutEffect(() => {
     const el = box.current!;
@@ -515,6 +585,47 @@ export function HistoryView({
             <Flag aria-hidden="true" />
             {t({ id: 'board.history.legend.milestones', defaultMessage: 'Milestones' })}
           </li>
+          {replans.length > 0 && (
+            <li>
+              <svg viewBox="0 0 12 12" aria-hidden="true">
+                <rect
+                  className="bd-hs-rpo"
+                  x={1}
+                  y={1}
+                  width={10}
+                  height={10}
+                  transform="rotate(45 6 6)"
+                />
+                <rect
+                  className="bd-hs-rpi"
+                  x={3.5}
+                  y={3.5}
+                  width={5}
+                  height={5}
+                  transform="rotate(45 6 6)"
+                />
+              </svg>
+              {t({ id: 'board.history.legend.replanned', defaultMessage: 'Re-planned' })}
+            </li>
+          )}
+          {pending.length > 0 && (
+            <li>
+              <svg viewBox="0 0 12 12" aria-hidden="true">
+                <rect
+                  className="bd-hs-pdm"
+                  x={2}
+                  y={2}
+                  width={8}
+                  height={8}
+                  transform="rotate(45 6 6)"
+                />
+              </svg>
+              {t({
+                id: 'board.history.legend.replanMet',
+                defaultMessage: 'Re-plan condition met',
+              })}
+            </li>
+          )}
         </ul>
       </section>
       <div className="bd-hs-plot" ref={box} onKeyDown={onPlotKey}>
@@ -646,6 +757,50 @@ export function HistoryView({
               />
             ))}
             {layout.decisions.map((d) => {
+              const first = d.items[0]!;
+              if (first.kind === 'replan' && first.replan) {
+                const open = () => openReplan(first.at);
+                return (
+                  <g
+                    key={d.key}
+                    className="bd-hs-rpk"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={t(
+                      { id: 'board.history.decisionList', defaultMessage: '{date}: {items}' },
+                      {
+                        date: dayText(first.at, now, { time: true }),
+                        items: replannedText(first as Replan),
+                      },
+                    )}
+                    aria-expanded={opened.has(first.at)}
+                    aria-controls={replanRowId(first.at)}
+                    onClick={open}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      open();
+                    }}
+                  >
+                    <rect
+                      className="bd-hs-rpo"
+                      x={d.x - 7}
+                      y={d.y - 7}
+                      width={14}
+                      height={14}
+                      transform={`rotate(45 ${d.x} ${d.y})`}
+                    />
+                    <rect
+                      className="bd-hs-rpi"
+                      x={d.x - 4}
+                      y={d.y - 4}
+                      width={8}
+                      height={8}
+                      transform={`rotate(45 ${d.x} ${d.y})`}
+                    />
+                  </g>
+                );
+              }
               const items = d.items.map(decisionText);
               return (
                 <g
@@ -673,6 +828,22 @@ export function HistoryView({
                 </g>
               );
             })}
+            {layout.pending.map(({ x, y, item }) => (
+              <rect
+                key={item.event_id}
+                className="bd-hs-pdm"
+                role="img"
+                aria-label={t(
+                  { id: 'board.history.decisionList', defaultMessage: '{date}: {items}' },
+                  { date: dayText(item.at, now, { time: true }), items: metText(item) },
+                )}
+                x={x - 4}
+                y={y - 4}
+                width={8}
+                height={8}
+                transform={`rotate(45 ${x} ${y})`}
+              />
+            ))}
             {layout.bars.map((bar) => (
               <rect
                 key={bar.x}
@@ -888,6 +1059,185 @@ export function HistoryView({
           )}
         </div>
       </div>
+      {(replans.length > 0 || pending.length > 0) && (
+        <section
+          className="bd-hs-rps"
+          aria-label={t({ id: 'board.history.replans', defaultMessage: 'Re-plans' })}
+        >
+          <h2 className="bd-hs-rph">
+            {t({ id: 'board.history.replans', defaultMessage: 'Re-plans' })}
+            <span className="bd-hs-sn">{replans.length}</span>
+          </h2>
+          <div className="bd-hs-rpl">
+            {[...pending].reverse().map((item) => {
+              const lead = milestones.find((m) => m.id === item.milestone_id)?.owner_session_id;
+              return (
+                <div key={item.event_id} className="bd-hs-rpw">
+                  <span
+                    className="bd-hs-rpg"
+                    role="img"
+                    aria-label={t({
+                      id: 'board.history.replan.waiting',
+                      defaultMessage: 'Waiting for the lead',
+                    })}
+                  >
+                    <StateIcon state="waiting_upstream" />
+                  </span>
+                  <span className="bd-hs-rpt">{metText(item)}</span>
+                  <span className="bd-hs-sn">
+                    {history.milestones.find((m) => m.id === item.milestone_id)?.title}
+                  </span>
+                  <span className="bd-hs-sn">{unansweredText()}</span>
+                  <span className="bd-hs-sn">{durationText(now - item.at)}</span>
+                  {lead && (
+                    <button type="button" className="btn sm" onClick={() => onOpenSession(lead)}>
+                      {openLeadText()}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {(allReplans ? replans : replans.slice(0, REPLAN_ROWS)).map((d) => {
+              const { triggers, added, removed, changed } = d.replan;
+              const counts = changesText(d.replan);
+              const open = opened.has(d.at);
+              return (
+                <Collapsible.Root
+                  key={d.at}
+                  id={replanRowId(d.at)}
+                  className="bd-hs-rp"
+                  open={open}
+                  onOpenChange={(next) =>
+                    setOpened((now) => {
+                      const rows = new Set(now);
+                      if (next) rows.add(d.at);
+                      else rows.delete(d.at);
+                      return rows;
+                    })
+                  }
+                >
+                  <Collapsible.Trigger
+                    className="bd-hs-rpb"
+                    ref={(el: HTMLButtonElement | null) => {
+                      if (el) replanHeads.current.set(d.at, el);
+                      else replanHeads.current.delete(d.at);
+                    }}
+                  >
+                    <ChevronRight className="bd-hs-rpc" aria-hidden="true" />
+                    <span className="bd-hs-rpt">
+                      {replannedText(d)}
+                      {!open && triggers.length > 1 && (
+                        <span className="bd-hs-sn">
+                          {t(
+                            { id: 'board.history.replan.more', defaultMessage: 'and {count} more' },
+                            { count: triggers.length - 1 },
+                          )}
+                        </span>
+                      )}
+                    </span>
+                    {counts && <span className="bd-hs-sn">{counts}</span>}
+                    <span className="bd-hs-sn">{dayText(d.at, now, { time: true })}</span>
+                  </Collapsible.Trigger>
+                  <Collapsible.Panel className="bd-hs-rpp">
+                    <div className="bd-hs-rpd">
+                      {triggers.length > 1 && (
+                        <ul
+                          className="bd-hs-rptr"
+                          aria-label={t({
+                            id: 'board.history.replan.conditions',
+                            defaultMessage: 'Conditions met',
+                          })}
+                        >
+                          {triggers.map((each) => (
+                            <li key={each.event_id}>
+                              <span>{each.text}</span>
+                              <span className="bd-hs-sn">
+                                {history.milestones.find((m) => m.id === each.milestone_id)?.title}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <h3 className="bd-hs-cap">
+                        {t({ id: 'board.history.replan.changes', defaultMessage: 'Plan changes' })}
+                      </h3>
+                      {counts ? (
+                        <ul
+                          className="bd-hs-pc"
+                          aria-label={t({
+                            id: 'board.history.replan.changes',
+                            defaultMessage: 'Plan changes',
+                          })}
+                        >
+                          {added.map((title, i) => (
+                            <li key={`added:${i}`} data-k="added">
+                              <Plus aria-hidden="true" />
+                              <span className="bd-hs-sn">
+                                {t({ id: 'board.history.replan.added', defaultMessage: 'Added' })}
+                              </span>
+                              <span className="bd-hs-pct">{title}</span>
+                            </li>
+                          ))}
+                          {removed.map((title, i) => (
+                            <li key={`removed:${i}`} data-k="removed">
+                              <X aria-hidden="true" />
+                              <span className="bd-hs-sn">
+                                {t({
+                                  id: 'board.history.replan.removed',
+                                  defaultMessage: 'Removed',
+                                })}
+                              </span>
+                              <span className="bd-hs-pct">{title}</span>
+                            </li>
+                          ))}
+                          {changed.map((title, i) => (
+                            <li key={`changed:${i}`} data-k="changed">
+                              <Pencil aria-hidden="true" />
+                              <span className="bd-hs-sn">
+                                {t({
+                                  id: 'board.history.replan.changed',
+                                  defaultMessage: 'Changed',
+                                })}
+                              </span>
+                              <span className="bd-hs-pct">{title}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="bd-hs-none">
+                          {t({
+                            id: 'board.history.replan.none',
+                            defaultMessage: 'No task changed',
+                          })}
+                        </p>
+                      )}
+                      {d.lead_session_id && (
+                        <span className="bd-hs-acts">
+                          <button
+                            type="button"
+                            className="btn sm ghost"
+                            onClick={() => onOpenSession(d.lead_session_id!)}
+                          >
+                            {openLeadText()}
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  </Collapsible.Panel>
+                </Collapsible.Root>
+              );
+            })}
+          </div>
+          {!allReplans && replans.length > REPLAN_ROWS && (
+            <button type="button" className="btn sm ghost" onClick={() => setAllReplans(true)}>
+              {t(
+                { id: 'board.rows.all', defaultMessage: 'Show all {count} rows' },
+                { count: replans.length },
+              )}
+            </button>
+          )}
+        </section>
+      )}
       <div className="bd-hs-sum">
         {summary.milestones.length > 0 && (
           <div className="bd-hs-cell">

@@ -45,5 +45,6 @@
   "trace.approved.overrule.yours": "你的回答",
   "trace.approved.overrule.cancel": "取消",
   "trace.approved.overrule.send": "推翻",
-  "components.needsPopover.approved": "{count, plural, other {替你批准了 # 项}}"
+  "components.needsPopover.approved": "{count, plural, other {替你批准了 # 项}}",
+  "trace.approved.rule.defaultAnswer": "到期后按推荐答案生效"
 }

@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { Improvement, WorkflowPolicy } from '@pantheon/domain';
 import type { BridgeResult } from '@pantheon/protocol';
-import { HookHost, deferred, find, mount, nodes, text, unmountAll } from './web-hook-host.js';
+import {
+  HookHost,
+  deferred,
+  find,
+  mount,
+  named,
+  nodes,
+  text,
+  unmountAll,
+} from './web-hook-host.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
@@ -96,7 +105,7 @@ beforeEach(() => {
   stored = new Map();
   bridge.answers = { 'workflow.policy': policy(), 'improvement.list': [] };
   bridge.commands = [];
-  vi.stubGlobal('window', { pantheon: bridge });
+  vi.stubGlobal('window', { pantheon: bridge, addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => stored.get(key) ?? null,
     setItem: (key: string, value: string) => void stored.set(key, value),
@@ -247,6 +256,52 @@ describe('workflow settings page', () => {
     const row = labelled(tree(h), param('budget'));
     const table = find(row, (n) => n.props.className === 'wf-bud');
     expect((row.props.children as ReactNode[]).flat()).toContain(table);
+  });
+
+  it('turns on the recommended answer for reversible questions after a day', async () => {
+    const h = await page();
+    const row = labelled(tree(h), zh('settings.workflow.questionDefaults'));
+    expect(row.props.role).toBe('group');
+    const toggle = find(row, (n) => n.type === 'input' && n.props.type === 'checkbox');
+    expect(toggle.props.checked).toBe(false);
+    expect(
+      nodes(row).some(
+        (n) => n.props['aria-label'] === zh('settings.workflow.questionDefaultsHours'),
+      ),
+    ).toBe(false);
+    toggle.props.onChange({ target: { checked: true } });
+    await h.flush();
+    expect(bridge.commands.map((c) => c.input)).toEqual([
+      { project_id: 'alpha', question_defaults: { after_hours: 24 } },
+    ]);
+  });
+
+  it('sets the hours before a recommended answer applies within 1 to 168, and turns it off', async () => {
+    bridge.answers['workflow.policy'] = policy({ question_defaults: { after_hours: 12 } });
+    const h = await page();
+    const label = zh('settings.workflow.questionDefaults');
+    const hours = zh('settings.workflow.questionDefaultsHours');
+    const field = () =>
+      find(labelled(tree(h), label), (n) => n.type === 'input' && n.props['aria-label'] === hours);
+    expect(field().props.value).toBe('12');
+    await type(h, field, '200');
+    expect(bridge.commands).toEqual([]);
+    expect(alerts(labelled(tree(h), label)).join('\n')).toContain('1 到 168');
+    await type(h, field, '48');
+    find(
+      labelled(tree(h), label),
+      (n) => n.type === 'input' && n.props.type === 'checkbox',
+    ).props.onChange({ target: { checked: false } });
+    await h.flush();
+    expect(bridge.commands.map((c) => c.input)).toEqual([
+      { project_id: 'alpha', question_defaults: { after_hours: 48 } },
+      { project_id: 'alpha', question_defaults: null },
+    ]);
+  });
+
+  it('ends a project’s page with its playbook', async () => {
+    const h = await page();
+    expect(named(tree(h), 'PlaybookEditor').props.project).toMatchObject({ id: 'alpha' });
   });
 
   it('marks a parameter on trial beside its name and opens the learned rules from it', async () => {

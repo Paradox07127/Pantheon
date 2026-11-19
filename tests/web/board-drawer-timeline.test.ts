@@ -10,7 +10,8 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 );
 import { useBoard } from '@/data/board';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
-import { TaskTimeline, TraceList } from '@/screens/board/TaskTimeline';
+import { TaskThread } from '@/screens/board/TaskThread';
+import { TraceList } from '@/screens/board/TaskTimeline';
 
 type Task = BoardModel['tasks'][number];
 
@@ -147,44 +148,7 @@ describe('task drawer timeline', () => {
     expect(open).toHaveBeenCalledWith('worker-1');
   });
 
-  it('shows a failed read with a retry instead of an empty trace', async () => {
-    const query = vi.fn(async () => ({
-      ok: false as const,
-      error: { code: 'internal', message: 'trace store down' },
-    }));
-    vi.stubGlobal('window', { pantheon: { query } });
-    useBoard.setState({
-      board: {
-        cursor: 1,
-        projects: [],
-        sessions: [{ id: 'lead-1', project_id: 'project-a' }],
-        session_turns: [],
-        workspaces: [],
-      } as never,
-      events: [],
-    });
-    const host = mount(() =>
-      TaskTimeline({
-        model: board([task('lead-1:t1')]),
-        task: task('lead-1:t1'),
-        onOpenSession: noop,
-        onOpenStory: noop,
-      }),
-    );
-    const tree = await host.flush();
-    expect(query).toHaveBeenCalledWith('task.trace', {
-      project_id: 'project-a',
-      lead_session_id: 'lead-1',
-      task_id: 't1',
-    });
-    expect(text(find(tree, (n) => n.props.role === 'alert'))).toContain('trace store down');
-    expect(nodes(tree).some((n) => n.type === 'ol')).toBe(false);
-    find(tree, (n) => n.type === 'button' && text(n) === zh('components.retry')).props.onClick();
-    await host.flush();
-    expect(query).toHaveBeenCalledTimes(2);
-  });
-
-  it('puts the merge into the timeline only, and shows no timeline for a session without a task', () => {
+  it('puts the merge into the thread only, and shows no thread for a session without a task', () => {
     const listeners = { addEventListener: noop, removeEventListener: noop };
     vi.stubGlobal('window', {
       ...listeners,
@@ -203,10 +167,10 @@ describe('task drawer timeline', () => {
         .filter((n) => n.type === 'h3')
         .map(text);
     const plan = drawer(board([task('lead-1:t1')]), 'lead-1:t1');
-    expect(nodes(plan).some((n) => n.type === TaskTimeline)).toBe(true);
+    expect(nodes(plan).some((n) => n.type === TaskThread)).toBe(true);
     expect(headings(plan)).not.toContain(mergeHeading);
     const adhoc = drawer(board([task('worker-1')]), 'worker-1');
-    expect(nodes(adhoc).some((n) => n.type === TaskTimeline)).toBe(false);
+    expect(nodes(adhoc).some((n) => n.type === TaskThread)).toBe(false);
     expect(headings(adhoc)).toContain(mergeHeading);
   });
 });

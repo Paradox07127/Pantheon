@@ -54,6 +54,7 @@ import { FlowGroupControl, hasPlanTasks } from './MainView';
 import { NewTask, planLead } from './NewTask';
 import { currentMilestone } from './MilestoneCard';
 import { OverviewPage } from './OverviewPage';
+import { PlanPause } from './PlanPause';
 import type { EvidenceTab } from './TaskFocus';
 import {
   DEFAULT_LAYOUT,
@@ -787,15 +788,27 @@ export function BoardView(props: BoardViewProps) {
               ) : (
                 plan?.plan_version !== undefined &&
                 model && (
-                  <span className="gm-pv">
-                    {t(
-                      { id: 'board.bar.planAt', defaultMessage: 'Plan v{version}, updated {time}' },
-                      {
-                        version: plan.plan_version,
-                        time: dayText(plan.updated_at, model.now, { time: true }),
-                      },
-                    )}
-                  </span>
+                  <PlanPause
+                    projectId={projectId ?? null}
+                    leadId={plan.session_id}
+                    version={plan.plan_version}
+                    now={model.now}
+                    run={actions?.run}
+                    stale={props.stale}
+                  >
+                    <span className="gm-pv">
+                      {t(
+                        {
+                          id: 'board.bar.planAt',
+                          defaultMessage: 'Plan v{version}, updated {time}',
+                        },
+                        {
+                          version: plan.plan_version,
+                          time: dayText(plan.updated_at, model.now, { time: true }),
+                        },
+                      )}
+                    </span>
+                  </PlanPause>
                 )
               )}
               {sync &&

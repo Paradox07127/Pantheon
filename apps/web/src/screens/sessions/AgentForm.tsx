@@ -286,13 +286,18 @@ const UNITS: { value: Unit; readonly label: string }[] = [
 ];
 
 /** The name of each routine template, by its id; the ids stay literal so message extraction finds them. */
-const ROUTINE_TEMPLATE_NAMES: Readonly<Record<string, () => string>> = {
+export const ROUTINE_TEMPLATE_NAMES: Readonly<Record<string, () => string>> = {
   'bug-hunt': () =>
     t({ id: 'sessions.agents.routineTemplate.bug-hunt', defaultMessage: 'Bug hunt' }),
   'security-scan': () =>
     t({ id: 'sessions.agents.routineTemplate.security-scan', defaultMessage: 'Security scan' }),
   'test-coverage': () =>
     t({ id: 'sessions.agents.routineTemplate.test-coverage', defaultMessage: 'Test coverage' }),
+  'weekly-self-review': () =>
+    t({
+      id: 'sessions.agents.routineTemplate.weekly-self-review',
+      defaultMessage: 'Weekly self-review',
+    }),
 };
 
 /** A radio button of a `.seg` group. */
@@ -657,7 +662,7 @@ export function agentFieldRows(props: {
                 set({
                   routines: [
                     ...draft.routines,
-                    routineDraft({ ...fields, enabled: NEW_ROUTINE.enabled }),
+                    routineDraft({ ...fields, enabled: fields.enabled ?? NEW_ROUTINE.enabled }),
                   ],
                 })
               }

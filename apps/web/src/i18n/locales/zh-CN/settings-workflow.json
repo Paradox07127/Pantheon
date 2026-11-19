@@ -10,5 +10,8 @@
   "settings.workflow.off": "关",
   "settings.workflow.planChanges": "计划改动",
   "settings.workflow.planChanges.auto": "lead 直接改",
-  "settings.workflow.planChanges.confirm": "等我批准"
+  "settings.workflow.planChanges.confirm": "等我批准",
+  "settings.workflow.questionDefaults": "可撤回的提问在 N 小时后采用 lead 推荐的答案",
+  "settings.workflow.questionDefaultsHours": "小时数",
+  "settings.workflow.outcome": "有没有用？{param}"
 }

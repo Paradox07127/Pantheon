@@ -6,6 +6,7 @@ import type {
   MemoryContext,
   MemoryRecord,
   Principal,
+  Project,
   Session,
 } from '@pantheon/domain';
 import type { LearnedItem } from '@pantheon/protocol';
@@ -112,10 +113,12 @@ it('lists a policy trial, an agent change, a workflow trial and an agent note, e
     grade: 'auto',
     status: 'active',
     group: 'in_force',
+    revision: note.revision,
     diff: { from: '', to: 'Finance reads exports as CSV.' },
     evidence: [{ kind: 'session', id: assistant.id }],
     actions: [{ command: 'memory.archive' }],
   });
+  expect(policy).not.toHaveProperty('revision');
   expect(policy).toMatchObject({
     kind: 'policy_change',
     id: 'policy-trial',
@@ -316,4 +319,26 @@ it('lists a proposal for several fields of an agent as an agent change and leave
 
   const items = f.control.learnedList(user, f.project.id);
   expect(items.map((item) => [item.kind, item.id])).toEqual([['agent_change', kept.id]]);
+});
+
+it("shows a gate change that waits for the user against the project's gate today", async () => {
+  const f = await workbenchFixture();
+  const root = f.project.roots[0]!;
+  const gate = [{ name: 'test', argv: ['true'] }];
+  const project = f.store.must<Project>('projects', f.project.id);
+  f.store.update('projects', { ...project, gates: { [root]: gate } }, project.revision);
+  f.store.insert<Improvement>('improvements', {
+    id: 'gate',
+    revision: 1,
+    project_id: f.project.id,
+    source: 'lead',
+    retrospective_ids: [],
+    status: 'candidate',
+    change: { type: 'gate_command', root, to: [{ ...gate[0]!, skippable: true }] },
+    proposed_at: f.store.now(),
+  });
+
+  const item = f.control.learnedList(user, f.project.id).find((i) => i.id === 'gate')!;
+  expect(item.group).toBe('needs_you');
+  expect(JSON.parse(item.diff.from)).toEqual(gate);
 });

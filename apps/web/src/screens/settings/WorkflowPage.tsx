@@ -5,8 +5,11 @@ import { RadioGroup } from '@base-ui/react/radio-group';
 import { Pin } from 'lucide-react';
 import type { Improvement } from '@pantheon/domain';
 import type { BoardSnapshot } from '@pantheon/protocol';
+import { ChangeOutcomeCard } from '../../components/ChangeOutcomeCard';
 import { runtimeName } from '../../components/RuntimeGlyph';
-import { useCurrentProject } from '../../data/current-project';
+import { useBoard } from '../../data/board';
+import { useChangeOutcomes, type ChangeOutcome } from '../../data/change-outcomes';
+import { currentProject, useCurrentProject } from '../../data/current-project';
 import {
   clearGlobal,
   clearOverride,
@@ -44,6 +47,7 @@ import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { useShell } from '../../store';
 import { Overrides } from './Overrides';
+import { PlaybookEditor } from './PlaybookEditor';
 import { policyStepper, runtimeLimits } from './PolicyStepper';
 import { failureText, Loading, Row, Section, type Failure } from './ProjectSettingsScreen';
 import { AutoMergeSwitch } from './WorktreesPage';
@@ -173,6 +177,10 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
   const defaults = useProjectDefaults();
   const improvements = useImprovements(project?.id ?? null);
   const runtimeStatus = useRuntimeStatus().read;
+  const stored = useCurrentProject((s) => s.projectId);
+  const current = useBoard((s) => currentProject(s.board, stored)?.id ?? null);
+  // The page every project follows shows the current project's numbers; one parameter's editor shows none.
+  const outcomes = useChangeOutcomes(only ? null : (project?.id ?? current));
   const setting = settingOf(defaults.data, 'workflow_policy');
   const autoMerge = settingOf(defaults.data, 'auto_merge');
   const global = project === null;
@@ -234,6 +242,11 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
   };
   const busy = pending !== null || source.stale;
   const changed = changedParams(improvements.read ?? []);
+  // The list is newest first, so the first of a parameter is the one that shows.
+  const outcomeOf = new Map<string, ChangeOutcome>();
+  for (const outcome of outcomes.read ?? [])
+    if (outcome.kind === 'policy_changed' && !outcomeOf.has(outcome.param!))
+      outcomeOf.set(outcome.param!, outcome);
 
   const draftOf = (key: string) => ({
     draft: drafts[key] ?? null,
@@ -356,6 +369,9 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
   const row = (key: RowKey, control: ReactNode, pin?: WorkflowParam, wide?: ReactNode) => {
     const by = pin && changed.get(pin);
     const pinned = !!pin && policy.pinned.includes(pin);
+    const outcome = outcomeOf.get(key);
+    // A failed read shows once, under the page's first row.
+    const failed = key === 'max_parallel' && outcomes.error !== null && !outcomes.unavailable;
     const pinCell = pin ? (
       pinButton({
         param: PARAM_LABEL[key],
@@ -367,34 +383,47 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
       <span />
     );
     return (
-      <div
-        key={key}
-        role="group"
-        aria-label={PARAM_LABEL[key]}
-        aria-busy={pending === key || undefined}
-        className="ps-row wf-pr"
-        data-setting-id={`workflow.${key.replace(/_(.)/g, (_, c: string) => c.toUpperCase())}`}
-      >
-        <span className="wf-nm">
-          <span>{PARAM_LABEL[key]}</span>
-          {by && project && improvementChip(by.status, project.id)}
-        </span>
-        {control}
-        {global ? (
-          <span className="wf-end">
-            {overrides(key)}
-            {pinCell}
+      <Fragment key={key}>
+        <div
+          role="group"
+          aria-label={PARAM_LABEL[key]}
+          aria-busy={pending === key || undefined}
+          className="ps-row wf-pr"
+          data-setting-id={`workflow.${key.replace(/_(.)/g, (_, c: string) => c.toUpperCase())}`}
+        >
+          <span className="wf-nm">
+            <span>{PARAM_LABEL[key]}</span>
+            {by && project && improvementChip(by.status, project.id)}
           </span>
-        ) : (
-          pinCell
+          {control}
+          {global ? (
+            <span className="wf-end">
+              {overrides(key)}
+              {pinCell}
+            </span>
+          ) : (
+            pinCell
+          )}
+          {wide}
+          {failure?.row === key && (
+            <div className="ps-err wf-err" role="alert">
+              {failure.text}
+            </div>
+          )}
+        </div>
+        {(outcome || failed) && (
+          <ChangeOutcomeCard
+            outcome={outcome ?? null}
+            wide
+            label={t(
+              { id: 'settings.workflow.outcome', defaultMessage: 'Did it help? {param}' },
+              { param: PARAM_LABEL[key] },
+            )}
+            error={failed ? outcomes.error! : undefined}
+            onRetry={outcomes.reload}
+          />
         )}
-        {wide}
-        {failure?.row === key && (
-          <div className="ps-err wf-err" role="alert">
-            {failure.text}
-          </div>
-        )}
-      </div>
+      </Fragment>
     );
   };
 
@@ -588,6 +617,34 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
         (plan_changes) => ({ plan_changes }),
       ),
     ),
+    question_defaults: row(
+      'question_defaults',
+      <span className="wf-qd">
+        <input
+          type="checkbox"
+          className="ps-sw"
+          aria-label={PARAM_LABEL.question_defaults}
+          checked={!!policy.question_defaults}
+          disabled={busy}
+          onChange={(e) =>
+            void send('question_defaults', {
+              question_defaults: e.target.checked ? { after_hours: 24 } : null,
+            })
+          }
+        />
+        {policy.question_defaults &&
+          policyStepper({
+            label: t({ id: 'settings.workflow.questionDefaultsHours', defaultMessage: 'Hours' }),
+            value: policy.question_defaults.after_hours,
+            low: 1,
+            high: 168,
+            disabled: busy,
+            ...draftOf('question_defaults'),
+            onSet: (to) => send('question_defaults', { question_defaults: { after_hours: to! } }),
+            onInvalid: (text) => setFailure({ row: 'question_defaults', text }),
+          })}
+      </span>,
+    ),
   } satisfies Partial<Record<RowKey, ReactNode>>;
   if (only) return <div className="ps-rows">{rows[only as keyof typeof rows]}</div>;
 
@@ -626,9 +683,11 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
       <div className="ps-grp">
         <div className="ps-rows">
           {rows.plan_changes}
+          {!global && rows.question_defaults}
           {rows.improvement_mode}
         </div>
       </div>
+      {project && <PlaybookEditor project={project} />}
     </>
   );
 }

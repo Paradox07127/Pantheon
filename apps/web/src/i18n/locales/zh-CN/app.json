@@ -29,5 +29,7 @@
   "app.palette.colorblindColours": "使用色盲友好配色",
   "app.palette.standardColours": "使用标准配色",
   "app.palette.reduceMotion": "减少动效",
-  "app.palette.standardMotion": "标准动效"
+  "app.palette.standardMotion": "标准动效",
+  "app.screenName.automations": "自动化",
+  "app.palette.automations": "打开自动化"
 }

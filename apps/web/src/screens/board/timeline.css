@@ -139,3 +139,64 @@ button.bd-tl-n:hover {
 .pt[data-motion='reduced'] .bd-tl-i {
   transition-property: opacity;
 }
+/* The task's thread reuses the trace rows; a step of the task's life runs out in a rule. */
+.bd-tl-i[data-mark] .bd-tl-n {
+  font-weight: 500;
+  color: var(--tx2);
+}
+.bd-tl-i[data-mark] .bd-tl-l::after {
+  content: '';
+  flex: 1;
+  min-width: var(--sp-4);
+  border-top: var(--hair) solid var(--bd2);
+}
+.bd-tl-s {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mu);
+  font: inherit;
+  transition: color var(--dur-1) var(--ease-std);
+}
+button.bd-tl-s:hover {
+  color: var(--tx);
+}
+.bd-tl-p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.bd-tl-b > .bd-tl-p {
+  color: var(--tx2);
+}
+.bd-tl-c {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bd-tl-st::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.bd-tl-st[data-tone='bad']::before {
+  background: var(--bad);
+}
+.bd-tl-st[data-tone='wait']::before {
+  background: var(--wait);
+}
+.bd-tl-age {
+  font-variant-numeric: tabular-nums;
+}
+.bd-tl-blk {
+  margin-left: auto;
+  font-family: inherit;
+}

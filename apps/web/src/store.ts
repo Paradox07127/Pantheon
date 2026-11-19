@@ -22,6 +22,7 @@ export type Screen =
   | 'flow'
   | 'trace'
   | 'memory'
+  | 'automations'
   | 'projects'
   | 'personal';
 
@@ -69,6 +70,7 @@ const PROJECT_SCREENS: readonly string[] = [
   'repo',
   'trace',
   'memory',
+  'automations',
 ];
 
 /** The stored theme; anything unreadable follows the system. */

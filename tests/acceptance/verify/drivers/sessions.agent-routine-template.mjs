@@ -82,7 +82,7 @@ try {
       });
     })()`);
 
-  // 2. The add menu lists a blank routine and the three templates.
+  // 2. The add menu lists a blank routine and the four templates.
   await page.click({ role: 'button', name: '添加例行任务', exact: true, within: PANEL });
   const items = await poll(() =>
     page
@@ -93,8 +93,8 @@ try {
       .then((list) => (list.includes('空白例行任务') ? list : null)),
   );
   check(
-    '菜单有 空白例行任务、找 bug、安全扫描、测试覆盖',
-    same(items, ['空白例行任务', '找 bug', '安全扫描', '测试覆盖']),
+    '菜单有 空白例行任务、找 bug、安全扫描、测试覆盖、每周自查',
+    same(items, ['空白例行任务', '找 bug', '安全扫描', '测试覆盖', '每周自查']),
     items,
   );
   await page.click({ role: 'menuitem', name: '找 bug', exact: true });

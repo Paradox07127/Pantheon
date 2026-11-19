@@ -1,4 +1,10 @@
-import type { BoardHistory, BoardModel, BoardTaskState, ProjectTimeline } from '@pantheon/protocol';
+import type {
+  BoardHistory,
+  BoardModel,
+  BoardTaskState,
+  PendingReplan,
+  ProjectTimeline,
+} from '@pantheon/protocol';
 import { BREAK_SHARE, timeAxis } from '../../lib/time-axis';
 import { TASK_TYPE } from './status';
 import { criticalPath } from './view-rules';
@@ -82,6 +88,8 @@ export interface HistoryLayout {
     count: number;
     items: HistoryDecision[];
   }[];
+  /** Fired re-plan conditions no plan change answered yet, at their time on the top row. */
+  pending: { x: number; y: number; item: PendingReplan }[];
   /** Dependencies between drawn tasks of different rows. */
   edges: { key: string; x1: number; y1: number; x2: number; y2: number; critical: boolean }[];
   /** The critical path's tasks while it is asked for and runs through a dependency, else null. */
@@ -282,7 +290,9 @@ export function historyLayout({
       bands === 'lanes' && decision.lane_id !== null && rowY.has(decision.lane_id)
         ? decision.lane_id
         : null;
-    const key = `${at}:${lane ?? ''}`;
+    // A re-plan stands alone at its own time, so it can open its row.
+    const replan = decision.kind === 'replan';
+    const key = replan ? `replan:${decision.at}` : `${at}:${lane ?? ''}`;
     const held = decisions.get(key);
     if (held) {
       held.count++;
@@ -290,7 +300,7 @@ export function historyLayout({
     } else
       decisions.set(key, {
         key,
-        x: x(at + DAY / 2),
+        x: x(replan ? decision.at : at + DAY / 2),
         y: lane === null ? TOP + 8 : rowY.get(lane)! - DECISION_RISE,
         at,
         count: 1,
@@ -351,6 +361,9 @@ export function historyLayout({
       ];
     }),
     decisions: [...decisions.values()],
+    pending: (history.pending_replans ?? [])
+      .filter((item) => item.at >= from && item.at <= to)
+      .map((item) => ({ x: x(item.at), y: TOP + 8, item })),
     edges,
     critical: path.length > 1 ? new Set(path) : null,
   };

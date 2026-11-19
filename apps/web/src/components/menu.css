@@ -12,6 +12,11 @@
 .mn-list {
   min-width: var(--anchor-width);
 }
+/* The select's List holds the listbox role, so it is the part that scrolls; the popup's padding is left over. */
+.mn-scroll {
+  max-height: calc(var(--available-height) - 2 * var(--sp-1));
+  overflow-y: auto;
+}
 .mn-row {
   display: flex;
   align-items: center;

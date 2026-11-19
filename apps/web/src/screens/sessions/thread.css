@@ -226,6 +226,68 @@
   flex: none;
   font-variant-numeric: tabular-nums;
 }
+/* How a rotated session's handoff note changed, in a popover over its chapter mark. */
+.ss-hop {
+  display: flex;
+  flex-direction: column;
+  width: min(656px, calc(100vw - 48px));
+  max-height: 60vh;
+}
+.ss-hoh {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--bar);
+  padding: 0 var(--sp-1) 0 var(--sp-3);
+  border-bottom: var(--hair) solid var(--bd2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.ss-hoh > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.ss-hoc {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+.ss-hod {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-height: 0;
+  padding: var(--sp-2) 0;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  user-select: text;
+}
+.ss-hod > div {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--sp-1);
+  padding: 0 var(--sp-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ss-hod > .skel {
+  margin: 0 var(--sp-3);
+}
+.ss-hod > [data-kind='add'] {
+  background: color-mix(in srgb, var(--add) 11%, transparent);
+}
+.ss-hod > [data-kind='del'] {
+  background: color-mix(in srgb, var(--del) 11%, transparent);
+}
+.ss-hod > [data-kind='add'] > :first-child {
+  color: var(--add);
+}
+.ss-hod > [data-kind='del'] > :first-child {
+  color: var(--del);
+}
 .tip.ss-rip {
   max-width: 320px;
 }

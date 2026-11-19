@@ -116,7 +116,12 @@ beforeEach(() => {
     'improvement.list': [],
   };
   bridge.commands = [];
-  vi.stubGlobal('window', { pantheon: bridge, matchMedia: () => ({ matches: false }) });
+  vi.stubGlobal('window', {
+    pantheon: bridge,
+    matchMedia: () => ({ matches: false }),
+    addEventListener() {},
+    removeEventListener() {},
+  });
   useBoard.setState({
     board: { cursor: 1, projects: [alpha, beta], sessions: [] },
     status: { state: 'live' },

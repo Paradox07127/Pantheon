@@ -95,7 +95,7 @@ beforeEach(() => {
   bridge.answers = { 'workflow.policy': policy(), 'improvement.list': [] };
   bridge.commandAnswers = [];
   bridge.commands = [];
-  vi.stubGlobal('window', { pantheon: bridge });
+  vi.stubGlobal('window', { pantheon: bridge, addEventListener() {}, removeEventListener() {} });
   useBoard.setState({
     board: { cursor: 1, projects: [project], sessions: [] },
     status: { state: 'live' },

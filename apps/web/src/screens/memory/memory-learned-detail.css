@@ -46,75 +46,22 @@
   margin-left: auto;
 }
 
-/* A status glyph: a dot in the status colour, ringed while waiting, half filled on trial. */
 .mld-st {
   flex: none;
-  position: relative;
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
-  color: var(--idle);
 }
-.mld-st::before {
-  content: '';
-  width: 58%;
-  height: 58%;
-  border-radius: 50%;
-  background: currentColor;
+.mld-kind {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 500;
+  color: var(--tx);
 }
-.mld-st[data-st='wait'] {
-  color: var(--wait);
-}
-.mld-st[data-st='wait']::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 1.5px solid currentColor;
-}
-.mld-st[data-st='rev'] {
-  color: var(--ready);
-}
-.mld-st[data-st='rev']::before {
-  box-sizing: border-box;
-  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
-  border: 1.5px solid currentColor;
-}
-.mld-st[data-st='ok'] {
-  color: var(--ok);
-}
-.mld-st[data-st='bad'] {
-  color: var(--bad);
-}
-.mld-st:is([data-st='ok'], [data-st='bad'])::before {
-  width: 86%;
-  height: 86%;
-  border-radius: 0;
-  mask: var(--mld-m) center / contain no-repeat;
-}
-.mld-st[data-st='ok']::before {
-  --mld-m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M5 12.5l4.5 4.5L19 7.5'/></svg>");
-}
-.mld-st[data-st='bad']::before {
-  --mld-m: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round'><path d='M6.5 6.5l11 11M17.5 6.5l-11 11'/></svg>");
+.mld-diff {
+  flex: none;
+  user-select: text;
 }
 
-.mld-rule {
-  margin: 0;
-  font-size: var(--fs-md);
-  line-height: var(--lh-md);
-  color: var(--tx);
-  user-select: text;
-}
-.mld-inl {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  padding: 1px 4px;
-  border-radius: 4px;
-  background: var(--sf2);
-  user-select: text;
-}
 .mld-mono {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -126,15 +73,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-}
-.mld-sub {
-  margin: 0;
-  font-size: var(--fs-sm);
-  line-height: var(--lh-sm);
-  color: var(--tx2);
-}
-.mld-sel {
-  user-select: text;
 }
 .mld .mld-cells > .mld-cell {
   gap: 2px;
@@ -150,30 +88,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mld-rt {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-}
-.mld-note {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  color: var(--tx2);
-}
 .mld-eh {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   min-height: var(--slot);
-}
-.mld-chips {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  margin-left: auto;
 }
 .mld-rows {
   display: flex;
@@ -206,6 +125,38 @@
 .mld-rr > :last-child {
   text-align: right;
 }
+.mld-ev {
+  display: grid;
+  grid-template-columns: 16px 96px minmax(0, 1fr) 16px;
+  align-items: center;
+  column-gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--row);
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+button.mld-ev:hover {
+  background: var(--sel);
+  color: var(--tx);
+}
+.mld-evi {
+  display: grid;
+  place-items: center;
+}
+.mld-evi svg {
+  width: 14px;
+  height: 14px;
+}
 .mld-cut {
   min-width: 0;
   white-space: nowrap;
@@ -225,32 +176,6 @@
   gap: var(--sp-1);
   margin-left: auto;
 }
-.mld-cmps {
-  display: flex;
-  flex-direction: column;
-}
-.mld-cmp {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px 72px;
-  align-items: center;
-  column-gap: var(--sp-2);
-  height: var(--row);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-sm);
-  color: var(--tx2);
-}
-.mld-cmp > :not(:first-child) {
-  text-align: right;
-}
-.mld-cmph {
-  height: 24px;
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  font-weight: 500;
-}
-.mld-now {
-  color: var(--tx);
-}
 .mld-sn {
   display: flex;
   align-items: center;
@@ -261,14 +186,6 @@
   color: var(--tx2);
 }
 .mld-down {
-  color: var(--mu);
-}
-.mld-check {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
   color: var(--mu);
 }
 .mld-foot {

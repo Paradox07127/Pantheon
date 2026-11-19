@@ -375,17 +375,30 @@ export function StateIcon({ state }: { state: BoardTaskState }) {
 
 /** The plan task's state name; a session row without a state goes by its status. */
 export const taskStateLabel = (
-  task: Pick<BoardModel['tasks'][number], 'state' | 'status' | 'rung'>,
+  task: Pick<BoardModel['tasks'][number], 'state' | 'status' | 'rung' | 'dispatch_wait'>,
 ) =>
   // A step the user has to count as passed or failed waits on the user, not on an approval.
   task.rung?.rung === 'user' && task.rung.reason === 'workflow_approval'
     ? t({ id: 'board.frame.needs', defaultMessage: 'Needs you' })
-    : task.state
-      ? STATE[task.state].label
-      : STATUS[task.status].label;
+    : task.dispatch_wait === 'paused'
+      ? t({ id: 'board.taskState.paused', defaultMessage: 'Paused' })
+      : task.state
+        ? STATE[task.state].label
+        : STATUS[task.status].label;
 
-/** The task state's icon; a session row without a state shows its status. */
+/** The task state's icon; a session row without a state shows its status, a held task two bars. */
 export function TaskStateIcon({ task }: { task: BoardModel['tasks'][number] }) {
+  if (task.dispatch_wait === 'paused')
+    return (
+      <svg className="bd-sti" viewBox="0 0 12 12" aria-hidden="true" data-state="paused">
+        <path
+          d="M4 2.5v7M8 2.5v7"
+          style={{ stroke: 'var(--mu)' }}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
   return task.state ? <StateIcon state={task.state} /> : <StatusIcon status={task.status} />;
 }
 

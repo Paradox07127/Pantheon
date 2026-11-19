@@ -1,13 +1,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { LoadError } from '../../components/LoadError';
 import { CheckCheck, UserPen } from 'lucide-react';
 import type { BoardModel, TaskTraceEntry, TaskTraceKind } from '@pantheon/protocol';
 import { DiffCounts } from '../../components/DiffCounts';
 import { MergeBlockedMark, StateGlyph } from '../../components/SessionStateIcon';
-import { Skeleton } from '../../components/Skeleton';
 import { ModelMark } from '../../components/RuntimeGlyph';
-import { useBoard } from '../../data/board';
-import { planTaskIds, useTaskTrace } from '../../data/task-trace';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
 import './timeline.css';
@@ -157,7 +153,10 @@ function TraceText({ text, bubble }: { text: string; bubble?: 'in' | 'out' }) {
 }
 
 /** The board merge of the session nearest in time to the trace's merged entry. */
-function mergeOf(entry: TaskTraceEntry, merges: readonly Merge[]): Merge | undefined {
+export function mergeOf(
+  entry: Pick<TaskTraceEntry, 'at' | 'session_id'>,
+  merges: readonly Merge[],
+): Merge | undefined {
   let best: Merge | undefined;
   for (const m of merges)
     if (
@@ -270,45 +269,5 @@ export function TraceList({
         );
       })}
     </ol>
-  );
-}
-
-export interface TaskTimelineProps {
-  model: BoardModel;
-  /** A plan task; its id is `<lead session id>:<task id>`. */
-  task: Task;
-  onOpenSession: (sessionId: string) => void;
-  onOpenStory: (sessionId: string) => void;
-}
-
-/** The drawer section with the task's trace from task.trace, its loading and its failure. */
-export function TaskTimeline({ model, task, onOpenSession, onOpenStory }: TaskTimelineProps) {
-  const lead = planTaskIds(task.id).lead;
-  const projectId = useBoard(
-    (s) => s.board?.sessions.find((session) => session.id === lead)?.project_id ?? null,
-  );
-  const sessionIds = task.segments.flatMap((s) => (s.session_id ? [s.session_id] : []));
-  const trace = useTaskTrace(projectId, task.id, sessionIds);
-  return (
-    <section className="bd-dsec" aria-labelledby="bd-tl-h">
-      <h3 id="bd-tl-h">{t({ id: 'board.task.trace.heading', defaultMessage: 'Conversation' })}</h3>
-      {trace.data ? (
-        <TraceList
-          entries={trace.data}
-          merges={model.merges}
-          segments={task.segments}
-          now={model.now}
-          onOpenSession={onOpenSession}
-          onOpenStory={onOpenStory}
-        />
-      ) : trace.error ? (
-        <LoadError message={trace.error} onRetry={trace.reload} />
-      ) : (
-        <div className="bd-sk" aria-busy="true">
-          <Skeleton style={{ height: 10, width: '60%' }} />
-          <Skeleton style={{ height: 10, width: '40%' }} />
-        </div>
-      )}
-    </section>
   );
 }

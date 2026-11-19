@@ -43,7 +43,7 @@ import {
 import { zh, zhf } from './i18n-setup.js';
 
 const count = (key: string, n: number) => `${zh(`projects.count.${key}`)} ${n}`;
-const needsYou = zhf('projects.row.needsYou', { count: 4 });
+const needsYou = zhf('projects.row.decisionsWaiting', { count: 4 });
 
 const NOW = Date.parse('2026-11-03T12:00:00.000Z');
 const MINUTE = 60_000;
@@ -82,23 +82,20 @@ const event = (sequence: number, project_id: string, kind: string): DaemonEvent 
   payload: {},
 });
 
-const row = (
-  s: ProjectSummary | undefined,
-  oldestWait: number | null = null,
-  needs: NeedsYouItem[] = [],
-) =>
+const row = (s: ProjectSummary | undefined, needs: NeedsYouItem[] = []) =>
   ProjectRow({
     project: project(s?.project_id ?? 'p') as any,
     summary: s,
     needs,
-    oldestWait,
     now: NOW,
     onOpenSettings: () => {},
     onRemove: () => {},
   });
 
-const cells = (tree: any) => nodes(tree).filter((n) => n.props.role === 'cell');
+const cells = (tree: any) => [tree.props.children].flat().filter(Boolean);
 const byLabel = (tree: any, label: string) => find(tree, (n) => n.props['aria-label'] === label);
+const byText = (tree: any, label: string) =>
+  find(tree, (n) => n.type === 'button' && text(n) === label);
 const buttons = (tree: any) => nodes(tree).filter((n) => n.type === 'button');
 const opener = (tree: any) =>
   find(tree, (n) => n.type === 'button' && text(n) === 'name of project-b');
@@ -157,9 +154,9 @@ describe('project table row', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('lays a project out as one row of mark, project, goal, sessions, needs-you and action cells', () => {
+  it('lays a project out as one region of mark, project, goal, sessions, needs-you and action cells', () => {
     const tree = row(full);
-    expect(tree.props.role).toBe('row');
+    expect(tree.props.role).toBe('region');
     const [, name, goal, sessions, needs, actions] = cells(tree);
     expect(cells(tree)).toHaveLength(6);
     const open = find(name, (n) => n.type === 'button');
@@ -271,7 +268,8 @@ describe('project table row', () => {
     ],
   ])('%s', async (_name, session, label, group) => {
     listed = [session];
-    await byLabel(row(full), label).props.onClick();
+    const tree = row(full);
+    await (label === needsYou ? byText(tree, label) : byLabel(tree, label)).props.onClick();
     expect(mock.shell.openSessionGroup).toHaveBeenCalledWith(group);
   });
 
@@ -301,12 +299,16 @@ describe('project table row', () => {
     expect(unread?.({ id: 's1', last_activity_at: at } as never)).toBe(true);
   });
 
-  it('shows the needs-you count with the waiting glyph and how long the oldest item has waited', () => {
-    const needs = cells(row(full, NOW - 18 * MINUTE))[4]!;
-    expect(text(byLabel(needs, needsYou))).toBe('4');
-    expect(named(byLabel(needs, needsYou), 'StateGlyph').props.name).toBe('approval');
-    expect(text(needs)).toBe('418 分钟');
-    expect(text(cells(row(full))[4])).toBe('4');
+  const waits = (
+    longest_wait_ms: number,
+    by_decision: NonNullable<ProjectSummary['waiting']>['by_decision'] = {},
+  ) => ({ ...full, waiting: { by_decision, longest_wait_ms, blocked_tasks: 0 } });
+
+  it('shows the decisions waiting count and how long the oldest item has waited', () => {
+    const needs = cells(row(waits(18 * MINUTE)))[4]!;
+    expect(text(byText(needs, needsYou))).toBe(needsYou);
+    expect(text(needs)).toBe(`${needsYou}18 分钟`);
+    expect(text(cells(row(full))[4])).toBe(needsYou);
   });
 
   const need = (
@@ -328,8 +330,8 @@ describe('project table row', () => {
   const kindName = (key: string) => zh(`data.attention.decision.${key}`);
   const byKind = (tree: any) => byLabel(cells(tree)[4], zh('projects.row.byKind'));
 
-  it('shows the item blocking the most and what waits by kind, the kind blocking the most first', () => {
-    const tree = row(full, null, [
+  it('shows the item blocking the most and what waits by kind, the largest kind first', () => {
+    const tree = row(waits(0, { question: 1, plan_change: 2 }), [
       need('question', 2),
       need('plan_change', 3, {
         kind: 'board.lane.approval',
@@ -340,8 +342,8 @@ describe('project table row', () => {
     const group = byKind(tree);
     expect(group.props.role).toBe('group');
     expect(buttons(group).map((b) => b.props['aria-label'])).toEqual([
-      zhf('projects.row.kindCount', { kind: kindName('planChange'), count: 1, blocks: 3 }),
-      zhf('projects.row.kindCount', { kind: kindName('question'), count: 1, blocks: 2 }),
+      zhf('projects.row.kindWaiting', { kind: kindName('planChange'), count: 2 }),
+      zhf('projects.row.kindWaiting', { kind: kindName('question'), count: 1 }),
     ]);
     const needs = text(cells(tree)[4]);
     expect(needs).toContain('Refund audit log');
@@ -353,23 +355,19 @@ describe('project table row', () => {
 
   it('shows four kinds and names the rest in one count', () => {
     const tree = row(
-      full,
-      null,
-      (
-        [
-          'plan_change',
-          'question',
-          'repeated_failure',
-          'permission',
-          'budget',
-          'agent_proposal',
-        ] as const
-      ).map((decision, i) => need(decision, 6 - i)),
+      waits(0, {
+        plan_change: 6,
+        question: 5,
+        repeated_failure: 4,
+        permission: 3,
+        budget: 1,
+        agent_proposal: 1,
+      }),
     );
     const labels = buttons(byKind(tree)).map((b) => b.props['aria-label']);
     expect(labels).toHaveLength(5);
     expect(labels[3]).toBe(
-      zhf('projects.row.kindCount', { kind: kindName('permission'), count: 1, blocks: 3 }),
+      zhf('projects.row.kindWaiting', { kind: kindName('permission'), count: 3 }),
     );
     expect(labels[4]).toBe(
       zhf('projects.row.otherKinds', {
@@ -381,8 +379,8 @@ describe('project table row', () => {
   });
 
   it('leaves the wait out until the oldest item has waited a minute', () => {
-    expect(text(cells(row(full, NOW - 20_000))[4])).toBe('4');
-    expect(text(cells(row(full, NOW - MINUTE))[4])).toBe('41 分钟');
+    expect(text(cells(row(waits(20_000)))[4])).toBe(needsYou);
+    expect(text(cells(row(waits(MINUTE)))[4])).toBe(`${needsYou}1 分钟`);
   });
 
   it('dims an idle project and puts its last activity in the goal column and dashes after it', () => {
@@ -406,6 +404,82 @@ describe('project table row', () => {
     const [, , goal, , needs] = cells(busy);
     expect(text(goal)).toBe(zh('projects.row.noGoal'));
     expect(text(needs)).toBe('—');
+  });
+});
+
+describe('project region', () => {
+  const asking = summary('project-b', {
+    needs_you: 5,
+    brief: 'The refund audit log merged.',
+    waiting: {
+      by_decision: { question: 1, plan_change: 3, permission: 1 },
+      longest_wait_ms: 25 * MINUTE,
+      blocked_tasks: 6,
+    },
+  });
+  const decisionsWaiting = (n: number) => zhf('projects.row.decisionsWaiting', { count: n });
+  const kindWaiting = (key: string, n: number) =>
+    zhf('projects.row.kindWaiting', { kind: zh(`data.attention.decision.${key}`), count: n });
+  const byKind = (tree: any) => byLabel(tree, zh('projects.row.byKind'));
+
+  let stored: [string, string][];
+  beforeEach(() => {
+    stored = [];
+    vi.stubGlobal('localStorage', {
+      getItem: () => null,
+      setItem: (key: string, value: string) => stored.push([key, value]),
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is a region named after the project', () => {
+    const tree = row(asking);
+    expect(tree.props.role).toBe('region');
+    expect(tree.props['aria-label']).toBe('name of project-b');
+  });
+
+  it('counts the decisions waiting and opens the project inbox from the count', () => {
+    const count = find(row(asking), (n) => n.type === 'button' && text(n) === decisionsWaiting(5));
+    count.props.onClick();
+    expect(mock.current.choose).toHaveBeenCalledWith('project-b');
+    expect(mock.shell.openSessionGroup).toHaveBeenCalledWith('inbox');
+  });
+
+  it('splits the decisions by kind, the most first, with the longest wait and the tasks they block', () => {
+    const tree = row(asking);
+    expect(buttons(byKind(tree)).map((b) => b.props['aria-label'])).toEqual([
+      kindWaiting('planChange', 3),
+      kindWaiting('question', 1),
+      kindWaiting('permission', 1),
+    ]);
+    expect(text(tree)).toContain('25 分钟');
+    expect(text(tree)).toContain(zhf('data.attention.blocks', { count: 6 }));
+  });
+
+  it('leaves the kinds, the wait and the blocked tasks out without a waiting summary', () => {
+    const tree = row({ ...asking, waiting: undefined });
+    expect(() => byKind(tree)).toThrow();
+    expect(text(tree)).not.toContain('25 分钟');
+    expect(text(tree)).not.toContain(zhf('data.attention.blocks', { count: 6 }));
+  });
+
+  it('opens the project board on its overview from the brief line', () => {
+    const line = byLabel(
+      row(asking),
+      zhf('projects.row.brief', { text: 'The refund audit log merged.' }),
+    );
+    expect(line.type).toBe('button');
+    line.props.onClick();
+    expect(stored).toContainEqual(['pantheon.board-page.project-b', 'overview']);
+    expect(mock.current.choose).toHaveBeenCalledWith('project-b');
+    expect(mock.shell.setScreen).toHaveBeenCalledWith('board');
+  });
+
+  it('draws no brief line without a brief', () => {
+    const tree = row({ ...asking, brief: undefined });
+    expect(
+      nodes(tree).some((n) => String(n.props['aria-label'] ?? '').startsWith('你离开后')),
+    ).toBe(false);
   });
 });
 
@@ -520,22 +594,17 @@ describe('projects screen', () => {
     vi.unstubAllGlobals();
   });
 
-  it('heads the table with the project, goal, sessions and needs-you columns', async () => {
+  it('groups the project regions under all projects, each with its own needs-you items', async () => {
     const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
     await h.flush();
-    const table = find(h.value, (n) => n.props.role === 'table');
-    expect(
-      nodes(table)
-        .filter((n) => n.props.role === 'columnheader')
-        .map(text)
-        .filter(Boolean),
-    ).toEqual(['project', 'goal', 'sessions', 'needsYou'].map((k) => zh(`projects.table.${k}`)));
+    const table = byLabel(h.value, zh('projects.title'));
+    expect(table.props.role).toBe('group');
     const rows = nodes(table).filter(
       (n) => typeof n.type === 'function' && n.type.name === 'ProjectRow',
     );
-    expect(rows.map((r) => [r.props.project.id, r.props.oldestWait])).toEqual([
-      ['alpha', NOW - 30 * MINUTE],
-      ['beta', null],
+    expect(rows.map((r) => [r.props.project.id, r.props.needs.length])).toEqual([
+      ['alpha', 2],
+      ['beta', 0],
     ]);
     expect(
       named(h.value, 'SummaryPanel').props.summaries.map((s: ProjectSummary) => s.project_id),
@@ -550,7 +619,7 @@ describe('projects screen', () => {
     window.pantheon!.command = command as never;
     const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
     await h.flush();
-    const table = find(h.value, (n) => n.props.role === 'table');
+    const table = byLabel(h.value, zh('projects.title'));
     expect(
       nodes(table)
         .filter((n) => typeof n.type === 'function' && n.type.name === 'ProjectRow')
@@ -600,7 +669,7 @@ describe('projects screen', () => {
   it('moves the focus between the rows with the up and down keys', async () => {
     const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
     await h.flush();
-    const table = find(h.value, (n) => n.props.role === 'table');
+    const table = byLabel(h.value, zh('projects.title'));
     const opens = [0, 1, 2].map(() => ({ focus: vi.fn() }));
     const press = (key: string, target: unknown) => {
       const e = {
@@ -839,10 +908,19 @@ describe('projects screen while it is open', () => {
       }) as NeedsYouItem;
     mock.board.board.projects.push(project('gamma'));
     items = [wait('a1', 'alpha'), wait('a2', 'alpha'), wait('g1', 'gamma')];
+    const waiting = (n: number) => ({
+      by_decision: { permission: n },
+      longest_wait_ms: 5 * MINUTE,
+      blocked_tasks: 0,
+    });
     summaries = [
-      { ...summaries[0]!, needs_you: 2 },
+      { ...summaries[0]!, needs_you: 2, waiting: waiting(2) },
       summaries[1]!,
-      summary('gamma', { needs_you: 1, last_activity_at: '2026-11-03T09:00:00.000Z' }),
+      summary('gamma', {
+        needs_you: 1,
+        waiting: waiting(1),
+        last_activity_at: '2026-11-03T09:00:00.000Z',
+      }),
     ];
     const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
     await h.flush();
@@ -853,22 +931,22 @@ describe('projects screen while it is open', () => {
     const asks = () =>
       find(SummaryPanel(named(h.value, 'SummaryPanel').props), (n) => n.type === NeedsPopover);
     const permissions = (n: number) =>
-      zhf('projects.row.kindCount', {
+      zhf('projects.row.kindWaiting', {
         kind: zh('data.attention.decision.permission'),
         count: n,
-        blocks: 0,
       });
+    const decisions = (n: number) => zhf('projects.row.decisionsWaiting', { count: n });
     expect(rowNodes().map((r) => r.props.project.id)).toEqual(['alpha', 'gamma', 'beta']);
-    expect(text(byLabel(rowOf('alpha'), zhf('projects.row.needsYou', { count: 2 })))).toBe('2');
+    expect(text(byText(rowOf('alpha'), decisions(2)))).toBe(decisions(2));
     expect(text(asks().props.trigger)).toBe(
       `${zh('projects.summary.needsYou')}3${zhf('projects.summary.across', { count: 2 })}`,
     );
 
     items = [wait('a2', 'alpha')];
     summaries = [
-      { ...summaries[0]!, needs_you: 1 },
+      { ...summaries[0]!, needs_you: 1, waiting: waiting(1) },
       summaries[1]!,
-      { ...summaries[2]!, needs_you: 0 },
+      { ...summaries[2]!, needs_you: 0, waiting: undefined },
     ];
     mock.board = { ...mock.board, events: [event(1, 'gamma', 'approval.resolved')] };
     h.render();
@@ -876,7 +954,7 @@ describe('projects screen while it is open', () => {
     await h.flush();
     expect(rowNodes().map((r) => r.props.project.id)).toEqual(['alpha', 'gamma', 'beta']);
     const alpha = rowOf('alpha');
-    expect(text(byLabel(alpha, zhf('projects.row.needsYou', { count: 1 })))).toBe('1');
+    expect(text(byText(alpha, decisions(1)))).toBe(decisions(1));
     expect(text(byLabel(alpha, permissions(1)))).toBe('1');
     expect(text(cells(rowOf('gamma'))[4])).toBe('—');
     expect(text(asks().props.trigger)).toBe(
@@ -919,12 +997,7 @@ describe('projects screen before the summary lands', () => {
     const h = mount(() => ProjectsScreen({ onOpenSettings() {}, onOpenProject() {} }));
     const projectRows = () =>
       nodes(h.value).filter((n) => typeof n.type === 'function' && n.type.name === 'ProjectRow');
-    const bodyRows = () =>
-      nodes(find(h.value, (n) => n.props.role === 'table')).filter(
-        (n) =>
-          (n.props.role === 'row' && !nodes(n).some((c) => c.props.role === 'columnheader')) ||
-          (typeof n.type === 'function' && n.type.name === 'ProjectRow'),
-      );
+    const bodyRows = () => [byLabel(h.value, zh('projects.title')).props.children].flat();
     expect(named(h.value, 'SummaryPanel')).toBeTruthy();
     expect(bodyRows()).toHaveLength(2);
     expect(projectRows()).toEqual([]);

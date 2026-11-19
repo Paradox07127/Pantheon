@@ -351,6 +351,8 @@ describe('cards for what needs the user', () => {
     const asked = (n: number) => ({
       ...leadQuestion,
       source: { ...leadQuestion.source, id: `beta-lead-${n}` },
+      // One lead each: the questions of one lead are one row.
+      session_id: `beta-lead-${n}`,
       unblocks: 0,
     });
     const needs = [1, 2, 3, 4].map(asked);

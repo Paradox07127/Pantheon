@@ -16,6 +16,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Clock,
   Columns3,
   GitBranch,
   Globe,
@@ -36,6 +37,7 @@ import {
   shownAgents,
   useAgents,
 } from '../data/agents';
+import { useRoutines } from '../data/automations';
 import { useBoard } from '../data/board';
 import { runCommand } from '../data/commands';
 import { saveLayout, setLayout, SIDEBAR, sidebarDrag, useLayout } from '../data/layout';
@@ -652,6 +654,11 @@ export function Sidebar({
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
   const residents = zone.map((r) => ({ ...r, session: residentOf(r) }));
+  // The automations entry shows once the project has an agent that is not archived.
+  const automated = !!agents && shownAgents(agents).length > 0;
+  const routinesOn =
+    useRoutines(automated ? currentProjectId : null).read?.filter((r) => r.routine.enabled)
+      .length ?? null;
   const runtimes = [
     ...new Set([
       ...all.filter((s) => !s.resident).map((s) => s.runtime),
@@ -731,6 +738,9 @@ export function Sidebar({
       bare: true,
       session: null,
     })),
+    ...(automated
+      ? [{ key: 'automations', group: 'tree' as const, shut: false, bare: true, session: null }]
+      : []),
     { key: PERSONAL_STOP, group: 'tree' as const, shut: false, bare: true, session: null },
     ...groups.flatMap((group) => {
       const shut = !group.bare && folded(group.key, group.folded);
@@ -1412,6 +1422,32 @@ export function Sidebar({
                   })}
                 >
                   {residents.map(residentRow)}
+                  {automated && (
+                    <button
+                      type="button"
+                      className="ss-rr"
+                      aria-current={current('automations')}
+                      aria-label={t(
+                        {
+                          id: 'components.sidebar.automations',
+                          defaultMessage:
+                            'Automations, {count, plural, one {# routine on} other {# routines on}}',
+                        },
+                        { count: routinesOn ?? 0 },
+                      )}
+                      data-stop="automations"
+                      tabIndex={tabStop === 'automations' ? 0 : -1}
+                      onClick={() => setScreen('automations')}
+                    >
+                      <Clock className="ic-sm" aria-hidden="true" />
+                      <span className="ss-ttl">{SCREEN_NAMES.automations}</span>
+                      {routinesOn !== null && (
+                        <span className="ss-rct" aria-hidden="true">
+                          {routinesOn}
+                        </span>
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
               <div

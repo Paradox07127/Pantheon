@@ -559,3 +559,29 @@ a.bf-brief-fail:hover {
 .bf-brief-ref:hover {
   text-decoration-color: var(--tx);
 }
+/* A re-plan since leaving, which opens it on the whole history, or a condition still waiting for the lead. */
+.bf-brief-rp {
+  display: grid;
+  grid-template-columns: 96px 14px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--row);
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+button.bf-brief-rp:hover {
+  background: var(--sf2);
+}
+.bf-brief-rp > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}

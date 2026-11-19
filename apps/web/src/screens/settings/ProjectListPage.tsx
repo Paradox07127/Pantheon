@@ -29,7 +29,8 @@ import { RoutingPage } from './RoutingPage';
 import { allProjects } from './SettingsNav';
 import { UsagePage } from './UsagePage';
 import { useSettingsView } from './view';
-import { onOff } from './WorkflowPage';
+import { PlaybookEditor } from './PlaybookEditor';
+import { onOff, WorkflowPage } from './WorkflowPage';
 import { WorktreesPage } from './WorktreesPage';
 
 type Project = BoardSnapshot['projects'][number];
@@ -114,7 +115,7 @@ export function ProjectListPage() {
   );
 }
 
-/** One project's own page: the settings it sets itself, then its gates, worktrees, routing, budget, extensions and environment. */
+/** One project's own page: the settings it sets itself, then its gates, worktrees, routing, question defaults, playbook, budget, extensions and environment. */
 function ProjectDetail({ project }: { project: Project }) {
   const read = useProjectDefaults();
   const [busy, setBusy] = useState(false);
@@ -181,6 +182,10 @@ function ProjectDetail({ project }: { project: Project }) {
       </div>
       <WorktreesPage project={project} />
       <RoutingPage project={project} />
+      <Section>
+        <WorkflowPage project={project} only="question_defaults" />
+      </Section>
+      <PlaybookEditor project={project} />
       <Section>
         <UsagePage project={project} only="project_budget" />
       </Section>

@@ -13,6 +13,8 @@ export interface LearnedItem {
   id: string;
   /** The setting, agent name, gate root, playbook runtime or "default", memory title or key, or an experience's first sentence; absent for a worktree setup or workflow definition. */
   title?: string;
+  /** The memory record's revision; only on a memory_note. */
+  revision?: number;
   grade: LearnedGrade;
   /** The status of the record it came from. */
   status: string;

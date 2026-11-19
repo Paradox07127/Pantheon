@@ -1,459 +1,270 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ChevronDown, Pin, Play, Undo2, X } from 'lucide-react';
-import type { Improvement, Retrospective, ImprovementSignal } from '@pantheon/domain';
-import { changeFrom, LearnedChangeDiff } from '../../components/LearnedChangeDiff';
-import { Menu, MenuItem, MenuSeparator } from '../../components/Menu';
-import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
-import { SessionStateIcon } from '../../components/SessionStateIcon';
-import { useBoard } from '../../data/board';
-import { shortId } from '../../data/format';
-import { useProjectRetrospectives } from '../../data/retrospective-read';
-import { useSessionList } from '../../data/workbench-sessions';
+import { useRef, useState, type ReactNode } from 'react';
 import {
-  changeText,
-  decideImprovement,
-  DOMAIN_LABEL,
-  PARAM_LABEL,
-  scopeText,
-  tierText,
-  useImprovementSessions,
-  type Decision,
-  type ImprovementListItem,
-} from '../../data/workflow-policy';
+  ChevronDown,
+  ChevronRight,
+  Flag,
+  FlaskConical,
+  MessageSquare,
+  ShieldCheck,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
+import { Menu, MenuItem, MenuSeparator } from '../../components/Menu';
+import { SessionStateIcon, StateGlyph } from '../../components/SessionStateIcon';
+import { shortId } from '../../data/format';
+import { runLearnedAction, type LearnedAction, type LearnedItem } from '../../data/learned';
+import { useImprovementSessions } from '../../data/workflow-policy';
+import { useSessionList } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
-import { durationText, tokenText } from '../board/panels-model';
-import { changeValueText, learnedEffect } from './learned-effect';
-import { userRejectText } from './learned-model';
+import { GROUP_GLYPH, GROUP_LABEL, kindText, tasksText, verdictText } from './LearnedList';
 import '../../components/button-busy.css';
+import '../../components/learned-change-diff.css';
 import './memory-learned-detail.css';
 
 export interface LearnedDetailProps {
   projectId: string;
-  item: ImprovementListItem;
+  item: LearnedItem;
   onClose: () => void;
   onOpenRetro: (retrospectiveId: string) => void;
 }
 
-type Tone = 'wait' | 'rev' | 'ok' | 'idle' | 'bad';
+type RejectReason = 'duplicate' | 'not_useful';
 
-const STATUS: Record<Improvement['status'], { tone: Tone; label: () => string }> = {
-  candidate: {
-    tone: 'wait',
-    label: () => t({ id: 'memory.learnedDetail.status.candidate', defaultMessage: 'Awaiting you' }),
+const GRADE: Record<LearnedItem['grade'], () => string> = {
+  auto: () => t({ id: 'memory.learnedDetail.grade.auto', defaultMessage: 'Applied at once' }),
+  trial: () => t({ id: 'memory.learnedDetail.grade.trial', defaultMessage: 'On trial first' }),
+  confirm: () => t({ id: 'memory.learnedDetail.grade.confirm', defaultMessage: 'Waits for you' }),
+};
+
+/** The button text of each action, and what its failure says. */
+const ACTIONS: Record<string, { label: () => string; failed: (error: string) => string }> = {
+  'improvement.decide confirm': {
+    label: () => t({ id: 'memory.learnedDetail.confirm', defaultMessage: 'Confirm' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.confirm', defaultMessage: 'Couldn’t confirm: {error}' },
+        { error },
+      ),
   },
-  trial: {
-    tone: 'rev',
-    label: () => t({ id: 'memory.learnedDetail.status.trial', defaultMessage: 'On trial' }),
+  'improvement.decide reject': {
+    label: () => t({ id: 'memory.learnedDetail.reject', defaultMessage: 'Reject' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.reject', defaultMessage: 'Couldn’t reject: {error}' },
+        { error },
+      ),
   },
-  active: {
-    tone: 'ok',
-    label: () => t({ id: 'memory.learnedDetail.status.active', defaultMessage: 'In effect' }),
+  'improvement.decide revert': {
+    label: () => t({ id: 'memory.learnedDetail.revert', defaultMessage: 'Revert' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.revert', defaultMessage: 'Couldn’t revert: {error}' },
+        { error },
+      ),
   },
-  reverted: {
-    tone: 'idle',
-    label: () => t({ id: 'memory.learnedDetail.status.reverted', defaultMessage: 'Reverted' }),
+  'improvement.decide pin': {
+    label: () => t({ id: 'memory.learnedDetail.pin', defaultMessage: 'Pin' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.pin', defaultMessage: 'Couldn’t pin: {error}' },
+        { error },
+      ),
   },
-  rejected: {
-    tone: 'idle',
-    label: () => t({ id: 'memory.learnedDetail.status.rejected', defaultMessage: 'Rejected' }),
+  'agent.proposal.resolve create': {
+    label: () => t({ id: 'memory.learnedDetail.apply', defaultMessage: 'Apply' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.apply', defaultMessage: 'Couldn’t apply: {error}' },
+        { error },
+      ),
+  },
+  'agent.proposal.resolve decline': {
+    label: () => t({ id: 'memory.learnedDetail.decline', defaultMessage: 'Decline' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.decline', defaultMessage: 'Couldn’t decline: {error}' },
+        { error },
+      ),
+  },
+  'workflow.definition.trial.decide keep': {
+    label: () => t({ id: 'memory.learnedDetail.keep', defaultMessage: 'Keep' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.keep', defaultMessage: 'Couldn’t keep it: {error}' },
+        { error },
+      ),
+  },
+  'workflow.definition.trial.decide revert': {
+    label: () => t({ id: 'memory.learnedDetail.revert', defaultMessage: 'Revert' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.revert', defaultMessage: 'Couldn’t revert: {error}' },
+        { error },
+      ),
+  },
+  'memory.commit': {
+    label: () => t({ id: 'memory.learnedDetail.keep', defaultMessage: 'Keep' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.keep', defaultMessage: 'Couldn’t keep it: {error}' },
+        { error },
+      ),
+  },
+  'memory.archive': {
+    label: () => t({ id: 'memory.learnedDetail.archive', defaultMessage: 'Archive' }),
+    failed: (error) =>
+      t(
+        { id: 'memory.learnedDetail.failed.archive', defaultMessage: 'Couldn’t archive: {error}' },
+        { error },
+      ),
   },
 };
 
-// The same texts as the experience settings page.
-const SIGNAL_TEXT: Record<ImprovementSignal, () => string> = {
-  always_approved_command: () =>
-    t({
-      id: 'data.workflowPolicy.signal.alwaysApprovedCommand',
-      defaultMessage: 'Always-approved command',
-    }),
-  late_gate_failure: () =>
-    t({ id: 'data.workflowPolicy.signal.lateGateFailure', defaultMessage: 'Late gate failure' }),
-  dispatch_overhead: () =>
-    t({
-      id: 'data.workflowPolicy.signal.dispatchOverhead',
-      defaultMessage: 'High dispatch overhead',
-    }),
-  direct_rework: () =>
-    t({
-      id: 'data.workflowPolicy.signal.directRework',
-      defaultMessage: 'Rework after doing it directly',
-    }),
-  idle_wakeups: () =>
-    t({ id: 'data.workflowPolicy.signal.idleWakeups', defaultMessage: 'Idle wake-ups' }),
-  queue_wait: () =>
-    t({ id: 'data.workflowPolicy.signal.queueWait', defaultMessage: 'Queue waits' }),
-  merge_conflicts: () =>
-    t({ id: 'data.workflowPolicy.signal.mergeConflicts', defaultMessage: 'Merge conflicts' }),
-  over_budget: () =>
-    t({ id: 'data.workflowPolicy.signal.overBudget', defaultMessage: 'Over budget' }),
-  repeat_gate_failure: () =>
-    t({
-      id: 'data.workflowPolicy.signal.repeatGateFailure',
-      defaultMessage: 'Gates failing repeatedly',
-    }),
-  repeat_turn_failure: () =>
-    t({
-      id: 'data.workflowPolicy.signal.repeatTurnFailure',
-      defaultMessage: 'Turns failing repeatedly',
-    }),
-  handback_loop: () =>
-    t({ id: 'data.workflowPolicy.signal.handbackLoop', defaultMessage: 'Repeated handbacks' }),
+const actionKey = (a: LearnedAction) => (a.decision ? `${a.command} ${a.decision}` : a.command);
+
+const EVIDENCE: Record<string, { icon: ReactNode; label: () => string }> = {
+  retrospective: {
+    icon: <Flag aria-hidden="true" />,
+    label: () =>
+      t({ id: 'memory.learnedDetail.evidence.retrospective', defaultMessage: 'Retrospective' }),
+  },
+  session: {
+    icon: <MessageSquare aria-hidden="true" />,
+    label: () => t({ id: 'memory.learnedDetail.evidence.session', defaultMessage: 'Session' }),
+  },
+  gate_run: {
+    icon: <ShieldCheck aria-hidden="true" />,
+    label: () => t({ id: 'memory.learnedDetail.evidence.gateRun', defaultMessage: 'Gate run' }),
+  },
+  signal_issue: {
+    icon: <TriangleAlert aria-hidden="true" />,
+    label: () => t({ id: 'memory.learnedDetail.evidence.signal', defaultMessage: 'Signal' }),
+  },
+  eval_receipt: {
+    icon: <FlaskConical aria-hidden="true" />,
+    label: () =>
+      t({ id: 'memory.learnedDetail.evidence.evalReceipt', defaultMessage: 'Eval receipt' }),
+  },
 };
 
-const FAILED: Record<Decision, (error: string) => string> = {
-  confirm: (error) =>
-    t(
-      {
-        id: 'memory.learnedDetail.failed.confirm',
-        defaultMessage: 'Couldn’t start the trial: {error}',
-      },
-      { error },
-    ),
-  reject: (error) =>
-    t(
-      { id: 'memory.learnedDetail.failed.reject', defaultMessage: 'Couldn’t reject: {error}' },
-      { error },
-    ),
-  pin: (error) =>
-    t(
-      { id: 'memory.learnedDetail.failed.pin', defaultMessage: 'Couldn’t pin: {error}' },
-      { error },
-    ),
-  revert: (error) =>
-    t(
-      { id: 'memory.learnedDetail.failed.revert', defaultMessage: 'Couldn’t revert: {error}' },
-      { error },
-    ),
-};
+type Line = { kind?: 'del' | 'add'; text: string };
 
-type Trial = NonNullable<ImprovementListItem['trial']>;
-type Metric = Trial['metrics'][number];
-
-const METRIC_TEXT: Record<string, () => string> = {
-  first_pass: () =>
-    t({ id: 'memory.learnedDetail.metric.firstPass', defaultMessage: 'First-pass gate' }),
-  input_tokens: () =>
-    t({ id: 'memory.learnedDetail.metric.inputTokens', defaultMessage: 'Input tokens' }),
-  wall_ms: () => t({ id: 'memory.learnedDetail.metric.wall', defaultMessage: 'Time' }),
-  wait_and_execution_ms: () =>
-    t({ id: 'memory.learnedDetail.metric.waitAndExecution', defaultMessage: 'Wait and run' }),
-  wakes_without_decision_per_task: () =>
-    t({ id: 'memory.learnedDetail.metric.idleWakes', defaultMessage: 'Idle wakes' }),
-  signal_findings: () =>
-    t({ id: 'memory.learnedDetail.metric.findings', defaultMessage: 'Findings' }),
-  first_pass_without_findings: () =>
-    t({ id: 'memory.learnedDetail.metric.cleanFirstPass', defaultMessage: 'Clean first pass' }),
-};
-
-/** A count against its tasks, or a value per task as the trial evaluation compares it. */
-function metricValue(metric: Metric, value: number, tasks: number): string {
-  if (metric.unit === 'tasks') return `${value} / ${tasks}`;
-  // A metric named per task already is one.
-  const each = metric.name.endsWith('_per_task') ? value : value / tasks;
-  if (metric.unit === 'tokens') return tokenText(each);
-  if (metric.unit === 'milliseconds') return durationText(each);
-  return each.toFixed(1);
-}
-
-const DAY = 86_400_000;
-
-function headTime(item: Improvement): string | null {
-  if (item.status === 'candidate')
-    return t(
-      { id: 'memory.learnedDetail.proposedAt', defaultMessage: 'Proposed {when}' },
-      { when: dayText(item.proposed_at, Date.now(), { time: true }) },
-    );
-  if (item.status === 'trial')
-    return t(
-      { id: 'memory.learnedDetail.startedAt', defaultMessage: 'Started {when}' },
-      { when: dayText(item.trial_started_at ?? item.proposed_at, Date.now(), { time: true }) },
-    );
-  if (item.decided_at === undefined) return null;
-  const when = dayText(item.decided_at, Date.now(), { time: true });
-  if (item.status === 'active')
-    return t(
-      { id: 'memory.learnedDetail.activeAt', defaultMessage: 'In effect since {when}' },
-      { when },
-    );
-  if (item.status === 'reverted')
-    return t(
-      { id: 'memory.learnedDetail.revertedAt', defaultMessage: 'Reverted {when}' },
-      { when },
-    );
-  return t({ id: 'memory.learnedDetail.rejectedAt', defaultMessage: 'Rejected {when}' }, { when });
-}
-
-const Glyph = ({ tone }: { tone: Tone }) => (
-  <span className="mld-st" data-st={tone} aria-hidden="true" />
-);
-
-/** Backticked spans of a procedure drawn as inline code. */
-const codeParts = (text: string): ReactNode[] =>
-  text.split(/`([^`]+)`/).map((part, i) =>
-    i % 2 ? (
-      <span key={i} className="mld-inl">
-        {part}
-      </span>
-    ) : (
-      part
-    ),
-  );
-
-const MARK = { what: '\u0001', from: '\u0002', to: '\u0003' };
-
-/** A policy change as its sentence, with numeric values set in mono. */
-function policyRule(
-  change: Extract<Improvement['change'], { type: 'policy_change' }>,
-): ReactNode[] {
-  const value = (v: unknown, key: string) => {
-    const text = changeValueText(change.param, v);
-    return typeof v === 'number' ? (
-      <span key={key} className="mld-mono">
-        {text}
-      </span>
-    ) : (
-      text
-    );
-  };
-  const what = change.tier
-    ? `${PARAM_LABEL.path} ${tierText(change.tier)}`
-    : PARAM_LABEL[change.param];
-  return t({ id: 'data.workflowPolicy.change', defaultMessage: '{what} from {from} to {to}' }, MARK)
-    .split(/([\u0001-\u0003])/)
-    .map((part, i) =>
-      part === MARK.what
-        ? what
-        : part === MARK.from
-          ? value(change.from, `f${i}`)
-          : part === MARK.to
-            ? value(change.to, `t${i}`)
-            : part,
-    );
-}
-
-function metricText(signal: ImprovementSignal | undefined, r: Retrospective): string | null {
-  if (signal === 'repeat_gate_failure') {
-    if (r.gate_passed_on_attempt !== undefined)
-      return t(
-        { id: 'memory.learnedDetail.gatePassed', defaultMessage: 'Passed the gate on try {n}' },
-        { n: r.gate_passed_on_attempt },
-      );
-    if (r.gate_failures?.length)
-      return t({
-        id: 'memory.learnedDetail.gateNotPassed',
-        defaultMessage: 'Never passed the gate',
-      });
+/** The lines of `from` and `to`, each kept, removed or added along their longest common run. */
+function lineDiff(from: string, to: string): Line[] {
+  const a = from ? from.split('\n') : [];
+  const b = to ? to.split('\n') : [];
+  // run[i][j]: the longest common run of a[i..] and b[j..].
+  const run = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--)
+    for (let j = b.length - 1; j >= 0; j--)
+      run[i]![j] =
+        a[i] === b[j] ? run[i + 1]![j + 1]! + 1 : Math.max(run[i + 1]![j]!, run[i]![j + 1]!);
+  const lines: Line[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      lines.push({ text: a[i++]! });
+      j++;
+    } else if (i < a.length && (j === b.length || run[i + 1]![j]! >= run[i]![j + 1]!))
+      lines.push({ kind: 'del', text: a[i++]! });
+    else lines.push({ kind: 'add', text: b[j++]! });
   }
-  if (signal === 'queue_wait' && r.stage_ms?.dispatch_wait !== undefined)
-    return t(
-      { id: 'memory.learnedDetail.queued', defaultMessage: 'Queued {minutes} min' },
-      { minutes: Math.round(r.stage_ms.dispatch_wait / 60_000) },
-    );
-  return null;
+  return lines;
 }
 
 export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: LearnedDetailProps) {
-  const retrospectives = useProjectRetrospectives(projectId);
-  const sessions = useBoard((s) => s.board?.sessions);
-  const [pending, setPending] = useState<{ id: string; decision: Decision } | null>(null);
-  const [failure, setFailure] = useState<{ id: string; decision: Decision; text: string } | null>(
-    null,
-  );
+  const [pending, setPending] = useState<{ id: string; key: string } | null>(null);
+  const [failure, setFailure] = useState<{ id: string; key: string; text: string } | null>(null);
   const sending = useRef(false);
 
-  const decide = async (
-    decision: Decision,
-    rejectReason?: NonNullable<Improvement['reject_reason']>,
-  ) => {
+  const run = async (action: LearnedAction, rejectReason?: RejectReason) => {
     if (sending.current) return;
     sending.current = true;
-    setPending({ id: item.id, decision });
+    const key = actionKey(action);
+    setPending({ id: item.id, key });
     setFailure(null);
-    const result = await decideImprovement(item, decision, rejectReason);
+    const result = await runLearnedAction(projectId, item, action, rejectReason);
     sending.current = false;
     setPending(null);
-    if (!result.ok) setFailure({ id: item.id, decision, text: result.error });
+    if (!result.ok) setFailure({ id: item.id, key, text: result.error });
   };
 
-  const status = STATUS[item.status];
-  const time = headTime(item);
-  const change = item.change;
-  const effect = learnedEffect(item);
-  const trial = item.trial;
   const injected =
-    change.type === 'experience' && (item.status === 'trial' || item.status === 'active');
+    item.kind === 'experience' && (item.status === 'trial' || item.status === 'active');
   const used = useImprovementSessions(projectId, injected ? item.id : null);
   const listed = useSessionList(injected ? projectId : null);
-  const replaced = changeFrom(
-    item,
-    useBoard((s) => s.board?.projects),
-  );
 
-  const cells: { cap: string; value: ReactNode }[] = [];
-  if (change.type === 'experience') {
-    if (change.domain)
-      cells.push({
-        cap: t({ id: 'memory.learnedDetail.domain', defaultMessage: 'Domain' }),
-        value: DOMAIN_LABEL[change.domain],
-      });
-    if (change.tier)
-      cells.push({
-        cap: t({ id: 'memory.learnedDetail.tier', defaultMessage: 'Tier' }),
-        value: <span className="mld-mono">{tierText(change.tier)}</span>,
-      });
-    if (change.runtime)
-      cells.push({
-        cap: t({ id: 'memory.learnedDetail.runtime', defaultMessage: 'runtime' }),
-        value: (
-          <span className="mld-rt">
-            <RuntimeGlyph runtime={change.runtime} size={14} />
-            {runtimeName(change.runtime)}
-          </span>
-        ),
-      });
-  }
-  if (cells.length === 0)
-    cells.push({
-      cap: t({ id: 'memory.learnedDetail.scope', defaultMessage: 'Scope' }),
-      value: scopeText(change),
-    });
-  if (item.status === 'trial' && item.trial_started_at !== undefined)
-    cells.push({
-      cap: t({ id: 'memory.learnedDetail.triedFor', defaultMessage: 'On trial for' }),
-      value: (
-        <span className="mld-num">
-          {t(
-            {
-              id: 'memory.learnedDetail.days',
-              defaultMessage: '{count, plural, one {# day} other {# days}}',
-            },
-            { count: Math.max(1, Math.ceil((Date.now() - item.trial_started_at) / DAY)) },
-          )}
-        </span>
-      ),
-    });
-  if (item.status === 'trial' && change.type === 'policy_change' && trial)
-    cells.push({
-      cap: t({ id: 'memory.learnedDetail.trialTasks', defaultMessage: 'Tasks' }),
-      value: (
-        <span className="mld-mono mld-num">
-          {trial.tasks_seen} / {trial.tasks_required}
-        </span>
-      ),
-    });
-  const compared =
-    trial && trial.status_reason !== 'no_baseline'
-      ? trial.metrics.filter((m) => m.baseline !== undefined && m.trial !== undefined)
-      : [];
-
-  const byId = new Map((retrospectives.read ?? []).map((r) => [r.id, r]));
-  const rows = item.retrospective_ids.flatMap((id) => byId.get(id) ?? []);
-  const taskName = (r: Retrospective) =>
-    sessions?.find((s) => s.task?.id === r.task_id && s.task.lead_session_id === r.lead_session_id)
-      ?.title ?? r.task_id;
-  const firstChecks = rows.map((r) => r.gate_failed_checks?.[0]);
-  const sharedCheck =
-    item.signal === 'repeat_gate_failure' &&
-    rows.length > 1 &&
-    firstChecks[0] !== undefined &&
-    firstChecks.every((c) => c === firstChecks[0])
-      ? firstChecks[0]
-      : null;
-  const leadRuntime =
-    item.source === 'lead'
-      ? sessions?.find((s) => s.id === item.lead_session_id)?.runtime
-      : undefined;
-
+  const lines = lineDiff(item.diff.from, item.diff.to);
+  const verdict = verdictText(item);
+  const tasks = tasksText(item);
   const failed = failure?.id === item.id ? failure : null;
-  const busy = pending?.id === item.id ? pending.decision : null;
-  const action = (decision: Decision, kind: string, icon: ReactNode, label: string) => (
-    <button
-      key={decision}
-      type="button"
-      className={busy === decision ? `${kind} btn-busy` : kind}
-      aria-busy={busy === decision || undefined}
-      aria-disabled={busy !== null || undefined}
-      onClick={() => void decide(decision)}
-    >
-      {busy !== decision && icon}
-      {label}
-    </button>
-  );
-  const actions: ReactNode[] = [];
-  if (item.status === 'candidate')
-    actions.push(
-      action(
-        'confirm',
-        'btn pri',
-        <Play aria-hidden="true" />,
-        t({ id: 'memory.learnedDetail.confirm', defaultMessage: 'Start trial' }),
-      ),
+  const busy = pending?.id === item.id ? pending.key : null;
+  const openSession = (id: string) => useShell.getState().openSession(id);
+
+  const buttons = item.actions.flatMap((action, n) => {
+    const key = actionKey(action);
+    const shown = ACTIONS[key];
+    if (!shown) return [];
+    const kind = n === 0 ? 'btn pri' : 'btn';
+    const button = (onClick?: () => void, end?: ReactNode) => (
+      <button
+        key={key}
+        type="button"
+        className={busy === key ? `${kind} btn-busy` : kind}
+        aria-busy={busy === key || undefined}
+        aria-disabled={busy !== null || undefined}
+        onClick={onClick}
+      >
+        {shown.label()}
+        {busy !== key && end}
+      </button>
+    );
+    if (key !== 'improvement.decide reject') return [button(() => void run(action))];
+    return [
       <Menu
-        key="reject"
+        key={key}
         label={t({ id: 'memory.learnedDetail.rejectMenu', defaultMessage: 'Reason for rejecting' })}
         side="top"
-        trigger={
-          <button
-            type="button"
-            className={busy === 'reject' ? 'btn ghost btn-busy' : 'btn ghost'}
-            aria-busy={busy === 'reject' || undefined}
-            aria-disabled={busy !== null || undefined}
-          >
-            {t({ id: 'memory.learnedDetail.reject', defaultMessage: 'Reject' })}
-            {busy !== 'reject' && <ChevronDown className="mld-down" aria-hidden="true" />}
-          </button>
-        }
+        trigger={button(undefined, <ChevronDown className="mld-down" aria-hidden="true" />)}
       >
-        <MenuItem onClick={() => void decide('reject', 'duplicate')}>
+        <MenuItem onClick={() => void run(action, 'duplicate')}>
           {t({
             id: 'memory.learnedDetail.rejectDuplicate',
             defaultMessage: 'Duplicates an existing rule',
           })}
         </MenuItem>
-        <MenuItem onClick={() => void decide('reject', 'not_useful')}>
+        <MenuItem onClick={() => void run(action, 'not_useful')}>
           {t({ id: 'memory.learnedDetail.rejectNotUseful', defaultMessage: 'Not useful' })}
         </MenuItem>
         <MenuSeparator />
-        <MenuItem onClick={() => void decide('reject')}>
+        <MenuItem onClick={() => void run(action)}>
           <span className="mld-tx2">
             {t({ id: 'memory.learnedDetail.rejectNoReason', defaultMessage: 'No reason' })}
           </span>
         </MenuItem>
       </Menu>,
-    );
-  if (item.status === 'trial' || item.status === 'active') {
-    if (change.type === 'policy_change')
-      actions.push(
-        action(
-          'pin',
-          'btn',
-          <Pin aria-hidden="true" />,
-          t({ id: 'memory.learnedDetail.pin', defaultMessage: 'Pin' }),
-        ),
-      );
-    actions.push(
-      action(
-        'revert',
-        'btn ghost',
-        <Undo2 aria-hidden="true" />,
-        t({ id: 'memory.learnedDetail.revert', defaultMessage: 'Revert' }),
-      ),
-    );
-  }
+    ];
+  });
 
   return (
     <aside
       className="mld"
-      aria-label={t({ id: 'memory.learnedDetail.label', defaultMessage: 'Experience details' })}
+      aria-label={t({ id: 'memory.learnedDetail.label', defaultMessage: 'Learned change details' })}
     >
       <div className="mld-head">
-        <Glyph tone={status.tone} />
-        <span className="mld-status">
-          {(item.status === 'rejected' && userRejectText(item)) || status.label()}
+        <span className="mld-st" aria-hidden="true">
+          <StateGlyph name={GROUP_GLYPH[item.group]} />
         </span>
-        {time && <span className="mld-time">{time}</span>}
+        <span className="mld-status">{GROUP_LABEL[item.group]()}</span>
+        <span className="mld-time">
+          {t(
+            { id: 'memory.learnedDetail.proposedAt', defaultMessage: 'Proposed {when}' },
+            { when: dayText(item.at, Date.now(), { time: true }) },
+          )}
+        </span>
         <button
           type="button"
           className="ib mld-x"
@@ -464,116 +275,54 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
         </button>
       </div>
 
-      <p className="mld-rule">
-        {change.type === 'experience'
-          ? codeParts(change.procedure)
-          : change.type === 'policy_change'
-            ? policyRule(change)
-            : changeText(change)}
-      </p>
-
-      {(change.type === 'gate_command' || change.type === 'worktree_setup') && (
-        <LearnedChangeDiff change={change} from={replaced} />
-      )}
-
-      {change.type === 'experience' && change.countercondition && (
-        <div className="mld-sec">
-          <span className="cap">
-            {t({ id: 'memory.learnedDetail.countercondition', defaultMessage: 'Does not apply' })}
-          </span>
-          <p className="mld-sub mld-sel">{change.countercondition}</p>
-        </div>
-      )}
-
-      <div
-        className="panel mld-cells"
-        style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}
-      >
-        {cells.map((c) => (
-          <div key={c.cap} className="cell mld-cell">
-            <span className="cap">{c.cap}</span>
-            <span className="mld-cv">{c.value}</span>
-          </div>
-        ))}
+      <div className="mld-eh">
+        <span className="mld-kind">{kindText(item.kind)}</span>
+        <span className="chip">{GRADE[item.grade]()}</span>
       </div>
 
-      {item.status === 'trial' && change.type === 'experience' && trial && (
-        <div className="mld-sec">
-          <div className="mld-eh">
-            <span className="cap">
-              {t({ id: 'memory.learnedDetail.progress', defaultMessage: 'Trial progress' })}
-            </span>
-            <span className="mld-end">
-              <span className="mld-mono mld-num">
-                {trial.tasks_seen} / {trial.tasks_required}
-              </span>
-              <span className="mld-meta">
-                {t(
-                  {
-                    id: 'memory.learnedDetail.progressTasks',
-                    defaultMessage: '{count, plural, one {task} other {tasks}}',
-                  },
-                  { count: trial.tasks_required },
-                )}
-              </span>
-            </span>
-          </div>
-          <div
-            className="meter"
-            style={
-              {
-                '--v': `${Math.min(100, (trial.tasks_seen / trial.tasks_required) * 100)}%`,
-              } as CSSProperties
-            }
-            role="img"
-            aria-label={t(
-              {
-                id: 'memory.learnedDetail.progressLabel',
-                defaultMessage: 'Trial progress: {seen} of {required} tasks done',
-              },
-              { seen: trial.tasks_seen, required: trial.tasks_required },
-            )}
-          >
-            <i />
-          </div>
-        </div>
-      )}
+      <ul
+        className="lcd-lines mld-diff"
+        aria-label={t(
+          {
+            id: 'memory.learnedDetail.change',
+            defaultMessage:
+              'Change, {removed, plural, one {# line} other {# lines}} removed, {added, plural, one {# line} other {# lines}} added',
+          },
+          {
+            removed: lines.filter((l) => l.kind === 'del').length,
+            added: lines.filter((l) => l.kind === 'add').length,
+          },
+        )}
+      >
+        {lines.map((line, n) => (
+          <li key={n} data-kind={line.kind}>
+            <span>{line.kind === 'del' ? '−' : line.kind === 'add' ? '+' : ''}</span>
+            <code>{line.text}</code>
+          </li>
+        ))}
+      </ul>
 
-      {item.status === 'trial' && trial?.status_reason === 'no_baseline' && (
-        <div className="mld-note">
-          <Glyph tone="idle" />
-          <span>
-            {t({
-              id: 'memory.learnedDetail.noBaseline',
-              defaultMessage:
-                'Too few similar tasks before the trial to compare against yet; the trial goes on',
-            })}
-          </span>
-        </div>
-      )}
-
-      {trial && compared.length > 0 && (
-        <div className="mld-cmps">
-          <div className="mld-cmp mld-cmph">
-            <span>{t({ id: 'memory.learnedDetail.compare', defaultMessage: 'Comparison' })}</span>
-            <span>
-              {t({ id: 'memory.learnedDetail.compare.before', defaultMessage: 'Before' })}
-            </span>
-            <span>
-              {t({ id: 'memory.learnedDetail.compare.trial', defaultMessage: 'On trial' })}
-            </span>
-          </div>
-          {compared.map((m) => (
-            <div key={m.name} className="mld-cmp">
-              <span className="mld-cut">{METRIC_TEXT[m.name]?.() ?? m.name}</span>
-              <span className="mld-mono mld-num">
-                {metricValue(m, m.baseline!, trial.baseline_tasks)}
+      {item.n !== undefined && (
+        <div
+          className="panel mld-cells"
+          style={{ gridTemplateColumns: `repeat(${verdict ? 2 : 1}, minmax(0, 1fr))` }}
+          role="group"
+          aria-label={t({ id: 'memory.learnedDetail.trialResult', defaultMessage: 'Trial result' })}
+        >
+          {verdict && (
+            <div className="cell mld-cell">
+              <span className="cap">
+                {t({ id: 'memory.learnedDetail.trial', defaultMessage: 'Trial' })}
               </span>
-              <span className="mld-mono mld-num mld-now">
-                {metricValue(m, m.trial!, trial.tasks_seen)}
-              </span>
+              <span className="mld-cv">{verdict}</span>
             </div>
-          ))}
+          )}
+          <div className="cell mld-cell">
+            <span className="cap">
+              {t({ id: 'memory.learnedDetail.trialTasks', defaultMessage: 'Tasks' })}
+            </span>
+            <span className="mld-cv mld-mono mld-num">{tasks}</span>
+          </div>
         </div>
       )}
 
@@ -589,7 +338,6 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
           </div>
           {used.error ? (
             <div className="mld-err" role="alert">
-              <Glyph tone="bad" />
               <span>
                 {t(
                   {
@@ -609,7 +357,7 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
                     key={u.session_id}
                     type="button"
                     className="mld-rr"
-                    onClick={() => useShell.getState().openSession(u.session_id)}
+                    onClick={() => openSession(u.session_id)}
                   >
                     <span className="mld-sn">
                       {session && <SessionStateIcon session={session} place="list" />}
@@ -641,74 +389,81 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
         </div>
       )}
 
-      <div className="mld-sec">
-        <span className="cap">{effect.label}</span>
-        <p className="mld-sub">{effect.text}</p>
-      </div>
-
-      <div className="mld-sec">
-        <div className="mld-eh">
-          <span className="cap">
-            {t({ id: 'memory.learnedDetail.evidence', defaultMessage: 'Evidence' })}
-          </span>
-          <span className="mld-chips">
-            <span className="chip">
-              {leadRuntime && <RuntimeGlyph runtime={leadRuntime} size={12} />}
-              {item.source === 'lead'
-                ? t({
-                    id: 'data.workflowPolicy.source.lead',
-                    defaultMessage: 'Proposed by the lead',
-                  })
-                : t({
-                    id: 'data.workflowPolicy.source.retrospective',
-                    defaultMessage: 'Proposed by a retrospective',
-                  })}
+      {item.evidence.length > 0 && (
+        <div className="mld-sec">
+          <div className="mld-eh">
+            <span className="cap">
+              {t({ id: 'memory.learnedDetail.evidence', defaultMessage: 'Evidence' })}
             </span>
-            {item.signal && <span className="chip">{SIGNAL_TEXT[item.signal]()}</span>}
-          </span>
-        </div>
-        {rows.length > 0 && (
-          <div className="mld-rows">
-            {rows.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                className="mld-rr"
-                data-id={r.id}
-                onClick={() => onOpenRetro(r.id)}
-              >
-                <span className="mld-cut">{taskName(r)}</span>
-                <span className="mld-meta">{metricText(item.signal, r)}</span>
-                <span className="mld-meta">{dayText(r.recorded_at, Date.now())}</span>
-              </button>
-            ))}
+            <span className="mld-end mld-mono mld-num mld-meta">{item.evidence.length}</span>
           </div>
-        )}
-        {sharedCheck && (
-          <span className="mld-check">
-            <span>
-              {t(
-                {
-                  id: 'memory.learnedDetail.sharedCheck',
-                  defaultMessage: 'All {count} first failed on',
-                },
-                { count: rows.length },
-              )}
-            </span>
-            <span className="mld-inl">{sharedCheck}</span>
-          </span>
-        )}
-      </div>
+          <div className="mld-rows">
+            {item.evidence.map((e) => {
+              const shown = EVIDENCE[e.kind];
+              const open =
+                e.kind === 'retrospective'
+                  ? {
+                      label: t(
+                        {
+                          id: 'memory.learnedDetail.openRetro',
+                          defaultMessage: 'Open retrospective {id}',
+                        },
+                        { id: e.id },
+                      ),
+                      onClick: () => onOpenRetro(e.id),
+                    }
+                  : e.kind === 'session'
+                    ? {
+                        label: t(
+                          {
+                            id: 'memory.learnedDetail.openSession',
+                            defaultMessage: 'Open session {id}',
+                          },
+                          { id: e.id },
+                        ),
+                        onClick: () => openSession(e.id),
+                      }
+                    : null;
+              const body = [
+                <span key="i" className="mld-evi">
+                  {shown?.icon}
+                </span>,
+                <span key="k">{shown?.label() ?? e.kind}</span>,
+                <span key="t" className={e.title ? 'mld-cut' : 'mld-cut mld-mono'}>
+                  {e.title ?? e.id}
+                </span>,
+                <span key="o" className="mld-evi">
+                  {open && <ChevronRight aria-hidden="true" />}
+                </span>,
+              ];
+              return open ? (
+                <button
+                  key={`${e.kind}:${e.id}`}
+                  type="button"
+                  className="mld-ev"
+                  aria-label={open.label}
+                  onClick={open.onClick}
+                >
+                  {body}
+                </button>
+              ) : (
+                <div key={`${e.kind}:${e.id}`} className="mld-ev">
+                  {body}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-      {actions.length > 0 && (
+      {buttons.length > 0 && (
         <div className="mld-foot">
           {failed && (
             <div className="mld-err" role="alert">
-              <Glyph tone="bad" />
-              <span>{FAILED[failed.decision](failed.text)}</span>
+              <span>{ACTIONS[failed.key]!.failed(failed.text)}</span>
             </div>
           )}
-          <div className="mld-acts">{actions}</div>
+          <div className="mld-acts">{buttons}</div>
         </div>
       )}
     </aside>

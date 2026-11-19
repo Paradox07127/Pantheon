@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Mail } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
+import { QuestionBatch } from '../../components/QuestionBatch';
 import { RequestCard, type RequestCardProps } from '../../components/RequestCard';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { StateGlyph } from '../../components/SessionStateIcon';
@@ -20,6 +21,7 @@ import {
   needKey,
   needSession,
   needWho,
+  questionBatches,
   type BoardLead,
   type BoardNeed,
 } from './frame-model';
@@ -363,12 +365,20 @@ export function NeedsStrip({
 }) {
   // useKept compares by identity.
   const listed = useMemo(() => boardNeeds(model), [model.needs]);
-  const needs = useKept(listed.length ? listed : null);
+  const kept = useKept(listed.length ? listed : null);
+  // A plan's questions are one row, where its first question stands.
+  const grouped = useMemo(() => kept && questionBatches(kept), [kept]);
+  const needs = grouped?.rows ?? null;
+  const batchOf = (item: BoardNeed) => grouped?.batches.get(item) ?? [item];
   const stored = useBoard((s) => s.board?.milestones) ?? NO_MILESTONES;
   const [all, setAll] = useState(false);
   const shown = useMemo(() => needs && (all ? needs : needs.slice(0, FOLDED)), [needs, all]);
   useEffect(() => {
-    useShell.setState({ stripWaits: new Set(shown?.flatMap((item) => needsKey(item) ?? [])) });
+    useShell.setState({
+      stripWaits: new Set(
+        shown?.flatMap((item) => batchOf(item).flatMap((one) => needsKey(one) ?? [])),
+      ),
+    });
   }, [shown]);
   // The row the user is on: the first until they settle one, then the one after it.
   const [current, setCurrent] = useState<string | null>(null);
@@ -377,7 +387,10 @@ export function NeedsStrip({
   const asked = useShell((s) => s.askedNeed);
   const list = useRef<HTMLUListElement>(null);
   useEffect(() => {
-    const at = asked === null ? -1 : (needs?.findIndex((item) => needsKey(item) === asked) ?? -1);
+    const at =
+      asked === null
+        ? -1
+        : (needs?.findIndex((item) => batchOf(item).some((one) => needsKey(one) === asked)) ?? -1);
     if (at < 0) return;
     if (hidden) return onShow?.();
     if (at >= FOLDED && !all) return setAll(true);
@@ -414,7 +427,7 @@ export function NeedsStrip({
     (primaries.current.get(current ?? '') ?? card?.querySelector('button'))?.focus();
   }, [current, shown]);
   // Every row's wait bar is on the scale of the longest wait, folded rows included.
-  const longest = Math.max(0, ...(needs ?? []).map((item) => model.now - item.created_at));
+  const longest = Math.max(0, ...(kept ?? []).map((item) => model.now - item.created_at));
   return (
     <Fold open={listed.length > 0}>
       <section
@@ -439,6 +452,26 @@ export function NeedsStrip({
               item.kind === 'board.lane.approval'
                 ? model.lanes.find((l) => l.id === `${item.session_id}:${item.request_id}`)
                 : undefined;
+            const batch = grouped?.batches.get(item);
+            if (batch)
+              return (
+                <li key={needKey(item)} className="bf-need">
+                  <QuestionBatch
+                    items={batch}
+                    who={needWho(item, model, sessions)}
+                    now={model.now}
+                    waitScale={longest}
+                    run={run}
+                    stale={stale}
+                    selected={needKey(item) === on}
+                    onActed={() => advance(needKey(item))}
+                    primaryRef={(el) => {
+                      if (el) primaries.current.set(needKey(item), el);
+                      else primaries.current.delete(needKey(item));
+                    }}
+                  />
+                </li>
+              );
             return (
               <li key={needKey(item)} className="bf-need">
                 <RequestCard

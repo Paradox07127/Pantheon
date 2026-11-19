@@ -231,6 +231,123 @@
 .rq-ms .bms-cell {
   cursor: default;
 }
+/* A setting change: the setting, its value now, then the proposed one. */
+.rq-set {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.rq-val {
+  padding: 0 var(--sp-1);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.rq-quote {
+  max-width: 560px;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
+  color: var(--tx);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* The lead's reassessment of a paused plan, side by side. */
+.rq-ra {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.rq-ra > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* When a question's recommended answer applies on its own. */
+.rq-dl {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+/* The questions of one plan, one line each. */
+.rqb {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: var(--hair) solid var(--bd2);
+  border-radius: var(--r-sm);
+}
+.rqb-q {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+}
+.rqb-q:first-child {
+  border-top: 0;
+}
+.rqb-q > .rq-dl {
+  grid-column: 1 / -1;
+}
+.rqb-t {
+  min-width: 0;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.rqb-n {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rqb-opts {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  gap: var(--sp-1);
+}
+.rqb-opts > [aria-checked='true'] {
+  border-color: var(--bd3);
+  background: var(--sel);
+}
+.rqb-rec {
+  margin-left: var(--sp-1);
+  color: var(--mu);
+}
+.rqb-in {
+  grid-column: 1 / -1;
+  min-width: 0;
+  height: var(--h-ctl);
+  padding: 0 var(--sp-2);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+}
+.rqb-in:focus-visible {
+  border-color: var(--bd3);
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: -1.5px;
+}
+.rqb-in::placeholder {
+  color: var(--faint);
+}
 
 /* Request card, full: the item picked in a list, with what it asks in full. */
 .rqf {

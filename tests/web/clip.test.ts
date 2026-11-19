@@ -38,12 +38,23 @@ const laidOut = {
   },
 };
 
+// Each observed box's first report, which the browser delivers after layout.
+let reports: (() => void)[] = [];
 beforeEach(() => {
+  reports = [];
   vi.stubGlobal(
     'ResizeObserver',
     class {
-      observe() {}
-      disconnect() {}
+      report: () => void;
+      constructor(callback: () => void) {
+        this.report = callback;
+      }
+      observe() {
+        reports.push(this.report);
+      }
+      disconnect() {
+        reports = reports.filter((report) => report !== this.report);
+      }
     },
   );
 });
@@ -59,6 +70,8 @@ function draw(lines: number, content: number, room: number) {
   box.room = room;
   const h = mount(() => Clip({ text: FULL, lines }));
   find(h.value, (n) => 'data-clip' in n.props).props.ref(laidOut);
+  h.render();
+  for (const report of reports.splice(0)) report();
   h.render();
   return h;
 }
@@ -118,6 +131,20 @@ describe('text cut to fit its box', () => {
     expect(text(drawn(h.value))).toBe(FULL);
     button(h.value).props.onClick();
     h.render();
+    expect(text(button(h.value))).toBe(zh('components.clip.more'));
+  });
+
+  it('draws the show-more button only once layout has reported the lines cut', () => {
+    box.content = 60;
+    box.room = 40;
+    const h = mount(() => Clip({ text: FULL, lines: 2 }));
+    find(h.value, (n) => 'data-clip' in n.props).props.ref(laidOut);
+    h.render();
+    expect(drawn(h.value).props['data-clip']).toBe('');
+    expect(nodes(h.value).some((n) => n.type === 'button')).toBe(false);
+    for (const report of reports.splice(0)) report();
+    h.render();
+    expect(drawn(h.value).props['data-clip']).toBe('cut');
     expect(text(button(h.value))).toBe(zh('components.clip.more'));
   });
 

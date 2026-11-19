@@ -615,3 +615,94 @@
   color: var(--tx2);
   font-size: var(--fs-xs);
 }
+/* The re-plan conditions the milestone's lead declared, after the due days; met, a chip with the wait. */
+.bms-rc {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  height: 22px;
+  padding: 0 var(--sp-1);
+  border: var(--hair) solid transparent;
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: transparent;
+  color: var(--mu);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    color var(--dur-1) var(--ease-std);
+}
+.bms-rc:is(:hover, [data-popup-open]) {
+  background: var(--sel);
+  color: var(--tx);
+}
+.bms-rc[data-met] {
+  padding: 0 var(--sp-2);
+  border-color: var(--bd2);
+  background: var(--sf2);
+  color: var(--tx2);
+}
+.bms-rc svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.bms-rn {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.bms-rpop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: min(360px, calc(100vw - 32px));
+  max-height: 60vh;
+  padding: var(--sp-3);
+  overflow-y: auto;
+}
+.bms-rl {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bms-rl li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-2);
+  padding: 4px 0;
+}
+.bms-rl li > svg {
+  width: 12px;
+  height: 12px;
+  margin: 4px 2px 0;
+  color: var(--mu);
+}
+.bms-rg {
+  display: inline-flex;
+  margin-top: 4px;
+}
+.bms-rm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bms-rs {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
+.bms-rw {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}

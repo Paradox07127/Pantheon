@@ -105,7 +105,7 @@ beforeEach(() => {
   bridge.commandAnswer = { ok: true, value: {} };
   bridge.queries = [];
   bridge.commands = [];
-  vi.stubGlobal('window', { pantheon: bridge });
+  vi.stubGlobal('window', { pantheon: bridge, addEventListener() {}, removeEventListener() {} });
   useBoard.setState({
     board: { cursor: 1, projects: [project], sessions: [] },
     status: { state: 'live' },

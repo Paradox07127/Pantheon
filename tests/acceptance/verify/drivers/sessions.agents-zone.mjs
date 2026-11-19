@@ -53,7 +53,8 @@ const expected = agents
 const rowsJs = `(() => {
   const group = document.querySelector('nav.ss-list [role=group][aria-label="本项目"]');
   if (!group) return null;
-  return [...group.querySelectorAll('button.ss-rr')].map((b) => ({
+  // The automations entry closes the group; it is not an agent row.
+  return [...group.querySelectorAll('button.ss-rr[data-stop^="resident:"]')].map((b) => ({
     stop: b.getAttribute('data-stop'),
     label: b.getAttribute('aria-label'),
     current: b.getAttribute('aria-current'),

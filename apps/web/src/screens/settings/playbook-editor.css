@@ -1,0 +1,87 @@
+/* Which playbook, then its source and version at the end of the row. */
+.pbk-hd {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  min-height: 44px;
+  padding: 8px 16px;
+}
+.pbk-rt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.pbk-end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  color: var(--tx2);
+}
+.pbk-ver {
+  font-variant-numeric: tabular-nums;
+}
+.pbk-cur {
+  margin-left: auto;
+  color: var(--mu);
+}
+.pbk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 16px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.pbk-fld {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pbk-fld > label {
+  font-weight: 500;
+}
+/* Grows with its text up to 8 lines, then scrolls inside. */
+.pbk-ta {
+  display: block;
+  width: 100%;
+  min-height: 104px;
+  max-height: calc(8 * var(--lh-sm) + 16px);
+  field-sizing: content;
+  resize: none;
+  overflow: auto;
+  padding: 8px 12px;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  user-select: text;
+  transition: border-color var(--dur-1) var(--ease-std);
+}
+.pbk-ta:is(:hover, :focus-visible) {
+  border-color: var(--bd3);
+}
+.pbk-ta[aria-invalid='true'] {
+  border-color: var(--bad);
+}
+.pbk-ta:is(:disabled, [readonly]) {
+  background: var(--sf2);
+  color: var(--tx2);
+}
+.pbk-act {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.pbk-grow {
+  flex: 1;
+  min-width: 0;
+}
+.pbk-rm {
+  margin-left: auto;
+}

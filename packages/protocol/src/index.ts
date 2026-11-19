@@ -2738,10 +2738,16 @@ export const inputSchemas = {
           evalReceiptSchema,
         ]),
       )
-      .min(2)
+      .min(1)
       .max(20)
+      .refine(
+        (entries) => entries.length >= 2 || entries[0]?.kind === 'eval_receipt',
+        'Give at least 2 records, or one eval_receipt',
+      )
       .optional()
-      .describe('2-20 records of any kind the change rests on.'),
+      .describe(
+        '2-20 records of any kind the change rests on, or a single eval_receipt. A playbook change needs an eval_receipt {kind, path, sha256, verdict}.',
+      ),
     change: improvementChange.describe('The one change to the workflow you propose.'),
   }),
   /** The user's decision on an improvement. */

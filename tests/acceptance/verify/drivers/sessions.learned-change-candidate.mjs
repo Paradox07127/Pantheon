@@ -214,45 +214,78 @@ try {
     inRow?.now,
   );
 
-  // 4 (before confirming). The candidate's details on the memory page draw the same groups.
-  const openLearned = async (group) => {
+  // 4 (before confirming). The candidate's details on the memory page draw the same change.
+  // The row is named after learned.list: the proposed value on one line, the kind, the group.
+  const openLearned = async (group, id) => {
     await page.click({ role: 'button', name: '记忆', exact: true });
     await page.click({ role: 'tab', name: '经验', exact: true });
+    const item = (await query('learned.list', { project_id })).find((i) => i.id === id);
+    if (!item) return false;
+    const name = `${JSON.stringify(JSON.parse(item.diff.to))}，门禁命令，${group}`;
     const option = await poll(async () =>
       page.evaluate(`(() => {
         const g = document.querySelector('[role="listbox"][aria-label=${JSON.stringify(group)}]');
-        return !!g && [...g.querySelectorAll('[role="option"]')].some((o) => o.textContent.includes(${JSON.stringify(ROOT)}));
+        return !!g && [...g.querySelectorAll('[role="option"]')].some((o) => o.getAttribute('aria-label') === ${JSON.stringify(name)});
       })()`),
     );
     if (!option) return false;
     await page.click({
       role: 'option',
-      name: `修改 ${ROOT} 的门禁命令`,
-      exact: false,
+      name,
+      exact: true,
       within: { role: 'listbox', name: group, exact: true },
     });
     return true;
   };
-  const detail = () => diff(`document.querySelector('aside[aria-label="经验详情"]')`);
-  check('记忆页 "等你确认" 里有这条候选', await openLearned('等你确认'), await names('门禁'));
+  // The details draw one line diff: kept lines plain, the value before with −, after with +.
+  const detail = () =>
+    page.evaluate(`(() => {
+      const ul = document.querySelector('aside[aria-label="经验详情"] ul.mld-diff');
+      if (!ul) return null;
+      const lines = [...ul.querySelectorAll('li')].map((li) => ({
+        kind: li.getAttribute('data-kind'),
+        sign: li.firstElementChild?.textContent ?? '',
+        text: li.querySelector('code')?.textContent ?? '',
+      }));
+      return {
+        lines,
+        now: lines.filter((l) => l.kind !== 'add').map((l) => l.text).join('\\n'),
+        proposed: lines.filter((l) => l.kind !== 'del').map((l) => l.text).join('\\n'),
+        signs: lines.every((l) => l.sign === (l.kind === 'del' ? '−' : l.kind === 'add' ? '+' : '')),
+      };
+    })()`);
+  const shows = (text, gate) => {
+    try {
+      return same(JSON.parse(text), gate);
+    } catch {
+      return false;
+    }
+  };
+  check(
+    '记忆页 "等你确认" 里有这条候选',
+    await openLearned('等你确认', candidate.id),
+    await names('门禁命令'),
+  );
   const pending = await poll(async () => {
     const d = await detail();
-    return d?.now && d;
+    return d?.lines.length && d;
   }, 5000);
   result.candidate_detail = pending;
   check(
-    '候选详情 "现在" 一组是项目真实的门禁(带 −、命令名和 argv)，不是 "没有门禁"',
-    lineOk(pending?.now, '−', gatesSet[ROOT]),
+    '候选详情 "现在" 一侧(未改和带 − 的行)是项目真实的门禁，不是空',
+    pending?.signs && shows(pending.now, gatesSet[ROOT]),
     { shown: pending?.now, gates: gatesSet[ROOT] },
   );
   check(
-    '候选详情 "提议" 一组带 +，读得到 "失败算跳过"，对上 change.to',
-    lineOk(pending?.proposed, '+', candidate.change.to),
-    { shown: pending?.proposed, to: candidate.change.to },
+    '候选详情 "提议" 一侧对上 change.to，带 + 的行是 "skippable": true',
+    pending?.signs &&
+      shows(pending.proposed, candidate.change.to) &&
+      pending.lines.some((l) => l.kind === 'add' && l.text.includes('"skippable": true')),
+    { shown: pending?.lines, to: candidate.change.to },
   );
   check(
-    '对照组：同一读法对 "现在" 一组判不出 "失败算跳过"',
-    !lineOk(pending?.now, '−', candidate.change.to),
+    '对照组：同一读法对 "现在" 一侧判不出 change.to',
+    !shows(pending?.now, candidate.change.to),
   );
   result.shot = await page.screenshot('learned-change-candidate');
 
@@ -283,19 +316,24 @@ try {
   check('确认后 change.from 是确认前的门禁', same(after.it?.change?.from, GATE), after.it?.change);
 
   // 4. The active change's details show the value before confirming, from change.from.
-  check('记忆页 "生效中" 里有这一条', await openLearned('生效中'), await names('门禁'));
+  check(
+    '记忆页 "生效中" 里有这一条',
+    await openLearned('生效中', candidate.id),
+    await names('门禁命令'),
+  );
   const active = await poll(async () => {
     const d = await detail();
-    return d?.now && d;
+    return d?.lines.length && d;
   }, 5000);
   result.active_detail = active;
-  check('生效中详情 "现在" 一组是确认前的值(change.from)', lineOk(active?.now, '−', GATE), {
-    shown: active?.now,
-    from: after.it?.change?.from,
-  });
   check(
-    '生效中详情 "提议" 一组是 change.to',
-    lineOk(active?.proposed, '+', PROPOSED),
+    '生效中详情 "现在" 一侧是确认前的值(change.from)',
+    active?.signs && shows(active.now, GATE),
+    { shown: active?.now, from: after.it?.change?.from },
+  );
+  check(
+    '生效中详情 "提议" 一侧是 change.to',
+    active?.signs && shows(active.proposed, PROPOSED),
     active?.proposed,
   );
 
@@ -348,22 +386,26 @@ try {
   if (clearing) {
     check(
       '记忆页 "等你确认" 里有清空门禁的候选',
-      await openLearned('等你确认'),
-      await names('门禁'),
+      await openLearned('等你确认', clearing.id),
+      await names('门禁命令'),
     );
     const cleared = await poll(async () => {
       const d = await detail();
-      return d?.proposed && d;
+      return d?.lines.length && d;
     }, 5000);
     result.clear_detail = cleared;
     check(
-      '清空门禁的候选："提议" 一组写 "没有门禁"(不是空白)',
-      cleared?.proposed?.length === 1 &&
-        cleared.proposed[0].none &&
-        cleared.proposed[0].text === '没有门禁',
-      cleared?.proposed,
+      '清空门禁的候选："提议" 一侧是一行带 + 的 [](不是空白)',
+      cleared?.signs &&
+        shows(cleared.proposed, []) &&
+        cleared.lines.some((l) => l.kind === 'add' && l.text === '[]'),
+      cleared?.lines,
     );
-    check('清空门禁的候选："现在" 一组是当前门禁', lineOk(cleared?.now, '−', GATE), cleared?.now);
+    check(
+      '清空门禁的候选："现在" 一侧是当前门禁',
+      cleared?.signs && shows(cleared.now, GATE),
+      cleared?.now,
+    );
     await page.click({ role: 'button', name: '项目看板', exact: true });
     const clearRows = await poll(async () => {
       const r = await strip();

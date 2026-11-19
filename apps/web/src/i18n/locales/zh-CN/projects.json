@@ -26,10 +26,6 @@
   "projects.count.ready": "待合并",
   "projects.count.failed": "失败",
   "projects.title": "全部项目",
-  "projects.table.project": "项目",
-  "projects.table.goal": "当前目标",
-  "projects.table.sessions": "会话",
-  "projects.table.needsYou": "等你",
   "projects.summary.needsYou": "等你",
   "projects.summary.across": "{count, plural, other {跨 # 个项目}}",
   "projects.summary.running": "在跑",
@@ -40,9 +36,7 @@
   "projects.row.goalBar": "已合并 {done}，在跑 {running}，失败 {failed}，未开始 {rest}",
   "projects.row.doneTrend": "近 14 天累计完成，当前 {count}",
   "projects.row.lastActive": "上次活动 {age}",
-  "projects.row.needsYou": "需要你 {count}",
   "projects.row.byKind": "按类型",
-  "projects.row.kindCount": "{blocks, plural, =0 {{kind} {count}} other {{kind} {count}，挡住 # 个任务}}",
   "projects.row.other": "其他 {count}",
   "projects.row.otherKinds": "其他 {count}：{kinds}",
   "projects.showAll": "{count, plural, other {显示全部 # 个项目}}",
@@ -163,5 +157,8 @@
   "projects.add.another": "换一个文件夹",
   "projects.add.skipBaseline": "跳过基线",
   "projects.needs.newAgent": "新智能体：{name}",
-  "projects.needs.changeAgent": "修改智能体：{name}"
+  "projects.needs.changeAgent": "修改智能体：{name}",
+  "projects.row.decisionsWaiting": "等你决定：{count}",
+  "projects.row.kindWaiting": "{kind} {count}",
+  "projects.row.brief": "你离开后：{text}"
 }

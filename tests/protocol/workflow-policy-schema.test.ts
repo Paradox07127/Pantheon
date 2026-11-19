@@ -112,6 +112,13 @@ it('counts cited evidence of any kind toward the two items a proposal rests on',
     }).success,
   ).toBe(true);
   expect(schema.safeParse({ ...proposal, evidence: [gateRun] }).success).toBe(false);
+  const receipt = {
+    kind: 'eval_receipt',
+    path: '/evals/runs.jsonl',
+    sha256: 'a'.repeat(64),
+    verdict: 'no_conclusion',
+  };
+  expect(schema.safeParse({ ...proposal, evidence: [receipt] }).success).toBe(true);
   expect(
     schema.safeParse({ ...proposal, evidence: [gateRun, { kind: 'rumour', id: 'run' }] }).success,
   ).toBe(false);

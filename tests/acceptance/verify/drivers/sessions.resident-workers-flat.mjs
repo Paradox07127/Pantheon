@@ -80,7 +80,8 @@ const layout = await poll(() =>
       zone: zone.firstElementChild?.textContent,
       afterZone: !!(zone.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING),
       inResidents: group.contains(row),
-      residentButtons: group.querySelectorAll('button').length,
+      // The automations entry closes the group; it is not a resident row.
+      residentButtons: group.querySelectorAll('button[data-stop^="resident:"]').length,
       residentExpandable: [...group.querySelectorAll('button')].some((b) => b.hasAttribute('aria-expanded')),
       nextAfterResidents: [group.nextElementSibling, group.nextElementSibling?.nextElementSibling].map((el) => el?.className).join(),
       rowName: row.getAttribute('aria-label'),

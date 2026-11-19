@@ -58,6 +58,12 @@
   grid-column: 1 / -1;
 }
 
+/* The switch, then the hours while it is on. */
+.wf-qd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
 .wf-stp {
   display: inline-flex;
   align-items: center;
@@ -122,4 +128,14 @@
 .wf-bud .inp {
   width: 100%;
   text-align: right;
+}
+
+/* What a change of a setting did, a sub-row under that setting's row. */
+.ps-rows > .co {
+  padding: 12px 16px 16px;
+  background: var(--sf2);
+  border-top: var(--hair) solid var(--bd2);
+}
+.ps-rows > .co + .ps-row {
+  border-top: var(--hair) solid var(--bd2);
 }

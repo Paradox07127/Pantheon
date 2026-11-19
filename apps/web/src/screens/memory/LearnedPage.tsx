@@ -4,7 +4,7 @@ import { ChartLine } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
 import { useBoardView } from '../../data/board-view';
-import { useImprovements, useWorkflowPolicy, type Improvement } from '../../data/workflow-policy';
+import { useLearned, type LearnedItem } from '../../data/learned';
 import { t } from '../../i18n';
 import { reducedMotion } from '../../lib/motion';
 import { keyText } from '../../lib/shortcuts';
@@ -12,16 +12,13 @@ import { useShell } from '../../store';
 import { retroTasks, RetroPanel } from '../board/RetroPanel';
 import { TaskDrawer } from '../board/TaskDrawer';
 import { LearnedDetail } from './LearnedDetail';
-import { LearnedList } from './LearnedList';
+import { LearnedList, OPEN_GROUPS } from './LearnedList';
 import './memory-learned-page.css';
-
-// The groups the list shows unfolded, in its order.
-const OPEN: readonly Improvement['status'][] = ['candidate', 'trial', 'active'];
 
 const SKELETON_ROWS = [176, 136, 152, 112];
 
-const firstRule = (items: readonly Improvement[]) =>
-  OPEN.flatMap((status) => items.filter((i) => i.status === status))[0]?.id ?? null;
+const firstRule = (items: readonly LearnedItem[]) =>
+  OPEN_GROUPS.flatMap((group) => items.filter((i) => i.group === group))[0]?.id ?? null;
 
 /** Up and down move the selection from the focused row to the one above or below it, across groups. */
 function moveSelection(e: KeyboardEvent<HTMLDivElement>) {
@@ -81,7 +78,7 @@ function Retrospectives({
   );
 }
 
-/** The project's learned rules beside the details of the one selected, its retrospectives under them. */
+/** The project's learned changes beside the details of the one selected, its retrospectives under them. */
 export function LearnedPage({
   projectId,
   onOpenRetros,
@@ -89,8 +86,7 @@ export function LearnedPage({
   projectId: string;
   onOpenRetros: (retrospectiveId?: string) => void;
 }) {
-  const list = useImprovements(projectId);
-  const policy = useWorkflowPolicy(projectId);
+  const list = useLearned(projectId);
   // Undefined until a row is picked; null once the details are closed.
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
   const retros = useRef<HTMLHeadingElement>(null);
@@ -103,9 +99,8 @@ export function LearnedPage({
           <section
             className="lr"
             aria-busy="true"
-            aria-label={t({ id: 'memory.learned.label', defaultMessage: 'Learned rules' })}
+            aria-label={t({ id: 'memory.learned.label', defaultMessage: 'Learned changes' })}
           >
-            <div className="lr-head" />
             <div className="lr-gh">
               <Skeleton style={{ width: 48 }} />
             </div>
@@ -129,7 +124,7 @@ export function LearnedPage({
           <div className="lp-empty">
             <EmptyState
               graphic={<ChartLine aria-hidden="true" />}
-              title={t({ id: 'memory.learnedPage.empty', defaultMessage: 'No learned rules yet' })}
+              title={t({ id: 'memory.learnedPage.empty', defaultMessage: 'Nothing learned yet' })}
               action={{
                 label: t({
                   id: 'memory.learnedPage.openRetros',
@@ -167,18 +162,13 @@ export function LearnedPage({
   return (
     <div className="lp" data-open={item ? '' : undefined}>
       <div className="lp-list" onKeyDown={moveSelection}>
-        <LearnedList
-          items={items}
-          pinned={policy.read?.pinned ?? []}
-          selected={selected}
-          onSelect={setPicked}
-        />
+        <LearnedList items={items} selected={selected} onSelect={setPicked} />
         {list.error && (
           <LoadError
             message={t(
               {
                 id: 'memory.learnedPage.readFailed',
-                defaultMessage: 'Couldn’t read the learned rules: {error}',
+                defaultMessage: 'Couldn’t read the learned changes: {error}',
               },
               { error: list.error },
             )}

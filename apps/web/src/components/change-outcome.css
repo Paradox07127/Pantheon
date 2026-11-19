@@ -1,0 +1,121 @@
+/* A change's outcome: head, task count, then one row per measure with its bar pair and both values. */
+.co {
+  --co-bw: 48px;
+  --co-nw: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.co[data-wide] {
+  --co-bw: 160px;
+  --co-nw: 96px;
+}
+.co + .co {
+  padding-top: var(--sp-3);
+  border-top: var(--hair) solid var(--bd2);
+}
+.co-h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--slot);
+  min-width: 0;
+}
+.co-t {
+  min-width: 0;
+  font-weight: 600;
+}
+.co-d {
+  flex: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.co-e,
+.co-v {
+  margin-left: auto;
+}
+.co-v::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.co-v[data-v='better']::before {
+  background: var(--ok);
+}
+.co-v[data-v='worse']::before {
+  background: var(--bad);
+}
+.co-l,
+.co-c {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 20px;
+}
+.co-l > .co-c {
+  flex: 1;
+}
+.co-m {
+  flex: 1;
+  max-width: 64px;
+}
+.co-l .co-m {
+  max-width: none;
+}
+.co-r {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--co-bw) var(--co-nw) var(--co-nw);
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 24px;
+}
+.co-r + .co-r {
+  border-top: var(--hair) solid var(--bd2);
+}
+.co-r > :nth-child(n + 3) {
+  display: flex;
+  justify-content: flex-end;
+  text-align: right;
+}
+.co-p {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.co-was {
+  --c: var(--idle);
+}
+.co-n {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.co-n[data-none] {
+  color: var(--mu);
+}
+.co-n svg {
+  width: 12px;
+  height: 12px;
+}
+.co-ch {
+  align-items: center;
+  gap: var(--sp-1);
+}
+.co-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+.co-dot[data-after] {
+  background: var(--ink);
+}

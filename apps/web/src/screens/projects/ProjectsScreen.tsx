@@ -28,6 +28,7 @@ import { Tip } from '../../components/Tip';
 import { TopBar } from '../../components/TopBar';
 import { blocksText, decisionText } from '../../data/attention';
 import { useBoard } from '../../data/board';
+import { pickBoardPage } from '../../data/board-page';
 import { useCurrentProject } from '../../data/current-project';
 import { useImportCandidates } from '../../data/import';
 import {
@@ -49,7 +50,6 @@ import {
   visibleProjects,
 } from '../../data/projects';
 import {
-  needsByKind,
   projectIdle,
   sortProjects,
   topNeed,
@@ -179,12 +179,6 @@ export function ProjectsScreen({
   // The summary decides the order, so until it lands the rows stand empty in the places they take.
   const pending = !order;
   const openDialog = () => setOpening(true);
-  const oldestWait = new Map<string, number>();
-  for (const item of needItems)
-    oldestWait.set(
-      item.project_id,
-      Math.min(item.created_at, oldestWait.get(item.project_id) ?? Infinity),
-    );
 
   return (
     <div className="tb-pg">
@@ -254,33 +248,17 @@ export function ProjectsScreen({
                 />
               )}
               <div
-                role="table"
+                role="group"
                 className="pr-tbl"
                 aria-label={t({ id: 'projects.title', defaultMessage: 'All projects' })}
                 aria-busy={pending || undefined}
                 onKeyDown={moveFocus}
               >
-                <div role="row" className="pr-row pr-head">
-                  <span role="columnheader" />
-                  <span role="columnheader">
-                    {t({ id: 'projects.table.project', defaultMessage: 'Project' })}
-                  </span>
-                  <span role="columnheader">
-                    {t({ id: 'projects.table.goal', defaultMessage: 'Current goal' })}
-                  </span>
-                  <span role="columnheader">
-                    {t({ id: 'projects.table.sessions', defaultMessage: 'Sessions' })}
-                  </span>
-                  <span role="columnheader">
-                    {t({ id: 'projects.table.needsYou', defaultMessage: 'Needs you' })}
-                  </span>
-                  <span role="columnheader" />
-                </div>
                 {pending
                   ? Array.from({ length: board ? listed.length : 3 }, (_, i) => (
-                      <div key={i} role="row" className="pr-row">
-                        <span role="cell" />
-                        <span role="cell" className="pr-name">
+                      <div key={i} className="pr-row">
+                        <span />
+                        <span className="pr-name">
                           <Skeleton className="pr-sk-c" />
                         </span>
                       </div>
@@ -291,7 +269,6 @@ export function ProjectsScreen({
                         project={project}
                         summary={summaries.find((s) => s.project_id === project.id)}
                         needs={needItems.filter((i) => i.project_id === project.id)}
-                        oldestWait={oldestWait.get(project.id) ?? null}
                         now={now}
                         onOpenSettings={onOpenSettings}
                         onRemove={setRemoving}
@@ -543,8 +520,6 @@ export function ProjectRow(props: {
   summary: ProjectSummary | undefined;
   /** The project's needs-you items. */
   needs: readonly NeedsYouItem[];
-  /** Unix milliseconds of the project's oldest needs-you item; null without one. */
-  oldestWait: number | null;
   now: number;
   onOpenSettings: (projectId: string) => void;
   onRemove: (project: Project) => void;
@@ -556,27 +531,35 @@ export function ProjectRow(props: {
   const active = summary ? COUNTS.filter(({ key }) => summary.counts[key] > 0) : [];
   const idle = projectIdle(summary);
   const top = topNeed(props.needs);
-  const kinds = needsByKind(props.needs);
+  const waiting = summary?.waiting;
+  // Most first; "other" has no name of its own, so it always folds into the rest.
+  const counted = (
+    Object.entries(waiting?.by_decision ?? {}) as [NonNullable<NeedsYouItem['decision']>, number][]
+  )
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a);
+  const kinds = counted.filter(([decision]) => decision !== 'other');
   const rest = kinds.slice(4);
-  const restCount = rest.reduce((n, kind) => n + kind.count, 0);
-  const kindName = (item: NeedsYouItem) => decisionText(item.decision) ?? needReasonText(item);
-  const kindIcon = (item: NeedsYouItem) => {
-    const Icon = KIND_ICONS[item.decision ?? 'other'];
+  const restCount = counted
+    .filter(([decision]) => !kinds.slice(0, 4).some(([shown]) => shown === decision))
+    .reduce((n, [, count]) => n + count, 0);
+  const kindIcon = (decision: NeedsYouItem['decision']) => {
+    const Icon = KIND_ICONS[decision ?? 'other'];
     return <Icon className="ic-sm" aria-hidden="true" />;
   };
 
   return (
-    <div role="row" className={idle ? 'pr-row pr-idle' : 'pr-row'}>
-      <span role="cell" className="pr-mark">
+    <section role="region" aria-label={project.name} className={idle ? 'pr-row pr-idle' : 'pr-row'}>
+      <span className="pr-mark">
         <ProjectMonogram id={project.id} name={project.name} />
       </span>
-      <span role="cell" className="pr-name">
+      <span className="pr-name">
         <button type="button" className="pr-open" onClick={() => openBoard(project.id)}>
           {project.name}
         </button>
         {project.roots[0] && <PathText path={project.roots[0]} className="pr-path mono" />}
       </span>
-      <span role="cell" className="pr-goal">
+      <span className="pr-goal">
         {!summary ? (
           <Skeleton className="pr-sk-c" />
         ) : milestone ? (
@@ -617,7 +600,7 @@ export function ProjectRow(props: {
           </svg>
         )}
       </span>
-      <span role="cell" className="pr-ses">
+      <span className="pr-ses">
         {!summary ? (
           <Skeleton className="pr-sk-c" />
         ) : active.length > 0 ? (
@@ -637,7 +620,7 @@ export function ProjectRow(props: {
           <span className="pr-none">—</span>
         )}
       </span>
-      <span role="cell" className="pr-need">
+      <span className="pr-need">
         {!summary ? (
           <Skeleton className="pr-sk-c" />
         ) : summary.needs_you > 0 ? (
@@ -646,19 +629,20 @@ export function ProjectRow(props: {
               <button
                 type="button"
                 className="pr-n"
-                aria-label={t(
-                  { id: 'projects.row.needsYou', defaultMessage: 'Needs you {count}' },
-                  { count: summary.needs_you },
-                )}
                 // The sidebar takes the inbox group as its only-waiting filter.
                 onClick={() => openGroup(project.id, 'inbox')}
               >
-                <StateGlyph name="approval" />
-                {summary.needs_you}
+                {t(
+                  {
+                    id: 'projects.row.decisionsWaiting',
+                    defaultMessage: 'Decisions waiting: {count}',
+                  },
+                  { count: summary.needs_you },
+                )}
               </button>
               {top && (
                 <>
-                  {kindIcon(top)}
+                  {kindIcon(top.decision)}
                   <Clip
                     className="pr-tt"
                     text={
@@ -674,46 +658,52 @@ export function ProjectRow(props: {
                 </>
               )}
               {/* Under a minute the notice card shows no wait either. */}
-              {props.oldestWait !== null && props.now - props.oldestWait >= 60_000 && (
-                <span className="pr-age">{durationText(props.now - props.oldestWait)}</span>
+              {waiting && waiting.longest_wait_ms >= 60_000 && (
+                <span className="pr-age">{durationText(waiting.longest_wait_ms)}</span>
+              )}
+              {waiting && blocksText(waiting.blocked_tasks) && (
+                <span className="pr-age">{blocksText(waiting.blocked_tasks)}</span>
               )}
             </span>
-            {kinds.length > 0 && (
+            {counted.length > 0 && (
               <span
                 className="pr-c"
                 role="group"
                 aria-label={t({ id: 'projects.row.byKind', defaultMessage: 'Needs you by kind' })}
               >
-                {kinds.slice(0, 4).map((kind) => (
+                {kinds.slice(0, 4).map(([decision, count]) => (
                   <button
-                    key={kind.item.source.id}
+                    key={decision}
                     type="button"
                     className="pr-n"
                     aria-label={t(
-                      {
-                        id: 'projects.row.kindCount',
-                        defaultMessage:
-                          '{blocks, plural, =0 {{kind} {count}} one {{kind} {count}, blocks # task} other {{kind} {count}, blocks # tasks}}',
-                      },
-                      { kind: kindName(kind.item), count: kind.count, blocks: kind.blocks },
+                      { id: 'projects.row.kindWaiting', defaultMessage: '{kind} {count}' },
+                      { kind: decisionText(decision)!, count },
                     )}
                     onClick={() => openGroup(project.id, 'inbox')}
                   >
-                    {kindIcon(kind.item)}
-                    {kind.count}
+                    {kindIcon(decision)}
+                    {count}
                   </button>
                 ))}
-                {rest.length > 0 && (
+                {restCount > 0 && (
                   <button
                     type="button"
                     className="pr-n"
-                    aria-label={t(
-                      { id: 'projects.row.otherKinds', defaultMessage: '{count} other: {kinds}' },
-                      {
-                        count: restCount,
-                        kinds: listText(...rest.map((kind) => kindName(kind.item))),
-                      },
-                    )}
+                    aria-label={
+                      rest.length > 0
+                        ? t(
+                            {
+                              id: 'projects.row.otherKinds',
+                              defaultMessage: '{count} other: {kinds}',
+                            },
+                            {
+                              count: restCount,
+                              kinds: listText(...rest.map(([decision]) => decisionText(decision)!)),
+                            },
+                          )
+                        : undefined
+                    }
                     onClick={() => openGroup(project.id, 'inbox')}
                   >
                     {t(
@@ -729,7 +719,7 @@ export function ProjectRow(props: {
           <span className="pr-none">—</span>
         )}
       </span>
-      <span role="cell" className="pr-act">
+      <span className="pr-act">
         <span className="pr-menu">
           <Menu.Root>
             <Menu.Trigger
@@ -757,7 +747,23 @@ export function ProjectRow(props: {
           </Menu.Root>
         </span>
       </span>
-    </div>
+      {summary?.brief && (
+        <button
+          type="button"
+          className="pr-brief"
+          aria-label={t(
+            { id: 'projects.row.brief', defaultMessage: 'Since you left: {text}' },
+            { text: summary.brief },
+          )}
+          onClick={() => {
+            pickBoardPage(project.id, 'overview');
+            openBoard(project.id);
+          }}
+        >
+          <Clip text={summary.brief} />
+        </button>
+      )}
+    </section>
   );
 }
 

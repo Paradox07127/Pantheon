@@ -88,7 +88,7 @@ import { shownInput, statusTicks, timelineNodes, type TimelineNode } from './thr
 import { ThreadFind, useThreadFind } from './ThreadFind';
 import { MemoryUsed } from './MemoryUsed';
 import { PersonalNeedsList, PersonalSentLine } from './PersonalNeedsList';
-import { Items, ResolveButtons, ThreadMark, TurnWork } from './parts';
+import { ChapterMark, Items, ResolveButtons, ThreadMark, TurnWork } from './parts';
 import { showThreadTurns } from './trace';
 import { BaselineReview, PendingQuestions, RequestCard, RequestSlot } from './RequestCards';
 import {
@@ -448,6 +448,7 @@ export function Thread(props: {
                     )}
                   </p>
                 )}
+              {view?.chapter && <ChapterMark event={view.chapter} />}
               {!view
                 ? !history.error && (
                     <div className="tr-typing" aria-busy="true">

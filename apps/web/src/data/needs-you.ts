@@ -257,8 +257,15 @@ export function touchesNeedsYou(kind: string): boolean {
       'board.external_held',
       'board.external_approved',
       'lead.question_answered',
+      'lead.question_kept_open',
+      'lead.question_overruled',
       'agent_proposal.created',
       'agent_proposal.resolved',
+      'setting_proposal.created',
+      'setting_proposal.resolved',
+      'board.plan_paused',
+      'board.plan_resumed',
+      'board.plan_reassessed',
       'task.reported',
       'task.start_requested',
       'task.stop_requested',
@@ -509,6 +516,16 @@ function knownReason(code: string): string | null {
       return t({ id: 'data.reason.leadQuestion', defaultMessage: 'The lead asked a question' });
     case 'task_blocked':
       return t({ id: 'data.reason.taskBlocked', defaultMessage: 'A task reported it is blocked' });
+    case 'setting_proposal_awaiting_decision':
+      return t({
+        id: 'data.reason.settingProposalAwaitingDecision',
+        defaultMessage: 'Setting change awaiting your decision',
+      });
+    case 'plan_reassessment_ready':
+      return t({
+        id: 'data.reason.planReassessmentReady',
+        defaultMessage: 'The lead reassessed the paused plan',
+      });
     case 'artifact_commit_missing':
       return t({
         id: 'data.reason.artifactCommitMissing',

@@ -227,6 +227,195 @@
   height: 14px;
   color: var(--mu);
 }
+/* The contract's limits, a label column and a control column like the fields above. */
+.ag-cf {
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+.ag-num {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ag-sp {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--ctl);
+  min-width: 0;
+}
+.ag-meter {
+  flex: 1;
+}
+.ag-hold::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wait);
+}
+.ag-hold[data-tone='idle']::before {
+  background: var(--idle);
+}
+.ag-skl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+}
+.ag-none {
+  margin: 0;
+  color: var(--mu);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.ag-wks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+/* A wake: its glyph, causes and time, then what it came to, then what it told or asked. */
+.ag-wk {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 var(--sp-2);
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.ag-wk:hover {
+  background: var(--sel);
+}
+.ag-wk:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ag-wg {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--tx2);
+}
+.ag-wg > svg {
+  width: 14px;
+  height: 14px;
+}
+.ag-wg[data-tone='wait'] {
+  color: var(--wait);
+}
+.ag-wg[data-tone='run'] {
+  color: var(--run);
+}
+.ag-wg[data-tone='bad'] {
+  color: var(--bad);
+}
+.ag-wc {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ag-wt {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ag-w2 {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.ag-wn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.ag-w3 {
+  grid-column: 2 / -1;
+  min-width: 0;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow-wrap: anywhere;
+}
+/* A routine: its title and Run now, then its schedule, next run and last run. */
+.ag-rn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  padding: var(--sp-1) 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.ag-rnt {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.ag-rn[data-off] > .ag-rnt {
+  color: var(--mu);
+}
+/* The week's ledger: the wakes across the top, then one number over each count. */
+.ag-lg {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.panel.ag-lg > .cell {
+  gap: 0;
+  padding: var(--sp-2) var(--sp-3);
+}
+.panel.ag-lg > .ag-lw {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.ag-lwn {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+}
+.ag-lc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.ag-lc > span {
+  display: flex;
+  gap: var(--sp-1);
+}
+.ag-lc .ag-num {
+  color: var(--tx2);
+}
+.ag-big {
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 /* An agent proposal in the conversation: one framed card, its parts split by hairlines. */
 .ag-pc {
   display: flex;

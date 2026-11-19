@@ -36,7 +36,8 @@ import { TaskDrawer } from '@/screens/board/TaskDrawer';
 import { EditButton } from '@/screens/board/EditMode';
 import { NewTask } from '@/screens/board/NewTask';
 import { LeadPlan } from '@/screens/board/LeadPlan';
-import { zh } from './i18n-setup.js';
+import { dayText } from '@/lib/time-text';
+import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.UTC(2026, 10, 13, 12);
 const DAY = 86_400_000;
@@ -444,5 +445,95 @@ describe('the device summary', () => {
     expect(meter.props.className).toBe('meter bdv-meter');
     expect(meter.props['data-full']).toBe(true);
     expect(meter.props['aria-label']).toBe('ws 的 gpu：1 个里占用 1 个');
+  });
+});
+
+describe('pausing the plan from the bar', () => {
+  const PAUSED_AT = NOW - 600_000;
+  /** The bar's plan pause control of a project whose project.read lists this plan. */
+  async function pauseOf(projectId: string, plan: object, failure: string | null = null) {
+    vi.stubGlobal('window', {
+      addEventListener() {},
+      removeEventListener() {},
+      pantheon: {
+        query: vi.fn(async (method: string) =>
+          method === 'project.read'
+            ? {
+                ok: true,
+                value: { plans: [{ lead_session_id: 'lead-1', ...plan }], milestones: [] },
+              }
+            : new Promise(() => {}),
+        ),
+      },
+    });
+    const run = vi.fn(async () => failure);
+    const tree = mount(() =>
+      BoardView({
+        model: board(),
+        loading: false,
+        error: null,
+        onRetry: noop,
+        page: 'overview',
+        onPage: noop,
+        projectId,
+        onOpenSession: noop,
+        onOpenStory: noop,
+        onOpenTrace: noop,
+        actions: { milestones: [], sessions: [], run },
+      }),
+    ).value;
+    const end = find(bar(tree).props.children, (n) => n.props.className === 'tb-end');
+    const el = named(end, 'PlanPause');
+    const h = mount(() => (el.type as (p: object) => ReactElement<any>)(el.props));
+    await h.flush();
+    return { h, run };
+  }
+  const toggle = (tree: ReactNode) => find(tree, (n) => n.type === 'button');
+
+  it('pauses a running plan without asking', async () => {
+    const { h, run } = await pauseOf('project-running', {});
+    expect(toggle(h.value).props['aria-label']).toBe(zh('board.bar.pausePlan'));
+    toggle(h.value).props.onClick();
+    await h.flush();
+    expect(run).toHaveBeenCalledWith(
+      'board.plan.pause',
+      { project_id: 'project-running', lead_session_id: 'lead-1' },
+      null,
+    );
+  });
+
+  it('resumes a paused plan, says when it was paused, and that the lead reassesses it', async () => {
+    const { h, run } = await pauseOf('project-paused', { paused: { at: PAUSED_AT } });
+    expect(toggle(h.value).props['aria-label']).toBe(zh('board.bar.resumePlan'));
+    expect(text(h.value)).toContain(
+      zhf('board.bar.planPaused', { version: 4, time: dayText(PAUSED_AT, NOW, { time: true }) }),
+    );
+    expect(named(h.value, 'RunningFor').props.label).toBe(zh('board.bar.reassessing'));
+    toggle(h.value).props.onClick();
+    await h.flush();
+    expect(run).toHaveBeenCalledWith(
+      'board.plan.resume',
+      { project_id: 'project-paused', lead_session_id: 'lead-1' },
+      null,
+    );
+  });
+
+  it('stops saying the lead reassesses once its reassessment is in', async () => {
+    const { h } = await pauseOf('project-reassessed', {
+      paused: { at: PAUSED_AT },
+      reassessment: { done: 'a', blocked: 'b', change: 'c', at: PAUSED_AT + 60_000 },
+    });
+    expect(has(h.value, 'RunningFor')).toBe(false);
+    expect(toggle(h.value).props['aria-label']).toBe(zh('board.bar.resumePlan'));
+  });
+
+  it('says why a pause failed beside the button', async () => {
+    const { h } = await pauseOf('project-refused', {}, 'the lead session is not running');
+    toggle(h.value).props.onClick();
+    await h.flush();
+    expect(text(find(h.value, (n) => n.props.role === 'alert'))).toBe(
+      zhf('board.bar.pauseFailed', { error: 'the lead session is not running' }),
+    );
+    expect(toggle(h.value).props['aria-label']).toBe(zh('board.bar.pausePlan'));
   });
 });
