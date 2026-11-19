@@ -1,4 +1,5 @@
 import { Tabs } from '@base-ui/react/tabs';
+import { ProjectReadStatus } from '../../components/ReadStatus';
 import { TopBar } from '../../components/TopBar';
 import { t } from '../../i18n';
 import { SCREEN_NAMES } from '../../screens';
@@ -64,6 +65,7 @@ export function MemoryScreen({ projectId }: { projectId: string | null }) {
         {projectId && tab === 'graph' && <GraphTopControls projectId={projectId} />}
       </TopBar>
       <main className="bd bd-paged">
+        {projectId && <ProjectReadStatus label={SCREEN_NAMES.memory} projectId={projectId} />}
         <Tabs.Panel className="bd-body" value="overview">
           {projectId && (
             <MemoryOverview

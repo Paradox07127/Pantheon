@@ -26,6 +26,8 @@ export interface MemoryRecord extends Entity {
   expires_at?: number;
   committed_at?: number;
   archived_at?: number;
+  /** Set when Pantheon wrote it from a lead's plan; the plan decided it, not the user. */
+  origin?: MemoryOrigin;
   reason?: 'superseded' | 'expired' | 'retracted' | 'stale';
   superseded_by?: string;
   restored_from?: string;
@@ -35,6 +37,17 @@ export interface MemoryRecord extends Entity {
     /** Already committed versions; a later commit of the same scope prevents undo. */
     committed_ids: string[];
   };
+}
+export interface MemoryOrigin {
+  kind: 'plan';
+  lead_session_id: string;
+  /** The milestone entity the assumption or risk rested on. */
+  milestone_id?: string;
+  subject: 'assumption' | 'risk';
+  subject_id: string;
+  outcome: 'confirmed' | 'refuted' | 'closed';
+  edit_id?: string;
+  plan_version: number;
 }
 export interface MemoryState extends Entity {
   project_id: string;
@@ -101,6 +114,7 @@ export interface MemorySummary {
   archived_at?: number;
   basis_id?: string;
   basis_title?: string;
+  origin?: MemoryOrigin;
   indexed: boolean;
   bytes: number;
   reasons?: string[];
@@ -114,6 +128,8 @@ export interface MemoryFilters {
   task_id?: string;
   lead_session_id?: string;
   project_only?: boolean;
+  origin?: 'plan';
+  milestone_id?: string;
   q?: string;
 }
 export interface MemoryDirectory {
@@ -126,6 +142,8 @@ export interface MemoryDirectory {
   facets: {
     tags: { tag: string; count: number }[];
     tasks: { id: string; lead_session_id: string; title?: string }[];
+    /** The milestones of plan-origin entries. */
+    milestones?: { id: string; title?: string; count: number }[];
   };
   budget: { used_bytes: number; limit_bytes: number };
   counts: Record<MemoryRecord['state'], number>;

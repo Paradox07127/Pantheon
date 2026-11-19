@@ -16,7 +16,8 @@ vi.mock('@/data/board', () => ({
     getState: () => mock.board,
   }),
 }));
-import { ArchDiagram, IntroView, SourceRef, Treemap, WritingMark } from '@/screens/board/IntroView';
+import { RunningFor } from '@/components/RunningFor';
+import { ArchDiagram, IntroView, SourceRef, Treemap } from '@/screens/board/IntroView';
 import { archLayout, commitShade, mergeEdges } from '@/screens/board/intro-model';
 import { zh } from './i18n-setup.js';
 
@@ -168,7 +169,8 @@ const rule = (selector: string) => {
 };
 
 describe('project introduction head', () => {
-  it('titles the section and states the time, the commit and a zero lag', async () => {
+  it('titles the section and states who surveyed it when, the commit and a zero lag', async () => {
+    mock.board.board.sessions = [{ id: 'intro-session', runtime: 'claude' }];
     const h = await mountIntro();
     const head = find(h.value, (n) => n.props.className === 'in-hd');
     expect(text(find(head, (n) => n.type === 'h2'))).toBe(zh('memory.intro.title'));
@@ -177,14 +179,21 @@ describe('project introduction head', () => {
       minute: '2-digit',
       hourCycle: 'h23',
     }).format(NOW);
-    expect(text(head)).toContain(`生成于今天 ${time}`);
+    expect(text(head)).toContain(`Claude 摸底于 今天 ${time}`);
     expect(text(head)).toContain('6e9b7a3');
     expect(text(head)).toContain('落后 0 个提交');
-    const regenerate = find(
+    const survey = find(
       head,
-      (n) => n.type === 'button' && text(n).includes(zh('board.intro.regenerate')),
+      (n) => n.type === 'button' && text(n).includes(zh('memory.intro.survey')),
     );
-    expect(regenerate.props.className).toBe('btn sm');
+    expect(survey.props.className).toBe('btn sm');
+  });
+
+  it('states the survey time alone once the surveying session is gone from the board', async () => {
+    const h = await mountIntro();
+    const head = find(h.value, (n) => n.props.className === 'in-hd');
+    expect(text(head)).toContain('摸底于 今天');
+    expect(text(head)).not.toContain('Claude');
   });
 
   it('shows only the writing state and how long it has run while a writing session runs', async () => {
@@ -194,13 +203,13 @@ describe('project introduction head', () => {
     ];
     const h = await mountIntro();
     const head = find(h.value, (n) => n.props.className === 'in-hd');
-    expect(text(head)).not.toContain(zh('memory.intro.written'));
-    const mark = find(head, (n) => typeName(n) === 'WritingMark');
-    expect(mark.props.since).toBe(NOW - 72_000);
-    const shown = mount(() => WritingMark({ since: Date.now() - 72_000 }));
-    expect(text(shown.value)).toContain(zh('board.intro.writing'));
+    expect(text(head)).not.toContain('摸底于');
+    const mark = find(head, (n) => typeName(n) === 'RunningFor');
+    expect(mark.props).toEqual({ label: zh('components.running.writing'), since: NOW - 72_000 });
+    const shown = mount(() => RunningFor({ ...mark.props, since: Date.now() - 72_000 }));
+    expect(text(shown.value)).toContain(zh('components.running.writing'));
     expect(text(shown.value)).toContain('1 分 12 秒');
-    const long = mount(() => WritingMark({ since: Date.now() - 3_725_000 }));
+    const long = mount(() => RunningFor({ ...mark.props, since: Date.now() - 3_725_000 }));
     expect(text(long.value)).toContain('1 小时 2 分');
   });
 });

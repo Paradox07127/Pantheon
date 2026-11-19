@@ -260,6 +260,51 @@ describe('memory entry detail', () => {
     expect(out).not.toContain('<div class="md">');
   });
 
+  it('says an entry the plan decided came from its milestone, how it ended, and jumps to the milestone', () => {
+    const onOpenMilestone = vi.fn();
+    const decided = {
+      ...third,
+      origin: {
+        kind: 'plan',
+        lead_session_id: 'l',
+        milestone_id: 'ms-release',
+        subject: 'assumption',
+        subject_id: 'a1',
+        outcome: 'refuted',
+        plan_version: 3,
+      },
+    } as MemoryItem;
+    const p = props({
+      item: decided,
+      versions: [decided],
+      milestones: [{ id: 'ms-release', title: 'Release', count: 2 }],
+      onOpenMilestone,
+    });
+    const shown = plain(html(p));
+    expect(shown).toContain(zh('memory.detail.byPlan'));
+    expect(shown).not.toContain(zh('memory.detail.byUser'));
+    expect(shown).toContain(zh('memory.detail.outcome.refuted'));
+    const chip = zhf('memory.detail.fromMilestone', { title: 'Release' });
+    expect(shown).toContain(chip);
+    find(EntryDetail(p), (n) => n.type === 'button' && text(n) === chip).props.onClick();
+    expect(onOpenMilestone).toHaveBeenCalled();
+    for (const outcome of ['confirmed', 'closed'] as const)
+      expect(
+        plain(html(props({ item: { ...decided, origin: { ...decided.origin!, outcome } } }))),
+      ).toContain(zh(`memory.detail.outcome.${outcome}`));
+  });
+
+  it('shows no plan chips on an entry the plan did not decide', () => {
+    const text = plain(html(props()));
+    for (const id of [
+      'memory.detail.byPlan',
+      'memory.detail.outcome.confirmed',
+      'memory.detail.outcome.refuted',
+      'memory.detail.fromPlan',
+    ])
+      expect(text).not.toContain(zh(id));
+  });
+
   it('says when the directory moved on since a draft was proposed', () => {
     const draft = record('d1', { state: 'draft', reason: undefined, committed_at: undefined });
     const text = plain(

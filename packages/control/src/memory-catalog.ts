@@ -12,6 +12,7 @@ import {
   type MemoryRecord,
   type MemoryReference,
   type MemorySummary,
+  type Milestone,
   type Principal,
   type Project,
   type Session,
@@ -183,6 +184,7 @@ function summary(ctx: ControlContext, r: MemoryRecord, reasons?: string[]): Memo
     ...(r.archived_at !== undefined && { archived_at: r.archived_at }),
     ...(basis && { basis_id: basis }),
     ...(basisRecord && { basis_title: basisRecord.title ?? basisRecord.key }),
+    ...(r.origin && { origin: r.origin }),
     indexed: index.indexed,
     bytes: memoryItemBytes(ctx, r),
     ...(reasons && { reasons }),
@@ -218,7 +220,9 @@ function view(
       wanted.every((tag) => (r.tags ?? []).some((t) => fold(t) === tag)) &&
       (!filters.task_id || r.task?.id === filters.task_id) &&
       (!filters.lead_session_id || r.task?.lead_session_id === filters.lead_session_id) &&
-      (!filters.project_only || !r.task),
+      (!filters.project_only || !r.task) &&
+      (!filters.origin || r.origin?.kind === filters.origin) &&
+      (!filters.milestone_id || r.origin?.milestone_id === filters.milestone_id),
   );
   return { all, chosen, signature: signature(ctx, project) };
 }
@@ -403,6 +407,30 @@ export function memoryRead(
               ] as const;
             }),
         ).values(),
+      ].slice(0, 100),
+      milestones: [
+        ...matches(
+          ctx,
+          project,
+          input.q,
+          view(ctx, p, project, 'memory.read', { ...input, milestone_id: undefined }).chosen,
+        )
+          .reduce((facets, { record: r }) => {
+            const milestoneId = r.origin?.milestone_id;
+            if (!milestoneId) return facets;
+            const facet = facets.get(milestoneId);
+            if (facet) facet.count++;
+            else {
+              const title = ctx.store.get<Milestone>('milestones', milestoneId)?.title;
+              facets.set(milestoneId, {
+                id: milestoneId,
+                ...(title !== undefined && { title }),
+                count: 1,
+              });
+            }
+            return facets;
+          }, new Map<string, { id: string; title?: string; count: number }>())
+          .values(),
       ].slice(0, 100),
     },
     jobs: jobs.slice(-10).reverse(),

@@ -16,6 +16,7 @@ import { approvalHandlers } from './approvals.js';
 import { prepareReviewRequest, reviewHandlers } from './review.js';
 import { prepareBoardSync, prepareTaskReport, taskTrackingHandlers } from './task-tracking.js';
 import { taskDispatchHandlers } from './task-dispatch.js';
+import { taskStatusLineHandlers } from './task-status-line.js';
 import { leadInboxHandlers } from './lead-inbox.js';
 import { workflowEngineHandlers } from './workflow-engine.js';
 import { routingHandlers } from './routing-table.js';
@@ -56,6 +57,7 @@ export const handlers: Handlers = {
   ...reviewHandlers,
   ...taskTrackingHandlers,
   ...taskDispatchHandlers,
+  ...taskStatusLineHandlers,
   ...leadInboxHandlers,
   ...workflowPolicyHandlers,
   ...routingHandlers,

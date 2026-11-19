@@ -23,6 +23,7 @@ vi.mock('@/data/commands', () => ({
 import { NeedsPopover, SessionsPopover } from '@/components/NeedsPopover';
 import { GateMark, StateGlyph } from '@/components/SessionStateIcon';
 import { runCommand } from '@/data/commands';
+import { useMemoryView } from '@/data/memory-view';
 import { reasonText } from '@/data/needs-you';
 import { wantedRequest } from '@/data/focus-request';
 import { zh, zhf } from './i18n-setup.js';
@@ -290,6 +291,26 @@ describe('needs-you list', () => {
     button(h.value, 'Fix login').props.onClick();
     expect(mock.shell.openProjectSession).toHaveBeenCalledWith('alpha', 'session-login');
     expect(wantedRequest()).toBe('proposal-a');
+  });
+
+  it('lists plan decisions kept as notes and opens the plan entries of memory', () => {
+    mock.shell.openProjectMemory = vi.fn();
+    const notes = item({
+      source: { table: 'memory_records', id: 'note-2', revision: 1 },
+      kind: 'memory.decision_budget',
+      status: 'over_budget',
+      reason: 'plan_decisions_over_budget',
+      decision: 'budget',
+      actions: [],
+      memory_notes: { count: 2, memory_ids: ['note-1', 'note-2'] },
+    });
+    const h = mount(() => NeedsPopover({ items: [notes], trigger }));
+    root(h.value).props.onOpenChange(true);
+    h.render();
+    expect(text(groups(h.value)[0])).toContain(zhf('board.needs.memoryBudget', { count: 2 }));
+    button(h.value, zh('board.needs.actions.memory')).props.onClick();
+    expect(mock.shell.openProjectMemory).toHaveBeenCalledWith('alpha', 'entries');
+    expect(useMemoryView.getState().askedFilters).toEqual({ origin: 'plan' });
   });
 });
 

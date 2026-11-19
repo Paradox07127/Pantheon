@@ -8,6 +8,7 @@ import {
   type ProjectBriefItem,
 } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
+import { RUNNING, RunningFor } from '../../components/RunningFor';
 import { Tip } from '../../components/Tip';
 import { toast } from '../../components/Toast';
 import { useAgentProposal } from '../../data/agents';
@@ -32,6 +33,8 @@ import './frame.css';
 type Of<K extends ProjectBriefItem['kind']> = Extract<ProjectBriefItem, { kind: K }>;
 
 const HOUR = 3_600_000;
+// The daemon gives up on the paragraph after this long without saying so.
+const PROSE_WAIT = 20_000;
 
 /** The whole hours to mark between the ends, about four at most, none crowding an end's label. */
 function hourMarks(from: number, to: number): number[] {
@@ -139,6 +142,14 @@ export function BriefCard({
   const proseOn = settings !== null && settings.brief_prose !== false;
   // The briefs the paragraph was asked for, by their items, so each is asked for once.
   const asked = useRef(new Set<string>());
+  // When the daemon started writing the paragraph of this project's brief.
+  const [writing, setWriting] = useState<{ projectId: string; at: number } | null>(null);
+  if (writing && brief?.prose) setWriting(null);
+  useEffect(() => {
+    if (!writing) return;
+    const timer = setTimeout(() => setWriting(null), writing.at + PROSE_WAIT - Date.now());
+    return () => clearTimeout(timer);
+  }, [writing]);
   useEffect(() => {
     if (!brief || brief === seen || brief.prose || !proseOn) return;
     // The decided count is not part of the paragraph, so a new count asks for no new one.
@@ -147,7 +158,9 @@ export function BriefCard({
     const key = JSON.stringify([projectId, brief.since, about]);
     if (asked.current.has(key)) return;
     asked.current.add(key);
-    void writeBriefProse(projectId);
+    void writeBriefProse(projectId).then(
+      (started) => started && setWriting({ projectId, at: Date.now() }),
+    );
   }, [brief, seen, proseOn, projectId]);
   if (!brief || brief === seen || brief.items.length === 0) return null;
 
@@ -560,6 +573,11 @@ export function BriefCard({
         </button>
       </div>
       <div className="bf-brief-box">
+        {!brief.prose && writing?.projectId === projectId && (
+          <div className="bf-brief-p">
+            <RunningFor label={RUNNING.writing} since={writing.at} />
+          </div>
+        )}
         {brief.prose && (
           <div className="bf-brief-p">
             <p className="bf-brief-prose">

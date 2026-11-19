@@ -135,7 +135,7 @@ const NEXT_STEP: Partial<Record<NeedsYouItem['reason'], () => string>> = {
 
 /** Who acts next on a needs-you item, by its reason; the daemon's English for a reason not known here. */
 export function nextStepText(
-  item: Pick<NeedsYouItem, 'reason' | 'next_step' | 'project_budget'>,
+  item: Pick<NeedsYouItem, 'reason' | 'next_step' | 'project_budget' | 'memory_notes'>,
 ): string | undefined {
   if (!item.next_step) return undefined;
   if (item.reason === 'project_over_budget' && item.project_budget)
@@ -146,6 +146,15 @@ export function nextStepText(
           'The project used {used} input tokens since its budget was set, against a budget of {budget}; Pantheon opens no new task session and wakes no lead, and running turns finish. Work resumes once the user raises or clears the project budget.',
       },
       { used: item.project_budget.used_input_tokens, budget: item.project_budget.input_tokens },
+    );
+  if (item.reason === 'plan_decisions_over_budget' && item.memory_notes)
+    return t(
+      {
+        id: 'daemon.nextStep.planDecisionsOverBudget',
+        defaultMessage:
+          '{count, plural, one {# decision from the plan did not fit the memory budget for decisions, so Pantheon kept it as a note} other {# decisions from the plan did not fit the memory budget for decisions, so Pantheon kept them as notes}}; the user reads them in project memory, shortens or archives decisions to make room, and archives each note once it is handled.',
+      },
+      { count: item.memory_notes.count },
     );
   return NEXT_STEP[item.reason]?.() ?? item.next_step;
 }

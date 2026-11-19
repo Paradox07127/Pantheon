@@ -5,6 +5,7 @@ import type { MemorySummary } from '@pantheon/domain';
 import path from 'node:path';
 import { Store } from '@pantheon/store';
 import { backfillMemoryIndex, indexMemory } from '../../packages/control/dist/memory-catalog.js';
+import { writePlanMemory } from '../../packages/control/dist/memory.js';
 
 async function catalogFixture() {
   const f = await workbenchFixture();
@@ -945,4 +946,69 @@ it('filters project records apart from task records in directory, search and gra
       .memoryGraph(user, { project_id: f.project.id, project_only: true })
       .nodes.map((r) => r.id),
   ).toEqual([project.id]);
+});
+
+it('filters plan decisions by origin and milestone and counts them by milestone', async () => {
+  const f = await catalogFixture();
+  const ctx = (f.control as any).ctx;
+  for (const [milestone, title] of [
+    ['ms-read', 'Importer reads files'],
+    ['ms-write', 'Importer writes rows'],
+  ] as const)
+    f.store.insert('milestones', {
+      id: milestone,
+      revision: 1,
+      project_id: f.project.id,
+      title,
+      required_sessions: [],
+      criteria: [],
+      created_at: f.store.now(),
+      updated_by: 'user',
+    });
+  const decide = (subject: string, milestone: string) =>
+    writePlanMemory(
+      ctx,
+      {
+        project_id: f.project.id,
+        key: `plan:lead:assumption:${subject}`,
+        title: `Assumption ${subject}`,
+        summary: `Assumption ${subject} holds.`,
+        tags: ['plan-decision', 'assumption'],
+        text: `Plan assumption ${subject} holds.`,
+        origin: {
+          kind: 'plan',
+          lead_session_id: 'lead',
+          milestone_id: milestone,
+          subject: 'assumption',
+          subject_id: subject,
+          outcome: 'confirmed',
+          plan_version: 1,
+        },
+      },
+      '',
+    );
+  decide('utf8', 'ms-read');
+  decide('header', 'ms-read');
+  decide('rows', 'ms-write');
+  f.save('manual', 'A note of the user');
+  const ids = (records: MemorySummary[]) => records.map((r) => r.origin?.subject_id).sort();
+
+  expect(f.directory().total).toBe(4);
+  expect(ids(f.directory({ origin: 'plan' }).records)).toEqual(['header', 'rows', 'utf8']);
+  const read = f.directory({ origin: 'plan', milestone_id: 'ms-read' });
+  expect(ids(read.records)).toEqual(['header', 'utf8']);
+  expect(read.records[0].origin).toMatchObject({ kind: 'plan', outcome: 'confirmed' });
+  expect(read.facets.milestones).toEqual([
+    { id: 'ms-read', title: 'Importer reads files', count: 2 },
+    { id: 'ms-write', title: 'Importer writes rows', count: 1 },
+  ]);
+  expect(
+    ids(
+      f.call<any>('memory.search', {
+        project_id: f.project.id,
+        origin: 'plan',
+        milestone_id: 'ms-write',
+      }).items,
+    ),
+  ).toEqual(['rows']);
 });

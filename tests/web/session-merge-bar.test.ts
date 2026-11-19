@@ -10,7 +10,7 @@ import type {
 } from '@pantheon/protocol';
 import type { FeedbackItem } from '@/data/feedback';
 import { type HookHost, find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const mock = vi.hoisted(() => ({
   board: {} as any,
@@ -87,6 +87,8 @@ vi.mock('@/data/facts-read', async (actual) => ({
   }),
 }));
 import { t } from '@/i18n';
+import { RunningFor } from '@/components/RunningFor';
+import { runtimeName } from '@/components/RuntimeGlyph';
 import { failureText } from '@/data/needs-you';
 import { SessionInspector } from '@/screens/sessions/SessionsScreen';
 import { ChecksTab, MergeBar, ReviewTab, StoryTab } from '@/screens/sessions/panel';
@@ -1342,10 +1344,43 @@ describe('story tab', () => {
     ];
     mock.stories.error = 'daemon unreachable';
     const h = tab();
-    expect(text(h.value)).toContain(zh('sessions.panel.story.generating'));
+    expect(find(h.value, (n) => n.type === RunningFor).props).toEqual({
+      label: zh('components.running.writing'),
+      since: 1,
+    });
     const failed = named(h.value, 'ReadFailed');
     expect(failed.props.read.error).toBe('daemon unreachable');
     failed.props.read.reload();
     expect(mock.stories.reloads).toBe(1);
+  });
+
+  it('says which runtime interpreted the shown story and how long ago', () => {
+    mock.stories.read = [
+      {
+        id: 'story-a',
+        revision: 1,
+        project_id: 'project-a',
+        workbench_session_id: 'session-a',
+        source: '/repo',
+        from_sha: '0123456789abcdef',
+        to_sha: 'fedcba9876543210',
+        state: 'ready',
+        runtime: 'codex',
+        created_at: Date.now() - 3 * 60_000,
+        result: {
+          overall: { before: [], after: [] },
+          cards: [],
+          noise: [],
+          uninterpreted: [],
+          hunk_total: 0,
+          unmatched_acceptance: [],
+        },
+      } as unknown as ChangeStory,
+    ];
+    shown.diff = diff('fedcba9876543210');
+    const h = tab();
+    expect(text(h.value)).toContain(
+      zhf('repo.changes.storyBy', { runtime: runtimeName('codex'), unit: 'minute', count: 3 }),
+    );
   });
 });

@@ -17,7 +17,5 @@
   "board.intro.module.entry": "入口",
   "board.intro.modules": "模块",
   "board.intro.modules.cell": "{path}：{lines}，近 30 天 {commits, plural, other {# 次提交}}",
-  "board.intro.modules.label": "{count, plural, other {# 个模块}}，{lines}",
-  "board.intro.regenerate": "重新生成",
-  "board.intro.writing": "生成中"
+  "board.intro.modules.label": "{count, plural, other {# 个模块}}，{lines}"
 }

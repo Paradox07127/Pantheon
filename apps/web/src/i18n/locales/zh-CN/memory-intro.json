@@ -9,7 +9,9 @@
   "memory.intro.module.role": "作用",
   "memory.intro.module.unpick": "取消选中",
   "memory.intro.nonGoals": "非目标",
+  "memory.intro.survey": "重新摸底",
+  "memory.intro.surveyed": "摸底于 {time}",
+  "memory.intro.surveyedBy": "{runtime} 摸底于 {time}",
   "memory.intro.title": "项目介绍",
-  "memory.intro.today": "今天 {time}",
-  "memory.intro.written": "生成于"
+  "memory.intro.today": "今天 {time}"
 }

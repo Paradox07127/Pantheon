@@ -14,6 +14,7 @@ import {
   unpinVisual,
   usePinnedVisuals,
   useRedrawFailed,
+  useRedrawStarts,
   useRefreshing,
   type VisualRead,
   type VisualSize,
@@ -32,6 +33,8 @@ export interface DiagramsState {
   refreshable: readonly Visual[];
   /** Ids of the visuals waiting on a redraw. */
   refreshing: ReadonlySet<string>;
+  /** When each redraw's turn was sent, by visual id. */
+  started: ReadonlyMap<string, number>;
   /** Ids of the visuals whose redraw ended without drawing them again. */
   failed: ReadonlySet<string>;
   /** The redraw of every visual while it runs. */
@@ -51,6 +54,7 @@ export function useDiagrams(projectId: string): DiagramsState {
   const visuals = read.data ?? NO_VISUALS;
   const refreshing = useRefreshing(read.data);
   const failed = useRedrawFailed(read.data);
+  const started = useRedrawStarts();
   const [editing, setEditing] = useState(false);
   const [batch, setBatch] = useState<readonly string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +77,7 @@ export function useDiagrams(projectId: string): DiagramsState {
     setEditing,
     refreshable,
     refreshing,
+    started,
     failed,
     progress: batch && done < batch.length ? { done, total: batch.length } : null,
     refreshAll,
@@ -110,7 +115,13 @@ function DiagramsTools({ diagrams, empty }: { diagrams: DiagramsState; empty: bo
               { id: 'memory.diagrams.refreshing', defaultMessage: 'Redrawing {done} / {total}' },
               { done: progress.done, total: progress.total },
             )
-          : t({ id: 'memory.diagrams.refreshAll', defaultMessage: 'Redraw all' })}
+          : t(
+              {
+                id: 'memory.diagrams.redrawAll',
+                defaultMessage: 'Redraw all ({count, plural, one {# turn} other {# turns}})',
+              },
+              { count: diagrams.refreshable.length },
+            )}
       </button>
       <button
         type="button"
@@ -273,10 +284,10 @@ export function DiagramsGrid({
         <VisualCard
           visual={visual}
           size={visual.pin!.size}
-          onRefresh={
-            visual.session_id ? () => void refreshVisual(visual).then(setError) : undefined
-          }
+          onRefresh={() => void refreshVisual(visual).then(setError)}
+          redrawable={visual.session_id !== null}
           refreshing={diagrams.refreshing.has(visual.id)}
+          redrawSince={diagrams.started.get(visual.id) ?? null}
           failed={diagrams.failed.has(visual.id)}
         />
       </div>

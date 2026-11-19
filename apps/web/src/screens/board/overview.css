@@ -532,6 +532,11 @@
   white-space: nowrap;
   color: var(--tx2);
 }
+/* When the agent wrote the line before it. */
+.bld-ago {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
 .bld-mc {
   grid-column: 6;
   white-space: nowrap;

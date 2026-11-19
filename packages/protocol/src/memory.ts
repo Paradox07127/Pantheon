@@ -32,6 +32,13 @@ export const memoryFilterShape = {
     .boolean()
     .optional()
     .describe('true keeps only project-wide entries; not with task_id.'),
+  origin: z
+    .literal('plan')
+    .optional()
+    .describe("plan keeps only entries Pantheon wrote from a lead's plan decisions."),
+  milestone_id: id
+    .optional()
+    .describe('Keep only plan entries about this milestone, by its id from project_read.'),
   q: z
     .string()
     .max(200)

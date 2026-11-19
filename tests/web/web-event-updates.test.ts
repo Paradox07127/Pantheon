@@ -203,6 +203,15 @@ it('reads the merge preflight again after the session turn ends', async () => {
   expect(reads).toEqual(['session.preflight', 'session.preflight']);
 });
 
+it('reads the board view again when the window regains focus', async () => {
+  const h = mount(() => useBoardView('project-a', 7));
+  await h.flush();
+  for (const listener of listeners.focus ?? []) listener();
+  h.render();
+  await h.flush();
+  expect(reads).toEqual(['board.view', 'board.view']);
+});
+
 it('reads the merge preflight again when the window regains focus', async () => {
   answers['session.preflight'] = { can_merge: true, gate: { configured_total: 0, last: 'none' } };
   const h = mount(() => useSessionPreflight('session-a'));

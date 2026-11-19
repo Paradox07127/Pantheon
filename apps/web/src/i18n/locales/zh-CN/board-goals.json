@@ -30,7 +30,6 @@
   "board.goals.conflict": "你编辑时另一个窗口改了它，现在是“{goal}”。",
   "board.goals.saveMine": "用我的",
   "board.goals.useTheirs": "用另一个窗口的",
-  "board.goals.sync": "让 lead 同步计划",
   "board.goals.milestone.current": "当前",
   "board.goals.milestone.todo": "未开始",
   "board.goals.progress.current": "当前 M{at}",

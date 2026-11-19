@@ -50,6 +50,13 @@ describe('next steps the daemon writes', () => {
         project_budget: { used_input_tokens: 150, input_tokens: 100 },
       }),
     ).toContain('项目从设预算起已用 150 输入 token，预算 100；');
+    expect(
+      nextStepText({
+        reason: 'plan_decisions_over_budget',
+        next_step: '3 decisions from the plan did not fit',
+        memory_notes: { count: 3, memory_ids: ['m1', 'm2', 'm3'] },
+      }),
+    ).toContain('计划里有 3 条决定超出记忆的决定预算');
     setLocaleSync('en', {});
     expect(nextStepText({ reason: 'merge_stuck', next_step: STUCK })).toBe(STUCK);
   });

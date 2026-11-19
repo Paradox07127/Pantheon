@@ -181,10 +181,14 @@ export const arrangeVisuals = (projectId: string, order: string[]) =>
 
 /* Refresh: the session that drew a visual draws it again in place */
 
-/** A redraw asked of a visual's session: the revision the visual had and the turn carrying the ask. */
+/**
+ * A redraw asked of a visual's session: the revision the visual had, the turn carrying the ask and
+ * when it was sent; both null while it waits behind another turn of its session.
+ */
 interface Refresh {
   revision: number;
   turn: string | null;
+  at: number | null;
 }
 let refreshes: ReadonlyMap<string, Refresh> = new Map();
 const refreshListeners = new Set<() => void>();
@@ -201,15 +205,70 @@ function setRefreshes(change: (next: Map<string, Refresh>) => void) {
 }
 
 // Prompts stay in English whatever the interface language is.
-const redrawPrompt = (visuals: readonly Visual[]) =>
-  [
-    'Draw these visuals again with fresh data. For each one, fetch its data again and call draw with the same title and kind, and replaces set to its id:',
-    ...visuals.map((v) => `- ${v.title} (${v.kind}): replaces "${v.id}"`),
-  ].join('\n');
+const redrawPrompt = (v: Visual) =>
+  `Draw this visual again with fresh data. Fetch its data again and call draw with the same title and kind, and replaces set to its id:\n- ${v.title} (${v.kind}): replaces "${v.id}"`;
 
 /**
- * Asks each visual's session (one message per session; deleted ones skipped) to draw it again with
- * fresh data. Null when every ask went out, else why the first one did not.
+ * Waits until the session can take a new turn, at a revision past `after` once a turn was sent:
+ * its revision then, null when the board does not show it, or 'gone' once it is deleted.
+ */
+function turnFree(sessionId: string, after: number | null): Promise<number | null | 'gone'> {
+  return new Promise((resolve) => {
+    const settled = (state: ReturnType<typeof useBoard.getState>) => {
+      if (state.events.some((e) => e.kind === 'session.deleted' && e.aggregate_id === sessionId)) {
+        resolve('gone');
+        return true;
+      }
+      const session = state.board?.sessions.find((s) => s.id === sessionId);
+      if (
+        session &&
+        (session.state === 'running' ||
+          session.state === 'reconciling' ||
+          (after !== null && session.revision <= after))
+      )
+        return false;
+      resolve(session?.revision ?? null);
+      return true;
+    };
+    if (settled(useBoard.getState())) return;
+    const stop = useBoard.subscribe((state) => {
+      if (settled(state)) stop();
+    });
+  });
+}
+
+/** Sends one session its visuals one turn each, each after the turn before it ended. */
+async function redrawInTurns(sessionId: string, drawn: readonly Visual[]): Promise<string | null> {
+  let failed: string | null = null;
+  let after: number | null = null;
+  for (const [index, v] of drawn.entries()) {
+    const revision = await turnFree(sessionId, after);
+    if (revision === 'gone') {
+      setRefreshes((next) => drawn.slice(index).forEach((left) => next.delete(left.id)));
+      break;
+    }
+    const at = Date.now();
+    const result = await runCommand(
+      'session.send',
+      { session_id: sessionId, input: redrawPrompt(v) },
+      revision,
+    );
+    const turn = result.ok ? field(result.value, 'id') : undefined;
+    setRefreshes((next) => {
+      if (result.ok)
+        next.set(v.id, { revision: v.revision, turn: typeof turn === 'string' ? turn : null, at });
+      else next.delete(v.id);
+    });
+    if (result.ok) after = revision;
+    else failed ??= failureText(result.error);
+  }
+  return failed;
+}
+
+/**
+ * Asks each visual's session (deleted ones skipped) to draw it again with fresh data, one turn per
+ * visual: a session's visuals one after another, the sessions side by side. Null when every ask went
+ * out, else why the first one did not.
  */
 export async function refreshVisuals(visuals: readonly Visual[]): Promise<string | null> {
   const bySession = new Map<string, Visual[]>();
@@ -218,26 +277,12 @@ export async function refreshVisuals(visuals: readonly Visual[]): Promise<string
   // Every visual counts as refreshing from the start, so a progress count never runs ahead.
   setRefreshes((next) => {
     for (const drawn of bySession.values())
-      for (const v of drawn) next.set(v.id, { revision: v.revision, turn: null });
+      for (const v of drawn) next.set(v.id, { revision: v.revision, turn: null, at: null });
   });
-  let failed: string | null = null;
-  for (const [sessionId, drawn] of bySession) {
-    const session = useBoard.getState().board?.sessions.find((s) => s.id === sessionId);
-    const result = await runCommand(
-      session?.state === 'running' ? 'session.steer' : 'session.send',
-      { session_id: sessionId, input: redrawPrompt(drawn) },
-      session?.revision ?? null,
-    );
-    const turn = result.ok ? field(result.value, 'id') : undefined;
-    setRefreshes((next) => {
-      for (const v of drawn)
-        if (result.ok)
-          next.set(v.id, { revision: v.revision, turn: typeof turn === 'string' ? turn : null });
-        else next.delete(v.id);
-    });
-    if (!result.ok) failed ??= failureText(result.error);
-  }
-  return failed;
+  const failures = await Promise.all(
+    [...bySession].map(([sessionId, drawn]) => redrawInTurns(sessionId, drawn)),
+  );
+  return failures.find((failed) => failed !== null) ?? null;
 }
 
 export const refreshVisual = (visual: Visual) => refreshVisuals([visual]);
@@ -262,17 +307,7 @@ function useRedraws(visuals: readonly Visual[] | null): ReadonlyMap<string, 'wai
       const sessionGone =
         read.session_id === null ||
         events.some((e) => e.kind === 'session.deleted' && e.aggregate_id === read.session_id);
-      // A delivered steer joins the session's running turn, so the redraw ends with that turn.
-      const ended =
-        sessionGone ||
-        (!!turn &&
-          turn.state !== 'queued' &&
-          turn.state !== 'running' &&
-          !(
-            turn.kind === 'steer' &&
-            turn.delivery === 'delivered' &&
-            turns!.some((t) => t.session_id === turn.session_id && t.state === 'running')
-          ));
+      const ended = sessionGone || (!!turn && turn.state !== 'queued' && turn.state !== 'running');
       if (!drawn) open.set(id, ended ? 'failed' : 'waiting');
     }
     return open;
@@ -305,3 +340,13 @@ export const useRefreshing = (visuals: readonly Visual[] | null): ReadonlySet<st
 /** The ids of these visuals whose asking turn or session ended without drawing them again. */
 export const useRedrawFailed = (visuals: readonly Visual[] | null): ReadonlySet<string> =>
   useRedrawIds(visuals, 'failed');
+
+/** When the turn asking each redraw was sent; a redraw waiting behind another turn has none yet. */
+export function useRedrawStarts(): ReadonlyMap<string, number> {
+  const asked = useSyncExternalStore(subscribeRefreshes, askedRefreshes, askedRefreshes);
+  return useMemo(
+    () =>
+      new Map([...asked].flatMap(([id, ask]) => (ask.at === null ? [] : [[id, ask.at] as const]))),
+    [asked],
+  );
+}

@@ -225,6 +225,11 @@ button.clb-node:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* When the agent wrote the line before it. */
+.clb-nago {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
 .clb-nr {
   flex: none;
   margin-left: auto;

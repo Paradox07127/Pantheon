@@ -65,13 +65,6 @@
   color: var(--mu);
   font-variant-numeric: tabular-nums;
 }
-.rvr-at {
-  margin-left: auto;
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  color: var(--mu);
-  font-variant-numeric: tabular-nums;
-}
 .rvr-summary {
   margin: 0;
   font-size: var(--fs-md);

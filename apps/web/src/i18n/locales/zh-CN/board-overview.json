@@ -37,6 +37,8 @@
   "board.needs.actions.open": "打开会话",
   "board.needs.actions.accept": "验收",
   "board.needs.actions.budget": "调整预算",
+  "board.needs.actions.memory": "打开记忆",
+  "board.needs.memoryBudget": "记忆决定预算满了，{count, plural, other {# 条计划决定}}存成了笔记",
   "board.needs.actions.confirm": "确认",
   "board.needs.actions.decline": "拒绝",
   "board.needs.actions.keepTrial": "保留",
@@ -224,13 +226,13 @@
   "board.panels.byRuntime": "按运行时",
   "board.panels.byRole": "按角色",
   "board.readStatus": "看板",
-  "board.headline.sync": "更新看板",
   "board.headline.syncBaseline": "摸底进行中",
   "board.headline.trace": "轨迹",
   "board.headline.range": "时间范围",
   "board.panels.tasks": "任务",
   "board.view.label": "看板视图",
-  "board.bar.planVersion": "计划 v{version}",
+  "board.bar.planAt": "计划 v{version}，更新于 {time}",
+  "board.bar.sync": "让 lead 同步计划",
   "board.bar.more": "更多",
   "board.lead.line.open": "打开 lead",
   "board.lead.line.toQuestion": "跳到需要你里的这条问题：{question}",
@@ -280,5 +282,6 @@
   "board.devices.online": "{count, plural, other {# 台设备在线}}",
   "board.lead.workers": "{count, plural, =0 {没有 worker} other {# 个 worker：{parts}}}",
   "board.lead.model": "{model} {effort}",
-  "board.overview.statePart": "{state} {count}"
+  "board.overview.statePart": "{state} {count}",
+  "daemon.nextStep.planDecisionsOverBudget": "{count, plural, other {计划里有 # 条决定超出记忆的决定预算，Pantheon 把它们记成了笔记}}；用户在项目记忆里读这些笔记，精简或归档决定腾出位置，每条笔记处理完后归档。"
 }

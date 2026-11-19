@@ -240,7 +240,7 @@ it('renders partial reviewer failure, cancellation, missing coverage and frozen 
   expect(cancelled).toContain(zh('components.reviewCoverage.cancelled'));
 });
 
-it('shows read failure, retained timestamp and retry without presenting it as loading', () => {
+it('shows read failure and retry without presenting it as loading', () => {
   const reload = vi.fn();
   const tree = ReadStatus({
     label: 'Trace',
@@ -250,9 +250,9 @@ it('shows read failure, retained timestamp and retry without presenting it as lo
     reload,
   });
   expect(text(tree)).toContain('Trace读取失败');
-  expect(text(tree)).toContain(zh('components.readStatus.stale'));
-  expect(find(tree, (node) => node.type === 'time').props.dateTime).toBe(
-    new Date(123456).toISOString(),
+  expect(nodes(tree).some((node) => node.type === 'time')).toBe(false);
+  expect(text(find(tree, (node) => node.type === 'button'))).toBe(
+    zh('components.readStatus.retry'),
   );
   find(tree, (node) => node.type === 'button').props.onClick();
   expect(reload).toHaveBeenCalledOnce();

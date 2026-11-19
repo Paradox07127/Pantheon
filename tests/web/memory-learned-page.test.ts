@@ -115,7 +115,7 @@ beforeEach(() => {
   ];
   bridge.fail = null;
   bridge.reads = 0;
-  vi.stubGlobal('window', { pantheon: bridge });
+  vi.stubGlobal('window', { pantheon: bridge, addEventListener() {}, removeEventListener() {} });
   useBoard.setState({
     board: { cursor: 1, projects: [], sessions: [] },
     status: { state: 'live' },
@@ -265,6 +265,8 @@ describe('learned rules page', () => {
     retros.props.headRef.current = shown;
     vi.stubGlobal('window', {
       pantheon: bridge,
+      addEventListener() {},
+      removeEventListener() {},
       matchMedia: () => ({ matches: false }),
     });
     empty.props.action.onClick();

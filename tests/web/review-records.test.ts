@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import type { RuntimeFinding, RuntimeReviewHistory } from '@pantheon/domain';
 import { HookHost, find, named, nodes, text, mount, unmountAll } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 const mock = vi.hoisted(() => ({ shell: {} as any, toast: (() => '') as any }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('@/data/board', () => ({
@@ -14,6 +14,7 @@ vi.mock('@/store', () => ({
   }),
 }));
 vi.mock('@/components/Toast', () => ({ toast: (options: unknown) => mock.toast(options) }));
+import { RunningFor } from '@/components/RunningFor';
 import { useMemoryView } from '@/data/memory-view';
 import { t } from '@/i18n';
 import { reasonText } from '@/data/needs-you';
@@ -131,9 +132,18 @@ describe('analysis records', () => {
     const head = find(h.value, (n) => n.props.className === 'rvr-head');
     const chip = find(head, (n) => String(n.props.className).includes('chip'));
     expect([text(chip), chip.props['data-phase']]).toEqual([phase('ready'), 'ready']);
-    expect(text(head)).toContain('Claude');
     expect(text(find(head, (n) => n.props.className === 'rvr-win'))).toBe('09:00 – 10:20');
-    expect(text(find(head, (n) => n.props.className === 'rvr-at'))).toBe('10:24');
+    expect(text(find(head, (n) => n.props.className === 'rvr-rt'))).toBe(
+      zhf('trace.reviews.analyzedBy', { runtime: 'Claude', time: '10:24' }),
+    );
+  });
+
+  it('heads a running record with how long it has been writing', () => {
+    const { h } = card(review({ state: 'running', report: undefined }));
+    const head = find(h.value, (n) => n.props.className === 'rvr-head');
+    const running = find(head, (n) => n.type === RunningFor);
+    expect(running.props).toEqual({ label: zh('components.running.writing'), since: at(10, 24) });
+    expect(nodes(head).some((n) => n.props.className === 'rvr-rt')).toBe(false);
   });
 
   it('calls a verified improvement effective', () => {

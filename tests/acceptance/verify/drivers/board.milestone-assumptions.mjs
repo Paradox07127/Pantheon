@@ -447,6 +447,26 @@ try {
     result.rejected.row,
   );
   check('对照组：同一读法对另一条理由判 false', !(rejected?.row.why === `${REASON}-absent`));
+  const planMemory = async () =>
+    (
+      await query('memory.read', {
+        project_id,
+        origin: 'plan',
+        milestone_id: msOf(await view(), MA)?.id,
+      })
+    ).records ?? [];
+  const keptMemory = await poll(async () => {
+    const records = await planMemory();
+    return records.length === 1 && records;
+  }, 15_000);
+  result.memory_rejected = keptMemory || (await planMemory());
+  check(
+    '后端：lead 驳回后项目记忆里这个里程碑有一条 confirmed 的计划决定',
+    keptMemory?.[0]?.origin?.outcome === 'confirmed' &&
+      keptMemory[0].origin.subject_id === 'utf8' &&
+      keptMemory[0].kind === 'decision',
+    result.memory_rejected,
+  );
   result.shot_rejected = await page.screenshot('board-assumptions-rejected');
 
   // 7. Esc closes the field, gives the focus back and sends nothing.
@@ -567,6 +587,18 @@ try {
     applied?.refuted.state === 'applied' && applied.text === INSTEAD2,
     result.applied,
   );
+  const refutedMemory = await poll(async () => {
+    const records = await planMemory();
+    return records.some((r) => r.origin?.outcome === 'refuted') && records;
+  }, 15_000);
+  result.memory_applied = refutedMemory || (await planMemory());
+  check(
+    '后端：lead 采纳后项目记忆里这个里程碑多一条 refuted 的计划决定',
+    refutedMemory?.filter(
+      (r) => r.origin?.outcome === 'refuted' && r.origin.subject_id === 'header',
+    ).length === 1,
+    result.memory_applied,
+  );
   // A settled assumption leaves the board; with none open, the flag leaves the point.
   const flagGone = await poll(
     () => page.evaluate(`!document.querySelector('.gm-pt > .gm-flag')`),
@@ -578,6 +610,68 @@ try {
   // Leaves nothing waiting for the user.
   const end = await view();
   check('收尾：lead 没有等处理的编辑', editsOf(end).length === 0, editsOf(end));
+  const finalMemory = await planMemory();
+  check('收尾：这个里程碑的计划决定一共 2 条', finalMemory.length === 2, finalMemory);
+
+  // 10. Memory entries filtered to milestone A list both, each marked with how it ended.
+  await page.click({ role: 'button', name: '记忆', exact: true });
+  await page.click({ role: 'tab', name: '条目', exact: true });
+  await page.click({ role: 'button', name: '来源', exact: true });
+  await page.click({ role: 'menuitemradio', name: MA, exact: false });
+  if (
+    await page.evaluate(
+      `[...document.querySelectorAll('[role=menuitemradio]')].some((el) => el.getClientRects().length)`,
+    )
+  )
+    await page.press('Escape');
+  const readEntries = () =>
+    page.evaluate(`[...document.querySelectorAll('[role=option]')].filter((o) => o.getClientRects().length).map((o) => ({
+      text: o.innerText.replace(/\\s+/g, ' ').trim(),
+      marks: [...o.querySelectorAll('.ml-oc[role=img]')].map((m) => m.getAttribute('aria-label')),
+    }))`);
+  const entries = await poll(async () => {
+    const rows = await readEntries();
+    return rows.length === 2 && rows.every((r) => r.marks.length === 1) && rows;
+  }, 15_000);
+  result.memory_entries = entries || (await readEntries());
+  check(
+    '记忆 · 条目选 "来源 → 里程碑 A" 后列出 2 条，分别带 "已确认" 和 "已否定"',
+    entries &&
+      entries
+        .flatMap((r) => r.marks)
+        .sort()
+        .join() === ['已否定', '已确认'].sort().join() &&
+      entries.every((r) => r.text.includes('计划里定的')),
+    result.memory_entries,
+  );
+  check(
+    '对照组：同一读法不会读出 "风险已关闭"',
+    !result.memory_entries.some((r) => r.marks.includes('风险已关闭')),
+  );
+  result.shot_memory = await page.screenshot('board-assumptions-memory');
+  await page.click({ role: 'option', name: A1, exact: false });
+  const chip = `来自里程碑 ${MA}`;
+  const detail = await poll(() =>
+    page.evaluate(`(() => {
+      const d = document.querySelector('aside[aria-label="记忆详情"]');
+      return d && d.innerText.includes(${JSON.stringify(chip)}) ? d.innerText.replace(/\\s+/g, ' ').slice(0, 600) : null;
+    })()`),
+  );
+  result.memory_detail = detail;
+  check('详情写明 "计划里定的" 和 "来自里程碑 A"', detail?.includes('计划里定的'), detail);
+  check('对照组：详情不写 "你定的"', detail && !detail.includes('你定的'), detail);
+  await page.click({ role: 'button', name: chip, exact: true });
+  const back = await poll(() =>
+    page.evaluate(
+      `document.querySelector('[role="radiogroup"][aria-label="看板视图"] [aria-checked="true"]')?.getAttribute('aria-label') === '总览' && [...document.querySelectorAll('section.bms')].filter((s) => s.getClientRects().length).map((s) => s.innerText.replace(/\\s+/g, ' ').slice(0, 200))`,
+    ),
+  );
+  result.memory_back = back;
+  check(
+    '点 "来自里程碑 A" 回到看板总览，里程碑 A 的卡展开着',
+    back && back.some((s) => s.includes(MA)),
+    back,
+  );
 } catch (error) {
   check('驱动跑完', false, String(error?.stack ?? error).slice(0, 600));
 }

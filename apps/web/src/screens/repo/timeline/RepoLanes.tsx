@@ -9,13 +9,15 @@ import { GitCommitHorizontal, GitMerge } from 'lucide-react';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import type { RepoLane, RepoTimeline } from '@pantheon/protocol';
+import { RunningFor, RUNNING } from '../../../components/RunningFor';
 import { runtimeName } from '../../../components/RuntimeGlyph';
-import { ageText, useNow } from '../../../data/needs-you';
+import { useBoard } from '../../../data/board';
+import { useNow } from '../../../data/needs-you';
 import { startRangeStory, useRangeStories, type RangeStory } from '../../../data/range-story';
 import { useRepoTimeline } from '../../../data/repo';
-import { elapsedText } from '../../../data/transcript';
 import { currentLocale, t } from '../../../i18n';
 import { listText } from '../../../lib/list-text';
+import { ageParts } from '../../../lib/time-text';
 import { Failure, Skeleton } from '../../board/BoardScreen';
 import { Empty, useSize } from '../../board/Charts';
 import { shortSha } from '../history/CommitGraph';
@@ -201,6 +203,7 @@ export function RepoLanes({
   const from = end - span;
   const timeline = useRepoTimeline(projectId, from, end, group);
   const stories = useRangeStories(projectId);
+  const sessions = useBoard((s) => s.board?.sessions);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [lanesRef, lanesSize] = useSize();
   const [drag, setDrag] = useState<{ x: number; width: number; by: number } | null>(null);
@@ -407,6 +410,7 @@ export function RepoLanes({
           {totalsPanel(current?.totals ?? null)}
           {storyPart({
             story,
+            runtime: sessions?.find((s) => s.id === story?.session_id)?.runtime ?? null,
             now,
             busy: !!askedHere && (askedHere.sending || (!askedHere.error && !story)),
             untold,
@@ -794,6 +798,7 @@ function totalsPanel(totals: RepoTimeline['totals'] | null) {
 
 function storyPart({
   story,
+  runtime,
   now,
   busy,
   untold,
@@ -801,6 +806,8 @@ function storyPart({
   onGenerate,
 }: {
   story: RangeStory | null;
+  /** The runtime of the session that wrote the story, when that session is on the board. */
+  runtime: string | null;
   now: number;
   busy: boolean;
   /** The range has no merges and no main-line commits to explain. */
@@ -818,6 +825,7 @@ function storyPart({
   if (story?.state === 'ready') {
     // A story without a source told merges.
     const commits = story.source === 'commits';
+    const ago = ageParts(now - Date.parse(story.created_at));
     const Mark = commits ? GitCommitHorizontal : GitMerge;
     return (
       <div className="rl-story">
@@ -832,7 +840,23 @@ function storyPart({
             </span>
           </span>
           <time className="mu" dateTime={story.created_at}>
-            {ageText(Date.parse(story.created_at), now)}
+            {runtime
+              ? t(
+                  {
+                    id: 'repo.timeline.storyBy',
+                    defaultMessage:
+                      '{runtime} interpreted {unit, select, now {just now} minute {{count, plural, one {# minute} other {# minutes}} ago} hour {{count, plural, one {# hour} other {# hours}} ago} other {{count, plural, one {# day} other {# days}} ago}}',
+                  },
+                  { runtime: runtimeName(runtime), ...ago },
+                )
+              : t(
+                  {
+                    id: 'repo.timeline.storyAt',
+                    defaultMessage:
+                      'Interpreted {unit, select, now {just now} minute {{count, plural, one {# minute} other {# minutes}} ago} hour {{count, plural, one {# hour} other {# hours}} ago} other {{count, plural, one {# day} other {# days}} ago}}',
+                  },
+                  ago,
+                )}
           </time>
         </div>
         {story.lines.map((line, i) => (
@@ -852,7 +876,7 @@ function storyPart({
       <div className="rl-story" aria-busy="true">
         <div className="rl-sh">
           <span className="rl-b">{title}</span>
-          <StoryElapsed since={Date.parse(story.created_at)} />
+          <RunningFor label={RUNNING.writing} since={Date.parse(story.created_at)} />
         </div>
       </div>
     );
@@ -871,18 +895,6 @@ function storyPart({
       </div>
       {alert}
     </div>
-  );
-}
-
-function StoryElapsed({ since }: { since: number }) {
-  const now = useNow(1000);
-  return (
-    <span className="mu rl-num">
-      {t(
-        { id: 'repo.timeline.storyRunning', defaultMessage: 'Interpreting, {elapsed}' },
-        { elapsed: elapsedText(Math.floor(Math.max(0, now - since) / 1000) * 1000) },
-      )}
-    </span>
   );
 }
 

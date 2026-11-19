@@ -288,6 +288,7 @@ export const sessionTools = {
     answer_worker_question: 'lead.worker_question.answer',
     stop_task: 'task.stop',
     report: 'task.report',
+    status_line: 'task.status_line',
     interrupt_task: 'task.interrupt',
     stop_background: 'task.background.stop',
     propose_improvement: 'improvement.propose',
@@ -309,6 +310,7 @@ export const sessionTools = {
     ...memoryTools,
     project_read: 'project.read',
     report: 'task.report',
+    status_line: 'task.status_line',
     draw: 'visual.draw',
     theme: 'theme.set',
     ...browserTools,
@@ -338,6 +340,7 @@ export const leadToolEffects = {
   answer_worker_question: 'write',
   stop_task: 'write',
   report: 'write',
+  status_line: 'write',
   interrupt_task: 'write',
   stop_background: 'write',
   propose_improvement: 'write',
@@ -399,6 +402,7 @@ export const leadToolGroups: Record<
   rerun_baseline: 'board',
   draw: 'board',
   theme: 'board',
+  status_line: 'board',
   start_task: 'dispatch',
   message_task: 'dispatch',
   accept_task: 'dispatch',
@@ -550,9 +554,6 @@ const milestoneInput = {
 const boardText = z.string().min(1).max(400);
 /** One part of a parallel task: its part number from 1, or the id of its session. */
 const partSelector = z.union([z.number().int().min(1).max(4), z.string().min(1)]).optional();
-const boardNote = z.strictObject({
-  text: boardText.describe('The note, at most 400 characters.'),
-});
 const planIdPattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
 const planId = z.string().regex(planIdPattern);
 const RECORDED_ONLY = 'Recorded only; Pantheon does not act on it yet.';
@@ -573,6 +574,15 @@ const planAssumption = z.strictObject({
   milestone: planId
     .optional()
     .describe(`Optional: the id of the milestone that rests on it. ${RECORDED_ONLY}`),
+});
+const planRisk = z.strictObject({
+  text: boardText.describe('What could go wrong, and its effect, at most 400 characters.'),
+  id: planId
+    .optional()
+    .describe(
+      'Optional short id, unique among the risks; once you drop the risk from the plan, project memory records it as closed.',
+    ),
+  milestone: planId.optional().describe('Optional: the id of the milestone the risk threatens.'),
 });
 const planTitle = z.string().min(1).max(80);
 const taskPriority = z.enum(['high', 'normal', 'low']);
@@ -1517,7 +1527,6 @@ const improvementChange = z.discriminatedUnion('type', [
       .describe('The paths to copy into a new worktree and the command to run there.'),
   }),
 ]);
-const boardNoteList = (text: string) => z.array(boardNote).max(16).describe(text);
 // MCP tools omit bound fields; the daemon checks references on the complete plan.
 export const boardPlanInputSchema = z.strictObject({
   project_id: str,
@@ -1632,9 +1641,12 @@ export const boardPlanInputSchema = z.strictObject({
     )
     .max(16)
     .describe('Up to 16 milestones.'),
-  risks: boardNoteList(
-    'Up to 16 `{ text }`, each at most 400 characters: what could go wrong, and its effect.',
-  ),
+  risks: z
+    .array(planRisk)
+    .max(16)
+    .describe(
+      'Up to 16 `{ text }`, each at most 400 characters: what could go wrong, and its effect.',
+    ),
   assumptions: z
     .array(planAssumption)
     .max(16)
@@ -2649,6 +2661,17 @@ export const inputSchemas = {
       decision: z.enum(['confirm', 'revert', 'pin']),
     }),
   ]),
+  /** Sets the one line of what the calling session does now in its running turn, shown on its board row with its time. Plan task and lead sessions only; a new text waits 15 s after the last one. */
+  'task.status_line': z.strictObject({
+    text: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .describe(
+        'What you are doing now in 1-80 characters, for example "Running the migration tests".',
+      ),
+  }),
   'task.report': z.strictObject({
     project_id: str,
     kind: z
@@ -4828,6 +4851,8 @@ export interface BoardModel {
     context?: { used_tokens: number; window_tokens: number };
     /** Unread notes. */
     inbox: number;
+    /** The line the lead session last set in its newest turn; `at` is epoch milliseconds. */
+    status_line?: { text: string; at: number };
     messages_today?: {
       session_id: string;
       lead: number;

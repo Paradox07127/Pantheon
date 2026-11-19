@@ -157,19 +157,23 @@ function sweep(ctx: ControlContext, project: string): [string, MemoryRecord[]] |
 function sameScope(a: MemoryRecord, b: MemoryRecord): boolean {
   return a.key === b.key && hash(taskScope(a.task) ?? null) === hash(taskScope(b.task) ?? null);
 }
-/** Confirmed decisions must fit the default context budget; throwing rolls back the command. */
-function assertDecisionBudget(ctx: ControlContext, project: string): void {
-  const decisions = current(ctx, project)
+const DECISION_BUDGET = 12000;
+function decisionBytes(ctx: ControlContext, project: string) {
+  return current(ctx, project)
     .filter((record) => record.kind === 'decision')
     .map((record) => ({ record, bytes: memoryItemBytes(ctx, record) }));
+}
+/** Confirmed decisions must fit the default context budget; throwing rolls back the command. */
+function assertDecisionBudget(ctx: ControlContext, project: string): void {
+  const decisions = decisionBytes(ctx, project);
   const used = decisions.reduce((total, item) => total + item.bytes, 0);
-  if (used > 12000)
+  if (used > DECISION_BUDGET)
     throw new DomainError(
       'memory_budget_exceeded',
       'Confirmed decisions exceed the context budget; shorten them before committing',
       {
         used_bytes: used,
-        limit_bytes: 12000,
+        limit_bytes: DECISION_BUDGET,
         largest_records: decisions
           .sort((a, b) => b.bytes - a.bytes)
           .slice(0, 5)
@@ -285,7 +289,7 @@ function activate(ctx: ControlContext, r: MemoryRecord, by: string, commandId: s
     {
       ...r,
       state: 'active',
-      authority: r.kind === 'decision' ? 'user' : r.authority,
+      authority: r.kind === 'decision' && !r.origin ? 'user' : r.authority,
       committed_at: ctx.store.now(),
       ...(r.kind === 'report' && { source_signature: sourceSignature(ctx, r.project_id) }),
     },
@@ -293,7 +297,8 @@ function activate(ctx: ControlContext, r: MemoryRecord, by: string, commandId: s
   );
   indexMemory(ctx, next, body(ctx, next).text);
   sweep(ctx, r.project_id);
-  assertDecisionBudget(ctx, r.project_id);
+  // A plan entry checked the budget before it chose its kind, and must not fail the plan write.
+  if (!r.origin) assertDecisionBudget(ctx, r.project_id);
   changed(ctx, r.project_id);
   ctx.store.event('memory.committed', next, r.project_id, { memory_id: next.id, by }, commandId);
   return body(ctx, next);
@@ -849,6 +854,59 @@ export function syncMemoryFiles(ctx: ControlContext, project: Project): void {
   );
   for (const r of gone) archive(ctx, r, 'retracted');
   if (gone.length) changed(ctx, project.id);
+}
+
+/** A decision Pantheon takes from a lead's plan, current at once and never confirmed by the user. */
+export interface PlanMemoryEntry {
+  project_id: string;
+  key: string;
+  title: string;
+  summary: string;
+  tags: string[];
+  text: string;
+  origin: NonNullable<MemoryRecord['origin']>;
+}
+
+/**
+ * Writes the entry as the current version of its key, unless that version has the same text; one
+ * that does not fit the decision budget is kept as a note. It never throws, so the plan write stands.
+ */
+export function writePlanMemory(
+  ctx: ControlContext,
+  entry: PlanMemoryEntry,
+  commandId: string,
+): void {
+  const project = entry.project_id;
+  const same = current(ctx, project).filter((r) => r.key === entry.key && !r.task);
+  if (same.some((r) => r.body_hash === createHash('sha256').update(entry.text).digest('hex')))
+    return;
+  const r: MemoryRecord = {
+    id: id(),
+    revision: 1,
+    project_id: project,
+    key: entry.key,
+    title: entry.title,
+    summary: entry.summary,
+    tags: entry.tags,
+    kind: 'decision',
+    state: 'draft',
+    authority: 'agent_reported',
+    author: 'pantheon:plan',
+    body_hash: ctx.files.put(Buffer.from(entry.text)).hash,
+    dependencies: [],
+    based_on: signature(ctx, project),
+    created_at: ctx.store.now(),
+    origin: entry.origin,
+  };
+  const used = decisionBytes(ctx, project)
+    .filter(({ record }) => !same.some((old) => old.id === record.id))
+    .reduce((total, item) => total + item.bytes, 0);
+  const size = memoryItemBytes(ctx, { ...r, state: 'active', committed_at: ctx.store.now() });
+  if (used + size > DECISION_BUDGET) r.kind = 'note';
+  ctx.store.insert('memory_records', r);
+  // activate replaces only a version of the same kind.
+  for (const old of same) if (old.kind !== r.kind) archive(ctx, old, 'superseded', r.id);
+  activate(ctx, r, r.author, commandId);
 }
 
 const FILE_SYNC_MS = 60_000;

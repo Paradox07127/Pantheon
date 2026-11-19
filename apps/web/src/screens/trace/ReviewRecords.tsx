@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { CommandType } from '@pantheon/protocol';
 import type { RuntimeFinding, RuntimeReviewHistory } from '@pantheon/domain';
+import { RunningFor, RUNNING } from '../../components/RunningFor';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { runCommand } from '../../data/commands';
 import { useMemoryView } from '../../data/memory-view';
@@ -162,12 +163,21 @@ function ReviewCard({
             { phase },
           )}
         </span>
-        <span className="rvr-rt">
-          <RuntimeGlyph runtime={review.runtime} />
-          {runtimeName(review.runtime)}
-        </span>
+        {review.state === 'running' ? (
+          <RunningFor label={RUNNING.writing} since={review.created_at} />
+        ) : (
+          <span className="rvr-rt">
+            <RuntimeGlyph runtime={review.runtime} />
+            {t(
+              { id: 'trace.reviews.analyzedBy', defaultMessage: '{runtime} analyzed {time}' },
+              {
+                runtime: runtimeName(review.runtime),
+                time: dayText(review.created_at, now, { time: true }),
+              },
+            )}
+          </span>
+        )}
         <span className="rvr-win">{windowText(review.from, review.to, now)}</span>
-        <span className="rvr-at">{dayText(review.created_at, now, { time: true })}</span>
       </div>
       {report && <p className="rvr-summary">{report.summary}</p>}
       {cited.length > 0 && (

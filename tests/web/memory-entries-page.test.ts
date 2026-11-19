@@ -20,7 +20,8 @@ import {
 } from './web-hook-host.js';
 import { toastManager } from '@/components/Toast';
 import { useBoard } from '@/data/board';
-import { useMemoryView } from '@/data/memory-view';
+import { askMilestone, useAskedMilestone, useBoardPage } from '@/data/board-page';
+import { openPlanMemory, useMemoryView } from '@/data/memory-view';
 import { failureText } from '@/data/needs-you';
 import { EntriesBar, EntriesTopControls, type EntriesFilters } from '@/screens/memory/EntriesBar';
 import { EntriesPage } from '@/screens/memory/EntriesPage';
@@ -244,6 +245,75 @@ describe('memory entries page', () => {
     tagRow(zh('memory.entries.allTags')).props.onChange(true);
     await rerender(h);
     expect(reads().at(-1)).toEqual({ project_id: projectId, state: 'active', limit: '20' });
+  });
+
+  it("reads the plan's entries, then one milestone's, and neither once the source is cleared", async () => {
+    const h = await mount();
+    named(h.value, 'EntriesBar').props.onChange({ state: 'active', tag: [], origin: 'plan' });
+    await rerender(h);
+    expect(reads().at(-1)).toEqual({
+      project_id: projectId,
+      state: 'active',
+      origin: 'plan',
+      limit: '20',
+    });
+    named(h.value, 'EntriesBar').props.onChange({
+      state: 'active',
+      tag: [],
+      origin: 'plan',
+      milestone: 'ms-release',
+    });
+    await rerender(h);
+    expect(reads().at(-1)).toEqual({
+      project_id: projectId,
+      state: 'active',
+      origin: 'plan',
+      milestone_id: 'ms-release',
+      limit: '20',
+    });
+    named(h.value, 'EntriesBar').props.onChange({ state: 'active', tag: [] });
+    await rerender(h);
+    expect(reads().at(-1)).toEqual({ project_id: projectId, state: 'active', limit: '20' });
+  });
+
+  it("lists the plan's entries when another screen opens memory for them", async () => {
+    openPlanMemory(projectId);
+    const h = await mount();
+    await rerender(h);
+    expect(useShell.getState()).toMatchObject({ screen: 'memory', memoryTab: 'entries' });
+    expect(named(h.value, 'EntriesBar').props.filters).toEqual({
+      state: 'active',
+      tag: [],
+      origin: 'plan',
+    });
+    expect(reads().at(-1)).toMatchObject({ origin: 'plan' });
+    expect(useMemoryView.getState().askedFilters).toBeNull();
+  });
+
+  it("names an entry's milestone from the directory and goes to the board overview from it", async () => {
+    const milestones = [{ id: 'ms-release', title: 'Release', count: 1 }];
+    pages = () => ({
+      ok: true,
+      value: directory({ facets: { ...directory().facets, milestones } }),
+    });
+    const h = await mount();
+    list(h).props.onSelect('r1');
+    await rerender(h);
+    const detail = named(h.value, 'EntryDetail');
+    expect(detail.props.milestones).toEqual(milestones);
+    detail.props.onOpenMilestone();
+    expect(useShell.getState().screen).toBe('board');
+  });
+
+  it("asks the board overview to unfold the entry's milestone", async () => {
+    const h = await mount();
+    list(h).props.onSelect('r1');
+    await rerender(h);
+    named(h.value, 'EntryDetail').props.onOpenMilestone('ms-release');
+    expect(useShell.getState().screen).toBe('board');
+    expect(mountHost(() => useBoardPage(projectId)).value).toBe('overview');
+    expect(mountHost(() => useAskedMilestone(projectId)).value).toBe('ms-release');
+    askMilestone(null);
   });
 
   it('names the session that proposed a pending entry from the board', async () => {
@@ -664,6 +734,72 @@ describe('memory entries filter row', () => {
       tag: [],
       task: { id: 't1', lead_session_id: 'lead' },
     });
+  });
+
+  it("lists the plan's milestones with their counts in the source menu, and picks one", () => {
+    const onChange = vi.fn();
+    const h = mountHost(() =>
+      EntriesBar({
+        filters: { state: 'active', tag: [], task: { id: 't1', lead_session_id: 'lead' } },
+        counts: { active: 2, draft: 0, archived: 0 },
+        facets: {
+          tags: [],
+          tasks: [],
+          milestones: [
+            { id: 'ms-release', title: 'Release', count: 2 },
+            { id: 'ms-beta', count: 1 },
+          ],
+        },
+        total: 2,
+        onChange,
+      }),
+    );
+    const source = menu(h, zh('memory.entries.source'));
+    const group = find(
+      source.props.children,
+      (n) => typeof n.type === 'function' && n.type.name === 'MenuRadioGroup',
+    );
+    expect(
+      nodes(group.props.children)
+        .filter((n) => typeof n.type === 'function' && n.type.name === 'MenuRadioItem')
+        .map((n) => text(n.props.children)),
+    ).toEqual([
+      zh('memory.entries.allSources'),
+      zh('memory.entries.fromPlan'),
+      'Release2',
+      'ms-beta1',
+    ]);
+    expect(text(source.props.trigger)).toBe(zh('memory.entries.source'));
+    const task = { id: 't1', lead_session_id: 'lead' };
+    group.props.onChange('plan');
+    expect(onChange).toHaveBeenLastCalledWith({ state: 'active', tag: [], task, origin: 'plan' });
+    group.props.onChange('milestone:ms-release');
+    expect(onChange).toHaveBeenLastCalledWith({
+      state: 'active',
+      tag: [],
+      task,
+      origin: 'plan',
+      milestone: 'ms-release',
+    });
+    group.props.onChange('');
+    expect(onChange).toHaveBeenLastCalledWith({ state: 'active', tag: [], task });
+  });
+
+  it('names the source button by the picked milestone', () => {
+    const h = mountHost(() =>
+      EntriesBar({
+        filters: { state: 'active', tag: [], origin: 'plan', milestone: 'ms-release' },
+        counts: null,
+        facets: {
+          tags: [],
+          tasks: [],
+          milestones: [{ id: 'ms-release', title: 'Release', count: 2 }],
+        },
+        total: null,
+        onChange: () => {},
+      }),
+    );
+    expect(text(menu(h, zh('memory.entries.source')).props.trigger)).toBe('Release');
   });
 
   it('clears the search words with the button that shows while there are some', () => {

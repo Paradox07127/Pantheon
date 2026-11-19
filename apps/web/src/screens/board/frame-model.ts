@@ -186,6 +186,7 @@ export type NeedActionKey =
   | 'continue'
   | 'sync'
   | 'budget'
+  | 'memory'
   | 'stop_background'
   | 'board'
   | 'keep'
@@ -279,6 +280,14 @@ function itemActions(
         key: 'budget',
         label: t({ id: 'board.needs.actions.budget', defaultMessage: 'Adjust budget' }),
         reason: offReason(item, 'workflow.policy.set'),
+      },
+    ];
+  if (item.kind === 'memory.decision_budget')
+    return [
+      {
+        key: 'memory',
+        label: t({ id: 'board.needs.actions.memory', defaultMessage: 'Open memory' }),
+        reason: null,
       },
     ];
   if (item.kind === 'improvement.candidate') {
@@ -740,6 +749,15 @@ export function needWhat(item: NeedItem, session?: SnapshotSession): string {
   if (blocked) return reasonDetail(reasonText(item.reason), reasonText(blocked));
   if (item.background) return reasonDetail(reasonText(item.reason), item.background.description);
   if (item.step_title) return reasonDetail(reasonText(item.reason), item.step_title);
+  if (item.memory_notes)
+    return t(
+      {
+        id: 'board.needs.memoryBudget',
+        defaultMessage:
+          'The memory budget for decisions is full; {count, plural, one {# plan decision was} other {# plan decisions were}} kept as notes',
+      },
+      { count: item.memory_notes.count },
+    );
   if (item.kind !== 'permission' || item.reason !== 'permission_requested')
     return needReasonText(item);
   if (asksQuestion(item))

@@ -100,7 +100,6 @@
   "sessions.panel.checks.externalReview": "外审",
   "sessions.panel.checks.reviewDone": "审查完成",
   "sessions.panel.checks.reviewFailed": "审查失败",
-  "sessions.panel.story.generating": "生成中",
   "sessions.panel.story.noCommits": "没有提交",
   "sessions.panel.story.generate": "生成解读",
   "sessions.panel.story.stale": "解读已过期，展示的是先前提交的证据",

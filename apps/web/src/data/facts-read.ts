@@ -53,9 +53,11 @@ export function factsRefresher(send: (project_id: string) => Promise<BridgeResul
   };
 }
 
-const refreshOnOpen = factsRefresher((project_id) =>
-  runCommand('project.facts.refresh', { project_id }, null),
-);
+/** Measures the project now; the result comes back once the new snapshot is stored. */
+export const measureFacts = (project_id: string) =>
+  runCommand('project.facts.refresh', { project_id }, null);
+
+const refreshOnOpen = factsRefresher(measureFacts);
 
 /**
  * Measures the project when it becomes the current one, and again on reconnecting if that failed;

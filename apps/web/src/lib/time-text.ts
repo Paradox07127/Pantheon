@@ -46,6 +46,14 @@ export function durationText(ms: number): string {
     : t({ id: 'lib.time.days', defaultMessage: '{days}d' }, { days });
 }
 
+/** An age as a unit and a count, for one message to word. */
+export function ageParts(ms: number): { unit: 'now' | 'minute' | 'hour' | 'day'; count: number } {
+  if (ms < MINUTE) return { unit: 'now', count: 0 };
+  if (ms < HOUR) return { unit: 'minute', count: Math.floor(ms / MINUTE) };
+  if (ms < DAY) return { unit: 'hour', count: Math.floor(ms / HOUR) };
+  return { unit: 'day', count: Math.floor(ms / DAY) };
+}
+
 const CLOCK = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } as const;
 
 const formats = new Map<string, Intl.DateTimeFormat>();

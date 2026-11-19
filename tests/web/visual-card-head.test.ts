@@ -12,7 +12,8 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { VisualCard } from '@/components/visual/VisualCard';
 import { useBoard } from '@/data/board';
 import { useShell } from '@/store';
-import { zh } from './i18n-setup.js';
+import { dayText } from '@/lib/time-text';
+import { zh, zhf } from './i18n-setup.js';
 
 const visual = (over: Partial<Visual> & Pick<Visual, 'kind' | 'spec'>): Visual =>
   ({
@@ -47,6 +48,8 @@ function card(props: Parameters<typeof VisualCard>[0]) {
 const head = (tree: ReactNode) => find(tree, (n) => n.props.className === 'vis-h');
 const labelled = (tree: ReactNode, label: string) =>
   nodes(tree).filter((n) => n.props['aria-label'] === label);
+const buttons = (tree: ReactNode, name: string) =>
+  nodes(tree).filter((n) => n.type === 'button' && text(n) === name);
 
 beforeEach(() => {
   vi.stubGlobal('window', {
@@ -116,7 +119,7 @@ describe('visual card header', () => {
     const shown = card({ visual: kline, size: 'M', onRefresh, failed: true });
     const status = find(head(shown), (n) => n.props.role === 'status');
     expect(text(status)).toBe(zh('visual.card.redrawFailed'));
-    expect(labelled(shown, zh('visual.card.refresh'))).toEqual([]);
+    expect(buttons(shown, zh('visual.card.redraw'))).toEqual([]);
     const retry = find(shown, (n) => n.type === 'button' && text(n) === zh('visual.card.retry'));
     retry.props.onClick();
     expect(onRefresh).toHaveBeenCalledOnce();
@@ -154,22 +157,46 @@ describe('visual card header', () => {
     expect(labelled(shown, '来源会话：Refund lead')).toEqual([]);
   });
 
-  it('refreshes only when the caller can, and holds still while a refresh runs', () => {
-    expect(labelled(card({ visual: kline, size: 'M' }), zh('visual.card.refresh'))).toEqual([]);
+  it('redraws only when the caller can, and holds still while a redraw runs', () => {
+    expect(buttons(card({ visual: kline, size: 'M' }), zh('visual.card.redraw'))).toEqual([]);
     const onRefresh = vi.fn();
-    const [button] = labelled(
+    const [button] = buttons(
       card({ visual: kline, size: 'M', onRefresh }),
-      zh('visual.card.refresh'),
+      zh('visual.card.redraw'),
     );
+    expect(button!.props['aria-label']).toBeUndefined();
     button!.props.onClick();
     expect(onRefresh).toHaveBeenCalledOnce();
     onRefresh.mockClear();
-    const busy = card({ visual: kline, size: 'M', onRefresh, refreshing: true });
-    const [held] = labelled(busy, zh('visual.card.refresh'));
+    const since = Date.now() - 42_000;
+    const busy = card({
+      visual: kline,
+      size: 'M',
+      onRefresh,
+      refreshing: true,
+      redrawSince: since,
+    });
+    const [held] = buttons(busy, zh('visual.card.redraw'));
     expect(held!.props['aria-disabled']).toBe(true);
     held!.props.onClick();
     expect(onRefresh).not.toHaveBeenCalled();
-    expect(text(head(busy))).toContain(zh('visual.card.refreshing'));
+    const running = named(head(busy), 'RunningFor');
+    expect(running.props).toEqual({ label: zh('components.running.redrawing'), since });
+  });
+
+  it('says a pinned visual was drawn at its time, and that one whose session is gone cannot be redrawn', () => {
+    const onRefresh = vi.fn();
+    const drawn = dayText(kline.updated_at, Date.now(), { time: true });
+    const fine = card({ visual: kline, size: 'M', onRefresh });
+    expect(text(head(fine))).toContain(zhf('visual.card.drawnAt', { time: drawn }));
+    expect(text(head(fine))).not.toContain(zh('visual.card.cannotRedraw'));
+    const orphan = card({ visual: kline, size: 'M', onRefresh, redrawable: false });
+    const status = find(head(orphan), (n) => n.props.role === 'status');
+    expect(text(status)).toBe(zh('visual.card.cannotRedraw'));
+    const [off] = buttons(orphan, zh('visual.card.redraw'));
+    expect(off!.props['aria-disabled']).toBe(true);
+    off!.props.onClick();
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   it('opens the spec as read-only text from an action shown on hover', () => {

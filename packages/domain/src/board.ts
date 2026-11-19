@@ -139,6 +139,12 @@ export interface PlanAssumption {
   /** A milestone id of the plan. */
   milestone?: string;
 }
+export interface PlanRisk {
+  text: string;
+  id?: string;
+  /** A milestone id of the plan. */
+  milestone?: string;
+}
 /**
  * A lane whose tasks wait until the user approves its plan; approved_at absent while it waits.
  * Without held_at it only keeps the user's depth.
@@ -224,7 +230,7 @@ export interface BoardPlan extends Entity {
   pending_edits: PendingPlanEdit[];
   /** Lead proposals waiting for the user, with resolved records retained like user edits. */
   pending_proposals?: PlanProposal[];
-  risks: { text: string }[];
+  risks: PlanRisk[];
   assumptions: PlanAssumption[];
   questions?: LeadQuestion[];
   /** Tasks the lead asked Pantheon to open a session for, by task id, until one opens. */

@@ -1,10 +1,11 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { Ellipsis, FlaskConical, Gauge, Lightbulb, Pencil } from 'lucide-react';
+import { BookOpen, Ellipsis, FlaskConical, Gauge, Lightbulb, Pencil } from 'lucide-react';
 import type { ApprovalQuestion, Improvement } from '@pantheon/domain';
 import type { BoardTaskRung } from '@pantheon/protocol';
 import { blocksText, decisionText, primaryAction } from '../data/attention';
 import { useBoard } from '../data/board';
+import { openPlanMemory } from '../data/memory-view';
 import type { PlanProposal } from '../data/plan-edit';
 import {
   ageText,
@@ -117,6 +118,7 @@ const MARK: Record<NeedItem['kind'], ReactNode> = {
   'workflow.definition.trial': <FlaskConical className="ic-sm" aria-hidden="true" />,
   'improvement.candidate': <Lightbulb className="ic-sm" aria-hidden="true" />,
   'project.over_budget': <Gauge className="ic-sm" aria-hidden="true" />,
+  'memory.decision_budget': <BookOpen className="ic-sm" aria-hidden="true" />,
 };
 
 const PRIMARY: ReadonlySet<NeedActionKey> = new Set([
@@ -209,6 +211,10 @@ export function RequestCard({
     }
     if (action.key === 'budget') {
       openSettingsPage(item.project_id, 'projects');
+      return;
+    }
+    if (action.key === 'memory') {
+      openPlanMemory(item.project_id);
       return;
     }
     const command = needCommand(item, action.key, { answers: answered, session, lead });

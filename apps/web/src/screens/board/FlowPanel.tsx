@@ -47,7 +47,7 @@ import {
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { dayText } from '../../lib/time-text';
-import { activityLine } from './activity';
+import { activityNote } from './activity';
 import {
   MAX_USER_ZOOM,
   MIN_USER_ZOOM,
@@ -752,6 +752,7 @@ function FlowCanvas({
             data: { task: overlay.task },
           };
         const task = tasks.get(n.id)!;
+        const note = states ? null : activityNote(task, now, model);
         return {
           ...place(NODE_WIDTH),
           type: 'task',
@@ -768,7 +769,8 @@ function FlowCanvas({
             now,
             critical: critical.includes(n.id),
             ready: ready.has(n.id),
-            line: states ? null : activityLine(task, now, model),
+            line: note?.text ?? null,
+            ...(note?.ago && { ago: note.ago }),
             editable,
             tall: heights.get(n.id) ?? NODE_HEIGHT,
             ...(marks.has(n.id) && { drafted: marks.get(n.id) }),

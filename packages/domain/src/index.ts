@@ -427,7 +427,8 @@ export interface NeedsYouItem {
       | 'workflow_policies'
       | 'workflow_definitions'
       | 'workflow_step_runs'
-      | 'agent_proposals';
+      | 'agent_proposals'
+      | 'memory_records';
     id: string;
     revision: number;
   };
@@ -446,7 +447,8 @@ export interface NeedsYouItem {
     | 'lead.question'
     | 'workflow.approval'
     | 'external.approval'
-    | 'agent.proposal';
+    | 'agent.proposal'
+    | 'memory.decision_budget';
   project_id: string;
   /**
    * The approval's session, or the lead of a plan, milestone or improvement item; absent on session
@@ -498,7 +500,8 @@ export interface NeedsYouItem {
     | 'task_blocked'
     | 'workflow_approval'
     | 'external_approval'
-    | 'agent_proposal_awaiting_decision';
+    | 'agent_proposal_awaiting_decision'
+    | 'plan_decisions_over_budget';
   /** What the user decides. */
   decision:
     | 'plan_change'
@@ -533,6 +536,8 @@ export interface NeedsYouItem {
   background?: BackgroundTask;
   /** The input tokens a project over its budget spent since the budget was set, and the budget. */
   project_budget?: { used_input_tokens: number; input_tokens: number };
+  /** The current plan decisions kept as notes because the decisions did not fit the memory budget. */
+  memory_notes?: { count: number; memory_ids: string[] };
   /** The upstream task, `<lead session id>:<task id>`, that keeps a queued task waiting, and why it does not go on. */
   upstream?: { task_id: string; stuck: 'merge_blocked' | 'stopped' | 'never_started' };
   /** How long a permission request has waited for an answer, in milliseconds; set once it is escalated. */
@@ -840,6 +845,8 @@ export interface Session extends Entity {
   /** ISO time the user snoozed the session; news from the session clears it. */
   snoozed_at?: string;
   recap?: SessionRecap;
+  /** The line the session last set in turn turn_id of what it does now; at is Unix ms. */
+  status_line?: { text: string; at: number; turn_id: string };
 }
 /** A short account of where a session stands, refreshed after its turns. */
 export interface SessionRecap {

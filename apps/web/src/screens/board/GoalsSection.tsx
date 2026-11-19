@@ -1,6 +1,8 @@
 import {
+  useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type DragEvent,
   type KeyboardEvent,
@@ -18,18 +20,18 @@ import {
   GripVertical,
   Pencil,
   Plus,
-  RefreshCw,
   TriangleAlert,
 } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { toast } from '../../components/Toast';
 import { Tip } from '../../components/Tip';
+import { askMilestone, useAskedMilestone } from '../../data/board-page';
 import { runCommand } from '../../data/commands';
 import { failureText } from '../../data/needs-you';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import type { BoardViewProps } from './BoardScreen';
+import { reducedMotion } from '../../lib/motion';
 import type { MilestoneActions } from './Charts';
 import { EvidenceMark } from './EvidenceMark';
 import { MilestoneAssumptions } from './MilestoneAssumptions';
@@ -45,57 +47,15 @@ const SHOWN_MILESTONES = 6;
 
 type Point = 'done' | 'ready' | 'current' | 'todo';
 
-/** The goals' heading controls: the plan's version, the lead's sync and the slot Add goal goes in. */
+/** The goals' heading controls: the slot Add goal goes in. */
 export function GoalsHead({
-  version,
-  sync,
-  stale,
   slot,
 }: {
-  version?: number;
-  sync?: BoardViewProps['sync'];
-  stale?: boolean;
   /** Takes the element the goals put their Add goal button in. */
   slot: (el: HTMLElement | null) => void;
 }) {
-  const label = t({ id: 'board.goals.sync', defaultMessage: 'Have the lead sync the plan' });
   return (
     <span className="bd-tools">
-      {version !== undefined && (
-        <span className="gm-pv">
-          {t({ id: 'board.bar.planVersion', defaultMessage: 'Plan v{version}' }, { version })}
-        </span>
-      )}
-      {sync &&
-        (sync.off ? (
-          <>
-            <Tip content={sync.off}>
-              <button
-                type="button"
-                className="btn sm ghost"
-                aria-disabled={true}
-                aria-describedby="board-goals-sync-off"
-              >
-                <RefreshCw aria-hidden="true" />
-                {label}
-              </button>
-            </Tip>
-            <span id="board-goals-sync-off" hidden>
-              {sync.off}
-            </span>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="btn sm ghost"
-            disabled={sync.busy || stale}
-            aria-busy={sync.busy || undefined}
-            onClick={sync.onSync}
-          >
-            <RefreshCw aria-hidden="true" />
-            {label}
-          </button>
-        ))}
       <span className="bd-slot" ref={slot} />
     </span>
   );
@@ -149,6 +109,16 @@ export function GoalsSection({
     const linked = new Set(goals.flatMap((g) => g.milestone_ids));
     return model.milestones.filter((m) => !linked.has(m.id));
   }, [goals, model.milestones]);
+  const asked = useAskedMilestone(projectId);
+  // The asked milestone, scrolled into view once its card is drawn.
+  const reveal = useRef<string | null>(null);
+  useEffect(() => {
+    if (!asked) return;
+    askMilestone(null);
+    if (!byId.has(asked)) return;
+    reveal.current = asked;
+    setExpanded((before) => new Set([...before, asked]));
+  }, [asked, byId]);
   // The goal a milestone unfolds under: the first that lists it, else none.
   const homeOf = (milestoneId: string) =>
     goals.find((g) => g.milestone_ids.includes(milestoneId))?.id ?? null;
@@ -499,10 +469,27 @@ export function GoalsSection({
     );
   };
 
-  /** The current milestone unfolded with its tasks. */
+  /** A milestone unfolded with its tasks. */
   const unfolded = (m: BoardMilestone) => (
-    <MilestoneCard model={model} milestone={m} actions={actions} onOpenTask={onOpenTask} />
+    <div
+      key={m.id}
+      ref={(el) => {
+        if (!el || reveal.current !== m.id) return;
+        reveal.current = null;
+        el.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      }}
+    >
+      <MilestoneCard model={model} milestone={m} actions={actions} onOpenTask={onOpenTask} />
+    </div>
   );
+  /** The current milestone, then those unfolded on request, whose goal is this one or none for null. */
+  const unfoldedUnder = (goalId: string | null) =>
+    [
+      ...(current && homeOf(current.id) === goalId ? [current] : []),
+      ...model.milestones.filter(
+        (m) => m.id !== current?.id && expanded.has(m.id) && homeOf(m.id) === goalId,
+      ),
+    ].map(unfolded);
 
   const goalRow = (goal: Goal, at: number) => {
     const headId = `${id}-${goal.id}`;
@@ -630,7 +617,7 @@ export function GoalsSection({
           </div>
         )}
         {failed?.goalId === goal.id && alert(failed.text)}
-        {current && homeOf(current.id) === goal.id && unfolded(current)}
+        {unfoldedUnder(goal.id)}
       </section>
     );
   };
@@ -718,7 +705,7 @@ export function GoalsSection({
               {t({ id: 'board.goals.noGoal', defaultMessage: 'No goal' })}
             </h2>
             {milestoneList('', loose)}
-            {current && homeOf(current.id) === null && unfolded(current)}
+            {unfoldedUnder(null)}
           </section>
         </div>
       )}

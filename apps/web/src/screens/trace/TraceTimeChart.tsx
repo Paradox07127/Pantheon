@@ -186,7 +186,7 @@ export function TraceTimeChart({
         </div>
         {data ? (
           <>
-            <ReadStatus label={heading} {...query} />
+            <ReadStatus label={heading} {...query} inner />
             {total > 0 ? (
               <>
                 <div className="trc-time-line">

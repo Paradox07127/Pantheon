@@ -1,0 +1,11 @@
+.run-for {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.run-for > .tr-status {
+  align-self: center;
+}
+.run-for-num {
+  font-variant-numeric: tabular-nums;
+}

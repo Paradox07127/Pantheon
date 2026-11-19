@@ -1,9 +1,15 @@
 import { Activity, useState, useSyncExternalStore } from 'react';
 import { Tabs } from '@base-ui/react/tabs';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ProjectReadStatus } from '../../components/ReadStatus';
+import { RUNNING, RunningFor } from '../../components/RunningFor';
 import { TopBar } from '../../components/TopBar';
+import { measureFacts, useFactsRead } from '../../data/facts-read';
+import { useNow } from '../../data/needs-you';
 import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import { SCREEN_NAMES } from '../../screens';
+import { Failure } from '../board/BoardScreen';
 import { ChangesTab } from './ChangesTab';
 import { CompareTab } from './CompareTab';
 import { FileHistory } from './file/FileHistory';
@@ -100,6 +106,52 @@ export function useRepoTab(projectId: string | null): RepoTab {
   return projectId ? (chosen ?? storedTab(projectId)) : 'timeline';
 }
 
+/** When the repository was last measured, and a button that measures it again. */
+export function MeasureControls({ projectId }: { projectId: string }) {
+  const facts = useFactsRead(projectId);
+  const now = useNow(60_000);
+  const [since, setSince] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const measure = () => {
+    setSince(Date.now());
+    setError(null);
+    void measureFacts(projectId).then((result) => {
+      setSince(null);
+      if (!result.ok) setError(result.error.message);
+    });
+  };
+  if (error !== null) return <Failure error={error} onRetry={measure} />;
+  const collected = facts.read?.collected_at ?? null;
+  const label = t({ id: 'repo.overview.measure', defaultMessage: 'Measure again' });
+  return (
+    <>
+      {since !== null ? (
+        <RunningFor label={RUNNING.measuring} since={since} />
+      ) : (
+        collected !== null && (
+          <span className="mu">
+            {t(
+              { id: 'repo.overview.measuredAt', defaultMessage: 'Measured {time}' },
+              { time: dayText(collected, now, { time: true }) },
+            )}
+          </span>
+        )
+      )}
+      <button
+        type="button"
+        className="btn"
+        disabled={since !== null}
+        aria-label={label}
+        title={label}
+        onClick={measure}
+      >
+        <RefreshCw className="ic-sm" aria-hidden="true" />
+        <span className="tb-lbl">{label}</span>
+      </button>
+    </>
+  );
+}
+
 export function RepoScreen({
   projectId,
   onOpenSession,
@@ -147,14 +199,20 @@ export function RepoScreen({
             {t({ id: 'repo.view.back', defaultMessage: 'Back to {tab}' }, { tab: tabLabel })}
           </button>
         )}
-        {projectId && view.kind === 'tabs' && tab === 'timeline' && (
-          <TimelineControls projectId={projectId} />
-        )}
-        {projectId && view.kind === 'tabs' && tab === 'overview' && (
-          <OverviewControls projectId={projectId} />
+        {projectId && (
+          <div className="tb-end">
+            {view.kind === 'tabs' && tab === 'timeline' && (
+              <TimelineControls projectId={projectId} />
+            )}
+            {view.kind === 'tabs' && tab === 'overview' && (
+              <OverviewControls projectId={projectId} />
+            )}
+            <MeasureControls key={projectId} projectId={projectId} />
+          </div>
         )}
       </TopBar>
       <main className="bd">
+        {projectId && <ProjectReadStatus label={SCREEN_NAMES.repo} projectId={projectId} />}
         <div className="bd-grid">
           {projectId &&
             (view.kind === 'commit' ? (

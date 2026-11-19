@@ -366,3 +366,26 @@ it('shows each assumption on its lead and its milestone with the state of the ne
     },
   ]);
 });
+
+it('leaves project memory one plan decision for each refute the lead resolved, none for a withdrawn one', async () => {
+  const f = await setup();
+  const lead = leadOf(f);
+  writePlan(f, lead);
+  const decisions = () =>
+    f.control
+      .memoryRead(user, f.project.id, { origin: 'plan' })
+      .records.map((record) => record.origin);
+
+  const applied = edit(f, user, lead, [refute('csv')]);
+  resolve(f, lead, applied.edit_id, 'apply');
+  const withdrawn = edit(f, user, lead, [refute('size', 'Exports may be large.')]);
+  f.call('board.plan.edit.withdraw', {
+    project_id: f.project.id,
+    lead_session_id: lead.session_id,
+    edit_id: withdrawn.edit_id,
+  });
+
+  expect(decisions()).toMatchObject([
+    { subject: 'assumption', subject_id: 'csv', outcome: 'refuted', edit_id: applied.edit_id },
+  ]);
+});

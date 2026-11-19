@@ -11,7 +11,7 @@ import { LoadError } from '../../components/LoadError';
 import { Menu } from '@base-ui/react/menu';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { Check, Ellipsis } from 'lucide-react';
+import { Check, Ellipsis, RefreshCw } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { useBoard } from '../../data/board';
 import { useBoardHistory } from '../../data/board-history';
@@ -29,6 +29,7 @@ import {
 } from '../../data/board-page';
 import { useBoardView } from '../../data/board-view';
 import { ReadStatus } from '../../components/ReadStatus';
+import { RUNNING, RunningFor } from '../../components/RunningFor';
 import { Skeleton as LoadingBlock } from '../../components/Skeleton';
 import { Tip } from '../../components/Tip';
 import { TopBar } from '../../components/TopBar';
@@ -39,6 +40,7 @@ import { useDraftEdits } from '../../data/plan-draft';
 import { useUnsentEdits } from '../../data/plan-edit';
 import { effectiveSessionDefaults, useLastProjectDefaults } from '../../data/project-defaults';
 import { t } from '../../i18n';
+import { dayText } from '../../lib/time-text';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
 import type { BaselineChoice, ProjectBaseline } from '../projects/baseline';
@@ -235,6 +237,8 @@ export interface BoardViewProps {
     onSync: () => void;
     /** Why the update is off; absent while it can run. */
     off?: string | null;
+    /** When this window sent the sync that runs; null while none does. */
+    since: number | null;
   };
   /** The project's setup, shown in place of an empty board; absent without a project. */
   setup?: ProjectSetupRead;
@@ -690,8 +694,9 @@ export function BoardView(props: BoardViewProps) {
   const [goalsBar, setGoalsBar] = useState<HTMLElement | null>(null);
   const empty = !!model && isEmpty(model);
   const planner = model && planLead(model);
-  const version = model?.leads?.find((l) => l.session_id === planner)?.plan_version;
-  const busy = !!sync?.busy || !!baseline?.busy;
+  const plan = model?.leads?.find((l) => l.session_id === planner);
+  const busy = !!baseline?.busy;
+  const syncLabel = t({ id: 'board.bar.sync', defaultMessage: 'Have the lead sync the plan' });
   const loadingPanel = (
     <section className="bd-pn bd-s12" aria-labelledby="bd-load-h">
       <div className="bd-ph">
@@ -777,6 +782,56 @@ export function BoardView(props: BoardViewProps) {
               {!setupOnly && page === 'tasks' && projectId && actions && (
                 <NewTask model={model} disabled={!scoped} onNew={newTask} />
               )}
+              {sync?.busy ? (
+                <RunningFor label={RUNNING.writing} since={sync.since} />
+              ) : (
+                plan?.plan_version !== undefined &&
+                model && (
+                  <span className="gm-pv">
+                    {t(
+                      { id: 'board.bar.planAt', defaultMessage: 'Plan v{version}, updated {time}' },
+                      {
+                        version: plan.plan_version,
+                        time: dayText(plan.updated_at, model.now, { time: true }),
+                      },
+                    )}
+                  </span>
+                )
+              )}
+              {sync &&
+                (sync.off ? (
+                  <>
+                    <Tip content={sync.off}>
+                      <button
+                        type="button"
+                        className="btn"
+                        aria-disabled={true}
+                        aria-describedby="board-sync-off"
+                        aria-label={syncLabel}
+                        title={syncLabel}
+                      >
+                        <RefreshCw className="ic-sm" aria-hidden="true" />
+                        <span className="tb-lbl">{syncLabel}</span>
+                      </button>
+                    </Tip>
+                    <span id="board-sync-off" hidden>
+                      {sync.off}
+                    </span>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={sync.busy || props.stale}
+                    aria-busy={sync.busy || undefined}
+                    aria-label={syncLabel}
+                    title={syncLabel}
+                    onClick={sync.onSync}
+                  >
+                    <RefreshCw className="ic-sm" aria-hidden="true" />
+                    <span className="tb-lbl">{syncLabel}</span>
+                  </button>
+                ))}
               <Menu.Root>
                 <Menu.Trigger
                   ref={moreButton}
@@ -789,27 +844,6 @@ export function BoardView(props: BoardViewProps) {
                 <Menu.Portal>
                   <Menu.Positioner side="bottom" align="end" sideOffset={4} style={{ zIndex: 40 }}>
                     <Menu.Popup className="wmenu pop">
-                      {sync &&
-                        (sync.off ? (
-                          <>
-                            <Tip content={sync.off}>
-                              <Menu.Item disabled aria-describedby="board-sync-off">
-                                {t({ id: 'board.headline.sync', defaultMessage: 'Update board' })}
-                              </Menu.Item>
-                            </Tip>
-                            <span id="board-sync-off" hidden>
-                              {sync.off}
-                            </span>
-                          </>
-                        ) : (
-                          <Menu.Item
-                            disabled={sync.busy || props.stale}
-                            aria-busy={sync.busy || undefined}
-                            onClick={sync.onSync}
-                          >
-                            {t({ id: 'board.headline.sync', defaultMessage: 'Update board' })}
-                          </Menu.Item>
-                        ))}
                       {baseline?.link && (
                         <Menu.Item onClick={() => onOpenSession(baseline.link!.session_id)}>
                           {baseline.link.label}
@@ -884,8 +918,6 @@ export function BoardView(props: BoardViewProps) {
                     loadingPanel,
                     goalsBar,
                     onGoalsBar: setGoalsBar,
-                    sync,
-                    planVersion: version,
                     onOpenNeeds: () => setNeedsAsked(!!model?.needs?.length),
                     onOpenTasks: (milestoneId) => {
                       setPicked(milestoneId);
@@ -968,12 +1000,14 @@ export function BoardScreen({
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncWait, setSyncWait] = useState<TurnWait | null>(null);
+  const [syncSince, setSyncSince] = useState<number | null>(null);
   const [actionsProject, setActionsProject] = useState(projectId);
   if (actionsProject !== projectId) {
     setActionsProject(projectId);
     setSyncing(false);
     setSyncError(null);
     setSyncWait(null);
+    setSyncSince(null);
   }
   const shownProject = useRef(projectId);
   shownProject.current = projectId;
@@ -981,6 +1015,7 @@ export function BoardScreen({
     setSyncing(true);
     setSyncError(null);
     setSyncWait(null);
+    setSyncSince(Date.now());
     const ended = endedTurns(useBoard.getState().board?.session_turns);
     const result = await runCommand('board.sync', { project_id }, null);
     // The board shows another project by now.
@@ -994,6 +1029,8 @@ export function BoardScreen({
   // Until the reset above lands, syncWait is still the last project's.
   const syncLeft = actionsProject !== projectId ? null : waitAfter(syncWait, snapshot);
   if (syncLeft !== syncWait) setSyncWait(syncLeft);
+  const syncBusy = syncing || syncLeft !== null;
+  if (!syncBusy && syncSince !== null) setSyncSince(null);
   const offline = useBoard((s) => s.status.state === 'offline');
   const globalDefaults = useLastProjectDefaults();
   const setup = useProjectSetup(projectId);
@@ -1016,10 +1053,11 @@ export function BoardScreen({
         {...(projectId && {
           projectId,
           sync: {
-            busy: syncing || syncLeft !== null,
+            busy: syncBusy,
             error: syncError,
             onSync: () => void onSync(projectId),
             off: baselineSyncReason(setup?.baseline),
+            since: syncSince,
           },
           setup,
           baseline: setup && baselineBar(setup),

@@ -3,6 +3,7 @@ import { Check, File, Globe, User, X } from 'lucide-react';
 import type {
   MemoryDirectory,
   MemoryItem,
+  MemoryOrigin,
   MemoryRecord,
   MemoryReference,
   MemorySummary,
@@ -26,6 +27,8 @@ export interface EntryDetailProps {
   dependencies: MemorySummary[];
   dependents: MemorySummary[];
   tasks: MemoryDirectory['facets']['tasks'];
+  /** The milestones of the plan's entries, which name the milestone an entry rests on. */
+  milestones?: NonNullable<MemoryDirectory['facets']['milestones']>;
   /** The directory signature now; a draft proposed against it is still the latest. */
   signature?: string;
   /** The session that proposed a draft. */
@@ -34,6 +37,8 @@ export interface EntryDetailProps {
   onOpen: (memoryId: string) => void;
   /** Sets the list's tag filter to this tag. */
   onTag: (tag: string) => void;
+  /** Goes to the board's overview with the plan's milestone unfolded. */
+  onOpenMilestone?: (milestoneId: string) => void;
   onClose: () => void;
 }
 
@@ -46,10 +51,29 @@ const kindText = (kind: MemoryRecord['kind']) =>
       ? t({ id: 'memory.detail.kind.report', defaultMessage: 'Report' })
       : t({ id: 'memory.detail.kind.note', defaultMessage: 'Note' });
 
-const authorityText = (authority: MemoryRecord['authority']) =>
-  authority === 'user'
-    ? t({ id: 'memory.detail.byUser', defaultMessage: 'You decided' })
-    : t({ id: 'memory.detail.byAgent', defaultMessage: 'Agent report' });
+const authorityText = (r: Pick<MemoryRecord, 'authority' | 'origin'>) =>
+  r.origin
+    ? t({ id: 'memory.detail.byPlan', defaultMessage: 'Decided in the plan' })
+    : r.authority === 'user'
+      ? t({ id: 'memory.detail.byUser', defaultMessage: 'You decided' })
+      : t({ id: 'memory.detail.byAgent', defaultMessage: 'Agent report' });
+
+/** What became of the plan's assumption or risk, and the status tone of its chip. */
+export const OUTCOME: Record<MemoryOrigin['outcome'], { tone: Tone | 'bad'; text: () => string }> =
+  {
+    confirmed: {
+      tone: 'ok',
+      text: () => t({ id: 'memory.detail.outcome.confirmed', defaultMessage: 'Confirmed' }),
+    },
+    refuted: {
+      tone: 'bad',
+      text: () => t({ id: 'memory.detail.outcome.refuted', defaultMessage: 'Refuted' }),
+    },
+    closed: {
+      tone: 'ok',
+      text: () => t({ id: 'memory.detail.outcome.closed', defaultMessage: 'Risk closed' }),
+    },
+  };
 
 const stateTone = (r: Pick<MemoryRecord, 'state'>): Tone =>
   r.state === 'active' ? 'ok' : r.state === 'draft' ? 'wait' : 'idle';
@@ -98,11 +122,13 @@ export function EntryDetail({
   dependencies,
   dependents,
   tasks,
+  milestones = [],
   signature,
   author,
   footer,
   onOpen,
   onTag,
+  onOpenMilestone,
   onClose,
 }: EntryDetailProps) {
   const all = versions.some((v) => v.id === item.id) ? versions : [item, ...versions];
@@ -123,6 +149,10 @@ export function EntryDetail({
       : t({ id: 'memory.detail.project', defaultMessage: 'Project' });
   const sources = item.reference_status ?? [];
   const latest = signature === undefined ? undefined : item.based_on === signature;
+  const origin = item.origin;
+  const milestone = origin?.milestone_id
+    ? milestones.find((m) => m.id === origin.milestone_id)
+    : undefined;
   const relatedRow = (s: MemorySummary, end: string) => (
     <button key={s.id} type="button" className="ed-row" data-id={s.id} onClick={() => onOpen(s.id)}>
       {kindIcon(s.kind, kindText(s.kind))}
@@ -159,11 +189,30 @@ export function EntryDetail({
           </span>
           {!(draft && item.author_session_id) && (
             <span className="chip">
-              {item.authority === 'user' && <User aria-hidden="true" />}
-              {authorityText(item.authority)}
+              {item.authority === 'user' && !origin && <User aria-hidden="true" />}
+              {authorityText(item)}
             </span>
           )}
           <span className="chip">{scope(item.task)}</span>
+          {origin && (
+            <span className="chip ed-st" data-st={OUTCOME[origin.outcome].tone}>
+              {OUTCOME[origin.outcome].text()}
+            </span>
+          )}
+          {origin?.milestone_id && (
+            <button
+              type="button"
+              className="chip ed-tag"
+              onClick={() => onOpenMilestone?.(origin.milestone_id!)}
+            >
+              {milestone?.title
+                ? t(
+                    { id: 'memory.detail.fromMilestone', defaultMessage: 'From milestone {title}' },
+                    { title: milestone.title },
+                  )
+                : t({ id: 'memory.detail.fromPlan', defaultMessage: 'From a plan milestone' })}
+            </button>
+          )}
         </div>
         {!!item.tags?.length && (
           <div
@@ -312,7 +361,7 @@ export function EntryDetail({
               { count: dependencies.length },
             )}
           </h3>
-          {dependencies.map((s) => relatedRow(s, authorityText(s.authority)))}
+          {dependencies.map((s) => relatedRow(s, authorityText(s)))}
         </section>
       )}
 

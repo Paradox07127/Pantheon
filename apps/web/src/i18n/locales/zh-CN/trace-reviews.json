@@ -1,4 +1,5 @@
 {
+  "trace.reviews.analyzedBy": "{runtime} 分析于 {time}",
   "trace.reviews.baseline": "对照基线",
   "trace.reviews.baselineInput": "基线值",
   "trace.reviews.baselineValue": "基线",

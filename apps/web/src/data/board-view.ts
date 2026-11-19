@@ -3,7 +3,7 @@ import type { BoardModel } from '@pantheon/protocol';
 import { useBoard } from './board';
 import { touchesNeedsYou, useMidnights } from './needs-you';
 import type { DaemonEvent } from './sync';
-import { useQuery, useRefetchTick } from './workbench-sessions';
+import { useFocusTick, useQuery, useRefetchTick } from './workbench-sessions';
 
 const acceptView = (value: unknown): BoardModel | null =>
   Array.isArray((value as Partial<BoardModel> | null)?.tasks) ? (value as BoardModel) : null;
@@ -64,7 +64,7 @@ export function useBoardView(
 ): ReturnType<typeof useQuery<BoardModel>> {
   const sequence = useBoard((s) => (projectId ? (newest(s.events, projectId)?.sequence ?? 0) : 0));
   const resync = useBoard((s) => s.resync);
-  const tick = useRefetchTick(sequence, false);
+  const tick = useRefetchTick(sequence, false) + useFocusTick();
   const [clockTick, setClockTick] = useState(0);
   // The last `days` days move at local midnight, even on an idle board.
   const midnights = useMidnights();

@@ -17,6 +17,12 @@ export const useProjectBrief = (projectId: string | null) =>
 export const markProjectSeen = (projectId: string): Promise<MutationResult> =>
   sendProjectCommand('project.seen', { project_id: projectId }, null);
 
-/** Asks the daemon to write the paragraph of the project's brief; it lands with a later read. */
-export const writeBriefProse = (projectId: string): Promise<MutationResult> =>
-  sendProjectCommand('project.brief.prose.write', { project_id: projectId }, null);
+/** Asks the daemon to write the paragraph of the project's brief; true once it started, the paragraph landing with a later read. */
+export const writeBriefProse = async (projectId: string): Promise<boolean> => {
+  const result = await sendProjectCommand(
+    'project.brief.prose.write',
+    { project_id: projectId },
+    null,
+  );
+  return result.ok && (result.value as { started?: boolean } | null)?.started === true;
+};

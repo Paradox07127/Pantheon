@@ -768,6 +768,12 @@ export const appHelpGroups: AppHelpGroup[] = [
       { type: 'task.report', tool: 'report' },
       { type: 'task.start', about: "Ids of tasks in the calling lead's plan.", tool: 'start_task' },
       {
+        type: 'task.status_line',
+        about:
+          'Sets the one line of what the calling session does now in its running turn, shown on its board row with its time. Plan task and lead sessions only; a new text waits 15 s after the last one.',
+        tool: 'status_line',
+      },
+      {
         type: 'task.stop',
         about:
           "Drops the start request of a task in the calling lead's plan and discards its open sessions.",

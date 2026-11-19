@@ -24,7 +24,7 @@ vi.mock('@/store', () => ({
     { setState() {} },
   ),
 }));
-import { Menu } from '../../apps/web/node_modules/@base-ui/react/menu/index.mjs';
+import { RunningFor } from '@/components/RunningFor';
 import { BoardScreen, BoardView } from '@/screens/board/BoardScreen';
 import { zh } from './i18n-setup.js';
 
@@ -50,7 +50,7 @@ const view = (sync: Parameters<typeof BoardView>[0]['sync']) =>
     }),
   );
 const syncItem = (tree: unknown) =>
-  find(tree as any, (n) => n.type === Menu.Item && text(n) === zh('board.headline.sync'));
+  find(tree as any, (n) => n.type === 'button' && n.props['aria-label'] === zh('board.bar.sync'));
 
 beforeEach(() => {
   commands = [];
@@ -80,23 +80,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('puts an update item in the more menu that is busy while it syncs, the menu button marked', () => {
+it("puts the lead's sync in the bar, off while it syncs with how long it has run beside it", () => {
   const onSync = vi.fn();
-  const idle = syncItem(view({ busy: false, error: null, onSync }).value);
+  const idle = syncItem(view({ busy: false, error: null, onSync, since: null }).value);
+  expect(text(idle)).toBe(zh('board.bar.sync'));
   idle.props.onClick();
   expect(onSync).toHaveBeenCalledOnce();
 
-  const tree = view({ busy: true, error: null, onSync }).value;
+  const tree = view({ busy: true, error: null, onSync, since: 1_000 }).value;
   const busy = syncItem(tree);
   expect(busy.props['aria-busy']).toBe(true);
   expect(busy.props.disabled).toBe(true);
-  expect(find(tree, (n) => n.props['aria-label'] === zh('board.bar.more')).props['aria-busy']).toBe(
-    true,
-  );
+  expect(find(tree, (n) => n.type === RunningFor).props).toEqual({
+    label: zh('components.running.writing'),
+    since: 1_000,
+  });
+  expect(
+    find(tree, (n) => n.props['aria-label'] === zh('board.bar.more')).props['aria-busy'],
+  ).toBeUndefined();
 });
 
 it("keeps the more menu at the bar's end, the lead's sentence giving way", () => {
-  const tree = view({ busy: false, error: null, onSync: noop }).value;
+  const tree = view({ busy: false, error: null, onSync: noop, since: null }).value;
   const actions = find(tree, (n) => n.props.className === 'tb-end');
   expect(() => syncItem(actions)).not.toThrow();
   const css = readFileSync(
@@ -110,7 +115,7 @@ it("keeps the more menu at the bar's end, the lead's sentence giving way", () =>
 
 it('shows a failed sync as one line under the bar', () => {
   const onSync = vi.fn();
-  const tree = view({ busy: false, error: 'resource_busy：Wait', onSync }).value;
+  const tree = view({ busy: false, error: 'resource_busy：Wait', onSync, since: null }).value;
   const line = named(tree, 'Failure');
   expect(line.props.error).toBe('resource_busy：Wait');
   line.props.onRetry();
@@ -128,9 +133,11 @@ it('sends board.sync and stays on the board, busy until the sync turns of its le
   mock.board.board = { cursor: 1, session_turns: [turn('old', 'lead-a', 'completed', 'sync')] };
   const h = mount(() => boardView({ projectId: 'project-a', onOpenSession: noop }));
   await h.flush();
+  const sent = Date.now();
   h.value.props.sync.onSync();
   h.render();
   expect(h.value.props.sync.busy).toBe(true);
+  expect(h.value.props.sync.since).toBeGreaterThanOrEqual(sent);
   await h.flush();
   expect(commands).toMatchObject([{ type: 'board.sync', input: { project_id: 'project-a' } }]);
   expect(mock.openSession).not.toHaveBeenCalled();
@@ -157,7 +164,7 @@ it('sends board.sync and stays on the board, busy until the sync turns of its le
     ],
   };
   h.render();
-  expect(h.value.props.sync).toMatchObject({ busy: false, error: null });
+  expect(h.value.props.sync).toMatchObject({ busy: false, error: null, since: null });
   expect(mock.openSession).not.toHaveBeenCalled();
 });
 
@@ -243,7 +250,7 @@ it.each([
   ['confirmed', false],
   ['failed', false],
 ] as const)(
-  'turns the update item off, saying why, while the newest baseline is %s: %s',
+  "turns the lead's sync off, saying why, while the newest baseline is %s: %s",
   async (state, off) => {
     (window as any).pantheon.query = vi.fn(async (method: string) => ({
       ok: true,
@@ -265,7 +272,7 @@ it.each([
     await h.flush();
     const tree = view(h.value.props.sync).value;
     const update = syncItem(tree);
-    expect(!!update.props.disabled).toBe(off);
+    expect(!!update.props['aria-disabled']).toBe(off);
     const described = update.props['aria-describedby'];
     if (!off) return expect(described).toBeUndefined();
     expect(text(find(tree, (n) => n.props.id === described && n.type === 'span'))).toBe(

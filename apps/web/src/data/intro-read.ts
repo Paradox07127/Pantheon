@@ -1,5 +1,5 @@
 import type { ProjectIntroRead } from '@pantheon/protocol';
-import { sendProjectCommand, useProjectQuery } from './project-read';
+import { REPOSITORY_KINDS, sendProjectCommand, useProjectQuery } from './project-read';
 
 export type { ProjectIntroRead };
 export type ProjectIntro = NonNullable<ProjectIntroRead['intro']>;
@@ -22,9 +22,27 @@ const isIntroRead = (value: unknown): boolean => {
   );
 };
 
-/** GET /v1/project.intro.read: the saved introduction, read again whenever the board moves. */
+/** Events that write the introduction, start or end a writing turn, or move a root's commits. */
+const INTRO_KINDS: ReadonlySet<string> = new Set([
+  'project.intro.written',
+  'session.opened',
+  'turn.queued',
+  'turn.running',
+  'turn.completed',
+  'turn.failed',
+  'turn.cancelled',
+  ...REPOSITORY_KINDS,
+]);
+
+/** GET /v1/project.intro.read: the saved introduction, read again after the events that change it. */
 export function useIntroRead(project_id: string | null) {
-  return useProjectQuery<ProjectIntroRead>('project.intro.read', project_id, isIntroRead);
+  return useProjectQuery<ProjectIntroRead>(
+    'project.intro.read',
+    project_id,
+    isIntroRead,
+    undefined,
+    { kinds: INTRO_KINDS },
+  );
 }
 
 /** Starts an introduction session; its events move the board, so the read follows. */

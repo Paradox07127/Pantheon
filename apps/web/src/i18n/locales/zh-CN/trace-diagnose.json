@@ -40,7 +40,7 @@
   "trace.diagnose.detail.category": "类别",
   "trace.diagnose.detail.showInTimeline": "在时间轴上看",
   "trace.diagnose.detail.showInThread": "在对话里看",
-  "trace.diagnose.analyze": "请 Lead 分析",
+  "trace.diagnose.analyze": "让 lead 分析",
   "trace.diagnose.runtime": "用哪个 runtime 分析",
   "trace.diagnose.sendTo": "结论发给",
   "trace.diagnose.start": "开始分析"

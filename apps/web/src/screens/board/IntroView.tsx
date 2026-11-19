@@ -4,12 +4,11 @@ import type { BaselineFolder } from '@pantheon/domain';
 import type { FileRef } from '@pantheon/protocol';
 import { Markdown, openFailureText } from '../../components/Markdown';
 import { GraphDiagram } from '../../components/visual/GraphDiagram';
-import { StateGlyph } from '../../components/SessionStateIcon';
+import { RUNNING, RunningFor } from '../../components/RunningFor';
+import { runtimeName } from '../../components/RuntimeGlyph';
 import { Tip } from '../../components/Tip';
 import { useBoard } from '../../data/board';
 import { startIntro, useIntroRead, type ProjectIntro } from '../../data/intro-read';
-import { useNow } from '../../data/needs-you';
-import { elapsedText } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { BaselinePopover } from '../projects/BaselineBlocks';
@@ -117,24 +116,6 @@ export function SourceRef({
           {error}
         </span>
       )}
-    </span>
-  );
-}
-
-/** The writing state, and how long the writing session has run when its start is known. */
-export function WritingMark({ since }: { since: number | null }) {
-  const now = useNow();
-  const label = t({ id: 'board.intro.writing', defaultMessage: 'Writing' });
-  return (
-    <span className="in-run">
-      <StateGlyph name="running" />
-      <span className="tr-status">
-        {label}
-        <span className="tr-shine" aria-hidden="true">
-          {label}
-        </span>
-      </span>
-      {since !== null && <span className="mono mu in-num">{elapsedText(now - since)}</span>}
     </span>
   );
 }
@@ -270,6 +251,9 @@ export function IntroView({ projectId }: { projectId: string }) {
   const brief = useBoard((s) => s.board?.project_briefs?.find((b) => b.project_id === projectId));
   const root = useBoard((s) => s.board?.projects.find((p) => p.id === projectId)?.roots[0]);
   const writingId = read?.writing_session_id ?? null;
+  const surveyor = useBoard(
+    (s) => s.board?.sessions.find((x) => x.id === read?.intro?.session_id)?.runtime ?? null,
+  );
   const since = useBoard(
     (s) =>
       s.events.find((e) => e.kind === 'session.opened' && e.aggregate_id === writingId)
@@ -327,7 +311,7 @@ export function IntroView({ projectId }: { projectId: string }) {
       <button type="button" className="btn sm" disabled={writing} onClick={() => void start()}>
         <RefreshCw className="ic-sm" aria-hidden="true" />
         {intro
-          ? t({ id: 'board.intro.regenerate', defaultMessage: 'Regenerate' })
+          ? t({ id: 'memory.intro.survey', defaultMessage: 'Survey again' })
           : t({ id: 'board.intro.generate', defaultMessage: 'Generate introduction' })}
       </button>
     ) : (
@@ -365,11 +349,19 @@ export function IntroView({ projectId }: { projectId: string }) {
       </h2>
       {intro && !writing && (
         <>
-          <span className="in-pair">
-            <span className="mu">
-              {t({ id: 'memory.intro.written', defaultMessage: 'Generated' })}
-            </span>
-            <span className="in-num">{writtenText(intro.written_at, Date.now())}</span>
+          <span className="mu in-num">
+            {surveyor
+              ? t(
+                  { id: 'memory.intro.surveyedBy', defaultMessage: '{runtime} surveyed {time}' },
+                  {
+                    runtime: runtimeName(surveyor),
+                    time: writtenText(intro.written_at, Date.now()),
+                  },
+                )
+              : t(
+                  { id: 'memory.intro.surveyed', defaultMessage: 'Surveyed {time}' },
+                  { time: writtenText(intro.written_at, Date.now()) },
+                )}
           </span>
           {intro.heads.length > 0 && (
             <span className="in-pair">
@@ -392,7 +384,7 @@ export function IntroView({ projectId }: { projectId: string }) {
           )}
         </>
       )}
-      {writing && <WritingMark since={since} />}
+      {writing && <RunningFor label={RUNNING.writing} since={since} />}
       <span className="in-acts">
         {failure && (
           <span className="in-err" role="alert">

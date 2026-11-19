@@ -79,16 +79,24 @@ vi.mock('@/screens/board/project-setup', async (actual) => ({
   ...(await actual<object>()),
   useProjectSetup: () => undefined,
 }));
+const commands = vi.hoisted(() => ({ run: null as unknown as (...args: unknown[]) => unknown }));
+vi.mock('@/data/commands', async (actual) => ({
+  ...(await actual<object>()),
+  runCommand: (...args: unknown[]) => commands.run(...args),
+}));
 import { Sidebar } from '@/components/Sidebar';
 import { TopBar } from '@/components/TopBar';
 import { Failure } from '@/screens/board/BoardScreen';
 import { MergesPanel } from '@/screens/board/Lists';
 import { MergeHeat, RepoPanels } from '@/screens/board/RepoCharts';
+import { RunningFor } from '@/components/RunningFor';
+import { dayText } from '@/lib/time-text';
 import { CommitGraph } from '@/screens/repo/history/CommitGraph';
 import { OverviewTab } from '@/screens/repo/OverviewTab';
-import { RepoScreen } from '@/screens/repo/RepoScreen';
+import { MeasureControls, RepoScreen } from '@/screens/repo/RepoScreen';
 import { TimelineTab } from '@/screens/repo/TimelineTab';
-import { zh } from './i18n-setup.js';
+import { deferred } from './web-hook-host.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 const model = {
@@ -141,6 +149,7 @@ beforeEach(() => {
   reads.facts = reads.landed({ facts: null, workstreams: [] });
   reads.stale = reads.landed(null);
   stored = new Map();
+  commands.run = vi.fn(async () => ({ ok: true, value: {} }));
   mock.board = { board: null, events: [], status: { state: 'live' } };
   mock.shell = {
     screen: 'board',
@@ -333,6 +342,78 @@ describe('repository top bar controls', () => {
   it('leaves the overview range switch out of the top bar on the timeline', () => {
     const page = screen('repo-bar-no-range');
     expect(barContents(page.value).map(rangeSwitch).filter(Boolean)).toEqual([]);
+  });
+});
+
+describe('repository measure controls', () => {
+  const MEASURED = Date.UTC(2026, 10, 18, 9, 12);
+  // The measure controls in the page's top bar, mounted so their state carries across renders.
+  const measureIn = (tree: unknown) => {
+    const node = find(
+      find(tree as never, (n) => n.type === TopBar).props.children,
+      (n) => n.type === MeasureControls,
+    );
+    return mount(() => MeasureControls(node.props));
+  };
+  const measureButton = (tree: unknown) =>
+    find(
+      tree as never,
+      (n) => n.type === 'button' && n.props['aria-label'] === zh('repo.overview.measure'),
+    );
+
+  it('says when the facts were measured in the top bar of every tab', () => {
+    reads.facts = reads.landed({ facts: null, workstreams: [], collected_at: MEASURED });
+    for (const tab of ['timeline', 'changes', 'compare', 'overview', 'pulls']) {
+      stored.set(`pantheon.repo.repo-measured-${tab}`, tab);
+      const bar = measureIn(screen(`repo-measured-${tab}`).value).value;
+      expect(text(bar)).toContain(
+        zhf('repo.overview.measuredAt', { time: dayText(MEASURED, Date.now(), { time: true }) }),
+      );
+      expect(text(measureButton(bar).props.children)).toBe(zh('repo.overview.measure'));
+    }
+  });
+
+  it('shows only the button before anything was measured', () => {
+    reads.facts = reads.landed({ facts: null, workstreams: [], collected_at: null });
+    const bar = measureIn(screen('repo-never-measured').value).value;
+    expect(text(bar)).toBe(zh('repo.overview.measure'));
+  });
+
+  it('measures again, showing how long it runs with the button off until it lands', async () => {
+    reads.facts = reads.landed({ facts: null, workstreams: [], collected_at: MEASURED });
+    const sent = deferred<unknown>();
+    commands.run = vi.fn(() => sent.promise);
+    const controls = measureIn(screen('repo-measure').value);
+    measureButton(controls.value).props.onClick();
+    controls.render();
+    expect(commands.run).toHaveBeenCalledWith(
+      'project.facts.refresh',
+      { project_id: 'repo-measure' },
+      null,
+    );
+    expect(measureButton(controls.value).props.disabled).toBe(true);
+    expect(find(controls.value, (n) => n.type === RunningFor).props.label).toBe(
+      zh('components.running.measuring'),
+    );
+    sent.resolve({ ok: true, value: {} });
+    await controls.flush();
+    expect(measureButton(controls.value).props.disabled).toBe(false);
+    expect(nodes(controls.value).some((n) => n.type === RunningFor)).toBe(false);
+  });
+
+  it('shows a failed measure with a retry that measures again', async () => {
+    reads.facts = reads.landed({ facts: null, workstreams: [], collected_at: MEASURED });
+    commands.run = vi.fn(async () => ({
+      ok: false,
+      error: { code: 'ipc_failed', message: 'measure gone' },
+    }));
+    const controls = measureIn(screen('repo-measure-failed').value);
+    measureButton(controls.value).props.onClick();
+    await controls.flush();
+    const failure = find(controls.value, (n) => n.type === Failure);
+    expect(failure.props.error).toBe('measure gone');
+    failure.props.onRetry();
+    expect(commands.run).toHaveBeenCalledTimes(2);
   });
 });
 

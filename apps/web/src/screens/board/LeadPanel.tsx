@@ -2,13 +2,14 @@ import type { BoardActivity, BoardModel } from '@pantheon/protocol';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { Tip } from '../../components/Tip';
+import { useNow } from '../../data/needs-you';
 import { needsKey } from '../../data/notice-tiers';
 import { useRuntimeModels } from '../../data/runtime-models';
 import { useSessionList } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
 import { EFFORT_LABEL } from '../sessions/model';
-import { PHASE, toolText } from './activity';
+import { agoText, PHASE, toolText } from './activity';
 import { ContextRing } from './FlowNode';
 import { leadState, type BoardLead } from './frame-model';
 import { stateParts } from './MilestoneCard';
@@ -28,9 +29,15 @@ function doing(a: BoardActivity): string {
   return a.waiting?.summary || PHASE[a.phase];
 }
 
-/** The sentence a lead's line says: what it is doing, else its state. */
+/** The sentence a lead's line says: the status line it set, else what it is doing, else its state. */
 export const leadLine = (lead: BoardLead): string =>
-  lead.activity ? doing(lead.activity) : leadState(lead).label;
+  lead.status_line?.text ?? (lead.activity ? doing(lead.activity) : leadState(lead).label);
+
+/** How long ago the lead set its status line, kept current. */
+function Ago({ at, floor }: { at: number; floor: number }) {
+  const now = Math.max(floor, useNow(15_000));
+  return <span className="bld-ago">{agoText(at, now)}</span>;
+}
 
 /** The project's open resident sessions that are not leads of the board, one per agent: the one not handing over. */
 export function residentSessions(
@@ -203,7 +210,8 @@ export function LeadPanel({
           const state = leadState(shown);
           const session = sessions.find((s) => s.id === lead.session_id);
           const name = lead.title || t({ id: 'board.lead.untitled', defaultMessage: 'Lead' });
-          const line = asked?.question ?? (lead.activity && doing(lead.activity));
+          const status = asked ? undefined : lead.status_line;
+          const line = asked?.question ?? status?.text ?? (lead.activity && doing(lead.activity));
           const question = run
             ? model.needs?.find(
                 (n) => n.kind === 'lead.question' && n.session_id === lead.session_id,
@@ -249,6 +257,12 @@ export function LeadPanel({
                   line && (
                     <span className="bld-do" title={line}>
                       {line}
+                      {status && (
+                        <>
+                          {' '}
+                          <Ago at={status.at} floor={model.now} />
+                        </>
+                      )}
                     </span>
                   )
                 )}

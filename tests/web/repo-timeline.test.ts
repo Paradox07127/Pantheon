@@ -55,6 +55,7 @@ vi.mock('@/screens/repo/route', async (actual) => ({
   ...(await actual<object>()),
   openRepoView: reads.openRepoView,
 }));
+import { RunningFor } from '@/components/RunningFor';
 import { runtimeName } from '@/components/RuntimeGlyph';
 import { RepoLanes } from '@/screens/repo/timeline/RepoLanes';
 import { releaseLabels } from '@/screens/repo/timeline/lanes-model';
@@ -448,6 +449,44 @@ describe('repository timeline lanes', () => {
     await host.flush();
     expect(again().props.disabled).toBe(false);
     expect(reads.sendProjectCommand).toHaveBeenCalledTimes(1);
+  });
+
+  const rangeStory = (projectId: string, state: 'ready' | 'running', created: number) => ({
+    id: 'story-by',
+    project_id: projectId,
+    from: NOW - 14 * DAY,
+    to: NOW,
+    state,
+    session_id: 'story-session',
+    created_at: new Date(created).toISOString(),
+    lines: state === 'ready' ? ['Refunds v2 split into six branches.'] : [],
+  });
+
+  it('says which runtime interpreted the range and how long ago', () => {
+    mock.board = {
+      board: { sessions: [{ id: 'story-session', runtime: 'codex' }] },
+      status: { state: 'live' },
+    };
+    reads.state.stories = reads.landed([rangeStory('lanes-story-by', 'ready', NOW - 12 * 60_000)]);
+    const host = lanesOf('lanes-story-by');
+    expect(text(host.value)).toContain(
+      zhf('repo.timeline.storyBy', { runtime: runtimeName('codex'), unit: 'minute', count: 12 }),
+    );
+  });
+
+  it('says only when a range was interpreted once its session is not on the board', () => {
+    reads.state.stories = reads.landed([rangeStory('lanes-story-at', 'ready', NOW - 12 * 60_000)]);
+    const host = lanesOf('lanes-story-at');
+    expect(text(host.value)).toContain(zhf('repo.timeline.storyAt', { unit: 'minute', count: 12 }));
+  });
+
+  it('shows how long a running interpretation has been writing', () => {
+    reads.state.stories = reads.landed([rangeStory('lanes-story-run', 'running', NOW - 12_000)]);
+    const host = lanesOf('lanes-story-run');
+    expect(find(host.value, (n) => n.type === RunningFor).props).toEqual({
+      label: zh('components.running.writing'),
+      since: NOW - 12_000,
+    });
   });
 
   it.each([

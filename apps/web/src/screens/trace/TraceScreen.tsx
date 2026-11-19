@@ -1111,6 +1111,7 @@ function TraceView({
                   : t({ id: 'trace.read.commits', defaultMessage: 'Commit history' })
               }
               {...heat}
+              inner={!heatShown}
             />
           )}
           {lanesShown && !heat.data && heat.error && (
@@ -1123,6 +1124,7 @@ function TraceView({
             <ReadStatus
               label={t({ id: 'trace.read.states', defaultMessage: 'Session states' })}
               {...timeline}
+              inner
             />
           )}
           {indexing && (
@@ -1320,6 +1322,7 @@ function TraceView({
                       <ReadStatus
                         label={t({ id: 'trace.read.turn', defaultMessage: 'Turn trace' })}
                         {...turnSteps}
+                        inner
                       />
                     ) : (
                       turnSteps.error && (
@@ -2609,6 +2612,7 @@ function Analysis({
         <ReadStatus
           label={t({ id: 'trace.read.session', defaultMessage: 'Session trace' })}
           {...trace}
+          inner
         />
       )}
       <TraceTimeChart query={time} titleOf={() => lane.title} onEvidence={onTimeEvidence} />
@@ -2623,6 +2627,7 @@ function Analysis({
             <ReadStatus
               label={t({ id: 'trace.read.commits', defaultMessage: 'Commit history' })}
               {...heat}
+              inner
             />
           ) : (
             heat.error && <Failure error={heat.error} onRetry={heat.reload} />

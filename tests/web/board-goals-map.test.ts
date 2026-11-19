@@ -34,7 +34,9 @@ vi.mock('@/components/Toast', async (actual) => ({
   toast: (...args: unknown[]) => mock.toast(...args),
 }));
 import {
+  askMilestone,
   pickTaskScope,
+  useAskedMilestone,
   useBoardPage,
   useTaskScope,
   useTaskView,
@@ -44,6 +46,7 @@ import { BoardView } from '@/screens/board/BoardScreen';
 import { GoalsHead, GoalsSection } from '@/screens/board/GoalsSection';
 import { MilestoneAssumptions } from '@/screens/board/MilestoneAssumptions';
 import { MilestoneCard } from '@/screens/board/MilestoneCard';
+import { dayText } from '@/lib/time-text';
 import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.UTC(2026, 10, 18, 12);
@@ -297,6 +300,30 @@ describe('goals map', () => {
     expect(cells).toHaveLength(3);
     cells[1]!.props.onClick();
     expect(onOpenTask).toHaveBeenCalledWith('lead-1:b');
+  });
+
+  it('unfolds a milestone another screen asked for besides the current one, and takes the ask once', () => {
+    const model = refunds();
+    const current = model.milestones[2]!;
+    const unfoldedIds = (tree: ReactNode) =>
+      all(tree, (n) => n.type === MilestoneCard).map((n) => n.props.milestone.id);
+    askMilestone('refunds', 'ms-api');
+    const asked = mount(() => GoalsSection(pageProps(model, { current })));
+    expect(unfoldedIds(asked.value)).toEqual(['ms-roll', 'ms-api']);
+    expect(mount(() => useAskedMilestone('refunds')).value).toBeNull();
+    const again = mount(() => GoalsSection(pageProps(model, { current })));
+    expect(unfoldedIds(again.value)).toEqual(['ms-roll']);
+    askMilestone('refunds', 'ms-docs');
+    const loose = mount(() => GoalsSection(pageProps(model)));
+    const none = find(loose.value, (n) => n.props['aria-labelledby'] === 'goals-id-none');
+    expect(unfoldedIds(none)).toEqual(['ms-docs']);
+  });
+
+  it('only opens the overview for an asked milestone the plan no longer has', () => {
+    askMilestone('refunds', 'ms-gone');
+    const h = mount(() => GoalsSection(pageProps(refunds())));
+    expect(all(h.value, (n) => n.type === MilestoneCard)).toHaveLength(0);
+    expect(mount(() => useAskedMilestone('refunds')).value).toBeNull();
   });
 
   it("puts a flag over the current milestone's point while an assumption of it is open, its popup the assumptions", () => {
@@ -568,27 +595,32 @@ describe('goals map in the board', () => {
     expect(nodes(h.value).some((n) => n.type === MilestoneCard)).toBe(false);
   });
 
-  it("heads the goals with the plan's version and the lead's sync, the bar holding neither", () => {
+  it("puts the plan's version and the lead's sync in the bar, the goals heading holding neither", () => {
     const onSync = vi.fn();
-    const model = { ...refunds(), leads: [{ session_id: 'lead-1', plan_version: 12 }] };
+    const model = {
+      ...refunds(),
+      leads: [{ session_id: 'lead-1', plan_version: 12, updated_at: NOW }],
+    };
     const h = mount(() =>
       BoardView({
         ...view('overview', noop),
         model: model as unknown as BoardModel,
         actions,
-        sync: { busy: false, error: null, onSync },
+        sync: { busy: false, error: null, onSync, since: null },
       } as never),
     );
-    const head = find(h.value, (n) => n.type === GoalsHead);
-    expect(head.props.version).toBe(12);
-    const drawn = GoalsHead(head.props);
-    expect(text(drawn)).toContain(zhf('board.bar.planVersion', { version: 12 }));
-    find(drawn, (n) => n.type === 'button' && text(n) === zh('board.goals.sync')).props.onClick();
+    const bar = find(h.value, (n) => n.props.className === 'tb-end');
+    expect(text(bar)).toContain(
+      zhf('board.bar.planAt', { version: 12, time: dayText(NOW, NOW, { time: true }) }),
+    );
+    find(
+      bar,
+      (n) => n.type === 'button' && n.props['aria-label'] === zh('board.bar.sync'),
+    ).props.onClick();
     expect(onSync).toHaveBeenCalledOnce();
-    expect(nodes(h.value).some((n) => n.props.className === 'bd-bar-v')).toBe(false);
-    const busy = GoalsHead({ ...head.props, sync: { busy: true, error: null, onSync } });
-    const button = find(busy, (n) => n.type === 'button');
-    expect([button.props.disabled, button.props['aria-busy']]).toEqual([true, true]);
+    const head = GoalsHead(find(h.value, (n) => n.type === GoalsHead).props);
+    expect(nodes(head).some((n) => n.type === 'button')).toBe(false);
+    expect(text(head)).not.toContain('v12');
   });
 
   it('stays on the overview and puts the needs-you strip in focus from what waits on the user for a goal', () => {

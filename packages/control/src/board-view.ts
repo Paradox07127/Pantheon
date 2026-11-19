@@ -31,7 +31,7 @@ import type {
   WorkbenchSession,
 } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
-import { milestoneExtras, taskExtras } from './board-view-task-extras.js';
+import { milestoneExtras, statusLineOf, taskExtras } from './board-view-task-extras.js';
 import { taskEvidenceLevel } from './evidence-level.js';
 import { effectiveDepth, laneHeld } from './lane-stops.js';
 import { estimateLane } from './plan-estimate.js';
@@ -2395,6 +2395,7 @@ export function boardView(
       title: lead?.title ?? '',
       state: leadState(listedOf.get(plan.id)?.state, () => leadTurnFailed(ctx, lead!, latest)),
       inbox: plan.inbox.length,
+      ...statusLineOf(ctx, lead),
       messages_today: [...stored.values()]
         .filter((session) => session.task?.lead_session_id === plan.id)
         .map((session) => {

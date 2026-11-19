@@ -86,6 +86,8 @@ export function expired(ctx: ControlContext, r: MemoryRecord): boolean {
       r.kind === 'note' &&
       // Handoff notes and notes imported from files stay while their source does.
       !r.tags?.some((t) => t === 'handoff' || t === 'imported') &&
+      // A plan decision kept as a note for lack of budget stays a decision of the plan.
+      !r.origin &&
       now - (r.last_used_at ?? r.created_at) > NOTE_IDLE_MS)
   );
 }
@@ -100,7 +102,10 @@ export function sourceSignature(
   const sessions = ctx.store.list<Session>('sessions');
   return hash({
     sources: sources(ctx, project),
-    decisions: all.filter((r) => r.kind === 'decision' && alive(ctx, r, sessions)).map((r) => r.id),
+    // A decision Pantheon wrote from a plan does not make the project's reports stale.
+    decisions: all
+      .filter((r) => r.kind === 'decision' && !r.origin && alive(ctx, r, sessions))
+      .map((r) => r.id),
   });
 }
 /** The one lifecycle gate every memory read goes through. */

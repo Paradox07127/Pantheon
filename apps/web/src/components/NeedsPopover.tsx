@@ -26,6 +26,7 @@ import {
   type NeedsYouItem,
 } from '../data/needs-you';
 import { focusRequest } from '../data/focus-request';
+import { openPlanMemory } from '../data/memory-view';
 import { needsKey } from '../data/notice-tiers';
 import { visibleProjects } from '../data/projects';
 import { sessionTitle } from '../data/transcript';
@@ -34,6 +35,7 @@ import { listText } from '../lib/list-text';
 import {
   needActions,
   needCommand,
+  needWhat,
   noVerdictKind,
   type NeedAction,
   type NeedItem,
@@ -285,7 +287,7 @@ export function NeedsPopover({
   const listed = items.map((item) => {
     const sessionId = itemSession(item);
     const session = sessionId ? board?.sessions.find((s) => s.id === sessionId) : undefined;
-    const reason = needReasonText(item);
+    const reason = item.memory_notes ? needWhat(item as NeedItem) : needReasonText(item);
     const key = needRowKey(item);
     const failed = answers[key];
     // A lead's question is answered on its card, which the lead's thread does not show.
@@ -301,6 +303,9 @@ export function NeedsPopover({
       ...(card && { open: () => useShell.getState().openProjectNeed(item.project_id, card) }),
       ...(item.kind === 'board.lane.approval' && {
         open: () => useShell.getState().openProjectBoard(item.project_id),
+      }),
+      ...(item.kind === 'memory.decision_budget' && {
+        open: () => openPlanMemory(item.project_id),
       }),
       ...(proposal &&
         sessionId && {

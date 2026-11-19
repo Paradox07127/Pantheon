@@ -1,0 +1,7 @@
+{
+  "components.readStatus.offline": "连接断开，显示的是 {time} 读到的数据",
+  "components.readStatus.reconnect": "重新连接",
+  "components.running.writing": "正在写",
+  "components.running.redrawing": "正在重画",
+  "components.running.measuring": "正在测量"
+}

@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { HookHost, deferred, find, nodes, text } from './web-hook-host.js';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
 import { toastManager } from '../../apps/web/src/components/Toast.js';
+import { useMemoryView } from '../../apps/web/src/data/memory-view.js';
+import { useShell } from '../../apps/web/src/store.js';
 import { useSettingsView } from '../../apps/web/src/screens/settings/view.js';
 import { needWho, type NeedItem } from '../../apps/web/src/screens/board/frame-model.js';
 import type {
@@ -104,6 +106,19 @@ const overBudget: NeedItem = {
   blocks: 0,
   actions: [{ command: 'workflow.policy.set', allowed: true }],
   project_budget: { used_input_tokens: 150, input_tokens: 100 },
+};
+
+const planNotes: NeedItem = {
+  source: { table: 'memory_records', id: 'note-2', revision: 1 },
+  kind: 'memory.decision_budget',
+  project_id: 'project-a',
+  status: 'over_budget',
+  created_at: NOW - 60_000,
+  reason: 'plan_decisions_over_budget',
+  decision: 'budget',
+  blocks: 0,
+  actions: [],
+  memory_notes: { count: 2, memory_ids: ['note-1', 'note-2'] },
 };
 
 type Props = Parameters<typeof RequestCard>[0];
@@ -245,6 +260,15 @@ describe('request card details', () => {
       page: 'projects',
       detail: 'project-a',
     });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('says how many plan decisions became notes and opens the plan entries of memory', () => {
+    const { h, run } = mount({ item: planNotes });
+    expect(text(h.value)).toContain(zhf('board.needs.memoryBudget', { count: 2 }));
+    button(h.value, zh('board.needs.actions.memory')).props.onClick();
+    expect(useShell.getState()).toMatchObject({ screen: 'memory', memoryTab: 'entries' });
+    expect(useMemoryView.getState().askedFilters).toEqual({ origin: 'plan' });
     expect(run).not.toHaveBeenCalled();
   });
 

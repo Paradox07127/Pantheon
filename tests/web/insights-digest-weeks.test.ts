@@ -164,6 +164,7 @@ describe('weekly digest weeks', () => {
   beforeEach(() => {
     mock.model = MODEL;
     mock.read = { error: null, stale: false, readAt: null };
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
     projectId = 'digest-project';
     section = 'digest';
   });

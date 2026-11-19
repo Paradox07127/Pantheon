@@ -82,8 +82,6 @@ export function OverviewPage({
   loadingPanel,
   goalsBar,
   onGoalsBar,
-  sync,
-  planVersion,
   onOpenNeeds,
   onOpenTasks,
   needsAsked,
@@ -105,9 +103,6 @@ export function OverviewPage({
   /** The goals heading's element the goals put their Add goal button in; `onGoalsBar` takes it. */
   goalsBar: HTMLElement | null;
   onGoalsBar: (el: HTMLElement | null) => void;
-  sync?: BoardViewProps['sync'];
-  /** The version of the plan the board shows; absent without a lead's plan. */
-  planVersion?: number;
   onOpenNeeds: () => void;
   /** Shows the tasks view on the milestone, or on the current one for null. */
   onOpenTasks: (milestoneId: string | null) => void;
@@ -173,7 +168,7 @@ export function OverviewPage({
           <section aria-labelledby="bd-ov-goals">
             <div className="bd-ph">
               <h2 id="bd-ov-goals">{t({ id: 'board.overview.goals', defaultMessage: 'Goals' })}</h2>
-              <GoalsHead version={planVersion} sync={sync} stale={stale} slot={onGoalsBar} />
+              <GoalsHead slot={onGoalsBar} />
             </div>
             <div className="bd-ov-goals">
               {!current && <TaskProgressStrip totals={model.task_progress.totals} />}

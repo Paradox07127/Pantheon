@@ -22,6 +22,7 @@ vi.mock('@/store', () => ({
     { setState() {} },
   ),
 }));
+import { RunningFor } from '@/components/RunningFor';
 import { BriefCard } from '@/screens/board/BriefCard';
 import { ProjectNeeds } from '@/screens/board/OverviewPage';
 import { RungLabel } from '@/screens/board/TaskRecovery';
@@ -205,6 +206,7 @@ beforeEach(() => {
 afterEach(() => {
   unmountAll();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const card = async (projectId: string, onOpenTask = vi.fn(), shown = model) => {
@@ -601,6 +603,61 @@ describe('since you left card', () => {
     expect(sent('project.brief.prose.write')).toEqual([
       expect.objectContaining({ input: { project_id: 'project-brief-g' } }),
     ]);
+  });
+
+  const writing = (tree: unknown) =>
+    nodes(tree as ReactElement).filter((n) => n.type === RunningFor);
+  const started = (value: boolean) =>
+    command.mockImplementation(async () => ({ ok: true, value: { started: value } }));
+
+  it('says it is writing the paragraph from when the daemon started it, until the paragraph lands', async () => {
+    serve(served);
+    started(true);
+    const before = Date.now();
+    const h = await card('project-brief-i');
+    h.render();
+    await h.flush();
+    const running = find(h.value, (n) => n.type === RunningFor);
+    expect(running.props.label).toBe(zh('components.running.writing'));
+    expect(running.props.since).toBeGreaterThanOrEqual(before);
+
+    const prose = { sentences: [{ text: 'Refund UI is complete.', refs: [] }], at: NOW };
+    query.mockImplementation(async (method: string) => ({
+      ok: true,
+      value: method === 'app.settings' ? {} : { ...served, prose },
+    }));
+    mock.board = { ...mock.board, changed: 2 };
+    h.render();
+    await h.flush();
+    expect(text(find(h.value, (n) => n.type === 'p'))).toBe('Refund UI is complete.');
+    expect(writing(h.value)).toEqual([]);
+  });
+
+  it('stops saying it is writing 20 s after the daemon started, with no paragraph and no failure', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    serve(served);
+    started(true);
+    const h = await card('project-brief-j');
+    h.render();
+    await h.flush();
+    vi.advanceTimersByTime(19_999);
+    h.render();
+    expect(writing(h.value)).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    h.render();
+    expect(writing(h.value)).toEqual([]);
+    expect(nodes(h.value).some((n) => n.type === 'p')).toBe(false);
+    expect(sent('project.brief.prose.write')).toHaveLength(1);
+  });
+
+  it('says nothing is being written when the daemon did not start the paragraph', async () => {
+    serve(served);
+    started(false);
+    const h = await card('project-brief-k');
+    h.render();
+    await h.flush();
+    expect(sent('project.brief.prose.write')).toHaveLength(1);
+    expect(writing(h.value)).toEqual([]);
   });
 
   it('does not ask for the paragraph with the setting off', async () => {

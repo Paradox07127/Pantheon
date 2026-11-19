@@ -26,6 +26,7 @@ import {
   agentProposalItems,
   definitionTrialItems,
   improvementItems,
+  memoryBudgetItems,
   projectBudgetItems,
   stepRunItems,
 } from './needs-you-workflow.js';
@@ -373,6 +374,7 @@ export function needsYou(
       ...improvementItems(ctx, scope),
       ...agentProposalItems(ctx, scope),
       ...projectBudgetItems(ctx, scope),
+      ...memoryBudgetItems(ctx, scope),
     );
   }
   const blocked = blockedTasks(ctx, planOf),

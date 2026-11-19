@@ -36,6 +36,7 @@ import { residentPlan } from './agent-always-on.js';
 import { deviceHasLabel, listDevices } from './devices.js';
 import { history } from './project-facts.js';
 import { INBOX_HEADER, appendNote, noteOtherPlan, opText, refuteText } from './lead-inbox.js';
+import { recordPlanDecisions } from './plan-decisions.js';
 import { reviewPlan } from './review.js';
 import { projectRoutingTable } from './routing-table.js';
 import {
@@ -136,6 +137,11 @@ function planProblem(input: PlanInput): string | null {
     if (assumption.milestone && !milestones.has(assumption.milestone))
       return `assumptions: assumption ${named} names unknown milestone ${assumption.milestone}`;
   }
+  const risk = repeated(input.risks.flatMap((risk) => (risk.id ? [risk.id] : [])));
+  if (risk) return `risks: risk id ${risk} is repeated`;
+  const astray = input.risks.find((risk) => risk.milestone && !milestones.has(risk.milestone));
+  if (astray)
+    return `risks: risk ${astray.id ?? astray.text.slice(0, 60)} names unknown milestone ${astray.milestone}`;
   for (const lane of input.lanes) {
     const stop = lane.stops
       ?.filter((stop) => stop.startsWith('milestone:'))
@@ -776,6 +782,7 @@ function storePlan(
   }
   writeLeadMilestones(ctx, p, leadId, input.project_id, input.milestones, commandId);
   ctx.store.event('board.plan_updated', next, input.project_id, next, commandId);
+  if (current) recordPlanDecisions(ctx, current, next, commandId);
   noteOtherPlan(ctx, next, commandId);
   for (const edit of options.userEdits ?? [])
     ctx.store.event(
@@ -987,7 +994,10 @@ function applyOps(plan: PlanInput, ops: PatchOp[]): PlanInput {
       ...(milestone && milestoneIds.has(milestone) ? { milestone } : {}),
     };
   });
-  return { ...plan, lanes, tasks, milestones, iterations, order_lock, assumptions };
+  const risks = plan.risks.map(({ milestone, ...risk }) =>
+    milestone && milestoneIds.has(milestone) ? { ...risk, milestone } : risk,
+  );
+  return { ...plan, lanes, tasks, milestones, iterations, order_lock, assumptions, risks };
 }
 
 const opTaskIds = (op: PatchOp): string[] =>

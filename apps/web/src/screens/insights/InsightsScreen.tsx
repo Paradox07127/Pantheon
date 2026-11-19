@@ -201,6 +201,7 @@ function WeeklyDigest({
         <ReadStatus
           label={t({ id: 'insights.digest.label', defaultMessage: 'Weekly digest' })}
           stale={view.stale}
+          inner
           refreshing={view.refreshing}
           error={view.error}
           readAt={view.readAt}

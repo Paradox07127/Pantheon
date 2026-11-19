@@ -240,20 +240,41 @@ describe('project introduction', () => {
     expect(text((await mountIntro()).value)).not.toContain(zh('board.intro.behind').split(' {')[0]);
   });
 
-  it('turns regenerate off and says it is writing while a writing session runs', async () => {
-    answers['project.intro.read'] = { intro: intro(), behind: 0, writing_session_id: 'writer' };
+  it('reads the lag again after a merge into the project, not after every board read', async () => {
+    const reads = () =>
+      ((window as any).pantheon.query as ReturnType<typeof vi.fn>).mock.calls.filter(
+        ([method]) => method === 'project.intro.read',
+      ).length;
     const h = await mountIntro();
-    expect(button(h.value, zh('board.intro.regenerate')).props.disabled).toBe(true);
-    expect(has(h.value, (n) => typeName(n) === 'WritingMark')).toBe(true);
+    expect(reads()).toBe(1);
+    mock.board.board = { ...mock.board.board, cursor: 2 };
+    h.render();
+    await h.flush();
+    expect(reads()).toBe(1);
+    answers['project.intro.read'] = { intro: intro(), behind: 2, writing_session_id: null };
+    mock.board.events = [{ kind: 'session.merged', project_id: 'refunds', sequence: 5 }];
+    h.render();
+    await h.flush();
+    expect(reads()).toBe(2);
+    expect(text(h.value)).toContain(
+      t({ id: 'board.intro.behind', defaultMessage: '' }, { count: 2 }),
+    );
   });
 
-  it('regenerates by sending the start command and shows a refusal beside the button', async () => {
+  it('turns survey again off and says it is writing while a writing session runs', async () => {
+    answers['project.intro.read'] = { intro: intro(), behind: 0, writing_session_id: 'writer' };
+    const h = await mountIntro();
+    expect(button(h.value, zh('memory.intro.survey')).props.disabled).toBe(true);
+    expect(has(h.value, (n) => typeName(n) === 'RunningFor')).toBe(true);
+  });
+
+  it('surveys again by sending the start command and shows a refusal beside the button', async () => {
     command.mockResolvedValueOnce({
       ok: false,
       error: { code: 'invalid_input', message: 'An introduction session turn is already running' },
     });
     const h = await mountIntro();
-    button(h.value, zh('board.intro.regenerate')).props.onClick();
+    button(h.value, zh('memory.intro.survey')).props.onClick();
     await h.flush();
     expect(command.mock.calls[0]![0]).toMatchObject({
       type: 'project.intro.start',

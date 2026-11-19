@@ -19,6 +19,8 @@ vi.mock('@/store', () => ({
   ),
 }));
 import { pickTaskScope, pickTaskView, useTaskView, type BoardPage } from '@/data/board-page';
+import { RunningFor } from '@/components/RunningFor';
+import { dayText } from '@/lib/time-text';
 import { BoardView } from '@/screens/board/BoardScreen';
 import { GoalsHead } from '@/screens/board/GoalsSection';
 import { LeadPanel } from '@/screens/board/LeadPanel';
@@ -254,19 +256,55 @@ describe('project board views', () => {
 });
 
 describe('project board bar', () => {
-  it('names the plan version of the lead that changed its plan last, in the goals heading', () => {
-    const model = board({
-      leads: [
-        lead('lead-1', { updated_at: NOW - HOUR, plan_version: 3 }),
-        lead('lead-2', { updated_at: NOW, plan_version: 15 }),
-      ],
-    });
+  it.each(['overview', 'tasks'] as const)(
+    'names the plan version of the lead that changed its plan last, in the bar of %s',
+    (page) => {
+      const model = board({
+        leads: [
+          lead('lead-1', { updated_at: NOW - HOUR, plan_version: 3 }),
+          lead('lead-2', { updated_at: NOW, plan_version: 15 }),
+        ],
+      });
+      const h = mount(() =>
+        BoardView(
+          viewProps({
+            model,
+            projectId: 'project-a',
+            page,
+            sync: { busy: false, error: null, onSync: noop, since: null },
+          }),
+        ),
+      );
+      const bar = find(h.value, (n) => n.props.className === 'tb-end');
+      expect(text(bar)).toContain('计划 v15');
+      expect(text(bar)).not.toContain('计划 v3');
+      expect(labelled(bar, zh('board.bar.sync')).type).toBe('button');
+      expect(text(bar)).toContain(
+        zhf('board.bar.planAt', { version: 15, time: dayText(NOW, NOW, { time: true }) }),
+      );
+      if (page === 'overview')
+        expect(text(GoalsHead(named(h.value, 'GoalsHead').props))).not.toContain('计划');
+    },
+  );
+
+  it('shows how long the sync has run in place of the plan version while it runs', () => {
+    const model = board({ leads: [lead('lead-1', { plan_version: 15 })] });
     const h = mount(() =>
-      BoardView(viewProps({ model, projectId: 'project-a', page: 'overview' })),
+      BoardView(
+        viewProps({
+          model,
+          projectId: 'project-a',
+          sync: { busy: true, error: null, onSync: noop, since: NOW - 64_000 },
+        }),
+      ),
     );
-    const head = GoalsHead(named(h.value, 'GoalsHead').props);
-    expect(text(head)).toContain('计划 v15');
-    expect(text(head)).not.toContain('计划 v3');
+    const bar = find(h.value, (n) => n.props.className === 'tb-end');
+    expect(text(bar)).not.toContain('计划 v15');
+    expect(find(bar, (n) => n.type === RunningFor).props).toEqual({
+      label: zh('components.running.writing'),
+      since: NOW - 64_000,
+    });
+    expect(labelled(bar, zh('board.bar.sync')).props.disabled).toBe(true);
   });
 
   it('offers the current milestone and all, the current milestone listing its own tasks only', () => {
@@ -353,7 +391,7 @@ describe('project board bar', () => {
     expect(ids(named(overview, 'TaskDrawer'))).toEqual(['lead-1:merged', 'lead-1:loose']);
   });
 
-  it('keeps new task in the bar and puts update, baseline and trace in the more menu', () => {
+  it("keeps new task and the lead's sync in the bar and puts baseline and trace in the more menu", () => {
     const onSync = vi.fn();
     const onStart = vi.fn();
     const onOpenTrace = vi.fn();
@@ -363,7 +401,7 @@ describe('project board bar', () => {
         viewProps({
           projectId: 'project-a',
           actions: { milestones: [], sessions: [], run: async () => null },
-          sync: { busy: false, error: null, onSync },
+          sync: { busy: false, error: null, onSync, since: null },
           baseline: {
             link: { label: '摸底 11-03 12:00', session_id: 'baseline-1' },
             start: '重新摸底',
@@ -383,13 +421,10 @@ describe('project board bar', () => {
         nodes(n.props.children).some((c) => c.props['aria-label'] === zh('board.bar.more')),
     );
     const items = nodes(more.props.children).filter((n) => n.type === Menu.Item);
-    expect(items.map(text)).toEqual([
-      zh('board.headline.sync'),
-      '摸底 11-03 12:00',
-      '重新摸底',
-      zh('board.headline.trace'),
-    ]);
+    expect(items.map(text)).toEqual(['摸底 11-03 12:00', '重新摸底', zh('board.headline.trace')]);
     items.forEach((item) => item.props.onClick());
+    expect(onSync).not.toHaveBeenCalled();
+    labelled(h.value, zh('board.bar.sync')).props.onClick();
     expect(onSync).toHaveBeenCalledOnce();
     expect(onOpenSession).toHaveBeenCalledWith('baseline-1');
     // The start item opens the model popover first.
@@ -397,9 +432,7 @@ describe('project board bar', () => {
     expect(onOpenTrace).toHaveBeenCalledOnce();
     // Only the menu holds them now.
     const outside = nodes(h.value).filter(
-      (n) =>
-        n.type === 'button' &&
-        [zh('board.headline.sync'), '重新摸底', '摸底 11-03 12:00'].includes(text(n)),
+      (n) => n.type === 'button' && ['重新摸底', '摸底 11-03 12:00'].includes(text(n)),
     );
     expect(outside).toHaveLength(0);
     expect(names(h.value)).toContain('NewTask');

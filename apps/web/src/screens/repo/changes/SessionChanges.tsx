@@ -6,7 +6,8 @@ import type { SessionGates, SessionPreflight, WorkbenchSession } from '@pantheon
 import { Check, X } from 'lucide-react';
 import { DiffCounts } from '../../../components/DiffCounts';
 import { DiffFiles } from '../../../components/DiffReview';
-import { RuntimeGlyph, runtimeName } from '../../../components/RuntimeGlyph';
+import { RunningFor, RUNNING } from '../../../components/RunningFor';
+import { RuntimeGlyph } from '../../../components/RuntimeGlyph';
 import { Tip } from '../../../components/Tip';
 import { useBoard } from '../../../data/board';
 import { useChangeStories, useChangeStoryDiff } from '../../../data/change-story';
@@ -30,6 +31,7 @@ import {
   GATE,
   gateCount,
   MergeDialog,
+  storyByText,
   StoryTab,
 } from '../../sessions/panel';
 import { useSessionCard } from '../../sessions/SessionCard';
@@ -42,18 +44,6 @@ type View = 'story' | 'files' | 'uninterpreted';
 
 // The tab last picked on each project's session changes while the app runs.
 const pickedViews = new Map<string, View>();
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/** The age of an interpretation as a unit and a count, for one message to word. */
-function age(ms: number): { unit: 'now' | 'minute' | 'hour' | 'day'; count: number } {
-  if (ms < MINUTE) return { unit: 'now', count: 0 };
-  if (ms < HOUR) return { unit: 'minute', count: Math.floor(ms / MINUTE) };
-  if (ms < DAY) return { unit: 'hour', count: Math.floor(ms / HOUR) };
-  return { unit: 'day', count: Math.floor(ms / DAY) };
-}
 
 const passedText = (count: number) =>
   t({ id: 'sessions.mergeBar.passed', defaultMessage: '{count} passed' }, { count });
@@ -293,7 +283,6 @@ function StoryList({
   const [error, setError] = useState<string | null>(null);
   const result = story.result!;
   const reason = listed ? worktreeReason(listed) : null;
-  const ago = age(Date.now() - story.created_at);
   async function start() {
     if (busy) return;
     setBusy(true);
@@ -336,13 +325,10 @@ function StoryList({
         <div className="rcs-by">
           {story.runtime && <RuntimeGlyph runtime={story.runtime} size={14} />}
           <span className="rcs-age">
-            {t(
-              {
-                id: 'repo.changes.storyBy',
-                defaultMessage:
-                  '{runtime} interpreted {unit, select, now {just now} minute {{count, plural, one {# minute} other {# minutes}} ago} hour {{count, plural, one {# hour} other {# hours}} ago} other {{count, plural, one {# day} other {# days}} ago}}',
-              },
-              { runtime: runtimeName(story.runtime ?? null), ...ago },
+            {busy ? (
+              <RunningFor label={RUNNING.writing} since={null} />
+            ) : (
+              storyByText(story, Date.now())
             )}
           </span>
           {reason ? <Tip content={reason}>{again}</Tip> : again}

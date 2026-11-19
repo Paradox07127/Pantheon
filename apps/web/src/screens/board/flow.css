@@ -398,6 +398,11 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* When the agent wrote the line before it. */
+.bd-nago {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+}
 .bd-ntm {
   flex: none;
   font-family: var(--font-mono);

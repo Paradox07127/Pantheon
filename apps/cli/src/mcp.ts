@@ -124,6 +124,8 @@ const descriptions: Record<ToolCommand, string> = {
     "Use when the user asks to sync, refresh or update the board (for example 更新看板, 同步看板, 看板不对了) or says the board no longer matches the project. Returns your plan with each task's state and sessions, the recent commits of each git folder, and the rules for rewriting the plan; it changes nothing. Then send the changes the user asked for with update_board, and implement nothing. To only look at the board, use project_read.",
   'project.baseline.start':
     'Use only when the user asks to assess the project again (for example 重新摸底, 再摸一遍底, rerun the baseline). Starts a separate read-only session that assesses the project; it costs a model run, so the user approves every call. The user confirms the result on the board, and it comes back to you as a message to rewrite your plan. Refused while a baseline is running. To read the current assessment, use project_read.',
+  'task.status_line':
+    'Set one short line, under 80 characters, of what you are doing now, for example "Running the migration tests"; the user sees it on the board with its time. Set it when you start a new step of your turn. At most once every 15 s; the same text again changes nothing. Refused invalid_state when no turn of yours is running.',
   'task.report':
     "Send your lead a note under 400 characters, or 4000 for the done report of a report task. kind requirement: the task conflicts with the user's words, needs paths outside its scope, or has an acceptance command that cannot pass; Pantheon holds the merge, so end your turn after it. kind blocked with a reason (missing_context, missing_permission, environment_problem, conflicting_requirements): you cannot go on; your task waits. kind risk, task or dependency: information; keep working. kind done with status done, or done_with_concerns for a concern that can safely ship. Requirement and blocked reports, and done reports of report tasks, reach the lead at once. A non-resident lead uses kind done only for its own direct task, once its commits are in; a resident lead cannot report. Refused: blocked without a reason.",
   'project.intro.submit':
@@ -268,6 +270,7 @@ const boundRevision = (type: CommandType) =>
   type === 'task.background.stop' ||
   type === 'session.merge' ||
   type === 'task.report' ||
+  type === 'task.status_line' ||
   type === 'visual.draw' ||
   type === 'theme.set' ||
   type === 'project.intro.submit' ||

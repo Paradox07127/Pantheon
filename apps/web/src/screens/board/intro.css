@@ -37,14 +37,6 @@
   align-items: center;
   gap: var(--sp-2);
 }
-.in-run {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.in-run > .tr-status {
-  align-self: center;
-}
 .in-err {
   color: var(--bad);
   font-size: var(--fs-xs);

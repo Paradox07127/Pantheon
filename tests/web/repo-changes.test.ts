@@ -89,6 +89,7 @@ vi.mock('@/data/facts-read', async (actual) => ({
   useFactsRead: () => landed(null),
 }));
 import { DiffFiles } from '@/components/DiffReview';
+import { RunningFor } from '@/components/RunningFor';
 import { Menu, MenuItem } from '@/components/Menu';
 import { ChangesTab } from '@/screens/repo/ChangesTab';
 
@@ -599,6 +600,46 @@ describe('repository changes of a session worktree', () => {
     picks[1]!.props.onClick();
     changes.render();
     expect(view().props.selected).toBe(1);
+  });
+
+  it('shows how long a running interpretation has been writing', () => {
+    const since = Date.now() - 12_000;
+    mock.stories = [{ ...STORY, state: 'running', result: undefined, created_at: since }];
+    const changes = sessionChanges(tab().value);
+    find(
+      changes.value,
+      (n) => n.props['aria-label'] === zh('repo.changes.view'),
+    ).props.onValueChange('story');
+    changes.render();
+    const story = expand(child(changes.value, 'StoryTab')).value;
+    expect(find(story, (n) => n.type === RunningFor).props).toEqual({
+      label: zh('components.running.writing'),
+      since,
+    });
+  });
+
+  it('shows the rerun as writing while its request is out', async () => {
+    let answer!: (result: unknown) => void;
+    vi.stubGlobal('window', {
+      addEventListener() {},
+      removeEventListener() {},
+      pantheon: { command: () => new Promise((resolve) => (answer = resolve)) },
+    });
+    mock.stories = [STORY];
+    mock.storyDiff = STORY_DIFF;
+    const changes = sessionChanges(tab().value);
+    const list = expand(child(changes.value, 'StoryList'));
+    const writing = () => nodes(list.value).find((n) => n.type === RunningFor);
+    expect(writing()).toBeUndefined();
+    find(
+      list.value,
+      (n) => n.type === 'button' && text(n.props.children) === zh('repo.changes.reinterpret'),
+    ).props.onClick();
+    list.render();
+    expect(writing()!.props).toEqual({ label: zh('components.running.writing'), since: null });
+    answer({ ok: true, value: {} });
+    await list.flush();
+    expect(writing()).toBeUndefined();
   });
 
   it('shows one card alone and open, with its acceptance, steps and hunks', () => {

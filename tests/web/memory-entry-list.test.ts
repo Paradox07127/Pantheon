@@ -220,6 +220,33 @@ describe('memory entry list', () => {
     expect(text(options(p)[0]!.props.children)).toContain('title a');
   });
 
+  it("marks how each of the plan's entries ended and says the plan set it", () => {
+    const origin = (outcome: 'confirmed' | 'refuted' | 'closed') => ({
+      kind: 'plan' as const,
+      lead_session_id: 'lead-1',
+      subject: 'assumption' as const,
+      subject_id: outcome,
+      outcome,
+      plan_version: 2,
+    });
+    const p = props({
+      records: [
+        record({ id: 'a', origin: origin('confirmed') }),
+        record({ id: 'b', origin: origin('refuted') }),
+        record({ id: 'c', origin: origin('closed') }),
+        record({ id: 'd' }),
+      ],
+    });
+    const out = html(p);
+    for (const outcome of ['confirmed', 'refuted', 'closed'])
+      expect(
+        out.match(new RegExp(`aria-label="${zh(`memory.detail.outcome.${outcome}`)}"`, 'g')),
+      ).toHaveLength(1);
+    const rows = options(p).map((row) => text(row.props.children));
+    expect(rows.slice(0, 3).every((row) => row.includes(zh('memory.list.byPlan')))).toBe(true);
+    expect(rows[3]).toContain(zh('memory.list.byUser'));
+  });
+
   it('puts a waiting mark before the time of an entry that awaits review', () => {
     const out = html(
       props({

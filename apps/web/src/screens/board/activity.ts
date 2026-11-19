@@ -6,7 +6,7 @@ import type {
   RuntimeStatus,
 } from '@pantheon/protocol';
 import { recapLine } from '../../components/SessionStateIcon';
-import { reasonText } from '../../data/needs-you';
+import { ageText, reasonText } from '../../data/needs-you';
 import { t } from '../../i18n';
 import { blockerTexts } from '../../lib/daemon-text';
 import { listText } from '../../lib/list-text';
@@ -122,20 +122,50 @@ function stateLine(task: BoardTask, board?: Board): string | null {
   return null;
 }
 
+/** A sentence an agent wrote, with how long ago it wrote it. */
+export interface ActivityNote {
+  text: string;
+  /** Absent when the sentence is the board's own. */
+  ago?: string;
+}
+
+/** How long ago an agent wrote a line. */
+export const agoText = (at: number, now: number) =>
+  now - at < 60_000
+    ? ageText(at, now)
+    : t({ id: 'board.task.activity.ago', defaultMessage: '{age} ago' }, { age: ageText(at, now) });
+
 /**
- * What the task is doing right now, in one sentence; null when there is nothing to say. Without
+ * What the task is doing right now, in one sentence: the board's state, else the newer of the
+ * agent's status line and its recap, else the phase; null when there is nothing to say. Without
  * the board, upstream waits and merges go unnamed.
  */
-export function activityLine(task: BoardTask, now: number, board?: Board): string | null {
+export function activityNote(task: BoardTask, now: number, board?: Board): ActivityNote | null {
   const stated = stateLine(task, board);
-  if (stated) return stated;
+  if (stated) return { text: stated };
+  const a = task.activity;
+  const settled =
+    !!a &&
+    a.phase === 'idle' &&
+    (task.status === 'idle' || task.status === 'ready') &&
+    !a.turn_error;
+  const recap = a && (waits(a) || settled) ? recapLine(task.recap, waits(a)) : null;
+  const status = task.status_line;
+  if (status && (!recap || status.at >= task.recap!.at))
+    return { text: status.text, ago: agoText(status.at, now) };
+  if (recap) return { text: recap, ago: agoText(task.recap!.at, now) };
+  const line = phaseLine(task, now);
+  return line === null ? null : { text: line };
+}
+
+/** The sentence of `activityNote` alone. */
+export const activityLine = (task: BoardTask, now: number, board?: Board): string | null =>
+  activityNote(task, now, board)?.text ?? null;
+
+function phaseLine(task: BoardTask, now: number): string | null {
   const a = task.activity;
   if (!a) return blockerTexts(task)[0] ?? null;
   const lasted = lastedText(now - a.since);
-  const settled =
-    a.phase === 'idle' && (task.status === 'idle' || task.status === 'ready') && !a.turn_error;
-  const recap = waits(a) || settled ? recapLine(task.recap, waits(a)) : null;
-  if (recap) return recap;
   if (a.phase === 'tool') return listText(a.tool ? toolText(a.tool) : PHASE.tool, lasted);
   if (a.phase === 'waiting_approval')
     return a.waiting

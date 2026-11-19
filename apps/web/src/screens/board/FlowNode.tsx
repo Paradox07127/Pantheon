@@ -66,6 +66,8 @@ export type TaskNode = Node<
     critical: boolean;
     ready: boolean;
     line: string | null;
+    /** How long ago the agent wrote `line`; absent when the line is the board's own. */
+    ago?: string;
     /** Its handles start and take new dependencies. */
     editable?: boolean;
     /**
@@ -552,6 +554,7 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
     critical,
     ready,
     line,
+    ago,
     editable = false,
     tall,
     actions,
@@ -670,6 +673,12 @@ export function TaskCard({ data }: NodeProps<TaskNode>) {
               <QuotaLine task={task} now={now} line={said} />
             ) : (
               (said ?? (task.state ? taskStateLabel(task) : phaseText(task, now)))
+            )}
+            {ago && said === line && task.dispatch_wait !== 'runtime_limited' && (
+              <>
+                {' '}
+                <span className="bd-nago">{ago}</span>
+              </>
             )}
           </span>
           {since !== null && (

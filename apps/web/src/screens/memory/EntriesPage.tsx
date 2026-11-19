@@ -12,7 +12,7 @@ import { useBoard } from '../../data/board';
 import { runCommand } from '../../data/commands';
 import { useMemoryQuery } from '../../data/memory';
 import { budgetRefusal, maintainMemory, type BudgetRefusal } from '../../data/memory-context';
-import { useMemoryView } from '../../data/memory-view';
+import { openPlanMilestone, useMemoryView } from '../../data/memory-view';
 import { failureText } from '../../data/needs-you';
 import { STREAM_KINDS } from '../../data/sync';
 import { sessionTitle } from '../../data/transcript';
@@ -113,6 +113,12 @@ export function EntriesPage({ projectId }: { projectId: string }) {
   const shown = useShell((s) => s.screen === 'memory');
   const board = useBoard((s) => s.board);
   const [filters, setFilters] = useState<EntriesFilters>({ state: 'active', tag: [] });
+  const asked = useMemoryView((s) => s.askedFilters);
+  useEffect(() => {
+    if (!asked) return;
+    setFilters({ state: 'active', tag: [], ...asked });
+    useMemoryView.setState({ askedFilters: null });
+  }, [asked]);
   const params = {
     state: filters.state,
     kind: filters.kind,
@@ -120,6 +126,8 @@ export function EntriesPage({ projectId }: { projectId: string }) {
     task_id: filters.task?.id,
     lead_session_id: filters.task?.lead_session_id,
     project_only: filters.projectOnly || undefined,
+    origin: filters.origin,
+    milestone_id: filters.milestone,
     q: query.trim() || undefined,
     limit: PAGE,
   };
@@ -367,6 +375,7 @@ export function EntriesPage({ projectId }: { projectId: string }) {
         dependencies={dependencies.data?.items ?? []}
         dependents={dependents.data?.items ?? []}
         tasks={directory?.facets.tasks ?? []}
+        milestones={base?.facets.milestones ?? []}
         signature={directory?.signature}
         author={author}
         footer={
@@ -382,6 +391,7 @@ export function EntriesPage({ projectId }: { projectId: string }) {
         onOpen={select}
         // The entry carries the tag, so it stays in the list and stays open.
         onTag={(tag) => setFilters({ ...filters, tag: [tag] })}
+        onOpenMilestone={(milestoneId) => openPlanMilestone(projectId, milestoneId)}
         onClose={() => select(null)}
       />
     );

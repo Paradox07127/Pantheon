@@ -15,7 +15,7 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
 }));
 import { FlowChart } from '@/screens/board/FlowPanel';
 import { TaskCard as FlowNode } from '@/screens/board/FlowNode';
-import { activityLine } from '@/screens/board/activity';
+import { activityLine, activityNote } from '@/screens/board/activity';
 
 type Task = BoardModel['tasks'][number];
 const NOW = Date.UTC(2026, 10, 7, 12);
@@ -277,6 +277,31 @@ describe('flow chart task node', () => {
     const merged = { ...running, state: 'merged' as const, ended_at: NOW - 2 * 60_000 };
     expect(text(byClass(flowNode(merged), 'bd-ntm'))).toBe('10 分钟');
     expect(byClass(flowNode({ ...task('a', 'todo'), state: 'todo' }), 'bd-ntm')).toBeUndefined();
+  });
+
+  it("reads the agent's status line and when it was written as one sentence of the card", () => {
+    const running: Task = {
+      ...task('a', 'running', { ...runningTool, health: 'fresh' }),
+      state: 'running',
+      status_line: { text: 'splitting the last 2 tasks', at: NOW - 3 * 60_000 },
+    };
+    const note = activityNote(running, NOW)!;
+    const card = expand(
+      FlowNode({
+        data: {
+          task: running,
+          selected: false,
+          now: NOW,
+          critical: false,
+          ready: false,
+          line: note.text,
+          ago: note.ago,
+        },
+      } as unknown as Parameters<typeof FlowNode>[0]),
+    );
+    expect(text(byClass(card, 'bd-na'))).toBe('splitting the last 2 tasks 3 分钟前');
+    expect(text(byClass(card, 'bd-nago'))).toBe('3 分钟前');
+    expect(byClass(flowNode(running, activityLine(running, NOW)), 'bd-nago')).toBeUndefined();
   });
 
   const full: Task = {

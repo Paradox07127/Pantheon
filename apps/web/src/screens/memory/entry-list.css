@@ -98,7 +98,16 @@
   flex: none;
   color: var(--mu);
 }
+.ml-oc {
+  display: grid;
+  flex: none;
+  color: var(--ok);
+}
+.ml-oc[data-o='refuted'] {
+  color: var(--bad);
+}
 .ml-ix svg.lucide,
+.ml-oc svg.lucide,
 .ml-r svg.lucide,
 .ml-nb svg.lucide {
   width: 12px;

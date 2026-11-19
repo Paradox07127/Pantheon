@@ -1,4 +1,4 @@
-import type { BoardPlan, MilestoneView, Session } from '@pantheon/domain';
+import type { BoardPlan, MilestoneView, Session, SessionTurn } from '@pantheon/domain';
 import type { BoardMilestoneExtras, BoardTaskExtras } from '@pantheon/protocol';
 import { boardTaskId } from './board-plan.js';
 import type { ControlContext } from './context.js';
@@ -6,12 +6,26 @@ import { milestoneEvidenceLevel } from './evidence-level.js';
 
 /** Fields of a plan task's board row beyond those the board view builds itself. */
 export function taskExtras(
-  _ctx: ControlContext,
+  ctx: ControlContext,
   _plan: BoardPlan,
   _task: BoardPlan['tasks'][number],
-  _session: Session | undefined,
+  session: Session | undefined,
 ): BoardTaskExtras {
-  return {};
+  return statusLineOf(ctx, session);
+}
+
+/** The session's status line while the turn that set it is the newest turn that started. */
+export function statusLineOf(
+  ctx: ControlContext,
+  session: Session | undefined,
+): Pick<BoardTaskExtras, 'status_line'> {
+  if (!session?.status_line) return {};
+  const line = session.status_line,
+    id = session.id;
+  const newest = ctx.store
+    .list<SessionTurn>('session_turns')
+    .findLast((turn) => turn.session_id === id && turn.state !== 'queued');
+  return newest?.id === line.turn_id ? { status_line: { text: line.text, at: line.at } } : {};
 }
 
 /**

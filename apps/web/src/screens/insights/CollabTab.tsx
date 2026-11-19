@@ -20,7 +20,7 @@ import { useRuntimeStatus } from '../../data/runtime-status';
 import { planTaskIds, useTaskTrace } from '../../data/task-trace';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import { activityLine } from '../board/activity';
+import { activityNote } from '../board/activity';
 import { runBoardCommand } from '../board/BoardScreen';
 import { Empty } from '../board/Charts';
 import { leadState } from '../board/frame-model';
@@ -944,6 +944,7 @@ export function CollabTab({
                 const sessionId = task.claim.session_id;
                 const count = counts.get(sessionId)?.lead;
                 const state = taskStateLabel(task);
+                const note = activityNote(task, now, model);
                 return [
                   <button
                     key={sessionId}
@@ -980,7 +981,15 @@ export function CollabTab({
                     </span>
                     <span className="clb-ns">
                       <TaskStateIcon task={task} />
-                      <span className="clb-nst">{activityLine(task, now, model) ?? state}</span>
+                      <span className="clb-nst">
+                        {note?.text ?? state}
+                        {note?.ago && (
+                          <>
+                            {' '}
+                            <span className="clb-nago">{note.ago}</span>
+                          </>
+                        )}
+                      </span>
                       <span className="clb-nr">{roleName('task')}</span>
                     </span>
                   </button>,

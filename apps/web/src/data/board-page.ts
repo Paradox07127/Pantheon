@@ -87,6 +87,25 @@ export const pickBoardPage = page.pick;
 /** The view the project's board shows: the one the user picked, else the overview. */
 export const useBoardPage = page.use;
 
+let asked: { projectId: string; milestoneId: string } | null = null;
+const askedListeners = new Set<() => void>();
+const subscribeAsked = (listener: () => void) => {
+  askedListeners.add(listener);
+  return () => void askedListeners.delete(listener);
+};
+
+/** Asks the overview to unfold the project's milestone; the goals take the ask once, and null clears it. */
+export function askMilestone(projectId: string | null, milestoneId?: string): void {
+  asked = projectId && milestoneId ? { projectId, milestoneId } : null;
+  askedListeners.forEach((listener) => listener());
+}
+
+/** The milestone another screen asked the project's overview to unfold, if any. */
+export function useAskedMilestone(projectId: string): string | null {
+  const read = () => (asked?.projectId === projectId ? asked.milestoneId : null);
+  return useSyncExternalStore(subscribeAsked, read, read);
+}
+
 const TASK_VIEWS: readonly TaskView[] = ['flow', 'list', 'timeline'];
 const TASK_SCOPES: readonly TaskScope[] = ['milestone', 'all'];
 

@@ -66,6 +66,7 @@ const state = (extra: Partial<DiagramsState> = {}): DiagramsState => ({
   setEditing: vi.fn(),
   refreshable: [],
   refreshing: new Set(),
+  started: new Map(),
   failed: new Set(),
   progress: null,
   refreshAll: vi.fn(),
@@ -107,7 +108,8 @@ describe('memory diagrams tab', () => {
       ['v2', 'M'],
     ]);
     expect(cells(h.value).map((c) => c.props['data-w'])).toEqual([4, 6]);
-    expect(cards(h.value).map((c) => typeof c.props.onRefresh)).toEqual(['function', 'undefined']);
+    expect(cards(h.value).map((c) => typeof c.props.onRefresh)).toEqual(['function', 'function']);
+    expect(cards(h.value).map((c) => c.props.redrawable)).toEqual([true, false]);
     expect(text(h.value)).toContain(`${zh('memory.diagrams.pinned')}2`);
   });
 
@@ -115,6 +117,23 @@ describe('memory diagrams tab', () => {
     const h = grid(state());
     expect(cards(h.value)).toEqual([]);
     expect(find(h.value, (n) => n.props.inline).props.title).toBe(zh('memory.diagrams.empty'));
+  });
+
+  it('counts the turns in the redraw all button and turns it off with none to redraw', () => {
+    const data = [visual('v1'), visual('v2'), visual('v3', { session_id: null })];
+    const read = { data, loading: false, error: null, gone: false };
+    const redrawAll = (tree: ReactNode) => {
+      const tools = named(tree, 'DiagramsTools');
+      const drawn = mount(() => (tools.type as (props: unknown) => ReactNode)(tools.props)).value;
+      return find(drawn, (n) => n.type === 'button' && text(n).startsWith('全部重画'));
+    };
+    const some = redrawAll(grid(state({ read, refreshable: data.slice(0, 2) })).value);
+    expect(text(some)).toBe(zhf('memory.diagrams.redrawAll', { count: 2 }));
+    expect(text(some)).toBe('全部重画（2 个回合）');
+    expect(some.props['aria-disabled']).toBeUndefined();
+    const none = redrawAll(grid(state({ read: { ...read, data: data.slice(2) } })).value);
+    expect(text(none)).toBe('全部重画（0 个回合）');
+    expect(none.props['aria-disabled']).toBe(true);
   });
 
   it('redraws every pinned visual whose session is still there', async () => {

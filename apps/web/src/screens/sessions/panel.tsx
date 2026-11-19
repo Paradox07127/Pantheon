@@ -13,6 +13,7 @@ import type {
   WorkbenchSession,
 } from '@pantheon/protocol';
 import { Check, ChevronRight, FolderOpen, MapPinOff, Minus, Timer, X } from 'lucide-react';
+import { RunningFor, RUNNING } from '../../components/RunningFor';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { Skeleton } from '../../components/Skeleton';
 import { GateMark } from '../../components/SessionStateIcon';
@@ -26,6 +27,7 @@ import { shortId } from '../../data/format';
 import { ageText, failureText, reasonText } from '../../data/needs-you';
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import { listText } from '../../lib/list-text';
+import { ageParts } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { GateTracker } from '../board/QualityCharts';
 import { GATE_STATES, gateState } from '../board/quality-model';
@@ -521,6 +523,17 @@ export function PlanTab(props: {
   );
 }
 
+/** Who interpreted the story and how long ago. */
+export const storyByText = (story: ChangeStory, now: number) =>
+  t(
+    {
+      id: 'repo.changes.storyBy',
+      defaultMessage:
+        '{runtime} interpreted {unit, select, now {just now} minute {{count, plural, one {# minute} other {# minutes}} ago} hour {{count, plural, one {# hour} other {# hours}} ago} other {{count, plural, one {# day} other {# days}} ago}}',
+    },
+    { runtime: runtimeName(story.runtime ?? null), ...ageParts(now - story.created_at) },
+  );
+
 /** The session's newest interpretation, or the button that starts one; both once HEAD moved past it. */
 export function StoryTab(props: {
   sessionId: string;
@@ -566,13 +579,19 @@ export function StoryTab(props: {
   );
   const ready = story?.state === 'ready' && story.result ? story : null;
   const view = ready && (
-    <StoryView
-      point={storyPoint(ready, props.listed)}
-      story={ready}
-      result={ready.result!}
-      diff={storyDiff.data}
-      findings={props.findings}
-    />
+    <>
+      <p className="ss-sby">
+        {ready.runtime && <RuntimeGlyph runtime={ready.runtime} size={14} />}
+        {storyByText(ready, Date.now())}
+      </p>
+      <StoryView
+        point={storyPoint(ready, props.listed)}
+        story={ready}
+        result={ready.result!}
+        diff={storyDiff.data}
+        findings={props.findings}
+      />
+    </>
   );
   const stale =
     ready !== null &&
@@ -584,7 +603,10 @@ export function StoryTab(props: {
   if (busy || story?.state === 'running')
     return shown(
       <div className="empty" aria-busy="true">
-        {t({ id: 'sessions.panel.story.generating', defaultMessage: 'Generating' })}
+        <RunningFor
+          label={RUNNING.writing}
+          since={story?.state === 'running' ? story.created_at : null}
+        />
       </div>,
     );
   const uncommitted =

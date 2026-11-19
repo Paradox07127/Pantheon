@@ -314,6 +314,7 @@ it("takes a lane's depth and stops, a milestone's re-plan triggers and an assump
       },
     },
     { assumption: { id: 'csv', affects: ['api'], milestone: 'release' } },
+    { risk: { id: 'slow', milestone: 'release' } },
   ])
     expect(plan(fields), JSON.stringify(fields)).toBe(true);
   for (const fields of [
@@ -321,7 +322,7 @@ it("takes a lane's depth and stops, a milestone's re-plan triggers and an assump
     { lane: { stops: ['milestone:'] } },
     { milestone: { replan_if: Array(5).fill(trigger) } },
     { milestone: { replan_if: [{ type: 'handbacks', count: 0 }] } },
-    { risk: { id: 'slow' } },
+    { risk: { affects: ['api'] } },
   ])
     expect(plan(fields), JSON.stringify(fields)).toBe(false);
 });

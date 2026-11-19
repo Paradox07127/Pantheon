@@ -10,7 +10,6 @@ import {
   MessageSquare,
   Network,
   Pin,
-  RefreshCw,
   ShieldCheck,
   Table,
   Workflow,
@@ -27,6 +26,7 @@ import { keyText } from '../../lib/shortcuts';
 import { dayText } from '../../lib/time-text';
 import { askFix } from '../../screens/sessions/panel';
 import { useShell } from '../../store';
+import { RUNNING, RunningFor } from '../RunningFor';
 import { noticeResult, toast } from '../Toast';
 import { Tip } from '../Tip';
 import { GraphDiagram, GraphNodeInfo } from './GraphDiagram';
@@ -579,16 +579,22 @@ export function VisualCard({
   footer,
   inline,
   onRefresh,
+  redrawable = true,
   refreshing = false,
+  redrawSince = null,
   failed = false,
 }: {
   visual: Visual;
   size: VisualSize;
   footer?: ReactNode;
   inline?: boolean;
-  /** Asks the source session to draw this visual again; absent when it cannot. */
+  /** Asks the source session to draw this visual again; absent where a visual is not redrawn. */
   onRefresh?: () => void;
+  /** False once the source session is deleted: the redraw stays, turned off. */
+  redrawable?: boolean;
   refreshing?: boolean;
+  /** When the turn asking the running redraw was sent. */
+  redrawSince?: number | null;
   /** The last redraw asked ended without drawing it again. */
   failed?: boolean;
 }) {
@@ -598,7 +604,6 @@ export function VisualCard({
   const drawer = board?.sessions.find((session) => session.id === visual.session_id);
   const source = inline ? undefined : drawer;
   const sourceTitle = source && sessionTitle(source, board!);
-  const refresh = t({ id: 'visual.card.refresh', defaultMessage: 'Refresh this visual' });
   const pinned = visual.pin !== undefined;
   const label = pinned
     ? t({ id: 'visual.card.unpin', defaultMessage: 'Pinned to Diagrams; click to unpin' })
@@ -620,9 +625,13 @@ export function VisualCard({
             { id: 'visual.card.updated', defaultMessage: 'Updated {time}' },
             { time: dayText(visual.updated_at, Date.now(), { time: true }) },
           )
-        : dayText(visual.updated_at, Date.now(), { time: true })}
+        : t(
+            { id: 'visual.card.drawnAt', defaultMessage: 'Drawn {time}' },
+            { time: dayText(visual.updated_at, Date.now(), { time: true }) },
+          )}
     </time>
   );
+  const held = refreshing || !redrawable;
   return (
     <VisualFrame
       title={visual.title}
@@ -663,35 +672,30 @@ export function VisualCard({
           )}
           {(refreshing || !inline) && (
             <span className="vis-meta">
-              {refreshing ? (
-                <>
-                  <RefreshCw className="si-spin" aria-hidden="true" />
-                  {t({ id: 'visual.card.refreshing', defaultMessage: 'Refreshing' })}
-                </>
-              ) : (
-                time
-              )}
+              {refreshing ? <RunningFor label={RUNNING.redrawing} since={redrawSince} /> : time}
             </span>
           )}
-          {onRefresh && failed && (
+          {onRefresh && !redrawable && (
+            <span className="vis-meta" role="status">
+              {t({ id: 'visual.card.cannotRedraw', defaultMessage: "Can't redraw" })}
+            </span>
+          )}
+          {onRefresh && redrawable && failed && (
             <button type="button" className="btn sm" onClick={onRefresh}>
               {t({ id: 'visual.card.retry', defaultMessage: 'Retry' })}
             </button>
           )}
-          {onRefresh && !failed && (
-            <Tip content={refresh}>
-              <button
-                type="button"
-                className="ib"
-                aria-label={refresh}
-                aria-disabled={refreshing || undefined}
-                onClick={() => {
-                  if (!refreshing) onRefresh();
-                }}
-              >
-                <RefreshCw aria-hidden="true" />
-              </button>
-            </Tip>
+          {onRefresh && !(redrawable && failed) && (
+            <button
+              type="button"
+              className="btn sm"
+              aria-disabled={held || undefined}
+              onClick={() => {
+                if (!held) onRefresh();
+              }}
+            >
+              {t({ id: 'visual.card.redraw', defaultMessage: 'Redraw' })}
+            </button>
           )}
         </>
       }
