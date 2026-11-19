@@ -49,6 +49,7 @@ import { wakeLead } from './task-tracking.js';
 import { kindOfPaths, risky, scopeTierReason } from './task-kind.js';
 import { chartered } from './charter.js';
 import { approveLane, firstPlanHolds, setLaneDepth } from './lane-stops.js';
+import { requireTriggerEvent } from './replan.js';
 import { workflowPolicy } from './workflow-policy.js';
 
 /** The longest iteration in days, so a mistyped year cannot make the board count each day of centuries. */
@@ -56,7 +57,7 @@ export const ITERATION_DAYS = 366;
 
 type PlanInput = Omit<
   ReturnType<(typeof inputSchemas)['board.plan.update']['parse']>,
-  'base_version'
+  'base_version' | 'trigger_event'
 > & { order_lock?: string[] };
 type PlanTask = PlanInput['tasks'][number];
 type EditOp = ReturnType<(typeof inputSchemas)['board.plan.edit']['parse']>['ops'][number];
@@ -589,6 +590,8 @@ function storePlan(
     leadTasks?: Set<string>;
     writtenTiers?: Map<string, TaskTier | undefined>;
     userEdits?: { edit_id: string; task_ids: string[] }[];
+    /** The board.replan_triggered event the change answers; history reads it off the plan_updated event. */
+    triggerEvent?: string;
   } = {},
 ): BoardPlan {
   input = withStoredGoals(ctx, leadId, input);
@@ -781,7 +784,13 @@ function storePlan(
     );
   }
   writeLeadMilestones(ctx, p, leadId, input.project_id, input.milestones, commandId);
-  ctx.store.event('board.plan_updated', next, input.project_id, next, commandId);
+  ctx.store.event(
+    'board.plan_updated',
+    next,
+    input.project_id,
+    options.triggerEvent ? { ...next, trigger_event: options.triggerEvent } : next,
+    commandId,
+  );
   if (current) recordPlanDecisions(ctx, current, next, commandId);
   noteOtherPlan(ctx, next, commandId);
   for (const edit of options.userEdits ?? [])
@@ -1027,6 +1036,7 @@ function leadEdit(
   edits: EditOp[],
   commandId: string,
   lanes: Lane[] = [],
+  triggerEvent?: string,
 ): BoardPlan {
   const ops = edits.filter(
     (op): op is Exclude<EditOp, { type: 'refute_assumption' }> => op.type !== 'refute_assumption',
@@ -1108,6 +1118,7 @@ function leadEdit(
             ),
         )
         .map((edit) => ({ edit_id: edit.edit_id, task_ids: edit.task_ids })),
+      triggerEvent,
     },
   );
   return gone.reduce((stored, note) => appendNote(ctx, stored, note, commandId), next);
@@ -1348,11 +1359,14 @@ const planView = (ctx: ControlContext, projectId: string, leadId: string) =>
 export const projectBoardHandlers: Handlers = {
   // Each lead owns its own plan row; base_version guards it against a write it has not read.
   'board.plan.update': (ctx, p, c) => {
-    const { base_version, ...input } = inputSchemas['board.plan.update'].parse(c.input);
+    const { base_version, trigger_event, ...input } = inputSchemas['board.plan.update'].parse(
+      c.input,
+    );
     projectAccess(ctx, p, input.project_id, c.type);
     requireThat(p.role === 'lead', 'permission_denied', 'Lead session required');
     ctx.store.must<Project>('projects', input.project_id);
     requireVersion(ctx.store.get<BoardPlan>('board_plans', p.session_id!), base_version);
+    requireTriggerEvent(ctx, p.session_id!, trigger_event);
     storePlan(
       ctx,
       p,
@@ -1362,6 +1376,7 @@ export const projectBoardHandlers: Handlers = {
       {
         leadTasks: new Set(input.tasks.map((task) => task.id)),
         writtenTiers: new Map(input.tasks.map((task) => [task.id, task.kind?.tier])),
+        triggerEvent: trigger_event,
       },
     );
     reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', p.session_id!), c.command_id);
@@ -1386,7 +1401,8 @@ export const projectBoardHandlers: Handlers = {
     );
     requireVersion(plan, input.base_version);
     if (p.role === 'lead') {
-      leadEdit(ctx, p, plan, input.ops, c.command_id);
+      requireTriggerEvent(ctx, leadId, input.trigger_event);
+      leadEdit(ctx, p, plan, input.ops, c.command_id, [], input.trigger_event);
       reviewPlan(ctx, ctx.store.must<BoardPlan>('board_plans', leadId), c.command_id);
       return planView(ctx, input.project_id, leadId);
     }
@@ -1410,6 +1426,7 @@ export const projectBoardHandlers: Handlers = {
       `Not found: board plan ${p.session_id}; write a plan with update_board first`,
     );
     requireVersion(plan, input.base_version);
+    requireTriggerEvent(ctx, plan.id, input.trigger_event);
     const mode = chartered(ctx, p, 'plan_change', plan, input.reason);
     requireThat(
       mode !== 'off',
@@ -1434,6 +1451,7 @@ export const projectBoardHandlers: Handlers = {
       base_version: input.base_version,
       created_at: ctx.store.now(),
       status: 'pending',
+      ...(input.trigger_event ? { trigger_event: input.trigger_event } : {}),
     };
     const next = ctx.store.update(
       'board_plans',
@@ -1445,7 +1463,7 @@ export const projectBoardHandlers: Handlers = {
     if (applied)
       resolveProposal(
         ctx,
-        leadEdit(ctx, p, next, ops, c.command_id, lanes),
+        leadEdit(ctx, p, next, ops, c.command_id, lanes, input.trigger_event),
         proposal,
         { status: 'accepted' },
         {
@@ -1537,9 +1555,12 @@ export const projectBoardHandlers: Handlers = {
               plan.id,
               applyOps(planContent(ctx, plan, written.lanes), ops),
               c.command_id,
-              { quoted: ops.flatMap((op) => (op.type === 'add_task' ? op.task.source : [])) },
+              {
+                quoted: ops.flatMap((op) => (op.type === 'add_task' ? op.task.source : [])),
+                triggerEvent: proposal.trigger_event,
+              },
             )
-          : leadEdit(ctx, p, plan, ops, c.command_id, proposal.lanes);
+          : leadEdit(ctx, p, plan, ops, c.command_id, proposal.lanes, proposal.trigger_event);
     resolveProposal(
       ctx,
       applied,

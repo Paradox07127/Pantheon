@@ -381,6 +381,8 @@ export interface PlanProposal {
   status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
   resolution_reason?: string;
   resolved_at?: number;
+  /** The board.replan_triggered event the proposal answers. */
+  trigger_event?: string;
 }
 export interface PlanProposalView {
   id: string;
@@ -446,8 +448,12 @@ export interface LeadNote {
     | 'runtime_switched'
     /** A lane the lead added waits for the user to approve its plan; does not wake the lead. */
     | 'plan_held'
+    /** A re-plan condition of one of the lead's milestones was met; wakes the lead. */
+    | 'replan'
     /** New items wait for the user in other projects; wakes the personal agent. */
-    | 'personal_attention';
+    | 'personal_attention'
+    /** A milestone's status changed; one line in the Assistant's inbox, and it does not wake the Assistant. */
+    | 'milestone';
   text: string;
   status?: 'done' | 'done_with_concerns';
   reason?: TaskBlockReason;
@@ -492,6 +498,8 @@ export interface LeadNote {
   signal?: 'interrupt' | 'digest';
   /** Wakes the agent even while its contract holds its wakes: an urgent signal or the user's own act. */
   bypass_hold?: 'urgent' | 'user';
+  /** The board.replan_triggered event a replan note tells of. */
+  replan_event?: string;
 }
 export interface MilestoneView {
   milestone: Milestone;

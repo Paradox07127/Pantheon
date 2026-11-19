@@ -45,6 +45,7 @@ import {
 } from './lead-inbox.js';
 import { openResident } from './resident.js';
 import { wrapUpOverBudget } from './budget-wrap-up.js';
+import { replanTriggers } from './replan.js';
 import { usageLimitWaiting, usageResetAt } from './continuation.js';
 import {
   currentAcceptance,
@@ -193,7 +194,9 @@ const wakingNote = (plan: BoardPlan, note: LeadNote) =>
   note.kind === 'plan_review_failed' ||
   note.kind === 'milestone_verified' ||
   note.kind === 'runtime_switched' ||
+  note.kind === 'replan' ||
   note.kind === 'personal_attention' ||
+  note.bypass_hold === 'user' ||
   (note.kind === 'user_edit' && (note.edit?.wake === true || note.edit?.applied === false)) ||
   reportDone(plan, note);
 
@@ -903,6 +906,7 @@ export function tickTaskTracking(ctx: ControlContext): void {
     escalated.set(approval.session_id, waited);
   }
   wrapUpOverBudget(ctx);
+  replanTriggers(ctx);
   const plans = ctx.store.list<BoardPlan>('board_plans');
   if (!plans.length) return;
   const sessions = ctx.store

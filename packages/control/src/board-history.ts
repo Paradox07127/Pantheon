@@ -1,13 +1,14 @@
-import type {
-  Approval,
-  BoardPlan,
-  Milestone,
-  Principal,
-  Project,
-  Session,
-  SessionTurn,
-  StepRun,
-  Workspace,
+import {
+  canonical,
+  type Approval,
+  type BoardPlan,
+  type Milestone,
+  type Principal,
+  type Project,
+  type Session,
+  type SessionTurn,
+  type StepRun,
+  type Workspace,
 } from '@pantheon/domain';
 import type { BoardHistory } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
@@ -18,6 +19,7 @@ import { milestoneView } from './project-facts.js';
 import { DECISIONS } from './retrospective.js';
 import { INBOX_HEADER } from './lead-inbox.js';
 import { cachedReady, TURN_ENDS } from './workbench-session.js';
+import { triggerText, type ReplanFired } from './replan.js';
 
 /** Every event kind the history reads; agent output, the bulk of the log, is none of them. */
 const HISTORY_KINDS = [
@@ -43,6 +45,7 @@ const HISTORY_KINDS = [
   'task.released',
   'task.handed_back',
   'milestone.accepted',
+  'board.replan_triggered',
 ];
 
 export function boardHistory(
@@ -201,13 +204,53 @@ export function boardHistory(
     planVersions = new Map<string, { sequence: number; plan: BoardPlan }[]>(),
     // The generation each session worked on as of the event being read.
     sessionGenerations = new Map<string, number>();
+  // Fired re-plan conditions no plan change answered yet, by event id; when each session's newest turn began.
+  const triggers = new Map<
+      string,
+      { sequence: number; leadId: string; milestone_id: string; text: string }
+    >(),
+    turnStarted = new Map<string, number>();
   for (const event of events) {
     const p = event.payload as Record<string, unknown>,
       day = dayOf(event.created_at);
+    let replan: BoardHistory['decisions'][number]['replan'];
     if (event.kind === 'board.plan_updated') {
       for (const task of (event.payload as BoardPlan).tasks)
         decisionTasks.set(boardTaskId(owner(event.aggregate_id), task.id), task);
       const versions = planVersions.get(owner(event.aggregate_id)) ?? [];
+      const explicit = p.trigger_event as string | undefined;
+      // Without an explicit event, the lead's own change in a turn begun after the condition fired answers it.
+      const own = () =>
+        ctx.store.receipt(`session:${event.aggregate_id}:command:${event.causation_id}`) !==
+        undefined;
+      const answered = [...triggers].filter(
+        ([eventId, trigger]) =>
+          trigger.leadId === owner(event.aggregate_id) &&
+          (explicit
+            ? eventId === explicit
+            : (turnStarted.get(event.aggregate_id) ?? 0) > trigger.sequence && own()),
+      );
+      if (answered.length) {
+        const before = new Map((versions.at(-1)?.plan.tasks ?? []).map((task) => [task.id, task])),
+          after = (event.payload as BoardPlan).tasks;
+        replan = {
+          triggers: answered.map(([eventId, trigger]) => ({
+            event_id: eventId,
+            milestone_id: trigger.milestone_id,
+            text: trigger.text,
+          })),
+          added: after.filter((task) => !before.has(task.id)).map((task) => task.title),
+          removed: [...before.values()]
+            .filter((task) => !after.some((each) => each.id === task.id))
+            .map((task) => task.title),
+          changed: after
+            .filter(
+              (task) => before.has(task.id) && canonical(before.get(task.id)) !== canonical(task),
+            )
+            .map((task) => task.title),
+        };
+        for (const [eventId] of answered) triggers.delete(eventId);
+      }
       versions.push({ sequence: event.sequence, plan: event.payload as BoardPlan });
       planVersions.set(owner(event.aggregate_id), versions);
     }
@@ -233,13 +276,16 @@ export function boardHistory(
           lane_id: task ? boardTaskId(leadId, task.lane) : null,
           kind:
             event.kind === 'board.plan_updated'
-              ? 'plan'
+              ? replan
+                ? 'replan'
+                : 'plan'
               : event.kind === 'task.start_requested' || event.kind === 'task.claimed'
                 ? 'start'
                 : event.kind === 'task.stop_requested'
                   ? 'stop'
                   : 'accept',
           ...(title ? { title: title.slice(0, 140) } : {}),
+          ...(replan ? { replan } : {}),
         });
     }
     if (event.kind === 'approval.requested' || event.kind === 'lead.question_asked') day.waited++;
@@ -315,6 +361,13 @@ export function boardHistory(
     else if (event.kind === 'session.discarded')
       discardedAt.set(event.aggregate_id, event.created_at);
     else if (event.kind === 'milestone.accepted') reached.set(event.aggregate_id, event.created_at);
+    else if (event.kind === 'board.replan_triggered')
+      triggers.set(event.event_id, {
+        sequence: event.sequence,
+        leadId: owner(event.aggregate_id),
+        milestone_id: (p as unknown as ReplanFired).milestone_id,
+        text: triggerText(p as unknown as ReplanFired),
+      });
     else if (event.kind === 'task.accepted')
       completed.set(
         `${boardTaskId(owner(event.aggregate_id), p.task_id as string)}:${(p.generation as number | undefined) ?? 1}`,
@@ -362,6 +415,7 @@ export function boardHistory(
     } else if (event.kind === 'turn.running') {
       // A system turn whose row is gone has only its purpose logged, with no id.
       const turn = turnOf.get(event.aggregate_id)!;
+      turnStarted.set(turn.session_id, event.sequence);
       allRunning.set(event.aggregate_id, event.created_at);
       if (sessionOf.get(turn.session_id)?.task || claims.has(turn.session_id))
         running.set(event.aggregate_id, event.created_at);

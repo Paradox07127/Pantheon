@@ -23,7 +23,7 @@ import { runValidationCommand } from './validation-executor.js';
 import { afterCommit } from './workbench-session.js';
 
 const FOLLOW_UP = 'agent-follow-up';
-const ROUTINE = 'agent-routine';
+export const ROUTINE = 'agent-routine';
 const ROUTINE_LIMIT = 10;
 const MINUTE_MS = 60_000;
 /** Routine timer subjects whose precheck is running. */
@@ -70,7 +70,8 @@ export function nextRun(routine: AgentRoutine, after: number): number {
     : nextClock(routine.active_hours.from, due);
 }
 
-const routineSubject = (profile: AgentProfile, routineId: string) => `${profile.id}:${routineId}`;
+export const routineSubject = (profile: AgentProfile, routineId: string) =>
+  `${profile.id}:${routineId}`;
 
 /** Cancels the routine's pending run and schedules its next one while it is enabled. */
 export function scheduleRoutine(ctx: ControlContext, profile: AgentProfile, routine: AgentRoutine) {
@@ -154,21 +155,30 @@ timerHandlers.set(FOLLOW_UP, (ctx, timer) => {
   wakeAgent(ctx, profile, 'follow_up', timer.note ?? '', `timer:${timer.id}`);
 });
 
-timerHandlers.set(ROUTINE, (ctx, timer) => {
-  const split = timer.subject_id.indexOf(':'),
-    profile = ctx.store.get<AgentProfile>('agents', timer.subject_id.slice(0, split)),
-    routine = profile?.routines.find((each) => each.id === timer.subject_id.slice(split + 1));
-  if (!profile || profile.archived_at || !routine?.enabled) return;
+/** The routine note of the agent's last run of the routine; undefined when it never ran. */
+export function lastRoutineRun(
+  ctx: ControlContext,
+  profile: AgentProfile,
+  routineId: string,
+): LeadNote | undefined {
   // Routine ids are unique within the profile, whose residents' plans hold its notes.
-  const last = ctx.store
+  return ctx.store
     .kindEvents(profile.project_id, ['lead.note_added'])
     .filter(
       (event) =>
         ctx.store.get<Session>('sessions', event.aggregate_id)?.resident?.agent_id === profile.id,
     )
     .map((event) => event.payload as LeadNote)
-    .filter((note) => note.kind === 'routine' && note.routine_id === routine.id)
+    .filter((note) => note.kind === 'routine' && note.routine_id === routineId)
     .at(-1);
+}
+
+timerHandlers.set(ROUTINE, (ctx, timer) => {
+  const split = timer.subject_id.indexOf(':'),
+    profile = ctx.store.get<AgentProfile>('agents', timer.subject_id.slice(0, split)),
+    routine = profile?.routines.find((each) => each.id === timer.subject_id.slice(split + 1));
+  if (!profile || profile.archived_at || !routine?.enabled) return;
+  const last = lastRoutineRun(ctx, profile, routine.id);
   const cause = `timer:${timer.id}`,
     fields = { routine_id: routine.id, ...(last ? { last_run_at: last.at } : {}) };
   const precheck = routine.precheck;

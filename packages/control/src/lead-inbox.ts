@@ -559,6 +559,19 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       `What happened: ${text}`,
       "How to handle: start the lane's tasks as you planned; they open once the user approves the plan, so tell the user it waits for them.",
     ];
+  else if (kind === 'replan')
+    lines = [
+      startTag([...onTask, ['event', note.replan_event]]),
+      `What happened: ${text}`,
+      since,
+      "How to handle: re-plan the milestone with update_board, edit_board or propose_board, giving this note's event as trigger_event; if the plan should stand, tell the user in one line why.",
+    ];
+  else if (kind === 'milestone')
+    lines = [
+      startTag(own),
+      `What happened: ${text}`,
+      'How to handle: nothing to do now; mention it when the user asks how the project stands.',
+    ];
   else if (kind === 'personal_attention')
     lines = [
       startTag(own),

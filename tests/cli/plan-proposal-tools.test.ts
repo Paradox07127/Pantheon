@@ -49,6 +49,7 @@ it('offers plain proposal tools to the lead with bound project and revision and 
   expect(propose.description).toContain('withdraw_board_proposal');
   expect(Object.keys(propose.inputSchema.properties ?? {})).toEqual([
     'base_version',
+    'trigger_event',
     'reason',
     'ops',
   ]);

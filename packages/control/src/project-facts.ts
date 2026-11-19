@@ -46,6 +46,7 @@ import {
   taskState,
 } from './board-plan.js';
 import { goalViews } from './project-goals.js';
+import { noteMilestone } from './task-thread.js';
 
 export function userOnly(principal: Principal): void {
   requireThat(
@@ -481,6 +482,7 @@ export const projectFactHandlers: Handlers = {
     );
     history(ctx, 'milestone', next, p.id);
     ctx.store.event('milestone.revised', next, old.project_id, next, c.command_id);
+    noteMilestone(ctx, next, milestoneView(ctx, next).status, c.command_id);
     return next;
   },
   'milestone.accept': (ctx, p, c) => {
@@ -595,6 +597,7 @@ export const projectFactHandlers: Handlers = {
     );
     history(ctx, 'milestone', next, p.id);
     ctx.store.event('milestone.accepted', next, old.project_id, next, c.command_id);
+    noteMilestone(ctx, next, milestoneView(ctx, next).status, c.command_id);
     return next;
   },
 };

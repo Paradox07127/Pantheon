@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   DomainError,
   id,
@@ -6,6 +7,7 @@ import {
   type AgentProfile,
   type BoardPlan,
   type Improvement,
+  type MemoryRecord,
   type Principal,
   type Project,
   type Retrospective,
@@ -14,7 +16,7 @@ import {
   type SessionTurn,
   type StepRun,
 } from '@pantheon/domain';
-import { inputSchemas } from '@pantheon/protocol';
+import { inputSchemas, type AgentChapterStartedPayload } from '@pantheon/protocol';
 import { runtime } from './admission.js';
 import { BOARD_READ_ONLY_TEMPLATES } from './agent-prompts.js';
 import { residentPlan, routineOf, scheduleRoutine } from './agent-always-on.js';
@@ -38,6 +40,12 @@ import { sessionDefaults } from './user-config.js';
 import { afterCommit, changeModel } from './workbench-session.js';
 
 type BuiltInKind = (typeof BUILT_IN_TEMPLATES)[number];
+type RotationReason = NonNullable<NonNullable<Session['rotation']>['reason']>;
+
+const instructionsHash = (profile: AgentProfile) =>
+  profile.instructions === undefined
+    ? undefined
+    : createHash('sha256').update(profile.instructions).digest('hex');
 
 /**
  * The profile's runtime when it can run read-only, else the project's session default runtime when
@@ -100,7 +108,7 @@ export function openAgent(
   ctx: ControlContext,
   profile: AgentProfile,
   cause: string,
-  handoff = false,
+  handoff?: RotationReason,
 ): Session {
   requireThat(!profile.archived_at, 'invalid_state', 'Unarchive the agent first');
   const projectId = profile.project_id;
@@ -111,6 +119,7 @@ export function openAgent(
     .filter((session) => session.resident?.agent_id === profile.id);
   const project = ctx.store.must<Project>('projects', projectId);
   const choice = residentChoice(ctx, project, profile);
+  const hash = instructionsHash(profile);
   const session: Session = {
     id: id(),
     revision: 1,
@@ -120,7 +129,11 @@ export function openAgent(
     state: 'open',
     turn_count: 0,
     title: profile.name,
-    resident: { kind: profile.template, agent_id: profile.id },
+    resident: {
+      kind: profile.template,
+      agent_id: profile.id,
+      ...(hash !== undefined && { instructions_hash: hash }),
+    },
     ...(choice.model !== undefined && { requested_model: choice.model }),
     ...(choice.effort !== undefined && { requested_effort: choice.effort }),
   };
@@ -153,7 +166,7 @@ export function openAgent(
       TAKEOVER_TEXT,
       ...(handoff
         ? [
-            `That session, ${ended.id}, ended because its context was nearly full; read it with session_read when you need more of it.`,
+            `That session, ${ended.id}, ${ENDED[handoff]}; read it with session_read when you need more of it.`,
             `It left the handoff note ${handoffKey(profile)} in project memory: read it with memory_get or memory_search before you act on anything.`,
           ]
         : []),
@@ -192,7 +205,7 @@ function takeOverReferences(ctx: ControlContext, from: string, to: string): void
 function closeResident(
   ctx: ControlContext,
   session: Session,
-  reason: 'agent_runtime_changed' | 'agent_archived' | 'context_full',
+  reason: 'agent_runtime_changed' | 'agent_archived' | RotationReason,
   cause: string,
 ): void {
   // The release only closes the process of an open session; its stop leaves a closed one closed.
@@ -217,20 +230,54 @@ function contextFull(session: Session): boolean {
   return !!limit && used !== undefined && used >= CONTEXT_FULL_SHARE * limit;
 }
 
-const handoffText = (session: Session, profile: AgentProfile) =>
+/** A resident session opened this long ago rolls when its next turn ends. */
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+const ROLLING: Record<RotationReason, string> = {
+  context_full: 'Your context is nearly full',
+  weekly: 'This session has run for a week',
+  instructions_changed: 'Your instructions changed',
+};
+
+const ENDED: Record<RotationReason, string> = {
+  context_full: 'ended because its context was nearly full',
+  weekly: 'ended after a week',
+  instructions_changed: "ended because the agent's instructions changed",
+};
+
+function rotationDue(
+  ctx: ControlContext,
+  session: Session,
+  profile: AgentProfile,
+): RotationReason | undefined {
+  if (contextFull(session)) return 'context_full';
+  const opened = ctx.store
+    .kindEvents(session.project_id, ['session.opened'])
+    .find((event) => event.aggregate_id === session.id);
+  if (opened && ctx.store.now() - opened.created_at > WEEK_MS) return 'weekly';
+  if (session.resident?.instructions_hash !== instructionsHash(profile))
+    return 'instructions_changed';
+  return undefined;
+}
+
+const handoffText = (session: Session, profile: AgentProfile, reason: RotationReason) =>
   [
-    'Your context is nearly full: after this turn a new session of this agent takes over, without this conversation.',
+    `${ROLLING[reason]}: after this turn a new session of this agent takes over, without this conversation.`,
     `Call guide with name "handoff" and follow it: write the handoff note with memory_propose under the key "${handoffKey(profile)}" and the title "Handoff from ${session.title ?? profile.name}".`,
   ].join('\n');
 
-/**
- * Called when a turn of the session ended. Once a resident has no turn left and its context is
- * full, it queues the turn that writes the handoff note; once that turn and any queued after it
- * have ended, the session closes and a new one of its agent takes over.
- */
+/** Called when a turn of the session ended; see rollWhenDue. */
 export function afterResidentTurn(ctx: ControlContext, sessionId: string, turnId: string): void {
+  rollWhenDue(ctx, sessionId, `turn:${turnId}`);
+}
+
+/**
+ * Once a resident has no turn left and its context is full, it opened over a week ago or its
+ * agent's instructions changed, it queues the turn that writes the handoff note; once that turn
+ * and any queued after it have ended, the session closes and a new one of its agent takes over.
+ */
+function rollWhenDue(ctx: ControlContext, sessionId: string, cause: string): void {
   if (ctx.closing) return;
-  const cause = `turn:${turnId}`;
   try {
     ctx.store.transaction(() => {
       const session = ctx.store.must<Session>('sessions', sessionId);
@@ -249,26 +296,46 @@ export function afterResidentTurn(ctx: ControlContext, sessionId: string, turnId
         return;
       const profile = ctx.store.must<AgentProfile>('agents', session.resident.agent_id);
       if (session.rotation) {
+        const reason = session.rotation.reason ?? 'context_full';
         // Without a plan the new session would have no takeover turn to name the handoff in.
         residentPlan(ctx, session);
-        closeResident(ctx, session, 'context_full', cause);
-        openAgent(ctx, profile, cause, true);
+        closeResident(ctx, session, reason, cause);
+        const next = openAgent(ctx, profile, cause, reason);
+        const notes = ctx.store
+          .list<MemoryRecord>('memory_records')
+          .filter(
+            (record) =>
+              record.project_id === profile.project_id && record.key === handoffKey(profile),
+          );
+        const note = notes
+          .filter((record) => record.created_at >= session.rotation!.at)
+          .sort((a, b) => b.created_at - a.created_at)[0];
+        const previous = note && notes.find((record) => record.superseded_by === note.id);
+        const payload: AgentChapterStartedPayload = {
+          chapter: ctx.store
+            .list<Session>('sessions')
+            .filter((each) => each.resident?.agent_id === profile.id).length,
+          ...(note && { handoff_memory_id: note.id }),
+          ...(previous && { previous_memory_id: previous.id }),
+        };
+        ctx.store.event('agent.chapter_started', next, next.project_id, payload, cause);
         return;
       }
-      if (!contextFull(session)) return;
+      const reason = rotationDue(ctx, session, profile);
+      if (!reason) return;
       // The personal agent keeps no memory to hand off; its next session reads live state again.
       if (profile.template === 'personal') {
         residentPlan(ctx, session);
-        closeResident(ctx, session, 'context_full', cause);
+        closeResident(ctx, session, reason, cause);
         openAgent(ctx, profile, cause);
         return;
       }
       acceptInput(ctx, session, 'send');
-      const turn = queueTurn(ctx, session, handoffText(session, profile), 'tracker', cause);
+      const turn = queueTurn(ctx, session, handoffText(session, profile, reason), 'tracker', cause);
       const queued = ctx.store.must<Session>('sessions', session.id);
       ctx.store.update(
         'sessions',
-        { ...queued, rotation: { flush_turn_id: turn.id, at: ctx.store.now() } },
+        { ...queued, rotation: { flush_turn_id: turn.id, at: ctx.store.now(), reason } },
         queued.revision,
       );
     });
@@ -379,7 +446,11 @@ export function updateAgent(
     const committed = afterCommit(ctx);
     const completion = Promise.resolve()
       .then(() => {
-        if (committed()) releaseIdleConversation(ctx, open);
+        if (!committed()) return;
+        // Changed instructions roll the session now when it is idle, else after its turns end.
+        if (instructionsHash(next) !== open.resident?.instructions_hash)
+          rollWhenDue(ctx, open.id, cause);
+        else releaseIdleConversation(ctx, open);
       })
       .finally(() => ctx.completions.delete(completion));
     ctx.completions.add(completion);

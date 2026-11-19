@@ -5,11 +5,15 @@ export type {
   MemoryUndoRetractionResult,
   MemorySessionTurnsResult,
 } from './memory.js';
+export type { ChangeOutcome, ChangeOutcomeWindow } from './change-outcomes.js';
 import { z } from 'zod';
 import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
 import { rangeStoryInputSchemas } from './range-story.js';
+import { planReplayQuerySchema } from './plan-replay.js';
 import { themeInputSchema, type ThemeInput } from './theme.js';
 import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
+import { agentWakeInputSchemas, agentWakeQuerySchemas } from './agent-wakes.js';
+export type { AgentRoutineRow, AgentWake, WakeOutcome } from './agent-wakes.js';
 import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
 import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
 import {
@@ -19,6 +23,8 @@ import {
   workflowToolGroups,
   workflowTools,
 } from './workflow-tools.js';
+import { playbookInputSchemas } from './playbooks.js';
+export type { PlaybookRead } from './playbooks.js';
 import type {
   AgentToolGroup,
   ApprovalQuestion,
@@ -187,6 +193,9 @@ export interface GithubPullDetail {
 export { prettifyError, ZodError, type ZodIssue } from 'zod';
 export * from './change-story.js';
 export * from './range-story.js';
+export * from './plan-replay.js';
+export * from './learned.js';
+export * from './agent-chapters.js';
 
 // Lives here, not in domain: the web bundle imports protocol at run time, and domain imports node:crypto.
 export function sessionRole(
@@ -1527,12 +1536,18 @@ const improvementChange = z.discriminatedUnion('type', [
       .describe('The paths to copy into a new worktree and the command to run there.'),
   }),
 ]);
+const triggerEvent = str
+  .optional()
+  .describe(
+    "Optional: the event of the replan note this change answers, from the note's event attribute.",
+  );
 // MCP tools omit bound fields; the daemon checks references on the complete plan.
 export const boardPlanInputSchema = z.strictObject({
   project_id: str,
   base_version: baseVersion.describe(
     'The plan_version of your current plan from project_read; 0 before your first plan. A different number is refused with the current one.',
   ),
+  trigger_event: triggerEvent,
   headline: planTitle.describe("The plan's title on the board, at most 80 characters."),
   lanes: z
     .array(
@@ -1635,7 +1650,7 @@ export const boardPlanInputSchema = z.strictObject({
           .max(4)
           .optional()
           .describe(
-            `Optional: up to 4 conditions on which you re-plan the milestone. ${RECORDED_ONLY}`,
+            'Optional: up to 4 conditions on which you re-plan the milestone. When a task of the milestone meets handbacks, budget_ratio or stall, Pantheon sends you a replan note once per task generation; assumption_false is recorded only.',
           ),
       }),
     )
@@ -2296,9 +2311,11 @@ export const inputSchemas = {
   ...rangeStoryInputSchemas,
   ...repoWriteInputSchemas,
   ...alwaysOnInputSchemas,
+  ...agentWakeInputSchemas,
   ...appInputSchemas,
   ...agentInputSchemas,
   ...workflowInputSchemas,
+  ...playbookInputSchemas,
   'terminal.open': z.strictObject({
     project_id: z.string(),
     session_id: z.string().optional(),
@@ -2430,6 +2447,7 @@ export const inputSchemas = {
     base_version: baseVersion.describe(
       'The plan_version from your last project_read; a different one is refused with the current number.',
     ),
+    trigger_event: triggerEvent,
     ops: z
       .array(planEditOp)
       .min(1)
@@ -2448,6 +2466,7 @@ export const inputSchemas = {
   'board.plan.propose': z.strictObject({
     project_id: str,
     base_version: baseVersion.describe('The plan_version from your last project_read.'),
+    trigger_event: triggerEvent,
     reason: boardText
       .max(280)
       .describe('Why the user should accept it, under 280 characters; the card shows it.'),
@@ -3288,6 +3307,7 @@ export const querySchemas = {
   'agent.proposal': z.strictObject({ proposal_id: str }),
   /** The user only; returns the defaults of the ideas, goals and custom templates a new agent starts from. */
   'agent.templates': z.strictObject({}),
+  ...agentWakeQuerySchemas,
   'project.usage.read': z.strictObject({ project_id: str }),
   'project.review.metrics': z.strictObject({ project_id: str }),
   'extensions.inventory': z.strictObject({ project_id: str, runtime: str }),
@@ -3413,6 +3433,7 @@ export const querySchemas = {
   'session.preflight': z.strictObject({ session_id: str }),
   'session.activity': z.strictObject({ session_id: str }),
   'board.history': z.strictObject({ project_id: str }),
+  'board.plan.replay': planReplayQuerySchema,
   'board.view': z.strictObject({
     project_id: str,
     days: z.enum(['1', '3', '7', '14', '30', 'all']),
@@ -3469,7 +3490,15 @@ export const querySchemas = {
   'improvement.sessions': z.strictObject({ project_id: str, improvement_id: str }),
   /** The signals the project's retrospectives show, with the change each suggests. */
   'improvement.signals': z.strictObject({ project_id: str }),
+  /** LearnedItem[]: every learned change of the project, newest first. */
+  'learned.list': z.strictObject({ project_id: str }),
+  /** ChangeOutcome of one workflow setting change, agent creation or routine enable, by event id. */
+  'change.outcome': z.strictObject({ project_id: str, event_id: str }),
+  /** ChangeOutcome[] of the project's measurable changes, newest first, at most 20. */
+  'change.outcomes': z.strictObject({ project_id: str }),
   'task.trace': z.strictObject({ project_id: str, lead_session_id: str, task_id: str }),
+  /** TaskThreadEntry[] of the task in event order. */
+  'task.thread': z.strictObject({ project_id: str, lead_session_id: str, task_id: str }),
   /** RuntimeStatus[]; refresh checks again instead of answering from the last check. */
   'runtime.status': z.strictObject({ refresh: z.stringbool().optional() }),
   /** McpStatus; a project reads the runtime's project setup, a session reads its live setup. */
@@ -4444,9 +4473,17 @@ export interface BoardHistory {
     at: number;
     /** The work line of the one task the decision is about; null for a plan or several tasks. */
     lane_id: string | null;
-    kind: 'plan' | 'start' | 'stop' | 'accept';
+    /** replan: a plan change that answers re-plan conditions the lead's milestones met. */
+    kind: 'plan' | 'start' | 'stop' | 'accept' | 'replan';
     /** The plan's headline or the task's title, cut to 140 characters. */
     title?: string;
+    /** On a replan: the conditions it answers, and the titles of the tasks it added, removed and changed. */
+    replan?: {
+      triggers: { event_id: string; milestone_id: string; text: string }[];
+      added: string[];
+      removed: string[];
+      changed: string[];
+    };
   }[];
   milestones: {
     id: string;

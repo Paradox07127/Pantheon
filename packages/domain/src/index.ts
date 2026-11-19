@@ -23,6 +23,8 @@ import type {
 export type * from './change-story.js';
 export type * from './range-story.js';
 export type * from './trace.js';
+export type * from './task-thread.js';
+export type * from './playbook.js';
 import { createHash, randomUUID } from 'node:crypto';
 
 export const id = (): string => randomUUID();
@@ -823,9 +825,19 @@ export interface Session extends Entity {
     uses?: Record<string, number>;
   };
   /** A lead the project keeps for one role: it plans and dispatches, never writes or works on a task itself. */
-  resident?: { kind: AgentProfile['template']; agent_id?: string };
+  resident?: {
+    kind: AgentProfile['template'];
+    agent_id?: string;
+    /** Hash of the agent's instructions when the session opened; absent when it had none. */
+    instructions_hash?: string;
+  };
   /** The resident's turn that writes its handoff note, queued at Unix ms at; a new session of its agent takes over once its turns end. */
-  rotation?: { flush_turn_id: string; at: number };
+  rotation?: {
+    flush_turn_id: string;
+    at: number;
+    /** Absent on rotations queued before reasons were kept, which were all context_full. */
+    reason?: 'context_full' | 'weekly' | 'instructions_changed';
+  };
   /**
    * The task of its own plan a lead works on itself; reported_head is its worktree's commit when it
    * reported the task done. Not task, which would make the session a worker.

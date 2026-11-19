@@ -73,6 +73,12 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'routine_cancel',
       },
       {
+        type: 'agent.routine.run',
+        about:
+          "The user only; wakes the agent with an enabled routine's prompt now, even while its contract holds its wakes, and runs no precheck.",
+        tool: 'the user does this in the app',
+      },
+      {
         type: 'agent.routine.set',
         about:
           'Adds or, by id, replaces a routine of the calling resident; exactly one of every_minutes or at (local HH:MM).',
@@ -117,6 +123,12 @@ export const appHelpGroups: AppHelpGroup[] = [
         type: 'agent.update',
         about:
           'The user only; changes an agent profile at its revision. A new model or effort applies to its open session, a new runtime ends it between turns and opens a successor; routines replace the list. Returns the AgentProfile.',
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'agent.wake.to_task',
+        about:
+          "The user only; leaves the project's Assistant the final output of an agent's wake as the user's request, and wakes it.",
         tool: 'the user does this in the app',
       },
     ],
@@ -406,6 +418,25 @@ export const appHelpGroups: AppHelpGroup[] = [
         type: 'personal.key.revoke',
         about:
           'The user only; revokes the personal agent key at once, and it stays revoked after a restart.',
+        tool: 'the user does this in the app',
+      },
+    ],
+  },
+  {
+    group: 'playbook',
+    about:
+      "The user only; returns PlaybookRead for the project's playbook for runtime, or its default playbook without runtime",
+    commands: [
+      {
+        type: 'playbook.get',
+        about:
+          "The user only; returns PlaybookRead for the project's playbook for runtime, or its default playbook without runtime.",
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'playbook.set',
+        about:
+          "The user only; stores sections as the next version of the project's playbook for runtime, or of its default playbook without runtime, and makes it current for leads that start afterwards; returns PlaybookRead.",
         tool: 'the user does this in the app',
       },
     ],

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import type {
   AgentProfile,
@@ -285,6 +285,109 @@ it('keeps task memory written under the old plan current and visible to the task
     reason: 'superseded',
     superseded_by: second.id,
   });
+});
+
+/** Proposes the agent's handoff note as the session's lead. */
+function writeHandoff(f: Fixture, profile: AgentProfile, sessionId: string, text: string) {
+  const lead = as(f, sessionId, 'lead');
+  return f.call<MemoryRecord>(
+    'memory.propose',
+    {
+      project_id: f.project.id,
+      key: `handoff/${profile.id}`,
+      kind: 'note',
+      title: `Handoff from ${current(f, sessionId).title}`,
+      tags: ['handoff'],
+      text,
+      based_on: f.call<{ signature: string }>(
+        'memory.context',
+        { project_id: f.project.id },
+        null,
+        lead,
+      ).signature,
+    },
+    null,
+    lead,
+  );
+}
+
+it('rolls an idle resident opened eight days ago when its next turn ends, for the reason weekly', async () => {
+  const f = await workbenchFixture();
+  const profile = assistantProfile(f);
+  const old = open(f);
+  vi.spyOn(f.store, 'now').mockImplementation(() => Date.now() + 8 * 24 * 60 * 60 * 1000);
+  send(f, old.id, 'What changed today?');
+  await eventually(
+    () => flushTurns(f, old.id).length > 0,
+    () => f.control.tick(),
+  );
+  expect(flushTurns(f, old.id)[0]!.input).toContain('This session has run for a week');
+  expect(flushTurns(f, old.id)[0]!.input).toContain(`handoff/${profile.id}`);
+  const next = await rotated(f, profile, old);
+  expect(current(f, old.id).rotation?.reason).toBe('weekly');
+  expect(
+    f.store
+      .kindEvents(f.project.id, ['session.closed'])
+      .find((event) => event.aggregate_id === old.id)!.payload,
+  ).toEqual({ reason: 'weekly' });
+  expect(f.turns(next.id)[0]!.input).toContain('ended after a week');
+});
+
+it('rolls after the running turn when the instructions change, and the new chapter names the handoff note and the one before it', async () => {
+  const f = await workbenchFixture({ delay: 600 });
+  const profile = assistantProfile(f);
+  const old = open(f);
+  const earlier = writeHandoff(f, profile, old.id, 'The user wants a weekly export summary.');
+  send(f, old.id, 'Summarise the board');
+  await eventually(
+    () => f.turns(old.id)[0]?.state === 'running',
+    () => f.control.tick(),
+  );
+  f.call('agent.update', {
+    agent_id: profile.id,
+    revision: profile.revision,
+    instructions: 'Answer in one line.',
+  });
+  await eventually(
+    () => flushTurns(f, old.id)[0]?.state === 'running',
+    () => f.control.tick(),
+  );
+  expect(f.turns(old.id)[0]!.state).toBe('completed');
+  expect(flushTurns(f, old.id)[0]!.input).toContain('Your instructions changed');
+  const note = writeHandoff(f, profile, old.id, 'The user wants the weekly export in one line.');
+  const next = await rotated(f, profile, old);
+  expect(current(f, old.id).rotation?.reason).toBe('instructions_changed');
+  expect(f.turns(next.id)[0]!.input).toContain('instructions changed');
+  const chapters = f.store.kindEvents(f.project.id, ['agent.chapter_started']);
+  expect(chapters).toHaveLength(1);
+  expect(chapters[0]).toMatchObject({
+    aggregate_id: next.id,
+    payload: { chapter: 2, handoff_memory_id: note.id, previous_memory_id: earlier.id },
+  });
+  // The new session started on the new instructions, so its turns end without another roll.
+  send(f, next.id, 'Anything new?');
+  await eventually(
+    () => idle(f, next.id) && f.turns(next.id).length === 2,
+    () => f.control.tick(),
+  );
+  expect(flushTurns(f, next.id)).toEqual([]);
+});
+
+it('starts the handoff at once when the instructions change while the resident is idle', async () => {
+  const f = await workbenchFixture();
+  const profile = assistantProfile(f);
+  const old = open(f);
+  f.call('agent.update', {
+    agent_id: profile.id,
+    revision: profile.revision,
+    instructions: 'Answer in one line.',
+  });
+  await eventually(
+    () => flushTurns(f, old.id).length > 0,
+    () => f.control.tick(),
+  );
+  await rotated(f, profile, old);
+  expect(current(f, old.id).rotation?.reason).toBe('instructions_changed');
 });
 
 it('rotates only after a user message queued during the handoff turn is done', async () => {

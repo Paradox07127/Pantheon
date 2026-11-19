@@ -171,8 +171,14 @@ it('types whole course task facts, daily counts and decisions', () => {
     {
       at: number;
       lane_id: string | null;
-      kind: 'plan' | 'start' | 'stop' | 'accept';
+      kind: 'plan' | 'start' | 'stop' | 'accept' | 'replan';
       title?: string;
+      replan?: {
+        triggers: { event_id: string; milestone_id: string; text: string }[];
+        added: string[];
+        removed: string[];
+        changed: string[];
+      };
     }[]
   >();
 });

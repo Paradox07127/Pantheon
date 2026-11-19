@@ -272,7 +272,7 @@ export function experienceMatchesSession(
   );
 }
 
-type Metric = (rows: Retrospective[]) => number | undefined;
+export type Metric = (rows: Retrospective[]) => number | undefined;
 /** The metrics a trial of the improvement is judged by; undefined when no rule judges it. */
 function trialMetrics(
   ctx: ControlContext,
@@ -319,6 +319,17 @@ function trialMetrics(
       return undefined;
   }
 }
+
+/** The sample's tasks, first gate passes, merged or accepted tasks, and each metric. */
+export const measure = (
+  sample: Retrospective[],
+  metrics?: Record<string, Metric>,
+): Record<string, number | undefined> => ({
+  tasks: sample.length,
+  first_pass: sample.filter((row) => row.gate_passed_on_attempt === 1).length,
+  delivered: sample.filter((row) => row.outcome === 'merged' || row.outcome === 'accepted').length,
+  ...Object.fromEntries(Object.entries(metrics ?? {}).map(([key, of]) => [key, of(sample)])),
+});
 
 /** Shared task selection and measurements for evaluation and list reads. */
 function trialEvidence(ctx: ControlContext, improvement: Improvement) {
@@ -369,14 +380,7 @@ function trialEvidence(ctx: ControlContext, improvement: Improvement) {
     .sort((a, b) => b.recorded_at - a.recorded_at)
     .slice(0, after.length);
   const metrics = trialMetrics(ctx, improvement);
-  const measure = (sample: Retrospective[]): Record<string, number | undefined> => ({
-    tasks: sample.length,
-    first_pass: sample.filter((row) => row.gate_passed_on_attempt === 1).length,
-    delivered: sample.filter((row) => row.outcome === 'merged' || row.outcome === 'accepted')
-      .length,
-    ...Object.fromEntries(Object.entries(metrics ?? {}).map(([key, of]) => [key, of(sample)])),
-  });
-  const comparison = { baseline: measure(before), trial: measure(after) };
+  const comparison = { baseline: measure(before, metrics), trial: measure(after, metrics) };
   const noBaseline =
     !metrics ||
     before.length < TRIAL_TASKS ||

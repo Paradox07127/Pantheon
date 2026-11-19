@@ -378,6 +378,30 @@ it('adds the environment check table with its project and baseline indexes to a 
   expect(store.get('projects', row.id)).toEqual(row);
 });
 
+it('adds the playbook table with one default and one playbook per runtime of a project to a database without it', () => {
+  const file = databaseFile();
+  const behind = open(
+    file,
+    migrations.filter((migration) => migration.version < 14),
+  );
+  behind.insert('projects', row);
+  close(behind);
+  const store = open(file);
+  expect(tableList(store.db)).toEqual(expect.arrayContaining([{ name: 'playbooks' }]));
+  const sections = { before_you_plan: 'Read first.', routing: 'Route.', replies: 'Reply.' };
+  const playbook = { revision: 1, project_id: row.id, version: 1, versions: { 1: sections } };
+  store.insert('playbooks', { ...playbook, id: 'default' });
+  store.insert('playbooks', { ...playbook, id: 'codex', runtime: 'codex' });
+  store.insert('playbooks', { ...playbook, id: 'claude', runtime: 'claude' });
+  store.insert('playbooks', { ...playbook, id: 'other-default', project_id: 'other' });
+  expect(() => store.insert('playbooks', { ...playbook, id: 'default-again' })).toThrow();
+  expect(() =>
+    store.insert('playbooks', { ...playbook, id: 'codex-again', runtime: 'codex' }),
+  ).toThrow();
+  expect(store.get('playbooks', 'codex')).toEqual({ ...playbook, id: 'codex', runtime: 'codex' });
+  expect(store.get('projects', row.id)).toEqual(row);
+});
+
 it('indexes the per-project plan and improvement reads and the active turn read on a database one version behind', () => {
   const file = databaseFile();
   close(open(file, migrations.slice(0, -1)));

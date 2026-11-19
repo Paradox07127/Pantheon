@@ -1,6 +1,7 @@
 import type {
   Principal,
   Project,
+  Retrospective,
   RoleUsage,
   Session,
   SessionRole,
@@ -11,6 +12,19 @@ import { sessionRole } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 
 const turnEnds: ReadonlySet<string> = new Set(['turn.completed', 'turn.failed', 'turn.cancelled']);
+
+/** The input tokens all the tasks spent per merged or accepted task, and how many those were; null tokens without one. */
+export function costPerAcceptedTask(rows: readonly Retrospective[]): {
+  input_tokens: number | null;
+  n: number;
+} {
+  const n = rows.filter((row) => row.outcome === 'merged' || row.outcome === 'accepted').length;
+  const spent = rows.reduce(
+    (sum, row) => sum + (row.lead_usage?.input_tokens ?? 0) + (row.task_usage?.input_tokens ?? 0),
+    0,
+  );
+  return { input_tokens: n ? Math.round(spent / n) : null, n };
+}
 
 export function projectUsageRead(
   ctx: ControlContext,

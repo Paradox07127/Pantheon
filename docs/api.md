@@ -272,6 +272,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `agent.proposal.resolve` | `proposal_id`: string<br>`decision`: "create" \| "decline"<br>`fields?`: object |  |
 | `agent.propose` | `project_id`: string<br>`agent_id?`: string<br>`name?`: string<br>`role?`: string<br>`instructions?`: string<br>`brief?`: string<br>`tools?`: ("board" \| "dispatch" \| "memory" \| "browser" \| "app" \| "sessions" \| "github" \| "always_on" \| "agents" \| "signals")[]<br>`listens?`: ("github" \| "gate_failures" \| "flaky_tests" \| "app_errors" \| "session_failures" \| "trace_findings")[]<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`routines?`: object[]<br>`template?`: "assistant" \| "triage" \| "ideas" \| "goals" \| "custom" | propose_agent (lead) |
 | `agent.routine.cancel` | `project_id`: string<br>`routine_id`: string | routine_cancel (lead) |
+| `agent.routine.run` | `agent_id`: string<br>`routine_id`: string |  |
 | `agent.routine.set` | `project_id`: string<br>`id?`: string<br>`prompt`: string<br>`every_minutes?`: integer<br>`at?`: string<br>`active_hours?`: object<br>`enabled`: boolean | routine_set (lead) |
 | `agent.session_read` | `session_id`: string<br>`turns?`: integer | session_read (lead) |
 | `agent.sessions` | `state?`: string | session_list (lead) |
@@ -280,6 +281,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `agent.tell_user` | `project_id`: string<br>`text`: string<br>`urgency`: "normal" \| "high"<br>`signal_issue_id?`: string | tell_user (lead) |
 | `agent.unarchive` | `agent_id`: string |  |
 | `agent.update` | `agent_id`: string<br>`revision`: integer<br>`name?`: string<br>`role?`: string<br>`instructions?`: string<br>`brief?`: string<br>`tools?`: ("board" \| "dispatch" \| "memory" \| "browser" \| "app" \| "sessions" \| "github" \| "always_on" \| "agents" \| "signals")[]<br>`listens?`: ("github" \| "gate_failures" \| "flaky_tests" \| "app_errors" \| "session_failures" \| "trace_findings")[]<br>`runtime?`: string<br>`model?`: string<br>`effort?`: "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"<br>`routines?`: object[]<br>`contract?`: object \| null |  |
+| `agent.wake.to_task` | `turn_id`: string |  |
 
 ### app
 
@@ -303,12 +305,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `board.lane.approve` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string |  |
 | `board.lane.depth.set` | `project_id`: string<br>`lead_session_id`: string<br>`lane_id`: string<br>`depth`: "just_do" \| "plan_first" \| "spec_first" |  |
-| `board.plan.edit` | `project_id`: string<br>`lead_session_id?`: string<br>`base_version`: integer<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object \| object \| object \| object)[] | edit_board (lead) |
+| `board.plan.edit` | `project_id`: string<br>`lead_session_id?`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object \| object \| object \| object)[] | edit_board (lead) |
 | `board.plan.edit.withdraw` | `project_id`: string<br>`lead_session_id`: string<br>`edit_id`: string |  |
 | `board.plan.proposal.resolve` | `project_id`: string<br>`lead_session_id`: string<br>`proposal_id`: string<br>`decision`: "accept" \| "reject"<br>`reason?`: string<br>`ops?`: (object \| object \| object \| object \| object \| object \| object \| object)[] |  |
 | `board.plan.proposal.withdraw` | `project_id`: string<br>`proposal_id`: string | withdraw_board_proposal (lead) |
-| `board.plan.propose` | `project_id`: string<br>`base_version`: integer<br>`reason`: string<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object)[] | propose_board (lead) |
-| `board.plan.update` | `project_id`: string<br>`base_version`: integer<br>`headline`: string<br>`lanes`: object[]<br>`iterations?`: object[]<br>`tasks`: object[]<br>`milestones`: object[]<br>`risks`: object[]<br>`assumptions`: object[] | update_board (lead) |
+| `board.plan.propose` | `project_id`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`reason`: string<br>`ops`: (object \| object \| object \| object \| object \| object \| object \| object)[] | propose_board (lead) |
+| `board.plan.update` | `project_id`: string<br>`base_version`: integer<br>`trigger_event?`: string<br>`headline`: string<br>`lanes`: object[]<br>`iterations?`: object[]<br>`tasks`: object[]<br>`milestones`: object[]<br>`risks`: object[]<br>`assumptions`: object[] | update_board (lead) |
 | `board.sync` | `project_id`: string | sync_board (lead) |
 
 ### browser
@@ -419,6 +421,13 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `personal.key.create` | `label`: string |  |
 | `personal.key.revoke` | `key_id`: string |  |
+
+### playbook
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `playbook.get` | `project_id`: string<br>`runtime?`: string |  |
+| `playbook.set` | `project_id`: string<br>`runtime?`: string<br>`base_version`: integer<br>`sections`: object |  |
 
 ### project.autoMerge
 
@@ -722,11 +731,16 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|
 | `agent.list` | `project_id`: string |
 | `agent.proposal` | `proposal_id`: string |
+| `agent.routines` | `project_id`: string |
 | `agent.templates` | — |
+| `agent.wakes` | `agent_id`: string<br>`limit?`: integer |
 | `app.settings` | — |
 | `backend.list` | — |
 | `board.history` | `project_id`: string |
+| `board.plan.replay` | `lead_session_id`: string<br>`after?`: integer<br>`limit?`: integer |
 | `board.view` | `project_id`: string<br>`days`: "1" \| "3" \| "7" \| "14" \| "30" \| "all"<br>`until?`: string |
+| `change.outcome` | `project_id`: string<br>`event_id`: string |
+| `change.outcomes` | `project_id`: string |
 | `change_story.diff` | `story_id`: string |
 | `change_story.list` | `project_id`: string |
 | `connections.status` | `refresh?`: string |
@@ -744,6 +758,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `improvement.list` | `project_id`: string<br>`status?`: "candidate" \| "trial" \| "active" \| "reverted" \| "rejected" |
 | `improvement.sessions` | `project_id`: string<br>`improvement_id`: string |
 | `improvement.signals` | `project_id`: string |
+| `learned.list` | `project_id`: string |
 | `mcp.app.resource` | `session_id`: string<br>`server`: string<br>`uri`: string |
 | `mcp.status` | `project_id`: string<br>`runtime`: string<br>或<br>`session_id`: string |
 | `memory.document` | `project_id`: string |
@@ -810,6 +825,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `signal.list` | `project_id`: string<br>`state?`: "open" \| "muted" \| "resolved" |
 | `style.read` | — |
 | `symbols.search` | `project_id`: string<br>`session_id?`: string<br>`q`: string |
+| `task.thread` | `project_id`: string<br>`lead_session_id`: string<br>`task_id`: string |
 | `task.trace` | `project_id`: string<br>`lead_session_id`: string<br>`task_id`: string |
 | `theme.get` | `theme_id`: string |
 | `theme.list` | — |

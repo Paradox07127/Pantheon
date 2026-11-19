@@ -187,12 +187,14 @@ it("gives a resident turn its template's role prompt, then the user's instructio
 
   const own = 'You only answer questions about the answer file.';
   update(f, { instructions: own });
-  // The idle process closes once the change commits, and the next input starts a new one.
+  // Changed instructions roll the idle resident: a new session of the agent takes over.
   await eventually(
-    () => ![...f.control.handles.values()].some((h) => h.platform_session_id === assistant.id),
+    () => current(f, assistant.id).state === 'closed',
     () => f.control.tick(),
   );
-  await send(f, assistant.id, 'And now?');
+  const successor = open(f);
+  await settleResident(f, successor.id);
+  await send(f, successor.id, 'And now?');
   const next = lastInstructions(f)!;
   const order = [
     ROLE_PROMPTS.assistant,

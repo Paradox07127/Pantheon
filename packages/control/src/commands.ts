@@ -21,6 +21,7 @@ import { leadInboxHandlers } from './lead-inbox.js';
 import { workflowEngineHandlers } from './workflow-engine.js';
 import { routingHandlers } from './routing-table.js';
 import { workflowPolicyHandlers } from './workflow-policy.js';
+import { playbookHandlers } from './playbooks.js';
 import { improvementHandlers, improvementPreparers } from './improvements.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
@@ -32,6 +33,7 @@ import { externalEventHandlers } from './external-events.js';
 import { residentHandlers } from './resident.js';
 import { frontDoorHandlers } from './front-door.js';
 import { agentAlwaysOnHandlers } from './agent-always-on.js';
+import { agentWakeHandlers } from './agent-wakes.js';
 import { agentAppToolPreparers } from './agent-app-tools.js';
 import { agentPromptPreparers } from './agent-prompts.js';
 import { agentProposalHandlers, agentProposalPreparers } from './agent-proposals.js';
@@ -60,6 +62,7 @@ export const handlers: Handlers = {
   ...taskStatusLineHandlers,
   ...leadInboxHandlers,
   ...workflowPolicyHandlers,
+  ...playbookHandlers,
   ...routingHandlers,
   ...workflowEngineHandlers,
   ...improvementHandlers,
@@ -70,6 +73,7 @@ export const handlers: Handlers = {
   ...residentHandlers,
   ...frontDoorHandlers,
   ...agentAlwaysOnHandlers,
+  ...agentWakeHandlers,
   ...agentProposalHandlers,
   ...signalHandlers,
   ...projectBriefHandlers,

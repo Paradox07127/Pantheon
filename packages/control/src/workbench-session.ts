@@ -164,7 +164,8 @@ import {
   workspaceReadAccess,
 } from './workspace.js';
 import { writerTempDirectory } from './workspace-removal.js';
-import { LEAD_INSTRUCTIONS, PLATFORM_CORE } from './agent-prompts.js';
+import { leadInstructions, PLATFORM_CORE } from './agent-prompts.js';
+import { leadPlaybook } from './playbooks.js';
 import { chartered, charterMode } from './charter.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
@@ -316,7 +317,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
       ...(pantheonMcp && session.task
         ? [workerInstructions(ctx, session.task, questionTool)]
         : planningLead
-          ? [LEAD_INSTRUCTIONS]
+          ? [leadInstructions(leadPlaybook(ctx, project.id, session.runtime))]
           : []),
     ].join('\n\n'),
     workspace: { id: workspace.id, path: workspace.path },

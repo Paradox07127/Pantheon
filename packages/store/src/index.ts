@@ -64,6 +64,7 @@ export const tables = [
   'milestone_verifications',
   'project_goals',
   'environment_checks',
+  'playbooks',
 ] as const;
 export type Table = (typeof tables)[number];
 export interface Outbox {
@@ -283,6 +284,15 @@ export const migrations: readonly Migration[] = [
         CREATE TABLE environment_checks (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
         CREATE INDEX environment_check_project ON environment_checks(json_extract(data,'$.project_id'));
         CREATE INDEX environment_check_baseline ON environment_checks(json_extract(data,'$.cause.baseline_id'));
+      `);
+    },
+  },
+  {
+    version: 14,
+    up(db) {
+      db.exec(`
+        CREATE TABLE playbooks (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
+        CREATE UNIQUE INDEX playbook_runtime ON playbooks(json_extract(data,'$.project_id'), coalesce(json_extract(data,'$.runtime'), ''));
       `);
     },
   },

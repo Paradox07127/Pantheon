@@ -1,6 +1,6 @@
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { BoardPlan, Milestone, Session, SessionTurn, StepRun } from '@pantheon/domain';
-import { user } from '../helpers.js';
+import { settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
@@ -297,6 +297,90 @@ it('records a lead claiming its direct task as a start decision', async () => {
     { kind: 'start', title: 'exports' },
   ]);
   expect(history.days.reduce((sum, day) => sum + day.decisions, 0)).toBe(2);
+});
+
+describe('a plan change that answers a fired re-plan condition', () => {
+  async function fired(f: Fixture) {
+    const lead = await leadWithPlan(f, ['exports']);
+    await settle(f, lead);
+    const event = f.store.event('board.replan_triggered', lead, f.project.id, {
+      milestone_id: 'milestone-row',
+      trigger: { type: 'handbacks', count: 2 },
+      task_id: 'exports',
+      generation: 1,
+      value: 2,
+    });
+    const edit = (title: string, trigger_event?: string) =>
+      f.call(
+        'board.plan.edit',
+        {
+          project_id: f.project.id,
+          base_version: f.store.must<BoardPlan>('board_plans', lead.id).plan_version,
+          ...(trigger_event ? { trigger_event } : {}),
+          ops: [{ type: 'set_task', task_id: 'exports', patch: { title } }],
+        },
+        null,
+        {
+          id: `session:${lead.id}`,
+          role: 'lead',
+          project_id: f.project.id,
+          session_id: lead.id,
+          expires_at: f.store.now() + 60000,
+        },
+      );
+    return { lead, event, edit };
+  }
+  const answered = (eventId: string, title: string) => ({
+    kind: 'replan',
+    replan: {
+      triggers: [
+        {
+          event_id: eventId,
+          milestone_id: 'milestone-row',
+          text: 'task exports was handed back 2 times',
+        },
+      ],
+      added: [],
+      removed: [],
+      changed: [title],
+    },
+  });
+
+  it('is a replan decision with the trigger and the tasks it changed when it names the event', async () => {
+    const f = await workbenchFixture();
+    const { event, edit } = await fired(f);
+    edit('Exports v2', event.event_id);
+    const history = f.control.boardHistory(user, f.project.id);
+    expect(history.decisions.map(({ kind, replan }) => ({ kind, replan }))).toEqual([
+      { kind: 'plan', replan: undefined },
+      answered(event.event_id, 'Exports v2'),
+    ]);
+  });
+
+  it("is the lead's first change in a turn begun after the condition fired", async () => {
+    const f = await workbenchFixture();
+    const { lead, event, edit } = await fired(f);
+    edit('Exports v2');
+    const turn = f.store.insert<SessionTurn>('session_turns', {
+      id: 'wake-turn',
+      revision: 1,
+      project_id: f.project.id,
+      session_id: lead.id,
+      input: 'Board updates',
+      kind: 'send',
+      delivery: 'delivered',
+      state: 'running',
+      origin: 'tracker',
+    });
+    f.store.event('turn.running', turn, f.project.id, {});
+    edit('Exports v3');
+    edit('Exports v4');
+    const kinds = f.control.boardHistory(user, f.project.id).decisions.map(({ kind }) => kind);
+    expect(kinds).toEqual(['plan', 'plan', 'replan', 'plan']);
+    expect(f.control.boardHistory(user, f.project.id).decisions[2]).toMatchObject(
+      answered(event.event_id, 'Exports v3'),
+    );
+  });
 });
 
 it('reads a task claim after a finished system turn whose row is gone', async () => {

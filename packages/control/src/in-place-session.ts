@@ -27,7 +27,8 @@ import { assertNativeSessionFree } from './native-liveness.js';
 import { managedSessionSpec } from './native-session.js';
 import { inPlaceSandbox } from './protection.js';
 import { registerInPlaceWorkspace } from './workspace.js';
-import { LEAD_INSTRUCTIONS, PLATFORM_CORE } from './agent-prompts.js';
+import { leadInstructions, PLATFORM_CORE } from './agent-prompts.js';
+import { leadPlaybook } from './playbooks.js';
 import { checkPermissionMode, workerInstructions } from './workbench-session.js';
 import { writerTempDirectory } from './workspace-removal.js';
 
@@ -123,7 +124,7 @@ export async function inPlaceSessionSpec(
         : `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
       ...(session.task ? [workerInstructions(ctx, session.task, questionTool)] : []),
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
-      ...(planningLead ? [LEAD_INSTRUCTIONS] : []),
+      ...(planningLead ? [leadInstructions(leadPlaybook(ctx, project.id, session.runtime))] : []),
       // workerInstructions tells a task session how to ask.
       ...(questionTool && !planningLead && !session.task
         ? [

@@ -2,6 +2,7 @@ import {
   requireThat,
   type AgentProfile,
   type AgentToolGroup,
+  type PlaybookSections,
   type Session,
 } from '@pantheon/domain';
 import { inputSchemas } from '@pantheon/protocol';
@@ -221,6 +222,7 @@ Your plan is lanes, tasks with their dependencies, milestones, risks and assumpt
 - Put every request that changes the repository in your plan, in its own lane, before work starts; a question needs no task. Split work for several sessions into tasks with dependencies and milestones, and record small decisions as assumptions. Change the plan in the same turn the work changes.
 - A new lane with a t3 task waits for the user to approve its plan; its started tasks queue until then.
 - When project_read.goals is not empty, give each milestone the goal it serves in goal, or say in one assumption that it serves none; the user writes the goals, you only link them.
+- Give each milestone replan_if: the conditions on which you would re-plan it. On a replan board update, change the plan with trigger_event set to the update's event, or tell the user in one line why the plan stands.
 - update_board sends the whole plan and edit_board changes tasks by id; give the base_version you last read. On a version conflict, read again and rebuild only your change on the latest plan.
 - A change that is the user's to decide waits for their answer; then make it with edit_board, or with propose_board, whose result says whether it applied at once. withdraw_board_proposal takes back one that waits. Say each change and its reason in one line.
 - Call milestone_accept only when project_read shows the milestone ready_for_acceptance and you checked its criteria against what landed.
@@ -557,6 +559,33 @@ Pantheon computes task state and sends you a message starting "[Pantheon] Board 
 - On a turn of board updates that needs nothing from the user, end with one short line.
 - draw shows a chart in this conversation when it makes an answer clearer; give it pin only when the user asks to see the chart on the board, and replaces to redraw one in place.
 - sync_board, when the user asks to sync or refresh the board, returns the plan with task states and recent commits; you then rewrite the plan with update_board. rerun_baseline reassesses the project when the user asks for it, and the user approves each run.`;
+
+/** The lead sections a playbook replaces; the opening and the other sections are contract and stay in code. */
+const PLAYBOOK_HEADINGS: Record<string, keyof PlaybookSections> = {
+  'Before you plan': 'before_you_plan',
+  Routing: 'routing',
+  Replies: 'replies',
+};
+
+const leadParts = LEAD_INSTRUCTIONS.split(/\n\n(?=## )/).map((text) => {
+  const heading = text.startsWith('## ') ? text.slice(3, text.indexOf('\n')) : '';
+  return {
+    text,
+    heading,
+    key: Object.hasOwn(PLAYBOOK_HEADINGS, heading) ? PLAYBOOK_HEADINGS[heading] : undefined,
+  };
+});
+
+/** The behaviour sections as written in code: the playbook of a project that stores none. */
+export const LEAD_PLAYBOOK = Object.fromEntries(
+  leadParts.flatMap(({ text, key }) => (key ? [[key, text.slice(text.indexOf('\n') + 1)]] : [])),
+) as unknown as PlaybookSections;
+
+/** LEAD_INSTRUCTIONS with the playbook's text as the body of each behaviour section. */
+export const leadInstructions = (playbook: PlaybookSections) =>
+  leadParts
+    .map(({ text, heading, key }) => (key ? `## ${heading}\n${playbook[key]}` : text))
+    .join('\n\n');
 
 /** The templates that read the board and propose plan changes but do not write the plan. */
 export const BOARD_READ_ONLY_TEMPLATES: readonly AgentProfile['template'][] = ['ideas', 'goals'];

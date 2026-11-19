@@ -96,8 +96,11 @@ import {
 } from './workflow-engine.js';
 import { inheritedPolicy, workflowPolicy } from './workflow-policy.js';
 import { improvementList, improvementSessions } from './improvements.js';
+import { learnedList } from './learned-inbox.js';
+import { changeOutcome, changeOutcomes } from './change-outcomes.js';
 import { improvementSignals } from './improvement-signals.js';
 import { taskTrace } from './task-trace.js';
+import { taskThread } from './task-thread.js';
 import { projectReviewMetrics, reviewExecutionReader, reviewTimeReader } from './review.js';
 import {
   baselineSessionOf,
@@ -138,6 +141,7 @@ import {
 import { sessionTasks } from './session-tasks.js';
 import { boardView, prefetchRevertWalks } from './board-view.js';
 import { boardHistory } from './board-history.js';
+import { planReplay } from './plan-replay.js';
 import {
   projectHeatmap,
   projectTrace,
@@ -159,6 +163,7 @@ import { decisionsForUser } from './decisions-for-user.js';
 import { personalKeyList } from './personal-keys.js';
 import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
+import { agentRoutines, agentWakes } from './agent-wakes.js';
 import { agentProposal } from './agent-proposals.js';
 import { recordTraceFindings, signalList } from './signals.js';
 import { continueSession } from './continuation.js';
@@ -788,6 +793,12 @@ export class Control extends EventEmitter {
   agentTemplates(principal: Principal) {
     return agentTemplates(principal);
   }
+  agentWakes(principal: Principal, agentId: string, limit: number) {
+    return agentWakes(this.ctx, principal, agentId, limit);
+  }
+  agentRoutines(principal: Principal, projectId: string) {
+    return agentRoutines(this.ctx, principal, projectId);
+  }
   agentProposal(principal: Principal, proposalId: string) {
     return agentProposal(this.ctx, principal, proposalId);
   }
@@ -826,6 +837,15 @@ export class Control extends EventEmitter {
   improvementSessions(principal: Principal, projectId: string, improvementId: string) {
     return improvementSessions(this.ctx, principal, projectId, improvementId);
   }
+  learnedList(principal: Principal, projectId: string) {
+    return learnedList(this.ctx, principal, projectId);
+  }
+  changeOutcome(principal: Principal, projectId: string, eventId: string) {
+    return changeOutcome(this.ctx, principal, projectId, eventId);
+  }
+  changeOutcomes(principal: Principal, projectId: string) {
+    return changeOutcomes(this.ctx, principal, projectId);
+  }
   improvementSignals(principal: Principal, projectId: string) {
     projectAccess(this.ctx, principal, projectId, 'improvement.signals');
     this.ctx.store.must<Project>('projects', projectId);
@@ -833,6 +853,9 @@ export class Control extends EventEmitter {
   }
   taskTrace(principal: Principal, projectId: string, leadId: string, taskId: string) {
     return taskTrace(this.ctx, principal, projectId, leadId, taskId);
+  }
+  taskThread(principal: Principal, projectId: string, leadId: string, taskId: string) {
+    return taskThread(this.ctx, principal, projectId, leadId, taskId);
   }
   projectReviewMetrics(principal: Principal, projectId: string) {
     return projectReviewMetrics(this.ctx, principal, projectId);
@@ -949,6 +972,9 @@ export class Control extends EventEmitter {
   }
   boardHistory(principal: Principal, projectId: string) {
     return boardHistory(this.ctx, principal, projectId);
+  }
+  planReplay(principal: Principal, leadId: string, after: number, limit: number) {
+    return planReplay(this.ctx, principal, leadId, after, limit);
   }
   boardView(
     principal: Principal,
