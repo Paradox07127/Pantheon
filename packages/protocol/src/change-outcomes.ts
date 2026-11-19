@@ -19,6 +19,9 @@ export interface ChangeOutcome {
   at: number;
   /** The workflow setting changed; only on policy_changed. */
   param?: string;
+  /** The setting's value before and after the change; only on policy_changed, and absent when its event did not record them. */
+  from?: unknown;
+  to?: unknown;
   /** The agent created or whose routines were enabled. */
   agent_id?: string;
   /** The routines enabled; only on routine_enabled. */

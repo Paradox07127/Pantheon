@@ -272,6 +272,9 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
           .list<Workspace>('workspaces')
           .filter((other) => other.id !== workspace.id && other.kind !== 'in_place')
           .map((other) => other.path),
+        hiddenChecksDirs: reviewsRoots(ctx).map((reviews) =>
+          path.join(path.dirname(reviews), 'checks'),
+        ),
         ...(session.task
           ? {
               taskSession: { reviewsDirs: reviewsRoots(ctx) },

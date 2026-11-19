@@ -180,6 +180,52 @@ it('refuses a proposal that rests on a retrospective that does not exist', async
   expect(error.message).toContain('ghost');
 });
 
+const proposeOn = (f: Fixture, evidence: { kind: string; id: string }[]) =>
+  f.call<Improvement>(
+    'improvement.propose',
+    { project_id: f.project.id, evidence, change: fewerParallel },
+    null,
+    principalOf(f, 'lead', 'lead'),
+  );
+
+it('accepts a proposal that cites two gate runs of the project instead of retrospectives', async () => {
+  const f = await opened();
+  const worker = f.store.must<Session>('sessions', 'worker');
+  const runs = [1, 2].map((attempt) => ({
+    kind: 'gate_run',
+    id: f.store.event('session.gate_checked', worker, f.project.id, {
+      results: [{ name: 'test', exit_code: 127, output: `pnpm: not found (${attempt})` }],
+    }).event_id,
+  }));
+  expect(proposeOn(f, runs)).toMatchObject({
+    status: 'trial',
+    retrospective_ids: [],
+    evidence: runs,
+  });
+});
+
+it('refuses a proposal that cites a session of another project', async () => {
+  const f = await opened();
+  f.store.insert<Session>('sessions', {
+    id: 'elsewhere',
+    revision: 1,
+    project_id: 'other-project',
+    runtime: f.adapter.name,
+    state: 'open',
+    turn_count: 1,
+    workspace_id: 'elsewhere-workspace',
+  });
+  const error = refused(() =>
+    proposeOn(f, [
+      { kind: 'session', id: 'worker' },
+      { kind: 'session', id: 'elsewhere' },
+    ]),
+  );
+  expect(error.code).toBe('invalid_input');
+  expect(error.message).toContain('elsewhere');
+  expect(f.store.list('improvements')).toEqual([]);
+});
+
 it('refuses a second proposal for a parameter whose trial is running', async () => {
   const f = await opened();
   propose(f, fewerParallel);

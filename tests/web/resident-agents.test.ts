@@ -38,7 +38,8 @@ vi.mock('@/components/Toast', async (actual) => ({ ...(await actual<object>()), 
 import { ROUTINE_TEMPLATES } from '@pantheon/protocol/routine-catalog';
 import { MenuItem } from '@/components/Menu';
 import { Sidebar } from '@/components/Sidebar';
-import { AgentProfilePanel, NewAgentDialog } from '@/screens/sessions/AgentForm';
+import { NewAgentDialog } from '@/screens/sessions/AgentForm';
+import { AgentProfilePanel } from '@/screens/sessions/AgentProfile';
 import { AgentProposalCall } from '@/screens/sessions/AgentProposal';
 import type { ToolItem } from '@/data/transcript';
 import { runtimeName } from '@/components/RuntimeGlyph';

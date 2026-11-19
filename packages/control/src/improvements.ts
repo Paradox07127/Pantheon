@@ -3,12 +3,14 @@ import {
   id,
   learnedGrade,
   requireThat,
+  type AgentProfile,
   type BoardPlan,
   type Improvement,
   type Principal,
   type Project,
   type Retrospective,
   type Session,
+  type SignalIssue,
 } from '@pantheon/domain';
 import {
   inputSchemas,
@@ -30,6 +32,8 @@ import {
 import { changeKind } from './learned-change-kinds.js';
 import { sessionTaskScope } from './memory-access.js';
 import { agentAttempt, improvementSignals } from './improvement-signals.js';
+import { costChange } from './paired-stats.js';
+import { playbookVersion, storedPlaybook } from './playbooks.js';
 import { changedPolicy, pinParam, policyValue, workflowPolicy } from './workflow-policy.js';
 
 const LIST_LIMIT = 100;
@@ -47,6 +51,8 @@ const WORSE_SHARE = 0.1;
 const FINDINGS_SHARE = 0.5;
 /** How many more harmful than beneficial trial tasks a trial may have and stay, in tasks. */
 const HARM_MARGIN = 3;
+/** The interval of the paired cost change of interleaved arms, computed as the eval report does. */
+const PAIRED_COST = { confidence: 0.95, bootstrap: { resamples: 10_000, seed: 1 } };
 type Verdict = NonNullable<NonNullable<Improvement['trial_evaluation']>['verdict']>;
 /** The verdict of each reason the evaluator ends a trial for. */
 const VERDICT: Record<string, Verdict> = {
@@ -54,6 +60,7 @@ const VERDICT: Record<string, Verdict> = {
   not_better: 'worse',
   insufficient_sample: 'not_enough_evidence',
   no_baseline: 'not_enough_evidence',
+  no_conclusion: 'not_enough_evidence',
 };
 
 type Status = Improvement['status'];
@@ -332,7 +339,10 @@ export const measure = (
 });
 
 /** Shared task selection and measurements for evaluation and list reads. */
-function trialEvidence(ctx: ControlContext, improvement: Improvement) {
+function trialEvidence(
+  ctx: ControlContext,
+  improvement: Improvement,
+): NonNullable<Improvement['trial_evaluation']> {
   if (improvement.status !== 'trial' && improvement.trial_evaluation)
     return improvement.trial_evaluation;
   if (improvement.status !== 'trial') {
@@ -371,21 +381,41 @@ function trialEvidence(ctx: ControlContext, improvement: Improvement) {
           improvement.decided_at === undefined ||
           row.recorded_at <= improvement.decided_at),
     );
+  // Tasks that took an arm of the trial ran on the same days as the tasks of the other arm.
+  const arm = (row: Retrospective) => row.trial_arms?.[improvement.id];
+  const interleaved = rows.some(arm);
   // A task under way at the start ran partly without the rule; legacy tasks count from recording.
   const after = rows
-    .filter((row) => (row.started_at ?? row.recorded_at) > started)
+    .filter((row) =>
+      interleaved ? arm(row) === 'new' : (row.started_at ?? row.recorded_at) > started,
+    )
     .sort((a, b) => a.recorded_at - b.recorded_at);
-  const before = rows
-    .filter((row) => row.recorded_at < started)
-    .sort((a, b) => b.recorded_at - a.recorded_at)
-    .slice(0, after.length);
+  const before = interleaved
+    ? rows.filter((row) => arm(row) === 'old').sort((a, b) => a.recorded_at - b.recorded_at)
+    : rows
+        .filter((row) => row.recorded_at < started)
+        .sort((a, b) => b.recorded_at - a.recorded_at)
+        .slice(0, after.length);
   const metrics = trialMetrics(ctx, improvement);
   const comparison = { baseline: measure(before, metrics), trial: measure(after, metrics) };
   const noBaseline =
     !metrics ||
     before.length < TRIAL_TASKS ||
     [...Object.values(comparison.baseline), ...Object.values(comparison.trial)].includes(undefined);
-  return { comparison, no_baseline: noBaseline };
+  // The n-th task of each arm make a pair; a pair without input tokens on both sides is left out.
+  const pairs = after.flatMap((row, index) => {
+    const first = before[index] && inputTokens(before[index]),
+      second = inputTokens(row);
+    return first && second ? [{ task: String(index), first, second }] : [];
+  });
+  return {
+    comparison,
+    no_baseline: noBaseline,
+    design: interleaved ? 'interleaved' : 'before_after',
+    ...(interleaved &&
+      before.length >= TRIAL_TASKS &&
+      after.length >= TRIAL_TASKS && { paired_cost: costChange(pairs, PAIRED_COST) }),
+  };
 }
 
 type Measure = Record<string, number>;
@@ -393,10 +423,16 @@ const fell = (before: number, after: number) => after < before * (1 - BETTER_SHA
 const rose = (before: number, after: number) => after > before * (1 + WORSE_SHARE);
 /**
  * Whether the trial tasks passed their first gate run and were merged or accepted as often per
- * task, had at most HARM_MARGIN more harmful than beneficial tasks, and moved the target metric
- * enough per task.
+ * task, had at most HARM_MARGIN more harmful than beneficial tasks, cost less than the other arm
+ * when the arms were interleaved, and moved the target metric enough per task; undefined when the
+ * interval of the arms' paired cost holds no change.
  */
-function better(change: Improvement['change'], before: Measure, after: Measure): boolean {
+function better(
+  change: Improvement['change'],
+  before: Measure,
+  after: Measure,
+  pairedCost?: NonNullable<Improvement['trial_evaluation']>['paired_cost'],
+): boolean | undefined {
   const perTask = (measure: Measure, key: string) => measure[key]! / measure.tasks!;
   if (perTask(after, 'first_pass') < perTask(before, 'first_pass')) return false;
   if (perTask(after, 'delivered') < perTask(before, 'delivered')) return false;
@@ -404,6 +440,11 @@ function better(change: Improvement['change'], before: Measure, after: Measure):
   const harmful = after.tasks! - after.first_pass!,
     beneficial = after.first_pass_without_findings ?? after.first_pass!;
   if (harmful - beneficial > HARM_MARGIN) return false;
+  if (pairedCost) {
+    const [lower, upper] = pairedCost.interval ?? [0, 0];
+    if (lower > 0) return false;
+    if (upper >= 0) return undefined;
+  }
   if (change.type === 'experience')
     return perTask(after, 'signal_findings') <= perTask(before, 'signal_findings') * FINDINGS_SHARE;
   if (change.type !== 'policy_change') return false;
@@ -437,7 +478,11 @@ export function evaluateTrials(ctx: ControlContext): void {
   passed.trials.set(ctx, mark);
   for (const improvement of trials) {
     const started = improvement.trial_started_at!;
-    const { comparison, no_baseline: noBaseline } = trialEvidence(ctx, improvement);
+    const {
+      comparison,
+      no_baseline: noBaseline,
+      paired_cost: pairedCost,
+    } = trialEvidence(ctx, improvement);
     const tasksSeen = comparison.trial.tasks!;
     if (tasksSeen < TRIAL_TASKS) {
       if (now - started >= TRIAL_WAIT_MS)
@@ -463,9 +508,22 @@ export function evaluateTrials(ctx: ControlContext): void {
         setStatus(ctx, improvement, 'trial', '', { status_reason: 'no_baseline' }, { comparison });
       continue;
     }
-    if (better(improvement.change, comparison.baseline as Measure, comparison.trial as Measure))
+    const judged = better(
+      improvement.change,
+      comparison.baseline as Measure,
+      comparison.trial as Measure,
+      pairedCost,
+    );
+    if (judged)
       setStatus(ctx, improvement, 'active', '', { status_reason: 'trial_passed' }, { comparison });
-    else revert(ctx, improvement, '', { status_reason: 'not_better' }, { comparison });
+    else
+      revert(
+        ctx,
+        improvement,
+        '',
+        { status_reason: judged === undefined ? 'no_conclusion' : 'not_better' },
+        { comparison },
+      );
   }
 }
 
@@ -475,15 +533,32 @@ export const improvementHandlers: Handlers = {
     projectAccess(ctx, p, input.project_id, c.type);
     requireThat(p.role === 'lead', 'permission_denied', 'Lead session required');
     ctx.store.must<Project>('projects', input.project_id);
-    const missing = input.retrospective_ids.filter(
-      (retrospectiveId) =>
-        ctx.store.get<Retrospective>('retrospectives', retrospectiveId)?.project_id !==
-        input.project_id,
+    const retrospectiveIds = input.retrospective_ids ?? [];
+    requireThat(
+      retrospectiveIds.length || input.evidence,
+      'invalid_input',
+      'Give retrospective_ids or evidence',
+    );
+    const tables = {
+      retrospective: 'retrospectives',
+      signal_issue: 'signal_issues',
+      session: 'sessions',
+    } as const;
+    const missing = [
+      ...retrospectiveIds.map((id) => ({ kind: 'retrospective' as const, id })),
+      ...(input.evidence ?? []).flatMap((entry) => (entry.kind === 'eval_receipt' ? [] : [entry])),
+    ].filter(({ kind, id }) =>
+      kind === 'gate_run'
+        ? !ctx.store
+            .kindEvents(input.project_id, ['session.gate_checked'])
+            .some((event) => event.event_id === id)
+        : ctx.store.get<Retrospective | SignalIssue | Session>(tables[kind], id)?.project_id !==
+          input.project_id,
     );
     requireThat(
       !missing.length,
       'invalid_input',
-      `No retrospective of this project: ${missing.join(', ')}`,
+      `No such record of this project: ${missing.map(({ kind, id }) => `${kind} ${id}`).join(', ')}`,
     );
     const policy = workflowPolicy(ctx, input.project_id);
     requireThat(
@@ -514,7 +589,28 @@ export const improvementHandlers: Handlers = {
       change = { ...proposed, from };
     } else if (input.change.type === 'gate_command')
       change = { ...input.change, root: resolvedPath(input.change.root) };
-    else change = input.change;
+    else if (input.change.type === 'agent_instructions') {
+      const { agent_id } = input.change;
+      requireThat(
+        ctx.store.get<AgentProfile>('agents', agent_id)?.project_id === input.project_id,
+        'invalid_input',
+        `No agent of this project: ${agent_id}`,
+      );
+      change = input.change;
+    } else if (input.change.type === 'playbook') {
+      const { runtime, to } = input.change;
+      requireThat(
+        storedPlaybook(ctx, input.project_id, runtime)?.versions[to] !== undefined,
+        'invalid_input',
+        `Playbook version ${to} is not stored`,
+      );
+      requireThat(
+        playbookVersion(ctx, input.project_id, runtime) !== to,
+        'invalid_input',
+        `Playbook version ${to} is current already`,
+      );
+      change = input.change;
+    } else change = input.change;
     requireThat(
       !ctx.store
         .list<Improvement>('improvements')
@@ -530,7 +626,11 @@ export const improvementHandlers: Handlers = {
           ? change.param
           : change.type === 'gate_command'
             ? `the gate of ${change.root}`
-            : 'the worktree setup'
+            : change.type === 'agent_instructions'
+              ? `the instructions of agent ${change.agent_id}`
+              : change.type === 'playbook'
+                ? 'the playbook'
+                : 'the worktree setup'
       } is waiting or on trial`,
     );
     const improvement = insert<Improvement>(
@@ -542,7 +642,8 @@ export const improvementHandlers: Handlers = {
         project_id: input.project_id,
         lead_session_id: p.session_id!,
         source: 'lead',
-        retrospective_ids: input.retrospective_ids,
+        retrospective_ids: retrospectiveIds,
+        ...(input.evidence && { evidence: input.evidence }),
         status: 'candidate',
         change,
         proposed_at: ctx.store.now(),
@@ -666,6 +767,7 @@ export function improvementList(
           baseline_tasks: comparison.baseline.tasks!,
           ...(noBaseline && { status_reason: 'no_baseline' as const }),
           ...('verdict' in evidence && evidence.verdict && { verdict: evidence.verdict }),
+          ...(evidence.design && { design: evidence.design }),
           metrics: Object.keys(comparison.trial)
             .filter((name) => name !== 'tasks' && name !== 'delivered')
             .map((name) => ({

@@ -73,6 +73,7 @@ const INHERITED = [
   ...Object.keys(DEFAULT_WORKFLOW_POLICY),
   'task_size_hint',
   'must_ask_extra',
+  'question_defaults',
 ] as InheritedParam[];
 const SETTINGS: (keyof PolicySettings)[] = [...INHERITED, 'project_budget'];
 
@@ -414,8 +415,16 @@ export const workflowPolicyHandlers: Handlers = {
   },
   'workflow.policy.set': (ctx, p, c) => {
     userOnly(p);
-    const { project_id, task_size_hint, path, budget, project_budget, charter, ...input } =
-      inputSchemas['workflow.policy.set'].parse(c.input);
+    const {
+      project_id,
+      task_size_hint,
+      path,
+      budget,
+      project_budget,
+      charter,
+      question_defaults,
+      ...input
+    } = inputSchemas['workflow.policy.set'].parse(c.input);
     projectAccess(ctx, p, project_id, c.type);
     ctx.store.must<Project>('projects', project_id);
     const old = ctx.store.get<WorkflowPolicy>('workflow_policies', project_id);
@@ -428,6 +437,7 @@ export const workflowPolicyHandlers: Handlers = {
       ...(budget ? ['budget'] : []),
       ...(charter ? ['charter'] : []),
       ...(task_size_hint === undefined ? [] : ['task_size_hint']),
+      ...(question_defaults === undefined ? [] : ['question_defaults']),
     ] as InheritedParam[];
     // A cleared hint is no longer the project's own, so the global one applies.
     const overridden = [...new Set([...own, ...given])].filter(
@@ -452,6 +462,8 @@ export const workflowPolicyHandlers: Handlers = {
       const inherited = inheritedPolicy(ctx).task_size_hint;
       if (inherited !== undefined) next.task_size_hint = inherited;
     } else if (task_size_hint !== undefined) next.task_size_hint = task_size_hint;
+    if (question_defaults === null) delete next.question_defaults;
+    else if (question_defaults) next.question_defaults = question_defaults;
     // A changed budget keeps counting from when the first one was set.
     if (project_budget === null) delete next.project_budget;
     else if (project_budget)

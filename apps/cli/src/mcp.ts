@@ -96,10 +96,12 @@ const descriptions: Record<ToolCommand, string> = {
     'Send a message to the open session of one task of your plan, by task id and, for a parallel task, the part: answer its requirement report, tell it how to go on after an interrupt, or ask it to fix something. The session reads it with the prefix [Lead]; it sees nothing of your conversation, so make the message self-contained. An idle session starts a turn at once; a running one reads it after its turn. Under 2000 characters. Refused when the task has no open session: use start_task.',
   'task.accept':
     'Accept a done_when report task after its session sent a done report: evidence says what you checked that shows the task is done. Pantheon records your evidence and does not check it, so check the report\'s decisive claim first. The task becomes done and its milestone can be accepted. Refused for a task done when merged (it completes by merging), for a task with no done report since its contract changed, and while after-merge steps wait. Refused "Project memory changed": call memory_context, recheck, and call again.',
+  'board.plan.reassess':
+    "Answer the user's pause of your plan with a re-assessment card: done (what the plan finished so far), blocked (what is stuck and why) and change (what you would change before it goes on), each in plain sentences. The user reads it before resuming the plan; a later call replaces it. No new task session starts while the plan is paused, so end your turn after it. Refused when your plan is not paused.",
   'lead.note.read':
     'Read one note of your board updates in full, by the note id the update names. Use it when an update was cut short or listed by id only, before you act on that note. Refused for an id that is not one of your notes.',
   'lead.ask':
-    "Ask the user one question on a card in needs-you and return at once. Use it only when the answer changes a task's scope, what counts as done, or an irreversible step; decide smaller points yourself. Give question, 2-4 options, recommended (one of the options), assumption (how you proceed meanwhile) and blocks (the task ids that must wait; [] when none). Keep working on the tasks it does not block; the answer arrives later as a board update. Refused without a plan: write one with update_board first, even if it holds only what you know.",
+    "Ask the user one question on a card in needs-you and return at once. Use it only when the answer changes a task's scope, what counts as done, or an irreversible step; decide smaller points yourself. Give question, 2-4 options, recommended (one of the options), assumption (how you proceed meanwhile) and blocks (the task ids that must wait; [] when none). Set reversible true only when a different answer later costs at most redoing tasks not started: if the user turned on default answers, your recommendation then applies after their deadline and you get it as an answer. Keep working on the tasks it does not block; the answer arrives later as a board update. Refused without a plan: write one with update_board first, even if it holds only what you know.",
   'lead.worker_question.answer':
     "Answer a task session's question only when the plan, project memory or the user's quoted words settle it; cite them. Otherwise leave it for the user, who sees the question too. Give question_id from the worker_question board update, answers keyed by each question's text word for word, and at least one citation: user_words (words copied exactly from the asking task's source), assumption (a plan assumption's text), memory (a current memory id) or earlier_answer (the id of an answered question of your plan). The answer goes back to the session at once. Refused once the question is answered, for a citation that does not resolve, and when the project's charter leaves these questions to the user.",
   'agent.follow_up':
@@ -119,7 +121,7 @@ const descriptions: Record<ToolCommand, string> = {
   'task.background.stop':
     "Stop one background command or agent of a task's session, by task id and the background_id a board update named, for example a dev server or watcher left running after the task no longer needs it. The session itself keeps running. Refused when the task has no background job with that id.",
   'improvement.propose':
-    'Propose one change to the project workflow, resting on 2-20 retrospective ids from lead.retrospectives in project_read that show the same problem. change is a policy_change (param, the tier for path, the target value) or an experience (a procedure of at most 600 bytes, an optional countercondition, and the domain, tier and runtime it applies to). Do not propose from a single event. Refused "No retrospective of this project" for an id not in lead.retrospectives, and when the user pinned the parameter or turned improvements off.',
+    'Propose one change to the project workflow, resting on 2-20 records of this project that show the same problem: retrospective_ids from lead.retrospectives in project_read, or evidence items of any kind (a retrospective, a signal issue id from signal_list, a session id, or the event id of a gate run). change is a policy_change (param, the tier for path, the target value), an experience (a procedure of at most 600 bytes, an optional countercondition, and the domain, tier and runtime it applies to), a gate_command (a root and its gate commands), a worktree_setup, agent_instructions (an agent id from list_agents and its whole new instructions) or a playbook (a stored lead playbook version to make current, with the runtime it belongs to or none for the default). Gate, worktree, instruction and playbook changes wait for the user to confirm them. Do not propose from a single event. Refused "No such record of this project" for an id the project does not have, and when the user pinned the parameter or turned improvements off.',
   'board.sync':
     "Use when the user asks to sync, refresh or update the board (for example 更新看板, 同步看板, 看板不对了) or says the board no longer matches the project. Returns your plan with each task's state and sessions, the recent commits of each git folder, and the rules for rewriting the plan; it changes nothing. Then send the changes the user asked for with update_board, and implement nothing. To only look at the board, use project_read.",
   'project.baseline.start':
@@ -176,6 +178,8 @@ const descriptions: Record<ToolCommand, string> = {
     "List this project's agents: id, name, template, role, tool groups, routines, and archived_at for an archived one. Call it before propose_agent so you do not propose an agent that already exists.",
   'workflow.step.verdict':
     'Hand in the verdict of the workflow step your current turn works on, when its prompt asks for one: verdict pass or fail, a summary of what you checked, and 1-8 evidence items, each a command you ran in this turn copied exactly or a file you changed. Call it before the turn ends; without a verdict the step waits for the user. A later call in the same turn replaces the verdict. Refused invalid_input for a command this turn did not run, and for a pass with nothing this turn shows; the error lists the commands that ran. Refused invalid_state when no step waits on this turn.',
+  'setting.propose':
+    "Propose a change of one project setting for the user to approve on a card, when the user states a standing rule such as 'propose plan changes before starting' (plan_changes confirm) or 'one task at a time' (max_parallel 1). Give param, value and quote, the user's words copied exactly from one of their messages; a quote no user message contains is refused. The card shows the current and the new value; the user's answer reaches you as a note.",
   'agent.propose':
     "Propose a new agent, or a change to one, for the user to approve on a card. New: template (ideas, goals or custom), name, role (a short label) and instructions (what it owns, how it works, when it speaks to the user), optionally brief, tools, listens, routines, runtime, model and effort. Change: agent_id and only the fields that change. Use it when the user asks for a standing helper or a kind of request keeps coming back. Fields the agent cannot take are refused now; the user's answer reaches you as a note.",
 };
@@ -279,12 +283,14 @@ const boundRevision = (type: CommandType) =>
   type === 'trace.report' ||
   type === 'lead.note.read' ||
   type === 'lead.ask' ||
+  type === 'board.plan.reassess' ||
   type === 'lead.worker_question.answer' ||
   type === 'agent.follow_up' ||
   type === 'agent.tell_user' ||
   type === 'agent.routine.set' ||
   type === 'agent.routine.cancel' ||
   type === 'agent.propose' ||
+  type === 'setting.propose' ||
   type === 'agent.agents' ||
   type === 'agent.guide' ||
   type === 'workflow.step.verdict' ||

@@ -1,22 +1,172 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { versionOf } from '@pantheon/adapters';
+import { NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
 import { startNativeDaemon } from '../../acceptance/lib/daemon.mjs';
 import { waitFor } from '../../acceptance/lib/event-client.mjs';
 import { materialize } from './check.mjs';
 
 const script = (...steps) => `fixture-script\n${JSON.stringify(steps)}`;
 const busy = (turn) => ['queued', 'running'].includes(turn.state);
+const env = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+  GIT_OPTIONAL_LOCKS: '0',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+};
+const git = (cwd, ...args) =>
+  execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+/** The plan a lead writes for the task: one task, dispatched to a session of its own. */
+export const oneTaskPlan = (task) => ({
+  base_version: 0,
+  headline: 'Evaluation run',
+  lanes: [{ id: 'main', title: 'Main' }],
+  tasks: [
+    {
+      id: 'A',
+      title: 'Task A',
+      goal: task.goal,
+      lane: 'main',
+      milestone: 'M',
+      depends_on: [],
+      // A source must be a verbatim quote of the lead's input, where the plan is escaped JSON.
+      source: [task.goal.split('\n')[0]],
+      scope: task.scope,
+      acceptance: task.acceptance,
+      ...(task.runtime ? { runtime: task.runtime } : {}),
+      ...(task.model ? { model: task.model } : {}),
+      path: 'dispatch',
+      flow_reason: 'The task runs in a session of its own',
+    },
+  ],
+  milestones: [{ id: 'M', title: 'Milestone M', criteria: ['A is merged'], tasks: ['A'] }],
+  risks: [],
+  assumptions: [],
+});
+
+/** Whether the hidden check passes on main, and whether it passed only on its second try. */
+async function hiddenOnMain(spec, repo) {
+  const hidden = async () => {
+    const tree = fs.mkdtempSync(path.join(spec.workspace, 'main-tree-'));
+    materialize(repo, 'main', tree);
+    return spec.hiddenCheck(tree);
+  };
+  const first = await hidden();
+  const passed = first || (await hidden());
+  return { hidden_passed: passed, hidden_unstable: first !== passed };
+}
+
+/** true: a file outside the source trees (product state, native transcripts) names the eval checkout. */
+const readCheckout = ({ workspace, checkout }) =>
+  checkout
+    ? fs
+        .readdirSync(workspace, { recursive: true })
+        .filter((file) => !/^(repo|workspaces|main-tree-[^/]*)(\/|$)/.test(file))
+        .map((file) => path.join(workspace, file))
+        .some((file) => fs.lstatSync(file).isFile() && fs.readFileSync(file).includes(checkout))
+    : null;
 
 /**
- * One run: a fresh daemon and repository, a scripted lead that writes a one-task plan and
- * dispatches it, then the hidden check on what reached main.
+ * A bare run: one session of the runtime outside Pantheon, so with no Pantheon tools, memory or
+ * gate, sent the goal alone in a worktree of the repository. What it commits there lands on main
+ * for the hidden check.
+ */
+async function bareRun(spec, repo, adapter, runtimeVersion) {
+  const tree = path.join(spec.workspace, 'workspaces', 'bare');
+  git(repo, 'worktree', 'add', '-q', '-b', 'bare', tree);
+  const events = [];
+  let ended;
+  const end = new Promise((resolve) => (ended = resolve));
+  const handle = await adapter.start(
+    {
+      platform_session_id: 'bare',
+      project_id: 'bare',
+      runtime: adapter.name,
+      ...(spec.task.model ? { model: spec.task.model } : {}),
+      device_id: 'local',
+      role: 'writer',
+      cwd: tree,
+      env_allowlist: NATIVE_ENV_ALLOWLIST,
+      skills: [],
+      mcp_servers: [],
+      budget: { max_turns: 1, wall_time_ms: spec.settleMs },
+      permission_mode: 'auto_edit',
+    },
+    (event) => {
+      events.push(event);
+      // Nobody answers a permission request here either.
+      if (event.kind === 'turn.completed' || event.kind === 'permission.requested') ended();
+    },
+  );
+  const started = Date.now();
+  try {
+    await adapter.send(handle, { turn_id: 'bare-turn', input: spec.task.goal });
+    await end;
+  } finally {
+    await adapter.close(handle, Date.now() + 10000);
+  }
+  const wall = Date.now() - started;
+  const completed = events.find((event) => event.kind === 'turn.completed');
+  const asked = events.filter((event) => event.kind === 'permission.requested').length;
+  const merged = git(repo, 'rev-list', '--count', 'main..bare').trim() !== '0';
+  if (merged) git(repo, 'merge', '-q', '--ff-only', 'bare');
+  const { hidden_passed, hidden_unstable } = merged
+    ? await hiddenOnMain(spec, repo)
+    : { hidden_passed: null, hidden_unstable: null };
+  const usage = events.findLast((event) => event.kind === 'usage.updated');
+  return {
+    mode: 'bare',
+    runtime_version: runtimeVersion,
+    model_asked: spec.task.model ?? null,
+    model_reported: [...new Set(events.map((event) => event.reported_model).filter(Boolean))],
+    outcome: merged ? 'merged' : 'failed',
+    hidden_passed,
+    hidden_unstable,
+    stopped_by: merged
+      ? null
+      : asked
+        ? 'permission_requested'
+        : completed?.status === 'failed'
+          ? 'turn_failed'
+          : 'unknown',
+    settled: completed?.error_code !== 'turn_deadline',
+    turn_error: completed?.status === 'failed' ? completed.error : null,
+    task_turns: 1,
+    gate_runs: 0,
+    // There is no Needs-you list outside Pantheon.
+    needs_you: null,
+    needs_you_kinds: null,
+    human_touches: asked,
+    read_checkout: readCheckout(spec),
+    input_tokens: usage ? (usage.input_tokens ?? 0) : null,
+    cached_input_tokens: usage ? (usage.cached_input_tokens ?? 0) : null,
+    output_tokens: usage ? (usage.output_tokens ?? 0) : null,
+    cost_usd: usage?.cost_usd ?? null,
+    wall_ms: wall,
+    playbook_version: null,
+    policy_version: null,
+  };
+}
+
+/**
+ * One run: a fresh repository, then either a bare session (see bareRun) or a fresh daemon whose
+ * lead, scripted or real, plans the task and dispatches it; then the hidden check on what
+ * reached main. A scripted lead writes oneTaskPlan; a real lead on the task's runtime is sent the
+ * goal as a user message, under the condition's playbook and policy.
  * The repository is `<workspace>/repo`.
  */
 export async function runOne(spec) {
   const { workspace } = spec;
   const repo = path.join(workspace, 'repo');
   spec.createRepo(repo);
+  const runtime = spec.task.runtime ?? spec.leadRuntime;
+  const adapter = spec.adapters.find((entry) => entry.name === runtime);
+  const runtimeVersion = adapter.binary ? versionOf(adapter.binary) : adapter.report.version;
+  if (spec.condition.mode === 'bare') return bareRun(spec, repo, adapter, runtimeVersion);
+  const real = spec.condition.lead === 'real';
   // With protection paths the task session gets its sandbox; this home keeps audits off the real one.
   // A real runtime reads its login from the real home, which the product must then protect.
   const home = spec.realHome ? undefined : path.join(workspace, 'home');
@@ -46,9 +196,10 @@ export async function runOne(spec) {
       { project_id: project.id, enabled: true },
       await revision(),
     );
+    const leadRuntime = real ? runtime : spec.leadRuntime;
     await fixture.call(
       'project.sessionDefaults.set',
-      { project_id: project.id, runtime: spec.leadRuntime, permission_mode: 'auto_edit' },
+      { project_id: project.id, runtime: leadRuntime, permission_mode: 'auto_edit' },
       await revision(),
     );
     await fixture.call('workflow.definition.set', {
@@ -58,41 +209,43 @@ export async function runOne(spec) {
       },
       base_version: 0,
     });
+    if (spec.condition.playbook) {
+      const shipped = await fixture.call('playbook.get', params);
+      await fixture.call('playbook.set', {
+        ...params,
+        base_version: 0,
+        sections: { ...shipped.sections, ...spec.condition.playbook.sections },
+      });
+    }
+    if (spec.condition.policy) {
+      const current = await get('workflow.policy', params);
+      // Revision 0 is the defaults of a project that stores no policy yet.
+      await fixture.call(
+        'workflow.policy.set',
+        { ...params, ...spec.condition.policy },
+        current.revision || null,
+      );
+    }
+    const policyVersion = (await get('workflow.policy', params)).policy_version;
 
-    const plan = {
-      base_version: 0,
-      headline: 'Evaluation run',
-      lanes: [{ id: 'main', title: 'Main' }],
-      tasks: [
-        {
-          id: 'A',
-          title: 'Task A',
-          goal: spec.task.goal,
-          lane: 'main',
-          milestone: 'M',
-          depends_on: [],
-          // A source must be a verbatim quote of the lead's input, where the plan is escaped JSON.
-          source: [spec.task.goal.split('\n')[0]],
-          scope: spec.task.scope,
-          acceptance: spec.task.acceptance,
-          ...(spec.task.runtime ? { runtime: spec.task.runtime } : {}),
-          ...(spec.task.model ? { model: spec.task.model } : {}),
-          path: 'dispatch',
-          flow_reason: 'The task runs in a session of its own',
-        },
-      ],
-      milestones: [{ id: 'M', title: 'Milestone M', criteria: ['A is merged'], tasks: ['A'] }],
-      risks: [],
-      assumptions: [],
-    };
-    await fixture.call('session.create', {
-      project_id: project.id,
-      runtime: spec.leadRuntime,
-      input: script(
-        { tool: { name: 'update_board', arguments: plan } },
-        { tool: { name: 'start_task', arguments: { task_ids: ['A'] } } },
-      ),
-    });
+    await fixture.call(
+      'session.create',
+      real
+        ? {
+            project_id: project.id,
+            runtime: leadRuntime,
+            ...(spec.task.model ? { model: spec.task.model } : {}),
+            input: spec.task.goal,
+          }
+        : {
+            project_id: project.id,
+            runtime: leadRuntime,
+            input: script(
+              { tool: { name: 'update_board', arguments: oneTaskPlan(spec.task) } },
+              { tool: { name: 'start_task', arguments: { task_ids: ['A'] } } },
+            ),
+          },
+    );
     const events = async () => {
       const all = [];
       for (let after = 0; ;) {
@@ -146,24 +299,19 @@ export async function runOne(spec) {
     const skipped = ofTask('session.merge_skipped').at(-1)?.payload;
     const merged = ofTask('session.merged').length > 0;
     const taskTurns = board.session_turns.filter((turn) => turn.session_id === taskSession);
-    const usage = taskTurns.map((turn) => turn.usage).filter(Boolean);
+    // A real lead's turns are part of what the run cost; a scripted lead's are not.
+    const usage = (real ? board.session_turns : taskTurns)
+      .map((turn) => turn.usage)
+      .filter(Boolean);
     const sum = (field) =>
       usage.length ? usage.reduce((total, row) => total + (row[field] ?? 0), 0) : null;
     const costs = usage.map((row) => row.cost_usd).filter((cost) => cost !== undefined);
-    const hidden = async () => {
-      const tree = fs.mkdtempSync(path.join(workspace, 'main-tree-'));
-      materialize(repo, 'main', tree);
-      return spec.hiddenCheck(tree);
-    };
-    let hiddenPassed = null,
-      hiddenUnstable = null;
-    if (merged) {
-      const first = await hidden();
-      hiddenPassed = first || (await hidden());
-      hiddenUnstable = first !== hiddenPassed;
-    }
+    const { hidden_passed: hiddenPassed, hidden_unstable: hiddenUnstable } = merged
+      ? await hiddenOnMain(spec, repo)
+      : { hidden_passed: null, hidden_unstable: null };
     return {
       mode: spec.condition.mode,
+      runtime_version: runtimeVersion,
       model_asked: spec.task.model ?? null,
       model_reported: [
         ...new Set(board.session_turns.map((turn) => turn.reported_model).filter(Boolean)),
@@ -193,22 +341,14 @@ export async function runOne(spec) {
       needs_you_kinds: needsYou,
       // What a person would have had to answer: the needs-you items left at settle.
       human_touches: needsYou.length,
-      // true: a file outside the source trees (product state, native transcripts) names the eval checkout.
-      read_checkout: spec.checkout
-        ? fs
-            .readdirSync(workspace, { recursive: true })
-            .filter((file) => !/^(repo|workspaces|main-tree-[^/]*)(\/|$)/.test(file))
-            .map((file) => path.join(workspace, file))
-            .some(
-              (file) =>
-                fs.lstatSync(file).isFile() && fs.readFileSync(file).includes(spec.checkout),
-            )
-        : null,
+      read_checkout: readCheckout(spec),
       input_tokens: sum('input_tokens'),
       cached_input_tokens: sum('cached_input_tokens'),
       output_tokens: sum('output_tokens'),
       cost_usd: costs.length ? costs.reduce((total, cost) => total + cost, 0) : null,
       wall_ms: changed - started,
+      playbook_version: spec.condition.playbook?.version ?? null,
+      policy_version: policyVersion,
     };
   } finally {
     await fixture.close();

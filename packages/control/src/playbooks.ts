@@ -10,7 +10,11 @@ import { LEAD_PLAYBOOK } from './agent-prompts.js';
 import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
 
 /** The project's playbook for runtime, or its default playbook without runtime. */
-const storedPlaybook = (ctx: ControlContext, projectId: string, runtime: string | undefined) =>
+export const storedPlaybook = (
+  ctx: ControlContext,
+  projectId: string,
+  runtime: string | undefined,
+) =>
   ctx.store
     .list<Playbook>('playbooks')
     .find((row) => row.project_id === projectId && row.runtime === runtime);
@@ -19,16 +23,26 @@ function playbookRead(
   ctx: ControlContext,
   projectId: string,
   runtime: string | undefined,
+  version?: number,
 ): PlaybookRead {
   const own = storedPlaybook(ctx, projectId, runtime);
   const used =
     own ?? (runtime === undefined ? undefined : storedPlaybook(ctx, projectId, undefined));
+  requireThat(
+    version === undefined || own?.versions[version] !== undefined,
+    'not_found',
+    `playbooks/${runtime ?? 'default'}/versions/${version}`,
+  );
   return {
     project_id: projectId,
     ...(runtime === undefined ? {} : { runtime }),
     version: own?.version ?? 0,
+    versions: Object.keys(own?.versions ?? {})
+      .map(Number)
+      .sort((a, b) => a - b),
     source: !used ? 'code' : used.runtime === undefined ? 'default' : 'runtime',
-    sections: used ? used.versions[used.version]! : { ...LEAD_PLAYBOOK },
+    sections: used ? used.versions[version ?? used.version]! : { ...LEAD_PLAYBOOK },
+    built_in: { ...LEAD_PLAYBOOK },
   };
 }
 
@@ -71,7 +85,7 @@ export const playbookHandlers: Handlers = {
     const input = inputSchemas['playbook.get'].parse(c.input);
     projectAccess(ctx, p, input.project_id, c.type);
     ctx.store.must<Project>('projects', input.project_id);
-    return playbookRead(ctx, input.project_id, input.runtime);
+    return playbookRead(ctx, input.project_id, input.runtime, input.version);
   },
   'playbook.set': (ctx, p, c) => {
     userOnly(p);
@@ -102,6 +116,28 @@ export const playbookHandlers: Handlers = {
       stored,
       input.project_id,
       { runtime: input.runtime, version },
+      c.command_id,
+    );
+    return playbookRead(ctx, input.project_id, input.runtime);
+  },
+  'playbook.remove': (ctx, p, c) => {
+    userOnly(p);
+    const input = inputSchemas['playbook.remove'].parse(c.input);
+    projectAccess(ctx, p, input.project_id, c.type);
+    ctx.store.must<Project>('projects', input.project_id);
+    const old = storedPlaybook(ctx, input.project_id, input.runtime);
+    requireThat(old, 'not_found', `playbooks/${input.runtime ?? 'default'}`);
+    requireThat(
+      input.base_version === old.version,
+      'version_conflict',
+      'Supply the current playbook base_version',
+    );
+    ctx.store.remove('playbooks', old.id, old.revision);
+    ctx.store.event(
+      'playbook.changed',
+      old,
+      input.project_id,
+      { runtime: input.runtime, version: 0 },
       c.command_id,
     );
     return playbookRead(ctx, input.project_id, input.runtime);

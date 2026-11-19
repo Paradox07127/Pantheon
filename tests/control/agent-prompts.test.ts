@@ -194,3 +194,9 @@ it('tells a lead to answer a worker question only from a cited source and otherw
     expect(LEAD_INSTRUCTIONS).toContain(source);
   expect(LEAD_INSTRUCTIONS).not.toContain('pass_worker_question');
 });
+
+it('tells a lead to mark only easily undone questions reversible, after the ask_user line', () => {
+  expect(LEAD_INSTRUCTIONS).toContain(
+    'first write a plan with update_board that holds only what you know, then ask.\n- Mark a question reversible only when a wrong answer is easy to change back later. When the user set a deadline, your recommended answer to a reversible question applies once that deadline passes.',
+  );
+});

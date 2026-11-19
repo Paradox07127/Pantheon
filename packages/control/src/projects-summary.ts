@@ -3,6 +3,7 @@ import type { ProjectSummary } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 import { boardView, midnight } from './board-view.js';
 import { needsYou } from './needs-you.js';
+import { cursorId, projectBrief, type SeenCursor } from './project-brief.js';
 import { sessionList } from './workbench-session.js';
 
 const COUNTED: Record<string, keyof ProjectSummary['counts']> = {
@@ -48,6 +49,10 @@ export function projectsSummary(
         if (key) counts[key]++;
       }
       const needs = items.filter((item) => item.project_id === project.id);
+      // Only a cursor with prose can give a brief; the brief checks the prose still fits its items.
+      const brief =
+        ctx.store.get<SeenCursor>('seen_cursors', cursorId(principal, project.id))?.prose &&
+        projectBrief(ctx, principal, project.id, undefined, needs).prose?.sentences[0]?.text;
       const board = boardView(ctx, principal, project.id, 14, undefined, sessions, needs);
       counts.queued = board.slots?.queued ?? 0;
       const open = board.milestones.find((m) => m.status !== 'completed');
@@ -62,6 +67,20 @@ export function projectsSummary(
         counts,
         merged_today: board.merges.filter((merge) => merge.merged_at >= midnight(board.now)).length,
         needs_you: needs.length,
+        ...(brief ? { brief } : {}),
+        ...(needs.length
+          ? {
+              waiting: {
+                by_decision: needs.reduce<NonNullable<ProjectSummary['waiting']>['by_decision']>(
+                  (by, item) => ({ ...by, [item.decision]: (by[item.decision] ?? 0) + 1 }),
+                  {},
+                ),
+                longest_wait_ms:
+                  ctx.store.now() - Math.min(...needs.map((item) => item.created_at)),
+                blocked_tasks: needs.reduce((sum, item) => sum + item.blocks, 0),
+              },
+            }
+          : {}),
         milestone: open
           ? {
               id: open.id,

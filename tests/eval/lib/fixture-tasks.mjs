@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { FixtureAdapter } from '@pantheon/adapters';
 import { runCommands } from './check.mjs';
+import { oneTaskPlan } from './run.mjs';
 
 // Scripted task behaviours on the fixture runtime; what each one leaves on main is known,
 // so the runs check the runner and the report rather than measure a model.
@@ -53,11 +54,47 @@ export const conditions = ['acceptance_only', 'independent_check'];
 export const knownAnswers = {
   acceptance_only: { runs: 7, merged: 3, leaked: 1, leaking: ['writes_wrong_content'] },
   independent_check: { runs: 7, merged: 2, leaked: 0, leaking: [] },
+  dispatch: { runs: 7, merged: 3, leaked: 1, leaking: ['writes_wrong_content'] },
+  // No scope check and no sandbox: the out-of-scope and the escaping commits land too.
+  bare: { runs: 7, merged: 4, leaked: 1, leaking: ['writes_wrong_content'] },
 };
 
 export const leadRuntime = new FixtureAdapter().name;
 
-export const adapters = () => [new FixtureAdapter()];
+/**
+ * The fixture runtime, whose lead sessions (Pantheon tools, no task) plan the goal of their first
+ * turn as one dispatched task, as a lead model would; a scripted lead's first turn is its script
+ * already.
+ */
+class PlanningFixtureAdapter extends FixtureAdapter {
+  #leads = new Set();
+  #started = new Set();
+
+  async resume(spec, nativeId, emit) {
+    if (spec.pantheon_mcp && !spec.task_session) this.#leads.add(spec.platform_session_id);
+    return super.resume(spec, nativeId, emit);
+  }
+
+  async send(handle, turn) {
+    const session = handle.platform_session_id;
+    const first = !this.#started.has(session);
+    this.#started.add(session);
+    if (!first || !this.#leads.has(session) || turn.input.startsWith('fixture-script'))
+      return super.send(handle, turn);
+    // The goal is a request line and the task session's two-line script; Pantheon may append to it.
+    const goal = turn.input.split('\n').slice(0, 3).join('\n');
+    const plan = oneTaskPlan({ goal, scope: [FILE], acceptance: [`test -f ${FILE}`] });
+    return super.send(handle, {
+      ...turn,
+      input: script(
+        { tool: { name: 'update_board', arguments: plan } },
+        { tool: { name: 'start_task', arguments: { task_ids: ['A'] } } },
+      ),
+    });
+  }
+}
+
+export const adapters = () => [new PlanningFixtureAdapter()];
 
 export const gate = [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }];
 

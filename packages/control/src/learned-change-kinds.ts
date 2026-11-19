@@ -1,7 +1,17 @@
-import { canonical, type Improvement, type Project } from '@pantheon/domain';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import {
+  canonical,
+  type AgentProfile,
+  type EvalReceipt,
+  type Improvement,
+  type Project,
+} from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { screenExperience } from './experience-screen.js';
+import { playbookVersion, setPlaybookVersion } from './playbooks.js';
 import { setProjectWorktree, writeProjectGate } from './project.js';
+import { updateAgent } from './resident.js';
 import { applyPolicyChange, policyValue, workflowPolicy } from './workflow-policy.js';
 
 type Change = Improvement['change'];
@@ -112,6 +122,87 @@ export const changeKinds: { [T in Change['type']]: ChangeKind<T> } = {
     stillCurrent: (ctx, improvement) =>
       canonical(project(ctx, improvement).worktree) === canonical(improvement.change.to),
     sameTarget: () => true,
+  },
+  agent_instructions: {
+    apply(ctx, improvement, commandId) {
+      const agent = ctx.store.must<AgentProfile>('agents', improvement.change.agent_id);
+      updateAgent(ctx, agent, { instructions: improvement.change.to }, commandId);
+      return { from: agent.instructions };
+    },
+    revert(ctx, improvement, commandId) {
+      if (!changeKinds.agent_instructions.stillCurrent(ctx, improvement))
+        return 'The agent instructions were changed since the change was confirmed, so they stay';
+      updateAgent(
+        ctx,
+        ctx.store.must<AgentProfile>('agents', improvement.change.agent_id),
+        { instructions: improvement.change.from },
+        commandId,
+      );
+      return undefined;
+    },
+    stillCurrent: (ctx, improvement) =>
+      ctx.store.must<AgentProfile>('agents', improvement.change.agent_id).instructions ===
+      improvement.change.to,
+    sameTarget: (a, b) => a.agent_id === b.agent_id,
+  },
+  // A playbook acts on a lead's plans, which no trial on live tasks compares, so a paired eval run decides.
+  playbook: {
+    apply(ctx, improvement, commandId) {
+      const receipts = (improvement.evidence ?? []).filter(
+        (entry): entry is EvalReceipt => entry.kind === 'eval_receipt',
+      );
+      // Why each receipt does not count; undefined for one that does.
+      const reasons = receipts.map(({ path, sha256, verdict }) => {
+        let second: string | undefined;
+        try {
+          const runs = readFileSync(path);
+          if (createHash('sha256').update(runs).digest('hex') !== sha256)
+            return `${path} changed since the eval run`;
+          // The report orders the conditions as the runs first name them.
+          second = [
+            ...new Set(
+              runs
+                .toString('utf8')
+                .split('\n')
+                .filter(Boolean)
+                .map((line) => (JSON.parse(line) as { condition: string }).condition),
+            ),
+          ][1];
+        } catch {
+          return `${path} cannot be read as the runs of an eval`;
+        }
+        if (verdict === 'no_conclusion') return `The eval in ${path} reached no conclusion`;
+        return second !== undefined &&
+          [`${second}_leaks_less`, `${second}_passes_more`, `${second}_cheaper`].includes(verdict)
+          ? undefined
+          : `The eval verdict ${verdict} does not favour ${second ?? 'a second condition'}, the second condition`;
+      });
+      if (!reasons.includes(undefined))
+        return {
+          refusal: receipts.length
+            ? { status_reason: 'eval_not_better', status_detail: reasons.join('; ') }
+            : {
+                status_reason: 'no_eval_receipt',
+                status_detail:
+                  'A playbook change needs an eval receipt whose verdict favours the second condition',
+              },
+        };
+      const { runtime, to } = improvement.change;
+      const from = playbookVersion(ctx, improvement.project_id, runtime);
+      setPlaybookVersion(ctx, improvement.project_id, runtime, to, commandId);
+      return { from };
+    },
+    revert(ctx, improvement, commandId) {
+      if (!changeKinds.playbook.stillCurrent(ctx, improvement))
+        return 'The playbook version was changed since the change was confirmed, so it stays';
+      const { runtime, from } = improvement.change;
+      setPlaybookVersion(ctx, improvement.project_id, runtime, from!, commandId);
+      return undefined;
+    },
+    stillCurrent: (ctx, improvement) =>
+      playbookVersion(ctx, improvement.project_id, improvement.change.runtime) ===
+      improvement.change.to,
+    sameTarget: (a, b) => a.runtime === b.runtime,
   },
 };
 

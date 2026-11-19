@@ -6,7 +6,13 @@ type UserRoutine = NonNullable<
 >[number];
 
 /** A starting point for a routine; without `id` and `title`, plus `enabled`, it is an agent.update routine. */
-export type RoutineTemplate = { id: string; title: string } & Omit<UserRoutine, 'id' | 'enabled'>;
+export type RoutineTemplate = { id: string; title: string } & Omit<
+  UserRoutine,
+  'id' | 'enabled'
+> & {
+    /** False for a routine the user turns on after adding it; absent adds it turned on. */
+    enabled?: false;
+  };
 
 const WEEK_MINUTES = 7 * 24 * 60;
 
@@ -39,5 +45,13 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
     prompt:
       'Find changed modules without tests. Propose one task per module with the tests it needs.',
     every_minutes: WEEK_MINUTES,
+  },
+  {
+    id: 'weekly-self-review',
+    title: 'Weekly self-review',
+    prompt:
+      "Read lead.retrospectives and the improvement signals in project_read, and what you did yourself this week. Name at most 3 points of friction from this week. Propose at most 2 changes with propose_improvement, each with its evidence, and state each one's sample size n; when the evidence is weak, say so. When you have nothing to propose, say that you have none.",
+    every_minutes: WEEK_MINUTES,
+    enabled: false,
   },
 ];

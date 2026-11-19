@@ -50,7 +50,7 @@ export function decisionsForUser(
       .filter((event) => event.kind === 'personal.called')
       .map((event) => [event.causation_id, event]),
   );
-  // Only a task session's question carries answered_by, and the lead answers it with citations.
+  // The lead answers a task session's question with citations.
   const byLead = (event: (typeof events)[number]) =>
     event.kind === 'lead.question_answered' &&
     (event.payload as LeadQuestion).answered_by === 'lead';
@@ -108,11 +108,13 @@ export function decisionsForUser(
     )
       return [];
     if (event.kind === 'lead.question_answered') {
-      const question = byLead(event)
-        ? ctx.store
-            .get<BoardPlan>('board_plans', event.aggregate_id)
-            ?.questions?.find((entry) => entry.id === (event.payload as LeadQuestion).id)
-        : undefined;
+      const defaulted = (event.payload as LeadQuestion).answered_by === 'default';
+      const question =
+        byLead(event) || defaulted
+          ? ctx.store
+              .get<BoardPlan>('board_plans', event.aggregate_id)
+              ?.questions?.find((entry) => entry.id === (event.payload as LeadQuestion).id)
+          : undefined;
       if (!question) return [];
       const { answer, source, citations } = question as Required<LeadQuestion>;
       return [
@@ -121,12 +123,14 @@ export function decisionsForUser(
           at,
           lead_session_id: event.aggregate_id,
           question_id: question.id,
-          session_id: ctx.store.get<Session>('sessions', source.session_id)
-            ? source.session_id
-            : undefined,
+          session_id:
+            source && ctx.store.get<Session>('sessions', source.session_id)
+              ? source.session_id
+              : undefined,
           question: question.question,
           answer: answer.overruled?.text ?? answer.text,
-          citations,
+          citations: citations ?? [],
+          ...(defaulted ? { answered_by: 'default' as const } : {}),
           ...(answer.overruled ? { overruled: { answer: answer.text, at: answer.at } } : {}),
         },
       ];

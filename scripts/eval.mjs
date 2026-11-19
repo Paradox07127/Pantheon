@@ -18,6 +18,8 @@ const rule = {
   interval: 'clopper-pearson',
   paired_test: 'exact sign test, two-sided',
   alpha: 0.05,
+  // The interval of the per-task change in input tokens per accepted run; one holding 0 is no conclusion.
+  bootstrap: { unit: 'task', resamples: 10000, seed: 1 },
 };
 // A run has settled when no event arrives for QUIET_MS and no turn is queued or running.
 const QUIET_MS = 2000;
@@ -28,7 +30,7 @@ const FROZEN_SETTLE_MS = 3600000;
 // Real-model runs per invocation without --over-cap.
 const REAL_RUN_CAP = 5;
 const usage =
-  'usage: node scripts/eval.mjs check [task-name...] | run --runtime fixture|reference|codex|claude [--task <name>]... [--condition <name>]... [--model <id>] [--repetitions <n>] [--over-cap] [--workspace <dir>] [--out <dir>] | report <run-dir> | history <bundle> <dir>';
+  'usage: node scripts/eval.mjs check [task-name...] | run --runtime fixture|reference|codex|claude [--task <name>]... [--condition <name>]... [--lead scripted|real] [--model <id>] [--repetitions <n>] [--over-cap] [--workspace <dir>] [--out <dir>] | report <run-dir> | history <bundle> <dir>';
 
 /** Returns the tasks; exits with how to supply them when historyRoot lacks one of their commits. */
 const withCommits = (tasks) => {
@@ -71,6 +73,8 @@ if (command === 'run') {
   const real = runtime === 'codex' || runtime === 'claude';
   const repetitions = Number(option('--repetitions') ?? 1);
   if (!Number.isInteger(repetitions) || repetitions < 1) refuse(usage);
+  const lead = option('--lead');
+  if (lead !== undefined && !['scripted', 'real'].includes(lead)) refuse(usage);
   const model = option('--model');
   if (model !== undefined && !real)
     refuse(`refused: --model applies to codex and claude runs only`);
@@ -96,6 +100,8 @@ if (command === 'run') {
         : runtime === 'fixture'
           ? fixtureTasks.conditions
           : ['default'],
+    ).map((condition) =>
+      lead !== undefined && condition.mode === 'dispatch' ? { ...condition, lead } : condition,
     );
   } catch (error) {
     refuse(error.message);

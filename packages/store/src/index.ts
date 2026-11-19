@@ -58,6 +58,7 @@ export const tables = [
   'agents',
   'agent_messages',
   'agent_proposals',
+  'setting_proposals',
   'signal_issues',
   'seen_cursors',
   'personal_keys',
@@ -294,6 +295,14 @@ export const migrations: readonly Migration[] = [
         CREATE TABLE playbooks (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
         CREATE UNIQUE INDEX playbook_runtime ON playbooks(json_extract(data,'$.project_id'), coalesce(json_extract(data,'$.runtime'), ''));
       `);
+    },
+  },
+  {
+    version: 15,
+    up(db) {
+      db.exec(
+        'CREATE TABLE setting_proposals (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;',
+      );
     },
   },
 ];

@@ -41,12 +41,20 @@ export interface AgentWake {
   question_ids: string[];
   /** Plan changes and task starts or stops the agent made in the turn. */
   actions: number;
+  /** message_ids with the first line of each message, cut at 140 characters. */
+  messages: { id: string; text: string }[];
+  /** question_ids with the first line of each question, cut at 140 characters. */
+  questions: { id: string; text: string }[];
+  /** The tasks the agent's start requests in the turn named. */
+  tasks_started: number;
 }
 
 /** One routine of an agent of the project. */
 export interface AgentRoutineRow {
   agent_id: string;
   agent_name: string;
+  /** The revision agent.update takes for this agent. */
+  agent_revision: number;
   routine: AgentRoutine;
   /** When the pending run is due, Unix epoch ms; absent while none is pending. */
   next_run_at?: number;

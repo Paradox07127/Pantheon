@@ -19,6 +19,7 @@ it('defines a strict input schema for each unimplemented command and the queries
     expect(inputSchemas[type].safeParse({ ...input, extra: 1 }).success, type).toBe(false);
   }
   expect(Object.keys(querySchemas).sort()).toEqual([
+    'agent.ledger',
     'agent.list',
     'agent.proposal',
     'agent.routines',

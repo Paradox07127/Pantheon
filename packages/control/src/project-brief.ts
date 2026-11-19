@@ -99,12 +99,16 @@ function completedTask(
   return task && { lead: task.lead_session_id, task: task.id };
 }
 
-/** What happened in the project after since, the caller's seen cursor by default, as counts and links. */
+/**
+ * What happened in the project after since, the caller's seen cursor by default, as counts and
+ * links; given is the project's needs-you list when the caller has it already.
+ */
 export function projectBrief(
   ctx: ControlContext,
   principal: Principal,
   projectId: string,
   since?: number,
+  given?: NeedsYouItem[],
 ): ProjectBrief {
   projectAccess(ctx, principal, projectId, 'project.brief');
   ctx.store.must<Project>('projects', projectId);
@@ -117,7 +121,7 @@ export function projectBrief(
       .map((plan) => [plan.id, plan]),
   );
   const items: ProjectBriefItem[] = [];
-  const needs = needsYou(ctx, principal, projectId).items,
+  const needs = given ?? needsYou(ctx, principal, projectId).items,
     arrived = needs.filter((item) => item.created_at > after);
   if (arrived.length)
     items.push({

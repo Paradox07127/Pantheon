@@ -218,6 +218,8 @@ export function planViews(ctx: ControlContext, projectId: string): BoardPlanView
       }),
       risks: plan.risks,
       assumptions: plan.assumptions,
+      ...(plan.paused ? { paused: { at: plan.paused.at } } : {}),
+      ...(plan.reassessment ? { reassessment: plan.reassessment } : {}),
       updated_at: plan.updated_at,
     }));
 }

@@ -10,12 +10,24 @@ import { z } from 'zod';
 import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
 import { rangeStoryInputSchemas } from './range-story.js';
 import { planReplayQuerySchema } from './plan-replay.js';
+import type { PendingReplan, ReplanHistoryTrigger } from './replan-history.js';
+import type { ProjectWaiting } from './project-waiting.js';
+import { evalReceiptSchema } from './eval-receipt.js';
 import { themeInputSchema, type ThemeInput } from './theme.js';
 import { alwaysOnInputSchemas, alwaysOnToolEffects, alwaysOnTools } from './always-on-tools.js';
 import { agentWakeInputSchemas, agentWakeQuerySchemas } from './agent-wakes.js';
 export type { AgentRoutineRow, AgentWake, WakeOutcome } from './agent-wakes.js';
+import { agentLedgerQuerySchemas } from './agent-ledger.js';
+export type { AgentLedgerWeek } from './agent-ledger.js';
 import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
 import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
+import {
+  settingInputSchemas,
+  settingToolEffects,
+  settingToolGroups,
+  settingTools,
+} from './setting-tools.js';
+export { settingValues } from './setting-tools.js';
 import {
   reviewerTools,
   workflowInputSchemas,
@@ -24,7 +36,16 @@ import {
   workflowTools,
 } from './workflow-tools.js';
 import { playbookInputSchemas } from './playbooks.js';
+import {
+  planPauseInputSchemas,
+  planPauseToolEffects,
+  planPauseToolGroups,
+  planPauseTools,
+} from './plan-pause.js';
 export type { PlaybookRead } from './playbooks.js';
+import { milestoneCheckInputSchemas } from './milestone-checks.js';
+export type { HiddenChecksRead } from './milestone-checks.js';
+import { questionBatchInputSchemas } from './question-batches.js';
 import type {
   AgentToolGroup,
   ApprovalQuestion,
@@ -194,6 +215,8 @@ export { prettifyError, ZodError, type ZodIssue } from 'zod';
 export * from './change-story.js';
 export * from './range-story.js';
 export * from './plan-replay.js';
+export * from './replan-history.js';
+export * from './project-waiting.js';
 export * from './learned.js';
 export * from './agent-chapters.js';
 
@@ -312,7 +335,9 @@ export const sessionTools = {
     ...alwaysOnTools,
     ...appTools,
     ...agentTools,
+    ...settingTools,
     ...workflowTools,
+    ...planPauseTools,
     guide: 'agent.guide',
   },
   worker: {
@@ -371,7 +396,9 @@ export const leadToolEffects = {
   ...alwaysOnToolEffects,
   ...appToolEffects,
   ...agentToolEffects,
+  ...settingToolEffects,
   ...workflowToolEffects,
+  ...planPauseToolEffects,
   guide: 'read',
 } as const satisfies Record<keyof typeof sessionTools.lead, 'read' | 'write' | 'costly'>;
 
@@ -396,7 +423,9 @@ export const leadToolGroups: Record<
   ...inGroup(alwaysOnTools, 'always_on'),
   ...appToolGroups,
   ...agentToolGroups,
+  ...settingToolGroups,
   ...workflowToolGroups,
+  ...planPauseToolGroups,
   project_read: 'board',
   update_board: 'board',
   edit_board: 'board',
@@ -1535,6 +1564,30 @@ const improvementChange = z.discriminatedUnion('type', [
       })
       .describe('The paths to copy into a new worktree and the command to run there.'),
   }),
+  z.strictObject({
+    type: z
+      .literal('agent_instructions')
+      .describe(
+        "agent_instructions: replace one agent's instructions; it waits for the user to confirm.",
+      ),
+    agent_id: str.describe('The id from list_agents of the agent whose instructions change.'),
+    to: z
+      .string()
+      .min(1)
+      .max(20000)
+      .describe('The whole new instructions of the agent, up to 20000 characters.'),
+  }),
+  z.strictObject({
+    type: z
+      .literal('playbook')
+      .describe(
+        'playbook: make a stored version of the lead playbook current; it waits for the user to confirm.',
+      ),
+    runtime: str
+      .optional()
+      .describe("The runtime whose playbook changes; absent for the project's default playbook."),
+    to: z.number().int().positive().describe('The stored playbook version to make current.'),
+  }),
 ]);
 const triggerEvent = str
   .optional()
@@ -2314,8 +2367,12 @@ export const inputSchemas = {
   ...agentWakeInputSchemas,
   ...appInputSchemas,
   ...agentInputSchemas,
+  ...settingInputSchemas,
   ...workflowInputSchemas,
   ...playbookInputSchemas,
+  ...milestoneCheckInputSchemas,
+  ...planPauseInputSchemas,
+  ...questionBatchInputSchemas,
   'terminal.open': z.strictObject({
     project_id: z.string(),
     session_id: z.string().optional(),
@@ -2617,6 +2674,11 @@ export const inputSchemas = {
     charter: charter.optional(),
     /** Permission rules whose prompts always reach the user; replaces the current list. */
     must_ask_extra: z.array(str).optional(),
+    /** A reversible lead question takes its recommended answer after_hours after it was asked; null turns it off. */
+    question_defaults: z
+      .strictObject({ after_hours: z.number().int().min(1).max(168) })
+      .nullable()
+      .optional(),
     /** The messages of agents other than the main agent that reach the user directly; replaces the current list. */
     urgent_direct: z.array(z.enum(['main_gate_failed'])).optional(),
     /** Merged into the current path by tier. */
@@ -2655,14 +2717,31 @@ export const inputSchemas = {
       .optional(),
     pinned: z.array(workflowParam).max(7).optional(),
   }),
-  /** A lead's proposal to change the workflow, resting on the retrospectives it names. */
+  /** A lead's proposal to change the workflow, resting on the retrospectives or other records it names; give at least one of the two lists. */
   'improvement.propose': z.strictObject({
     project_id: str,
     retrospective_ids: z
       .array(str)
       .min(2)
       .max(20)
+      .optional()
       .describe('2-20 ids of the retrospectives the change rests on.'),
+    evidence: z
+      .array(
+        z.union([
+          z.strictObject({
+            kind: z
+              .enum(['retrospective', 'signal_issue', 'session', 'gate_run'])
+              .describe('What the id names.'),
+            id: str.describe('The id of that record in this project.'),
+          }),
+          evalReceiptSchema,
+        ]),
+      )
+      .min(2)
+      .max(20)
+      .optional()
+      .describe('2-20 records of any kind the change rests on.'),
     change: improvementChange.describe('The one change to the workflow you propose.'),
   }),
   /** The user's decision on an improvement. */
@@ -2736,6 +2815,12 @@ export const inputSchemas = {
     blocks: z
       .array(planId)
       .describe('Ids of the tasks that must wait for the answer; [] when none.'),
+    reversible: z
+      .boolean()
+      .optional()
+      .describe(
+        'true only when a different answer later costs at most redoing tasks not started; the user may let your recommendation apply after a while.',
+      ),
   }),
   'lead.question.answer': z.strictObject({
     project_id: str,
@@ -2745,11 +2830,13 @@ export const inputSchemas = {
     /** A relayed worker question only: question text to the answer, as approval.respond takes it. */
     answers: z.record(str, str).optional(),
   }),
-  /** The user only; replaces the answer a lead gave a task session's question and tells the lead and that session. */
+  /** The user only; replaces the answer a lead gave a task session's question, or a recommended answer applied at its deadline, and tells the lead and that session. */
   'lead.question.overrule': z.strictObject({
     project_id: str,
     lead_session_id: str.describe('The lead whose plan holds the question.'),
-    question_id: str.describe("A task session's question its lead answered."),
+    question_id: str.describe(
+      "A task session's question its lead answered, or a question answered by its default.",
+    ),
     answer: str.describe("The user's answer, which replaces the lead's."),
   }),
   /** The calling lead's answer to a task session's question on its own plan; the first answer wins. */
@@ -3308,6 +3395,7 @@ export const querySchemas = {
   /** The user only; returns the defaults of the ideas, goals and custom templates a new agent starts from. */
   'agent.templates': z.strictObject({}),
   ...agentWakeQuerySchemas,
+  ...agentLedgerQuerySchemas,
   'project.usage.read': z.strictObject({ project_id: str }),
   'project.review.metrics': z.strictObject({ project_id: str }),
   'extensions.inventory': z.strictObject({ project_id: str, runtime: str }),
@@ -3557,6 +3645,8 @@ export interface ImprovementListItem extends Omit<Improvement, 'trial_evaluation
     status_reason?: 'no_baseline';
     /** Absent while the trial runs and when the user ended it. */
     verdict?: NonNullable<Improvement['trial_evaluation']>['verdict'];
+    /** Absent for a trial ended before the design was recorded. */
+    design?: NonNullable<Improvement['trial_evaluation']>['design'];
     metrics: {
       name: string;
       unit: string;
@@ -3760,6 +3850,10 @@ export interface ProjectSummary {
   done_daily: { date: string; done: number }[];
   /** Newest session last_activity_at, as an ISO time; null without sessions. */
   last_activity_at: string | null;
+  /** The first sentence of the caller's project.brief prose; absent without prose. */
+  brief?: string;
+  /** Absent when nothing waits for the user. */
+  waiting?: ProjectWaiting;
 }
 /** What a brief item links to; a merge is the merged session's id, decided the project's id. */
 export interface ProjectBriefRef {
@@ -3847,6 +3941,8 @@ export type DecisionForUser =
       question: string;
       answer: string;
       citations: NonNullable<NonNullable<BoardPlan['questions']>[number]['citations']>;
+      /** Set on the lead's own question no one answered before its deadline: answer is the lead's recommendation, applied then; citations is empty. */
+      answered_by?: 'default';
       overruled?: { answer: string; at: number };
     }
   /** A decision a personal agent key answered for the user. */
@@ -4479,12 +4575,16 @@ export interface BoardHistory {
     title?: string;
     /** On a replan: the conditions it answers, and the titles of the tasks it added, removed and changed. */
     replan?: {
-      triggers: { event_id: string; milestone_id: string; text: string }[];
+      triggers: ReplanHistoryTrigger[];
       added: string[];
       removed: string[];
       changed: string[];
     };
+    /** On a replan: the lead whose plan changed. */
+    lead_session_id?: string;
   }[];
+  /** Fired re-plan conditions no plan change answered yet, oldest first; absent when none. */
+  pending_replans?: PendingReplan[];
   milestones: {
     id: string;
     title: string;

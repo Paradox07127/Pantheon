@@ -89,6 +89,20 @@ it('reads worse when the user stops more tasks after the change', async () => {
   expect(f.control.changeOutcome(user, f.project.id, eventId).after.user_interventions).toBe(2);
 });
 
+it('gives a setting change the values before and after it, and leaves them out when its event lacks them', async () => {
+  const { f, changePolicy } = await setup();
+  const eventId = changePolicy();
+  f.store.event('workflow.policy_changed', { id: 'policy', revision: 1 }, f.project.id, {
+    param: 'max_parallel',
+    by: 'user',
+  });
+  const [bare, changed] = f.control.changeOutcomes(user, f.project.id);
+  expect(changed).toMatchObject({ event_id: eventId, from: 'auto', to: 'off' });
+  expect(bare).toMatchObject({ param: 'max_parallel' });
+  expect(bare).not.toHaveProperty('from');
+  expect(bare).not.toHaveProperty('to');
+});
+
 it('lists the setting change, agent creation and routine enable newest first', async () => {
   const { f, clock } = await setup();
   f.call('workflow.policy.set', { project_id: f.project.id, improvement_mode: 'off' }, null);

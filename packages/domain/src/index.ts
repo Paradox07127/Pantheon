@@ -25,6 +25,7 @@ export type * from './range-story.js';
 export type * from './trace.js';
 export type * from './task-thread.js';
 export type * from './playbook.js';
+export type * from './setting-proposal.js';
 import { createHash, randomUUID } from 'node:crypto';
 
 export const id = (): string => randomUUID();
@@ -430,6 +431,7 @@ export interface NeedsYouItem {
       | 'workflow_definitions'
       | 'workflow_step_runs'
       | 'agent_proposals'
+      | 'setting_proposals'
       | 'memory_records';
     id: string;
     revision: number;
@@ -445,11 +447,13 @@ export interface NeedsYouItem {
     | 'improvement.candidate'
     | 'board.plan.proposal'
     | 'board.lane.approval'
+    | 'board.plan.reassessment'
     | 'project.over_budget'
     | 'lead.question'
     | 'workflow.approval'
     | 'external.approval'
     | 'agent.proposal'
+    | 'setting.proposal'
     | 'memory.decision_budget';
   project_id: string;
   /**
@@ -497,12 +501,14 @@ export interface NeedsYouItem {
     | 'improvement_awaiting_decision'
     | 'plan_proposal_awaiting_decision'
     | 'lane_plan_awaiting_approval'
+    | 'plan_reassessment_ready'
     | 'project_over_budget'
     | 'lead_question'
     | 'task_blocked'
     | 'workflow_approval'
     | 'external_approval'
     | 'agent_proposal_awaiting_decision'
+    | 'setting_proposal_awaiting_decision'
     | 'plan_decisions_over_budget';
   /** What the user decides. */
   decision:
@@ -531,6 +537,10 @@ export interface NeedsYouItem {
   lane_title?: string;
   step_title?: string;
   question?: LeadQuestion;
+  /** The headline of the plan a `lead.question` item belongs to; session_id is its lead. */
+  plan_title?: string;
+  /** When the recommended answer of a `lead.question` item applies unless the user answers first, in Unix milliseconds. */
+  default_at?: number;
   blocked?: LeadNote;
   /** When a session that waits for its used-up usage limit resumes, in Unix milliseconds. */
   resets_at?: number;
@@ -550,6 +560,8 @@ export interface NeedsYouItem {
   failure_class?: GateFailureClass;
   /** The questions of a pending AskUserQuestion request, as it asked them. */
   questions?: ApprovalQuestion[];
+  /** The lead's re-assessment of a paused plan; only a `board.plan.reassessment` item has it. */
+  reassessment?: { done: string; blocked: string; change: string; at: number };
   /** On a lane waiting for plan approval: whether the automatic plan review of its tasks still runs. */
   plan_review_running?: boolean;
   /** The agent a pending proposal creates or changes, and how long it has waited in milliseconds. */
@@ -560,6 +572,11 @@ export interface NeedsYouItem {
     agent_id?: string;
     waited_ms: number;
   };
+  /** The setting a pending proposal changes, from its current to the proposed value, and the user's words it quotes. */
+  setting_proposal?: Pick<
+    import('./setting-proposal.js').SettingProposal,
+    'id' | 'param' | 'current' | 'value' | 'quote'
+  > & { waited_ms: number };
   binding?: {
     action?: string;
     input_hash?: string;

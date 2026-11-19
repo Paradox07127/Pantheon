@@ -142,6 +142,8 @@ export interface WorkflowPolicy extends Entity {
   charter?: Partial<Record<CharterPower, CharterMode>>;
   /** Permission rules, in the syntax of Project.permission_rules, whose prompts always reach the user beside the built-in must-ask kinds. */
   must_ask_extra?: string[];
+  /** When set, a reversible question the lead asked takes its recommended answer after_hours after it was asked unless the user answers first; absent is off. */
+  question_defaults?: { after_hours: number };
   /** The messages of agents other than the main agent that reach the user directly: main_gate_failed cites a check that failed on the default branch. */
   urgent_direct?: 'main_gate_failed'[];
   /** Whether the lead makes a task of each tier itself or dispatches a task session, reviewed or not; an absent tier takes its default. */
@@ -247,12 +249,27 @@ export interface Improvement extends Entity {
         /** Absent until the change is applied. */
         from?: Project['worktree'];
         to: Project['worktree'];
+      }
+    | {
+        type: 'agent_instructions';
+        agent_id: string;
+        /** Absent until the change is applied, and when the agent had no instructions. */
+        from?: string;
+        to: string;
+      }
+    | {
+        type: 'playbook';
+        /** Absent for the project's default playbook. */
+        runtime?: string;
+        /** The version current before; absent until the change is applied. */
+        from?: number;
+        /** The stored version to make current. */
+        to: number;
       };
   /** What the change rests on besides the retrospectives; absent when nothing else. */
-  evidence?: {
-    kind: 'retrospective' | 'signal_issue' | 'session' | 'gate_run' | 'eval_receipt';
-    id: string;
-  }[];
+  evidence?: (
+    { kind: 'retrospective' | 'signal_issue' | 'session' | 'gate_run'; id: string } | EvalReceipt
+  )[];
   /** Unix epoch milliseconds. */
   proposed_at: number;
   /** Unix epoch milliseconds; absent until its trial starts. */
@@ -266,9 +283,25 @@ export interface Improvement extends Entity {
     no_baseline: boolean;
     /** How the evaluator ended the trial; absent when the user ended it. */
     verdict?: 'better' | 'worse' | 'not_enough_evidence';
+    /** interleaved: the baseline is the trial's tasks without the change; absent on trials ended before it was recorded. */
+    design?: 'interleaved' | 'before_after';
+    /** Input tokens of the arms paired task by task, once each arm has its tasks; interleaved trials only. */
+    paired_cost?: {
+      pairs: number;
+      tasks: number;
+      change: number | null;
+      interval: [number, number] | null;
+    };
   };
   /** Unix epoch milliseconds when it became active, reverted or rejected; absent before. */
   decided_at?: number;
+}
+/** An eval run's runs.jsonl, its sha256, and a verdict of its report as the report gives it. */
+export interface EvalReceipt {
+  kind: 'eval_receipt';
+  path: string;
+  sha256: string;
+  verdict: string;
 }
 /** How a learned change takes effect: at once, on trial, or only when the user confirms it. */
 export type LearnedGrade = 'auto' | 'trial' | 'confirm';

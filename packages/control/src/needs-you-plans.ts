@@ -87,6 +87,25 @@ export function planItems(
         next_step: NEXT_STEP.lane_plan_awaiting_approval,
       });
     }
+    if (plan.paused && plan.reassessment)
+      items.push({
+        source: { table: 'board_plans', id: plan.id, revision: plan.revision },
+        kind: 'board.plan.reassessment',
+        project_id: plan.project_id,
+        session_id: plan.id,
+        status: 'paused',
+        created_at: plan.reassessment.at,
+        reason: 'plan_reassessment_ready',
+        decision: 'plan_change',
+        primary: 'board.plan.resume',
+        actions: [
+          action('board.plan.resume', () =>
+            requireThat(principal.role === 'user', 'permission_denied', 'Only user'),
+          ),
+        ],
+        reassessment: plan.reassessment,
+        next_step: NEXT_STEP.plan_reassessment_ready,
+      });
     for (const [subject, hold] of Object.entries(plan.external_holds ?? {})) {
       const title = ctx.store
         .list<ExternalEvent>('external_events')
@@ -126,6 +145,8 @@ export function planItems(
         decision: 'question',
         primary: 'lead.question.answer',
         question,
+        plan_title: plan.headline,
+        ...(question.default_after_ms && { default_at: question.at + question.default_after_ms }),
         actions: [
           action('lead.question.answer', () => {
             projectAccess(ctx, principal, plan.project_id, 'lead.question.answer');

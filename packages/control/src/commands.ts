@@ -9,6 +9,7 @@ import type { Handlers, Preparers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
 import { projectGoalHandlers } from './project-goals.js';
 import { projectBoardHandlers } from './project-board.js';
+import { planPauseHandlers } from './plan-pause.js';
 import { projectHandlers, projectPreparers } from './project.js';
 import { prepareResolve, sessionHandlers } from './session.js';
 import { workbenchSessionHandlers } from './workbench-session.js';
@@ -22,6 +23,7 @@ import { workflowEngineHandlers } from './workflow-engine.js';
 import { routingHandlers } from './routing-table.js';
 import { workflowPolicyHandlers } from './workflow-policy.js';
 import { playbookHandlers } from './playbooks.js';
+import { milestoneCheckHandlers } from './milestone-checks.js';
 import { improvementHandlers, improvementPreparers } from './improvements.js';
 import { inPlaceSessionHandlers } from './in-place-session.js';
 import { visualHandlers } from './visual.js';
@@ -37,6 +39,7 @@ import { agentWakeHandlers } from './agent-wakes.js';
 import { agentAppToolPreparers } from './agent-app-tools.js';
 import { agentPromptPreparers } from './agent-prompts.js';
 import { agentProposalHandlers, agentProposalPreparers } from './agent-proposals.js';
+import { settingProposalHandlers } from './setting-proposals.js';
 import { signalHandlers, signalPreparers } from './signals.js';
 import { projectBriefHandlers } from './project-brief.js';
 import { briefProseHandlers } from './project-brief-prose.js';
@@ -48,6 +51,7 @@ export const handlers: Handlers = {
   ...projectFactHandlers,
   ...projectGoalHandlers,
   ...projectBoardHandlers,
+  ...planPauseHandlers,
   ...baselineHandlers,
   ...environmentCheckHandlers,
   ...changeStoryHandlers,
@@ -63,6 +67,7 @@ export const handlers: Handlers = {
   ...leadInboxHandlers,
   ...workflowPolicyHandlers,
   ...playbookHandlers,
+  ...milestoneCheckHandlers,
   ...routingHandlers,
   ...workflowEngineHandlers,
   ...improvementHandlers,
@@ -75,6 +80,7 @@ export const handlers: Handlers = {
   ...agentAlwaysOnHandlers,
   ...agentWakeHandlers,
   ...agentProposalHandlers,
+  ...settingProposalHandlers,
   ...signalHandlers,
   ...projectBriefHandlers,
   ...briefProseHandlers,

@@ -1,5 +1,8 @@
+import { playbookVersions } from './playbooks.mjs';
+
 // The conditions an eval run compares. A dispatch condition runs a scripted lead's one-task plan
 // with these before_merge steps; the task's own acceptance command runs in every condition.
+// A bare condition runs one session of the runtime on the goal alone, outside Pantheon.
 export const conditionCatalog = {
   default: { mode: 'dispatch', lead: 'scripted', before_merge: [] },
   acceptance_only: { mode: 'dispatch', lead: 'scripted', before_merge: [] },
@@ -15,6 +18,15 @@ export const conditionCatalog = {
       },
     ],
   },
+  dispatch: { mode: 'dispatch', lead: 'scripted', before_merge: [] },
+  bare: { mode: 'bare' },
+  // A playbook acts on a lead that plans, so its conditions have a real lead.
+  ...Object.fromEntries(
+    Object.entries(playbookVersions).map(([version, sections]) => [
+      `playbook=${version}`,
+      { mode: 'dispatch', lead: 'real', before_merge: [], playbook: { version, sections } },
+    ]),
+  ),
 };
 
 /** The named conditions; an unknown name throws with the list of known names. */

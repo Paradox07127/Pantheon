@@ -136,5 +136,92 @@ it('pages the replay by sequence', async () => {
   expect(first.frames).toEqual(whole.slice(0, 3));
   expect(first.next_after).toBe(whole[2]!.sequence);
   const rest = f.control.planReplay(user, lead.id, first.next_after!, 100);
-  expect(rest).toEqual({ frames: whole.slice(3), next_after: null });
+  expect(rest).toEqual({
+    frames: whole.slice(3),
+    next_after: null,
+    total: whole.length,
+    last_at: whole.at(-1)!.at,
+  });
+});
+
+it('pages back from a sequence and counts every frame of the plan on each page', async () => {
+  const { f, lead } = await replayedPlan();
+  const whole = f.control.planReplay(user, lead.id, 0, 100).frames;
+  const page = f.control.planReplay(user, lead.id, 0, 2, whole[5]!.sequence);
+  expect(page).toEqual({
+    frames: whole.slice(3, 5),
+    next_after: whole[4]!.sequence,
+    total: 7,
+    last_at: whole[6]!.at,
+  });
+  expect(f.control.planReplay(user, lead.id, 0, 2, whole[1]!.sequence)).toMatchObject({
+    frames: whole.slice(0, 1),
+  });
+});
+
+it('marks a re-plan, the decision on a proposal and the session of a dispatch and a merge', async () => {
+  const { f, lead } = await replayedPlan();
+  let plan = f.store.must<BoardPlan>('board_plans', lead.id);
+  const fired = f.store.event('board.replan_triggered', plan, f.project.id, {
+    milestone_id: 'milestone-row',
+    trigger: { type: 'handbacks', count: 2 },
+    task_id: 'exports',
+    generation: 1,
+    value: 2,
+  });
+  f.call(
+    'board.plan.edit',
+    {
+      project_id: f.project.id,
+      base_version: plan.plan_version,
+      trigger_event: fired.event_id,
+      ops: [{ type: 'set_task', task_id: 'docs', patch: { title: 'Docs v2' } }],
+    },
+    null,
+    {
+      id: `session:${lead.id}`,
+      role: 'lead',
+      project_id: f.project.id,
+      session_id: lead.id,
+      expires_at: f.store.now() + 60000,
+    },
+  );
+  plan = f.store.must<BoardPlan>('board_plans', lead.id);
+  f.store.event('board.plan_proposal_resolved', plan, f.project.id, {
+    proposal_id: 'split',
+    ops: [],
+    reason: 'Split the exports',
+    base_version: plan.plan_version,
+    created_at: f.store.now(),
+    status: 'rejected',
+  });
+  const frames = f.control.planReplay(user, lead.id, 0, 100).frames;
+  expect(
+    frames.map(({ kind, text, task_id, session_id, replan, decision }) => ({
+      kind,
+      text,
+      task_id,
+      session_id,
+      replan,
+      decision,
+    })),
+  ).toEqual([
+    expect.objectContaining({ kind: 'board.plan_updated', replan: undefined }),
+    expect.objectContaining({ kind: 'lead.question_asked' }),
+    expect.objectContaining({ kind: 'task.dispatched', session_id: 'exports-part-one' }),
+    expect.objectContaining({ kind: 'session.merged', session_id: 'exports-part-one' }),
+    expect.objectContaining({ kind: 'board.plan_updated', replan: undefined }),
+    expect.objectContaining({ kind: 'session.merged', session_id: 'exports-part-two' }),
+    expect.objectContaining({ kind: 'milestone.accepted' }),
+    expect.objectContaining({
+      kind: 'board.replan_triggered',
+      text: 'task exports was handed back 2 times',
+    }),
+    expect.objectContaining({ kind: 'board.plan_updated', replan: true }),
+    expect.objectContaining({
+      kind: 'board.plan_proposal_resolved',
+      text: 'Split the exports',
+      decision: 'rejected',
+    }),
+  ]);
 });

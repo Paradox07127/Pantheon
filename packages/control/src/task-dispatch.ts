@@ -439,7 +439,7 @@ export function dispatchQueue(
       },
       sessionLimit = deviceId === 'local' ? localLimit : device?.max_sessions;
     const wait: DispatchWait | undefined =
-      (policy.dispatch_paused ? 'paused' : undefined) ??
+      (policy.dispatch_paused || plan.paused ? 'paused' : undefined) ??
       (externalHeld(plan, task) ? 'approval' : undefined) ??
       (laneHeld(plan, task.lane) ? 'plan_approval' : undefined) ??
       taskWaits(ctx, plan, task, held)?.wait ??
@@ -1153,6 +1153,11 @@ function claimDirectTask(
     !workflowPolicy(ctx, plan.project_id).dispatch_paused,
     'resource_busy',
     'Task dispatch is paused; only the user can resume it in settings. Tell the user and wait',
+  );
+  requireThat(
+    !plan.paused,
+    'resource_busy',
+    'The user paused your plan; write a re-assessment with reassess and wait for the user to resume it',
   );
   requireThat(
     taskIds.length === 1,

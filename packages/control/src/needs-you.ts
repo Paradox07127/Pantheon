@@ -28,6 +28,7 @@ import {
   improvementItems,
   memoryBudgetItems,
   projectBudgetItems,
+  settingProposalItems,
   stepRunItems,
 } from './needs-you-workflow.js';
 import { taskRung, taskRungFacts } from './task-rung.js';
@@ -65,7 +66,9 @@ export const NEXT_STEP: Record<
   | 'improvement_awaiting_decision'
   | 'plan_proposal_awaiting_decision'
   | 'lane_plan_awaiting_approval'
-  | 'agent_proposal_awaiting_decision',
+  | 'plan_reassessment_ready'
+  | 'agent_proposal_awaiting_decision'
+  | 'setting_proposal_awaiting_decision',
   string
 > = {
   merge_stuck: 'The user checks the stuck merge and cancels it if needed.',
@@ -106,8 +109,12 @@ export const NEXT_STEP: Record<
     'The plan proposal awaits the user; the user accepts it, changes its ops before accepting, or rejects it.',
   lane_plan_awaiting_approval:
     'Approve the plan to let its tasks start, or tell the lead what to change.',
+  plan_reassessment_ready:
+    'The lead re-assessed the paused plan; read what it would change, tell it what to do, and resume the plan to let its tasks start.',
   agent_proposal_awaiting_decision:
     'An agent proposes to create or change an agent; the user creates it, edits its fields before creating it, or declines it.',
+  setting_proposal_awaiting_decision:
+    "The Assistant proposes a change of a project setting, quoting the user's words; the user approves the change or declines it.",
   background_task_long:
     'A background command or agent of the session has run for 30 minutes; the user stops it, or waits for it to end.',
 };
@@ -373,6 +380,7 @@ export function needsYou(
       ...definitionTrialItems(ctx, scope),
       ...improvementItems(ctx, scope),
       ...agentProposalItems(ctx, scope),
+      ...settingProposalItems(ctx, scope),
       ...projectBudgetItems(ctx, scope),
       ...memoryBudgetItems(ctx, scope),
     );
@@ -389,17 +397,28 @@ export function needsYou(
         })
       : items;
   // Most tasks blocked first, then the longest waiting.
+  const sorted = shown
+    .map((item) => {
+      const rung = rungOf(item);
+      return { ...item, ...(rung ? { rung } : {}), blocks: blocked(item) };
+    })
+    .sort(
+      (a, b) =>
+        b.blocks - a.blocks ||
+        a.created_at - b.created_at ||
+        a.source.id.localeCompare(b.source.id),
+    );
+  // A plan's questions stay together, at the place of the one that blocks most.
+  const questionsOf = new Map<string, NeedsYouItem[]>();
+  for (const item of sorted)
+    if (item.kind === 'lead.question')
+      questionsOf.set(item.source.id, [...(questionsOf.get(item.source.id) ?? []), item]);
   return {
-    items: shown
-      .map((item) => {
-        const rung = rungOf(item);
-        return { ...item, ...(rung ? { rung } : {}), blocks: blocked(item) };
-      })
-      .sort(
-        (a, b) =>
-          b.blocks - a.blocks ||
-          a.created_at - b.created_at ||
-          a.source.id.localeCompare(b.source.id),
-      ),
+    items: sorted.flatMap((item) => {
+      if (item.kind !== 'lead.question') return [item];
+      const group = questionsOf.get(item.source.id);
+      questionsOf.delete(item.source.id);
+      return group ?? [];
+    }),
   };
 }

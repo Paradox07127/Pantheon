@@ -96,12 +96,14 @@ it('composes the lead prompt from the text in code while the project stores no p
     project_id: f.project.id,
     runtime: 'codex',
     version: 0,
+    versions: [],
     source: 'code',
     sections: {
       before_you_plan: expect.stringMatching(/^- Call project_read, then read the code/),
       routing: expect.stringMatching(/^- Give every task its kind, a domain and a tier/),
       replies: expect.stringMatching(/^- After a turn that changed the plan/),
     },
+    built_in: read.sections,
   });
   expect(LEAD_INSTRUCTIONS).toContain(
     section('Before you plan', read.sections.before_you_plan, 'The plan'),
@@ -124,8 +126,10 @@ it('changes only the behaviour sections of a codex lead when the user stores a c
     project_id: f.project.id,
     runtime: 'codex',
     version: 1,
+    versions: [1],
     source: 'runtime',
     sections: codexSections,
+    built_in: code,
   });
   const composed = LEAD_INSTRUCTIONS.replace(
     code.before_you_plan,
@@ -153,8 +157,10 @@ it('gives a lead the project default playbook when its runtime has none of its o
     project_id: f.project.id,
     runtime: 'claude',
     version: 0,
+    versions: [],
     source: 'default',
     sections: defaultSections,
+    built_in: expect.objectContaining({ routing: expect.any(String) }),
   });
   expect(get(f)).toMatchObject({ version: 1, source: 'default', sections: defaultSections });
 });
@@ -190,6 +196,72 @@ it('stores each save as a new version and applies the version another module mak
   const [stored] = f.store.list<Playbook>('playbooks');
   expect(Object.keys(stored!.versions)).toEqual(['1', '2', '3']);
   expect(stored!.versions[2]).toEqual(second);
+});
+
+it('reads a stored version by its number and lists the stored numbers with the built-in text', async () => {
+  const f = await setup();
+  const code = get(f).sections;
+  const second = { ...codexSections, routing: '- Send every task to codex with medium effort.' };
+  set(f, { runtime: 'codex', base_version: 0, sections: codexSections });
+  set(f, { runtime: 'codex', base_version: 1, sections: second });
+  const read = (version: number) =>
+    f.call<PlaybookRead>('playbook.get', { project_id: f.project.id, runtime: 'codex', version });
+  expect(get(f, 'codex')).toMatchObject({ version: 2, versions: [1, 2], built_in: code });
+  expect(read(1)).toMatchObject({
+    version: 2,
+    versions: [1, 2],
+    source: 'runtime',
+    sections: codexSections,
+  });
+  expect(() => read(3)).toThrow(expect.objectContaining({ code: 'not_found' }));
+});
+
+it('removes a stored playbook so its leads fall back to the project default and then the code', async () => {
+  const f = await setup();
+  const code = get(f).sections;
+  const remove = (input: Record<string, unknown>, principal?: Principal) =>
+    f.call<PlaybookRead>(
+      'playbook.remove',
+      { project_id: f.project.id, ...input },
+      null,
+      principal,
+    );
+  set(f, { base_version: 0, sections: defaultSections });
+  set(f, { runtime: 'codex', base_version: 0, sections: codexSections });
+  expect(() => remove({ runtime: 'codex', base_version: 0 })).toThrow(
+    expect.objectContaining({ code: 'version_conflict' }),
+  );
+  const session = leadSession(f, 'codex');
+  const lead: Principal = {
+    id: `session:${session.id}`,
+    role: 'lead',
+    project_id: f.project.id,
+    session_id: session.id,
+    expires_at: f.store.now() + 60_000,
+  };
+  expect(() => remove({ runtime: 'codex', base_version: 1 }, lead)).toThrow(
+    expect.objectContaining({ code: 'permission_denied' }),
+  );
+
+  expect(remove({ runtime: 'codex', base_version: 1 })).toMatchObject({
+    version: 0,
+    versions: [],
+    source: 'default',
+    sections: defaultSections,
+  });
+  expect(leadPrompt(f, 'codex')).toContain(
+    section('Routing', defaultSections.routing, 'Dispatching'),
+  );
+  expect(remove({ base_version: 1 })).toMatchObject({ version: 0, source: 'code', sections: code });
+  expect(get(f, 'codex')).toMatchObject({ source: 'code', sections: code });
+  expect(f.store.list<Playbook>('playbooks')).toEqual([]);
+  expect(
+    f.store
+      .kindEvents(f.project.id, ['playbook.changed'])
+      .slice(-2)
+      .map((event) => event.payload),
+  ).toEqual([{ runtime: 'codex', version: 0 }, { version: 0 }]);
+  expect(() => remove({ base_version: 0 })).toThrow(expect.objectContaining({ code: 'not_found' }));
 });
 
 it('refuses a playbook with a missing or empty section or a line that opens a section', async () => {

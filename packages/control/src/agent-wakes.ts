@@ -16,7 +16,7 @@ import { openOf } from './resident.js';
 type Span = { turn: SessionTurn; at: number; start: number | null; end: number | null };
 
 /** The agent's wake turns with when each was queued and the event span it ran in, newest first. */
-function wakeSpans(ctx: ControlContext, profile: AgentProfile): Span[] {
+export function wakeSpans(ctx: ControlContext, profile: AgentProfile): Span[] {
   const sessions = new Set(
     ctx.store
       .list<Session>('sessions')
@@ -37,26 +37,28 @@ function wakeSpans(ctx: ControlContext, profile: AgentProfile): Span[] {
 }
 
 /** The wake with what the agent did while its turn ran. */
-function wakeOf(ctx: ControlContext, { turn, at, start, end }: Span): AgentWake {
-  const ids = (sql: string, sessionId: string) =>
+export function wakeOf(ctx: ControlContext, { turn, at, start, end }: Span): AgentWake {
+  const ids = <Row = { id: string; text: string }>(sql: string, sessionId: string) =>
     start === null
       ? []
-      : (ctx.store.statement(sql).all(sessionId, start, end ?? Number.MAX_SAFE_INTEGER) as {
-          id: string;
-        }[]);
+      : (ctx.store.statement(sql).all(sessionId, start, end ?? Number.MAX_SAFE_INTEGER) as Row[]);
+  const brief = ({ id, text }: { id: string; text: string }) => ({
+    id,
+    text: text.split('\n')[0]!.slice(0, 140),
+  });
   const messages = ids(
-      "SELECT payload ->> '$.id' AS id FROM events WHERE kind IN ('agent_message.created','agent_message.routed') AND payload ->> '$.session_id'=? AND sequence>? AND sequence<? ORDER BY sequence",
+      "SELECT payload ->> '$.id' AS id, payload ->> '$.text' AS text FROM events WHERE kind IN ('agent_message.created','agent_message.routed') AND payload ->> '$.session_id'=? AND sequence>? AND sequence<? ORDER BY sequence",
       turn.session_id,
-    ).map((row) => row.id),
+    ).map(brief),
     questions = ids(
-      "SELECT payload ->> '$.id' AS id FROM events WHERE aggregate_id=? AND kind='lead.question_asked' AND sequence>? AND sequence<? ORDER BY sequence",
+      "SELECT payload ->> '$.id' AS id, payload ->> '$.question' AS text FROM events WHERE aggregate_id=? AND kind='lead.question_asked' AND sequence>? AND sequence<? ORDER BY sequence",
       turn.session_id,
-    ).map((row) => row.id),
+    ).map(brief),
     // An event is the agent's own when the inbox holds its command under the session's principal.
-    actions = ids(
-      "SELECT event_id AS id FROM events WHERE aggregate_id=? AND kind IN ('board.plan_updated','board.plan_proposed','task.start_requested','task.stop_requested') AND sequence>? AND sequence<? AND EXISTS(SELECT 1 FROM inbox WHERE source_key='session:'||events.aggregate_id||':command:'||events.causation_id)",
+    actions = ids<{ started: number }>(
+      "SELECT CASE WHEN kind='task.start_requested' THEN json_array_length(payload, '$.task_ids') ELSE 0 END AS started FROM events WHERE aggregate_id=? AND kind IN ('board.plan_updated','board.plan_proposed','task.start_requested','task.stop_requested') AND sequence>? AND sequence<? AND EXISTS(SELECT 1 FROM inbox WHERE source_key='session:'||events.aggregate_id||':command:'||events.causation_id)",
       turn.session_id,
-    ).length;
+    );
   return {
     turn_id: turn.id,
     session_id: turn.session_id,
@@ -69,12 +71,15 @@ function wakeOf(ctx: ControlContext, { turn, at, start, end }: Span): AgentWake 
       ? 'asked'
       : messages.length
         ? 'told_user'
-        : actions
+        : actions.length
           ? 'acted'
           : 'nothing',
-    message_ids: messages,
-    question_ids: questions,
-    actions,
+    message_ids: messages.map((message) => message.id),
+    question_ids: questions.map((question) => question.id),
+    actions: actions.length,
+    messages,
+    questions,
+    tasks_started: actions.reduce((sum, action) => sum + action.started, 0),
   };
 }
 
@@ -119,6 +124,7 @@ export function agentRoutines(
         return {
           agent_id: agent.id,
           agent_name: agent.name,
+          agent_revision: agent.revision,
           routine,
           ...(next !== undefined && { next_run_at: next }),
           ...(wake && {

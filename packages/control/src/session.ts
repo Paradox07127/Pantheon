@@ -1712,6 +1712,9 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
                             .map((root) => path.join(root, 'runtime-analysis')),
                         ]
                       : otherReviewers,
+                    hiddenChecksDirs: reviewsRoots(ctx).map((reviews) =>
+                      path.join(path.dirname(reviews), 'checks'),
+                    ),
                   }).map(({ path, deny }) => ({ path, deny })),
                 },
               }

@@ -195,6 +195,12 @@ export const appHelpGroups: AppHelpGroup[] = [
         tool: 'the user does this in the app',
       },
       {
+        type: 'board.plan.pause',
+        about:
+          "Holds the new task sessions of a lead's plan while its running sessions go on, and wakes the lead to write a re-assessment; the user only.",
+        tool: 'the user does this in the app',
+      },
+      {
         type: 'board.plan.proposal.resolve',
         about: 'Applies or rejects a pending lead proposal; the user only.',
         tool: 'the user does this in the app',
@@ -208,6 +214,18 @@ export const appHelpGroups: AppHelpGroup[] = [
         type: 'board.plan.propose',
         about: "Holds a change to the calling lead's plan for the user's decision.",
         tool: 'propose_board',
+      },
+      {
+        type: 'board.plan.reassess',
+        about:
+          "Stores the calling lead's re-assessment of its paused plan, replacing an earlier one, for the user to read before resuming it; the lead only.",
+        tool: 'reassess',
+      },
+      {
+        type: 'board.plan.resume',
+        about:
+          'Lets the held tasks of a paused plan start again and tells the lead; the user only.',
+        tool: 'the user does this in the app',
       },
       { type: 'board.plan.update', tool: 'update_board' },
       { type: 'board.sync', tool: 'sync_board' },
@@ -308,7 +326,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'improvement',
     about:
-      "The user's decision on an improvement; A lead's proposal to change the workflow, resting on the retrospectives it names",
+      "The user's decision on an improvement; A lead's proposal to change the workflow, resting on the retrospectives or other records it names; give at least one of the two lists",
     commands: [
       {
         type: 'improvement.decide',
@@ -317,7 +335,8 @@ export const appHelpGroups: AppHelpGroup[] = [
       },
       {
         type: 'improvement.propose',
-        about: "A lead's proposal to change the workflow, resting on the retrospectives it names.",
+        about:
+          "A lead's proposal to change the workflow, resting on the retrospectives or other records it names; give at least one of the two lists.",
         tool: 'propose_improvement',
       },
     ],
@@ -325,7 +344,7 @@ export const appHelpGroups: AppHelpGroup[] = [
   {
     group: 'lead',
     about:
-      "Reads one note of the calling lead's plan in full, by the id its digest names; read-only; The user only; replaces the answer a lead gave a task session's question and tells the lead and that session",
+      "Reads one note of the calling lead's plan in full, by the id its digest names; read-only; The user only; drops the deadline of an open question, so its recommended answer never applies on its own",
     commands: [
       { type: 'lead.ask', tool: 'ask_user' },
       {
@@ -336,9 +355,21 @@ export const appHelpGroups: AppHelpGroup[] = [
       },
       { type: 'lead.question.answer', tool: 'the user does this in the app' },
       {
+        type: 'lead.question.keep_open',
+        about:
+          'The user only; drops the deadline of an open question, so its recommended answer never applies on its own.',
+        tool: 'the user does this in the app',
+      },
+      {
         type: 'lead.question.overrule',
         about:
-          "The user only; replaces the answer a lead gave a task session's question and tells the lead and that session.",
+          "The user only; replaces the answer a lead gave a task session's question, or a recommended answer applied at its deadline, and tells the lead and that session.",
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'lead.questions.answer_batch',
+        about:
+          "The user only; answers several open questions of one lead's plan, each as its own answer, and wakes the lead once. Refused as a whole when any question is missing or already answered.",
         tool: 'the user does this in the app',
       },
       {
@@ -386,9 +417,22 @@ export const appHelpGroups: AppHelpGroup[] = [
   },
   {
     group: 'milestone',
-    about: '',
+    about:
+      'The user only; returns HiddenChecksRead, the checks only milestone verification runs, for the project',
     commands: [
       { type: 'milestone.accept', tool: 'milestone_accept' },
+      {
+        type: 'milestone.checks.get',
+        about:
+          'The user only; returns HiddenChecksRead, the checks only milestone verification runs, for the project.',
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'milestone.checks.set',
+        about:
+          "The user only; replaces the project's hidden checks, which milestone verification runs in the clone after the gate and the acceptance; the lead sees only their names, exit codes and last output lines; returns HiddenChecksRead.",
+        tool: 'the user does this in the app',
+      },
       { type: 'milestone.create', tool: 'the user does this in the app' },
       { type: 'milestone.revise', tool: 'the user does this in the app' },
     ],
@@ -424,13 +468,18 @@ export const appHelpGroups: AppHelpGroup[] = [
   },
   {
     group: 'playbook',
-    about:
-      "The user only; returns PlaybookRead for the project's playbook for runtime, or its default playbook without runtime",
+    about: '',
     commands: [
       {
         type: 'playbook.get',
         about:
-          "The user only; returns PlaybookRead for the project's playbook for runtime, or its default playbook without runtime.",
+          "The user only; returns PlaybookRead for the project's playbook for runtime, or its default playbook without runtime; with version, its sections are that stored version's, not_found when it is not stored.",
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'playbook.remove',
+        about:
+          "The user only; deletes the project's stored playbook for runtime, or its default playbook without runtime, so its leads fall back to the project default or the code; returns PlaybookRead.",
         tool: 'the user does this in the app',
       },
       {
@@ -718,6 +767,25 @@ export const appHelpGroups: AppHelpGroup[] = [
       },
       { type: 'session.steer', tool: 'the user does this in the app' },
       { type: 'session.unarchive', tool: 'the user does this in the app' },
+    ],
+  },
+  {
+    group: 'setting',
+    about:
+      "the user only; puts one project setting change, with the user's words it rests on, on a card the user decides",
+    commands: [
+      {
+        type: 'setting.proposal.resolve',
+        about:
+          'SettingProposal; the user only. approve applies the setting as the user would change it, decline turns it down; the Assistant is told either way.',
+        tool: 'the user does this in the app',
+      },
+      {
+        type: 'setting.propose',
+        about:
+          "SettingProposal; puts one project setting change, with the user's words it rests on, on a card the user decides. The Assistant only.",
+        tool: 'propose_setting',
+      },
     ],
   },
   {

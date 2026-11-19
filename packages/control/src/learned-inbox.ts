@@ -1,9 +1,11 @@
 import type {
   AgentProfile,
   AgentProposal,
+  BoardPlan,
   MemoryRecord,
   Principal,
   Project,
+  Retrospective,
   Session,
   StoredWorkflowDefinition,
 } from '@pantheon/domain';
@@ -44,6 +46,15 @@ export function learnedList(
     items.push({
       kind: change.type,
       id: row.id,
+      ...((change.type === 'policy_change' && { title: change.param }) ||
+        (change.type === 'experience' && {
+          title: change.procedure.split(/(?<=[.!?])\s/)[0]!,
+        }) ||
+        (change.type === 'gate_command' && { title: change.root }) ||
+        (change.type === 'agent_instructions' && {
+          title: ctx.store.get<AgentProfile>('agents', change.agent_id)?.name,
+        }) ||
+        (change.type === 'playbook' && { title: change.runtime ?? 'default' })),
       grade: row.grade,
       status: row.status,
       group:
@@ -63,10 +74,15 @@ export function learnedList(
           : { from: text(change.from), to: text(change.to) },
       evidence: [
         ...row.retrospective_ids.map((id) => ({ kind: 'retrospective', id })),
-        ...(row.evidence ?? []),
+        ...(row.evidence ?? []).map((entry) =>
+          entry.kind === 'eval_receipt'
+            ? { kind: entry.kind, id: entry.path, title: entry.verdict }
+            : entry,
+        ),
       ],
       ...(row.trial?.verdict && { verdict: row.trial.verdict }),
       ...(row.trial && { n: row.trial.tasks_seen }),
+      ...(row.status === 'trial' && row.trial && { tasks_required: row.trial.tasks_required }),
       actions:
         row.status === 'candidate'
           ? decide('confirm', 'reject')
@@ -81,15 +97,16 @@ export function learnedList(
     if (proposal.project_id !== projectId || !proposal.agent_id) continue;
     const fields: Record<string, unknown> = { ...proposal.fields, ...proposal.edited_fields };
     const names = Object.keys(fields);
-    const target = ctx.store.must<AgentProfile>('agents', proposal.agent_id) as unknown as Record<
-      string,
-      unknown
-    >;
+    const target = ctx.store.get<AgentProfile>('agents', proposal.agent_id) as unknown as
+      Record<string, unknown> | undefined;
+    if (!target) continue;
     const shown = (of: Record<string, unknown>) =>
       text(names.length === 1 ? of[names[0]!] : Object.fromEntries(names.map((n) => [n, of[n]])));
     items.push({
-      kind: 'agent_change',
+      kind:
+        names.length === 1 && names[0] === 'instructions' ? 'agent_instructions' : 'agent_change',
       id: proposal.id,
+      title: target.name as string,
       grade: 'confirm',
       status: proposal.state,
       group:
@@ -129,6 +146,7 @@ export function learnedList(
       },
       evidence: [],
       n: row.trial.done,
+      ...(!done && { tasks_required: row.trial.tasks }),
       actions: done
         ? (['keep', 'revert'] as const).map((decision) => ({
             command: 'workflow.definition.trial.decide',
@@ -155,6 +173,7 @@ export function learnedList(
     items.push({
       kind: 'memory_note',
       id: r.id,
+      title: r.title ?? r.key,
       grade: 'auto',
       status: r.state,
       group: memoryGroup[r.state],
@@ -172,6 +191,7 @@ export function learnedList(
     items.push({
       kind: 'runtime_review',
       id: r.id,
+      title: r.title ?? r.key,
       grade: 'confirm',
       status: r.state,
       group: memoryGroup[r.state],
@@ -182,5 +202,21 @@ export function learnedList(
     });
   }
 
+  const evidenceTitle = ({ kind, id }: LearnedItem['evidence'][number]) => {
+    if (kind === 'session') return ctx.store.get<Session>('sessions', id)?.title;
+    if (kind !== 'retrospective') return undefined;
+    const row = ctx.store.get<Retrospective>('retrospectives', id);
+    return (
+      row &&
+      ctx.store
+        .get<BoardPlan>('board_plans', row.lead_session_id)
+        ?.tasks.find((task) => task.id === row.task_id)?.title
+    );
+  };
+  for (const item of items)
+    item.evidence = item.evidence.map((entry) => {
+      const title = evidenceTitle(entry);
+      return title === undefined ? entry : { ...entry, title };
+    });
   return items.sort((a, b) => b.at - a.at);
 }

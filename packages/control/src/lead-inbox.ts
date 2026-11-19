@@ -10,10 +10,11 @@ import {
   type LeadQuestion,
   type PendingPlanEdit,
   type PlanEditOp,
+  type Principal,
   type Session,
   type SessionTurn,
 } from '@pantheon/domain';
-import { inputSchemas } from '@pantheon/protocol';
+import { inputSchemas, type Command } from '@pantheon/protocol';
 import {
   actsAsUser,
   projectAccess,
@@ -43,6 +44,8 @@ import { changeModel } from './workbench-session.js';
 import { causeTurn, chainDepth } from './progress.js';
 import { retiredBinding, taskGeneration, taskSessions, taskState } from './board-plan.js';
 import { recordRuntimeUnavailable } from './signal-sources.js';
+import { cancelTimer, scheduleTimer, timerHandlers } from './timers.js';
+import { workflowPolicy } from './workflow-policy.js';
 
 export const INBOX_HEADER = '[Pantheon] Board updates since your last message:';
 /** Characters of one digest, so the notes leave most of the lead's turn input to everything else. */
@@ -51,6 +54,8 @@ export const DIGEST_BUDGET = 6000;
 const NOTE_TEXT_LIMIT = 600;
 // Five minutes catches repeated compression before useful work can refill a normal context window.
 const COMPACTION_WINDOW_MS = 5 * 60_000;
+const HOUR_MS = 60 * 60_000;
+const QUESTION_DEFAULT = 'question-default';
 
 /** Called for a deduplicated compaction, before its event is recorded. */
 export function noteCompactionThrash(ctx: ControlContext, session: Session): void {
@@ -422,13 +427,15 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       startTag(onTask),
       overruled
         ? `What happened: the user overruled your answer to "${question!.question}": you answered "${overruled.text}", the user says "${note.answer}".`
-        : kind === 'answer' && question
-          ? `What happened: the user${note.via ? "'s personal agent" : ''} answered your question${note.via ? ' for the user' : ''}: "${question.question}" Answer: "${note.answer}". You had assumed: "${question.assumption}".`
-          : `What happened: ${note.task_id ? `Task ${taskRef}: ` : ''}${text}${reason}`,
+        : kind === 'answer' && question?.answered_by === 'default'
+          ? `What happened: the user did not answer your question "${question.question}" before its deadline, so your recommended answer "${note.answer}" applies. You had assumed: "${question.assumption}".`
+          : kind === 'answer' && question
+            ? `What happened: the user${note.via ? "'s personal agent" : ''} answered your question${note.via ? ' for the user' : ''}: "${question.question}" Answer: "${note.answer}". You had assumed: "${question.assumption}".`
+            : `What happened: ${note.task_id ? `Task ${taskRef}: ` : ''}${text}${reason}`,
       since,
       `How to handle: ${
         overruled
-          ? `the user's answer replaces yours; fix anything in the plan built on yours${note.turn_id ? '. Pantheon sent the task session the new answer.' : ', and tell the task session what changes.'}`
+          ? `the user's answer replaces yours; fix anything in the plan built on yours${note.turn_id ? '. Pantheon sent the task session the new answer.' : note.session_id ? ', and tell the task session what changes.' : '.'}`
           : WAITING_HANDLING[kind]
       }${note.via ? NOT_USER_WORDS : ''}`,
     ];
@@ -546,6 +553,12 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       startTag(own),
       `What happened: ${text}`,
       "How to handle: the user already decided on the card, so do not tell them the outcome again. Check whether the agent was created or changed. You keep the requests and promises you hold; if the user should go on in the new agent's conversation, tell them its name and the open request in one line. If they declined, do not propose the same agent again unless the user brings it up; if they edited it, the agent works from their version.",
+    ];
+  else if (kind === 'setting_proposal')
+    lines = [
+      startTag(own),
+      `What happened: ${text}`,
+      'How to handle: the user already decided on the card, so do not tell them the outcome again. If they declined, do not propose the same change again unless the user brings it up.',
     ];
   else if (kind === 'milestone_verified')
     lines = [
@@ -707,7 +720,15 @@ export function askQuestion(
   fields: Omit<LeadQuestion, 'id' | 'at'>,
   cause = '',
 ): LeadQuestion {
-  const question: LeadQuestion = { ...fields, id: id(), at: ctx.store.now() };
+  const hours = workflowPolicy(ctx, plan.project_id).question_defaults?.after_hours;
+  // Only the lead's own questions can be marked reversible; relayed worker questions never are.
+  const after = fields.reversible && hours ? hours * HOUR_MS : undefined;
+  const question: LeadQuestion = {
+    ...fields,
+    id: id(),
+    at: ctx.store.now(),
+    ...(after && { default_after_ms: after }),
+  };
   const next = ctx.store.update(
     'board_plans',
     { ...plan, questions: [...(plan.questions ?? []), question] },
@@ -715,7 +736,113 @@ export function askQuestion(
   );
   ctx.store.event('lead.question_asked', next, plan.project_id, question, cause);
   unsnooze(ctx, plan.id, 'needs_you', cause);
+  if (after)
+    scheduleTimer(ctx, {
+      id: defaultTimerId(plan.id, question.id),
+      project_id: plan.project_id,
+      kind: QUESTION_DEFAULT,
+      subject_id: question.id,
+      due_at: question.at + after,
+    });
   return question;
+}
+
+const defaultTimerId = (planId: string, questionId: string) =>
+  `${QUESTION_DEFAULT}:${planId}:${questionId}`;
+
+timerHandlers.set(QUESTION_DEFAULT, (ctx, timer) => {
+  const plan = ctx.store
+    .list<BoardPlan>('board_plans')
+    .find(
+      (entry) =>
+        entry.project_id === timer.project_id &&
+        entry.questions?.some((question) => question.id === timer.subject_id),
+    );
+  const question = plan?.questions!.find((entry) => entry.id === timer.subject_id);
+  // The user may have turned defaults off since the question was asked.
+  if (
+    !plan ||
+    !question ||
+    question.answer ||
+    !workflowPolicy(ctx, plan.project_id).question_defaults
+  )
+    return;
+  const cause = `timer:${timer.id}`;
+  const { plan: next, question: answered } = answerQuestion(
+    ctx,
+    plan,
+    question,
+    question.recommended,
+    cause,
+    { answered_by: 'default' },
+  );
+  const noted = appendNote(
+    ctx,
+    next,
+    {
+      at: answered.answer.at,
+      session_id: '',
+      task_id: '',
+      kind: 'answer',
+      question_id: question.id,
+      answer: question.recommended,
+      text: `Question: ${question.question}\nNo answer before the deadline; your recommended answer applies: ${question.recommended}`,
+    },
+    cause,
+  );
+  wakeLead(ctx, noted, cause);
+});
+
+/** Records the user's answer to an open question; the lead's own question also gets an answer note, whose plan it returns. */
+function answerForUser(
+  ctx: ControlContext,
+  p: Principal,
+  c: Command,
+  plan: BoardPlan,
+  question: LeadQuestion,
+  input: { answer: string; answers?: Record<string, string> },
+): { answered: LeadQuestion; noted?: BoardPlan } {
+  cancelTimer(ctx, defaultTimerId(plan.id, question.id));
+  const { plan: next, question: answered } = answerQuestion(
+    ctx,
+    plan,
+    question,
+    input.answer,
+    c.command_id,
+    p.role === 'personal' ? { via: { kind: 'personal', key_id: personalKeyId(p) } } : {},
+  );
+  if (question.source) {
+    const approval = ctx.store.get<Approval>('approvals', question.source.approval_id);
+    // A request answered or lost meanwhile keeps only the board's answer.
+    if (approval?.state === 'pending')
+      answerApproval(
+        ctx,
+        p,
+        approval,
+        {
+          decision: 'approve',
+          answers: input.answers ?? { [question.question]: input.answer },
+        },
+        c.command_id,
+      );
+    return { answered };
+  }
+  const noted = appendNote(
+    ctx,
+    next,
+    {
+      at: answered.answer.at,
+      session_id: '',
+      task_id: '',
+      kind: 'answer',
+      question_id: question.id,
+      answer: input.answer,
+      text: `Question: ${question.question}\nAnswer: ${input.answer}\nPrevious assumption: ${question.assumption}`,
+      ...(answered.via ? { via: answered.via } : {}),
+    },
+    c.command_id,
+  );
+  return { answered, noted };
 }
 
 export function answerQuestion(
@@ -794,47 +921,77 @@ export const leadInboxHandlers: Handlers = {
     requireThat(!question.answer, 'invalid_state', 'This question has already been answered');
     personalAnswer(ctx, p, 'lead.question.answer', input.project_id, question);
     personalCalled(ctx, p, c, input.project_id);
-    const { plan: next, question: answered } = answerQuestion(
-      ctx,
-      plan,
-      question,
-      input.answer,
-      c.command_id,
-      p.role === 'personal' ? { via: { kind: 'personal', key_id: personalKeyId(p) } } : {},
-    );
-    if (question.source) {
-      const approval = ctx.store.get<Approval>('approvals', question.source.approval_id);
-      // A request answered or lost meanwhile keeps only the board's answer.
-      if (approval?.state === 'pending')
-        answerApproval(
-          ctx,
-          p,
-          approval,
-          {
-            decision: 'approve',
-            answers: input.answers ?? { [question.question]: input.answer },
-          },
-          c.command_id,
-        );
-      return answered;
-    }
-    const noted = appendNote(
-      ctx,
-      next,
-      {
-        at: answered.answer.at,
-        session_id: '',
-        task_id: '',
-        kind: 'answer',
-        question_id: question.id,
-        answer: input.answer,
-        text: `Question: ${question.question}\nAnswer: ${input.answer}\nPrevious assumption: ${question.assumption}`,
-        ...(answered.via ? { via: answered.via } : {}),
-      },
-      c.command_id,
-    );
-    wakeLead(ctx, noted, c.command_id);
+    const { answered, noted } = answerForUser(ctx, p, c, plan, question, input);
+    if (noted) wakeLead(ctx, noted, c.command_id);
     return answered;
+  },
+  'lead.questions.answer_batch': (ctx, p, c) => {
+    const input = inputSchemas['lead.questions.answer_batch'].parse(c.input);
+    userOnly(p);
+    projectAccess(ctx, p, input.project_id, c.type);
+    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
+    requireThat(
+      plan && plan.project_id === input.project_id,
+      'not_found',
+      `Not found: board plan ${input.lead_session_id}`,
+    );
+    requireThat(
+      new Set(input.answers.map((entry) => entry.question_id)).size === input.answers.length,
+      'invalid_input',
+      'Each question can be answered once in a batch',
+    );
+    const questions = input.answers.map((entry) => {
+      const question = plan.questions?.find((question) => question.id === entry.question_id);
+      requireThat(question, 'not_found', `Not found: question ${entry.question_id}`);
+      requireThat(
+        !question.answer,
+        'invalid_state',
+        `Question ${question.id} has already been answered`,
+      );
+      return question;
+    });
+    let noted = false;
+    const answered = input.answers.map((entry, index) => {
+      const result = answerForUser(
+        ctx,
+        p,
+        c,
+        ctx.store.must<BoardPlan>('board_plans', plan.id),
+        questions[index]!,
+        entry,
+      );
+      noted ||= !!result.noted;
+      return result.answered;
+    });
+    // The lead wakes once with every answer of the batch.
+    if (noted) wakeLead(ctx, ctx.store.must<BoardPlan>('board_plans', plan.id), c.command_id);
+    return answered;
+  },
+  'lead.question.keep_open': (ctx, p, c) => {
+    const input = inputSchemas['lead.question.keep_open'].parse(c.input);
+    userOnly(p);
+    projectAccess(ctx, p, input.project_id, c.type);
+    const plan = ctx.store.get<BoardPlan>('board_plans', input.lead_session_id);
+    requireThat(
+      plan && plan.project_id === input.project_id,
+      'not_found',
+      `Not found: board plan ${input.lead_session_id}`,
+    );
+    const question = plan.questions?.find((question) => question.id === input.question_id);
+    requireThat(question, 'not_found', `Not found: question ${input.question_id}`);
+    requireThat(!question.answer, 'invalid_state', 'This question has already been answered');
+    cancelTimer(ctx, defaultTimerId(plan.id, question.id));
+    const { default_after_ms: _, ...open } = question;
+    const next = ctx.store.update(
+      'board_plans',
+      {
+        ...plan,
+        questions: plan.questions!.map((entry) => (entry.id === question.id ? open : entry)),
+      },
+      plan.revision,
+    );
+    ctx.store.event('lead.question_kept_open', next, plan.project_id, open, c.command_id);
+    return open;
   },
   'lead.question.overrule': (ctx, p, c) => {
     const input = inputSchemas['lead.question.overrule'].parse(c.input);
@@ -849,9 +1006,11 @@ export const leadInboxHandlers: Handlers = {
     const question = plan.questions?.find((question) => question.id === input.question_id);
     requireThat(question, 'not_found', `Not found: question ${input.question_id}`);
     requireThat(
-      question.answered_by === 'lead' && question.answer && question.source,
+      question.answer &&
+        ((question.answered_by === 'lead' && question.source) ||
+          question.answered_by === 'default'),
       'invalid_state',
-      'Only an answer the lead gave a task session can be overruled',
+      'Only an answer the lead gave a task session, or a recommended answer applied at its deadline, can be overruled',
     );
     const leadAnswer = question.answer,
       at = ctx.store.now(),
@@ -869,7 +1028,8 @@ export const leadInboxHandlers: Handlers = {
       plan.revision,
     );
     ctx.store.event('lead.question_overruled', next, plan.project_id, overruled, c.command_id);
-    const asking = ctx.store.get<Session>('sessions', question.source.session_id);
+    const asking =
+      question.source && ctx.store.get<Session>('sessions', question.source.session_id);
     const told =
       asking && !asking.outcome
         ? queueStepTurn(
@@ -885,7 +1045,7 @@ export const leadInboxHandlers: Handlers = {
       ctx.store.must<BoardPlan>('board_plans', plan.id),
       {
         at,
-        session_id: question.source.session_id,
+        session_id: question.source?.session_id ?? '',
         task_id: asking?.task?.id ?? '',
         kind: 'answer',
         question_id: question.id,

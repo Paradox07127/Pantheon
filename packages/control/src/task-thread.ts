@@ -26,9 +26,15 @@ const KINDS = [
   'lead.question_overruled',
   'lead.note_added',
   'session.gate_checked',
+  'task.dispatched',
+  'task.handed_back',
+  'session.merged',
 ];
 
-/** The task's lead messages, reports, review findings, questions, answers, notes and gate runs, in event order. */
+/**
+ * The task's lead messages, reports, review findings, questions, answers, notes, gate runs,
+ * dispatches, hand-backs and merges, in event order.
+ */
 export function taskThread(
   ctx: ControlContext,
   principal: Principal,
@@ -92,11 +98,17 @@ export function taskThread(
         )
       )
         continue;
+      const reviewers = review.session_ids.filter(
+        (id) => ctx.store.get<Session>('sessions', id)?.runtime === finding.runtime,
+      );
       entries.push({
         ...base,
         kind: 'finding',
         ...(review.session_id ? { session_id: review.session_id } : {}),
         text: `${finding.location}: ${finding.impact}`,
+        location: finding.location,
+        impact: finding.impact,
+        ...(reviewers.length === 1 ? { reviewer_session_id: reviewers[0] } : {}),
         blocking: finding.blocking,
       });
     } else if (event.kind.startsWith('lead.question_')) {
@@ -112,25 +124,52 @@ export function taskThread(
         question_id: question.id,
         ...(event.kind === 'lead.question_asked'
           ? { kind: 'question' as const, text: question.question }
-          : { kind: 'answer' as const, text: question.answer!.text }),
+          : {
+              kind: 'answer' as const,
+              text: question.answer!.text,
+              answered_by: question.answered_by ?? 'user',
+              overruled: event.kind === 'lead.question_overruled',
+            }),
       });
+    } else if (event.kind === 'task.dispatched' || event.kind === 'task.handed_back') {
+      const p = event.payload as { task_id: string; session_id?: string; reason?: string };
+      if (event.aggregate_id !== leadId || p.task_id !== taskId) continue;
+      entries.push({
+        ...base,
+        kind: event.kind === 'task.dispatched' ? 'dispatched' : 'handed_back',
+        ...(p.session_id ? { session_id: p.session_id } : {}),
+        text: p.reason ?? '',
+      });
+    } else if (event.kind === 'session.merged') {
+      const p = event.payload as { direct?: boolean; task_id?: string };
+      if (
+        !sessions.has(event.aggregate_id) &&
+        !(event.aggregate_id === leadId && p.direct && p.task_id === taskId)
+      )
+        continue;
+      entries.push({ ...base, kind: 'merged', session_id: event.aggregate_id, text: '' });
     } else if (sessions.has(event.aggregate_id)) {
-      const failed = (
+      const commands = (
         (event.payload as Record<string, unknown>).results as {
           name: string;
           exit_code?: number | null;
           timed_out?: boolean;
           state?: string;
         }[]
-      ).filter(
-        (result) => result.state !== 'skipped' && (result.exit_code !== 0 || result.timed_out),
-      );
+      )
+        .filter((result) => result.state !== 'skipped')
+        .map((result) => ({
+          name: result.name,
+          passed: result.exit_code === 0 && !result.timed_out,
+        }));
+      const failed = commands.filter((command) => !command.passed);
       entries.push({
         ...base,
         kind: 'gate',
         session_id: event.aggregate_id,
-        text: failed.map((result) => result.name).join(', '),
+        text: failed.map((command) => command.name).join(', '),
         passed: !failed.length,
+        commands,
       });
     }
   }

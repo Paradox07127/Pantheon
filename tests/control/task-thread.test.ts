@@ -7,6 +7,7 @@ import type {
   Milestone,
   Principal,
   Project,
+  Review,
   Session,
   TaskThreadEntry,
 } from '@pantheon/domain';
@@ -160,6 +161,7 @@ it.skipIf(insideSandbox)(
 
     const entries = f.control.taskThread(user, f.project.id, lead.id, 'a') as TaskThreadEntry[];
     expect(entries.map((entry) => entry.kind)).toEqual([
+      'dispatched',
       'lead_message',
       'report',
       'question',
@@ -167,6 +169,7 @@ it.skipIf(insideSandbox)(
       'gate',
     ]);
     expect(entries.map((entry) => entry.event_id)).toEqual([
+      ...eventIds(f, 'task.dispatched'),
       f.store
         .kindEvents(f.project.id, ['turn.queued'])
         .find((event) => (event.payload as { origin?: string }).origin === 'lead')!.event_id,
@@ -175,17 +178,153 @@ it.skipIf(insideSandbox)(
       ...eventIds(f, 'lead.question_answered'),
       ...eventIds(f, 'session.gate_checked'),
     ]);
-    expect(entries[0]!.text).toContain('Keep the rows in file order');
-    expect(entries[1]).toMatchObject({
+    expect(entries[0]).toMatchObject({ session_id: worker.id });
+    expect(entries[1]!.text).toContain('Keep the rows in file order');
+    expect(entries[2]).toMatchObject({
       session_id: worker.id,
       note_kind: 'blocked',
       text: 'The export format is undecided',
     });
-    expect(entries[2]).toMatchObject({ question_id: question.id, text: formatQuestion });
-    expect(entries[3]).toMatchObject({ question_id: question.id, text: 'CSV' });
-    expect(entries[4]).toMatchObject({ session_id: worker.id, passed: true });
+    expect(entries[3]).toMatchObject({ question_id: question.id, text: formatQuestion });
+    expect(entries[4]).toMatchObject({ question_id: question.id, text: 'CSV' });
+    expect(entries[5]).toMatchObject({ session_id: worker.id, passed: true });
   },
 );
+
+it("lists a task's dispatch, gate commands, finding parts, answers, hand-back and merge", async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  await settle(f, lead);
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: [
+        {
+          id: 'a',
+          title: 'Task a',
+          goal: 'Finish task a',
+          lane: 'core',
+          depends_on: [],
+          source: ['Plan the export feature'],
+          scope: ['src/a'],
+          acceptance: ['true'],
+        },
+      ],
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    sessionOf(f, lead.id, 'lead'),
+  );
+  const session = (id: string, fields: Partial<Session>) =>
+    f.store.insert<Session>('sessions', {
+      id,
+      revision: 1,
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      state: 'open',
+      turn_count: 0,
+      ...fields,
+    });
+  const worker = session('a-worker', {
+    workspace_id: f.store.must<Session>('sessions', lead.id).workspace_id,
+    task: { lead_session_id: lead.id, id: 'a', generation: 1 },
+  });
+  session('a-reviewer', { review_id: 'a-review' });
+  const review = f.store.insert<Review>('reviews', {
+    id: 'a-review',
+    revision: 1,
+    project_id: f.project.id,
+    session_id: worker.id,
+    round: 1,
+    runtimes: [f.adapter.name],
+    state: 'running',
+    findings: [],
+    session_ids: ['a-reviewer'],
+  });
+  const plan = () => f.store.must<BoardPlan>('board_plans', lead.id);
+  f.store.event('task.dispatched', plan(), f.project.id, { task_id: 'a', session_id: worker.id });
+  f.store.event('session.gate_checked', worker, f.project.id, {
+    results: [
+      { name: 'Tests', exit_code: 0 },
+      { name: 'Lint', exit_code: 1 },
+      { name: 'Docs', exit_code: null, state: 'skipped' },
+    ],
+  });
+  f.store.event('review.finding_recorded', review, f.project.id, {
+    id: 'finding',
+    review_id: review.id,
+    runtime: f.adapter.name,
+    round: 1,
+    location: 'src/a.ts:3',
+    quote: 'rows.sort()',
+    evidence: 'The rows are sorted',
+    impact: 'Rows lose their file order',
+    status: 'open',
+    blocking: true,
+  });
+  const question: LeadQuestion = {
+    id: 'format',
+    at: f.store.now(),
+    question: formatQuestion,
+    options: ['CSV', 'JSON'],
+    recommended: 'CSV',
+    assumption: 'CSV',
+    blocks: ['a'],
+  };
+  const leadAnswer = { text: 'JSON', at: f.store.now() };
+  f.store.event('lead.question_asked', plan(), f.project.id, question);
+  f.store.event('lead.question_answered', plan(), f.project.id, {
+    ...question,
+    answer: leadAnswer,
+    answered_by: 'lead',
+  });
+  f.store.event('lead.question_overruled', plan(), f.project.id, {
+    ...question,
+    answer: { text: 'CSV', at: f.store.now(), overruled: leadAnswer },
+    answered_by: 'user',
+  });
+  f.store.event('task.handed_back', plan(), f.project.id, {
+    session_id: worker.id,
+    task_id: 'a',
+    reason: 'The rows lose their order',
+  });
+  f.store.event('session.merged', worker, f.project.id, { to_sha: 'abc' });
+
+  const entries = f.control.taskThread(user, f.project.id, lead.id, 'a') as TaskThreadEntry[];
+  expect(entries.map(({ event_id, at, note_kind, question_id, ...entry }) => entry)).toEqual([
+    { kind: 'dispatched', session_id: worker.id, text: '' },
+    {
+      kind: 'gate',
+      session_id: worker.id,
+      text: 'Lint',
+      passed: false,
+      commands: [
+        { name: 'Tests', passed: true },
+        { name: 'Lint', passed: false },
+      ],
+    },
+    {
+      kind: 'finding',
+      session_id: worker.id,
+      text: 'src/a.ts:3: Rows lose their file order',
+      location: 'src/a.ts:3',
+      impact: 'Rows lose their file order',
+      reviewer_session_id: 'a-reviewer',
+      blocking: true,
+    },
+    { kind: 'question', text: formatQuestion },
+    { kind: 'answer', text: 'JSON', answered_by: 'lead', overruled: false },
+    { kind: 'answer', text: 'CSV', answered_by: 'user', overruled: true },
+    { kind: 'handed_back', session_id: worker.id, text: 'The rows lose their order' },
+    { kind: 'merged', session_id: worker.id, text: '' },
+  ]);
+});
 
 it("leaves the open Assistant one note of a milestone's new status without waking it", async () => {
   const f = await workbenchFixture();

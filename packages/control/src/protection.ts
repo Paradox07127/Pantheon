@@ -299,6 +299,8 @@ export function worktreeSandbox(
     tempDir: string;
     /** A session a lead dispatched for a task also may not read other worktrees, native records or reviews. */
     taskSession?: { reviewsDirs: string[] };
+    /** The folders of the checks only milestone verification runs, which no session may read. */
+    hiddenChecksDirs?: string[];
   },
 ): { writable_roots: string[]; protected_entries: ProtectionEntry[] } {
   const source = resolvedPath(input.sourceRepo),
@@ -345,6 +347,9 @@ export function worktreeSandbox(
           deny: 'read_write',
           reason: 'Other workspaces, reviews and native session records',
         });
+  for (const target of input.hiddenChecksDirs ?? [])
+    for (const entry of entryPaths(target))
+      entries.push({ path: entry, deny: 'read_write', reason: 'Hidden milestone checks' });
   const add = (targets: string[], reason: string) => {
     for (const target of targets)
       for (const entry of entryPaths(target)) entries.push({ path: entry, deny: 'write', reason });
@@ -394,9 +399,14 @@ export async function inPlaceSandbox(
   input: Omit<ProtectionPaths, 'sourceRepo' | 'workspacePath'> & {
     projectRoot: string;
     tempDir: string;
+    /** The folders of the checks only milestone verification runs, which no session may read. */
+    hiddenChecksDirs?: string[];
   },
 ): Promise<{ writable_roots: string[]; protected_entries: ProtectionEntry[] }> {
   const entries = await protectionList({ ...input, workspacePath: input.projectRoot });
+  for (const target of input.hiddenChecksDirs ?? [])
+    for (const entry of entryPaths(target))
+      entries.push({ path: entry, deny: 'read_write', reason: 'Hidden milestone checks' });
   const { gitDir, commonDir } = gitMetadata(input.projectRoot),
     worktrees = path.join(commonDir, 'worktrees'),
     // A linked worktree commits through its own metadata folder and the shared objects and refs.
@@ -468,7 +478,9 @@ export function plannerProtectionList(
     ...[
       ...input.otherWorkspaces,
       ...nativeRecordsAndSkills(input),
-      ...(input.workspaceRoot ? [path.join(input.workspaceRoot, 'reviews')] : []),
+      ...(input.workspaceRoot
+        ? [path.join(input.workspaceRoot, 'reviews'), path.join(input.workspaceRoot, 'checks')]
+        : []),
     ].flatMap((target) =>
       entryPaths(target).map((entry): ProtectionEntry => ({
         path: entry,
@@ -483,6 +495,8 @@ export function reviewerProtectionList(
   input: Omit<ProtectionPaths, 'sourceRepo' | 'workspacePath'> & {
     reviewerPath: string;
     otherReviewers: string[];
+    /** The folders of the checks only milestone verification runs, which no session may read. */
+    hiddenChecksDirs?: string[];
   },
 ): ProtectionEntry[] {
   return [
@@ -492,6 +506,13 @@ export function reviewerProtectionList(
         path: entry,
         deny: 'read_write',
         reason: 'Other reviews, native session records and user skills',
+      })),
+    ),
+    ...(input.hiddenChecksDirs ?? []).flatMap((target) =>
+      entryPaths(target).map((entry): ProtectionEntry => ({
+        path: entry,
+        deny: 'read_write',
+        reason: 'Hidden milestone checks',
       })),
     ),
     ...entryPaths(input.reviewerPath).map((entry): ProtectionEntry => ({

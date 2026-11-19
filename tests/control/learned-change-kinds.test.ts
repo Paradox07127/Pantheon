@@ -1,6 +1,11 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import {
   DomainError,
+  type AgentProfile,
   type Improvement,
   type Principal,
   type Project,
@@ -147,4 +152,182 @@ it('sets the worktree setup when the user confirms a worktree change, and restor
   });
   expect((await decide(f, confirmed, 'revert')).status).toBe('reverted');
   expect(project(f).worktree).toEqual({ copy_paths: ['.env'] });
+});
+
+const addHelper = (f: Fixture) =>
+  f.store.insert<AgentProfile>('agents', {
+    id: 'helper',
+    revision: 1,
+    project_id: f.project.id,
+    template: 'custom',
+    name: 'Helper',
+    role: 'Help',
+    instructions: 'Answer with the reasons.',
+    routines: [],
+    created_by: { kind: 'user' },
+    created_at: f.store.now(),
+  });
+const helper = (f: Fixture) => f.store.must<AgentProfile>('agents', 'helper');
+const oneLine = { type: 'agent_instructions', agent_id: 'helper', to: 'Answer in one line.' };
+
+it('sets the agent instructions when the user confirms an instruction change, and restores them on revert', async () => {
+  const f = await opened();
+  addHelper(f);
+  const improvement = propose(f, oneLine);
+  expect(improvement.status).toBe('candidate');
+  expect(helper(f).instructions).toBe('Answer with the reasons.');
+  const confirmed = await decide(f, improvement, 'confirm');
+  expect(confirmed).toMatchObject({
+    status: 'active',
+    change: { from: 'Answer with the reasons.', to: 'Answer in one line.' },
+  });
+  expect(helper(f).instructions).toBe('Answer in one line.');
+  const reverted = await decide(f, confirmed, 'revert');
+  expect(reverted.status).toBe('reverted');
+  expect(reverted.status_detail).toBeUndefined();
+  expect(helper(f).instructions).toBe('Answer with the reasons.');
+});
+
+it('keeps the instructions the user wrote after the confirmation when the instruction change is reverted', async () => {
+  const f = await opened();
+  addHelper(f);
+  const confirmed = await decide(f, propose(f, oneLine), 'confirm');
+  f.call('agent.update', {
+    agent_id: 'helper',
+    revision: helper(f).revision,
+    instructions: 'Answer with a table.',
+  });
+  const reverted = await decide(f, confirmed, 'revert');
+  expect(reverted.status_detail).toBeTruthy();
+  expect(helper(f).instructions).toBe('Answer with a table.');
+});
+
+it('refuses an instruction change for an agent of another project', async () => {
+  const f = await opened();
+  f.store.insert<AgentProfile>('agents', {
+    ...addHelper(f),
+    id: 'stranger',
+    project_id: 'other-project',
+  });
+  let error: unknown;
+  try {
+    propose(f, { ...oneLine, agent_id: 'stranger' });
+  } catch (caught) {
+    error = caught;
+  }
+  expect((error as DomainError).code).toBe('invalid_input');
+  expect(f.store.list('improvements')).toEqual([]);
+});
+
+const sections = (reply: string) => ({
+  before_you_plan: 'Plan right away.',
+  routing: '- Keep every task on t1.',
+  replies: reply,
+});
+const playbookVersion = (f: Fixture) =>
+  f.call<{ version: number }>('playbook.get', { project_id: f.project.id }).version;
+/** The runs file of an eval of two conditions, the second of them the proposed playbook. */
+const runsFile = () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'eval-receipt-')), 'runs.jsonl');
+  fs.writeFileSync(
+    file,
+    ['playbook=2', 'playbook=1', 'playbook=1', 'playbook=2']
+      .map((condition) => `${JSON.stringify({ task: 'fixture', condition, repetition: 0 })}\n`)
+      .join(''),
+  );
+  return { path: file, sha256: createHash('sha256').update(fs.readFileSync(file)).digest('hex') };
+};
+const receipt = (verdict: string, file = runsFile()) => ({
+  kind: 'eval_receipt',
+  ...file,
+  verdict,
+});
+const proposePlaybook = (f: Fixture, evidence: Record<string, unknown>[]) =>
+  f.call<Improvement>(
+    'improvement.propose',
+    {
+      project_id: f.project.id,
+      retrospective_ids: retrospectiveIds,
+      ...(evidence.length && { evidence: [...evidence, { kind: 'session', id: 'lead' }] }),
+      change: { type: 'playbook', to: 1 },
+    },
+    null,
+    lead(f),
+  );
+const twoPlaybooks = (f: Fixture) => {
+  for (const [base_version, reply] of [
+    [0, '- Reply with the task ids.'],
+    [1, '- Reply in one line.'],
+  ] as const)
+    f.call('playbook.set', { project_id: f.project.id, base_version, sections: sections(reply) });
+};
+
+it('makes an earlier playbook version current when the user confirms it, and the later one again on revert', async () => {
+  const f = await opened();
+  twoPlaybooks(f);
+  const better = receipt('playbook=1_passes_more');
+  const improvement = proposePlaybook(f, [better]);
+  expect(improvement.status).toBe('candidate');
+  expect(improvement.evidence).toContainEqual(better);
+  expect(playbookVersion(f)).toBe(2);
+  const confirmed = await decide(f, improvement, 'confirm');
+  expect(confirmed).toMatchObject({ status: 'active', change: { from: 2, to: 1 } });
+  expect(playbookVersion(f)).toBe(1);
+  expect((await decide(f, confirmed, 'revert')).status).toBe('reverted');
+  expect(playbookVersion(f)).toBe(2);
+});
+
+it.each([
+  ['without an eval receipt', () => [], 'no_eval_receipt', 'eval receipt'],
+  [
+    'whose eval reached no conclusion',
+    () => [receipt('no_conclusion')],
+    'eval_not_better',
+    'no conclusion',
+  ],
+  [
+    'whose eval found the current version better',
+    () => [receipt('playbook=2_passes_more')],
+    'eval_not_better',
+    'playbook=2_passes_more',
+  ],
+  [
+    'whose eval runs changed since the receipt',
+    () => {
+      const changed = receipt('playbook=1_passes_more');
+      fs.appendFileSync(changed.path, '\n');
+      return [changed];
+    },
+    'eval_not_better',
+    'changed',
+  ],
+] as const)(
+  'refuses to confirm a playbook change %s and keeps the current version',
+  async (_, evidence, reason, detail) => {
+    const f = await opened();
+    twoPlaybooks(f);
+    const refused = await decide(f, proposePlaybook(f, evidence()), 'confirm');
+    expect(refused).toMatchObject({ status: 'rejected', status_reason: reason });
+    expect(refused.status_detail).toContain(detail);
+    expect(playbookVersion(f)).toBe(2);
+  },
+);
+
+it('refuses a playbook change to a version that is not stored or already current', async () => {
+  const f = await opened();
+  f.call('playbook.set', {
+    project_id: f.project.id,
+    base_version: 0,
+    sections: sections('- Reply in one line.'),
+  });
+  for (const to of [1, 3]) {
+    let error: unknown;
+    try {
+      propose(f, { type: 'playbook', to });
+    } catch (caught) {
+      error = caught;
+    }
+    expect((error as DomainError).code).toBe('invalid_input');
+  }
+  expect(f.store.list('improvements')).toEqual([]);
 });

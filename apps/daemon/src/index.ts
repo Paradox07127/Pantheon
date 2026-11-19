@@ -603,6 +603,7 @@ export async function startDaemon(options: DaemonOptions) {
       'agent.list': (p, i) => control.agentList(p, i.project_id),
       'agent.templates': (p) => control.agentTemplates(p),
       'agent.wakes': (p, i) => control.agentWakes(p, i.agent_id, i.limit),
+      'agent.ledger': (p, i) => control.agentLedger(p, i.agent_id, i.weeks),
       'agent.routines': (p, i) => control.agentRoutines(p, i.project_id),
       'agent.proposal': (p, i) => control.agentProposal(p, i.proposal_id),
       'retrospective.list': (p, i) => control.retrospectiveList(p, i.project_id, i.task_id),
@@ -651,7 +652,8 @@ export async function startDaemon(options: DaemonOptions) {
       'session.preflight': (p, i) => control.sessionPreflight(p, i.session_id),
       'session.activity': (p, i) => control.sessionToolActivity(p, i.session_id),
       'board.history': (p, i) => control.boardHistory(p, i.project_id),
-      'board.plan.replay': (p, i) => control.planReplay(p, i.lead_session_id, i.after, i.limit),
+      'board.plan.replay': (p, i) =>
+        control.planReplay(p, i.lead_session_id, i.after ?? 0, i.limit, i.before),
       'board.view': async (p, i) => {
         await prefetch(p, i.project_id);
         return timed('board.view', () =>

@@ -5,6 +5,7 @@ import type {
   Improvement,
   MemoryRecord,
   Project,
+  SettingProposal,
   StepRun,
   StoredWorkflowDefinition,
 } from '@pantheon/domain';
@@ -168,6 +169,41 @@ export function agentProposalItems(ctx: ControlContext, scope: NeedsYouScope): N
     });
   }
   return items;
+}
+
+/** Pending setting proposals. */
+export function settingProposalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
+  const { principal, listedProject } = scope;
+  return ctx.store
+    .list<SettingProposal>('setting_proposals')
+    .filter((proposal) => proposal.state === 'pending' && listedProject(proposal.project_id))
+    .map((proposal) => ({
+      source: { table: 'setting_proposals', id: proposal.id, revision: proposal.revision },
+      kind: 'setting.proposal',
+      project_id: proposal.project_id,
+      session_id: proposal.session_id,
+      status: proposal.state,
+      created_at: proposal.at,
+      reason: 'setting_proposal_awaiting_decision',
+      decision: 'other',
+      primary: 'setting.proposal.resolve',
+      // reject stands for the command's decline decision.
+      actions: (['approve', 'reject'] as const).map((decision) => ({
+        ...action('setting.proposal.resolve', () =>
+          projectAccess(ctx, principal, proposal.project_id, 'setting.proposal.resolve'),
+        ),
+        decision,
+      })),
+      setting_proposal: {
+        id: proposal.id,
+        param: proposal.param,
+        current: proposal.current,
+        value: proposal.value,
+        quote: proposal.quote,
+        waited_ms: ctx.store.now() - proposal.at,
+      },
+      next_step: NEXT_STEP.setting_proposal_awaiting_decision,
+    }));
 }
 
 /** Projects over their budget. */

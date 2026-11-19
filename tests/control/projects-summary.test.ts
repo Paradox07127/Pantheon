@@ -1,7 +1,8 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import type { Approval, Principal, Project, Session, Workspace } from '@pantheon/domain';
+import type { Approval, BoardPlan, Principal, Project, Session, Workspace } from '@pantheon/domain';
+import { briefItemsKey, type SeenCursor } from '../../packages/control/dist/project-brief.js';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { git, workbenchFixture } from './workbench-fixture.js';
 
@@ -145,9 +146,117 @@ it('summarizes two projects and limits a planner to its own project', async () =
     session_id: plannerSession.id,
     expires_at: f.store.now() + 60000,
   };
-  expect(f.control.projectsSummary(planner).projects).toEqual([
-    { ...projects.find((project) => project.project_id === f.project.id)!, needs_you: 0 },
-  ]);
+  const { waiting: _waiting, ...own } = projects.find(
+    (project) => project.project_id === f.project.id,
+  )!;
+  expect(f.control.projectsSummary(planner).projects).toEqual([{ ...own, needs_you: 0 }]);
+});
+
+it("gives each project its waiting decisions by kind, the longest wait, the tasks they hold and its brief's first sentence", async () => {
+  const f = await workbenchFixture();
+  const lead = await idleSession(f, 'Ship exports');
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: 0,
+      headline: 'Ship exports',
+      lanes: [{ id: 'exports', title: 'Exports' }],
+      tasks: ['api', 'docs'].map((id) => ({
+        id,
+        title: id,
+        goal: 'Build exports',
+        lane: 'exports',
+        depends_on: [],
+        source: ['Ship exports'],
+        scope: [`src/${id}`],
+        acceptance: ['pnpm test'],
+      })),
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    {
+      id: `session:${lead.id}`,
+      role: 'lead',
+      project_id: f.project.id,
+      session_id: lead.id,
+      expires_at: f.store.now() + 60000,
+    },
+  );
+  const now = f.store.now();
+  vi.spyOn(f.store, 'now').mockReturnValue(now);
+  const plan = f.store.must<BoardPlan>('board_plans', lead.id);
+  f.store.update<BoardPlan>(
+    'board_plans',
+    {
+      ...plan,
+      questions: [
+        {
+          id: 'format',
+          at: now - 2000,
+          question: 'Which format?',
+          options: ['CSV', 'JSON'],
+          recommended: 'CSV',
+          assumption: 'CSV',
+          blocks: ['api', 'docs'],
+        },
+      ],
+    },
+    plan.revision,
+  );
+  f.store.insert<Approval>('approvals', {
+    id: 'lead-permission',
+    revision: 1,
+    project_id: f.project.id,
+    session_id: lead.id,
+    kind: 'permission',
+    input_hash: 'permission-input',
+    decider: 'user',
+    state: 'pending',
+    created_at: now - 5000,
+  });
+  const otherProject = f.store.insert<Project>('projects', {
+    ...f.project,
+    id: 'other-project',
+    name: 'Other project',
+  });
+  const brief = f.control.projectBrief(user, f.project.id);
+  const prose = (projectId: string, itemsKey: string) =>
+    f.store.insert<SeenCursor>('seen_cursors', {
+      id: JSON.stringify([user.id, projectId]),
+      revision: 1,
+      user_id: user.id,
+      project_id: projectId,
+      at: 0,
+      prose: {
+        sentences: [
+          { text: 'One question holds both export tasks.', refs: [] },
+          { text: 'A permission waits too.', refs: [] },
+        ],
+        at: now,
+        since: 0,
+        items_key: itemsKey,
+      },
+    });
+  prose(f.project.id, briefItemsKey(brief.items));
+  // Prose written for other items is stale and gives no brief.
+  prose(otherProject.id, 'other-items');
+
+  const { projects } = f.control.projectsSummary(user);
+  expect(projects.find((project) => project.project_id === f.project.id)).toMatchObject({
+    needs_you: 2,
+    brief: 'One question holds both export tasks.',
+    waiting: {
+      by_decision: { question: 1, permission: 1 },
+      longest_wait_ms: 5000,
+      blocked_tasks: 2,
+    },
+  });
+  const other = projects.find((project) => project.project_id === otherProject.id)!;
+  expect(other.brief).toBeUndefined();
+  expect(other.waiting).toBeUndefined();
 });
 
 it('reads each worktree once per summary', async () => {

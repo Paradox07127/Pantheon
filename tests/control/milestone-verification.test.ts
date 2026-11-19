@@ -207,9 +207,14 @@ it('lists the failed commands of a failed verification with their output tails',
     commands: [
       { name: 'build', exit_code: 0 },
       { name: 'test', exit_code: 1 },
+      { name: 'hidden-check', exit_code: 0 },
     ],
   });
   expect(viewOf(f, milestone).verification!.commands[0]).not.toHaveProperty('output_tail');
+  expect(viewOf(f, milestone).verification!.commands[2]).toEqual({
+    name: 'hidden-check',
+    exit_code: 0,
+  });
 });
 
 it('never shows a verification on a milestone the user created', async () => {
@@ -596,6 +601,39 @@ it.skipIf(insideSandbox)(
       () => f.turns(lead.id).some((turn) => turn.input.includes('<note kind="milestone_verified"')),
       () => f.control.tick(),
     );
+  },
+);
+
+it.skipIf(insideSandbox)(
+  "runs the user's hidden checks after the acceptance and tells the lead only their names, results and last lines",
+  async () => {
+    const command = 'echo private-check-marker >/dev/null; seq 1 9; exit 4';
+    const { f } = await mergedMilestone();
+    f.call('milestone.checks.set', {
+      project_id: f.project.id,
+      checks: [
+        { name: 'Restart keeps exports', command: 'echo restarted' },
+        { name: 'Export survives a crash', command },
+      ],
+    });
+    const row = await ended(f);
+    expect(row).toMatchObject({
+      state: 'failed',
+      reason_code: 'checks_failed',
+      commands: [
+        { name: 'Gate', exit_code: 0, hidden: false },
+        { name: 'pwd', exit_code: 0, hidden: false },
+        { name: 'Restart keeps exports', exit_code: 0, hidden: true },
+        { name: 'Export survives a crash', exit_code: 4, hidden: true },
+      ],
+    });
+    expect(row.commands[3]!.output_tail.trim().split('\n')).toEqual(['5', '6', '7', '8', '9']);
+    const text = verifiedNotes(f)[0]!.text;
+    expect(text).toContain('Failed: Export survives a crash (exit 4)');
+    expect(text).toContain('9');
+    expect(text).not.toContain('private-check-marker');
+    expect(text).not.toContain('seq 1 9');
+    expect(text).not.toMatch(/^1$/m);
   },
 );
 

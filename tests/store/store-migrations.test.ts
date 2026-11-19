@@ -402,6 +402,32 @@ it('adds the playbook table with one default and one playbook per runtime of a p
   expect(store.get('projects', row.id)).toEqual(row);
 });
 
+it('adds the setting proposal table to a database without it', () => {
+  const file = databaseFile();
+  const behind = open(
+    file,
+    migrations.filter((migration) => migration.version < 15),
+  );
+  behind.insert('projects', row);
+  close(behind);
+  const store = open(file);
+  const proposal = {
+    id: 'proposal',
+    revision: 1,
+    project_id: row.id,
+    session_id: 'assistant',
+    param: 'max_parallel',
+    current: 3,
+    value: 1,
+    quote: 'Run one task at a time.',
+    state: 'pending',
+    at: 1,
+  };
+  store.insert('setting_proposals', proposal);
+  expect(store.get('setting_proposals', proposal.id)).toEqual(proposal);
+  expect(store.get('projects', row.id)).toEqual(row);
+});
+
 it('indexes the per-project plan and improvement reads and the active turn read on a database one version behind', () => {
   const file = databaseFile();
   close(open(file, migrations.slice(0, -1)));

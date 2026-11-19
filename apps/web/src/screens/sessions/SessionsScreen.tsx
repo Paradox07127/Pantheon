@@ -60,7 +60,7 @@ import {
   useSessionMenu,
 } from './shared';
 import { DiscardDialog } from './parts';
-import { AgentProfilePanel } from './AgentForm';
+import { AgentProfilePanel } from './AgentProfile';
 import { SessionCard, SessionInspector } from './SessionCard';
 import { MoreMenu, PANELS, parentLink, type TerminalToggle } from './SessionHeader';
 import { parentOf } from './session-groups';

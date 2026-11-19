@@ -160,7 +160,7 @@ function planProblem(input: PlanInput): string | null {
 }
 
 /** A source quote that no user turn of a lead in the project, user plan edit or quoted text contains, or null. */
-function sourceProblem(
+export function sourceProblem(
   ctx: ControlContext,
   input: PlanInput,
   quoted: string[] = [],
@@ -729,6 +729,8 @@ function storePlan(
     ...(current?.wake_failed ? { wake_failed: current.wake_failed } : {}),
     ...(current?.external_holds ? { external_holds: current.external_holds } : {}),
     ...(Object.keys(laneStops).length ? { lane_stops: laneStops } : {}),
+    ...(current?.paused ? { paused: current.paused } : {}),
+    ...(current?.reassessment ? { reassessment: current.reassessment } : {}),
     ...(current?.last_told ? { last_told: current.last_told } : {}),
     contract_changed: [...new Set([...(current?.contract_changed ?? []), ...told])],
     ...(current?.handed_back ? { handed_back: current.handed_back } : {}),

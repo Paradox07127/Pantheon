@@ -4,7 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-type Condition = { name: string; mode: string; lead: string; before_merge: unknown[] };
+type Condition = {
+  name: string;
+  mode: string;
+  lead?: string;
+  before_merge?: unknown[];
+  playbook?: { version: string; sections: Record<string, string> };
+};
 type Job<T> = { task: T; condition: Condition; repetition: number };
 // The tests project only typechecks the scripts it lists, so this module is imported by URL.
 const {
@@ -63,6 +69,24 @@ describe('eval conditions', () => {
     expect(plain).toMatchObject({ name: 'acceptance_only', mode: 'dispatch', before_merge: [] });
     expect(checked?.before_merge).toHaveLength(1);
   });
+
+  it('has a bare condition with no lead and no merge steps', () => {
+    expect(parseConditions(['bare'])).toEqual([{ name: 'bare', mode: 'bare' }]);
+  });
+
+  it('gives a playbook version a real lead and the sections it replaces', () => {
+    const [first, second] = parseConditions(['playbook=v1', 'playbook=v2']);
+    expect(first).toMatchObject({
+      mode: 'dispatch',
+      lead: 'real',
+      playbook: { version: 'v1', sections: {} },
+    });
+    expect(Object.keys(second?.playbook?.sections ?? {})).toEqual(['replies']);
+  });
+
+  it('refuses a playbook version it does not hold', () => {
+    expect(() => parseConditions(['playbook=v0'])).toThrow(/playbook=v0.*playbook=v1/);
+  });
 });
 
 describe('eval run refusals', () => {
@@ -82,5 +106,11 @@ describe('eval run refusals', () => {
     const result = evalRun('--runtime', 'fixture', '--condition', 'no_such_condition');
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(/known conditions: default, acceptance_only/);
+  });
+
+  it('refuses a lead other than scripted or real', () => {
+    const result = evalRun('--runtime', 'fixture', '--lead', 'planner');
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/--lead scripted\|real/);
   });
 });

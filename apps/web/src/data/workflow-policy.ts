@@ -568,6 +568,7 @@ export function changeText(change: Improvement['change']): string {
       id: 'data.workflowPolicy.change.worktree',
       defaultMessage: 'Change the worktree setup',
     });
+  if (change.type !== 'policy_change') return String(change.to);
   const what = change.tier
     ? `${PARAM_LABEL.path} ${tierText(change.tier)}`
     : PARAM_LABEL[change.param];

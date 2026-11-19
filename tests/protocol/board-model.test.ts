@@ -174,11 +174,20 @@ it('types whole course task facts, daily counts and decisions', () => {
       kind: 'plan' | 'start' | 'stop' | 'accept' | 'replan';
       title?: string;
       replan?: {
-        triggers: { event_id: string; milestone_id: string; text: string }[];
+        triggers: {
+          event_id: string;
+          milestone_id: string;
+          text: string;
+          type: 'handbacks' | 'budget_ratio' | 'stall' | 'assumption_false';
+          value?: number;
+          task_id: string;
+          task_title: string;
+        }[];
         added: string[];
         removed: string[];
         changed: string[];
       };
+      lead_session_id?: string;
     }[]
   >();
 });

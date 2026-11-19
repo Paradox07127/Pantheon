@@ -56,6 +56,24 @@ describe('routine template catalog', () => {
       if (template.precheck) expect(template.precheck.argv[0]).toBeTruthy();
   });
 
+  it('offers a weekly self-review that starts turned off and proposes at most two changes with their sample size', () => {
+    const template = ROUTINE_TEMPLATES.find((each) => each.id === 'weekly-self-review')!;
+    expect(template).toMatchObject({
+      title: 'Weekly self-review',
+      every_minutes: 7 * 24 * 60,
+      enabled: false,
+    });
+    for (const part of [
+      'project_read',
+      'lead.retrospectives',
+      'at most 3',
+      'at most 2',
+      'propose_improvement',
+      'sample size n',
+    ])
+      expect(template.prompt).toContain(part);
+  });
+
   it('runs the bug hunt on its first run, even in a repository without commits', () => {
     expect(precheck('bug-hunt', repo())).toBe(0);
     expect(precheck('bug-hunt', repo('2026-01-01T00:00:00Z'))).toBe(0);

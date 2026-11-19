@@ -12,7 +12,7 @@ const LIST_LIMIT = 20;
 
 type Change = Pick<
   ChangeOutcome,
-  'event_id' | 'kind' | 'at' | 'param' | 'agent_id' | 'routine_ids'
+  'event_id' | 'kind' | 'at' | 'param' | 'from' | 'to' | 'agent_id' | 'routine_ids'
 >;
 
 /** The user's workflow setting changes, agent creations and routine enables in the project, oldest first. */
@@ -32,7 +32,13 @@ function changes(ctx: ControlContext, projectId: string): Change[] {
     };
     if (event.kind === 'workflow.policy_changed') {
       if (payload.by === 'user')
-        found.push({ ...base, kind: 'policy_changed', param: payload.param! });
+        found.push({
+          ...base,
+          kind: 'policy_changed',
+          param: payload.param!,
+          ...('from' in payload && { from: payload.from }),
+          ...('to' in payload && { to: payload.to }),
+        });
       continue;
     }
     if (event.kind === 'agent_profile.created')

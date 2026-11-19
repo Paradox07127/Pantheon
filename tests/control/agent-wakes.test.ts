@@ -1,11 +1,12 @@
 import { expect, it, vi } from 'vitest';
-import type {
-  AgentMessage,
-  AgentProfile,
-  LeadNote,
-  LeadQuestion,
-  Principal,
-  Session,
+import {
+  id,
+  type AgentMessage,
+  type AgentProfile,
+  type LeadNote,
+  type LeadQuestion,
+  type Principal,
+  type Session,
 } from '@pantheon/domain';
 import { eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
@@ -134,6 +135,68 @@ it('classes a wake that asked the user and left a message as asked, with both id
   ]);
 });
 
+it("lists a wake's messages and questions by their first line, cut at 140 characters, and counts the tasks it started", async () => {
+  const { f, assistant, as, profile, trackerTurns, ended, run } = await routineFixture(3000);
+  f.store.insert('session_turns', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    session_id: assistant.id,
+    input: 'Restart the stalled export tasks.',
+    kind: 'send',
+    delivery: 'delivered',
+    state: 'completed',
+  });
+  run('stalled');
+  await eventually(
+    () => trackerTurns()[0]?.state === 'running',
+    () => f.control.tick(),
+  );
+  const message = as<AgentMessage>('agent.tell_user', {
+    text: `${'Two tasks stalled overnight. '.repeat(6)}\nBoth wait on the export.`,
+    urgency: 'normal',
+  });
+  const question = as<LeadQuestion>('lead.ask', {
+    question: 'Restart the stalled tasks?\nThey stopped at midnight.',
+    options: ['Yes', 'No'],
+    recommended: 'Yes',
+    assumption: 'They stay stopped.',
+    blocks: [],
+  });
+  const task = (taskId: string) => ({
+    id: taskId,
+    title: `Restart ${taskId}`,
+    goal: `Restart the stalled ${taskId} task`,
+    lane: 'core',
+    depends_on: [],
+    source: ['Restart the stalled export tasks'],
+    scope: [],
+    acceptance: [],
+    done_when: 'report',
+  });
+  as('board.plan.update', {
+    base_version: 0,
+    headline: 'Restart the stalled tasks',
+    lanes: [{ id: 'core', title: 'Core' }],
+    tasks: [task('export'), task('import')],
+    milestones: [],
+    risks: [],
+    assumptions: [],
+  });
+  as('task.start', { task_ids: ['export', 'import'] });
+  await eventually(ended, () => f.control.tick(), 20_000);
+  expect(f.control.agentWakes(user, profile().id, 10)).toEqual([
+    expect.objectContaining({
+      message_ids: [message.id],
+      question_ids: [question.id],
+      messages: [{ id: message.id, text: 'Two tasks stalled overnight. '.repeat(6).slice(0, 140) }],
+      questions: [{ id: question.id, text: 'Restart the stalled tasks?' }],
+      actions: 2,
+      tasks_started: 2,
+    }),
+  ]);
+});
+
 it('lists each routine with its next run and the outcome of its last run', async () => {
   const { f, profile, trackerTurns, ended, run, start } = await routineFixture();
   run('stalled');
@@ -146,6 +209,7 @@ it('lists each routine with its next run and the outcome of its last run', async
     {
       agent_id: profile().id,
       agent_name: 'Assistant',
+      agent_revision: profile().revision,
       routine: { id: 'stalled', prompt: 'Look for stalled tasks', at: '18:00', enabled: true },
       next_run_at: start + 9 * 60 * MINUTE,
       last_run: {
@@ -158,6 +222,7 @@ it('lists each routine with its next run and the outcome of its last run', async
     {
       agent_id: profile().id,
       agent_name: 'Assistant',
+      agent_revision: profile().revision,
       routine: {
         id: 'paused',
         prompt: 'Look for stale branches',

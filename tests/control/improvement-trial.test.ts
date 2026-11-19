@@ -465,7 +465,56 @@ it('reverts an experience trial whose findings per task did not fall to half', a
       trial: { tasks: 10, signal_findings: 3 },
     },
   });
+  expect(improvements()[0]?.trial_evaluation?.design).toBe('before_after');
 });
+
+it.each([
+  ['the same input', 1000, 'reverted', 'not_enough_evidence'],
+  ['40% less input', 600, 'active', 'better'],
+] as const)(
+  'judges an experience trial whose interleaved arms spent %s by the paired cost of the arms',
+  async (_, newTokens, status, verdict) => {
+    const { f, clock, retro, improvements } = await setup();
+    f.store.insert<Improvement>('improvements', {
+      id: 'interleaved',
+      revision: 1,
+      project_id: f.project.id,
+      source: 'lead',
+      lead_session_id: 'lead',
+      signal: 'repeat_turn_failure',
+      retrospective_ids: [],
+      status: 'trial',
+      change: { type: 'experience', procedure: 'Run the tests before the first commit' },
+      proposed_at: clock.now,
+      trial_started_at: clock.now,
+    });
+    clock.now += 1_000;
+    // No task ran before the trial: the old arm is the baseline.
+    for (let i = 0; i < 10; i++) {
+      retro(measured(newTokens, 10_000, { trial_arms: { interleaved: 'new' } }));
+      retro(measured(1000, 10_000, { trial_arms: { interleaved: 'old' } }));
+    }
+    await f.control.tick();
+
+    expect(improvements()).toMatchObject([
+      {
+        id: 'interleaved',
+        status,
+        trial_evaluation: {
+          design: 'interleaved',
+          verdict,
+          comparison: { baseline: { tasks: 10 }, trial: { tasks: 10 } },
+        },
+      },
+    ]);
+    expect(f.control.improvementList(user, f.project.id)[0]?.trial).toMatchObject({
+      design: 'interleaved',
+      verdict,
+      tasks_seen: 10,
+      baseline_tasks: 10,
+    });
+  },
+);
 
 it('holds a trial without ten earlier tasks to compare for the user', async () => {
   const { f, clock, retro, improvements, policy } = await setup();

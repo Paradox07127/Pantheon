@@ -15,6 +15,7 @@ import { rootOf, type ControlContext } from './context.js';
 import { runGit } from './git.js';
 import { checkCandidate, gateFailed } from './landing.js';
 import { appendNote, contractLines } from './lead-inbox.js';
+import { hiddenChecks } from './milestone-checks.js';
 import { commitmentHash, milestoneView } from './project-facts.js';
 import { reviewerVerdict, startReview } from './review.js';
 import { verifierRuntime } from './runtime-vendor.js';
@@ -42,6 +43,7 @@ const INDEPENDENCE: Record<NonNullable<MilestoneVerification['independence']>, s
   same_runtime: "the writers' own runtime",
 };
 const OUTPUT_TAIL_LIMIT = 600;
+const HIDDEN_TAIL_LINES = 5;
 
 /** What the lead's note says about a verification that ended. */
 function verifiedText(milestone: Milestone, row: MilestoneVerification): string {
@@ -120,6 +122,7 @@ function landedRoots(
       for (const command of task.acceptance)
         if (!root.acceptance.includes(command)) root.acceptance.push(command);
     }
+  const hidden = hiddenChecks(ctx, project.id);
   return [...roots].map(([source, root]) => {
     const folder = rootOf(project, [source]);
     const commands: GateCommands = [
@@ -127,7 +130,12 @@ function landedRoots(
         []),
       ...root.acceptance.map((command) => ({ name: command, argv: ['/bin/sh', '-c', command] })),
     ];
-    return { source, branch: root.branch, bases: root.bases, commands };
+    // The hidden checks come last, so the results from index `visible` on are theirs.
+    const visible = commands.length;
+    commands.push(
+      ...hidden.map((check) => ({ name: check.name, argv: ['/bin/sh', '-c', check.command] })),
+    );
+    return { source, branch: root.branch, bases: root.bases, commands, visible };
   });
 }
 
@@ -200,7 +208,7 @@ function checkMilestone(ctx: ControlContext, milestone: Milestone, row: Mileston
     .then(async () => {
       if (!committed() || ctx.closing) return;
       const commits: { source: string; commit: string }[] = [],
-        results: GateResults = [],
+        results: (GateResults[number] & { hidden: boolean })[] = [],
         diffs: string[] = [];
       for (const root of roots) {
         const commit = (
@@ -216,7 +224,9 @@ function checkMilestone(ctx: ControlContext, milestone: Milestone, row: Mileston
           cancelled,
         });
         if (!checked) return;
-        results.push(...checked);
+        results.push(
+          ...checked.map((result, index) => ({ ...result, hidden: index >= root.visible })),
+        );
         if (checked.some(gateFailed)) break;
         const base = root.bases.length
           ? (await gitOutput(root.source, ['merge-base', '--octopus', ...root.bases])).trim()
@@ -235,8 +245,11 @@ function checkMilestone(ctx: ControlContext, milestone: Milestone, row: Mileston
             name: result.name,
             // A run that timed out or gave no exit code still failed.
             exit_code: gateFailed(result) ? result.exit_code || -1 : 0,
-            output_tail: result.output,
-            hidden: false,
+            // The lead reads a hidden check's output only by its last lines.
+            output_tail: result.hidden
+              ? result.output.trimEnd().split('\n').slice(-HIDDEN_TAIL_LINES).join('\n')
+              : result.output,
+            hidden: result.hidden,
             ...(result.failure_class ? { failure_class: result.failure_class } : {}),
           })),
         };

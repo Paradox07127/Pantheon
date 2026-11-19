@@ -179,9 +179,7 @@ function leadMilestoneView(ctx: ControlContext, milestone: Milestone): Milestone
         failed: verification.commands
           .filter((command) => command.exit_code !== 0)
           .map(({ name, output_tail }) => ({ name, output_tail })),
-        commands: verification.commands
-          .filter((command) => !command.hidden)
-          .map(({ name, exit_code }) => ({ name, exit_code })),
+        commands: verification.commands.map(({ name, exit_code }) => ({ name, exit_code })),
       },
     }),
   };

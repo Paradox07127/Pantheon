@@ -164,6 +164,7 @@ import { personalKeyList } from './personal-keys.js';
 import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
 import { agentRoutines, agentWakes } from './agent-wakes.js';
+import { agentLedger } from './agent-ledger.js';
 import { agentProposal } from './agent-proposals.js';
 import { recordTraceFindings, signalList } from './signals.js';
 import { continueSession } from './continuation.js';
@@ -796,6 +797,9 @@ export class Control extends EventEmitter {
   agentWakes(principal: Principal, agentId: string, limit: number) {
     return agentWakes(this.ctx, principal, agentId, limit);
   }
+  agentLedger(principal: Principal, agentId: string, weeks: number) {
+    return agentLedger(this.ctx, principal, agentId, weeks);
+  }
   agentRoutines(principal: Principal, projectId: string) {
     return agentRoutines(this.ctx, principal, projectId);
   }
@@ -973,8 +977,8 @@ export class Control extends EventEmitter {
   boardHistory(principal: Principal, projectId: string) {
     return boardHistory(this.ctx, principal, projectId);
   }
-  planReplay(principal: Principal, leadId: string, after: number, limit: number) {
-    return planReplay(this.ctx, principal, leadId, after, limit);
+  planReplay(principal: Principal, leadId: string, after: number, limit: number, before?: number) {
+    return planReplay(this.ctx, principal, leadId, after, limit, before);
   }
   boardView(
     principal: Principal,

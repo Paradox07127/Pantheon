@@ -120,8 +120,12 @@ export interface LeadQuestion {
   source?: { session_id: string; approval_id: string };
   /** The relayed question's original questions. */
   questions?: ApprovalQuestion[];
-  /** Who answered a relayed worker question; absent when the user answered before the lead. */
-  answered_by?: 'user' | 'lead';
+  /** The lead's mark that a different answer later costs at most redoing tasks not started. */
+  reversible?: boolean;
+  /** Set when the recommended answer applies this long after `at` unless the user answers first. */
+  default_after_ms?: number;
+  /** Who answered a relayed worker question, or 'default' for a recommendation applied at its deadline; absent when the user answered. */
+  answered_by?: 'user' | 'lead' | 'default';
   /** Who answered for the user; absent when the user answered. */
   via?: PersonalVia;
   /**
@@ -252,6 +256,10 @@ export interface BoardPlan extends Entity {
   external_holds?: Record<string, { at: number }>;
   /** Lanes held for the user's plan approval, by lane id; daemon-kept, lead input never writes it. */
   lane_stops?: Record<string, LaneStop>;
+  /** Set while the user holds the plan's new task sessions; its running sessions go on. */
+  paused?: { at: number; by: 'user' };
+  /** The lead's latest re-assessment of the plan, written after the user paused it. */
+  reassessment?: { done: string; blocked: string; change: string; at: number };
   /** Notes for the lead's next message. */
   inbox: LeadNote[];
   /** The last task session state the lead was told of, by session id. */
@@ -433,6 +441,8 @@ export interface LeadNote {
     | 'follow_up'
     | 'routine'
     | 'agent_proposal'
+    /** The user decided on a setting change the Assistant proposed; wakes it. */
+    | 'setting_proposal'
     | 'signal'
     /** A message another agent of the project left for the user, sent to the main agent instead. */
     | 'agent_report'
@@ -525,7 +535,7 @@ export interface MilestoneView {
     | 'finished_at'
   > & {
     failed: { name: string; output_tail: string }[];
-    /** The commands the run went through, in order; hidden checks are left out. */
+    /** The commands the run went through, in order; a hidden check shows its name, never its command. */
     commands: { name: string; exit_code: number }[];
   };
 }
@@ -566,6 +576,10 @@ export interface BoardPlanView {
   })[];
   risks: BoardPlan['risks'];
   assumptions: BoardPlan['assumptions'];
+  /** Set while the user has the plan paused. */
+  paused?: { at: number };
+  /** The lead's latest re-assessment of the plan, once it wrote one. */
+  reassessment?: BoardPlan['reassessment'];
   updated_at: number;
 }
 /** Why a verification failed or was inconclusive. */

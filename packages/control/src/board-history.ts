@@ -10,7 +10,7 @@ import {
   type StepRun,
   type Workspace,
 } from '@pantheon/domain';
-import type { BoardHistory } from '@pantheon/protocol';
+import type { BoardHistory, PendingReplan } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 import { awaitingChange, boardTaskId, currentBinding, taskGeneration } from './board-plan.js';
 import { dayKey, midnight, planTaskState, type MergedPayload } from './board-view.js';
@@ -207,7 +207,7 @@ export function boardHistory(
   // Fired re-plan conditions no plan change answered yet, by event id; when each session's newest turn began.
   const triggers = new Map<
       string,
-      { sequence: number; leadId: string; milestone_id: string; text: string }
+      { sequence: number; leadId: string; text: string } & Omit<PendingReplan, 'event_id'>
     >(),
     turnStarted = new Map<string, number>();
   for (const event of events) {
@@ -234,10 +234,9 @@ export function boardHistory(
         const before = new Map((versions.at(-1)?.plan.tasks ?? []).map((task) => [task.id, task])),
           after = (event.payload as BoardPlan).tasks;
         replan = {
-          triggers: answered.map(([eventId, trigger]) => ({
+          triggers: answered.map(([eventId, { sequence, leadId, at, ...trigger }]) => ({
             event_id: eventId,
-            milestone_id: trigger.milestone_id,
-            text: trigger.text,
+            ...trigger,
           })),
           added: after.filter((task) => !before.has(task.id)).map((task) => task.title),
           removed: [...before.values()]
@@ -285,7 +284,7 @@ export function boardHistory(
                   ? 'stop'
                   : 'accept',
           ...(title ? { title: title.slice(0, 140) } : {}),
-          ...(replan ? { replan } : {}),
+          ...(replan ? { replan, lead_session_id: leadId } : {}),
         });
     }
     if (event.kind === 'approval.requested' || event.kind === 'lead.question_asked') day.waited++;
@@ -361,14 +360,21 @@ export function boardHistory(
     else if (event.kind === 'session.discarded')
       discardedAt.set(event.aggregate_id, event.created_at);
     else if (event.kind === 'milestone.accepted') reached.set(event.aggregate_id, event.created_at);
-    else if (event.kind === 'board.replan_triggered')
+    else if (event.kind === 'board.replan_triggered') {
+      const fired = p as unknown as ReplanFired,
+        key = boardTaskId(owner(event.aggregate_id), fired.task_id);
       triggers.set(event.event_id, {
         sequence: event.sequence,
         leadId: owner(event.aggregate_id),
-        milestone_id: (p as unknown as ReplanFired).milestone_id,
-        text: triggerText(p as unknown as ReplanFired),
+        milestone_id: fired.milestone_id,
+        text: triggerText(fired),
+        at: event.created_at,
+        type: fired.trigger.type,
+        ...(fired.value === undefined ? {} : { value: fired.value }),
+        task_id: key,
+        task_title: (decisionTasks.get(key) ?? archive.get(key)!.task).title,
       });
-    else if (event.kind === 'task.accepted')
+    } else if (event.kind === 'task.accepted')
       completed.set(
         `${boardTaskId(owner(event.aggregate_id), p.task_id as string)}:${(p.generation as number | undefined) ?? 1}`,
         event.created_at,
@@ -577,6 +583,16 @@ export function boardHistory(
       tasks.length > 2000 || [...days.values()].reduce((sum, day) => sum + day.decisions, 0) > 2000,
     days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
     decisions,
+    ...(triggers.size
+      ? {
+          pending_replans: [...triggers].map(
+            ([eventId, { sequence, leadId, text, ...trigger }]) => ({
+              event_id: eventId,
+              ...trigger,
+            }),
+          ),
+        }
+      : {}),
     idle,
     milestones: milestones.map((row) => {
       const state = row.removed_at ? 'removed' : milestoneView(ctx, row).status;

@@ -97,6 +97,26 @@ it('accepts an experience proposal and refuses a long procedure or a single retr
   ).toBe(false);
 });
 
+it('counts cited evidence of any kind toward the two items a proposal rests on', () => {
+  const schema = inputSchemas['improvement.propose'];
+  const proposal = {
+    project_id: 'project',
+    change: { type: 'policy_change', param: 'max_parallel', to: 2 },
+  };
+  const gateRun = { kind: 'gate_run', id: 'run' };
+  expect(schema.safeParse({ ...proposal, evidence: [gateRun, gateRun] }).success).toBe(true);
+  expect(
+    schema.safeParse({
+      ...proposal,
+      evidence: [{ kind: 'retrospective', id: 'first' }, gateRun],
+    }).success,
+  ).toBe(true);
+  expect(schema.safeParse({ ...proposal, evidence: [gateRun] }).success).toBe(false);
+  expect(
+    schema.safeParse({ ...proposal, evidence: [gateRun, { kind: 'rumour', id: 'run' }] }).success,
+  ).toBe(false);
+});
+
 it('accepts a known improvement decision and refuses an unknown one', () => {
   const schema = inputSchemas['improvement.decide'];
   const decision = { project_id: 'project', improvement_id: 'improvement' };

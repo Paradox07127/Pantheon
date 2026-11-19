@@ -330,7 +330,7 @@ describe('a plan change that answers a fired re-plan condition', () => {
       );
     return { lead, event, edit };
   }
-  const answered = (eventId: string, title: string) => ({
+  const answered = (eventId: string, title: string, leadId: string) => ({
     kind: 'replan',
     replan: {
       triggers: [
@@ -338,6 +338,10 @@ describe('a plan change that answers a fired re-plan condition', () => {
           event_id: eventId,
           milestone_id: 'milestone-row',
           text: 'task exports was handed back 2 times',
+          type: 'handbacks',
+          value: 2,
+          task_id: `${leadId}:exports`,
+          task_title: 'exports',
         },
       ],
       added: [],
@@ -348,13 +352,32 @@ describe('a plan change that answers a fired re-plan condition', () => {
 
   it('is a replan decision with the trigger and the tasks it changed when it names the event', async () => {
     const f = await workbenchFixture();
-    const { event, edit } = await fired(f);
+    const { lead, event, edit } = await fired(f);
     edit('Exports v2', event.event_id);
     const history = f.control.boardHistory(user, f.project.id);
     expect(history.decisions.map(({ kind, replan }) => ({ kind, replan }))).toEqual([
       { kind: 'plan', replan: undefined },
-      answered(event.event_id, 'Exports v2'),
+      answered(event.event_id, 'Exports v2', lead.id),
     ]);
+    expect(history.decisions[1]!.lead_session_id).toBe(lead.id);
+  });
+
+  it('lists a fired condition as pending until a plan change answers it', async () => {
+    const f = await workbenchFixture();
+    const { lead, event, edit } = await fired(f);
+    expect(f.control.boardHistory(user, f.project.id).pending_replans).toEqual([
+      {
+        event_id: event.event_id,
+        milestone_id: 'milestone-row',
+        at: event.created_at,
+        type: 'handbacks',
+        value: 2,
+        task_id: `${lead.id}:exports`,
+        task_title: 'exports',
+      },
+    ]);
+    edit('Exports v2', event.event_id);
+    expect(f.control.boardHistory(user, f.project.id).pending_replans).toBeUndefined();
   });
 
   it("is the lead's first change in a turn begun after the condition fired", async () => {
@@ -378,7 +401,7 @@ describe('a plan change that answers a fired re-plan condition', () => {
     const kinds = f.control.boardHistory(user, f.project.id).decisions.map(({ kind }) => kind);
     expect(kinds).toEqual(['plan', 'plan', 'replan', 'plan']);
     expect(f.control.boardHistory(user, f.project.id).decisions[2]).toMatchObject(
-      answered(event.event_id, 'Exports v3'),
+      answered(event.event_id, 'Exports v3', lead.id),
     );
   });
 });
