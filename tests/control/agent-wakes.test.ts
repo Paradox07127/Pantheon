@@ -3,11 +3,14 @@ import {
   id,
   type AgentMessage,
   type AgentProfile,
+  type BoardPlan,
   type LeadNote,
   type LeadQuestion,
   type Principal,
   type Session,
 } from '@pantheon/domain';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import { askQuestion } from '../../packages/control/dist/lead-inbox.js';
 import { eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -107,6 +110,42 @@ it('runs an enabled routine now even while the contract holds its wakes, refuses
   ]);
 });
 
+it('runs a routine at once when the resident woke seconds ago', async () => {
+  const { f, trackerTurns, ended, run, advance } = await routineFixture();
+  run('stalled');
+  await eventually(
+    () => trackerTurns().length === 1 && ended(),
+    () => f.control.tick(),
+  );
+  advance(10_000);
+  run('stalled');
+  expect(trackerTurns()).toHaveLength(2);
+});
+
+it('says the budget holds a routine run while the project is over its budget', async () => {
+  const { f, assistant, trackerTurns, run, advance } = await routineFixture();
+  f.call('workflow.policy.set', {
+    project_id: f.project.id,
+    project_budget: { input_tokens: 100 },
+  });
+  advance(1000);
+  const spent = f.store.insert('session_turns', {
+    id: id(),
+    revision: 1,
+    project_id: f.project.id,
+    session_id: assistant.id,
+    input: 'A message for the Assistant',
+    kind: 'send',
+    delivery: 'delivered',
+    state: 'completed',
+    usage: { input_tokens: 150, output_tokens: 0 },
+  });
+  f.store.event('turn.completed', spent, f.project.id, {});
+  advance(1000);
+  expect(run('stalled')).toEqual({ session_id: assistant.id, queued: 'budget' });
+  expect(trackerTurns()).toEqual([]);
+});
+
 it('classes a wake that asked the user and left a message as asked, with both ids', async () => {
   const { f, as, profile, trackerTurns, ended, run } = await routineFixture(3000);
   run('stalled');
@@ -132,6 +171,60 @@ it('classes a wake that asked the user and left a message as asked, with both id
       message_ids: [message.id],
       question_ids: [question.id],
     }),
+  ]);
+});
+
+it("keeps a worker's question relayed during the wake out of the wake's outcome", async () => {
+  const { f, assistant, profile, trackerTurns, ended, run } = await routineFixture(3000);
+  run('stalled');
+  await eventually(
+    () => trackerTurns()[0]?.state === 'running',
+    () => f.control.tick(),
+  );
+  askQuestion(
+    (f.control as unknown as { ctx: ControlContext }).ctx,
+    f.store.must<BoardPlan>('board_plans', assistant.id),
+    {
+      question: 'Which file format comes first?',
+      options: ['CSV', 'JSON'],
+      recommended: 'CSV',
+      assumption: '',
+      blocks: [],
+      source: { session_id: 'worker-session', approval_id: 'worker-approval' },
+    },
+  );
+  await eventually(ended, () => f.control.tick(), 20_000);
+  expect(f.control.agentWakes(user, profile().id, 10)).toEqual([
+    expect.objectContaining({ outcome: 'nothing', question_ids: [], questions: [] }),
+  ]);
+});
+
+it('lists the wakes of one routine even when newer wakes of the agent fill the limit', async () => {
+  const { f, assistant, profile, trackerTurns, ended, run, advance } = await routineFixture();
+  run('stalled');
+  await eventually(
+    () => trackerTurns().length === 1 && ended(),
+    () => f.control.tick(),
+  );
+  for (let i = 0; i < 60; i++) {
+    advance(MINUTE);
+    const turn = f.store.insert('session_turns', {
+      id: id(),
+      revision: 1,
+      project_id: f.project.id,
+      session_id: assistant.id,
+      input: 'A message for the Assistant',
+      kind: 'send',
+      delivery: 'delivered',
+      state: 'completed',
+      origin: 'tracker',
+      wake: { causes: ['user_edit'] },
+    });
+    f.store.event('turn.queued', turn, f.project.id, {});
+  }
+  expect(f.control.agentWakes(user, profile().id, 50)).toHaveLength(50);
+  expect(f.control.agentWakes(user, profile().id, 50, 'stalled')).toEqual([
+    expect.objectContaining({ turn_id: trackerTurns()[0]!.id, routine_ids: ['stalled'] }),
   ]);
 });
 

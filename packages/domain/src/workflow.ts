@@ -166,6 +166,8 @@ export interface WorkflowPolicy extends Entity {
   milestone_verify?: 'off' | 'auto';
   /** Whether a task session whose hand-backs of one problem ran out moves once to an alternate runtime for one more, before the lead takes over. */
   recovery_switch?: 'off' | 'auto';
+  /** Whether the user may start the requested eval of a playbook change from the app; off leaves the command to run by hand. */
+  eval_runner?: 'off' | 'on';
   /** The most files a task should change, as a hint to the lead; absent gives no hint. */
   task_size_hint?: number;
   /** The budget of a task by tier and path; a cell without one has no budget. Exceeding it only flags the task. */
@@ -270,6 +272,15 @@ export interface Improvement extends Entity {
   evidence?: (
     { kind: 'retrospective' | 'signal_issue' | 'session' | 'gate_run'; id: string } | EvalReceipt
   )[];
+  /** The paired eval a playbook change proposed without a receipt needs; absent for other changes. */
+  eval_request?: {
+    /** The playbook version in force when it was proposed, then the proposed one. */
+    conditions: [number, number];
+    /** The real-model runs the eval makes. */
+    runs: number;
+    /** The scripts/eval.mjs command line, run from the Pantheon checkout. */
+    command: string;
+  };
   /** Unix epoch milliseconds. */
   proposed_at: number;
   /** Unix epoch milliseconds; absent until its trial starts. */

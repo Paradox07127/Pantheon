@@ -138,7 +138,7 @@ function checkEnvironment(
           const run = () =>
             runCandidateCommand(
               ctx,
-              { projectId: row.project_id, cancelled },
+              { projectId: row.project_id, cancelled, allGates: true },
               key,
               command,
               workspace.path,

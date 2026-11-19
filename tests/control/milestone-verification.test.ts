@@ -1,8 +1,9 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
 import {
+  hash,
   id,
   type AgentEvent,
   type AgentEventSink,
@@ -23,6 +24,7 @@ import {
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { commitmentHash } from '../../packages/control/dist/project-facts.js';
+import * as validation from '../../packages/control/dist/validation-executor.js';
 import { workflowPolicy } from '../../packages/control/dist/workflow-policy.js';
 import {
   awaitWorkspaceReady,
@@ -38,6 +40,7 @@ import { git, workbenchFixture } from './workbench-fixture.js';
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 const fixtures: Fixture[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const f of fixtures.splice(0)) await f.close();
 });
 async function opened() {
@@ -299,6 +302,34 @@ it.each<[string, MilestoneVerification['state'] | undefined, 'lead' | 'user', st
   if (reason)
     expect(acceptance?.override).toEqual({ reason, verification_id: row!.id, state: 'failed' });
   else expect(acceptance).not.toHaveProperty('override');
+  expect(viewOf(f, milestone).status).toBe('completed');
+});
+
+it('refuses a lead acceptance until a verification ran the hidden checks the user changed, then accepts after it passed', async () => {
+  const f = await opened();
+  const milestone = readyLeadMilestone(f);
+  f.call('workflow.policy.set', { project_id: f.project.id, milestone_verify: 'auto' }, null);
+  verification(f, milestone, { state: 'passed' });
+  const checks = [{ name: 'Export survives a restart', command: 'exit 1' }];
+  f.call('milestone.checks.set', { project_id: f.project.id, checks });
+  for (const extra of [{}, { override_reason: 'The old checks passed' }])
+    expect(() => leadAccept(f, extra)).toThrow(
+      expect.objectContaining({
+        code: 'invalid_state',
+        message: expect.stringContaining('hidden checks'),
+      }),
+    );
+  expect(f.store.must<Milestone>('milestones', milestone.id)).not.toHaveProperty('acceptance');
+  verification(f, milestone, { state: 'passed', checks_hash: hash(checks), started_at: 2 });
+  leadAccept(f);
+  expect(viewOf(f, milestone).status).toBe('completed');
+});
+
+it('accepts for a lead with verification on and no verification yet when the project has no hidden checks', async () => {
+  const f = await opened();
+  const milestone = readyLeadMilestone(f);
+  f.call('workflow.policy.set', { project_id: f.project.id, milestone_verify: 'auto' }, null);
+  expect(leadAccept(f).acceptance).not.toHaveProperty('override');
   expect(viewOf(f, milestone).status).toBe('completed');
 });
 
@@ -693,6 +724,51 @@ it.skipIf(insideSandbox)(
     expect(row).not.toHaveProperty('review_id');
     expect(f.store.list<Review>('reviews')).toEqual([]);
     expect(reviewer.starts).toEqual([]);
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'opens the GPU the user allowed the gate commands to the project gate only, not to the acceptance or the hidden checks',
+  async () => {
+    const { f } = await mergedMilestone();
+    const execute = vi.spyOn(validation, 'runValidationCommand').mockResolvedValue({
+      exit_code: 0,
+      timedOut: false,
+      signal: null,
+      duration_ms: 1,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.alloc(0),
+      log: Buffer.alloc(0),
+      tail: '',
+      stdout_sha256: '',
+      stderr_sha256: '',
+      output_truncated: false,
+      boundary: {
+        kind: 'macos-seatbelt',
+        network: 'loopback',
+        supported: true,
+        stop_scope: 'process-group',
+      },
+    });
+    f.call(
+      'project.gateGpu.set',
+      { project_id: f.project.id, enabled: true },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    f.call('milestone.checks.set', {
+      project_id: f.project.id,
+      checks: [{ name: 'Restart keeps exports', command: 'echo restarted' }],
+    });
+    await eventually(
+      () => execute.mock.calls.some(([input]) => input.argv.at(-1) === 'echo restarted'),
+      () => f.control.tick(),
+      20000,
+    );
+    expect(execute.mock.calls.map(([input]) => [input.argv, input.gpu])).toEqual([
+      [f.store.must<Project>('projects', f.project.id).gates![f.source]![0]!.argv, true],
+      [['/bin/sh', '-c', 'pwd'], false],
+      [['/bin/sh', '-c', 'echo restarted'], false],
+    ]);
   },
 );
 

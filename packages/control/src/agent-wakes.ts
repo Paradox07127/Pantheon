@@ -12,6 +12,7 @@ import { finalOutput } from './agent-app-tools.js';
 import { ensureAgents } from './agents.js';
 import { projectAccess, userOnly, type ControlContext, type Handlers } from './context.js';
 import { openOf } from './resident.js';
+import { projectOverBudget } from './workflow-policy.js';
 
 type Span = { turn: SessionTurn; at: number; start: number | null; end: number | null };
 
@@ -51,7 +52,7 @@ export function wakeOf(ctx: ControlContext, { turn, at, start, end }: Span): Age
       turn.session_id,
     ).map(brief),
     questions = ids(
-      "SELECT payload ->> '$.id' AS id, payload ->> '$.question' AS text FROM events WHERE aggregate_id=? AND kind='lead.question_asked' AND sequence>? AND sequence<? ORDER BY sequence",
+      "SELECT payload ->> '$.id' AS id, payload ->> '$.question' AS text FROM events WHERE aggregate_id=? AND kind='lead.question_asked' AND payload ->> '$.source' IS NULL AND sequence>? AND sequence<? ORDER BY sequence",
       turn.session_id,
     ).map(brief),
     // An event is the agent's own when the inbox holds its command under the session's principal.
@@ -89,11 +90,13 @@ export function agentWakes(
   p: Principal,
   agentId: string,
   limit: number,
+  routineId?: string,
 ): AgentWake[] {
   userOnly(p);
   const profile = ctx.store.must<AgentProfile>('agents', agentId);
   projectAccess(ctx, p, profile.project_id, 'agent.wakes');
   return wakeSpans(ctx, profile)
+    .filter((span) => !routineId || span.turn.wake!.routine_ids?.includes(routineId))
     .slice(0, limit)
     .map((span) => wakeOf(ctx, span));
 }
@@ -156,7 +159,10 @@ export const agentWakeHandlers: Handlers = {
       ...(last && { last_run_at: last.at }),
       bypass_hold: 'user',
     });
-    return { session_id: openOf(ctx, profile)!.id };
+    return {
+      session_id: openOf(ctx, profile)!.id,
+      ...(projectOverBudget(ctx, profile.project_id) && { queued: 'budget' as const }),
+    };
   },
   'agent.wake.to_task': (ctx, p, c) => {
     userOnly(p);

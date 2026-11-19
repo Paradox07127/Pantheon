@@ -76,6 +76,7 @@ export interface ControlContext {
   /** Closes the session tools relay of a session whose runtime runs on a device, by session id. */
   readonly toolRelays: Map<string, () => void>;
   readonly localCommand: NonNullable<ControlOptions['localCommand']>;
+  readonly evalRunner?: ControlOptions['evalRunner'];
   readonly externalSources?: ControlOptions['externalSources'];
   readonly turnSummarizer?: ControlOptions['turnSummarizer'];
   readonly failpoint: (name: string) => void;

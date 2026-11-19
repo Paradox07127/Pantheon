@@ -19,6 +19,8 @@ const ROUTINE_KINDS: ReadonlySet<string> = new Set([
   'agent_profile.created',
   'agent_profile.updated',
   'timer.fired',
+  'agent.routine_skipped',
+  'agent.wake_held',
   ...TURN_KINDS,
 ]);
 
@@ -29,12 +31,19 @@ export function useRoutines(projectId: string | null) {
   });
 }
 
-const wakeParams = (agent_id: string) => ({ agent_id, limit: '50' });
+const wakeParams = (key: string) => ({
+  ...(JSON.parse(key) as Record<string, string>),
+  limit: '50',
+});
 const acceptWakes = (value: unknown): AgentWake[] | null =>
   Array.isArray(value) ? (value as AgentWake[]) : null;
 
-/** The agent's newest 50 wakes, read again when a turn of the project moves; none while agentId is null. */
-export function useAgentWakes(projectId: string | null, agentId: string | null) {
+/** The agent's newest 50 wakes, of routineId only when given, read again when a turn of the project moves; none while agentId is null. */
+export function useAgentWakes(
+  projectId: string | null,
+  agentId: string | null,
+  routineId?: string,
+) {
   const tick = useBoard((s) => {
     for (let i = s.events.length - 1; i >= 0; i--) {
       const event = s.events[i]!;
@@ -42,5 +51,9 @@ export function useAgentWakes(projectId: string | null, agentId: string | null) 
     }
     return 0;
   });
-  return useQuery<AgentWake[]>('agent.wakes', agentId, wakeParams, acceptWakes, tick);
+  const key =
+    agentId === null
+      ? null
+      : JSON.stringify({ agent_id: agentId, ...(routineId && { routine_id: routineId }) });
+  return useQuery<AgentWake[]>('agent.wakes', key, wakeParams, acceptWakes, tick);
 }

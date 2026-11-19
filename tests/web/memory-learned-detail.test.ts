@@ -230,6 +230,20 @@ describe('learned change detail', () => {
     }
   });
 
+  it.each<[string, LearnedItem, string]>([
+    ['a rejected improvement', improvement({ status: 'rejected', group: 'reverted' }), '已拒绝'],
+    [
+      'a declined agent change',
+      improvement({ kind: 'agent_change', status: 'declined', group: 'reverted' }),
+      '已拒绝',
+    ],
+    ['a reverted improvement', improvement({ status: 'reverted', group: 'reverted' }), '已撤回'],
+  ])('heads %s with how it ended', async (_, item, label) => {
+    const h = await mount({ item: { ...item, actions: [] } });
+    const head = text(byClass(tree(h), 'mld-head')[0]!);
+    expect(head).toMatch(new RegExp(`^${label}\\d\\d:\\d\\d 提出`));
+  });
+
   it.each<[string, LearnedItem, string[]]>([
     [
       'the root of a gate change',

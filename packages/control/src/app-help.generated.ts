@@ -75,7 +75,7 @@ export const appHelpGroups: AppHelpGroup[] = [
       {
         type: 'agent.routine.run',
         about:
-          "The user only; wakes the agent with an enabled routine's prompt now, even while its contract holds its wakes, and runs no precheck.",
+          "The user only; wakes the agent with an enabled routine's prompt now, even while its contract holds its wakes or its resident session's cooldown has not passed, and runs no precheck. The project budget still holds the run: the result says queued 'budget' while it is spent.",
         tool: 'the user does this in the app',
       },
       {
@@ -285,6 +285,19 @@ export const appHelpGroups: AppHelpGroup[] = [
     ],
   },
   {
+    group: 'eval',
+    about:
+      "The user only, and only while the project's eval_runner is on: starts the eval_request of a waiting playbook change, whose receipt is added to its evidence when the run ends; returns the improvement",
+    commands: [
+      {
+        type: 'eval.request.run',
+        about:
+          "The user only, and only while the project's eval_runner is on: starts the eval_request of a waiting playbook change, whose receipt is added to its evidence when the run ends; returns the improvement.",
+        tool: 'the user does this in the app',
+      },
+    ],
+  },
+  {
     group: 'external',
     about: '',
     commands: [{ type: 'external.approve', tool: 'the user does this in the app' }],
@@ -470,6 +483,12 @@ export const appHelpGroups: AppHelpGroup[] = [
     group: 'playbook',
     about: '',
     commands: [
+      {
+        type: 'playbook.export',
+        about:
+          "The user only; writes the stored version of the project's playbook for runtime, or of its default playbook without runtime, as {version, sections} to a JSON file under the data folder, which the eval condition playbook=file:<path> reads; returns PlaybookExport, not_found when the version is not stored.",
+        tool: 'the user does this in the app',
+      },
       {
         type: 'playbook.get',
         about:

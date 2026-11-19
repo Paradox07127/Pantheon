@@ -1,4 +1,5 @@
 import type {
+  BoardPlan,
   LeadNote,
   LeadQuestion,
   Milestone,
@@ -14,7 +15,8 @@ import type {
 import { projectAccess, type ControlContext } from './context.js';
 import { ensureAgents } from './agents.js';
 import { residentPlan } from './agent-always-on.js';
-import { appendNote } from './lead-inbox.js';
+import { ownEntry } from './board-plan.js';
+import { appendNote, planLineage } from './lead-inbox.js';
 import { openOf } from './resident.js';
 
 const KINDS = [
@@ -45,19 +47,37 @@ export function taskThread(
 ): TaskThreadEntry[] {
   projectAccess(ctx, principal, projectId, 'task.thread');
   ctx.store.must<Project>('projects', projectId);
+  const lineage = new Set(planLineage(ctx, leadId));
+  const retired = ownEntry(ctx.store.get<BoardPlan>('board_plans', leadId)?.retired, taskId) ?? 0;
+  // A task added again under a removed id is new work; its thread starts where it was added.
+  const since = retired
+    ? (ctx.store
+        .kindEvents(projectId, ['board.plan_updated'])
+        .find(
+          (event) =>
+            lineage.has(event.aggregate_id) &&
+            (ownEntry((event.payload as BoardPlan).generations, taskId)?.generation ?? 0) > retired,
+        )?.sequence ?? 0)
+    : 0;
   const sessions = new Set(
     ctx.store
       .list<Session>('sessions')
-      .filter((session) => session.task?.lead_session_id === leadId && session.task.id === taskId)
+      .filter(
+        (session) =>
+          !!session.task &&
+          lineage.has(session.task.lead_session_id) &&
+          session.task.id === taskId &&
+          (session.task.generation ?? 1) > retired,
+      )
       .map((session) => session.id),
   );
-  const events = ctx.store.kindEvents(projectId, KINDS);
+  const events = ctx.store.kindEvents(projectId, KINDS).filter((event) => event.sequence >= since);
   const noteKey = (cause: string, note: LeadNote) =>
     [cause, note.session_id, note.kind, note.text].join('\n');
   // Each report is also kept as a note in the same command; the report stands for both.
   const reported = new Set(
     events
-      .filter((event) => event.kind === 'task.reported' && event.aggregate_id === leadId)
+      .filter((event) => event.kind === 'task.reported' && lineage.has(event.aggregate_id))
       .map((event) => noteKey(event.causation_id, event.payload as LeadNote)),
   );
   const entries: TaskThreadEntry[] = [];
@@ -74,7 +94,7 @@ export function taskThread(
         });
     } else if (event.kind === 'task.reported' || event.kind === 'lead.note_added') {
       const note = event.payload as LeadNote;
-      if (event.aggregate_id !== leadId || note.task_id !== taskId) continue;
+      if (!lineage.has(event.aggregate_id) || note.task_id !== taskId) continue;
       // A note of a question repeats the question's own event.
       if (
         event.kind === 'lead.note_added' &&
@@ -95,7 +115,9 @@ export function taskThread(
         finding.status === 'rejected' ||
         !(
           (review?.session_id && sessions.has(review.session_id)) ||
-          (review?.requester?.lead_session_id === leadId && review.requester.task_id === taskId)
+          (review?.requester &&
+            lineage.has(review.requester.lead_session_id) &&
+            review.requester.task_id === taskId)
         )
       )
         continue;
@@ -115,7 +137,7 @@ export function taskThread(
     } else if (event.kind.startsWith('lead.question_')) {
       const question = event.payload as LeadQuestion;
       if (
-        event.aggregate_id !== leadId ||
+        !lineage.has(event.aggregate_id) ||
         !(question.blocks.includes(taskId) || sessions.has(question.source?.session_id ?? ''))
       )
         continue;
@@ -134,7 +156,7 @@ export function taskThread(
       });
     } else if (event.kind === 'task.dispatched' || event.kind === 'task.handed_back') {
       const p = event.payload as { task_id: string; session_id?: string; reason?: string };
-      if (event.aggregate_id !== leadId || p.task_id !== taskId) continue;
+      if (!lineage.has(event.aggregate_id) || p.task_id !== taskId) continue;
       entries.push({
         ...base,
         kind: event.kind === 'task.dispatched' ? 'dispatched' : 'handed_back',
@@ -145,7 +167,7 @@ export function taskThread(
       const p = event.payload as { direct?: boolean; task_id?: string };
       if (
         !sessions.has(event.aggregate_id) &&
-        !(event.aggregate_id === leadId && p.direct && p.task_id === taskId)
+        !(lineage.has(event.aggregate_id) && p.direct && p.task_id === taskId)
       )
         continue;
       entries.push({ ...base, kind: 'merged', session_id: event.aggregate_id, text: '' });

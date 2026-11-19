@@ -676,7 +676,7 @@ export function inboxDigest(
 }
 
 /** The plan's id and the ids it had before it was transferred to a new lead. */
-function planIds(ctx: ControlContext, planId: string): string[] {
+export function planLineage(ctx: ControlContext, planId: string): string[] {
   const ids = [planId];
   for (let index = 0; index < ids.length; index++)
     for (const row of ctx.store.db
@@ -688,7 +688,7 @@ function planIds(ctx: ControlContext, planId: string): string[] {
 
 /** Every note recorded for the plan, as recorded. */
 function recordedNotes(ctx: ControlContext, planId: string): LeadNote[] {
-  return planIds(ctx, planId)
+  return planLineage(ctx, planId)
     .flatMap(
       (id) =>
         ctx.store.db

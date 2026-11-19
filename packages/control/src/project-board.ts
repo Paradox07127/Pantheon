@@ -700,6 +700,7 @@ function storePlan(
     ),
     ...holds.map((laneId) => [laneId, { held_at: ctx.store.now(), plan_version: planVersion }]),
   ]);
+  const playbook = ctx.store.get<Session>('sessions', leadId)?.playbook;
   const value: BoardPlan = {
     id: leadId,
     revision: 1,
@@ -710,6 +711,7 @@ function storePlan(
     order_lock: orderLock,
     tasks: input.tasks,
     plan_version: planVersion,
+    ...(playbook ? { playbook } : {}),
     pending_edits: options.pendingEdits ?? current?.pending_edits ?? [],
     pending_proposals: current?.pending_proposals ?? [],
     ...(current?.questions ? { questions: current.questions } : {}),

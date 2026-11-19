@@ -501,7 +501,7 @@ export const projectFactHandlers: Handlers = {
         );
       requireThat(owned, 'not_found', `Not found: milestone ${input.milestone_id}`);
       // A verification still running has not passed either.
-      const verification = milestoneView(ctx, owned).verification;
+      const { status, verification } = milestoneView(ctx, owned);
       const overridden = verification && verification.state !== 'passed' ? verification : undefined;
       requireThat(
         chartered(
@@ -514,6 +514,15 @@ export const projectFactHandlers: Handlers = {
         ) === 'on',
         'permission_denied',
         `The user accepts milestone ${owned.key} on the milestone card; the project's charter does not let a lead accept milestones`,
+      );
+      // Hidden checks run only in a verification, so one must run the current checks before a lead accepts.
+      requireThat(
+        verification ||
+          status !== 'ready_for_acceptance' ||
+          workflowPolicy(ctx, owned.project_id).milestone_verify !== 'auto' ||
+          !hiddenChecks(ctx, owned.project_id).length,
+        'invalid_state',
+        `No verification of milestone ${owned.key} has run the user's current hidden checks yet; wait for its result, which reaches you as a note`,
       );
       if (overridden) {
         requireThat(

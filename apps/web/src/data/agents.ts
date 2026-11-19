@@ -254,11 +254,33 @@ export function shownAgents(agents: readonly AgentProfile[]): AgentProfile[] {
 }
 
 let profileOf: string | null = null;
+let profileIntent: ProfileIntent | null = null;
 const profileListeners = new Set<() => void>();
 
+/** What the profile does once when it opens: `addRoutine` puts a blank routine in its form. */
+export type ProfileIntent = { addRoutine: true };
+
 /** Shows the profile of the agent beside the conversation; null closes it. */
-export function showAgentProfile(agentId: string | null): void {
+export function showAgentProfile(agentId: string | null, intent?: ProfileIntent): void {
   profileOf = agentId;
+  profileIntent = (agentId && intent) || null;
+  profileListeners.forEach((listener) => listener());
+}
+
+/** What the shown profile was opened to do, until the panel takes it with `takeAgentProfileIntent`. */
+export function useAgentProfileIntent(): ProfileIntent | null {
+  return useSyncExternalStore(
+    (listener) => {
+      profileListeners.add(listener);
+      return () => void profileListeners.delete(listener);
+    },
+    () => profileIntent,
+    () => profileIntent,
+  );
+}
+
+export function takeAgentProfileIntent(): void {
+  profileIntent = null;
   profileListeners.forEach((listener) => listener());
 }
 

@@ -58,6 +58,7 @@ export const DEFAULT_WORKFLOW_POLICY: PolicySettings & {
   gate_runner: 'daemon',
   milestone_verify: 'off',
   recovery_switch: 'off',
+  eval_runner: 'off',
   // The largest of the simple-task baselines on each path; tiers without a baseline have none.
   budget: {
     t1: {

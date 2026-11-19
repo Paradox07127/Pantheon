@@ -468,7 +468,7 @@ it('sends a failed merge command through the existing gate hand-back path before
   ).toBe(true);
 });
 
-it('opens the GPU the project allows to its gate commands and before-merge steps, not to other command steps', async () => {
+it('opens the GPU the project allows to its gate commands only, not to workflow command steps', async () => {
   const execute = vi
     .spyOn(validation, 'runValidationCommand')
     .mockResolvedValue(validationResult());
@@ -512,7 +512,7 @@ it('opens the GPU the project allows to its gate commands and before-merge steps
   ).toMatchObject({
     'dispatch-check': false,
     'project-gate': true,
-    'merge-check': true,
+    'merge-check': false,
     'after-check': false,
   });
 });

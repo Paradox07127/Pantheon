@@ -3,7 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
-import { id, type Playbook, type Principal, type Project, type Session } from '@pantheon/domain';
+import {
+  id,
+  type BoardPlan,
+  type Playbook,
+  type Principal,
+  type Project,
+  type Session,
+} from '@pantheon/domain';
 import type { PlaybookRead } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { LEAD_INSTRUCTIONS } from '../../packages/control/dist/agent-prompts.js';
@@ -196,6 +203,48 @@ it('stores each save as a new version and applies the version another module mak
   const [stored] = f.store.list<Playbook>('playbooks');
   expect(Object.keys(stored!.versions)).toEqual(['1', '2', '3']);
   expect(stored!.versions[2]).toEqual(second);
+});
+
+it('records on the plan the playbook version its lead started with', async () => {
+  const f = await setup();
+  const ctx = ctxOf(f);
+  set(f, { runtime: 'codex', base_version: 0, sections: codexSections });
+  set(f, { runtime: 'codex', base_version: 1, sections: defaultSections });
+  const lead = leadSession(f, 'codex');
+  workbenchSessionSpec(ctx, lead);
+  const writePlan = (headline: string) =>
+    f.call(
+      'board.plan.update',
+      {
+        project_id: f.project.id,
+        base_version: f.store.get<BoardPlan>('board_plans', lead.id)?.plan_version ?? 0,
+        headline,
+        lanes: [{ id: 'core', title: 'Core' }],
+        tasks: [],
+        milestones: [],
+        risks: [],
+        assumptions: [],
+      },
+      null,
+      {
+        id: `session:${lead.id}`,
+        role: 'lead',
+        project_id: f.project.id,
+        session_id: lead.id,
+        expires_at: f.store.now() + 60000,
+      },
+    );
+  writePlan('Export ships this week');
+  expect(f.store.must<BoardPlan>('board_plans', lead.id).playbook).toEqual({
+    runtime: 'codex',
+    version: 2,
+  });
+  set(f, { runtime: 'codex', base_version: 2, sections: codexSections });
+  writePlan('Export ships next week');
+  expect(f.store.must<BoardPlan>('board_plans', lead.id)).toMatchObject({
+    headline: 'Export ships next week',
+    playbook: { runtime: 'codex', version: 2 },
+  });
 });
 
 it('reads a stored version by its number and lists the stored numbers with the built-in text', async () => {

@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Bot,
   Circle,
@@ -20,8 +20,10 @@ import { Skeleton } from '../../components/Skeleton';
 import { toast } from '../../components/Toast';
 import {
   agentName,
+  takeAgentProfileIntent,
   templateName,
   useAgentLedger,
+  useAgentProfileIntent,
   useAgentRoutines,
   useAgentWakes,
   useAgents,
@@ -38,6 +40,7 @@ import { useShell } from '../../store';
 import { tokenText } from '../board/panels-model';
 import {
   FIELD_KEYS,
+  NEW_ROUTINE,
   ROUTINE_TEMPLATE_NAMES,
   agentFieldRows,
   changedFields,
@@ -71,6 +74,21 @@ export function AgentProfilePanel({
   const [instructions, setInstructions] = useState<{ revision: number; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Refusal | null>(null);
+  // Opened to add a routine: 'want' until the profile loads, 'focus' until its prompt has focus.
+  const intent = useAgentProfileIntent();
+  const [adding, setAdding] = useState<'want' | 'focus' | null>(null);
+  const aside = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!intent?.addRoutine) return;
+    takeAgentProfileIntent();
+    setAdding('want');
+  }, [intent]);
+  useEffect(() => {
+    if (adding !== 'focus') return;
+    setAdding(null);
+    const rows = aside.current?.querySelectorAll('.ag-rtn');
+    rows?.[rows.length - 1]?.querySelector<HTMLInputElement>(':scope > input')?.focus();
+  }, [adding]);
   if (!profile) return null;
   const base = draftOf({
     ...profile,
@@ -85,6 +103,11 @@ export function AgentProfilePanel({
       revision: now?.revision ?? profile.revision,
       draft: { ...(now?.draft ?? base), ...patch },
     }));
+  if (adding === 'want') {
+    const room = draft.routines.length < 10;
+    setAdding(room ? 'focus' : null);
+    if (room) set({ routines: [...draft.routines, NEW_ROUTINE] });
+  }
   const cancel = () => {
     setEdit(null);
     setError(null);
@@ -290,6 +313,7 @@ export function AgentProfilePanel({
   ];
   return (
     <aside
+      ref={aside}
       className="ag-insp"
       aria-label={t(
         { id: 'sessions.agents.profile.label', defaultMessage: '{name} profile' },
@@ -394,22 +418,31 @@ function AgentContract({ profile }: { profile: AgentListed }) {
       revision: profile.revision,
       ...patch,
     }));
-  // One save at a time: a save asked for while one is out waits, then sends what the fields show then.
+  // One save at a time: a save asked for while one is out keeps the value it asked for and waits.
   const saving = useRef(false);
-  const waiting = useRef<'budget' | 'loudest' | 'quiet' | null>(null);
-  const latest = useRef({ budget, loudest, quiet });
-  latest.current = { budget, loudest, quiet };
+  const waiting = useRef<{
+    field: 'budget' | 'loudest' | 'quiet';
+    values: { budget?: string; loudest?: Loudest; quiet?: Hours | null };
+  } | null>(null);
+  // The profile list may not show the revision the last save made yet.
+  const made = useRef<{ id: string; revision: number } | null>(null);
   const save = async (
     field: 'budget' | 'loudest' | 'quiet',
     next: { budget?: string; loudest?: Loudest; quiet?: Hours | null },
   ) => {
     if (saving.current) {
-      waiting.current = field;
+      waiting.current = {
+        field,
+        values: { ...waiting.current?.values, [field]: { budget, loudest, quiet, ...next }[field] },
+      };
       return;
     }
     saving.current = true;
     let shown = { budget, loudest, quiet, ...next };
-    let revision = profile.revision;
+    let revision =
+      made.current?.id === profile.id && made.current.revision > profile.revision
+        ? made.current.revision
+        : profile.revision;
     setBusy(true);
     setRefusal(null);
     for (;;) {
@@ -432,14 +465,17 @@ function AgentContract({ profile }: { profile: AgentListed }) {
         setRefusal({ field, text: failureText(result.error) });
         break;
       }
-      if (!again || JSON.stringify(latest.current) === JSON.stringify(shown)) break;
+      const saved = (result.value as AgentListed).revision;
+      made.current = { id: profile.id, revision: saved };
+      if (!again) break;
+      const queued = { ...shown, ...again.values };
+      if (JSON.stringify(queued) === JSON.stringify(shown)) break;
       // The draft moves to the saved revision so it stays shown when the profile catches up.
       const sent = revision;
-      const made = (result.value as AgentListed).revision;
-      setDraft((now) => (now?.revision === sent ? { ...now, revision: made } : now));
-      revision = made;
-      field = again;
-      shown = latest.current;
+      setDraft((now) => (now?.revision === sent ? { ...now, revision: saved } : now));
+      revision = saved;
+      field = again.field;
+      shown = queued;
     }
     saving.current = false;
     setBusy(false);
@@ -451,7 +487,7 @@ function AgentContract({ profile }: { profile: AgentListed }) {
       </span>
     );
   const cap = contract.weekly_input_tokens;
-  const spent = week.data?.input_tokens;
+  const spent = week.data?.contract_spent;
   const now = new Date();
   const at = now.getHours() * 60 + now.getMinutes();
   const [from, to] = quiet ? [minutesOf(quiet.from), minutesOf(quiet.to)] : [0, 0];
@@ -811,7 +847,15 @@ function RoutineRuns({ profile }: { profile: AgentListed }) {
       null,
     );
     setStarting(null);
-    if (!result.ok) setRefused({ routine, text: failureText(result.error) });
+    if (!result.ok) return setRefused({ routine, text: failureText(result.error) });
+    if ((result.value as { queued?: unknown } | null)?.queued === 'budget')
+      setRefused({
+        routine,
+        text: t({
+          id: 'automations.runNow.budget',
+          defaultMessage: 'Queued until the project budget is raised or cleared',
+        }),
+      });
   };
   const now = Date.now();
   return section(

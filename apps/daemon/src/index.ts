@@ -602,7 +602,7 @@ export async function startDaemon(options: DaemonOptions) {
       'project.usage.read': (p, i) => control.projectUsageRead(p, i.project_id),
       'agent.list': (p, i) => control.agentList(p, i.project_id),
       'agent.templates': (p) => control.agentTemplates(p),
-      'agent.wakes': (p, i) => control.agentWakes(p, i.agent_id, i.limit),
+      'agent.wakes': (p, i) => control.agentWakes(p, i.agent_id, i.limit, i.routine_id),
       'agent.ledger': (p, i) => control.agentLedger(p, i.agent_id, i.weeks),
       'agent.routines': (p, i) => control.agentRoutines(p, i.project_id),
       'agent.proposal': (p, i) => control.agentProposal(p, i.proposal_id),

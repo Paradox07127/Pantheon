@@ -13,6 +13,7 @@ import type {
 } from '@pantheon/domain';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { agentEvent } from '../../packages/control/dist/agent.js';
+import { transferPlan } from '../../packages/control/dist/board-plan.js';
 import { awaitWorkspaceReady, eventually, insideSandbox, settle, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -366,6 +367,118 @@ it("lists a task session's blocked merge with its reason and the tracker's messa
   expect(entries.map(({ event_id, at, ...entry }) => entry)).toEqual([
     { kind: 'merge_blocked', session_id: worker.id, text: 'out_of_scope' },
     { kind: 'tracker_message', session_id: worker.id, text: 'Move the change back into src/a' },
+  ]);
+});
+
+/** Writes the lead's plan with tasks of the given ids and goals. */
+function writePlan(f: Fixture, leadId: string, tasks: { id: string; goal: string }[]) {
+  f.call(
+    'board.plan.update',
+    {
+      project_id: f.project.id,
+      base_version: f.store.get<BoardPlan>('board_plans', leadId)?.plan_version ?? 0,
+      headline: 'Export ships this week',
+      lanes: [{ id: 'core', title: 'Core' }],
+      tasks: tasks.map((task) => ({
+        ...task,
+        title: `Task ${task.id}`,
+        lane: 'core',
+        depends_on: [],
+        source: ['Plan the export feature'],
+        scope: [`src/${task.id}`],
+        acceptance: ['true'],
+      })),
+      milestones: [],
+      risks: [],
+      assumptions: [],
+    },
+    null,
+    sessionOf(f, leadId, 'lead'),
+  );
+}
+
+const taskSession = (f: Fixture, id: string, leadId: string, generation: number) =>
+  f.store.insert<Session>('sessions', {
+    id,
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    state: 'open',
+    turn_count: 0,
+    task: { lead_session_id: leadId, id: 'a', generation },
+  });
+
+const report = (f: Fixture, leadId: string, sessionId: string, text: string) =>
+  f.store.event('task.reported', f.store.must<BoardPlan>('board_plans', leadId), f.project.id, {
+    at: f.store.now(),
+    session_id: sessionId,
+    task_id: 'a',
+    kind: 'blocked',
+    text,
+  } satisfies LeadNote);
+
+it("keeps a task's dispatch, report, question and hand-back after its plan moves to a new lead", async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  await settle(f, lead);
+  writePlan(f, lead.id, [{ id: 'a', goal: 'Finish task a' }]);
+  const worker = taskSession(f, 'a-worker', lead.id, 1);
+  const plan = () => f.store.must<BoardPlan>('board_plans', lead.id);
+  f.store.event('task.dispatched', plan(), f.project.id, { task_id: 'a', session_id: worker.id });
+  report(f, lead.id, worker.id, 'The export format is undecided');
+  f.store.event('lead.question_asked', plan(), f.project.id, {
+    id: 'format',
+    at: f.store.now(),
+    question: formatQuestion,
+    options: ['CSV', 'JSON'],
+    recommended: 'CSV',
+    assumption: 'CSV',
+    blocks: ['a'],
+  } satisfies LeadQuestion);
+  f.store.event('task.handed_back', plan(), f.project.id, {
+    session_id: worker.id,
+    task_id: 'a',
+    reason: 'The rows lose their order',
+  });
+  const successor = await f.create('Carry on with the export feature');
+  await settle(f, successor);
+  const ctx = ctxOf(f);
+  ctx.store.transaction(() => transferPlan(ctx, plan(), successor.id, ''));
+  f.store.event('session.merged', f.store.must<Session>('sessions', worker.id), f.project.id, {
+    to_sha: 'abc',
+  });
+
+  const entries = f.control.taskThread(user, f.project.id, successor.id, 'a') as TaskThreadEntry[];
+  expect(entries.map((entry) => [entry.kind, entry.text])).toEqual([
+    ['dispatched', ''],
+    ['report', 'The export format is undecided'],
+    ['question', formatQuestion],
+    ['handed_back', 'The rows lose their order'],
+    ['merged', ''],
+  ]);
+});
+
+it('starts the thread of a task added again under a removed id at its new addition', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  await settle(f, lead);
+  const plan = () => f.store.must<BoardPlan>('board_plans', lead.id);
+  writePlan(f, lead.id, [{ id: 'a', goal: 'Export the rows as CSV' }]);
+  const old = taskSession(f, 'old-a-worker', lead.id, 1);
+  f.store.event('task.dispatched', plan(), f.project.id, { task_id: 'a', session_id: old.id });
+  report(f, lead.id, old.id, 'The CSV export is blocked');
+  f.store.event('session.merged', old, f.project.id, { to_sha: 'abc' });
+  writePlan(f, lead.id, []);
+  writePlan(f, lead.id, [{ id: 'a', goal: 'Import the rows from JSON' }]);
+  const added = taskSession(f, 'new-a-worker', lead.id, 2);
+  f.store.event('task.dispatched', plan(), f.project.id, { task_id: 'a', session_id: added.id });
+  writePlan(f, lead.id, [{ id: 'a', goal: 'Import the rows from JSON and YAML' }]);
+  report(f, lead.id, added.id, 'The YAML import is blocked');
+
+  const entries = f.control.taskThread(user, f.project.id, lead.id, 'a') as TaskThreadEntry[];
+  expect(entries.map((entry) => [entry.kind, entry.session_id, entry.text])).toEqual([
+    ['dispatched', added.id, ''],
+    ['report', added.id, 'The YAML import is blocked'],
   ]);
 });
 

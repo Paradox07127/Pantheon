@@ -171,6 +171,14 @@ describe('extensions runtime tabs', () => {
       zh('settings.extensions.unsupported'),
     );
   });
+
+  it('draws no section before the read says which ones the runtime has', () => {
+    reads.loading = true;
+    const html = body(render());
+    const start = html.indexOf(`aria-label="${ext('tools', { runtime: 'Claude' })}"`);
+    const group = html.slice(html.lastIndexOf('<div', start), html.indexOf('</div>', start) + 6);
+    expect(group).toMatch(/^<div[^>]*aria-busy="true"[^>]*><\/div>$/);
+  });
 });
 
 describe('extensions items', () => {
@@ -210,13 +218,11 @@ describe('extensions items', () => {
     );
   });
 
-  it('takes the hooks group title and switch name from the catalog, loaded or loading', () => {
+  it('takes the hooks group title and switch name from the catalog', () => {
     setLocaleSync('zh-CN', { ...zhCatalog(), 'settings.extensions.hooks': '钩子' });
     const hooks = section(body(render()), '钩子');
     expect(hooks).toContain('<h3>钩子</h3>');
     expect(hooks).toContain(`aria-label="${ext('load', { name: '钩子' })}"`);
-    reads.loading = true;
-    expect(section(body(render()), '钩子')).toContain('<h3>钩子</h3>');
   });
 
   it('marks an entry the machine no longer lists with its kind and offers a small remove button', () => {

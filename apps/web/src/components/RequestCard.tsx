@@ -315,7 +315,21 @@ export function RequestCard({
         ref={action === primary ? primaryRef : undefined}
         type="button"
         className={marked(action) ? 'btn pri' : 'btn'}
-        aria-label={`${action.label} ${who}`}
+        aria-label={
+          item.setting_proposal
+            ? t(
+                {
+                  id: 'components.requestCard.settingAction',
+                  defaultMessage: '{action} {setting}, {agent}',
+                },
+                {
+                  action: action.label,
+                  setting: settingName(item.setting_proposal.param),
+                  agent: who,
+                },
+              )
+            : `${action.label} ${who}`
+        }
         aria-disabled={off || undefined}
         aria-busy={held || undefined}
         aria-expanded={opens ? answering : undefined}

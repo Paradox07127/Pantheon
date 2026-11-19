@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { playbookVersions } from './playbooks.mjs';
 
 // The conditions an eval run compares. A dispatch condition runs a scripted lead's one-task plan
@@ -29,14 +30,31 @@ export const conditionCatalog = {
   ),
 };
 
+// A playbook version the daemon's playbook.export wrote, as {version, sections}.
+const PLAYBOOK_FILE = 'playbook=file:';
+
 /** The named conditions; an unknown name throws with the list of known names. */
 export function parseConditions(names) {
-  const unknown = names.filter((name) => !Object.hasOwn(conditionCatalog, name));
+  const unknown = names.filter(
+    (name) => !Object.hasOwn(conditionCatalog, name) && !name.startsWith(PLAYBOOK_FILE),
+  );
   if (unknown.length)
     throw new Error(
-      `unknown condition ${unknown.join(', ')}; known conditions: ${Object.keys(conditionCatalog).join(', ')}`,
+      `unknown condition ${unknown.join(', ')}; known conditions: ${Object.keys(conditionCatalog).join(', ')}, ${PLAYBOOK_FILE}<path>`,
     );
-  return names.map((name) => ({ name, ...conditionCatalog[name] }));
+  return names.map((name) => {
+    if (!name.startsWith(PLAYBOOK_FILE)) return { name, ...conditionCatalog[name] };
+    const { version, sections } = JSON.parse(
+      fs.readFileSync(name.slice(PLAYBOOK_FILE.length), 'utf8'),
+    );
+    return {
+      name,
+      mode: 'dispatch',
+      lead: 'real',
+      before_merge: [],
+      playbook: { version, sections },
+    };
+  });
 }
 
 /**

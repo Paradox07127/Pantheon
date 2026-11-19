@@ -115,7 +115,13 @@ export function taskTrace(
       add(at, failed ? 'gate_failed' : 'gate_passed', event.aggregate_id, failed?.name);
     } else if (BLOCKED.has(event.kind))
       add(at, 'merge_blocked', event.aggregate_id, p.reason as string | undefined);
-    else if (event.kind === 'session.merge_started') add(at, 'merge_started', event.aggregate_id);
+    else if (event.kind === 'session.merge_started')
+      add(
+        at,
+        'merge_started',
+        event.aggregate_id,
+        p.reason === 'gates_passed' ? 'Retried after the gates passed again' : undefined,
+      );
     else if (event.kind === 'session.merged') add(at, 'merged', event.aggregate_id);
     else add(at, 'discarded', event.aggregate_id);
   }

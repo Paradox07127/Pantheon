@@ -1,3 +1,7 @@
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   canonical,
   id,
@@ -5,6 +9,7 @@ import {
   requireThat,
   type AgentProfile,
   type BoardPlan,
+  type EvalReceipt,
   type Improvement,
   type Principal,
   type Project,
@@ -29,11 +34,12 @@ import {
   type Handlers,
   type Preparers,
 } from './context.js';
-import { changeKind } from './learned-change-kinds.js';
+import { changeKind, playbookEval } from './learned-change-kinds.js';
 import { sessionTaskScope } from './memory-access.js';
 import { agentAttempt, improvementSignals } from './improvement-signals.js';
 import { armsCostChange } from './paired-stats.js';
-import { playbookVersion, storedPlaybook } from './playbooks.js';
+import { exportPlaybook, playbookVersion, storedPlaybook } from './playbooks.js';
+import { afterCommit } from './workbench-session.js';
 import { changedPolicy, pinParam, policyValue, workflowPolicy } from './workflow-policy.js';
 
 const LIST_LIMIT = 100;
@@ -631,17 +637,27 @@ export const improvementHandlers: Handlers = {
                 : 'the worktree setup'
       } is waiting or on trial`,
     );
+    const improvementId = id();
+    // A playbook change without a receipt would be refused on confirm, so it records the eval it needs.
+    const evalRequest =
+      change.type === 'playbook' &&
+      !input.evidence?.some((entry) => entry.kind === 'eval_receipt') &&
+      playbookEval(ctx, { id: improvementId, project_id: input.project_id }, change.runtime, [
+        playbookVersion(ctx, input.project_id, change.runtime),
+        change.to,
+      ]).request;
     const improvement = insert<Improvement>(
       ctx,
       'improvements',
       {
-        id: id(),
+        id: improvementId,
         revision: 1,
         project_id: input.project_id,
         lead_session_id: p.session_id!,
         source: 'lead',
         retrospective_ids: retrospectiveIds,
         ...(input.evidence && { evidence: input.evidence }),
+        ...(evalRequest && { eval_request: evalRequest }),
         status: 'candidate',
         change,
         proposed_at: ctx.store.now(),
@@ -654,7 +670,103 @@ export const improvementHandlers: Handlers = {
     return applyImprovement(ctx, improvement, c.command_id);
   },
   'improvement.decide': (ctx, p, c) => decide(ctx, p, c),
+  'eval.request.run': (ctx, p, c) => {
+    userOnly(p);
+    const input = inputSchemas['eval.request.run'].parse(c.input);
+    projectAccess(ctx, p, input.project_id, c.type);
+    ctx.store.must<Project>('projects', input.project_id);
+    const improvement = ctx.store.get<Improvement>('improvements', input.improvement_id);
+    requireThat(
+      improvement?.project_id === input.project_id,
+      'not_found',
+      `improvements/${input.improvement_id}`,
+    );
+    const { change, eval_request: request } = improvement;
+    requireThat(
+      change.type === 'playbook' && request && improvement.status === 'candidate',
+      'invalid_state',
+      'Only a waiting playbook change with an eval request has an eval to run',
+    );
+    requireThat(
+      workflowPolicy(ctx, input.project_id).eval_runner !== 'off',
+      'invalid_state',
+      'The eval runner is off for this project; run the eval_request command yourself, or turn eval_runner on',
+    );
+    let running = runningEvals.get(ctx);
+    if (!running) runningEvals.set(ctx, (running = new Set()));
+    requireThat(
+      !running.has(improvement.id),
+      'invalid_state',
+      'The eval of this improvement is running',
+    );
+    for (const version of request.conditions)
+      exportPlaybook(ctx, input.project_id, change.runtime, version);
+    const { checkout, args, out } = playbookEval(
+      ctx,
+      improvement,
+      change.runtime,
+      request.conditions,
+    );
+    const committed = afterCommit(ctx);
+    running.add(improvement.id);
+    void Promise.resolve()
+      .then(async () => {
+        if (!committed()) return;
+        const code = await (ctx.evalRunner ?? spawnEval)(checkout, args);
+        const runsFile = path.join(out, 'runs.jsonl');
+        if (code !== 0 || !existsSync(runsFile))
+          throw new Error(`The eval of improvement ${improvement.id} exited ${code} without runs`);
+        if (ctx.closing) return;
+        // The receipt carries the report's verdict for the proposed version; confirming checks it against the runs.
+        const second = args[args.lastIndexOf('--condition') + 1];
+        const verdicts = [
+          ...readFileSync(path.join(out, 'report.md'), 'utf8').matchAll(
+            /^Verdict: (.+?) (leaks less|passes more|cheaper)\b/gm,
+          ),
+        ].map(([, condition, what]) => `${condition}_${what!.replace(' ', '_')}`);
+        const receipt: EvalReceipt = {
+          kind: 'eval_receipt',
+          path: runsFile,
+          sha256: createHash('sha256').update(readFileSync(runsFile)).digest('hex'),
+          verdict:
+            verdicts.find((verdict) => verdict.startsWith(`${second}_`)) ??
+            verdicts[0] ??
+            'no_conclusion',
+        };
+        ctx.store.transaction(() => {
+          const current = ctx.store.must<Improvement>('improvements', improvement.id);
+          const next = ctx.store.update<Improvement>(
+            'improvements',
+            { ...current, evidence: [...(current.evidence ?? []), receipt] },
+            current.revision,
+          );
+          ctx.store.event(
+            'improvement.evidence_added',
+            next,
+            next.project_id,
+            { improvement_id: next.id, evidence: receipt },
+            c.command_id,
+          );
+        });
+        ctx.changed();
+      })
+      .catch((error: unknown) => ctx.diagnostic(error))
+      .finally(() => running.delete(improvement.id));
+    return improvement;
+  },
 };
+
+/** The improvements whose eval this daemon started and that has not ended, by context. */
+const runningEvals = new WeakMap<ControlContext, Set<string>>();
+
+/** Runs node with args in cwd detached, so a daemon restart does not stop the eval; only this daemon attaches its receipt. */
+const spawnEval = (cwd: string, args: string[]) =>
+  new Promise<number>((resolve, reject) => {
+    const child = spawn(process.execPath, args, { cwd, detached: true, stdio: 'ignore' });
+    child.on('error', reject);
+    child.on('exit', (code) => resolve(code ?? -1));
+    child.unref();
+  });
 
 /** A gate change reads its root as a git folder before the transaction. */
 export const improvementPreparers: Preparers = {

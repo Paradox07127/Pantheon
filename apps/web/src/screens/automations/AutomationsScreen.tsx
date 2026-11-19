@@ -183,10 +183,10 @@ export function AutomationsScreen({ projectId }: { projectId: string | null }) {
   const rows = routines.read;
   const agents = useAgents(projectId);
   const now = useNow(30_000);
-  // The open row; one at a time, so one agent's wakes are read.
+  // The open row; one at a time, so one routine's wakes are read.
   const [open, setOpen] = useState<string | null>(null);
   const openRow = rows?.find((row) => keyOf(row) === open) ?? null;
-  const wakes = useAgentWakes(projectId, openRow?.agent_id ?? null);
+  const wakes = useAgentWakes(projectId, openRow?.agent_id ?? null, openRow?.routine.id);
   // The row and button whose command is out.
   const [busy, setBusy] = useState<{ key: string; button: 'run' | 'pause' } | null>(null);
   const [refusal, setRefusal] = useState<{ key: string; text: string } | null>(null);
@@ -208,7 +208,15 @@ export function AutomationsScreen({ projectId }: { projectId: string | null }) {
       null,
     );
     setBusy(null);
-    if (!result.ok) setRefusal({ key, text: failureText(result.error) });
+    if (!result.ok) return setRefusal({ key, text: failureText(result.error) });
+    if ((result.value as { queued?: unknown } | null)?.queued === 'budget')
+      setRefusal({
+        key,
+        text: t({
+          id: 'automations.runNow.budget',
+          defaultMessage: 'Queued until the project budget is raised or cleared',
+        }),
+      });
   };
 
   // agent.update replaces the whole list, so it sends every routine of the row's agent.
@@ -271,7 +279,7 @@ export function AutomationsScreen({ projectId }: { projectId: string | null }) {
   const addRoutine = () => {
     const assistant = shownAgents(agents ?? []).find((agent) => agent.template === 'assistant');
     if (!assistant) return;
-    showAgentProfile(assistant.id);
+    showAgentProfile(assistant.id, { addRoutine: true });
     setScreen('sessions');
   };
 

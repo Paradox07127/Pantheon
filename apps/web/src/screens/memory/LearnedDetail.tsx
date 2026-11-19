@@ -259,7 +259,11 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
         <span className="mld-st" aria-hidden="true">
           <StateGlyph name={GROUP_GLYPH[item.group]} />
         </span>
-        <span className="mld-status">{GROUP_LABEL[item.group]()}</span>
+        <span className="mld-status">
+          {item.status === 'rejected' || item.status === 'declined'
+            ? t({ id: 'memory.learnedDetail.rejected', defaultMessage: 'Rejected' })
+            : GROUP_LABEL[item.group]()}
+        </span>
         <span className="mld-time">
           {t(
             { id: 'memory.learnedDetail.proposedAt', defaultMessage: 'Proposed {when}' },

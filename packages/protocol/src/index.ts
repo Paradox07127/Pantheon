@@ -43,6 +43,7 @@ import {
   planPauseTools,
 } from './plan-pause.js';
 export type { PlaybookRead } from './playbooks.js';
+export type { PlaybookExport } from './playbooks.js';
 import { milestoneCheckInputSchemas } from './milestone-checks.js';
 export type { HiddenChecksRead } from './milestone-checks.js';
 import { questionBatchInputSchemas } from './question-batches.js';
@@ -2705,6 +2706,12 @@ export const inputSchemas = {
       .describe(
         "auto moves a task session whose hand-backs of one problem ran out to the routing cell's alternate runtime, or else the writer fallback, for one more hand-back; off leaves it to the lead.",
       ),
+    eval_runner: z
+      .enum(['off', 'on'])
+      .optional()
+      .describe(
+        'on lets the user start the requested eval of a playbook change from the app, which spends real model runs; off leaves its command to run by hand.',
+      ),
     handback_limit: z.union([z.literal(0), z.number().int().min(2).max(5)]).optional(),
     /** null clears the hint. */
     task_size_hint: z.number().int().nullable().optional(),
@@ -2765,6 +2772,8 @@ export const inputSchemas = {
       decision: z.enum(['confirm', 'revert', 'pin']),
     }),
   ]),
+  /** The user only, and only while the project's eval_runner is on: starts the eval_request of a waiting playbook change, whose receipt is added to its evidence when the run ends; returns the improvement. */
+  'eval.request.run': z.strictObject({ project_id: str, improvement_id: str }),
   /** Sets the one line of what the calling session does now in its running turn, shown on its board row with its time. Plan task and lead sessions only; a new text waits 15 s after the last one. */
   'task.status_line': z.strictObject({
     text: z

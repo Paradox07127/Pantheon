@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -82,6 +83,21 @@ describe('eval conditions', () => {
       playbook: { version: 'v1', sections: {} },
     });
     expect(Object.keys(second?.playbook?.sections ?? {})).toEqual(['replies']);
+  });
+
+  it('reads a playbook version exported to a file as a condition with a real lead', () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'eval-playbook-')), 'v3.json');
+    const sections = { before_you_plan: 'Plan.', routing: '- t1.', replies: '- One line.' };
+    fs.writeFileSync(file, JSON.stringify({ version: 3, sections }));
+    expect(parseConditions([`playbook=file:${file}`])).toEqual([
+      {
+        name: `playbook=file:${file}`,
+        mode: 'dispatch',
+        lead: 'real',
+        before_merge: [],
+        playbook: { version: 3, sections },
+      },
+    ]);
   });
 
   it('refuses a playbook version it does not hold', () => {

@@ -23,13 +23,18 @@
   color: var(--tx);
 }
 /* Every line after a label's first is its detail. */
-.vis-mermaid .node > .label:not(.noteLabel, [class*='attribute-']) > foreignObject:first-of-type p,
+/* Named classes, not [class*=]: a class attribute selector here restyles the whole subtree of any element whose class changes. */
+.vis-mermaid
+  .node
+  > .label:not(.noteLabel, .attribute-type, .attribute-name, .attribute-keys, .attribute-comment)
+  > foreignObject:first-of-type
+  p,
 .vis-mermaid .statediagram-state > .label > foreignObject + foreignObject p {
   color: var(--mu);
 }
 .vis-mermaid
   .node
-  > .label:not(.noteLabel, [class*='attribute-'])
+  > .label:not(.noteLabel, .attribute-type, .attribute-name, .attribute-keys, .attribute-comment)
   > foreignObject:first-of-type
   p::first-line {
   color: var(--tx);

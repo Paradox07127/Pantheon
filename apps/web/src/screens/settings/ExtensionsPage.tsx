@@ -39,7 +39,6 @@ import {
 import { t } from '../../i18n';
 import {
   failureText,
-  Loading,
   noChanges,
   runtimeLabel,
   saveLabel,
@@ -60,8 +59,6 @@ const unsupportedText = () =>
     id: 'settings.extensions.unsupported',
     defaultMessage: 'This runtime does not list its extensions',
   });
-const readingInventory = () =>
-  t({ id: 'settings.extensions.reading', defaultMessage: "Reading this machine's inventory" });
 const mcpTitle = () => t({ id: 'settings.extensions.mcp', defaultMessage: 'MCP servers' });
 const pluginsTitle = () => t({ id: 'settings.extensions.plugins', defaultMessage: 'Plugins' });
 const skillsTitle = () => t({ id: 'settings.extensions.skills', defaultMessage: 'Skills' });
@@ -160,15 +157,8 @@ export function ExtensionsPage({ project }: { project: Project }) {
         <LoadError message={failureText(state)} onRetry={reload} />
       </Section>
     );
-  else if (state.state === 'loading')
-    panel = [mcpTitle(), pluginsTitle(), skillsTitle(), appsLabel(runtime), hooksTitle()].map(
-      (title) => (
-        <Section key={title} title={title} meta={readingInventory()}>
-          <Loading />
-        </Section>
-      ),
-    );
-  else {
+  // While loading the panel stays empty: the read decides between the five groups and one section.
+  else if (state.state !== 'loading') {
     const changes = selectionChanges(initial, draft);
     const busy = saving === runtime || savedAt?.runtime === runtime;
     const enabled = saving === null && savedAt === null && canSave(initial, draft);
@@ -257,7 +247,12 @@ export function ExtensionsPage({ project }: { project: Project }) {
           ))}
         </Tabs.List>
       </Tabs.Root>
-      <div aria-label={toolsTitle(runtimeName(runtime))} role="group" className="ps-col">
+      <div
+        aria-label={toolsTitle(runtimeName(runtime))}
+        role="group"
+        className="ps-col"
+        aria-busy={state.state === 'loading' || undefined}
+      >
         {panel}
       </div>
       {footer}

@@ -35,6 +35,12 @@ export const settingProposalHandlers: Handlers = {
       'invalid_input',
       `${value} is not a value of ${param}; see the param description for its values`,
     );
+    const policy = workflowPolicy(ctx, session.project_id);
+    requireThat(
+      param !== 'max_parallel' || (value as number) <= policy.max_parallel_limit,
+      'invalid_input',
+      `max_parallel can be at most the project's max_parallel_limit (${policy.max_parallel_limit}); propose ${policy.max_parallel_limit} or less`,
+    );
     const unquoted = sourceProblem(ctx, {
       project_id: session.project_id,
       tasks: [{ id: 'setting', source: [quote] }],
@@ -44,8 +50,7 @@ export const settingProposalHandlers: Handlers = {
       'invalid_input',
       `No message of the user contains "${quote}"; quote the words of the user that ask for the change exactly`,
     );
-    const policy = workflowPolicy(ctx, session.project_id),
-      power = charterPower(param);
+    const power = charterPower(param);
     const current =
       param === 'external_events'
         ? externalEvents(ctx, ctx.store.must<Project>('projects', session.project_id))

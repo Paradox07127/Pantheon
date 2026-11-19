@@ -1,7 +1,15 @@
-import type { BoardPlan, LeadQuestion, Milestone, PlanProposal, Principal } from '@pantheon/domain';
+import type {
+  BoardPlan,
+  LeadQuestion,
+  Milestone,
+  PlanProposal,
+  Principal,
+  Session,
+} from '@pantheon/domain';
 import type { PlanReplay, PlanReplayFrame, PlanReplayTaskStatus } from '@pantheon/protocol';
 import { projectAccess, type ControlContext } from './context.js';
 import { taskGeneration } from './board-plan.js';
+import { planLineage } from './lead-inbox.js';
 import { triggerText, type ReplanFired } from './replan.js';
 
 const REPLAY_KINDS: PlanReplayFrame['kind'][] = [
@@ -35,6 +43,7 @@ export function planReplay(
 ): PlanReplay {
   const projectId = ctx.store.must<BoardPlan>('board_plans', leadId).project_id;
   projectAccess(ctx, principal, projectId, 'project.read');
+  const lineage = new Set(planLineage(ctx, leadId));
   let plan: BoardPlan | undefined;
   // By task id, with the task generation the status was reached in; replaced, not changed, so a frame keeps its own.
   let statuses: Statuses = new Map();
@@ -86,11 +95,19 @@ export function planReplay(
           generation: p.generation as number,
         });
       } else {
-        taskId = sessionTask.get(event.aggregate_id);
+        // A session the user opened from the board has no dispatch event; its own task binds it.
+        const task = ctx.store.get<Session>('sessions', event.aggregate_id)?.task;
+        taskId =
+          sessionTask.get(event.aggregate_id) ??
+          (task && lineage.has(task.lead_session_id) ? task.id : undefined);
         if (!taskId) continue;
-        const open = parts.get(taskId)!;
+        let open = parts.get(taskId);
+        if (!open) parts.set(taskId, (open = new Set()));
         open.delete(event.aggregate_id);
-        const status = statuses.get(taskId)!;
+        const status = statuses.get(taskId) ?? {
+          status: 'merged' as const,
+          generation: task!.generation ?? taskGeneration(plan, taskId),
+        };
         if (!open.size) statuses = new Map(statuses).set(taskId, { ...status, status: 'merged' });
       }
     } else if (event.kind === 'task.accepted') {

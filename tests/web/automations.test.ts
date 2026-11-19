@@ -26,6 +26,7 @@ const data = vi.hoisted(() => ({
   routines: null as any,
   wakes: null as any,
   wakesOf: [] as (string | null)[],
+  wakesOfRoutine: [] as (string | undefined)[],
 }));
 const showAgentProfile = vi.hoisted(() => vi.fn());
 vi.mock('@/data/agents', async (actual) => ({
@@ -35,8 +36,9 @@ vi.mock('@/data/agents', async (actual) => ({
 }));
 vi.mock('@/data/automations', () => ({
   useRoutines: () => data.routines,
-  useAgentWakes: (_projectId: string | null, agentId: string | null) => {
+  useAgentWakes: (_projectId: string | null, agentId: string | null, routineId?: string) => {
     data.wakesOf.push(agentId);
+    data.wakesOfRoutine.push(routineId);
     return agentId ? data.wakes : { data: null, loading: false, error: null, reload() {} };
   },
 }));
@@ -163,6 +165,7 @@ beforeEach(() => {
   data.routines = read(rows());
   data.wakes = { data: [], loading: false, error: null, reload: vi.fn() };
   data.wakesOf = [];
+  data.wakesOfRoutine = [];
 });
 afterEach(() => {
   unmountAll();
@@ -243,6 +246,18 @@ describe('automations page', () => {
     expect(all(h.value, 'alert').map(nameOf)).toEqual([failureText(error)]);
     await press(h, one(row(h.value, REBASE), 'button', 'Run now'));
     expect(all(h.value, 'alert')).toEqual([]);
+  });
+
+  it('says under its row when the project budget holds a run', async () => {
+    runCommand.mockImplementationOnce(async () => ({
+      ok: true,
+      value: { session_id: 's-assistant', queued: 'budget' },
+    }));
+    const h = screen();
+    await press(h, one(row(h.value, REBASE), 'button', 'Run now'));
+    expect(all(h.value, 'alert').map(nameOf)).toEqual([
+      'Queued until the project budget is raised or cleared',
+    ]);
   });
 
   it('pauses a routine through agent.update at the row revision, with an undo', async () => {
@@ -334,6 +349,12 @@ describe('automations page', () => {
     ]);
   });
 
+  it("reads the wakes of the open row's routine", async () => {
+    const h = screen();
+    await press(h, one(h.value, 'button', `Show runs of ${REBASE}`));
+    expect([data.wakesOf.at(-1), data.wakesOfRoutine.at(-1)]).toEqual(['ag-assistant', 'r-rebase']);
+  });
+
   it('makes a task of a run and then offers to open the Assistant', async () => {
     data.wakes.data = [wake('t-1', { outcome: 'told_user', message_ids: ['m-1'] })];
     runCommand.mockImplementation(async () => ({ ok: true, value: { session_id: 's-assistant' } }));
@@ -378,7 +399,7 @@ describe('automations page', () => {
     const h = screen();
     expect(text(h.value)).toContain('No agent in this project runs anything on a schedule.');
     await press(h, one(h.value, 'button', 'Add a routine'));
-    expect(showAgentProfile).toHaveBeenCalledWith('ag-assistant');
+    expect(showAgentProfile).toHaveBeenCalledWith('ag-assistant', { addRoutine: true });
     expect(mock.shell.setScreen).toHaveBeenCalledWith('sessions');
   });
 });

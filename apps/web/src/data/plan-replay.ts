@@ -45,6 +45,8 @@ interface ReplayState {
   earlierError: string | null;
   /** Earlier pages load while fewer frames than this are in. */
   budget: number;
+  /** An earlier page came back short, so the plan's first frame is in. */
+  reachedStart: boolean;
 }
 
 const start = (lead: string): ReplayState => ({
@@ -57,6 +59,7 @@ const start = (lead: string): ReplayState => ({
   error: null,
   earlierError: null,
   budget: REPLAY_BACKGROUND_FRAMES,
+  reachedStart: false,
 });
 
 async function readPage(
@@ -128,6 +131,7 @@ export function usePlanReplay(leadId: string): PlanReplayRead {
   const earlier =
     shown.loaded &&
     !shown.earlierError &&
+    !shown.reachedStart &&
     oldest !== undefined &&
     shown.frames.length < shown.total &&
     shown.frames.length < shown.budget;
@@ -142,7 +146,12 @@ export function usePlanReplay(leadId: string): PlanReplayRead {
           ? s
           : 'error' in read
             ? { ...s, earlierError: read.error }
-            : { ...s, frames: [...read.page.frames, ...s.frames], total: read.page.total },
+            : {
+                ...s,
+                frames: [...read.page.frames, ...s.frames],
+                total: read.page.total,
+                reachedStart: read.page.frames.length < PAGE,
+              },
       );
     });
   }, [earlier, oldest, leadId]);
@@ -159,6 +168,7 @@ export function usePlanReplay(leadId: string): PlanReplayRead {
   const held =
     shown.loaded &&
     !shown.earlierError &&
+    !shown.reachedStart &&
     shown.frames.length < shown.total &&
     shown.frames.length >= shown.budget;
   return {

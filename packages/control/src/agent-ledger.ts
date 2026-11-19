@@ -1,5 +1,6 @@
 import type { AgentProfile, Principal, Retrospective, Session } from '@pantheon/domain';
 import type { AgentLedgerWeek } from '@pantheon/protocol';
+import { weeklyInputTokensSpent } from './agent-contract.js';
 import { wakeOf, wakeSpans } from './agent-wakes.js';
 import { projectAccess, userOnly, type ControlContext } from './context.js';
 import { latestRetrospectives } from './retrospective.js';
@@ -32,7 +33,11 @@ export function agentLedger(
       ctx.store.list<Retrospective>('retrospectives'),
       profile.project_id,
     ).values(),
-  ].filter((row) => led.has(row.lead_session_id) && row.started_at !== undefined);
+  ].filter((row) => led.has(row.lead_session_id));
+  // A task starts when its lead dispatches it or claims it to do directly; both events are the lead's.
+  const starts = ctx.store
+    .kindEventsSince(profile.project_id, ['task.dispatched', 'task.claimed'], since)
+    .filter((event) => led.has(event.aggregate_id));
   // An approval on a task session's behalf names the session of the lead that approved it.
   const approved = sessions.length
     ? (ctx.store.db
@@ -46,7 +51,6 @@ export function agentLedger(
       from = to - WEEK_MS;
     const within = (at: number) => at > from && at <= to;
     const week = wakes.filter((wake) => within(wake.at));
-    const started = tasks.filter((row) => within(row.started_at!));
     const causes: AgentLedgerWeek['causes'] = {};
     for (const cause of week.flatMap((wake) => wake.causes))
       causes[cause] = (causes[cause] ?? 0) + 1;
@@ -61,9 +65,11 @@ export function agentLedger(
         told_user: week.filter((wake) => wake.outcome === 'told_user').length,
         asked: week.filter((wake) => wake.outcome === 'asked').length,
       },
-      tasks_started: started.length,
-      tasks_merged: started.filter((row) => row.outcome === 'merged' || row.outcome === 'accepted')
-        .length,
+      tasks_started: starts.filter((event) => within(event.created_at)).length,
+      tasks_merged: tasks.filter(
+        (row) =>
+          within(row.recorded_at) && (row.outcome === 'merged' || row.outcome === 'accepted'),
+      ).length,
       input_tokens: sessions.length
         ? turnInputTokens(ctx, {
             project_id: profile.project_id,
@@ -73,6 +79,7 @@ export function agentLedger(
           }).reduce((sum, row) => sum + row.input_tokens, 0)
         : 0,
       prompts_auto_approved: approved.filter((row) => within(row.created_at)).length,
+      ...(index === 0 && { contract_spent: weeklyInputTokensSpent(ctx, profile, now) }),
     };
   });
 }

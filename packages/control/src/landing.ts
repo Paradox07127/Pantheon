@@ -157,9 +157,12 @@ function failureClass(result: ValidationResult): GateFailureClass | undefined {
     : 'code';
 }
 
+/** Who runs a gate command; allGates marks every command as a gate candidate, as an environment check's are. */
+type GateRunner = Pick<LandingOwner, 'projectId' | 'cancelled'> & { allGates?: boolean };
+
 async function runGateCommand(
   ctx: ControlContext,
-  owner: Pick<LandingOwner, 'projectId' | 'cancelled'>,
+  owner: GateRunner,
   key: string,
   command: GateCommands[number],
   candidate: string,
@@ -182,7 +185,13 @@ async function runGateCommand(
       // Gates verify a candidate without installing; pnpm's pre-run install writes the store outside the sandbox.
       pnpm_config_verify_deps_before_run: 'false',
     },
-    gpu: project.gate_gpu === true,
+    // The user opened the GPU to the project's gate commands, not to acceptance or hidden checks.
+    gpu:
+      project.gate_gpu === true &&
+      (owner.allGates === true ||
+        Object.values(project.gates ?? {}).some((commands) =>
+          commands.some((gate) => JSON.stringify(gate.argv) === JSON.stringify(command.argv)),
+        )),
     timeoutMs: command.timeout_ms ?? 1200000,
     cancelled: owner.cancelled,
   });
@@ -425,7 +434,7 @@ async function cloneCandidate(
 /** Runs one command on the candidate, failed when it changed tracked files; undefined when stopped. */
 async function runChecked(
   ctx: ControlContext,
-  owner: Pick<LandingOwner, 'projectId' | 'cancelled'>,
+  owner: GateRunner,
   key: string,
   command: GateCommands[number],
   candidate: string,

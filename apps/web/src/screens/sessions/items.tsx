@@ -927,25 +927,30 @@ function McpStartNotice(props: { event: DaemonEvent; enter: string }) {
 export function ChapterMark({ event }: { event: DaemonEvent }) {
   const {
     chapter,
+    handoff_key: handoffKey,
     handoff_memory_id: handoff,
     previous_memory_id: previous,
   } = event.payload as AgentChapterStartedPayload;
   const [notes, setNotes] = useState<{ lines: DiffLine[] } | { error: string } | null>(null);
-  // The note it replaced is no longer current, so memory.get refuses it; the key's history has it.
+  // Both notes are superseded once later chapters start, so memory.get refuses them; the key's history has them.
   const load = async () => {
     setNotes(null);
-    const note = await runCommand('memory.get', { memory_id: handoff }, null);
-    if (!note.ok) return setNotes({ error: failureText(note.error) });
-    const { key, text } = note.value as { key: string; text: string };
+    let key = handoffKey;
+    let text: string | undefined;
+    if (!key) {
+      const note = await runCommand('memory.get', { memory_id: handoff }, null);
+      if (!note.ok) return setNotes({ error: failureText(note.error) });
+      ({ key, text } = note.value as { key: string; text: string });
+    }
     const history = await runCommand(
       'memory.history',
       { project_id: event.project_id, key, limit: 50 },
       null,
     );
     if (!history.ok) return setNotes({ error: failureText(history.error) });
-    const before = (history.value as { items: { id: string; text: string }[] }).items.find(
-      (item) => item.id === previous,
-    );
+    const items = (history.value as { items: { id: string; text: string }[] }).items;
+    const before = items.find((item) => item.id === previous);
+    text ??= items.find((item) => item.id === handoff)?.text ?? '';
     setNotes({ lines: diffLines(before?.text ?? '', text) });
   };
   const lines = notes && 'lines' in notes ? notes.lines : null;

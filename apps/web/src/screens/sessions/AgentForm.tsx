@@ -100,7 +100,7 @@ export function routineInput(draft: RoutineDraft): AgentRoutineInput {
   };
 }
 
-const NEW_ROUTINE: RoutineDraft = {
+export const NEW_ROUTINE: RoutineDraft = {
   prompt: '',
   daily: false,
   amount: '1',

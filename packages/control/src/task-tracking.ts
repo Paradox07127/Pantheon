@@ -1406,8 +1406,14 @@ export function wakeLead(ctx: ControlContext, plan: BoardPlan, cause: string): v
             turn.origin === 'tracker',
         )
     : undefined;
-  // A resident gathers the notes of a whole window into its next turn instead of hitting the limit.
-  if (!waiting && lead.resident && ctx.store.now() - lastWake(ctx, lead.id) < RESIDENT_WAKE_MS)
+  // A resident gathers the notes of a whole window into its next turn instead of hitting the limit;
+  // the user's own act wakes it at once.
+  if (
+    !waiting &&
+    lead.resident &&
+    !plan.inbox.some((note) => note.bypass_hold === 'user') &&
+    ctx.store.now() - lastWake(ctx, lead.id) < RESIDENT_WAKE_MS
+  )
     return;
   // Notes folded into the queued turn add no turn, so only a new one counts against the limit.
   if (!waiting && !lead.resident && recentWakes(ctx, lead.id) >= WAKE_LIMIT) {

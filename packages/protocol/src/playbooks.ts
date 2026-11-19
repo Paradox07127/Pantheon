@@ -28,6 +28,12 @@ export interface PlaybookRead {
   built_in: PlaybookSections;
 }
 
+/** What playbook.export returns. */
+export interface PlaybookExport {
+  /** The absolute path of the written file. */
+  path: string;
+}
+
 /** The user only; a playbook replaces the lead instruction sections Before you plan, Routing and Replies. */
 export const playbookInputSchemas = {
   /** The user only; returns PlaybookRead for the project's playbook for runtime, or its default playbook without runtime; with version, its sections are that stored version's, not_found when it is not stored. */
@@ -48,5 +54,11 @@ export const playbookInputSchemas = {
     project_id: str,
     runtime: str.optional(),
     base_version: z.number().int().min(0),
+  }),
+  /** The user only; writes the stored version of the project's playbook for runtime, or of its default playbook without runtime, as {version, sections} to a JSON file under the data folder, which the eval condition playbook=file:<path> reads; returns PlaybookExport, not_found when the version is not stored. */
+  'playbook.export': z.strictObject({
+    project_id: str,
+    runtime: str.optional(),
+    version: z.number().int().min(1),
   }),
 } as const satisfies Record<string, z.ZodType>;

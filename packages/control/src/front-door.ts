@@ -122,7 +122,7 @@ export function routingReceipt(
   if (
     ctx.store.db
       .prepare(
-        "SELECT 1 FROM events WHERE aggregate_id=? AND kind='lead.question_asked' AND sequence>? AND sequence<? LIMIT 1",
+        "SELECT 1 FROM events WHERE aggregate_id=? AND kind='lead.question_asked' AND payload ->> '$.source' IS NULL AND sequence>? AND sequence<? LIMIT 1",
       )
       .get(turn.session_id, span.start, span.end)
   )

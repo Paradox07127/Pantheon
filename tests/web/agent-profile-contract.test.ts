@@ -34,6 +34,7 @@ vi.mock('@/data/agents', async (actual) => ({
   useAgentLedger: () => data.ledger,
 }));
 import { ROUTINE_TEMPLATES } from '@pantheon/protocol/routine-catalog';
+import { showAgentProfile } from '@/data/agents';
 import { AgentProfilePanel } from '@/screens/sessions/AgentProfile';
 import { ChapterMark } from '@/screens/sessions/items';
 import { buildTranscript } from '@/data/transcript';
@@ -77,6 +78,7 @@ const week = (extra: object = {}) => ({
   tasks_merged: 2,
   input_tokens: 1_240_000,
   prompts_auto_approved: 5,
+  contract_spent: 1_240_000,
   ...extra,
 });
 
@@ -152,6 +154,44 @@ describe('agent profile sections', () => {
     ['WeekLedger', 'sessions.agents.week.title'],
   ])('names the %s section by its caption', (name, caption) => {
     expect(section(part(name).value, zh(caption))).toBeTruthy();
+  });
+});
+
+describe('opened to add a routine', () => {
+  afterEach(() => showAgentProfile(null));
+  const labels = Array.from({ length: 11 }, (_, i) =>
+    zhf('sessions.agents.routine.label', { number: i + 1 }),
+  );
+  const routineRows = (tree: unknown) =>
+    nodes(tree as never).filter(
+      (n) => n.props.role === 'group' && labels.includes(n.props['aria-label']),
+    );
+
+  it('puts one blank routine in the form with Save on, and saves nothing until pressed', async () => {
+    showAgentProfile('agent-triage', { addRoutine: true });
+    const h = panel();
+    await h.flush();
+    const shown = routineRows(h.value);
+    expect(shown).toHaveLength(1);
+    expect(named(shown[0], zh('sessions.agents.routine.prompt'))!.props.value).toBe('');
+    const save = buttons(h.value).find((n) => text(n) === zh('sessions.agents.save'));
+    expect(save?.props.disabled).toBe(false);
+    expect(runCommand.mock.calls.filter((call) => call[0] === 'agent.update')).toEqual([]);
+    expect(routineRows(panel().value)).toEqual([]);
+  });
+
+  it('only opens when the agent already has ten routines', () => {
+    const ten = Array.from({ length: 10 }, (_, i) => ({
+      id: `r-${i}`,
+      prompt: `Check ${i}`,
+      every_ms: 3_600_000,
+      enabled: true,
+    }));
+    data.agents = [triage({ routines: ten })];
+    showAgentProfile('agent-triage', { addRoutine: true });
+    const h = panel();
+    expect(routineRows(h.value)).toHaveLength(10);
+    expect(buttons(h.value).some((n) => text(n) === zh('sessions.agents.save'))).toBe(false);
   });
 });
 
@@ -280,20 +320,84 @@ describe('contract', () => {
     expect(alerts(h.value)).toEqual([]);
   });
 
+  it('still sends an edit made during a save when the refreshed profile arrives before the reply', async () => {
+    let profile = triage();
+    const contractOf = nodes(panel().value).find(
+      (n) => typeof n.type === 'function' && n.type.name === 'AgentContract',
+    )!.type as (props: unknown) => any;
+    const h = host(() => contractOf({ profile }));
+    let answer!: (result: unknown) => void;
+    runCommand.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    const budget = () => labelled(h.value, zh('sessions.agents.contract.budget'));
+    const until = () => named(h.value, zh('sessions.agents.contract.quietUntil'))!;
+    budget().props.onChange({ target: { value: '500000' } });
+    h.render();
+    budget().props.onBlur();
+    until().props.onChange({ target: { value: '07:30' } });
+    h.render();
+    until().props.onBlur();
+    await h.flush();
+    const saved = triage({
+      revision: 8,
+      contract: { ...triage().contract, weekly_input_tokens: 500000 },
+    });
+    profile = saved;
+    h.render();
+    answer({ ok: true, value: saved });
+    await h.flush();
+    const sent = runCommand.mock.calls.filter((call) => call[0] === 'agent.update');
+    expect(sent.map((call) => (call[1] as any).revision)).toEqual([7, 8]);
+    expect((sent[1]![1] as any).contract).toEqual({
+      weekly_input_tokens: 500000,
+      loudest: 'notify',
+      quiet_hours: { from: '22:00', to: '07:30' },
+    });
+  });
+
+  it('sends an edit made after a save returned at the revision that save made, before the profile catches up', async () => {
+    runCommand.mockImplementation(async () => ({
+      ok: true,
+      value: triage({
+        revision: 8,
+        contract: { ...triage().contract, weekly_input_tokens: 500000 },
+      }),
+    }));
+    const h = part('AgentContract');
+    const budget = () => labelled(h.value, zh('sessions.agents.contract.budget'));
+    budget().props.onChange({ target: { value: '500000' } });
+    h.render();
+    budget().props.onBlur();
+    await h.flush();
+    budget().props.onChange({ target: { value: '400000' } });
+    h.render();
+    budget().props.onBlur();
+    await h.flush();
+    const sent = runCommand.mock.calls.filter((call) => call[0] === 'agent.update');
+    expect(sent.map((call) => (call[1] as any).revision)).toEqual([7, 8]);
+    expect((sent[1]![1] as any).contract.weekly_input_tokens).toBe(400000);
+  });
+
   it('shows what this week spent against the budget, and that wakes are held once it is spent', () => {
-    data.ledger = read(week({ input_tokens: 1_240_000 }));
+    data.ledger = read(week({ contract_spent: 1_240_000 }));
     let h = part('AgentContract');
     expect(
       named(h.value, zhf('sessions.agents.contract.spentMeter', { percent: 62 })),
     ).toBeTruthy();
     expect(text(h.value)).not.toContain(zh('sessions.agents.contract.held'));
     unmountAll();
-    data.ledger = read(week({ input_tokens: 2_060_000 }));
+    data.ledger = read(week({ contract_spent: 2_060_000 }));
     h = part('AgentContract');
     expect(
       named(h.value, zhf('sessions.agents.contract.spentMeter', { percent: 100 })),
     ).toBeTruthy();
     expect(text(h.value)).toContain(zh('sessions.agents.contract.held'));
+  });
+
+  it("reads the spend from the daemon's week, not the last seven days", () => {
+    data.ledger = read(week({ input_tokens: 2_060_000, contract_spent: 0 }));
+    const h = part('AgentContract');
+    expect(named(h.value, zhf('sessions.agents.contract.spentMeter', { percent: 0 }))).toBeTruthy();
+    expect(text(h.value)).not.toContain(zh('sessions.agents.contract.held'));
   });
 
   it('shows the number alone without a budget', () => {
@@ -466,6 +570,18 @@ describe('routine runs', () => {
     expect(alerts(groups(h)[0]).join()).toContain('The runtime is signed out');
   });
 
+  it('says under its routine when the project budget holds the run', async () => {
+    runCommand.mockImplementation(async () => ({
+      ok: true,
+      value: { session_id: 'session-1', queued: 'budget' },
+    }));
+    data.routines = read([row({})]);
+    const h = part('RoutineRuns');
+    buttons(groups(h)[0])[0]!.props.onClick();
+    await h.flush();
+    expect(alerts(groups(h)[0])).toEqual([zh('automations.runNow.budget')]);
+  });
+
   it('says so when the agent has no routines', () => {
     expect(text(part('RoutineRuns').value)).toContain(zh('sessions.agents.runs.empty'));
   });
@@ -559,6 +675,44 @@ describe('chapter mark', () => {
     expect(text(popup)).toContain('−1');
     expect(text(popup)).toContain('- old');
     expect(named(popup, zh('sessions.thread.handoffClose'))).toBeTruthy();
+  });
+
+  it("opens an older chapter's diff from the key's history after a later note replaced its own", async () => {
+    runCommand.mockImplementation(async (type: unknown) =>
+      type === 'memory.get'
+        ? { ok: false, error: { code: 'not_found', message: 'No current memory with this id' } }
+        : {
+            ok: true,
+            value: {
+              items: [
+                { id: 'note-3', text: '## Open\n- c\n' },
+                { id: 'note-2', text: '## Open\n- a\n- b\n' },
+                { id: 'note-1', text: '## Open\n- old\n' },
+              ],
+            },
+          },
+    );
+    const h = host(() =>
+      ChapterMark({
+        event: started({
+          chapter: 2,
+          handoff_key: 'handoff/agent-triage',
+          handoff_memory_id: 'note-2',
+          previous_memory_id: 'note-1',
+        }) as any,
+      }),
+    );
+    nodes(h.value)
+      .find((n) => typeof n.props.onOpenChange === 'function')!
+      .props.onOpenChange(true);
+    await h.flush();
+    expect(runCommand.mock.calls.map((call) => [call[0], call[1]])).toEqual([
+      ['memory.history', { project_id: 'alpha', key: 'handoff/agent-triage', limit: 50 }],
+    ]);
+    const popup = named(h.value, zh('sessions.thread.handoffDiff'))!;
+    expect(text(popup)).toContain('+2');
+    expect(text(popup)).toContain('−1');
+    expect(text(popup)).toContain('- old');
   });
 
   it('opens a first handoff note in Memory, and offers nothing without a note', () => {

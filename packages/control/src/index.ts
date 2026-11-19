@@ -316,6 +316,8 @@ export interface ControlOptions {
   externalSources?: ExternalSource[];
   /** Runs local connection and GitHub commands; absent means execFile. */
   localCommand?: LocalCommand;
+  /** Runs scripts/eval.mjs with args in the checkout cwd and resolves with its exit code; absent means a detached node process. */
+  evalRunner?: (cwd: string, args: string[]) => Promise<number>;
   /** Writes each session's recap after its turns and requests; absent means sessions get none. */
   turnSummarizer?: TurnSummarizer;
   /** How commands and git reach a device's SSH target; absent means SSH itself. */
@@ -429,6 +431,7 @@ export class Control extends EventEmitter {
       toolRelays: new Map(),
       externalSources: options.externalSources ?? [githubSource()],
       localCommand: options.localCommand ?? localCommand,
+      evalRunner: options.evalRunner,
       turnSummarizer: options.turnSummarizer,
       failpoint,
       busy: false,
@@ -794,8 +797,8 @@ export class Control extends EventEmitter {
   agentTemplates(principal: Principal) {
     return agentTemplates(principal);
   }
-  agentWakes(principal: Principal, agentId: string, limit: number) {
-    return agentWakes(this.ctx, principal, agentId, limit);
+  agentWakes(principal: Principal, agentId: string, limit: number, routineId?: string) {
+    return agentWakes(this.ctx, principal, agentId, limit, routineId);
   }
   agentLedger(principal: Principal, agentId: string, weeks: number) {
     return agentLedger(this.ctx, principal, agentId, weeks);

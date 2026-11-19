@@ -316,6 +316,7 @@ function rollWhenDue(ctx: ControlContext, sessionId: string, cause: string): voi
           chapter: ctx.store
             .list<Session>('sessions')
             .filter((each) => each.resident?.agent_id === profile.id).length,
+          handoff_key: handoffKey(profile),
           ...(note && { handoff_memory_id: note.id }),
           ...(previous && { previous_memory_id: previous.id }),
         };

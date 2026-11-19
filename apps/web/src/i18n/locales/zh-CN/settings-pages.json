@@ -73,7 +73,6 @@
   "settings.editor.inAppDiff": "应用内 diff",
   "settings.extensions.tools": "{runtime} 工具",
   "settings.extensions.unsupported": "这个运行时不提供扩展清单",
-  "settings.extensions.reading": "读取本机清单",
   "settings.extensions.mcp": "MCP 服务",
   "settings.extensions.plugins": "插件",
   "settings.extensions.skills": "技能",

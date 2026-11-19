@@ -29,7 +29,7 @@ import { inPlaceSandbox } from './protection.js';
 import { reviewsRoots } from './session.js';
 import { registerInPlaceWorkspace } from './workspace.js';
 import { leadInstructions, PLATFORM_CORE } from './agent-prompts.js';
-import { leadPlaybook } from './playbooks.js';
+import { startedLeadPlaybook } from './playbooks.js';
 import { checkPermissionMode, workerInstructions } from './workbench-session.js';
 import { writerTempDirectory } from './workspace-removal.js';
 
@@ -128,7 +128,7 @@ export async function inPlaceSessionSpec(
         : `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
       ...(session.task ? [workerInstructions(ctx, session.task, questionTool)] : []),
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
-      ...(planningLead ? [leadInstructions(leadPlaybook(ctx, project.id, session.runtime))] : []),
+      ...(planningLead ? [leadInstructions(startedLeadPlaybook(ctx, session))] : []),
       // workerInstructions tells a task session how to ask.
       ...(questionTool && !planningLead && !session.task
         ? [

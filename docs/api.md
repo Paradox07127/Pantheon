@@ -340,6 +340,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `device.remove` | `id`: string |  |
 | `device.save` | `id`: string<br>`ssh`: string<br>`name?`: string<br>`note?`: string<br>`labels?`: string[]<br>`resources?`: object<br>`max_sessions?`: integer |  |
 
+### eval
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `eval.request.run` | `project_id`: string<br>`improvement_id`: string |  |
+
 ### external
 
 | type | input | MCP 工具 |
@@ -433,6 +439,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 
 | type | input | MCP 工具 |
 |---|---|---|
+| `playbook.export` | `project_id`: string<br>`runtime?`: string<br>`version`: integer |  |
 | `playbook.get` | `project_id`: string<br>`runtime?`: string<br>`version?`: integer |  |
 | `playbook.remove` | `project_id`: string<br>`runtime?`: string<br>`base_version`: integer |  |
 | `playbook.set` | `project_id`: string<br>`runtime?`: string<br>`base_version`: integer<br>`sections`: object |  |
@@ -736,7 +743,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `workflow.definition.set_default` | `project_id`: string<br>`id`: string |  |
 | `workflow.definition.trial.decide` | `project_id`: string<br>`id?`: string<br>`decision`: "keep" \| "revert" |  |
 | `workflow.policy.reset` | `project_id`: string |  |
-| `workflow.policy.set` | `project_id`: string<br>`improvement_mode?`: "auto" \| "confirm" \| "off"<br>`plan_changes?`: "auto" \| "confirm"<br>`charter?`: object<br>`must_ask_extra?`: string[]<br>`question_defaults?`: object \| null<br>`urgent_direct?`: "main_gate_failed"[]<br>`path?`: object<br>`acceptance_wake?`: "each_merge" \| "milestone"<br>`max_parallel?`: integer<br>`max_parallel_limit?`: integer<br>`runtime_parallel?`: object<br>`dispatch_paused?`: boolean<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`milestone_verify?`: "off" \| "auto"<br>`recovery_switch?`: "off" \| "auto"<br>`handback_limit?`: 0 \| integer<br>`task_size_hint?`: integer \| null<br>`budget?`: object<br>`project_budget?`: object \| null<br>`pinned?`: ("path" \| "acceptance_wake" \| "max_parallel" \| "handback_limit" \| "task_size_hint" \| "runtime_quota_threshold" \| "budget")[] |  |
+| `workflow.policy.set` | `project_id`: string<br>`improvement_mode?`: "auto" \| "confirm" \| "off"<br>`plan_changes?`: "auto" \| "confirm"<br>`charter?`: object<br>`must_ask_extra?`: string[]<br>`question_defaults?`: object \| null<br>`urgent_direct?`: "main_gate_failed"[]<br>`path?`: object<br>`acceptance_wake?`: "each_merge" \| "milestone"<br>`max_parallel?`: integer<br>`max_parallel_limit?`: integer<br>`runtime_parallel?`: object<br>`dispatch_paused?`: boolean<br>`runtime_quota_threshold?`: number<br>`gate_on_fail?`: "handback" \| "retry" \| "stop"<br>`gate_runner?`: "daemon" \| "session"<br>`milestone_verify?`: "off" \| "auto"<br>`recovery_switch?`: "off" \| "auto"<br>`eval_runner?`: "off" \| "on"<br>`handback_limit?`: 0 \| integer<br>`task_size_hint?`: integer \| null<br>`budget?`: object<br>`project_budget?`: object \| null<br>`pinned?`: ("path" \| "acceptance_wake" \| "max_parallel" \| "handback_limit" \| "task_size_hint" \| "runtime_quota_threshold" \| "budget")[] |  |
 | `workflow.step.decide` | `step_run_id`: string<br>`decision`: "approve" \| "reject"<br>`reason?`: string |  |
 | `workflow.step.verdict` | `verdict`: "pass" \| "fail"<br>`summary`: string<br>`evidence`: object[] | step_verdict (lead), step_verdict (worker) |
 
@@ -755,7 +762,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `agent.proposal` | `proposal_id`: string |
 | `agent.routines` | `project_id`: string |
 | `agent.templates` | — |
-| `agent.wakes` | `agent_id`: string<br>`limit?`: integer |
+| `agent.wakes` | `agent_id`: string<br>`limit?`: integer<br>`routine_id?`: string |
 | `app.settings` | — |
 | `backend.list` | — |
 | `board.history` | `project_id`: string |

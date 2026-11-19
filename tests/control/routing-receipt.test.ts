@@ -7,6 +7,8 @@ import type {
   Session,
   SessionTurn,
 } from '@pantheon/domain';
+import type { ControlContext } from '../../packages/control/dist/context.js';
+import { askQuestion } from '../../packages/control/dist/lead-inbox.js';
 import { eventually } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -180,6 +182,29 @@ it('marks a turn that asked the user a question as asked', async () => {
   );
 
   expect(turn.routing).toEqual({ kind: 'asked' });
+});
+
+it("marks a turn during which a worker's question was relayed as answered here", async () => {
+  const f = await workbenchFixture();
+  const assistant = await askedAssistant(f);
+  writePlan(f, assistant, [lanes.core], [task('a', 'core')]);
+
+  const turn = await heldTurn(f, (sessionId) =>
+    askQuestion(
+      (f.control as unknown as { ctx: ControlContext }).ctx,
+      f.store.must<BoardPlan>('board_plans', sessionId),
+      {
+        question: 'Which file format comes first?',
+        options: ['CSV', 'JSON'],
+        recommended: 'CSV',
+        assumption: '',
+        blocks: ['a'],
+        source: { session_id: 'worker-session', approval_id: 'worker-approval' },
+      },
+    ),
+  );
+
+  expect(turn.routing).toEqual({ kind: 'answered' });
 });
 
 /** A user's own plan change for the assistant's plan, made ready before the turn and run during it. */

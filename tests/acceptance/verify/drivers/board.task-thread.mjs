@@ -218,13 +218,8 @@ try {
     { session_id: worker.id },
     (await board()).sessions.find((s) => s.id === worker.id).revision,
   );
-  // The merge the failed gate stopped stays blocked; the user merges once the gate passes.
+  // The daemon retries the merge the failed gate stopped once the user's gate run passes.
   await poll(async () => (await thread()).some((e) => e.kind === 'gate' && e.passed), 40_000);
-  await call(
-    'session.merge',
-    { session_id: worker.id },
-    (await board()).sessions.find((s) => s.id === worker.id).revision,
-  );
   const merged = await poll(async () => (await thread()).find((e) => e.kind === 'merged'), 60_000);
   check(
     '前置：task.thread 有合并',

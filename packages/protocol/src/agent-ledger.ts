@@ -21,12 +21,17 @@ export interface AgentLedgerWeek {
   /** How many of those wakes each cause woke; a wake with several causes counts under each. */
   causes: Partial<Record<LeadNote['kind'], number>>;
   outcomes: Record<WakeOutcome, number>;
-  /** Ended tasks the agent's sessions led that started in the week. */
+  /** Tasks the agent's sessions dispatched or claimed to do directly in the week. */
   tasks_started: number;
-  /** Of those, the tasks that merged or were accepted. */
+  /** Tasks the agent's sessions led whose merge or acceptance was recorded in the week. */
   tasks_merged: number;
   /** Input tokens of the turns of the agent's sessions that ended in the week. */
   input_tokens: number;
   /** Permission prompts of the agent's task sessions approved on its behalf under the project's charter. */
   prompts_auto_approved: number;
+  /**
+   * Newest week only: the input tokens the agent's weekly cap counts now, from local Monday 00:00,
+   * which is when the daemon starts the cap again.
+   */
+  contract_spent?: number;
 }

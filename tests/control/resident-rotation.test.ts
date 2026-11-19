@@ -373,6 +373,57 @@ it('rolls after the running turn when the instructions change, and the new chapt
   expect(flushTurns(f, next.id)).toEqual([]);
 });
 
+it("names the handoff key on each chapter, so an older chapter's note and the one before it stay readable", async () => {
+  const f = await workbenchFixture({ delay: 600 });
+  const profile = assistantProfile(f);
+  const first = open(f);
+  const earlier = writeHandoff(f, profile, first.id, 'The user wants a weekly export summary.');
+  const rotate = async (old: Session, instructions: string, text: string) => {
+    f.call('agent.update', {
+      agent_id: profile.id,
+      revision: f.store.must<AgentProfile>('agents', profile.id).revision,
+      instructions,
+    });
+    await eventually(
+      () => flushTurns(f, old.id)[0]?.state === 'running',
+      () => f.control.tick(),
+    );
+    const note = writeHandoff(f, profile, old.id, text);
+    return { note, next: await rotated(f, profile, old) };
+  };
+  const one = await rotate(first, 'Answer in one line.', 'The user wants the export in one line.');
+  const two = await rotate(one.next, 'Answer in two lines.', 'The user wants two lines.');
+  const chapters = f.store.kindEvents(f.project.id, ['agent.chapter_started']);
+  expect(chapters.map((event) => event.payload)).toEqual([
+    {
+      chapter: 2,
+      handoff_key: `handoff/${profile.id}`,
+      handoff_memory_id: one.note.id,
+      previous_memory_id: earlier.id,
+    },
+    {
+      chapter: 3,
+      handoff_key: `handoff/${profile.id}`,
+      handoff_memory_id: two.note.id,
+      previous_memory_id: one.note.id,
+    },
+  ]);
+  const { items } = f.call<{ items: { id: string; text: string }[] }>(
+    'memory.history',
+    {
+      project_id: f.project.id,
+      key: (chapters[0]!.payload as { handoff_key: string }).handoff_key,
+    },
+    null,
+  );
+  expect(items.find((item) => item.id === one.note.id)?.text).toBe(
+    'The user wants the export in one line.',
+  );
+  expect(items.find((item) => item.id === earlier.id)?.text).toBe(
+    'The user wants a weekly export summary.',
+  );
+});
+
 it('starts the handoff at once when the instructions change while the resident is idle', async () => {
   const f = await workbenchFixture();
   const profile = assistantProfile(f);

@@ -2,6 +2,7 @@ export * from './planning.js';
 export * from './board.js';
 export * from './workflow.js';
 import type {
+  BoardPlan,
   BoardPlanView,
   FlowPath,
   GateFailureClass,
@@ -740,6 +741,8 @@ export interface Session extends Entity {
   requested_effort?: EffortLevel;
   reported_model?: string;
   profile_version?: number;
+  /** The playbook a planning lead's runtime process last started with. */
+  playbook?: BoardPlan['playbook'];
   account_ref?: string;
   device_id?: string;
   /** The device's changes of the last turn are not yet back in the local worktree. */

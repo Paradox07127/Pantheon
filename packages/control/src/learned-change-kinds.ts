@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   canonical,
   hash,
@@ -11,7 +13,13 @@ import {
 import type { ControlContext } from './context.js';
 import { screenExperience } from './experience-screen.js';
 import { comparePairs, signTest } from './paired-stats.js';
-import { leadPlaybook, playbookVersion, setPlaybookVersion, storedPlaybook } from './playbooks.js';
+import {
+  leadPlaybook,
+  playbookExportPath,
+  playbookVersion,
+  setPlaybookVersion,
+  storedPlaybook,
+} from './playbooks.js';
 import { setProjectWorktree, writeProjectGate } from './project.js';
 import { updateAgent } from './resident.js';
 import { applyPolicyChange, policyValue, workflowPolicy } from './workflow-policy.js';
@@ -265,6 +273,49 @@ export const changeKinds: { [T in Change['type']]: ChangeKind<T> } = {
     sameTarget: (a, b) => a.runtime === b.runtime,
   },
 };
+
+/** The checkout the package is built in, which holds scripts/eval.mjs and its frozen tasks. */
+const BUILT_IN_CHECKOUT = fileURLToPath(new URL('../../../', import.meta.url));
+const EVAL_REPETITIONS = 1;
+
+/**
+ * The paired eval that decides a playbook change: the version in force, then the proposed one,
+ * each read from the file playbook.export writes; scripts/eval.mjs writes its runs to out.
+ */
+export function playbookEval(
+  ctx: ControlContext,
+  improvement: Pick<Improvement, 'id' | 'project_id'>,
+  runtime: string | undefined,
+  conditions: [number, number],
+) {
+  const checkout = ctx.appRoot ?? BUILT_IN_CHECKOUT;
+  const out = path.join(path.dirname(ctx.files.directory), 'evals', improvement.id);
+  const args = [
+    'scripts/eval.mjs',
+    'run',
+    '--runtime',
+    runtime === 'codex' ? 'codex' : 'claude',
+    '--lead',
+    'real',
+    ...conditions.flatMap((version) => [
+      '--condition',
+      `playbook=file:${playbookExportPath(ctx, improvement.project_id, runtime, version)}`,
+    ]),
+    '--repetitions',
+    String(EVAL_REPETITIONS),
+    '--out',
+    out,
+  ];
+  const tasks = path.join(checkout, 'tests/eval/tasks');
+  const request: NonNullable<Improvement['eval_request']> = {
+    conditions,
+    runs: (existsSync(tasks) ? readdirSync(tasks).length : 0) * 2 * EVAL_REPETITIONS,
+    command: ['node', ...args]
+      .map((arg) => (/^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`))
+      .join(' '),
+  };
+  return { checkout, args, out, request };
+}
 
 /** The registry entry of the change's kind. */
 export const changeKind = (change: Change) =>

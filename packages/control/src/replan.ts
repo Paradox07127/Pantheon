@@ -10,7 +10,7 @@ import {
 } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { ownEntry, taskGeneration, taskSessions, taskState } from './board-plan.js';
-import { appendNote } from './lead-inbox.js';
+import { appendNote, planLineage } from './lead-inbox.js';
 import { taskBudgetUse } from './task-budget.js';
 
 /** The payload of a board.replan_triggered event, on the plan of the milestone's lead. */
@@ -20,7 +20,7 @@ export interface ReplanFired {
   trigger: ReplanTrigger;
   task_id: string;
   generation: number;
-  /** The hand-backs counted or the budget ratio reached; absent for a stall. */
+  /** The hand-backs counted or the budget ratio reached; absent for a stall or a false assumption. */
   value?: number;
 }
 
@@ -30,7 +30,9 @@ export function triggerText(fired: ReplanFired): string {
     ? `task ${fired.task_id} was handed back ${fired.value} times`
     : fired.trigger.type === 'budget_ratio'
       ? `task ${fired.task_id} spent ${Math.round(fired.value! * 100)}% of its budget`
-      : `task ${fired.task_id} stalled`;
+      : fired.trigger.type === 'stall'
+        ? `task ${fired.task_id} stalled`
+        : `assumption ${fired.trigger.assumption_id} behind task ${fired.task_id} turned out false`;
 }
 
 /**
@@ -66,6 +68,7 @@ export function replanTriggers(ctx: ControlContext): void {
       )
         continue;
       const generation = taskGeneration(plan, taskId),
+        direct = lead?.direct_task?.id === taskId && lead.direct_task.generation === generation,
         bound = sessions.filter(
           (session) =>
             session.task?.lead_session_id === plan!.id &&
@@ -83,23 +86,32 @@ export function replanTriggers(ctx: ControlContext): void {
               handedBack.filter(
                 (event) => (event.payload as { session_id?: string }).session_id === session.id,
               ).length,
-            0,
+            direct ? (ownEntry(plan.handed_back, `${lead!.id}:${taskId}`)?.length ?? 0) : 0,
           );
           if (value < trigger.count) continue;
         } else if (trigger.type === 'budget_ratio') {
           value = taskBudgetUse(ctx, plan, taskId, ctx.store.now())?.ratio;
           if (value === undefined || value < trigger.at) continue;
         } else if (trigger.type === 'stall') {
+          // The lead's own stalls count for the task it works on itself.
+          const ids = [...bound.map((session) => session.id), ...(direct ? [plan.id] : [])];
           const stalled = Object.entries(plan.alerted ?? {}).some(
             ([turnId, alerts]) =>
               alerts.includes('stalled') &&
-              bound.some(
-                (session) =>
-                  session.id === ctx.store.get<SessionTurn>('session_turns', turnId)?.session_id,
-              ),
+              ids.includes(ctx.store.get<SessionTurn>('session_turns', turnId)?.session_id ?? ''),
           );
           if (!stalled) continue;
-        } else continue;
+        } else {
+          // The lead applied the user's edit that says the assumption is wrong.
+          const refuted =
+            plan.assumptions.some((assumption) => assumption.id === trigger.assumption_id) &&
+            plan.pending_edits.some(
+              (edit) =>
+                edit.status === 'applied' &&
+                edit.refutes?.some((refute) => refute.assumption_id === trigger.assumption_id),
+            );
+          if (!refuted) continue;
+        }
         if (
           fired.some((event) => {
             const payload = event.payload as ReplanFired;
@@ -132,7 +144,7 @@ export function replanTriggers(ctx: ControlContext): void {
           kind: 'replan',
           generation,
           replan_event: event.event_id,
-          text: `Milestone ${row.key} "${row.title}": ${triggerText(payload)}, which meets the replan_if condition you set (${trigger.type === 'handbacks' ? `handbacks ${trigger.count}` : trigger.type === 'budget_ratio' ? `budget_ratio ${trigger.at}` : 'stall'}).`,
+          text: `Milestone ${row.key} "${row.title}": ${triggerText(payload)}, which meets the replan_if condition you set (${trigger.type === 'handbacks' ? `handbacks ${trigger.count}` : trigger.type === 'budget_ratio' ? `budget_ratio ${trigger.at}` : trigger.type === 'stall' ? 'stall' : `assumption_false ${trigger.assumption_id}`}).`,
         });
       }
     }
@@ -146,10 +158,11 @@ export function requireTriggerEvent(
   eventId: string | undefined,
 ): void {
   if (eventId === undefined) return;
+  const lineage = planLineage(ctx, leadId);
   const found = ctx.store
     .statement(
-      "SELECT 1 FROM events WHERE event_id=? AND kind='board.replan_triggered' AND aggregate_id=?",
+      `SELECT 1 FROM events WHERE event_id=? AND kind='board.replan_triggered' AND aggregate_id IN (${lineage.map(() => '?').join(',')})`,
     )
-    .get(eventId, leadId);
+    .get(eventId, ...lineage);
   requireThat(found, 'not_found', `Not found: re-plan event ${eventId} of your plan`);
 }

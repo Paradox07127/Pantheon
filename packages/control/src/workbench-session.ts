@@ -165,7 +165,7 @@ import {
 } from './workspace.js';
 import { writerTempDirectory } from './workspace-removal.js';
 import { leadInstructions, PLATFORM_CORE } from './agent-prompts.js';
-import { leadPlaybook } from './playbooks.js';
+import { startedLeadPlaybook } from './playbooks.js';
 import { chartered, charterMode } from './charter.js';
 
 // One turn runs at most six hours; adapters time it with setTimeout, which fires at once above 2^31 - 1 ms.
@@ -320,7 +320,7 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
       ...(pantheonMcp && session.task
         ? [workerInstructions(ctx, session.task, questionTool)]
         : planningLead
-          ? [leadInstructions(leadPlaybook(ctx, project.id, session.runtime))]
+          ? [leadInstructions(startedLeadPlaybook(ctx, session))]
           : []),
     ].join('\n\n'),
     workspace: { id: workspace.id, path: workspace.path },
@@ -3786,7 +3786,7 @@ export function admitMerge(
     'session.merge_started',
     next,
     next.project_id,
-    cause ? (reason ? { reason } : {}) : { auto: true },
+    { ...(cause ? {} : { auto: true }), ...(reason ? { reason } : {}) },
     cause,
   );
   ctx.store.enqueue('session.merge', { session_id: session.id });
@@ -3928,6 +3928,7 @@ function runSessionGates(
   );
   running.add(session.id);
   const committed = afterCommit(ctx);
+  let passed = false;
   const completion = Promise.resolve()
     .then(() =>
       committed()
@@ -3942,8 +3943,9 @@ function runSessionGates(
           )
         : undefined,
     )
-    .then(() => {
+    .then((results) => {
       if (committed()) finishGateRun(ctx, session.id, runId);
+      passed = !!results?.length && !results.some(gateFailed);
     })
     .catch((error: unknown) => {
       if (committed()) finishGateRun(ctx, session.id, runId, error);
@@ -3953,11 +3955,79 @@ function runSessionGates(
       const turnId = mergesAfterGates(ctx).get(session.id);
       mergesAfterGates(ctx).delete(session.id);
       if (turnId && committed() && !ctx.closing) autoMergeAfterTurn(ctx, session.id, turnId);
+      if (passed && committed() && !ctx.closing)
+        retryMergeAfterGates(ctx, session.id, worktree.head, c.command_id);
       ctx.completions.delete(completion);
       if (!ctx.closing) ctx.changed();
     });
   ctx.completions.add(completion);
   return next;
+}
+
+/** The merge_started reason of a merge retried after a gate run passed. */
+const GATES_PASSED = 'gates_passed';
+
+/**
+ * After a user's gate run passed on commit, merges again once the session whose merge a failed gate
+ * blocked on that same commit, with the checks of a user merge; a blocked retry is not retried.
+ */
+function retryMergeAfterGates(
+  ctx: ControlContext,
+  sessionId: string,
+  commit: string,
+  cause: string,
+): void {
+  const blocked = () => {
+    const session = ctx.store.must<Session>('sessions', sessionId);
+    if (
+      session.merge?.state !== 'blocked' ||
+      session.merge.reason !== 'gate_failed' ||
+      session.archived_at
+    )
+      return;
+    const events = ctx.store
+      .kindEvents(session.project_id, ['session.merge_started', 'session.gate_checked'])
+      .filter((event) => event.aggregate_id === sessionId);
+    const started = events.findLast((event) => event.kind === 'session.merge_started')?.payload as
+      { auto?: boolean; reason?: string } | undefined;
+    // The merge's own gate runs carry no run id.
+    const failed = events.findLast(
+      (event) =>
+        event.kind === 'session.gate_checked' && !(event.payload as { run_id?: string }).run_id,
+    )?.payload as { commit: string } | undefined;
+    if (!started || started.reason === GATES_PASSED || failed?.commit !== commit) return;
+    return { session, auto: started.auto === true };
+  };
+  const found = blocked();
+  if (!found) return;
+  const workspace = ctx.store.must<Workspace>('workspaces', found.session.workspace_id!);
+  const work: Promise<void> = readMergeStates(ctx, sessionId, workspace)
+    .then((reads) => {
+      if (ctx.closing) return;
+      try {
+        ctx.store.transaction(() => {
+          const again = blocked();
+          if (!again || reads.worktree(workspace)?.head !== commit) return;
+          // A merge the daemon started stays its own, so the tracker still follows up a block.
+          admitMerge(
+            ctx,
+            again.session,
+            again.auto ? undefined : cause,
+            undefined,
+            GATES_PASSED,
+            undefined,
+            reads,
+          );
+        });
+      } catch (error) {
+        // A session no longer ready to merge keeps its blocked merge.
+        if (!(error instanceof DomainError)) throw error;
+      }
+      ctx.changed();
+    })
+    .catch((error: unknown) => ctx.diagnostic(error))
+    .finally(() => ctx.completions.delete(work));
+  ctx.completions.add(work);
 }
 
 /** The session a session.merge queues, checked without git, and the admission that queues it. */

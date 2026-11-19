@@ -136,6 +136,19 @@ describe('plan replay read', () => {
     expect(read.held).toBe(false);
   });
 
+  it('stops loading earlier frames at the first one when a frame arrives during the read', async () => {
+    const frames = range(101);
+    const { held } = daemon(frames, { hold: (p) => p.before === '2' });
+    const h = mount(() => usePlanReplay('lead-1'));
+    await settle(h);
+    frames.push(frame(102));
+    held[0]!.resolve();
+    const read = await settle(h);
+    expect(read.frames.map((f) => f.sequence)).toEqual(range(101).map((f) => f.sequence));
+    expect(read.loadingEarlier).toBe(false);
+    expect(read.held).toBe(false);
+  });
+
   it('keeps the loaded frames when an earlier page fails and repeats that read on Retry', async () => {
     let down = true;
     const { asked } = daemon(range(300), { fail: (p) => down && p.before === '201' });

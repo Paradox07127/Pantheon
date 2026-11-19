@@ -186,6 +186,23 @@ describe('a setting change the Assistant proposes', () => {
       null,
     );
   });
+
+  it('names the Apply button of two cards from one agent by their settings', () => {
+    const other: NeedItem = {
+      ...setting,
+      source: { ...setting.source, id: 'proposal-2' },
+      setting_proposal: { ...setting.setting_proposal!, id: 'proposal-2', param: 'max_parallel' },
+    };
+    const names = [setting, other].map(
+      (item) =>
+        button(card(item, 'Assistant').h.value, zh('board.needs.actions.applySetting')).props[
+          'aria-label'
+        ],
+    );
+    expect(names[0]).not.toBe(names[1]);
+    expect(names[0]).toContain(zh('settings.workflow.planChanges'));
+    expect(names[0]).toContain('Assistant');
+  });
 });
 
 describe('a paused plan with the lead reassessment', () => {

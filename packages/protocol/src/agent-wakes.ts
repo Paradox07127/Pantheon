@@ -4,17 +4,18 @@ import type { AgentRoutine, LeadNote, SessionTurn, Usage } from '@pantheon/domai
 const str = z.string().min(1).max(65536);
 
 export const agentWakeInputSchemas = {
-  /** The user only; wakes the agent with an enabled routine's prompt now, even while its contract holds its wakes, and runs no precheck. */
+  /** The user only; wakes the agent with an enabled routine's prompt now, even while its contract holds its wakes or its resident session's cooldown has not passed, and runs no precheck. The project budget still holds the run: the result says queued 'budget' while it is spent. */
   'agent.routine.run': z.strictObject({ agent_id: str, routine_id: str }),
   /** The user only; leaves the project's Assistant the final output of an agent's wake as the user's request, and wakes it. */
   'agent.wake.to_task': z.strictObject({ turn_id: str }),
 };
 
 export const agentWakeQuerySchemas = {
-  /** The user only; returns the agent's wakes as AgentWake records, newest first. */
+  /** The user only; returns the agent's wakes as AgentWake records, newest first; with routine_id, only the wakes that ran that routine. */
   'agent.wakes': z.strictObject({
     agent_id: str,
     limit: z.coerce.number().int().min(1).max(200).default(50),
+    routine_id: str.optional(),
   }),
   /** The user only; returns an AgentRoutineRow for each routine of the project's agents that are not archived. */
   'agent.routines': z.strictObject({ project_id: str }),

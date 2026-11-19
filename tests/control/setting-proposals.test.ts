@@ -79,6 +79,16 @@ it('records a proposal that quotes the user and refuses an unquoted rule, anothe
       }),
     ),
   ).toBe('permission_denied');
+  expect(f.control.workflowPolicy(user, f.project.id).max_parallel_limit).toBe(3);
+  expect(
+    await refusal(() =>
+      as(assistant, 'setting.propose', {
+        param: 'max_parallel',
+        value: 5,
+        quote: 'Run one task at a time.',
+      }),
+    ),
+  ).toBe('invalid_input');
   expect(f.store.list('setting_proposals')).toEqual([]);
 
   const proposal = as<SettingProposal>(assistant, 'setting.propose', {

@@ -252,5 +252,6 @@
   "components.changeOutcome.since": "自 {date}",
   "components.changeOutcome.table": "改动前后对比",
   "components.changeOutcome.before": "改前",
-  "components.changeOutcome.after": "改后"
+  "components.changeOutcome.after": "改后",
+  "components.requestCard.settingAction": "{action}{setting}，{agent}"
 }

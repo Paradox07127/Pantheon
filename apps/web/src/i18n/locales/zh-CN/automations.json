@@ -39,5 +39,6 @@
   "automations.pause": "暂停",
   "automations.resume": "恢复",
   "automations.empty": "本项目还没有 agent 按时间安排做事。",
-  "automations.addRoutine": "添加例行任务"
+  "automations.addRoutine": "添加例行任务",
+  "automations.runNow.budget": "已排队，项目预算提高或清除后运行"
 }

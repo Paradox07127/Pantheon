@@ -63,5 +63,6 @@
   "memory.learnedDetail.scope.root": "目录",
   "memory.learnedDetail.scope.runtime": "运行时",
   "memory.learnedDetail.scope.domain": "领域",
-  "memory.learnedDetail.scope.tier": "级别"
+  "memory.learnedDetail.scope.tier": "级别",
+  "memory.learnedDetail.rejected": "已拒绝"
 }
