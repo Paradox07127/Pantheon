@@ -19,6 +19,7 @@ const THREAD_KINDS: ReadonlySet<string> = new Set([
   'task.dispatched',
   'task.handed_back',
   'session.merged',
+  'session.merge_blocked',
 ]);
 
 const acceptThread = (value: unknown): TaskThreadEntry[] | null =>

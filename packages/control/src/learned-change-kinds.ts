@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   canonical,
+  hash,
   type AgentProfile,
   type EvalReceipt,
   type Improvement,
@@ -9,7 +10,8 @@ import {
 } from '@pantheon/domain';
 import type { ControlContext } from './context.js';
 import { screenExperience } from './experience-screen.js';
-import { playbookVersion, setPlaybookVersion } from './playbooks.js';
+import { comparePairs, signTest } from './paired-stats.js';
+import { leadPlaybook, playbookVersion, setPlaybookVersion, storedPlaybook } from './playbooks.js';
 import { setProjectWorktree, writeProjectGate } from './project.js';
 import { updateAgent } from './resident.js';
 import { applyPolicyChange, policyValue, workflowPolicy } from './workflow-policy.js';
@@ -40,6 +42,20 @@ interface ChangeKind<T extends Change['type']> {
 
 const project = (ctx: ControlContext, improvement: Improvement) =>
   ctx.store.must<Project>('projects', improvement.project_id);
+
+/** A line of an eval's runs.jsonl, the fields a receipt is checked by. */
+interface EvalRun {
+  task: string;
+  condition: string;
+  repetition: number;
+  outcome: string;
+  hidden_passed: boolean | null;
+  input_tokens: number | null;
+  /** The hash of the playbook sections the run's lead had; absent from runs of older evals. */
+  playbook_sha256?: string | null;
+}
+/** The rule scripts/eval.mjs reports by; the rule.json beside a runs file is not part of its receipt. */
+const EVAL_RULE = { alpha: 0.05, confidence: 0.95, bootstrap: { resamples: 10_000, seed: 1 } };
 
 export const changeKinds: { [T in Change['type']]: ChangeKind<T> } = {
   policy_change: {
@@ -151,31 +167,76 @@ export const changeKinds: { [T in Change['type']]: ChangeKind<T> } = {
       const receipts = (improvement.evidence ?? []).filter(
         (entry): entry is EvalReceipt => entry.kind === 'eval_receipt',
       );
+      const { runtime, to } = improvement.change;
+      // The first condition must have run the playbook in force, the second the proposed version.
+      const playbooks = [
+        hash(leadPlaybook(ctx, improvement.project_id, runtime)),
+        hash(storedPlaybook(ctx, improvement.project_id, runtime)?.versions[to]),
+      ];
       // Why each receipt does not count; undefined for one that does.
       const reasons = receipts.map(({ path, sha256, verdict }) => {
-        let second: string | undefined;
+        let runs: EvalRun[];
         try {
-          const runs = readFileSync(path);
-          if (createHash('sha256').update(runs).digest('hex') !== sha256)
+          const bytes = readFileSync(path);
+          if (createHash('sha256').update(bytes).digest('hex') !== sha256)
             return `${path} changed since the eval run`;
-          // The report orders the conditions as the runs first name them.
-          second = [
-            ...new Set(
-              runs
-                .toString('utf8')
-                .split('\n')
-                .filter(Boolean)
-                .map((line) => (JSON.parse(line) as { condition: string }).condition),
-            ),
-          ][1];
+          runs = bytes
+            .toString('utf8')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as EvalRun);
         } catch {
           return `${path} cannot be read as the runs of an eval`;
         }
+        // The report orders the conditions as the runs first name them.
+        const conditions = [...new Set(runs.map((run) => run.condition))];
+        if (conditions.length !== 2)
+          return `${path} holds the runs of ${conditions.length} conditions; a playbook eval compares two`;
+        const [first, second] = conditions as [string, string];
+        if (runs.some((run) => run.playbook_sha256 === undefined))
+          return `${path} comes from an eval that did not record the playbook of each condition; run the eval again`;
+        const other = runs.find(
+          (run) => run.playbook_sha256 !== playbooks[run.condition === first ? 0 : 1],
+        );
+        if (other)
+          return `${path}: ${other.condition} ran another playbook than ${other.condition === first ? 'the one in force' : `version ${to}`}`;
+        // The verdicts of the eval report, from the same pairs by the same rule.
+        const key = (run: EvalRun) => JSON.stringify([run.task, run.repetition]);
+        const partners = new Map(
+          runs.filter((run) => run.condition === second).map((run) => [key(run), run]),
+        );
+        const leaked = (run: EvalRun) => run.outcome === 'merged' && run.hidden_passed === false;
+        const side = (run: EvalRun) => ({
+          accepted: run.outcome === 'merged' && run.hidden_passed === true,
+          cost: run.input_tokens,
+        });
+        const leakedOnlyUnder = { first: 0, second: 0 };
+        const pairs = runs
+          .filter((run) => run.condition === first)
+          .flatMap((run) => {
+            const partner = partners.get(key(run));
+            if (!partner) return [];
+            if (leaked(run) && !leaked(partner)) leakedOnlyUnder.first++;
+            if (leaked(partner) && !leaked(run)) leakedOnlyUnder.second++;
+            return [{ task: run.task, first: side(run), second: side(partner) }];
+          });
+        const { pass, cost } = comparePairs(pairs, EVAL_RULE);
+        const named = { first, second };
+        const shown = [
+          signTest(leakedOnlyUnder.first, leakedOnlyUnder.second) < EVAL_RULE.alpha
+            ? `${leakedOnlyUnder.first < leakedOnlyUnder.second ? first : second}_leaks_less`
+            : 'no_conclusion',
+          pass.verdict === 'no_conclusion' ? pass.verdict : `${named[pass.verdict]}_passes_more`,
+          cost.verdict === 'no_conclusion' ? cost.verdict : `${named[cost.verdict]}_cheaper`,
+        ];
+        if (!shown.includes(verdict))
+          return `The eval verdict ${verdict} is not what the runs in ${path} show: ${shown.join(', ')}`;
         if (verdict === 'no_conclusion') return `The eval in ${path} reached no conclusion`;
-        return second !== undefined &&
-          [`${second}_leaks_less`, `${second}_passes_more`, `${second}_cheaper`].includes(verdict)
+        return [`${second}_leaks_less`, `${second}_passes_more`, `${second}_cheaper`].includes(
+          verdict,
+        )
           ? undefined
-          : `The eval verdict ${verdict} does not favour ${second ?? 'a second condition'}, the second condition`;
+          : `The eval verdict ${verdict} does not favour ${second}, the second condition`;
       });
       if (!reasons.includes(undefined))
         return {
@@ -187,7 +248,6 @@ export const changeKinds: { [T in Change['type']]: ChangeKind<T> } = {
                   'A playbook change needs an eval receipt whose verdict favours the second condition',
               },
         };
-      const { runtime, to } = improvement.change;
       const from = playbookVersion(ctx, improvement.project_id, runtime);
       setPlaybookVersion(ctx, improvement.project_id, runtime, to, commandId);
       return { from };

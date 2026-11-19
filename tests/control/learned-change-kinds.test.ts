@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import {
   DomainError,
+  hash,
   type AgentProfile,
   type Improvement,
   type Principal,
@@ -226,15 +227,27 @@ const sections = (reply: string) => ({
 });
 const playbookVersion = (f: Fixture) =>
   f.call<{ version: number }>('playbook.get', { project_id: f.project.id }).version;
-/** The runs file of an eval of two conditions, the second of them the proposed playbook. */
-const runsFile = () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'eval-receipt-')), 'runs.jsonl');
-  fs.writeFileSync(
-    file,
-    ['playbook=2', 'playbook=1', 'playbook=1', 'playbook=2']
-      .map((condition) => `${JSON.stringify({ task: 'fixture', condition, repetition: 0 })}\n`)
-      .join(''),
+const replies = { 1: '- Reply with the task ids.', 2: '- Reply in one line.' } as const;
+/**
+ * The runs of an eval of six tasks under the current playbook, version 2, then under version 1;
+ * only the winner's runs merged with the hidden check passed.
+ */
+const evalRuns = (winner: 1 | 2 = 1): Record<string, unknown>[] =>
+  ['a', 'b', 'c', 'd', 'e', 'f'].flatMap((task) =>
+    ([2, 1] as const).map((version) => ({
+      task,
+      condition: `playbook=${version}`,
+      repetition: 0,
+      outcome: version === winner ? 'merged' : 'failed',
+      hidden_passed: version === winner ? true : null,
+      input_tokens: 1000,
+      playbook_sha256: hash(sections(replies[version])),
+    })),
   );
+/** The runs file of an eval of two conditions, the second of them the proposed playbook. */
+const runsFile = (runs = evalRuns()) => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'eval-receipt-')), 'runs.jsonl');
+  fs.writeFileSync(file, runs.map((run) => `${JSON.stringify(run)}\n`).join(''));
   return { path: file, sha256: createHash('sha256').update(fs.readFileSync(file)).digest('hex') };
 };
 const receipt = (verdict: string, file = runsFile()) => ({
@@ -256,8 +269,8 @@ const proposePlaybook = (f: Fixture, evidence: Record<string, unknown>[]) =>
   );
 const twoPlaybooks = (f: Fixture) => {
   for (const [base_version, reply] of [
-    [0, '- Reply with the task ids.'],
-    [1, '- Reply in one line.'],
+    [0, replies[1]],
+    [1, replies[2]],
   ] as const)
     f.call('playbook.set', { project_id: f.project.id, base_version, sections: sections(reply) });
 };
@@ -287,9 +300,48 @@ it.each([
   ],
   [
     'whose eval found the current version better',
-    () => [receipt('playbook=2_passes_more')],
+    () => [receipt('playbook=2_passes_more', runsFile(evalRuns(2)))],
     'eval_not_better',
     'playbook=2_passes_more',
+  ],
+  [
+    'whose verdict its runs do not show',
+    () => [
+      receipt(
+        'playbook=1_passes_more',
+        runsFile(evalRuns().map((run) => ({ ...run, outcome: 'merged', hidden_passed: true }))),
+      ),
+    ],
+    'eval_not_better',
+    'not what the runs',
+  ],
+  [
+    'whose runs compared another playbook with the current one',
+    () => [
+      receipt(
+        'playbook=1_passes_more',
+        runsFile(
+          evalRuns().map((run) =>
+            run.condition === 'playbook=1'
+              ? { ...run, playbook_sha256: hash(sections('- Reply in two lines.')) }
+              : run,
+          ),
+        ),
+      ),
+    ],
+    'eval_not_better',
+    'another playbook',
+  ],
+  [
+    'whose runs do not record the playbook of each condition',
+    () => [
+      receipt(
+        'playbook=1_passes_more',
+        runsFile(evalRuns().map(({ playbook_sha256: _, ...run }) => run)),
+      ),
+    ],
+    'eval_not_better',
+    'record the playbook',
   ],
   [
     'whose eval runs changed since the receipt',

@@ -3115,6 +3115,7 @@ function landDirectTask(
               session_id: sessionId,
               from_sha: item.from_sha!,
               to_sha: item.to_sha!,
+              source: item.source,
             },
           },
         },

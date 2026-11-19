@@ -396,5 +396,6 @@
   "board.task.thread.notAnswered": "未回答",
   "board.task.thread.blockingCount": "{count} 个阻塞",
   "board.task.thread.blockingJump": "{count, plural, other {# 个阻塞合并的发现，跳到第一个}}",
-  "board.taskState.paused": "已暂停"
+  "board.taskState.paused": "已暂停",
+  "board.task.thread.trackerMessage": "Pantheon 消息"
 }

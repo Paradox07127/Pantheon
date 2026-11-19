@@ -15,6 +15,7 @@ type Row = {
   turn_error: string | null;
   runtime_version: string;
   playbook_version: string | null;
+  playbook_sha256?: string | null;
   policy_version: number | null;
 };
 type Spec = Record<string, unknown>;
@@ -98,6 +99,19 @@ describe('a fixture eval run', () => {
       'playbook=v2',
     );
     expect(status, stderr).toBe(0);
+    const playbooks = ['v1', 'v2'].map(
+      (version) =>
+        new Set(
+          rows
+            .filter((row) => row.condition === `playbook=${version}`)
+            .map((row) => row.playbook_sha256),
+        ),
+    );
+    expect(playbooks.map((hashes) => [...hashes])).toEqual([
+      [expect.stringMatching(/^[0-9a-f]{64}$/)],
+      [expect.stringMatching(/^[0-9a-f]{64}$/)],
+    ]);
+    expect([...playbooks[0]!][0]).not.toBe([...playbooks[1]!][0]);
     for (const version of ['v1', 'v2']) {
       const condition = `playbook=${version}`;
       expect(rows.filter((row) => row.condition === condition)).toHaveLength(7);

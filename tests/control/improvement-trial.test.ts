@@ -468,12 +468,29 @@ it('reverts an experience trial whose findings per task did not fall to half', a
   expect(improvements()[0]?.trial_evaluation?.design).toBe('before_after');
 });
 
+const tenOf = (tokens: number) => Array.from({ length: 10 }, () => tokens);
+const cheapFirst = [100, 100, 100, 100, 100, 1000, 1000, 1000, 1000, 1000];
+const spread = [800, 900, 1000, 1100, 1200, 800, 900, 1000, 1100, 1200];
 it.each([
-  ['the same input', 1000, 'reverted', 'not_enough_evidence'],
-  ['40% less input', 600, 'active', 'better'],
+  ['the same input', tenOf(1000), tenOf(1000), 'reverted', 'not_enough_evidence'],
+  ['40% less input', tenOf(600), tenOf(1000), 'active', 'better'],
+  [
+    'the same input in the opposite order',
+    [...cheapFirst].reverse(),
+    cheapFirst,
+    'reverted',
+    'not_enough_evidence',
+  ],
+  [
+    'twice the input in another order',
+    spread.map((tokens) => tokens * 2).reverse(),
+    spread,
+    'reverted',
+    'worse',
+  ],
 ] as const)(
   'judges an experience trial whose interleaved arms spent %s by the paired cost of the arms',
-  async (_, newTokens, status, verdict) => {
+  async (_, newTokens, oldTokens, status, verdict) => {
     const { f, clock, retro, improvements } = await setup();
     f.store.insert<Improvement>('improvements', {
       id: 'interleaved',
@@ -491,8 +508,8 @@ it.each([
     clock.now += 1_000;
     // No task ran before the trial: the old arm is the baseline.
     for (let i = 0; i < 10; i++) {
-      retro(measured(newTokens, 10_000, { trial_arms: { interleaved: 'new' } }));
-      retro(measured(1000, 10_000, { trial_arms: { interleaved: 'old' } }));
+      retro(measured(newTokens[i]!, 10_000, { trial_arms: { interleaved: 'new' } }));
+      retro(measured(oldTokens[i]!, 10_000, { trial_arms: { interleaved: 'old' } }));
     }
     await f.control.tick();
 

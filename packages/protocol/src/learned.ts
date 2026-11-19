@@ -1,4 +1,4 @@
-import type { Improvement, LearnedGrade } from '@pantheon/domain';
+import type { Improvement, LearnedGrade, TaskKind } from '@pantheon/domain';
 
 /** One learned change of a project, from whichever record holds it. */
 export interface LearnedItem {
@@ -13,6 +13,8 @@ export interface LearnedItem {
   id: string;
   /** The setting, agent name, gate root, playbook runtime or "default", memory title or key, or an experience's first sentence; absent for a worktree setup or workflow definition. */
   title?: string;
+  /** Where the change applies: a gate change's root, a policy change's tier, an experience's domain, tier and runtime; each absent when the change has none. */
+  scope?: { root?: string; tier?: TaskKind['tier']; domain?: TaskKind['domain']; runtime?: string };
   /** The memory record's revision; only on a memory_note or runtime_review. */
   revision?: number;
   grade: LearnedGrade;

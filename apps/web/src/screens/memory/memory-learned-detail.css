@@ -61,6 +61,26 @@
   flex: none;
   user-select: text;
 }
+.mld-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--tx2);
+}
+.mld-sv {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mld-path {
+  user-select: text;
+}
 
 .mld-mono {
   font-family: var(--font-mono);

@@ -180,6 +180,19 @@ it('drops the verification once the task contract changes the commitment', async
   expect(view).not.toHaveProperty('verification');
 });
 
+it('drops the verification once the user changes the hidden checks', async () => {
+  const f = await opened();
+  const milestone = readyLeadMilestone(f);
+  verification(f, milestone, { state: 'passed' });
+  f.call('milestone.checks.set', {
+    project_id: f.project.id,
+    checks: [{ name: 'Export survives a restart', command: 'exit 1' }],
+  });
+  const view = viewOf(f, milestone);
+  expect(view.status).toBe('ready_for_acceptance');
+  expect(view).not.toHaveProperty('verification');
+});
+
 it('lists the failed commands of a failed verification with their output tails', async () => {
   const f = await opened();
   const milestone = readyLeadMilestone(f);
@@ -370,6 +383,8 @@ async function mergedMilestone(
     gate?: (dir: string) => string;
     gateTimeoutMs?: number;
     policy?: 'off' | 'auto';
+    /** The lead merged the task itself, with the merge's record naming its source root or not. */
+    direct?: 'source' | 'no_source';
   } = {},
 ) {
   const f = await workbenchFixture();
@@ -440,30 +455,51 @@ async function mergedMilestone(
   git(f.source, 'add', 'export.txt');
   git(f.source, 'commit', '--quiet', '-m', 'Serve exports');
   const head = git(f.source, 'rev-parse', 'HEAD');
-  const workspace = f.store.insert<Workspace>('workspaces', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    kind: 'linked_worktree',
-    path: path.join(f.root, 'managed', 'merged-api'),
-    source: f.source,
-    source_branch: 'main',
-    base_sha: base,
-    owner: 'none',
-    ownership_epoch: 0,
-    removed_at: f.store.now(),
-  });
-  f.store.insert<Session>('sessions', {
-    id: id(),
-    revision: 1,
-    project_id: f.project.id,
-    runtime: f.adapter.name,
-    workspace_id: workspace.id,
-    state: 'closed',
-    outcome: 'merged',
-    turn_count: 1,
-    task: { lead_session_id: lead.id, id: 'api', generation: 1 },
-  });
+  if (options.direct) {
+    const plan = f.store.must<BoardPlan>('board_plans', lead.id);
+    f.store.update<BoardPlan>(
+      'board_plans',
+      {
+        ...plan,
+        direct_merged: {
+          api: {
+            generation: 1,
+            at: f.store.now(),
+            session_id: lead.id,
+            from_sha: base,
+            to_sha: head,
+            ...(options.direct === 'source' ? { source: f.source } : {}),
+          },
+        },
+      },
+      plan.revision,
+    );
+  } else {
+    const workspace = f.store.insert<Workspace>('workspaces', {
+      id: id(),
+      revision: 1,
+      project_id: f.project.id,
+      kind: 'linked_worktree',
+      path: path.join(f.root, 'managed', 'merged-api'),
+      source: f.source,
+      source_branch: 'main',
+      base_sha: base,
+      owner: 'none',
+      ownership_epoch: 0,
+      removed_at: f.store.now(),
+    });
+    f.store.insert<Session>('sessions', {
+      id: id(),
+      revision: 1,
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      workspace_id: workspace.id,
+      state: 'closed',
+      outcome: 'merged',
+      turn_count: 1,
+      task: { lead_session_id: lead.id, id: 'api', generation: 1 },
+    });
+  }
   if (options.policy !== 'off')
     f.call('workflow.policy.set', { project_id: f.project.id, milestone_verify: 'auto' }, null);
   const milestone = f.store.list<Milestone>('milestones').find((row) => row.key === 'release')!;
@@ -667,6 +703,26 @@ it.skipIf(insideSandbox)('starts no second verification of the same commitment',
   expect(rowsOf(f)).toHaveLength(1);
 });
 
+it.skipIf(insideSandbox)(
+  'verifies the milestone again once the user changes its hidden checks',
+  async () => {
+    const { f } = await mergedMilestone({ acceptance: ['exit 3'] });
+    await ended(f);
+    f.call('milestone.checks.set', {
+      project_id: f.project.id,
+      checks: [{ name: 'Export survives a restart', command: 'echo restarted' }],
+    });
+    for (let tick = 0; tick < 3; tick++) await f.control.tick();
+    expect(rowsOf(f)).toHaveLength(2);
+    await eventually(
+      () => rowsOf(f).every((row) => row.state !== 'running'),
+      () => f.control.tick(),
+      20000,
+    );
+    expect(rowsOf(f)).toHaveLength(2);
+  },
+);
+
 it
   .skipIf(insideSandbox)
   .each<
@@ -723,6 +779,28 @@ it
         endReview(setup, review);
       },
       { state: 'inconclusive', reason_code: 'no_verdict' },
+    ],
+    [
+      'a failing hidden check of a task the lead merged directly',
+      { direct: 'source' },
+      async ({ f }) => {
+        f.call('milestone.checks.set', {
+          project_id: f.project.id,
+          checks: [{ name: 'Export survives a restart', command: 'exit 4' }],
+        });
+      },
+      { state: 'failed', reason_code: 'checks_failed' },
+    ],
+    [
+      'hidden checks and a direct merge whose source root is not recorded',
+      { direct: 'no_source' },
+      async ({ f }) => {
+        f.call('milestone.checks.set', {
+          project_id: f.project.id,
+          checks: [{ name: 'Export survives a restart', command: 'echo restarted' }],
+        });
+      },
+      { state: 'inconclusive', reason_code: 'check_error' },
     ],
   ])('records why the verification ended on %s', async (_, options, drive, expected) => {
   const setup = await mergedMilestone(options);

@@ -1,5 +1,6 @@
 import {
   DomainError,
+  hash,
   id,
   type BoardPlan,
   type Milestone,
@@ -10,7 +11,7 @@ import {
   type Session,
   type Workspace,
 } from '@pantheon/domain';
-import { taskSessions } from './board-plan.js';
+import { currentDirectMerge, taskSessions } from './board-plan.js';
 import { rootOf, type ControlContext } from './context.js';
 import { runGit } from './git.js';
 import { checkCandidate, gateFailed } from './landing.js';
@@ -96,32 +97,61 @@ function finish(
 }
 
 /**
- * Per source root the milestone's merged sessions landed in: its branch, their bases, and the
- * root's enabled gate followed by the acceptance of the tasks that landed there.
+ * Per source root the milestone's merged sessions and the lead's direct merges landed in: its
+ * branch, their bases, and the root's enabled gate followed by the acceptance of the tasks that
+ * landed there.
  */
 function landedRoots(
   ctx: ControlContext,
   project: Project,
+  plan: BoardPlan,
   tasks: { task: Task; sessions: Session[] }[],
 ) {
   const roots = new Map<string, { branch: string; bases: string[]; acceptance: string[] }>();
-  for (const { task, sessions } of tasks)
-    for (const session of sessions) {
-      const workspace =
-        session.outcome === 'merged' && session.workspace_id
-          ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
-          : undefined;
-      if (!workspace?.source) continue;
-      let root = roots.get(workspace.source);
+  const workspaceOf = (session: Session | undefined) =>
+    session?.workspace_id
+      ? ctx.store.get<Workspace>('workspaces', session.workspace_id)
+      : undefined;
+  for (const { task, sessions } of tasks) {
+    const direct = currentDirectMerge(plan, task.id);
+    const landings = [
+      ...sessions
+        .map((session) => (session.outcome === 'merged' ? workspaceOf(session) : undefined))
+        .flatMap((workspace) =>
+          workspace?.source
+            ? [
+                {
+                  source: workspace.source,
+                  branch: workspace.source_branch,
+                  base: workspace.base_sha,
+                },
+              ]
+            : [],
+        ),
+      // A direct task lands from the lead's own worktree onto the branch that worktree follows.
+      ...(direct?.source
+        ? [
+            {
+              source: direct.source,
+              branch: workspaceOf(ctx.store.get<Session>('sessions', direct.session_id))
+                ?.source_branch,
+              base: direct.from_sha,
+            },
+          ]
+        : []),
+    ];
+    for (const landing of landings) {
+      let root = roots.get(landing.source);
       if (!root)
         roots.set(
-          workspace.source,
-          (root = { branch: workspace.source_branch ?? 'HEAD', bases: [], acceptance: [] }),
+          landing.source,
+          (root = { branch: landing.branch ?? 'HEAD', bases: [], acceptance: [] }),
         );
-      if (workspace.base_sha) root.bases.push(workspace.base_sha);
+      if (landing.base) root.bases.push(landing.base);
       for (const command of task.acceptance)
         if (!root.acceptance.includes(command)) root.acceptance.push(command);
     }
+  }
   const hidden = hiddenChecks(ctx, project.id);
   return [...roots].map(([source, root]) => {
     const folder = rootOf(project, [source]);
@@ -198,7 +228,7 @@ function checkMilestone(ctx: ControlContext, milestone: Milestone, row: Mileston
     const task = plan.tasks.find((each) => each.id === taskId);
     return task ? [{ task, sessions: taskSessions(ctx, plan.id, taskId) }] : [];
   });
-  const roots = landedRoots(ctx, ctx.store.must<Project>('projects', row.project_id), tasks);
+  const roots = landedRoots(ctx, ctx.store.must<Project>('projects', row.project_id), plan, tasks);
   const cancelled = () => {
     const current = ctx.store.get<MilestoneVerification>('milestone_verifications', row.id);
     return current?.state !== 'running' || current.revision !== row.revision;
@@ -253,6 +283,13 @@ function checkMilestone(ctx: ControlContext, milestone: Milestone, row: Mileston
             ...(result.failure_class ? { failure_class: result.failure_class } : {}),
           })),
         };
+        if (!roots.length && hiddenChecks(ctx, row.project_id).length)
+          return finish(
+            ctx,
+            next,
+            { state: 'inconclusive', reason_code: 'check_error' },
+            { reason: 'No merged code of this milestone was found to run its hidden checks on' },
+          );
         const failed = results.find(gateFailed);
         if (failed)
           return finish(
@@ -380,6 +417,7 @@ export function advanceMilestoneVerifications(ctx: ControlContext): void {
         view.required_sessions,
         ctx.store.get<BoardPlan>('board_plans', milestone.owner_session_id),
       ),
+      checks_hash: hash(hiddenChecks(ctx, milestone.project_id)),
       state: 'running',
       commands: [],
       started_at: ctx.store.now(),

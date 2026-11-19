@@ -1221,7 +1221,6 @@ function runCommandStep(ctx: ControlContext, pending: StepRun): void {
               LANG: 'en_US.UTF-8',
               pnpm_config_verify_deps_before_run: 'false',
             },
-            gpu: project.gate_gpu === true,
             timeoutMs: kind.timeout_seconds * 1000,
             cancelled,
           });

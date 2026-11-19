@@ -146,6 +146,12 @@ const THREAD: TaskThreadEntry[] = [
     passed: true,
     commands: [{ name: 'unit tests', passed: true }],
   }),
+  entry(14, { kind: 'merge_blocked', session_id: 'worker-1', text: 'out_of_scope' }),
+  entry(15, {
+    kind: 'tracker_message',
+    session_id: 'worker-1',
+    text: 'Move the change back into reconcile/.',
+  }),
 ];
 
 let query: ReturnType<typeof vi.fn>;
@@ -224,6 +230,8 @@ describe('the thread of a task in its drawer', () => {
     ['event-11', zh('board.task.thread.note')],
     ['event-12', zh('board.task.trace.merged')],
     ['event-13', zh('board.task.trace.gatePassed')],
+    ['event-14', zh('board.task.trace.mergeBlocked')],
+    ['event-15', zh('board.task.thread.trackerMessage')],
   ])('names the entry %s "%s"', async (eventId, label) => {
     const tree = await show('lead-1:t-names');
     expect(text(row(tree, eventId))).toContain(label);
@@ -253,6 +261,15 @@ describe('the thread of a task in its drawer', () => {
     expect(text(blocking)).toContain('Totals are summed as floats');
     expect(text(blocking)).toContain(zh('board.task.thread.blocking'));
     expect(text(row(tree, 'event-5'))).not.toContain(zh('board.task.thread.blocking'));
+  });
+
+  it('says why a merge was blocked and what Pantheon sent the session to fix it', async () => {
+    const tree = await show('lead-1:t-blocked');
+    expect(text(row(tree, 'event-14'))).toContain(zh('data.reason.outOfScope'));
+    expect(text(row(tree, 'event-15'))).toContain('Move the change back into reconcile/.');
+    expect(buttons(row(tree, 'event-15')).map((n) => n.props['aria-label'])).toEqual([
+      openLabel('worker one'),
+    ]);
   });
 
   it('lists the failed commands of a failed gate, and none of a passed one', async () => {
@@ -355,6 +372,7 @@ describe('reading the thread again', () => {
   it.each([
     ['a report to its lead', event(5, 'task.reported', 'lead-1'), 2],
     ['a gate run of its session', event(5, 'session.gate_checked', 'worker-1'), 2],
+    ['a blocked merge of its session', event(5, 'session.merge_blocked', 'worker-1'), 2],
     ['a finding of any review in the project', event(5, 'review.finding_recorded', 'review-9'), 2],
     ['a report to another lead', event(5, 'task.reported', 'lead-2'), 1],
     ['a finished turn of its session', event(5, 'turn.completed', 'worker-1'), 1],

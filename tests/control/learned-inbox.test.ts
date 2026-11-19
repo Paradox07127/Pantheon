@@ -388,6 +388,41 @@ it.each<[string, (f: Fixture) => { change: Improvement['change']; today: unknown
   expect(typeof today === 'string' ? item.diff.from : JSON.parse(item.diff.from)).toEqual(today);
 });
 
+it.each<[string, Improvement['change'], LearnedItem['scope']]>([
+  ['a gate command', { type: 'gate_command', root: '/repo/app', to: [] }, { root: '/repo/app' }],
+  [
+    'a policy change',
+    { type: 'policy_change', param: 'path', tier: 't2', from: 'direct', to: 'dispatch' },
+    { tier: 't2' },
+  ],
+  [
+    'an experience',
+    {
+      type: 'experience',
+      domain: 'frontend-ui',
+      tier: 't1',
+      runtime: 'codex',
+      procedure: 'Run the export tests first.',
+    },
+    { domain: 'frontend-ui', tier: 't1', runtime: 'codex' },
+  ],
+])('gives %s the scope it changes', async (_, change, scope) => {
+  const f = await workbenchFixture();
+  f.store.insert<Improvement>('improvements', {
+    id: 'scoped',
+    revision: 1,
+    project_id: f.project.id,
+    source: 'lead',
+    retrospective_ids: [],
+    status: 'candidate',
+    change,
+    proposed_at: f.store.now(),
+  });
+
+  const item = f.control.learnedList(user, f.project.id).find((i) => i.id === 'scoped')!;
+  expect(item.scope).toEqual(scope);
+});
+
 it('gives a runtime review the revision of its memory record', async () => {
   const f = await workbenchFixture();
   const assistant = f.call<Session>('resident.open', {

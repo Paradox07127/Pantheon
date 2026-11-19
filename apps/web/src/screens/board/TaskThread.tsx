@@ -7,7 +7,7 @@ import { LoadError } from '../../components/LoadError';
 import { ModelMark } from '../../components/RuntimeGlyph';
 import { Skeleton } from '../../components/Skeleton';
 import { useBoard } from '../../data/board';
-import { ageText, useNow } from '../../data/needs-you';
+import { ageText, reasonText, useNow } from '../../data/needs-you';
 import { planTaskIds } from '../../data/task-trace';
 import { useTaskThread, type TaskThreadEntry } from '../../data/task-thread';
 import { sessionTitle } from '../../data/transcript';
@@ -53,6 +53,13 @@ function look(entry: TaskThreadEntry): {
       return of('handback', true);
     case 'merged':
       return of('merged', true);
+    case 'merge_blocked':
+      return of('merge_blocked', true);
+    case 'tracker_message':
+      return {
+        label: t({ id: 'board.task.thread.trackerMessage', defaultMessage: 'Pantheon message' }),
+        glyph: drawn(KINDS.handback),
+      };
     case 'finding':
       return {
         label: t({ id: 'board.task.thread.finding', defaultMessage: 'Finding' }),
@@ -216,7 +223,11 @@ export function TaskThread({ model, task, onOpenSession, onOpenStory }: TaskThre
     );
   };
   const body = (entry: TaskThreadEntry): ReactNode => {
-    if (entry.kind === 'lead_message' || entry.kind === 'report')
+    if (
+      entry.kind === 'lead_message' ||
+      entry.kind === 'tracker_message' ||
+      entry.kind === 'report'
+    )
       return (
         entry.text && (
           <div className="bd-tl-q" data-bubble={entry.kind === 'report' ? 'out' : 'in'}>
@@ -251,6 +262,8 @@ export function TaskThread({ model, task, onOpenSession, onOpenStory }: TaskThre
       );
     }
     if (entry.kind === 'dispatched' || entry.kind === 'merged') return null;
+    if (entry.kind === 'merge_blocked')
+      return entry.text && <p className="bd-tl-p">{reasonText(entry.text)}</p>;
     return entry.text && <p className="bd-tl-p">{entry.text}</p>;
   };
 

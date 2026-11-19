@@ -232,6 +232,7 @@ it.skipIf(insideSandbox)(
       session_id: lead.id,
       from_sha: expect.any(String),
       to_sha: head,
+      source: worktreeOf(f, lead).source,
     });
     expect(boardTask(f, lead.id, 'a').status).toBe('done');
     expect(boardTask(f, lead.id, 'a').state).toBe('merged');

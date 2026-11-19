@@ -295,12 +295,19 @@ export interface BoardPlan extends Entity {
   /** Report tasks the lead accepted, by task id, with the task generation accepted (absent: the first). */
   accepted?: Record<string, { at: number; evidence: string; generation?: number }>;
   /**
-   * Direct tasks the lead merged from its own worktree, by task id, with the task generation merged
-   * and the source branch commits before and after the merge.
+   * Direct tasks the lead merged from its own worktree, by task id, with the task generation merged,
+   * the source branch commits before and after the merge, and the source root it landed in.
    */
   direct_merged?: Record<
     string,
-    { generation: number; at: number; session_id: string; from_sha: string; to_sha: string }
+    {
+      generation: number;
+      at: number;
+      session_id: string;
+      from_sha: string;
+      to_sha: string;
+      source?: string;
+    }
   >;
   /** Each task's generation and contract hash, kept by the daemon; a changed contract starts the next. */
   generations?: Record<string, { generation: number; contract: string }>;
@@ -600,6 +607,8 @@ export interface MilestoneVerification extends Entity {
   /** The milestone row id. */
   milestone_id: string;
   commitment_hash: string;
+  /** The hash of the project's hidden checks when the run started; absent reads as no hidden checks. */
+  checks_hash?: string;
   state: 'pending' | 'running' | 'passed' | 'failed' | 'inconclusive' | 'skipped';
   commands: {
     name: string;

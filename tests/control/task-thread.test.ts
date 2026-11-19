@@ -326,6 +326,49 @@ it("lists a task's dispatch, gate commands, finding parts, answers, hand-back an
   ]);
 });
 
+it("lists a task session's blocked merge with its reason and the tracker's message to fix it", async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  await settle(f, lead);
+  const session = (id: string, fields: Partial<Session>) =>
+    f.store.insert<Session>('sessions', {
+      id,
+      revision: 1,
+      project_id: f.project.id,
+      runtime: f.adapter.name,
+      state: 'open',
+      turn_count: 0,
+      ...fields,
+    });
+  const worker = session('a-worker', {
+    task: { lead_session_id: lead.id, id: 'a', generation: 1 },
+  });
+  const other = session('b-worker', {
+    task: { lead_session_id: lead.id, id: 'b', generation: 1 },
+  });
+  const turn = (id: string, session_id: string, input: string) => {
+    const queued = { id, revision: 1, session_id, origin: 'tracker', input };
+    f.store.event('turn.queued', queued, f.project.id, queued);
+  };
+  f.store.event('session.merge_blocked', worker, f.project.id, {
+    state: 'blocked',
+    reason: 'out_of_scope',
+  });
+  turn('fix-a', worker.id, 'Move the change back into src/a');
+  f.store.event('session.merge_blocked', other, f.project.id, {
+    state: 'blocked',
+    reason: 'gate_failed',
+  });
+  turn('fix-b', other.id, 'Fix the failing gate');
+  turn('lead-digest', lead.id, 'Task a is blocked');
+
+  const entries = f.control.taskThread(user, f.project.id, lead.id, 'a') as TaskThreadEntry[];
+  expect(entries.map(({ event_id, at, ...entry }) => entry)).toEqual([
+    { kind: 'merge_blocked', session_id: worker.id, text: 'out_of_scope' },
+    { kind: 'tracker_message', session_id: worker.id, text: 'Move the change back into src/a' },
+  ]);
+});
+
 it("leaves the open Assistant one note of a milestone's new status without waking it", async () => {
   const f = await workbenchFixture();
   const assistant = f.call<Session>('resident.open', {

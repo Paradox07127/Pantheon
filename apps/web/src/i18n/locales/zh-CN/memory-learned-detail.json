@@ -58,5 +58,10 @@
   "memory.learnedDetail.trialResult": "试用结果",
   "memory.learnedDetail.trial": "试用",
   "memory.learnedDetail.openRetro": "打开复盘 {id}",
-  "memory.learnedDetail.openSession": "打开会话 {id}"
+  "memory.learnedDetail.openSession": "打开会话 {id}",
+  "memory.learnedDetail.scope": "适用范围",
+  "memory.learnedDetail.scope.root": "目录",
+  "memory.learnedDetail.scope.runtime": "运行时",
+  "memory.learnedDetail.scope.domain": "领域",
+  "memory.learnedDetail.scope.tier": "级别"
 }

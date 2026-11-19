@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { BridgeResult, ImprovementSession, LearnedItem } from '@pantheon/protocol';
 import {
   HookHost,
@@ -228,6 +228,29 @@ describe('learned change detail', () => {
       expect(byClass(tree(ended), 'mld-foot')).toEqual([]);
       expect(byClass(tree(ended), 'mld-ev')).toHaveLength(2);
     }
+  });
+
+  it.each<[string, LearnedItem, string[]]>([
+    [
+      'the root of a gate change',
+      improvement({ kind: 'gate_command', title: '/repo/app', scope: { root: '/repo/app' } }),
+      ['/repo/app'],
+    ],
+    ['the tier of a policy change', policyTrial({ scope: { tier: 't2' } }), ['T2']],
+    [
+      'the runtime, domain and tier of an experience',
+      improvement({ scope: { runtime: 'codex', domain: 'frontend-ui', tier: 't1' } }),
+      ['Codex', '前端界面', 'T1'],
+    ],
+  ])('shows %s above the change', async (_, item, values) => {
+    const h = await mount({ item });
+    const parts = ([] as ReactNode[])
+      .concat(find(tree(h), (n) => n.type === 'aside').props.children)
+      .filter((n): n is ReactElement<any> => !!n && typeof n === 'object' && 'props' in n);
+    const scope = parts.findIndex((n) => values.every((v) => text(n).includes(v)));
+    expect(scope).toBeGreaterThan(-1);
+    expect(scope).toBeLessThan(parts.findIndex((n) => n.type === 'ul'));
+    expect(parts[scope]!.props['aria-label']).toBe(zh('memory.learnedDetail.scope'));
   });
 
   it('lists the sessions an experience on trial goes to and opens one', async () => {

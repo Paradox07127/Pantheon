@@ -298,6 +298,36 @@ describe('playbook editor', () => {
     expect(labelled(h, runtimeBox('Codex', 'routing')).props.value).toBe(OWN.routing);
   });
 
+  it('keeps text typed while a save is in flight as a draft on the saved version', async () => {
+    const h = await editor();
+    await choose(h, 'codex');
+    await type(h, runtimeBox('Codex', 'replies'), 'First.');
+    let answer!: (result: BridgeResult<unknown>) => void;
+    bridge.replies['playbook.set'] = [
+      new Promise((resolve) => (answer = resolve)) as unknown as BridgeResult<unknown>,
+    ];
+    await click(h, button(h, zh('settings.playbook.save')));
+    await type(h, runtimeBox('Codex', 'replies'), 'First. Then more.');
+    answer({
+      ok: true,
+      value: {
+        ...codexOwn,
+        version: 4,
+        versions: [1, 2, 3, 4],
+        sections: { ...OWN, replies: 'First.' },
+      },
+    });
+    await h.flush();
+    expect(labelled(h, zhf('settings.playbook.version', { version: 4 }))).toBeTruthy();
+    expect(labelled(h, runtimeBox('Codex', 'replies')).props.value).toBe('First. Then more.');
+
+    await click(h, button(h, zh('settings.playbook.save')));
+    expect(sent('playbook.set').map((input) => [input.base_version, input.sections])).toEqual([
+      [3, { ...OWN, replies: 'First.' }],
+      [4, { ...OWN, replies: 'First. Then more.' }],
+    ]);
+  });
+
   it('keeps the text after a version conflict and loads the newer version to save over', async () => {
     const h = await editor();
     await choose(h, 'codex');

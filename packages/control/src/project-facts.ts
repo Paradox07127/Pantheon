@@ -47,6 +47,7 @@ import {
 } from './board-plan.js';
 import { goalViews } from './project-goals.js';
 import { noteMilestone } from './task-thread.js';
+import { hiddenChecks } from './milestone-checks.js';
 
 export function userOnly(principal: Principal): void {
   requireThat(
@@ -184,19 +185,21 @@ function leadMilestoneView(ctx: ControlContext, milestone: Milestone): Milestone
     }),
   };
 }
-/** The newest verification run against the milestone's commitment with this hash. */
+/** The newest verification run against the milestone's commitment with this hash and the current hidden checks. */
 function currentVerification(
   ctx: ControlContext,
   milestone: Milestone,
-  hash: string,
+  commitment: string,
 ): MilestoneVerification | undefined {
+  const checks = hash(hiddenChecks(ctx, milestone.project_id)),
+    none = hash([]);
   return ctx.store
     .statement(
       "SELECT data FROM milestone_verifications WHERE json_extract(data,'$.milestone_id')=? ORDER BY rowid",
     )
     .all(milestone.id)
     .map((row) => JSON.parse(String(row.data)) as MilestoneVerification)
-    .filter((row) => row.commitment_hash === hash)
+    .filter((row) => row.commitment_hash === commitment && (row.checks_hash ?? none) === checks)
     .reduce<MilestoneVerification | undefined>(
       (newest, row) => (newest && newest.started_at >= row.started_at ? newest : row),
       undefined,

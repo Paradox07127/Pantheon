@@ -1,4 +1,4 @@
-import { Fragment, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Bot,
   Circle,
@@ -394,28 +394,55 @@ function AgentContract({ profile }: { profile: AgentListed }) {
       revision: profile.revision,
       ...patch,
     }));
+  // One save at a time: a save asked for while one is out waits, then sends what the fields show then.
+  const saving = useRef(false);
+  const waiting = useRef<'budget' | 'loudest' | 'quiet' | null>(null);
+  const latest = useRef({ budget, loudest, quiet });
+  latest.current = { budget, loudest, quiet };
   const save = async (
     field: 'budget' | 'loudest' | 'quiet',
     next: { budget?: string; loudest?: Loudest; quiet?: Hours | null },
   ) => {
-    const shown = { budget, loudest, quiet, ...next };
+    if (saving.current) {
+      waiting.current = field;
+      return;
+    }
+    saving.current = true;
+    let shown = { budget, loudest, quiet, ...next };
+    let revision = profile.revision;
     setBusy(true);
     setRefusal(null);
-    const result = await runCommand(
-      'agent.update',
-      {
-        agent_id: profile.id,
-        revision: profile.revision,
-        contract: {
-          ...(shown.budget.trim() && { weekly_input_tokens: Number(shown.budget) }),
-          ...(shown.loudest && { loudest: shown.loudest }),
-          ...(shown.quiet && { quiet_hours: shown.quiet }),
+    for (;;) {
+      const result = await runCommand(
+        'agent.update',
+        {
+          agent_id: profile.id,
+          revision,
+          contract: {
+            ...(shown.budget.trim() && { weekly_input_tokens: Number(shown.budget) }),
+            ...(shown.loudest && { loudest: shown.loudest }),
+            ...(shown.quiet && { quiet_hours: shown.quiet }),
+          },
         },
-      },
-      null,
-    );
+        null,
+      );
+      const again = waiting.current;
+      waiting.current = null;
+      if (!result.ok) {
+        setRefusal({ field, text: failureText(result.error) });
+        break;
+      }
+      if (!again || JSON.stringify(latest.current) === JSON.stringify(shown)) break;
+      // The draft moves to the saved revision so it stays shown when the profile catches up.
+      const sent = revision;
+      const made = (result.value as AgentListed).revision;
+      setDraft((now) => (now?.revision === sent ? { ...now, revision: made } : now));
+      revision = made;
+      field = again;
+      shown = latest.current;
+    }
+    saving.current = false;
     setBusy(false);
-    if (!result.ok) setRefusal({ field, text: failureText(result.error) });
   };
   const refused = (field: 'budget' | 'loudest' | 'quiet') =>
     refusal?.field === field && (

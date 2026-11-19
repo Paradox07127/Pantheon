@@ -468,6 +468,55 @@ it('sends a failed merge command through the existing gate hand-back path before
   ).toBe(true);
 });
 
+it('opens the GPU the project allows to its gate commands and before-merge steps, not to other command steps', async () => {
+  const execute = vi
+    .spyOn(validation, 'runValidationCommand')
+    .mockResolvedValue(validationResult());
+  const step = (command: string): WorkflowStep => ({
+    id: command,
+    title: command,
+    kind: { type: 'command', command, timeout_seconds: 17 },
+  });
+  const definition = empty();
+  definition.slots.before_dispatch = [step('dispatch-check')];
+  definition.slots.before_merge = [step('merge-check')];
+  definition.slots.after_merge = [step('after-check')];
+  const { f, lead } = await setup(definition);
+  enableMerge(f);
+  const project = () => f.store.must<Project>('projects', f.project.id);
+  await f.call(
+    'project.gate.set',
+    {
+      project_id: f.project.id,
+      root: f.source,
+      commands: [{ name: 'Project gate', argv: ['project-gate'] }],
+    },
+    project().revision,
+  );
+  f.call('project.gateGpu.set', { project_id: f.project.id, enabled: true }, project().revision);
+  start(f, lead);
+  await eventually(
+    () => workerOf(f, lead) !== undefined,
+    () => f.control.tick(),
+  );
+  await build(f, workerOf(f, lead));
+  await eventually(
+    () => runs(f).some((r) => r.slot === 'after_merge' && r.state === 'passed'),
+    () => f.control.tick(),
+    10000,
+  );
+  expect(
+    Object.fromEntries(
+      execute.mock.calls.map(([input]) => [input.argv.at(-1), input.gpu ?? false]),
+    ),
+  ).toMatchObject({
+    'dispatch-check': false,
+    'project-gate': true,
+    'merge-check': true,
+    'after-check': false,
+  });
+});
+
 it('keeps legacy unpinned sessions on the empty definition', async () => {
   vi.spyOn(validation, 'runValidationCommand').mockResolvedValue(validationResult());
   const definition = empty();

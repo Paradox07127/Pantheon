@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { versionOf } from '@pantheon/adapters';
-import { NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
+import { hash, NATIVE_ENV_ALLOWLIST } from '@pantheon/domain';
 import { startNativeDaemon } from '../../acceptance/lib/daemon.mjs';
 import { waitFor } from '../../acceptance/lib/event-client.mjs';
 import { materialize } from './check.mjs';
@@ -147,6 +147,7 @@ async function bareRun(spec, repo, adapter, runtimeVersion) {
     cost_usd: usage?.cost_usd ?? null,
     wall_ms: wall,
     playbook_version: null,
+    playbook_sha256: null,
     policy_version: null,
   };
 }
@@ -227,6 +228,8 @@ export async function runOne(spec) {
       );
     }
     const policyVersion = (await get('workflow.policy', params)).policy_version;
+    // A playbook change's eval receipt is checked against the sections the lead ran under.
+    const playbookSha256 = hash((await fixture.call('playbook.get', params)).sections);
 
     await fixture.call(
       'session.create',
@@ -348,6 +351,7 @@ export async function runOne(spec) {
       cost_usd: costs.length ? costs.reduce((total, cost) => total + cost, 0) : null,
       wall_ms: changed - started,
       playbook_version: spec.condition.playbook?.version ?? null,
+      playbook_sha256: playbookSha256,
       policy_version: policyVersion,
     };
   } finally {

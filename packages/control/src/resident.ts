@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   DomainError,
   id,
@@ -425,7 +426,13 @@ export function updateAgent(
     for (const routine of profile.routines)
       if (!next.routines.some((each) => each.id === routine.id))
         scheduleRoutine(ctx, next, { ...routine, enabled: false });
-    if (!next.archived_at) for (const routine of next.routines) scheduleRoutine(ctx, next, routine);
+    // A routine the update leaves as it was keeps its pending run; a changed prompt alone moves no run.
+    if (!next.archived_at)
+      for (const routine of next.routines) {
+        const before = profile.routines.find((each) => each.id === routine.id);
+        if (!before || !isDeepStrictEqual({ ...before, prompt: routine.prompt }, routine))
+          scheduleRoutine(ctx, next, routine);
+      }
   }
   if (!open) return next;
   if (moved) {

@@ -621,11 +621,14 @@ export function BoardView(props: BoardViewProps) {
   const [picked, setPicked] = useState<string | null>(null);
   const [needsAsked, setNeedsAsked] = useState(false);
   const [selectedProject, setSelectedProject] = useState(projectId);
+  // A hidden board renders a project change but runs no effects until it is shown again.
+  const [leftProject, setLeftProject] = useState(false);
   if (selectedProject !== projectId) {
     setSelectedProject(projectId);
     setGraphFull(false);
     setPicked(null);
     setNeedsAsked(false);
+    setLeftProject(true);
   }
   const current =
     model && (model.milestones.find((m) => m.id === picked) ?? currentMilestone(model.milestones));
@@ -647,8 +650,12 @@ export function BoardView(props: BoardViewProps) {
       }),
     [projectId],
   );
-  // Leaving the project closes its drawer, so coming back opens none.
-  useEffect(() => () => useShell.setState({ boardTask: null }), [projectId]);
+  // Leaving the project closes its drawer, so coming back opens none; hiding the board keeps it.
+  useEffect(() => {
+    if (!leftProject) return;
+    useShell.setState({ boardTask: null });
+    setLeftProject(false);
+  }, [leftProject]);
   const scoped = actions && projectId && !props.stale ? { ...actions, projectId } : undefined;
   // A project's first read draws what is under the view tabs in one commit, once the board and
   // its sessions are in or failed; later reads update in place.

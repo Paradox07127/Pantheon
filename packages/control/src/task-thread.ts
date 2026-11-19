@@ -29,11 +29,12 @@ const KINDS = [
   'task.dispatched',
   'task.handed_back',
   'session.merged',
+  'session.merge_blocked',
 ];
 
 /**
- * The task's lead messages, reports, review findings, questions, answers, notes, gate runs,
- * dispatches, hand-backs and merges, in event order.
+ * The task's lead and tracker messages, reports, review findings, questions, answers, notes, gate
+ * runs, dispatches, hand-backs, blocked merges and merges, in event order.
  */
 export function taskThread(
   ctx: ControlContext,
@@ -64,10 +65,10 @@ export function taskThread(
     const base = { event_id: event.event_id, at: event.created_at };
     if (event.kind === 'turn.queued') {
       const turn = event.payload as SessionTurn;
-      if (turn.origin === 'lead' && sessions.has(turn.session_id))
+      if ((turn.origin === 'lead' || turn.origin === 'tracker') && sessions.has(turn.session_id))
         entries.push({
           ...base,
-          kind: 'lead_message',
+          kind: turn.origin === 'lead' ? 'lead_message' : 'tracker_message',
           session_id: turn.session_id,
           text: turn.input,
         });
@@ -148,6 +149,14 @@ export function taskThread(
       )
         continue;
       entries.push({ ...base, kind: 'merged', session_id: event.aggregate_id, text: '' });
+    } else if (event.kind === 'session.merge_blocked') {
+      if (!sessions.has(event.aggregate_id)) continue;
+      entries.push({
+        ...base,
+        kind: 'merge_blocked',
+        session_id: event.aggregate_id,
+        text: (event.payload as { reason?: string }).reason ?? '',
+      });
     } else if (sessions.has(event.aggregate_id)) {
       const commands = (
         (event.payload as Record<string, unknown>).results as {

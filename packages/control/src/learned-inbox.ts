@@ -55,6 +55,16 @@ export function learnedList(
           title: ctx.store.get<AgentProfile>('agents', change.agent_id)?.name,
         }) ||
         (change.type === 'playbook' && { title: change.runtime ?? 'default' })),
+      ...((change.type === 'gate_command' && { scope: { root: change.root } }) ||
+        (change.type === 'policy_change' && change.tier && { scope: { tier: change.tier } }) ||
+        (change.type === 'experience' &&
+          (change.domain || change.tier || change.runtime) && {
+            scope: {
+              ...(change.domain && { domain: change.domain }),
+              ...(change.tier && { tier: change.tier }),
+              ...(change.runtime && { runtime: change.runtime }),
+            },
+          })),
       grade: row.grade,
       status: row.status,
       group:

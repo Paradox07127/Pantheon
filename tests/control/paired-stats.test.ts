@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
-import { costChange } from '../../packages/control/dist/paired-stats.js';
+import { comparePairs, costChange } from '../../packages/control/dist/paired-stats.js';
 
-const { costChange: evalCostChange } = await import(
+const { comparePairs: evalComparePairs, costChange: evalCostChange } = await import(
   new URL('../eval/lib/paired-stats.mjs', import.meta.url).href
 );
 
@@ -14,6 +14,17 @@ it('gives the same change and interval as the eval report for the same pairs and
     second: 600 + ((index * 53) % 400),
   }));
   expect(costChange(pairs, rule)).toEqual(evalCostChange(pairs, rule));
+});
+
+it('gives the same pass and cost verdicts as the eval report for the same pairs and seed', () => {
+  const pairs = Array.from({ length: 14 }, (_, index) => ({
+    task: `task-${index % 7}`,
+    first: { accepted: index % 3 !== 0, cost: index % 5 ? 1000 + index * 37 : null },
+    second: { accepted: index % 4 !== 1, cost: 600 + ((index * 53) % 400) },
+  }));
+  expect(comparePairs(pairs, { ...rule, alpha: 0.05 })).toEqual(
+    evalComparePairs(pairs, { ...rule, alpha: 0.05 }),
+  );
 });
 
 it('holds no change in the interval when every pair costs the same on both sides', () => {

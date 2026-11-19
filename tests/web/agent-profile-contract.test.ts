@@ -247,6 +247,39 @@ describe('contract', () => {
     expect((update()![1] as any).contract.quiet_hours).toEqual({ from: '22:00', to: '07:30' });
   });
 
+  it('sends a second quiet hours edit only once the first save returns, at the revision it made', async () => {
+    let profile = triage();
+    const contractOf = nodes(panel().value).find(
+      (n) => typeof n.type === 'function' && n.type.name === 'AgentContract',
+    )!.type as (props: unknown) => any;
+    const h = host(() => contractOf({ profile }));
+    let answer!: (result: unknown) => void;
+    runCommand.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    const end = (name: string) => named(h.value, zh(`sessions.agents.contract.${name}`))!;
+    end('quietFrom').props.onChange({ target: { value: '21:00' } });
+    h.render();
+    end('quietFrom').props.onBlur();
+    end('quietUntil').props.onChange({ target: { value: '07:30' } });
+    h.render();
+    end('quietUntil').props.onBlur();
+    await h.flush();
+    expect(runCommand.mock.calls.filter((call) => call[0] === 'agent.update')).toHaveLength(1);
+
+    const saved = triage({
+      revision: 8,
+      contract: { ...triage().contract, quiet_hours: { from: '21:00', to: '08:00' } },
+    });
+    answer({ ok: true, value: saved });
+    await h.flush();
+    const sent = runCommand.mock.calls.filter((call) => call[0] === 'agent.update');
+    expect(sent.map((call) => (call[1] as any).revision)).toEqual([7, 8]);
+    expect((sent[1]![1] as any).contract.quiet_hours).toEqual({ from: '21:00', to: '07:30' });
+    profile = saved;
+    h.render();
+    expect(end('quietUntil').props.value).toBe('07:30');
+    expect(alerts(h.value)).toEqual([]);
+  });
+
   it('shows what this week spent against the budget, and that wakes are held once it is spent', () => {
     data.ledger = read(week({ input_tokens: 1_240_000 }));
     let h = part('AgentContract');

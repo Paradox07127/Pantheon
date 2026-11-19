@@ -36,7 +36,7 @@ vi.mock('@/screens/board/TaskDrawer', async (actual) => ({
   TaskDrawer: stub('TaskDrawer'),
 }));
 
-import { act, createElement } from 'react';
+import { act, Activity, createElement } from 'react';
 import { pickTaskView } from '@/data/board-page';
 import { BoardView } from '@/screens/board/BoardScreen';
 import { FakeDocument } from './web-fake-dom.js';
@@ -135,20 +135,27 @@ afterAll(() => {
   vi.unstubAllGlobals();
 });
 
-const show = (projectId: string, page: 'overview' | 'tasks') =>
+const show = (
+  projectId: string,
+  page: 'overview' | 'tasks',
+  mode: 'visible' | 'hidden' = 'visible',
+) =>
   act(() =>
     root.render(
-      createElement(BoardView, {
-        model,
-        loading: false,
-        error: null,
-        onRetry: noop,
-        page,
-        onPage: noop,
-        projectId,
-        onOpenSession: noop,
-        onOpenStory: noop,
-        onOpenTrace: noop,
+      createElement(Activity, {
+        mode,
+        children: createElement(BoardView, {
+          model,
+          loading: false,
+          error: null,
+          onRetry: noop,
+          page,
+          onPage: noop,
+          projectId,
+          onOpenSession: noop,
+          onOpenStory: noop,
+          onOpenTrace: noop,
+        }),
       }),
     ),
   );
@@ -177,4 +184,26 @@ describe('picking a task re-renders only what shows the pick', () => {
       }
     },
   );
+});
+
+describe('the open drawer while the board is hidden', () => {
+  it('stays open when the board is hidden and shown again', async () => {
+    pickTaskView('hidden-keeps', 'list');
+    await show('hidden-keeps', 'tasks');
+    await act(() => seen.props.TaskList.onOpenTask('a'));
+    await show('hidden-keeps', 'tasks', 'hidden');
+    await show('hidden-keeps', 'tasks');
+    expect(seen.props.TaskDrawer.taskId).toBe('a');
+  });
+
+  it('does not reopen the task of a project left and come back to while the board was hidden', async () => {
+    pickTaskView('hidden-left', 'list');
+    await show('hidden-left', 'tasks');
+    await act(() => seen.props.TaskList.onOpenTask('a'));
+    await show('hidden-left', 'tasks', 'hidden');
+    await show('hidden-other', 'tasks', 'hidden');
+    await show('hidden-left', 'tasks', 'hidden');
+    await show('hidden-left', 'tasks');
+    expect(seen.props.TaskDrawer.taskId).toBeNull();
+  });
 });

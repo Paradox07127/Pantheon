@@ -1741,6 +1741,9 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
                               !inside(resolvedPath(root), other),
                           ),
                         ),
+                      hiddenChecksDirs: reviewsRoots(ctx).map((reviews) =>
+                        path.join(path.dirname(reviews), 'checks'),
+                      ),
                     }).map(({ path, deny }) => ({ path, deny })),
                   },
                 }

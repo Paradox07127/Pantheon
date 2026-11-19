@@ -169,6 +169,7 @@ export function PlaybookEditor({ project }: { project: Project }) {
     if (saving) return;
     setSaving(true);
     setFailure(null);
+    const before = draft;
     const result = await setPlaybook(project.id, runtime, base, sections);
     setSaving(false);
     if (!result.ok) {
@@ -192,9 +193,13 @@ export function PlaybookEditor({ project }: { project: Project }) {
         });
       return;
     }
-    current.put(result.value as PlaybookRead);
+    const saved = result.value as PlaybookRead;
+    current.put(saved);
     setViewing(null);
-    dropDraft();
+    // Text typed while the save was out stays as a draft on the version it made.
+    setDrafts(({ [choice]: now, ...rest }) =>
+      !now || now === before ? rest : { ...rest, [choice]: { ...now, base: saved.version } },
+    );
   };
 
   const own = runtime !== null && read && read.version > 0 ? { runtime, read } : null;

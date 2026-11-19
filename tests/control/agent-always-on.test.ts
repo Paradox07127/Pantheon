@@ -18,6 +18,7 @@ import type {
 import { command, inputSchemas } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { TOOL_GROUP_MODULES } from '../../packages/control/dist/agent-prompts.js';
+import * as validation from '../../packages/control/dist/validation-executor.js';
 import { eventually, user } from '../helpers.js';
 import { workbenchFixture } from './workbench-fixture.js';
 
@@ -196,6 +197,33 @@ it('gives each routine note its routine id and the time the routine last ran', a
   expect(notes[0]!.last_run_at).toBeUndefined();
 });
 
+it('keeps the due time of a routine an update leaves as it was, and reschedules the one it pauses', async () => {
+  const { f, assistant, advance, start } = await clockFixture();
+  const profile = () => f.store.must<AgentProfile>('agents', assistant.resident!.agent_id!);
+  const routines = (paused: boolean) => [
+    { id: 'hourly', prompt: 'Look for stalled tasks', every_minutes: 60, enabled: true },
+    { id: 'daily', prompt: 'Sum up the day', every_minutes: 24 * 60, enabled: !paused },
+  ];
+  const update = (paused: boolean) =>
+    f.call<AgentProfile>('agent.update', {
+      agent_id: profile().id,
+      revision: profile().revision,
+      routines: routines(paused),
+    });
+  const due = (routineId: string) =>
+    timersOf(f, 'agent-routine').find(
+      (timer) => timer.state === 'pending' && timer.subject_id === `${profile().id}:${routineId}`,
+    )?.due_at;
+  update(false);
+  advance(20 * MINUTE);
+  update(true);
+  expect(due('hourly')).toBe(start + 60 * MINUTE);
+  expect(due('daily')).toBeUndefined();
+  update(false);
+  expect(due('hourly')).toBe(start + 60 * MINUTE);
+  expect(due('daily')).toBe(start + 20 * MINUTE + 24 * 60 * MINUTE);
+});
+
 /** A clock fixture whose assistant has one hourly routine with the precheck the user gave it. */
 async function precheckFixture(argv: string[]) {
   const fixture = await clockFixture();
@@ -248,6 +276,29 @@ it('wakes the agent on a routine whose precheck exits 0', async () => {
   ]);
   expect(trackerTurns(f, assistant.id)[0]!.wake?.causes).toContain('routine');
   expect(skipped()).toEqual([]);
+});
+
+it('runs a routine precheck without the GPU the project opens to its gate commands', async () => {
+  const execute = vi.spyOn(validation, 'runValidationCommand');
+  const { f, assistant, advance } = await precheckFixture(['sh', '-c', 'exit 0']);
+  f.call(
+    'project.gateGpu.set',
+    { project_id: f.project.id, enabled: true },
+    f.store.must<Project>('projects', f.project.id).revision,
+  );
+  advance(60 * MINUTE);
+  await f.control.tick();
+  await eventually(
+    () => trackerTurns(f, assistant.id).length === 1,
+    () => f.control.tick(),
+    20_000,
+  );
+  expect(
+    execute.mock.calls
+      .filter(([input]) => input.key.startsWith('routine-precheck:'))
+      .map(([input]) => input.gpu ?? false),
+  ).toEqual([false]);
+  execute.mockRestore();
 });
 
 it('records a run its precheck skips, and opens no turn for it', async () => {

@@ -285,10 +285,10 @@ export interface Improvement extends Entity {
     verdict?: 'better' | 'worse' | 'not_enough_evidence';
     /** interleaved: the baseline is the trial's tasks without the change; absent on trials ended before it was recorded. */
     design?: 'interleaved' | 'before_after';
-    /** Input tokens of the arms paired task by task, once each arm has its tasks; interleaved trials only. */
+    /** Input tokens per task of the new arm against the old arm, once each arm has its tasks; interleaved trials only. */
     paired_cost?: {
-      pairs: number;
-      tasks: number;
+      /** The tasks of the old arm and of the new arm. */
+      tasks: [number, number];
       change: number | null;
       interval: [number, number] | null;
     };

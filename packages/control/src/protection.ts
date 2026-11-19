@@ -471,7 +471,11 @@ function nativeRecordsAndSkills(input: Pick<ProtectionPaths, 'home' | 'codexHome
 }
 
 export function plannerProtectionList(
-  input: Omit<ProtectionPaths, 'sourceRepo' | 'workspacePath'> & { workspaceRoot?: string },
+  input: Omit<ProtectionPaths, 'sourceRepo' | 'workspacePath'> & {
+    workspaceRoot?: string;
+    /** The folders of the checks only milestone verification runs, which no session may read. */
+    hiddenChecksDirs?: string[];
+  },
 ): ProtectionEntry[] {
   return [
     ...protectionListWithoutWorkspace({ ...input, otherWorkspaces: [] }),
@@ -486,6 +490,13 @@ export function plannerProtectionList(
         path: entry,
         deny: 'read_write',
         reason: 'Other workspaces, reviews, native session records and user skills',
+      })),
+    ),
+    ...(input.hiddenChecksDirs ?? []).flatMap((target) =>
+      entryPaths(target).map((entry): ProtectionEntry => ({
+        path: entry,
+        deny: 'read_write',
+        reason: 'Hidden milestone checks',
       })),
     ),
   ];

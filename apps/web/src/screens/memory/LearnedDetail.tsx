@@ -10,10 +10,11 @@ import {
   X,
 } from 'lucide-react';
 import { Menu, MenuItem, MenuSeparator } from '../../components/Menu';
+import { runtimeName } from '../../components/RuntimeGlyph';
 import { SessionStateIcon, StateGlyph } from '../../components/SessionStateIcon';
 import { shortId } from '../../data/format';
 import { runLearnedAction, type LearnedAction, type LearnedItem } from '../../data/learned';
-import { useImprovementSessions } from '../../data/workflow-policy';
+import { DOMAIN_LABEL, tierText, useImprovementSessions } from '../../data/workflow-policy';
 import { useSessionList } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
@@ -279,6 +280,47 @@ export function LearnedDetail({ projectId, item, onClose, onOpenRetro }: Learned
         <span className="mld-kind">{kindText(item.kind)}</span>
         <span className="chip">{GRADE[item.grade]()}</span>
       </div>
+
+      {item.scope && (
+        <div
+          className="mld-scope"
+          role="group"
+          aria-label={t({ id: 'memory.learnedDetail.scope', defaultMessage: 'Applies to' })}
+        >
+          {item.scope.root && (
+            <span className="mld-sv">
+              <span className="cap">
+                {t({ id: 'memory.learnedDetail.scope.root', defaultMessage: 'Root' })}
+              </span>
+              <span className="mld-mono mld-path">{item.scope.root}</span>
+            </span>
+          )}
+          {item.scope.runtime && (
+            <span className="mld-sv">
+              <span className="cap">
+                {t({ id: 'memory.learnedDetail.scope.runtime', defaultMessage: 'Runtime' })}
+              </span>
+              <span>{runtimeName(item.scope.runtime)}</span>
+            </span>
+          )}
+          {item.scope.domain && (
+            <span className="mld-sv">
+              <span className="cap">
+                {t({ id: 'memory.learnedDetail.scope.domain', defaultMessage: 'Domain' })}
+              </span>
+              <span>{DOMAIN_LABEL[item.scope.domain]}</span>
+            </span>
+          )}
+          {item.scope.tier && (
+            <span className="mld-sv">
+              <span className="cap">
+                {t({ id: 'memory.learnedDetail.scope.tier', defaultMessage: 'Tier' })}
+              </span>
+              <span>{tierText(item.scope.tier)}</span>
+            </span>
+          )}
+        </div>
+      )}
 
       <ul
         className="lcd-lines mld-diff"

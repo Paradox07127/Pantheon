@@ -50,7 +50,7 @@ function playbookRead(
 export const leadPlaybook = (
   ctx: ControlContext,
   projectId: string,
-  runtime: string,
+  runtime: string | undefined,
 ): PlaybookSections => playbookRead(ctx, projectId, runtime).sections;
 
 /** The current version of the project's playbook for runtime, or of its default without runtime; 0 while none is stored. */

@@ -32,7 +32,7 @@ import {
 import { changeKind } from './learned-change-kinds.js';
 import { sessionTaskScope } from './memory-access.js';
 import { agentAttempt, improvementSignals } from './improvement-signals.js';
-import { costChange } from './paired-stats.js';
+import { armsCostChange } from './paired-stats.js';
 import { playbookVersion, storedPlaybook } from './playbooks.js';
 import { changedPolicy, pinParam, policyValue, workflowPolicy } from './workflow-policy.js';
 
@@ -51,7 +51,7 @@ const WORSE_SHARE = 0.1;
 const FINDINGS_SHARE = 0.5;
 /** How many more harmful than beneficial trial tasks a trial may have and stay, in tasks. */
 const HARM_MARGIN = 3;
-/** The interval of the paired cost change of interleaved arms, computed as the eval report does. */
+/** The confidence and bootstrap of the cost change of interleaved arms, as the eval report uses them. */
 const PAIRED_COST = { confidence: 0.95, bootstrap: { resamples: 10_000, seed: 1 } };
 type Verdict = NonNullable<NonNullable<Improvement['trial_evaluation']>['verdict']>;
 /** The verdict of each reason the evaluator ends a trial for. */
@@ -402,19 +402,17 @@ function trialEvidence(
     !metrics ||
     before.length < TRIAL_TASKS ||
     [...Object.values(comparison.baseline), ...Object.values(comparison.trial)].includes(undefined);
-  // The n-th task of each arm make a pair; a pair without input tokens on both sides is left out.
-  const pairs = after.flatMap((row, index) => {
-    const first = before[index] && inputTokens(before[index]),
-      second = inputTokens(row);
-    return first && second ? [{ task: String(index), first, second }] : [];
-  });
+  // A task without input tokens is left out.
+  const costs = (arm: Retrospective[]) => arm.flatMap((row) => inputTokens(row) || []);
   return {
     comparison,
     no_baseline: noBaseline,
     design: interleaved ? 'interleaved' : 'before_after',
     ...(interleaved &&
       before.length >= TRIAL_TASKS &&
-      after.length >= TRIAL_TASKS && { paired_cost: costChange(pairs, PAIRED_COST) }),
+      after.length >= TRIAL_TASKS && {
+        paired_cost: armsCostChange(costs(before), costs(after), PAIRED_COST),
+      }),
   };
 }
 

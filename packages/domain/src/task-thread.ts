@@ -5,7 +5,8 @@ import type { LeadNote, LeadQuestion } from './board.js';
  * task.reported note, finding a recorded review finding of a task session, question and answer a
  * board question blocking the task or relayed from its session, note any other note left for the
  * lead on the task, gate a gate run of a task session, dispatched, handed_back and merged the
- * task's dispatch, its hand-back to the lead and a merge of the task.
+ * task's dispatch, its hand-back to the lead and a merge of the task, merge_blocked a blocked merge
+ * of a task session, tracker_message a turn the task tracker queued on a task session.
  */
 export interface TaskThreadEntry {
   /** The event the entry was read from. */
@@ -22,11 +23,14 @@ export interface TaskThreadEntry {
     | 'gate'
     | 'dispatched'
     | 'handed_back'
-    | 'merged';
+    | 'merged'
+    | 'merge_blocked'
+    | 'tracker_message';
   session_id?: string;
   /**
    * On a finding its location and impact; on a gate entry the names of the commands that failed; on
-   * a hand-back its reason; empty on a dispatch or merge.
+   * a hand-back or blocked merge its reason; on a tracker message its input; empty on a dispatch or
+   * merge.
    */
   text: string;
   /** On a report or note, its kind. */

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { FixtureAdapter } from '@pantheon/adapters';
@@ -86,6 +86,35 @@ it('denies a task session and a session without a task reading the hidden checks
   expect(unreadable(worker.id)).toContain(folder);
   expect(unreadable(lead.id)).toContain(folder);
 });
+
+it.each(['claude', 'codex'])(
+  'denies a %s planner session reading the hidden checks of another project',
+  async (runtime) => {
+    const f = await workbenchFixture();
+    f.control.adapters.delete(f.adapter.name);
+    f.adapter.name = runtime;
+    f.control.adapters.set(runtime, f.adapter);
+    const other = path.join(f.root, 'managed', 'other-project', 'checks');
+    mkdirSync(other, { recursive: true });
+    writeFileSync(path.join(other, 'hidden.json'), JSON.stringify({ checks }));
+    // A baseline, the planner session here, skips a project with fewer than three files.
+    for (const file of ['README.md', 'index.ts'])
+      writeFileSync(path.join(f.source, file), `${file}\n`);
+    git(f.source, 'add', '.');
+    git(f.source, 'commit', '--quiet', '-m', 'Add the project files');
+    await f.call('project.baseline.start', { project_id: f.project.id });
+    await eventually(
+      () => f.start.mock.calls.some(([spec]) => spec.role === 'planner'),
+      () => f.control.tick(),
+    );
+    const [spec] = f.start.mock.calls.find(([candidate]) => candidate.role === 'planner')!;
+    expect(spec.runtime).toBe(runtime);
+    expect(spec.sandbox?.protected_entries).toContainEqual({
+      path: realpathSync(other),
+      deny: 'read_write',
+    });
+  },
+);
 
 it('denies a reviewer session reading the hidden checks folder', async () => {
   const f = await workbenchFixture();
