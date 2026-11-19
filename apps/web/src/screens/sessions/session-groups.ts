@@ -97,13 +97,13 @@ function groupOf(s: WorkbenchSession, unread: (s: WorkbenchSession) => boolean):
 
 export type SessionSort = 'activity' | 'created' | 'title';
 
-/** What a session is to the list's type filter: a project's resident lead, a board task's worker, a runtime analysis, or one the user opened. */
-export type SessionType = 'resident' | 'worker' | 'direct' | 'review';
+/** What a listed session is to the list's type filter: a board task's worker, a runtime analysis, or one the user opened. */
+export type SessionType = 'worker' | 'direct' | 'review';
 
-export const SESSION_TYPES: readonly SessionType[] = ['resident', 'worker', 'direct', 'review'];
+export const SESSION_TYPES: readonly SessionType[] = ['worker', 'direct', 'review'];
 
 export const sessionType = (s: WorkbenchSession): SessionType =>
-  s.resident ? 'resident' : s.lead ? 'worker' : s.runtime_review ? 'review' : 'direct';
+  s.lead ? 'worker' : s.runtime_review ? 'review' : 'direct';
 
 export interface SessionListView {
   /** lead: by who opened or forked each session; time: by day of the sorted time. */

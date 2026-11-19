@@ -195,11 +195,6 @@ const SORTS = [
 ] as const;
 
 const TYPES: Record<SessionType, { readonly label: string }> = {
-  resident: {
-    get label() {
-      return t({ id: 'components.sidebar.typeResident', defaultMessage: 'Resident' });
-    },
-  },
   worker: {
     get label() {
       return t({ id: 'components.sidebar.typeWorker', defaultMessage: 'Worker' });
@@ -655,13 +650,12 @@ export function Sidebar({
             : s.resident?.kind === r.kind && BUILT_IN_NAMES[r.kind] !== undefined),
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
-  const residents = view.hiddenTypes?.includes('resident')
-    ? []
-    : zone
-        .map((r) => ({ ...r, session: residentOf(r) }))
-        .filter((r) => !r.session || keptByView(r.session, view));
+  const residents = zone.map((r) => ({ ...r, session: residentOf(r) }));
   const runtimes = [
-    ...new Set([...all.map((s) => s.runtime), ...(view.hiddenRuntimes ?? [])]),
+    ...new Set([
+      ...all.filter((s) => !s.resident).map((s) => s.runtime),
+      ...(view.hiddenRuntimes ?? []),
+    ]),
   ].sort(compareRuntimes);
   // The project whose list shows only the sessions that need the user; null when none does.
   const [waitingIn, setWaitingIn] = useState<string | null>(null);
@@ -1389,7 +1383,6 @@ export function Sidebar({
                   <Plus aria-hidden="true" />
                 </button>
               </Tip>
-              <ViewMenu view={view} runtimes={runtimes} onChange={setView} />
             </div>
             <nav
               className="ss-list"
@@ -1453,6 +1446,7 @@ export function Sidebar({
                     <KeyHint id="new" />
                   </button>
                 </Tip>
+                <ViewMenu view={view} runtimes={runtimes} onChange={setView} />
               </div>
               {!list.data && listError}
               {!list.data && !list.error && (

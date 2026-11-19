@@ -96,11 +96,18 @@ check(
   menu?.heads,
 );
 check(
-  '类型组有 常驻/Worker/直接/分析 四个勾选项，起初都勾上',
-  ['常驻', 'Worker', '直接', '分析'].every((n) =>
+  '类型组有 Worker/直接/分析 三个勾选项，起初都勾上，没有常驻',
+  ['Worker', '直接', '分析'].every((n) =>
     menu?.checks.some((c) => c.name === n && c.checked === 'true'),
-  ),
+  ) && !menu?.checks.some((c) => c.name === '常驻'),
   menu?.checks,
+);
+check(
+  '视图菜单按钮在会话标题行，不在智能体标题行',
+  await page.evaluate(
+    `!!document.querySelector('.ss-zh [aria-label="分组、排序与筛选"]') && !document.querySelector('.sb-sh [aria-label="分组、排序与筛选"]')`,
+  ),
+  null,
 );
 check(
   '运行时组列出 fixture',

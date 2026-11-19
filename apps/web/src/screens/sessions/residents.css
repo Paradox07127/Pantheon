@@ -45,7 +45,7 @@
   padding-top: var(--sp-1);
   border-top: var(--hair) solid var(--bd2);
 }
-/* The title of the list under the residents, with the new session button at its end. */
+/* The title of the list under the residents, with the new session button and the view menu at its end. */
 .ss-zh {
   display: flex;
   align-items: center;

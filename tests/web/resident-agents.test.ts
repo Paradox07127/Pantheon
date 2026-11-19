@@ -831,15 +831,30 @@ describe('type and runtime filters', () => {
     const labels = nodes(drawn).map((n) => text(n.props.children));
     expect(labels).toContain(zh('components.sidebar.types'));
     expect(labels).toContain(zh('components.sidebar.runtimes'));
+    const types = nodes(drawn)
+      .filter((n) => 'onCheckedChange' in n.props && 'checked' in n.props)
+      .map((n) => text(n.props.children));
+    expect(types).toEqual(
+      expect.arrayContaining(
+        ['typeWorker', 'typeDirect', 'typeReview'].map((type) => zh(`components.sidebar.${type}`)),
+      ),
+    );
+    expect(types).not.toContain('常驻');
   });
 
-  it('keeps only the worker rows with only Worker checked, and still after a remount', () => {
+  it('keeps only the worker sessions with only Worker checked, and still after a remount', () => {
     const h = sidebar(LIST);
-    for (const type of ['typeResident', 'typeDirect', 'typeReview'])
+    for (const type of ['typeDirect', 'typeReview'])
       pick(h, zh(`components.sidebar.${type}`), false);
-    expect(order(h)).toEqual(['w-claude', 'w-codex']);
+    expect(order(h)).toEqual([ASSISTANT, TRIAGE, 'w-claude', 'w-codex']);
     unmountAll();
-    expect(order(sidebar(LIST))).toEqual(['w-claude', 'w-codex']);
+    expect(order(sidebar(LIST))).toEqual([ASSISTANT, TRIAGE, 'w-claude', 'w-codex']);
+  });
+
+  it('keeps the agents when their runtime is unchecked, since the menu filters only the sessions', () => {
+    const h = sidebar(LIST);
+    pick(h, runtimeName('claude'), false);
+    expect(order(h)).toEqual([ASSISTANT, TRIAGE, 'w-codex']);
   });
 
   it('leaves out the sessions of an unchecked runtime, and still after a remount', () => {
