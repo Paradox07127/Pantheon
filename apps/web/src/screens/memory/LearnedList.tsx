@@ -6,6 +6,7 @@ import type { LearnedItem } from '../../data/learned';
 import { ageText } from '../../data/needs-you';
 import { PARAM_LABEL } from '../../data/workflow-policy';
 import { t } from '../../i18n';
+import { listText } from '../../lib/list-text';
 import './memory-learned.css';
 
 export interface LearnedListProps {
@@ -114,6 +115,42 @@ function firstLine(text: string): string {
   }
 }
 
+/** A structured value in words: list items and object entries joined, nesting flattened. */
+function brief(value: unknown): string {
+  if (Array.isArray(value)) return listText(...value.map(brief));
+  if (value && typeof value === 'object')
+    return listText(...Object.entries(value).map(([key, v]) => `${key} ${brief(v)}`));
+  return String(value);
+}
+
+/** What a setting, gate or setup change makes the value, in words. */
+function changeTitle(item: LearnedItem): string | null {
+  let to: unknown;
+  try {
+    to = JSON.parse(item.diff.to);
+  } catch {
+    return null;
+  }
+  if (item.kind === 'policy_change' && item.title)
+    return t(
+      { id: 'memory.learned.setTo', defaultMessage: '{what}: {to}' },
+      {
+        what: (PARAM_LABEL as Record<string, string>)[item.title] ?? item.title,
+        to: brief(to),
+      },
+    );
+  if (item.kind === 'gate_command')
+    return (
+      listText(...(to as { name: string }[]).map((command) => command.name)) ||
+      t({ id: 'memory.learned.noCommands', defaultMessage: 'No commands' })
+    );
+  if (item.kind === 'worktree_setup') {
+    const setup = to as { copy_paths: string[]; command?: { argv: string[] } };
+    return listText(setup.command?.argv.join(' '), ...setup.copy_paths);
+  }
+  return null;
+}
+
 /** The row's title as drawn and as read out. */
 function rowTitle(item: LearnedItem): { node: ReactNode; text: string } {
   const { from, to } = item.diff;
@@ -138,7 +175,7 @@ function rowTitle(item: LearnedItem): { node: ReactNode; text: string } {
         : t({ id: 'memory.learned.fromTo', defaultMessage: '{from} to {to}' }, { from, to }),
     };
   }
-  const line = firstLine(to);
+  const line = changeTitle(item) ?? firstLine(to);
   return {
     node: <Clip text={line} className={MONO.has(item.kind) ? 'lr-mono' : undefined} />,
     text: line,

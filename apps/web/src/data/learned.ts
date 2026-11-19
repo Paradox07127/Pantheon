@@ -1,7 +1,5 @@
 import type { CommandType, LearnedItem } from '@pantheon/protocol';
-import { failureText } from './needs-you';
 import { sendProjectCommand, useProjectQuery, type MutationResult } from './project-read';
-import { readQuery } from './workbench-sessions';
 
 export type { LearnedItem };
 export type LearnedAction = LearnedItem['actions'][number];
@@ -75,12 +73,5 @@ export async function runLearnedAction(
       { project_id: projectId, id: item.id, decision: action.decision },
       null,
     );
-  // memory.commit and memory.archive expect the record's revision, which learned.list leaves out.
-  const read = await readQuery('memory.item', { project_id: projectId, memory_id: item.id });
-  if (!read.ok) return { ok: false, error: failureText(read.error) };
-  return sendProjectCommand(
-    action.command as CommandType,
-    { memory_id: item.id },
-    (read.value as { revision: number }).revision,
-  );
+  return sendProjectCommand(action.command as CommandType, { memory_id: item.id }, item.revision!);
 }

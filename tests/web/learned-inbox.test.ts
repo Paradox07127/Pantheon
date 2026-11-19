@@ -95,6 +95,7 @@ const items: LearnedItem[] = [
     status: 'active',
     group: 'in_force',
     title: 'Webhook tests',
+    revision: 7,
     diff: { from: '', to: 'Webhook signature tests need TZ=UTC.' },
     actions: [{ command: 'memory.archive' }],
   }),
@@ -316,7 +317,7 @@ describe('learned inbox', () => {
       { project_id: 'pay', id: 'wf-1', decision: 'keep' },
       null,
     ],
-    ['mem-1', zh('memory.learnedDetail.archive'), 'memory.archive', { memory_id: 'mem-1' }, 4],
+    ['mem-1', zh('memory.learnedDetail.archive'), 'memory.archive', { memory_id: 'mem-1' }, 7],
   ])('sends %s its action %s', async (id, label, type, input, revision) => {
     const h = await mountDetail(id);
     button(tree(h), label).props.onClick();
@@ -324,6 +325,7 @@ describe('learned inbox', () => {
     expect(bridge.commands).toEqual([
       expect.objectContaining({ type, input, expected_revision: revision }),
     ]);
+    expect(bridge.queries.map((q) => q.method)).not.toContain('memory.item');
   });
 
   it('draws one button per action, the first primary, and none for an item without actions', async () => {

@@ -215,13 +215,18 @@ try {
   );
 
   // 4 (before confirming). The candidate's details on the memory page draw the same change.
-  // The row is named after learned.list: the proposed value on one line, the kind, the group.
+  // The row is named after learned.list: the proposed commands' names, the kind, the group.
+  // The tab's name carries the count of changes that need you.
   const openLearned = async (group, id) => {
     await page.click({ role: 'button', name: '记忆', exact: true });
-    await page.click({ role: 'tab', name: '经验', exact: true });
+    await page.click({ role: 'tab', name: '经验', exact: false });
     const item = (await query('learned.list', { project_id })).find((i) => i.id === id);
     if (!item) return false;
-    const name = `${JSON.stringify(JSON.parse(item.diff.to))}，门禁命令，${group}`;
+    const commands =
+      JSON.parse(item.diff.to)
+        .map((c) => c.name)
+        .join(', ') || '没有命令';
+    const name = `${commands}，门禁命令，${group}`;
     const option = await poll(async () =>
       page.evaluate(`(() => {
         const g = document.querySelector('[role="listbox"][aria-label=${JSON.stringify(group)}]');
@@ -262,8 +267,8 @@ try {
     }
   };
   check(
-    '记忆页 "等你确认" 里有这条候选',
-    await openLearned('等你确认', candidate.id),
+    '记忆页 "需要你" 里有这条候选',
+    await openLearned('需要你', candidate.id),
     await names('门禁命令'),
   );
   const pending = await poll(async () => {
@@ -385,8 +390,8 @@ try {
   );
   if (clearing) {
     check(
-      '记忆页 "等你确认" 里有清空门禁的候选',
-      await openLearned('等你确认', clearing.id),
+      '记忆页 "需要你" 里有清空门禁的候选',
+      await openLearned('需要你', clearing.id),
       await names('门禁命令'),
     );
     const cleared = await poll(async () => {

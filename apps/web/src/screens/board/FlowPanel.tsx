@@ -697,7 +697,8 @@ function FlowCanvas({
       if (e.from === hovered || e.to === hovered) lit.add(e.from).add(e.to);
     return lit;
   }, [layout, hovered]);
-  const nodes = useMemo(
+  // Built without the selection, so picking a task hands React Flow new objects for two nodes only.
+  const unselected = useMemo(
     () =>
       layout.nodes.map((n): ChartNode => {
         const place = (width: number) => ({
@@ -765,7 +766,7 @@ function FlowCanvas({
           ),
           data: {
             task,
-            selected: n.id === selected,
+            selected: false,
             now,
             critical: critical.includes(n.id),
             ready: ready.has(n.id),
@@ -782,7 +783,6 @@ function FlowCanvas({
       layout,
       graph,
       tasks,
-      selected,
       now,
       critical,
       ready,
@@ -796,6 +796,13 @@ function FlowCanvas({
       marks,
       onAskNeed,
     ],
+  );
+  const nodes = useMemo(
+    () =>
+      unselected.map((n): ChartNode =>
+        n.type === 'task' && n.id === selected ? { ...n, data: { ...n.data, selected: true } } : n,
+      ),
+    [unselected, selected],
   );
   const edges = useMemo(() => {
     const path = new Set(critical.slice(1).map((to, i) => `${critical[i]}->${to}`));

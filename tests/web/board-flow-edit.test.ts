@@ -134,7 +134,7 @@ function canvas(props: Partial<ChartProps> = {}) {
   hosts.push(h);
   h.render();
   const flow = () => find(h.value, (n) => 'nodeTypes' in n.props).props;
-  return { h, flow, box: () => box(h.value).props };
+  return { h, flow, box: () => box(h.value).props, all };
 }
 
 const drafted = () => draftEdits('project-a').map((d) => d.ops);
@@ -347,5 +347,22 @@ describe('plan edit ops', () => {
     expect(opChanges(m, 'lead-1', { type: 'remove_task', task_id: 'c' })).toEqual([
       { field: field('task'), before: 'task c', after: null },
     ]);
+  });
+});
+
+describe('the flow chart across a selection change', () => {
+  it('hands React Flow new node objects only for the tasks that gain or lose the selection', () => {
+    const { h, flow, all } = canvas({ selected: 'lead-1:a' });
+    type Node = { id: string; data: { selected?: boolean } };
+    const before = new Map<string, Node>(flow().nodes.map((n: Node) => [n.id, n]));
+    all.selected = 'lead-1:b';
+    h.render();
+    const after = new Map<string, Node>(flow().nodes.map((n: Node) => [n.id, n]));
+    expect(after.get('lead-1:a')!.data.selected).toBe(false);
+    expect(after.get('lead-1:b')!.data.selected).toBe(true);
+    expect(after.get('lead-1:a')).not.toBe(before.get('lead-1:a'));
+    expect(after.get('lead-1:b')).not.toBe(before.get('lead-1:b'));
+    expect(after.get('lead-1:c')).toBe(before.get('lead-1:c'));
+    expect(after.get('lead-1:d')).toBe(before.get('lead-1:d'));
   });
 });

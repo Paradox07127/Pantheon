@@ -1,6 +1,6 @@
 {
   "memory.learned.label": "经验列表",
-  "memory.learned.group.candidate": "等你确认",
+  "memory.learned.group.candidate": "需要你",
   "memory.learned.group.trial": "试用中",
   "memory.learned.group.active": "生效中",
   "memory.learned.group.closed": "已撤回",
@@ -37,5 +37,7 @@
   "memory.learned.tasks": "{count, plural, other {# 个任务}}",
   "memory.learned.tasksOf": "{count} / {required, plural, other {# 个任务}}",
   "memory.learned.fromTo": "从 {from} 改成 {to}",
-  "memory.learned.row": "{title}，{kind}，{group}"
+  "memory.learned.row": "{title}，{kind}，{group}",
+  "memory.learned.setTo": "{what}：{to}",
+  "memory.learned.noCommands": "没有命令"
 }

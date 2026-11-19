@@ -3,5 +3,6 @@
   "memory.tab.entries": "条目",
   "memory.tab.graph": "图谱",
   "memory.tab.diagrams": "图解",
-  "memory.tab.learned": "经验"
+  "memory.tab.learned": "经验",
+  "memory.tab.learnedCount": "经验，{count, plural, other {# 条需要你}}"
 }

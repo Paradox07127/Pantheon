@@ -90,7 +90,7 @@ try {
         `[...document.querySelectorAll('[role=menu] [role=menuitem]')].filter((m) => m.getClientRects().length).map((m) => m.textContent.trim())`,
       )
       // The row's context menu may still be leaving.
-      .then((list) => (list.includes('空白例行任务') ? list : null)),
+      .then((list) => (list[0] === '空白例行任务' ? list : null)),
   );
   check(
     '菜单有 空白例行任务、找 bug、安全扫描、测试覆盖、每周自查',

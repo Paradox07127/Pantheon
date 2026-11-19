@@ -321,24 +321,111 @@ it('lists a proposal for several fields of an agent as an agent change and leave
   expect(items.map((item) => [item.kind, item.id])).toEqual([['agent_change', kept.id]]);
 });
 
-it("shows a gate change that waits for the user against the project's gate today", async () => {
+type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;
+
+it.each<[string, (f: Fixture) => { change: Improvement['change']; today: unknown }]>([
+  [
+    "the project's gate",
+    (f) => {
+      const root = f.project.roots[0]!;
+      const gate = [{ name: 'test', argv: ['true'] }];
+      const project = f.store.must<Project>('projects', f.project.id);
+      f.store.update('projects', { ...project, gates: { [root]: gate } }, project.revision);
+      return {
+        change: { type: 'gate_command', root, to: [{ ...gate[0]!, skippable: true }] },
+        today: gate,
+      };
+    },
+  ],
+  [
+    "the project's worktree setup",
+    (f) => {
+      const worktree = { copy_paths: ['.env'], command: { argv: ['pnpm', 'install'] } };
+      const project = f.store.must<Project>('projects', f.project.id);
+      f.store.update('projects', { ...project, worktree }, project.revision);
+      return {
+        change: { type: 'worktree_setup', to: { ...worktree, copy_paths: ['.env', '.npmrc'] } },
+        today: worktree,
+      };
+    },
+  ],
+  [
+    "the agent's instructions",
+    (f) => {
+      const ideas = f.call<AgentProfile>('agent.create', {
+        project_id: f.project.id,
+        template: 'ideas',
+        name: 'Ideas',
+        role: 'Idea',
+      });
+      f.call('agent.update', {
+        agent_id: ideas.id,
+        revision: ideas.revision,
+        instructions: 'Plan monthly.',
+      });
+      return {
+        change: { type: 'agent_instructions', agent_id: ideas.id, to: 'Plan weekly.' },
+        today: 'Plan monthly.',
+      };
+    },
+  ],
+])('shows a change that waits for the user against %s today', async (_, arrange) => {
   const f = await workbenchFixture();
-  const root = f.project.roots[0]!;
-  const gate = [{ name: 'test', argv: ['true'] }];
-  const project = f.store.must<Project>('projects', f.project.id);
-  f.store.update('projects', { ...project, gates: { [root]: gate } }, project.revision);
+  const { change, today } = arrange(f);
   f.store.insert<Improvement>('improvements', {
-    id: 'gate',
+    id: 'waiting',
     revision: 1,
     project_id: f.project.id,
     source: 'lead',
     retrospective_ids: [],
     status: 'candidate',
-    change: { type: 'gate_command', root, to: [{ ...gate[0]!, skippable: true }] },
+    change,
     proposed_at: f.store.now(),
   });
 
-  const item = f.control.learnedList(user, f.project.id).find((i) => i.id === 'gate')!;
+  const item = f.control.learnedList(user, f.project.id).find((i) => i.id === 'waiting')!;
   expect(item.group).toBe('needs_you');
-  expect(JSON.parse(item.diff.from)).toEqual(gate);
+  expect(typeof today === 'string' ? item.diff.from : JSON.parse(item.diff.from)).toEqual(today);
+});
+
+it('gives a runtime review the revision of its memory record', async () => {
+  const f = await workbenchFixture();
+  const assistant = f.call<Session>('resident.open', {
+    project_id: f.project.id,
+    kind: 'assistant',
+  });
+  const resident: Principal = {
+    id: `session:${assistant.id}`,
+    role: 'lead',
+    project_id: f.project.id,
+    session_id: assistant.id,
+    expires_at: f.store.now() + 60_000,
+  };
+  const read = f.call<MemoryContext>(
+    'memory.context',
+    { project_id: f.project.id },
+    null,
+    resident,
+  );
+  const review = f.call<MemoryRecord>(
+    'memory.propose',
+    {
+      project_id: f.project.id,
+      key: 'runtime-review',
+      kind: 'note',
+      text: 'Codex stalls on long installs.',
+      based_on: read.signature,
+    },
+    null,
+    resident,
+  );
+  const session = f.store.must<Session>('sessions', assistant.id);
+  f.store.update(
+    'sessions',
+    { ...session, runtime_review: { memory_id: review.id } } as Session,
+    session.revision,
+  );
+
+  const item = f.control.learnedList(user, f.project.id).find((i) => i.kind === 'runtime_review')!;
+  expect(item.revision).toBe(review.revision);
 });

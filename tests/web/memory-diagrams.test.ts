@@ -45,7 +45,11 @@ const sent = (type: string) =>
 beforeEach(() => {
   pinned = [];
   command.mockClear();
-  vi.stubGlobal('window', { pantheon: { command, query: command } });
+  vi.stubGlobal('window', {
+    pantheon: { command, query: command },
+    addEventListener() {},
+    removeEventListener() {},
+  });
   useBoard.setState({
     events: [],
     resync: 0,

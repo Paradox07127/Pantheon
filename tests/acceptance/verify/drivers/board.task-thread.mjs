@@ -233,7 +233,7 @@ try {
   );
   // The merge wakes the lead, whose turns can add entries; the thread is read once the lead and its
   // task sessions have no turn left, in the same pass that judges them quiet.
-  const entries =
+  let entries =
     (await poll(async () => {
       const [list, now] = await Promise.all([sessions(), thread()]);
       const lead = list.find((s) => s.id === assistant);
@@ -292,9 +292,14 @@ try {
     `(() => { const t = ${threadJs}; return t ? (t.busy ? 'busy' : t.rows.length + '|' + (t.jump?.text ?? '')) : 'none'; })()`,
   );
   await page.click({ role: 'group', name: `${TITLE}，`, exact: false });
+  // A note can still arrive after the merge: the list is compared with the thread read at the same moment.
   const shown = await poll(async () => {
+    const now = await thread();
     const t = await page.evaluate(threadJs);
-    return t && !t.busy && t.rows.length === entries.length && t;
+    if (!t || t.busy || t.rows.map((r) => r.kind).join() !== now.map((e) => e.kind).join())
+      return null;
+    entries = now;
+    return t;
   }, 15_000);
   const t0 = shown || (await page.evaluate(threadJs));
   result.thread = t0;

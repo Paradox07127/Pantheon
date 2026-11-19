@@ -164,7 +164,8 @@ try {
   })()`;
   await page.click({ role: 'button', name: '记忆', exact: true });
   await watch(listState);
-  await page.click({ role: 'tab', name: '经验', exact: true });
+  // The tab's name carries the count of changes that need you.
+  await page.click({ role: 'tab', name: '经验', exact: false });
   const read = () =>
     page.evaluate(`(() => {
       const s = [...document.querySelectorAll('section')].find((el) => el.getAttribute('aria-label') === ${JSON.stringify(LIST)});
@@ -176,15 +177,15 @@ try {
     })()`);
   const list = await poll(async () => {
     const r = await read();
-    return r?.groups['等你确认'] && r?.groups['试用中'] && r;
+    return r?.groups['需要你'] && r?.groups['试用中'] && r;
   });
   result.list = list;
   check('有区域 "经验列表"', list, await names('经验'));
   const trialRow = list?.groups['试用中']?.find((o) => o.name.includes('流程参数'));
   check(
-    '等你确认 一组有这条 experience',
-    list?.groups['等你确认']?.some((o) => o.name.includes(KEEP)),
-    list?.groups['等你确认'],
+    '需要你 一组有这条 experience',
+    list?.groups['需要你']?.some((o) => o.name.includes(KEEP)),
+    list?.groups['需要你'],
   );
   check('试用中 一组有这条 policy_change', trialRow, list?.groups['试用中']);
   const trialItem = learned.find((i) => i.id === policyItem.id);
@@ -200,8 +201,8 @@ try {
     list?.fold,
   );
   check(
-    '对照组：等你确认 一组里没有已撤回的那条',
-    !list?.groups['等你确认']?.some((o) => o.name.includes(DROP)),
+    '对照组：需要你 一组里没有已撤回的那条',
+    !list?.groups['需要你']?.some((o) => o.name.includes(DROP)),
   );
   const firstStates = await states();
   result.first_open_states = firstStates;
@@ -245,7 +246,7 @@ try {
     role: 'option',
     name: KEEP,
     exact: false,
-    within: { role: 'listbox', name: '等你确认', exact: true },
+    within: { role: 'listbox', name: '需要你', exact: true },
   });
   const candButtons = await poll(async () => {
     const b = await detailButtons();
@@ -262,9 +263,9 @@ try {
   );
   const moved = await poll(async () => {
     const r = await read();
-    return r?.groups['试用中']?.some((o) => o.name.includes(KEEP)) && !r.groups['等你确认'] && r;
+    return r?.groups['试用中']?.some((o) => o.name.includes(KEEP)) && !r.groups['需要你'] && r;
   });
-  check('确认后它从 等你确认 移到 试用中', moved, (await read())?.groups);
+  check('确认后它从 需要你 移到 试用中', moved, (await read())?.groups);
 
   // 4. Revert the policy trial from its details.
   await page.click({

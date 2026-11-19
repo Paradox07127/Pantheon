@@ -7,7 +7,7 @@ import type { LearnedItem } from '@pantheon/protocol';
 import { find, HookHost, nodes, text } from './web-hook-host.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 import { LearnedList, type LearnedListProps } from '@/screens/memory/LearnedList';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const NOW = new Date(2026, 10, 13, 15, 0).getTime();
 const at = (day: number, hour: number, minute: number) =>
@@ -159,6 +159,82 @@ describe('learned list', () => {
     );
     expect(text(part(trial!, 'lr-tm'))).toBe('2 天');
     expect(text(part(set!, 'lr-tr'))).toBe(`${zh('memory.learned.verdict.better')}8 个任务`);
+  });
+
+  it.each([
+    [
+      'a policy setting by its name and new value',
+      item({
+        id: 'p',
+        kind: 'policy_change',
+        title: 'budget',
+        diff: {
+          from: '',
+          to: JSON.stringify({ input_tokens: 2000, wall_ms: 60000 }, null, 2),
+        },
+      }),
+      () =>
+        zhf('memory.learned.setTo', {
+          what: zh('data.workflowPolicy.param.budget'),
+          to: 'input_tokens 2000, wall_ms 60000',
+        }),
+    ],
+    [
+      'a gate change by its command names',
+      item({
+        id: 'g',
+        kind: 'gate_command',
+        title: '/repo',
+        diff: {
+          from: '',
+          to: JSON.stringify(
+            [
+              { name: 'test', argv: ['pnpm', 'test'] },
+              { name: 'types', argv: ['pnpm', 'tsc'] },
+            ],
+            null,
+            2,
+          ),
+        },
+      }),
+      () => 'test, types',
+    ],
+    [
+      'a gate change that clears the gate',
+      item({
+        id: 'g0',
+        kind: 'gate_command',
+        title: '/repo',
+        diff: { from: JSON.stringify([{ name: 'test', argv: ['true'] }], null, 2), to: '[]' },
+      }),
+      () => zh('memory.learned.noCommands'),
+    ],
+    [
+      'a worktree setup by its command and copied paths',
+      item({
+        id: 'w',
+        kind: 'worktree_setup',
+        diff: {
+          from: '',
+          to: JSON.stringify(
+            { copy_paths: ['.env'], command: { argv: ['pnpm', 'install'] } },
+            null,
+            2,
+          ),
+        },
+      }),
+      () => 'pnpm install, .env',
+    ],
+  ])('names %s', (_, row, title) => {
+    const [drawn] = rows(mount(props({ items: [row] })).value);
+    expect(text(part(drawn!, 'lr-tt'))).toBe(title());
+    expect(drawn!.props['aria-label']).toBe(
+      zhf('memory.learned.row', {
+        title: title(),
+        kind: text(part(drawn!, 'lr-kind')),
+        group: zh('memory.learned.group.candidate'),
+      }),
+    );
   });
 
   it('marks the selected row and selects the row that is clicked', () => {

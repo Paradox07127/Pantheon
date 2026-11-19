@@ -82,6 +82,8 @@ Click "Check again" after you install or sign in to a tool.
 3. In the dialog, choose the folders, the project name and the environment variables. You can also write a goal.
 4. Click "Open project". Opening a project does not start a run.
 
+Each project in "All projects" shows "Decisions waiting" with the count; click it to open the project with only the sessions that wait for you. The counts by kind are beside it. A line "Since you left" gives the short brief; click it to open the "Overview" of the board.
+
 If a folder is not a git repository, Pantheon runs `git init` and commits the existing files.
 To prevent this, turn off "Automatic git init" in "Settings" > "Project". Pantheon then refuses to open such a folder.
 
@@ -158,6 +160,8 @@ Each project has two resident agents. The sidebar lists them under "Agents". Cli
 - "New agent" next to "Agents" adds another agent from a template: "Ideas", "Goals" or "Custom". Right-click an agent and choose "Profile" to change or archive it.
 - "Add routine" in an agent's form adds a "Blank routine" or one from a template: "Bug hunt" runs daily at 09:00, only when there are new commits since its last run; "Security scan" and "Test coverage" run weekly.
 - An agent's contract (the `contract` field of the `agent.update` command) limits when it reaches you: during its quiet hours, or once its input tokens of the week reach the limit, Pantheon does not wake it. During quiet hours its messages that are not urgent do not notify you.
+- "Automations" in the sidebar lists the routines of the agents of the project. It shows once the project has an agent that is not archived. The table has "Agent", "Routine", "Schedule", "Next run" and "Last run". "Run now" runs a routine at once, and "Pause" and "Resume" turn it off and on. Open a row to see its recent runs with the result: "Nothing", "Acted", "Told you" or "Asked you". "Make a task" turns a finished run into a task for the "Assistant", and "Open" opens the session that it got. "Add a routine" opens the profile of the "Assistant".
+- An agent's profile also shows what it did. "Contract" sets the "Weekly budget", the "Quiet hours" and the "Loudest" level ("Feed", "Notify" or "Ask") of its messages, and shows what it "Spent this week". "Recent wakes" lists each wake with its cause and result; open one to see its session. "Routine runs" shows each routine with its next run and "Run now". "This week" counts the wakes, the tasks started and merged, the input tokens and the prompts approved for you.
 - A lead can propose a change it learned to a gate or to the worktree setup. The change waits in "Needs you" until you decide. The item shows the gate or the setup "Now" and "Proposed". A confirmed change takes effect without a trial.
 
 ## Project board
@@ -175,6 +179,13 @@ The "Project board" shows the work of a project. It has two pages: "Overview" an
 - Merged tasks and done milestones show what backs them: "Report only", "Gate passed", "Reviewed other runtime" or "Reviewed other vendor". A milestone can also show "Verified" or "Accepted" (by you).
 - A task that went wrong shows who acts next and why: "Pantheon retries" with the count, "Moved to" another runtime, "Lead has it" or "Waits for you".
 - "Needs you" lists the items that need your action, such as approvals.
+- When the lead asks several questions at once, one card "N decisions for" the plan holds them, and "Answer all" sends your choices together. A question that can be undone may show "Recommended answer takes effect in" a time: when the time passes, the lead's recommended answer applies. "Keep open" stops that. To turn it on, set the hours in "Settings" > "Workflow".
+- When you ask the "Assistant" to change a setting, it can propose the change as a "Setting change" card that shows your words, the old value and the new one. Click "Apply" or "Decline".
+- "Pause" in the bar of the board, next to the plan version, stops a plan: running task sessions go on, no new one starts, and the bar says "Lead is reassessing". The lead writes "Reassessment from lead" ("Done", "Blocked" and "Would change"), and a "Plan paused" card shows it in "Needs you". "Resume" (in the bar or on the card) continues the plan.
+- A milestone card can show a button with the number of its re-plan conditions. It lists when the lead re-plans: a task is handed back several times, a task spends a share of its budget, a task stalls, or an assumption turns out false. When one is met, the button says "Re-plan condition met" with the wait until the lead changes the plan, and the list has "Open lead session".
+- "Timeline" with the range "All" has a "Re-plans" list: for each re-plan, the conditions met and the tasks "Added", "Removed" and "Changed". "Since you left" counts re-plans and met conditions too.
+- "Replay" in the bar of the "Timeline" view steps through the events of a plan. Move "Plan time" or use "Previous event" and "Next event". The chart shows the tasks as "Planned", "Dispatched", "Merged" or "Accepted" at that point, and "Events at this point" lists what happened. "Load earlier events" reads further back.
+- "Thread" in the task drawer shows what passed between the lead and the task: review findings ("Finding", and "Blocking" when it blocks the merge), questions and answers ("Default answer", "Overruled the lead"), gate results, notes, and when the task was dispatched, handed back and merged. A question that nobody answered shows "Waits for you" or "Not answered".
 - A lead decides some things for you: it approves the permission requests and answers the questions of its task sessions, changes the plan, accepts milestones and merges changes outside a task's scope. It asks you before it adds an agent. To approve each plan change yourself, set "Settings" > "Workflow" > "Plan changes" to "Wait for my approval".
 - Some decisions always reach you: destructive git commands (such as a force push or `git reset --hard`), network and credential tools, writes outside the worktree, and plan changes when the project is over its budget.
 - The flow chart shows the tasks and their dependencies. To add a dependency, drag a connection.
@@ -210,6 +221,7 @@ You can replay a turn and see the file changes of one step.
 - The details of an entry show when a session last read it ("Last read"). An entry with file references that a session proposed shows the commit it was checked at ("Checked at").
 - A note of an agent that no session read in 90 days expires: "Expired: not read in 90 days". Decisions, reports, handoff notes, imported entries and your own entries do not expire this way.
 - "Learned" shows the learned lessons and their trial results.
+- "Learned" lists every change that agents proposed, in groups: "Needs you", "On trial", "In force" and "Reverted". Open a change to read its evidence and use its actions: "Confirm" or "Reject" for a change that waits for you ("Reject" asks for a reason), "Revert" for a change on trial or in force, and "Pin" or "Keep" where the change offers them.
 
 [Project memory](memory.md) (in Chinese) describes storage, budgets and limits.
 
@@ -244,6 +256,9 @@ You can replay a turn and see the file changes of one step.
 - **Themes.** Choose a built-in theme: "Travertine", "Dusk", "Lapis" or "Terracotta". You can also ask a session to make a theme. The session calls the `theme.set` tool, and Pantheon applies the theme. You can delete a theme.
 - **Shortcuts.** Search by name or by keys. Click "Record keys" to change a shortcut. "Restore all defaults" resets all shortcuts.
 - **Notifications.** Each kind of decision, and merges, has "Now", "Brief only" or "Never". During quiet hours, "Now" works as "Brief only". A question that has waited over 4 hours always notifies you.
+- **Playbook.** "Settings" > "Workflow" ends with "Playbook", the text that a lead reads before it plans. It has three sections: "Before you plan", "Routing" and "Replies". Choose "Default" or a runtime in "Playbook for". "Save as new version" stores your edit, the version list loads an older one, and "Reset to built-in" brings back the built-in text.
+- **Question default.** "Settings" > "Workflow" has "Apply the lead's recommended answer to reversible questions after N hours". It is off until you turn it on, and it applies to the current project only.
+- **Did it help?** After you change a workflow setting, create an agent or turn on a routine, a "Did it help?" card compares the tasks of the project before and after: "First gate run passed" and "Tokens per accepted task". It says "Better", "Worse" or "Not enough evidence", and it needs 10 tasks after the change. It counts only changes you made in the project. It shows under the setting and in the agent's profile.
 - **Environment.** "Check environment" on the "Gates" page prepares a fresh worktree the way a task session gets one, then runs the gate commands in it. The baseline confirmation card has the same check for the commands that the baseline proposes. When one of them fails, the baseline agent fixes it once.
 - **Devices.** Click "Add device" and enter a host name from `~/.ssh/config`. Pantheon checks the system, the runtime versions and the sign-in state over SSH. You can set labels, resources and the session limit of each device, and probe it again.
 

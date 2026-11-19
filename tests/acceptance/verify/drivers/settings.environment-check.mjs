@@ -209,7 +209,12 @@ try {
     slowStarted && refused?.includes('resource_busy'),
     refused,
   );
-  const busyShown = await section();
+  // The running state reaches the page an event after the daemon has it.
+  const busyShown =
+    (await poll(async () => {
+      const now = await section();
+      return now?.disabled ? now : null;
+    }, 3000)) || (await section());
   check('这时界面按钮不可用', busyShown?.disabled, busyShown?.button);
   const slowEnded = await settled();
   check('慢检查结束且通过', slowEnded?.state === 'passed', slowEnded?.state);

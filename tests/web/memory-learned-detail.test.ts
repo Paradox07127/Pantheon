@@ -161,7 +161,7 @@ describe('learned change detail', () => {
     const onClose = vi.fn();
     const h = await mount({ onClose });
     const head = byClass(tree(h), 'mld-head')[0]!;
-    expect(text(head)).toMatch(/^等你确认\d\d:\d\d 提出/);
+    expect(text(head)).toMatch(/^需要你\d\d:\d\d 提出/);
     find(
       tree(h),
       (n) => n.props['aria-label'] === zh('memory.learnedDetail.close'),

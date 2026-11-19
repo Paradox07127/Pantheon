@@ -72,11 +72,17 @@ export function learnedList(
               to: [change.procedure, change.countercondition].filter(Boolean).join('\n'),
             }
           : {
-              // A gate change records what it replaced only once confirmed; until then that is today's gate.
+              // A change records what it replaced only once confirmed; until then that is today's value.
               from: text(
-                change.type === 'gate_command' && row.status === 'candidate'
-                  ? project.gates?.[change.root]
-                  : change.from,
+                row.status !== 'candidate'
+                  ? change.from
+                  : change.type === 'gate_command'
+                    ? project.gates?.[change.root]
+                    : change.type === 'worktree_setup'
+                      ? project.worktree
+                      : change.type === 'agent_instructions'
+                        ? ctx.store.get<AgentProfile>('agents', change.agent_id)?.instructions
+                        : change.from,
               ),
               to: text(change.to),
             },
@@ -201,6 +207,7 @@ export function learnedList(
       kind: 'runtime_review',
       id: r.id,
       title: r.title ?? r.key,
+      revision: r.revision,
       grade: 'confirm',
       status: r.state,
       group: memoryGroup[r.state],
