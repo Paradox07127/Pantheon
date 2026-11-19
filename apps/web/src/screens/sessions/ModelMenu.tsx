@@ -33,7 +33,7 @@ import {
   modelText,
   permissionModeLabel,
 } from './model';
-import { modelLabel } from './thread-model';
+import { modelLabel, runningModel } from './thread-model';
 import './model-menu.css';
 
 export interface ModelChoice {
@@ -139,6 +139,7 @@ export function ModelMenu({
   onFast = () => {},
   ultracode = null,
   onUltracode = () => {},
+  reported = null,
 }: {
   runtimes: readonly string[];
   models: Readonly<Record<string, ModelsState>>;
@@ -167,6 +168,8 @@ export function ModelMenu({
   ultracode?: boolean | null;
   /** May answer with why the switch was refused; null when it was not. */
   onUltracode?: (on: boolean) => void | Promise<string | null>;
+  /** The model the runtime reported for the session; null when none is known. */
+  reported?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [fastError, setFastError] = useState<string | null>(null);
@@ -237,7 +240,8 @@ export function ModelMenu({
   const fastLabel = t({ id: 'sessions.composer.fastMode', defaultMessage: 'Fast mode' });
   const ultracodeShown = ultracode !== null && value.runtime === 'claude';
   const ultracodeLabel = t({ id: 'sessions.composer.ultracode', defaultMessage: 'Ultracode' });
-  const effort = value.model !== null && value.effort ? EFFORT_LABEL[value.effort] : null;
+  const runs = runningModel(listed, value.model, value.effort, reported);
+  const effort = runs.effort ? EFFORT_LABEL[runs.effort] : null;
   const efforts = current?.efforts ?? [];
   const effortLabel = t({ id: 'sessions.composer.effort', defaultMessage: 'Reasoning effort' });
   const modeGroupLabel = t({
@@ -316,7 +320,7 @@ export function ModelMenu({
         onClick={() => choose(value.runtime, m)}
       >
         <ModelMark model={m.resolved ?? m.id} />
-        <span className="cp-mil">{modelLabel(m)}</span>
+        <span className="cp-mil">{modelLabel(m, listed)}</span>
         {m.description && <span className="cp-mmd">{m.description}</span>}
         <Check />
       </Menu.RadioItem>
@@ -351,10 +355,11 @@ export function ModelMenu({
             summary: listText(
               modelText(
                 value.runtime,
-                listOf(read),
+                listed,
                 value.model,
                 value.effort,
                 backend?.id ?? null,
+                reported,
               ),
               modeLabel,
             ),
@@ -363,13 +368,7 @@ export function ModelMenu({
         aria-keyshortcuts={shortcutKeys('model-menu') || undefined}
       >
         <RuntimeGlyph runtime={value.runtime} />
-        <span className="cp-mdn">
-          {value.model === null
-            ? t({ id: 'sessions.composer.defaultModel', defaultMessage: 'Default' })
-            : current
-              ? modelLabel(current)
-              : value.model}
-        </span>
+        <span className="cp-mdn">{runs.name}</span>
         {backend && <span className="cp-mdx mono">{backend.id}</span>}
         {effort && <span className="cp-mdx">{effort}</span>}
         {modeLabel && <span className="cp-mdx">{modeLabel}</span>}

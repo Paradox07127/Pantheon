@@ -9,7 +9,7 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { ModelMenu, type ModelChoice } from '@/screens/sessions/parts';
 import { supersededModels } from '@/screens/sessions/ModelMenu';
 import { useSettingsView } from '@/screens/settings/view';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const model = (id: string): RuntimeModel => ({
   id,
@@ -290,6 +290,46 @@ describe('session model menu capabilities', () => {
         String(n.props['aria-label'] ?? '').includes('Default (recommended)'),
       ),
     ).toEqual([]);
+  });
+
+  const button = (h: HookHost<any>) =>
+    find(h.value, (n) => n.props.className === 'cp-mdl' && n.props['aria-label'] !== undefined);
+  const claude = [
+    {
+      ...model('default'),
+      label: 'Default (recommended)',
+      default: true,
+      resolved: 'claude-opus-5-5',
+      default_effort: 'high' as const,
+    },
+    { ...model('opus'), label: 'Opus 5.5', resolved: 'claude-opus-5-5' },
+    { ...model('sonnet'), label: 'Sonnet 5.5', resolved: 'claude-sonnet-5-5' },
+  ];
+  const high = zh('sessions.model.effort.high');
+
+  it.each<[string, Partial<ModelChoice>, string | null, string]>([
+    ['the default row', { model: 'default', effort: null }, null, 'Opus 5.5'],
+    ['no model', { model: null, effort: null }, null, 'Opus 5.5'],
+    [
+      'no model and a reported one',
+      { model: null, effort: null },
+      'claude-sonnet-5-5',
+      'Sonnet 5.5',
+    ],
+  ])(
+    'names the model and effort a session on %s runs, on the button and in its name',
+    (_, choice, reported, name) => {
+      const h = onModels(claude, { value: { ...onClaude, ...choice }, reported });
+      expect(text(find(button(h), (n) => n.props.className === 'cp-mdn'))).toBe(name);
+      expect(text(button(h))).toContain(high);
+      expect(button(h).props['aria-label']).toContain(`${name}，${high}`);
+    },
+  );
+
+  it('names the model the default row resolves to in its row', () => {
+    const h = onModels(claude, { value: { ...onClaude, model: 'default' } });
+    const row = find(h.value, (n) => n.props.value === 'default' && n.props.onClick);
+    expect(text(row)).toBe(zhf('sessions.composer.defaultModelNamed', { model: 'Opus 5.5' }));
   });
 
   it("offers the picked model's permission modes, else the runtime's when it lists none", () => {

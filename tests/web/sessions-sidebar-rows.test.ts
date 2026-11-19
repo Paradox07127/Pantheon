@@ -18,6 +18,7 @@ vi.mock('@/store', () => ({
   }),
 }));
 import { Sidebar } from '@/components/Sidebar';
+import { runtimeName } from '@/components/RuntimeGlyph';
 import { sessionStateTone } from '@/components/SessionStateIcon';
 import { t } from '@/i18n';
 import { listText } from '@/lib/list-text';
@@ -274,6 +275,47 @@ describe('session preview', () => {
     const labels = facts(html).map(([label]) => label);
     expect(labels).not.toContain('模型');
     expect(labels).not.toContain('权限');
+  });
+
+  it.each([
+    ['the model the default row resolves to', { model: null }, 'Opus 5.5'],
+    ['the label of a listed model', { model: 'opus' }, 'Opus 5.5'],
+  ])('names %s with its default effort in the model line', (_, own, name) => {
+    const row = (id: string, extra = {}) => ({
+      id,
+      label: id,
+      permission_modes: [],
+      efforts: [],
+      default_effort: 'high' as const,
+      default: false,
+      ...extra,
+    });
+    const models = {
+      state: 'ready' as const,
+      models: [
+        row('default', { default: true, resolved: 'claude-opus-5-5' }),
+        row('opus', { label: 'Opus 5.5', resolved: 'claude-opus-5-5' }),
+      ],
+    };
+    const s = session('a', 'idle', {
+      runtime: 'claude',
+      effort: null,
+      permission_mode: 'ask',
+      ...own,
+    });
+    const line = listText(name, EFFORT_LABEL.high, permissionModeLabel('claude', 'ask'));
+    expect(render(s, { models })).toContain(`title="${line}">${line}</span>`);
+  });
+
+  it('names the runtime in the model line while its model list is not read', () => {
+    const s = session('a', 'idle', {
+      runtime: 'claude',
+      model: null,
+      effort: null,
+      permission_mode: 'ask',
+    });
+    const line = listText(runtimeName('claude'), permissionModeLabel('claude', 'ask'));
+    expect(render(s)).toContain(`title="${line}">${line}</span>`);
   });
 
   it('shows no waiting line or context without those facts', () => {

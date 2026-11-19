@@ -35,6 +35,7 @@ function fakeQuery(
   models: ModelInfo[] = [],
   account: Record<string, unknown> = { apiProvider: 'firstParty', subscriptionType: 'max' },
   adapterOptions: { artifacts?: boolean } = {},
+  applied: { model: string | null; effort: string | null } = { model: null, effort: null },
 ) {
   const options: Options[] = [];
   const streams: {
@@ -49,6 +50,7 @@ function fakeQuery(
     const stream = {
       initializationResult: async () => ({ account }),
       supportedModels: vi.fn(async () => models),
+      getSettings: vi.fn(async () => ({ applied })),
       setModel: vi.fn(async () => {}),
       applyFlagSettings: vi.fn(async () => {}),
       close: vi.fn(() => ended.resolve()),
@@ -356,6 +358,34 @@ describe('Claude model and effort', () => {
         default: false,
         resolved: 'claude-opus-5-5',
       },
+    ]);
+  });
+
+  it("gives the settings effort as the default effort of the rows of the session's model", async () => {
+    const f = fakeQuery(
+      [
+        {
+          value: 'default',
+          displayName: 'Default',
+          description: '',
+          resolvedModel: 'claude-opus-5-5',
+        },
+        { value: 'opus', displayName: 'Opus', description: '', resolvedModel: 'claude-opus-5-5' },
+        {
+          value: 'sonnet',
+          displayName: 'Sonnet',
+          description: '',
+          resolvedModel: 'claude-sonnet-5-5',
+        },
+      ],
+      undefined,
+      {},
+      { model: 'claude-opus-5-5', effort: 'high' },
+    );
+    expect((await f.adapter.models(process.cwd())).map((m) => [m.id, m.default_effort])).toEqual([
+      ['default', 'high'],
+      ['opus', 'high'],
+      ['sonnet', null],
     ]);
   });
 });

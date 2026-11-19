@@ -404,7 +404,7 @@ export function TaskStateBadge({ task }: { task: BoardModel['tasks'][number] }) 
 export function modelName(models: readonly RuntimeModel[], id: string): string {
   const entry =
     models.find((m) => m.id === id) ?? models.find((m) => m.id !== 'default' && m.resolved === id);
-  return entry ? modelLabel(entry) : id;
+  return entry ? modelLabel(entry, models) : id;
 }
 
 /** The runtime glyph and model of the task's claim, else of its plan routing; nothing without either. */

@@ -47,6 +47,7 @@ import {
   usePersonalOpening,
 } from '../data/personal-agent';
 import { projectIdle, sortProjects, useProjectsSummary } from '../data/projects-summary';
+import { useRuntimeModels } from '../data/runtime-models';
 import { markRead, markUnread, useUnread } from '../data/unread';
 import type { useSessionList } from '../data/workbench-sessions';
 import { t } from '../i18n';
@@ -744,6 +745,8 @@ export function Sidebar({
     }),
   ];
   const visible = stops.flatMap((stop) => (stop.session ? [stop.session] : []));
+  // The row previews name a session's default model from its runtime's list.
+  const models = useRuntimeModels(currentProjectId, [...new Set(visible.map((s) => s.runtime))]);
   const tabStop =
     stops.find((stop) => stop.key === active)?.key ??
     stops.find((stop) => stop.key === shownId)?.key ??
@@ -1033,6 +1036,7 @@ export function Sidebar({
         lead={leads.has(session.id)}
         number={number > 0 && number <= 9 ? number : undefined}
         source={titleOf(session.lead ?? session.forked_from?.session_id)}
+        models={models[session.runtime]}
         on={session.id === shownId}
         unread={unread(session)}
         selected={selected.has(session.id)}

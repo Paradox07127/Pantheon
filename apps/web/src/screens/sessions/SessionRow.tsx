@@ -27,6 +27,7 @@ import {
 } from '../../components/SessionStateIcon';
 import { KeyHint } from '../../components/Shortcuts';
 import { ageText } from '../../data/needs-you';
+import { type ModelsState } from '../../data/runtime-models';
 import { elapsedText } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
@@ -43,6 +44,7 @@ import {
 } from './model';
 import { aheadText, gateCounts, sessionBranch } from './inspector-model';
 import { ringTone } from './run-model';
+import { runningModel } from './thread-model';
 import { GATE_NAME, GateSeg, UNCOUNTED_GATE } from './SessionHeader';
 import { FIT_MENU, useSessionMenu } from './shared';
 import './session-row.css';
@@ -233,6 +235,8 @@ const CONTEXT_TONE = { none: '--run', ac2: '--run', wait: '--wait', bad: '--bad'
 export function SessionPreview(props: {
   session: WorkbenchSession;
   now: number;
+  /** The model list of the session's runtime, which names a default model and effort. */
+  models?: ModelsState;
   /** The title of the session it was opened or forked from. */
   source?: string;
 }) {
@@ -258,11 +262,11 @@ export function SessionPreview(props: {
           { detail: s.waiting_request.detail ?? s.waiting_request.tool },
         )
       : null;
-  const modelLine = listText(
-    s.model ?? runtimeName(s.runtime),
-    s.effort && EFFORT_LABEL[s.effort],
-    mode,
-  );
+  const running =
+    props.models?.state === 'ready' && !s.backend_id
+      ? runningModel(props.models.models, s.model, s.effort)
+      : { name: s.model ?? runtimeName(s.runtime), effort: s.effort };
+  const modelLine = listText(running.name, running.effort && EFFORT_LABEL[running.effort], mode);
   const facts: [string, ReactNode][] = [
     ...(s.workspace_kind === 'in_place'
       ? [
@@ -454,6 +458,7 @@ export function SessionListRow(props: {
   selected?: boolean;
   /** The title of the session it was opened or forked from. */
   source?: string;
+  models?: ModelsState;
 }) {
   const { session } = props;
   const {
@@ -581,7 +586,12 @@ export function SessionListRow(props: {
       <PreviewCard.Portal>
         <PreviewCard.Positioner side="right" align="start" sideOffset={8} style={{ zIndex: 40 }}>
           <PreviewCard.Popup className="pop ss-hc">
-            <SessionPreview session={session} now={props.now} source={props.source} />
+            <SessionPreview
+              session={session}
+              now={props.now}
+              source={props.source}
+              models={props.models}
+            />
           </PreviewCard.Popup>
         </PreviewCard.Positioner>
       </PreviewCard.Portal>

@@ -1958,8 +1958,20 @@ export class ClaudeAdapter implements HarnessAdapter {
       });
       const result = (async () => {
         await stream!.initializationResult();
+        // Query's types leave out getSettings, which the SDK has; applied is what the next request sends.
+        const [listed, settings] = await Promise.all([
+          stream!.supportedModels(),
+          (
+            stream as unknown as {
+              getSettings(): Promise<{
+                applied: { model: string | null; effort: ClaudeEffortLevel | null };
+              }>;
+            }
+          ).getSettings(),
+        ]);
+        const { applied } = settings;
         // ModelInfo names neither a default model nor a default effort; the SDK's default row is 'default'.
-        return (await stream!.supportedModels()).map<RuntimeModel>((model) => ({
+        return listed.map<RuntimeModel>((model) => ({
           id: model.value,
           label: model.displayName,
           ...(model.description ? { description: model.description } : {}),
@@ -1972,7 +1984,11 @@ export class ClaudeAdapter implements HarnessAdapter {
           ],
           ...(model.supportsFastMode ? { fast: true as const } : {}),
           efforts: model.supportedEffortLevels ?? [],
-          default_effort: null,
+          // A session that names no effort runs with the user's settings effort for its model.
+          default_effort:
+            model.resolvedModel !== undefined && model.resolvedModel === applied.model
+              ? applied.effort
+              : null,
           default: model.value === 'default',
           ...(model.resolvedModel ? { resolved: model.resolvedModel } : {}),
         }));

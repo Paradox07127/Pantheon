@@ -42,7 +42,13 @@ afterEach(() => {
 describe('model menu text', () => {
   const models = [model('model-a'), model('model-b')];
   const alias = [model('opus', { resolved: 'claude-opus-5-5', label: 'Opus 5.5' })];
+  const claude = [
+    model('default', { resolved: 'claude-opus-5-5', default: true, default_effort: 'high' }),
+    ...alias,
+    model('sonnet', { resolved: 'claude-sonnet-5-5', label: 'Sonnet 5.5' }),
+  ];
   const high = zh('sessions.model.effort.high');
+  const medium = zh('sessions.model.effort.medium');
 
   it.each<[string, Parameters<typeof modelText>, string]>([
     [
@@ -60,10 +66,39 @@ describe('model menu text', () => {
       ['claude', models, 'model-z', 'low'],
       `claude，model-z，${zh('sessions.model.effort.low')}`,
     ],
-    ['shows only the runtime without a model', ['codex', models, null, 'max'], 'codex'],
     [
-      'leaves out the effort when there is none',
+      'names the default model and its effort without a model',
+      ['codex', models, null, null],
+      `codex，label of model-a，${medium}`,
+    ],
+    [
+      "names the model the runtime's default row resolves to",
+      ['claude', claude, 'default', null],
+      `claude，Opus 5.5，${high}`,
+    ],
+    [
+      'names a full model id by its own row, not by the default row that resolves to it',
+      ['claude', claude, 'claude-opus-5-5', null],
+      `claude，Opus 5.5，${medium}`,
+    ],
+    [
+      'names the model the runtime reported for a session without a model',
+      ['claude', claude, null, null, null, 'claude-sonnet-5-5'],
+      `claude，Sonnet 5.5，${high}`,
+    ],
+    [
+      'says default only while no model is listed',
+      ['claude', [], null, null],
+      `claude，${zh('sessions.composer.defaultModel')}`,
+    ],
+    [
+      'takes the default effort of the model when there is none',
       ['claude', models, 'model-a', null],
+      `claude，label of model-a，${medium}`,
+    ],
+    [
+      'leaves out the effort when the model has no default one',
+      ['claude', [model('model-a', { default_effort: null })], 'model-a', null],
       'claude, label of model-a',
     ],
   ])('%s', (_, args, expected) => {
@@ -670,6 +705,19 @@ describe('composer backends', () => {
     await h.flush();
     return sent().at(-1);
   };
+
+  it('names the model the newest turn reported while the session reports none of its own', async () => {
+    mock.board.board.session_turns = [
+      { id: 'turn-1', session_id: 'session-b', reported_model: 'model-a' },
+      { id: 'turn-2', session_id: 'session-c', reported_model: 'model-a' },
+      { id: 'turn-3', session_id: 'session-b', reported_model: 'model-b' },
+      { id: 'turn-4', session_id: 'session-b' },
+    ];
+    const h = await composer(listed({ model: null, effort: null }));
+    const menu = named(h.value, 'ModelMenu');
+    const shown = mount(() => (menu.type as (p: object) => any)(menu.props));
+    expect(text(find(shown.value, (n) => n.props.className === 'cp-mdn'))).toBe('label of model-b');
+  });
 
   it('switches an open session to another backend at its revision', async () => {
     const h = await composer(listed());

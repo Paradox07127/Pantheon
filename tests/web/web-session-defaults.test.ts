@@ -52,18 +52,18 @@ describe('new session defaults', () => {
     expect(defaultPermissionMode('grok', 'plan')).toBe('ask');
     expect(permissionModes('agy').map((m) => m.value)).toEqual(['ask', 'auto_edit', 'plan']);
     const html = render({ runtime: 'grok', permission_mode: 'plan' });
-    expect(modelButton(html)).toBe('grok');
+    expect(modelButton(html)).toBe(`grok，${zh('sessions.composer.defaultModel')}`);
     expect(html).not.toContain(`aria-label="${zh('sessions.composer.permissionMode')}"`);
   });
 
   it("selects the project's defaults in the new-session composer", () => {
     const html = render({ runtime: 'codex', permission_mode: 'plan' });
-    expect(modelButton(html)).toBe('codex，只读');
+    expect(modelButton(html)).toBe(`codex，${zh('sessions.composer.defaultModel')}，只读`);
   });
 
   it('selects claude and ask without project defaults', () => {
     const html = render();
-    expect(modelButton(html)).toBe('claude，逐条审批');
+    expect(modelButton(html)).toBe(`claude，${zh('sessions.composer.defaultModel')}，逐条审批`);
   });
 
   it('prefills the composer from a board task', () => {

@@ -114,6 +114,7 @@
   "sessions.composer.fastModeBilling": "按用量另计",
   "sessions.composer.ultracode": "Ultracode",
   "sessions.composer.defaultModel": "默认",
+  "sessions.composer.defaultModelNamed": "默认（{model}）",
   "sessions.composer.backend": "后端",
   "sessions.composer.runtimeEndpoint": "{runtime} 默认",
   "sessions.composer.backendKeyMissing": "{env} 未设置",

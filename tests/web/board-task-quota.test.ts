@@ -43,7 +43,7 @@ import { TaskCard } from '@/screens/board/FlowNode';
 import { useRouteFields } from '@/screens/board/PlanEdit';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
 import type { SnapshotSession } from '@/screens/board/panels-model';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 type Task = BoardModel['tasks'][number];
 
@@ -223,7 +223,9 @@ describe('the model in the task drawer', () => {
       return text(mount(() => (element.type as (p: object) => ReactNode)(element.props)).value);
     };
     expect(route('claude-opus-5-5')).toBe('Opus 5.5');
-    expect(route('default')).toBe(zh('sessions.composer.defaultModel'));
+    expect(route('default')).toBe(
+      zhf('sessions.composer.defaultModelNamed', { model: 'Opus 5.5' }),
+    );
   });
 
   it("offers the runtime's default once, named by the model it resolves to", () => {

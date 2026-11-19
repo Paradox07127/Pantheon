@@ -465,6 +465,15 @@ export function SessionCompose({
     compactable: compaction !== null,
   });
   const runtimes = offeredRuntimes(runtimeStatus.read, [runtime]);
+  // A resumed query reports no model until its next turn; the newest turn's report stands meanwhile.
+  const reportedModel = useBoard(
+    (s) =>
+      session.reported_model ??
+      (s.board?.session_turns ?? NO_TURNS).findLast(
+        (turn) => turn.session_id === session.id && turn.reported_model,
+      )?.reported_model ??
+      null,
+  );
   const inPlace = listed?.workspace_kind === 'in_place';
   // The daemon forks only a worktree session, and a running one only from a turn that completed.
   const completedTurn = useBoard((s) =>
@@ -1212,6 +1221,7 @@ export function SessionCompose({
                   onFast={switchFast}
                   ultracode={handoff ? null : (listed?.ultracode ?? null)}
                   onUltracode={switchUltracode}
+                  reported={handoff ? null : reportedModel}
                   inSession
                   {...(active ? {} : { keys: false })}
                 />

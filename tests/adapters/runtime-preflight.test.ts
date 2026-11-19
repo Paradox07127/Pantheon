@@ -74,6 +74,7 @@ function fakeQuery(account: unknown, answer = true) {
         answer ? Promise.resolve({ account }) : new Promise(() => {}),
       ),
       supportedModels: vi.fn(async () => []),
+      getSettings: vi.fn(async () => ({ applied: { model: null, effort: null } })),
     };
     streams.push(stream);
     return stream;

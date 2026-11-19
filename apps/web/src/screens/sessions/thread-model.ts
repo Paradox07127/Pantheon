@@ -161,24 +161,66 @@ export const defaultModelFor = (
   (preferred !== undefined && models.find((m) => m.id === preferred || m.resolved === preferred)) ||
   defaultModel(models);
 
-/** A model's name; the runtime's own default entry, whose id is `default`, in the interface language. */
-export const modelLabel = (model: RuntimeModel): string =>
-  model.id === 'default'
-    ? t({ id: 'sessions.composer.defaultModel', defaultMessage: 'Default' })
-    : model.label;
+/** The label of the listed model an id or resolved id names, past the `default` row; else the id. */
+const listedName = (models: readonly RuntimeModel[], id: string): string =>
+  models.find((m) => m.id !== 'default' && (m.id === id || m.resolved === id))?.label ?? id;
 
-/** `runtime, model, effort, backend` of the model menu; a null model is the runtime's default. */
+/**
+ * A model's name; the runtime's own default entry, whose id is `default`, in the interface
+ * language with the model it resolves to.
+ */
+export function modelLabel(model: RuntimeModel, models: readonly RuntimeModel[] = []): string {
+  if (model.id !== 'default') return model.label;
+  return model.resolved
+    ? t(
+        { id: 'sessions.composer.defaultModelNamed', defaultMessage: 'Default ({model})' },
+        { model: listedName(models, model.resolved) },
+      )
+    : t({ id: 'sessions.composer.defaultModel', defaultMessage: 'Default' });
+}
+
+/**
+ * The model and effort a session on `model` and `effort` runs. A null or `default` model runs the
+ * model the runtime reported, else the one the default row resolves to; "Default" only when neither
+ * is known. A null effort runs the row's default effort.
+ */
+export function runningModel(
+  models: readonly RuntimeModel[],
+  model: string | null,
+  effort: EffortLevel | null,
+  reported: string | null = null,
+): { name: string; effort: EffortLevel | null } {
+  // A full model id names its own row before the default row that resolves to it.
+  const row =
+    model === null
+      ? defaultModel(models)
+      : (models.find((m) => m.id === model) ??
+        models.find((m) => m.id !== 'default' && m.resolved === model) ??
+        models.find((m) => m.resolved === model) ??
+        null);
+  const own = model !== null && row?.id !== 'default';
+  const runs = own ? undefined : (reported ?? row?.resolved);
+  const name = own
+    ? (row?.label ?? model!)
+    : runs
+      ? listedName(models, runs)
+      : row && row.id !== 'default'
+        ? row.label
+        : t({ id: 'sessions.composer.defaultModel', defaultMessage: 'Default' });
+  return { name, effort: effort ?? row?.default_effort ?? null };
+}
+
+/** `runtime, model, effort, backend` of the model menu, naming what a null model or effort runs. */
 export function modelText(
   runtime: string,
   models: readonly RuntimeModel[],
   model: string | null,
   effort: EffortLevel | null,
   backend: string | null = null,
+  reported: string | null = null,
 ): string {
-  if (model === null) return listText(runtime, backend);
-  const found = models.find((m) => m.id === model || m.resolved === model);
-  const name = found ? modelLabel(found) : model;
-  return listText(runtime, name, effort && EFFORT_LABEL[effort], backend);
+  const running = runningModel(models, model, effort, reported);
+  return listText(runtime, running.name, running.effort && EFFORT_LABEL[running.effort], backend);
 }
 
 /**
