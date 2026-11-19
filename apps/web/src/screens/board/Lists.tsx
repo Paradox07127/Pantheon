@@ -1,19 +1,12 @@
 import { useState, type CSSProperties, type ReactElement } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
-import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { shortId } from '../../data/format';
 import { t } from '../../i18n';
 import { Empty, NumText, Panel, WarnIcon, runtimeColor } from './Charts';
 import { MergeTrack } from './QualityCharts';
 import { dayText } from '../../lib/time-text';
-import {
-  recentMerges,
-  runtimeName,
-  visibleFindings,
-  type BoardFinding,
-  type BoardRisk,
-} from './panels-model';
+import { recentMerges, runtimeName, visibleFindings, type BoardFinding } from './panels-model';
 import { BlockedIcon } from './status';
 import './lists.css';
 
@@ -279,41 +272,6 @@ export function FindingsPanel({
               onResolve={onResolve}
             />
           ))}
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-export function RisksPanel({ model }: { model: BoardModel }) {
-  const group = (kind: BoardRisk['kind'], title: string) => {
-    const items = model.risks.filter((r) => r.kind === kind);
-    if (items.length === 0) return null;
-    return (
-      <>
-        <h3>{title}</h3>
-        <ul>
-          {items.map((r, i) => (
-            <li key={i}>
-              {kind === 'risk' ? <WarnIcon /> : <i className="bul" aria-hidden="true" />}
-              <Clip text={r.text} lines={3} />
-            </li>
-          ))}
-        </ul>
-      </>
-    );
-  };
-  return (
-    <Panel
-      title={t({ id: 'board.risks.title', defaultMessage: 'Risks and assumptions' })}
-      className="bp-listp"
-    >
-      {model.risks.length === 0 ? (
-        <Empty text={t({ id: 'board.risks.empty', defaultMessage: 'No risks or assumptions' })} />
-      ) : (
-        <div className="bp-pb bp-rk">
-          {group('risk', t({ id: 'board.risks.risks', defaultMessage: 'Risks' }))}
-          {group('assumption', t({ id: 'board.risks.assumptions', defaultMessage: 'Assumptions' }))}
         </div>
       )}
     </Panel>

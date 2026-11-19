@@ -29,24 +29,12 @@
 .bd-slot {
   display: contents;
 }
-.bd-bar-v {
-  flex: none;
-  color: var(--mu);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
 /* The lead plan is the one part of the bar that gives up width; the name and the controls keep theirs. */
 .tb:has(> .bgl) > :is(h1, .tb-end) {
   flex: none;
 }
 @container tb (width < 1280px) {
   .tb > .bgl {
-    display: none;
-  }
-}
-@container tb (width < 1180px) {
-  .bd-bar-v {
     display: none;
   }
 }
@@ -98,11 +86,38 @@
 }
 .bd-pub {
   flex: none;
-  padding: var(--sp-3) var(--sp-6) 0;
+  padding: var(--sp-3) var(--sp-6) calc(var(--sp-4) + var(--toast-reserve));
 }
 .bd-needs {
   flex: none;
   padding: var(--sp-3) var(--sp-6) 0;
+}
+/* The overview: one centred column that scrolls as the page. */
+.bd-ov {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding: var(--sp-6) var(--sp-6) 0;
+}
+.bd-ov-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 720px), 1fr));
+  gap: var(--sp-6);
+  align-items: start;
+}
+.bd-ov-row:empty {
+  display: none;
+}
+.bd-ov .bf-brief {
+  margin: 0;
+}
+.bd-ov .bd-needs {
+  padding: 0;
+}
+.bd-ov-goals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
 }
 .bd-errs {
   display: flex;
@@ -111,34 +126,7 @@
   gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-6) 0;
 }
-/* The now view's strips and canvas share the height the bar and the summary leave. */
-.bd-now-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-/* The strips above the canvas scroll as one block, and give way first in a short window. */
-.bd-now-top {
-  display: flex;
-  flex: 0 1 auto;
-  flex-direction: column;
-  min-height: 0;
-  max-height: 45%;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-.bd-now-top[hidden] {
-  display: none;
-}
-/* A question being answered, a plan approval's estimate, or a proposed change's commands, in the needs-you strip takes all the height the chart's least leaves. */
-.bd-now-body[data-graph] > .bd-now-top:has(.bd-needs :is(.qc, .bf-est, .lcd)) {
-  max-height: calc(100% - 240px);
-}
-.bd-now-body[data-graph]:has(> .bd-now-top .bd-needs :is(.qc, .bf-est, .lcd)) .bd-cv {
-  min-height: 240px;
-}
-/* The now view's canvas: the height the bar and the strips leave. */
+/* The flow chart's canvas: the height the bar leaves. */
 .bd-cv {
   display: flex;
   flex: 1;
@@ -154,28 +142,6 @@
   content: '';
   flex: none;
   height: var(--toast-reserve);
-}
-/* With no nodes to draw, the canvas keeps the height of what it shows and the strips take the rest. */
-.bd-now-body:not([data-graph]) > .bd-now-top {
-  max-height: none;
-}
-/* With no chart to scroll past them, the notice cards' room is left at the strips' end. */
-.bd-now-body:not([data-graph]) > .bd-now-top::after {
-  content: '';
-  flex: none;
-  height: var(--toast-reserve);
-}
-.bd-now-body:not([data-graph]) > .bd-em-off > .bd-em-canvas > .bd-cv {
-  flex: none;
-  min-height: 0;
-  max-height: max(240px, 55%);
-}
-.bd-now-body:not([data-graph]) .bd-cv > .bd-main {
-  min-height: 0;
-  grid-template-rows: auto auto auto;
-}
-.bd-now-body:not([data-graph]) .bd-cv::after {
-  display: none;
 }
 /* Out of edit mode the edit body's boxes drop out, so the canvas lays out as on its own. */
 .bd-em-off,
@@ -217,8 +183,6 @@
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: var(--sp-3);
-  max-width: 1760px;
-  margin: 0 auto;
   padding: var(--sp-6);
   box-sizing: border-box;
 }
@@ -287,7 +251,7 @@
 .bd-sub > :has(> .bd-pmenu) :is(.bp-pn, .bd-pn) > :is(.bp-ph, .bd-ph) {
   padding-right: 32px;
 }
-.bd-sub > :has(> .bd-pmenu) > :is(.bd-flow, .bp-tblp) > :is(.bd-ph, .bp-ph) {
+.bd-sub > :has(> .bd-pmenu) > .bd-flow > :is(.bd-ph, .bp-ph) {
   padding-right: 48px;
 }
 /* A panel's height tier caps its body, as a pinned visual's caps its picture. */

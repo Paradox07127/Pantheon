@@ -1,37 +1,116 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Popover } from '@base-ui/react/popover';
+import { Bot, Check, CircleDashed, Crown, Flag, Square, X } from 'lucide-react';
 import {
-  Bot,
-  Crown,
-  Ellipsis,
-  Flag,
-  GitMerge,
-  KeyRound,
-  Lightbulb,
-  MessageSquare,
-  Workflow,
-} from 'lucide-react';
-import type { BoardModel, ProjectBrief, ProjectBriefItem } from '@pantheon/protocol';
+  decisionType,
+  type BoardModel,
+  type DecisionForUser,
+  type ProjectBrief,
+  type ProjectBriefItem,
+} from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
+import { Tip } from '../../components/Tip';
 import { toast } from '../../components/Toast';
+import { useAgentProposal } from '../../data/agents';
 import { useAppSettings } from '../../data/app-settings';
 import { useBoard } from '../../data/board';
-import { useDecisionsAfter } from '../../data/decisions-for-user';
+import { decisionRow, useDecisionsAfter } from '../../data/decisions-for-user';
 import { reasonText } from '../../data/needs-you';
 import { markProjectSeen, useProjectBrief, writeBriefProse } from '../../data/project-brief';
 import { t } from '../../i18n';
-import { dayText } from '../../lib/time-text';
+import { listText } from '../../lib/list-text';
+import { clockText, dayText, durationText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import { needSession } from './frame-model';
 import { verifyText } from './MilestoneCard';
 import { tellLeadDraft, type RunBoardCommand, type SnapshotSession } from './panels-model';
 import { StatusIcon } from './status';
+import { RungLabel } from './TaskRecovery';
 import { TellLead } from './TellLead';
+import './brief-lanes.css';
 import './frame.css';
 
 type Of<K extends ProjectBriefItem['kind']> = Extract<ProjectBriefItem, { kind: K }>;
 
-/** What happened in the project since the user last marked it read, as counts and links. */
+const HOUR = 3_600_000;
+
+/** The whole hours to mark between the ends, about four at most, none crowding an end's label. */
+function hourMarks(from: number, to: number): number[] {
+  const span = to - from;
+  const step = Math.max(1, Math.ceil(span / HOUR / 4));
+  const start = new Date(from);
+  start.setMinutes(0, 0, 0);
+  const marks: number[] = [];
+  for (let at = start.getTime() + HOUR; at < to; at += HOUR)
+    if (new Date(at).getHours() % step === 0 && at - from > span * 0.08 && to - at > span * 0.08)
+      marks.push(at);
+  return marks;
+}
+
+/** One event on a lane: where it sits, how it is drawn and named, and what pressing it opens. */
+interface LanePoint {
+  key: string;
+  at: number;
+  kind: 'merge' | 'failure' | 'decided' | 'assumption' | 'proposal';
+  glyph: ReactNode;
+  type: string;
+  title: string;
+  open?: () => void;
+}
+
+/** The axis the lanes share: from leaving to now. */
+interface Axis {
+  from: number;
+  span: number;
+  now: number;
+}
+
+const percent = (at: number, axis: Axis) =>
+  `${axis.span > 0 ? Math.min(100, Math.max(0, ((at - axis.from) / axis.span) * 100)) : 100}%`;
+
+function pointButton(point: LanePoint, axis: Axis) {
+  const time = dayText(point.at, axis.now, { time: true });
+  return (
+    <Tip key={point.key} content={listText(point.title, point.type, time)}>
+      <button
+        type="button"
+        className="bl-pt"
+        data-kind={point.kind}
+        style={{ left: percent(point.at, axis) }}
+        aria-label={t(
+          { id: 'board.brief.point', defaultMessage: '{time} {type}: {title}' },
+          { time, type: point.type, title: point.title },
+        )}
+        aria-disabled={!point.open || undefined}
+        onClick={() => point.open?.()}
+      >
+        {point.glyph}
+      </button>
+    </Tip>
+  );
+}
+
+/** An agent's proposal on the plan lane, named and opened once its proposal is read. */
+function ProposalPoint({
+  point,
+  axis,
+  openSession,
+}: {
+  point: LanePoint;
+  axis: Axis;
+  openSession: (sessionId: string) => void;
+}) {
+  const stored = useAgentProposal(point.key);
+  return pointButton(
+    {
+      ...point,
+      title: stored?.fields.name || point.title,
+      open: stored ? () => openSession(stored.session_id) : undefined,
+    },
+    axis,
+  );
+}
+
+/** What happened in the project since the user last marked it read, on a time track and as links. */
 export function BriefCard({
   projectId,
   model,
@@ -56,8 +135,6 @@ export function BriefCard({
   const openApproved = useShell((s) => s.openProjectApproved);
   // The read the user marked read stays hidden until the brief is read again.
   const [seen, setSeen] = useState<ProjectBrief | null>(null);
-  // The cell whose items show in its popover.
-  const [open, setOpen] = useState<string | null>(null);
   const { settings } = useAppSettings();
   const proseOn = settings !== null && settings.brief_prose !== false;
   // The briefs the paragraph was asked for, by their items, so each is asked for once.
@@ -81,44 +158,16 @@ export function BriefCard({
     model.merges.find((m) => m.session_id === id)?.title;
   // An event ref is the source's newest event; its aggregate is the session, or the plan's lead.
   const eventSession = (id: string) => events.findLast((e) => e.event_id === id)?.aggregate_id;
-  const link = (key: string, icon: ReactNode, title: string, open: () => void) => (
-    <a
-      key={key}
-      className="bf-brief-lk"
-      href="#"
-      onClick={(e: MouseEvent) => {
-        e.preventDefault();
-        setOpen(null);
-        open();
-      }}
-    >
-      {icon}
-      <span>{title}</span>
-    </a>
-  );
+  const untitled = () =>
+    t({ id: 'board.brief.untitledSession', defaultMessage: 'Untitled session' });
   const row = (key: string, icon: ReactNode, title: string) => (
     <span key={key} className="bf-brief-lk">
       {icon}
       <span>{title}</span>
     </span>
   );
-  /** A link to the task in the board's drawer or to the session; a plain row without either. */
-  const target = (
-    key: string,
-    icon: ReactNode,
-    ref: ProjectBriefItem['ref'],
-    session: string | null | undefined,
-    fallback: string,
-  ) => {
-    if (ref.kind === 'task') {
-      const title = model.tasks.find((task) => task.id === ref.id)?.title || fallback;
-      return link(key, icon, title, () => onOpenTask(ref.id));
-    }
-    if (!session) return row(key, icon, fallback);
-    return link(key, icon, sessionTitle(session) || fallback, () => openSession(session));
-  };
 
-  /** Where a sentence that cites the item links to, as the item's own link in its cell. */
+  /** Where a sentence that cites the item links to, as the item's own link elsewhere in the card. */
   const proseTarget = (item: ProjectBriefItem) => {
     const ref = item.ref;
     if (ref.kind === 'task')
@@ -184,254 +233,305 @@ export function BriefCard({
     );
   };
 
-  const decisions = of('decisions')[0];
-  const cells: { key: string; cap: string; label: string; count: number; rows: ReactNode }[] = [];
-  if (decisions)
-    cells.push({
-      key: 'decisions',
-      cap: t({ id: 'board.brief.waiting', defaultMessage: 'Waiting on you' }),
-      label: t(
-        {
-          id: 'board.brief.waitingCount',
-          defaultMessage:
-            '{count, plural, one {# decision waiting on you} other {# decisions waiting on you}}',
-        },
-        { count: decisions.count },
-      ),
-      count: decisions.count,
-      rows: null,
-    });
-  const milestones = of('milestone');
-  if (milestones.length)
-    cells.push({
-      key: 'milestones',
-      cap: t({ id: 'board.brief.milestones', defaultMessage: 'Milestones moved' }),
-      label: t(
-        {
-          id: 'board.brief.milestonesCount',
-          defaultMessage: '{count, plural, one {# milestone moved} other {# milestones moved}}',
-        },
-        { count: milestones.length },
-      ),
-      count: milestones.length,
-      rows: milestones.map((item) => (
-        <span key={item.ref.id} className="bf-brief-lk">
-          <Flag aria-hidden="true" />
-          <span>{item.title}</span>
-        </span>
-      )),
-    });
+  /** The task a failure is about: its own ref, or the plan task of the session its event came from. */
+  const failedTask = (item: Of<'failure'>) => {
+    if (item.ref.kind === 'task') {
+      const id = item.ref.id;
+      return model.tasks.find((task) => task.id === id);
+    }
+    const session = sessions.find(
+      (s) => item.ref.kind === 'event' && s.id === eventSession(item.ref.id),
+    );
+    return (
+      session?.task &&
+      model.tasks.find((task) => task.id === `${session.task!.lead_session_id}:${session.task!.id}`)
+    );
+  };
+  const failureOpen = (item: Of<'failure'>) => {
+    const task = failedTask(item);
+    if (task) return () => onOpenTask(task.id);
+    const session = item.ref.kind === 'event' ? eventSession(item.ref.id) : undefined;
+    return session ? () => openSession(session) : undefined;
+  };
+  const failureTitle = (item: Of<'failure'>) => {
+    const session = item.ref.kind === 'event' ? eventSession(item.ref.id) : undefined;
+    return failedTask(item)?.title || (session && sessionTitle(session)) || reasonText(item.reason);
+  };
+
   const merges = of('merge');
-  if (merges.length)
-    cells.push({
-      key: 'merges',
-      cap: t({ id: 'board.brief.merged', defaultMessage: 'Merged' }),
-      label: t(
-        { id: 'board.brief.mergedCount', defaultMessage: '{count} merged' },
-        { count: merges.length },
-      ),
-      count: merges.length,
-      rows: merges.map((item) =>
-        target(
-          item.ref.id,
-          <GitMerge aria-hidden="true" />,
-          item.ref,
-          item.ref.id,
-          t({ id: 'board.brief.untitledSession', defaultMessage: 'Untitled session' }),
-        ),
-      ),
-    });
   const failures = of('failure');
-  if (failures.length)
-    cells.push({
-      key: 'failures',
-      cap: t({ id: 'board.brief.failed', defaultMessage: 'Failed' }),
-      label: t(
-        { id: 'board.brief.failedCount', defaultMessage: '{count} failed' },
-        { count: failures.length },
-      ),
-      count: failures.length,
-      rows: failures.map((item) => {
-        const key = `${item.ref.kind}:${item.ref.id}`;
-        const why = reasonText(item.reason);
-        const session = item.ref.kind === 'event' ? eventSession(item.ref.id) : undefined;
-        if (item.ref.kind !== 'task' && !session)
-          return row(key, <StatusIcon status="failed" />, why);
-        return (
-          <span key={key} className="bf-brief-it">
-            {target('item', <StatusIcon status="failed" />, item.ref, session, why)}
-            <span className="bf-brief-n">{why}</span>
-          </span>
-        );
-      }),
-    });
-  const decided = of('decided')[0];
-  if (decided) {
-    const other =
-      decided.count - (decided.types.permission + decided.types.answer + decided.types.plan_change);
-    cells.push({
-      key: 'decided',
-      cap: t({ id: 'board.brief.decided', defaultMessage: 'Decided for you' }),
-      label: t(
-        { id: 'board.brief.decidedCount', defaultMessage: '{count} decided for you' },
-        { count: decided.count },
-      ),
-      count: decided.count,
-      rows: (
-        [
-          [
-            'permission',
-            <KeyRound aria-hidden="true" />,
-            t(
-              {
-                id: 'board.brief.decidedPermissions',
-                defaultMessage: '{count, plural, one {# permission} other {# permissions}}',
-              },
-              { count: decided.types.permission },
-            ),
-          ],
-          [
-            'answer',
-            <MessageSquare aria-hidden="true" />,
-            t(
-              {
-                id: 'board.brief.decidedAnswers',
-                defaultMessage: '{count, plural, one {# answer} other {# answers}}',
-              },
-              { count: decided.types.answer },
-            ),
-          ],
-          [
-            'plan_change',
-            <Workflow aria-hidden="true" />,
-            t(
-              {
-                id: 'board.brief.decidedPlanChanges',
-                defaultMessage: '{count, plural, one {# plan change} other {# plan changes}}',
-              },
-              { count: decided.types.plan_change },
-            ),
-          ],
-        ] as const
-      )
-        .filter(([type]) => decided.types[type] > 0)
-        .map(([type, icon, title]) =>
-          link(type, icon, title, () => openApproved(projectId, type, brief.since)),
-        )
-        .concat(
-          other > 0
-            ? [
-                link(
-                  'other',
-                  <Ellipsis aria-hidden="true" />,
-                  t(
-                    {
-                      id: 'board.brief.decidedOther',
-                      defaultMessage: '{count, plural, one {# other} other {# others}}',
-                    },
-                    { count: other },
-                  ),
-                  () => openApproved(projectId, undefined, brief.since),
-                ),
-              ]
-            : [],
-        )
-        .concat(
-          (decidedAfter?.items ?? []).flatMap((item) => {
-            if (
-              item.kind !== 'power_used' ||
-              item.power !== 'accept_milestone' ||
-              !item.verification ||
-              !item.reason
-            )
-              return [];
-            const milestone =
-              model.milestones.find((each) => each.id === item.subject)?.title ?? item.subject;
-            const title = t(
-              { id: 'board.brief.leadAccepted', defaultMessage: '{lead} accepted {milestone}' },
-              {
-                lead:
-                  sessionTitle(item.session_id) ||
-                  t({ id: 'board.brief.untitledSession', defaultMessage: 'Untitled session' }),
-                milestone,
-              },
-            );
-            return [
-              <div
-                key={`${item.subject}:${item.at}`}
-                className="bf-brief-it bf-brief-ov"
-                role="group"
-                aria-label={title}
-              >
-                <span className="bf-brief-lk">
-                  <Crown aria-hidden="true" />
-                  <span>{title}</span>
-                </span>
-                {/* The decision keeps the state the run had then, not when the run started. */}
-                <span className="bf-brief-n">
-                  {/* The record has no start time to count a running verification from. */}
-                  {item.verification.state === 'pending' || item.verification.state === 'running'
-                    ? t({ id: 'board.verify.badge.runningNoTime', defaultMessage: 'Verifying' })
-                    : verifyText(
-                        { started_at: item.at, ...item.verification } as Parameters<
-                          typeof verifyText
-                        >[0],
-                        item.at,
-                      )}
-                </span>
-                <Clip as="div" lines={3} className="bf-brief-why" text={item.reason} />
-                {run && (
-                  <TellLead
-                    className="btn bf-brief-tell"
-                    lead={sessions.find((s) => s.id === item.session_id)}
-                    draft={tellLeadDraft('milestone', milestone, item.subject)}
-                    label={milestone}
-                    run={run}
-                    text={t({ id: 'board.verify.card.tellLead', defaultMessage: 'Tell lead' })}
-                  />
-                )}
-              </div>,
-            ];
-          }),
-        ),
-    });
-  }
+  const delivered: LanePoint[] = [
+    ...merges.map((item): LanePoint => ({
+      key: `merge:${item.ref.id}`,
+      at: item.at,
+      kind: 'merge',
+      glyph: <Check aria-hidden="true" />,
+      type: t({ id: 'board.brief.merged', defaultMessage: 'Merged' }),
+      title:
+        (item.ref.kind === 'task'
+          ? model.tasks.find((task) => task.id === item.ref.id)?.title
+          : sessionTitle(item.ref.id)) || untitled(),
+      open:
+        item.ref.kind === 'task' ? () => onOpenTask(item.ref.id) : () => openSession(item.ref.id),
+    })),
+    ...failures.map((item): LanePoint => ({
+      key: `failure:${item.ref.kind}:${item.ref.id}`,
+      at: item.at,
+      kind: 'failure',
+      glyph: <X aria-hidden="true" />,
+      type: reasonText(item.reason),
+      title: failureTitle(item),
+      open: failureOpen(item),
+    })),
+  ];
+
+  const decidedItems: readonly DecisionForUser[] = of('decided').length
+    ? (decidedAfter?.items ?? [])
+    : [];
+  const decisionTypes = {
+    permission: t({ id: 'board.brief.type.permission', defaultMessage: 'Permission approved' }),
+    answer: t({ id: 'board.brief.type.answer', defaultMessage: 'Question answered' }),
+    plan_change: t({ id: 'board.brief.type.planChange', defaultMessage: 'Plan changed' }),
+  };
+  const decided: LanePoint[] = decidedItems.map((item) => {
+    const type = decisionType(item);
+    const shown = decisionRow(item);
+    return {
+      key: `decided:${shown.key}`,
+      at: item.at,
+      kind: 'decided',
+      glyph: <span className="bl-dot" aria-hidden="true" />,
+      type: type
+        ? decisionTypes[type]
+        : t({ id: 'board.brief.type.other', defaultMessage: 'Decided' }),
+      title: shown.action,
+      open: () => openApproved(projectId, type ?? undefined, brief.since),
+    };
+  });
+  const typeCount = (type: ReturnType<typeof decisionType>) =>
+    decidedItems.filter((item) => decisionType(item) === type).length;
+
   const assumptions = of('assumption');
-  if (assumptions.length)
-    cells.push({
-      key: 'assumptions',
-      cap: t({ id: 'board.brief.assumptions', defaultMessage: 'New assumptions' }),
-      label: t(
-        {
-          id: 'board.brief.assumptionsCount',
-          defaultMessage: '{count, plural, one {# new assumption} other {# new assumptions}}',
-        },
-        { count: assumptions.length },
-      ),
-      count: assumptions.length,
-      rows: assumptions.map((item) => {
-        const lead = eventSession(item.ref.id);
-        const icon = <Lightbulb aria-hidden="true" />;
-        return lead
-          ? link(`${item.ref.id}:${item.text}`, icon, item.text, () => openSession(lead))
-          : row(`${item.ref.id}:${item.text}`, icon, item.text);
-      }),
-    });
   const proposals = of('proposal');
-  if (proposals.length)
-    cells.push({
-      key: 'proposals',
-      cap: t({ id: 'board.brief.proposals', defaultMessage: 'Agent proposals' }),
-      label: t(
-        {
-          id: 'board.brief.proposalsCount',
-          defaultMessage: '{count, plural, one {# agent proposal} other {# agent proposals}}',
-        },
-        { count: proposals.length },
+  const planned: LanePoint[] = [
+    ...assumptions.map((item): LanePoint => {
+      const lead = eventSession(item.ref.id);
+      return {
+        key: `assumption:${item.ref.id}:${item.text}`,
+        at: item.at,
+        kind: 'assumption',
+        glyph: <CircleDashed aria-hidden="true" />,
+        type: t({ id: 'board.brief.type.assumption', defaultMessage: 'New assumption' }),
+        title: item.text,
+        open: lead ? () => openSession(lead) : undefined,
+      };
+    }),
+    ...proposals.map((item): LanePoint => ({
+      key: item.ref.id,
+      at: item.at,
+      kind: 'proposal',
+      glyph: <Square aria-hidden="true" />,
+      type: t({ id: 'board.brief.type.proposal', defaultMessage: 'Agent proposal' }),
+      title: t({ id: 'board.brief.untitledProposal', defaultMessage: 'Untitled proposal' }),
+    })),
+  ];
+
+  const times = [...delivered, ...decided, ...planned].map((point) => point.at);
+  // Without a seen cursor the track starts at the first event.
+  const from = brief.since > 0 ? brief.since : Math.min(model.now - HOUR, ...times);
+  const axis: Axis = { from, span: model.now - from, now: model.now };
+  const marks = hourMarks(from, model.now);
+  const lanes: { key: string; name: string; parts: (string | false)[]; points: ReactNode[] }[] = [
+    {
+      key: 'delivered',
+      name: t({ id: 'board.brief.lane.delivered', defaultMessage: 'Delivered' }),
+      parts: [
+        merges.length > 0 &&
+          t(
+            { id: 'board.brief.mergedCount', defaultMessage: '{count} merged' },
+            { count: merges.length },
+          ),
+        failures.length > 0 &&
+          t(
+            { id: 'board.brief.failedCount', defaultMessage: '{count} failed' },
+            { count: failures.length },
+          ),
+      ],
+      points: delivered.map((point) => pointButton(point, axis)),
+    },
+    {
+      key: 'decided',
+      name: t({ id: 'board.brief.decided', defaultMessage: 'Decided for you' }),
+      parts: [
+        typeCount('permission') > 0 &&
+          t(
+            {
+              id: 'board.brief.decidedPermissions',
+              defaultMessage: '{count, plural, one {# permission} other {# permissions}}',
+            },
+            { count: typeCount('permission') },
+          ),
+        typeCount('answer') > 0 &&
+          t(
+            {
+              id: 'board.brief.decidedAnswers',
+              defaultMessage: '{count, plural, one {# answer} other {# answers}}',
+            },
+            { count: typeCount('answer') },
+          ),
+        typeCount('plan_change') > 0 &&
+          t(
+            {
+              id: 'board.brief.decidedPlanChanges',
+              defaultMessage: '{count, plural, one {# plan change} other {# plan changes}}',
+            },
+            { count: typeCount('plan_change') },
+          ),
+        typeCount(null) > 0 &&
+          t(
+            {
+              id: 'board.brief.decidedOther',
+              defaultMessage: '{count, plural, one {# other} other {# others}}',
+            },
+            { count: typeCount(null) },
+          ),
+      ],
+      points: decided.map((point) => pointButton(point, axis)),
+    },
+    {
+      key: 'planned',
+      name: t({ id: 'board.brief.lane.plan', defaultMessage: 'Plan' }),
+      parts: [
+        assumptions.length > 0 &&
+          t(
+            {
+              id: 'board.brief.assumptionsCount',
+              defaultMessage: '{count, plural, one {# new assumption} other {# new assumptions}}',
+            },
+            { count: assumptions.length },
+          ),
+        proposals.length > 0 &&
+          t(
+            {
+              id: 'board.brief.proposalsCount',
+              defaultMessage: '{count, plural, one {# agent proposal} other {# agent proposals}}',
+            },
+            { count: proposals.length },
+          ),
+      ],
+      points: planned.map((point) =>
+        point.kind === 'proposal' ? (
+          <ProposalPoint key={point.key} point={point} axis={axis} openSession={openSession} />
+        ) : (
+          pointButton(point, axis)
+        ),
       ),
-      count: proposals.length,
-      rows: null,
-    });
+    },
+  ];
+
+  const rows: ReactNode[] = [];
+  const decisions = of('decisions')[0];
+  if (decisions)
+    rows.push(
+      row(
+        'decisions',
+        <span className="ss-dot waiting" aria-hidden="true" />,
+        t(
+          {
+            id: 'board.brief.waitingCount',
+            defaultMessage:
+              '{count, plural, one {# decision waiting on you} other {# decisions waiting on you}}',
+          },
+          { count: decisions.count },
+        ),
+      ),
+    );
+  // A milestone's move has no time, so it stays a line under the track.
+  for (const item of of('milestone'))
+    rows.push(row(`milestone:${item.ref.id}`, <Flag aria-hidden="true" />, item.title));
+  for (const item of decidedItems) {
+    if (
+      item.kind !== 'power_used' ||
+      item.power !== 'accept_milestone' ||
+      !item.verification ||
+      !item.reason
+    )
+      continue;
+    const milestone =
+      model.milestones.find((each) => each.id === item.subject)?.title ?? item.subject;
+    const title = t(
+      { id: 'board.brief.leadAccepted', defaultMessage: '{lead} accepted {milestone}' },
+      { lead: sessionTitle(item.session_id) || untitled(), milestone },
+    );
+    rows.push(
+      <div
+        key={`${item.subject}:${item.at}`}
+        className="bf-brief-it bf-brief-ov"
+        role="group"
+        aria-label={title}
+      >
+        <span className="bf-brief-lk">
+          <Crown aria-hidden="true" />
+          <span>{title}</span>
+        </span>
+        {/* The decision keeps the state the run had then, not when the run started. */}
+        <span className="bf-brief-n">
+          {/* The record has no start time to count a running verification from. */}
+          {item.verification.state === 'pending' || item.verification.state === 'running'
+            ? t({ id: 'board.verify.badge.runningNoTime', defaultMessage: 'Verifying' })
+            : verifyText(
+                { started_at: item.at, ...item.verification } as Parameters<typeof verifyText>[0],
+                item.at,
+              )}
+        </span>
+        <Clip as="div" lines={3} className="bf-brief-why" text={item.reason} />
+        {run && (
+          <TellLead
+            className="btn bf-brief-tell"
+            lead={sessions.find((s) => s.id === item.session_id)}
+            draft={tellLeadDraft('milestone', milestone, item.subject)}
+            label={milestone}
+            run={run}
+            text={t({ id: 'board.verify.card.tellLead', defaultMessage: 'Tell lead' })}
+          />
+        )}
+      </div>,
+    );
+  }
+
+  const failRow = (item: Of<'failure'>) => {
+    const task = failedTask(item);
+    const open = failureOpen(item);
+    const steps = (task?.gate_steps ?? []).filter((step) => step.state === 'failed');
+    const content = (
+      <>
+        <StatusIcon status="failed" />
+        <span className="bf-brief-fn">{failureTitle(item)}</span>
+        {steps.length > 0 && (
+          <span className="bf-brief-fs">{listText(...steps.map((step) => step.name))}</span>
+        )}
+        {task?.rung && <RungLabel rung={task.rung} />}
+      </>
+    );
+    const key = `${item.ref.kind}:${item.ref.id}`;
+    return open ? (
+      <a
+        key={key}
+        className="bf-brief-fail"
+        href="#"
+        onClick={(e: MouseEvent) => {
+          e.preventDefault();
+          open();
+        }}
+      >
+        {content}
+      </a>
+    ) : (
+      <span key={key} className="bf-brief-fail">
+        {content}
+      </span>
+    );
+  };
 
   const read = async () => {
     const result = await markProjectSeen(projectId);
@@ -444,65 +544,97 @@ export function BriefCard({
   };
   const title = t({ id: 'board.brief.label', defaultMessage: 'Since you left' });
   return (
-    <section
-      className="panel bf-brief"
-      role="group"
-      aria-label={title}
-      style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}
-    >
-      <div className="cell bf-brief-h">
-        <span className="bf-brief-t">{title}</span>
+    <section className="bf-brief" role="group" aria-label={title}>
+      <div className="bd-ph">
+        <h2>{title}</h2>
         {brief.since > 0 && (
           <time className="bf-brief-at" dateTime={new Date(brief.since).toISOString()}>
-            {dayText(brief.since, model.now, { time: true })}
+            {t(
+              { id: 'board.brief.away', defaultMessage: 'Away {duration}' },
+              { duration: durationText(model.now - brief.since) },
+            )}
           </time>
         )}
         <button type="button" className="btn bf-brief-read" onClick={() => void read()}>
           {t({ id: 'board.brief.read', defaultMessage: 'Mark as read' })}
         </button>
       </div>
-      {cells.map((cell) =>
-        cell.rows === null ? (
-          <div key={cell.key} className="cell bf-brief-c" role="group" aria-label={cell.label}>
-            <span className="cap">{cell.cap}</span>
-            <span className="kpi">{cell.count}</span>
+      <div className="bf-brief-box">
+        {brief.prose && (
+          <div className="bf-brief-p">
+            <p className="bf-brief-prose">
+              {brief.prose.sentences.map((each, i) => sentence(each.text, each.refs, i))}
+            </p>
+            <span className="bf-brief-who">
+              <Bot aria-hidden="true" />
+              <span>{t({ id: 'board.brief.assistant', defaultMessage: 'Assistant' })}</span>
+              <time className="bf-brief-at" dateTime={new Date(brief.prose.at).toISOString()}>
+                {t(
+                  { id: 'board.brief.writtenAt', defaultMessage: 'Written at {time}' },
+                  { time: dayText(brief.prose.at, model.now, { time: true }) },
+                )}
+              </time>
+            </span>
           </div>
-        ) : (
-          <Popover.Root
-            key={cell.key}
-            open={open === cell.key}
-            onOpenChange={(next) => setOpen(next ? cell.key : null)}
-          >
-            <Popover.Trigger
-              className="cell bf-brief-c"
-              aria-label={cell.label}
-              aria-haspopup="dialog"
-              aria-expanded={open === cell.key}
-            >
-              <span className="cap">{cell.cap}</span>
-              <span className="kpi">{cell.count}</span>
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Positioner side="bottom" align="start" sideOffset={4} style={{ zIndex: 40 }}>
-                <Popover.Popup className="pop bf-brief-pop" aria-label={cell.label}>
-                  {cell.rows}
-                </Popover.Popup>
-              </Popover.Positioner>
-            </Popover.Portal>
-          </Popover.Root>
-        ),
-      )}
-      {brief.prose && (
-        <div className="cell bf-brief-p">
-          <span className="bf-brief-who">
-            <Bot aria-hidden="true" />
-            <span>{t({ id: 'board.brief.assistant', defaultMessage: 'Assistant' })}</span>
-          </span>
-          <p className="bf-brief-prose">
-            {brief.prose.sentences.map((each, i) => sentence(each.text, each.refs, i))}
-          </p>
+        )}
+        <div className="bl-tl">
+          <div className="bl-ls" aria-hidden="true">
+            {lanes.map((lane) => (
+              <span key={lane.key} className="bl-l">
+                {lane.name}
+                <span className="bl-n">{lane.points.length}</span>
+              </span>
+            ))}
+          </div>
+          <div className="bl-tr">
+            {marks.map((at) => (
+              <i key={at} className="bl-g" style={{ left: percent(at, axis) }} aria-hidden="true" />
+            ))}
+            <i className="bl-g" data-now="" style={{ left: '100%' }} aria-hidden="true" />
+            {lanes.map((lane) => (
+              <div
+                key={lane.key}
+                className="bl-k"
+                role="group"
+                aria-label={
+                  lane.points.length
+                    ? t(
+                        {
+                          id: 'board.brief.laneLabel',
+                          defaultMessage:
+                            '{lane}, {count, plural, one {# item} other {# items}}: {parts}',
+                        },
+                        {
+                          lane: lane.name,
+                          count: lane.points.length,
+                          parts: listText(...lane.parts),
+                        },
+                      )
+                    : t(
+                        { id: 'board.brief.laneEmpty', defaultMessage: '{lane}, nothing' },
+                        { lane: lane.name },
+                      )
+                }
+              >
+                {lane.points}
+              </div>
+            ))}
+            <div className="bl-ax" aria-hidden="true">
+              <span style={{ left: 0 }}>{dayText(from, model.now, { time: true })}</span>
+              {marks.map((at) => (
+                <span key={at} style={{ left: percent(at, axis) }}>
+                  {axis.span > 24 * HOUR ? dayText(at, model.now) : clockText(at)}
+                </span>
+              ))}
+              <span style={{ left: '100%' }}>
+                {t({ id: 'board.brief.now', defaultMessage: 'Now' })}
+              </span>
+            </div>
+          </div>
         </div>
-      )}
+        {rows.length > 0 && <div className="bf-brief-rows">{rows}</div>}
+        {failures.length > 0 && <div className="bf-brief-rows">{failures.map(failRow)}</div>}
+      </div>
     </section>
   );
 }

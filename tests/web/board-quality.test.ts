@@ -300,7 +300,7 @@ describe('gate history', () => {
 
 type Task = BoardModel['tasks'][number];
 const task = (id: string, retrospective?: Task['retrospective']) =>
-  ({ id, title: `task ${id}`, retrospective }) as Task;
+  ({ id, title: `task ${id}`, segments: [], retrospective }) as unknown as Task;
 const quality = (
   tasks: Task[],
   cycle: { median_ms: number | null; sample_count: number },
@@ -310,9 +310,11 @@ const quality = (
   ({
     since: new Date(2026, 10, 3 + 1 - days).getTime(),
     now: new Date(2026, 10, 3, 12).getTime(),
-    counts,
+    counts: { merged: 0, ...counts },
     tasks,
     task_progress: { cycle: { ...cycle, p90_ms: null, buckets: [] } },
+    usage: [],
+    merges: [],
   }) as unknown as BoardModel;
 const html = (type: unknown, props: Record<string, unknown>) =>
   renderToStaticMarkup(createElement(type as never, props as never));
@@ -348,6 +350,7 @@ describe('quality overview', () => {
       [zh('insights.quality.firstPass'), '33% 共 3 个任务'],
       [zh('insights.quality.rework'), '1.0 轮 / 任务，共 3 个任务'],
       [zh('insights.quality.cycle'), '47 分钟 中位数，共 5 个任务'],
+      [zh('insights.quality.merged'), '0'],
     ]);
   });
 
@@ -475,7 +478,7 @@ describe('most failed gate steps', () => {
 });
 
 describe('quality tab layout', () => {
-  it('puts the overview and the failed steps first, then findings beside the matrix, the merge history and the gate history', () => {
+  it('puts the overview first, then the completion trend, the cycle time beside the merges per day, the failed steps, findings beside the matrix, the merge history and the gate history', () => {
     const model = {
       since: NOW - 7 * DAY,
       now: NOW,
@@ -524,6 +527,9 @@ describe('quality tab layout', () => {
     const slots = nodes(panel.props.children).filter((n) => n.props.title);
     expect(slots.map((n) => n.props.title)).toEqual([
       zh('insights.quality.label'),
+      zh('board.trend.title'),
+      zh('board.cycle.title'),
+      zh('insights.mergesPerDay.title'),
       zh('insights.gateFailures.title'),
       zh('board.findings.title'),
       zh('board.reviewMatrix.title'),
@@ -538,6 +544,9 @@ describe('quality tab layout', () => {
       ]);
     expect(widths).toEqual([
       ['bd-s12', zh('insights.quality.label')],
+      ['bd-s12', zh('board.trend.title')],
+      ['bd-s6', zh('board.cycle.title')],
+      ['bd-s6', zh('insights.mergesPerDay.title')],
       ['bd-s12', zh('insights.gateFailures.title')],
       ['bd-s6', zh('board.findings.title')],
       ['bd-s6', zh('board.reviewMatrix.title')],

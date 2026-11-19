@@ -1,8 +1,9 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, type CSSProperties } from 'react';
 import type { ReviewMetrics } from '@pantheon/domain';
 import type { BoardModel, GateFirstPass, ProjectGatesHistory } from '@pantheon/protocol';
 import { Tip } from '../../components/Tip';
 import { shortId } from '../../data/format';
+import { nowSummary } from '../../data/now-summary';
 import { useQuery } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
@@ -385,6 +386,33 @@ export function GateHistoryPanel({ projectId, since }: { projectId: string; sinc
 const firstPassText = (pass: GateFirstPass | undefined) =>
   pass && `${Math.round((pass.passed / pass.tasks) * 100)}%`;
 
+function FirstPassRing({ pass }: { pass: GateFirstPass }) {
+  const percent = Math.round((pass.passed / pass.tasks) * 100);
+  return (
+    <svg
+      className="ql-ring"
+      width="32"
+      height="32"
+      viewBox="0 0 32 32"
+      role="img"
+      aria-label={t(
+        { id: 'insights.quality.firstPassRing', defaultMessage: 'First-pass rate {percent}%' },
+        { percent },
+      )}
+    >
+      <circle cx="16" cy="16" r="13" pathLength={100} />
+      <circle
+        cx="16"
+        cy="16"
+        r="13"
+        pathLength={100}
+        strokeDasharray={`${percent} 100`}
+        transform="rotate(-90 16 16)"
+      />
+    </svg>
+  );
+}
+
 export function QualityKpis({ model }: { model: BoardModel }) {
   // The same window as the backend's first-pass count.
   const retros = model.tasks.flatMap(({ retrospective: r }) =>
@@ -398,27 +426,48 @@ export function QualityKpis({ model }: { model: BoardModel }) {
     rangeDays(model).length,
     firstPassText(model.counts.previous?.gate_first_pass),
   );
+  const today = nowSummary(model);
   return (
     <section
       className="bd-kpis"
       aria-label={t({ id: 'insights.quality.label', defaultMessage: 'Quality overview' })}
     >
-      <Metric
-        label={t({ id: 'insights.quality.firstPass', defaultMessage: 'Gates passed first time' })}
-        text={firstPassText(firstPass) ?? '—'}
-        note={
-          firstPass &&
-          t(
-            {
-              id: 'insights.quality.tasks',
-              defaultMessage: '{count, plural, one {of # task} other {of # tasks}}',
-            },
-            { count: firstPass.tasks },
-          )
-        }
-      >
-        {before && <span className="bd-kpi-n">{before}</span>}
-      </Metric>
+      <div className="bd-kpi">
+        <span className="bd-kpi-k">
+          {t({ id: 'insights.quality.firstPass', defaultMessage: 'Gates passed first time' })}
+        </span>
+        <span className="bd-kpi-v">
+          {firstPass && <FirstPassRing pass={firstPass} />}
+          <b>{firstPassText(firstPass) ?? '—'}</b>
+          {firstPass && (
+            <span className="bd-kpi-n">
+              {t(
+                {
+                  id: 'insights.quality.tasks',
+                  defaultMessage: '{count, plural, one {of # task} other {of # tasks}}',
+                },
+                { count: firstPass.tasks },
+              )}
+            </span>
+          )}
+          {before && <span className="bd-kpi-n">{before}</span>}
+        </span>
+        {today?.gate && (
+          <span className="bd-kpi-n">
+            {t(
+              {
+                id: 'insights.quality.firstPassToday',
+                defaultMessage: 'Today {percent}%, first pass {first} / {total}',
+              },
+              {
+                percent: Math.round((today.gate.first / today.gate.total) * 100),
+                first: today.gate.first,
+                total: today.gate.total,
+              },
+            )}
+          </span>
+        )}
+      </div>
       <Metric
         label={t({ id: 'insights.quality.rework', defaultMessage: 'Rework before merge' })}
         text={n ? (handbacks / n).toFixed(1) : '—'}
@@ -451,7 +500,81 @@ export function QualityKpis({ model }: { model: BoardModel }) {
             : undefined
         }
       />
+      <Metric
+        label={t({ id: 'insights.quality.merged', defaultMessage: 'Merged' })}
+        text={String(model.counts.merged)}
+        note={
+          today?.merged
+            ? t(
+                {
+                  id: 'insights.quality.mergedToday',
+                  defaultMessage: '{count, plural, other {# today}}',
+                },
+                { count: today.merged.today },
+              )
+            : undefined
+        }
+      />
     </section>
+  );
+}
+
+/** The merges of each local day of the last week, today last. */
+export function MergesPerDayPanel({ model }: { model: BoardModel }) {
+  const merged = nowSummary(model)?.merged ?? null;
+  const days = merged?.days ?? [];
+  const top = Math.max(1, ...days.map((d) => d.count));
+  const total = days.reduce((sum, d) => sum + d.count, 0);
+  const today = t({ id: 'board.ranges.today', defaultMessage: 'Today' });
+  const dayLabel = (i: number) => (i === days.length - 1 ? today : days[i]!.day.slice(5));
+  return (
+    <Panel
+      title={t({ id: 'insights.mergesPerDay.title', defaultMessage: 'Merges per day' })}
+      num={
+        merged && (
+          <span className="bp-hn">
+            {t(
+              {
+                id: 'insights.mergesPerDay.total',
+                defaultMessage: '{count, plural, other {# in all}}',
+              },
+              { count: total },
+            )}
+          </span>
+        )
+      }
+    >
+      {merged ? (
+        <div
+          className="ql-days"
+          role="img"
+          aria-label={t(
+            { id: 'insights.mergesPerDay.label', defaultMessage: 'Merges per day, {items}' },
+            {
+              items: days
+                .map((d, i) => `${dayLabel(i)} ${d.count}`)
+                .join(t({ id: 'board.charts.listSeparator', defaultMessage: ', ' })),
+            },
+          )}
+        >
+          {days.map((d, i) => (
+            <div key={d.day} style={{ '--v': `${(d.count / top) * 100}%` } as CSSProperties}>
+              <span className="ql-dn">{d.count}</span>
+              <span className="ql-dbar">
+                <i />
+              </span>
+              <span className="ql-dn">{dayLabel(i)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="bp-chart">
+          <Empty
+            text={t({ id: 'insights.mergesPerDay.empty', defaultMessage: 'No merges this week' })}
+          />
+        </div>
+      )}
+    </Panel>
   );
 }
 

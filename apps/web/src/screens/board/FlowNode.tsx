@@ -137,9 +137,9 @@ function nodeTone(task: Task, look: NodeLook): string {
   return task.state ? TASK_STATE_TONE[task.state] : TASK_STATUS_TONE[displayStatus(task)];
 }
 
-const STAGES = ['plan', 'build', 'gate', 'review', 'merge'] as const;
+export const STAGES = ['plan', 'build', 'gate', 'review', 'merge'] as const;
 type Stage = (typeof STAGES)[number];
-const STAGE_NAME: Record<Stage, () => string> = {
+export const STAGE_NAME: Record<Stage, () => string> = {
   plan: () => t({ id: 'board.plan.flow.stage.plan', defaultMessage: 'Plan' }),
   build: () => t({ id: 'board.plan.flow.stage.build', defaultMessage: 'Build' }),
   gate: () => t({ id: 'board.plan.flow.stage.gate', defaultMessage: 'Checks' }),
@@ -148,7 +148,7 @@ const STAGE_NAME: Record<Stage, () => string> = {
 };
 
 /** The plan stage the task's state stands in; null when the state does not say which. */
-function stageOf(task: Task): { at: number; done: boolean } | null {
+export function stageOf(task: Task): { at: number; done: boolean } | null {
   switch (task.state) {
     case 'todo':
     case 'waiting_upstream':
@@ -193,6 +193,7 @@ function StageBar({ task }: { task: Task }) {
   const stage = stageOf(task);
   if (!stage) return null;
   const name = STAGE_NAME[STAGES[stage.at]!]();
+  const passed = stage.done ? STAGES.length : stage.at;
   return (
     <div className="bd-nrow">
       <span
@@ -213,7 +214,9 @@ function StageBar({ task }: { task: Task }) {
           />
         ))}
       </span>
-      <span className="bd-nstn">{name}</span>
+      <span className="bd-nstn">
+        {passed} / {STAGES.length}
+      </span>
     </div>
   );
 }
@@ -279,35 +282,57 @@ function Amounts({ task, line }: { task: Task; line: string | null }) {
   const checks = task.checks === 'none' ? null : task.checks;
   const steps = task.gate_steps?.length ? task.gate_steps : null;
   const passed = steps?.filter((s) => s.state === 'passed').length ?? 0;
+  const failed = steps?.filter((s) => s.state === 'failed') ?? [];
+  const waiting = task.activity?.waiting;
+  const command = waiting?.kind === 'approval' && waiting.summary ? waiting.summary : null;
   // The merged task's line already names its commit and diff.
   const diff =
     (task.additions !== null || task.deletions !== null) && !(task.state === 'merged' && line);
   const subagents = task.subagents ? task.subagents : null;
   const successors = task.successors ? task.successors : null;
   const acceptance = task.acceptance_checks?.length ? task.acceptance_checks : null;
-  if (!checks && !steps && !diff && !subagents && !successors && !acceptance) return null;
+  if (!command && !checks && !steps && !diff && !subagents && !successors && !acceptance)
+    return null;
   return (
     <div className="bd-nrow bd-nq">
-      {steps ? (
+      {command ? (
+        <span className="bd-ncmd">{command}</span>
+      ) : steps ? (
         <>
           <span
             className="bd-ngate"
             role="img"
-            aria-label={t(
-              {
-                id: 'board.plan.flow.gateSteps',
-                defaultMessage: 'Checks: {passed} of {count} steps passed',
-              },
-              { passed, count: steps.length },
-            )}
+            aria-label={
+              failed.length
+                ? t(
+                    {
+                      id: 'board.node.gate.failed',
+                      defaultMessage: 'Checks: {count} steps, {failed} failed, {passed} passed',
+                    },
+                    { count: steps.length, failed: failed.length, passed },
+                  )
+                : t(
+                    {
+                      id: 'board.plan.flow.gateSteps',
+                      defaultMessage: 'Checks: {passed} of {count} steps passed',
+                    },
+                    { passed, count: steps.length },
+                  )
+            }
           >
-            {steps.map((step, i) => (
-              <i key={i} data-state={step.state} />
+            {[...failed, ...steps.filter((s) => s.state !== 'failed')].map((step, i) => (
+              <i
+                key={i}
+                data-state={
+                  step.state === 'passed' || step.state === 'failed' ? step.state : 'pending'
+                }
+              />
             ))}
           </span>
           <span className="bd-ngn">
-            {passed}/{steps.length}
+            {passed} / {steps.length}
           </span>
+          {failed[0] && <span className="bd-nfail">{failed[0].name}</span>}
         </>
       ) : (
         checks && (

@@ -149,8 +149,11 @@ await call('session.create', {
   )}`,
 });
 await page.click({ role: 'button', name: '项目看板', exact: true });
-// The range a previous run left; the needs-you list and the open tasks show under 进行中.
-await page.click({ role: 'radio', name: '进行中', exact: true });
+// The view and scope a previous run left; the flow chart shows every task under 全部.
+await page.click({ role: 'radio', name: '任务', exact: true });
+await page.click({ role: 'radio', name: '流程图', exact: true });
+await page.click({ role: 'radio', name: '全部', exact: true });
+await page.click({ role: 'radio', name: '总览', exact: true });
 
 // One board read gives each task and its step run; every check below reads the same result.
 const stepOf = (b, key) => {
@@ -177,7 +180,7 @@ check(
   result.step_runs,
 );
 
-// The needs-you list on the board's Now page and the task drawer's workflow step section.
+// The needs-you list on the board's overview and the task drawer's workflow step section.
 const strip = () =>
   page.evaluate(`(() => {
     const s = [...document.querySelectorAll('section[aria-label="需要你"]')].find((el) => el.getClientRects().length);
@@ -216,8 +219,12 @@ const drawer = () =>
       },
     };
   })()`);
-// A task's card on the board canvas opens it in the drawer.
+/** The task buttons of the milestone card the overview unfolds. */
+const MILESTONE_TASKS = { role: 'group', name: '3 个任务：', exact: false };
+// A task's card on the tasks page's flow chart opens it in the drawer; `via`, a task button of the
+// overview's current milestone, opens it beside the needs-you list.
 const openDrawer = async (key, via) => {
+  await page.click({ role: 'radio', name: via ? '总览' : '任务', exact: true });
   // React Flow keeps a node hidden until it has measured it.
   if (!via)
     await poll(() =>
@@ -312,7 +319,13 @@ await page.evaluate(
 );
 result.shot = await page.screenshot('pair-step-verdict');
 
-// The row's More menu holds the other decision.
+// The row's More menu holds the other decision; the drawer stays open on the overview.
+await openDrawer('none', {
+  role: 'button',
+  name: `${TASK.none}，`,
+  exact: false,
+  within: MILESTONE_TASKS,
+});
 if (row?.more[0]) {
   await page.click({ role: 'button', name: row.more[0], exact: true });
   const items = async () => (await names('算失败')).filter((c) => c.role === 'menuitem');
@@ -373,11 +386,15 @@ const merged = await poll(async () => {
 check('任务继续去合并', merged, merged || stepOf(await view(), 'none').task?.state);
 
 // Passed: the summary and the evidence, checked against what the turn ran.
-// A merged task is not on the Now canvas; another task's drawer lists it under its milestone.
-await openDrawer('failed');
+// The overview's current milestone lists the merged task.
 const passedRun = stepOf(last, 'passed').run;
 const pd = (
-  await openDrawer('passed', { role: 'button', name: `${TASK.passed}已合并`, exact: true })
+  await openDrawer('passed', {
+    role: 'button',
+    name: `${TASK.passed}，已合并`,
+    exact: true,
+    within: MILESTONE_TASKS,
+  })
 )?.step;
 result.passed_drawer = pd ?? (await drawer());
 check(

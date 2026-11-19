@@ -150,10 +150,22 @@ try {
   );
 
   await page.click({ role: 'button', name: '项目看板', exact: true });
-  /** Picks a milestone on the goals view, which shows it on the now view. */
+  /** Picks a milestone's point in the overview's goals, which opens the tasks view on it; back on the overview it unfolds under its goal. */
   const pick = async (title) => {
-    await page.click({ role: 'radio', name: '目标', exact: true });
-    await page.click({ role: 'button', name: title, exact: false });
+    await page.click({ role: 'radio', name: '总览', exact: true });
+    // The point is named "M{n} {title}：{state}"; the flag beside it ends with the title.
+    await page.click({
+      role: 'button',
+      name: `${title}：`,
+      exact: false,
+      within: { role: 'list', name: '目标', exact: true },
+    });
+    await poll(() =>
+      page.evaluate(
+        `document.querySelector('[role="radiogroup"][aria-label="看板视图"] [aria-checked="true"]')?.getAttribute('aria-label') === '任务'`,
+      ),
+    );
+    await page.click({ role: 'radio', name: '总览', exact: true });
     const state = () =>
       page.evaluate(`({
         hash: location.hash,
@@ -166,15 +178,27 @@ try {
     });
     if (!at)
       throw new Error(
-        `the now view does not show milestone ${title}: ${JSON.stringify(await state())}`,
+        `the overview does not show milestone ${title}: ${JSON.stringify(await state())}`,
       );
   };
-  /** The milestone card's assumptions list and each row's parts. */
-  const readList = () =>
-    page.evaluate(`(() => {
+  /** The unfolded milestone's assumptions, in the popup of the flag over its point, opened when it is shut. */
+  const readList = async () => {
+    await page.evaluate(`(() => {
+      if ([...document.querySelectorAll('.gm-asm')].some((p) => p.getClientRects().length)) return;
+      document.querySelector('.gm-pt > .gm-flag')?.click();
+    })()`);
+    await poll(
+      () =>
+        page.evaluate(
+          `!document.querySelector('.gm-pt > .gm-flag') || [...document.querySelectorAll('.gm-asm')].some((p) => p.getClientRects().length)`,
+        ),
+      2000,
+    );
+    return page.evaluate(`(() => {
       const card = [...document.querySelectorAll('section.bms')].find((s) => s.getClientRects().length);
       if (!card) return null;
-      const list = card.querySelector('ul[aria-label="假设"]');
+      const pop = [...document.querySelectorAll('.gm-asm')].find((p) => p.getClientRects().length);
+      const list = pop?.querySelector('ul[aria-label="假设"]');
       return {
         milestone: card.querySelector('.bms-h')?.textContent ?? null,
         list: !!list,
@@ -189,6 +213,7 @@ try {
         })) : [],
       };
     })()`);
+  };
   const rowOf = async (text) => (await readList())?.rows.find((r) => r.text === text) ?? null;
   /** Clicks the button with text `label` in the row of assumption `text`, by a CDP click on its centre. */
   const clickRow = async (text, label) => {
@@ -209,7 +234,7 @@ try {
     await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...mouse });
   };
 
-  // 2. The now view of milestone A lists the two assumptions, each with its tasks.
+  // 2. The overview's card of milestone A lists the two assumptions, each with its tasks.
   await pick(MA);
   const shown = await poll(async () => {
     const l = await readList();
@@ -217,7 +242,7 @@ try {
   });
   result.list = shown;
   check(
-    '"现在" 页里程碑 A 的 "假设" 列表是这两条的文字',
+    '"总览" 页里程碑 A 的 "假设" 列表是这两条的文字',
     shown?.milestone === MA && shown.rows.map((r) => r.text).join('|') === `${A1}|${A2}`,
     shown,
   );
@@ -424,38 +449,6 @@ try {
   check('对照组：同一读法对另一条理由判 false', !(rejected?.row.why === `${REASON}-absent`));
   result.shot_rejected = await page.screenshot('board-assumptions-rejected');
 
-  // 6. Refute the second assumption; the lead applies it.
-  const INSTEAD2 = `Some files start with data ${stamp}`;
-  await clickRow(A2, '不对，改成别的');
-  await page.fill({ role: 'textbox', name: '应该是什么', exact: true }, INSTEAD2);
-  await page.press('Enter');
-  const second = await poll(async () => {
-    const a = msOf(await view(), MA)?.assumptions?.find((x) => x.id === 'header');
-    return a?.refuted?.state === 'pending' && a;
-  });
-  check('后端：第二条 refuted.state=pending', second?.refuted.instead === INSTEAD2, second);
-  result.apply_turn = second && (await resolve(second.refuted.edit_id, 'apply'));
-  const applied = await poll(async () => {
-    const a = msOf(await view(), MA)?.assumptions?.find((x) => x.id === 'header');
-    const row = await rowOf(INSTEAD2);
-    return a?.refuted?.state === 'applied' && row?.outcome?.includes('lead 改了计划') && { a, row };
-  }, 15_000);
-  result.applied = applied || {
-    a: msOf(await view(), MA)?.assumptions?.find((x) => x.id === 'header'),
-    rows: (await readList())?.rows,
-  };
-  check(
-    '后端：refuted.state=applied，假设文字变成用户写的话',
-    applied?.a.refuted.state === 'applied' && applied.a.text === INSTEAD2,
-    result.applied.a,
-  );
-  check(
-    '那一行显示 "lead 改了计划"，文字是用户写的话',
-    applied?.row.text === INSTEAD2 && applied.row.outcome.includes('lead 改了计划'),
-    result.applied.row ?? result.applied.rows,
-  );
-  check('对照组：原来的文字不再出现在列表里', (await rowOf(A2)) === null, await rowOf(A2));
-
   // 7. Esc closes the field, gives the focus back and sends nothing.
   const count = editsOf(await view()).length;
   await clickRow(A1, '不对，改成别的');
@@ -483,10 +476,11 @@ try {
     after: editsOf(await view()).length,
   });
 
-  // 8. No horizontal overflow. The card is the nearest box that draws (background, border or clip),
-  // as overflow.mjs counts it; the rows' hover fill bleeds past the undrawn milestone column on purpose.
+  // 8. No horizontal overflow. The popup is the nearest box that draws (background, border or clip),
+  // as overflow.mjs counts it; the rows' hover fill bleeds past the undrawn column on purpose.
+  await readList();
   result.geometry = await page.evaluate(`(() => {
-    const ms = [...document.querySelectorAll('section.bms')].find((s) => s.getClientRects().length);
+    const ms = [...document.querySelectorAll('.gm-asm')].find((s) => s.getClientRects().length);
     const list = ms?.querySelector('ul[aria-label="假设"]');
     if (!list) return null;
     const clear = (c) => /^transparent$|,\\s*0\\)$|\\/\\s*0\\)$/.test(c);
@@ -510,7 +504,7 @@ try {
     };
   })()`);
   check(
-    '列表和每一行在里程碑卡(画出来的框)里，不压到 lead 栏，文字不出里程碑栏，卡没有横向滚动',
+    '列表和每一行在假设弹层(画出来的框)里，不压到 lead 栏，文字不出弹层，弹层没有横向滚动',
     result.geometry &&
       result.geometry.out.length === 0 &&
       result.geometry.into_lead.length === 0 &&
@@ -547,6 +541,39 @@ try {
     '对照组：选中的行不是别的会话',
     !result.open_lead.current.some((t) => t.startsWith(`${LEAD}-absent`)),
   );
+
+  // 9. Refute the second assumption; once the lead applies it, both are settled.
+  await page.click({ role: 'button', name: '项目看板', exact: true });
+  await pick(MA);
+  await poll(async () => (await readList())?.rows.length);
+  const INSTEAD2 = `Some files start with data ${stamp}`;
+  await clickRow(A2, '不对，改成别的');
+  await page.fill({ role: 'textbox', name: '应该是什么', exact: true }, INSTEAD2);
+  await page.press('Enter');
+  const second = await poll(async () => {
+    const a = msOf(await view(), MA)?.assumptions?.find((x) => x.id === 'header');
+    return a?.refuted?.state === 'pending' && a;
+  });
+  check('后端：第二条 refuted.state=pending', second?.refuted.instead === INSTEAD2, second);
+  const flagBefore = await page.evaluate(`!!document.querySelector('.gm-pt > .gm-flag')`);
+  result.apply_turn = second && (await resolve(second.refuted.edit_id, 'apply'));
+  const applied = await poll(async () => {
+    const a = msOf(await view(), MA)?.assumptions?.find((x) => x.id === 'header');
+    return a?.refuted?.state === 'applied' && a;
+  }, 15_000);
+  result.applied = applied || msOf(await view(), MA)?.assumptions?.find((x) => x.id === 'header');
+  check(
+    '后端：refuted.state=applied，假设文字变成用户写的话',
+    applied?.refuted.state === 'applied' && applied.text === INSTEAD2,
+    result.applied,
+  );
+  // A settled assumption leaves the board; with none open, the flag leaves the point.
+  const flagGone = await poll(
+    () => page.evaluate(`!document.querySelector('.gm-pt > .gm-flag')`),
+    15_000,
+  );
+  check('两条都定了以后里程碑点旁的假设旗子离开', flagGone, flagGone);
+  check('对照组：lead 处理前旗子在', flagBefore, flagBefore);
 
   // Leaves nothing waiting for the user.
   const end = await view();

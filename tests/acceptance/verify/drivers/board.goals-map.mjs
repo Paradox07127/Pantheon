@@ -58,10 +58,10 @@ try {
     await switchTo(NAME);
   };
 
-  // 1. A project without goals opens on the now view.
+  // 1. A project without goals opens on the overview.
   const first = await poll(async () => ((await tab()) ? await tab() : null));
-  check('没有目标的项目进入后 "看板视图" 选中的是 "现在"', first === '现在', first);
-  check('对照组：同一读法对 "目标" 判 false', first !== '目标', first);
+  check('没有目标的项目进入后 "看板视图" 选中的是 "总览"', first === '总览', first);
+  check('对照组：同一读法对 "任务" 判 false', first !== '任务', first);
 
   // 2. Two goals, the first with two milestones of the assistant's plan.
   const G1 = `Ship the importer ${stamp}`;
@@ -130,22 +130,22 @@ try {
     result.seeded.map((g) => [g.text, g.milestones, g.needs]),
   );
 
-  // Back on the project with no stored choice: the goals view.
+  // Back on the project with no stored choice: still the overview.
   await away();
-  const landed = await tabIs('目标');
-  check('有目标、没存过选择：换回项目后选中 "目标"', landed, await tab());
+  const landed = await tabIs('总览');
+  check('有目标、没存过选择：换回项目后选中 "总览"', landed, await tab());
   // A stored choice holds.
-  await page.click({ role: 'radio', name: '现在', exact: true });
-  await tabIs('现在');
+  await page.click({ role: 'radio', name: '任务', exact: true });
+  await tabIs('任务');
   await away();
-  const kept = await tabIs('现在', 5000);
-  check('点过 "现在" 后换走再回来，仍是 "现在"', kept, await tab());
+  const kept = await tabIs('任务', 5000);
+  check('点过 "任务" 后换走再回来，仍是 "任务"', kept, await tab());
   const stored = await page.evaluate(
     `localStorage.getItem(${JSON.stringify(`pantheon.board-page.${project_id}`)})`,
   );
-  check('存下的选择是 now', stored === 'now', stored);
-  await page.click({ role: 'radio', name: '目标', exact: true });
-  await tabIs('目标');
+  check('存下的选择是 tasks', stored === 'tasks', stored);
+  await page.click({ role: 'radio', name: '总览', exact: true });
+  await tabIs('总览');
 
   // 3. The goals list against goals[].
   const list = () =>
@@ -156,11 +156,11 @@ try {
       const ids = s.getAttribute('aria-labelledby');
       return {
         name: ids ? document.getElementById(ids)?.textContent.trim() : s.getAttribute('aria-label'),
-        count: s.querySelector('.gm-gp .gm-n')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
+        count: s.querySelector('.gm-gh > .gm-n')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
         none: !!s.querySelector('.gm-none'),
         need: s.querySelector('.gm-need')?.textContent.trim() ?? null,
         needLabel: s.querySelector('.gm-need')?.getAttribute('aria-label') ?? null,
-        milestones: [...s.querySelectorAll('.gm-ms .gm-ms-t')].map((m) => m.textContent.trim()),
+        milestones: [...s.querySelectorAll('.gm-path .gm-po')].map((m) => m.getAttribute('aria-label').replace(/^M\\d+ /, '').replace(/：[^：]*$/, '')),
       };
     });
   })()`);
@@ -197,13 +197,13 @@ try {
     result.rows?.[noNeeds],
   );
   check(
-    '第一个目标下列出它的两个里程碑',
+    '第一个目标的里程碑路径是它的两个里程碑',
     JSON.stringify(result.rows?.[0]?.milestones) === JSON.stringify([M1, M2]),
     result.rows?.[0]?.milestones,
   );
   result.shot = await page.screenshot('board-goals-map');
 
-  // 4. The needs chip opens the now view with the focus on the first row's primary button.
+  // 4. The needs chip stays on the overview and puts the focus on the first row's primary button.
   const focus = () =>
     page.evaluate(`(() => {
     const a = document.activeElement;
@@ -220,8 +220,8 @@ try {
   const needLabel = withNeeds >= 0 && `这个目标有 ${goals[withNeeds].needs} 项等你决定`;
   if (needLabel && (await names(needLabel)).length) {
     await page.click({ role: 'button', name: needLabel, exact: true });
-    const nowTab = await tabIs('现在');
-    check('点 "这个目标有 N 项等你决定" 切到 "现在"', nowTab, await tab());
+    const stayed = await tabIs('总览');
+    check('点 "这个目标有 N 项等你决定" 留在 "总览"', stayed, await tab());
     const focused = await poll(async () => {
       const f = await focus();
       return f.isPrimary && f;
@@ -230,25 +230,42 @@ try {
     check('焦点在 "需要你" 第一行的主按钮上', result.focus.isPrimary, result.focus);
   } else check('有按钮 "这个目标有 N 项等你决定"', false, await names('等你决定'));
 
-  // 5. A milestone row opens the now view on that milestone.
-  const card = () =>
+  // 5. A milestone's point on the path opens the tasks view's flow chart on that milestone's tasks.
+  const flowTasks = () =>
     page.evaluate(
-      `[...document.querySelectorAll('section.bms h2.bms-h')].filter((h) => h.getClientRects().length).map((h) => h.textContent.trim())`,
+      `[...document.querySelectorAll('[role="group"]')].filter((g) => g.getClientRects().length).map((g) => g.getAttribute('aria-label') ?? '')`,
     );
-  for (const title of [M2, M1]) {
-    await page.click({ role: 'radio', name: '目标', exact: true });
-    await tabIs('目标');
-    await page.click({ role: 'button', name: title, exact: false });
-    await tabIs('现在');
+  const scope = () =>
+    page.evaluate(
+      `document.querySelector('[role="radiogroup"][aria-label="任务范围"] [role="radio"][aria-checked="true"]')?.textContent.trim() ?? null`,
+    );
+  for (const [title, own, other] of [
+    [M2, 'Task two', 'Task one'],
+    [M1, 'Task one', 'Task two'],
+  ]) {
+    await page.click({ role: 'radio', name: '总览', exact: true });
+    await tabIs('总览');
+    await page.click({
+      role: 'button',
+      name: title,
+      exact: false,
+      within: { role: 'list', name: '目标', exact: true },
+    });
+    await tabIs('任务');
     const shown = await poll(async () => {
-      const c = await card();
-      return c.includes(title) && c;
+      const labels = await flowTasks();
+      return labels.some((l) => l.startsWith(`${own}，`)) && labels;
     }, 5000);
-    check(`点里程碑 "${title}" 后 "现在" 页的里程碑卡显示它`, shown, await card());
+    check(`点里程碑 "${title}" 后 "任务" 页流程图列出它的任务`, shown, await flowTasks());
+    check(
+      `对照组：流程图不列另一个里程碑的任务 "${other}"`,
+      !(await flowTasks()).some((l) => l.startsWith(`${other}，`)),
+      await flowTasks(),
+    );
+    check(`范围是 "当前里程碑"`, (await scope()) === '当前里程碑', await scope());
   }
-  check('对照组：里程碑卡不显示另一个里程碑', !(await card()).includes(M2), await card());
-  await page.click({ role: 'radio', name: '目标', exact: true });
-  await tabIs('目标');
+  await page.click({ role: 'radio', name: '总览', exact: true });
+  await tabIs('总览');
 
   // 11. Switching tabs reads no new board view. Reads go through the desktop bridge, not fetch;
   // the bridge is counted when it can be wrapped, and a project switch shows the count sees reads.
@@ -265,13 +282,13 @@ try {
     const reads = () =>
       page.evaluate(`window.__verifyReads.filter((m) => m === 'board.view').length`);
     const readsBefore = await reads();
-    for (const name of ['现在', '目标', '现在', '目标']) {
+    for (const name of ['任务', '总览', '任务', '总览']) {
       await page.click({ role: 'radio', name, exact: true });
       await tabIs(name);
     }
     const readsAfter = await reads();
     await away();
-    await tabIs('目标');
+    await tabIs('总览');
     const readsAway = await poll(async () => {
       const n = await reads();
       return n > readsAfter && n;
@@ -282,7 +299,7 @@ try {
       after_project_switch: readsAway,
     };
     check(
-      '目标 ↔ 现在 切换四次不重新请求 board.view',
+      '总览 ↔ 任务 切换四次不重新请求 board.view',
       readsAfter === readsBefore,
       result.board_reads,
     );
@@ -312,7 +329,7 @@ try {
     );
     if (live) return;
     await away();
-    await tabIs('目标');
+    await tabIs('总览');
     const reread = await poll(async () => {
       const r = await list();
       return ok(r) && r;

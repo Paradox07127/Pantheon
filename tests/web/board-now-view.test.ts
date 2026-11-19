@@ -18,12 +18,13 @@ vi.mock('@/store', () => ({
     { setState() {} },
   ),
 }));
-import { readBoardPage } from '@/data/board-page';
+import { pickTaskScope, pickTaskView, useTaskView, type BoardPage } from '@/data/board-page';
 import { BoardView } from '@/screens/board/BoardScreen';
+import { GoalsHead } from '@/screens/board/GoalsSection';
 import { LeadPanel } from '@/screens/board/LeadPanel';
 import { MilestoneCard } from '@/screens/board/MilestoneCard';
-import { readCanvasOrder, saveCanvasOrder } from '@/screens/board/panel-layout';
 import type { BoardMilestone, SnapshotMilestone } from '@/screens/board/panels-model';
+import { STATUS } from '@/screens/board/status';
 import { zh, zhf } from './i18n-setup.js';
 import { setupRead } from './setup-fixture.js';
 
@@ -124,9 +125,7 @@ const viewProps = (over: Partial<Parameters<typeof BoardView>[0]>) => ({
   loading: false,
   error: null,
   onRetry: noop,
-  range: 7 as const,
-  onRange: noop,
-  page: 'now' as const,
+  page: 'tasks' as BoardPage,
   onPage: noop,
   onOpenSession: noop,
   onOpenStory: noop,
@@ -151,6 +150,8 @@ beforeEach(() => {
     refresh() {},
   };
   stored = new Map();
+  pickTaskView('project-a', 'flow');
+  pickTaskScope('project-a', 'milestone');
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => stored.get(key) ?? null,
     setItem: (key: string, value: string) => stored.set(key, value),
@@ -168,13 +169,7 @@ afterEach(() => {
 });
 
 describe('project board views', () => {
-  it('reads a stored view back and opens the now view for anything else', () => {
-    for (const key of ['goals', 'now', 'history', 'canvas']) expect(readBoardPage(key)).toBe(key);
-    for (const raw of [null, '', 'progress', 'milestones', 'quality', 'intro', 'memory'])
-      expect(readBoardPage(raw)).toBe('now');
-  });
-
-  it('switches between goals, now, whole history and canvas from one segmented control', () => {
+  it('switches between overview and tasks from one segmented control', () => {
     const onPage = vi.fn();
     const h = mount(() => BoardView(viewProps({ projectId: 'project-a', onPage })));
     const views = labelled(h.value, zh('board.view.label'));
@@ -182,46 +177,57 @@ describe('project board views', () => {
       nodes(views.props.children)
         .filter((n) => n.props.value !== undefined)
         .map(text),
-    ).toEqual([
-      zh('board.view.goals'),
-      zh('board.history.span.now'),
-      zh('board.history.span.history'),
-      zh('board.view.canvas'),
-    ]);
-    views.props.onValueChange('canvas');
-    expect(onPage).toHaveBeenCalledWith('canvas');
+    ).toEqual([zh('board.view.overview'), zh('board.view.tasks')]);
+    views.props.onValueChange('overview');
+    expect(onPage).toHaveBeenCalledWith('overview');
   });
 
-  const PANELS = ['ProgressTable', 'TrendPanel', 'CyclePanel', 'StallPanel', 'Milestones'];
+  const PANELS = ['TaskList', 'TrendPanel', 'CyclePanel', 'Milestones'];
 
-  it('fills the now view with the flow chart and leaves the panel grid out', () => {
-    const h = mount(() => BoardView(viewProps({ projectId: 'project-a', page: 'now' })));
+  it('fills the flow view with the flow chart and leaves the panels out', () => {
+    const h = mount(() => BoardView(viewProps({ projectId: 'project-a' })));
     expect(names(h.value)).toContain('MainView');
-    for (const panel of [...PANELS, 'RisksPanel']) expect(names(h.value)).not.toContain(panel);
+    for (const panel of PANELS) expect(names(h.value)).not.toContain(panel);
   });
 
-  it('hands the other panels to the canvas view, which lays them out with the pinned visuals', () => {
-    const h = mount(() => BoardView(viewProps({ projectId: 'project-a', page: 'canvas' })));
-    const canvas = named(h.value, 'CanvasView');
-    const shown = canvas.props.panels.flatMap((p: { node: ReactNode }) => names(p.node));
-    for (const panel of [...PANELS, 'RisksPanel']) expect(shown).toContain(panel);
-    expect(names(h.value)).not.toContain('MainView');
-    expect(names(h.value)).not.toContain('PanelMenu');
-  });
+  it('offers the flow chart, the list and the timeline, and draws the one picked', () => {
+    const h = mount(() => BoardView(viewProps({ projectId: 'project-a' })));
+    const switcher = () => labelled(h.value, zh('board.tasks.view.label'));
+    expect(nodes(switcher().props.children).map(text)).toEqual([
+      zh('board.tasks.view.flow'),
+      zh('board.tasks.view.list'),
+      zh('board.tasks.view.timeline'),
+    ]);
+    expect(switcher().props.value).toBe('flow');
 
-  it('shows the whole history in the history view', () => {
-    const h = mount(() => BoardView(viewProps({ projectId: 'project-a', page: 'history' })));
+    switcher().props.onValueChange('list');
+    h.render();
+    expect(switcher().props.value).toBe('list');
+    expect(names(h.value)).toContain('TaskList');
+    for (const panel of ['MainView', 'HistoryTab', 'TrendPanel', 'CyclePanel', 'Milestones'])
+      expect(names(h.value)).not.toContain(panel);
+
+    switcher().props.onValueChange('timeline');
+    h.render();
     expect(names(h.value)).toContain('HistoryTab');
-    expect(names(h.value)).not.toContain('MainView');
+    for (const panel of ['MainView', 'TaskList', 'TaskDrawer'])
+      expect(names(h.value)).not.toContain(panel);
+  });
+
+  it('keeps the view switch and the scope off the overview', () => {
+    const h = mount(() => BoardView(viewProps({ projectId: 'project-a', page: 'overview' })));
+    for (const label of [zh('board.tasks.view.label'), zh('board.tasks.scope.label')])
+      expect(nodes(h.value).some((n) => n.props['aria-label'] === label)).toBe(false);
+    for (const part of ['MainView', 'PublishBar', 'NewTask', 'EditButton'])
+      expect(names(h.value)).not.toContain(part);
   });
 
   it('decides from the history read whether a board with nothing in its range has a history', async () => {
+    pickTaskView('project-a', 'timeline');
     const counts = { ...board().counts, running: 0 };
     const model = board({ tasks: [], counts });
     const setup = setupRead('none');
-    const h = mount(() =>
-      BoardView(viewProps({ model, projectId: 'project-a', page: 'history', setup })),
-    );
+    const h = mount(() => BoardView(viewProps({ model, projectId: 'project-a', setup })));
     const tab = named(h.value, 'HistoryTab');
     const history = (tasks: unknown[]) => ({
       started_at: NOW,
@@ -248,81 +254,103 @@ describe('project board views', () => {
 });
 
 describe('project board bar', () => {
-  it('names the plan version of the lead that changed its plan last', () => {
+  it('names the plan version of the lead that changed its plan last, in the goals heading', () => {
     const model = board({
       leads: [
         lead('lead-1', { updated_at: NOW - HOUR, plan_version: 3 }),
         lead('lead-2', { updated_at: NOW, plan_version: 15 }),
       ],
     });
-    const h = mount(() => BoardView(viewProps({ model, projectId: 'project-a' })));
-    expect(text(h.value)).toContain('计划 v15');
-    expect(text(h.value)).not.toContain('计划 v3');
+    const h = mount(() =>
+      BoardView(viewProps({ model, projectId: 'project-a', page: 'overview' })),
+    );
+    const head = GoalsHead(named(h.value, 'GoalsHead').props);
+    expect(text(head)).toContain('计划 v15');
+    expect(text(head)).not.toContain('计划 v3');
   });
 
-  it('offers in progress and the last 3 and 7 days, in progress leaving the ended tasks out', () => {
-    const onRange = vi.fn();
-    const model = board({
-      tasks: [
-        task('lead-1:merged', { state: 'merged', status: 'done' }),
-        task('lead-1:failed', { state: 'failed', status: 'failed' }),
-        task('lead-1:running', { state: 'running' }),
-        task('session-done', { status: 'done' }),
-        task('session-discarded', { status: 'discarded' }),
-        task('session-idle', { status: 'idle' }),
-      ],
-    });
-    let range: 'active' | 7 = 7;
-    const h = mount(() => BoardView(viewProps({ model, range, onRange, projectId: 'project-a' })));
-    const ranges = labelled(h.value, zh('board.headline.range'));
-    expect(nodes(ranges.props.children).map(text)).toEqual([
-      zh('board.ranges.active'),
-      zhf('board.ranges.last', { days: 3 }),
-      zhf('board.ranges.last', { days: 7 }),
-    ]);
-    ranges.props.onValueChange('active');
-    expect(onRange).toHaveBeenCalledWith('active');
-    expect(named(h.value, 'MainView').props.model.tasks).toHaveLength(6);
-
-    range = 'active';
-    h.render();
-    expect(named(h.value, 'MainView').props.model.tasks.map((t: Task) => t.id)).toEqual([
-      'lead-1:failed',
-      'lead-1:running',
-      'session-idle',
-    ]);
-  });
-
-  it('keeps the ended tasks in the milestone, the drawer and the milestones panel under in progress', () => {
+  it('offers the current milestone and all, the current milestone listing its own tasks only', () => {
     const model = board({
       milestones: [milestone],
       tasks: [
         task('lead-1:merged', { state: 'merged', status: 'done', milestone_id: 'ms-cur' }),
         task('lead-1:running', { state: 'running', milestone_id: 'ms-cur' }),
+        task('lead-1:later', { state: 'running', milestone_id: 'ms-later' }),
+        task('session-loose', { status: 'idle' }),
+      ],
+    });
+    const h = mount(() => BoardView(viewProps({ model, projectId: 'project-a' })));
+    const scope = () => labelled(h.value, zh('board.tasks.scope.label'));
+    const ids = () => named(h.value, 'MainView').props.model.tasks.map((t: Task) => t.id);
+    expect(nodes(scope().props.children).map(text)).toEqual([
+      zh('board.tasks.scope.milestone'),
+      zh('board.tasks.scope.all'),
+    ]);
+    expect(scope().props.value).toBe('milestone');
+    expect(ids()).toEqual(['lead-1:merged', 'lead-1:running']);
+
+    scope().props.onValueChange('all');
+    h.render();
+    expect(scope().props.value).toBe('all');
+    expect(ids()).toEqual(['lead-1:merged', 'lead-1:running', 'lead-1:later', 'session-loose']);
+
+    pickTaskView('project-a', 'list');
+    h.render();
+    expect(named(h.value, 'TaskList').props.model.tasks).toHaveLength(4);
+    scope().props.onValueChange('milestone');
+    h.render();
+    expect(named(h.value, 'TaskList').props.model.tasks).toHaveLength(2);
+  });
+
+  it("lays out only the current milestone's tasks on the timeline, and the whole history for all", () => {
+    pickTaskView('project-a', 'timeline');
+    pickTaskScope('project-a', 'milestone');
+    const model = board({
+      milestones: [milestone],
+      tasks: [
+        task('lead-1:merged', { state: 'merged', status: 'done', milestone_id: 'ms-cur' }),
+        task('lead-1:later', { state: 'running', milestone_id: 'ms-later' }),
+      ],
+    });
+    const h = mount(() => BoardView(viewProps({ model, projectId: 'project-a' })));
+    const scope = () => labelled(h.value, zh('board.tasks.scope.label'));
+    expect(named(h.value, 'TaskTimelineView').props.model.tasks.map((t: Task) => t.id)).toEqual([
+      'lead-1:merged',
+    ]);
+    expect(names(h.value)).not.toContain('HistoryTab');
+    scope().props.onValueChange('all');
+    h.render();
+    expect(names(h.value)).toContain('HistoryTab');
+    expect(names(h.value)).not.toContain('TaskTimelineView');
+    expect(text(h.value).split(zh('board.tasks.scope.milestone'))).toHaveLength(2);
+  });
+
+  it('lists every task under the current milestone scope while the board has no current milestone', () => {
+    const model = board({
+      tasks: [task('lead-1:a', { state: 'running' }), task('lead-1:b', { state: 'merged' })],
+    });
+    const h = mount(() => BoardView(viewProps({ model, projectId: 'project-a' })));
+    expect(labelled(h.value, zh('board.tasks.scope.label')).props.value).toBe('milestone');
+    expect(named(h.value, 'MainView').props.model.tasks).toHaveLength(2);
+  });
+
+  it('keeps every task in the goals and the drawer whatever the scope', () => {
+    const model = board({
+      milestones: [milestone],
+      tasks: [
+        task('lead-1:merged', { state: 'merged', status: 'done', milestone_id: 'ms-cur' }),
+        task('lead-1:loose', { state: 'running' }),
       ],
     });
     const ids = (el: ReactElement<any>) => el.props.model.tasks.map((t: Task) => t.id);
-    const view = (page: 'now' | 'canvas') =>
-      mount(() => BoardView(viewProps({ model, range: 'active', page, projectId: 'project-a' })));
-    const now = view('now');
-    expect(ids(named(now.value, 'MainView'))).toEqual(['lead-1:running']);
-    expect(ids(named(now.value, 'MilestoneCard'))).toEqual(['lead-1:merged', 'lead-1:running']);
-    expect(ids(named(now.value, 'TaskDrawer'))).toEqual(['lead-1:merged', 'lead-1:running']);
-    const canvas = named(view('canvas').value, 'CanvasView');
-    const panels = canvas.props.panels.map((p: { node: ReactNode }) => p.node);
-    expect(ids(named(panels, 'Milestones'))).toEqual(['lead-1:merged', 'lead-1:running']);
-  });
-
-  it('offers the layout reset after a canvas reorder alone, and the reset puts the order back', () => {
-    saveCanvasOrder('reordered', ['trend', 'table', 'cycle', 'stall', 'milestones', 'risks']);
-    const h = mount(() => BoardView(viewProps({ page: 'canvas', projectId: 'reordered' })));
-    const menu = named(h.value, 'HiddenMenu');
-    const reset = (menu.type as (props: unknown) => ReactElement<any>)(menu.props);
-    expect(text(reset)).toBe(zh('board.layout.reset'));
-    reset.props.onClick();
-    expect(readCanvasOrder('reordered')).toEqual([]);
-    h.render();
-    expect(names(h.value)).not.toContain('HiddenMenu');
+    const view = (page: BoardPage) =>
+      mount(() => BoardView(viewProps({ model, page, projectId: 'project-a' }))).value;
+    const tasks = view('tasks');
+    expect(ids(named(tasks, 'MainView'))).toEqual(['lead-1:merged']);
+    expect(ids(named(tasks, 'TaskDrawer'))).toEqual(['lead-1:merged', 'lead-1:loose']);
+    const overview = view('overview');
+    expect(ids(named(overview, 'GoalsSection'))).toEqual(['lead-1:merged', 'lead-1:loose']);
+    expect(ids(named(overview, 'TaskDrawer'))).toEqual(['lead-1:merged', 'lead-1:loose']);
   });
 
   it('keeps new task in the bar and puts update, baseline and trace in the more menu', () => {
@@ -378,87 +406,98 @@ describe('project board bar', () => {
     expect(names(more.props.children)).not.toContain('NewTask');
   });
 
-  it('puts the since-you-left card above the strip of the milestone and the leads, in the now view only', () => {
-    const model = board({ milestones: [milestone], leads: [lead('lead-1')] });
-    const view = (page: 'now' | 'canvas') =>
-      mount(() => BoardView(viewProps({ model, page, projectId: 'project-a' }))).value;
-    const strip = (tree: ReactNode) =>
-      nodes(tree).find((n) => n.props['aria-label'] === zh('board.strip.label'));
-    const now = view('now');
-    expect(names(strip(now))).toEqual(expect.arrayContaining(['MilestoneCard', 'LeadPanel']));
-    expect(names(strip(now))).not.toContain('BriefCard');
-    const parts = names(now);
-    expect(parts).toContain('BriefCard');
-    expect(parts.indexOf('BriefCard')).toBeLessThan(parts.indexOf('MilestoneCard'));
-    const canvas = view('canvas');
-    expect(strip(canvas)).toBeUndefined();
-    expect(names(canvas)).not.toContain('BriefCard');
+  it('opens the flow chart from new task in the list view', () => {
+    const onPage = vi.fn();
+    const h = mount(() =>
+      BoardView(
+        viewProps({
+          projectId: 'project-a',
+          page: 'tasks',
+          onPage,
+          actions: { milestones: [], sessions: [], run: async () => null },
+        }),
+      ),
+    );
+    pickTaskView('project-a', 'list');
+    h.render();
+    named(h.value, 'NewTask').props.onNew();
+    expect(onPage).not.toHaveBeenCalled();
+    expect(mount(() => useTaskView('project-a')).value).toBe('flow');
   });
 
-  it('lets the flow chart take the height of the strips above and give it back, collapsed again on another project', () => {
-    let projectId = 'project-a';
+  it('lays out the overview as since you left, the agents and the goals, each section named', () => {
     const model = board({ milestones: [milestone], leads: [lead('lead-1')] });
-    const h = mount(() => BoardView(viewProps({ model, projectId })));
+    const view = (page: BoardPage) =>
+      mount(() => BoardView(viewProps({ model, page, projectId: 'project-a' }))).value;
+    const overview = view('overview');
+    const parts = names(overview);
+    const order = ['BriefCard', 'LeadPanel', 'GoalsSection'];
+    for (const part of order) expect(parts).toContain(part);
+    expect(order.map((part) => parts.indexOf(part))).toEqual(
+      order.map((part) => parts.indexOf(part)).sort((a, b) => a - b),
+    );
+    const headings = nodes(overview)
+      .filter((n) => n.type === 'h2')
+      .map(text);
+    expect(headings).toEqual(
+      expect.arrayContaining([zh('board.overview.agents'), zh('board.overview.goals')]),
+    );
+    const tasks = names(view('tasks'));
+    for (const part of order) expect(tasks).not.toContain(part);
+  });
+
+  it('leaves the agents out of an overview with no lead', () => {
+    const h = mount(() => BoardView(viewProps({ projectId: 'project-a', page: 'overview' })));
+    expect(names(h.value)).not.toContain('LeadPanel');
+    expect(text(h.value)).not.toContain(zh('board.overview.agents'));
+  });
+
+  it('lets the flow chart take the height of the requirement bar and give it back, collapsed again on another project', () => {
+    let projectId = 'project-a';
+    const model = board({ leads: [lead('lead-1')] });
+    const actions = { milestones: [], sessions: [], run: async () => null };
+    const h = mount(() => BoardView(viewProps({ model, projectId, actions })));
     const expand = () => named(h.value, 'MainView').props.expand;
-    // The element that holds the since-you-left card and the strip of the milestone and the leads.
-    const strips = () =>
-      find(
-        h.value,
-        (n) =>
-          typeof n.type === 'string' &&
-          [n.props.children].flat().some((c) => c?.type?.name === 'BriefCard') &&
-          [n.props.children]
-            .flat()
-            .some((c) => c?.props?.['aria-label'] === zh('board.strip.label')),
-      ).props.hidden;
+    const bar = () => names(h.value).includes('PublishBar');
     expect(expand().on).toBe(false);
-    expect(strips()).toBe(false);
+    expect(bar()).toBe(true);
     expand().onToggle();
     h.render();
     expect(expand().on).toBe(true);
-    expect(strips()).toBe(true);
-    expect(names(h.value)).toContain('NowSummary');
+    expect(bar()).toBe(false);
     expand().onToggle();
     h.render();
     expect(expand().on).toBe(false);
-    expect(strips()).toBe(false);
+    expect(bar()).toBe(true);
     expand().onToggle();
     h.render();
     projectId = 'project-b';
     h.render();
     expect(expand().on).toBe(false);
-    expect(strips()).toBe(false);
+    expect(bar()).toBe(true);
   });
 
-  it('tells the needs-you strip the expanded chart hides it, and collapses the chart when the strip asks', () => {
+  it('puts the requirement bar under the flow chart, whose replay bar it follows', () => {
+    const model = board({ leads: [lead('lead-1')] });
     const actions = { milestones: [], sessions: [], run: async () => null };
-    const asking = {
-      source: { table: 'sessions', id: 'lead-1', revision: 1 },
-      kind: 'lead.question',
-      request_id: 'question-1',
-      project_id: 'project-a',
-      session_id: 'lead-1',
-      status: 'pending',
-      created_at: NOW - 60_000,
-      reason: 'question',
-      actions: [],
-      unblocks: 0,
-    } as unknown as NonNullable<BoardModel['needs']>[number];
-    const model = board({ needs: [asking] });
-    const h = mount(() => BoardView(viewProps({ model, projectId: 'project-a', actions })));
-    const expand = () => named(h.value, 'MainView').props.expand;
-    const strip = () => named(h.value, 'ProjectNeeds').props;
-    expect(strip().hidden).toBe(false);
-    expand().onToggle();
-    h.render();
-    expect(strip().hidden).toBe(true);
-    strip().onShow();
-    h.render();
-    expect(expand().on).toBe(false);
-    expect(strip().hidden).toBe(false);
+    const parts = names(
+      mount(() => BoardView(viewProps({ model, projectId: 'project-a', actions }))).value,
+    );
+    expect(parts.indexOf('MainView')).toBeGreaterThanOrEqual(0);
+    expect(parts.indexOf('PublishBar')).toBeGreaterThan(parts.indexOf('MainView'));
   });
 
-  it('lists what needs the user under the requirement bar and the since-you-left card, and nothing when nothing does', () => {
+  it('takes a jump to a needs-you row from the flow chart and the drawer to the overview', () => {
+    const onPage = vi.fn();
+    const actions = { milestones: [], sessions: [], run: async () => null };
+    const h = mount(() => BoardView(viewProps({ projectId: 'project-a', actions, onPage })));
+    named(h.value, 'MainView').props.onAskNeed('approval-1');
+    expect(onPage).toHaveBeenCalledWith('overview');
+    named(h.value, 'TaskDrawer').props.onAskNeed('approval-1');
+    expect(onPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('lists what needs the user under the since-you-left card on the overview, and nothing when nothing does', () => {
     const actions = { milestones: [], sessions: [], run: async () => null };
     const waiting = {
       source: { table: 'approvals', id: 'approval-1', revision: 1 },
@@ -471,63 +510,34 @@ describe('project board bar', () => {
       actions: [{ command: 'approval.respond', allowed: true }],
       unblocks: 0,
     } as unknown as NonNullable<BoardModel['needs']>[number];
-    const view = (needs: NonNullable<BoardModel['needs']>) =>
+    const view = (needs: NonNullable<BoardModel['needs']>, page: BoardPage = 'overview') =>
       mount(() =>
-        BoardView(viewProps({ model: board({ needs }), projectId: 'project-a', actions })),
+        BoardView(viewProps({ model: board({ needs }), page, projectId: 'project-a', actions })),
       ).value;
     const listed = view([waiting]);
     const parts = names(listed);
-    expect(parts.indexOf('PublishBar')).toBeGreaterThanOrEqual(0);
-    expect(parts.indexOf('PublishBar')).toBeLessThan(parts.indexOf('BriefCard'));
+    expect(parts).not.toContain('PublishBar');
+    expect(parts.indexOf('BriefCard')).toBeGreaterThanOrEqual(0);
     expect(parts.indexOf('BriefCard')).toBeLessThan(parts.indexOf('ProjectNeeds'));
     const strip = named(listed, 'ProjectNeeds');
     expect(strip.props.model.needs).toEqual([waiting]);
     expect(strip.props.run).toBe(actions.run);
     expect(names(view([]))).not.toContain('ProjectNeeds');
+    expect(names(view([waiting], 'tasks'))).not.toContain('ProjectNeeds');
   });
 });
 
 describe('milestone line', () => {
-  it.each(
-    [
-      {
-        name: 'draws one bar part per state of the tasks of the milestone alone, its counts in the bar name',
-        // Two of its three merged tasks ended before the board's window; the plan has more tasks.
-        tasks: { done: 3, total: 6 },
-        states: [
-          ['lead-1:merged', 'done'],
-          ['lead-1:run-a', 'running'],
-          ['lead-1:run-b', 'running'],
-          ['lead-1:next', 'todo'],
-          ['lead-1:other', 'waiting', 'ms-later'],
-          ['lead-1:loose', 'failed', null],
-        ],
-        label: '6 个任务：3 已合并，2 运行，1 排队',
-        parts: [
-          ['merged', 3],
-          ['running', 2],
-          ['queued', 1],
-        ],
-      },
-      {
-        name: 'gives the discarded tasks of the milestone their own bar part, counted in the bar name',
-        tasks: { done: 1, total: 4 },
-        states: [
-          ['lead-1:merged', 'done'],
-          ['lead-1:next', 'todo'],
-          ['lead-1:drop-a', 'discarded'],
-          ['lead-1:drop-b', 'discarded'],
-        ],
-        label: '4 个任务：1 已合并，1 排队，2 已丢弃',
-        parts: [
-          ['merged', 1],
-          ['queued', 1],
-          ['discarded', 2],
-        ],
-      },
-    ].map((row) => [row.name, row] as const),
-  )('%s', (_name, { tasks, states, label, parts }) => {
-    const own = { ...milestone, tasks };
+  it('draws a cell per task of the milestone alone, the grid naming each state with its count', () => {
+    const own = { ...milestone, tasks: { done: 3, total: 6 } };
+    const states = [
+      ['lead-1:merged', 'done'],
+      ['lead-1:run-a', 'running'],
+      ['lead-1:run-b', 'running'],
+      ['lead-1:next', 'todo'],
+      ['lead-1:other', 'waiting', 'ms-later'],
+      ['lead-1:loose', 'failed', null],
+    ];
     const model = board({
       milestones: [own],
       tasks: states.map(([id, status, ms = 'ms-cur']) =>
@@ -537,14 +547,25 @@ describe('milestone line', () => {
     const out = new HookHost(() =>
       MilestoneCard({ model, milestone: own, onOpenTask: noop }),
     ).render();
-    const bar = find(out, (n) => n.props.className === 'bms-bar');
-    expect(bar.props.role).toBe('img');
-    expect(bar.props['aria-label']).toBe(label);
+    const grid = find(out, (n) => n.props.className === 'bms-tg');
+    const label = (status: Task['status']) => STATUS[status].label;
+    expect(grid.props['aria-label']).toBe(
+      zhf('board.plan.milestone.bar', {
+        count: 4,
+        parts: [
+          zhf('board.overview.statePart', { state: label('done'), count: 1 }),
+          zhf('board.overview.statePart', { state: label('running'), count: 2 }),
+          zhf('board.overview.statePart', { state: label('todo'), count: 1 }),
+        ].join('，'),
+      }),
+    );
     expect(
-      nodes(bar.props.children).map((n) => [n.props['data-part'], n.props.style.flexGrow]),
-    ).toEqual(parts);
+      nodes(grid)
+        .filter((n) => n.props.className === 'bms-tk')
+        .map((n) => n.key),
+    ).toEqual(['lead-1:merged', 'lead-1:run-a', 'lead-1:run-b', 'lead-1:next']);
   });
-  it('keeps the acceptance, criteria, due date and task cells behind the button that ends the line', () => {
+  it('keeps the acceptance, criteria and due date behind the button that ends the line, the task cells under it', () => {
     const stored = {
       id: 'ms-cur',
       revision: 2,
@@ -575,11 +596,7 @@ describe('milestone line', () => {
       }),
     ).render();
     expect(nodes(find(out, (n) => n.type === 'h2').props.children)).toHaveLength(0);
-    const details = find(out, (n) =>
-      nodes(n.props.children).some(
-        (c) => c.props['aria-label'] === zh('board.plan.milestone.details'),
-      ),
-    );
+    const details = find(out, (n) => n.props.className === 'pop bms-pop');
     const inside = (predicate: (n: ReactElement<any>) => boolean) =>
       nodes(details.props.children).some(predicate);
     expect(inside((n) => n.props['aria-label'] === '验收 refunds rollout')).toBe(true);
@@ -589,12 +606,13 @@ describe('milestone line', () => {
         (n) => n.type === 'input' && n.props['aria-label'] === zh('board.plan.milestone.dueOn'),
       ),
     ).toBe(true);
-    expect(inside((n) => n.props.className === 'bms-cell')).toBe(true);
+    expect(inside((n) => n.props.className === 'bms-tk')).toBe(false);
+    expect(nodes(out).filter((n) => n.props.className === 'bms-tk')).toHaveLength(1);
   });
 });
 
 describe('lead line', () => {
-  it('shows the runtime, a state glyph, what the lead does and a button opening it', () => {
+  it('shows the runtime, its name opening it, a state glyph and what the lead does', () => {
     const onOpenSession = vi.fn();
     const out = new HookHost(() =>
       LeadPanel({
@@ -626,10 +644,9 @@ describe('lead line', () => {
       }),
     );
     const open = find(out, (n) => n.type === 'button');
-    expect(text(open)).toBe(zh('board.lead.line.open'));
+    expect(text(open)).toBe('plan lead');
     open.props.onClick();
     expect(onOpenSession).toHaveBeenCalledWith('lead-a');
-    expect(text(out)).not.toContain('plan lead');
   });
 
   it('shows a lead whose question waits for the user as awaiting an answer, with the question', () => {

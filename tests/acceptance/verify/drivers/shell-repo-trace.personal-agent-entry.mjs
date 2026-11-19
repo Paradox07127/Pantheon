@@ -332,7 +332,10 @@ const turnsBefore = (await query('board')).session_turns.filter(
   (t) => t.session_id === sessions1[0]?.id,
 ).length;
 const convoText = () =>
-  page.evaluate(`document.querySelector('main[aria-label="对话"]')?.innerText ?? ''`);
+  // Kept screens stay mounted hidden; only the shown conversation counts.
+  page.evaluate(
+    `[...document.querySelectorAll('main[aria-label="对话"]')].find((m) => m.getClientRects().length > 0)?.innerText ?? ''`,
+  );
 check('对照组：发送前对话里没有这条回复', !(await convoText()).includes(REPLY));
 await page.fill({ role: 'textbox', name: '发给 个人级智能体', exact: true }, MESSAGE);
 await page.click({ role: 'button', name: '发送', exact: true });

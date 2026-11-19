@@ -56,6 +56,21 @@
   height: 12px;
 }
 
+/* The stage count, and the checks row's first failed step or the command waiting for approval */
+.bd-nd .bd-nstn {
+  font-variant-numeric: tabular-nums;
+}
+.bd-nfail,
+.bd-ncmd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  color: var(--tx2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* A blocked task's leading glyph, which names its blockers */
 .bd-nst {
   display: inline-flex;

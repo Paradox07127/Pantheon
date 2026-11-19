@@ -52,7 +52,6 @@ import {
 } from '@/data/plan-edit';
 import { Select } from '@/components/Select';
 import { ContractFields, PlanEdit } from '@/screens/board/PlanEdit';
-import { ProgressTable } from '@/screens/board/ProgressTable';
 import { UnsentEdits } from '@/screens/board/UnsentEdits';
 import type { SnapshotSession } from '@/screens/board/panels-model';
 import { zh, zhf } from './i18n-setup.js';
@@ -620,63 +619,6 @@ describe('moving a plan task', () => {
     expect(moveTaskOp(model, 'lead-1:a', 'lead-2:x')).toBeNull();
     const op = moveTaskOp(model, 'lead-1:a', 'lead-1:b');
     expect(accepted([op])).toBe(true);
-  });
-
-  const table = (projectId?: string) =>
-    mount(() =>
-      ProgressTable({
-        model: board([task('b', { order: 1 }), task('a', { order: 0 }), task('c', { order: 2 })]),
-        onOpenTask() {},
-        ...(projectId ? { projectId } : {}),
-      }),
-    );
-  const rows = (h: HookHost<any>) =>
-    nodes(h.value).filter((n) => n.props.className === 'bp-tr bp-trw');
-
-  it('lists the plan in its order and sends move_task from the row menu', async () => {
-    const h = table('project-a');
-    expect(rows(h).map((n) => n.key)).toEqual(['lead-1:a', 'lead-1:b', 'lead-1:c']);
-    const items = (row: ReactElement<any>, name: string) =>
-      find(row, (n) => n.props.role === undefined && text(n) === name && 'disabled' in n.props)
-        .props;
-    expect(items(rows(h)[0]!, zh('board.progress.order.up')).disabled).toBe(true);
-    items(rows(h)[1]!, zh('board.progress.order.up')).onClick();
-    await h.flush();
-    expect(runCommand.mock.calls).toEqual([
-      [
-        'board.plan.edit',
-        { ...scope, base_version: 3, ops: [{ type: 'move_task', task_id: 'b', before: 'a' }] },
-        null,
-      ],
-    ]);
-  });
-
-  it('moves a row dropped on another row of the same lead', async () => {
-    const h = table('project-a');
-    const transfer = { setData() {}, effectAllowed: '', dropEffect: '' };
-    const drag = { preventDefault: vi.fn(), dataTransfer: transfer };
-    expect(rows(h)[0]!.props.draggable).toBe(true);
-    rows(h)[0]!.props.onDragStart(drag);
-    h.render();
-    rows(h)[2]!.props.onDragOver(drag);
-    h.render();
-    expect(drag.preventDefault).toHaveBeenCalled();
-    rows(h)[2]!.props.onDrop(drag);
-    await h.flush();
-    expect(runCommand.mock.calls[0]![1].ops).toEqual([
-      { type: 'move_task', task_id: 'a', before: null },
-    ]);
-  });
-
-  it('does not drag while a column sort is on, or without a project', () => {
-    const h = table('project-a');
-    label(
-      h.value,
-      zhf('board.progress.sortBy', { column: zh('board.progress.columns.task') }),
-    ).onClick();
-    h.render();
-    expect(rows(h).every((n) => !n.props.draggable)).toBe(true);
-    expect(rows(table()).every((n) => !n.props.draggable)).toBe(true);
   });
 });
 

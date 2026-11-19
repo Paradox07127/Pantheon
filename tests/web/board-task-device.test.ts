@@ -8,7 +8,7 @@ vi.mock('@/data/devices', () => ({
   useDevices: () => ({ read: devices.read, reload: async () => {} }),
 }));
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
-import { TaskGroups } from '@/screens/board/TaskGroups';
+import { TaskList } from '@/screens/board/TaskList';
 
 type Task = BoardModel['tasks'][number];
 
@@ -42,7 +42,11 @@ const task = (id: string, planned?: Task['planned']): Task =>
 
 const row = (t: Task) =>
   renderToStaticMarkup(
-    createElement(TaskGroups, { model: { tasks: [t], needs: [] }, onOpenTask() {} }),
+    createElement(TaskList, {
+      model: { tasks: [t], needs: [], now: NOW },
+      onOpenTask() {},
+      bar: null,
+    }),
   );
 
 const drawer = (t: Task) =>
@@ -73,18 +77,9 @@ const sent = task('sent', {
 });
 
 describe('task row device', () => {
-  it('shows the device a task is sent to', () => {
-    expect(row(task('remote', { device: 'ws' }))).toContain('<span class="chip mono">ws</span>');
-  });
-
-  it('shows no device for a task on this computer', () => {
-    expect(row(task('plain'))).not.toContain('chip mono');
-    expect(row(task('here', { device: 'local' }))).not.toContain('chip mono');
-  });
-
   it('says what the task waits for on the device, without the queued prefix', () => {
     const html = row(task('ws-gpu', { device: 'ws', uses: { gpu: 1 } }));
-    expect(html).toContain('<span class="btl-why">等ws的gpu</span>');
+    expect(html).toContain('<span class="btk-why">等ws的gpu</span>');
     expect(html).not.toContain('排队中');
   });
 });

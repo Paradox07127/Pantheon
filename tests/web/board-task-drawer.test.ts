@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import type { BackendSummary, BoardModel } from '@pantheon/protocol';
+import type {
+  BackendSummary,
+  BoardModel,
+  SessionDiff,
+  SessionGatesHistory,
+} from '@pantheon/protocol';
 import { find, named, nodes, text, mount, unmountAll } from './web-hook-host.js';
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true }),
@@ -9,13 +14,23 @@ vi.mock('react', async (actual) =>
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
-const { editPlan, backends, models } = vi.hoisted(() => ({
+const { editPlan, backends, models, gateRuns, diffFiles } = vi.hoisted(() => ({
   editPlan: vi.fn(async (..._args: unknown[]) => ({ kind: 'applied' })),
   backends: [] as BackendSummary[],
   models: {} as Record<string, ModelsState>,
+  gateRuns: [] as SessionGatesHistory['runs'],
+  diffFiles: { value: null as SessionDiff['files'] | null },
 }));
 vi.mock('@/data/plan-edit', async (actual) => ({ ...(await actual<object>()), editPlan }));
 vi.mock('@/data/backends', () => ({ useBackends: () => backends }));
+vi.mock('@/data/session-panel', async (actual) => ({
+  ...(await actual<object>()),
+  useSessionGatesHistory: () => ({ data: { runs: gateRuns }, loading: false, error: null }),
+}));
+vi.mock('@/data/workbench-sessions', async (actual) => ({
+  ...(await actual<object>()),
+  useSessionDiff: () => ({ data: diffFiles.value && { files: diffFiles.value }, error: null }),
+}));
 vi.mock('@/data/runtime-models', async (actual) => ({
   ...(await actual<object>()),
   useRuntimeModels: (_project: string | null, runtimes: readonly string[]) =>
@@ -175,6 +190,8 @@ beforeEach(() => {
   for (const runtime of Object.keys(models)) delete models[runtime];
   focusRequest(null);
   useDrafts.setState({ drafts: {} });
+  gateRuns.splice(0);
+  diffFiles.value = null;
 });
 afterEach(() => {
   unmountAll();
@@ -679,5 +696,169 @@ describe('the rest of the task drawer', () => {
     );
     expect(css).not.toMatch(/\d(vh|vw|dvh|svh)\b|position:\s*fixed/);
     expect(css).toMatch(/container:\s*bd-drw \/ inline-size/);
+  });
+});
+
+describe('the task drawer graphics', () => {
+  const failing = row('f', {
+    status: 'failed',
+    state: 'failed',
+    checks: 'fail',
+    milestone_id: 'ms-sign',
+    claim: { session_id: 'session-b', runtime: 'codex', model: null },
+    additions: 212,
+    deletions: 40,
+    gate_steps: [
+      { name: 'lint', state: 'passed' },
+      { name: 'test:web', state: 'failed', tests: { passed: 40, failed: 3, skipped: 0 } },
+      { name: 'typecheck', state: 'passed' },
+    ],
+  });
+  const result = (name: string, duration_ms: number) => ({ name, command: [], duration_ms });
+  const pipeline = () => {
+    const checks = inner(drawer(failing.id, [failing]).value, 'GateChecks');
+    const blocks = nodes(checks.value).filter((n) => n.props.className === 'bd-gp-s');
+    return {
+      checks,
+      graphic: find(checks.value, (n) => n.props.className === 'bd-gp'),
+      names: blocks.map((n) => text(find(n, (c) => c.props.className === 'bd-gp-n'))),
+      grow: blocks.map((n) => n.props.style.flexGrow as number),
+    };
+  };
+
+  it('draws one block per gate step, failed first, as wide as the newest run timed it', () => {
+    gateRuns.push(
+      {
+        run_id: 'new',
+        commit: 'c2',
+        started_at: '',
+        finished_at: '',
+        results: [result('lint', 6_000), result('test:web', 72_000), result('typecheck', 18_000)],
+      },
+      { run_id: 'old', commit: 'c1', started_at: '', finished_at: '', results: [] },
+    );
+    const { checks, graphic, names, grow } = pipeline();
+    expect(names).toEqual(['test:web', 'lint', 'typecheck']);
+    expect(grow[0]! / grow[1]!).toBe(12);
+    expect(grow[2]! / grow[1]!).toBe(3);
+    expect(graphic.props.role).toBe('img');
+    expect(graphic.props['aria-label']).toContain(
+      zhf('board.drawer.gate.testsFailed', { count: 3 }),
+    );
+    expect(text(find(checks.value, (n) => n.props.className === 'bd-dsv'))).toBe(
+      zhf('lib.time.minutesSeconds', { minutes: 1, seconds: 36 }),
+    );
+  });
+
+  it('draws even blocks without the run times, and reruns only the failed steps of the session', async () => {
+    const { checks, grow } = pipeline();
+    expect(grow).toEqual([1, 1, 1]);
+    expect(nodes(checks.value).some((n) => n.props.className === 'bd-dsv')).toBe(false);
+    button(checks.value, zh('board.drawer.gate.rerunFailed')).props.onClick();
+    await checks.flush();
+    expect(run.mock.calls).toEqual([
+      ['session.gates.run', { session_id: 'session-b', only_failed: true }, 7],
+    ]);
+  });
+
+  it('gives each changed file a bar scaled to the largest file, beside the totals', () => {
+    diffFiles.value = [
+      { path: 'tests/acceptance/verify/run.mjs', additions: 148, deletions: 31, untracked: false },
+      { path: 'drivers/window.mjs', additions: 64, deletions: 9, untracked: false },
+    ];
+    const tree = drawer(failing.id, [failing]).value;
+    const cells = find(tree, (n) => n.props.className === 'bd-dcells');
+    expect(cells.props['aria-label']).toBe(
+      zhf('board.drawer.changes.total', { additions: 212, deletions: 40 }),
+    );
+    expect(nodes(cells).map((n) => n.props['data-k'] ?? null)).toEqual([
+      null,
+      'a',
+      'a',
+      'a',
+      'a',
+      'd',
+    ]);
+    const files = inner(tree, 'ChangedFiles').value;
+    const bars = nodes(files).filter((n) => n.props.className === 'bd-dfb');
+    expect(bars.map((n) => n.props['aria-label'])).toEqual([
+      zhf('board.drawer.changes.file', {
+        path: 'tests/acceptance/verify/run.mjs',
+        additions: 148,
+        deletions: 31,
+      }),
+      zhf('board.drawer.changes.file', { path: 'drivers/window.mjs', additions: 64, deletions: 9 }),
+    ]);
+    expect(
+      bars.map((n) =>
+        nodes(n)
+          .filter((i) => i.type === 'i')
+          .map((i) => i.props.style.flexGrow),
+      ),
+    ).toEqual([
+      [148, 31, 0],
+      [64, 9, 106],
+    ]);
+  });
+
+  it('draws the budget as two rings named by their percent', () => {
+    const spent = row('r', {
+      started_at: NOW - 60_000,
+      budget: {
+        ratio: 0.62,
+        input_tokens: 1_240_000,
+        wall_ms: 41 * 60_000,
+        limit: { input_tokens: 2_000_000, wall_ms: 90 * 60_000 },
+      },
+    });
+    const rings = nodes(drawer(spent.id, [spent]).value).filter(
+      (n) => n.props.className === 'bd-drg-c',
+    );
+    expect(rings.map((n) => [n.props.role, n.props['aria-label']])).toEqual([
+      ['img', zhf('board.recovery.budget.tokensMeter', { percent: 62 })],
+      ['img', zhf('board.recovery.budget.timeMeter', { percent: 46 })],
+    ]);
+  });
+
+  it('draws the upstream tasks, the task and its milestone, the met dependency in green', () => {
+    const tasks = [plan[0]!, failing];
+    const model = { ...board(tasks), edges: [{ from: plan[0]!.id, to: failing.id, state: 'met' }] };
+    const tree = mount(() =>
+      TaskDrawer({
+        model: model as BoardModel,
+        taskId: failing.id,
+        onSelect: noop,
+        onOpenSession: noop,
+        onOpenStory: noop,
+      }),
+    ).value;
+    const graph = find(tree, (n) => n.props.className === 'bd-dg');
+    expect(graph.props.role).toBe('img');
+    expect(graph.props['aria-label']).toContain('task a');
+    expect(graph.props['aria-label']).toContain('signing');
+    const boxes = nodes(graph).filter((n) => String(n.props.className).startsWith('bd-dg-'));
+    expect(boxes.map((n) => [n.props.className, text(n)])).toEqual([
+      ['bd-dg-c', 'task a'],
+      ['bd-dg-n', 'task a'],
+      ['bd-dg-n bd-dg-me', 'task f'],
+      ['bd-dg-ms', '0 / 0signing'],
+      ['bd-dg-mh', '0 / 0'],
+      ['bd-dg-mn', '0 / 0'],
+    ]);
+    expect(
+      nodes(graph)
+        .filter((n) => n.type === 'path')
+        .map((n) => n.props['data-met']),
+    ).toEqual([true, undefined]);
+  });
+
+  it('heads the details with the hand-backs and the milestone', () => {
+    const handed = row('h', {
+      ...failing,
+      activity: { phase: 'idle', since: NOW, health: 'fresh', attempt: 3, handed_back: ['a', 'b'] },
+    });
+    const meta = find(drawer(handed.id, [handed]).value, (n) => n.props.className === 'bd-dmeta');
+    expect(text(meta)).toContain(zhf('board.recovery.step.handedBackCount', { count: 2 }));
+    expect(text(meta)).toContain('signing');
   });
 });

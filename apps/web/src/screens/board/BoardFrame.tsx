@@ -13,6 +13,7 @@ import { useImprovements, type Improvement } from '../../data/workflow-policy';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
 import { acceptEvidence } from './Charts';
+import { ProposalEdit } from './PlanProposals';
 import {
   leadState,
   boardNeeds,
@@ -119,7 +120,15 @@ export function needContext(
   improvements: readonly Improvement[] | null,
 ): Pick<
   RequestCardProps,
-  'who' | 'session' | 'lead' | 'task' | 'rung' | 'milestone' | 'improvement'
+  | 'who'
+  | 'session'
+  | 'lead'
+  | 'task'
+  | 'rung'
+  | 'milestone'
+  | 'improvement'
+  | 'taskMilestone'
+  | 'proposal'
 > {
   const session = sessions.find((s) => s.id === needSession(item));
   const lead = session?.task && sessions.find((s) => s.id === session.task!.lead_session_id);
@@ -130,7 +139,27 @@ export function needContext(
     item.source.table === 'milestones'
       ? model.milestones?.find((m) => m.id === item.source.id)
       : undefined;
+  const proposal =
+    item.kind === 'board.plan.proposal'
+      ? model.leads
+          ?.find((l) => l.session_id === item.session_id)
+          ?.pending_proposals?.find((p) => p.id === item.request_id)
+      : undefined;
   return {
+    taskMilestone: task
+      ? model.milestones?.find((m) => m.id === task.milestone_id)?.title
+      : undefined,
+    proposal: proposal && {
+      view: proposal,
+      edit: (close) => (
+        <ProposalEdit
+          model={model}
+          projectId={item.project_id}
+          proposal={proposal}
+          onCancel={close}
+        />
+      ),
+    },
     who: needWho(item, model, sessions),
     session,
     lead: lead || undefined,
@@ -384,6 +413,8 @@ export function NeedsStrip({
     card?.scrollIntoView({ block: 'nearest' });
     (primaries.current.get(current ?? '') ?? card?.querySelector('button'))?.focus();
   }, [current, shown]);
+  // Every row's wait bar is on the scale of the longest wait, folded rows included.
+  const longest = Math.max(0, ...(needs ?? []).map((item) => model.now - item.created_at));
   return (
     <Fold open={listed.length > 0}>
       <section
@@ -394,6 +425,12 @@ export function NeedsStrip({
           <span className="ss-dot waiting" aria-hidden="true" />
           <b>{t({ id: 'board.frame.needs', defaultMessage: 'Needs you' })}</b>
           <span className="bf-strip-n">{needs?.length}</span>
+          <span className="bf-strip-w">
+            {t(
+              { id: 'board.needs.longestWait', defaultMessage: 'Longest wait {duration}' },
+              { duration: durationText(longest) },
+            )}
+          </span>
         </div>
         <ul ref={list} className="bf-needs">
           {shown?.map((item) => {
@@ -408,6 +445,7 @@ export function NeedsStrip({
                   item={item}
                   size="compact"
                   now={model.now}
+                  waitScale={longest}
                   run={run}
                   onOpenSession={onOpenSession}
                   stale={stale}

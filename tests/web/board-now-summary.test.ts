@@ -1,33 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
+import { describe, expect, it } from 'vitest';
 import type { BoardModel, BoardSegment } from '@pantheon/protocol';
-import { find, nodes, text, mount, unmountAll } from './web-hook-host.js';
-const mock = vi.hoisted(() => ({ board: {} as any }));
-vi.mock('react', async (actual) =>
-  (await import('./web-hook-host.js')).reactMock(actual, { useId: 'summary-id' }),
-);
-vi.mock('@/data/board', () => ({
-  useBoard: Object.assign((selector: any) => selector(mock.board), {
-    getState: () => mock.board,
-  }),
-}));
-vi.mock('@/store', () => ({
-  useShell: Object.assign(
-    (selector: any) => selector({ openSession() {}, openSessionGroup() {}, openTaskSession() {} }),
-    { setState() {} },
-  ),
-}));
 import { nowSummary } from '@/data/now-summary';
-import { NowSummary } from '@/screens/board/NowSummary';
-import { BoardView } from '@/screens/board/BoardScreen';
-import { zh, zhf } from './i18n-setup.js';
 
 // Local noon, so the day boundaries below are the user's calendar days.
 const NOW = new Date(2026, 10, 13, 12).getTime();
 const TODAY = new Date(2026, 10, 13).getTime();
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
-const noop = () => {};
 
 type Task = BoardModel['tasks'][number];
 const segment = (session_id: string, extra: Partial<BoardSegment> = {}): BoardSegment => ({
@@ -155,34 +134,6 @@ const full = () =>
     merges: [merge(TODAY + HOUR), merge(TODAY + 2 * HOUR), merge(TODAY - 2 * DAY + HOUR)],
   });
 
-const labelled = (tree: ReactNode, label: string) =>
-  find(tree, (n) => n.props['aria-label'] === label);
-
-beforeEach(() => {
-  mock.board = {
-    board: { cursor: 1, projects: [], sessions: [], session_turns: [], workspaces: [] },
-    events: [],
-    status: { state: 'live' },
-    resync: 0,
-    refresh() {},
-  };
-  const stored = new Map<string, string>();
-  vi.stubGlobal('localStorage', {
-    getItem: (key: string) => stored.get(key) ?? null,
-    setItem: (key: string, value: string) => stored.set(key, value),
-  });
-  vi.stubGlobal('window', {
-    pantheon: {
-      query: vi.fn(() => new Promise(() => {})),
-      command: vi.fn(async () => ({ ok: true, value: null })),
-    },
-  });
-});
-afterEach(() => {
-  unmountAll();
-  vi.unstubAllGlobals();
-});
-
 describe('now summary figures', () => {
   it("counts today's ended sessions, first-pass gates, usage per runtime and merges per day", () => {
     const summary = nowSummary(full())!;
@@ -208,89 +159,5 @@ describe('now summary figures', () => {
       usage: null,
       merged: { today: 1, days: [{ day: '2026-11-13', count: 1 }] },
     });
-  });
-});
-
-describe('now summary strip', () => {
-  it('draws nothing when the board has nothing to sum up', () => {
-    expect(mount(() => NowSummary({ model: board(), onOpenSession: noop })).value).toBeNull();
-  });
-
-  it('puts each part in a cell of one panel, every small graphic beside its number', () => {
-    const h = mount(() => NowSummary({ model: full(), onOpenSession: noop }));
-    const panel = labelled(h.value, zh('board.summary.label'));
-    expect(panel.props.className).toContain('panel');
-    const cells = nodes(panel.props.children).filter((n) =>
-      String(n.props.className).split(' ').includes('cell'),
-    );
-    expect(cells).toHaveLength(4);
-    expect(text(cells[0])).toContain(`${zh('board.summary.ended')}2`);
-    expect(text(cells[1])).toContain(zh('board.summary.gate'));
-    expect(labelled(cells[1], zhf('board.summary.gate.ring', { percent: 67 })).props.role).toBe(
-      'img',
-    );
-    expect(text(cells[1])).toContain(
-      `67%${zhf('board.summary.gate.count', { first: 2, total: 3 })}`,
-    );
-    expect(text(cells[2])).toContain(zh('board.summary.usage'));
-    expect(text(cells[2])).toContain('300');
-    expect(
-      labelled(cells[2], zhf('board.summary.usage.share', { runtime: 'Claude', percent: 75 })).props
-        .role,
-    ).toBe('meter');
-    expect(text(cells[3])).toContain(`${zh('board.summary.merged')}2`);
-    expect(
-      find(cells[3], (n) => n.props.label === zhf('board.summary.merged.bars', { count: 7 })).props
-        .values,
-    ).toHaveLength(7);
-  });
-
-  it('opens the ended sessions as a list, each row opening its session', () => {
-    const onOpenSession = vi.fn();
-    const h = mount(() => NowSummary({ model: full(), onOpenSession }));
-    const toggle = () => find(h.value, (n) => n.props['aria-expanded'] !== undefined);
-    expect(toggle().props['aria-expanded']).toBe(false);
-    expect(nodes(h.value).some((n) => n.type === 'ul')).toBe(false);
-    toggle().props.onClick();
-    h.render();
-    expect(toggle().props['aria-expanded']).toBe(true);
-    const list = find(h.value, (n) => n.type === 'ul');
-    expect(toggle().props['aria-controls']).toBe(list.props.id);
-    const rows = nodes(list.props.children).filter((n) => n.type === 'button');
-    expect(rows.map((row) => text(row))).toEqual(['s-first2 小时', 's-failed2 小时']);
-    rows[1]!.props.onClick();
-    expect(onOpenSession).toHaveBeenCalledWith('s-failed');
-  });
-
-  it('drops the cell of a part without data', () => {
-    const h = mount(() => NowSummary({ model: { ...full(), usage: [] }, onOpenSession: noop }));
-    expect(text(h.value)).not.toContain(zh('board.summary.usage'));
-    expect(labelled(h.value, zh('board.summary.label')).props.style.gridTemplateColumns).toBe(
-      'minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr)',
-    );
-  });
-
-  it('sits under the now view only', () => {
-    const shown = (page: 'now' | 'canvas') =>
-      nodes(
-        mount(() =>
-          BoardView({
-            model: full(),
-            loading: false,
-            error: null,
-            onRetry: noop,
-            range: 7,
-            onRange: noop,
-            page,
-            onPage: noop,
-            projectId: 'project-a',
-            onOpenSession: noop,
-            onOpenStory: noop,
-            onOpenTrace: noop,
-          }),
-        ).value,
-      ).some((n) => n.type === NowSummary);
-    expect(shown('now')).toBe(true);
-    expect(shown('canvas')).toBe(false);
   });
 });

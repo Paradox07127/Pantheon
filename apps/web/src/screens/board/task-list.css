@@ -1,0 +1,236 @@
+/* The task list: a share bar over one table read through graphics. */
+.btk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.btk-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.btk-share {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  height: 8px;
+}
+.btk-share i {
+  min-width: 2px;
+  border-radius: 2px;
+}
+.btk-lg > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btk-ln {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.btk-tb {
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  background: var(--sf);
+  overflow: hidden;
+}
+.btk-r {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 120px 160px 112px 136px;
+  align-items: center;
+  column-gap: 12px;
+  height: var(--row);
+  padding: 0 16px 0 8px;
+  border-top: var(--hair) solid var(--bd2);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.btk-r:hover {
+  background: var(--sf2);
+}
+.btk-r:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.btk-hr {
+  border-top: 0;
+  font-size: var(--fs-xs);
+  color: var(--mu);
+}
+.btk-hr:hover {
+  background: none;
+}
+.btk-th {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.btk-sb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  transition: color var(--dur-1) var(--ease-std);
+}
+.btk-sb:hover,
+.btk-sb[data-on] {
+  color: var(--tx);
+}
+.btk-sb svg {
+  width: 12px;
+  height: 12px;
+}
+.btk-c {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.btk-st {
+  display: inline-flex;
+}
+.btk-tt > :first-child {
+  min-width: 0;
+}
+.btk-stk {
+  flex: none;
+}
+.btk-stk::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.btk-why {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+}
+.btk-n {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}
+.btk-n[data-faint] {
+  color: var(--mu);
+}
+.btk-stg {
+  display: flex;
+  gap: 2px;
+  width: 80px;
+  flex: none;
+}
+.btk-stg i {
+  flex: 1;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--sf3);
+}
+.btk-stg i[data-at='done'] {
+  background: var(--ok);
+}
+.btk-stg i[data-at='now'] {
+  background: var(--c);
+}
+.btk-age {
+  --c: var(--mu);
+  width: 104px;
+  flex: none;
+}
+.btk-gm,
+.btk-df {
+  display: inline-flex;
+  gap: 2px;
+  flex: none;
+}
+.btk-gm i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--sf3);
+}
+.btk-gm i[data-state='failed'] {
+  background: var(--bad);
+}
+.btk-gm i[data-state='passed'] {
+  background: var(--ok);
+}
+.btk-gm i[data-state='skipped'] {
+  background: var(--idle);
+}
+.btk-gm i[data-state='running'] {
+  background: var(--run);
+}
+.btk-df i {
+  width: 6px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--sf3);
+}
+.btk-df i[data-diff='add'] {
+  background: var(--ok);
+}
+.btk-df i[data-diff='del'] {
+  background: var(--bad);
+}
+.btk-dn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.btk-gh {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 16px 0 4px;
+  border-top: var(--hair) solid var(--bd2);
+  background: var(--sf2);
+}
+.btk-gb {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--tx);
+  font-size: var(--fs-sm);
+}
+.btk-gb svg {
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
+}
+.btk-gb:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+.btk-more {
+  padding: 4px 16px 8px;
+  border-top: var(--hair) solid var(--bd2);
+}
+.btk-flt[aria-pressed='true'] {
+  background: var(--sel);
+}
+.btk-fn {
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+}

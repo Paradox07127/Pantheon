@@ -101,7 +101,7 @@ const sessionsText = (d: DeviceListItem) =>
         { used: d.load.sessions, max: d.max_sessions },
       );
 
-/** The bar's device summary: how many devices are online, and each device's state and load. */
+/** The agents' device summary: how many devices are online, and each device's state and load. */
 export function BoardDevices() {
   const { read, reload } = useDevices();
   if (read.state !== 'ready') return null;
@@ -120,10 +120,15 @@ export function BoardDevices() {
         if (open) void reload(false);
       }}
     >
-      <Popover.Trigger className="btn ghost bdv-tg" aria-label={summary} title={summary}>
+      <Popover.Trigger className="btn sm ghost bdv-tg" aria-label={summary}>
         <Terminal aria-hidden="true" />
-        <span className="tb-lbl">{label}</span>
-        <span className="bdv-n">{`${online} / ${read.devices.length}`}</span>
+        {t(
+          {
+            id: 'board.devices.online',
+            defaultMessage: '{count, plural, one {# device online} other {# devices online}}',
+          },
+          { count: online },
+        )}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="end" sideOffset={4} style={{ zIndex: 40 }}>

@@ -4,7 +4,7 @@ import type { BoardModel } from '@pantheon/protocol';
 import { zh } from './i18n-setup.js';
 import { HookHost, find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
 import { Clip } from '@/components/Clip';
-import { pickBoardPage, useBoardPage } from '@/data/board-page';
+import { pickBoardPage, pickTaskView, useBoardPage, useTaskView } from '@/data/board-page';
 import { boardEditing, setBoardEditing } from '@/screens/board/EditMode';
 import { useShell } from '@/store';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
@@ -326,11 +326,13 @@ describe('iterations page frame', () => {
     const bar = named(h.value, 'BarSlot');
     expect(labelled(bar, itr('shown'))).toBeTruthy();
     expect(labelled(bar, itr('view'))).toBeTruthy();
-    pickBoardPage('project-a', 'canvas');
+    pickBoardPage('project-a', 'overview');
+    pickTaskView('project-a', 'list');
     named(bar, 'NewTask').props.onNew();
-    // The new task form is in the board's edit mode, on its now page.
+    // The new task form is in the board's edit mode, on its tasks page's flow chart.
     expect(useShell.getState().screen).toBe('board');
-    expect(new HookHost(() => useBoardPage('project-a')).render()).toBe('now');
+    expect(new HookHost(() => useBoardPage('project-a')).render()).toBe('tasks');
+    expect(new HookHost(() => useTaskView('project-a')).render()).toBe('flow');
     expect(boardEditing('project-a')).toBe(true);
     setBoardEditing('project-a', false);
     const readOnly = view(board(), false);

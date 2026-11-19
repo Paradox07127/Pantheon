@@ -183,18 +183,7 @@
   border-color: var(--bad);
 }
 
-/* A lead's plan proposals */
-.bd-pp {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 320px;
-  overflow: auto;
-  box-sizing: border-box;
-  padding: var(--sp-3) var(--sp-4);
-  border-bottom: var(--hair) solid var(--bd2);
-}
+/* A lead's plan proposal, changed before it is accepted, under its needs-you row */
 .bd-pp-card {
   display: flex;
   flex: none;
@@ -207,20 +196,6 @@
   border-radius: var(--r-md);
   background: var(--sf);
   font-size: var(--fs-xs);
-}
-.bd-pp-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.bd-pp-t {
-  flex: none;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-}
-.bd-pp-why {
-  color: var(--mu);
 }
 .bd-pp-rows {
   display: flex;
@@ -308,9 +283,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.bd-pp-end {
-  margin-left: auto;
 }
 .bd-pp-card .bd-perr {
   margin: 0;

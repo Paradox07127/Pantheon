@@ -1,4 +1,4 @@
-import type { BoardHistory, BoardTaskState } from '@pantheon/protocol';
+import type { BoardHistory, BoardModel, BoardTaskState, ProjectTimeline } from '@pantheon/protocol';
 import { BREAK_SHARE, timeAxis } from '../../lib/time-axis';
 import { TASK_TYPE } from './status';
 import { criticalPath } from './view-rules';
@@ -470,5 +470,108 @@ export function historySummary(
       share: task.handbacks / reworked[0]!.handbacks,
     })),
     gate: gated.length ? { share: firstRun(gated), weeks: gateWeeks } : null,
+  };
+}
+
+/* The current milestone's task lanes */
+
+type TimelineSession = ProjectTimeline['sessions'][number];
+type LaneTask = Pick<BoardModel['tasks'][number], 'id' | 'segments'>;
+
+/** Session states in which the session waits on someone else rather than works. */
+const WAIT_STATES: ReadonlySet<string> = new Set(['queued', 'waiting', 'ready', 'idle']);
+
+export interface LanePart {
+  from: number;
+  to: number;
+  wait: boolean;
+  /** Left edge and width as shares of the axis. */
+  x: number;
+  w: number;
+}
+
+export interface TaskLane<T extends LaneTask> {
+  task: T;
+  /** The task's sessions from start to end, or to now while open. */
+  spans: { from: number; to: number; tokens: number }[];
+  parts: LanePart[];
+  /** Summed length of the spans. */
+  total: number;
+}
+
+/** A span cut into working and waiting parts by its session's state intervals; all working without them. */
+function spanParts(from: number, to: number, session: TimelineSession | undefined, now: number) {
+  const waits = (session?.intervals ?? [])
+    .filter((i) => WAIT_STATES.has(i.state))
+    .map((i) => ({
+      from: Math.max(from, Date.parse(i.from)),
+      to: Math.min(to, i.to ? Date.parse(i.to) : now),
+    }))
+    .filter((w) => w.to > w.from)
+    .sort((a, b) => a.from - b.from);
+  const parts: { from: number; to: number; wait: boolean }[] = [];
+  let at = from;
+  for (const w of waits) {
+    if (w.from > at) parts.push({ from: at, to: w.from, wait: false });
+    if (w.to > at) parts.push({ from: Math.max(at, w.from), to: w.to, wait: true });
+    at = Math.max(at, w.to);
+  }
+  if (to > at) parts.push({ from: at, to, wait: false });
+  return parts;
+}
+
+/**
+ * One lane per started task, over its sessions' earliest start to now; stretches in which no lane
+ * is busy and that pass BREAK_SHARE of the range are cut to a break mark.
+ */
+export function taskLanes<T extends LaneTask>(
+  tasks: readonly T[],
+  now: number,
+  sessions: readonly TimelineSession[] | null,
+) {
+  const lanes = tasks.flatMap((task) => {
+    const spans = task.segments.flatMap((s) =>
+      s.started_at == null
+        ? []
+        : [
+            {
+              from: s.started_at,
+              to: s.ended_at ?? now,
+              tokens: s.tokens,
+              sessionId: s.session_id,
+            },
+          ],
+    );
+    return spans.length ? [{ task, spans }] : [];
+  });
+  const from = Math.min(now, ...lanes.flatMap((l) => l.spans.map((s) => s.from)));
+  const axis = timeAxis(
+    lanes.flatMap((l) => l.spans.map((s): [number, number] => [s.from, s.to])),
+    from,
+    now,
+    0,
+  );
+  const share = (at: number) => Math.min(1, Math.max(0, axis.position(at)));
+  return {
+    from,
+    lanes: lanes.map(({ task, spans }): TaskLane<T> => ({
+      task,
+      spans: spans.map(({ from, to, tokens }) => ({ from, to, tokens })),
+      parts: spans.flatMap((s) =>
+        spanParts(
+          s.from,
+          s.to,
+          sessions?.find((x) => x.session_id === s.sessionId),
+          now,
+        ).map((p) => ({ ...p, x: share(p.from), w: share(p.to) - share(p.from) })),
+      ),
+      total: spans.reduce((sum, s) => sum + s.to - s.from, 0),
+    })),
+    breaks: axis.breaks.map((b) => {
+      const at = axis.time(b.at);
+      return { x: b.at, w: BREAK_SHARE, from: at, to: at + b.ms };
+    }),
+    /** A time's place on the axis, as a share of it. */
+    share,
   };
 }

@@ -29,7 +29,8 @@ vi.mock('@/data/workflow-policy', async (actual) => ({
 }));
 import { useCurrentProject } from '@/data/current-project';
 import { RetroGates, RetroPanel, type RetroTask } from '@/screens/board/RetroPanel';
-import { openBoardTab } from '@/screens/settings/settings-jump';
+import { openRetrospective } from '@/screens/settings/settings-jump';
+import { useShell } from '@/store';
 import { zh } from './i18n-setup.js';
 
 type Task = BoardModel['tasks'][number];
@@ -214,9 +215,10 @@ describe('board retrospective panel', () => {
     expect(render(TASKS)).not.toContain('提案等待决定');
   });
 
-  it('opens the retrospective the board was asked for, and only that one', () => {
+  it('opens the retrospective asked for on the learned page, and only that one', () => {
     useCurrentProject.setState({ projectId: 'project-a' });
-    openBoardTab('retro', 'retro-newest');
+    openRetrospective('retro-newest');
+    expect(useShell.getState()).toMatchObject({ screen: 'memory', memoryTab: 'learned' });
     const [newest, dropped, older] = rows(render(TASKS));
     expect(newest).toContain('aria-expanded="true"');
     expect(newest).toContain('class="ret-dt"');

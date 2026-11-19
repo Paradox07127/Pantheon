@@ -14,7 +14,6 @@ import { listText } from '../../lib/list-text';
 import { dayText } from '../../lib/time-text';
 import { useShell } from '../../store';
 import {
-  currentMilestone,
   dayNumber,
   historyLayout,
   historySummary,
@@ -53,25 +52,15 @@ const RANGES: { key: HistoryRange; label: () => string }[] = [
     key: 'month',
     label: () => t({ id: 'board.history.range.month', defaultMessage: 'Last 30 days' }),
   },
-  {
-    key: 'milestone',
-    label: () => t({ id: 'board.history.range.milestone', defaultMessage: 'Current milestone' }),
-  },
 ];
 
 export interface HistoryRangeControlProps {
   value: HistoryRange;
   onValueChange: (range: HistoryRange) => void;
-  /** Whether a milestone is open; the current milestone range needs one. */
-  hasMilestone: boolean;
 }
 
-/** The whole history's range: all, the last 30 days or the current milestone. */
-export function HistoryRangeControl({
-  value,
-  onValueChange,
-  hasMilestone,
-}: HistoryRangeControlProps) {
+/** The whole history's time range: all or the last 30 days; the tasks page's scope picks the milestone. */
+export function HistoryRangeControl({ value, onValueChange }: HistoryRangeControlProps) {
   return (
     <RadioGroup<HistoryRange>
       className="tb-seg"
@@ -80,7 +69,7 @@ export function HistoryRangeControl({
       onValueChange={onValueChange}
     >
       {RANGES.map((r) => (
-        <Radio.Root key={r.key} value={r.key} disabled={r.key === 'milestone' && !hasMilestone}>
+        <Radio.Root key={r.key} value={r.key}>
           {r.label()}
         </Radio.Root>
       ))}
@@ -279,7 +268,6 @@ export function HistoryView({
     setTitleWidth(Math.max(0, ...[...titles].map((el) => el.scrollWidth)));
   }, [layout]);
   const summary = useMemo(() => historySummary(history, due, now), [history, due, now]);
-  const current = currentMilestone(history);
   const titles = new Map(lanes.map((lane) => [lane.id, lane.title]));
   const rowTitle = (row: HistoryRow) =>
     bands === 'type'
@@ -402,7 +390,6 @@ export function HistoryView({
                   setRange(value);
                   setCard(null);
                 }}
-                hasMilestone={!!current}
               />
               <RadioGroup<HistoryBands>
                 className="tb-seg"

@@ -18,6 +18,7 @@ const drawer = (taskId: string, tasks: Task[], extra: object = {}) =>
         lanes: [],
         edges: [],
         merges: [],
+        milestones: [],
         tasks,
         ...extra,
       } as unknown as BoardModel,

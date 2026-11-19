@@ -1,0 +1,86 @@
+/* Diagrams tab: the pinned visuals on 12 columns. */
+.mdg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  box-sizing: border-box;
+}
+.mdg-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-ctl);
+}
+.mdg-head > h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  text-wrap: balance;
+}
+.mdg-n {
+  color: var(--mu);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.mdg-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+.mdg-err {
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}
+.mdg-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--sp-3);
+  align-items: start;
+}
+.mdg-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  grid-column: span 6;
+  transition: opacity var(--dur-1) var(--ease-std);
+}
+.mdg-cell[data-w='4'] {
+  grid-column: span 4;
+}
+.mdg-cell[data-w='8'] {
+  grid-column: span 8;
+}
+.mdg-cell[data-w='12'] {
+  grid-column: span 12;
+}
+.mdg-cell[data-dragging] {
+  opacity: 0.5;
+}
+.mdg-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-ctl);
+}
+.mdg-grip {
+  cursor: grab;
+}
+.mdg-edit-end {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+/* An empty row after the last card to drop a card at the end. */
+.mdg-slot {
+  grid-column: span 12;
+  height: 96px;
+  border: var(--hair) dashed var(--bd3);
+  border-radius: var(--r-md);
+  background: var(--sf2);
+}

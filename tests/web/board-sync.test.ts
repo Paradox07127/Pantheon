@@ -41,9 +41,7 @@ const view = (sync: Parameters<typeof BoardView>[0]['sync']) =>
       loading: false,
       error: null,
       onRetry: noop,
-      range: 7,
-      onRange: noop,
-      page: 'now',
+      page: 'overview',
       onPage: noop,
       onOpenSession: noop,
       onOpenStory: noop,
@@ -97,13 +95,10 @@ it('puts an update item in the more menu that is busy while it syncs, the menu b
   );
 });
 
-it("keeps the more menu and the range picker at the bar's end, the lead's sentence giving way", () => {
+it("keeps the more menu at the bar's end, the lead's sentence giving way", () => {
   const tree = view({ busy: false, error: null, onSync: noop }).value;
   const actions = find(tree, (n) => n.props.className === 'tb-end');
   expect(() => syncItem(actions)).not.toThrow();
-  expect(() =>
-    find(actions, (n) => n.props['aria-label'] === zh('board.headline.range')),
-  ).not.toThrow();
   const css = readFileSync(
     new URL('../../apps/web/src/screens/board/overview.css', import.meta.url),
     'utf8',

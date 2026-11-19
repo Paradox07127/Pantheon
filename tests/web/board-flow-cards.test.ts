@@ -416,8 +416,54 @@ describe('flow chart task node', () => {
       nodes(gate)
         .filter((n) => n.type === 'i')
         .map((n) => n.props['data-state']),
-    ).toEqual(['passed', 'running', 'pending']);
-    expect(text(byClass(tree, 'bd-ngn'))).toBe('1/3');
+    ).toEqual(['passed', 'pending', 'pending']);
+    expect(text(byClass(tree, 'bd-ngn'))).toBe('1 / 3');
+  });
+
+  it('puts the failed gate steps first, counts the passed and failed ones and names the first failure', () => {
+    const tree = flowNode({
+      ...facts,
+      gate_steps: [
+        { name: 'lint', state: 'passed' },
+        { name: 'test:web', state: 'failed' },
+        { name: 'typecheck', state: 'passed' },
+        { name: 'e2e', state: 'failed' },
+      ],
+    });
+    const gate = byClass(tree, 'bd-ngate')!;
+    expect(gate.props['aria-label']).toBe('门禁 4 步：失败 2，通过 2');
+    expect(
+      nodes(gate)
+        .filter((n) => n.type === 'i')
+        .map((n) => n.props['data-state']),
+    ).toEqual(['failed', 'failed', 'passed', 'passed']);
+    expect(text(byClass(tree, 'bd-ngn'))).toBe('2 / 4');
+    expect(text(byClass(tree, 'bd-nfail'))).toBe('test:web');
+    expect(byClass(flowNode(facts), 'bd-nfail')).toBeUndefined();
+  });
+
+  it('counts the stages passed at the end of the stage bar, whose name says which stage of five', () => {
+    const at = (state: BoardTaskState) => {
+      const tree = flowNode({ ...task('a', 'todo'), state });
+      const bar = byClass(tree, 'bd-nstg')!;
+      return [
+        bar.props['aria-label'],
+        nodes(bar)
+          .filter((n) => n.type === 'i')
+          .map((n) => n.props['data-at'] ?? null),
+        text(byClass(tree, 'bd-nstn')),
+      ];
+    };
+    expect(at('awaiting_acceptance')).toEqual([
+      '阶段：审阅，5 步里的第 4 步',
+      ['done', 'done', 'done', 'now', null],
+      '3 / 5',
+    ]);
+    expect(at('merged')).toEqual([
+      '阶段：合并，5 步里的第 5 步',
+      ['done', 'done', 'done', 'done', 'done'],
+      '5 / 5',
+    ]);
   });
 
   it('counts the follow-up tasks and shows the external review rounds and verdict', () => {

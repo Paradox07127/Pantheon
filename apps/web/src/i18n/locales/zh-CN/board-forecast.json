@@ -4,7 +4,6 @@
   "board.editMode.unlockOrder": "解锁顺序",
   "board.merges.reverted": "被回退",
   "board.plan.flow.review.elapsed": "已过 {duration}",
-  "board.progress.estimate": "预计 {duration}",
   "board.task.orderLocked": "顺序已锁定",
   "board.task.pullRequest": "拉取请求 #{number}",
   "insights.iterations.capacity": "{count, plural, other {还能排 # 个任务}}",

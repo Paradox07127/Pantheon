@@ -27,12 +27,12 @@ vi.mock('@/data/runtime-models', () => ({
   useRuntimeModels: (_project: string, runtimes: string[]) =>
     Object.fromEntries(runtimes.map((runtime) => [runtime, { state: 'ready', models: [] }])),
 }));
+import { pickTaskView, type BoardPage } from '@/data/board-page';
 import { TopBar } from '@/components/TopBar';
 import { BoardDevices, DeviceState, ResourceMeter } from '@/screens/board/BoardDevices';
 import { BoardScreen, BoardView } from '@/screens/board/BoardScreen';
 import { FlowGroupControl, MainView } from '@/screens/board/MainView';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
-import { CanvasBar, type CanvasState } from '@/screens/board/CanvasView';
 import { EditButton } from '@/screens/board/EditMode';
 import { NewTask } from '@/screens/board/NewTask';
 import { LeadPlan } from '@/screens/board/LeadPlan';
@@ -137,14 +137,12 @@ const board = (): BoardModel =>
     ],
   }) as unknown as BoardModel;
 
-const view = (page: 'now' | 'history' | 'canvas' = 'now') =>
+const view = (page: BoardPage = 'tasks') =>
   BoardView({
     model: board(),
     loading: false,
     error: null,
     onRetry: noop,
-    range: 'active',
-    onRange: noop,
     page,
     onPage: noop,
     projectId: 'project-a',
@@ -165,6 +163,7 @@ const css = (file: string) =>
 let stored: Record<string, string>;
 beforeEach(() => {
   stored = {};
+  pickTaskView('project-a', 'flow');
   mock.board = {
     board: { cursor: 1, projects: [], sessions: [], session_turns: [], workspaces: [] },
     events: [],
@@ -195,21 +194,11 @@ describe('the board top bar', () => {
     const tree = mount(() => view()).value;
     const tabs = labelled(bar(tree).props.children, zh('board.view.label'));
     expect(tabs.props.className.split(' ')).toContain('tb-seg');
-    expect(tabs.props.value).toBe('now');
+    expect(tabs.props.value).toBe('tasks');
     expect(nodes(tree).some((n) => n.props.className === 'bd-bar')).toBe(false);
   });
 
-  it('opens the now page on the in-progress range', () => {
-    const h = mount(() =>
-      find(
-        BoardScreen({ projectId: 'project-a', onOpenSession: noop }),
-        (n) => n.type === BoardView,
-      ),
-    );
-    expect(h.value.props.range).toBe('active');
-  });
-
-  it('reads today for in progress and the last 3 or 7 days for the other ranges', async () => {
+  it("reads today's board", async () => {
     const h = mount(() =>
       find(
         // A project no other test reads, so no earlier read of the same range is shared.
@@ -222,12 +211,6 @@ describe('the board top bar', () => {
       query.mock.calls.filter(([type]: [string]) => type === 'board.view').at(-1)[1].days;
     await h.flush();
     expect(days()).toBe('1');
-    h.value.props.onRange(3);
-    await h.flush();
-    expect(days()).toBe('3');
-    h.value.props.onRange(7);
-    await h.flush();
-    expect(days()).toBe('7');
   });
 
   it('puts the grouping in the bar, and the flow chart bands by the group picked there', () => {
@@ -254,8 +237,9 @@ describe('the board top bar', () => {
     expect(FlowGroupControl).toBe(control.type);
   });
 
-  it("puts the whole history's range at the right end of the bar, with no grid around the page", () => {
-    const h = mount(() => view('history'));
+  it("puts the timeline's range at the right end of the bar, with no grid around the page", () => {
+    pickTaskView('project-a', 'timeline');
+    const h = mount(() => view());
     const end = find(bar(h.value).props.children, (n) => n.props.className === 'tb-end');
     const slot = find(end, (n) => typeof n.props.ref === 'function');
     const element = { nodeType: 1 } as unknown as HTMLElement;
@@ -265,8 +249,8 @@ describe('the board top bar', () => {
     expect(nodes(h.value).some((n) => n.props.className === 'bd-grid')).toBe(false);
   });
 
-  it('lists the needs-you items on the now page', () => {
-    const tree = mount(() => view()).value;
+  it('lists the needs-you items on the overview', () => {
+    const tree = mount(() => view('overview')).value;
     expect(has(tree, 'ProjectNeeds')).toBe(true);
     expect(nodes(tree).some((n) => n.props.className === 'bd-need')).toBe(false);
   });
@@ -292,13 +276,13 @@ describe('the board top bar', () => {
     expect(drawerRule).not.toContain('position: fixed');
   });
 
-  it('puts the device summary at the right end of the bar', () => {
-    for (const page of ['now', 'history', 'canvas'] as const) {
+  it("leaves the device summary out of the bar, for the agents' heading", () => {
+    for (const page of ['overview', 'tasks'] as const) {
       const end = find(
         bar(mount(() => view(page)).value).props.children,
         (n) => n.props.className === 'tb-end',
       );
-      expect(has(end, 'BoardDevices')).toBe(true);
+      expect(has(end, 'BoardDevices')).toBe(false);
     }
   });
 });
@@ -358,47 +342,26 @@ describe('the board top bar in a narrow window', () => {
       ),
       zh('board.newTask.title'),
     );
-    const canvas = {
-      editing: false,
-      setEditing: noop,
-      refreshable: [{}],
-      progress: null,
-      refreshAll: noop,
-    } as unknown as CanvasState;
-    const [refresh, edit] = [
-      CanvasBar({ canvas, empty: false }).props.children,
-    ].flat() as ReactElement<any>[];
-    shortened(refresh!, zh('board.canvas.refreshAll'));
-    shortened(edit!, zh('board.canvas.editLayout'));
-    const done = CanvasBar({ canvas: { ...canvas, editing: true }, empty: false });
-    expect(nodes(done).some((n) => n.props.className === 'tb-lbl')).toBe(false);
 
     vi.stubGlobal('window', {
       pantheon: { query: vi.fn(async () => ({ ok: true, value: [] })) },
     });
     const h = mount(() => BoardDevices());
     await h.flush();
-    const trigger = find(h.value, (n) => n.props.className === 'btn ghost bdv-tg');
-    expect(trigger.props.title).toBe(trigger.props['aria-label']);
-    expect(text(find(trigger, (n) => n.props.className === 'tb-lbl'))).toBe(
-      zh('board.devices.title'),
-    );
+    const trigger = find(h.value, (n) => n.props.className === 'btn sm ghost bdv-tg');
+    expect(nodes(trigger).some((n) => n.props.className === 'tb-lbl')).toBe(false);
   });
 
   it('names each view tab, its text kept in a label the bar can hide', () => {
     const tabs = labelled(bar(mount(() => view()).value).props.children, zh('board.view.label'));
     const radios = nodes(tabs.props.children).filter((n) => n.props.value !== undefined);
     expect(radios.map((r) => r.props['aria-label'])).toEqual([
-      zh('board.view.goals'),
-      zh('board.history.span.now'),
-      zh('board.history.span.history'),
-      zh('board.view.canvas'),
+      zh('board.view.overview'),
+      zh('board.view.tasks'),
     ]);
     expect(radios.map((r) => text(find(r, (n) => n.props.className === 'tb-lbl')))).toEqual([
-      zh('board.view.goals'),
-      zh('board.history.span.now'),
-      zh('board.history.span.history'),
-      zh('board.view.canvas'),
+      zh('board.view.overview'),
+      zh('board.view.tasks'),
     ]);
   });
 
@@ -410,7 +373,6 @@ describe('the board top bar in a narrow window', () => {
         .map((rule) => rule.selector);
     expect(hides(1280)).toContain('.tb > .bgl');
     expect(hides(1180).some((selector) => selector.includes('.tb-lbl'))).toBe(true);
-    expect(hides(1180)).toContain('.bd-bar-v');
     expect(hides(960).some((selector) => selector.includes('.tb-lbl'))).toBe(true);
   });
 
@@ -463,9 +425,9 @@ describe('the device summary', () => {
       device('pi5', false, { resources: { camera: 1 } }),
     ]);
     const tree = (await summary()).value;
-    const trigger = find(tree, (n) => n.props.className === 'btn ghost bdv-tg');
+    const trigger = find(tree, (n) => n.props.className === 'btn sm ghost bdv-tg');
     expect(trigger.props['aria-label']).toBe('设备，3 台里 2 台在线');
-    expect(text(trigger)).toBe('设备2 / 3');
+    expect(text(trigger)).toBe('2 台设备在线');
     const rows = nodes(tree).filter((n) => n.props.className === 'bdv-d');
     expect(rows.map((r) => text(r))).toEqual(['这台 Mac3 个会话', 'ws会话 1 / 2gpu', 'pi5连不上']);
     const states = nodes(tree)

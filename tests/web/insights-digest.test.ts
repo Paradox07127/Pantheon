@@ -12,7 +12,7 @@ const mock = vi.hoisted(() => ({
     loading: false,
     error: null as string | null,
   },
-  boardTabs: [] as unknown[][],
+  retros: [] as unknown[][],
 }));
 vi.mock('@/data/workflow-policy', async (actual) => ({
   ...(await actual<object>()),
@@ -20,7 +20,7 @@ vi.mock('@/data/workflow-policy', async (actual) => ({
 }));
 vi.mock('@/screens/settings/settings-jump', async (actual) => ({
   ...(await actual<object>()),
-  openBoardTab: (...args: unknown[]) => void mock.boardTabs.push(args),
+  openRetrospective: (...args: unknown[]) => void mock.retros.push(args),
 }));
 import {
   DigestPanel,
@@ -224,7 +224,7 @@ describe('weekly digest panel', () => {
   });
 
   it('opens the newest retrospective a signal rests on', () => {
-    mock.boardTabs = [];
+    mock.retros = [];
     const tree = DigestPanel({
       model: MODEL,
       projectId: 'project-a',
@@ -239,10 +239,7 @@ describe('weekly digest panel', () => {
       );
     opens('同一个门禁检查').props.onClick();
     opens('超了预算').props.onClick();
-    expect(mock.boardTabs).toEqual([
-      ['retro', 'r-b'],
-      ['retro', 'r-a'],
-    ]);
+    expect(mock.retros).toEqual([['r-b'], ['r-a']]);
   });
 
   it('says so when no signal rests on this range', () => {

@@ -3,20 +3,13 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BoardModel, BoardTaskStatus } from '@pantheon/protocol';
 import { Milestones, spreadLabels } from '../../apps/web/src/screens/board/Charts.js';
-import {
-  FindingRow,
-  FindingsPanel,
-  MergesPanel,
-  RisksPanel,
-} from '../../apps/web/src/screens/board/Lists.js';
+import { FindingRow, FindingsPanel, MergesPanel } from '../../apps/web/src/screens/board/Lists.js';
 import { TrendPanel } from '../../apps/web/src/screens/board/ProgressCharts.js';
-import { ProgressTable } from '../../apps/web/src/screens/board/ProgressTable.js';
 import { UsageStackPanel } from '../../apps/web/src/screens/board/UsageCharts.js';
 import { usageStack } from '../../apps/web/src/screens/board/usage-model.js';
 import { dayText } from '@/lib/time-text';
 import {
-  groupTasks,
-  tickLabels,
+  sortTasks,
   timeTicks,
   usageSeries,
   visibleFindings,
@@ -101,34 +94,18 @@ const render = (type: unknown, props: Record<string, unknown>) =>
   renderToStaticMarkup(createElement(type as never, props as never));
 const noop = () => {};
 
-describe('board progress table model', () => {
-  it('groups tasks by lane with unlaned tasks last and orders each group by status', () => {
-    const model = {
-      ...emptyModel(),
-      lanes: [
-        { id: 'adapters', title: '适配器' },
-        { id: 'empty-lane', title: '空' },
-        { id: 'board', title: '看板' },
-      ],
-      tasks: [
-        task('loose', null, 'todo'),
-        task('a-done', 'adapters', 'done'),
-        task('a-discarded', 'adapters', 'discarded'),
-        task('a-todo', 'adapters', 'todo'),
-        task('a-ready', 'adapters', 'ready'),
-        task('a-running', 'adapters', 'running'),
-        task('a-failed', 'adapters', 'failed'),
-        task('a-waiting', 'adapters', 'waiting'),
-        task('b-done', 'board', 'done'),
-      ],
-    };
-    const groups = groupTasks(model);
-    expect(groups.map((g) => [g.id, g.title, g.done, g.total])).toEqual([
-      ['adapters', '适配器', 1, 7],
-      ['board', '看板', 1, 1],
-      [null, zh('board.taskGroups.other'), 0, 1],
-    ]);
-    expect(groups[0]!.tasks.map((t) => t.status)).toEqual([
+describe('board task order', () => {
+  it('orders tasks by status without a column sort', () => {
+    const tasks = [
+      task('a-done', null, 'done'),
+      task('a-discarded', null, 'discarded'),
+      task('a-todo', null, 'todo'),
+      task('a-ready', null, 'ready'),
+      task('a-running', null, 'running'),
+      task('a-failed', null, 'failed'),
+      task('a-waiting', null, 'waiting'),
+    ];
+    expect(sortTasks(tasks, null, NOW).map((t) => t.status)).toEqual([
       'waiting',
       'failed',
       'running',
@@ -342,9 +319,6 @@ describe('board findings', () => {
 describe('board panel empty states', () => {
   it('shows one line per empty panel', () => {
     const model = emptyModel();
-    expect(render(ProgressTable, { model, onOpenTask: noop })).toContain(
-      zh('board.progress.empty'),
-    );
     expect(render(TrendPanel, { model })).toContain(zh('board.trend.empty'));
     expect(render(UsageStackPanel, { model })).toContain(zh('board.usage.empty'));
     expect(render(MergesPanel, { model, onOpenSession: noop, onOpenStory: noop })).toContain(
@@ -353,7 +327,6 @@ describe('board panel empty states', () => {
     expect(render(FindingsPanel, { model, onOpenSession: noop })).toContain(
       zh('board.findings.empty'),
     );
-    expect(render(RisksPanel, { model })).toContain(zh('board.risks.empty'));
   });
 });
 
@@ -459,91 +432,5 @@ describe('board time ticks across a daylight saving change', () => {
     const ticks = timeTicks(since, now);
     expect(new Set(ticks.map((t) => t.at)).size).toBe(ticks.length);
     expect(ticks.map((t) => t.label)).toEqual(['00:00', '03:00', '06:00']);
-  });
-});
-
-describe('board gantt segments', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(NOW);
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('lets the keyboard reach each segment and names its start, end and tokens', () => {
-    const start = NOW - 2 * 3_600_000;
-    const html = render(ProgressTable, {
-      model: {
-        ...emptyModel(),
-        tasks: [
-          {
-            ...task('t1', null, 'running'),
-            segments: [
-              {
-                id: 'seg-1',
-                session_id: 's1',
-                title: 'session one',
-                runtime: 'claude',
-                model: 'opus',
-                status: 'done',
-                started_at: start,
-                ended_at: start + 3_600_000,
-                tokens: 12_000,
-              },
-            ],
-          },
-        ],
-      },
-      onOpenTask: noop,
-    });
-    const seg = html.slice(html.indexOf('class="bp-gseg"'));
-    const tag = seg.slice(0, seg.indexOf('>'));
-    expect(tag).toContain('tabindex="0"');
-    expect(tag).toContain(
-      `aria-label="${zhf('board.progress.segmentLabel', { start: dayText(start, NOW, { time: true }), end: dayText(start + 3_600_000, NOW, { time: true }), tokens: '12k' })}"`,
-    );
-  });
-});
-
-describe('board gantt axis labels', () => {
-  const now = new Date(2026, 10, 3, 0, 48).getTime();
-  const since = new Date(2026, 9, 28).getTime();
-  const span = (now - since) * 1.03;
-  const ticks = timeTicks(since, now);
-
-  it('keeps the label of the day still running inside the axis', () => {
-    const labels = tickLabels(ticks, since, span, 400);
-    expect(labels.at(-1)!.label).toBe('11-03');
-    expect(labels.at(-1)!.x + 22).toBeLessThanOrEqual(400);
-    expect(labels[0]!.x - 22).toBeGreaterThanOrEqual(0);
-  });
-
-  it('leaves out an older label that would run into a newer one', () => {
-    const labels = tickLabels(ticks, since, span, 250);
-    for (let i = 1; i < labels.length; i++)
-      expect(labels[i]!.x - labels[i - 1]!.x).toBeGreaterThanOrEqual(44);
-    expect(labels.length).toBeLessThan(ticks.length);
-  });
-
-  it('keeps the previous day labelled just after midnight', () => {
-    expect(
-      tickLabels(ticks, since, span, 400)
-        .slice(-2)
-        .map((l) => l.label),
-    ).toEqual(['11-02', '11-03']);
-    expect(tickLabels(ticks, since, span, 250).at(-1)!.label).toBe('11-02');
-  });
-
-  it('labels every day when the axis has room', () => {
-    expect(tickLabels(ticks, since, span, 1200).map((l) => l.label)).toEqual([
-      '10-28',
-      '10-29',
-      '10-30',
-      '10-31',
-      '11-01',
-      '11-02',
-      '11-03',
-    ]);
   });
 });

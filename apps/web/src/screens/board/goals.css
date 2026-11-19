@@ -1,16 +1,8 @@
-/* Goals view: scrolls as one page; one column of goals, then the milestones of no goal. */
-.gm {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--sp-6);
-}
+/* Goals section: one column of goals, then the milestones of no goal. */
 .gm-col {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
-  max-width: 960px;
-  margin: 0 auto;
 }
 .gm-list {
   display: grid;
@@ -21,7 +13,7 @@
   background: var(--bd2);
   overflow: hidden;
 }
-/* A goal: the user's words, what waits on the user, the way into Now; then progress over its milestones. */
+/* A goal: its line, then the current milestone unfolded when the goal holds it. */
 .gm-goal {
   position: relative;
   display: flex;
@@ -50,14 +42,22 @@
 .gm-goal[data-drop='after']::before {
   bottom: 0;
 }
+/* The goal's line: the flag, the user's words, the milestone path, milestones done, then what waits and the menu. */
 .gm-gh {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-2);
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) minmax(0, 240px) 48px auto;
+  align-items: center;
+  column-gap: var(--sp-2);
   min-width: 0;
+  min-height: 40px;
+}
+.gm-fl {
+  justify-self: center;
+  width: 14px;
+  height: 14px;
+  color: var(--mu);
 }
 .gm-gt {
-  flex: 1;
   min-width: 0;
   margin: 0;
   font-size: var(--fs-md);
@@ -80,7 +80,7 @@
   text-align: left;
 }
 .gm-ga {
-  flex: none;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: var(--sp-1);
@@ -140,28 +140,107 @@
 .gm-need:hover {
   border-color: var(--bd3);
 }
-/* Progress: done and to-accept milestones over all of the goal's, with the counts beside. */
-.gm-gp {
+/* A point per milestone joined by a line: filled done, the to-accept glyph, a thick ring for the current one, hollow not started. */
+.gm-path {
   display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+.gm-pt {
+  position: relative;
+  flex: 0 1 48px;
+  min-width: 24px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--sp-2);
+  gap: 2px;
+  padding-top: 4px;
 }
-.gm-bar {
-  display: flex;
-  gap: var(--sp-1);
-  width: 160px;
-  height: 6px;
+.gm-pt + .gm-pt::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: calc(-50% + 8px);
+  right: calc(50% + 8px);
+  height: 1px;
+  background: var(--bd3);
+  transition: background-color var(--dur-2) var(--ease-std);
 }
-.gm-bar > i {
-  min-width: 4px;
-  border-radius: 1px;
-  background: var(--track);
-}
-.gm-bar > i[data-part='done'] {
+.gm-pt[data-s='done'] + .gm-pt::before {
   background: var(--ok);
 }
-.gm-bar > i[data-part='ready'] {
-  background: var(--ready);
+.gm-po {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+}
+.gm-po:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.gm-po > i {
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--bd3);
+  border-radius: 50%;
+  background: var(--sf);
+  transition:
+    border-color var(--dur-2) var(--ease-std),
+    background-color var(--dur-2) var(--ease-std);
+}
+.gm-po:hover > i {
+  border-color: var(--mu);
+}
+.gm-pt[data-s='done'] .gm-po > i {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+.gm-pt[data-s='current'] .gm-po > i {
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--run);
+}
+.gm-pl {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.gm-pt[data-s='current'] .gm-pl {
+  color: var(--tx);
+  font-weight: 500;
+}
+/* The current milestone's open assumptions, a flag above its point. */
+.gm-pt > .gm-flag {
+  position: absolute;
+  top: -12px;
+  left: calc(50% + 6px);
+  width: 16px;
+  height: 16px;
+  color: var(--tx2);
+}
+.gm-flag svg {
+  width: 12px;
+  height: 12px;
+}
+.gm-asm {
+  width: min(440px, calc(100vw - 32px));
+  max-height: 60vh;
+  padding: var(--sp-3);
+  overflow-y: auto;
+}
+/* The plan's version in the goals' heading. */
+.gm-pv {
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .gm-n {
   flex: none;

@@ -28,6 +28,9 @@ export const DEFAULT_LAYOUT: BoardLayout = {
   workflow: places(['workflow', 12]),
   quality: places(
     ['qualityKpis', 12],
+    ['qualityTrend', 12],
+    ['qualityCycle', 6],
+    ['mergesPerDay', 6],
     ['gateFailures', 12],
     ['findings', 6],
     ['matrix', 6],
@@ -35,7 +38,6 @@ export const DEFAULT_LAYOUT: BoardLayout = {
     ['gates', 12],
   ),
   usage: places(['quota', 12], ['runtime', 12], ['usage', 12], ['roles', 12]),
-  retro: places(['retro', 12]),
   digest: places(['digest', 12]),
   signals: places(['signals', 12]),
 };
@@ -154,34 +156,7 @@ export function useBoardLayout(projectId: string | undefined): BoardLayout {
   return useSyncExternalStore(subscribe, read, read);
 }
 
-/* Canvas order: the board's panels and pinned visuals in one sequence */
-
-const VISUAL = 'visual:';
-/** A pinned visual's key in the canvas order, beside the panel keys. */
-export const visualKey = (visualId: string) => `${VISUAL}${visualId}`;
-/** The visual id a canvas key names; null for a panel key. */
-export const visualOf = (key: string): string | null =>
-  key.startsWith(VISUAL) ? key.slice(VISUAL.length) : null;
-
-/**
- * The stored keys that still name a panel or a pinned visual, then the new panels, then the new
- * visuals. The visual places take the visuals in pinned order, which `visual.arrange` keeps.
- */
-export function canvasOrder(
-  stored: readonly string[],
-  panels: readonly string[],
-  visuals: readonly string[],
-): string[] {
-  const pinned = visuals.map(visualKey);
-  const known = new Set([...panels, ...pinned]);
-  const kept = [...new Set(stored)].filter((key) => known.has(key));
-  const placed = pinned.filter((key) => kept.includes(key));
-  return [
-    ...kept.map((key) => (visualOf(key) === null ? key : placed.shift()!)),
-    ...panels.filter((key) => !kept.includes(key)),
-    ...pinned.filter((key) => !kept.includes(key)),
-  ];
-}
+/* Moving a key within an order */
 
 /** Moves `key` to just before `before`, or to the end when `before` is null. */
 export function moveBefore(order: readonly string[], key: string, before: string | null): string[] {
@@ -202,49 +177,4 @@ export function stepKey(
   if (step < 0) return moveBefore(order, key, next);
   const rest = order.filter((k) => k !== key);
   return [...rest.slice(0, rest.indexOf(next) + 1), key, ...rest.slice(rest.indexOf(next) + 1)];
-}
-
-const orderKey = (projectId: string) => `pantheon.board.canvas.${projectId}`;
-const NO_ORDER: readonly string[] = [];
-let heldOrders: Readonly<Record<string, readonly string[]>> = {};
-const lastOrder = new Map<string, { raw: string | null; order: readonly string[] }>();
-
-function storedOrder(projectId: string): readonly string[] {
-  let raw: string | null = null;
-  try {
-    raw = localStorage.getItem(orderKey(projectId));
-  } catch {
-    // Without storage the default order applies.
-  }
-  const last = lastOrder.get(projectId);
-  if (last && last.raw === raw) return last.order;
-  let value: unknown = null;
-  try {
-    value = JSON.parse(raw ?? 'null');
-  } catch {
-    // An unreadable value is no stored order.
-  }
-  const order = Array.isArray(value) ? value.filter((k): k is string => typeof k === 'string') : [];
-  lastOrder.set(projectId, { raw, order });
-  return order;
-}
-
-export function readCanvasOrder(projectId: string): readonly string[] {
-  return heldOrders[projectId] ?? storedOrder(projectId);
-}
-
-export function saveCanvasOrder(projectId: string, order: readonly string[]) {
-  heldOrders = { ...heldOrders, [projectId]: order };
-  listeners.forEach((listener) => listener());
-  try {
-    localStorage.setItem(orderKey(projectId), JSON.stringify(order));
-  } catch {
-    // The order still holds until the app closes.
-  }
-}
-
-/** The project's stored canvas order; empty without a project. */
-export function useCanvasOrder(projectId: string | undefined): readonly string[] {
-  const read = () => (projectId ? readCanvasOrder(projectId) : NO_ORDER);
-  return useSyncExternalStore(subscribe, read, read);
 }

@@ -15,7 +15,18 @@ import { Check, Ellipsis } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { useBoard } from '../../data/board';
 import { useBoardHistory } from '../../data/board-history';
-import { PAGES, pickBoardPage, useBoardPage, type BoardPage } from '../../data/board-page';
+import {
+  PAGES,
+  pickBoardPage,
+  pickTaskScope,
+  pickTaskView,
+  useBoardPage,
+  useTaskScope,
+  useTaskView,
+  type BoardPage,
+  type TaskScope,
+  type TaskView,
+} from '../../data/board-page';
 import { useBoardView } from '../../data/board-view';
 import { ReadStatus } from '../../components/ReadStatus';
 import { Skeleton as LoadingBlock } from '../../components/Skeleton';
@@ -32,34 +43,22 @@ import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
 import type { BaselineChoice, ProjectBaseline } from '../projects/baseline';
 import { BaselinePopover } from '../projects/BaselineBlocks';
-import { BoardDevices } from './BoardDevices';
-import { CanvasPage } from './CanvasPage';
-import { Milestones } from './Charts';
 import { EditBar, EditButton, setBoardEditing, useBoardEditing } from './EditMode';
 import { baselineSyncReason, type SessionDefaults } from './frame-model';
-import { GoalsPage } from './GoalsPage';
 import { leadLine } from './LeadPanel';
 import { LeadPlan } from './LeadPlan';
-import { HistoryPage } from './HistoryPage';
 import { HistoryView } from './HistoryView';
-import { RisksPanel } from './Lists';
 import { FlowGroupControl, hasPlanTasks } from './MainView';
 import { NewTask, planLead } from './NewTask';
-import { NowPage } from './NowPage';
 import { currentMilestone } from './MilestoneCard';
+import { OverviewPage } from './OverviewPage';
 import type { EvidenceTab } from './TaskFocus';
 import {
-  canvasOrder,
   DEFAULT_LAYOUT,
   movePanel,
-  saveCanvasOrder,
-  saveLayout,
   setHeight,
   setHidden,
   setSpan,
-  useBoardLayout,
-  useCanvasOrder,
-  visualOf,
   type BoardLayout,
   type PanelHeight,
   type PanelPlace,
@@ -75,10 +74,8 @@ import {
   type TurnWait,
 } from './project-setup';
 import { ProjectSetup } from './ProjectSetup';
-import { CyclePanel, StallPanel, TrendPanel } from './ProgressCharts';
-import { ProgressTable } from './ProgressTable';
-import { PublishBar } from './PublishBar';
 import { TaskDrawer } from './TaskDrawer';
+import { TasksPage } from './TasksPage';
 import './board.css';
 
 export type BoardDays = 1 | 7 | 30 | 'all';
@@ -86,8 +83,6 @@ export type BoardDays = 1 | 7 | 30 | 'all';
 export type OverviewSection = 'progress' | 'milestones';
 /** The progress panel whose task drawer is open. */
 type TaskPanel = 'flow';
-
-const CANVAS_TABS: readonly OverviewSection[] = ['progress', 'milestones'];
 const NO_TASKS: Pick<BoardModel, 'tasks' | 'leads'> = { tasks: [] };
 
 export const RANGES: { days: BoardDays; label: string }[] = [
@@ -117,33 +112,42 @@ export const RANGES: { days: BoardDays; label: string }[] = [
   },
 ];
 
-/** The project board's range: the unfinished tasks of today's read, or the last 3 or 7 days. */
-export type BoardRange = 'active' | 3 | 7;
-
-const BOARD_RANGES: { range: BoardRange; label: string }[] = [
+// Labels are getters, so each is read in the language loaded by then.
+const TASK_VIEWS: { view: TaskView; label: string }[] = [
   {
-    range: 'active',
+    view: 'flow',
     get label() {
-      return t({ id: 'board.ranges.active', defaultMessage: 'In progress' });
+      return t({ id: 'board.tasks.view.flow', defaultMessage: 'Flow' });
     },
   },
   {
-    range: 3,
+    view: 'list',
     get label() {
-      return t({ id: 'board.ranges.last', defaultMessage: 'Last {days} days' }, { days: 3 });
+      return t({ id: 'board.tasks.view.list', defaultMessage: 'List' });
     },
   },
   {
-    range: 7,
+    view: 'timeline',
     get label() {
-      return t({ id: 'board.ranges.last', defaultMessage: 'Last {days} days' }, { days: 7 });
+      return t({ id: 'board.tasks.view.timeline', defaultMessage: 'Timeline' });
     },
   },
 ];
 
-/** Whether a task is over: merged, accepted or discarded; a failed one stays, as it waits for a retry. */
-const over = (task: BoardModel['tasks'][number]) =>
-  task.state ? task.state === 'merged' : task.status === 'done' || task.status === 'discarded';
+const TASK_SCOPES: { scope: TaskScope; label: string }[] = [
+  {
+    scope: 'milestone',
+    get label() {
+      return t({ id: 'board.tasks.scope.milestone', defaultMessage: 'Current milestone' });
+    },
+  },
+  {
+    scope: 'all',
+    get label() {
+      return t({ id: 'board.tasks.scope.all', defaultMessage: 'All' });
+    },
+  },
+];
 
 const clock = (at: number): string => {
   const d = new Date(at);
@@ -215,10 +219,7 @@ export interface BoardViewProps {
   onRetry: () => void;
   stale?: boolean;
   readAt?: number | null;
-  range: BoardRange;
-  onRange: (range: BoardRange) => void;
-  /** Null until the board read decides which view the project opens on. */
-  page: BoardPage | null;
+  page: BoardPage;
   onPage: (page: BoardPage) => void;
   /** Reads the review metrics and role usage tables; absent without a project. */
   projectId?: string;
@@ -584,23 +585,17 @@ export function laidPanels({
 }
 
 export function BoardView(props: BoardViewProps) {
-  const { loading, error, onRetry, range, onRange, onOpenSession, setup } = props;
+  const { loading, error, onRetry, onOpenSession, setup } = props;
   const { onOpenStory, onOpenTrace, onStartTask, sync, baseline } = props;
   const { page, onPage, projectId, actions } = props;
   const model = props.model;
-  // The task collections shown; actions, evidence, drawers and new tasks keep every task read.
-  const shown = useMemo(
-    () =>
-      model && range === 'active'
-        ? { ...model, tasks: model.tasks.filter((t) => !over(t)) }
-        : model,
-    [model, range],
-  );
+  const view = useTaskView(projectId ?? null);
+  const scope = useTaskScope(projectId ?? null);
   const headline = model?.headline ?? null;
   const [selected, setSelected] = useState<{ taskId: string; panel: TaskPanel } | null>(null);
-  // The now view's chart expanded over the strips above it; held for this project while the page lives.
+  // The flow chart expanded over the requirement bar; held for this project while the page lives.
   const [graphFull, setGraphFull] = useState(false);
-  // The milestone the goals view opened the now view on, and whether it asked for the needs-you strip.
+  // The milestone the goals opened the tasks view on, and whether they asked for the needs-you strip.
   const [picked, setPicked] = useState<string | null>(null);
   const [needsAsked, setNeedsAsked] = useState(false);
   const [selectedProject, setSelectedProject] = useState(projectId);
@@ -611,6 +606,16 @@ export function BoardView(props: BoardViewProps) {
     setPicked(null);
     setNeedsAsked(false);
   }
+  const current =
+    model && (model.milestones.find((m) => m.id === picked) ?? currentMilestone(model.milestones));
+  // The tasks the tasks view shows; actions, evidence, drawers and new tasks keep every task read.
+  const shown = useMemo(
+    () =>
+      model && scope === 'milestone' && current
+        ? { ...model, tasks: model.tasks.filter((t) => t.milestone_id === current.id) }
+        : model,
+    [model, scope, current],
+  );
   // The more menu's baseline start opens the model popover at the menu button.
   const [choosing, setChoosing] = useState(false);
   const moreButton = useRef<HTMLButtonElement>(null);
@@ -627,10 +632,10 @@ export function BoardView(props: BoardViewProps) {
   const drawnBefore = drawnProject !== null && drawnProject.projectId === projectId;
   if (settled && !drawnBefore) setDrawnProject({ projectId });
   const drawn = settled || drawnBefore;
-  // The approvals the now view's needs-you strip lists, folded away or not.
+  // The approvals the overview's needs-you strip lists, folded away or not.
   const listed =
-    page === 'now' && scoped && shown
-      ? (shown.needs ?? []).flatMap((n) =>
+    page === 'overview' && scoped && model
+      ? (model.needs ?? []).flatMap((n) =>
           n.source.table === 'approvals' ? (needsKey(n) ?? []) : [],
         )
       : [];
@@ -640,13 +645,8 @@ export function BoardView(props: BoardViewProps) {
   }, [drawn, listed.join('\n')]);
   const pending =
     !model && (error ? <Failure error={error} onRetry={onRetry} /> : loading && <Skeleton />);
-  const current =
-    model && (model.milestones.find((m) => m.id === picked) ?? currentMilestone(model.milestones));
-  const layout = useBoardLayout(projectId);
-  const onLayout: ChangeLayout = (change) => {
-    if (projectId) saveLayout(projectId, change(layout));
-  };
-  const editing = useBoardEditing(projectId ?? '') && page === 'now' && !!model && !!projectId;
+  const flow = page === 'tasks' && view === 'flow';
+  const editing = useBoardEditing(projectId ?? '') && flow && !!model && !!projectId;
   const unsent =
     useDraftEdits(projectId ?? '').length +
     useUnsentEdits(model ?? NO_TASKS, projectId ?? '').length;
@@ -656,18 +656,23 @@ export function BoardView(props: BoardViewProps) {
   useEffect(() => {
     if (focusTask) taskTitle.current?.focus();
   }, [focusTask]);
+  const openFlow = () => {
+    if (!projectId) return;
+    if (page !== 'tasks') onPage('tasks');
+    if (view !== 'flow') pickTaskView(projectId, 'flow');
+  };
   const newTask = () => {
     if (!projectId) return;
-    if (page !== 'now') onPage('now');
+    openFlow();
     setBoardEditing(projectId, true);
     setFocusTask((n) => n + 1);
   };
-  // The task the now or canvas view picked, docked as the body's second column.
-  // The asked row is in the needs-you strip, which the expanded chart hides.
+  // The asked row is in the overview's needs-you strip.
   const askNeed = (key: string) => {
-    setGraphFull(false);
+    if (page !== 'overview') onPage('overview');
     useShell.setState({ askedNeed: key });
   };
+  // The task the page picked, docked as the body's second column.
   const drawer = model && (
     <TaskDrawer
       model={model}
@@ -677,73 +682,13 @@ export function BoardView(props: BoardViewProps) {
       onOpenStory={onOpenStory}
       onStartTask={onStartTask}
       tell={scoped && { sessions: scoped.sessions, run: scoped.run }}
-      onAskNeed={page === 'now' && actions ? askNeed : undefined}
+      onAskNeed={actions ? askNeed : undefined}
     />
   );
-  const panels: BoardPanels =
-    model && shown
-      ? {
-          table: {
-            title: t({ id: 'board.progress.title', defaultMessage: 'Progress table' }),
-            node: (
-              <ProgressTable model={shown} onOpenTask={selectFlow} projectId={scoped?.projectId} />
-            ),
-          },
-          trend: {
-            title: t({ id: 'board.trend.title', defaultMessage: 'Completion trend' }),
-            node: <TrendPanel model={shown} />,
-          },
-          cycle: {
-            title: t({ id: 'board.cycle.title', defaultMessage: 'Cycle time distribution' }),
-            node: <CyclePanel model={shown} />,
-          },
-          stall: {
-            title: t({ id: 'board.stalls.title', defaultMessage: 'Blocked and stalled' }),
-            node: <StallPanel model={shown} onOpenTask={selectFlow} />,
-          },
-          milestones: {
-            title: t({ id: 'board.milestones.title', defaultMessage: 'Milestones' }),
-            node: <Milestones model={model} actions={scoped} />,
-          },
-          risks: {
-            title: t({ id: 'board.risks.title', defaultMessage: 'Risks and assumptions' }),
-            node: <RisksPanel model={shown} />,
-          },
-        }
-      : {};
-  // The main view is the now view's canvas; the canvas view lays out the rest.
-  const placed = (tab: OverviewSection) => layout[tab].filter((p) => panels[p.key]);
-  // The canvas and whole history views put their controls in these elements of the bar.
-  const [canvasBar, setCanvasBar] = useState<HTMLElement | null>(null);
+  // The overview and the whole history put their controls in these elements of the bar.
   const [historyBar, setHistoryBar] = useState<HTMLElement | null>(null);
   const [goalsBar, setGoalsBar] = useState<HTMLElement | null>(null);
-  const canvasPanels = CANVAS_TABS.flatMap(placed).map((place) => ({
-    place,
-    title: panels[place.key]!.title,
-    node: (
-      <PanelBoundary
-        title={panels[place.key]!.title}
-        model={model}
-        onRetry={onRetry}
-        withFailure={panels[place.key]!.withFailure}
-      >
-        {panels[place.key]!.node}
-      </PanelBoundary>
-    ),
-  }));
-  const hidden = CANVAS_TABS.flatMap((tab) => placed(tab).filter((p) => p.hidden)).map((p) => ({
-    key: p.key,
-    title: panels[p.key]!.title,
-  }));
-  // The canvas keeps its card order apart from the layout; a visual's key stands for its place.
-  const canvasStored = useCanvasOrder(projectId);
-  const canvasKeys = canvasPanels.map((p) => p.place.key);
-  const placedVisuals = canvasStored.flatMap((key) => visualOf(key) ?? []);
-  const reordered =
-    canvasOrder(canvasStored, canvasKeys, placedVisuals).join() !==
-    canvasOrder([], canvasKeys, placedVisuals).join();
-  const changed = layoutChanged(layout, CANVAS_TABS) || reordered;
-  const empty = !!shown && isEmpty(shown);
+  const empty = !!model && isEmpty(model);
   const planner = model && planLead(model);
   const version = model?.leads?.find((l) => l.session_id === planner)?.plan_version;
   const busy = !!sync?.busy || !!baseline?.busy;
@@ -755,18 +700,18 @@ export function BoardView(props: BoardViewProps) {
       {pending}
     </section>
   );
-  const setupPanel = setup && setupShown(setup, shown, empty) && (
+  const setupPanel = setup && setupShown(setup, model, empty) && (
     <ProjectSetup setup={setup} onOpenSession={onOpenSession} />
   );
   // The setup says a failed start in its own panel.
   const startError = !setupPanel && baseline?.error;
-  // In place of the body the setup keeps only the view switch and the More menu in the bar.
-  const setupOnly = !!setupPanel && page !== 'canvas';
+  // In place of the body the setup keeps only the view switches and the More menu in the bar.
+  const setupOnly = !!setupPanel;
   return (
     <>
       <TopBar title={SCREEN_NAMES.board}>
         {projectId && (
-          <RadioGroup<BoardPage | null>
+          <RadioGroup<BoardPage>
             className="tb-seg bd-views"
             aria-label={t({ id: 'board.view.label', defaultMessage: 'Board view' })}
             value={page}
@@ -780,67 +725,58 @@ export function BoardView(props: BoardViewProps) {
             ))}
           </RadioGroup>
         )}
+        {page === 'tasks' && projectId && (
+          <RadioGroup<TaskView>
+            className="tb-seg"
+            aria-label={t({ id: 'board.tasks.view.label', defaultMessage: 'Task view' })}
+            value={view}
+            onValueChange={(next) => pickTaskView(projectId, next)}
+          >
+            {TASK_VIEWS.map((v) => (
+              <Radio.Root key={v.view} value={v.view}>
+                {v.label}
+              </Radio.Root>
+            ))}
+          </RadioGroup>
+        )}
+        {page === 'tasks' && projectId && !setupOnly && (
+          <RadioGroup<TaskScope>
+            className="tb-seg"
+            aria-label={t({ id: 'board.tasks.scope.label', defaultMessage: 'Task scope' })}
+            value={scope}
+            onValueChange={(next) => pickTaskScope(projectId, next)}
+          >
+            {TASK_SCOPES.map((s) => (
+              <Radio.Root key={s.scope} value={s.scope}>
+                {s.label}
+              </Radio.Root>
+            ))}
+          </RadioGroup>
+        )}
         {drawn && (
           <>
-            {version !== undefined && (
-              <span className="bd-bar-v">
-                {t({ id: 'board.bar.planVersion', defaultMessage: 'Plan v{version}' }, { version })}
-              </span>
-            )}
             {headline && (
               <LeadPlan
                 headline={headline}
                 sessions={actions?.sessions}
                 repeated={
-                  page === 'now' && !!model?.leads?.some((l) => leadLine(l) === headline.text)
+                  page === 'overview' && !!model?.leads?.some((l) => leadLine(l) === headline.text)
                 }
               />
             )}
             <div className="tb-end">
-              {page === 'goals' && projectId && model && (
-                <span className="bd-slot" ref={setGoalsBar} />
+              {flow && !setupOnly && projectId && shown && !empty && hasPlanTasks(shown) && (
+                <FlowGroupControl projectId={projectId} />
               )}
-              {(page === 'now' || page === 'canvas') && !setupOnly && (
-                <RadioGroup<BoardRange>
-                  className="tb-seg"
-                  aria-label={t({ id: 'board.headline.range', defaultMessage: 'Time range' })}
-                  value={range}
-                  onValueChange={onRange}
-                >
-                  {BOARD_RANGES.map((r) => (
-                    <Radio.Root key={r.range} value={r.range}>
-                      {r.label}
-                    </Radio.Root>
-                  ))}
-                </RadioGroup>
-              )}
-              {page === 'now' &&
-                !setupOnly &&
-                projectId &&
-                shown &&
-                !empty &&
-                hasPlanTasks(shown) && <FlowGroupControl projectId={projectId} />}
-              {page === 'history' && projectId && model && (
+              {page === 'tasks' && view !== 'flow' && projectId && model && (
                 <span className="bd-slot" ref={setHistoryBar} />
               )}
-              {page === 'canvas' && projectId && model && (hidden.length > 0 || changed) && (
-                <HiddenMenu
-                  hidden={hidden}
-                  tabs={CANVAS_TABS}
-                  onLayout={onLayout}
-                  onReset={() => saveCanvasOrder(projectId, [])}
-                />
-              )}
-              {page === 'canvas' && projectId && model && (
-                <span className="cv-bar" ref={setCanvasBar} />
-              )}
-              {page === 'now' && !setupOnly && projectId && model && actions && !editing && (
+              {flow && !setupOnly && projectId && model && actions && !editing && (
                 <EditButton projectId={projectId} disabled={!scoped} count={unsent} />
               )}
-              {!setupOnly && page !== 'goals' && projectId && actions && (
+              {!setupOnly && page === 'tasks' && projectId && actions && (
                 <NewTask model={model} disabled={!scoped} onNew={newTask} />
               )}
-              <BoardDevices />
               <Menu.Root>
                 <Menu.Trigger
                   ref={moreButton}
@@ -921,23 +857,9 @@ export function BoardView(props: BoardViewProps) {
           />
         )}
         {drawn && editing && model && projectId && <EditBar model={model} projectId={projectId} />}
-        {drawn && page ? (
+        {drawn ? (
           <div className="bd-split">
             <div className="bd-split-main">
-              {scoped && !setupOnly && page !== 'goals' && (
-                <div className="bd-pub">
-                  <PublishBar
-                    projectId={scoped.projectId}
-                    leads={model?.leads}
-                    sessions={scoped.sessions}
-                    tasks={model?.tasks}
-                    defaults={scoped.defaults}
-                    run={runCommand}
-                    // Without the board read the newest lead is unknown.
-                    disabled={!model}
-                  />
-                </div>
-              )}
               {(sync?.error || startError || baseline?.readFailure) && (
                 <div className="bd-errs">
                   {sync?.error && <Failure error={sync.error} onRetry={sync.onSync} />}
@@ -945,32 +867,10 @@ export function BoardView(props: BoardViewProps) {
                   {baseline?.readFailure && <Failure {...baseline.readFailure} />}
                 </div>
               )}
-              {page === 'goals' &&
-                projectId &&
-                (model ? (
-                  <GoalsPage
-                    key={projectId}
-                    model={model}
-                    projectId={projectId}
-                    bar={goalsBar}
-                    onOpenNeeds={() => {
-                      setGraphFull(false);
-                      setNeedsAsked(!!model.needs?.length);
-                      onPage('now');
-                    }}
-                    onOpenNow={(milestoneId) => {
-                      setPicked(milestoneId);
-                      onPage('now');
-                    }}
-                  />
-                ) : (
-                  loadingPanel
-                ))}
               {/* The pages hold no hooks; called inline, their elements stay in this view's tree. */}
-              {page === 'now'
-                ? NowPage({
+              {page === 'overview'
+                ? OverviewPage({
                     model,
-                    shown,
                     current,
                     projectId,
                     actions,
@@ -978,11 +878,40 @@ export function BoardView(props: BoardViewProps) {
                     stale: props.stale,
                     onRetry,
                     onOpenSession,
+                    selectFlow,
+                    drawerOpen: selectedIn('flow') !== null,
+                    setupPanel,
+                    loadingPanel,
+                    goalsBar,
+                    onGoalsBar: setGoalsBar,
+                    sync,
+                    planVersion: version,
+                    onOpenNeeds: () => setNeedsAsked(!!model?.needs?.length),
+                    onOpenTasks: (milestoneId) => {
+                      setPicked(milestoneId);
+                      if (projectId) pickTaskScope(projectId, 'milestone');
+                      openFlow();
+                    },
+                    needsAsked,
+                    onNeedsAsked: () => setNeedsAsked(false),
+                  })
+                : TasksPage({
+                    view,
+                    model,
+                    shown,
+                    projectId,
+                    scoped,
+                    onRetry,
+                    onOpenSession,
                     onOpenEvidence: props.onOpenEvidence,
                     onStartTask,
                     selectedIn,
                     selectFlow,
                     onAskNeed: actions ? askNeed : undefined,
+                    onOpenTask: (taskId) => {
+                      openFlow();
+                      selectFlow(taskId);
+                    },
                     editing,
                     taskTitle,
                     setFocusTask,
@@ -991,34 +920,10 @@ export function BoardView(props: BoardViewProps) {
                     loadingPanel,
                     graphFull,
                     onGraphFull: () => setGraphFull((on) => !on),
-                    needsAsked,
-                    onNeedsAsked: () => setNeedsAsked(false),
-                  })
-                : shown && (page === 'canvas' || !projectId)
-                  ? CanvasPage({
-                      model,
-                      shown,
-                      projectId,
-                      canvasBar,
-                      canvasPanels,
-                      empty,
-                      onLayout,
-                      onRetry,
-                      selectFlow,
-                    })
-                  : page !== 'goals' &&
-                    HistoryPage({
-                      model,
-                      projectId,
-                      setupPanel,
-                      loadingPanel,
-                      onOpenSession,
-                      onPage,
-                      selectFlow,
-                      historyBar,
-                    })}
+                    historyBar,
+                  })}
             </div>
-            {page !== 'history' && page !== 'goals' && drawer}
+            {!(page === 'tasks' && view === 'timeline') && drawer}
           </div>
         ) : (
           <div className="bd-cv" aria-busy="true">
@@ -1053,14 +958,8 @@ export function BoardScreen({
   projectId: string | null;
   onOpenSession: (sessionId: string) => void;
 }) {
-  const [range, setRange] = useState<BoardRange>('active');
-  // The in-progress range reads today's board and leaves the ended tasks out.
-  const view = useBoardView(projectId, range === 'active' ? 1 : range);
-  // Undecided while the first read of the project is out, so no view shows before it lands.
-  const page = useBoardPage(
-    projectId,
-    view.data ? !!view.data.goals?.length : view.loading && !view.error ? null : false,
-  );
+  const view = useBoardView(projectId, 1);
+  const page = useBoardPage(projectId);
   const onPage = (next: BoardPage) => {
     if (projectId) pickBoardPage(projectId, next);
   };
@@ -1107,8 +1006,6 @@ export function BoardScreen({
         onRetry={view.reload}
         stale={view.stale}
         readAt={view.readAt}
-        range={range}
-        onRange={setRange}
         page={page}
         onPage={onPage}
         onOpenSession={onOpenSession}

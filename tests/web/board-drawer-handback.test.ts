@@ -59,6 +59,7 @@ const board = (row: Task) =>
     lanes: [],
     edges: [],
     merges: [],
+    milestones: [],
     tasks: [row],
     leads: [{ session_id: 'lead-1', title: 'lead', state: 'idle', inbox: 0, updated_at: 0 }],
   }) as unknown as BoardModel;

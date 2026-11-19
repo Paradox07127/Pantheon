@@ -29,7 +29,7 @@ vi.mock('@/store', () => ({
 }));
 import { BoardScreen, BoardView, PanelBoundary } from '@/screens/board/BoardScreen';
 import { FindingRow } from '@/screens/board/Lists';
-import { DEFAULT_LAYOUT, saveLayout, setHidden } from '@/screens/board/panel-layout';
+import { pickTaskView } from '@/data/board-page';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
 import { zh } from './i18n-setup.js';
 
@@ -108,9 +108,7 @@ const viewProps = (over: Partial<Parameters<typeof BoardView>[0]>) => ({
   loading: false,
   error: null,
   onRetry: noop,
-  range: 7 as const,
-  onRange: noop,
-  page: 'now' as const,
+  page: 'tasks' as const,
   onPage: noop,
   onOpenSession: noop,
   onOpenStory: noop,
@@ -190,22 +188,19 @@ describe('board actions wait for the reads they depend on', () => {
 });
 
 describe('board task drawer', () => {
-  it('opens the task a progress table or stall row of the canvas view picks', () => {
-    saveLayout('drawer-hidden-main', setHidden(DEFAULT_LAYOUT, 'main', true));
-    const h = mount(() =>
-      BoardView(viewProps({ projectId: 'drawer-hidden-main', page: 'canvas' })),
-    );
-    const laid = () => named(h.value, 'CanvasView').props.panels.map((p: any) => p.node);
-    named(laid(), 'ProgressTable').props.onOpenTask('lead-1:t1');
+  it('opens the task a row of the list view picks', () => {
+    pickTaskView('drawer-list', 'list');
+    const h = mount(() => BoardView(viewProps({ projectId: 'drawer-list' })));
+    named(h.value, 'TaskList').props.onOpenTask('lead-1:t1');
     h.render();
     expect(find(h.value, (n) => n.type === TaskDrawer).props.taskId).toBe('lead-1:t1');
 
-    named(laid(), 'StallPanel').props.onOpenTask(null);
+    named(h.value, 'TaskList').props.onOpenTask(null);
     h.render();
     expect(find(h.value, (n) => n.type === TaskDrawer).props.taskId).toBeNull();
   });
 
-  it('opens the task the main view picks in the drawer beside the now view', () => {
+  it('opens the task the main view picks in the drawer beside the flow chart', () => {
     const h = mount(() => BoardView(viewProps({ projectId: 'drawer-main-shown' })));
     named(h.value, 'MainView').props.onSelect('lead-1:t1');
     h.render();

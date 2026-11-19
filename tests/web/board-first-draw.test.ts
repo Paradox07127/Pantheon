@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { HookHost, mount, named, nodes, unmountAll } from './web-hook-host.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+import type { BoardPage } from '../../apps/web/src/data/board-page.js';
 import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import type { BoardNeed } from '../../apps/web/src/screens/board/frame-model.js';
 import type { SnapshotSession } from '../../apps/web/src/screens/board/panels-model.js';
@@ -76,9 +77,7 @@ const view = (props: Partial<Parameters<typeof BoardView>[0]>) =>
     loading: false,
     error: null,
     onRetry: noop,
-    range: 7,
-    onRange: noop,
-    page: 'now',
+    page: 'tasks',
     onPage: noop,
     projectId: 'project-a',
     onOpenSession: noop,
@@ -101,7 +100,6 @@ function parts(tree: ReactNode) {
   };
   return {
     publish: has('bd-pub'),
-    strip: has('bov'),
     actions: has('tb-end'),
     plan: element('LeadPlan'),
     main: element('MainView'),
@@ -110,12 +108,11 @@ function parts(tree: ReactNode) {
 
 const none = {
   publish: false,
-  strip: false,
   actions: false,
   plan: false,
   main: false,
 };
-const full = { publish: true, strip: true, actions: true, plan: true, main: true };
+const full = { publish: true, actions: true, plan: true, main: true };
 
 describe('board first draw', () => {
   it('draws everything under the view tabs in one go once the board and its sessions are in', () => {
@@ -157,7 +154,7 @@ describe('board first draw', () => {
     expect(useShell.getState().boardWaits).toEqual(new Set());
   });
 
-  it('tells the notice cards every approval its needs-you list holds, on the chart or not, on the now view only', () => {
+  it('tells the notice cards every approval its needs-you list holds, on the chart or not, on the overview only', () => {
     const approval = {
       source: { table: 'approvals', id: 'approval-1', revision: 1 },
       kind: 'permission',
@@ -221,10 +218,10 @@ describe('board first draw', () => {
       ],
     } as unknown as BoardModel;
     const actions = { milestones: [], sessions: [], run: async () => null };
-    let page: 'now' | 'history' = 'now';
+    let page: BoardPage = 'overview';
     const h = mount(() => view({ model, actions, page }));
     expect(useShell.getState().boardWaits).toEqual(new Set(['approval-1', 'approval-2']));
-    page = 'history';
+    page = 'tasks';
     h.render();
     expect(useShell.getState().boardWaits).toEqual(new Set());
   });

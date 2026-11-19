@@ -284,3 +284,55 @@
   text-align: right;
   white-space: nowrap;
 }
+
+/* Quality overview: the first-pass ring beside its rate */
+
+.ql-ring {
+  flex: none;
+  align-self: center;
+}
+.ql-ring circle {
+  fill: none;
+  stroke: var(--track);
+  stroke-width: 3;
+}
+.ql-ring circle + circle {
+  stroke: var(--ok);
+  stroke-linecap: round;
+}
+
+/* Merges per day: one bar per day, its count over it and its day under it */
+
+.ql-days {
+  display: flex;
+  gap: var(--sp-2);
+  height: 160px;
+}
+.ql-days > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ql-dbar {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  width: 100%;
+  min-height: 0;
+}
+.ql-dbar > i {
+  width: 100%;
+  height: var(--v);
+  border-radius: 3px 3px 0 0;
+  background: var(--ok);
+}
+.ql-dn {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

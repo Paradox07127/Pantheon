@@ -18,8 +18,7 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
 import { FlowChart } from '@/screens/board/FlowPanel';
 import { flowLayout } from '@/screens/board/flow-layout';
 import { FlowGroupControl, MainView } from '@/screens/board/MainView';
-import { ProgressTable } from '@/screens/board/ProgressTable';
-import { TaskGroups } from '@/screens/board/TaskGroups';
+import { TaskList } from '@/screens/board/TaskList';
 
 type Task = BoardModel['tasks'][number];
 const NOW = Date.UTC(2026, 10, 12, 12);
@@ -192,28 +191,18 @@ describe('board canvas long lists', () => {
   const todo = (n: number) =>
     Array.from({ length: n }, (_, i) => task(`row-${i}`, { state: 'todo' }));
   const toggles = (tree: ReactNode) =>
-    nodes(tree).filter((n) => n.type === 'button' && 'aria-expanded' in n.props);
+    nodes(tree).filter((n) => n.type === 'button' && n.props.className === 'bd-lnk bf-more');
 
   it.each([
     {
-      list: 'progress table',
-      limit: 12,
+      list: 'task list group',
+      limit: 8,
       draw: (n: number) =>
         mount(() =>
-          ProgressTable({
-            model: { ...board(todo(n)), counts: { median_ms: null } } as BoardModel,
-            onOpenTask() {},
-          }),
+          TaskList({ model: { tasks: todo(n), needs: [], now: NOW }, onOpenTask() {}, bar: null }),
         ),
       rows: (tree: ReactNode) =>
         nodes(tree).filter((n) => n.props.role === 'row' && n.props['aria-label']).length,
-    },
-    {
-      list: 'task group',
-      limit: 8,
-      draw: (n: number) =>
-        mount(() => TaskGroups({ model: { tasks: todo(n), needs: [] }, onOpenTask() {} })),
-      rows: (tree: ReactNode) => nodes(tree).filter((n) => n.props.task).length,
     },
   ])(
     'shows the first $limit rows of a $list and a switch to all of them',

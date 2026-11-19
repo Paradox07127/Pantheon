@@ -908,7 +908,8 @@ export async function run({ workspace, evidenceDir, humanReview }) {
           ?.find((l) => l.session_id === ids.lead)
           ?.pending_edits?.some((e) => e.id === editId) ?? false;
       await click(button('项目看板', { within: NAV }));
-      await click({ role: 'radio', name: '现在', exact: true });
+      await click({ role: 'radio', name: '任务', exact: true });
+      await click({ role: 'radio', name: '流程图', exact: true });
       // With changes left unsent the edit button's name counts them.
       await click(button('编辑', { exact: false }));
       const source = await waitUi(

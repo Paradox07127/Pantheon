@@ -129,6 +129,8 @@ const expectedMenu = [...agents.map(agentLabel), leadTitle, DIRECT, '新 lead'];
 result.expected_menu = expectedMenu;
 
 await page.click({ role: 'button', name: '项目看板', exact: true });
+// The requirement bar is on the tasks page.
+await page.click({ role: 'radio', name: '任务', exact: true });
 const targetButton = () =>
   poll(async () => (await names('发送给')).filter((c) => c.role === 'button').map((c) => c.name));
 const firstTarget = await targetButton();
@@ -264,6 +266,7 @@ check(
 await page.click({ role: 'button', name: '切换项目', exact: true });
 await page.click({ role: 'menuitemradio', name: `verify-request-${stamp}`, exact: false });
 await page.click({ role: 'button', name: '项目看板', exact: true });
+await page.click({ role: 'radio', name: '任务', exact: true });
 const afterReload = await targetButton();
 check(`刷新后按钮仍叫 "发送给${DIRECT}"`, afterReload?.[0] === `发送给${DIRECT}`, afterReload);
 const ASK2 = `verify-ask-direct-${stamp}`;

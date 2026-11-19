@@ -81,7 +81,6 @@ describe('page top bar', () => {
         'insights.sections.workflow',
         'board.sections.quality',
         'board.sections.usage',
-        'board.panels.retro',
         'insights.digest.label',
         'insights.sections.signals',
       ].map((id) => zh(id)),
@@ -113,11 +112,11 @@ describe('page top bar', () => {
     expect(body).not.toContain('role="radiogroup"');
   });
 
-  it('holds the memory name and its overview, entries, graph and learned tabs', () => {
+  it('holds the memory name and its overview, entries, graph, diagrams and learned tabs', () => {
     const { bar, body } = split(createElement(MemoryScreen, { projectId: 'alpha' }));
     expect(bar).toContain(`<h1>${SCREEN_NAMES.memory}</h1>`);
     expect(tabs(bar)).toEqual(
-      ['overview', 'entries', 'graph', 'learned'].map((tab) => zh(`memory.tab.${tab}`)),
+      ['overview', 'entries', 'graph', 'diagrams', 'learned'].map((tab) => zh(`memory.tab.${tab}`)),
     );
     expect(tabs(body)).toEqual([]);
   });

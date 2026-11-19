@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { BoardModel } from '@pantheon/protocol';
 import { activityLine, taskBadges } from '@/screens/board/activity';
 import { TaskDrawer } from '@/screens/board/TaskDrawer';
-import { TaskGroups } from '@/screens/board/TaskGroups';
+import { TaskList } from '@/screens/board/TaskList';
 import { zh } from './i18n-setup.js';
 
 const queuedText = (key: string, values: Record<string, string> = {}) =>
@@ -43,6 +43,11 @@ const queued = (id: string, wait: Task['dispatch_wait']): Task =>
     activity: { phase: 'queued', since: NOW, health: 'fresh', attempt: 1 },
   }) as Task;
 
+const list = (tasks: Task[]) =>
+  renderToStaticMarkup(
+    createElement(TaskList, { model: { tasks, needs: [], now: NOW }, onOpenTask() {}, bar: null }),
+  );
+
 const paused = queued('paused', 'paused');
 const full = queued('full', 'runtime_capacity');
 
@@ -54,10 +59,8 @@ describe('dispatch paused and runtime capacity waits', () => {
     expect(taskBadges(full).map((b) => b.label)).toContain(queuedText('runtimeCapacity'));
   });
 
-  it('words both in the task groups', () => {
-    const html = renderToStaticMarkup(
-      createElement(TaskGroups, { model: { tasks: [paused, full], needs: [] }, onOpenTask() {} }),
-    );
+  it('words both in the task list', () => {
+    const html = list([paused, full]);
     expect(html).toContain(queuedText('paused'));
     expect(html).toContain(queuedText('runtimeCapacity'));
   });
@@ -88,13 +91,8 @@ describe('device waits', () => {
     }
   });
 
-  it('words each in the task groups', () => {
-    const html = renderToStaticMarkup(
-      createElement(TaskGroups, {
-        model: { tasks: waits.map(([task]) => task), needs: [] },
-        onOpenTask() {},
-      }),
-    );
+  it('words each in the task list', () => {
+    const html = list(waits.map(([task]) => task));
     for (const [, text] of waits) expect(html).toContain(text);
     expect(html).not.toContain('排队中');
   });
@@ -116,11 +114,8 @@ describe('waiting for a workflow step', () => {
     ).toContain('Release sign-off');
   });
 
-  it('names the step in the task groups and the task drawer', () => {
-    const groups = renderToStaticMarkup(
-      createElement(TaskGroups, { model: { tasks: [step], needs: [] }, onOpenTask() {} }),
-    );
-    expect(groups).toContain('Release sign-off');
+  it('names the step in the task list and the task drawer', () => {
+    expect(list([step])).toContain('Release sign-off');
     const drawer = renderToStaticMarkup(
       createElement(TaskDrawer, {
         model: {

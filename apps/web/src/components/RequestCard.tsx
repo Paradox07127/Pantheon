@@ -5,6 +5,7 @@ import type { ApprovalQuestion, Improvement } from '@pantheon/domain';
 import type { BoardTaskRung } from '@pantheon/protocol';
 import { blocksText, decisionText, primaryAction } from '../data/attention';
 import { useBoard } from '../data/board';
+import type { PlanProposal } from '../data/plan-edit';
 import {
   ageText,
   blockedReasonText,
@@ -25,7 +26,6 @@ import {
   noVerdict,
   noVerdictKind,
   outOfScopeFiles,
-  proposalCardId,
   stripActions,
   type NeedAction,
   type NeedActionKey,
@@ -44,7 +44,6 @@ import { STATE, STATUS, StateIcon } from '../screens/board/status';
 import { useDialogContent } from '../screens/board/TellLead';
 import { ResolveButtons } from '../screens/sessions/parts';
 import { openSettingsPage } from '../screens/settings/settings-jump';
-import { useShell } from '../store';
 import { Clip } from './Clip';
 import { changeFrom, LearnedChangeDiff } from './LearnedChangeDiff';
 import { Menu, MenuItem } from './Menu';
@@ -93,6 +92,12 @@ export interface RequestCardProps {
   primaryRef?: (el: HTMLButtonElement | null) => void;
   /** Drawn under a compact row's line, after its own facts. */
   sub?: ReactNode;
+  /** The title of the milestone the session's task is in. */
+  taskMilestone?: string;
+  /** The longest wait of the list, the full length of a compact row's wait bar. */
+  waitScale?: number;
+  /** The lead's proposal a plan proposal row decides, and its change-then-accept editor. */
+  proposal?: { view: PlanProposal; edit: (close: () => void) => ReactNode };
 }
 
 // The waiting dot stays with approvals and questions; every other kind has its mark from elsewhere.
@@ -144,6 +149,9 @@ export function RequestCard({
   onActed,
   primaryRef,
   sub,
+  taskMilestone,
+  waitScale,
+  proposal,
 }: RequestCardProps) {
   const asked = item.kind === 'lead.question' ? item.question : undefined;
   const relayed = asked?.source;
@@ -166,6 +174,8 @@ export function RequestCard({
   const [error, setError] = useState<string | null>(null);
   // A list row's question card opens under the row from its one action.
   const [answering, setAnswering] = useState(false);
+  // A plan proposal row's change-then-accept editor opens under the row.
+  const [editing, setEditing] = useState(false);
   const accepting = useDialogContent<{ stored: SnapshotMilestone }>();
   // The board that draws the card draws it again on every read, so no subscription is needed.
   const replaced = changeFrom(improvement, useBoard.getState().board?.projects);
@@ -199,17 +209,6 @@ export function RequestCard({
     }
     if (action.key === 'budget') {
       openSettingsPage(item.project_id, 'projects');
-      return;
-    }
-    if (action.key === 'proposal') {
-      const card = document.getElementById(proposalCardId(item.request_id ?? ''));
-      // Without the board's now view drawn there is no proposals panel to show it in.
-      if (!card) {
-        useShell.getState().openProjectBoard(item.project_id);
-        return;
-      }
-      card.scrollIntoView({ block: 'nearest' });
-      card.focus();
       return;
     }
     const command = needCommand(item, action.key, { answers: answered, session, lead });
@@ -466,7 +465,36 @@ export function RequestCard({
     { id: 'components.requestCard.more', defaultMessage: 'More actions: {name}' },
     { name: who },
   );
-  const rest = actions.filter((action) => action !== primary);
+  // A plan proposal row is decided in place, so both of its buttons show.
+  const plan = item.kind === 'board.plan.proposal' ? proposal : undefined;
+  const inline = plan ? actions : primary ? [primary] : [];
+  const rest = actions.filter((action) => !inline.includes(action));
+  const adjust = t({ id: 'board.plan.proposal.adjust', defaultMessage: 'Change, then accept' });
+  const waited = Math.max(0, now - item.created_at);
+  const meta = [
+    taskMilestone && <span key="milestone">{taskMilestone}</span>,
+    plan && (
+      <span key="why" className="rq-why">
+        <Clip text={plan.view.reason} />
+      </span>
+    ),
+    plan && (
+      <span key="ops">
+        {t(
+          { id: 'board.plan.row.ops', defaultMessage: 'Adds {adds}, removes {removes}' },
+          {
+            adds: plan.view.ops.filter((op) => op.type === 'add_task').length,
+            removes: plan.view.ops.filter((op) => op.type === 'remove_task').length,
+          },
+        )}
+      </span>
+    ),
+    blocks && (
+      <span key="blocks" className="rq-blk">
+        {blocks}
+      </span>
+    ),
+  ].filter(Boolean);
 
   // The row's count of commands hides what each one runs and whether its failure fails the gate.
   const changeDiff = (improvement?.change.type === 'gate_command' ||
@@ -587,38 +615,79 @@ export function RequestCard({
     <>
       <div className="rq-hd">
         {MARK[item.kind]}
-        <span className="rq-kind">
-          <Clip text={kind} />
-        </span>
-        <span className="rq-what">
-          {summary ? (
-            <span className="rq-cmd" title={summary}>
-              {summary}
+        <div className="rq-main">
+          <div className="rq-l1">
+            <span className="rq-kind">
+              <Clip text={kind} />
             </span>
-          ) : (
-            rowWhat !== kind && <Clip text={rowWhat} />
-          )}
-          {onSelect ? (
-            <Tip content={who}>
+            <span className="rq-what">
+              {summary ? (
+                <span className="rq-cmd" title={summary}>
+                  {summary}
+                </span>
+              ) : (
+                rowWhat !== kind && <Clip text={rowWhat} />
+              )}
+              {onSelect ? (
+                <Tip content={who}>
+                  <button
+                    type="button"
+                    className="rq-who rq-pick"
+                    aria-current={selected || undefined}
+                    onClick={onSelect}
+                  >
+                    {who}
+                  </button>
+                </Tip>
+              ) : (
+                <b className="rq-who">
+                  <Clip text={who} />
+                </b>
+              )}
+            </span>
+          </div>
+          {meta.length > 0 && <div className="rq-l2">{meta}</div>}
+        </div>
+        <span className="rq-wt">
+          <span
+            className="meter"
+            role="img"
+            aria-label={t(
+              {
+                id: 'board.needs.waitBar',
+                defaultMessage: 'Waited {duration}, scale 0 to {longest}',
+              },
+              {
+                duration: durationText(waited),
+                longest: durationText(Math.max(waited, waitScale ?? 0)),
+              },
+            )}
+            style={
+              {
+                '--v': `${waitScale ? Math.min(100, (waited / waitScale) * 100) : 100}%`,
+                '--c': 'var(--wait)',
+              } as CSSProperties
+            }
+          >
+            <i />
+          </span>
+          {age}
+        </span>
+        <span className="rq-acts">
+          {inline.map((action) => button(action))}
+          {plan && (
+            <Tip content={adjust}>
               <button
                 type="button"
-                className="rq-who rq-pick"
-                aria-current={selected || undefined}
-                onClick={onSelect}
+                className="ib"
+                aria-label={`${adjust} ${who}`}
+                aria-expanded={editing}
+                onClick={() => setEditing(!editing)}
               >
-                {who}
+                <Pencil aria-hidden="true" />
               </button>
             </Tip>
-          ) : (
-            <b className="rq-who">
-              <Clip text={who} />
-            </b>
           )}
-        </span>
-        <span className="rq-blk">{blocks}</span>
-        {age}
-        <span className="rq-acts">
-          {primary && button(primary)}
           {(rest.length > 0 || stuck) && (
             <Menu
               label={who}
@@ -671,6 +740,7 @@ export function RequestCard({
         )}
         {changeDiff}
         {answering && card}
+        {plan && editing && plan.edit(() => setEditing(false))}
         {sub}
       </div>
     </>

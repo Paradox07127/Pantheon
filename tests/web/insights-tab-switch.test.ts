@@ -201,10 +201,10 @@ it("shows only the picked tab's panel, with its content, in the first commit aft
   const [collab] = shownPanels();
   expect(shownPanels()).toHaveLength(1);
   expect(collab!.textContent).toContain('collaboration content');
-  await show('retro');
+  await show('quality');
   const shown = shownPanels();
   expect(shown.map((p) => p.textContent)).toEqual([
-    expect.stringContaining(zh('board.task.retro.empty')),
+    expect.stringContaining(zh('board.trend.empty')),
   ]);
   expect(shown[0]!.textContent).not.toContain('collaboration content');
 });
@@ -215,7 +215,7 @@ it('shows the panel last drawn for a tab when it comes back to that tab', async 
   await settle();
   const drawn = collab();
   expect(drawn).toBeDefined();
-  await show('retro');
+  await show('quality');
   await settle();
   await show('collab');
   expect(collab() === drawn).toBe(true);

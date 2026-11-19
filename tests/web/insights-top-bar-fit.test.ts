@@ -129,14 +129,14 @@ describe('engineering board tabs in a bar too narrow for them', () => {
   it('shows every tab while they fit', async () => {
     room.px = 1000;
     await show('usage');
-    expect(shownTabs()).toHaveLength(8);
+    expect(shownTabs()).toHaveLength(7);
     expect(moreTabs()).toHaveLength(0);
   });
 
   it('moves the tabs that do not fit into a menu, so no tab runs under the controls after it', async () => {
     await resize(450);
     expect(tabsInside()).toBe(true);
-    expect(shownTabs().length).toBeLessThan(8);
+    expect(shownTabs().length).toBeLessThan(7);
     expect(shownTabs()).toContain(zh('board.sections.usage'));
     expect(moreTabs()).toHaveLength(1);
   });
@@ -149,7 +149,7 @@ describe('engineering board tabs in a bar too narrow for them', () => {
 
   it('brings every tab back once the bar is wide again', async () => {
     await resize(1000);
-    expect(shownTabs()).toHaveLength(8);
+    expect(shownTabs()).toHaveLength(7);
     expect(moreTabs()).toHaveLength(0);
   });
 });

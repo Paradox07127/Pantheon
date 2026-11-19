@@ -1,29 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readBoardPage } from '../../apps/web/src/data/board-page.js';
+import { readBoardPage, type BoardPage } from '../../apps/web/src/data/board-page.js';
 import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import { changesBoard } from '../../apps/web/src/data/board-view.js';
 import { acceptanceEvidence } from '../../apps/web/src/screens/board/panels-model.js';
-import { TaskGroups, taskGroups } from '../../apps/web/src/screens/board/TaskGroups.js';
+import { taskGroups } from '../../apps/web/src/screens/board/TaskGroups.js';
+import { TaskList } from '../../apps/web/src/screens/board/TaskList.js';
 import type { BoardModel, BoardTaskState, BoardTaskStatus } from '@pantheon/protocol';
 import { zh } from './i18n-setup.js';
 
 describe('board view storage', () => {
-  it.each<[string, (string | null)[], (key: string | null) => string | null]>([
-    ['reads each stored view key back', ['goals', 'now', 'history', 'canvas'], (key) => key],
-    [
-      'opens the now view for a former tab key',
-      ['progress', 'milestones', 'tasks', 'commitments', 'quality', 'usage'],
-      () => 'now',
-    ],
-    [
-      'falls back to the now view for a missing or unknown value',
-      [null, '', '"canvas"', 'flow'],
-      () => 'now',
-    ],
-  ])('%s', (_name, keys, expected) => {
-    for (const key of keys) expect(readBoardPage(key)).toBe(expected(key));
+  it.each<[string | null, BoardPage]>([
+    ['overview', 'overview'],
+    ['tasks', 'tasks'],
+    ['goals', 'overview'],
+    ['now', 'overview'],
+    ['canvas', 'overview'],
+    ['history', 'tasks'],
+    [null, 'overview'],
+    ['', 'overview'],
+    ['"canvas"', 'overview'],
+    ['progress', 'overview'],
+    ['flow', 'overview'],
+  ])('reads the stored view %j as %s', (raw, page) => {
+    expect(readBoardPage(raw)).toBe(page);
   });
 });
 
@@ -88,7 +89,9 @@ describe('first screen task groups', () => {
   ];
   const model = { tasks, needs: [asked('lead-1:asked-a')] };
   const html = (m: Pick<BoardModel, 'tasks' | 'needs'>) =>
-    renderToStaticMarkup(createElement(TaskGroups, { model: m, onOpenTask() {} }));
+    renderToStaticMarkup(
+      createElement(TaskList, { model: { ...m, now: 0 }, onOpenTask() {}, bar: null }),
+    );
 
   it('groups the plan tasks: yours, blocked or failed, running, awaiting acceptance, to do, merged', () => {
     expect(taskGroups(model).map((g) => [g.label, g.tasks.map((t) => t.title)])).toEqual([
@@ -112,26 +115,6 @@ describe('first screen task groups', () => {
     expect(out.indexOf(zh('board.task.group.todo'))).toBeLessThan(
       out.indexOf(zh('board.task.group.merged')),
     );
-  });
-
-  it('strikes the planned model through before the claimed one when they differ', () => {
-    const out = html({
-      tasks: [
-        planTask('swapped', 'running', {
-          planned: { runtime: 'codex', model: 'gpt-5.1-codex' },
-          claim: { session_id: 'w1', runtime: 'claude', model: 'claude-sonnet-4-5' },
-        }),
-        planTask('kept', 'running', {
-          planned: { runtime: 'codex', model: 'gpt-5.1-codex-mini' },
-          claim: { session_id: 'w2', runtime: 'codex', model: 'gpt-5.1-codex-mini' },
-        }),
-      ],
-      needs: [],
-    });
-    expect(out).toContain('<s>gpt-5.1-codex</s>');
-    expect(out.match(/<s>/g)).toHaveLength(1);
-    expect(out).toContain('claude-sonnet-4-5');
-    expect(out).toContain('gpt-5.1-codex-mini');
   });
 });
 
@@ -195,12 +178,11 @@ describe('main progress on the first screen', () => {
     renderToStaticMarkup(
       createElement(BoardView, {
         model: board(milestones),
-        page: 'now',
+        projectId: 'project-a',
+        page: 'overview',
         loading: false,
         error: null,
         onRetry() {},
-        range: 7,
-        onRange() {},
         onPage() {},
         onOpenSession() {},
         onOpenStory() {},

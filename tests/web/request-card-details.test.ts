@@ -5,7 +5,6 @@ import { zh } from './i18n-setup.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 import { RequestCard } from '../../apps/web/src/components/RequestCard.js';
 import { toastManager } from '../../apps/web/src/components/Toast.js';
-import { useShell } from '../../apps/web/src/store.js';
 import { useSettingsView } from '../../apps/web/src/screens/settings/view.js';
 import { needWho, type NeedItem } from '../../apps/web/src/screens/board/frame-model.js';
 import type {
@@ -207,9 +206,7 @@ describe('request card details', () => {
     expect(text(h.value)).not.toContain('The task has no running turn');
   });
 
-  it('marks a lead plan proposal with the plan edit icon and offers only to show it, on the board when no proposals panel is drawn', () => {
-    const openProjectBoard = vi.fn();
-    useShell.setState({ openProjectBoard });
+  it('marks a lead plan proposal with the plan edit icon and decides it in place with Accept and Reject', async () => {
     const leadSession = { ...worker, id: 'lead-1', title: 'Refunds lead', task: undefined };
     const who = needWho(proposed, { tasks: [], milestones: [] }, [leadSession]);
     expect(who).toBe('Refunds lead 提议改计划');
@@ -221,12 +218,23 @@ describe('request card details', () => {
     );
     expect(text(find(h.value, (n) => n.props.className === 'rq-who'))).toBe(who);
     expect(text(h.value)).toContain(zh('data.reason.planProposalAwaitingDecision'));
-    expect(labels(h.value)).toEqual([zh('board.needs.actions.proposal')]);
-    vi.stubGlobal('document', { getElementById: () => null });
-    button(h.value, zh('board.needs.actions.proposal')).props.onClick();
-    vi.unstubAllGlobals();
-    expect(openProjectBoard).toHaveBeenCalledWith('project-a');
-    expect(run).not.toHaveBeenCalled();
+    expect(labels(h.value)).toEqual([
+      zh('board.plan.proposal.accept'),
+      zh('board.plan.proposal.reject'),
+    ]);
+    run.mockResolvedValue(null);
+    button(h.value, zh('board.plan.proposal.accept')).props.onClick();
+    await h.flush();
+    expect(run).toHaveBeenCalledWith(
+      'board.plan.proposal.resolve',
+      {
+        project_id: 'project-a',
+        lead_session_id: 'lead-1',
+        proposal_id: 'proposal-1',
+        decision: 'accept',
+      },
+      null,
+    );
   });
 
   it('opens the settings on the page of the project over its budget', () => {

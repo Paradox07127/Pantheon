@@ -13,7 +13,7 @@ import {
   readInsightsSection,
   type InsightsSection,
 } from '@/screens/insights/InsightsScreen';
-import { zh } from './i18n-setup.js';
+import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 
@@ -82,13 +82,11 @@ const progress = (projectId: string) =>
   renderToStaticMarkup(
     createElement(BoardView, {
       model: board(),
-      page: 'canvas',
+      page: 'tasks',
       projectId,
       loading: false,
       error: null,
       onRetry() {},
-      range: 7,
-      onRange() {},
       onPage() {},
       onOpenSession() {},
       onOpenStory() {},
@@ -105,12 +103,11 @@ describe('engineering board tabs', () => {
     'workflow',
     'quality',
     'usage',
-    'retro',
     'digest',
     'signals',
   ];
 
-  it('names the tabs iterations, collaboration, workflow, quality, usage, retrospectives, weekly digest and signals in that order', () => {
+  it('names the tabs iterations, collaboration, workflow, quality, usage, weekly digest and signals in that order', () => {
     const html = insights('quality');
     expect(html).toContain(`aria-label="${zh('insights.tabs.label')}"`);
     expect(tabs(html)).toEqual(
@@ -120,7 +117,6 @@ describe('engineering board tabs', () => {
         'insights.sections.workflow',
         'board.sections.quality',
         'board.sections.usage',
-        'board.panels.retro',
         'insights.digest.label',
         'insights.sections.signals',
       ].map(zh),
@@ -139,25 +135,76 @@ describe('engineering board tabs', () => {
       expect(readInsightsSection(raw)).toBe('iterations');
   });
 
-  it('shows the retrospectives on their own tab and not on quality', () => {
-    expect(insights('retro')).toContain(zh('board.task.retro.empty'));
+  it('has no retrospectives tab, and opens quality for a stored retrospectives tab', () => {
+    expect(tabs(insights('quality'))).not.toContain(zh('board.panels.retro'));
+    expect(readInsightsSection('retro')).toBe('quality');
     expect(insights('quality')).not.toContain(zh('board.task.retro.empty'));
     expect(progress('retro-on-board')).not.toContain(zh('board.task.retro.empty'));
   });
 
   it('shows the weekly digest on its own tab', () => {
     expect(insights('digest', 'weekly-digest')).toContain('class="wkd"');
-    expect(insights('retro', 'weekly-digest')).not.toContain('class="wkd"');
+    expect(insights('quality', 'weekly-digest')).not.toContain('class="wkd"');
   });
 
   it('gives each tab its own place at the end of the top bar, only the shown tab’s on screen', () => {
     const places = [...insights('collab').matchAll(/<span class="ins-bar"( hidden="")?/g)];
-    expect(places).toHaveLength(8);
+    expect(places).toHaveLength(7);
     expect(places.filter((m) => !m[1])).toHaveLength(1);
   });
 
   it('shows the usage overview on the usage tab', () => {
     expect(insights('usage', 'usage-overview')).toContain(`aria-label="${zh('board.kpi.label')}"`);
+  });
+});
+
+describe('engineering board quality tab', () => {
+  it('shows the first-pass ring, then the completion trend, the cycle time distribution and the merges per day', () => {
+    const model = board();
+    const html = renderToStaticMarkup(
+      createElement(InsightsView, {
+        model: {
+          ...model,
+          counts: { ...model.counts, merged: 1, gate_first_pass: { tasks: 4, passed: 3 } },
+          merges: [
+            {
+              session_id: 'merged-1',
+              title: 'Refund retries',
+              merged_at: NOW - 3_600_000,
+              from_sha: null,
+              sha: 'a1b2c3d4e5',
+              additions: 1,
+              deletions: 0,
+              story_id: null,
+            },
+          ],
+        },
+        section: 'quality',
+        loading: false,
+        error: null,
+        onRetry() {},
+        days: 7,
+        onDays() {},
+        onSection() {},
+        onOpenSession() {},
+        onOpenStory() {},
+      }),
+    );
+    expect(html).toMatch(
+      new RegExp(
+        `role="img" aria-label="${zhf('insights.quality.firstPassRing', { percent: 75 })}"`,
+      ),
+    );
+    const at = (title: string) => html.indexOf(`>${title}</h2>`);
+    const order = [
+      zh('board.trend.title'),
+      zh('board.cycle.title'),
+      zh('insights.mergesPerDay.title'),
+      zh('board.findings.title'),
+    ].map(at);
+    expect(order.every((i) => i > html.indexOf(zh('insights.quality.merged')))).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(order[0]).toBeGreaterThan(-1);
   });
 });
 
@@ -183,7 +230,6 @@ describe('engineering board storage', () => {
     expect(insights('quality', 'layout-split')).toContain('已隐藏 1');
     expect(progress('layout-split')).not.toContain('class="bd-hid"');
     saveLayout('layout-board-only', setSpan(DEFAULT_LAYOUT, 'stall', 6));
-    expect(progress('layout-board-only')).toContain(zh('board.layout.reset'));
     expect(insights('quality', 'layout-board-only')).not.toContain('class="bd-hid"');
   });
 });

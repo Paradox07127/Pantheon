@@ -69,6 +69,7 @@ const board = (tasks: Task[]): BoardModel =>
     lanes: [],
     edges: [],
     merges: [merge],
+    milestones: [],
     tasks,
   }) as unknown as BoardModel;
 

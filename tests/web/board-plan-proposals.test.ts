@@ -5,13 +5,10 @@ import { deferred, find, nodes, text, unmountAll, mount } from './web-hook-host.
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 const { runCommand } = vi.hoisted(() => ({ runCommand: vi.fn() }));
 vi.mock('@/data/commands', () => ({ runCommand }));
-import { PlanProposals } from '@/screens/board/PlanProposals';
-import { proposalCardId } from '@/screens/board/frame-model';
-import { RuntimeGlyph } from '@/components/RuntimeGlyph';
+import { ProposalEdit } from '@/screens/board/PlanProposals';
 import { toastManager } from '@/components/Toast';
 import { failureText } from '@/data/needs-you';
 import type { PlanOp, PlanProposal } from '@/data/plan-edit';
-import type { SnapshotSession } from '@/screens/board/panels-model';
 import { zh, zhf } from './i18n-setup.js';
 
 type Task = BoardModel['tasks'][number];
@@ -77,8 +74,6 @@ const board = (proposals: PlanProposal[] = [proposal('p-1', NOW)]): BoardModel =
     ],
   }) as unknown as BoardModel;
 
-const lead = { id: 'lead-1', project_id: 'project-a', runtime: 'claude' } as SnapshotSession;
-
 beforeEach(() => {
   runCommand.mockReset();
   runCommand.mockResolvedValue({ ok: true, value: {} });
@@ -88,14 +83,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Each proposal card of the board, drawn with its own state. */
-function cards(model: BoardModel) {
-  const list = PlanProposals({ model, projectId: 'project-a', sessions: [lead] });
-  return nodes(list)
-    .filter((n) => typeof n.type === 'function' && n.type.name === 'ProposalCard')
-    .map((card) => mount(() => (card.type as (p: object) => ReactElement<any>)(card.props)));
+/** The change-then-accept editor of the board's first proposal, drawn with its own state. */
+function editor(model: BoardModel = board(), onCancel = vi.fn()) {
+  const shown = model.leads![0]!.pending_proposals![0]!;
+  return mount(() => ProposalEdit({ model, projectId: 'project-a', proposal: shown, onCancel }));
 }
-const card = () => cards(board())[0]!;
 
 const button = (tree: ReactNode, label: string) =>
   find(tree, (n) => n.type === 'button' && text(n) === label);
@@ -105,37 +97,15 @@ const rows = (tree: ReactNode) => nodes(tree).filter((n) => n.props.className ==
 const sent = () => runCommand.mock.calls.map(([type, input, revision]) => [type, input, revision]);
 const RESOLVE = { project_id: 'project-a', lead_session_id: 'lead-1', proposal_id: 'p-1' };
 
-describe('lead plan proposals on the board', () => {
-  it('draws nothing without a pending proposal', () => {
-    expect(PlanProposals({ model: board([]), projectId: 'project-a', sessions: [] })).toBeNull();
-    const none = { ...board(), leads: [{ ...board().leads![0]!, pending_proposals: undefined }] };
-    expect(PlanProposals({ model: none, projectId: 'project-a', sessions: [] })).toBeNull();
-  });
-
-  it("heads a card with the lead's runtime, its proposal and its reason side by side", () => {
-    const h = card();
-    const head = find(h.value, (n) => n.props.className === 'bd-pp-h');
-    const [mark, title, why] = nodes(head.props.children);
-    expect(mark!.type).toBe(RuntimeGlyph);
-    expect(mark!.props.runtime).toBe('claude');
-    expect(text(title)).toBe(zhf('board.plan.proposal.title', { lead: 'Refunds lead' }));
-    expect(why!.props.className).toBe('bd-pp-why');
-    expect(text(why)).toBe('The diff report failed its gate three times');
-  });
-
-  it('marks each card by its proposal, so a needs-you row can bring it into view and focus it', () => {
-    const article = find(card().value, (n) => n.type === 'article');
-    expect(article.props.id).toBe(proposalCardId('p-1'));
-    expect(article.props.tabIndex).toBe(-1);
-  });
-
+describe('changing a lead plan proposal before accepting it', () => {
   it('lists each op in order: removed and added tasks with their signs, others as changes', () => {
-    const [removed, added, chained, other] = rows(card().value);
+    const [removed, added, chained, other] = rows(editor().value);
     expect(removed!.props['data-change']).toBe('remove');
     expect(text(removed)).toBe('−删除task c');
     expect(added!.props['data-change']).toBe('add');
-    expect(text(added)).toBe('+新增Daily query功能依赖 task a');
-    expect(text(chained)).toBe('+新增Report page依赖 Daily query');
+    expect(text(added)).toBe('+新增功能依赖 task a');
+    expect(find(added, (n) => n.type === 'input').props.value).toBe('Daily query');
+    expect(text(chained)).toBe('+新增依赖 Daily query');
     expect(other!.props['data-change']).toBeUndefined();
     expect(text(other)).toContain('task b');
     expect(find(other, (n) => n.props.className === 'bd-bn-ch')).toBeTruthy();
@@ -149,19 +119,8 @@ describe('lead plan proposals on the board', () => {
     }
   });
 
-  it('accepts the proposal as the lead wrote it', async () => {
-    const h = card();
-    button(h.value, zh('board.plan.proposal.accept')).props.onClick();
-    await h.flush();
-    expect(sent()).toEqual([
-      ['board.plan.proposal.resolve', { ...RESOLVE, decision: 'accept' }, null],
-    ]);
-  });
-
   it('accepts the ops left after removing one and retitling a new task', async () => {
-    const h = card();
-    button(h.value, zh('board.plan.proposal.adjust')).props.onClick();
-    h.render();
+    const h = editor();
     labelled(h.value, zhf('board.plan.proposal.drop', { change: 'task c' })).props.onClick();
     h.render();
     labelled(
@@ -191,10 +150,9 @@ describe('lead plan proposals on the board', () => {
     ]);
   });
 
-  it('holds the edited accept while no op is left or a new task has no title', () => {
-    const h = card();
-    button(h.value, zh('board.plan.proposal.adjust')).props.onClick();
-    h.render();
+  it('holds the edited accept while no op is left or a new task has no title, and Cancel closes it', () => {
+    const onCancel = vi.fn();
+    const h = editor(board(), onCancel);
     labelled(
       h.value,
       zhf('board.plan.proposal.taskTitle', { title: 'Report page' }),
@@ -208,106 +166,30 @@ describe('lead plan proposals on the board', () => {
     expect(rows(h.value)).toHaveLength(0);
     expect(button(h.value, zh('board.plan.proposal.acceptEdited')).props.disabled).toBe(true);
     button(h.value, zh('board.plan.proposal.cancel')).props.onClick();
-    h.render();
-    expect(rows(h.value)).toHaveLength(4);
-    expect(button(h.value, zh('board.plan.proposal.accept')).props.disabled).toBe(false);
-  });
-
-  it('rejects with the reason typed, sent by Enter', async () => {
-    const h = card();
-    button(h.value, zh('board.plan.proposal.reject')).props.onClick();
-    h.render();
-    labelled(h.value, zh('board.plan.proposal.rejectReason')).props.onChange({
-      target: { value: ' Keep it one task ' },
-    });
-    h.render();
-    labelled(h.value, zh('board.plan.proposal.rejectReason')).props.onKeyDown({
-      key: 'Enter',
-      nativeEvent: { isComposing: false },
-      preventDefault() {},
-    });
-    await h.flush();
-    expect(sent()).toEqual([
-      [
-        'board.plan.proposal.resolve',
-        { ...RESOLVE, decision: 'reject', reason: 'Keep it one task' },
-        null,
-      ],
-    ]);
-  });
-
-  it('rejects without a reason from the button, and Escape goes back without sending', async () => {
-    const h = card();
-    button(h.value, zh('board.plan.proposal.reject')).props.onClick();
-    h.render();
-    labelled(h.value, zh('board.plan.proposal.rejectReason')).props.onKeyDown({
-      key: 'Escape',
-      nativeEvent: { isComposing: false },
-      preventDefault() {},
-    });
-    h.render();
-    expect(
-      nodes(h.value).some((n) => n.props['aria-label'] === zh('board.plan.proposal.rejectReason')),
-    ).toBe(false);
+    expect(onCancel).toHaveBeenCalledOnce();
     expect(runCommand).not.toHaveBeenCalled();
-    button(h.value, zh('board.plan.proposal.reject')).props.onClick();
-    h.render();
-    button(h.value, zh('board.plan.proposal.reject')).props.onClick();
-    await h.flush();
-    expect(sent()).toEqual([
-      ['board.plan.proposal.resolve', { ...RESOLVE, decision: 'reject' }, null],
-    ]);
   });
 
-  it('leaves Enter and Escape to an open input method composition in the reason', async () => {
-    const h = card();
-    button(h.value, zh('board.plan.proposal.reject')).props.onClick();
-    h.render();
-    labelled(h.value, zh('board.plan.proposal.rejectReason')).props.onChange({
-      target: { value: '拆成' },
-    });
-    h.render();
-    const composing = { nativeEvent: { isComposing: true }, preventDefault: vi.fn() };
-    labelled(h.value, zh('board.plan.proposal.rejectReason')).props.onKeyDown({
-      ...composing,
-      key: 'Enter',
-    });
-    labelled(h.value, zh('board.plan.proposal.rejectReason')).props.onKeyDown({
-      ...composing,
-      key: 'Escape',
-    });
-    await h.flush();
-    expect(runCommand).not.toHaveBeenCalled();
-    expect(composing.preventDefault).not.toHaveBeenCalled();
-    expect(labelled(h.value, zh('board.plan.proposal.rejectReason')).props.value).toBe('拆成');
-  });
-
-  it('holds all three buttons while the decision is in flight', async () => {
+  it('holds both buttons while the decision is in flight', async () => {
     const answer = deferred<unknown>();
     runCommand.mockReturnValue(answer.promise);
-    const h = card();
-    button(h.value, zh('board.plan.proposal.accept')).props.onClick();
+    const h = editor();
+    button(h.value, zh('board.plan.proposal.acceptEdited')).props.onClick();
     h.render();
-    for (const label of [
-      zh('board.plan.proposal.accept'),
-      zh('board.plan.proposal.adjust'),
-      zh('board.plan.proposal.reject'),
-    ])
+    for (const label of [zh('board.plan.proposal.acceptEdited'), zh('board.plan.proposal.cancel')])
       expect(button(h.value, label).props.disabled).toBe(true);
-    button(h.value, zh('board.plan.proposal.accept')).props.onClick();
+    button(h.value, zh('board.plan.proposal.acceptEdited')).props.onClick();
     expect(runCommand).toHaveBeenCalledTimes(1);
     answer.resolve({ ok: false, error: { code: 'internal', message: 'boom' } });
     await h.flush();
-    expect(button(h.value, zh('board.plan.proposal.accept')).props.disabled).toBe(false);
+    expect(button(h.value, zh('board.plan.proposal.acceptEdited')).props.disabled).toBe(false);
   });
 
-  it('shows a failure in the card and keeps the edits made before it', async () => {
+  it('shows a failure in the editor and keeps the edits made before it', async () => {
     const add = vi.spyOn(toastManager, 'add');
     const error = { code: 'revision_conflict', message: 'plan moved' };
     runCommand.mockResolvedValue({ ok: false, error });
-    const h = card();
-    button(h.value, zh('board.plan.proposal.adjust')).props.onClick();
-    h.render();
+    const h = editor();
     labelled(h.value, zhf('board.plan.proposal.drop', { change: 'task b' })).props.onClick();
     h.render();
     labelled(
@@ -349,7 +231,7 @@ describe('lead plan proposals on the board', () => {
       ...board([proposal('p-1', NOW, { ops: [full] })]),
       iterations: [{ id: 'lead-1:it-7', title: 'Iteration 7', starts_on: '', ends_on: '' }],
     } as unknown as BoardModel;
-    const h = cards(model)[0]!;
+    const h = editor(model);
     const toggle = labelled(h.value, zhf('board.plan.proposal.contract', { title: 'Export job' }));
     expect(toggle.props['aria-expanded']).toBe(false);
     expect(nodes(h.value).some((n) => n.type === 'dl')).toBe(false);
@@ -392,7 +274,7 @@ describe('lead plan proposals on the board', () => {
         ],
       },
     ];
-    const [milestone, iterations] = rows(cards(board([proposal('p-1', NOW, { ops })]))[0]!.value);
+    const [milestone, iterations] = rows(editor(board([proposal('p-1', NOW, { ops })])).value);
     const changes = (row: ReactElement<any> | undefined) =>
       nodes(find(row, (n) => n.props.className === 'bd-bn-ch').props.children).filter(
         (n) => n.props.className === 'bd-diff',
@@ -403,21 +285,9 @@ describe('lead plan proposals on the board', () => {
     ]);
   });
 
-  it('keeps the whole of a long reason and a long task name in the card', () => {
-    const reason = `The diff report failed its gate three times; ${'the refunds export keeps timing out '.repeat(8)}`;
+  it('keeps the whole of a long task name in the editor', () => {
     const name = `Rebuild the nightly refunds export ${'with retries and a resumable cursor '.repeat(4)}`;
-    const h = cards(board([proposal('p-1', NOW, { reason, ops: [newTask('c9', name)] })]))[0]!;
-    expect(text(h.value)).toContain(reason);
-    expect(text(h.value)).toContain(name);
-  });
-
-  it('orders the cards by when each proposal was made', () => {
-    const titles = cards(
-      board([
-        proposal('p-late', NOW, { reason: 'later' }),
-        proposal('p-early', NOW - 60_000, { reason: 'earlier' }),
-      ]),
-    ).map((h) => text(find(h.value, (n) => n.props.className === 'bd-pp-why')));
-    expect(titles).toEqual(['earlier', 'later']);
+    const h = editor(board([proposal('p-1', NOW, { ops: [newTask('c9', name)] })]));
+    expect(find(h.value, (n) => n.type === 'input').props.value).toBe(name);
   });
 });

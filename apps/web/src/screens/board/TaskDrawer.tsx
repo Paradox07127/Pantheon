@@ -2,12 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSPropert
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Dialog } from '@base-ui/react/dialog';
 import { Check, Crown, File, RefreshCw, Terminal, X } from 'lucide-react';
-import type {
-  BackendSummary,
-  BoardModel,
-  BoardTaskRung,
-  BoardTaskStatus,
-} from '@pantheon/protocol';
+import type { BackendSummary, BoardModel, BoardTaskStatus } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { DiffCounts } from '../../components/DiffCounts';
 import { Menu, MenuItem } from '../../components/Menu';
@@ -55,6 +50,14 @@ import { openBoardTab } from '../settings/settings-jump';
 import { quotaResetsAt, resumesText, taskBadges, taskTokens } from './activity';
 import { DeviceDot, DeviceFacts, DeviceState, ResourceMeter } from './BoardDevices';
 import {
+  budgetRing,
+  ChangedFiles,
+  dependencyGraph,
+  diffCells,
+  escalationTrack,
+  GateChecks,
+} from './DrawerGraphics';
+import {
   needActions,
   needCommand,
   requestNeed,
@@ -67,6 +70,7 @@ import { PlanList } from './PlanList';
 import { dayText } from '../../lib/time-text';
 import {
   durationText,
+  milestoneCounts,
   tellLeadDraft,
   tokenText,
   type RunBoardCommand,
@@ -110,13 +114,6 @@ const CHECKS: Record<Task['checks'], { icon: BoardTaskStatus | null; label: stri
       return noneText();
     },
   },
-};
-
-const RUNGS: Record<BoardTaskRung['rung'], () => string> = {
-  retry: () => t({ id: 'board.recovery.rung.retry', defaultMessage: 'Pantheon retries' }),
-  switch: () => t({ id: 'board.recovery.step.switch', defaultMessage: 'Another runtime' }),
-  lead: () => t({ id: 'board.recovery.step.lead', defaultMessage: 'Lead' }),
-  user: () => t({ id: 'board.recovery.step.user', defaultMessage: 'You' }),
 };
 
 /** The longest the drawer waits for its exit transition before it unmounts anyway. */
@@ -886,6 +883,14 @@ export function TaskDrawer({
     task.segments.some((s) => s.session_id === m.session_id),
   );
   const target = plan && tell ? editTarget(task, tell.sessions) : null;
+  // A session row's changes and gates are its own; a plan task's are its newest session's.
+  const sessionId = task.claim?.session_id ?? (plan ? null : task.id);
+  const milestone = model.milestones.find((m) => m.id === task.milestone_id);
+  const handbacks = task.retrospective?.handbacks ?? task.activity?.handed_back?.length ?? 0;
+  const upLinks = model.edges.flatMap((e) => {
+    const up = e.to === task.id ? byId.get(e.from) : undefined;
+    return up ? [{ task: up, met: e.state === 'met' }] : [];
+  });
   const relink = (op: PlanOp) => {
     if (target) void editPlan(target, [op], planVersion(model, target.leadId));
   };
@@ -986,6 +991,7 @@ export function TaskDrawer({
       : []),
   ];
   const topShare = Math.max(...budgetRows.map((row) => row.share));
+  const plannedBudget = budgetRows.filter((row) => row.key === 'plan');
   return (
     <aside
       ref={ref}
@@ -1028,6 +1034,18 @@ export function TaskDrawer({
           )}
           <div className="bd-dmeta">
             <TaskStateBadge task={task} />
+            {handbacks > 0 && (
+              <span className="chip">
+                {t(
+                  {
+                    id: 'board.recovery.step.handedBackCount',
+                    defaultMessage:
+                      '{count, plural, one {Handed back # time} other {Handed back # times}}',
+                  },
+                  { count: handbacks },
+                )}
+              </span>
+            )}
             <EvidenceMark level={task.evidence_level} reviewer={task.evidence_reviewer} />
             <TaskRoute
               task={task}
@@ -1043,6 +1061,7 @@ export function TaskDrawer({
                 )}
               </span>
             )}
+            {milestone && <span className="mu">{milestone.title}</span>}
             {task.token_budget === undefined && taskTokens(task) > 0 && (
               <span className="mu">{tokenText(taskTokens(task))} tokens</span>
             )}
@@ -1075,6 +1094,59 @@ export function TaskDrawer({
               ))}
             </ul>
           )}
+          {task.gate_steps?.length ? (
+            <GateChecks
+              steps={task.gate_steps}
+              sessionId={sessionId}
+              revision={tell?.sessions.find((s) => s.id === sessionId)?.revision ?? null}
+              run={tell?.run}
+            />
+          ) : (
+            <section className="bd-dsec">
+              <h3>{t({ id: 'board.task.drawer.checks', defaultMessage: 'Checks' })}</h3>
+              <span className="bd-dchk">
+                {check.icon ? (
+                  <StatusIcon status={check.icon} />
+                ) : (
+                  <span className="mu" aria-hidden="true">
+                    —
+                  </span>
+                )}
+                <span>{check.label}</span>
+              </span>
+            </section>
+          )}
+          {rung && (
+            <section className="bd-dsec" aria-labelledby="bd-drecovery">
+              <div className="bd-dsh">
+                <h3 id="bd-drecovery">
+                  {t({ id: 'board.recovery.ladder', defaultMessage: 'Who acts next' })}
+                </h3>
+                <span className="bd-dsv">{durationText(now - rung.since)}</span>
+              </div>
+              {escalationTrack(rung)}
+              {(rungReason(rung.reason) || task.activity?.repeated_failure) && (
+                <ul className="bd-rf">
+                  {rungReason(rung.reason) && (
+                    <li>
+                      <span>{rungReason(rung.reason)}</span>
+                    </li>
+                  )}
+                  {task.activity?.repeated_failure && (
+                    <li>
+                      <RefreshCw aria-hidden="true" />
+                      <span>
+                        {t({
+                          id: 'board.recovery.repeated',
+                          defaultMessage: 'Same failure as the attempt before',
+                        })}
+                      </span>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </section>
+          )}
           {budgetRows.length > 0 && (
             <section className="bd-dsec" aria-labelledby="bd-dbudget">
               <div className="bd-dsh">
@@ -1083,132 +1155,129 @@ export function TaskDrawer({
                 </h3>
                 {budget && <span className="bd-dsv">{Math.round(budget.ratio * 100)}%</span>}
               </div>
-              <div className="bd-bg">
-                {budgetRows.map((row) => {
-                  const percent = Math.round(row.share * 100);
-                  const max = row.share === topShare || undefined;
-                  return (
-                    <Fragment key={row.key}>
-                      <span data-max={max}>{row.label}</span>
-                      <span
-                        className="meter"
-                        role="img"
-                        aria-label={row.meter(percent)}
-                        data-max={max}
-                        style={{ '--v': `${Math.min(100, percent)}%` } as CSSProperties}
-                      >
-                        <i />
-                      </span>
-                      <span className="bd-bg-n" data-max={max}>
-                        {t(
-                          {
-                            id: 'board.recovery.budget.amount',
-                            defaultMessage: '{used} / {limit}',
-                          },
-                          { used: row.used, limit: row.limit },
-                        )}
-                      </span>
-                      <span className="bd-bg-n" data-max={max}>
-                        {percent}%
-                      </span>
-                    </Fragment>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-          {rung && (
-            <section className="bd-dsec" aria-labelledby="bd-drecovery">
-              <div className="bd-dsh">
-                <h3 id="bd-drecovery">
-                  {t({ id: 'board.recovery.heading', defaultMessage: 'Recovery' })}
-                </h3>
-                <span className="bd-dsv">{durationText(now - rung.since)}</span>
-              </div>
-              <ol
-                className="bd-lad"
-                aria-label={t({ id: 'board.recovery.ladder', defaultMessage: 'Who acts next' })}
-              >
-                {(Object.keys(RUNGS) as BoardTaskRung['rung'][]).map((level, i, levels) => {
-                  const at = levels.indexOf(rung.rung);
-                  // Without the rung's count, the hand-backs of its reason; the limit is not on the task.
-                  const handed = task.activity?.handed_back?.filter((r) => r === rung.reason);
-                  // Tries Pantheon used, or runtime changes, of a rung already passed.
-                  const used =
-                    i >= at
-                      ? null
-                      : level === 'retry' && rung.used !== undefined && rung.limit !== undefined
-                        ? t(
-                            {
-                              id: 'board.recovery.step.handedBack',
-                              defaultMessage: 'Handed back {used} / {limit}',
-                            },
-                            { used: rung.used, limit: rung.limit },
-                          )
-                        : level === 'retry' && handed?.length
-                          ? t(
-                              {
-                                id: 'board.recovery.step.handedBackCount',
-                                defaultMessage:
-                                  '{count, plural, one {Handed back # time} other {Handed back # times}}',
-                              },
-                              { count: handed.length },
-                            )
-                          : level === 'switch' && rung.switches.length > 0
-                            ? String(rung.switches.length)
-                            : null;
-                  // Without the task's activity it is unknown whether Pantheon handed it back.
-                  const none = level === 'retry' && !task.activity ? null : noneText();
-                  return (
-                    <li key={level} aria-current={i === at ? 'step' : undefined}>
-                      {used ? (
-                        <Check
-                          role="img"
-                          aria-label={t({ id: 'board.recovery.step.done', defaultMessage: 'Done' })}
-                        />
-                      ) : (
+              {budget && (
+                <div className="bd-drg">
+                  {budgetRows
+                    .filter((row) => row.key !== 'plan')
+                    .map((row) =>
+                      budgetRing({
+                        key: row.key,
+                        label: row.label,
+                        meter: row.meter(Math.round(row.share * 100)),
+                        share: row.share,
+                        used: row.used,
+                        limit: row.limit,
+                        max: row.share === topShare || undefined,
+                      }),
+                    )}
+                </div>
+              )}
+              {plannedBudget.length > 0 && (
+                <div className="bd-bg">
+                  {plannedBudget.map((row) => {
+                    const percent = Math.round(row.share * 100);
+                    const max = row.share === topShare || undefined;
+                    return (
+                      <Fragment key={row.key}>
+                        <span data-max={max}>{row.label}</span>
                         <span
-                          className="bd-lg"
-                          data-s={i === at ? 'now' : i < at ? 'skip' : undefined}
+                          className="meter"
                           role="img"
-                          aria-label={
-                            i === at
-                              ? t({ id: 'board.recovery.step.current', defaultMessage: 'Current' })
-                              : i < at
-                                ? t({
-                                    id: 'board.recovery.step.skipped',
-                                    defaultMessage: 'Skipped',
-                                  })
-                                : t({
-                                    id: 'board.recovery.step.ahead',
-                                    defaultMessage: 'Not reached',
-                                  })
-                          }
-                        />
-                      )}
-                      <span>{RUNGS[level]()}</span>
-                      <span className="bd-lad-r">
-                        {i === at ? rungReason(rung.reason) : i < at ? (used ?? none) : null}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ol>
-              {task.activity?.repeated_failure && (
-                <ul className="bd-rf">
-                  <li>
-                    <RefreshCw aria-hidden="true" />
-                    <span>
-                      {t({
-                        id: 'board.recovery.repeated',
-                        defaultMessage: 'Same failure as the attempt before',
-                      })}
-                    </span>
-                  </li>
-                </ul>
+                          aria-label={row.meter(percent)}
+                          data-max={max}
+                          style={{ '--v': `${Math.min(100, percent)}%` } as CSSProperties}
+                        >
+                          <i />
+                        </span>
+                        <span className="bd-bg-n" data-max={max}>
+                          {t(
+                            {
+                              id: 'board.recovery.budget.amount',
+                              defaultMessage: '{used} / {limit}',
+                            },
+                            { used: row.used, limit: row.limit },
+                          )}
+                        </span>
+                        <span className="bd-bg-n" data-max={max}>
+                          {percent}%
+                        </span>
+                      </Fragment>
+                    );
+                  })}
+                </div>
               )}
             </section>
           )}
+          <section className="bd-dsec" aria-labelledby="bd-dchanges">
+            <div className="bd-dsh">
+              <h3 id="bd-dchanges">
+                {t({ id: 'board.task.drawer.changes', defaultMessage: 'Changes' })}
+              </h3>
+              {task.additions !== null && (
+                <span className="bd-dsx">
+                  {diffCells(task.additions, task.deletions ?? 0)}
+                  <span className="bd-dfx">
+                    <DiffCounts additions={task.additions} deletions={task.deletions} />
+                  </span>
+                </span>
+              )}
+            </div>
+            {task.additions === null ? (
+              // Null also means the changes could not be read, which only a task with no session rules out.
+              <div className="mu">
+                {task.segments.length
+                  ? t({ id: 'board.task.drawer.changesUnknown', defaultMessage: 'Unknown' })
+                  : t({ id: 'board.task.drawer.noChanges', defaultMessage: 'No changes' })}
+              </div>
+            ) : (
+              sessionId && <ChangedFiles sessionId={sessionId} />
+            )}
+          </section>
+          <section className="bd-dsec">
+            <h3>{t({ id: 'board.task.drawer.upstream', defaultMessage: 'Dependencies' })}</h3>
+            {(upLinks.length > 0 || milestone) &&
+              dependencyGraph({
+                task,
+                ups: upLinks,
+                milestone: milestone
+                  ? { title: milestone.title, ...milestoneCounts(milestone) }
+                  : null,
+              })}
+            <TaskLinks
+              tasks={ups.filter((up) => up !== undefined)}
+              onSelect={onSelect}
+              {...(target && {
+                remove: {
+                  label: (up: Task) =>
+                    t(
+                      {
+                        id: 'board.task.dependency.remove',
+                        defaultMessage: 'Remove dependency: {from} to {to}',
+                      },
+                      { from: up.title, to: task.title },
+                    ),
+                  onRemove: (up: Task) => relink(withoutDependency(model, up.id, task.id)),
+                },
+              })}
+            />
+            {candidates.length > 0 && (
+              <Select
+                aria-label={t({
+                  id: 'board.task.dependency.add',
+                  defaultMessage: 'Add dependency',
+                })}
+                value=""
+                onChange={(next) => next && relink(withDependency(model, next, task.id))}
+                options={[
+                  {
+                    value: '',
+                    label: t({ id: 'board.task.dependency.add', defaultMessage: 'Add dependency' }),
+                  },
+                  ...candidates.map((t) => ({ value: t.id, label: t.title })),
+                ]}
+              />
+            )}
+          </section>
           {acceptance.length > 0 && (
             <section className="bd-dsec">
               <h3>{t({ id: 'board.drawer.acceptance', defaultMessage: 'Acceptance' })}</h3>
@@ -1385,34 +1454,6 @@ export function TaskDrawer({
               </ul>
             </section>
           )}
-          <section className="bd-dsec">
-            <h3>{t({ id: 'board.task.drawer.changes', defaultMessage: 'Changes' })}</h3>
-            {task.additions === null ? (
-              // Null also means the changes could not be read, which only a task with no session rules out.
-              <div className="mu">
-                {task.segments.length
-                  ? t({ id: 'board.task.drawer.changesUnknown', defaultMessage: 'Unknown' })
-                  : t({ id: 'board.task.drawer.noChanges', defaultMessage: 'No changes' })}
-              </div>
-            ) : (
-              <span className="bd-dfx">
-                <DiffCounts additions={task.additions} deletions={task.deletions} />
-              </span>
-            )}
-          </section>
-          <section className="bd-dsec">
-            <h3>{t({ id: 'board.task.drawer.checks', defaultMessage: 'Checks' })}</h3>
-            <span className="bd-dchk">
-              {check.icon ? (
-                <StatusIcon status={check.icon} />
-              ) : (
-                <span className="mu" aria-hidden="true">
-                  —
-                </span>
-              )}
-              <span>{check.label}</span>
-            </span>
-          </section>
           {step && (
             <WorkflowStep
               step={step}
@@ -1463,43 +1504,6 @@ export function TaskDrawer({
               )}
             </section>
           )}
-          <section className="bd-dsec">
-            <h3>{t({ id: 'board.task.drawer.upstream', defaultMessage: 'Dependencies' })}</h3>
-            <TaskLinks
-              tasks={ups.filter((up) => up !== undefined)}
-              onSelect={onSelect}
-              {...(target && {
-                remove: {
-                  label: (up: Task) =>
-                    t(
-                      {
-                        id: 'board.task.dependency.remove',
-                        defaultMessage: 'Remove dependency: {from} to {to}',
-                      },
-                      { from: up.title, to: task.title },
-                    ),
-                  onRemove: (up: Task) => relink(withoutDependency(model, up.id, task.id)),
-                },
-              })}
-            />
-            {candidates.length > 0 && (
-              <Select
-                aria-label={t({
-                  id: 'board.task.dependency.add',
-                  defaultMessage: 'Add dependency',
-                })}
-                value=""
-                onChange={(next) => next && relink(withDependency(model, next, task.id))}
-                options={[
-                  {
-                    value: '',
-                    label: t({ id: 'board.task.dependency.add', defaultMessage: 'Add dependency' }),
-                  },
-                  ...candidates.map((t) => ({ value: t.id, label: t.title })),
-                ]}
-              />
-            )}
-          </section>
           <section className="bd-dsec">
             <h3>{t({ id: 'board.task.drawer.downstream', defaultMessage: 'Downstream' })}</h3>
             <TaskLinks tasks={downs.filter((down) => down !== undefined)} onSelect={onSelect} />

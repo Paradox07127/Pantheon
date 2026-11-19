@@ -85,6 +85,7 @@ const board = (b: Partial<Task> = {}): BoardModel =>
     now: NOW,
     lanes: [{ id: 'lead-1:main', title: 'main' }],
     merges: [],
+    milestones: [],
     tasks: [task('a'), task('b', { depends_on: ['a'], ...b })],
     edges: [{ from: 'lead-1:a', to: 'lead-1:b', state: 'pending' }],
     leads: [

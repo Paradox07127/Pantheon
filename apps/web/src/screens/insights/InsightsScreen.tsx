@@ -38,16 +38,15 @@ import {
 import { KpiTiles } from '../board/KpiTiles';
 import { FindingsPanel, MergesPanel } from '../board/Lists';
 import { saveLayout, useBoardLayout } from '../board/panel-layout';
-import { setupShown, useProjectSetup, type ProjectSetupRead } from '../board/project-setup';
-import { ProjectSetup } from '../board/ProjectSetup';
 import type { RunBoardCommand, SnapshotSession } from '../board/panels-model';
+import { CyclePanel, TrendPanel } from '../board/ProgressCharts';
 import {
   GateFailuresPanel,
   GateHistoryPanel,
+  MergesPerDayPanel,
   QualityKpis,
   ReviewMatrixPanel,
 } from '../board/QualityCharts';
-import { RetroPanel } from '../board/RetroPanel';
 import { TaskDrawer } from '../board/TaskDrawer';
 import { QuotaPanel, RoleUsagePanel, UsageRings, UsageStackPanel } from '../board/UsageCharts';
 import { localDay } from '../board/usage-model';
@@ -59,7 +58,7 @@ import { WorkflowTab } from './WorkflowTab';
 import '../board/board.css';
 
 export type InsightsSection =
-  'iterations' | 'collab' | 'workflow' | 'quality' | 'usage' | 'retro' | 'digest' | 'signals';
+  'iterations' | 'collab' | 'workflow' | 'quality' | 'usage' | 'digest' | 'signals';
 
 // Labels are getters, so each is read in the language loaded by then.
 const SECTIONS: { key: InsightsSection; label: string }[] = [
@@ -94,12 +93,6 @@ const SECTIONS: { key: InsightsSection; label: string }[] = [
     },
   },
   {
-    key: 'retro',
-    get label() {
-      return t({ id: 'board.panels.retro', defaultMessage: 'Retrospectives' });
-    },
-  },
-  {
     key: 'digest',
     get label() {
       return t({ id: 'insights.digest.label', defaultMessage: 'Weekly digest' });
@@ -116,6 +109,8 @@ const TABS = SECTIONS.map((s) => s.key);
 
 /** The stored engineering board tab; anything else opens the iterations tab. */
 export function readInsightsSection(raw: string | null): InsightsSection {
+  // The retrospectives moved to memory; their old tab opens quality.
+  if (raw === 'retro') return 'quality';
   return SECTIONS.find((s) => s.key === raw)?.key ?? 'iterations';
 }
 
@@ -309,13 +304,11 @@ interface InsightsViewProps {
   actions?: { sessions: readonly SnapshotSession[]; run: RunBoardCommand };
   /** The project's token targets by runtime, for the usage rings. */
   usageTargets?: Record<string, number>;
-  /** The project's setup, shown in place of an empty page; absent without a project. */
-  setup?: ProjectSetupRead;
 }
 
 export function InsightsView(props: InsightsViewProps) {
   const { model, loading, error, onRetry, days, onDays, section, onSection, projectId } = props;
-  const { onOpenSession, onOpenStory, onStartTask, actions, setup } = props;
+  const { onOpenSession, onOpenStory, onStartTask, actions } = props;
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState(projectId);
   const [seen, setSeen] = useState<readonly InsightsSection[]>([section]);
@@ -404,6 +397,18 @@ export function InsightsView(props: InsightsViewProps) {
           title: t({ id: 'insights.quality.label', defaultMessage: 'Quality overview' }),
           node: <QualityKpis model={model} />,
         },
+        qualityTrend: {
+          title: t({ id: 'board.trend.title', defaultMessage: 'Completion trend' }),
+          node: <TrendPanel model={model} />,
+        },
+        qualityCycle: {
+          title: t({ id: 'board.cycle.title', defaultMessage: 'Cycle time distribution' }),
+          node: <CyclePanel model={model} />,
+        },
+        mergesPerDay: {
+          title: t({ id: 'insights.mergesPerDay.title', defaultMessage: 'Merges per day' }),
+          node: <MergesPerDayPanel model={model} />,
+        },
         gateFailures: projectId
           ? {
               title: t({
@@ -444,16 +449,6 @@ export function InsightsView(props: InsightsViewProps) {
               node: <ReviewMatrixPanel projectId={projectId} />,
             }
           : undefined,
-        retro: {
-          title: t({ id: 'board.panels.retro', defaultMessage: 'Retrospectives' }),
-          withFailure: drawer,
-          node: (
-            <>
-              <RetroPanel model={model} projectId={projectId} onOpenTask={setSelected} />
-              {drawer}
-            </>
-          ),
-        },
         digest: projectId
           ? {
               title: t({ id: 'insights.digest.label', defaultMessage: 'Weekly digest' }),
@@ -507,9 +502,6 @@ export function InsightsView(props: InsightsViewProps) {
     : {};
   const shown = (tab: InsightsSection) => layout[tab].filter((p) => !p.hidden && panels[p.key]);
   const empty = !!model && isEmpty(model) && !shown(section).some((p) => OWN_READS.has(p.key));
-  const setupPanel = setup && setupShown(setup, model, empty) && (
-    <ProjectSetup setup={setup} onOpenSession={onOpenSession} />
-  );
   const laid = (tab: InsightsSection) =>
     model && laidPanels({ places: shown(tab), panels, model, projectId, onRetry, onLayout });
   const hidden = layout[section]
@@ -559,38 +551,37 @@ export function InsightsView(props: InsightsViewProps) {
           />
         )}
         <div className="bd-grid">
-          {setupPanel ||
-            (empty ? null : !model ? (
-              <section className="bd-pn bd-s12" aria-labelledby="bd-load-h">
-                <div className="bd-ph">
-                  <h2 id="bd-load-h">{insightsSectionLabel(section)}</h2>
-                </div>
-                {pending}
-              </section>
-            ) : (
-              <>
-                {/* A seen tab stays mounted and is hidden in the switch's own commit; Tabs.Panel alone
+          {empty ? null : !model ? (
+            <section className="bd-pn bd-s12" aria-labelledby="bd-load-h">
+              <div className="bd-ph">
+                <h2 id="bd-load-h">{insightsSectionLabel(section)}</h2>
+              </div>
+              {pending}
+            </section>
+          ) : (
+            <>
+              {/* A seen tab stays mounted and is hidden in the switch's own commit; Tabs.Panel alone
                   keeps a closed panel on screen until the next animation frame. */}
-                {SECTIONS.filter((s) => seen.includes(s.key)).map(({ key }) => (
-                  <Activity key={key} mode={key === section ? 'visible' : 'hidden'}>
-                    <Tabs.Panel className="bd-s12 bd-sub" value={key} keepMounted>
-                      {key === 'usage' && (
-                        <div className="bd-s12">
-                          <PanelBoundary
-                            title={t({ id: 'board.kpi.label', defaultMessage: 'Usage overview' })}
-                            model={model}
-                            onRetry={onRetry}
-                          >
-                            <KpiTiles model={model} />
-                          </PanelBoundary>
-                        </div>
-                      )}
-                      {laid(key)}
-                    </Tabs.Panel>
-                  </Activity>
-                ))}
-              </>
-            ))}
+              {SECTIONS.filter((s) => seen.includes(s.key)).map(({ key }) => (
+                <Activity key={key} mode={key === section ? 'visible' : 'hidden'}>
+                  <Tabs.Panel className="bd-s12 bd-sub" value={key} keepMounted>
+                    {key === 'usage' && (
+                      <div className="bd-s12">
+                        <PanelBoundary
+                          title={t({ id: 'board.kpi.label', defaultMessage: 'Usage overview' })}
+                          model={model}
+                          onRetry={onRetry}
+                        >
+                          <KpiTiles model={model} />
+                        </PanelBoundary>
+                      </div>
+                    )}
+                    {laid(key)}
+                  </Tabs.Panel>
+                </Activity>
+              ))}
+            </>
+          )}
         </div>
       </main>
     </Tabs.Root>
@@ -614,7 +605,6 @@ export function InsightsScreen({
     (s) => s.board?.projects.find((p) => p.id === projectId)?.usage_targets,
   );
   const defaults = useProjectDefaults();
-  const setup = useProjectSetup(projectId);
   const usageTargets =
     ownTargets || settingOf(defaults.data, 'usage_targets')?.global
       ? effectiveUsageTargets({ usage_targets: ownTargets }, defaults.data)
@@ -640,7 +630,6 @@ export function InsightsScreen({
         projectId,
         actions: sessions ? { sessions, run: runBoardCommand } : undefined,
         usageTargets,
-        setup,
       })}
     />
   );

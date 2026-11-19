@@ -1,0 +1,106 @@
+/* Since you left: one time track from leaving to now, a lane per kind of change. */
+.bl-tl {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-6) var(--sp-2) var(--sp-4);
+}
+.bl-ls {
+  display: flex;
+  flex-direction: column;
+}
+.bl-l {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 32px;
+  color: var(--tx2);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.bl-n {
+  color: var(--mu);
+  font-variant-numeric: tabular-nums;
+}
+.bl-tr {
+  position: relative;
+}
+.bl-g {
+  position: absolute;
+  top: 0;
+  bottom: 20px;
+  width: var(--hair);
+  background: var(--bd2);
+}
+.bl-g[data-now] {
+  background: var(--bd3);
+}
+.bl-k {
+  position: relative;
+  height: 32px;
+}
+.bl-k::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: var(--hair);
+  background: var(--bd);
+}
+/* One event at its time; the glyph says its kind. */
+.bl-pt {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sf);
+  color: var(--tx2);
+  transform: translate(-50%, -50%);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bl-pt:is(:hover, :focus-visible) {
+  background: var(--sf3);
+}
+.bl-pt > svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+.bl-pt[data-kind='merge'] {
+  color: var(--ok);
+}
+.bl-pt[data-kind='failure'] {
+  color: var(--bad);
+}
+.bl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tx2);
+}
+.bl-ax {
+  position: relative;
+  height: 20px;
+}
+.bl-ax > span {
+  position: absolute;
+  top: 4px;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.bl-ax > span:first-child {
+  transform: none;
+}
+.bl-ax > span:last-child {
+  color: var(--tx2);
+  transform: translateX(-100%);
+}

@@ -397,17 +397,16 @@ describe('current milestone card', () => {
       findings: [],
       risks: [],
     }) as unknown as BoardModel;
-  const view = (milestones: BoardMilestone[]) =>
+  const view = (milestones: BoardMilestone[], projectId?: string) =>
     new HookHost(() =>
       BoardView({
         model: firstScreen(milestones),
         loading: false,
         error: null,
         onRetry: noop,
-        range: 7,
-        onRange: noop,
-        page: 'now',
+        page: 'overview',
         onPage: noop,
+        projectId,
         onOpenSession: noop,
         onOpenStory: noop,
         onOpenTrace: noop,
@@ -421,8 +420,10 @@ describe('current milestone card', () => {
   } as SnapshotMilestone;
 
   it('puts the first unfinished milestone on the first screen with its criteria', () => {
-    const card = named(view([finished, current('active'), later]), 'MilestoneCard');
-    const out = new HookHost(() => MilestoneCard(card.props)).render();
+    const goals = named(view([finished, current('active'), later], 'project-a'), 'GoalsSection');
+    const out = new HookHost(() =>
+      MilestoneCard({ model: goals.props.model, milestone: goals.props.current, onOpenTask: noop }),
+    ).render();
     expect(text(find(out, (n) => n.type === 'h2'))).toBe('importer ready');
     const criteria = labelled(out, zh('board.plan.milestone.criteria'));
     expect(

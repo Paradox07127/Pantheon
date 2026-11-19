@@ -152,6 +152,7 @@ const board = {
   lanes: [],
   edges: [],
   merges: [],
+  milestones: [],
   tasks: [
     {
       id: 'lead-1:importer',

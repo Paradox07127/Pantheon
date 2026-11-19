@@ -544,7 +544,14 @@ describe('drawer width', () => {
     blocked_since: null,
     turn_running: false,
   };
-  const model = { now: 0, tasks: [task], lanes: [], edges: [], merges: [] } as never as BoardModel;
+  const model = {
+    now: 0,
+    tasks: [task],
+    lanes: [],
+    edges: [],
+    merges: [],
+    milestones: [],
+  } as never as BoardModel;
   const drawer = () =>
     mount(() =>
       TaskDrawer({

@@ -1,10 +1,4 @@
-import type {
-  BoardModel,
-  BoardSegment,
-  BoardSnapshot,
-  BoardTaskStatus,
-  CommandType,
-} from '@pantheon/protocol';
+import type { BoardModel, BoardSnapshot, BoardTaskStatus, CommandType } from '@pantheon/protocol';
 import { compareRuntimes, runtimeName } from '../../components/RuntimeGlyph';
 import { composeState } from '../../data/transcript';
 import { currentLocale, t } from '../../i18n';
@@ -53,7 +47,7 @@ export function modelLabel(runtime: string, model: string | null): string {
   );
 }
 
-/* Progress table */
+/* Task list */
 
 export const STATUS_ORDER: readonly BoardTaskStatus[] = [
   'waiting',
@@ -72,32 +66,9 @@ export interface TaskSort {
   dir: 1 | -1;
 }
 
-export interface TaskGroup {
-  /** null for tasks outside every lane. */
-  id: string | null;
-  title: string;
-  done: number;
-  total: number;
-  tasks: BoardTask[];
-}
-
 /** From the first session's start to the merge, or to now while open. */
 export function taskDuration(task: BoardTask, now: number): number | null {
   return task.started_at == null ? null : (task.ended_at ?? now) - task.started_at;
-}
-
-/** Median taskDuration of the done tasks; null without one. */
-export function doneMedian(tasks: readonly BoardTask[]): number | null {
-  const sorted = tasks
-    .flatMap((task) =>
-      task.status === 'done' && task.started_at != null && task.ended_at != null
-        ? [task.ended_at - task.started_at]
-        : [],
-    )
-    .sort((a, b) => a - b);
-  if (!sorted.length) return null;
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 const byStatus = (a: BoardTask, b: BoardTask) =>
@@ -118,75 +89,6 @@ export function sortTasks(tasks: readonly BoardTask[], sort: TaskSort | null, no
 export function nextSort(current: TaskSort | null, key: TaskSortKey): TaskSort | null {
   if (current?.key !== key) return { key, dir: 1 };
   return current.dir === 1 ? { key, dir: -1 } : null;
-}
-
-/** Lanes in board order; tasks without a known lane go last under "其他". */
-export function groupTasks(
-  model: Pick<BoardModel, 'lanes' | 'tasks' | 'now'>,
-  sort: TaskSort | null = null,
-  now = model.now,
-): TaskGroup[] {
-  const laneIds = new Set(model.lanes.map((lane) => lane.id));
-  const groups = [
-    ...model.lanes.map((lane) => ({
-      id: lane.id as string | null,
-      title: lane.title,
-      tasks: model.tasks.filter((task) => task.lane_id === lane.id),
-    })),
-    {
-      id: null,
-      title: t({ id: 'board.taskGroups.other', defaultMessage: 'Other' }),
-      tasks: model.tasks.filter((task) => task.lane_id == null || !laneIds.has(task.lane_id)),
-    },
-  ];
-  return groups
-    .filter((group) => group.tasks.length > 0)
-    .map((group) => ({
-      ...group,
-      done: group.tasks.filter((task) => task.status === 'done').length,
-      total: group.tasks.length,
-      tasks: sortTasks(group.tasks, sort, now),
-    }));
-}
-
-export interface GanttBar {
-  segment: BoardSegment;
-  /** Row inside the cell; overlapping sessions take separate rows. */
-  track: number;
-  from: number;
-  to: number;
-  live: boolean;
-}
-
-/** More tracks would no longer fit in a table row. */
-const GANTT_TRACKS = 3;
-
-export function ganttBars(task: BoardTask, since: number, now: number) {
-  const started = task.segments
-    .filter((s): s is BoardSegment & { started_at: number } => s.started_at != null)
-    .filter((s) => (s.ended_at ?? now) >= since)
-    .sort((a, b) => a.started_at - b.started_at);
-  const trackEnds: number[] = [];
-  const bars: GanttBar[] = started.map((segment) => {
-    const to = segment.ended_at ?? now;
-    let track = trackEnds.findIndex((end) => end <= segment.started_at);
-    if (track < 0 && trackEnds.length < GANTT_TRACKS) {
-      track = trackEnds.length;
-      trackEnds.push(to);
-    } else {
-      // Past the last track a segment overlaps the one that frees first.
-      if (track < 0) track = trackEnds.indexOf(Math.min(...trackEnds));
-      trackEnds[track] = Math.max(trackEnds[track]!, to);
-    }
-    return {
-      segment,
-      track,
-      from: Math.max(segment.started_at, since),
-      to,
-      live: segment.ended_at == null,
-    };
-  });
-  return { bars, tracks: Math.max(1, trackEnds.length) };
 }
 
 export interface TimeTick {
@@ -225,47 +127,6 @@ export function timeTicks(since: number, now: number): TimeTick[] {
     ticks.push({ at: day(i), end: day(i + 1), label });
   }
   return ticks;
-}
-
-export interface TickLabel {
-  at: number;
-  label: string;
-  /** Centre in px from the left of the axis. */
-  x: number;
-}
-
-/**
- * Tick labels on an axis `width` px wide; from the newest, a label closer than `room` px to the next
- * is left out, except the day before a newest-day sliver moves left or takes the newest's place.
- */
-export function tickLabels(
-  ticks: readonly TimeTick[],
-  since: number,
-  span: number,
-  width: number,
-  room = 44,
-): TickLabel[] {
-  if (width <= room) return [];
-  const until = since + span;
-  const at = (t: number) => ((t - since) / span) * width;
-  const newest = ticks[ticks.length - 1];
-  const newestShort =
-    newest?.end != null && at(Math.min(newest.end, until)) - at(Math.max(newest.at, since)) < room;
-  const kept: TickLabel[] = [];
-  for (const tk of [...ticks].reverse()) {
-    const from = Math.max(tk.at, since);
-    const to = tk.end == null ? tk.at : Math.min(tk.end, until);
-    let x = Math.min(width - room / 2, Math.max(room / 2, at((from + to) / 2)));
-    const next = kept[kept.length - 1];
-    if (next && next.x - x < room) {
-      // Just after midnight the newest day is a sliver; the day before it keeps its label.
-      if (!newestShort || next.at !== newest!.at) continue;
-      if (next.x - room >= Math.max(at(from), room / 2)) x = next.x - room;
-      else kept.pop();
-    }
-    kept.push({ at: tk.at, label: tk.label, x });
-  }
-  return kept.reverse();
 }
 
 /* Milestones */

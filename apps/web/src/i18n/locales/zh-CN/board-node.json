@@ -1,4 +1,5 @@
 {
+  "board.node.gate.failed": "门禁 {count} 步：失败 {failed}，通过 {passed}",
   "board.node.reason.retried": "{count, plural, other {已重试 # 次}}",
   "board.node.reason.retriedSamePlace": "{count, plural, other {已重试 # 次，失败在同一处}}",
   "board.node.reason.unattended": "没有会话在处理",

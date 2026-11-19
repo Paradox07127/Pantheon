@@ -388,10 +388,11 @@ export async function run({ spec, workspace, evidenceDir, humanReview }) {
     await click(button('流程图', { within: NAV }));
     await waitUi(`document.querySelectorAll('.react-flow__node').length > 0`, 'the flow chart');
   };
-  /** The board's now view in edit mode, where changes on the chart go into the draft. */
+  /** The board's flow chart in edit mode, where changes on the chart go into the draft. */
   const openEditing = async () => {
     await click(button('项目看板', { within: NAV }));
-    await click({ role: 'radio', name: '现在', exact: true });
+    await click({ role: 'radio', name: '任务', exact: true });
+    await click({ role: 'radio', name: '流程图', exact: true });
     // With changes left unsent the edit button's name counts them.
     await click(button('编辑', { exact: false }));
     await waitUi(

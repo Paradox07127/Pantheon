@@ -23,39 +23,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The now view's strip: the current milestone and the leads, on one line while they fit. */
-.bov {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-4);
-  min-width: 0;
-  box-sizing: border-box;
-  padding: var(--sp-3) var(--sp-4);
-  border-bottom: var(--hair) solid var(--bd2);
-}
-.bov:empty {
-  display: none;
-}
-.bov > .bms {
-  flex: 1 1 0;
-  /* Room for its fixed parts: the fraction, the bar, the due chip and the button. */
-  min-width: min(100%, 280px);
-}
-.bov > .bld {
-  flex: 0 1 320px;
-  min-width: 0;
-  align-self: stretch;
-  padding-left: var(--sp-4);
-  border-left: var(--hair) solid var(--bd2);
-}
-
-/* Current milestone: title, merged over planned, a bar part per task state and the days left; the rest opens from the line's end. */
+/* Current milestone, unfolded under its goal: its line, then a cell per task. */
 .bms {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
+  margin: 0 0 0 calc(16px + var(--sp-2));
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--sf2);
 }
 .bms-ln {
   display: flex;
@@ -94,45 +70,13 @@
 .bms-vf > [role='img'] {
   display: inline-flex;
 }
-/* Merged tasks over planned tasks. */
+/* Merged tasks over planned tasks, at the line's end. */
 .bms-frac {
   flex: none;
+  margin-left: auto;
   color: var(--tx2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-/* The plan's tasks by state, each part as wide as its count. */
-.bms-bar {
-  display: flex;
-  gap: 2px;
-  flex: 1;
-  min-width: 48px;
-  height: 10px;
-}
-.bms-bar i {
-  flex: 1 1 0;
-  min-width: 2px;
-  border-radius: var(--radius-bar);
-  background: var(--e-pend);
-  transition: background-color var(--dur-2) var(--ease-std);
-}
-.bms-bar [data-part='merged'] {
-  background: var(--ok);
-}
-.bms-bar [data-part='running'] {
-  background: var(--run);
-}
-.bms-bar [data-part='waiting'] {
-  background: var(--wait);
-}
-.bms-bar [data-part='review'] {
-  background: var(--ready);
-}
-.bms-bar [data-part='failed'] {
-  background: var(--bad);
-}
-.bms-bar [data-part='discarded'] {
-  background: var(--idle);
 }
 /* Days to the due day; past it, in the danger colour. */
 .bms-due {
@@ -239,6 +183,65 @@
   [data-state='idle']
 ) {
   background: var(--e-pend);
+}
+/* The milestone's tasks: the state's icon, the title and the runtime, the border in the state's colour. */
+.bms-tg {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: var(--sp-2);
+}
+.bms-tk {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--e-pend);
+  border-radius: var(--r-sm);
+  background: var(--sf);
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease-std),
+    border-color var(--dur-2) var(--ease-std);
+}
+.bms-tk:hover {
+  background: var(--sf3);
+}
+.bms-tk:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.bms-tk > svg {
+  flex: none;
+}
+.bms-tt {
+  flex: 1;
+  min-width: 0;
+}
+.bms-tk:is([data-state='merged'], [data-state='done']) {
+  border-color: var(--ok);
+}
+.bms-tk:is([data-state='running'], [data-state='claimed']) {
+  border-color: var(--run);
+}
+.bms-tk:is([data-state='gating'], [data-state='awaiting_merge'], [data-state='ready']) {
+  border-color: var(--ready);
+}
+.bms-tk:is(
+  [data-state='waiting_approval'],
+  [data-state='awaiting_acceptance'],
+  [data-state='waiting']
+) {
+  border-color: var(--wait);
+}
+.bms-tk:is([data-state='blocked'], [data-state='failed']) {
+  border-color: var(--bad);
+}
+.bms-tk:is([data-state='discarded']) {
+  border-color: var(--idle);
 }
 .bms-date {
   align-self: flex-start;
@@ -413,13 +416,7 @@
   gap: var(--sp-2);
 }
 
-/* Leads: one line each, one under another. */
-.bld-l,
-.btl-l {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
+/* Agents: one line each in one box, its columns lined up from line to line. */
 .bld {
   display: flex;
   flex-direction: column;
@@ -427,47 +424,127 @@
   gap: var(--sp-3);
 }
 .bld-l {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
   width: 100%;
   min-width: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+  background: var(--sf);
+  overflow: hidden;
 }
 .bld-i {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 128px) 16px auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: var(--sp-3);
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--sp-4) 0 var(--sp-2);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bld-i + .bld-i {
+  border-top: var(--hair) solid var(--bd2);
+}
+.bld-i:hover {
+  background: var(--sf2);
+}
+.bld-rt {
+  grid-column: 1;
+  display: grid;
+  place-items: center;
+}
+.bld-t {
+  grid-column: 2;
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bld-t:hover {
+  text-decoration: underline;
+}
+.bld-st {
+  grid-column: 3;
+  display: grid;
+  place-items: center;
+}
+/* The tasks in the agent's hands: a tile each, the state in its icon, the count after. */
+.bld-w {
+  grid-column: 4;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.bld-ws {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.bld-wt {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: var(--hair) solid var(--bd);
+  border-radius: max(calc(var(--r-sm) - 2px), 4px);
+  background: var(--sf2);
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+.bld-wt:hover {
+  background: var(--sf3);
+}
+.bld-wt:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.bld-n {
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* What the agent is doing, then its model and effort. */
+.bld-m {
+  grid-column: 5;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
 }
-.bld-r {
-  flex: none;
-  margin-left: auto;
-}
-.btl-m {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--tx2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-}
-.bld-t {
+.bld-do {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.bld-do {
-  /* The title gives way first, so a short state word stays whole. */
-  flex: 0 0 auto;
-  max-width: 45%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--tx2);
+}
+.bld-mc {
+  grid-column: 6;
+  white-space: nowrap;
+}
+/* The context used: the ring and its percent. */
+.bld-cx {
+  grid-column: 7;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  color: var(--tx2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Tasks the lead sent to another device: one row each, the device, the task and the reason. */
@@ -532,127 +609,4 @@
   white-space: nowrap;
   color: var(--tx2);
   font-size: var(--fs-xs);
-}
-
-/* Task list grouped by state. */
-.btl-gh {
-  display: grid;
-  grid-template-columns: 12px auto auto minmax(0, 1fr);
-  column-gap: var(--sp-2);
-  align-items: center;
-  width: 100%;
-  min-height: var(--row);
-  padding: 0 var(--sp-2);
-  box-sizing: border-box;
-  border-top: var(--hair) solid var(--bd2);
-  color: var(--tx2);
-  font-size: var(--fs-xs);
-}
-.btl-gh b {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.btl-tg {
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-  background: transparent;
-  font-family: inherit;
-  text-align: left;
-}
-.btl-tg:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-.btl-chev {
-  justify-self: start;
-  width: 12px;
-  height: 12px;
-  color: var(--mu);
-}
-.btl-tg[data-panel-open] .btl-chev {
-  transform: rotate(180deg);
-}
-.btl-r {
-  display: grid;
-  grid-template-columns: 12px minmax(min(160px, 40%), 1fr) fit-content(280px) 184px 88px minmax(
-      0,
-      190px
-    );
-  column-gap: var(--sp-2);
-  align-items: center;
-  width: 100%;
-  min-height: var(--row);
-  padding: 0 var(--sp-2);
-  box-sizing: border-box;
-  border: 0;
-  border-top: var(--hair) solid var(--bd2);
-  border-radius: 0;
-  background: transparent;
-  color: var(--tx);
-  font: inherit;
-  text-align: left;
-  transition: background-color var(--dur-1) var(--ease-std);
-}
-.btl-g > .bf-more {
-  margin-left: var(--sp-2);
-}
-.btl-r:hover {
-  background: var(--sf2);
-}
-.btl-r:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-.btl-rx {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-1);
-  min-width: 0;
-  color: var(--mu);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-}
-.btl-rx s {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.btl-why {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-sans);
-}
-.btl-rx svg:not(.rtg) {
-  flex: none;
-  width: 12px;
-  height: 12px;
-}
-.btl-who {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  min-width: 0;
-}
-.btl-fold {
-  height: var(--collapsible-panel-height);
-  overflow: clip;
-  transition:
-    height var(--dur-2) var(--ease-in),
-    opacity var(--dur-2) var(--ease-in);
-}
-.btl-fold:is([data-starting-style], [data-ending-style]) {
-  height: 0;
-  opacity: 0;
-}
-.btl-fold[data-ending-style] {
-  transition-duration: var(--dur-1);
-  transition-timing-function: var(--ease-out);
-}
-.pt[data-motion='reduced'] .btl-fold {
-  transition-property: opacity;
 }

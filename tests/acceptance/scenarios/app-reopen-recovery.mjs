@@ -105,9 +105,9 @@ const sessionShown = (sessionTitle) => `(() => {
     turns: document.querySelectorAll('[data-turn]').length,
   };
 })()`;
-/** The status the progress table's row of this task title names, as the board shows it. */
+/** The status the task list's row of this task title names, as the board shows it. */
 const rowShown = (taskTitle) => `(() => {
-  const row = [...document.querySelectorAll('[role="table"][aria-label="进度表"] [role="row"][aria-label]')].find(
+  const row = [...document.querySelectorAll('[role="table"][aria-label="任务列表"] [role="row"][aria-label]')].find(
     (el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(`${taskTitle}，`)}),
   );
   return row ? { status: row.getAttribute('aria-label').slice(${JSON.stringify(`${taskTitle}，`)}.length) } : null;
@@ -664,15 +664,17 @@ export async function run({ workspace, evidenceDir }) {
       await shot('ended');
 
       await click(button('项目看板', { within: NAV }));
-      const canvas = { role: 'radio', name: '画布', exact: true };
-      await appear(canvas);
-      await click(canvas);
+      const tasks = { role: 'radio', name: '任务', exact: true };
+      await appear(tasks);
+      await click(tasks);
+      await click({ role: 'radio', name: '列表', exact: true });
+      await click({ role: 'radio', name: '全部', exact: true });
       const until = Math.min(deadline, Date.now() + 15000);
       let row, shown, expected;
       for (;;) {
         row = (await boardView()).tasks.find((task) => task.id === sessionId) ?? null;
         expected = row ? { status: TASK_STATUS_LABEL[row.status] } : null;
-        shown = await read(rowShown(row?.title ?? sessionTitle), 'the progress table row status');
+        shown = await read(rowShown(row?.title ?? sessionTitle), 'the task list row status');
         if ((expected && isDeepStrictEqual(shown, expected)) || Date.now() >= until) break;
         await delay(200);
       }

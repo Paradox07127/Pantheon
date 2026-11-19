@@ -3,7 +3,8 @@ import { TopBar } from '../../components/TopBar';
 import { t } from '../../i18n';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell, type MemoryTab } from '../../store';
-import { openBoardTab } from '../settings/settings-jump';
+import { openRetrospective } from '../settings/settings-jump';
+import { DiagramsPage } from './DiagramsPage';
 import { EntriesTopControls } from './EntriesBar';
 import { EntriesPage } from './EntriesPage';
 import { LearnedPage } from './LearnedPage';
@@ -30,6 +31,12 @@ const TABS: { key: MemoryTab; label: string }[] = [
     key: 'graph',
     get label() {
       return t({ id: 'memory.tab.graph', defaultMessage: 'Graph' });
+    },
+  },
+  {
+    key: 'diagrams',
+    get label() {
+      return t({ id: 'memory.tab.diagrams', defaultMessage: 'Diagrams' });
     },
   },
   {
@@ -72,13 +79,12 @@ export function MemoryScreen({ projectId }: { projectId: string | null }) {
         <Tabs.Panel className="bd-body" value="graph">
           {projectId && <MemoryGraphView key={projectId} projectId={projectId} />}
         </Tabs.Panel>
+        <Tabs.Panel className="bd-body" value="diagrams">
+          {projectId && <DiagramsPage key={projectId} projectId={projectId} />}
+        </Tabs.Panel>
         <Tabs.Panel className="bd-body" value="learned">
           {projectId && (
-            <LearnedPage
-              key={projectId}
-              projectId={projectId}
-              onOpenRetros={(retrospectiveId) => openBoardTab('retro', retrospectiveId)}
-            />
+            <LearnedPage key={projectId} projectId={projectId} onOpenRetros={openRetrospective} />
           )}
         </Tabs.Panel>
       </main>

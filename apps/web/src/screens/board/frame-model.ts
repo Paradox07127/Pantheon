@@ -190,7 +190,6 @@ export type NeedActionKey =
   | 'board'
   | 'keep'
   | 'revert'
-  | 'proposal'
   | 'open';
 
 export interface NeedAction {
@@ -250,19 +249,10 @@ export function needActions(
     : actions;
 }
 
-/** The id of a plan proposal's card in the plan proposals panel. */
-export const proposalCardId = (proposalId: string): string => `bd-pp-${proposalId}`;
-
-/** The needs-you strip's buttons: a plan proposal is decided in the plan proposals panel, which its one button shows. */
+/** The needs-you strip's buttons: a plan proposal is decided in its row, which is on the board. */
 export const stripActions = (...args: Parameters<typeof needActions>): NeedAction[] =>
   args[0].kind === 'board.plan.proposal'
-    ? [
-        {
-          key: 'proposal',
-          label: t({ id: 'board.needs.actions.proposal', defaultMessage: 'Show proposal' }),
-          reason: null,
-        },
-      ]
+    ? needActions(...args).filter((a) => a.key !== 'board')
     : needActions(...args);
 
 function itemActions(

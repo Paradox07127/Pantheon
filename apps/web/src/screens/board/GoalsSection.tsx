@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Menu } from '@base-ui/react/menu';
+import { Popover } from '@base-ui/react/popover';
 import {
   Archive,
   ArrowDown,
@@ -17,8 +18,8 @@ import {
   GripVertical,
   Pencil,
   Plus,
+  RefreshCw,
   TriangleAlert,
-  Workflow,
 } from 'lucide-react';
 import type { BoardModel } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
@@ -28,8 +29,12 @@ import { runCommand } from '../../data/commands';
 import { failureText } from '../../data/needs-you';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
+import type { BoardViewProps } from './BoardScreen';
+import type { MilestoneActions } from './Charts';
 import { EvidenceMark } from './EvidenceMark';
-import { milestoneCounts, milestoneFinished, type BoardMilestone } from './panels-model';
+import { MilestoneAssumptions } from './MilestoneAssumptions';
+import { MilestoneCard } from './MilestoneCard';
+import { milestoneCounts, type BoardMilestone } from './panels-model';
 import { StatusIcon } from './status';
 import './goals.css';
 
@@ -37,6 +42,64 @@ type Goal = BoardModel['goals'][number];
 
 const MAX_GOALS = 7;
 const SHOWN_MILESTONES = 6;
+
+type Point = 'done' | 'ready' | 'current' | 'todo';
+
+/** The goals' heading controls: the plan's version, the lead's sync and the slot Add goal goes in. */
+export function GoalsHead({
+  version,
+  sync,
+  stale,
+  slot,
+}: {
+  version?: number;
+  sync?: BoardViewProps['sync'];
+  stale?: boolean;
+  /** Takes the element the goals put their Add goal button in. */
+  slot: (el: HTMLElement | null) => void;
+}) {
+  const label = t({ id: 'board.goals.sync', defaultMessage: 'Have the lead sync the plan' });
+  return (
+    <span className="bd-tools">
+      {version !== undefined && (
+        <span className="gm-pv">
+          {t({ id: 'board.bar.planVersion', defaultMessage: 'Plan v{version}' }, { version })}
+        </span>
+      )}
+      {sync &&
+        (sync.off ? (
+          <>
+            <Tip content={sync.off}>
+              <button
+                type="button"
+                className="btn sm ghost"
+                aria-disabled={true}
+                aria-describedby="board-goals-sync-off"
+              >
+                <RefreshCw aria-hidden="true" />
+                {label}
+              </button>
+            </Tip>
+            <span id="board-goals-sync-off" hidden>
+              {sync.off}
+            </span>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="btn sm ghost"
+            disabled={sync.busy || stale}
+            aria-busy={sync.busy || undefined}
+            onClick={sync.onSync}
+          >
+            <RefreshCw aria-hidden="true" />
+            {label}
+          </button>
+        ))}
+      <span className="bd-slot" ref={slot} />
+    </span>
+  );
+}
 
 /** The goal being written: an existing one by id, or a new one. */
 interface Draft {
@@ -49,21 +112,30 @@ interface Draft {
 }
 
 /** The project's goals, each with its progress, what waits on the user and its milestones; the user writes, orders and archives them here. */
-export function GoalsPage({
+export function GoalsSection({
   model,
   projectId,
   bar,
+  current = null,
+  actions,
   onOpenNeeds,
-  onOpenNow,
+  onOpenTasks,
+  onOpenTask = () => {},
+  onOpenSession,
 }: {
   model: BoardModel;
   projectId: string;
-  /** The board bar's element the Add goal button goes in, once it is in. */
+  /** The heading's element the Add goal button goes in, once it is in. */
   bar: HTMLElement | null;
-  /** Shows the now view with the needs-you strip in focus. */
+  /** The current milestone, unfolded under its goal with its tasks. */
+  current?: BoardMilestone | null;
+  actions?: MilestoneActions;
+  /** Puts the needs-you strip in focus. */
   onOpenNeeds: () => void;
-  /** Shows the now view on the milestone, or on the current one for null. */
-  onOpenNow: (milestoneId: string | null) => void;
+  /** Shows the tasks view on the milestone, or on the current one for null. */
+  onOpenTasks: (milestoneId: string | null) => void;
+  onOpenTask?: (taskId: string) => void;
+  onOpenSession?: (sessionId: string) => void;
 }) {
   const id = useId();
   const goals = model.goals;
@@ -77,6 +149,9 @@ export function GoalsPage({
     const linked = new Set(goals.flatMap((g) => g.milestone_ids));
     return model.milestones.filter((m) => !linked.has(m.id));
   }, [goals, model.milestones]);
+  // The goal a milestone unfolds under: the first that lists it, else none.
+  const homeOf = (milestoneId: string) =>
+    goals.find((g) => g.milestone_ids.includes(milestoneId))?.id ?? null;
   const full = goals.length >= MAX_GOALS;
   const adding = draft?.goalId === null;
 
@@ -236,7 +311,7 @@ export function GoalsPage({
             : t({ id: 'board.goals.milestone.active', defaultMessage: 'In progress' });
     return (
       <li key={m.id}>
-        <button type="button" className="gm-ms" onClick={() => onOpenNow(m.id)}>
+        <button type="button" className="gm-ms" onClick={() => onOpenTasks(m.id)}>
           <span className="gm-ms-g" role="img" aria-label={state}>
             {m.status === 'completed' ? (
               <StatusIcon status="done" />
@@ -298,62 +373,140 @@ export function GoalsPage({
     );
   };
 
-  const progress = ({ milestones: { done, ready, total } }: Goal) => {
-    if (!total)
+  const pointOf = (m: BoardMilestone): Point =>
+    m.id === current?.id
+      ? 'current'
+      : m.status === 'completed'
+        ? 'done'
+        : m.status === 'ready_for_acceptance'
+          ? 'ready'
+          : 'todo';
+  const pointText: Record<Point, () => string> = {
+    done: () => t({ id: 'board.goals.milestone.done', defaultMessage: 'Done' }),
+    ready: () => t({ id: 'board.goals.milestone.ready', defaultMessage: 'To accept' }),
+    current: () => t({ id: 'board.goals.milestone.current', defaultMessage: 'Current' }),
+    todo: () => t({ id: 'board.goals.milestone.todo', defaultMessage: 'Not started' }),
+  };
+
+  /** The assumptions of the current milestone not yet refuted, or refuted and waiting for the lead, behind a flag. */
+  const flag = (m: BoardMilestone) => {
+    const open = (m.assumptions ?? []).filter((a) => !a.refuted || a.refuted.state === 'pending');
+    if (!open.length) return null;
+    return (
+      <Popover.Root>
+        <Popover.Trigger
+          className="ib gm-flag"
+          aria-label={t(
+            {
+              id: 'board.goals.assumptions',
+              defaultMessage:
+                '{count, plural, one {# open assumption} other {# open assumptions}}: {title}',
+            },
+            { count: open.length, title: m.title },
+          )}
+        >
+          <Flag aria-hidden="true" />
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Positioner side="bottom" align="start" sideOffset={4} style={{ zIndex: 40 }}>
+            <Popover.Popup className="pop gm-asm">
+              <MilestoneAssumptions
+                model={model}
+                milestone={m}
+                projectId={projectId}
+                onOpenTask={onOpenTask}
+                onOpenSession={onOpenSession}
+              />
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
+    );
+  };
+
+  /** A point per milestone of the goal in plan order, joined by a line; each opens its milestone in the tasks view. */
+  const path = (goal: Goal) => {
+    const milestones = goal.milestone_ids.flatMap((mid) => byId.get(mid) ?? []);
+    if (!milestones.length)
       return (
         <p className="gm-none">
           {t({ id: 'board.goals.noMilestones', defaultMessage: 'No milestones' })}
         </p>
       );
-    const open = total - done - ready;
+    const points = milestones.map(pointOf);
+    const count = (point: Point) => points.filter((p) => p === point).length;
+    const currentAt = points.indexOf('current');
     return (
-      <div className="gm-gp">
-        <span
-          className="gm-bar"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={done}
-          aria-label={t(
-            { id: 'board.goals.progress.label', defaultMessage: 'Milestones: {parts}' },
-            {
-              parts: listText(
-                done > 0 &&
-                  t(
-                    { id: 'board.goals.progress.done', defaultMessage: '{count} done' },
-                    { count: done },
-                  ),
-                ready > 0 &&
-                  t(
-                    { id: 'board.goals.progress.ready', defaultMessage: '{count} to accept' },
-                    { count: ready },
-                  ),
-                open > 0 &&
-                  t(
-                    { id: 'board.goals.progress.open', defaultMessage: '{count} in progress' },
-                    { count: open },
-                  ),
-              ),
-            },
-          )}
-        >
-          {done > 0 && <i data-part="done" style={{ flexGrow: done }} />}
-          {ready > 0 && <i data-part="ready" style={{ flexGrow: ready }} />}
-          {open > 0 && <i style={{ flexGrow: open }} />}
-        </span>
-        <span className="gm-n">
-          {done} / {total}
-        </span>
+      <div
+        className="gm-path"
+        role="group"
+        aria-label={t(
+          { id: 'board.goals.progress.label', defaultMessage: 'Milestones: {parts}' },
+          {
+            parts: listText(
+              count('done') > 0 &&
+                t(
+                  { id: 'board.goals.progress.done', defaultMessage: '{count} done' },
+                  { count: count('done') },
+                ),
+              count('ready') > 0 &&
+                t(
+                  { id: 'board.goals.progress.ready', defaultMessage: '{count} to accept' },
+                  { count: count('ready') },
+                ),
+              currentAt >= 0 &&
+                t(
+                  { id: 'board.goals.progress.current', defaultMessage: 'M{at} current' },
+                  { at: currentAt + 1 },
+                ),
+              count('todo') > 0 &&
+                t(
+                  { id: 'board.goals.progress.todo', defaultMessage: '{count} not started' },
+                  { count: count('todo') },
+                ),
+            ),
+          },
+        )}
+      >
+        {milestones.map((m, i) => {
+          const point = points[i]!;
+          const state = listText(
+            pointText[point](),
+            point === 'current' && m.status === 'ready_for_acceptance' && pointText.ready(),
+          );
+          return (
+            <span key={m.id} className="gm-pt" data-s={point}>
+              {point === 'current' && flag(m)}
+              <Tip content={m.title}>
+                <button
+                  type="button"
+                  className="gm-po"
+                  aria-label={t(
+                    { id: 'board.goals.point', defaultMessage: 'M{at} {title}: {state}' },
+                    { at: i + 1, title: m.title, state },
+                  )}
+                  aria-current={point === 'current' ? 'step' : undefined}
+                  onClick={() => onOpenTasks(m.id)}
+                >
+                  {point === 'ready' ? <StatusIcon status="ready" /> : <i />}
+                </button>
+              </Tip>
+              <span className="gm-pl" aria-hidden="true">{`M${i + 1}`}</span>
+            </span>
+          );
+        })}
       </div>
     );
   };
 
+  /** The current milestone unfolded with its tasks. */
+  const unfolded = (m: BoardMilestone) => (
+    <MilestoneCard model={model} milestone={m} actions={actions} onOpenTask={onOpenTask} />
+  );
+
   const goalRow = (goal: Goal, at: number) => {
     const headId = `${id}-${goal.id}`;
     const writing = draft?.goalId === goal.id ? draft : null;
-    const next =
-      goal.milestone_ids.map((mid) => byId.get(mid)).find((m) => m && !milestoneFinished(m)) ??
-      null;
     return (
       <section
         key={goal.id}
@@ -399,12 +552,38 @@ export function GoalsPage({
           editor(writing, goal)
         ) : (
           <div className="gm-gh">
+            <Flag className="gm-fl" aria-hidden="true" />
             <h2 className="gm-gt" id={headId}>
               <button type="button" className="gm-gtb" onClick={() => write(goal)}>
                 {goal.text}
               </button>
             </h2>
+            {path(goal)}
+            <span className="gm-n">
+              {goal.milestones.done} / {goal.milestones.total}
+            </span>
             <span className="gm-ga">
+              {goal.needs > 0 && (
+                <button
+                  type="button"
+                  className="chip gm-need"
+                  aria-label={t(
+                    {
+                      id: 'board.goals.needs.label',
+                      defaultMessage:
+                        '{count, plural, one {# decision waits on you for this goal} other {# decisions wait on you for this goal}}',
+                    },
+                    { count: goal.needs },
+                  )}
+                  onClick={onOpenNeeds}
+                >
+                  <span className="ss-dot waiting" aria-hidden="true" />
+                  {t(
+                    { id: 'board.goals.needs', defaultMessage: '{count} to decide' },
+                    { count: goal.needs },
+                  )}
+                </button>
+              )}
               <Menu.Root>
                 <Menu.Trigger
                   className="ib gm-menu"
@@ -447,48 +626,11 @@ export function GoalsPage({
                   </Menu.Positioner>
                 </Menu.Portal>
               </Menu.Root>
-              {goal.needs > 0 && (
-                <button
-                  type="button"
-                  className="chip gm-need"
-                  aria-label={t(
-                    {
-                      id: 'board.goals.needs.label',
-                      defaultMessage:
-                        '{count, plural, one {# decision waits on you for this goal} other {# decisions wait on you for this goal}}',
-                    },
-                    { count: goal.needs },
-                  )}
-                  onClick={onOpenNeeds}
-                >
-                  <span className="ss-dot waiting" aria-hidden="true" />
-                  {t(
-                    { id: 'board.goals.needs', defaultMessage: '{count} to decide' },
-                    { count: goal.needs },
-                  )}
-                </button>
-              )}
-              <button
-                type="button"
-                className="btn sm ghost"
-                aria-label={t(
-                  { id: 'board.goals.openNow.label', defaultMessage: 'Open in Now: {goal}' },
-                  { goal: goal.text },
-                )}
-                onClick={() => onOpenNow(next?.id ?? null)}
-              >
-                <Workflow aria-hidden="true" />
-                {t({ id: 'board.goals.openNow', defaultMessage: 'Now' })}
-              </button>
             </span>
           </div>
         )}
         {failed?.goalId === goal.id && alert(failed.text)}
-        {progress(goal)}
-        {milestoneList(
-          goal.id,
-          goal.milestone_ids.flatMap((mid) => byId.get(mid) ?? []),
-        )}
+        {current && homeOf(current.id) === goal.id && unfolded(current)}
       </section>
     );
   };
@@ -528,59 +670,58 @@ export function GoalsPage({
     );
 
   return (
-    <div className="gm">
+    <div className="gm-col">
       {barButton}
-      <div className="gm-col">
-        {goals.length > 0 || adding ? (
-          <div
-            className="gm-list"
-            role="list"
-            aria-label={t({ id: 'board.goals.list', defaultMessage: 'Goals' })}
-          >
-            {goals.map(goalRow)}
-            {restoreFailed && !goals.some((g) => g.id === restoreFailed.goal.id) && (
-              <section className="gm-goal" role="listitem" aria-label={restoreFailed.goal.text}>
-                <h2 className="gm-gt" data-off="">
-                  {restoreFailed.goal.text}
-                </h2>
-                {alert(restoreFailed.text)}
-              </section>
-            )}
-            {draft?.goalId === null && (
-              <section
-                className="gm-goal"
-                role="listitem"
-                aria-label={t({ id: 'board.goals.new', defaultMessage: 'New goal' })}
-              >
-                {editor(draft, undefined)}
-              </section>
-            )}
-          </div>
-        ) : (
-          <div className="gm-empty">
-            <p>
-              {t({
-                id: 'board.goals.empty',
-                defaultMessage: 'Say in your own words what this project is for.',
-              })}
-            </p>
-            <button type="button" className="btn pri" onClick={() => write(null)}>
-              <Plus aria-hidden="true" />
-              {addLabel}
-            </button>
-          </div>
-        )}
-        {loose.length > 0 && (
-          <div className="gm-list" role="group" aria-labelledby={`${id}-none`}>
-            <section className="gm-goal">
-              <h2 className="gm-gt" id={`${id}-none`} data-off="">
-                {t({ id: 'board.goals.noGoal', defaultMessage: 'No goal' })}
+      {goals.length > 0 || adding ? (
+        <div
+          className="gm-list"
+          role="list"
+          aria-label={t({ id: 'board.goals.list', defaultMessage: 'Goals' })}
+        >
+          {goals.map(goalRow)}
+          {restoreFailed && !goals.some((g) => g.id === restoreFailed.goal.id) && (
+            <section className="gm-goal" role="listitem" aria-label={restoreFailed.goal.text}>
+              <h2 className="gm-gt" data-off="">
+                {restoreFailed.goal.text}
               </h2>
-              {milestoneList('', loose)}
+              {alert(restoreFailed.text)}
             </section>
-          </div>
-        )}
-      </div>
+          )}
+          {draft?.goalId === null && (
+            <section
+              className="gm-goal"
+              role="listitem"
+              aria-label={t({ id: 'board.goals.new', defaultMessage: 'New goal' })}
+            >
+              {editor(draft, undefined)}
+            </section>
+          )}
+        </div>
+      ) : (
+        <div className="gm-empty">
+          <p>
+            {t({
+              id: 'board.goals.empty',
+              defaultMessage: 'Say in your own words what this project is for.',
+            })}
+          </p>
+          <button type="button" className="btn pri" onClick={() => write(null)}>
+            <Plus aria-hidden="true" />
+            {addLabel}
+          </button>
+        </div>
+      )}
+      {loose.length > 0 && (
+        <div className="gm-list" role="group" aria-labelledby={`${id}-none`}>
+          <section className="gm-goal">
+            <h2 className="gm-gt" id={`${id}-none`} data-off="">
+              {t({ id: 'board.goals.noGoal', defaultMessage: 'No goal' })}
+            </h2>
+            {milestoneList('', loose)}
+            {current && homeOf(current.id) === null && unfolded(current)}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

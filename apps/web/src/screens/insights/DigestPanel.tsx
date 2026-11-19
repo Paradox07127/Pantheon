@@ -18,7 +18,7 @@ import { Empty } from '../board/Charts';
 import { durationText } from '../board/panels-model';
 import { localDay, previousText } from '../board/usage-model';
 import { failureText, type Failure } from '../settings/ProjectSettingsScreen';
-import { openBoardTab, openSettingsPage } from '../settings/settings-jump';
+import { openRetrospective, openSettingsPage } from '../settings/settings-jump';
 import './digest.css';
 
 export interface DigestPanelProps {
@@ -840,7 +840,7 @@ export function DigestPanel({ model, projectId, bar, week, onWeek }: DigestPanel
                             <button
                               type="button"
                               className="btn sm"
-                              onClick={() => openBoardTab('retro', finding.retrospective_ids[0])}
+                              onClick={() => openRetrospective(finding.retrospective_ids[0])}
                             >
                               {t({
                                 id: 'insights.digest.openRetro',

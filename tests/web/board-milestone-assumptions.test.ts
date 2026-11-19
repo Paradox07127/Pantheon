@@ -16,8 +16,8 @@ vi.mock('@/components/Toast', async (actual) => ({
   ...(await actual<object>()),
   toast: (...args: unknown[]) => mock.toast(...args),
 }));
+import { GoalsSection } from '@/screens/board/GoalsSection';
 import { MilestoneAssumptions } from '@/screens/board/MilestoneAssumptions';
-import { MilestoneCard } from '@/screens/board/MilestoneCard';
 import type { BoardMilestone } from '@/screens/board/panels-model';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -153,19 +153,42 @@ describe('assumptions of the selected milestone', () => {
   it.each([
     ['with assumptions', PLAN, true],
     ['without assumptions', undefined, false],
-  ] as const)('the milestone card draws the block only %s', (_, assumptions, drawn) => {
-    const card = mount(() =>
-      MilestoneCard({
-        model: board(),
-        milestone: milestone(assumptions as Assumption[] | undefined),
-        onOpenTask: () => {},
-        onOpenSession: () => {},
-      }),
-    );
-    const block = nodes(card.value).find((n) => n.type === MilestoneAssumptions);
-    expect(!!block).toBe(true);
-    expect(mount(() => MilestoneAssumptions(block!.props)).value === null).toBe(!drawn);
-  });
+  ] as const)(
+    "the current milestone's flag in the goals holds the block only %s",
+    (_, assumptions, drawn) => {
+      const current = milestone(assumptions as Assumption[] | undefined);
+      const goals = mount(() =>
+        GoalsSection({
+          model: {
+            ...board(),
+            milestones: [current],
+            goals: [
+              {
+                id: 'g-staging',
+                text: 'Refunds reach staging',
+                order: 0,
+                revision: 1,
+                milestone_ids: [current.id],
+                milestones: { done: 0, ready: 0, total: 1 },
+                tasks: { done: 1, total: 4 },
+                needs: 0,
+              },
+            ],
+          } as BoardModel,
+          projectId: 'payments',
+          bar: null,
+          current,
+          onOpenNeeds: () => {},
+          onOpenTasks: () => {},
+          onOpenTask: () => {},
+          onOpenSession: () => {},
+        }),
+      );
+      const block = nodes(goals.value).find((n) => n.type === MilestoneAssumptions);
+      expect(!!block).toBe(drawn);
+      if (block) expect(mount(() => MilestoneAssumptions(block.props)).value).not.toBeNull();
+    },
+  );
 
   it('shows the first 4 of 6 assumptions and all 6 once unfolded', () => {
     const six = Array.from({ length: 6 }, (_, i) => assumption(`a${i}`, `assumption number ${i}`));

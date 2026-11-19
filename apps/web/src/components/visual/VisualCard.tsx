@@ -19,7 +19,6 @@ import {
 import type { Visual, VisualContent } from '@pantheon/domain';
 import { canMessage } from '../../data/ask-debug';
 import { useBoard } from '../../data/board';
-import { pickBoardPage } from '../../data/board-page';
 import { failureText } from '../../data/needs-you';
 import { sessionTitle, type Session } from '../../data/transcript';
 import { pinVisual, unpinVisual, useVisual, type VisualSize } from '../../data/visuals';
@@ -532,21 +531,18 @@ export function VisualFrame({
   );
 }
 
-/** Says the visual went onto its project's canvas, with the way there and an undo. */
+/** Says the visual went onto its project's diagrams, with the way there and an undo. */
 function noticePinned(visual: Visual) {
   noticeResult({
     tone: 'done',
     heading: t(
-      { id: 'visual.card.pinned', defaultMessage: 'Pinned to the canvas: {title}' },
+      { id: 'visual.card.pinned', defaultMessage: 'Pinned to Diagrams: {title}' },
       { title: visual.title },
     ),
     actions: [
       {
-        label: t({ id: 'visual.card.openCanvas', defaultMessage: 'Open canvas' }),
-        run: () => {
-          pickBoardPage(visual.project_id, 'canvas');
-          useShell.getState().openProjectBoard(visual.project_id);
-        },
+        label: t({ id: 'visual.card.openDiagrams', defaultMessage: 'Open Diagrams' }),
+        run: () => useShell.getState().openProjectMemory(visual.project_id, 'diagrams'),
       },
       {
         label: t({ id: 'visual.card.undoPin', defaultMessage: 'Undo' }),
@@ -605,8 +601,8 @@ export function VisualCard({
   const refresh = t({ id: 'visual.card.refresh', defaultMessage: 'Refresh this visual' });
   const pinned = visual.pin !== undefined;
   const label = pinned
-    ? t({ id: 'visual.card.unpin', defaultMessage: 'Pinned to the canvas; click to unpin' })
-    : t({ id: 'visual.card.pin', defaultMessage: 'Pin to the canvas' });
+    ? t({ id: 'visual.card.unpin', defaultMessage: 'Pinned to Diagrams; click to unpin' })
+    : t({ id: 'visual.card.pin', defaultMessage: 'Pin to Diagrams' });
   const toggle = () => {
     if (busy) return;
     setBusy(true);

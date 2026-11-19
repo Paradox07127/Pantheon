@@ -339,6 +339,12 @@
   color: var(--mu);
   font-variant-numeric: tabular-nums;
 }
+.bf-strip-w {
+  margin-left: auto;
+  color: var(--mu);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
 .bf-needs {
   display: flex;
   flex-direction: column;
@@ -409,7 +415,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Since you left: a header across the card, then a cell per kind of change with its count; a cell with items opens them in a popover. */
+/* Since you left: a header over the card; in it the paragraph, the time track, then the lines left over and the failures. */
 .bf-brief {
   flex: none;
   margin: var(--sp-3) var(--sp-6) 0;
@@ -420,16 +426,50 @@
     opacity: 0;
   }
 }
-/* Outranks `.panel > .cell`, which index.css sets later as a column. */
-.bf-brief > .cell.bf-brief-h {
-  grid-column: 1 / -1;
-  flex-direction: row;
-  align-items: center;
+.bf-brief-box {
+  display: flex;
+  flex-direction: column;
+  background: var(--sf);
+  border: var(--hair) solid var(--bd);
+  border-radius: var(--r-lg);
+}
+.bf-brief-box > * + * {
+  border-top: var(--hair) solid var(--bd2);
+}
+.bf-brief-rows {
+  display: flex;
+  flex-direction: column;
   gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4);
 }
-.bf-brief-t {
-  font-weight: 600;
+/* A failure still waiting: its task, the gate steps that failed, and who acts next at the end. */
+.bf-brief-fail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--row);
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--tx);
+  text-decoration: none;
+  transition: background-color var(--dur-1) var(--ease-std);
+}
+a.bf-brief-fail:hover {
+  background: var(--sf2);
+}
+.bf-brief-fn {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bf-brief-fs {
+  color: var(--mu);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.bf-brief-fail > .bd-rg {
+  margin-left: auto;
 }
 .bf-brief-at {
   color: var(--mu);
@@ -440,31 +480,6 @@
 }
 .bf-brief-read {
   margin-left: auto;
-}
-.bf-brief > .bf-brief-c {
-  gap: var(--sp-2);
-}
-.bf-brief > button.bf-brief-c {
-  border: 0;
-  border-radius: 0;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-}
-.bf-brief > button.bf-brief-c:hover {
-  background: var(--st-hov);
-}
-.bf-brief > button.bf-brief-c[data-popup-open] {
-  background: var(--st-on);
-}
-.bf-brief-pop {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  width: min(360px, calc(100vw - 32px));
-  max-height: 60vh;
-  padding: var(--sp-3);
-  overflow-y: auto;
 }
 .bf-brief-it {
   display: flex;
@@ -480,10 +495,6 @@
   color: var(--tx2);
   text-decoration: none;
   overflow-wrap: anywhere;
-  transition: color var(--dur-1) var(--ease-std);
-}
-a.bf-brief-lk:hover {
-  color: var(--tx);
 }
 .bf-brief-lk > span {
   min-width: 0;
@@ -498,7 +509,7 @@ a.bf-brief-lk:hover {
   color: var(--mu);
   font-size: var(--fs-xs);
 }
-/* A milestone the lead accepted without a passed verification, under the counts. */
+/* A milestone the lead accepted without a passed verification, under the track. */
 .bf-brief-ov {
   padding-top: var(--sp-2);
   border-top: var(--hair) solid var(--bd2);
@@ -511,10 +522,12 @@ a.bf-brief-lk:hover {
 .bf-brief-tell {
   align-self: flex-start;
 }
-/* The side model's paragraph across the card, under the cells, so nothing in the card moves when it lands. */
-.bf-brief > .bf-brief-p {
-  grid-column: 1 / -1;
+/* The side model's paragraph, over the track, with who wrote it and when under it. */
+.bf-brief-p {
+  display: flex;
+  flex-direction: column;
   gap: var(--sp-2);
+  padding: var(--sp-4);
 }
 .bf-brief-who {
   display: flex;

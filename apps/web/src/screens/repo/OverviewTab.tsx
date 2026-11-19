@@ -12,8 +12,6 @@ import { t } from '../../i18n';
 import { useShell } from '../../store';
 import { Failure, Skeleton } from '../board/BoardScreen';
 import { Panel } from '../board/Charts';
-import { useProjectSetup } from '../board/project-setup';
-import { ProjectSetup } from '../board/ProjectSetup';
 import { MergesPanel } from '../board/Lists';
 import {
   BranchPanel,
@@ -132,7 +130,6 @@ export function OverviewTab({
   const head = useProjectHead(projectId);
   const sessions = useSessionList(projectId);
   const board = useBoardView(projectId, range.board);
-  const setup = useProjectSetup(projectId);
   const openSession = useShell((s) => s.openSession);
   const now = useNow(60_000);
   const [drawn, setDrawn] = useState(false);
@@ -151,11 +148,6 @@ export function OverviewTab({
   const workstreams = facts.read?.workstreams ?? [];
   return (
     <>
-      {setup?.state && setup.state !== 'ready' && (
-        <div className="bd-s12">
-          <ProjectSetup setup={setup} onOpenSession={onOpenSession} />
-        </div>
-      )}
       {facts.read && facts.error && (
         <div className="bd-s12">
           <Failure error={facts.error} onRetry={facts.reload} />

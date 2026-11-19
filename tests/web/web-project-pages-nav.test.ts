@@ -53,8 +53,8 @@ describe('project page entries', () => {
 });
 
 describe('stored places', () => {
-  it('opens a board left on the introduction or memory view on its now view', () => {
-    expect(readBoardPage('intro')).toBe('now');
-    expect(readBoardPage('memory')).toBe('now');
+  it('opens a board left on the introduction or memory view on its overview', () => {
+    expect(readBoardPage('intro')).toBe('overview');
+    expect(readBoardPage('memory')).toBe('overview');
   });
 });

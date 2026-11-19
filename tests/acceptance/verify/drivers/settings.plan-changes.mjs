@@ -139,10 +139,17 @@ const needsProposal = async () =>
   (await query('needs_you.list', { project_id })).items.filter(
     (i) => i.kind === 'board.plan.proposal',
   );
+// The needs-you rows that decide a plan proposal in place: each has its change-then-accept toggle.
 const cards = () =>
   page.evaluate(`(() => {
-    const list = document.querySelector('section[aria-label="计划改动提议"]');
-    return list ? list.querySelectorAll('article').length : 0;
+    const list = document.querySelector('section[aria-label="需要你"]');
+    return list
+      ? [...list.querySelectorAll('article')].filter((row) =>
+          [...row.querySelectorAll('button[aria-expanded]')].some((b) =>
+            b.getAttribute('aria-label')?.startsWith('改一下再接受 '),
+          ),
+        ).length
+      : 0;
   })()`);
 
 // Auto: the change lands at once.
@@ -164,10 +171,14 @@ const autoNeeds = await needsProposal();
 check('auto:needs_you.list 没有 board.plan.proposal', autoNeeds.length === 0, autoNeeds);
 await reset();
 await page.click({ role: 'button', name: '项目看板', exact: true });
-await page.click({ role: 'radio', name: '现在', exact: true });
+// The accepted task shows on the tasks page's flow chart once the board read has it.
+await page.click({ role: 'radio', name: '任务', exact: true });
+await page.click({ role: 'radio', name: '流程图', exact: true });
+await page.click({ role: 'radio', name: '全部', exact: true });
 await poll(() => page.evaluate(`document.body.innerText.includes(${JSON.stringify('Auto task')})`));
+await page.click({ role: 'radio', name: '总览', exact: true });
 const autoCards = await cards();
-check('auto:看板"现在"页没有计划改动提议卡', autoCards === 0, autoCards);
+check('auto:看板"总览"页的需要你没有提议行', autoCards === 0, autoCards);
 result.shot_auto = await page.screenshot(`${result.id}-auto`);
 
 // Control group: "等我批准" set through the UI, and the next proposal waits.
@@ -207,9 +218,9 @@ check(
 );
 await reset();
 await page.click({ role: 'button', name: '项目看板', exact: true });
-await page.click({ role: 'radio', name: '现在', exact: true });
+await page.click({ role: 'radio', name: '总览', exact: true });
 const confirmCards = await poll(async () => ((await cards()) > 0 ? await cards() : null));
-check('对照组：看板"现在"页有计划改动提议卡', confirmCards === 1, confirmCards);
+check('对照组：看板"总览"页的需要你有一条提议行', confirmCards === 1, confirmCards);
 result.shot = await page.screenshot(result.id);
 
 await restore();

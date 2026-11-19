@@ -21,6 +21,7 @@ vi.mock('@/data/runtime-models', () => ({
   useRuntimeModels: (_project: string, runtimes: string[]) =>
     Object.fromEntries(runtimes.map((runtime) => [runtime, { state: 'ready', models: [] }])),
 }));
+import type { BoardPage } from '@/data/board-page';
 import { addDraftEdit, discardDraftEdits } from '@/data/plan-draft';
 import type { PlanOp } from '@/data/plan-edit';
 import { BoardView } from '@/screens/board/BoardScreen';
@@ -113,14 +114,12 @@ const board = (): BoardModel =>
     ],
   }) as unknown as BoardModel;
 
-const view = (page: 'now' | 'canvas' = 'now', onPage = noop) =>
+const view = (page: BoardPage = 'tasks', onPage = noop) =>
   BoardView({
     model: board(),
     loading: false,
     error: null,
     onRetry: noop,
-    range: 7,
-    onRange: noop,
     page,
     onPage,
     projectId: 'project-a',
@@ -176,15 +175,15 @@ describe('the board in edit mode', () => {
     expect(has(h.value, 'EditButton')).toBe(false);
   });
 
-  it("keeps the leads' plan proposals on the board outside edit mode as well as in it", () => {
-    const h = mount(() => view());
-    expect(has(h.value, 'PlanProposals')).toBe(true);
+  it("leaves the leads' plan proposals to the needs-you rows, outside edit mode as well as in it", () => {
+    expect(has(mount(() => view('overview')).value, 'PlanProposals')).toBe(false);
 
+    const h = mount(() => view());
     const edit = named(h.value, 'EditButton');
     mount(() => (edit.type as (p: object) => ReactElement<any>)(edit.props)).value.props.onClick();
     h.render();
-    expect(has(h.value, 'PlanProposals')).toBe(true);
     expect(has(named(h.value, 'EditMode').props.side, 'PlanProposals')).toBe(false);
+    expect(has(mount(() => view('overview')).value, 'PlanProposals')).toBe(false);
   });
 
   it('hands the edit mode to the flow chart of the main view, and only then', () => {
@@ -242,8 +241,8 @@ describe('the board in edit mode', () => {
     expect(named(h.value, 'EditButton').props.count).toBe(1);
   });
 
-  it('leaves the edit button off the canvas view', () => {
-    const h = mount(() => view('canvas'));
+  it('leaves the edit button off the overview', () => {
+    const h = mount(() => view('overview'));
     expect(has(h.value, 'EditButton')).toBe(false);
   });
 });

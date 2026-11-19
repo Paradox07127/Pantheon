@@ -26,7 +26,7 @@ export type Screen =
   | 'personal';
 
 export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved';
-export type MemoryTab = 'overview' | 'entries' | 'graph' | 'learned';
+export type MemoryTab = 'overview' | 'entries' | 'graph' | 'diagrams' | 'learned';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -199,6 +199,8 @@ interface ShellState {
   openProjectSession: (projectId: string, sessionId: string) => void;
   // Makes the project current and opens its board, whose needs strip holds its decisions, in one switch.
   openProjectBoard: (projectId: string) => void;
+  // Makes the project current and opens one tab of its memory, in one switch.
+  openProjectMemory: (projectId: string, tab: MemoryTab) => void;
   // Makes the project current and opens its runs going now, whose needs-you strip answers the wait.
   openProjectNeed: (projectId: string, needKey: string) => void;
   // Makes the project current and opens the trace's list of what was approved for the user, of one type when given.
@@ -468,6 +470,18 @@ export const useShell = create<ShellState>((set) => ({
     navigate(
       {
         screen: 'board',
+        sessionTab: null,
+        sessionRun: null,
+        sessionGroup: null,
+        sessionTask: null,
+      },
+      projectId,
+    ),
+  openProjectMemory: (projectId, memoryTab) =>
+    navigate(
+      {
+        screen: 'memory',
+        memoryTab,
         sessionTab: null,
         sessionRun: null,
         sessionGroup: null,

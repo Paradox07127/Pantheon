@@ -1,6 +1,4 @@
 {
-  "board.history.span.now": "现在",
-  "board.history.span.history": "全程",
   "board.history.label": "全程",
   "board.history.progressSection": "全程进度",
   "board.history.progress": "{total, plural, other {# 个任务}}：{states}",
@@ -14,7 +12,6 @@
   "board.history.range": "范围",
   "board.history.range.all": "全部",
   "board.history.range.month": "近 30 天",
-  "board.history.range.milestone": "当前里程碑",
   "board.history.bands": "分带",
   "board.history.bands.lanes": "工作线",
   "board.history.chart": "全程流程图",
@@ -65,5 +62,16 @@
   "board.history.daysLeft": "{count, plural, other {还有 # 天}}",
   "board.history.dueToday": "今天到期",
   "board.history.overdue": "{count, plural, other {超期 # 天}}",
-  "board.history.weekSpan": "{count, plural, other {# 周}}"
+  "board.history.weekSpan": "{count, plural, other {# 周}}",
+  "board.history.lanes.period": "{from} 到 {to}",
+  "board.history.lanes.empty": "这个里程碑还没有任务开始",
+  "board.history.lanes.waited": "等了 {duration}",
+  "board.history.lanes.total": "共 {duration}",
+  "board.history.lanes.tip.period": "时段",
+  "board.history.lanes.tip.handbacks": "交回",
+  "board.history.lanes.tip.handbackCount": "{count, plural, other {# 次}}",
+  "board.history.lanes.range": "{from} 到现在，{duration}",
+  "board.history.lanes.waiting": "等待",
+  "board.history.lanes.label": "{count, plural, other {# 个任务}}的时间线",
+  "board.history.lanes.cut": "{from} 到 {to} 的 {duration} 没有动静，已压缩"
 }

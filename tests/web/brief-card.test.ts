@@ -22,18 +22,21 @@ vi.mock('@/store', () => ({
     { setState() {} },
   ),
 }));
-import { Popover } from '../../apps/web/node_modules/@base-ui/react/popover/index.mjs';
 import { BriefCard } from '@/screens/board/BriefCard';
-import { ProjectNeeds } from '@/screens/board/NowPage';
+import { ProjectNeeds } from '@/screens/board/OverviewPage';
+import { RungLabel } from '@/screens/board/TaskRecovery';
 import { TellLead } from '@/screens/board/TellLead';
 import type { SnapshotSession } from '@/screens/board/panels-model';
+import { reasonText } from '@/data/needs-you';
+import { listText } from '@/lib/list-text';
+import { dayText } from '@/lib/time-text';
 import { zh, zhf } from './i18n-setup.js';
 
 const NOW = Date.UTC(2026, 10, 17, 14);
 const LEFT = NOW - 3 * 3_600_000;
 
 type Task = BoardModel['tasks'][number];
-const task = (id: string, title: string): Task =>
+const task = (id: string, title: string, extra: Partial<Task> = {}): Task =>
   ({
     id,
     title,
@@ -52,6 +55,7 @@ const task = (id: string, title: string): Task =>
     last_progress_at: null,
     blocked_since: null,
     turn_running: false,
+    ...extra,
   }) as Task;
 
 const merge = (session_id: string, title: string): BoardModel['merges'][number] => ({
@@ -65,10 +69,28 @@ const merge = (session_id: string, title: string): BoardModel['merges'][number] 
   story_id: null,
 });
 
+const RUNG = {
+  rung: 'retry',
+  by: 'pantheon',
+  reason: 'gate_failed',
+  used: 2,
+  limit: 3,
+  since: NOW - 300_000,
+  switches: [],
+} as const;
+
 const model = {
   since: NOW - 7 * 86_400_000,
   now: NOW,
-  tasks: [task('lead-1:audit', 'Add refund audit log')],
+  tasks: [
+    task('lead-1:audit', 'Add refund audit log', {
+      gate_steps: [
+        { name: 'lint', state: 'passed' },
+        { name: 'test:web', state: 'failed' },
+      ],
+      rung: { ...RUNG, switches: [] },
+    }),
+  ],
   merges: [
     merge('session-filters', 'Refund list filters'),
     merge('session-copy', 'Refund UI copy'),
@@ -198,39 +220,16 @@ const needsList = (projectId: string) =>
   );
 const group = (tree: unknown, label: string) =>
   find(tree as ReactElement, (n) => n.props.role === 'group' && n.props['aria-label'] === label);
-/** The tree as drawn: a popover's portal only while its root is open. */
-const drawn = (tree: unknown): any => {
-  if (Array.isArray(tree)) return tree.map(drawn);
-  if (!tree || typeof tree !== 'object' || !('props' in tree)) return tree;
-  const node = tree as ReactElement<any>;
-  const closed = node.type === Popover.Root && !node.props.open;
-  const children = [node.props.children]
-    .flat()
-    .filter((child: any) => !(closed && child?.type === Popover.Portal))
-    .map(drawn);
-  return { ...node, props: { ...node.props, children } };
-};
-/** A cell of the card by its name, as a group or as the button that opens its list. */
-const cell = (tree: unknown, label: string) =>
-  find(drawn(tree), (n) => n.type !== Popover.Popup && n.props['aria-label'] === label);
-const rootOf = (tree: unknown, label: string) =>
-  find(
-    tree as ReactElement,
-    (n) =>
-      n.type === Popover.Root &&
-      nodes(n.props.children).some(
-        (c) => c.type === Popover.Trigger && c.props['aria-label'] === label,
-      ),
-  );
-/** Opens the cell's popover as a press on its button does, and returns the popup as drawn. */
-const openCell = (h: { value: unknown; render(): unknown }, label: string) => {
-  rootOf(h.value, label).props.onOpenChange(true);
-  h.render();
-  return find(drawn(h.value), (n) => n.type === Popover.Popup && n.props['aria-label'] === label);
-};
 const links = (tree: unknown) => nodes(tree as ReactElement).filter((n) => n.type === 'a');
 const sent = (type: string) =>
   command.mock.calls.map(([each]) => each).filter((each) => each.type === type);
+/** A lane of the time track by its name and the counts its label writes out. */
+const laneLabel = (lane: string, count: number, ...parts: string[]) =>
+  zhf('board.brief.laneLabel', { lane, count, parts: listText(...parts) });
+/** The points of a lane, as the buttons it draws and the proposals it reads first. */
+const points = (lane: ReactElement<any>) => nodes(lane.props.children).filter((n) => n !== lane);
+const pointLabel = (at: number, type: string, title: string) =>
+  zhf('board.brief.point', { time: dayText(at, NOW, { time: true }), type, title });
 
 describe('needs-you list under the card', () => {
   it('stays out until the brief read lands, so the card does not push it down', async () => {
@@ -290,163 +289,162 @@ describe('since you left card', () => {
     expect(text(root)).toContain(zh('board.brief.read'));
   });
 
-  it('heads the card with its title, the time the user left and Mark as read in one row', async () => {
+  it('heads the card with its title, how long the user was away and Mark as read in one row', async () => {
     serve(served);
     const h = await card('project-brief-f');
     const root = group(h.value, zh('board.brief.label'));
     const header = find(root, (n) =>
       [n.props.children].flat().some((c: any) => c?.type === 'button'),
     );
-    expect(
-      [header.props.children]
-        .flat()
-        .filter(Boolean)
-        .map((c: any) => (c.type === 'time' ? 'time' : text(c))),
-    ).toEqual([zh('board.brief.label'), 'time', zh('board.brief.read')]);
-  });
-
-  it('shows each count as the brief serves it', async () => {
-    serve(served);
-    const h = await card('project-brief-b');
-    expect(text(cell(h.value, zhf('board.brief.waitingCount', { count: 7 })))).toContain('7');
-    expect(text(cell(h.value, zhf('board.brief.milestonesCount', { count: 1 })))).toContain('1');
-    expect(text(cell(h.value, zhf('board.brief.mergedCount', { count: 2 })))).toContain('2');
-    expect(text(cell(h.value, zhf('board.brief.failedCount', { count: 2 })))).toContain('2');
-    expect(text(cell(h.value, zhf('board.brief.assumptionsCount', { count: 1 })))).toContain('1');
-    expect(text(cell(h.value, zhf('board.brief.proposalsCount', { count: 1 })))).toContain('1');
-  });
-
-  it('draws only the titles and counts until a cell is opened', async () => {
-    serve(served);
-    const h = await card('project-brief-c');
-    const shown = drawn(h.value);
-    expect(links(shown)).toEqual([]);
-    for (const item of [
-      'Add refund audit log',
-      'Refund list filters',
-      'Refund UI copy',
-      'Reconciliation report',
-      'UTC is the day boundary',
-      'Refund UI',
-    ])
-      expect(text(shown)).not.toContain(item);
-  });
-
-  it('keeps the waiting cell a count with no button, since the list under the card has its items', async () => {
-    serve(served);
-    const h = await card('project-brief-c');
-    const waitingCell = cell(h.value, zhf('board.brief.waitingCount', { count: 7 }));
-    expect(waitingCell.props.role).toBe('group');
-    expect(text(waitingCell)).toBe(`${zh('board.brief.waiting')}7`);
-    expect(
-      nodes(h.value).some(
-        (n) =>
-          n.type === Popover.Trigger &&
-          n.props['aria-label'] === zhf('board.brief.waitingCount', { count: 7 }),
-      ),
-    ).toBe(false);
-  });
-
-  it.each([
-    {
-      cellName: 'merged',
-      label: () => zhf('board.brief.mergedCount', { count: 2 }),
-      titles: ['Refund list filters', 'Refund UI copy'],
-      sessions: ['session-filters', 'session-copy'],
-      tasks: [],
-    },
-    {
-      cellName: 'failed',
-      label: () => zhf('board.brief.failedCount', { count: 2 }),
-      titles: ['Reconciliation report', 'Add refund audit log'],
-      sessions: ['session-recon'],
-      tasks: ['lead-1:audit'],
-    },
-    {
-      cellName: 'assumptions',
-      label: () => zhf('board.brief.assumptionsCount', { count: 1 }),
-      titles: ['UTC is the day boundary'],
-      sessions: ['lead-1'],
-      tasks: [],
-    },
-  ])(
-    'opens the $cellName cell to its items, each linking to its task or session',
-    async ({ label, titles, sessions: opened, tasks }) => {
-      serve(served);
-      const onOpenTask = vi.fn();
-      const h = await card('project-brief-c', onOpenTask);
-      const button = cell(h.value, label());
-      expect(button.type).toBe(Popover.Trigger);
-      expect(button.props['aria-haspopup']).toBe('dialog');
-      expect(button.props['aria-expanded']).toBe(false);
-      const popup = openCell(h, label());
-      expect(cell(h.value, label()).props['aria-expanded']).toBe(true);
-      const shown = links(popup);
-      expect(shown.map(text)).toEqual(titles);
-      const prevented = { preventDefault: vi.fn() };
-      shown.forEach((link) => link.props.onClick(prevented));
-      expect(prevented.preventDefault).toHaveBeenCalledTimes(titles.length);
-      expect(mock.openSession.mock.calls.map(([id]) => id)).toEqual(opened);
-      expect(onOpenTask.mock.calls.map(([id]) => id)).toEqual(tasks);
-      h.render();
-      expect(rootOf(h.value, label()).props.open).toBe(false);
-    },
-  );
-
-  it('lists the milestones that moved by title, without their score', async () => {
-    serve(served);
-    const h = await card('project-brief-c');
-    const popup = openCell(h, zhf('board.brief.milestonesCount', { count: 1 }));
-    expect(text(popup)).toBe('Refund UI');
-  });
-
-  it('counts what was decided for the user and links each type to the approved list filtered by it', async () => {
-    serve({
-      since: LEFT,
-      items: [
-        {
-          kind: 'decided',
-          ref: { kind: 'decided', id: 'project-brief-j' },
-          count: 6,
-          types: { permission: 3, answer: 2, plan_change: 0 },
-        },
-      ],
-    });
-    const h = await card('project-brief-j');
-    const label = zhf('board.brief.decidedCount', { count: 6 });
-    expect(text(cell(h.value, label))).toContain(zh('board.brief.decided'));
-    expect(text(cell(h.value, label))).toContain('6');
-    const shown = links(openCell(h, label));
-    expect(shown.map(text)).toEqual([
-      zhf('board.brief.decidedPermissions', { count: 3 }),
-      zhf('board.brief.decidedAnswers', { count: 2 }),
-      zhf('board.brief.decidedOther', { count: 1 }),
+    const parts = [header.props.children].flat().filter(Boolean);
+    expect(parts.map((c: any) => (c.type === 'time' ? 'time' : text(c)))).toEqual([
+      zh('board.brief.label'),
+      'time',
+      zh('board.brief.read'),
     ]);
-    shown.forEach((link) => link.props.onClick({ preventDefault() {} }));
+    expect(text(parts[1])).toBe(zhf('board.brief.away', { duration: '3 小时' }));
+  });
+
+  it('draws the delivered lane with a point per merge and failure, each named by its time, kind and title', async () => {
+    serve(served);
+    const onOpenTask = vi.fn();
+    const h = await card('project-brief-b', onOpenTask);
+    const lane = group(
+      h.value,
+      laneLabel(
+        zh('board.brief.lane.delivered'),
+        4,
+        zhf('board.brief.mergedCount', { count: 2 }),
+        zhf('board.brief.failedCount', { count: 2 }),
+      ),
+    );
+    const shown = points(lane).filter((n) => n.type === 'button');
+    expect(shown.map((n) => n.props['aria-label'])).toEqual([
+      pointLabel(NOW - 3_600_000, zh('board.brief.merged'), 'Refund list filters'),
+      pointLabel(NOW - 3_000_000, zh('board.brief.merged'), 'Refund UI copy'),
+      pointLabel(NOW - 2_000_000, reasonText('gate_failed'), 'Reconciliation report'),
+      pointLabel(NOW - 400_000, reasonText('gate_failed'), 'Add refund audit log'),
+    ]);
+    // Placed by time on the track from leaving to now.
+    expect(shown[0]!.props.style.left).toBe(`${(2 / 3) * 100}%`);
+    shown.forEach((point) => point.props.onClick());
+    expect(mock.openSession.mock.calls.map(([id]) => id)).toEqual([
+      'session-filters',
+      'session-copy',
+      'session-recon',
+    ]);
+    expect(onOpenTask.mock.calls.map(([id]) => id)).toEqual(['lead-1:audit']);
+  });
+
+  it('draws the plan lane with the new assumptions and the agent proposals', async () => {
+    serve(served);
+    const h = await card('project-brief-c');
+    const lane = group(
+      h.value,
+      laneLabel(
+        zh('board.brief.lane.plan'),
+        2,
+        zhf('board.brief.assumptionsCount', { count: 1 }),
+        zhf('board.brief.proposalsCount', { count: 1 }),
+      ),
+    );
+    const [assumption, proposal] = points(lane).filter(
+      (n) =>
+        n.type === 'button' || (typeof n.type === 'function' && n.type.name === 'ProposalPoint'),
+    );
+    expect(assumption!.props['aria-label']).toBe(
+      pointLabel(NOW - 1_000_000, zh('board.brief.type.assumption'), 'UTC is the day boundary'),
+    );
+    assumption!.props.onClick();
+    expect(mock.openSession).toHaveBeenCalledWith('lead-1');
+    expect(proposal!.props.point).toMatchObject({ key: 'proposal-1', at: NOW - 500_000 });
+  });
+
+  it('draws the decided lane with a point per decision, which opens the approved list on its type', async () => {
+    const decided: DecisionForUser[] = [
+      {
+        kind: 'prompt_approved',
+        at: NOW - 7_000_000,
+        approval_id: 'approval-1',
+        session_id: 'session-recon',
+        decided_by: 'session:lead-1',
+        tool: 'Bash',
+        input_summary: 'pnpm test',
+      },
+      {
+        kind: 'question_answered',
+        at: NOW - 6_000_000,
+        lead_session_id: 'lead-1',
+        question_id: 'question-1',
+        question: 'Which day boundary?',
+        answer: 'UTC',
+        citations: [],
+      },
+    ];
+    serve(
+      {
+        since: LEFT,
+        items: [
+          {
+            kind: 'decided',
+            ref: { kind: 'decided', id: 'project-brief-j' },
+            count: 2,
+            types: { permission: 1, answer: 1, plan_change: 0 },
+          },
+        ],
+      },
+      {},
+      decided,
+    );
+    const h = await card('project-brief-j');
+    const lane = group(
+      h.value,
+      laneLabel(
+        zh('board.brief.decided'),
+        2,
+        zhf('board.brief.decidedPermissions', { count: 1 }),
+        zhf('board.brief.decidedAnswers', { count: 1 }),
+      ),
+    );
+    const shown = points(lane).filter((n) => n.type === 'button');
+    expect(shown.map((n) => n.props['aria-label'])).toEqual([
+      pointLabel(NOW - 7_000_000, zh('board.brief.type.permission'), 'pnpm test'),
+      pointLabel(NOW - 6_000_000, zh('board.brief.type.answer'), 'Which day boundary?'),
+    ]);
+    shown.forEach((point) => point.props.onClick());
     expect(mock.openProjectApproved.mock.calls).toEqual([
       ['project-brief-j', 'permission', LEFT],
       ['project-brief-j', 'answer', LEFT],
-      ['project-brief-j', undefined, LEFT],
     ]);
+    // The lanes without events are drawn empty.
+    expect(
+      group(h.value, zhf('board.brief.laneEmpty', { lane: zh('board.brief.lane.delivered') })),
+    ).toBeTruthy();
   });
 
-  it('has no other row when the types add up to the count', async () => {
-    serve({
-      since: LEFT,
-      items: [
-        {
-          kind: 'decided',
-          ref: { kind: 'decided', id: 'project-brief-j' },
-          count: 5,
-          types: { permission: 3, answer: 2, plan_change: 0 },
-        },
-      ],
-    });
-    const h = await card('project-brief-j');
-    expect(links(openCell(h, zhf('board.brief.decidedCount', { count: 5 }))).map(text)).toEqual([
-      zhf('board.brief.decidedPermissions', { count: 3 }),
-      zhf('board.brief.decidedAnswers', { count: 2 }),
+  it('keeps a milestone that moved, which has no time, as a line under the track, with the decisions waiting', async () => {
+    serve(served);
+    const h = await card('project-brief-c');
+    const lines = find(
+      h.value,
+      (n) => n.props.className === 'bf-brief-rows' && text(n).includes('Refund UI'),
+    );
+    expect(text(lines)).toBe(`${zhf('board.brief.waitingCount', { count: 7 })}Refund UI`);
+  });
+
+  it('lists each failure still waiting with its failed gate step and who acts next', async () => {
+    serve(served);
+    const onOpenTask = vi.fn();
+    const h = await card('project-brief-c', onOpenTask);
+    const failed = nodes(h.value).filter((n) => n.props.className === 'bf-brief-fail');
+    expect(failed.map((n) => text(n))).toEqual([
+      'Reconciliation report',
+      'Add refund audit logtest:web',
     ]);
+    expect(find(failed[1], (n) => n.type === RungLabel).props.rung).toMatchObject({ used: 2 });
+    failed.forEach((n) => n.props.onClick({ preventDefault() {} }));
+    expect(mock.openSession).toHaveBeenCalledWith('session-recon');
+    expect(onOpenTask).toHaveBeenCalledWith('lead-1:audit');
   });
 
   const decidedBrief: ProjectBrief = {
@@ -477,28 +475,23 @@ describe('since you left card', () => {
     ...model,
     milestones: [{ id: 'ms-refund-ui', title: 'Refund UI' }],
   } as unknown as BoardModel;
+  const acceptedEntry = (tree: unknown) =>
+    find(
+      tree as ReactElement,
+      (n) =>
+        n.props.role === 'group' &&
+        n.props['aria-label'] ===
+          zhf('board.brief.leadAccepted', { lead: 'Refunds rollout lead', milestone: 'Refund UI' }),
+    );
 
-  it('lists a milestone the lead accepted without a passed verification under the counts, with its reason, state and Tell lead', async () => {
+  it('lists a milestone the lead accepted without a passed verification under the track, with its reason, state and Tell lead', async () => {
     serve(decidedBrief, {}, [accepted(false)]);
     const h = await card('project-brief-l', vi.fn(), withMilestone);
     expect(query).toHaveBeenCalledWith('project.decisions', {
       project_id: 'project-brief-l',
       since: String(LEFT + 1),
     });
-    const label = zhf('board.brief.decidedCount', { count: 4 });
-    expect(text(cell(h.value, label))).toContain('4');
-    const popup = openCell(h, label);
-    expect(links(popup).map(text)).toEqual([
-      zhf('board.brief.decidedPermissions', { count: 2 }),
-      zhf('board.brief.decidedOther', { count: 2 }),
-    ]);
-    const entry = find(
-      popup,
-      (n) =>
-        n.props.role === 'group' &&
-        n.props['aria-label'] ===
-          zhf('board.brief.leadAccepted', { lead: 'Refunds rollout lead', milestone: 'Refund UI' }),
-    );
+    const entry = acceptedEntry(h.value);
     expect(text(entry)).toContain(WHY);
     expect(text(entry)).toContain(zh('board.verify.badge.failed'));
     const tell = find(entry, (n) => n.type === TellLead);
@@ -518,39 +511,18 @@ describe('since you left card', () => {
     async (state) => {
       serve(decidedBrief, {}, [accepted(false, state)]);
       const h = await card('project-brief-l', vi.fn(), withMilestone);
-      const entry = find(
-        openCell(h, zhf('board.brief.decidedCount', { count: 4 })),
-        (n) =>
-          n.props.role === 'group' &&
-          n.props['aria-label'] ===
-            zhf('board.brief.leadAccepted', {
-              lead: 'Refunds rollout lead',
-              milestone: 'Refund UI',
-            }),
-      );
       expect(
-        nodes(entry).some(
+        nodes(acceptedEntry(h.value)).some(
           (n) => typeof n.type === 'string' && text(n) === zh('board.verify.badge.runningNoTime'),
         ),
       ).toBe(true);
     },
   );
 
-  it('keeps the decided popover to its counts when the lead accepted only verified milestones', async () => {
+  it('lists no accepted milestone when the lead accepted only verified ones', async () => {
     serve(decidedBrief, {}, [accepted(true)]);
     const h = await card('project-brief-l', vi.fn(), withMilestone);
-    const popup = openCell(h, zhf('board.brief.decidedCount', { count: 4 }));
-    expect(text(popup)).toBe(
-      zhf('board.brief.decidedPermissions', { count: 2 }) +
-        zhf('board.brief.decidedOther', { count: 2 }),
-    );
-    expect(nodes(popup).some((n) => n.type === TellLead)).toBe(false);
-  });
-
-  it('has no decided cell without decisions', async () => {
-    serve(served);
-    const h = await card('project-brief-k');
-    expect(text(h.value)).not.toContain(zh('board.brief.decided'));
+    expect(nodes(h.value).some((n) => n.type === TellLead)).toBe(false);
   });
 
   it('marks the project read and hides', async () => {
@@ -575,7 +547,7 @@ describe('since you left card', () => {
     expect(sent('project.brief.prose.write')).toEqual([]);
   });
 
-  it('shows the paragraph under the cells with each cited item as its link', async () => {
+  it('shows the paragraph over the track with each cited item as its link, and when it was written', async () => {
     serve({
       ...served,
       prose: {
@@ -593,7 +565,7 @@ describe('since you left card', () => {
           },
           { text: 'The audit log waits on you.', refs: [{ kind: 'task', id: 'lead-1:audit' }] },
         ],
-        at: NOW,
+        at: NOW - 60_000,
       },
     });
     const onOpenTask = vi.fn();
@@ -615,6 +587,9 @@ describe('since you left card', () => {
     ]);
     expect(onOpenTask).toHaveBeenCalledWith('lead-1:audit');
     expect(text(h.value)).toContain(zh('board.brief.assistant'));
+    expect(text(h.value)).toContain(
+      zhf('board.brief.writtenAt', { time: dayText(NOW - 60_000, NOW, { time: true }) }),
+    );
     expect(sent('project.brief.prose.write')).toEqual([]);
   });
 

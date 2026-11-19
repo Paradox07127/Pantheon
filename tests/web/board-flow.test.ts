@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BoardModel, BoardTaskState } from '../../packages/protocol/src/index.js';
 import { activityLine } from '../../apps/web/src/screens/board/activity.js';
-import type { BoardPage } from '../../apps/web/src/data/board-page.js';
+import { pickTaskView, type BoardPage } from '../../apps/web/src/data/board-page.js';
 import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import { edgeState } from '../../apps/web/src/screens/board/FlowPanel.js';
 import { t } from '../../apps/web/src/i18n/index.js';
@@ -121,13 +121,11 @@ const view = (
   renderToStaticMarkup(
     createElement(BoardView, {
       model,
-      page: extra.page ?? 'now',
+      page: extra.page ?? 'tasks',
       projectId: extra.projectId,
       loading: extra.loading ?? false,
       error: extra.error ?? null,
       onRetry() {},
-      range: 7,
-      onRange() {},
       onPage() {},
       onOpenSession() {},
       onOpenStory() {},
@@ -326,42 +324,34 @@ describe('board flow edges', () => {
 describe('board view', () => {
   it('names the loading panel after the open view', () => {
     // A first read that fails shows the panel; one still out shows nothing under the view tabs.
-    expect(view(null, { error: 'x', page: 'canvas' })).toContain(
-      `<h2 id="bd-load-h">${zh('board.view.canvas')}</h2>`,
+    expect(view(null, { error: 'x', page: 'overview' })).toContain(
+      `<h2 id="bd-load-h">${zh('board.view.overview')}</h2>`,
     );
-    expect(view(null, { error: 'x', page: 'canvas' })).not.toContain(zh('app.screenName.flow'));
-    expect(view(null, { loading: true, page: 'canvas' })).not.toContain('bd-load-h');
+    expect(view(null, { error: 'x', page: 'overview' })).not.toContain(zh('app.screenName.flow'));
+    expect(view(null, { loading: true, page: 'overview' })).not.toContain('bd-load-h');
   });
 
-  it('names the views goals, now, whole history and canvas in that order', () => {
+  it('names the views overview and tasks in that order', () => {
     const html = view(flowBoard, { projectId: 'flow-views' });
     const views = [
       ...html.matchAll(
         /role="radio"[^>]*>(?:<svg[\s\S]*?<\/svg>)?(?:<span class="tb-lbl">)?([^<]*)/g,
       ),
     ].map((m) => m[1]);
-    expect(views.slice(0, 4)).toEqual(
-      zhs(
-        'board.view.goals',
-        'board.history.span.now',
-        'board.history.span.history',
-        'board.view.canvas',
-      ),
-    );
+    expect(views.slice(0, 2)).toEqual(zhs('board.view.overview', 'board.view.tasks'));
   });
 
-  it('shows the flow chart in the now view, and the progress table then the trend in the canvas view', () => {
+  it("shows the flow chart in the tasks view's flow, and the task list in its list", () => {
     const main = `aria-label="${zh('board.plan.view.main')}"`;
-    const tableHeading = `>${zh('board.progress.title')}</h2>`;
-    const now = view(flowBoard);
-    expect(now).toContain(main);
-    expect(now).not.toContain(tableHeading);
-    const html = view(flowBoard, { page: 'canvas' });
-    const table = html.indexOf(tableHeading);
-    const trend = html.indexOf(`>${zh('board.trend.title')}</h2>`);
+    const tableHeading = `role="table" aria-label="${zh('board.tasks.list.table')}"`;
+    const flow = view(flowBoard, { projectId: 'flow-list' });
+    expect(flow).toContain(main);
+    expect(flow).not.toContain(tableHeading);
+    pickTaskView('flow-list', 'list');
+    const html = view(flowBoard, { projectId: 'flow-list' });
     expect(html).not.toContain(main);
-    expect(table).toBeGreaterThan(-1);
-    expect(trend).toBeGreaterThan(table);
+    expect(html).toContain(tableHeading);
+    expect(html).not.toContain(`>${zh('board.trend.title')}</h2>`);
   });
 
   it('offers the project setup when the project has no tasks and no counts', () => {

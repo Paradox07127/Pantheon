@@ -143,10 +143,8 @@ describe('board drawer merge section', () => {
     ],
   ])('%s', (_, merged, taskId, shown, hidden) => {
     const html = drawer(model([merged]), taskId);
-    const section = html.slice(
-      html.indexOf(`<h3>${zh('board.task.drawer.merge')}</h3>`),
-      html.indexOf(`<h3>${zh('board.task.drawer.upstream')}</h3>`),
-    );
+    const start = html.indexOf(`<h3>${zh('board.task.drawer.merge')}</h3>`);
+    const section = html.slice(start, html.indexOf('</section>', start));
     for (const part of shown) expect(section).toContain(part);
     for (const part of hidden) expect(section).not.toContain(part);
   });
@@ -221,8 +219,8 @@ describe('board panel failure', () => {
   });
 });
 
-describe('board view with no tasks in the range', () => {
-  it('still shows the risks, milestones and completion trend of the range', () => {
+describe('board view with no tasks', () => {
+  it('still shows the milestones on the overview, with no setup', () => {
     const board: BoardModel = {
       ...model([]),
       tasks: [],
@@ -248,17 +246,15 @@ describe('board view with no tasks in the range', () => {
         loading: false,
         error: null,
         onRetry: noop,
-        range: 7,
-        onRange: noop,
-        page: 'canvas',
+        page: 'overview',
         onPage: noop,
+        projectId: 'project-links',
         onOpenSession: noop,
         onOpenStory: noop,
         onOpenTrace: noop,
         setup: setupRead('none'),
       }),
     );
-    expect(html).toContain('imports may drop rows');
     expect(html).toContain('ship the importer');
     expect(html).not.toContain(zh('board.baseline.start'));
   });

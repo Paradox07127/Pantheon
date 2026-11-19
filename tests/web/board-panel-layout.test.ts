@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BoardModel } from '@pantheon/protocol';
-import { BoardView } from '@/screens/board/BoardScreen';
 import { InsightsView } from '@/screens/insights/InsightsScreen';
 import {
   DEFAULT_LAYOUT,
@@ -15,7 +14,7 @@ import {
   setSpan,
   type BoardLayout,
 } from '@/screens/board/panel-layout';
-import { zh, zhf } from './i18n-setup.js';
+import { zh } from './i18n-setup.js';
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 
@@ -96,6 +95,9 @@ describe('board panel layout', () => {
     expect(DEFAULT_LAYOUT.progress.map((p) => p.span)).toEqual([12, 12, 6, 6, 12]);
     expect(keys(DEFAULT_LAYOUT, 'quality')).toEqual([
       'qualityKpis',
+      'qualityTrend',
+      'qualityCycle',
+      'mergesPerDay',
       'gateFailures',
       'findings',
       'matrix',
@@ -103,7 +105,6 @@ describe('board panel layout', () => {
       'gates',
     ]);
     expect(keys(DEFAULT_LAYOUT, 'usage')).toEqual(['quota', 'runtime', 'usage', 'roles']);
-    expect(keys(DEFAULT_LAYOUT, 'retro')).toEqual(['retro']);
     expect(keys(DEFAULT_LAYOUT, 'digest')).toEqual(['digest']);
     expect(
       Object.values(DEFAULT_LAYOUT)
@@ -238,54 +239,18 @@ describe('board panel layout storage', () => {
     expect(readLayout('layout-delta')).toEqual(DEFAULT_LAYOUT);
   });
 
-  const view = (projectId: string) =>
-    renderToStaticMarkup(
-      createElement(BoardView, {
-        model: board(),
-        page: 'canvas',
-        projectId,
-        loading: false,
-        error: null,
-        onRetry() {},
-        range: 7,
-        onRange() {},
-        onPage() {},
-        onOpenSession() {},
-        onOpenStory() {},
-        onOpenTrace() {},
-      }),
-    );
   /** The classes of the layout cell holding the panel titled `title`. */
   const cell = (html: string, title: string) =>
     [
       ...html.slice(0, html.indexOf(`>${title}</h2>`)).matchAll(/class="(bd-s(?:6|12)\b[^"]*)"/g),
     ].at(-1)?.[1];
 
-  it('leaves a hidden panel out and gives a half width panel the half width cell', () => {
-    let layout = setHidden(DEFAULT_LAYOUT, 'trend', true);
-    layout = setSpan(layout, 'stall', 6);
-    stored.set('pantheon.board.layout.layout-render', JSON.stringify(layout));
-    const html = view('layout-render');
-    expect(html).not.toContain(`>${zh('board.trend.title')}</h2>`);
-    expect(html).toContain(`>${zh('board.cycle.title')}</h2>`);
-    expect(cell(html, zh('board.stalls.title'))).toContain('bd-s6');
-    expect(html).not.toContain('>任务完成</h2>');
-    expect(html).toContain(zhf('board.layout.hidden', { count: 1 }));
-  });
-
-  it('draws the default layout with every panel shown', () => {
-    const html = view('layout-plain');
-    expect(html).toContain(`>${zh('board.trend.title')}</h2>`);
-    expect(cell(html, zh('board.stalls.title'))).toContain('bd-s12');
-    expect(html).not.toContain('已隐藏');
-  });
-
-  it('draws the retrospective panel full width on the engineering board retrospectives tab', () => {
+  it('draws the completion trend full width and the cycle time and merges per day halves on the quality tab', () => {
     const html = renderToStaticMarkup(
       createElement(InsightsView, {
         model: board(),
-        section: 'retro',
-        projectId: 'layout-retro',
+        section: 'quality',
+        projectId: 'layout-quality',
         loading: false,
         error: null,
         onRetry() {},
@@ -296,7 +261,8 @@ describe('board panel layout storage', () => {
         onOpenStory() {},
       }),
     );
-    expect(cell(html, zh('board.task.retro.listTitle'))).toContain('bd-s12');
-    expect(html).toContain(zh('board.task.retro.empty'));
+    expect(cell(html, zh('board.trend.title'))).toContain('bd-s12');
+    expect(cell(html, zh('board.cycle.title'))).toContain('bd-s6');
+    expect(cell(html, zh('insights.mergesPerDay.title'))).toContain('bd-s6');
   });
 });

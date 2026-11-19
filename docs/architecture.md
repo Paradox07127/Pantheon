@@ -84,7 +84,7 @@ apps/daemon ──> packages/control ─> packages/adapters, packages/store, pac
 
 - `BoardScreen.tsx`:看板屏。首屏从上到下是发布条、结论条、“自上次以来”条、分页签和“需要你”条；进度页先放当前里程碑卡、lead 面板和任务分组，再放可调布局的面板。
 - `PublishBar.tsx`:发布条。多行需求和附件默认发给项目的助理(Assistant),目标菜单可改发给别的常驻 agent、某个 lead 或会话，或开一个新 lead;目标在跑回合时插话。发出后留一张回执，按收到、排队、拆计划、建任务四步推进，并列出计划新建的任务；常驻 agent 记下分流回执后，回执换成一行分流结果(就地回答、新计划、加进某条泳道、转给某个 agent、问你)和改投菜单，文案由 `data/routing-receipt.ts` 拼。
-- `NowPage.tsx`:看板的 Now 页：离开期间简报、需要你、里程碑和 lead、计划提案、主视图，底部是 `NowSummary.tsx` 的当天汇总条(结束的会话、门禁、用量、合并)。
+- `NowPage.tsx`:看板的 Now 页：离开期间简报、需要你、里程碑和 lead、计划提案、主视图。
 - `BriefCard.tsx`:离开期间简报卡：用户上次标为已读之后项目里发生的事，给计数和链接，附侧模型写的短文；读 `project.brief`,标为已读发 `project.seen`。
 - `BoardFrame.tsx`:“需要你”条和“自上次以来”条。
 - `MilestoneCard.tsx`:当前里程碑(第一个没验收的)卡：已合并数和计划数、每个任务一格、验收标准、验收按钮。

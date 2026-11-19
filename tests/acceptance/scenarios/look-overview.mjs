@@ -120,7 +120,10 @@ class IntroFixtureAdapter extends FixtureAdapter {
                   { id: 'free_space', tokens: 367400, kind: 'free' },
                   { id: 'mcp_tools_deferred', tokens: 102600, kind: 'deferred' },
                 ],
-                memory_files: [{ path: 'CLAUDE.md', tokens: 6000 }, { path: 'MEMORY.md', tokens: 4800 }],
+                memory_files: [
+                  { path: 'CLAUDE.md', tokens: 6000 },
+                  { path: 'MEMORY.md', tokens: 4800 },
+                ],
                 mcp_tools: [{ name: 'explore', server: 'codegraph', tokens: 17500, loaded: true }],
                 agents: [{ type: 'worker', source: 'projectSettings', tokens: 142 }],
               },
@@ -832,12 +835,16 @@ try {
     await delay(1500);
   });
   await visit('overview', async () => {
-    const ok = await page.evaluate(`(() => { const b = [...document.querySelectorAll('header button')].find((e) => e.getAttribute('aria-label') === '概览'); if (!b) return false; if (b.getAttribute('aria-pressed') !== 'true') b.click(); return b.getAttribute('aria-pressed') ?? 'none'; })()`);
+    const ok = await page.evaluate(
+      `(() => { const b = [...document.querySelectorAll('header button')].find((e) => e.getAttribute('aria-label') === '概览'); if (!b) return false; if (b.getAttribute('aria-pressed') !== 'true') b.click(); return b.getAttribute('aria-pressed') ?? 'none'; })()`,
+    );
     if (!ok) throw new Error('no overview toggle');
     await delay(1500);
   });
   try {
-    const box = await page.evaluate(`(() => { const r = [...document.querySelectorAll('nav[aria-label="会话"] [role="button"], nav[aria-label="会话"] button')].find((e) => e.textContent.includes(${JSON.stringify(showcaseTitle)}))?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })()`);
+    const box = await page.evaluate(
+      `(() => { const r = [...document.querySelectorAll('nav[aria-label="会话"] [role="button"], nav[aria-label="会话"] button')].find((e) => e.textContent.includes(${JSON.stringify(showcaseTitle)}))?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })()`,
+    );
     if (!box) throw new Error('no session row');
     await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
     await delay(1500);
@@ -912,9 +919,9 @@ try {
       );
       await delay(1500);
     });
-  await visit('board-retro', async () => {
-    await nav('工程看板');
-    await click({ role: 'tab', name: tr('board.panels.retro'), exact: true });
+  await visit('memory-retro', async () => {
+    await nav('记忆');
+    await click({ role: 'tab', name: tr('memory.tab.learned'), exact: true });
     await delay(1500);
   });
 
@@ -994,10 +1001,9 @@ try {
         'session.send',
         {
           session_id: streamId,
-          input: script(
-            trace('Read', { file_path: `src/handlers/delivery-${i}.ts` }),
-            { say: `Checked the handler of delivery ${i}; it verifies the signature before it parses the body.` },
-          ),
+          input: script(trace('Read', { file_path: `src/handlers/delivery-${i}.ts` }), {
+            say: `Checked the handler of delivery ${i}; it verifies the signature before it parses the body.`,
+          }),
         },
         (await row(streamId)).revision,
       );
@@ -1161,12 +1167,18 @@ try {
       await page.send('Page.addScriptToEvaluateOnNewDocument', { source: bootScript });
       for (let round = 0; round < Number(process.env.BOOT_REPEAT ?? 1); round++) {
         // The connection gives up on a navigation, so the reloaded page is read over a new one.
-        const before = round === 0 ? page : await connect(app.port, deadline, { evidenceDir: path.join(workspace, 'evidence') });
-        if (round > 0) await before.send('Page.addScriptToEvaluateOnNewDocument', { source: bootScript });
+        const before =
+          round === 0
+            ? page
+            : await connect(app.port, deadline, { evidenceDir: path.join(workspace, 'evidence') });
+        if (round > 0)
+          await before.send('Page.addScriptToEvaluateOnNewDocument', { source: bootScript });
         before.send('Page.reload').catch(() => {});
         await delay(6000);
         if (round > 0) before.close();
-        const reloaded = await connect(app.port, deadline, { evidenceDir: path.join(workspace, 'evidence') });
+        const reloaded = await connect(app.port, deadline, {
+          evidenceDir: path.join(workspace, 'evidence'),
+        });
         feel.push({ name: 'boot', ...(await reloaded.evaluate(`window.__boot`)) });
         reloaded.close();
         log('feel', 'boot', JSON.stringify(feel.at(-1)));
@@ -1219,15 +1231,37 @@ try {
           view.evaluate(`document.querySelectorAll('[role=menu]').length`),
           delay(1500).then(() => 'no answer'),
         ]);
-        await view.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-        await view.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        await view.send('Input.dispatchKeyEvent', {
+          type: 'keyDown',
+          key: 'Escape',
+          code: 'Escape',
+          windowsVirtualKeyCode: 27,
+        });
+        await view.send('Input.dispatchKeyEvent', {
+          type: 'keyUp',
+          key: 'Escape',
+          code: 'Escape',
+          windowsVirtualKeyCode: 27,
+        });
         await delay(300);
-        await view.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...row, button: 'left', clickCount: 1 });
-        await view.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...row, button: 'left', clickCount: 1 });
+        await view.send('Input.dispatchMouseEvent', {
+          type: 'mousePressed',
+          ...row,
+          button: 'left',
+          clickCount: 1,
+        });
+        await view.send('Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          ...row,
+          button: 'left',
+          clickCount: 1,
+        });
         await delay(1500);
         const field = await centre('textarea');
         out.field = field;
-        out.field_spellcheck = await view.evaluate(`document.querySelector('textarea')?.spellcheck ?? null`);
+        out.field_spellcheck = await view.evaluate(
+          `document.querySelector('textarea')?.spellcheck ?? null`,
+        );
         out.other_inputs_spellcheck = await view.evaluate(
           `[...document.querySelectorAll('input:not([type=checkbox]):not([type=radio])')].map((el) => el.spellcheck)`,
         );
@@ -1251,7 +1285,8 @@ try {
   if (page) page.close();
   if (app) await app.stop().catch((error) => log('stop', error.message));
   await fixture?.close().catch(() => {});
-  if (probe) await writeFile(path.join(workspace, 'evidence', 'feel.json'), JSON.stringify(feel, null, 1));
+  if (probe)
+    await writeFile(path.join(workspace, 'evidence', 'feel.json'), JSON.stringify(feel, null, 1));
   for (const line of skipped) console.log(`SKIP ${line}`);
   for (const line of missing) console.log(`MISSING DATA ${line}`);
   console.log(

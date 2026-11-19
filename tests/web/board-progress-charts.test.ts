@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { BoardModel, BoardTaskStatus } from '@pantheon/protocol';
+import { pickTaskView } from '../../apps/web/src/data/board-page.js';
 import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import {
   burnupPoints,
@@ -166,7 +167,7 @@ describe('blocked and stalled tasks', () => {
 });
 
 describe('progress section', () => {
-  it('lays out table, trend beside cycle time, then blocked and stalled in the canvas view', () => {
+  it('lists the tasks in the list view of the tasks page, without the charts', () => {
     const model: BoardModel = {
       since: NOW - 7 * 86_400_000,
       now: NOW,
@@ -210,15 +211,15 @@ describe('progress section', () => {
       findings: [],
       risks: [],
     };
+    pickTaskView('progress-charts', 'list');
     const html = renderToStaticMarkup(
       createElement(BoardView, {
         model,
-        page: 'canvas',
+        page: 'tasks',
+        projectId: 'progress-charts',
         loading: false,
         error: null,
         onRetry() {},
-        range: 7,
-        onRange() {},
         onPage() {},
         onOpenSession() {},
         onOpenStory() {},
@@ -226,12 +227,9 @@ describe('progress section', () => {
       }),
     );
     const titles = [...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1]);
-    expect(titles.slice(0, 4)).toEqual([
-      zh('board.progress.title'),
-      zh('board.trend.title'),
-      zh('board.cycle.title'),
-      zh('board.stalls.title'),
-    ]);
+    const panels = [zh('board.trend.title'), zh('board.cycle.title')];
+    expect(titles.filter((title) => panels.includes(title!))).toEqual([]);
+    expect(html).toContain(`role="table" aria-label="${zh('board.tasks.list.table')}"`);
     expect(titles).not.toContain(zh('board.panels.main'));
     expect(html).not.toContain('任务完成');
   });

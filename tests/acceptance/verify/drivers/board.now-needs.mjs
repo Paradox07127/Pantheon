@@ -50,12 +50,13 @@ const strip = () =>
       rows: [...s.querySelectorAll('li.bf-need')].map((li) => {
         const art = li.querySelector('article');
         const acts = [...li.querySelectorAll('.rq-hd .rq-acts button')];
-        const menus = acts.filter((b) => b.classList.contains('ib'));
+        const menus = acts.filter((b) => b.getAttribute('aria-haspopup') === 'menu');
         return {
           who: art?.getAttribute('aria-label') ?? null,
           kind: li.querySelector('.rq-kind')?.textContent ?? null,
           what: li.querySelector('.rq-hd .rq-what')?.textContent ?? null,
-          blocks: li.querySelector('.rq-blk')?.textContent ?? null,
+          // A row that blocks nothing draws no blocks text.
+          blocks: li.querySelector('.rq-blk')?.textContent ?? '',
           age: li.querySelector('.rq-age')?.textContent ?? null,
           primary: acts.filter((b) => !menus.includes(b)).map((b) => ({ text: b.textContent.trim(), label: b.getAttribute('aria-label'), expanded: b.getAttribute('aria-expanded') })),
           more: menus.map((b) => b.getAttribute('aria-label')),
@@ -220,9 +221,10 @@ check(
   rows.length > 0 && rows.every((r) => /^(刚刚|\d+ (分钟|小时|天|个月))$/.test(r.age ?? '')),
   rows.map((r) => r.age),
 );
+// A plan change is answered in its row; its three buttons are checked below.
 check(
-  '每行恰好一个操作按钮',
-  rows.length > 0 && rows.every((r) => r.primary.length === 1),
+  '计划变更行以外每行恰好一个操作按钮',
+  rows.length > 0 && rows.every((r) => r.kind === '计划变更' || r.primary.length === 1),
   rows.map((r) => [r.kind, r.primary.map((p) => p.text)]),
 );
 check(
@@ -271,22 +273,22 @@ check(
 );
 const planRow = all.find((r) => r.kind === '计划变更');
 check(
-  '计划变更行只有一个按钮 "查看提议"，没有 "接受"、"拒绝" 和 "更多操作"',
-  planRow?.primary.length === 1 &&
-    planRow.primary[0].text === '查看提议' &&
+  '计划变更行在行内作答："接受"、"拒绝" 和 "改一下再接受"，没有 "更多操作"',
+  planRow?.primary.map((b) => b.text).join('|') === '接受|拒绝|' &&
+    planRow.primary[2].label.startsWith('改一下再接受 ') &&
     planRow.more.length === 0,
   planRow,
 );
-// The row's one button brings the proposal's card in the plan proposals panel into view and focus.
-await page.click({ role: 'button', name: planRow.primary[0].label, exact: true });
-const proposalFocus = await poll(
+// "Change, then accept" opens the proposal's ops under its row.
+await page.click({ role: 'button', name: planRow.primary[2].label, exact: true });
+const proposalEdit = await poll(
   () =>
     page.evaluate(
-      `(() => { const el = document.activeElement; return el?.tagName === 'ARTICLE' && !!el.closest('section[aria-label="计划改动提议"]') && el.getAttribute('aria-label'); })()`,
+      `(() => { const li = [...document.querySelectorAll('section[aria-label="需要你"] li.bf-need')].find((el) => el.querySelector('button[aria-expanded="true"]')?.getAttribute('aria-label')?.startsWith('改一下再接受 ')); return !!li?.querySelector('.rq-sub .bd-pp-card'); })()`,
     ),
   3000,
 );
-check('"查看提议" 把焦点移到 "计划改动提议" 面板里那张提议卡', proposalFocus, proposalFocus);
+check('"改一下再接受" 在这一行下展开提议的改动', proposalEdit, proposalEdit);
 
 // No floating notice card for a wait the list shows. Only wait cards count: a result card such as
 // "Assistant 回合完成" names the same session but tells a turn end, not a wait.

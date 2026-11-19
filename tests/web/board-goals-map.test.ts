@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
-import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
+import { find, mount, named, nodes, text, unmountAll } from './web-hook-host.js';
 const mock = vi.hoisted(() => ({
   board: {} as any,
   runCommand: (() => {}) as any,
@@ -33,10 +33,16 @@ vi.mock('@/components/Toast', async (actual) => ({
   ...(await actual<object>()),
   toast: (...args: unknown[]) => mock.toast(...args),
 }));
-import { useBoardPage, type BoardPage } from '@/data/board-page';
+import {
+  pickTaskScope,
+  useBoardPage,
+  useTaskScope,
+  useTaskView,
+  type BoardPage,
+} from '@/data/board-page';
 import { BoardView } from '@/screens/board/BoardScreen';
-import { EvidenceMark } from '@/screens/board/EvidenceMark';
-import { GoalsPage } from '@/screens/board/GoalsPage';
+import { GoalsHead, GoalsSection } from '@/screens/board/GoalsSection';
+import { MilestoneAssumptions } from '@/screens/board/MilestoneAssumptions';
 import { MilestoneCard } from '@/screens/board/MilestoneCard';
 import { zh, zhf } from './i18n-setup.js';
 
@@ -136,12 +142,12 @@ const refunds = () =>
     ],
   });
 
-const pageProps = (model: BoardModel, over: Partial<Parameters<typeof GoalsPage>[0]> = {}) => ({
+const pageProps = (model: BoardModel, over: Partial<Parameters<typeof GoalsSection>[0]> = {}) => ({
   model,
   projectId: 'refunds',
   bar: BAR,
   onOpenNeeds: noop,
-  onOpenNow: noop,
+  onOpenTasks: noop,
   ...over,
 });
 
@@ -160,6 +166,10 @@ const buttonText = (tree: ReactNode, label: string) =>
   );
 const milestoneRows = (tree: ReactNode) =>
   all(tree, (n) => n.type === 'button' && text(n).startsWith('milestone '));
+const pathOf = (tree: ReactNode) => find(tree, (n) => n.props.className === 'gm-path');
+const points = (tree: ReactNode) => all(pathOf(tree), (n) => n.props.className === 'gm-po');
+const point = (at: number, title: string, state: string) =>
+  zhf('board.goals.point', { at, title, state });
 const key = (k: string) => ({
   key: k,
   shiftKey: false,
@@ -189,13 +199,11 @@ afterEach(() => {
 });
 
 describe('goals map', () => {
-  it("shows a goal's words, its milestone progress and what waits on the user for it", () => {
+  it("shows a goal's words, its milestones done and what waits on the user for it", () => {
     const onOpenNeeds = vi.fn();
-    const h = mount(() => GoalsPage(pageProps(refunds(), { onOpenNeeds })));
+    const h = mount(() => GoalsSection(pageProps(refunds(), { onOpenNeeds })));
     const first = goalItem(h.value, 'Customers refund any payment themselves');
-    const progress = find(first, (n) => n.props.role === 'progressbar');
-    expect([progress.props['aria-valuenow'], progress.props['aria-valuemax']]).toEqual([1, 3]);
-    expect(text(first)).toContain('1 / 3');
+    expect(text(find(first, (n) => n.props.className === 'gm-n'))).toBe('1 / 3');
     const needs = labelled(first, zhf('board.goals.needs.label', { count: 3 }));
     expect(text(needs)).toBe(zhf('board.goals.needs', { count: 3 }));
     needs.props.onClick();
@@ -205,29 +213,119 @@ describe('goals map', () => {
     expect(text(second)).toContain(zh('board.goals.noMilestones'));
   });
 
-  it("lists a goal's milestones with their state and evidence, and opens one in the now view", () => {
-    const onOpenNow = vi.fn();
-    const h = mount(() => GoalsPage(pageProps(refunds(), { onOpenNow })));
-    const rows = milestoneRows(goalItem(h.value, 'Customers refund any payment themselves'));
-    expect(rows.map((r) => text(r))).toEqual([
-      expect.stringContaining('milestone ms-api'),
-      expect.stringContaining('milestone ms-ui'),
-      expect.stringContaining('milestone ms-roll'),
-    ]);
-    const levels = rows.map(
-      (r) => all(r, (n) => n.type === EvidenceMark)[0]?.props.level as string | undefined,
+  it("draws a goal's milestones as a path, a point each named by its state, each opening its milestone in the tasks view", () => {
+    const onOpenTasks = vi.fn();
+    const model = refunds();
+    const h = mount(() =>
+      GoalsSection(pageProps(model, { onOpenTasks, current: model.milestones[2]! })),
     );
-    expect(levels).toEqual(['accepted', 'gate', undefined]);
-    expect(labelled(rows[0], zh('board.goals.milestone.done'))).toBeTruthy();
-    expect(labelled(rows[1], zh('board.goals.milestone.ready'))).toBeTruthy();
-    expect(labelled(rows[2], zh('board.goals.milestone.active'))).toBeTruthy();
-    rows[1]!.props.onClick();
-    expect(onOpenNow).toHaveBeenCalledWith('ms-ui');
+    const goal = goalItem(h.value, 'Customers refund any payment themselves');
+    const path = pathOf(goal);
+    expect(path.props.role).toBe('group');
+    expect(path.props['aria-label']).toBe(
+      zhf('board.goals.progress.label', {
+        parts: [
+          zhf('board.goals.progress.done', { count: 1 }),
+          zhf('board.goals.progress.ready', { count: 1 }),
+          zhf('board.goals.progress.current', { at: 3 }),
+        ].join('，'),
+      }),
+    );
+    const shown = points(goal);
+    expect(shown).toHaveLength(3);
+    expect(shown.map((p) => p.props['aria-label'])).toEqual([
+      point(1, 'milestone ms-api', zh('board.goals.milestone.done')),
+      point(2, 'milestone ms-ui', zh('board.goals.milestone.ready')),
+      point(3, 'milestone ms-roll', zh('board.goals.milestone.current')),
+    ]);
+    expect(shown.map((p) => p.props['aria-current'])).toEqual([undefined, undefined, 'step']);
+    shown[1]!.props.onClick();
+    expect(onOpenTasks).toHaveBeenCalledWith('ms-ui');
+  });
+
+  it('calls the milestones after the current one not started, and the current one to accept as both', () => {
+    const model = board({
+      milestones: [ms('ms-a', { status: 'ready_for_acceptance' }), ms('ms-b'), ms('ms-c')],
+      goals: [
+        goal('g-a', {
+          milestone_ids: ['ms-a', 'ms-b', 'ms-c'],
+          milestones: { done: 0, ready: 1, total: 3 },
+        }),
+      ],
+    });
+    const h = mount(() => GoalsSection(pageProps(model, { current: model.milestones[0]! })));
+    expect(pathOf(h.value).props['aria-label']).toBe(
+      zhf('board.goals.progress.label', {
+        parts: [
+          zhf('board.goals.progress.current', { at: 1 }),
+          zhf('board.goals.progress.todo', { count: 2 }),
+        ].join('，'),
+      }),
+    );
+    expect(points(h.value).map((p) => p.props['aria-label'])).toEqual([
+      point(
+        1,
+        'milestone ms-a',
+        `${zh('board.goals.milestone.current')}，${zh('board.goals.milestone.ready')}`,
+      ),
+      point(2, 'milestone ms-b', zh('board.goals.milestone.todo')),
+      point(3, 'milestone ms-c', zh('board.goals.milestone.todo')),
+    ]);
+  });
+
+  it('unfolds the current milestone under its goal alone, a cell per task opening it', () => {
+    const onOpenTask = vi.fn();
+    const tasks = ['a', 'b', 'c'].map((id) => ({
+      id: `lead-1:${id}`,
+      title: `task ${id}`,
+      milestone_id: 'ms-roll',
+      status: 'running',
+      state: 'running',
+      segments: [],
+    }));
+    const model = { ...refunds(), tasks } as unknown as BoardModel;
+    const current = model.milestones[2]!;
+    const h = mount(() => GoalsSection(pageProps(model, { current, onOpenTask })));
+    const cards = all(h.value, (n) => n.type === MilestoneCard);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.props.milestone).toBe(current);
+    expect(nodes(goalItem(h.value, 'Customers refund any payment themselves'))).toContain(cards[0]);
+    const out = mount(() => MilestoneCard(cards[0]!.props)).value;
+    const grid = find(out, (n) => n.props.className === 'bms-tg');
+    expect(grid.props.role).toBe('group');
+    const cells = all(grid, (n) => n.props.className === 'bms-tk');
+    expect(cells).toHaveLength(3);
+    cells[1]!.props.onClick();
+    expect(onOpenTask).toHaveBeenCalledWith('lead-1:b');
+  });
+
+  it("puts a flag over the current milestone's point while an assumption of it is open, its popup the assumptions", () => {
+    const open = { id: 'a-1', text: 'Refunds settle within a day', affects: [] };
+    const settled = { ...open, id: 'a-2', refuted: { state: 'applied', instead: 'Two days' } };
+    const flagOf = (assumptions: unknown[]) => {
+      const model = refunds();
+      const current = { ...model.milestones[2]!, assumptions } as Milestone;
+      model.milestones[2] = current;
+      const h = mount(() => GoalsSection(pageProps(model, { current })));
+      return {
+        flag: all(h.value, (n) => n.props.className === 'ib gm-flag')[0],
+        block: all(h.value, (n) => n.type === MilestoneAssumptions)[0],
+        current,
+      };
+    };
+    const shown = flagOf([open, settled]);
+    expect(shown.flag!.props['aria-label']).toBe(
+      zhf('board.goals.assumptions', { count: 1, title: 'milestone ms-roll' }),
+    );
+    expect(shown.block!.props.milestone).toBe(shown.current);
+    expect(flagOf([settled]).flag).toBeUndefined();
+    expect(flagOf([]).block).toBeUndefined();
   });
 
   it('groups the milestones of no goal last under No goal', () => {
-    const h = mount(() => GoalsPage(pageProps(refunds())));
-    const group = find(h.value, (n) => n.props.role === 'group');
+    const h = mount(() => GoalsSection(pageProps(refunds())));
+    const group = find(h.value, (n) => n.props['aria-labelledby'] === 'goals-id-none');
+    expect(group.props.role).toBe('group');
     expect(text(group)).toContain(zh('board.goals.noGoal'));
     expect(milestoneRows(group).map((r) => text(r))).toEqual([
       expect.stringContaining('milestone ms-docs'),
@@ -238,7 +336,7 @@ describe('goals map', () => {
 
   it('offers one sentence and one button without a goal, and keeps the milestones under No goal', () => {
     const model = board({ milestones: [ms('ms-docs')] });
-    const h = mount(() => GoalsPage(pageProps(model)));
+    const h = mount(() => GoalsSection(pageProps(model)));
     expect(text(h.value)).toContain(zh('board.goals.empty'));
     const add = buttonText(h.value, zh('board.goals.add'));
     expect(text(find(h.value, (n) => n.props.role === 'group'))).toContain(
@@ -252,9 +350,9 @@ describe('goals map', () => {
   it('turns Add goal off with the reason once the project has 7 goals', () => {
     const goals = (n: number) =>
       board({ goals: Array.from({ length: n }, (_, i) => goal(`g-${i}`, { order: i })) });
-    const six = mount(() => GoalsPage(pageProps(goals(6))));
+    const six = mount(() => GoalsSection(pageProps(goals(6))));
     expect(buttonText(six.value, zh('board.goals.add')).props.disabled).toBeFalsy();
-    const seven = mount(() => GoalsPage(pageProps(goals(7))));
+    const seven = mount(() => GoalsSection(pageProps(goals(7))));
     const add = find(seven.value, (n) => n.type === 'button' && text(n) === zh('board.goals.add'));
     expect(add.props['aria-disabled']).toBe(true);
     expect(add.props.onClick).toBeUndefined();
@@ -262,7 +360,7 @@ describe('goals map', () => {
   });
 
   it('adds a goal from the row Add goal opens, and Esc puts the row away', async () => {
-    const h = mount(() => GoalsPage(pageProps(refunds())));
+    const h = mount(() => GoalsSection(pageProps(refunds())));
     buttonText(h.value, zh('board.goals.add')).props.onClick();
     h.render();
     let input = field(h.value, zh('board.goals.new'));
@@ -285,7 +383,7 @@ describe('goals map', () => {
   });
 
   it('rewrites a goal in place from its words, with its revision', async () => {
-    const h = mount(() => GoalsPage(pageProps(refunds())));
+    const h = mount(() => GoalsSection(pageProps(refunds())));
     const second = goalItem(h.value, 'A refund never pays out twice');
     buttonText(second, 'A refund never pays out twice').props.onClick();
     h.render();
@@ -307,7 +405,7 @@ describe('goals map', () => {
   });
 
   it('moves a goal up from its menu and never past the first', async () => {
-    const h = mount(() => GoalsPage(pageProps(refunds())));
+    const h = mount(() => GoalsSection(pageProps(refunds())));
     const first = goalItem(h.value, 'Customers refund any payment themselves');
     expect(
       find(first, (n) => text(n) === zh('board.goals.moveUp') && 'disabled' in n.props).props
@@ -324,7 +422,7 @@ describe('goals map', () => {
   });
 
   it('moves a goal to where it is dropped', async () => {
-    const h = mount(() => GoalsPage(pageProps(refunds())));
+    const h = mount(() => GoalsSection(pageProps(refunds())));
     const grip = labelled(h.value, zhf('board.goals.reorder', { goal: 'Every webhook is signed' }));
     expect(grip.props.draggable).toBe(true);
     const drag = { preventDefault() {}, dataTransfer: { setData() {}, effectAllowed: '' } };
@@ -343,7 +441,7 @@ describe('goals map', () => {
   });
 
   it('archives a goal at once and restores it from the notice Undo', async () => {
-    const h = mount(() => GoalsPage(pageProps(refunds())));
+    const h = mount(() => GoalsSection(pageProps(refunds())));
     const second = goalItem(h.value, 'A refund never pays out twice');
     buttonText(second, zh('board.goals.archive')).props.onClick();
     await h.flush();
@@ -364,7 +462,7 @@ describe('goals map', () => {
       ok: false,
       error: { code: 'revision_conflict', message: 'Supply the current aggregate revision' },
     }));
-    const h = mount(() => GoalsPage(pageProps(model)));
+    const h = mount(() => GoalsSection(pageProps(model)));
     buttonText(
       goalItem(h.value, 'A refund never pays out twice'),
       'A refund never pays out twice',
@@ -404,13 +502,10 @@ describe('goals map', () => {
     );
   });
 
-  it('shows six milestones of a goal and the rest behind a switch', () => {
+  it('shows six milestones of no goal and the rest behind a switch', () => {
     const ids = Array.from({ length: 9 }, (_, i) => `ms-${i}`);
-    const model = board({
-      milestones: ids.map((id) => ms(id, { goal_id: 'g-a' })),
-      goals: [goal('g-a', { milestone_ids: ids, milestones: { done: 0, ready: 0, total: 9 } })],
-    });
-    const h = mount(() => GoalsPage(pageProps(model)));
+    const model = board({ milestones: ids.map((id) => ms(id)) });
+    const h = mount(() => GoalsSection(pageProps(model)));
     expect(milestoneRows(h.value)).toHaveLength(6);
     const more = buttonText(h.value, zhf('board.goals.more', { count: 3 }));
     expect(more.props['aria-expanded']).toBe(false);
@@ -426,8 +521,6 @@ describe('goals map in the board', () => {
     loading: false,
     error: null,
     onRetry: noop,
-    range: 7 as const,
-    onRange: noop,
     page,
     onPage,
     projectId: 'refunds',
@@ -435,56 +528,143 @@ describe('goals map in the board', () => {
     onOpenStory: noop,
     onOpenTrace: noop,
   });
+  const actions = { milestones: [], sessions: [], run: async () => null };
+  const asking = {
+    source: { table: 'sessions', id: 'lead-1', revision: 1 },
+    kind: 'lead.question',
+    request_id: 'question-1',
+    project_id: 'refunds',
+    session_id: 'lead-1',
+    status: 'pending',
+    created_at: NOW - 60_000,
+    reason: 'question',
+    actions: [],
+    unblocks: 0,
+  } as unknown as NonNullable<BoardModel['needs']>[number];
+  const task = (id: string, milestone_id: string | null) =>
+    ({
+      id,
+      title: id,
+      goal: '',
+      scope: [],
+      lane_id: null,
+      milestone_id,
+      status: 'running',
+      blockers: [],
+      segments: [],
+      additions: null,
+      deletions: null,
+      checks: 'none',
+      started_at: null,
+      ended_at: null,
+      last_progress_at: null,
+      blocked_since: null,
+      turn_running: false,
+    }) as BoardModel['tasks'][number];
 
-  it('draws no view before the board read decides which one the project opens on', () => {
-    const h = mount(() => BoardView({ ...view('goals', noop), page: null }));
-    expect(find(h.value, (n) => n.props['aria-label'] === zh('board.view.label')).props.value).toBe(
-      null,
-    );
-    expect(nodes(h.value).some((n) => n.type === GoalsPage || n.type === MilestoneCard)).toBe(
-      false,
-    );
-    expect(find(h.value, (n) => n.props['aria-busy'] === 'true')).toBeTruthy();
+  it('puts the goals on the overview with the current milestone to unfold, and no card of it beside', () => {
+    const h = mount(() => BoardView(view('overview', noop)));
+    expect(find(h.value, (n) => n.type === GoalsSection).props.current.id).toBe('ms-ui');
+    expect(nodes(h.value).some((n) => n.type === MilestoneCard)).toBe(false);
   });
 
-  it('opens the now view from what waits on the user for a goal', () => {
+  it("heads the goals with the plan's version and the lead's sync, the bar holding neither", () => {
+    const onSync = vi.fn();
+    const model = { ...refunds(), leads: [{ session_id: 'lead-1', plan_version: 12 }] };
+    const h = mount(() =>
+      BoardView({
+        ...view('overview', noop),
+        model: model as unknown as BoardModel,
+        actions,
+        sync: { busy: false, error: null, onSync },
+      } as never),
+    );
+    const head = find(h.value, (n) => n.type === GoalsHead);
+    expect(head.props.version).toBe(12);
+    const drawn = GoalsHead(head.props);
+    expect(text(drawn)).toContain(zhf('board.bar.planVersion', { version: 12 }));
+    find(drawn, (n) => n.type === 'button' && text(n) === zh('board.goals.sync')).props.onClick();
+    expect(onSync).toHaveBeenCalledOnce();
+    expect(nodes(h.value).some((n) => n.props.className === 'bd-bar-v')).toBe(false);
+    const busy = GoalsHead({ ...head.props, sync: { busy: true, error: null, onSync } });
+    const button = find(busy, (n) => n.type === 'button');
+    expect([button.props.disabled, button.props['aria-busy']]).toEqual([true, true]);
+  });
+
+  it('stays on the overview and puts the needs-you strip in focus from what waits on the user for a goal', () => {
     const onPage = vi.fn();
-    const h = mount(() => BoardView(view('goals', onPage)));
-    find(h.value, (n) => n.type === GoalsPage).props.onOpenNeeds();
-    expect(onPage).toHaveBeenCalledWith('now');
+    const model = { ...refunds(), needs: [asking] };
+    const h = mount(() => BoardView({ ...view('overview', onPage), model, actions }));
+    expect(named(h.value, 'ProjectNeeds').props.asked).toBe(false);
+    find(h.value, (n) => n.type === GoalsSection).props.onOpenNeeds();
+    h.render();
+    expect(onPage).not.toHaveBeenCalled();
+    expect(named(h.value, 'ProjectNeeds').props.asked).toBe(true);
   });
 
-  it('opens the now view on the milestone picked in the goals map', () => {
-    let page: BoardPage = 'goals';
-    const h = mount(() => BoardView(view(page, (next) => (page = next))));
-    find(h.value, (n) => n.type === GoalsPage).props.onOpenNow('ms-api');
+  it("opens the tasks view's flow chart on the tasks of the milestone picked in the goals map", () => {
+    pickTaskScope('refunds', 'all');
+    const model = {
+      ...refunds(),
+      tasks: [task('api-task', 'ms-api'), task('roll-task', 'ms-roll'), task('loose', null)],
+    };
+    let page: BoardPage = 'overview';
+    const h = mount(() => BoardView({ ...view(page, (next) => (page = next)), model }));
+    find(h.value, (n) => n.type === GoalsSection).props.onOpenTasks('ms-api');
     h.render();
-    expect(page).toBe('now');
-    expect(find(h.value, (n) => n.type === MilestoneCard).props.milestone.id).toBe('ms-api');
+    expect(page).toBe('tasks');
+    expect(mount(() => useTaskView('refunds')).value).toBe('flow');
+    expect(mount(() => useTaskScope('refunds')).value).toBe('milestone');
+    const shown = named(h.value, 'MainView').props.model.tasks.map((t: { id: string }) => t.id);
+    expect(shown).toEqual(['api-task']);
   });
 });
 
 describe('the view a project opens on', () => {
-  it.each<[string, string, string | null, boolean, BoardPage]>([
-    ['the now view for a project without goals', 'p-none', null, false, 'now'],
-    ['the goals view for a project with goals', 'p-goals', null, true, 'goals'],
-    ['the stored view over the default', 'p-stored', 'history', true, 'history'],
-    ['a stored goals view on a project without goals', 'p-stored-goals', 'goals', false, 'goals'],
-    ['the default for a stored view that no longer exists', 'p-former', 'progress', true, 'goals'],
-  ])('opens %s', (_name, projectId, stored, hasGoals, page) => {
-    if (stored) localStorage.setItem(`pantheon.board-page.${projectId}`, stored);
-    expect(mount(() => useBoardPage(projectId, hasGoals)).value).toBe(page);
+  it.each([
+    ['without goals', 'p-none', board()],
+    ['with goals', 'p-goals', refunds()],
+  ])('opens the overview of a project %s when nothing is stored', (_name, projectId, model) => {
+    const h = mount(() =>
+      BoardView({
+        model,
+        loading: false,
+        error: null,
+        onRetry: noop,
+        page: useBoardPage(projectId),
+        onPage: noop,
+        projectId,
+        onOpenSession: noop,
+        onOpenStory: noop,
+        onOpenTrace: noop,
+      }),
+    );
+    const tabs = find(h.value, (n) => n.props['aria-label'] === zh('board.view.label'));
+    expect(tabs.props.value).toBe('overview');
+    expect(nodes(h.value).some((n) => n.type === GoalsSection)).toBe(true);
   });
 
-  it('waits for the board read, then keeps the view it landed on', () => {
-    let hasGoals: boolean | null = null;
-    const h = mount(() => useBoardPage('p-wait', hasGoals));
-    expect(h.value).toBeNull();
-    hasGoals = true;
-    h.render();
-    expect(h.value).toBe('goals');
-    hasGoals = false;
-    h.render();
-    expect(h.value).toBe('goals');
+  it.each<[string, string, string, BoardPage, string]>([
+    ['the stored tasks view', 'p-tasks', 'tasks', 'tasks', 'flow'],
+    ['the tasks timeline for a stored whole history', 'p-history', 'history', 'tasks', 'timeline'],
+    ['the overview for a stored goals view', 'p-goals-stored', 'goals', 'overview', 'flow'],
+    ['the overview for a stored now view', 'p-now', 'now', 'overview', 'flow'],
+    [
+      'the overview for a stored view that no longer exists',
+      'p-former',
+      'progress',
+      'overview',
+      'flow',
+    ],
+  ])('opens %s', (_name, projectId, stored, page, taskView) => {
+    localStorage.setItem(`pantheon.board-page.${projectId}`, stored);
+    expect(mount(() => useBoardPage(projectId)).value).toBe(page);
+    expect(mount(() => useTaskView(projectId)).value).toBe(taskView);
+  });
+
+  it('keeps a picked task view over the timeline a stored whole history asks for', () => {
+    localStorage.setItem('pantheon.board-page.p-history-list', 'history');
+    localStorage.setItem('pantheon.board-task-view.p-history-list', 'list');
+    expect(mount(() => useTaskView('p-history-list')).value).toBe('list');
   });
 });

@@ -1,11 +1,16 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { LoadError } from '../../components/LoadError';
 import { ChartLine } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { Skeleton } from '../../components/Skeleton';
+import { useBoardView } from '../../data/board-view';
 import { useImprovements, useWorkflowPolicy, type Improvement } from '../../data/workflow-policy';
 import { t } from '../../i18n';
+import { reducedMotion } from '../../lib/motion';
 import { keyText } from '../../lib/shortcuts';
+import { useShell } from '../../store';
+import { retroTasks, RetroPanel } from '../board/RetroPanel';
+import { TaskDrawer } from '../board/TaskDrawer';
 import { LearnedDetail } from './LearnedDetail';
 import { LearnedList } from './LearnedList';
 import './memory-learned-page.css';
@@ -31,7 +36,52 @@ function moveSelection(e: KeyboardEvent<HTMLDivElement>) {
   next.click();
 }
 
-/** The project's learned rules beside the details of the one selected. */
+/** What the harness learned from each finished task of the project, with the drawer of the task opened. */
+function Retrospectives({
+  projectId,
+  headRef,
+}: {
+  projectId: string;
+  headRef?: RefObject<HTMLHeadingElement | null>;
+}) {
+  const view = useBoardView(projectId, 'all');
+  const openSession = useShell((s) => s.openSession);
+  const [task, setTask] = useState<string | null>(null);
+  const id = useId();
+  const model = view.data;
+  return (
+    <section
+      className="lp-sec"
+      aria-labelledby={id}
+      aria-busy={(!model && !view.error) || undefined}
+    >
+      <div className="lp-sh">
+        <h2 id={id} ref={headRef} tabIndex={-1}>
+          {t({ id: 'memory.learnedPage.retros', defaultMessage: 'Retrospectives' })}
+        </h2>
+        {model && <span className="lp-n">{retroTasks(model.tasks).length}</span>}
+      </div>
+      {model ? (
+        <>
+          <RetroPanel model={model} projectId={projectId} onOpenTask={setTask} />
+          <TaskDrawer
+            model={model}
+            taskId={task}
+            onSelect={setTask}
+            onOpenSession={(sessionId) => openSession(sessionId)}
+            onOpenStory={(sessionId) => openSession(sessionId, 'story')}
+          />
+        </>
+      ) : view.error ? (
+        <LoadError message={view.error} onRetry={view.reload} />
+      ) : (
+        <Skeleton style={{ height: 160 }} />
+      )}
+    </section>
+  );
+}
+
+/** The project's learned rules beside the details of the one selected, its retrospectives under them. */
 export function LearnedPage({
   projectId,
   onOpenRetros,
@@ -43,6 +93,7 @@ export function LearnedPage({
   const policy = useWorkflowPolicy(projectId);
   // Undefined until a row is picked; null once the details are closed.
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const retros = useRef<HTMLHeadingElement>(null);
 
   const items = list.read ?? [];
   if (list.read === null && !list.error)
@@ -73,24 +124,40 @@ export function LearnedPage({
     );
   if (list.read?.length === 0 && !list.error)
     return (
-      <div className="lp-empty">
-        <EmptyState
-          graphic={<ChartLine aria-hidden="true" />}
-          title={t({ id: 'memory.learnedPage.empty', defaultMessage: 'No learned rules yet' })}
-          action={{
-            label: t({ id: 'memory.learnedPage.openRetros', defaultMessage: 'See retrospectives' }),
-            onClick: () => onOpenRetros(),
-          }}
-        />
-        <span className="lp-hint">
-          <span className="kbd">{keyText('Meta+K')}</span>
-          <span>
-            {t({
-              id: 'memory.learnedPage.searchHint',
-              defaultMessage: 'Type “retrospective”',
-            })}
-          </span>
-        </span>
+      <div className="lp">
+        <div className="lp-list">
+          <div className="lp-empty">
+            <EmptyState
+              graphic={<ChartLine aria-hidden="true" />}
+              title={t({ id: 'memory.learnedPage.empty', defaultMessage: 'No learned rules yet' })}
+              action={{
+                label: t({
+                  id: 'memory.learnedPage.openRetros',
+                  defaultMessage: 'See retrospectives',
+                }),
+                onClick: () => {
+                  const head = retros.current;
+                  if (!head) return;
+                  head.scrollIntoView({
+                    behavior: reducedMotion() ? 'auto' : 'smooth',
+                    block: 'start',
+                  });
+                  head.focus({ preventScroll: true });
+                },
+              }}
+            />
+            <span className="lp-hint">
+              <span className="kbd">{keyText('Meta+K')}</span>
+              <span>
+                {t({
+                  id: 'memory.learnedPage.searchHint',
+                  defaultMessage: 'Type “retrospective”',
+                })}
+              </span>
+            </span>
+          </div>
+          <Retrospectives projectId={projectId} headRef={retros} />
+        </div>
       </div>
     );
 
@@ -118,6 +185,7 @@ export function LearnedPage({
             onRetry={list.reload}
           />
         )}
+        <Retrospectives projectId={projectId} />
       </div>
       {item && (
         <LearnedDetail

@@ -11,7 +11,9 @@ import {
   unmountAll,
   mount as mountHost,
 } from './web-hook-host.js';
-vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
+vi.mock('react', async (actual) =>
+  (await import('./web-hook-host.js')).reactMock(actual, { useId: 'learned-id' }),
+);
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
@@ -47,6 +49,21 @@ const policy: WorkflowPolicy = {
   dispatch_paused: false,
 } as WorkflowPolicy;
 
+// A board read holding one finished task with its retrospective.
+const retroBoard = {
+  since: 0,
+  now: 1,
+  tasks: [
+    {
+      id: 'lead:refund',
+      title: 'Refund retries',
+      ended_at: 1,
+      segments: [],
+      retrospective: { id: 'retro-refund', outcome: 'merged', handbacks: 1 },
+    },
+  ],
+};
+
 const bridge = {
   items: [] as Improvement[],
   fail: null as string | null,
@@ -60,6 +77,7 @@ const bridge = {
     }
     if (method === 'workflow.policy') return { ok: true, value: policy };
     if (method === 'retrospective.list') return { ok: true, value: [] };
+    if (method === 'board.view') return { ok: true, value: retroBoard };
     return { ok: false, error: { code: 'unknown_route', message: method } };
   },
   async command(): Promise<BridgeResult<unknown>> {
@@ -211,6 +229,22 @@ describe('learned rules page', () => {
     expect(text(alerts(h)[0])).toMatch(/^读不到经验列表：/);
   });
 
+  it('shows the retrospectives under the rules, under their heading and count', async () => {
+    const h = await mount();
+    const lane = find(tree(h), (n) => typeof n.props.onKeyDown === 'function');
+    const shown = nodes(lane.props.children).filter((n) => typeof n.type === 'function');
+    expect(shown.map((n) => (n.type as { name: string }).name)).toEqual([
+      'LearnedList',
+      'Retrospectives',
+    ]);
+    const section = mountHost(() => (shown[1]!.type as (p: unknown) => ReactNode)(shown[1]!.props));
+    await section.flush();
+    const heading = find(section.value, (n) => n.type === 'h2');
+    expect(text(heading)).toBe(zh('memory.learnedPage.retros'));
+    expect(text(section.value)).toContain(`${zh('memory.learnedPage.retros')}1`);
+    expect(named(section.value, 'RetroPanel').props.model.tasks[0].id).toBe('lead:refund');
+  });
+
   it('points an empty project to the retrospectives', async () => {
     bridge.items = [];
     const onOpenRetros = vi.fn();
@@ -220,7 +254,22 @@ describe('learned rules page', () => {
     expect(empty.props.title).toBe(zh('memory.learnedPage.empty'));
     expect(text(tree(h))).toContain(zh('memory.learnedPage.searchHint'));
     expect(empty.props.action.label).toBe(zh('memory.learnedPage.openRetros'));
+    const retros = named(tree(h), 'Retrospectives');
+    const section = mountHost(() => (retros.type as (p: unknown) => ReactNode)(retros.props));
+    await section.flush();
+    const heading = find(section.value, (n) => n.type === 'h2');
+    expect(text(heading)).toBe(zh('memory.learnedPage.retros'));
+    expect(heading.props.tabIndex).toBe(-1);
+    expect(heading.props.ref).toBe(retros.props.headRef);
+    const shown = { scrollIntoView: vi.fn(), focus: vi.fn() };
+    retros.props.headRef.current = shown;
+    vi.stubGlobal('window', {
+      pantheon: bridge,
+      matchMedia: () => ({ matches: false }),
+    });
     empty.props.action.onClick();
-    expect(onOpenRetros).toHaveBeenCalled();
+    expect(shown.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    expect(shown.focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(onOpenRetros).not.toHaveBeenCalled();
   });
 });

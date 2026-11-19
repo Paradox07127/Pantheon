@@ -1048,7 +1048,7 @@ svg.lucide.lead-crown{width:12px;height:12px;margin-left:var(--sp-1);color:var(-
 @supports (corner-shape: superellipse(1.25)) {
   .pt,.pt *,.pt::before,.pt::after,.pt *::before,.pt *::after{corner-shape:superellipse(1.25)}
   .pt :is(.sb-conn,.g,.ps-sw,.ws-bar,.gs-no,.ss-badge,.ss-dot,.bd-rt,.bp-rtd,.bp-trk,.bp-trk-bar,.ql-mk,.ql-dot,.bd-tpb,.trc-rt,.trc-st,.ps-acc-sw,[type=radio]),
-  .pt :is(.tr-st,.sb-wait,.nch,.tr-cut)::before,.pt .ps-sw::after,.pt :is(.sb-rail,.wc) .ib b,.pt .bp-crit .mk,.pt .bp-rk .bul,.pt .bd-pbar i,.pt .bp-pbar i{corner-shape:round}
+  .pt :is(.tr-st,.sb-wait,.nch,.tr-cut)::before,.pt .ps-sw::after,.pt :is(.sb-rail,.wc) .ib b,.pt .bp-crit .mk,.pt .bd-pbar i,.pt .bp-pbar i{corner-shape:round}
 }
 
 .df-opts{display:flex;justify-content:flex-end;gap:2px;padding:4px 14px;border-bottom:var(--hair) solid var(--bd)}

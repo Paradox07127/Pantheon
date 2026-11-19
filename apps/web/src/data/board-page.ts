@@ -1,95 +1,111 @@
-import { useState, useSyncExternalStore } from 'react';
-import { ChartGantt, SquarePen, Target, Workflow, type LucideIcon } from 'lucide-react';
+import { useSyncExternalStore } from 'react';
+import { LayoutDashboard, Workflow, type LucideIcon } from 'lucide-react';
 import { t } from '../i18n';
 
 /** The views available on the project board. */
-export type BoardPage = 'goals' | 'now' | 'history' | 'canvas';
+export type BoardPage = 'overview' | 'tasks';
+/** How the tasks view draws the tasks. */
+export type TaskView = 'flow' | 'list' | 'timeline';
+/** Which tasks the tasks view shows: those of the current milestone, or all. */
+export type TaskScope = 'milestone' | 'all';
 
 // Labels are getters, so each is read in the language loaded by then.
 export const PAGES: readonly { key: BoardPage; label: string; icon: LucideIcon }[] = [
   {
-    key: 'goals',
+    key: 'overview',
     get label() {
-      return t({ id: 'board.view.goals', defaultMessage: 'Goals' });
+      return t({ id: 'board.view.overview', defaultMessage: 'Overview' });
     },
-    icon: Target,
+    icon: LayoutDashboard,
   },
   {
-    key: 'now',
+    key: 'tasks',
     get label() {
-      return t({ id: 'board.history.span.now', defaultMessage: 'Now' });
+      return t({ id: 'board.view.tasks', defaultMessage: 'Tasks' });
     },
     icon: Workflow,
   },
-  {
-    key: 'history',
-    get label() {
-      return t({ id: 'board.history.span.history', defaultMessage: 'Whole history' });
-    },
-    icon: ChartGantt,
-  },
-  {
-    key: 'canvas',
-    get label() {
-      return t({ id: 'board.view.canvas', defaultMessage: 'Canvas' });
-    },
-    icon: SquarePen,
-  },
 ];
 
-/** The stored board view; anything else opens the now view. */
+// The views stored before the board had two, each read as the one that took its place.
+const STORED_PAGES = new Map<string, BoardPage>([
+  ['overview', 'overview'],
+  ['tasks', 'tasks'],
+  ['goals', 'overview'],
+  ['now', 'overview'],
+  ['canvas', 'overview'],
+  ['history', 'tasks'],
+]);
+
+/** The stored board view; anything else opens the overview. */
 export function readBoardPage(raw: string | null): BoardPage {
-  return PAGES.find((p) => p.key === raw)?.key ?? 'now';
+  return (raw !== null && STORED_PAGES.get(raw)) || 'overview';
 }
 
 const pageKey = (projectId: string) => `pantheon.board-page.${projectId}`;
 
-/** The view stored for the project; null when none is, or it is no view any more. */
-function storedPage(projectId: string): BoardPage | null {
+function stored(key: string): string | null {
   try {
-    const raw = localStorage.getItem(pageKey(projectId));
-    return PAGES.some((p) => p.key === raw) ? readBoardPage(raw) : null;
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-// The view picked on each project's board while the app runs; the title bar names it too.
-let picked: Readonly<Record<string, BoardPage>> = {};
-const pickListeners = new Set<() => void>();
-const subscribePicked = (listener: () => void) => {
-  pickListeners.add(listener);
-  return () => void pickListeners.delete(listener);
-};
-
-export function pickBoardPage(projectId: string, page: BoardPage) {
-  picked = { ...picked, [projectId]: page };
-  pickListeners.forEach((listener) => listener());
-  try {
-    localStorage.setItem(pageKey(projectId), page);
-  } catch {
-    // The choice still holds until the app closes.
-  }
+/** A choice kept for each project while the app runs and in local storage across runs. */
+function projectChoice<T extends string>(
+  key: (projectId: string) => string,
+  read: (raw: string | null, projectId: string) => T,
+) {
+  let picked: Readonly<Record<string, T>> = {};
+  const listeners = new Set<() => void>();
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => void listeners.delete(listener);
+  };
+  const pick = (projectId: string, value: T) => {
+    picked = { ...picked, [projectId]: value };
+    listeners.forEach((listener) => listener());
+    try {
+      localStorage.setItem(key(projectId), value);
+    } catch {
+      // The choice still holds until the app closes.
+    }
+  };
+  const use = (projectId: string | null): T => {
+    const chosen = () => (projectId ? picked[projectId] : undefined);
+    const value = useSyncExternalStore(subscribe, chosen, chosen);
+    if (!projectId) return read(null, '');
+    return value ?? read(stored(key(projectId)), projectId);
+  };
+  return { pick, use };
 }
 
-/**
- * The view the project's board shows: the one the user picked, else goals for a project with
- * goals and now for one without. Null while `hasGoals` is unknown; the default it then lands on
- * holds for the project while the board stays mounted.
- */
-export function useBoardPage(
-  projectId: string | null,
-  hasGoals: boolean | null = null,
-): BoardPage | null {
-  const read = () => (projectId ? picked[projectId] : undefined);
-  const chosen = useSyncExternalStore(subscribePicked, read, read);
-  const [landed, setLanded] = useState<{ projectId: string; page: BoardPage } | null>(null);
-  if (!projectId) return 'now';
-  const own = chosen ?? storedPage(projectId);
-  if (own) return own;
-  if (landed?.projectId === projectId) return landed.page;
-  if (hasGoals === null) return null;
-  const page = hasGoals ? 'goals' : 'now';
-  setLanded({ projectId, page });
-  return page;
-}
+const page = projectChoice(pageKey, readBoardPage);
+
+export const pickBoardPage = page.pick;
+/** The view the project's board shows: the one the user picked, else the overview. */
+export const useBoardPage = page.use;
+
+const TASK_VIEWS: readonly TaskView[] = ['flow', 'list', 'timeline'];
+const TASK_SCOPES: readonly TaskScope[] = ['milestone', 'all'];
+
+const view = projectChoice(
+  (projectId) => `pantheon.board-task-view.${projectId}`,
+  (raw, projectId): TaskView =>
+    TASK_VIEWS.find((v) => v === raw) ??
+    (projectId && stored(pageKey(projectId)) === 'history' ? 'timeline' : 'flow'),
+);
+
+export const pickTaskView = view.pick;
+/** The tasks view's drawing the user picked for the project, else the flow chart. */
+export const useTaskView = view.use;
+
+const scope = projectChoice(
+  (projectId) => `pantheon.board-task-scope.${projectId}`,
+  (raw): TaskScope => TASK_SCOPES.find((s) => s === raw) ?? 'milestone',
+);
+
+export const pickTaskScope = scope.pick;
+/** The tasks view's scope the user picked for the project, else the current milestone. */
+export const useTaskScope = scope.use;

@@ -13,7 +13,6 @@ import { Drawing } from '@/components/visual/shared';
 import { VisualBoundary, VisualCard, VisualsDrawing } from '@/components/visual/VisualCard';
 import { toastManager } from '@/components/Toast';
 import { useBoard } from '@/data/board';
-import { useBoardPage } from '@/data/board-page';
 import { useShell } from '@/store';
 import { zh } from './i18n-setup.js';
 
@@ -205,23 +204,22 @@ describe('visual card', () => {
     ).toEqual([...(fix ? [zh('visual.error.fix')] : []), zh('visual.card.viewSpec')]);
   });
 
-  it('says a pinned visual went onto the canvas, opens the canvas and undoes the pin', async () => {
+  it('says a pinned visual went onto the diagrams, opens them in memory and undoes the pin', async () => {
     const add = vi.spyOn(toastManager, 'add');
-    const openProjectBoard = vi.fn();
-    useShell.setState({ openProjectBoard });
+    const openProjectMemory = vi.fn();
+    useShell.setState({ openProjectMemory });
     const { outer } = card({ visual: kline, size: 'S' });
     find(outer.value, (n) => n.props['aria-label'] === zh('visual.card.pin')).props.onClick();
     await outer.flush();
     const shown = add.mock.calls.at(-1)![0] as { data: { card: NoticeShape } };
-    expect(shown.data.card.heading).toBe('已钉到画布：Refund retries');
+    expect(shown.data.card.heading).toBe('已钉到图解：Refund retries');
     const [open, undo] = shown.data.card.actions;
     expect([open!.label, undo!.label]).toEqual([
-      zh('visual.card.openCanvas'),
+      zh('visual.card.openDiagrams'),
       zh('visual.card.undoPin'),
     ]);
     open!.run();
-    expect(openProjectBoard).toHaveBeenCalledWith('project-1');
-    expect(mount(() => useBoardPage('project-1')).value).toBe('canvas');
+    expect(openProjectMemory).toHaveBeenCalledWith('project-1', 'diagrams');
     undo!.run();
     await outer.flush();
     expect(command).toHaveBeenLastCalledWith(

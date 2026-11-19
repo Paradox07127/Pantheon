@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactElement, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { ProjectBaseline } from '@pantheon/domain';
 import type { BoardModel } from '@pantheon/protocol';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
@@ -386,9 +386,7 @@ describe('project setup on the pages', () => {
         loading: false,
         error: null,
         onRetry: noop,
-        range: 7,
-        onRange: noop,
-        page: 'now',
+        page: 'tasks',
         onPage: noop,
         projectId: 'project-a',
         onOpenSession: noop,
@@ -413,13 +411,13 @@ describe('project setup on the pages', () => {
     ['running', setupOf('running', { baseline: baseline('running') }), false],
     ['ready', setupOf('ready'), true],
   ])(
-    'in the %s state, draws the lead input and the time range only on a set-up board',
+    'in the %s state, draws the lead input and the task scope only on a set-up board',
     (_name, setup, drawn) => {
       const tree = view(setup, board(), {
         actions: { milestones: [], sessions: [], run: async () => null },
       });
       expect(!!typed(tree, PublishBar)).toBe(drawn);
-      expect(nodes(tree).some((n) => n.props['aria-label'] === zh('board.headline.range'))).toBe(
+      expect(nodes(tree).some((n) => n.props['aria-label'] === zh('board.tasks.scope.label'))).toBe(
         drawn,
       );
     },
@@ -438,7 +436,7 @@ describe('project setup on the pages', () => {
     expect(shown(view(planning, planned))).toBe(false);
   });
 
-  it('shows a baseline started on the board as busy on the insights and repository pages', async () => {
+  it('keeps the setup on the board and leaves it off the engineering board and the repository overview', async () => {
     const boardPage = mount(() =>
       find(
         BoardScreen({ projectId: 'project-a', onOpenSession: noop }),
@@ -455,27 +453,8 @@ describe('project setup on the pages', () => {
     await boardPage.flush();
     await insights.flush();
     await overview.flush();
-    const overviewSetup = () =>
-      (find(overview.value, (n) => n.type === ProjectSetup) as ReactElement<any>).props.setup;
     expect(boardPage.value.props.setup).toMatchObject({ state: 'none', busy: false });
-    expect(insights.value.props.setup).toMatchObject({ state: 'none', busy: false });
-    expect(overviewSetup()).toMatchObject({ state: 'none', busy: false });
-
-    const onBoard = mount(() =>
-      ProjectSetup({ setup: boardPage.value.props.setup, onOpenSession: noop }),
-    );
-    button(onBoard.value, zh('board.baseline.start')).props.onClick();
-    insights.render();
-    overview.render();
-    expect(insights.value.props.setup.busy).toBe(true);
-    expect(overviewSetup().busy).toBe(true);
-    const onInsights = mount(() =>
-      ProjectSetup({ setup: insights.value.props.setup, onOpenSession: noop }),
-    );
-    expect(button(onInsights.value, zh('board.baseline.start')).props['aria-busy']).toBe(true);
-    await insights.flush();
-    expect(commands).toMatchObject([
-      { type: 'project.baseline.start', input: { project_id: 'project-a' } },
-    ]);
+    expect(insights.value.props).not.toHaveProperty('setup');
+    expect(nodes(overview.value).some((n) => n.type === ProjectSetup)).toBe(false);
   });
 });

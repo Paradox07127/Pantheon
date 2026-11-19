@@ -12,6 +12,33 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
+}
+/* The list scrolls as one with the retrospectives under the rules. */
+.lp-list > .lr {
+  flex: none;
+}
+.lp-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+}
+.lp-sh {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.lp-sh > h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+}
+.lp-n {
+  color: var(--mu);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .lp-empty {

@@ -28,17 +28,26 @@ export function revealSetting(id: string, block: 'center' | 'start'): HTMLElemen
   return anchor;
 }
 
-/** Closes the settings and opens the project's engineering board on the tab, and on the retrospective when given. */
-export function openBoardTab(section: InsightsSection, retrospectiveId?: string) {
+/** Closes the settings and opens the project's engineering board on the tab. */
+export function openBoardTab(section: InsightsSection) {
   const view = useSettingsView.getState();
   const projectId = view.detail ?? useCurrentProject.getState().projectId;
   view.close();
   if (!projectId) return;
   pickInsightsSection(projectId, section);
-  if (retrospectiveId) openRetro(retrospectiveId);
   // The project is chosen before the one navigation, which would drop a navigation still owed.
   useCurrentProject.getState().choose(projectId);
   useShell.getState().setScreen('insights');
+}
+
+/** Closes the settings and opens the project's learned page, on the retrospective when given. */
+export function openRetrospective(retrospectiveId?: string) {
+  const view = useSettingsView.getState();
+  const projectId = view.detail ?? useCurrentProject.getState().projectId;
+  view.close();
+  if (!projectId) return;
+  if (retrospectiveId) openRetro(retrospectiveId);
+  useShell.getState().openProjectMemory(projectId, 'learned');
 }
 
 /** Opens the settings on the page; a part of one project's page opens on that project. */

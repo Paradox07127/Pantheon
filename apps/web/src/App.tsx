@@ -69,7 +69,7 @@ import { groupWorkbenchSessions, sessionRow } from './screens/sessions/model';
 import { PersonalAgentScreen } from './screens/sessions/PersonalAgentScreen';
 import { RepoScreen } from './screens/repo/RepoScreen';
 import { SessionsScreen } from './screens/sessions/SessionsScreen';
-import { openBoardTab } from './screens/settings/settings-jump';
+import { openRetrospective } from './screens/settings/settings-jump';
 import { SettingsDialog } from './screens/settings/SettingsDialog';
 import { AddProject } from './screens/projects/AddProject';
 import { SETTINGS_PAGES, useSettingsView } from './screens/settings/view';
@@ -454,7 +454,7 @@ function MainWindow({ kind }: { kind: 'main' | 'project' }) {
                   page(
                     'screen-retro',
                     t({ id: 'board.panels.retro', defaultMessage: 'Retrospectives' }),
-                    () => openBoardTab('retro'),
+                    () => openRetrospective(),
                   ),
                 ]
               : []),

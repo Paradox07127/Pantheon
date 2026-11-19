@@ -1,0 +1,5 @@
+{
+  "board.plan.row.ops": "加 {adds} 删 {removes}",
+  "board.needs.longestWait": "最久等了 {duration}",
+  "board.needs.waitBar": "等了 {duration}，刻度 0 到 {longest}"
+}

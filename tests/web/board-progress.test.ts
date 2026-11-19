@@ -8,6 +8,7 @@ vi.mock('@/data/board', () => ({
 vi.mock('@/store', () => ({
   useShell: Object.assign((selector: any) => selector({}), { setState() {} }),
 }));
+import { pickTaskView, type TaskView } from '@/data/board-page';
 import { BoardView } from '@/screens/board/BoardScreen';
 
 const noop = () => {};
@@ -77,47 +78,40 @@ const model: BoardModel = {
   risks: [],
 };
 
-const board = (page: 'now' | 'canvas' = 'canvas') =>
-  mount(() =>
+const board = (view: TaskView = 'list') => {
+  pickTaskView('progress-board', view);
+  return mount(() =>
     BoardView({
       model,
       loading: false,
       error: null,
       onRetry: noop,
-      range: 7,
-      onRange: noop,
-      page,
+      page: 'tasks',
       onPage: noop,
+      projectId: 'progress-board',
       onOpenSession: noop,
       onOpenStory: noop,
       onOpenTrace: noop,
     }),
   );
-/** The tree with the panels the canvas view lays out. */
-const laid = (tree: unknown): any => [
-  tree,
-  ...(
-    nodes(tree as any).find((n) => typeof n.type === 'function' && n.type.name === 'CanvasView')
-      ?.props.panels ?? []
-  ).map((p: { node: unknown }) => p.node),
-];
+};
 const has = (tree: unknown, name: string) =>
-  nodes(laid(tree)).some((n) => typeof n.type === 'function' && n.type.name === name);
+  nodes(tree as any).some((n) => typeof n.type === 'function' && n.type.name === name);
 
-it('shows the progress table in the canvas view, the table by default, and the flow chart in the now view', () => {
+it('shows the task list in the list view of the tasks page, and the flow chart in its flow view', () => {
   const tree = board().value;
   expect(has(tree, 'MainView')).toBe(false);
-  expect(has(tree, 'ProgressTable')).toBe(true);
-  expect(has(tree, 'TrendPanel')).toBe(true);
-  const now = board('now').value;
-  expect(has(now, 'MainView')).toBe(true);
-  expect(has(now, 'ProgressTable')).toBe(false);
+  expect(has(tree, 'TaskList')).toBe(true);
+  expect(has(tree, 'TrendPanel')).toBe(false);
+  const flow = board('flow').value;
+  expect(has(flow, 'MainView')).toBe(true);
+  expect(has(flow, 'TaskList')).toBe(false);
 });
 
-it('opens the task drawer of a task picked in the progress table', () => {
+it('opens the task drawer of a task picked in the task list', () => {
   const h = board();
-  expect(named(laid(h.value), 'TaskDrawer').props.taskId).toBeNull();
-  named(laid(h.value), 'ProgressTable').props.onOpenTask('importer');
+  expect(named(h.value, 'TaskDrawer').props.taskId).toBeNull();
+  named(h.value, 'TaskList').props.onOpenTask('importer');
   h.render();
-  expect(named(laid(h.value), 'TaskDrawer').props.taskId).toBe('importer');
+  expect(named(h.value, 'TaskDrawer').props.taskId).toBe('importer');
 });

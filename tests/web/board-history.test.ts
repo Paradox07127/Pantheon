@@ -618,7 +618,7 @@ describe('history view', () => {
     expect(text(top)).toContain(`9月2日至今，${dayNumber(START, NOW)} 天`);
   });
 
-  it('offers the range as its own control in the board bar, current milestone only while there is one', () => {
+  it('offers the time range as its own control in the board bar, leaving the milestone to the scope switch', () => {
     const bar = { nodeType: 1 } as unknown as HTMLElement;
     const shown = mount(history(), [], { bar }).value;
     const portals: { containerInfo: unknown; children: unknown }[] = [];
@@ -630,26 +630,23 @@ describe('history view', () => {
     };
     walk(shown);
     expect(portals.map((p) => p.containerInfo)).toEqual([bar]);
-    expect(named(portals[0]!.children as never, 'HistoryRangeControl').props.hasMilestone).toBe(
-      false,
+    const placed = named(portals[0]!.children as never, 'HistoryRangeControl');
+    expect(text(HistoryRangeControl(placed.props))).not.toContain(
+      zh('board.tasks.scope.milestone'),
     );
     const top = find(shown, (n) => n.props.className === 'bd-hs-top');
     expect(() => named(top, 'HistoryRangeControl')).toThrow();
     const picked: string[] = [];
-    const control = (hasMilestone: boolean) =>
-      HistoryRangeControl({ value: 'all', onValueChange: (r) => picked.push(r), hasMilestone });
+    const group = HistoryRangeControl({ value: 'all', onValueChange: (r) => picked.push(r) });
     const radios = (tree: unknown) =>
       nodes(tree as never).filter((n) => n.props.value !== undefined && n.type !== 'div');
-    const group = control(false);
     expect(group.props['aria-label']).toBe(hz('range'));
     expect(
       radios(group.props.children).map((n) => [n.props.value, text(n), !!n.props.disabled]),
     ).toEqual([
       ['all', hz('range.all'), false],
       ['month', hz('range.month'), false],
-      ['milestone', hz('range.milestone'), true],
     ]);
-    expect(radios(control(true).props.children).some((n) => n.props.disabled)).toBe(false);
     group.props.onValueChange('month');
     expect(picked).toEqual(['month']);
   });

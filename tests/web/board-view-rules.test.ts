@@ -185,13 +185,11 @@ describe('main view grouping', () => {
     renderToStaticMarkup(
       createElement(BoardView, {
         model,
-        page: 'now',
+        page: 'tasks',
         projectId,
         loading: false,
         error: null,
         onRetry() {},
-        range: 7,
-        onRange() {},
         onPage() {},
         onOpenSession() {},
         onOpenStory() {},

@@ -93,7 +93,10 @@ const idle = () =>
 const lead = await idle();
 check('前置：lead 会话的回合结束', lead, lead?.last_turn);
 await page.click({ role: 'button', name: '项目看板', exact: true });
-await page.click({ role: 'radio', name: '进行中', exact: true });
+await page.click({ role: 'radio', name: '任务', exact: true });
+await page.click({ role: 'radio', name: '流程图', exact: true });
+await page.click({ role: 'radio', name: '全部', exact: true });
+await page.click({ role: 'radio', name: '总览', exact: true });
 
 // One read of the board view and the session list gives the tasks, their waits and their sessions.
 const snapshot = async () => {
@@ -152,7 +155,7 @@ check(
   result.held_tasks,
 );
 
-// c. The needs-you list on the board shows the lane.
+// c. The needs-you list on the board's overview shows the lane.
 const strip = () =>
   page.evaluate(`(() => {
     const s = [...document.querySelectorAll('section[aria-label="需要你"]')].find((el) => el.getClientRects().length && el.getBoundingClientRect().height > 0);
@@ -187,7 +190,8 @@ check(
   row?.primary,
 );
 
-// The queued text on the task's node on the canvas.
+// The queued text on the task's node on the tasks page's flow chart.
+await page.click({ role: 'radio', name: '任务', exact: true });
 const nodeOf = (title) =>
   page.evaluate(`(() => {
     const el = [...document.querySelectorAll('[role="group"]')].find((g) => g.getAttribute('aria-label')?.startsWith(${JSON.stringify(`${title}，`)}) && g.getClientRects().length);
@@ -233,7 +237,8 @@ if (opener) {
 
 result.shot = await page.screenshot('board-lane-approval');
 
-// d. Approve from the board's needs-you row.
+// d. Approve from the board's needs-you row, on the overview.
+await page.click({ role: 'radio', name: '总览', exact: true });
 try {
   await page.click({ role: 'button', name: `批准计划 ${RISKY}`, exact: true });
 } catch (error) {

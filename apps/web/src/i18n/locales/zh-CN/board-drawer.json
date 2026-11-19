@@ -10,5 +10,18 @@
   "board.drawer.redo.menu": "换到哪个后端重做",
   "board.drawer.tell.send": "主会话会把这条当作下一条消息",
   "board.drawer.tell.steer": "主会话会在正在跑的这一轮里读到",
-  "board.drawer.answer": "回答问题"
+  "board.drawer.answer": "回答问题",
+  "board.drawer.gate.label": "门禁 {count, plural, other {# 步}}：{steps}",
+  "board.drawer.gate.step": "{name}：{state, select, passed {通过} failed {失败} running {运行中} skipped {已跳过} other {未运行}}",
+  "board.drawer.gate.testsFailed": "{count, plural, other {# 个测试失败}}",
+  "board.drawer.gate.log": "看日志",
+  "board.drawer.gate.rerunFailed": "只重跑失败的步骤",
+  "board.drawer.esc.label": "升级 {count} 步，到第 {step} 步：{current}",
+  "board.drawer.esc.retry": "worker 修第 {n} 次",
+  "board.drawer.esc.lead": "lead 换人重做",
+  "board.drawer.esc.user": "交给你",
+  "board.drawer.changes.total": "共加 {additions} 行，删 {deletions} 行",
+  "board.drawer.changes.file": "{path}：加 {additions} 行，删 {deletions} 行",
+  "board.drawer.deps.upstream": "上游 {count, plural, other {# 个任务}}，{met} 个已满足：{titles}",
+  "board.drawer.deps.milestone": "里程碑 {title}，{done} / {total}"
 }

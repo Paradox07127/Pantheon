@@ -32,6 +32,7 @@ import type { DaemonEvent } from '../../apps/web/src/data/sync.js';
 import { NeedsStrip, useNeedImprovements } from '../../apps/web/src/screens/board/BoardFrame.js';
 import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import { LeadPanel } from '../../apps/web/src/screens/board/LeadPanel.js';
+import { ProposalEdit } from '../../apps/web/src/screens/board/PlanProposals.js';
 import { PublishBar, type PublishCommand } from '../../apps/web/src/screens/board/PublishBar.js';
 import {
   LEAD_STATE,
@@ -42,7 +43,6 @@ import {
   needWhat,
   needWho,
   outOfScopeFiles,
-  proposalCardId,
   requirementSessionInput,
   requirementTarget,
   requirementTargets,
@@ -512,7 +512,7 @@ describe('lead panel', () => {
       }),
     ).value;
 
-  it('gives each lead a row with a state glyph of its own, opening its session', () => {
+  it('gives each lead a row with a state glyph of its own, its name opening its session', () => {
     const onOpenSession = vi.fn();
     const states: BoardLead['state'][] = ['running', 'waiting', 'idle', 'failed', 'closed'];
     const out = panel(
@@ -526,7 +526,7 @@ describe('lead panel', () => {
       [],
       onOpenSession,
     );
-    const rows = nodes(out).filter((n) => n.props.className === 'btn bld-r');
+    const rows = nodes(out).filter((n) => n.props.className === 'bld-t');
     expect(rows).toHaveLength(6);
     expect(
       nodes(out)
@@ -537,16 +537,17 @@ describe('lead panel', () => {
     expect(onOpenSession).toHaveBeenCalledWith('lead-idle');
   });
 
-  it("shows a lead's runtime from its session and leaves its model out", () => {
+  it("shows a lead's runtime from its session and takes its model from the session list", () => {
     const out = panel(
       [{ ...lead('lead-a', 'running', NOW), inbox: 3 }],
       [session('lead-a', 'running', { runtime: 'claude', reported_model: 'claude-opus-4-5' })],
     );
     expect(named(out, 'RuntimeGlyph').props.runtime).toBe('claude');
+    expect(named(out, 'AgentFacts').props.sessionId).toBe('lead-a');
     expect(text(out)).not.toContain('claude-opus-4-5');
   });
 
-  it('says what a lead does now, else its state', () => {
+  it('says what a lead does now, and nothing in its place without an activity', () => {
     const out = panel([
       {
         ...lead('lead-a', 'running', NOW),
@@ -564,7 +565,7 @@ describe('lead panel', () => {
       nodes(out)
         .filter((n) => n.props.className === 'bld-do')
         .map(text),
-    ).toEqual([`${zh('runs.table.verb.run')} pnpm test`, leadLabel('idle')]);
+    ).toEqual([`${zh('runs.table.verb.run')} pnpm test`]);
   });
 
   it("jumps from a lead's question line to its row in the needs-you strip, answering nothing in place", () => {
@@ -1310,9 +1311,7 @@ describe('board new session while the board refreshes', () => {
         error: null,
         onRetry: noop,
         stale: true,
-        range: 7,
-        onRange: noop,
-        page: 'now',
+        page: 'tasks',
         onPage: noop,
         onOpenSession: noop,
         onOpenStory: noop,
@@ -1531,23 +1530,135 @@ describe('needs-you row', () => {
     });
   });
 
-  it('gives a plan change row one button, which brings its card in the plan proposals panel into view, and neither accepts nor rejects it', () => {
+  /** The board with the lead's pending proposal the row points at. */
+  const proposing = (item: BoardNeed): BoardModel =>
+    ({
+      ...board([]),
+      needs: [item],
+      leads: [
+        {
+          session_id: 'lead-1',
+          title: 'Refunds lead',
+          state: 'idle',
+          inbox: 0,
+          updated_at: 0,
+          plan_version: 6,
+          pending_edits: [],
+          pending_proposals: [
+            {
+              id: 'proposal-1',
+              lead_session_id: 'lead-1',
+              reason: 'The export keeps timing out',
+              ops: [
+                { type: 'remove_task', task_id: 'export' },
+                {
+                  type: 'add_task',
+                  task: {
+                    id: 'export-a',
+                    title: 'Export part A',
+                    goal: '',
+                    scope: [],
+                    depends_on: [],
+                  },
+                },
+                {
+                  type: 'add_task',
+                  task: {
+                    id: 'export-b',
+                    title: 'Export part B',
+                    goal: '',
+                    scope: [],
+                    depends_on: [],
+                  },
+                },
+              ],
+              base_version: 6,
+              created_at: NOW - 60_000,
+              task_ids: ['export'],
+            },
+          ],
+        },
+      ],
+    }) as unknown as BoardModel;
+  const proposalRow = (run: RunBoardCommand) => {
+    const item = proposal(true);
+    const strip = mount(() =>
+      NeedsStrip({ model: proposing(item), sessions: [], run, onOpenSession: () => {} }),
+    );
+    const el = named(strip.value, 'RequestCard');
+    return mount(() => (el.type as (props: unknown) => ReactNode)(el.props));
+  };
+
+  it("answers a plan change in its row: the lead's reason, what it adds and removes, Accept and Reject", async () => {
     const run = vi.fn(async () => null);
-    const h = row(proposal(true), run, () => {});
+    const h = proposalRow(run);
+    expect(text(h.value)).toContain('The export keeps timing out');
+    expect(text(h.value)).toContain(zhf('board.plan.row.ops', { adds: 2, removes: 1 }));
+    const accept = zh('board.plan.proposal.accept');
+    const reject = zh('board.plan.proposal.reject');
     expect(
       nodes(h.value)
         .filter((n) => n.type === 'button')
         .map((n) => text(n)),
-    ).toEqual([act('proposal')]);
+    ).toEqual([accept, reject, '']);
     expect(nodes(h.value).some((n) => n.type === MenuItem)).toBe(false);
-    const card = { scrollIntoView: vi.fn(), focus: vi.fn() };
-    const getElementById = vi.fn(() => card);
-    vi.stubGlobal('document', { getElementById });
-    button(h.value, act('proposal')).props.onClick();
-    expect(getElementById).toHaveBeenCalledWith(proposalCardId('proposal-1'));
-    expect(card.scrollIntoView).toHaveBeenCalled();
-    expect(card.focus).toHaveBeenCalled();
-    expect(run).not.toHaveBeenCalled();
+    button(h.value, accept).props.onClick();
+    await h.flush();
+    expect(run).toHaveBeenCalledWith(
+      'board.plan.proposal.resolve',
+      {
+        project_id: 'project-a',
+        lead_session_id: 'lead-1',
+        proposal_id: 'proposal-1',
+        decision: 'accept',
+      },
+      null,
+    );
+  });
+
+  it('opens the change-then-accept editor of a plan change under its row', () => {
+    const h = proposalRow(vi.fn(async () => null));
+    const who = text(find(h.value, (n) => n.props.className === 'rq-who'));
+    const label = `${zh('board.plan.proposal.adjust')} ${who}`;
+    const toggle = find(h.value, (n) => n.props['aria-label'] === label);
+    expect(toggle.props['aria-expanded']).toBe(false);
+    expect(nodes(h.value).some((n) => n.type === ProposalEdit)).toBe(false);
+    toggle.props.onClick();
+    h.render();
+    expect(find(h.value, (n) => n.props['aria-label'] === label).props['aria-expanded']).toBe(true);
+    const editor = find(h.value, (n) => n.type === ProposalEdit);
+    expect(editor.props.proposal.id).toBe('proposal-1');
+    editor.props.onCancel();
+    h.render();
+    expect(nodes(h.value).some((n) => n.type === ProposalEdit)).toBe(false);
+  });
+
+  it("draws each row's wait on the scale of the longest, full for the longest, and heads the list with it", () => {
+    const old = need({ created_at: NOW - 18 * 60_000 });
+    const fresh = need({
+      source: { table: 'approvals', id: 'approval-2', revision: 3 },
+      created_at: NOW - 6 * 60_000,
+    });
+    const strip = mount(() =>
+      NeedsStrip({
+        model: { ...board([]), needs: [old, fresh] },
+        sessions: [],
+        run: async () => null,
+        onOpenSession: () => {},
+      }),
+    );
+    expect(text(strip.value)).toContain(zhf('board.needs.longestWait', { duration: '18 分钟' }));
+    const bars = nodes(strip.value)
+      .filter((n) => typeof n.type === 'function' && n.type.name === 'RequestCard')
+      .map((el) => {
+        const drawn = mount(() => (el.type as (props: unknown) => ReactNode)(el.props)).value;
+        return find(drawn, (n) => n.props.role === 'img' && n.props.className === 'meter');
+      });
+    expect(bars.map((bar) => bar.props['aria-label'])).toEqual([
+      zhf('board.needs.waitBar', { duration: '18 分钟', longest: '18 分钟' }),
+      zhf('board.needs.waitBar', { duration: '6 分钟', longest: '18 分钟' }),
+    ]);
+    expect(bars.map((bar) => bar.props.style['--v'])).toEqual(['100%', `${(6 / 18) * 100}%`]);
   });
 
   it('shows a lane waiting for plan approval by the lane title, approves its plan in place, and holds the button the backend refuses', async () => {

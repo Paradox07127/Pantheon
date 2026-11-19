@@ -4,7 +4,7 @@ import type { ProjectBaseline, ProjectIntro } from '@pantheon/domain';
 import { t } from '@/i18n';
 import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 import { zh } from './i18n-setup.js';
-const mock = vi.hoisted(() => ({ board: {} as any, boardTabs: [] as unknown[][] }));
+const mock = vi.hoisted(() => ({ board: {} as any, retros: [] as unknown[][] }));
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true, useId: 'intro-id' }),
 );
@@ -28,7 +28,7 @@ vi.mock('@/store', () => ({
 }));
 vi.mock('@/screens/settings/settings-jump', async (actual) => ({
   ...(await actual<object>()),
-  openBoardTab: (...args: unknown[]) => void mock.boardTabs.push(args),
+  openRetrospective: (...args: unknown[]) => void mock.retros.push(args),
 }));
 import { readBoardPage, useBoardPage } from '@/data/board-page';
 import { BoardView } from '@/screens/board/BoardScreen';
@@ -167,16 +167,14 @@ const button = (tree: ReactNode, label: string) =>
   find(tree, (n) => n.type === 'button' && text(n).includes(label));
 
 describe('board views', () => {
-  it('offers goals, now, whole history and canvas in that order and opens now without goals when nothing is stored', () => {
+  it('offers overview and tasks in that order and opens the overview when nothing is stored', () => {
     const h = mount(() =>
       BoardView({
         model: null,
         loading: false,
         error: null,
         onRetry: noop,
-        range: 7,
-        onRange: noop,
-        page: useBoardPage('refunds', false),
+        page: useBoardPage('refunds'),
         onPage: noop,
         projectId: 'refunds',
         onOpenSession: noop,
@@ -185,21 +183,14 @@ describe('board views', () => {
       }),
     );
     const views = labelled(h.value, zh('board.view.label'));
-    expect(views.props.value).toBe('now');
+    expect(views.props.value).toBe('overview');
     expect(
       nodes(views.props.children)
         .filter((n) => n.props.value !== undefined)
         .map(text),
-    ).toEqual(
-      zhs(
-        'board.view.goals',
-        'board.history.span.now',
-        'board.history.span.history',
-        'board.view.canvas',
-      ),
-    );
-    expect(readBoardPage('intro')).toBe('now');
-    expect(readBoardPage(null)).toBe('now');
+    ).toEqual(zhs('board.view.overview', 'board.view.tasks'));
+    expect(readBoardPage('intro')).toBe('overview');
+    expect(readBoardPage(null)).toBe('overview');
   });
 
   it('mounts the profile, the memory panel and the introduction in the memory overview', async () => {
@@ -229,11 +220,11 @@ describe('board views', () => {
     expect(has(page.value, (n) => typeName(n) === 'IntroView')).toBe(true);
   });
 
-  it('opens the retrospective a learned rule names on the board', () => {
+  it('opens the retrospective a learned rule names on the learned page', () => {
     mock.board.board.projects = [{ id: 'refunds', revision: 1, name: 'Refunds', roots: [] }];
     const h = mount(() => MemoryScreen({ projectId: 'refunds' }));
     find(h.value, (n) => typeName(n) === 'LearnedPage').props.onOpenRetros('retro-7');
-    expect(mock.boardTabs).toEqual([['retro', 'retro-7']]);
+    expect(mock.retros).toEqual([['retro-7']]);
   });
 });
 

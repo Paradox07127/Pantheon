@@ -59,6 +59,8 @@ await poll(async () => {
   return s?.last_turn?.state === 'completed';
 }, 30_000);
 await page.click({ role: 'button', name: '项目看板', exact: true });
+// The requirement bar is on the tasks page.
+await page.click({ role: 'radio', name: '任务', exact: true });
 const barShown = await poll(
   () =>
     page.evaluate(

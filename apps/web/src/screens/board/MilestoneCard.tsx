@@ -1,9 +1,9 @@
-import { useId, useState, type CSSProperties } from 'react';
+import { useId, useState } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Dialog } from '@base-ui/react/dialog';
 import { Popover } from '@base-ui/react/popover';
-import { ChevronDown, Clock, Flag, SquareTerminal, TriangleAlert } from 'lucide-react';
-import type { BoardModel, BoardTaskStatus } from '@pantheon/protocol';
+import { ChevronDown, Clock, Diamond, SquareTerminal, TriangleAlert } from 'lucide-react';
+import type { BoardModel } from '@pantheon/protocol';
 import { Clip } from '../../components/Clip';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { Tip } from '../../components/Tip';
@@ -12,7 +12,6 @@ import { milestoneDueOp, planVersion } from '../../data/plan-edit';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { AcceptDialog, acceptEvidence, type MilestoneActions } from './Charts';
-import { MilestoneAssumptions } from './MilestoneAssumptions';
 import {
   durationText,
   milestoneCounts,
@@ -21,7 +20,7 @@ import {
   type BoardMilestone,
   type SnapshotMilestone,
 } from './panels-model';
-import { StateIcon, StatusIcon, taskStateLabel } from './status';
+import { StateIcon, StatusIcon, TaskStateIcon, taskStateLabel } from './status';
 import { TellLead, useDialogContent } from './TellLead';
 import './overview.css';
 
@@ -56,90 +55,25 @@ export function dueText(days: number): string {
   );
 }
 
-type Totals = BoardModel['task_progress']['totals'];
+type Task = BoardModel['tasks'][number];
 
-const TOTAL: Record<BoardTaskStatus, keyof Totals> = {
-  done: 'done',
-  running: 'running',
-  waiting: 'waiting',
-  idle: 'idle',
-  ready: 'ready',
-  failed: 'failed',
-  todo: 'not_started',
-  discarded: 'discarded',
-};
-
-/** The milestone's tasks by state; merged is its own count, which holds tasks merged before the board's window. */
-function milestoneTotals(done: number, cells: BoardModel['tasks']): Totals {
-  const totals: Totals = {
-    done,
-    running: 0,
-    waiting: 0,
-    idle: 0,
-    ready: 0,
-    failed: 0,
-    discarded: 0,
-    not_started: 0,
-  };
-  for (const cell of cells) if (cell.status !== 'done') totals[TOTAL[cell.status]]++;
-  return totals;
+/** The tasks by state in words, each state once with its count, in the order the tasks come. */
+export function stateParts(tasks: readonly Task[]): string {
+  const counts = new Map<string, number>();
+  for (const task of tasks) {
+    const state = taskStateLabel(task);
+    counts.set(state, (counts.get(state) ?? 0) + 1);
+  }
+  return listText(
+    ...[...counts].map(([state, count]) =>
+      t({ id: 'board.overview.statePart', defaultMessage: '{state} {count}' }, { state, count }),
+    ),
+  );
 }
 
-// Functions, so each label is read in the language loaded by then.
-const PARTS: {
-  key: string;
-  count: (totals: Totals) => number;
-  label: (count: number) => string;
-}[] = [
-  {
-    key: 'merged',
-    count: (x) => x.done,
-    label: (count) =>
-      t({ id: 'board.plan.milestone.bar.merged', defaultMessage: '{count} merged' }, { count }),
-  },
-  {
-    key: 'running',
-    count: (x) => x.running,
-    label: (count) =>
-      t({ id: 'board.plan.milestone.bar.running', defaultMessage: '{count} running' }, { count }),
-  },
-  {
-    key: 'waiting',
-    count: (x) => x.waiting,
-    label: (count) =>
-      t(
-        { id: 'board.plan.milestone.bar.waiting', defaultMessage: '{count} waiting on you' },
-        { count },
-      ),
-  },
-  {
-    key: 'review',
-    count: (x) => x.ready,
-    label: (count) =>
-      t({ id: 'board.plan.milestone.bar.review', defaultMessage: '{count} to review' }, { count }),
-  },
-  {
-    key: 'failed',
-    count: (x) => x.failed,
-    label: (count) =>
-      t({ id: 'board.plan.milestone.bar.failed', defaultMessage: '{count} failed' }, { count }),
-  },
-  {
-    key: 'queued',
-    count: (x) => x.not_started + x.idle,
-    label: (count) =>
-      t({ id: 'board.plan.milestone.bar.queued', defaultMessage: '{count} queued' }, { count }),
-  },
-  {
-    key: 'discarded',
-    count: (x) => x.discarded,
-    label: (count) =>
-      t(
-        { id: 'board.plan.milestone.bar.discarded', defaultMessage: '{count} discarded' },
-        { count },
-      ),
-  },
-];
+/** The runtime the task runs or is planned on; null before either says. */
+const taskRuntime = (task: Task): string | null =>
+  task.claim?.runtime ?? task.planned?.runtime ?? task.segments.at(-1)?.runtime ?? null;
 
 type Verification = NonNullable<BoardMilestone['verification']>;
 
@@ -245,21 +179,20 @@ export function VerifyBadge({
 }
 
 /**
- * The current milestone on one line: merged over planned tasks, the milestone's tasks by state and
- * the days left; its acceptance, criteria, task cells and due day open from the button that ends it.
+ * The current milestone, unfolded under its goal: a line with its verification, the days left and
+ * merged over planned tasks, its acceptance, criteria and due day behind the button that ends it;
+ * below, a cell per task opening it.
  */
 export function MilestoneCard({
   model,
   milestone,
   actions,
   onOpenTask,
-  onOpenSession,
 }: {
   model: BoardModel;
   milestone: BoardMilestone;
   actions?: MilestoneActions;
   onOpenTask: (taskId: string) => void;
-  onOpenSession?: (sessionId: string) => void;
 }) {
   const id = useId();
   const accepting = useDialogContent<{ stored: SnapshotMilestone }>();
@@ -303,16 +236,20 @@ export function MilestoneCard({
     );
   };
   const days = milestone.due_on === undefined ? null : daysLeft(milestone.due_on, model.now);
-  const totals = milestoneTotals(done, cells);
-  const parts = PARTS.map((p) => ({ ...p, n: p.count(totals) })).filter((p) => p.n > 0);
   return (
     <section className="bms" aria-labelledby={id} data-debug-region="board.milestone">
       <div className="bms-ln">
-        <Flag className="bms-ic" aria-hidden="true" />
+        <Diamond className="bms-ic" aria-hidden="true" />
         <h2 id={id} className="bms-h" title={milestone.title}>
           {milestone.title}
         </h2>
         {verification && <VerifyBadge verification={verification} now={now} />}
+        {days !== null && (
+          <span className="bms-due" data-late={days < 0 || undefined}>
+            <Clock aria-hidden="true" />
+            {dueText(days)}
+          </span>
+        )}
         <span
           className="bms-frac"
           role="img"
@@ -327,33 +264,6 @@ export function MilestoneCard({
         >
           {done} / {total}
         </span>
-        {parts.length > 0 && (
-          <span
-            className="bms-bar"
-            data-debug-region="board.progress"
-            role="img"
-            aria-label={t(
-              {
-                id: 'board.plan.milestone.bar',
-                defaultMessage: '{count, plural, one {# task} other {# tasks}}: {parts}',
-              },
-              {
-                count: parts.reduce((sum, p) => sum + p.n, 0),
-                parts: listText(...parts.map((p) => p.label(p.n))),
-              },
-            )}
-          >
-            {parts.map((p) => (
-              <i key={p.key} data-part={p.key} style={{ flexGrow: p.n }} />
-            ))}
-          </span>
-        )}
-        {days !== null && (
-          <span className="bms-due" data-late={days < 0 || undefined}>
-            <Clock aria-hidden="true" />
-            {dueText(days)}
-          </span>
-        )}
         <Popover.Root>
           <Popover.Trigger
             className="ib bms-more"
@@ -403,24 +313,6 @@ export function MilestoneCard({
                       ))}
                     </ul>
                   )}
-                  {cells.length > 0 && (
-                    <div className="bms-cells" style={{ '--n': cells.length } as CSSProperties}>
-                      {cells.map((cell) => (
-                        <Tip key={cell.id} content={cell.title}>
-                          <button
-                            type="button"
-                            className="bms-cell"
-                            data-state={cell.state ?? cell.status}
-                            aria-label={t(
-                              { id: 'board.task.link.label', defaultMessage: '{title}, {status}' },
-                              { title: cell.title, status: taskStateLabel(cell) },
-                            )}
-                            onClick={() => onOpenTask(cell.id)}
-                          />
-                        </Tip>
-                      ))}
-                    </div>
-                  )}
                   {lead && key && (
                     <input
                       type="date"
@@ -444,13 +336,41 @@ export function MilestoneCard({
           </Popover.Portal>
         </Popover.Root>
       </div>
-      <MilestoneAssumptions
-        model={model}
-        milestone={milestone}
-        projectId={actions?.projectId}
-        onOpenTask={onOpenTask}
-        onOpenSession={onOpenSession}
-      />
+      {cells.length > 0 && (
+        <div
+          className="bms-tg"
+          role="group"
+          data-debug-region="board.progress"
+          aria-label={t(
+            {
+              id: 'board.plan.milestone.bar',
+              defaultMessage: '{count, plural, one {# task} other {# tasks}}: {parts}',
+            },
+            { count: cells.length, parts: stateParts(cells) },
+          )}
+        >
+          {cells.map((cell) => {
+            const runtime = taskRuntime(cell);
+            return (
+              <button
+                key={cell.id}
+                type="button"
+                className="bms-tk"
+                data-state={cell.state ?? cell.status}
+                aria-label={t(
+                  { id: 'board.task.link.label', defaultMessage: '{title}, {status}' },
+                  { title: cell.title, status: taskStateLabel(cell) },
+                )}
+                onClick={() => onOpenTask(cell.id)}
+              >
+                <TaskStateIcon task={cell} />
+                <Clip className="bms-tt" text={cell.title} />
+                {runtime && <RuntimeGlyph runtime={runtime} size={14} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {verification && !verifying && verification.state !== 'skipped' && (
         <Collapsible.Root
           key={verification.id}

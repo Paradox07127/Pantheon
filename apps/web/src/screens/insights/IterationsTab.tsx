@@ -28,7 +28,7 @@ import {
 import { Clip } from '../../components/Clip';
 import { Select } from '../../components/Select';
 import { useBoard } from '../../data/board';
-import { pickBoardPage } from '../../data/board-page';
+import { pickBoardPage, pickTaskView } from '../../data/board-page';
 import { planVersion, type PlanOp } from '../../data/plan-edit';
 import { DOMAIN_LABEL } from '../../data/workflow-policy';
 import { planTaskIds } from '../../data/task-trace';
@@ -667,8 +667,9 @@ export function IterationsBarControls({
           model={newTask.model}
           disabled={false}
           onNew={() => {
-            // The new task form is in the board's edit mode, on its now page.
-            pickBoardPage(newTask.projectId, 'now');
+            // The new task form is in the board's edit mode, on its tasks page's flow chart.
+            pickBoardPage(newTask.projectId, 'tasks');
+            pickTaskView(newTask.projectId, 'flow');
             setBoardEditing(newTask.projectId, true);
             useShell.getState().setScreen('board');
           }}

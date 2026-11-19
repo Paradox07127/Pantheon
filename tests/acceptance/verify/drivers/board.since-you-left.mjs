@@ -6,15 +6,8 @@ const { page, query, call, errors, poll, newProject } = await open(runDir, { ms:
 const result = { id: 'board.since-you-left', checks: [] };
 const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got });
 
-// The cell caption each brief kind gets (BriefCard.tsx, zh-CN/brief.json).
-const CAPTION = {
-  decisions: '等你处理',
-  milestone: '里程碑有进展',
-  merge: '已合并',
-  failure: '失败',
-  assumption: '新假设',
-  proposal: '智能体提议',
-};
+// The lane names the card draws (BriefCard.tsx, zh-CN/board-brief.json).
+const LANE = { delivered: '交付', decided: '替你决定', planned: '计划' };
 
 const stamp = Date.now();
 const { project_id } = await newProject(`verify-brief-${stamp}`, {
@@ -37,39 +30,24 @@ const idle = (id) =>
   }, 30_000);
 await page.click({ role: 'button', name: '项目看板', exact: true });
 
-// The card as shown: its name, the item links it draws, and per cell its label, caption, count
-// and whether it is a button.
+// The card as shown, read by role and accessible name: whether it has "标为已读", per lane its
+// name and the names of its points, and the links outside its paragraph (the failure lines).
 const card = () =>
   page.evaluate(`(() => {
     const c = [...document.querySelectorAll('[role=group][aria-label="你离开后"]')].find((el) => el.getClientRects().length);
     if (!c) return null;
+    const lanes = ${JSON.stringify(LANE)};
+    const groups = [...c.querySelectorAll('[role=group]')];
+    const lane = (name) => {
+      const g = groups.find((el) => (el.getAttribute('aria-label') ?? '').startsWith(name));
+      return g ? { label: g.getAttribute('aria-label'), points: [...g.querySelectorAll('button')].map((b) => b.getAttribute('aria-label')) } : null;
+    };
     return {
-      read: !!c.querySelector('.bf-brief-read'),
-      links: [...c.querySelectorAll('a.bf-brief-lk')].map((a) => a.textContent.trim()),
-      cells: [...c.querySelectorAll('.bf-brief-c')].map((cell) => ({
-        label: cell.getAttribute('aria-label'),
-        cap: cell.querySelector('.cap')?.textContent ?? null,
-        count: cell.querySelector('.kpi')?.textContent ?? null,
-        button: cell.tagName === 'BUTTON' && cell.getAttribute('aria-haspopup') === 'dialog',
-      })),
+      read: [...c.querySelectorAll('button')].some((b) => b.textContent.trim() === '标为已读'),
+      lanes: Object.fromEntries(Object.entries(lanes).map(([key, name]) => [key, lane(name)])),
+      lines: [...c.querySelectorAll('a[href]')].filter((a) => !a.closest('p')).map((a) => a.textContent.trim()),
     };
   })()`);
-// The item links in a cell's popover, which a press on the cell opens.
-const popoverLinks = (label) =>
-  page.evaluate(`(() => {
-    const d = [...document.querySelectorAll('[role=dialog]')].find((el) => el.getAttribute('aria-label') === ${JSON.stringify(label)} && el.getClientRects().length);
-    return d ? [...d.querySelectorAll('a.bf-brief-lk')].map((a) => a.textContent.trim()) : null;
-  })()`);
-const openCell = async (label) => {
-  await page.click({ role: 'button', name: label, exact: true });
-  return poll(() => popoverLinks(label), 3000);
-};
-const itemsOf = async (label) => {
-  const links = await openCell(label);
-  await page.press('Escape');
-  await poll(async () => (await popoverLinks(label)) === null, 3000);
-  return links;
-};
 
 // A lead plans one task in a milestone, so a failure of its worker links to that task.
 const task = {
@@ -175,50 +153,47 @@ check(
   served,
   (await brief()).items.map((i) => [i.kind, i.ref]),
 );
-const kinds = served ? [...new Set(served.items.map((i) => i.kind))] : [];
-// Per kind the count the card shows: one cell per item, the decisions cell its count.
-const countOf = (b, kind) =>
-  kind === 'decisions'
-    ? b.items.find((i) => i.kind === 'decisions')?.count
-    : b.items.filter((i) => i.kind === kind).length;
-const shown =
-  (await poll(async () => {
-    const c = await card();
-    return c?.cells.length === kinds.length && c;
-  })) || (await card());
+// Per lane the points the card should draw: delivered is merges and failures, plan is assumptions
+// and proposals, decided for you is the decisions project.decisions lists after leaving.
+const expected = async (b) => {
+  const n = (...kinds) => b.items.filter((i) => kinds.includes(i.kind)).length;
+  const decided = b.items.some((i) => i.kind === 'decided')
+    ? (await query('project.decisions', { project_id, since: String(b.since + 1) })).items.length
+    : 0;
+  return {
+    delivered: n('merge', 'failure'),
+    decided,
+    planned: n('assumption', 'proposal'),
+  };
+};
+const pointCounts = (c) =>
+  c && Object.fromEntries(Object.keys(LANE).map((k) => [k, c.lanes[k]?.points.length ?? null]));
+const sameCounts = (c, want) =>
+  !!c && Object.keys(LANE).every((k) => c.lanes[k]?.points.length === want[k]);
 const now = await brief();
+const want = await expected(now);
+const shown = (await poll(async () => sameCounts(await card(), want) && card())) || (await card());
 result.brief = now;
 result.card = shown;
 check('出现 "你离开后"，带 "标为已读"', shown?.read, shown);
-const sameCounts = (c, b, of = countOf) =>
-  !!c &&
-  c.cells.length === [...new Set(b.items.map((i) => i.kind))].length &&
-  [...new Set(b.items.map((i) => i.kind))].every((kind) =>
-    c.cells?.some((cell) => cell.cap === CAPTION[kind] && cell.count === String(of(b, kind))),
-  );
-check('每类的计数等于 project.brief 里该类的条目数', sameCounts(shown, now), {
-  ui: shown?.cells?.map((c) => [c.cap, c.count]),
-  daemon: [...new Set(now.items.map((i) => i.kind))].map((k) => [k, countOf(now, k)]),
+check('每道时间轴的点数等于 project.brief 里该类条目数', sameCounts(shown, want), {
+  ui: pointCounts(shown),
+  daemon: want,
 });
 check(
-  '对照组：把合并数加一，同一读法判 false',
-  !sameCounts(shown, now, (b, kind) => countOf(b, kind) + (kind === 'merge' ? 1 : 0)),
+  '对照组：把交付道的期望点数加一，同一读法判 false',
+  !sameCounts(shown, { ...want, delivered: want.delivered + 1 }),
 );
-check('卡里默认不列条目链接', shown && shown.links.length === 0, shown?.links);
-check(
-  '"等你处理" 一格不是按钮，其余有条目的格是打开弹层的按钮',
-  shown?.cells?.every((c) => c.button === !['等你处理', '智能体提议'].includes(c.cap)),
-  shown?.cells,
+const mergedPoint = shown?.lanes.delivered?.points.find((l) =>
+  l?.includes(`verify-brief-merge-${stamp}`),
 );
-const mergedCell = shown?.cells?.find((c) => c.cap === '已合并');
-const mergedLinks = mergedCell ? await itemsOf(mergedCell.label) : null;
 check(
-  '点开已合并一格，弹层链到合并会话的标题',
-  mergedLinks?.includes(`verify-brief-merge-${stamp}`),
-  { mergedCell, mergedLinks },
+  '交付道有合并会话的点，名字带 "已合并"',
+  mergedPoint?.includes('已合并'),
+  shown?.lanes.delivered,
 );
 
-// The card comes before the needs-you list, and its title, time and "标为已读" share one row.
+// The card comes before the needs-you list, and its heading, time and "标为已读" share one row.
 const layout = () =>
   page.evaluate(`(() => {
     const visible = (sel) => [...document.querySelectorAll(sel)].find((el) => el.getClientRects().length);
@@ -229,10 +204,10 @@ const layout = () =>
     return {
       cardFirst: !!(c.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING),
       listFirst: !!(list.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING),
-      title: mid(c.querySelector('.bf-brief-t')),
-      time: mid(c.querySelector('.bf-brief-at')),
-      read: mid(c.querySelector('.bf-brief-read')),
-      firstCount: mid(c.querySelector('.bf-brief-c .kpi')),
+      title: mid(c.querySelector('h2')),
+      time: mid(c.querySelector('time')),
+      read: mid([...c.querySelectorAll('button')].find((b) => b.textContent.trim() === '标为已读')),
+      firstLane: mid(c.querySelector('[role=group]')),
       rows: [...list.querySelectorAll('li.bf-need')].map((li) => ({
         who: li.querySelector('article')?.getAttribute('aria-label') ?? null,
         kind: (li.querySelector('.rq-kind')?.textContent ?? '').trim(),
@@ -251,9 +226,9 @@ check(
   placed && [placed.title, placed.time, placed.read],
 );
 check(
-  '对照组：同一读法判标题和第一格的计数不在同一行',
-  placed && !oneRow(placed.title, placed.firstCount),
-  placed && [placed.title, placed.firstCount],
+  '对照组：同一读法判标题和第一道时间轴不在同一行',
+  placed && !oneRow(placed.title, placed.firstLane),
+  placed && [placed.title, placed.firstLane],
 );
 // The failed worker's row in the list, at its place in needs_you.list.
 const needs = (await query('needs_you.list', { project_id })).items;
@@ -271,47 +246,49 @@ result.dark = await page.evaluate(`document.documentElement.classList.contains('
 result.shot = await page.screenshot('pair-brief');
 copyFileSync(path.join(runDir, result.shot.file), path.join(runDir, 'screens', 'pair-brief.png'));
 
-// A task item is a link that opens its task in the board's drawer; the decisions cell lists none.
-const taskItem = now.items.find((i) => i.ref.kind === 'task' && i.kind !== 'decisions');
-check(
-  '前置：project.brief 有指向任务的条目',
-  taskItem,
-  now.items.map((i) => [i.kind, i.ref]),
-);
+// The worker's failure is a point on the delivered lane and a failure line, both named by its task.
 const view = await query('board.view', { project_id, days: '7' });
-const taskTitle = view.tasks.find((t) => t.id === taskItem?.ref.id)?.title;
-const failedCell = shown?.cells?.find((c) => c.cap === CAPTION[taskItem?.kind]);
-const failedLinks = failedCell ? await itemsOf(failedCell.label) : null;
+const taskTitle = view.tasks.find((t) => t.id === `${lead.id}:task-one`)?.title;
+check('前置：board.view 有计划任务', taskTitle === task.title, taskTitle);
+const taskPoint = shown?.lanes.delivered?.points.find((l) => taskTitle && l?.includes(taskTitle));
+check('交付道有失败任务的点，名字带任务标题', taskPoint, shown?.lanes.delivered);
 check(
-  '点开那一格，弹层里任务条目显示为任务标题的链接',
-  taskTitle && failedLinks?.includes(taskTitle),
+  '失败行是带任务标题的链接',
+  shown?.lines.some((l) => taskTitle && l.includes(taskTitle)),
   {
-    links: failedLinks,
+    lines: shown?.lines,
     taskTitle,
   },
 );
+check(
+  '对照组：同一读法在失败行里找不到合并会话',
+  !shown?.lines.some((l) => l.includes(`verify-brief-merge-${stamp}`)),
+  shown?.lines,
+);
 const drawer = () =>
   page.evaluate(
-    `(() => { const d = document.querySelector('aside.bd-drw'); return d && d.getClientRects().length && !d.dataset.endingStyle ? document.getElementById('bd-drw-title')?.textContent ?? '' : null; })()`,
+    `(() => { const d = document.querySelector('aside[aria-labelledby=bd-drw-title]'); return d && d.getClientRects().length && !d.dataset.endingStyle ? document.getElementById('bd-drw-title')?.textContent ?? '' : null; })()`,
   );
 check('前置：抽屉未打开', (await drawer()) === null, await drawer());
-if (taskTitle) {
-  await openCell(failedCell.label);
+if (taskPoint)
   await page.click({
-    role: 'link',
+    role: 'button',
     name: taskTitle,
-    exact: true,
-    within: { role: 'dialog', name: failedCell.label, exact: true },
+    within: { role: 'group', name: shown.lanes.delivered.label, exact: true },
   });
-}
 const opened = await poll(async () => {
   const d = await drawer();
   return d && d;
 });
-check('点任务链接后抽屉打开这个任务', opened === taskTitle, { opened, taskTitle });
+check('点交付道上的任务点后抽屉打开这个任务', opened === taskTitle, { opened, taskTitle });
 check('对照组：抽屉标题不是合并会话', opened !== `verify-brief-merge-${stamp}`, opened);
-await page.press('Escape');
-await poll(async () => (await drawer()) === null, 3000);
+// The pressed point keeps focus and its tooltip, which may take the first Escape.
+const closed = await poll(async () => {
+  if ((await drawer()) === null) return true;
+  await page.press('Escape');
+  return false;
+}, 3000);
+check('按 Escape 后抽屉关上', closed, await drawer());
 
 // Mark as read: project.seen moves the cursor, the card leaves, the brief is empty.
 const cursorBefore = now.since;
@@ -340,16 +317,23 @@ const again = await poll(async () => {
   return b.items.some((i) => i.kind === 'failure') && b;
 }, 20_000);
 check('前置：新失败后 project.brief 又有条目', again, (await brief()).items);
-const back = await poll(async () => {
-  const c = await card();
-  return c && c;
-});
 const latest = await brief();
-check('新事发生后卡片回来，计数等于 project.brief', sameCounts(back, latest), {
-  ui: back?.cells?.map((c) => [c.cap, c.count]),
-  daemon: [...new Set(latest.items.map((i) => i.kind))].map((k) => [k, countOf(latest, k)]),
+const wantBack = await expected(latest);
+const back =
+  (await poll(async () => sameCounts(await card(), wantBack) && card())) || (await card());
+check('新事发生后卡片回来，每道点数等于 project.brief', sameCounts(back, wantBack), {
+  ui: pointCounts(back),
+  daemon: wantBack,
 });
-check('回来的卡片没有已读前的合并', !back?.cells?.some((c) => c.cap === '已合并'), back);
+check(
+  '对照组：同一读法把计划道的期望点数加一判 false',
+  !sameCounts(back, { ...wantBack, planned: wantBack.planned + 1 }),
+);
+check(
+  '回来的卡片没有已读前的合并',
+  back && !back.lanes.delivered?.points.some((l) => l?.includes(`verify-brief-merge-${stamp}`)),
+  back?.lanes.delivered,
+);
 
 result.errors = await errors();
 console.log(JSON.stringify(result, null, 2));

@@ -1,7 +1,5 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
-import { useNow } from '../../data/needs-you';
-import { Clip } from '../../components/Clip';
 import { Tip } from '../../components/Tip';
 import { t } from '../../i18n';
 import {
@@ -15,14 +13,12 @@ import {
   useSize,
   ViewToggle,
 } from './Charts';
-import { durationText } from './panels-model';
 import {
   bannerSegments,
   burnupPoints,
   cycleHistogram,
   dayTick,
   markerPlacement,
-  stallRows,
   type BurnupPoints,
 } from './progress-model';
 import './progress.css';
@@ -405,78 +401,6 @@ export function CyclePanel({ model }: { model: BoardModel }) {
         </div>
       ) : (
         <Histogram cycle={cycle} />
-      )}
-    </Panel>
-  );
-}
-
-/* Blocked and stalled tasks */
-
-// Getters, so each label is read in the language loaded by then.
-const KIND_LABEL = {
-  get blocked() {
-    return t({ id: 'board.stalls.blocked', defaultMessage: 'Blocked' });
-  },
-  get stalled() {
-    return t({ id: 'board.stalls.stalled', defaultMessage: 'Stalled' });
-  },
-};
-
-export function StallPanel({
-  model,
-  onOpenTask,
-}: {
-  model: BoardModel;
-  onOpenTask: (taskId: string) => void;
-}) {
-  // Stalls grow with time alone, while the model is read again only on events.
-  const now = useNow(60_000);
-  const rows = stallRows({ tasks: model.tasks, now: Math.max(model.now, now) });
-  return (
-    <Panel title={t({ id: 'board.stalls.title', defaultMessage: 'Blocked and stalled' })}>
-      {rows.length === 0 ? (
-        <Empty
-          text={t({ id: 'board.stalls.empty', defaultMessage: 'No blocked or stalled tasks' })}
-        />
-      ) : (
-        <>
-          <div className="bp-lgd">
-            {(['blocked', 'stalled'] as const).map((kind) => (
-              <span key={kind}>
-                <i className={`bpc-sw bpc-st-${kind}`} />
-                {KIND_LABEL[kind]}
-              </span>
-            ))}
-          </div>
-          <div className="bpc-stl">
-            {rows.map((r) => {
-              const text = `${KIND_LABEL[r.kind]} ${durationText(r.ms)}`;
-              return (
-                <div className="bpc-str" key={r.task.id}>
-                  <button type="button" className="bpc-stn" onClick={() => onOpenTask(r.task.id)}>
-                    <Clip text={r.task.title} />
-                  </button>
-                  <span
-                    className="bpc-stt"
-                    role="img"
-                    aria-label={t(
-                      { id: 'board.stalls.rowLabel', defaultMessage: '{task}, {state}' },
-                      { task: r.task.title, state: text },
-                    )}
-                  >
-                    <Tip content={text}>
-                      <i
-                        className={`bpc-stb bpc-st-${r.kind}`}
-                        style={{ width: `${r.share * 100}%` }}
-                      />
-                    </Tip>
-                  </span>
-                  <span className="bpc-std">{durationText(r.ms)}</span>
-                </div>
-              );
-            })}
-          </div>
-        </>
       )}
     </Panel>
   );

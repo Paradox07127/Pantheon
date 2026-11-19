@@ -97,9 +97,11 @@ const composerValue = `${byLabel('textarea', '新会话的第一条消息')}?.va
 // The trigger's name is "模型：" and its choices; its text starts with the runtime's display name.
 // Scoped to the new-session composer: the closed settings dialog keeps a model menu in the document.
 const modelText = `(document.querySelector('section[aria-label="新会话"] button[aria-label^="模型"]')?.textContent ?? '').trim().toLowerCase()`;
-const TABLE = { role: 'table', name: '进度表', exact: true };
-/** The progress table's task rows as [title, state], from their names "title，state". */
-const tableRows = `[...document.querySelectorAll('[role="table"][aria-label="进度表"] [role="row"][aria-label]')].map((row) => row.getAttribute('aria-label').split('，'))`;
+const TABLE = { role: 'table', name: '任务列表', exact: true };
+/** The task list's rows as [title, state], from their names "title，state". */
+const tableRows = `[...document.querySelectorAll('[role="table"][aria-label="任务列表"] [role="row"][aria-label]')].map((row) => row.getAttribute('aria-label').split('，'))`;
+/** Unfolds the task list's merged group, which starts folded. */
+const unfoldMerged = `document.querySelector('[role="table"][aria-label="任务列表"] button[aria-label="展开已合并"]')?.click()`;
 const nextFrames =
   'new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))';
 
@@ -274,14 +276,14 @@ export async function run({ workspace, evidenceDir }) {
     }
   };
 
-  /** Board › 画布 › 近 7 天, where the progress table lists the tasks. */
+  /** Board › 任务 › 列表 › 全部, where the task list lists the tasks. */
   const openTable = async () => {
     await click(button('项目看板', { within: NAV }));
-    const canvas = { role: 'radio', name: '画布', exact: true };
-    await appear(canvas);
-    await click(canvas);
-    // The board opens on the unfinished tasks; the table here also holds the finished ones.
-    await click({ role: 'radio', name: '近 7 天', exact: true });
+    const tasks = { role: 'radio', name: '任务', exact: true };
+    await appear(tasks);
+    await click(tasks);
+    await click({ role: 'radio', name: '列表', exact: true });
+    await click({ role: 'radio', name: '全部', exact: true });
     await appear(TABLE);
   };
 
@@ -447,7 +449,6 @@ export async function run({ workspace, evidenceDir }) {
     for (const task of plan.tasks) {
       await step(`task-${task.id}`, async () => {
         await openTable();
-        // The task groups beside show the same task as another row.
         await click({ role: 'row', name: `${task.title}，`, within: TABLE });
         await click(button(`开会话做它 ${task.title}`));
         await appear(COMPOSER);
@@ -565,13 +566,13 @@ export async function run({ workspace, evidenceDir }) {
 
       await openTable();
       const titles = await waitUi(
-        `(() => { const t = ${tableRows}.filter(([, state]) => state === '已合并' || state === '已完成').map(([title]) => title); return ${JSON.stringify(plan.tasks.map((task) => task.title))}.every((title) => t.includes(title)) ? t : false; })()`,
-        'the progress table to show both tasks done',
+        `(() => { ${unfoldMerged}; const t = ${tableRows}.filter(([, state]) => state === '已合并' || state === '已完成').map(([title]) => title); return ${JSON.stringify(plan.tasks.map((task) => task.title))}.every((title) => t.includes(title)) ? t : false; })()`,
+        'the task list to show both tasks done',
       );
       observations.board = { done_cards: sorted(titles) };
       await read(
-        `(() => { document.querySelector('[role="table"][aria-label="进度表"]').scrollIntoView({ block: 'center' }); return ${nextFrames}; })()`,
-        'scroll the progress table into view',
+        `(() => { document.querySelector('[role="table"][aria-label="任务列表"]').scrollIntoView({ block: 'center' }); return ${nextFrames}; })()`,
+        'scroll the task list into view',
       );
       await shot('done-cards');
 
@@ -586,7 +587,11 @@ export async function run({ workspace, evidenceDir }) {
 
     await step('accept', async () => {
       await click(button('项目看板', { within: NAV }));
-      // The milestone's row holds this button.
+      // The board keeps the tasks page the earlier steps left it on.
+      const overview = { role: 'radio', name: '总览', exact: true };
+      await appear(overview);
+      await click(overview);
+      // The milestone's item in the needs-you list holds this button.
       const accept = button(`验收 ${MILESTONE_TITLE}`);
       await appear(accept);
       await click(accept);
@@ -607,8 +612,8 @@ export async function run({ workspace, evidenceDir }) {
         await click({ role: 'checkbox', name: criterion, exact: true, within: dialog });
       await click(button('确定', { within: dialog }));
       await waitUi(
-        `![...document.querySelectorAll('[role="dialog"]')].some((d) => d.getClientRects().length > 0) && [...document.querySelectorAll('.bp-msr')].some((row) => row.querySelector('.nm')?.textContent.trim() === ${JSON.stringify(MILESTONE_TITLE)} && row.textContent.includes('已验收'))`,
-        'the dialog to close and the milestone to show 已验收',
+        `(() => { const goals = [...document.querySelectorAll('section h2')].find((h) => h.textContent.trim() === '目标')?.closest('section'); return [...document.querySelectorAll('[role="dialog"]')].every((d) => d.getClientRects().length === 0) && !!goals && [...goals.querySelectorAll('button')].some((row) => row.textContent.includes(${JSON.stringify(MILESTONE_TITLE)}) && !!row.querySelector('[role="img"][aria-label="已完成"]') && !!row.querySelector('[role="img"][aria-label="证据：你已验收"]')); })()`,
+        'the dialog to close and the goals to show the milestone done and accepted by you',
       );
       observations.milestone.accepted_in_ui = true;
       const refs = sorted(plan.tasks.map((task) => `session:${sessions[task.id]}`));

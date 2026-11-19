@@ -332,10 +332,12 @@ describe('flow node size by zoom', () => {
 
 describe('flow node reason layer', () => {
   const said = (t: Task) => text(byClass(tree(t, { selected: true }), 'bd-nwhy'));
-  it('says a task awaits approval without the command, which the needs-you strip shows', () => {
+  it('says a task awaits approval in its line and puts the command in the row under the stages', () => {
     const shown = tree(approving, { line: 'Awaiting approval pnpm db:migrate --env staging' });
-    expect(text(shown)).not.toContain('pnpm');
-    expect(text(shown)).toContain(zh('board.task.phase.waitingApproval'));
+    expect(text(byClass(shown, 'bd-nw'))).not.toContain('pnpm');
+    expect(text(byClass(shown, 'bd-nw'))).toContain(zh('board.task.phase.waitingApproval'));
+    expect(text(byClass(byClass(shown, 'bd-nq'), 'bd-ncmd'))).toBe('pnpm db:migrate --env staging');
+    expect(text(shown).split('pnpm')).toHaveLength(2);
   });
 
   it('shows the question a task waits to have answered', () => {

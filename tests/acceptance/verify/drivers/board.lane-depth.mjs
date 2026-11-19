@@ -114,7 +114,9 @@ const laneOf = (v, key) => v.lanes.find((l) => l.id === `${lead?.id}:${key}`);
 const taskOf = (v, key) => v.tasks.find((t) => t.title === TASK[key]);
 
 await page.click({ role: 'button', name: '项目看板', exact: true });
-await page.click({ role: 'radio', name: '进行中', exact: true });
+await page.click({ role: 'radio', name: '任务', exact: true });
+await page.click({ role: 'radio', name: '流程图', exact: true });
+await page.click({ role: 'radio', name: '全部', exact: true });
 
 // The lane head on the canvas: its depth control, who chose it, the reason and the plan state.
 const headOf = (title) =>
@@ -223,7 +225,7 @@ const geometry = (title) =>
     return { lane: box, view, head, children, out: out.map((c) => c.cls) };
   })()`);
 
-// 1b. The quick lane is chosen by the lead, with its reason; checked once its task merged, under 近 7 天.
+// 1b. The quick lane is chosen by the lead, with its reason; checked once its task merged, in step 5.
 // 2. A real click on another segment sets the user's depth.
 const target = { role: 'radiogroup', name: `${RISKY} 的深度`, exact: true };
 result.hit_before_click = await page.evaluate(`(() => {
@@ -279,7 +281,8 @@ check(
 );
 result.shot = await page.screenshot('board-lane-depth');
 
-// 3. The estimate under the plan approval in the needs-you strip.
+// 3. The estimate under the plan approval in the needs-you strip on the overview.
+await page.click({ role: 'radio', name: '总览', exact: true });
 const estimate = () =>
   page.evaluate(`(() => {
     const s = [...document.querySelectorAll('section[aria-label="需要你"]')].find((el) => el.getClientRects().length && el.getBoundingClientRect().height > 0);
@@ -409,13 +412,14 @@ check(
 );
 const gone = await poll(async () => (await estimate()) === null, 5000);
 check('批准后估算消失', gone, await estimate());
+await page.click({ role: 'radio', name: '任务', exact: true });
 const approvedHead = await poll(async () => {
   const head = await headOf(RISKY);
   return head?.stop?.startsWith('计划已批准') && head;
 }, 5000);
 check('批准后线头显示 "计划已批准"', approvedHead, approvedHead || (await headOf(RISKY)));
 
-// 5. Evidence marks, read under 近 7 天 where merged tasks stay on the canvas.
+// 5. Evidence marks, read on the flow chart, where merged tasks stay.
 const merged = await poll(async () => {
   const v = await view();
   const t = taskOf(v, 'quick_one');
@@ -429,7 +433,6 @@ result.quick_task = quick && {
   evidence_reviewer: quick.evidence_reviewer,
 };
 check('前置：quick 线的任务已合并，有 evidence_level', merged, result.quick_task);
-await page.click({ role: 'radio', name: '近 7 天', exact: true });
 const LEVEL_LABEL = {
   report: '证据：仅有报告',
   gate: '证据：门禁通过',
@@ -622,7 +625,9 @@ const narrowLane = await poll(async () => {
 }, 30_000);
 check('前置：窄线项目的线等批准，只有一个任务', narrowLane, narrowLane);
 await page.click({ role: 'button', name: '项目看板', exact: true });
-await page.click({ role: 'radio', name: '进行中', exact: true });
+await page.click({ role: 'radio', name: '任务', exact: true });
+await page.click({ role: 'radio', name: '流程图', exact: true });
+await page.click({ role: 'radio', name: '全部', exact: true });
 const narrowHead = await poll(() => headOf(NARROW), 10_000);
 check('窄线的线头和 board.view 一致', headMatches(narrowHead, narrowLane), {
   ui: narrowHead,
