@@ -330,7 +330,6 @@
   flex-direction: column;
   gap: var(--sp-6);
   min-width: 0;
-  max-width: 1040px;
   padding: var(--sp-6);
 }
 .rh-ba {

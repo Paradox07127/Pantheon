@@ -862,7 +862,6 @@ button.trc-kpi:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
-  max-width: 920px;
 }
 .trc-day {
   display: flex;
