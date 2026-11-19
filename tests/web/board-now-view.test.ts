@@ -212,7 +212,7 @@ describe('project board views', () => {
     switcher().props.onValueChange('timeline');
     h.render();
     expect(names(h.value)).toContain('HistoryTab');
-    for (const panel of ['MainView', 'TaskList', 'TaskDrawer'])
+    for (const panel of ['MainView', 'TaskList', 'BoardDrawer'])
       expect(names(h.value)).not.toContain(panel);
   });
 
@@ -385,10 +385,10 @@ describe('project board bar', () => {
       mount(() => BoardView(viewProps({ model, page, projectId: 'project-a' }))).value;
     const tasks = view('tasks');
     expect(ids(named(tasks, 'MainView'))).toEqual(['lead-1:merged']);
-    expect(ids(named(tasks, 'TaskDrawer'))).toEqual(['lead-1:merged', 'lead-1:loose']);
+    expect(ids(named(tasks, 'BoardDrawer'))).toEqual(['lead-1:merged', 'lead-1:loose']);
     const overview = view('overview');
     expect(ids(named(overview, 'GoalsSection'))).toEqual(['lead-1:merged', 'lead-1:loose']);
-    expect(ids(named(overview, 'TaskDrawer'))).toEqual(['lead-1:merged', 'lead-1:loose']);
+    expect(ids(named(overview, 'BoardDrawer'))).toEqual(['lead-1:merged', 'lead-1:loose']);
   });
 
   it("keeps new task and the lead's sync in the bar and puts baseline and trace in the more menu", () => {
@@ -526,7 +526,7 @@ describe('project board bar', () => {
     const h = mount(() => BoardView(viewProps({ projectId: 'project-a', actions, onPage })));
     named(h.value, 'MainView').props.onAskNeed('approval-1');
     expect(onPage).toHaveBeenCalledWith('overview');
-    named(h.value, 'TaskDrawer').props.onAskNeed('approval-1');
+    named(h.value, 'BoardDrawer').props.onAskNeed('approval-1');
     expect(onPage).toHaveBeenCalledTimes(2);
   });
 

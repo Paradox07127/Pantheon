@@ -2,8 +2,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
 
-// Files that measure git against a fixed time bound: they run after the parallel pool, one at a time.
-const SERIAL = ['tests/control/repo-query-caches.test.ts'];
+// Files that measure against a fixed time bound: they run after the parallel pool, one at a time.
+const SERIAL = [
+  'tests/control/repo-query-caches.test.ts',
+  'tests/control/workbench-session-reads.test.ts',
+];
 
 const webVersion = JSON.parse(
   readFileSync(new URL('./apps/web/package.json', import.meta.url), 'utf8'),

@@ -536,6 +536,7 @@ export const appHelpGroups: AppHelpGroup[] = [
       { type: 'project.externalEvents.set', tool: 'the user does this in the app' },
       { type: 'project.facts.refresh', tool: 'the user does this in the app' },
       { type: 'project.gate.set', tool: 'the user does this in the app' },
+      { type: 'project.gateGpu.set', tool: 'the user does this in the app' },
       {
         type: 'project.intro.start',
         about: 'The user only; starts a read-only introduction session and returns { session_id }.',

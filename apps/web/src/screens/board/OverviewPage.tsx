@@ -3,8 +3,9 @@ import type { BoardModel } from '@pantheon/protocol';
 import { useProjectBrief } from '../../data/project-brief';
 import { t } from '../../i18n';
 import { reducedMotion } from '../../lib/motion';
+import { useShell } from '../../store';
 import { NeedsStrip, useNeedImprovements } from './BoardFrame';
-import { PanelBoundary, type BoardViewProps } from './BoardScreen';
+import { PanelBoundary, selectedIn, type BoardViewProps } from './BoardScreen';
 import { BoardDevices } from './BoardDevices';
 import { BriefCard } from './BriefCard';
 import { GoalsHead, GoalsSection } from './GoalsSection';
@@ -15,13 +16,12 @@ import { TaskProgressStrip } from './ProgressCharts';
 /** The needs-you list with the proposals its items point at; the hooks sit here, as the page holds none. */
 export function ProjectNeeds({
   projectId,
-  drawer,
   ...props
 }: Omit<ComponentProps<typeof NeedsStrip>, 'improvements'> & {
   projectId: string;
-  /** The task drawer is open beside the list. */
-  drawer?: boolean;
 }) {
+  // The task drawer is open beside the list.
+  const drawer = useShell((s) => selectedIn(s, projectId, 'flow') !== null);
   const improvements = useNeedImprovements(props.model);
   const brief = useProjectBrief(projectId);
   // The since-you-left card above lands with its own read; shown before it, the list would move down.
@@ -77,7 +77,6 @@ export function OverviewPage({
   onRetry,
   onOpenSession,
   selectFlow,
-  drawerOpen,
   setupPanel,
   loadingPanel,
   goalsBar,
@@ -96,8 +95,6 @@ export function OverviewPage({
   onRetry: () => void;
   onOpenSession: (sessionId: string) => void;
   selectFlow: (taskId: string | null) => void;
-  /** The task drawer is open beside the page. */
-  drawerOpen: boolean;
   setupPanel: ReactNode;
   loadingPanel: ReactNode;
   /** The goals heading's element the goals put their Add goal button in; `onGoalsBar` takes it. */
@@ -134,7 +131,6 @@ export function OverviewPage({
               run={actions.run}
               onOpenSession={onOpenSession}
               stale={stale}
-              drawer={drawerOpen}
               asked={needsAsked}
               onAsked={onNeedsAsked}
             />

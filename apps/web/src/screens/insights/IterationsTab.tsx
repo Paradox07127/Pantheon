@@ -39,6 +39,7 @@ import { Empty } from '../board/Charts';
 import { setBoardEditing } from '../board/EditMode';
 import { NewTask } from '../board/NewTask';
 import { dayText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { durationText, type RunBoardCommand } from '../board/panels-model';
 import { TaskStateIcon } from '../board/status';
 import { TellLead, useDialogContent } from '../board/TellLead';
@@ -729,7 +730,7 @@ function IterationDialog({
   const endText = t({ id: 'insights.iterations.end', defaultMessage: 'End date' });
   return (
     <Dialog.Portal>
-      <Dialog.Backdrop className="pj-scrim" />
+      <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
       <Dialog.Popup className="pj-dlg pj-rm pop">
         <div className="pj-dh">
           <Dialog.Title className="pj-dt">{heading}</Dialog.Title>

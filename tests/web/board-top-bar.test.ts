@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import type { ReactElement, ReactNode } from 'react';
 import type { BoardModel, DeviceListItem } from '@pantheon/protocol';
 import { find, named, nodes, text, mount, unmountAll } from './web-hook-host.js';
-const mock = vi.hoisted(() => ({ board: {} as any }));
+const mock = vi.hoisted(() => ({
+  board: {} as any,
+  shell: { openSession() {}, openSessionGroup() {}, openTaskSession() {} } as any,
+}));
 vi.mock('@/data/project-defaults', async (actual) => ({
   ...(await actual<object>()),
   useProjectDefaults: () => ({ data: null, loading: false, error: null, reload() {} }),
@@ -18,10 +21,10 @@ vi.mock('@/data/board', () => ({
   }),
 }));
 vi.mock('@/store', () => ({
-  useShell: Object.assign(
-    (selector: any) => selector({ openSession() {}, openSessionGroup() {}, openTaskSession() {} }),
-    { setState() {}, getState: () => ({}) },
-  ),
+  useShell: Object.assign((selector: any) => selector(mock.shell), {
+    setState: (patch: object) => Object.assign(mock.shell, patch),
+    getState: () => ({}),
+  }),
 }));
 vi.mock('@/data/runtime-models', () => ({
   useRuntimeModels: (_project: string, runtimes: string[]) =>
@@ -226,7 +229,6 @@ describe('the board top bar', () => {
       MainView({
         model: board(),
         projectId: 'project-a',
-        selected: null,
         onSelect: noop,
         onOpenSession: noop,
       }),
@@ -266,12 +268,13 @@ describe('the board top bar', () => {
     const [body, drawer] = columns();
     expect(body!.props.className).toBe(before.props.className);
     expect(body!.key).toBe(before.key);
-    expect(drawer!.type).toBe(TaskDrawer);
-    expect(drawer!.props.taskId).toBe('lead-1:a');
-    expect(has(named(h.value, 'MainView'), 'TaskDrawer')).toBe(false);
+    const shown = (drawer!.type as (p: unknown) => ReactElement<any>)(drawer!.props);
+    expect(shown.type).toBe(TaskDrawer);
+    expect(shown.props.taskId).toBe('lead-1:a');
+    expect(has(named(h.value, 'MainView'), 'BoardDrawer')).toBe(false);
 
     expect(css('board.css')).toMatch(
-      /\.bd-split:has\(> \.bd-drw\) \{[^}]*grid-template-columns: minmax\(0, 1fr\) 400px;/,
+      /\.bd-split\[data-drawer\] \{[^}]*grid-template-columns: minmax\(0, 1fr\) 400px;/,
     );
     const drawerRule = /\n\.bd-drw \{([^}]*)\}/.exec(css('flow.css'))![1]!;
     expect(drawerRule).not.toContain('position: fixed');

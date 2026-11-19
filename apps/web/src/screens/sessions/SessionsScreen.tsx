@@ -26,6 +26,7 @@ import { useUnread } from '../../data/unread';
 import type { useSessionList } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { useShortcut } from '../../lib/shortcuts';
+import { scrimFlag } from '../../lib/root-flag';
 import { useShell, type SplitPane } from '../../store';
 import {
   groupWorkbenchSessions,
@@ -660,7 +661,7 @@ export function SessionsScreen({ projectId, needs, list }: SessionsScreenProps) 
         >
           <Dialog.Portal>
             {/* Under the sheet; dialogs opened from the sheet put their scrim over it. */}
-            <Dialog.Backdrop className="pj-scrim" style={{ zIndex: 35 }} />
+            <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} style={{ zIndex: 35 }} />
             {/* Focusing the close button would ring it even when a pointer opened the sheet. */}
             <Dialog.Popup
               ref={sheet}

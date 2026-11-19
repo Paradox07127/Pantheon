@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -27,6 +28,7 @@ import {
   type DebugPick,
 } from '../data/debug-view';
 import { t } from '../i18n';
+import { holdRootFlag } from '../lib/root-flag';
 import { keyText } from '../lib/shortcuts';
 import './debug-view.css';
 
@@ -187,6 +189,9 @@ function DebugLayer() {
   const [describing, setDescribing] = useState(false);
   const shown = items.find((item) => item.pick === chosen) ?? items.at(-1);
   const inspected = inspecting ? shown : undefined;
+
+  // While the view is open the page under it stays hit-testable and still (debug-view.css).
+  useLayoutEffect(() => holdRootFlag('debug-view'), []);
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;

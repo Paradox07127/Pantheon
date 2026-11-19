@@ -20,12 +20,12 @@
   height: var(--h-ctl);
 }
 /* The page bars in the title bar end where these controls begin (--end-w on .app in index.css). */
-.app:has(.tbe-wait) {
+:root[data-title-needs] .app {
   --end-w: var(--tbe-wait);
 }
-.app:has(.tbe-dbg) {
+:root[data-title-debug] .app {
   --end-w: var(--h-ctl);
 }
-.app:has(.tbe-wait):has(.tbe-dbg) {
+:root[data-title-needs][data-title-debug] .app {
   --end-w: calc(var(--tbe-wait) + var(--sp-2) + var(--h-ctl));
 }

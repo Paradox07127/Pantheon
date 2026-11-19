@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement, ReactNode } from 'react';
 import type { BoardModel } from '@pantheon/protocol';
 import { deferred, find, named, nodes, mount, unmountAll } from './web-hook-host.js';
-const mock = vi.hoisted(() => ({ board: {} as any, contexts: new Map<unknown, unknown>() }));
+const mock = vi.hoisted(() => ({
+  board: {} as any,
+  contexts: new Map<unknown, unknown>(),
+  shell: {} as any,
+}));
 vi.mock('@/data/project-defaults', async (actual) => ({
   ...(await actual<object>()),
   useProjectDefaults: () => ({ data: null, loading: false, error: null, reload() {} }),
@@ -22,10 +27,9 @@ vi.mock('@/data/board', () => ({
   }),
 }));
 vi.mock('@/store', () => ({
-  useShell: Object.assign(
-    (selector: any) => selector({ openSession() {}, openSessionGroup() {}, openTaskSession() {} }),
-    { setState() {} },
-  ),
+  useShell: Object.assign((selector: any) => selector(mock.shell), {
+    setState: (patch: object) => Object.assign(mock.shell, patch),
+  }),
 }));
 import { BoardScreen, BoardView, PanelBoundary } from '@/screens/board/BoardScreen';
 import { FindingRow } from '@/screens/board/Lists';
@@ -119,6 +123,7 @@ const viewProps = (over: Partial<Parameters<typeof BoardView>[0]>) => ({
 let baselineReply: ReturnType<typeof deferred<unknown>>;
 beforeEach(() => {
   baselineReply = deferred();
+  mock.shell = { openSession() {}, openSessionGroup() {}, openTaskSession() {}, boardTask: null };
   mock.board = {
     board: { cursor: 1, projects: [], sessions: [], session_turns: [], workspaces: [] },
     events: [],
@@ -187,25 +192,32 @@ describe('board actions wait for the reads they depend on', () => {
   });
 });
 
+// The board's drawer and its main view, drawn with the pick the store holds.
+const render = (el: ReactElement<any>) => (el.type as (p: unknown) => ReactElement<any>)(el.props);
+const drawer = (tree: ReactNode) =>
+  find(render(named(tree, 'BoardDrawer')), (n) => n.type === TaskDrawer);
+const chartPick = (tree: ReactNode) =>
+  named(mount(() => render(named(tree, 'MainView'))).value, 'FlowChart').props.selected;
+
 describe('board task drawer', () => {
   it('opens the task a row of the list view picks', () => {
     pickTaskView('drawer-list', 'list');
     const h = mount(() => BoardView(viewProps({ projectId: 'drawer-list' })));
     named(h.value, 'TaskList').props.onOpenTask('lead-1:t1');
     h.render();
-    expect(find(h.value, (n) => n.type === TaskDrawer).props.taskId).toBe('lead-1:t1');
+    expect(drawer(h.value).props.taskId).toBe('lead-1:t1');
 
     named(h.value, 'TaskList').props.onOpenTask(null);
     h.render();
-    expect(find(h.value, (n) => n.type === TaskDrawer).props.taskId).toBeNull();
+    expect(drawer(h.value).props.taskId).toBeNull();
   });
 
   it('opens the task the main view picks in the drawer beside the flow chart', () => {
     const h = mount(() => BoardView(viewProps({ projectId: 'drawer-main-shown' })));
     named(h.value, 'MainView').props.onSelect('lead-1:t1');
     h.render();
-    expect(find(h.value, (n) => n.type === TaskDrawer).props.taskId).toBe('lead-1:t1');
-    expect(named(h.value, 'MainView').props.selected).toBe('lead-1:t1');
+    expect(drawer(h.value).props.taskId).toBe('lead-1:t1');
+    expect(chartPick(h.value)).toBe('lead-1:t1');
   });
 
   it('keeps the picked task in its drawer when the main view fails to render', () => {
@@ -216,9 +228,11 @@ describe('board task drawer', () => {
       h.value,
       (n) => n.type === PanelBoundary && n.props.title === zh('board.panels.main'),
     );
-    expect(nodes(main).some((n) => n.type === TaskDrawer)).toBe(false);
+    expect(nodes(main).some((n) => (n.type as { name?: string }).name === 'BoardDrawer')).toBe(
+      false,
+    );
     expect(main.props.withFailure).toBeUndefined();
-    expect(find(h.value, (n) => n.type === TaskDrawer).props.taskId).toBe('lead-1:t1');
+    expect(drawer(h.value).props.taskId).toBe('lead-1:t1');
   });
 
   it('does not reopen the task of a project the user left and came back to', () => {
@@ -226,12 +240,12 @@ describe('board task drawer', () => {
     const h = mount(() => BoardView(viewProps({ projectId })));
     named(h.value, 'MainView').props.onSelect('lead-1:t1');
     h.render();
-    expect(named(h.value, 'MainView').props.selected).toBe('lead-1:t1');
+    expect(chartPick(h.value)).toBe('lead-1:t1');
     projectId = 'drawer-project-b';
     h.render();
     projectId = 'drawer-project-a';
     h.render();
-    expect(named(h.value, 'MainView').props.selected).toBeNull();
+    expect(chartPick(h.value)).toBeNull();
   });
 });
 
@@ -242,7 +256,7 @@ describe('main view drawer', () => {
     const h = mount(() => BoardView(viewProps({ projectId: 'main-with-session-task', model })));
     named(h.value, 'MainView').props.onSelect('session-task');
     h.render();
-    expect(find(h.value, (n) => n.type === TaskDrawer).props.taskId).toBe('session-task');
+    expect(drawer(h.value).props.taskId).toBe('session-task');
   });
 });
 

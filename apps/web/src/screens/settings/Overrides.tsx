@@ -14,6 +14,7 @@ import {
 import { visibleProjects } from '../../data/projects';
 import { t } from '../../i18n';
 import { failureText, type Failure } from './ProjectSettingsScreen';
+import { scrimFlag } from '../../lib/root-flag';
 import './overrides.css';
 
 type Project = BoardSnapshot['projects'][number];
@@ -87,7 +88,7 @@ export function Overrides<K extends ProjectSettingKey>(props: {
         }}
       >
         <Dialog.Portal>
-          <Dialog.Backdrop className="pj-scrim" />
+          <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
           <Dialog.Popup className="pj-dlg pop po-dlg">
             <div className="pj-dh">
               <Dialog.Title className="pj-dt">{props.name}</Dialog.Title>

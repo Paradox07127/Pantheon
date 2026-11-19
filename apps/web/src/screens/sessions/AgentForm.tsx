@@ -24,6 +24,7 @@ import { useRuntimeModels } from '../../data/runtime-models';
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import { t } from '../../i18n';
 import { ModelMenu, type ModelChoice } from './ModelMenu';
+import { scrimFlag } from '../../lib/root-flag';
 import './agents.css';
 
 type Unit = 'minutes' | 'hours' | 'days';
@@ -734,7 +735,7 @@ export function NewAgentDialog({
   return (
     <Dialog.Root open={open} onOpenChange={(next) => next || close()}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="pj-dlg ag-dlg" aria-label={title}>
           <form
             className="ag-dform"

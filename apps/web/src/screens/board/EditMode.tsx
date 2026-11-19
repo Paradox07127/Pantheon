@@ -19,6 +19,7 @@ import { planTaskIds } from '../../data/task-trace';
 import { t } from '../../i18n';
 import { NewTaskForm, newTaskId, planLead } from './NewTask';
 import { OrderLockedMark } from './status';
+import { scrimFlag } from '../../lib/root-flag';
 import './edit-mode.css';
 
 // The projects whose board is in edit mode, kept for this window only.
@@ -96,7 +97,7 @@ function DiscardDrafts({ count, open, onOpenChange, onDiscard }: DiscardDraftsPr
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="pj-scrim" />
+        <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <AlertDialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <AlertDialog.Title className="pj-dt">

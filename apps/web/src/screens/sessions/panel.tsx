@@ -28,6 +28,7 @@ import { ageText, failureText, reasonText } from '../../data/needs-you';
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import { listText } from '../../lib/list-text';
 import { ageParts } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { useShell } from '../../store';
 import { GateTracker } from '../board/QualityCharts';
 import { GATE_STATES, gateState } from '../board/quality-model';
@@ -1538,7 +1539,7 @@ export function MergeDialog(props: {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <Dialog.Title className="pj-dt">

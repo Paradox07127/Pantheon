@@ -19,6 +19,7 @@ import {
 import { offeredRuntimes, useRuntimeStatus } from '../../data/runtime-status';
 import { t } from '../../i18n';
 import { Section } from './ProjectSettingsScreen';
+import { scrimFlag } from '../../lib/root-flag';
 import './playbook-editor.css';
 
 type Project = BoardSnapshot['projects'][number];
@@ -457,7 +458,7 @@ export function PlaybookEditor({ project }: { project: Project }) {
                   }}
                 >
                   <AlertDialog.Portal>
-                    <AlertDialog.Backdrop className="pj-scrim" />
+                    <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
                     <AlertDialog.Popup className="pj-dlg pj-rm pop">
                       <div className="pj-dh">
                         <AlertDialog.Title className="pj-dt">

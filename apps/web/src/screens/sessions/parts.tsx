@@ -7,6 +7,7 @@ import { Tip } from '../../components/Tip';
 import { runCommand } from '../../data/commands';
 import { failureText, reasonText, type NeedsYouItem } from '../../data/needs-you';
 import { t } from '../../i18n';
+import { scrimFlag } from '../../lib/root-flag';
 export {
   AnsweredRequest,
   CALL_STATE,
@@ -165,7 +166,7 @@ export function DiscardDialog(props: {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <Dialog.Title className="pj-dt">

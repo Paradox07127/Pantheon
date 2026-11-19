@@ -89,6 +89,7 @@ import { hasBrowser } from './inspector-model';
 import { itemId } from './model';
 import { openMemory } from './MemoryUsed';
 import { clockText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { OrchestrationRow } from './orchestration';
 import { SubagentFan } from './SubagentFan';
 import { ForkDialog, forkStepLabel } from './TurnMenu';
@@ -827,7 +828,7 @@ export function ToolImages(props: { images: ToolImage[]; files: string[]; sessio
       {large !== null && (
         <Dialog.Root open onOpenChange={(open) => !open && setLarge(null)}>
           <Dialog.Portal>
-            <Dialog.Backdrop className="pj-scrim" />
+            <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
             <Dialog.Popup className="pj-dlg ss-timgdlg" aria-label={name}>
               <img src={large} alt={name} draggable={false} />
             </Dialog.Popup>

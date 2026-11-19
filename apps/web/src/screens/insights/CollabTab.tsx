@@ -25,6 +25,7 @@ import { runBoardCommand } from '../board/BoardScreen';
 import { Empty } from '../board/Charts';
 import { leadState } from '../board/frame-model';
 import { dayText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { durationText, tellLead } from '../board/panels-model';
 import { runtimeName, StateIcon, StatusIcon, taskStateLabel, TaskStateIcon } from '../board/status';
 import { hasOpenSession } from '../board/TaskDrawer';
@@ -1208,7 +1209,7 @@ export function CollabTab({
       <Dialog.Root {...dialog.root}>
         {dialog.content && target && (
           <Dialog.Portal>
-            <Dialog.Backdrop className="pj-scrim" />
+            <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
             <Dialog.Popup className="pj-dlg pj-rm pop">
               <div className="pj-dh">
                 <Dialog.Title className="pj-dt">

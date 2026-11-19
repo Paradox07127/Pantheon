@@ -47,6 +47,7 @@ import {
 } from '../../data/session-panel';
 import { useSessionDiff, useTurnDiff } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
+import { holdRootFlag } from '../../lib/root-flag';
 import { useShell } from '../../store';
 import {
   anchorFinding,
@@ -229,6 +230,8 @@ const usageCount = (usage: unknown, key: string): number | null => {
 };
 
 const NO_PROJECTS: BoardSnapshot['projects'] = [];
+// The toast stack keeps within the overview column while one is in the page (toast.css).
+const overviewFlag = () => holdRootFlag('session-overview');
 
 /** The session's overview, a panel at the thread's right, over its merge bar. */
 export function SessionCard(props: {
@@ -346,7 +349,7 @@ export function SessionCard(props: {
   const connectorsTitle = t({ id: 'sessions.overview.connectors', defaultMessage: 'Connectors' });
   const outputsTitle = t({ id: 'sessions.overview.outputs', defaultMessage: 'Outputs' });
   return (
-    <aside className="ov-card" aria-label={overview}>
+    <aside className="ov-card" aria-label={overview} ref={overviewFlag}>
       <div className="ov-hd">
         <span className="ov-t">{overview}</span>
         <button

@@ -68,6 +68,7 @@ import { EvidenceMark } from './EvidenceMark';
 import { PlanEdit } from './PlanEdit';
 import { PlanList } from './PlanList';
 import { dayText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import {
   durationText,
   milestoneCounts,
@@ -171,7 +172,7 @@ function HandBackDialog({
   };
   return (
     <Dialog.Portal>
-      <Dialog.Backdrop className="pj-scrim" />
+      <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
       <Dialog.Popup className="pj-dlg pj-rm pop">
         <div className="pj-dh">
           <Dialog.Title className="pj-dt">{handBackText()}</Dialog.Title>
@@ -267,7 +268,7 @@ function CancelDialog({
   };
   return (
     <AlertDialog.Portal>
-      <AlertDialog.Backdrop className="pj-scrim" />
+      <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
       <AlertDialog.Popup className="pj-dlg pj-rm pop">
         <div className="pj-dh">
           <AlertDialog.Title className="pj-dt">{cancelText()}</AlertDialog.Title>
@@ -802,11 +803,21 @@ export function TaskDrawer({
     }
   }, [taskId]);
 
+  const giveFocusBack = () => {
+    if (ref.current?.contains(document.activeElement) && opener.current?.isConnected)
+      opener.current.focus({ preventScroll: true });
+  };
+  // Focus goes back before the drawer is marked leaving, while the page's layout is still clean.
+  const dismiss = () => {
+    giveFocusBack();
+    onSelect(null);
+  };
+
   useEffect(() => {
     if (!leaving) return;
     const el = ref.current;
-    if (el?.contains(document.activeElement) && opener.current?.isConnected)
-      opener.current.focus({ preventScroll: true });
+    // A close from outside the drawer, such as another project, still has focus inside it.
+    giveFocusBack();
     // Inert only after focus has left, so the drawer's controls drop out of the tab order.
     if (el) el.inert = true;
     let done = false;
@@ -819,13 +830,17 @@ export function TaskDrawer({
       return;
     }
     const timer = setTimeout(finish, EXIT_MS);
+    // In the next frame the style pass this read needs is the frame's own, not an extra forced one.
     // Before the exit transition starts there is nothing to wait on; the timer ends it then.
-    const animations = el.getAnimations();
-    if (animations.length > 0)
-      void Promise.allSettled(animations.map((a) => a.finished)).then(finish);
+    const frame = requestAnimationFrame(() => {
+      const animations = el.getAnimations();
+      if (animations.length > 0)
+        void Promise.allSettled(animations.map((a) => a.finished)).then(finish);
+    });
     return () => {
       done = true;
       clearTimeout(timer);
+      cancelAnimationFrame(frame);
       el.inert = false;
     };
   }, [leaving]);
@@ -834,7 +849,7 @@ export function TaskDrawer({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       // Esc inside a dialog, menu or select list the drawer opened closes only that one.
-      if (e.key === 'Escape' && !(e.target as Element).closest?.('.pj-dlg, .mn')) onSelect(null);
+      if (e.key === 'Escape' && !(e.target as Element).closest?.('.pj-dlg, .mn')) dismiss();
     };
     // A click on another flow node or task card switches the drawer instead of closing it;
     // the needs-you list beside it settles what the drawer shows.
@@ -844,7 +859,7 @@ export function TaskDrawer({
         !ref.current?.contains(target) &&
         !target.closest?.('.react-flow__node, [data-task-card], .pj-dlg, .pj-scrim, .mn, .bf-needs')
       )
-        onSelect(null);
+        dismiss();
     };
     window.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onDown);
@@ -859,6 +874,15 @@ export function TaskDrawer({
     seenFolds.current = folds;
     if (open) onSelect(null);
   }, [folds]);
+
+  // The board split gives the drawer its column for as long as it is in the DOM, its exit included.
+  const drawn = task !== undefined;
+  useLayoutEffect(() => {
+    const box = ref.current?.parentElement;
+    if (!drawn || !box) return;
+    box.setAttribute('data-drawer', '');
+    return () => box.removeAttribute('data-drawer');
+  }, [drawn]);
 
   if (!task) return null;
   const lane = model.lanes.find((l) => l.id === task.lane_id);
@@ -1022,7 +1046,7 @@ export function TaskDrawer({
           type="button"
           className="ib"
           aria-label={t({ id: 'board.task.drawer.close', defaultMessage: 'Close details' })}
-          onClick={() => onSelect(null)}
+          onClick={dismiss}
         >
           <X aria-hidden="true" />
         </button>
@@ -1382,7 +1406,7 @@ export function TaskDrawer({
               target={target}
               lead={tell.sessions.find((s) => s.id === target.leadId)}
               run={tell.run}
-              onClose={() => onSelect(null)}
+              onClose={dismiss}
             />
           )}
           {plan && (

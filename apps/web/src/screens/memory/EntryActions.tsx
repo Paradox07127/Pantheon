@@ -4,6 +4,7 @@ import type { MemoryRecord } from '@pantheon/domain';
 import { toast } from '../../components/Toast';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import './entry-actions.css';
 
 export interface EntryActionsProps {
@@ -77,7 +78,7 @@ export function EntryActions({
               {t({ id: 'memory.actions.discard', defaultMessage: 'Discard' })}
             </AlertDialog.Trigger>
             <AlertDialog.Portal>
-              <AlertDialog.Backdrop className="pj-scrim" />
+              <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
               <AlertDialog.Popup className="pj-dlg pj-rm pop">
                 <div className="pj-dh">
                   <AlertDialog.Title className="pj-dt">

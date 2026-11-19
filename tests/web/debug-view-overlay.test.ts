@@ -85,6 +85,7 @@ vi.mock('@/components/NoticeFeed', () => ({ NoticeFeed: () => null }));
 
 import { act, createElement } from 'react';
 import { App } from '@/App';
+import { DebugView } from '@/components/DebugView';
 import { useBoard } from '@/data/board';
 import { useCurrentProject } from '@/data/current-project';
 import { sendDebugItems } from '@/data/debug-view';
@@ -404,4 +405,19 @@ it('keeps clicks and keys from the app while open and gives them back after', as
   await click(merge);
   await press('j', doc.body);
   expect([seen.appClicks, keys]).toEqual([2, ['j', 'a', 'j']]);
+});
+
+it('marks the root while a debug view is open, until the last one closes', async () => {
+  const marked = () => doc.documentElement.hasAttribute('data-debug-view');
+  expect(marked()).toBe(false);
+  await openFromPalette();
+  expect(marked()).toBe(true);
+  const { createRoot } = await import('react-dom/client');
+  const other = createRoot(doc.createElement('div') as never);
+  await act(() => other.render(createElement(DebugView)));
+  act(() => other.unmount());
+  expect(marked()).toBe(true);
+  await press('Escape');
+  expect(toolbar()).toBeUndefined();
+  expect(marked()).toBe(false);
 });

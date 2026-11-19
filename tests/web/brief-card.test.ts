@@ -6,6 +6,7 @@ const mock = vi.hoisted(() => ({
   board: {} as any,
   openSession: vi.fn(),
   openProjectApproved: vi.fn(),
+  boardTask: null as unknown,
 }));
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { useId: 'brief-id' }),
@@ -18,7 +19,11 @@ vi.mock('@/data/board', () => ({
 vi.mock('@/store', () => ({
   useShell: Object.assign(
     (selector: any) =>
-      selector({ openSession: mock.openSession, openProjectApproved: mock.openProjectApproved }),
+      selector({
+        openSession: mock.openSession,
+        openProjectApproved: mock.openProjectApproved,
+        boardTask: mock.boardTask,
+      }),
     { setState() {} },
   ),
 }));
@@ -259,17 +264,20 @@ describe('needs-you list under the card', () => {
 
   it('marks its list while the task drawer is open, so the rows take the narrow columns', async () => {
     serve(served);
-    const list = (drawer: boolean) =>
-      mount(() =>
+    const list = (drawer: boolean) => {
+      mock.boardTask = drawer
+        ? { projectId: 'project-brief-i', taskId: 'task-1', panel: 'flow' }
+        : null;
+      return mount(() =>
         ProjectNeeds({
           projectId: 'project-brief-i',
           model,
           sessions,
           run: async () => null,
           onOpenSession() {},
-          drawer,
         }),
       );
+    };
     const open = list(true);
     await open.flush();
     expect((open.value as ReactElement<Record<string, unknown>>).props['data-drawer']).toBe('');

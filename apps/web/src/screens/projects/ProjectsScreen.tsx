@@ -60,6 +60,7 @@ import { readQuery } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { keyText, shortcutKeys } from '../../lib/shortcuts';
+import { scrimFlag } from '../../lib/root-flag';
 import { SCREEN_NAMES } from '../../screens';
 import { useShell } from '../../store';
 import { durationText } from '../board/panels-model';
@@ -811,7 +812,7 @@ function RemoveProjectDialog({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="pj-scrim" />
+        <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <AlertDialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <AlertDialog.Title className="pj-dt">

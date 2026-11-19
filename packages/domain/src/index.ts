@@ -325,6 +325,8 @@ export interface Project extends Entity {
     string,
     { name: string; argv: string[]; timeout_ms?: number; enabled?: boolean; skippable?: boolean }[]
   >;
+  /** Gate commands on macOS may open the GPU driver and the Metal and video decode services; absent is off. */
+  gate_gpu?: boolean;
   /** Set on every native session process and gate command; Pantheon's own variables win. */
   env?: Record<string, string>;
   /** What a new session starts on; absent follows the global value, else the composer's own default. */

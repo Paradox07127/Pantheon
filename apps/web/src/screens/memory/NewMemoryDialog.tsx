@@ -30,6 +30,7 @@ import { sendProjectCommand } from '../../data/project-read';
 import { readQuery } from '../../data/workbench-sessions';
 import { currentLocale, t } from '../../i18n';
 import { keyText } from '../../lib/shortcuts';
+import { scrimFlag } from '../../lib/root-flag';
 import './new-memory.css';
 
 type Kind = MemoryRecord['kind'];
@@ -703,7 +704,7 @@ export function NewMemoryDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup
           className="pj-dlg pop mnw-dlg"
           initialFocus={titleRef}

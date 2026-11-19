@@ -18,6 +18,7 @@ import { searchFiles } from '../data/runtime-models';
 import { searchSessions } from '../data/session-search';
 import { t } from '../i18n';
 import { keyText } from '../lib/shortcuts';
+import { scrimFlag } from '../lib/root-flag';
 import {
   fileItem,
   paletteIntent,
@@ -127,7 +128,7 @@ export function CommandPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="cmdk-scrim" />
+        <Dialog.Backdrop className="cmdk-scrim" ref={scrimFlag} />
         <Dialog.Popup
           className="cmdk"
           finalFocus={() => before.current ?? true}

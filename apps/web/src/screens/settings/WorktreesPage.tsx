@@ -20,6 +20,7 @@ import {
 } from '../../data/worktree-setup';
 import { t } from '../../i18n';
 import { revealText } from '../../lib/platform-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { ipcFailure } from './editors';
 import { savedGate } from './gate';
 import { useGateSaving } from './GatesPage';
@@ -428,7 +429,7 @@ export function WorktreesPage({ project }: { project: Project }) {
           }}
         >
           <AlertDialog.Portal>
-            <AlertDialog.Backdrop className="pj-scrim" />
+            <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
             <AlertDialog.Popup className="pj-dlg pj-rm pop">
               <div className="pj-dh">
                 <AlertDialog.Title className="pj-dt">

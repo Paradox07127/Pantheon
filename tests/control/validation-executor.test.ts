@@ -715,6 +715,54 @@ it.skipIf(
   60000,
 );
 
+it.skipIf(
+  process.platform !== 'darwin' ||
+    insideSandbox ||
+    spawnSync('/usr/bin/xcrun', ['--find', 'swiftc']).status !== 0,
+)(
+  'lets a verifier open the GPU, compile a Metal shader and create an IOSurface only when allowed',
+  async () => {
+    const f = await candidateFixture();
+    try {
+      writeFileSync(
+        path.join(f.candidate, 'probe.swift'),
+        `import Foundation
+import IOSurface
+import Metal
+guard let device = MTLCreateSystemDefaultDevice() else { print("no device"); exit(10) }
+do { _ = try device.makeLibrary(source: "kernel void k() {}", options: nil) } catch { print("no compiler"); exit(11) }
+guard IOSurface(properties: [.width: 4, .height: 4, .bytesPerElement: 4, .pixelFormat: 0x42475241]) != nil else { print("no surface"); exit(12) }
+print("gpu reached")
+`,
+      );
+      execFileSync('/usr/bin/xcrun', ['swiftc', '-o', 'probe', 'probe.swift'], {
+        cwd: f.candidate,
+      });
+      const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+      const run = (gpu: boolean) =>
+        runValidationCommand({
+          ctx,
+          key: `check-process:gpu:${gpu}`,
+          argv: ['./probe'],
+          cwd: f.candidate,
+          root: f.candidate,
+          gpu,
+          timeoutMs: 60000,
+        });
+      const allowed = await run(true);
+      expect(allowed.stdout.toString(), allowed.error ?? allowed.tail).toBe('gpu reached\n');
+      expect(allowed.exit_code).toBe(0);
+      const closed = await run(false);
+      expect(closed.stdout.toString()).toBe('no device\n');
+      expect(closed.exit_code).toBe(10);
+      expect(closed.boundary.policy_sha256).not.toBe(allowed.boundary.policy_sha256);
+    } finally {
+      await f.close();
+    }
+  },
+  120000,
+);
+
 it.runIf(process.platform === 'linux')(
   'allows a loopback server inside the sandbox and no outside network on Linux',
   async () => {

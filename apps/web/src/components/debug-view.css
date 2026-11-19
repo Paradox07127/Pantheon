@@ -7,11 +7,11 @@
   pointer-events: none;
 }
 /* While the view is open the page stays hit-testable under hover menus, and its animations hold still. */
-:root:has(.dbv),
-:root:has(.dbv) body {
+:root[data-debug-view],
+:root[data-debug-view] body {
   pointer-events: auto !important;
 }
-:root:has(.dbv) body *:not(.dbv, .dbv *) {
+:root[data-debug-view] body *:not(.dbv, .dbv *) {
   animation-play-state: paused !important;
 }
 /* Over the title bar too; the window still drags from it. */

@@ -38,6 +38,7 @@ import { SettingsNav } from './SettingsNav';
 import { UsagePage } from './UsagePage';
 import { navPage, SETTINGS_PAGES, useSettingsView, type SettingsPage } from './view';
 import { WorkflowPage } from './WorkflowPage';
+import { scrimFlag } from '../../lib/root-flag';
 import './settings-frame.css';
 
 type Project = BoardSnapshot['projects'][number];
@@ -314,7 +315,7 @@ export function RemoveProject({ project }: { project: Project }) {
         }}
       >
         <Dialog.Portal>
-          <Dialog.Backdrop className="pj-scrim" />
+          <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
           <Dialog.Popup className="pj-dlg pj-rm pop">
             <div className="pj-dh">
               <Dialog.Title className="pj-dt">

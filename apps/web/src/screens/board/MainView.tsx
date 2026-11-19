@@ -11,6 +11,8 @@ import { flowReplay, momentAt, statusesAt, type FlowReplay } from './flow-replay
 import { FlowChart } from './FlowPanel';
 import type { GraphExpand } from './FlowOverlays';
 import { dayText } from '../../lib/time-text';
+import { useShell } from '../../store';
+import { selectedIn } from './BoardScreen';
 import type { TaskDrawerProps } from './TaskDrawer';
 import { isPlanTask } from './view-rules';
 import { TaskFocus, type EvidenceTab } from './TaskFocus';
@@ -186,10 +188,8 @@ export const hasPlanTasks = (model: BoardModel) => model.tasks.some(isPlanTask);
 
 interface MainViewProps {
   model: BoardModel;
-  /** Keys the grouping picked by hand; without it the tasks band by lane. */
+  /** Keys the grouping picked by hand and the task picked on the board; without it the tasks band by lane. */
   projectId?: string;
-  /** The task whose drawer is open; null when none is. */
-  selected: string | null;
   onSelect: (taskId: string | null) => void;
   onOpenSession: (sessionId: string) => void;
   onOpenEvidence?: (sessionId: string, tab: EvidenceTab) => void;
@@ -205,7 +205,6 @@ interface MainViewProps {
 export function MainView({
   model,
   projectId,
-  selected,
   onSelect,
   onOpenSession,
   onOpenEvidence,
@@ -216,6 +215,8 @@ export function MainView({
   expand,
 }: MainViewProps) {
   const group = useGroup(projectId);
+  // The task whose drawer is open; null when none is.
+  const selected = useShell((s) => selectedIn(s, projectId, 'flow'));
   const plan = useMemo(() => ({ ...model, tasks: model.tasks.filter(isPlanTask) }), [model]);
   const onlyAdhoc = plan.tasks.length === 0;
   const flow = useMemo(() => flowReplay(plan.tasks, plan.now), [plan]);

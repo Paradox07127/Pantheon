@@ -165,6 +165,7 @@ async function runGateCommand(
   candidate: string,
   disposable: boolean,
 ): Promise<NonNullable<LandingItem['gate_results']>[number]> {
+  const project = ctx.store.must<Project>('projects', owner.projectId);
   const result = await runValidationCommand({
     ctx,
     key,
@@ -175,12 +176,13 @@ async function runGateCommand(
     // Gates inherit no daemon credentials. PATH locates installed executables only;
     // the sandbox still controls which files and child processes they can access.
     env: {
-      ...ctx.store.must<Project>('projects', owner.projectId).env,
+      ...project.env,
       PATH: process.env.PATH ?? '/usr/bin:/bin',
       LANG: 'en_US.UTF-8',
       // Gates verify a candidate without installing; pnpm's pre-run install writes the store outside the sandbox.
       pnpm_config_verify_deps_before_run: 'false',
     },
+    gpu: project.gate_gpu === true,
     timeoutMs: command.timeout_ms ?? 1200000,
     cancelled: owner.cancelled,
   });

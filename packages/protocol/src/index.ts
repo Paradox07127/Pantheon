@@ -3016,6 +3016,8 @@ export const inputSchemas = {
   }),
   'project.sessionDefaults.set': z.strictObject({ project_id: str, ...sessionDefaults }),
   'project.autoMerge.set': z.strictObject({ project_id: str, enabled: z.boolean() }),
+  /** The user only; lets the project's gate commands on macOS open the GPU, its kernel driver included. */
+  'project.gateGpu.set': z.strictObject({ project_id: str, enabled: z.boolean() }),
   'project.externalEvents.set': z.strictObject({ project_id: str, mode: externalEventsMode }),
   /** Sets the value of one setting that every project follows where it has none of its own; the user only. */
   'project.defaults.set': z.discriminatedUnion('key', [

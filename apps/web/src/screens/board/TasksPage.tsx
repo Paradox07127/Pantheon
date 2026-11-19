@@ -23,7 +23,6 @@ export function TasksPage({
   onOpenSession,
   onOpenEvidence,
   onStartTask,
-  selectedIn,
   selectFlow,
   onAskNeed,
   onOpenTask,
@@ -47,7 +46,6 @@ export function TasksPage({
   onOpenSession: (sessionId: string) => void;
   onOpenEvidence: BoardViewProps['onOpenEvidence'];
   onStartTask: BoardViewProps['onStartTask'];
-  selectedIn: (panel: 'flow') => string | null;
   selectFlow: (taskId: string | null) => void;
   /** Jumps to a row of the needs-you strip; absent without the strip. */
   onAskNeed?: (key: string) => void;
@@ -143,7 +141,6 @@ export function TasksPage({
                 <MainView
                   model={shown}
                   projectId={projectId}
-                  selected={selectedIn('flow')}
                   onSelect={selectFlow}
                   onOpenSession={onOpenSession}
                   onOpenEvidence={onOpenEvidence}

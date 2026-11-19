@@ -18,6 +18,7 @@ import { useProjectHead } from '../../data/runtime-models';
 import { useSessionList } from '../../data/workbench-sessions';
 import { pruneStale, sizeText, useStaleWorkspaces } from '../../data/worktree-setup';
 import { listedTitle } from '../../lib/daemon-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { workstreamRows } from '../projects/facts';
 import { WorkstreamBars } from '../projects/WorkstreamBars';
 import { WorkstreamDetails } from '../projects/WorkstreamDetails';
@@ -643,7 +644,7 @@ export function usePruneConfirm(
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="pj-scrim" />
+        <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <AlertDialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <AlertDialog.Title className="pj-dt">

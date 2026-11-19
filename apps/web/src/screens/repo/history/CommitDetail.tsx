@@ -27,6 +27,7 @@ import { layoutFlow } from '../../sessions/story/story-diagram';
 import { StoryDiagram } from '../../sessions/story/StoryDiagram';
 import { openRepoView } from '../route';
 import { LOG_PAGE, landedStory, sessionName, shortSha } from './CommitGraph';
+import { scrimFlag } from '../../../lib/root-flag';
 import './history.css';
 
 /** One step of a flow; change marks a step only one side has. */
@@ -679,7 +680,7 @@ export function CommitDetail({
         }}
       >
         <AlertDialog.Portal>
-          <AlertDialog.Backdrop className="pj-scrim" />
+          <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
           <AlertDialog.Popup className="pj-dlg pj-rm pop">
             <div className="pj-dh">
               <AlertDialog.Title className="pj-dt">

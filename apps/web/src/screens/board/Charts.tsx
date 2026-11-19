@@ -35,6 +35,7 @@ import { StatusIcon } from './status';
 import { TellLead, useDialogContent } from './TellLead';
 import { Clip } from '../../components/Clip';
 import { EmptyState } from '../../components/EmptyState';
+import { scrimFlag } from '../../lib/root-flag';
 import './charts.css';
 
 /* Shared panel parts */
@@ -319,7 +320,7 @@ function DialogFrame({
   );
   return (
     <Dialog.Portal>
-      <Dialog.Backdrop className="pj-scrim" />
+      <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
       <Dialog.Popup className="pj-dlg pj-rm pop">
         <div className="pj-dh">
           <Dialog.Title className="pj-dt">{title}</Dialog.Title>

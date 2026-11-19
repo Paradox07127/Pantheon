@@ -10,6 +10,7 @@ import {
   text,
   unmountAll,
 } from './web-hook-host.js';
+import { FakeElement } from './web-fake-dom.js';
 import { zh } from './i18n-setup.js';
 vi.mock('react', async (actual) =>
   (await import('./web-hook-host.js')).reactMock(actual, { layoutEffect: true }),
@@ -192,6 +193,9 @@ describe('closing the task drawer', () => {
     });
     vi.stubGlobal('document', { ...listeners, activeElement: null });
     vi.stubGlobal('HTMLElement', class {});
+    const frames: (() => void)[] = [];
+    vi.stubGlobal('requestAnimationFrame', (run: () => void) => frames.push(run));
+    vi.stubGlobal('cancelAnimationFrame', noop);
     let taskId: string | null = 'lead-1:importer';
     const host = new HookHost(() =>
       TaskDrawer({
@@ -208,9 +212,59 @@ describe('closing the task drawer', () => {
 
     taskId = null;
     host.render();
+    for (const run of frames.splice(0)) run();
     expect(await host.flush()).not.toBeNull();
     vi.advanceTimersByTime(400);
     expect(host.render()).toBeNull();
+  });
+
+  it('docks in the box it is placed in from opening until its exit has ended', async () => {
+    vi.useFakeTimers();
+    const listeners = { addEventListener: noop, removeEventListener: noop };
+    vi.stubGlobal('window', {
+      ...listeners,
+      innerWidth: 1440,
+      matchMedia: () => ({ matches: false }),
+    });
+    vi.stubGlobal('document', { ...listeners, activeElement: null });
+    vi.stubGlobal('HTMLElement', class {});
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    vi.stubGlobal('cancelAnimationFrame', noop);
+    const box = new FakeElement(1, 'DIV', null);
+    const docked = () => box.hasAttribute('data-drawer');
+    let taskId: string | null = null;
+    const host = new HookHost(
+      () =>
+        TaskDrawer({
+          model: board,
+          taskId,
+          onSelect: noop,
+          onOpenSession: noop,
+          onOpenStory: noop,
+        }),
+      (aside) => {
+        if (aside)
+          aside.props.ref.current = {
+            parentElement: box,
+            contains: () => false,
+            getAnimations: () => [],
+          };
+      },
+    );
+    host.render();
+    expect(docked()).toBe(false);
+    taskId = 'lead-1:importer';
+    host.render();
+    expect(docked()).toBe(true);
+
+    taskId = null;
+    host.render();
+    expect(await host.flush()).not.toBeNull();
+    expect(docked()).toBe(true);
+    vi.advanceTimersByTime(400);
+    expect(host.render()).toBeNull();
+    expect(docked()).toBe(false);
+    host.unmount();
   });
 
   it('moves focus into the drawer when a control outside opens it', () => {
@@ -260,6 +314,8 @@ describe('closing the task drawer', () => {
     vi.stubGlobal('HTMLElement', Element);
     const opener = new Element();
     vi.stubGlobal('document', { ...listeners, activeElement: opener });
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    vi.stubGlobal('cancelAnimationFrame', noop);
     let taskId: string | null = 'lead-1:importer';
     const host = new HookHost(() =>
       TaskDrawer({
@@ -280,6 +336,95 @@ describe('closing the task drawer', () => {
     expect(el.inert).toBe(true);
     host.unmount();
   });
+
+  type Closer = {
+    on: Record<string, (event: unknown) => void>;
+    closeButton: () => { props: { onClick: () => void } };
+  };
+  it.each<[string, (closer: Closer) => void]>([
+    ['Esc', ({ on }) => on.keydown!({ key: 'Escape', target: {} })],
+    ['the close button', ({ closeButton }) => closeButton().props.onClick()],
+    ['a press outside', ({ on }) => on.pointerdown!({ target: { closest: () => null } })],
+  ])(
+    'puts focus back on its opener before it is marked leaving, on %s, and reads its exit motion a frame later',
+    (_, closeIt) => {
+      const on: Record<string, (event: unknown) => void> = {};
+      const listeners = {
+        addEventListener: (type: string, listener: (event: unknown) => void) => {
+          on[type] = listener;
+        },
+        removeEventListener: noop,
+      };
+      vi.stubGlobal('window', {
+        ...listeners,
+        innerWidth: 1440,
+        matchMedia: () => ({ matches: false }),
+      });
+      const frames: (() => void)[] = [];
+      vi.stubGlobal('requestAnimationFrame', (run: () => void) => frames.push(run));
+      vi.stubGlobal('cancelAnimationFrame', noop);
+      const doc: { activeElement: unknown } = { activeElement: null };
+      class Element {
+        isConnected = true;
+        focus = vi.fn(() => {
+          doc.activeElement = this;
+        });
+      }
+      vi.stubGlobal('HTMLElement', Element);
+      vi.stubGlobal('document', Object.assign(doc, listeners));
+      const opener = new Element();
+      const close = new Element();
+      doc.activeElement = opener;
+      const el = {
+        contains: (node: unknown) => node === close,
+        getAnimations: vi.fn(() => []),
+        inert: false,
+      };
+      let taskId: string | null = 'lead-1:importer';
+      const host = new HookHost(
+        () =>
+          TaskDrawer({
+            model: board,
+            taskId,
+            onSelect: (id) => {
+              taskId = id;
+            },
+            onOpenSession: noop,
+            onOpenStory: noop,
+          }),
+        (aside) => {
+          if (!aside) return;
+          aside.props.ref.current = el;
+          find(
+            aside,
+            (n) => n.props['aria-label'] === zh('board.task.drawer.close'),
+          ).props.ref.current = close;
+        },
+      );
+      const aside = host.render()!;
+      expect(doc.activeElement).toBe(close);
+      let focused: { leaving: unknown; inert: boolean } | undefined;
+      opener.focus.mockImplementation(() => {
+        focused = { leaving: host.value?.props['data-ending-style'], inert: el.inert };
+        doc.activeElement = opener;
+      });
+
+      closeIt({
+        on,
+        closeButton: () =>
+          find(aside, (n) => n.props['aria-label'] === zh('board.task.drawer.close')),
+      });
+      expect(taskId).toBeNull();
+      host.render();
+      expect(focused).toEqual({ leaving: undefined, inert: false });
+      expect(doc.activeElement).toBe(opener);
+      expect(el.inert).toBe(true);
+      expect(el.getAnimations).not.toHaveBeenCalled();
+      for (const run of frames.splice(0)) run();
+      expect(el.getAnimations).toHaveBeenCalled();
+      host.unmount();
+    },
+  );
 });
 
 describe('editing a plan task in the drawer', () => {

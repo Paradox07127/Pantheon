@@ -4,6 +4,7 @@ import { Tip } from '../../components/Tip';
 import { draftKey, useDrafts } from '../../data/drafts';
 import { t } from '../../i18n';
 import { tellLead, type RunBoardCommand, type SnapshotSession } from './panels-model';
+import { scrimFlag } from '../../lib/root-flag';
 
 const tellText = () => t({ id: 'board.lead.tell.title', defaultMessage: 'Tell the lead' });
 import './charts.css';
@@ -66,7 +67,7 @@ function TellDialog({
   };
   return (
     <Dialog.Portal>
-      <Dialog.Backdrop className="pj-scrim" />
+      <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
       <Dialog.Popup
         className="pj-dlg pj-rm pop"
         initialFocus={() => {

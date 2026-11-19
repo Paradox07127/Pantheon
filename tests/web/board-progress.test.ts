@@ -5,8 +5,11 @@ vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMoc
 vi.mock('@/data/board', () => ({
   useBoard: Object.assign((selector: any) => selector({}), { getState: () => ({}) }),
 }));
+const shell = vi.hoisted(() => ({}) as Record<string, unknown>);
 vi.mock('@/store', () => ({
-  useShell: Object.assign((selector: any) => selector({}), { setState() {} }),
+  useShell: Object.assign((selector: any) => selector(shell), {
+    setState: (patch: object) => Object.assign(shell, patch),
+  }),
 }));
 import { pickTaskView, type TaskView } from '@/data/board-page';
 import { BoardView } from '@/screens/board/BoardScreen';
@@ -110,8 +113,13 @@ it('shows the task list in the list view of the tasks page, and the flow chart i
 
 it('opens the task drawer of a task picked in the task list', () => {
   const h = board();
-  expect(named(h.value, 'TaskDrawer').props.taskId).toBeNull();
+  // The board's drawer, drawn with the pick the store holds.
+  const drawer = () => {
+    const el = named(h.value, 'BoardDrawer');
+    return named((el.type as (p: unknown) => unknown)(el.props) as never, 'TaskDrawer');
+  };
+  expect(drawer().props.taskId).toBeNull();
   named(h.value, 'TaskList').props.onOpenTask('importer');
   h.render();
-  expect(named(h.value, 'TaskDrawer').props.taskId).toBe('importer');
+  expect(drawer().props.taskId).toBe('importer');
 });

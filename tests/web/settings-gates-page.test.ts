@@ -12,7 +12,7 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 import { useBoard } from '@/data/board';
 import { t as format } from '@/i18n';
 import { DEFAULT_FIX_LIMIT, lastDuration, placeRow, rowsOf } from '@/screens/settings/gate';
-import { FolderGate, GatePolicy } from '@/screens/settings/GatesPage';
+import { FolderGate, GateGpu, GatePolicy } from '@/screens/settings/GatesPage';
 import { useSettingsView } from '@/screens/settings/view';
 import { useShell } from '@/store';
 
@@ -553,5 +553,39 @@ describe('what a failed gate does and where the gates run', () => {
     const h = await fixLimit();
     expect(labelled(tree(h), ON_FAIL).props.value).toBe('retry');
     expect(labelled(tree(h), RUNNER).props.value).toBe('session');
+  });
+});
+
+describe('the GPU switch for gate commands', () => {
+  const GPU = '门禁命令可使用 GPU';
+  const gpu = async () => {
+    const h = mount(() => GateGpu({ project }));
+    await h.flush();
+    return h;
+  };
+  const toggle = (h: HookHost<any>) =>
+    find(tree(h), (n) => n.type === 'input' && n.props['aria-label'] === GPU);
+
+  it('is off for a project that stores no choice and on once the project reads true', async () => {
+    const h = await gpu();
+    expect(toggle(h).props.type).toBe('checkbox');
+    expect(toggle(h).props.checked).toBe(false);
+    project = { ...project, revision: 5, gate_gpu: true };
+    h.render();
+    await h.flush();
+    expect(toggle(h).props.checked).toBe(true);
+  });
+
+  it('sends the new choice at the project revision when it is clicked', async () => {
+    const h = await gpu();
+    toggle(h).props.onChange({ target: { checked: true } });
+    await h.flush();
+    expect(bridge.commands).toMatchObject([
+      {
+        type: 'project.gateGpu.set',
+        input: { project_id: 'alpha', enabled: true },
+        expected_revision: 4,
+      },
+    ]);
   });
 });

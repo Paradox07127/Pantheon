@@ -24,6 +24,7 @@ import { pinVisual, unpinVisual, useVisual, type VisualSize } from '../../data/v
 import { currentLocale, t } from '../../i18n';
 import { keyText } from '../../lib/shortcuts';
 import { dayText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { askFix } from '../../screens/sessions/panel';
 import { useShell } from '../../store';
 import { RUNNING, RunningFor } from '../RunningFor';
@@ -428,7 +429,7 @@ export function VisualFrame({
                   </Dialog.Trigger>
                 </Tip>
                 <Dialog.Portal>
-                  <Dialog.Backdrop className="pj-scrim" />
+                  <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
                   <Dialog.Popup className="vis-dlg pop">
                     <div className="vis-h">
                       <span className="vis-ic" aria-hidden="true">
@@ -478,7 +479,7 @@ export function VisualFrame({
         {footer && <div className="vis-f">{footer}</div>}
       </section>
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="vis-dlg pop">
           <div className="vis-h">
             <span className="vis-ic" aria-hidden="true">

@@ -52,7 +52,7 @@
   min-height: 0;
   overflow: hidden;
 }
-.bd-split:has(> .bd-drw) {
+.bd-split[data-drawer] {
   grid-template-columns: minmax(0, 1fr) 400px;
 }
 .bd-split-main {
@@ -71,7 +71,7 @@
 }
 /* Beside the drawer the page column would be narrower than the drawer; the drawer lies over it instead. */
 @container bd-page (width < 800px) {
-  .bd-split:has(> .bd-drw) {
+  .bd-split[data-drawer] {
     grid-template-columns: minmax(0, 1fr);
   }
   .bd-split > .bd-drw {

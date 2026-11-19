@@ -234,7 +234,7 @@ describe('notice cards', () => {
       'utf8',
     ).replace(/\s+/g, ' ');
     expect(toastCss).toMatch(
-      /body:has\(\[class\$='-scrim'\]\[data-open\]\) \.toast\[data-type='needs'\] \{ display: none; \}/,
+      /:root\[data-scrim-open\] \.toast\[data-type='needs'\] \{ display: none; \}/,
     );
     // Every modal dialog's backdrop is a scrim the rule above sees.
     const src = path.resolve(import.meta.dirname, '../../apps/web/src');

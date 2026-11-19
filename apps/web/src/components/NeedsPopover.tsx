@@ -32,6 +32,7 @@ import { visibleProjects } from '../data/projects';
 import { sessionTitle } from '../data/transcript';
 import { t } from '../i18n';
 import { listText } from '../lib/list-text';
+import { holdRootFlag } from '../lib/root-flag';
 import {
   needActions,
   needCommand,
@@ -233,13 +234,17 @@ function itemActions(item: NeedsYouItem): NeedAction[] {
 export function NeedsPopover({
   items,
   trigger,
+  titleBar = false,
 }: {
   items: readonly NeedsYouItem[];
   trigger: ReactElement;
+  /** The title bar's list, which the toast stack moves aside for while it is open. */
+  titleBar?: boolean;
 }) {
   const board = useBoard((s) => s.board);
   const now = useNow(30_000);
   const [open, setOpen] = useState(false);
+  useEffect(() => (titleBar && open ? holdRootFlag('needs-open') : undefined), [titleBar, open]);
   // By row: ANSWERING while the command is out, else why it failed.
   const [answers, setAnswers] = useState<Readonly<Record<string, string>>>({});
   // The rows settled since the daemon last listed the items; its next list shows what still waits.

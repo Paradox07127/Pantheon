@@ -19,6 +19,7 @@ import {
 import { useProjectHead } from '../../../data/runtime-models';
 import { t } from '../../../i18n';
 import { keyText } from '../../../lib/shortcuts';
+import { scrimFlag } from '../../../lib/root-flag';
 import { Failure, Skeleton } from '../../board/BoardScreen';
 import { Empty } from '../../board/Charts';
 import { discardPatch, fileHeaders, lineKey } from './line-patch';
@@ -317,7 +318,7 @@ export function LocalChanges({ projectId }: { projectId: string }) {
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="pj-scrim" />
+        <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <AlertDialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <AlertDialog.Title className="pj-dt">

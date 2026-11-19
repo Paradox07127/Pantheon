@@ -9,10 +9,14 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
   ...(await actual<object>()),
   useReactFlow: () => ({ setViewport: async () => true }),
 }));
+vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
+  (await import('./web-live-stores.js')).liveStores(actual as never),
+);
 import { flowReplay, momentAt, statusesAt } from '@/screens/board/flow-replay';
 import { FlowChart } from '@/screens/board/FlowPanel';
 import { stackMerged } from '@/screens/board/MergedStack';
 import { MainView } from '@/screens/board/MainView';
+import { useShell } from '@/store';
 
 type Task = BoardModel['tasks'][number];
 type Segment = Task['segments'][number];
@@ -219,8 +223,10 @@ describe('the main view under replay', () => {
   });
 
   it('leaves the focus out while a task drawer is open', () => {
-    const h = mount(() => MainView({ ...props(model(planned(tasks))), selected: 'lead:build' }));
+    useShell.setState({ boardTask: { projectId: null, taskId: 'lead:build', panel: 'flow' } });
+    const h = mount(() => MainView(props(model(planned(tasks)))));
     expect(names(h.value)).not.toContain('TaskFocus');
+    useShell.setState({ boardTask: null });
   });
 
   it('leaves the focus out at a past moment', () => {

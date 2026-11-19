@@ -77,7 +77,7 @@ import {
   type TurnWait,
 } from './project-setup';
 import { ProjectSetup } from './ProjectSetup';
-import { TaskDrawer } from './TaskDrawer';
+import { TaskDrawer, type TaskDrawerProps } from './TaskDrawer';
 import { TasksPage } from './TasksPage';
 import './board.css';
 
@@ -86,6 +86,15 @@ export type BoardDays = 1 | 7 | 30 | 'all';
 export type OverviewSection = 'progress' | 'milestones';
 /** The progress panel whose task drawer is open. */
 type TaskPanel = 'flow';
+/** The task whose drawer is open in the panel of the project's board; null when none is. */
+export const selectedIn = (
+  s: Pick<ReturnType<typeof useShell.getState>, 'boardTask'>,
+  projectId: string | undefined,
+  panel: TaskPanel,
+) =>
+  s.boardTask?.projectId === (projectId ?? null) && s.boardTask.panel === panel
+    ? s.boardTask.taskId
+    : null;
 const NO_TASKS: Pick<BoardModel, 'tasks' | 'leads'> = { tasks: [] };
 
 export const RANGES: { days: BoardDays; label: string }[] = [
@@ -589,6 +598,15 @@ export function laidPanels({
   });
 }
 
+/** The drawer of the task picked on the project's board. */
+function BoardDrawer({
+  projectId,
+  ...props
+}: Omit<TaskDrawerProps, 'taskId'> & { projectId?: string }) {
+  const taskId = useShell((s) => selectedIn(s, projectId, 'flow'));
+  return <TaskDrawer {...props} taskId={taskId} />;
+}
+
 export function BoardView(props: BoardViewProps) {
   const { loading, error, onRetry, onOpenSession, setup } = props;
   const { onOpenStory, onOpenTrace, onStartTask, sync, baseline } = props;
@@ -597,7 +615,6 @@ export function BoardView(props: BoardViewProps) {
   const view = useTaskView(projectId ?? null);
   const scope = useTaskScope(projectId ?? null);
   const headline = model?.headline ?? null;
-  const [selected, setSelected] = useState<{ taskId: string; panel: TaskPanel } | null>(null);
   // The flow chart expanded over the requirement bar; held for this project while the page lives.
   const [graphFull, setGraphFull] = useState(false);
   // The milestone the goals opened the tasks view on, and whether they asked for the needs-you strip.
@@ -606,7 +623,6 @@ export function BoardView(props: BoardViewProps) {
   const [selectedProject, setSelectedProject] = useState(projectId);
   if (selectedProject !== projectId) {
     setSelectedProject(projectId);
-    setSelected(null);
     setGraphFull(false);
     setPicked(null);
     setNeedsAsked(false);
@@ -625,10 +641,14 @@ export function BoardView(props: BoardViewProps) {
   const [choosing, setChoosing] = useState(false);
   const moreButton = useRef<HTMLButtonElement>(null);
   const selectFlow = useCallback(
-    (taskId: string | null) => setSelected(taskId === null ? null : { taskId, panel: 'flow' }),
-    [],
+    (taskId: string | null) =>
+      useShell.setState({
+        boardTask: taskId === null ? null : { projectId: projectId ?? null, taskId, panel: 'flow' },
+      }),
+    [projectId],
   );
-  const selectedIn = (panel: TaskPanel) => (selected?.panel === panel ? selected.taskId : null);
+  // Leaving the project closes its drawer, so coming back opens none.
+  useEffect(() => () => useShell.setState({ boardTask: null }), [projectId]);
   const scoped = actions && projectId && !props.stale ? { ...actions, projectId } : undefined;
   // A project's first read draws what is under the view tabs in one commit, once the board and
   // its sessions are in or failed; later reads update in place.
@@ -679,9 +699,9 @@ export function BoardView(props: BoardViewProps) {
   };
   // The task the page picked, docked as the body's second column.
   const drawer = model && (
-    <TaskDrawer
+    <BoardDrawer
+      projectId={projectId}
       model={model}
-      taskId={selectedIn('flow')}
       onSelect={selectFlow}
       onOpenSession={onOpenSession}
       onOpenStory={onOpenStory}
@@ -926,7 +946,6 @@ export function BoardView(props: BoardViewProps) {
                     onRetry,
                     onOpenSession,
                     selectFlow,
-                    drawerOpen: selectedIn('flow') !== null,
                     setupPanel,
                     loadingPanel,
                     goalsBar,
@@ -950,7 +969,6 @@ export function BoardView(props: BoardViewProps) {
                     onOpenSession,
                     onOpenEvidence: props.onOpenEvidence,
                     onStartTask,
-                    selectedIn,
                     selectFlow,
                     onAskNeed: actions ? askNeed : undefined,
                     onOpenTask: (taskId) => {

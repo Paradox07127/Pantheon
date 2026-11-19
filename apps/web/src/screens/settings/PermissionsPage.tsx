@@ -14,6 +14,7 @@ import { visibleProjects } from '../../data/projects';
 import { sessionTitle } from '../../data/transcript';
 import { t } from '../../i18n';
 import { dayText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { useShell } from '../../store';
 import { failureText, Loading, type Failure } from './ProjectSettingsScreen';
 import { useSettingsView } from './view';
@@ -167,7 +168,7 @@ export function GlobalPermissions() {
       )}
       <Dialog.Root open={viewing} onOpenChange={(next) => setViewing(next)}>
         <Dialog.Portal>
-          <Dialog.Backdrop className="pj-scrim" />
+          <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
           <Dialog.Popup className="pj-dlg pop">
             <div className="pj-dh">
               <Dialog.Title className="pj-dt">{projectRules}</Dialog.Title>
@@ -339,7 +340,7 @@ export function PermissionsPage({ project, readOnly }: { project: Project; readO
         }}
       >
         <Dialog.Portal>
-          <Dialog.Backdrop className="pj-scrim" />
+          <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
           <Dialog.Popup className="pj-dlg pj-rm pop">
             <div className="pj-dh">
               <Dialog.Title className="pj-dt">{removeLabel(named.current)}</Dialog.Title>

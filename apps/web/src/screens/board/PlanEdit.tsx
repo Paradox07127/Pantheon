@@ -41,6 +41,7 @@ import { taskTokens } from './activity';
 import { tellLeadDraft, type RunBoardCommand, type SnapshotSession } from './panels-model';
 import { modelName, runtimeName, TASK_TYPE, type TaskType } from './status';
 import { TellLead, useDialogContent } from './TellLead';
+import { scrimFlag } from '../../lib/root-flag';
 import './edits.css';
 
 type Task = BoardModel['tasks'][number];
@@ -632,7 +633,7 @@ const stopText = () => t({ id: 'board.plan.task.stop', defaultMessage: 'Stop' })
 function StopDialog({ onStop }: { onStop: () => void }) {
   return (
     <Dialog.Portal>
-      <Dialog.Backdrop className="pj-scrim" />
+      <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
       <Dialog.Popup className="pj-dlg pj-rm pop">
         <div className="pj-dh">
           <Dialog.Title className="pj-dt">

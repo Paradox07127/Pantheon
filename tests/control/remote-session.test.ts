@@ -827,8 +827,11 @@ it('finishes bringing the device changes back before shutdown returns', async ()
   const session = await f.create(
     script({ write: { path: 'notes.txt', text: 'written on the device\n' } }, { wait: 60000 }),
   );
+  // The file exists empty before its text is in; a stop between the two abandons the write.
   await eventually(
-    () => existsSync(path.join(f.deviceWork(session), 'notes.txt')),
+    () =>
+      existsSync(path.join(f.deviceWork(session), 'notes.txt')) &&
+      read(f.deviceWork(session), 'notes.txt') === 'written on the device\n',
     () => f.control.tick(),
     10000,
   );

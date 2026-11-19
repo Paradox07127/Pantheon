@@ -498,6 +498,12 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 |---|---|---|
 | `project.gate.set` | `project_id`: string<br>`root`: string<br>`commands`: object[] |  |
 
+### project.gateGpu
+
+| type | input | MCP 工具 |
+|---|---|---|
+| `project.gateGpu.set` | `project_id`: string<br>`enabled`: boolean |  |
+
 ### project.intro
 
 | type | input | MCP 工具 |

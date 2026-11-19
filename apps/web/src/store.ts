@@ -177,6 +177,8 @@ interface ShellState {
   approvedType: DecisionType | null;
   /** The time the asking page counted from, Unix milliseconds; the list opens on a range that reaches it. */
   approvedSince: number | null;
+  /** The task whose drawer is open on the board of the project it was picked in; null when none is. */
+  boardTask: { projectId: string | null; taskId: string; panel: 'flow' } | null;
   // Opens the trace's runs tab on the session, or on every session for null.
   showRuns: (sessionId: string | null) => void;
   setTraceTab: (tab: TraceTab) => void;
@@ -353,6 +355,7 @@ export const useShell = create<ShellState>((set) => ({
   askedNeed: null,
   approvedType: null,
   approvedSince: null,
+  boardTask: null,
   showRuns: (runsSession) =>
     navigate({
       screen: 'trace',

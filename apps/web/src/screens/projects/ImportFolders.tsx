@@ -6,6 +6,7 @@ import { runCommand } from '../../data/commands';
 import { ageText, useNow } from '../../data/needs-you';
 import { openRejectText } from '../../data/projects';
 import { t } from '../../i18n';
+import { scrimFlag } from '../../lib/root-flag';
 import './welcome.css';
 
 // Labels are getters, so each is read in the language loaded by then.
@@ -205,7 +206,7 @@ export function ImportDialog({
   return (
     <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="pj-dlg pop">
           <div className="pj-dh">
             <Dialog.Title className="pj-dt">

@@ -51,6 +51,7 @@ import { sessionTitle } from '../../data/transcript';
 import { clearUserStyle, setUserStyleEnabled, useUserStyle } from '../../data/user-style';
 import { t } from '../../i18n';
 import { keyText } from '../../lib/shortcuts';
+import { scrimFlag } from '../../lib/root-flag';
 import { resolveTheme, useShell } from '../../store';
 import { ipcFailure } from './editors';
 import { Row, Section } from './ProjectSettingsScreen';
@@ -599,7 +600,7 @@ function SavedThemeRow({ id, label }: { id: string; label: string }) {
         }}
       >
         <AlertDialog.Portal>
-          <AlertDialog.Backdrop className="pj-scrim" />
+          <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
           <AlertDialog.Popup className="pj-dlg pj-rm pop">
             <div className="pj-dh">
               <AlertDialog.Title className="pj-dt">
@@ -687,7 +688,7 @@ function UserStyleRow() {
         }}
       >
         <AlertDialog.Portal>
-          <AlertDialog.Backdrop className="pj-scrim" />
+          <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
           <AlertDialog.Popup className="pj-dlg pj-rm pop">
             <div className="pj-dh">
               <AlertDialog.Title className="pj-dt">

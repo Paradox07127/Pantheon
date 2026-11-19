@@ -138,7 +138,8 @@ The session list shows the files that will probably conflict when you merge.
 
 - the gate commands; you can turn off a command, or let a command be skipped when it fails;
 - what to do when the gate fails: hand the task back, retry the failed commands once, or stop;
-- where the gate runs: in a candidate clone (daemon) or in the session worktree.
+- where the gate runs: in a candidate clone (daemon) or in the session worktree;
+- "Let gate commands use the GPU", off by default: the gate sandbox on macOS blocks the GPU, so tests that render with Metal or decode video with AVFoundation fail there. Only you can turn it on, and then the gate commands of the project can reach the GPU kernel driver and the Metal compiler and video decoder services.
 
 ## Import an external session
 

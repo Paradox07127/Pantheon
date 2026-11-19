@@ -3,6 +3,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { SCREEN_NAMES } from '../../screens';
 import { ProjectSettingsScreen } from './ProjectSettingsScreen';
 import { useSettingsView } from './view';
+import { scrimFlag } from '../../lib/root-flag';
 
 /** The settings over the current screen; once opened, it stays mounted closed so unsaved drafts survive. */
 export function SettingsDialog() {
@@ -20,7 +21,7 @@ export function SettingsDialog() {
       }}
     >
       <Dialog.Portal keepMounted>
-        <Dialog.Backdrop className="ps-scrim" />
+        <Dialog.Backdrop className="ps-scrim" ref={scrimFlag} />
         <Dialog.Popup
           className="ps-frame"
           onKeyDown={(e) => {

@@ -178,5 +178,6 @@
   "settings.harness.backendKeychain": "钥匙串",
   "settings.pages.projects": "项目",
   "settings.nav.projects": "所有项目",
-  "settings.appearance.savedTheme": "已保存的主题"
+  "settings.appearance.savedTheme": "已保存的主题",
+  "settings.gate.gpu": "门禁命令可使用 GPU"
 }

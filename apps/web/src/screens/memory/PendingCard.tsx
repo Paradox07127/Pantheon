@@ -7,6 +7,7 @@ import type { BudgetRefusal } from '../../data/memory-context';
 import { t } from '../../i18n';
 import { diffLines } from '../../lib/text-diff';
 import { dayText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { numberText } from './AgentContextDialog';
 import { versionNumbers } from './EntryActions';
 import { kindIcon } from './GraphLegend';
@@ -70,7 +71,7 @@ export function PendingCard({
         {t({ id: 'memory.pending.discard', defaultMessage: 'Discard' })}
       </AlertDialog.Trigger>
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="pj-scrim" />
+        <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <AlertDialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <AlertDialog.Title className="pj-dt">

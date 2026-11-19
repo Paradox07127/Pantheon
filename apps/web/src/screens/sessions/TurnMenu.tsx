@@ -16,6 +16,7 @@ import { useShell } from '../../store';
 import { usePrefill } from './parts';
 import { fail } from './shared';
 import { useThreadFind } from './ThreadFind';
+import { scrimFlag } from '../../lib/root-flag';
 import './runtime-events.css';
 
 interface TurnScopes {
@@ -372,7 +373,7 @@ export function ForkDialog(props: {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <Dialog.Title className="pj-dt">
@@ -507,7 +508,7 @@ export function RollbackDialog(props: {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <Dialog.Title className="pj-dt">

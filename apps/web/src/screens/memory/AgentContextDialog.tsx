@@ -2,6 +2,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { X } from 'lucide-react';
 import type { MemoryContext } from '../../data/memory-context';
 import { currentLocale, t } from '../../i18n';
+import { scrimFlag } from '../../lib/root-flag';
 import './agent-context.css';
 
 export const numberText = (n: number) => n.toLocaleString(currentLocale());
@@ -93,7 +94,7 @@ export function AgentContextDialog({
   return (
     <Dialog.Root open={open && !!context} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="acx-dlg">
           {context && (
             <>

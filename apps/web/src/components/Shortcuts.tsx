@@ -17,6 +17,7 @@ import {
   type ShortcutId,
   type ShortcutScope,
 } from '../lib/shortcuts';
+import { scrimFlag } from '../lib/root-flag';
 import { Tip } from './Tip';
 import './shortcuts.css';
 import './shortcut-settings.css';
@@ -238,7 +239,7 @@ export function ShortcutSheet({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="pj-dlg pop ks-dlg">
           <div className="pj-dh">
             <Dialog.Title className="pj-dt">

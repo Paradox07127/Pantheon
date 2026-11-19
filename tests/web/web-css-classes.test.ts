@@ -26,6 +26,21 @@ it('defines each top-level class rule once across the stylesheets', () => {
   expect([...rules].filter(([, at]) => at.length > 1)).toEqual([]);
 });
 
+it('keeps :has() off the root and body, where any change in the page would restyle all of it', () => {
+  const rooted = cssFiles(src).flatMap((file) =>
+    [
+      ...readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .matchAll(/([^{}]+)\{/g),
+    ]
+      .flatMap(([, list]) => list!.split(/,(?![^(]*\))/))
+      .map((selector) => selector.trim())
+      .filter((selector) => /^(:root|html|body)\b[^,]*:has\(/.test(selector))
+      .map((selector) => `${path.relative(src, file)}: ${selector}`),
+  );
+  expect(rooted).toEqual([]);
+});
+
 it('never reuses a top-level class of another stylesheet as a modifier', () => {
   // A top-level `.x` rule also styles every `.y.x` element: modifiers need names of their own.
   const sheets = cssFiles(src).map(

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 import type { Session } from '@pantheon/domain';
 import type { SessionGates, SessionPreflight, WorkbenchSession } from '@pantheon/protocol';
+import { FakeElement } from './web-fake-dom.js';
 import { find, named, nodes, text, mount, unmountAll } from './web-hook-host.js';
 
 const mock = vi.hoisted(() => ({
@@ -391,6 +392,20 @@ describe('session overview', () => {
   it('draws nothing without any section or merge bar', () => {
     showThreadTurns(null);
     expect(card(listed({ workspace_kind: 'in_place' })).value).toBeNull();
+  });
+
+  it('marks the root while an overview is in the page, until the last one leaves', () => {
+    vi.stubGlobal('document', { documentElement: new FakeElement(1, 'HTML', null) });
+    const marked = () => document.documentElement.hasAttribute('data-session-overview');
+    const [first, second] = [card().value!, card().value!];
+    expect(marked()).toBe(false);
+    const leaveFirst = first.props.ref(first);
+    const leaveSecond = second.props.ref(second);
+    expect(marked()).toBe(true);
+    leaveFirst();
+    expect(marked()).toBe(true);
+    leaveSecond();
+    expect(marked()).toBe(false);
   });
 
   it('folds to its header and remembers that per session', () => {

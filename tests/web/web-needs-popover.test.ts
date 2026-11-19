@@ -2,7 +2,8 @@ import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchSession } from '@pantheon/protocol';
 import type { NeedsYouItem } from '@/data/needs-you';
-import { find, mount, nodes, text, unmountAll } from './web-hook-host.js';
+import { FakeElement } from './web-fake-dom.js';
+import { HookHost, find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 
 const mock = vi.hoisted(() => ({ board: {} as any, shell: {} as any }));
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
@@ -107,6 +108,34 @@ describe('needs-you list', () => {
     root(h.value).props.onOpenChange(true);
     h.render();
     expect(root(h.value).props.open).toBe(true);
+  });
+
+  it("marks the root while a title bar's list is open, until the last one closes", () => {
+    vi.stubGlobal('document', { documentElement: new FakeElement(1, 'HTML', null) });
+    const marked = () => document.documentElement.hasAttribute('data-needs-open');
+    const toggle = (h: { value: unknown; render: () => unknown }, open: boolean) => {
+      root(h.value).props.onOpenChange(open);
+      h.render();
+    };
+    const elsewhere = new HookHost(() => NeedsPopover({ items: [request], trigger }));
+    elsewhere.render();
+    toggle(elsewhere, true);
+    expect(marked()).toBe(false);
+
+    const first = new HookHost(() => NeedsPopover({ items: [request], trigger, titleBar: true }));
+    const second = new HookHost(() => NeedsPopover({ items: [request], trigger, titleBar: true }));
+    first.render();
+    second.render();
+    expect(marked()).toBe(false);
+    toggle(first, true);
+    toggle(second, true);
+    expect(marked()).toBe(true);
+    toggle(first, false);
+    expect(marked()).toBe(true);
+    second.unmount();
+    expect(marked()).toBe(false);
+    first.unmount();
+    elsewhere.unmount();
   });
 
   it('groups the items by project, the project and the item that waited longest first', () => {

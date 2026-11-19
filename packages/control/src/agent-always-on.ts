@@ -227,6 +227,7 @@ timerHandlers.set(ROUTINE, (ctx, timer) => {
             pnpm_config_verify_deps_before_run: 'false',
             ...(last && { ROUTINE_LAST_RUN_AT: new Date(last.at).toISOString() }),
           },
+          gpu: project.gate_gpu === true,
           timeoutMs: precheck.timeout_ms ?? MINUTE_MS,
           cancelled: () => ctx.closing,
         });

@@ -15,6 +15,9 @@ vi.mock('../../apps/web/node_modules/@xyflow/react/dist/esm/index.mjs', async (a
   useReactFlow: () => ({ setViewport, zoomTo }),
   useViewport: () => viewport,
 }));
+vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
+  (await import('./web-live-stores.js')).liveStores(actual as never),
+);
 import { FlowChart } from '@/screens/board/FlowPanel';
 import { flowLayout } from '@/screens/board/flow-layout';
 import { FlowGroupControl, MainView } from '@/screens/board/MainView';
@@ -122,7 +125,6 @@ const main = (projectId = 'canvas-project', model = mixed()) =>
     MainView({
       model,
       projectId,
-      selected: null,
       onSelect() {},
       onOpenSession() {},
     }),
@@ -491,7 +493,7 @@ describe('board canvas layout styles', () => {
 
   it('docks a 400px drawer as the page column beside the one with the canvas', () => {
     expect(board).toMatch(
-      /\.bd-split:has\(> \.bd-drw\) \{[^}]*grid-template-columns: minmax\(0, 1fr\) 400px;/,
+      /\.bd-split\[data-drawer\] \{[^}]*grid-template-columns: minmax\(0, 1fr\) 400px;/,
     );
     expect(board).toMatch(/\.bd-split > \.bd-drw \{[^}]*max-width: 100%;/);
     expect(css).not.toContain('@container bd-main');

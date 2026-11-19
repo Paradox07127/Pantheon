@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { SquareDashedMousePointer } from 'lucide-react';
 import { debugTarget } from '../data/app-errors';
 import type { NeedsYouItem } from '../data/needs-you';
 import { t } from '../i18n';
+import { holdRootFlag } from '../lib/root-flag';
 import { toggleDebugView, useDebugView } from './DebugView';
 import { NeedsPopover } from './NeedsPopover';
 import './title-bar-end.css';
@@ -20,6 +21,10 @@ export function TitleBarEnd({ needs }: TitleBarEndProps) {
   const debugging = useDebugView((s) => s.open);
   const [dev, setDev] = useState(false);
   useEffect(() => void debugTarget().then((target) => setDev(target !== null)), []);
+  const waits = needs.length > 0;
+  // The page bars in the title bar end where these controls begin (title-bar-end.css).
+  useLayoutEffect(() => (waits ? holdRootFlag('title-needs') : undefined), [waits]);
+  useLayoutEffect(() => (dev ? holdRootFlag('title-debug') : undefined), [dev]);
   return (
     <div className="tbe">
       {dev && (
@@ -36,6 +41,7 @@ export function TitleBarEnd({ needs }: TitleBarEndProps) {
       {needs.length > 0 && (
         <NeedsPopover
           items={needs}
+          titleBar
           trigger={
             <button
               type="button"

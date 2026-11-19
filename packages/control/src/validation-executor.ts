@@ -36,6 +36,8 @@ export interface ValidationInput {
   disposable?: boolean;
   readFiles?: string[];
   env?: NodeJS.ProcessEnv;
+  /** On macOS, the command may open the GPU driver and the Metal compiler and video decode services. */
+  gpu?: boolean;
   timeoutMs: number;
   cancelled?: () => boolean;
 }
@@ -483,6 +485,15 @@ export async function runValidationCommand(input: ValidationInput): Promise<Vali
         ]),
         // Recursive fs.watch on macOS goes through the FSEvents service.
         '(allow mach-lookup (global-name "com.apple.FSEvents"))',
+        // Any GPU driver's user client, not only Apple Silicon's AGXDeviceUserClient, so Intel and AMD Macs work too.
+        ...(input.gpu
+          ? [
+              '(allow iokit-open-user-client (iokit-connection "IOAccelerator"))',
+              '(allow iokit-open-user-client (iokit-user-client-class "IOSurfaceRootUserClient"))',
+              '(allow mach-lookup (xpc-service-name "com.apple.MTLCompilerService"))',
+              '(allow mach-lookup (xpc-service-name "com.apple.coremedia.videodecoder"))',
+            ]
+          : []),
       ].join('\n');
       boundary.policy_sha256 = createHash('sha256').update(profile).digest('hex');
       launch = ['-p', profile, command, ...input.argv.slice(1)];

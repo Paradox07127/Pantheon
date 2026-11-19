@@ -55,6 +55,7 @@ import { useSessionPreflight } from '../../data/session-panel';
 import { isUnread, markRead, markUnread, useSeenRecords } from '../../data/unread';
 import { t } from '../../i18n';
 import { keyText } from '../../lib/shortcuts';
+import { scrimFlag } from '../../lib/root-flag';
 import { useShell } from '../../store';
 import { lineCount } from './attachments';
 import { markdownFileName, sessionMarkdown } from './export-markdown';
@@ -682,7 +683,7 @@ function RenameDialog(props: {
   return (
     <Dialog.Root open onOpenChange={(next) => !next && props.onClose()}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="pj-scrim" />
+        <Dialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <Dialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <Dialog.Title className="pj-dt">
@@ -778,7 +779,7 @@ function DeleteDialog(props: {
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="pj-scrim" />
+        <AlertDialog.Backdrop className="pj-scrim" ref={scrimFlag} />
         <AlertDialog.Popup className="pj-dlg pj-rm pop">
           <div className="pj-dh">
             <AlertDialog.Title className="pj-dt">

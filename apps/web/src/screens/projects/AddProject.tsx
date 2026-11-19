@@ -14,6 +14,7 @@ import { nameFromPath, openRejectText } from '../../data/projects';
 import { t } from '../../i18n';
 import { useShortcut } from '../../lib/shortcuts';
 import { durationText } from '../../lib/time-text';
+import { scrimFlag } from '../../lib/root-flag';
 import { Result, ReviewBaseline, RunningBaseline, StartBaseline } from './BaselineBlocks';
 import { baselineEntry, baselineStartRequest } from './baseline';
 import { briefRequest } from './brief';
@@ -498,7 +499,7 @@ export function AddProject({ projects, onOpened }: AddProjectProps) {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="ap-scrim" />
+        <Dialog.Backdrop className="ap-scrim" ref={scrimFlag} />
         <Dialog.Popup
           ref={popup}
           className="ap"

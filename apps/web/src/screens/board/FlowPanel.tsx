@@ -1,4 +1,6 @@
 import {
+  memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -44,7 +46,7 @@ import {
   withoutDependency,
   type PlanOp,
 } from '../../data/plan-edit';
-import { t } from '../../i18n';
+import { currentLocale, t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { dayText } from '../../lib/time-text';
 import { activityNote } from './activity';
@@ -149,7 +151,8 @@ type ChartNode = TaskNode | StackNode | MilestoneFlowNode | DraftNode;
 type DependencyOp = Extract<PlanOp, { type: 'set_dependencies' }>;
 
 const NODE_TYPES = {
-  task: TaskCard,
+  // A card reads only its data; React Flow also hands it positions and sizes on every move.
+  task: memo(TaskCard, (before, after) => before.data === after.data),
   stack: MergedStack,
   milestone: MilestoneNode,
   draft: DraftCard,
@@ -169,6 +172,11 @@ const ARIA_LABELS = {
     return nodeHint();
   },
 };
+
+/** Layouts by project and by their inputs, so a chart mounted again skips dagre; oldest first. */
+const LAYOUTS = new Map<string, Map<string, FlowLayout>>();
+/** A mount lays out at width 0, then unmeasured, then measured; a few more cover resizes. */
+const KEPT_LAYOUTS = 8;
 
 type LaneCount = 'merged' | 'running' | 'waiting' | 'stuck' | 'todo' | 'discarded';
 const LANE_COUNTS: { key: Exclude<LaneCount, 'merged'>; text: (count: number) => string }[] = [
@@ -577,10 +585,23 @@ function FlowCanvas({
   // Refreshes that only change statuses or usage keep the layout, so the viewport stays put.
   const key = layoutKey(graph.model, group);
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
-  const layout = useMemo(
-    () => flowLayout(graph.model, width - 2 * EDGE, group, heights),
-    [key, width, heights],
-  );
+  const layout = useMemo(() => {
+    // Every input of flowLayout, so a kept layout is the one it would make now.
+    const inputs = JSON.stringify([
+      key,
+      graph.model.edges,
+      width,
+      [...heights].sort(),
+      currentLocale(),
+    ]);
+    const kept = LAYOUTS.get(projectId) ?? new Map<string, FlowLayout>();
+    const laid = kept.get(inputs) ?? flowLayout(graph.model, width - 2 * EDGE, group, heights);
+    kept.delete(inputs);
+    kept.set(inputs, laid);
+    if (kept.size > KEPT_LAYOUTS) kept.delete(kept.keys().next().value!);
+    LAYOUTS.set(projectId, kept);
+    return laid;
+  }, [key, width, heights]);
   // A graph still too wide at the smallest zoom pans; the height follows the drawn graph.
   const zoom = flowZoom(width - 2 * EDGE, layout.width);
   const height = Math.round(layout.height * zoom + 2 * EDGE);
@@ -697,106 +718,146 @@ function FlowCanvas({
       if (e.from === hovered || e.to === hovered) lit.add(e.from).add(e.to);
     return lit;
   }, [layout, hovered]);
+  // Read when asked, so the board's new closure on each render does not redraw every card.
+  const askNeed = useRef(onAskNeed);
+  askNeed.current = onAskNeed;
+  const ask = useCallback((key: string) => askNeed.current?.(key), []);
+  const asks = onAskNeed && ask;
+  // The cards' data from the last build by task id; a card that reads the same keeps its object,
+  // so React Flow does not draw it again.
+  const drawnCards = useRef<{
+    actions?: NonNullable<TaskNode['data']['actions']>;
+    cards: ReadonlyMap<string, TaskNode['data']>;
+  }>({ cards: new Map() });
   // Built without the selection, so picking a task hands React Flow new objects for two nodes only.
-  const unselected = useMemo(
-    () =>
-      layout.nodes.map((n): ChartNode => {
-        const place = (width: number) => ({
-          id: n.id,
-          position: { x: n.x, y: n.y },
-          width,
-          initialHeight: NODE_HEIGHT,
-          // Handed back so React Flow keeps the card measured instead of measuring it anew.
-          ...(heights.has(n.id) && { measured: { width, height: heights.get(n.id) } }),
-        });
-        const overlay = graph.overlays.get(n.id);
-        if (overlay?.kind === 'stack')
-          return {
-            ...place(STACK_WIDTH),
-            type: 'stack',
-            focusable: false,
-            data: {
-              tasks: overlay.members.map((id) => tasks.get(id)!),
-              open: opened.has(n.id),
-              onToggle: () => toggle(n.id),
-              onOpen: onSelect,
-            },
-          };
-        if (overlay?.kind === 'milestone') {
-          const next =
-            model.tasks.find((t) => t.milestone_id === overlay.milestone.id && ready.has(t.id)) ??
-            null;
-          const target = next && tell && editTarget(next, tell.sessions);
-          const verification = overlay.milestone.verification;
-          return {
-            ...place(NODE_WIDTH),
-            type: 'milestone',
-            focusable: false,
-            ariaLabel: listText(
-              overlay.milestone.title,
-              verification && verification.state !== 'skipped' && verifyText(verification, now),
-            ),
-            data: {
-              milestone: overlay.milestone,
-              now,
-              next,
-              ...(target && { onStart: () => startPlanTasks(target, [target.planId]) }),
-            },
-          };
-        }
-        if (overlay?.kind === 'draft')
-          return {
-            ...place(NODE_WIDTH),
-            type: 'draft',
-            focusable: false,
-            ariaLabel: listText(overlay.task.title, draftText()),
-            data: { task: overlay.task },
-          };
-        const task = tasks.get(n.id)!;
-        const note = states ? null : activityNote(task, now, model);
+  const unselected = useMemo(() => {
+    const before = drawnCards.current;
+    const live = tell && { tell, needs: model.needs ?? [], onAskNeed: asks };
+    const kept = before.actions;
+    // The board hands a new context each render; the same sessions, runner and needs keep the old one.
+    const actions =
+      live &&
+      kept &&
+      kept.tell.sessions === live.tell.sessions &&
+      kept.tell.run === live.tell.run &&
+      kept.onAskNeed === live.onAskNeed &&
+      JSON.stringify(kept.needs) === JSON.stringify(live.needs)
+        ? kept
+        : live;
+    const cards = new Map<string, TaskNode['data']>();
+    const drawn = layout.nodes.map((n): ChartNode => {
+      const place = (width: number) => ({
+        id: n.id,
+        position: { x: n.x, y: n.y },
+        width,
+        initialHeight: NODE_HEIGHT,
+        // Handed back so React Flow keeps the card measured instead of measuring it anew.
+        ...(heights.has(n.id) && { measured: { width, height: heights.get(n.id) } }),
+      });
+      const overlay = graph.overlays.get(n.id);
+      if (overlay?.kind === 'stack')
         return {
-          ...place(NODE_WIDTH),
-          type: 'task',
-          ...(near.has(n.id) && { className: 'hl' }),
-          ariaLabel: listText(
-            task.title,
-            taskStateLabel(task),
-            task.pending_edit &&
-              t({ id: 'board.plan.flow.pendingEditLabel', defaultMessage: 'Edit awaits the lead' }),
-          ),
+          ...place(STACK_WIDTH),
+          type: 'stack',
+          focusable: false,
           data: {
-            task,
-            selected: false,
-            now,
-            critical: critical.includes(n.id),
-            ready: ready.has(n.id),
-            line: note?.text ?? null,
-            ...(note?.ago && { ago: note.ago }),
-            editable,
-            tall: heights.get(n.id) ?? NODE_HEIGHT,
-            ...(marks.has(n.id) && { drafted: marks.get(n.id) }),
-            ...(tell && { actions: { tell, needs: model.needs ?? [], onAskNeed } }),
+            tasks: overlay.members.map((id) => tasks.get(id)!),
+            open: opened.has(n.id),
+            onToggle: () => toggle(n.id),
+            onOpen: onSelect,
           },
         };
-      }),
-    [
-      layout,
-      graph,
-      tasks,
-      now,
-      critical,
-      ready,
-      model,
-      editable,
-      near,
-      heights,
-      tell,
-      opened,
-      states,
-      marks,
-      onAskNeed,
-    ],
-  );
+      if (overlay?.kind === 'milestone') {
+        const next =
+          model.tasks.find((t) => t.milestone_id === overlay.milestone.id && ready.has(t.id)) ??
+          null;
+        const target = next && tell && editTarget(next, tell.sessions);
+        const verification = overlay.milestone.verification;
+        return {
+          ...place(NODE_WIDTH),
+          type: 'milestone',
+          focusable: false,
+          ariaLabel: listText(
+            overlay.milestone.title,
+            verification && verification.state !== 'skipped' && verifyText(verification, now),
+          ),
+          data: {
+            milestone: overlay.milestone,
+            now,
+            next,
+            ...(target && { onStart: () => startPlanTasks(target, [target.planId]) }),
+          },
+        };
+      }
+      if (overlay?.kind === 'draft')
+        return {
+          ...place(NODE_WIDTH),
+          type: 'draft',
+          focusable: false,
+          ariaLabel: listText(overlay.task.title, draftText()),
+          data: { task: overlay.task },
+        };
+      const was = before.cards.get(n.id);
+      const read = tasks.get(n.id)!;
+      const task =
+        was && (was.task === read || JSON.stringify(was.task) === JSON.stringify(read))
+          ? was.task
+          : read;
+      const note = states ? null : activityNote(task, now, model);
+      const fresh: TaskNode['data'] = {
+        task,
+        selected: false,
+        now,
+        critical: critical.includes(n.id),
+        ready: ready.has(n.id),
+        line: note?.text ?? null,
+        ...(note?.ago && { ago: note.ago }),
+        editable,
+        tall: heights.get(n.id) ?? NODE_HEIGHT,
+        ...(marks.has(n.id) && { drafted: marks.get(n.id) }),
+        ...(actions && { actions }),
+      };
+      const data =
+        was &&
+        was.task === task &&
+        was.actions === fresh.actions &&
+        JSON.stringify({ ...was, task: null, actions: null }) ===
+          JSON.stringify({ ...fresh, task: null, actions: null })
+          ? was
+          : fresh;
+      cards.set(n.id, data);
+      return {
+        ...place(NODE_WIDTH),
+        type: 'task',
+        ...(near.has(n.id) && { className: 'hl' }),
+        ariaLabel: listText(
+          task.title,
+          taskStateLabel(task),
+          task.pending_edit &&
+            t({ id: 'board.plan.flow.pendingEditLabel', defaultMessage: 'Edit awaits the lead' }),
+        ),
+        data,
+      };
+    });
+    drawnCards.current = { actions, cards };
+    return drawn;
+  }, [
+    layout,
+    graph,
+    tasks,
+    now,
+    critical,
+    ready,
+    model,
+    editable,
+    near,
+    heights,
+    tell,
+    opened,
+    states,
+    marks,
+    asks,
+  ]);
   const nodes = useMemo(
     () =>
       unselected.map((n): ChartNode =>
