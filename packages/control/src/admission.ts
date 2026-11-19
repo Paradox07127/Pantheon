@@ -8,10 +8,12 @@ import { acpProfiles } from '@pantheon/adapters';
 import type { ControlContext } from './context.js';
 import { readUserConfig } from './user-config.js';
 
-/** ACP runtimes may run without verified isolation unless the user configured otherwise. */
+/** ACP runtimes and OpenCode may run without verified isolation unless the user configured otherwise. */
 export function isolationWaived(ctx: ControlContext, runtime: string): boolean {
   const configured = readUserConfig(ctx.userConfigDir).runtimes?.[runtime]?.unverified_isolation;
-  return typeof configured === 'boolean' ? configured : Object.hasOwn(acpProfiles, runtime);
+  return typeof configured === 'boolean'
+    ? configured
+    : Object.hasOwn(acpProfiles, runtime) || runtime === 'opencode';
 }
 
 export function runtime(

@@ -102,7 +102,6 @@ describe('ACP adapter', () => {
         permissionModes: ['plan', 'auto_edit', 'full_access'],
       },
       muse: { binary: 'muse', args: ['acp'] },
-      opencode: { binary: 'opencode', args: ['acp'] },
       cursor: { binary: 'cursor-agent', args: ['acp'] },
       copilot: { binary: 'copilot', args: ['--acp'] },
       gemini: { binary: 'gemini', args: ['--acp'] },
@@ -123,6 +122,7 @@ describe('ACP adapter', () => {
       droid: { binary: 'droid', args: ['exec', '--output-format', 'acp-daemon'] },
       qoder: { binary: 'qodercli', args: ['--acp'] },
     });
+    expect(acpProfiles).not.toHaveProperty('opencode');
     const adapter = new AcpAdapter({
       name: 'grok',
       profile: acpProfiles.grok!,

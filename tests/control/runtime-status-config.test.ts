@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { acpProfiles, FixtureAdapter } from '@pantheon/adapters';
+import { acpProfiles, FixtureAdapter, nativeRuntimes } from '@pantheon/adapters';
 import { command } from '@pantheon/protocol';
 import { fixture, user } from '../helpers.js';
 
@@ -30,7 +30,7 @@ it('lists registered, configured and ACP runtimes once, including disabled confi
   });
   const statuses = await f.control.runtimeStatus(user);
   expect(statuses.map((s) => s.runtime).sort()).toEqual(
-    [...new Set(['fixture', 'claude', 'codex', ...Object.keys(acpProfiles)])].sort(),
+    [...new Set(['fixture', ...nativeRuntimes, ...Object.keys(acpProfiles)])].sort(),
   );
   expect(statuses.find((s) => s.runtime === 'claude')).toMatchObject({
     enabled: false,

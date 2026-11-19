@@ -1,4 +1,4 @@
-import { acpProfiles } from '@pantheon/adapters';
+import { acpProfiles, nativeRuntimes } from '@pantheon/adapters';
 import { requireThat, type Principal } from '@pantheon/domain';
 import { type Command } from '@pantheon/protocol';
 import { userOnly, type ControlContext, type Handler } from './context.js';
@@ -21,7 +21,7 @@ export async function prepareRuntimeConfig(
   userOnly(principal);
   const { runtime, ...patch } = input;
   requireThat(
-    runtime === 'claude' || runtime === 'codex' || Object.hasOwn(acpProfiles, runtime),
+    (nativeRuntimes as readonly string[]).includes(runtime) || Object.hasOwn(acpProfiles, runtime),
     'invalid_input',
     `Unknown runtime ${runtime}`,
   );

@@ -59,7 +59,6 @@ export const acpProfiles: Record<string, AcpProfile> = {
     args: ['acp'],
     listArgs: ['--no-session-log'],
   },
-  opencode: { binary: 'opencode', args: ['acp'] },
   cursor: { binary: 'cursor-agent', args: ['acp'] },
   copilot: { binary: 'copilot', args: ['--acp'] },
   gemini: { binary: 'gemini', args: ['--acp'] },

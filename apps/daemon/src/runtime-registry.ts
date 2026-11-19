@@ -5,6 +5,7 @@ import {
   ClaudeAdapter,
   CodexAdapter,
   nativeEnvironment,
+  OpencodeAdapter,
 } from '@pantheon/adapters';
 import type { HarnessAdapter } from '@pantheon/domain';
 import type { UserConfig } from '@pantheon/protocol';
@@ -46,6 +47,7 @@ export async function createRuntimeAdapter(
       artifacts: config.artifacts,
     });
   if (name === 'codex') return new CodexAdapter(binary, version, { args: config.args });
+  if (name === 'opencode') return new OpencodeAdapter(binary, version, { args: config.args });
   return version === 'unprobed'
     ? undefined
     : new AcpAdapter({ name, profile: profile!, binary, args: config.args, version });

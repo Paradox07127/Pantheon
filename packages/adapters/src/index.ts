@@ -15,6 +15,8 @@ export { CodexAdapter } from './codex.js';
 export { ClaudeAdapter } from './claude.js';
 export { AcpAdapter } from './acp.js';
 export { acpProfiles, type AcpProfile } from './acp-profiles.js';
+export { OpencodeAdapter } from './opencode.js';
+export const nativeRuntimes = ['claude', 'codex', 'opencode'] as const;
 export {
   createClaudeReducer,
   createCodexReducer,

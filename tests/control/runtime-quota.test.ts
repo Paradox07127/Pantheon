@@ -57,11 +57,13 @@ it('shares the latest quota across sessions and retains it through a runtime sta
   };
   expect(await f.control.runtimeStatus(user)).toEqual([
     expect.objectContaining({ runtime: 'fixture', quota: expected }),
+    expect.objectContaining({ runtime: 'claude' }),
+    expect.objectContaining({ runtime: 'codex' }),
+    expect.objectContaining({ runtime: 'opencode' }),
     expect.objectContaining({ runtime: 'grok' }),
     expect.objectContaining({ runtime: 'agy' }),
     expect.objectContaining({ runtime: 'dsh' }),
     expect.objectContaining({ runtime: 'muse' }),
-    expect.objectContaining({ runtime: 'opencode' }),
     expect.objectContaining({ runtime: 'cursor' }),
     expect.objectContaining({ runtime: 'copilot' }),
     expect.objectContaining({ runtime: 'gemini' }),
@@ -93,11 +95,13 @@ it('shares the latest quota across sessions and retains it through a runtime sta
   });
   expect(await f.control.runtimeStatus(user, true)).toEqual([
     expect.objectContaining({ runtime: 'fixture', quota: expected }),
+    expect.objectContaining({ runtime: 'claude' }),
+    expect.objectContaining({ runtime: 'codex' }),
+    expect.objectContaining({ runtime: 'opencode' }),
     expect.objectContaining({ runtime: 'grok' }),
     expect.objectContaining({ runtime: 'agy' }),
     expect.objectContaining({ runtime: 'dsh' }),
     expect.objectContaining({ runtime: 'muse' }),
-    expect.objectContaining({ runtime: 'opencode' }),
     expect.objectContaining({ runtime: 'cursor' }),
     expect.objectContaining({ runtime: 'copilot' }),
     expect.objectContaining({ runtime: 'gemini' }),

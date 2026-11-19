@@ -40,6 +40,12 @@ vi.mock('@pantheon/adapters', async () => ({
       mock.constructed.push(['codex', ...args]);
     }
   },
+  OpencodeAdapter: class {
+    constructor(...args: unknown[]) {
+      mock.constructed.push(['opencode', ...args]);
+    }
+  },
+  nativeRuntimes: ['claude', 'codex', 'opencode'],
   FixtureAdapter: class {},
   claudeOneShot: mock.oneShot,
 }));
@@ -73,7 +79,11 @@ it('starts native and ACP version probes before awaiting their results', async (
   mock.callbacks[0]!(null, 'claude-version\n');
   for (const callback of mock.callbacks.slice(1)) callback(new Error('missing'), '');
   await entry;
-  expect(mock.constructed.map((args) => args[2])).toEqual(['claude-version', 'unprobed']);
+  expect(mock.constructed.map((args) => args[2])).toEqual([
+    'claude-version',
+    'unprobed',
+    'unprobed',
+  ]);
   expect(mock.start).toHaveBeenCalledTimes(1);
 });
 it('probes and starts each runtime with the binary and arguments of the user configuration', async () => {
@@ -231,7 +241,7 @@ it('registers installed ACP profiles and skips a missing binary', async () => {
       version: 'muse-version',
     }),
   ]);
-  expect(mock.constructed.filter(([kind]) => kind === 'acp')).toHaveLength(23);
+  expect(mock.constructed.filter(([kind]) => kind === 'acp')).toHaveLength(22);
   expect(mock.start.mock.calls[0]![0].adapters).toHaveLength(25);
 });
 
@@ -252,10 +262,10 @@ it('uses configured ACP binaries and extra arguments and skips a disabled profil
   expect(mock.exec.mock.calls.map(([binary]) => binary)).toEqual([
     'claude',
     'codex',
+    'opencode',
     '/opt/grok',
     'dsh',
     'muse',
-    'opencode',
     'cursor-agent',
     'copilot',
     'gemini',
@@ -285,5 +295,5 @@ it('uses configured ACP binaries and extra arguments and skips a disabled profil
       version: 'installed',
     }),
   ]);
-  expect(mock.constructed.filter(([kind]) => kind === 'acp')).toHaveLength(23);
+  expect(mock.constructed.filter(([kind]) => kind === 'acp')).toHaveLength(22);
 });

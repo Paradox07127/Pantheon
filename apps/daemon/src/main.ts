@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 // Stack frames name the TypeScript sources; only modules loaded after this get mapped, so the rest load dynamically.
 process.setSourceMapsEnabled(true);
 const { startDaemon } = await import('./index.js');
-const { acpProfiles, claudeOneShot, FixtureAdapter, withInstallFolders } =
+const { acpProfiles, claudeOneShot, FixtureAdapter, nativeRuntimes, withInstallFolders } =
   await import('@pantheon/adapters');
 const { runtimeConfig } = await import('@pantheon/control');
 const { defaultDataDirectory, defaultDesktopUserDataDirectory } =
@@ -26,26 +26,17 @@ const directory = path.resolve(
 const userConfigDir = path.join(os.homedir(), '.pantheon');
 const formerWorkspaceRoot = path.join(path.dirname(directory), 'Pantheon Workspaces');
 type RuntimeConfig = ReturnType<typeof runtimeConfig>;
-let claudeConfig: RuntimeConfig = {},
-  codexConfig: RuntimeConfig = {};
-const acpConfigs: Record<string, RuntimeConfig> = {};
+const runtimes = [...nativeRuntimes, ...Object.keys(acpProfiles)];
+const configs: Record<string, RuntimeConfig> = {};
 try {
-  claudeConfig = runtimeConfig(userConfigDir, 'claude');
-  codexConfig = runtimeConfig(userConfigDir, 'codex');
-  for (const name of Object.keys(acpProfiles))
-    acpConfigs[name] = runtimeConfig(userConfigDir, name);
+  for (const name of runtimes) configs[name] = runtimeConfig(userConfigDir, name);
 } catch (error) {
   console.error('Starting the runtimes with their defaults:', (error as Error).message);
 }
 const adapters = (
   await Promise.all(
-    ['claude', 'codex', ...Object.keys(acpProfiles)].map(async (name) => {
-      const config =
-        name === 'claude'
-          ? claudeConfig
-          : name === 'codex'
-            ? codexConfig
-            : (acpConfigs[name] ?? {});
+    runtimes.map(async (name) => {
+      const config = configs[name] ?? {};
       try {
         return await createRuntimeAdapter(name, config);
       } catch (error) {

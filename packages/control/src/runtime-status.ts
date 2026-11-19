@@ -8,7 +8,7 @@ import {
   type Session,
   type SessionTurn,
 } from '@pantheon/domain';
-import { acpProfiles } from '@pantheon/adapters';
+import { acpProfiles, nativeRuntimes } from '@pantheon/adapters';
 import { sessionAdapter, userOnly, type ControlContext } from './context.js';
 import { isolationWaived } from './admission.js';
 import { readUserConfig } from './user-config.js';
@@ -53,7 +53,7 @@ async function findInstalledRuntimes(ctx: ControlContext): Promise<void> {
   if (!create) return;
   const configured = readUserConfig(ctx.userConfigDir).runtimes ?? {};
   await Promise.all(
-    ['claude', 'codex', ...Object.keys(acpProfiles)]
+    [...nativeRuntimes, ...Object.keys(acpProfiles)]
       .filter((runtime) => !ctx.adapters.has(runtime) && configured[runtime]?.enabled !== false)
       .map(async (runtime) => {
         // A configuration the adapter refuses leaves the runtime absent, as at the start.
@@ -75,6 +75,7 @@ export async function runtimeStatus(
   const runtimes = new Set([
     ...ctx.adapters.keys(),
     ...Object.keys(configured ?? {}),
+    ...nativeRuntimes,
     ...Object.keys(acpProfiles),
   ]);
   return [...runtimes].map((runtime) => {
@@ -233,7 +234,8 @@ export async function reconnectRuntime(ctx: ControlContext, principal: Principal
   try {
     if (!adapter && ctx.createRuntimeAdapter) {
       requireThat(
-        runtime === 'claude' || runtime === 'codex' || Object.hasOwn(acpProfiles, runtime),
+        (nativeRuntimes as readonly string[]).includes(runtime) ||
+          Object.hasOwn(acpProfiles, runtime),
         'invalid_input',
         `Unknown runtime ${runtime}`,
       );
