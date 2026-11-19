@@ -15,6 +15,8 @@ vi.mock('@/store', () => ({
     getState: () => mock.shell,
   }),
 }));
+vi.mock('@/components/Toast', () => ({ toast: vi.fn(() => 'toast') }));
+import { toast } from '@/components/Toast';
 import { eventSummary } from '@/data/logs';
 import { groupWorkbenchSessions, sessionMenu, sidebarGroups } from '@/screens/sessions/model';
 import { SessionListRow } from '@/screens/sessions/SessionsScreen';
@@ -303,6 +305,40 @@ describe('session row actions', () => {
     ]);
     expect(mock.shell.followFirstSession).toHaveBeenCalledOnce();
     expect(named(h.value, 'DeleteDialog').props.open).toBe(false);
+  });
+
+  it('archives the shown session, then shows the next one, and undo opens it again', async () => {
+    mock.shell.openSession = vi.fn();
+    // The archive answers with the archived session, whose revision the undo restores at.
+    vi.mocked(window.pantheon!.command).mockImplementation(async (command: any) => {
+      commands.push(command);
+      return { ok: true, value: { id: 'a', revision: 6 } };
+    });
+    const h = row(session('a', 'discarded'));
+    item(h.value, menu('archive')).props.onClick();
+    await h.flush();
+    expect(commands).toMatchObject([{ type: 'session.archive', input: { session_id: 'a' } }]);
+    expect(mock.shell.followFirstSession).toHaveBeenCalledOnce();
+    vi.mocked(toast).mock.calls.at(-1)![0].action!.run();
+    await h.flush();
+    expect(commands.at(-1)).toMatchObject({
+      type: 'session.unarchive',
+      input: { session_id: 'a' },
+      expected_revision: 6,
+    });
+    expect(mock.shell.openSession).toHaveBeenCalledWith('a');
+  });
+
+  it('keeps the shown session when another one is archived, and undo leaves it shown', async () => {
+    mock.shell.openSession = vi.fn();
+    mock.shell.sessionId = 'b';
+    const h = row(session('a', 'discarded'), false);
+    item(h.value, menu('archive')).props.onClick();
+    await h.flush();
+    expect(mock.shell.followFirstSession).not.toHaveBeenCalled();
+    vi.mocked(toast).mock.calls.at(-1)![0].action!.run();
+    await h.flush();
+    expect(mock.shell.openSession).not.toHaveBeenCalled();
   });
 
   it('keeps the shown session when another one is deleted', async () => {

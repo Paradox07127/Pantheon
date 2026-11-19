@@ -154,6 +154,40 @@ const alerts = (h: HookHost<any>) =>
     .filter((n) => n.props.role === 'alert')
     .map((n) => text(n));
 
+describe('an archived session', () => {
+  it('says it is archived above a disabled box, and restore sends unarchive', async () => {
+    session = { ...session, archived_at: '2026-11-03T00:00:00.000Z' };
+    listed = row('session-a', { archived_at: '2026-11-03T00:00:00.000Z' });
+    const h = await compose();
+    expect(find(h.value, (n) => n.type === 'textarea').props).toMatchObject({
+      disabled: true,
+      placeholder: zh('data.transcript.busy.archived'),
+    });
+    expect(text(h.value)).toContain(zh('sessions.compose.archived'));
+    find(
+      h.value,
+      (n) => n.type === 'button' && text(n) === zh('sessions.compose.unarchive'),
+    ).props.onClick();
+    await h.flush();
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'session.unarchive',
+        input: { session_id: 'session-a' },
+        expected_revision: 3,
+      }),
+    );
+  });
+
+  it('shows no archived bar on a session that is not archived', async () => {
+    const h = await compose();
+    expect(
+      nodes(h.value).some(
+        (n) => n.type === 'button' && text(n) === zh('sessions.compose.unarchive'),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('the session rows of the add menu', () => {
   it('are off once the pull requests, issues and sessions referred to reach the limit', async () => {
     useDrafts.getState().update(key(), () => ({

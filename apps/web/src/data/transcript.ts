@@ -772,27 +772,33 @@ export function composeState(session: Session): { send: Availability; steer: Ava
   const readOnly = READ_ONLY[sessionPurpose(session)];
   const busy =
     readOnly ??
-    (session.stop_pending
+    (session.archived_at
       ? t({
-          id: 'data.transcript.busy.stopPending',
-          defaultMessage: "The session's stop is not confirmed yet; you cannot send or steer",
+          id: 'data.transcript.busy.archived',
+          defaultMessage: 'The session is archived; restore it to send or steer',
         })
-      : session.merge?.state === 'running'
+      : session.stop_pending
         ? t({
-            id: 'data.transcript.busy.merging',
-            defaultMessage: 'The session is merging; you cannot send or steer',
+            id: 'data.transcript.busy.stopPending',
+            defaultMessage: "The session's stop is not confirmed yet; you cannot send or steer",
           })
-        : session.stop_requested
+        : session.merge?.state === 'running'
           ? t({
-              id: 'data.transcript.busy.discarding',
-              defaultMessage: 'The session is being discarded; you cannot send or steer',
+              id: 'data.transcript.busy.merging',
+              defaultMessage: 'The session is merging; you cannot send or steer',
             })
-          : session.rollback_pending
+          : session.stop_requested
             ? t({
-                id: 'data.transcript.busy.rollingBack',
-                defaultMessage: "The session's rollback has not finished; you cannot send or steer",
+                id: 'data.transcript.busy.discarding',
+                defaultMessage: 'The session is being discarded; you cannot send or steer',
               })
-            : null);
+            : session.rollback_pending
+              ? t({
+                  id: 'data.transcript.busy.rollingBack',
+                  defaultMessage:
+                    "The session's rollback has not finished; you cannot send or steer",
+                })
+              : null);
   if (busy) return { send: off(busy), steer: off(busy) };
   if (session.runtime_review) {
     const blocked = off(

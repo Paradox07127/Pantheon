@@ -49,5 +49,7 @@
   "sessions.compose.context.used": "已用 {share}",
   "sessions.compose.handoffInPlace": "只有工作树会话能换运行时",
   "sessions.compose.handoffFirstTurn": "第一轮结束后才能换",
-  "sessions.compose.backendInPlace": "你文件夹里的会话不能换后端"
+  "sessions.compose.backendInPlace": "你文件夹里的会话不能换后端",
+  "sessions.compose.archived": "已归档",
+  "sessions.compose.unarchive": "恢复"
 }

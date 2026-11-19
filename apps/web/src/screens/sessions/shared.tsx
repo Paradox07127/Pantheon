@@ -420,20 +420,23 @@ export function useSessionMenu(
         : runCommand(item.command, item.input, revision)
     ).catch(fail);
     if (!result.ok) return setError(failureText(result.error));
-    if (item.command === 'session.archive')
+    if (item.command === 'session.archive') {
+      const shown = useShell.getState().sessionId === session.id;
+      followShown();
       toast({
         title: t({ id: 'sessions.screen.archived', defaultMessage: 'Session archived' }),
         action: {
           label: t({ id: 'sessions.screen.undo', defaultMessage: 'Undo' }),
           run: () =>
-            void runCommand('session.unarchive', item.input, null)
+            void runCommand('session.unarchive', item.input, (result.value as Session).revision)
               .catch(fail)
-              .then(
-                (undone) =>
-                  undone.ok || toast({ title: failureText(undone.error), kind: 'failure' }),
-              ),
+              .then((undone) => {
+                if (!undone.ok) return toast({ title: failureText(undone.error), kind: 'failure' });
+                if (shown) useShell.getState().openSession(session.id);
+              }),
         },
       });
+    }
   };
   /**
    * The menu as data for the page's menus and the native one. The header's menu leaves out opening

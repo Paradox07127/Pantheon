@@ -3,6 +3,7 @@ import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
 import {
   AppWindow,
+  Archive,
   ArrowUp,
   Check,
   ChevronRight,
@@ -864,6 +865,27 @@ export function SessionCompose({
             </button>
           </div>
         )}
+        {session.archived_at && (
+          <div className="cp-fork">
+            <Archive className="cp-fork-i" aria-hidden="true" />
+            <span className="cp-fork-t">
+              {t({ id: 'sessions.compose.archived', defaultMessage: 'Archived' })}
+            </span>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() =>
+                void runCommand(
+                  'session.unarchive',
+                  { session_id: session.id },
+                  session.revision,
+                ).then((result) => result.ok || setModeError(failureText(result.error)))
+              }
+            >
+              {t({ id: 'sessions.compose.unarchive', defaultMessage: 'Restore' })}
+            </button>
+          </div>
+        )}
         {asks}
         <div className="cp-stack">
           <QueueDock session={session} />
@@ -896,22 +918,24 @@ export function SessionCompose({
               )}
               placeholder={
                 ended ??
-                (send
-                  ? t({ id: 'sessions.composer.reply', defaultMessage: 'Reply…' })
-                  : waiting === 'approval'
-                    ? t({
-                        id: 'sessions.composeDock.approvalPlaceholder',
-                        defaultMessage: 'Add a requirement, or answer the approval',
-                      })
-                    : steerFirst
+                (session.archived_at
+                  ? (state.send.reason ?? undefined)
+                  : send
+                    ? t({ id: 'sessions.composer.reply', defaultMessage: 'Reply…' })
+                    : waiting === 'approval'
                       ? t({
-                          id: 'sessions.composer.steerTurnPlaceholder',
-                          defaultMessage: 'Steer the running turn…',
+                          id: 'sessions.composeDock.approvalPlaceholder',
+                          defaultMessage: 'Add a requirement, or answer the approval',
                         })
-                      : t({
-                          id: 'sessions.composeDock.queuePlaceholder',
-                          defaultMessage: 'Queue, until this turn ends',
-                        }))
+                      : steerFirst
+                        ? t({
+                            id: 'sessions.composer.steerTurnPlaceholder',
+                            defaultMessage: 'Steer the running turn…',
+                          })
+                        : t({
+                            id: 'sessions.composeDock.queuePlaceholder',
+                            defaultMessage: 'Queue, until this turn ends',
+                          }))
               }
               value={input}
               disabled={!writable}

@@ -381,6 +381,7 @@ describe('sending to a session', () => {
     ['being merged', { merge: { state: 'running' } }],
     ['being discarded', { stop_requested: { reason: 'user', at: 1, by: 'user' } }],
     ['finishing a rollback', { rollback_pending: { checkpoint: 'c', turn_id: 't' } }],
+    ['that is archived', { archived_at: '2026-01-01T00:00:00.000Z' }],
   ] as [string, Partial<Session>][])('gives a reason for both on a session %s', (_, extra) => {
     for (const s of ['open', 'running'] as const) {
       const state = composeState(session('s', s, extra));
