@@ -156,24 +156,31 @@ Each project has two resident agents. The sidebar lists them under "Agents". Cli
 - "Assistant" is the main agent of the project. It answers your requests, plans the work and hands the changes to task sessions. It reads code but does not change it.
 - "Triage" handles the problems that come from outside the conversation: GitHub issues and pull requests, gate failures on main, flaky tests, app errors, failing sessions and trace findings. It plans a fix task for each real problem, or tells you what you must decide.
 - "New agent" next to "Agents" adds another agent from a template: "Ideas", "Goals" or "Custom". Right-click an agent and choose "Profile" to change or archive it.
+- "Add routine" in an agent's form adds a "Blank routine" or one from a template: "Bug hunt" runs daily at 09:00, only when there are new commits since its last run; "Security scan" and "Test coverage" run weekly.
+- An agent's contract (the `contract` field of the `agent.update` command) limits when it reaches you: during its quiet hours, or once its input tokens of the week reach the limit, Pantheon does not wake it. During quiet hours its messages that are not urgent do not notify you.
+- A lead can propose a change it learned to a gate or to the worktree setup. The change waits in "Needs you" until you decide. The item shows the gate or the setup "Now" and "Proposed". A confirmed change takes effect without a trial.
 
 ## Project board
 
-The "Project board" shows the work of a project. "Now", "Whole history" and "Canvas" switch the view.
+The "Project board" shows the work of a project. It has two pages: "Overview" and "Tasks". "Overview" shows, from the top, "Since you left", "Needs you", "Agents" and "Goals". "Tasks" shows the tasks as "Flow", "List" or "Timeline", for the "Current milestone" or "All".
 
-- Write a requirement in the bar at the top. By default Pantheon sends it to the "Assistant". In the "Send to" menu you can choose another agent, the lead of a plan or a session. "New lead" starts a lead session with the requirement. The lead writes a plan of tasks and milestones.
+- Write a requirement in the bar at the bottom of "Tasks". By default Pantheon sends it to the "Assistant". In the "Send to" menu you can choose another agent, the lead of a plan or a session. "New lead" starts a lead session with the requirement. The lead writes a plan of tasks and milestones.
 - A receipt shows the steps: received, queued, planning and creating tasks. When an agent such as the "Assistant" ends its turn, the receipt says what it did: "Answered here", "New plan", "Added to" a lane, or "Asked you". "Route differently" sends the request again: "Answer here", "New plan", "Add to a plan" or "Send to" another agent.
 - "Since you left" counts what happened since you last clicked "Mark as read": "Waiting on you", "Milestones moved", "Merged", "Failed", "New assumptions" and "Agent proposals". It can also show a short summary paragraph.
 - Each task runs in its own task session and worktree, and merges through the gate.
+- "Goals" lists the goals of the project, at most 7. "Add goal" adds one. A goal's menu has "Rename", "Move up", "Move down" and "Archive"; "Undo" brings back an archived goal. Each goal shows the milestones the lead put under it and their progress. After you change the goals, "Have the lead sync the plan" asks the lead to update the plan.
 - The current milestone card shows the merged and planned tasks, the acceptance criteria and "Accept".
+- Under a milestone, "Assumptions" lists what the lead's plan takes as given. Click "No, do something else", write what holds instead and click "Send". The lead gets it as a plan change. While it "Waits for the lead", "Withdraw" takes it back. Then the line says "Lead changed the plan" or "Lead kept it".
+- To verify milestones, turn on "Settings" > "Gates" > "Verify milestones automatically". When a lead's milestone is ready for acceptance, Pantheon runs the gate and the acceptance commands of its tasks on the merged code in a fresh clone. If they pass, a read-only verifier reviews the changes against the milestone's criteria, on a runtime of another vendor than the writers when one is available. The milestone shows "Verifying", "Verified", "Verification failed" or "Not verified", and the lead gets the result.
+- Merged tasks and done milestones show what backs them: "Report only", "Gate passed", "Reviewed other runtime" or "Reviewed other vendor". A milestone can also show "Verified" or "Accepted" (by you).
+- A task that went wrong shows who acts next and why: "Pantheon retries" with the count, "Moved to" another runtime, "Lead has it" or "Waits for you".
 - "Needs you" lists the items that need your action, such as approvals.
 - A lead decides some things for you: it approves the permission requests and answers the questions of its task sessions, changes the plan, accepts milestones and merges changes outside a task's scope. It asks you before it adds an agent. To approve each plan change yourself, set "Settings" > "Workflow" > "Plan changes" to "Wait for my approval".
 - Some decisions always reach you: destructive git commands (such as a force push or `git reset --hard`), network and credential tools, writes outside the worktree, and plan changes when the project is over its budget.
 - The flow chart shows the tasks and their dependencies. To add a dependency, drag a connection.
+- Each lane of a plan has a depth: "Just do it", "Plan first" or "Spec first". When a lead adds a lane with a top-tier task, its tasks wait for you to approve its plan. "Needs you" shows the lane with an estimate of the sessions, tokens and time. Approve it, or set the lane to "Just do it". "Plan first" and "Spec first" hold the tasks of a lane that have not started.
 - The task drawer shows the route, the changes, the checks and the dependencies of a task. You can change the runtime, model and effort, or stop, restart or delete the task.
 - "Workflow step" in the task drawer shows the verdict of the newest workflow step: its summary, the commands and files it checked, and the verdict of each reviewer. A reviewer that gives no verdict fails a blocking review step. A failed step before the merge goes back to the lead. When a step ends without a verdict, click "Count as passed" or "Count as failed".
-- The summary at the bottom shows the sessions that ended today, the gates, the usage and the merges.
-- You can choose the time range of the board: 1, 3, 7, 14 or 30 days, or all time.
 
 ## Engineering board
 
@@ -195,11 +202,13 @@ You can replay a turn and see the file changes of one step.
 
 ## Memory
 
-"Memory" keeps project decisions, reports and notes. It has four tabs: "Overview", "Entries", "Graph" and "Learned".
+"Memory" keeps project decisions, reports and notes. It has five tabs: "Overview", "Entries", "Graph", "Diagrams" and "Learned".
 
 - Agents propose drafts. A draft has no effect until you confirm it.
 - You confirm, archive and restore entries.
 - Pantheon sends the current memory to a session before each message.
+- The details of an entry show when a session last read it ("Last read"). An entry with file references that a session proposed shows the commit it was checked at ("Checked at").
+- A note of an agent that no session read in 90 days expires: "Expired: not read in 90 days". Decisions, reports, handoff notes, imported entries and your own entries do not expire this way.
 - "Learned" shows the learned lessons and their trial results.
 
 [Project memory](memory.md) (in Chinese) describes storage, budgets and limits.
@@ -222,7 +231,7 @@ You can replay a turn and see the file changes of one step.
 | "Shortcuts"             | Keyboard shortcuts.                                                              |
 | "Data"                  | Data folder, diagnostic log, import and export of personal settings.             |
 | "About"                 | Versions, daemon state, logs folder.                                             |
-| "Gates"                 | Gate commands of the project.                                                    |
+| "Gates"                 | Gate commands of the project, milestone verification and the environment check.  |
 | "Worktrees and merging" | Files to copy, preparation command, automatic merge, cleanup.                    |
 | "Permissions"           | Always-allowed rules of the project.                                             |
 | "External requests"     | Sources of external requests and when they need your approval.                   |
@@ -235,6 +244,7 @@ You can replay a turn and see the file changes of one step.
 - **Themes.** Choose a built-in theme: "Travertine", "Dusk", "Lapis" or "Terracotta". You can also ask a session to make a theme. The session calls the `theme.set` tool, and Pantheon applies the theme. You can delete a theme.
 - **Shortcuts.** Search by name or by keys. Click "Record keys" to change a shortcut. "Restore all defaults" resets all shortcuts.
 - **Notifications.** Each kind of decision, and merges, has "Now", "Brief only" or "Never". During quiet hours, "Now" works as "Brief only". A question that has waited over 4 hours always notifies you.
+- **Environment.** "Check environment" on the "Gates" page prepares a fresh worktree the way a task session gets one, then runs the gate commands in it. The baseline confirmation card has the same check for the commands that the baseline proposes. When one of them fails, the baseline agent fixes it once.
 - **Devices.** Click "Add device" and enter a host name from `~/.ssh/config`. Pantheon checks the system, the runtime versions and the sign-in state over SSH. You can set labels, resources and the session limit of each device, and probe it again.
 
 ## Data and security
@@ -264,6 +274,8 @@ In a checkout, run the CLI with `pnpm cli`. The CLI reads `daemon.json` and the 
 Each command accepts `--data-dir DIR`. The [API reference](api.md) describes the command envelope and the queries.
 
 ## Connect your own agent
+
+Pantheon has a built-in personal agent. Open "Personal agent" in the "Personal" group of the sidebar. The first open creates its own personal key. "Profile" shows what it can do, the kinds it answers for you ("Answers for you") and its "Personal agent key", which you can revoke; it gets a new key when you open it again. It checks every project daily at 09:00, and Pantheon wakes it at most every 30 minutes when new items wait for you in other projects.
 
 Your everyday agent (Claude Code, Codex, Claude Desktop or any agent that runs a local stdio MCP server) can work across your Pantheon projects with a personal key. Only local agents can connect: the daemon listens only on `127.0.0.1`.
 
