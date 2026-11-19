@@ -310,7 +310,7 @@ function trackedText(
         : undefined;
   const gate = session.merge?.gate;
   if (state === 'blocked' && session.merge?.failure_class === 'environment' && gate)
-    return `${TRACKED_TEXT[state]} Reason: ${reason}. The gate command "${gate.name}" failed because of the environment it ran in (it timed out, could not start or was killed), also when run again on the same commit; the session was not asked to fix it.`;
+    return `${TRACKED_TEXT[state]} Reason: ${reason}. The gate command "${gate.name}" failed because of the environment it ran in (it timed out, could not start, was killed or was refused by the gate sandbox), also when run again on the same commit; the session was not asked to fix it.`;
   if (
     state === 'turn_failed' &&
     turnErrorCode(ctx, latestTurns.get(session.id)!) === 'turn_deadline'

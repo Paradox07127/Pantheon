@@ -147,6 +147,15 @@ const failing = {
   argv: [process.execPath, '-e', "process.stderr.write('gate broke'); process.exit(3)"],
 };
 
+const sandboxRefused = {
+  name: 'Refused by the sandbox',
+  argv: [
+    process.execPath,
+    '-e',
+    "process.stderr.write('xcrun: error: unable to load libxcrun (dlopen(/x/libxcrun.dylib, 0x0005): tried: \\'/x/libxcrun.dylib\\' (file system sandbox blocked open())).'); process.exit(1)",
+  ],
+};
+
 const unstartable = {
   name: 'Cannot start',
   argv: ['/nonexistent/pantheon-gate-tool'],
@@ -229,6 +238,34 @@ it.skipIf(insideSandbox)(
     expect(notes).toMatchObject([{ session_id: session.id, kind: 'blocked' }]);
     expect(notes[0]!.text).toContain('environment');
     expect(notes[0]!.text).toContain('"Hangs on its first run"');
+  },
+  20000,
+);
+
+it.skipIf(insideSandbox)(
+  'does not hand a gate the sandbox refused back to the task session',
+  async () => {
+    const f = await mergeFixture();
+    const { session, workspace, sourceHead } = await idleTaskSession(f);
+    await gateAndMergeAutomatically(f, [sandboxRefused]);
+    commit(workspace.path, 'answer.txt', 'sandbox\n');
+    const turn = send(f, session.id);
+    await eventually(
+      () => current(f, session.id).merge?.state === 'blocked',
+      () => f.control.tick(),
+      14000,
+    );
+    for (let i = 0; i < 3; i++) await f.control.tick();
+    expect(fromTracker(f, session.id)).toEqual([]);
+    expect(f.turns(session.id).at(-1)!.id).toBe(turn.id);
+    expect(current(f, session.id).merge).toMatchObject({
+      state: 'blocked',
+      reason: 'gate_failed',
+      failure_class: 'environment',
+      gate: { name: 'Refused by the sandbox' },
+    });
+    expect(blockedNotes(f)).toMatchObject([{ session_id: session.id, kind: 'blocked' }]);
+    expect(git(f.source, 'rev-parse', 'main')).toBe(sourceHead);
   },
   20000,
 );

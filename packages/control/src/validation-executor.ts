@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   access,
@@ -16,6 +16,7 @@ import {
 } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { constants } from 'node:fs';
 import { hash, requireThat, type TestCounts } from '@pantheon/domain';
 import { inside, type ControlContext } from './context.js';
@@ -103,9 +104,13 @@ async function executable(argv0: string, cwd: string, env: NodeJS.ProcessEnv): P
   throw new Error('validation_executable_unavailable');
 }
 
-/** The installed node_modules package holding the file, whose other files a script's interpreter loads. */
+/**
+ * The installed node_modules package or Homebrew keg (`Cellar/<formula>/<version>`) holding the
+ * file, whose other files the tool or a script's interpreter loads.
+ */
 async function installedPackage(file: string): Promise<string | undefined> {
   for (let dir = path.dirname(file); dir !== path.dirname(dir); dir = path.dirname(dir)) {
+    if (path.basename(path.dirname(path.dirname(dir))) === 'Cellar') return dir;
     const parent = path.dirname(dir);
     const folder = path.basename(parent).startsWith('@') ? path.dirname(parent) : parent;
     if (path.basename(folder) !== 'node_modules') continue;
@@ -149,6 +154,9 @@ async function pathTools(
   }
   return { folders: [...folders], files: [...files] };
 }
+
+/** The developer folder `xcode-select -p` reports for each DEVELOPER_DIR, absent without developer tools. */
+const developerFolders = new Map<string | undefined, Promise<string | undefined>>();
 
 /**
  * bubblewrap arguments matching the Seatbelt profile: system files, the command and its package
@@ -408,6 +416,17 @@ export async function runValidationCommand(input: ValidationInput): Promise<Vali
       launch = [...args, '--', command, ...input.argv.slice(1)];
     } else {
       const quote = (value: string) => JSON.stringify(value);
+      const { DEVELOPER_DIR } = supplied;
+      if (!developerFolders.has(DEVELOPER_DIR))
+        developerFolders.set(
+          DEVELOPER_DIR,
+          promisify(execFile)('/usr/bin/xcode-select', ['-p'], { env })
+            .then(({ stdout }) => realpath(stdout.trim()))
+            .catch(() => undefined),
+        );
+      const developer = await developerFolders.get(DEVELOPER_DIR);
+      // The xcrun shims such as make and git load the whole Xcode bundle, not only its developer folder.
+      const toolchain = developer?.match(/^(.+\.app)\/Contents\/Developer$/)?.[1] ?? developer;
       const profile = [
         '(version 1)',
         '(deny default)',
@@ -433,12 +452,23 @@ export async function runValidationCommand(input: ValidationInput): Promise<Vali
           (file) => `(allow file-read* (literal ${quote(file)}))`,
         ),
         '(allow file-write* (literal "/dev/null"))',
+        // A shell's process substitution reads and writes its own descriptors there.
+        '(allow file-read* file-write* (subpath "/dev/fd"))',
+        // diff copies a pipe input to /tmp/diff.XXXXXXXX, ignoring TMPDIR, and unlinks it at once.
+        '(allow file-read* file-write* (regex #"^/private/tmp/diff[.][^/]+$"))',
         ...[root, scratch].map((dir) => `(allow file-read* file-write* (subpath ${quote(dir)}))`),
         ...[...files, ...tools.files].map((file) => `(allow file-read* (literal ${quote(file)}))`),
         // Read-only, so a script command such as npm can load its own installed package.
         ...[...packages, ...tools.folders].map(
           (dir) => `(allow file-read* (subpath ${quote(dir)}))`,
         ),
+        // xcodebuild, which a shim runs to find its tool, reads the accepted Xcode license there.
+        ...(toolchain
+          ? [
+              `(allow file-read* (subpath ${quote(toolchain)}))`,
+              '(allow file-read* (literal "/Library/Preferences/com.apple.dt.Xcode.plist"))',
+            ]
+          : []),
         // The candidate is a clone of committed files, so its own protected entries stay readable.
         ...protectedPaths.map(
           (dir) =>

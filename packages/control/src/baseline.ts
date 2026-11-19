@@ -50,7 +50,13 @@ import {
   type Preparers,
 } from './context.js';
 import { sessionDefaults } from './user-config.js';
-import { DISABLED, projectHandlers, readPantheonFile, setProjectGate } from './project.js';
+import {
+  DISABLED,
+  projectHandlers,
+  readPantheonFile,
+  setProjectGate,
+  setProjectWorktree,
+} from './project.js';
 import { projectFactHandlers } from './project-facts.js';
 import { runtime } from './admission.js';
 import { runGit } from './git.js';
@@ -965,6 +971,31 @@ function confirm(
       },
       gitRoots,
     );
+  // A setup the folders agree on and the newest checks ran passing prepares workers' worktrees too.
+  const proposed = baseline.result.folders.filter((folder) => folder.commands?.setup);
+  const setup = proposed[0]?.commands!.setup!.argv;
+  const project = ctx.store.must<Project>('projects', projectId);
+  const { latest } = baselineChecks(ctx, baseline.id);
+  if (
+    setup &&
+    !project.worktree?.command &&
+    proposed.every((folder) => {
+      const ran = latest
+        .find((check) => check.root === folder.root)
+        ?.commands.find((command) => command.name === 'setup');
+      return (
+        folder.commands!.setup!.argv.join('\0') === setup.join('\0') &&
+        ran?.argv.join('\0') === setup.join('\0') &&
+        ran.exit_code === 0
+      );
+    })
+  )
+    setProjectWorktree(
+      ctx,
+      project,
+      { copy_paths: project.worktree?.copy_paths ?? [], command: { argv: setup } },
+      c.command_id,
+    );
   // Checked extensions stay off; ones this baseline turned off and the user unchecked go back on.
   const kept = input.extensions ?? [];
   const unchecked = (ctx.store.must<Project>('projects', projectId).extension_auto ?? []).filter(
@@ -1262,11 +1293,18 @@ export function sessionEnded(ctx: ControlContext, sessionId: string): boolean {
   );
 }
 
-/** The commands an environment check of a folder runs: its gate, then build, test and lint not already in it. */
-export function baselineCommands(folder: BaselineFolder): { name: string; argv: string[] }[] {
+/**
+ * The commands an environment check of a folder runs: its gate without the commands turned off,
+ * then build, test and lint not already in it.
+ */
+export function baselineCommands(
+  folder: BaselineFolder,
+): { name: string; argv: string[]; skippable?: boolean }[] {
   const same = (a: string[], b: string[]) => a.join('\0') === b.join('\0');
   return [
-    ...folder.gate.map(({ name, argv }) => ({ name, argv })),
+    ...folder.gate
+      .filter((command) => command.enabled !== false)
+      .map(({ name, argv, skippable }) => ({ name, argv, ...(skippable && { skippable }) })),
     ...(['build', 'test', 'lint'] as const).flatMap((name) => {
       const entry = folder.commands?.[name];
       return entry && !folder.gate.some((gate) => same(gate.argv, entry.argv))
@@ -1276,27 +1314,33 @@ export function baselineCommands(folder: BaselineFolder): { name: string; argv: 
   ];
 }
 
+/** Every check of the baseline's proposed commands, and the newest one of each root. */
+function baselineChecks(ctx: ControlContext, baselineId: string) {
+  const all = ctx.store
+    .list<EnvironmentCheck>('environment_checks')
+    .filter((entry) => entry.cause.kind === 'baseline' && entry.cause.baseline_id === baselineId);
+  return {
+    all,
+    latest: all.filter(
+      (entry, index) => !all.slice(index + 1).some((later) => later.root === entry.root),
+    ),
+  };
+}
+
 /**
- * Records an ended check of a baseline's proposed commands. When every folder's first check has
- * ended and one failed on its code, the submitted baseline goes back to its session once to fix
- * the commands, without using a round. The caller owns the transaction.
+ * Records an ended check of a baseline's proposed commands. When the newest check of every
+ * folder has ended and one failed on its code, the submitted baseline goes back to its session
+ * once to fix the commands, without using a round. The caller owns the transaction.
  */
 export function baselineChecked(ctx: ControlContext, row: EnvironmentCheck): void {
   if (row.cause.kind !== 'baseline') return;
   const { baseline_id, attempt } = row.cause;
   const baseline = ctx.store.must<ProjectBaseline>('project_baselines', baseline_id);
-  const checks = ctx.store
-    .list<EnvironmentCheck>('environment_checks')
-    .filter(
-      (entry) =>
-        entry.cause.kind === 'baseline' &&
-        entry.cause.baseline_id === baseline_id &&
-        entry.cause.attempt === attempt,
-    );
+  const { all, latest: checks } = baselineChecks(ctx, baseline_id);
   const environment: NonNullable<ProjectBaseline['environment']> = {
     ...baseline.environment,
     check_ids: [
-      ...new Set([...(baseline.environment?.check_ids ?? []), ...checks.map((entry) => entry.id)]),
+      ...new Set([...(baseline.environment?.check_ids ?? []), ...all.map((entry) => entry.id)]),
     ],
     commands: checks.flatMap((check) => {
       const folder = baseline.result?.folders.find((entry) => entry.root === check.root);
@@ -1339,6 +1383,19 @@ export function baselineChecked(ctx: ControlContext, row: EnvironmentCheck): voi
     );
     return;
   }
+  const setups = new Set(
+    baseline.result!.folders.flatMap((folder) =>
+      folder.commands?.setup ? [folder.commands.setup.argv.join('\0')] : [],
+    ),
+  );
+  // The check prepares with the project's worktree command, else with the folder's setup.
+  const prepared = ctx.store.must<Project>('projects', baseline.project_id).worktree?.command
+    ? "prepared the way a worker gets one, with the project's worktree command,"
+    : !setups.size
+      ? 'prepared the way a worker gets one,'
+      : setups.size === 1
+        ? 'prepared with your setup command, which workers get only once it passes here and the user confirms the baseline,'
+        : "prepared with the folder's setup command, which workers do not get because the folders propose different ones,";
   const now = ctx.store.now();
   ctx.store.update<ProjectBaseline>(
     'project_baselines',
@@ -1355,7 +1412,7 @@ export function baselineChecked(ctx: ControlContext, row: EnvironmentCheck): voi
     ctx,
     session,
     [
-      'Pantheon ran the commands you proposed in a fresh worktree, prepared the way a worker gets one, and these failed:',
+      `Pantheon ran the commands you proposed in a fresh worktree, ${prepared} and these failed:`,
       ...failed.flatMap((check) =>
         check.commands
           .filter((command) => command.exit_code !== 0)

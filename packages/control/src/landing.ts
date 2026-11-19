@@ -141,11 +141,20 @@ export function beforeMergeCommands(
     });
 }
 
-/** A run that timed out, could not start or was killed by a signal failed because of the machine. */
+/**
+ * A run that timed out, could not start, was killed by a signal or was refused by the gate sandbox
+ * failed because of the machine.
+ */
 function failureClass(result: ValidationResult): GateFailureClass | undefined {
   if (result.timedOut || (result.exit_code === null && result.error) || result.signal)
     return 'environment';
-  if (result.exit_code !== 0) return 'code';
+  if (result.exit_code === 0) return;
+  // Only the sandbox prints these; a bare "Operation not permitted" also comes from ordinary failures.
+  const output = result.log.toString();
+  return output.includes('(file system sandbox blocked') ||
+    output.includes('sandbox_apply: Operation not permitted')
+    ? 'environment'
+    : 'code';
 }
 
 async function runGateCommand(

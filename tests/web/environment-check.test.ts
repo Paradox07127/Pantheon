@@ -13,12 +13,15 @@ vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
 vi.mock('@/data/facts-read', () => ({ useFactsRead: () => ({ read: null }) }));
 vi.mock('@/data/intro-read', () => ({ useIntroRead: () => ({ read: null }) }));
 vi.mock('@/data/app-settings', () => ({ useAppSettings: () => ({ settings: null }) }));
+import { Clip } from '@/components/Clip';
 import { EnvironmentCheck, type PlannedCommands } from '@/components/EnvironmentCheck';
 import { useBoard } from '@/data/board';
 import { durationText } from '@/lib/time-text';
+import { ProjectSetup } from '@/screens/board/ProjectSetup';
 import { ReviewBaseline } from '@/screens/projects/BaselineBlocks';
 import { Button } from '@/screens/projects/parts';
 import { ProjectGate } from '@/screens/settings/GatesPage';
+import { setupRead } from './setup-fixture.js';
 
 type Command = { type: string; input: Record<string, unknown>; expected_revision: number | null };
 
@@ -214,6 +217,26 @@ describe('the environment check', () => {
     if (note) expect(text(root)).toContain(env(note));
   });
 
+  it('cuts a long command name to its line and keeps its whole text', async () => {
+    const name = 'Hosted app contract shard (no Lite host)';
+    bridge.checks = [
+      failedCheck({
+        commands: [
+          {
+            name,
+            argv: ['make', 'test-app-hosted'],
+            exit_code: 2,
+            duration_ms: 1000,
+            output_tail: 'file system sandbox blocked',
+          },
+        ],
+      }),
+    ];
+    const h = await show({ planned: [{ root: ROOT, commands: [] }] });
+    const [row] = rows(tree(h));
+    expect(find(row, (n) => n.type === Clip && n.props.text === name)).toBeTruthy();
+  });
+
   it('names a command that fails on the machine', async () => {
     bridge.checks = [
       failedCheck({
@@ -380,6 +403,33 @@ describe('the environment check of a baseline', () => {
     expect(onOpenSession).toHaveBeenCalledWith('session-1');
   });
 
+  it('keeps the last results and the command being fixed while the baseline runs again, and holds the button', async () => {
+    bridge.checks = [
+      failedCheck({ cause: { kind: 'baseline', baseline_id: 'baseline-1', attempt: 1 } }),
+    ];
+    const h = await show({
+      baseline: baseline({
+        state: 'running',
+        environment: {
+          check_ids: ['check-/work/alpha'],
+          fix_requested_at: Date.now(),
+          commands: [
+            { root: ROOT, name: 'test', state: 'failed' },
+            { root: ROOT, name: 'build', state: 'not_run' },
+          ],
+        },
+      }),
+    });
+    expect(rows(tree(h)).map(glyphOf)).toEqual([
+      env('passed'),
+      env('passed'),
+      env('failedExit', { code: 1 }),
+      env('notRun'),
+    ]);
+    expect(text(tree(h))).toContain(env('fixing', { name: 'test' }));
+    expect(run(h).props.disabled).toBe(true);
+  });
+
   it('says the commands passed after the fix', async () => {
     bridge.checks = [
       ofBaseline(2),
@@ -435,7 +485,11 @@ describe('where the environment check is drawn', () => {
           {
             root: ROOT,
             stage: 'active',
-            gate: [{ ...test, sources: [] }],
+            // A gate command turned off is not checked, so it is not planned.
+            gate: [
+              { ...test, sources: [] },
+              { ...lint, enabled: false, sources: [] },
+            ],
             commands: {
               build: { argv: build.argv, sources: [] },
               test: { argv: test.argv, sources: [] },
@@ -461,5 +515,51 @@ describe('where the environment check is drawn', () => {
     );
     expect(confirm.props.busy).toBe(false);
     expect(confirm.props.state).toBeUndefined();
+  });
+
+  it('stays under the building baseline while its agent fixes a failed command', async () => {
+    const result = {
+      folders: [
+        {
+          root: ROOT,
+          stage: 'active',
+          gate: [{ ...test, sources: [] }],
+          commands: { build: { argv: build.argv, sources: [] } },
+        },
+      ],
+      workstreams: [],
+      contradictions: [],
+      findings: [],
+      questions: [],
+    };
+    const running = (environment?: ProjectBaseline['environment']) =>
+      ({
+        id: 'baseline-1',
+        revision: 5,
+        project_id,
+        state: 'running',
+        session_id: 'session-1',
+        dropped: 0,
+        facts_id: 'facts-1',
+        created_at: 1,
+        result,
+        ...(environment && { environment }),
+      }) as never as ProjectBaseline;
+    const draw = async (baseline: ProjectBaseline) => {
+      const h = mount(() =>
+        ProjectSetup({ setup: setupRead('running', { baseline }), onOpenSession: () => {} }),
+      );
+      await h.flush();
+      return nodes(tree(h)).filter((n) => n.type === EnvironmentCheck);
+    };
+    const fixing = running({
+      check_ids: ['c1'],
+      fix_requested_at: Date.now(),
+      commands: [{ root: ROOT, name: 'test', state: 'failed' }],
+    });
+    const [block] = await draw(fixing);
+    expect(block!.props.baseline).toBe(fixing);
+    expect(block!.props.planned).toEqual([{ root: ROOT, commands: [test, build] }]);
+    expect(await draw(running())).toEqual([]);
   });
 });

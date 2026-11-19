@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
   writeFileSync,
@@ -621,6 +621,98 @@ it.skipIf(!isolated || insideSandbox)(
       await f.close();
     }
   },
+);
+
+it.skipIf(!isolated || insideSandbox)(
+  'lets a tool linked from a Homebrew keg read the rest of its keg',
+  async () => {
+    const f = await candidateFixture();
+    try {
+      const keg = path.join(f.root, 'brew', 'Cellar', 'tool', '1.0'),
+        bin = path.join(f.root, 'brew', 'bin');
+      mkdirSync(path.join(keg, 'bin'), { recursive: true });
+      mkdirSync(path.join(keg, 'share'));
+      mkdirSync(bin);
+      writeFileSync(path.join(keg, 'share', 'data.txt'), 'from the keg\n');
+      writeFileSync(
+        path.join(keg, 'bin', 'tool'),
+        `#!/bin/sh\ncat ${JSON.stringify(path.join(keg, 'share', 'data.txt'))}\n`,
+      );
+      chmodSync(path.join(keg, 'bin', 'tool'), 0o755);
+      symlinkSync('../Cellar/tool/1.0/bin/tool', path.join(bin, 'tool'));
+      const result = await runValidationCommand({
+        ctx: (f.control as unknown as { ctx: ControlContext }).ctx,
+        key: 'check-process:homebrew-keg:0',
+        argv: ['tool'],
+        cwd: f.candidate,
+        root: f.candidate,
+        env: { PATH: `${bin}:/usr/bin:/bin` },
+        timeoutMs: 5000,
+      });
+      expect(result.error ?? result.stderr.toString()).toBe('');
+      expect(result.stdout.toString()).toBe('from the keg\n');
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.skipIf(!isolated || insideSandbox)(
+  'runs a shell process substitution, which reads through /dev/fd, also as an input of diff',
+  async () => {
+    const f = await candidateFixture();
+    try {
+      const result = await runValidationCommand({
+        ctx: (f.control as unknown as { ctx: ControlContext }).ctx,
+        key: 'check-process:process-substitution:0',
+        argv: [
+          '/bin/bash',
+          '-c',
+          'while read -r line; do echo "got $line"; done < <(echo one); diff <(echo a) <(echo a)',
+        ],
+        cwd: f.candidate,
+        root: f.candidate,
+        env: { PATH: '/usr/bin:/bin' },
+        timeoutMs: 5000,
+      });
+      expect(result.error ?? result.stderr.toString()).toBe('');
+      expect(result.stdout.toString()).toBe('got one\n');
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.skipIf(
+  process.platform !== 'darwin' ||
+    insideSandbox ||
+    spawnSync('/usr/bin/xcode-select', ['-p']).status !== 0,
+)(
+  'runs the xcrun shims of macOS, such as make and git, on the developer tools',
+  async () => {
+    const f = await candidateFixture();
+    try {
+      writeFileSync(path.join(f.candidate, 'Makefile'), 'all:\n\t@echo made\n');
+      execFileSync('/usr/bin/git', ['init', '-q'], { cwd: f.candidate });
+      const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+      for (const argv of [['/usr/bin/make'], ['/usr/bin/git', 'status']]) {
+        const result = await runValidationCommand({
+          ctx,
+          key: `check-process:xcrun-shim:${argv[0]}`,
+          argv,
+          cwd: f.candidate,
+          root: f.candidate,
+          env: { PATH: '/usr/bin:/bin' },
+          timeoutMs: 20000,
+        });
+        expect(result.error ?? result.stderr.toString()).not.toContain('sandbox blocked');
+        expect(result.exit_code).toBe(0);
+      }
+    } finally {
+      await f.close();
+    }
+  },
+  60000,
 );
 
 it.runIf(process.platform === 'linux')(

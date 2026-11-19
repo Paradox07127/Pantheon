@@ -210,7 +210,7 @@ export function EnvironmentCheck({
           <button
             type="button"
             className={baseline ? 'btn sm' : 'btn pri sm'}
-            disabled={empty || running || sending}
+            disabled={empty || running || sending || baseline?.state === 'running'}
             aria-describedby={empty ? whyId : error ? errorId : undefined}
             onClick={() => void verify()}
           >
@@ -366,8 +366,10 @@ export function EnvironmentCheck({
                                     )
                                   : notRunText(),
                             )}
-                            <span className="evc-nm">{row.name}</span>
-                            <Clip text={row.argv.join(' ')} className="evc-argv" />
+                            <span className="evc-what">
+                              <Clip text={row.name} className="evc-nm" />
+                              <Clip text={row.argv.join(' ')} className="evc-argv" />
+                            </span>
                             {row.state === 'failed' && row.run?.failure_class ? (
                               <span className="evc-class">
                                 {row.run.failure_class === 'code' ? (

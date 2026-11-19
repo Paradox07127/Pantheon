@@ -781,7 +781,9 @@ svg.lucide.ic-sm{width:14px;height:14px}
 .hm-other{flex:1 1 160px;min-width:0;height:22px;padding:0 6px;border:var(--hair) solid var(--bd);border-radius:max(calc(var(--r-sm) - 2px),4px);background:transparent;color:var(--tx);font:inherit;font-size:var(--fs-xs)}
 .hm-other:not(:placeholder-shown){border-color:var(--ink)}
 button.chip{font:inherit;font-size:var(--fs-xs);}
-.hm-pick{margin:0;padding:6px 10px 8px;border:var(--hair) solid var(--bd2);border-radius:var(--r-md);display:flex;flex-direction:column;gap:3px;max-height:150px;overflow-y:auto;min-width:0}
+.hm-pick{margin:0;padding:6px 10px 8px;border:var(--hair) solid var(--bd2);border-radius:var(--r-md);display:flex;flex-direction:column;gap:3px;min-width:0}
+/* Five whole rows, then the rest scrolls. */
+.hm-pis{display:flex;flex-direction:column;gap:3px;max-height:calc(5 * var(--lh-sm) + 4 * 3px);overflow-y:auto;min-width:0;line-height:var(--lh-sm)}
 .hm-pick legend{padding:0 4px;font-size:var(--fs-xs);color:var(--tx2)}
 .hm-pi{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;font-size:var(--fs-xs)}
 .hm-ext{grid-template-columns:auto fit-content(40%) minmax(0,1fr)}

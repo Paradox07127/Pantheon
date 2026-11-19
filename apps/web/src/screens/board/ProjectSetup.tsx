@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { ChevronDown } from 'lucide-react';
+import { EnvironmentCheck } from '../../components/EnvironmentCheck';
 import { RuntimeGlyph, runtimeName } from '../../components/RuntimeGlyph';
 import { StateGlyph } from '../../components/SessionStateIcon';
 import { useBoard } from '../../data/board';
@@ -14,7 +15,7 @@ import { useSessionList } from '../../data/workbench-sessions';
 import { t } from '../../i18n';
 import { keyText, shortcutKeys } from '../../lib/shortcuts';
 import { baselineEntry, type ProjectBaseline } from '../projects/baseline';
-import { BaselinePopover, ReviewBaseline } from '../projects/BaselineBlocks';
+import { BaselinePopover, baselinePlanned, ReviewBaseline } from '../projects/BaselineBlocks';
 import { TaskGraph } from '../projects/TaskGraph';
 import { defaultModelFor, defaultRuntime } from '../sessions/model';
 import { ModelMenu, type ModelChoice } from '../sessions/ModelMenu';
@@ -295,6 +296,15 @@ export function ProjectSetup({
             ))}
           </ul>
         </div>
+        {!failed && baseline.environment?.fix_requested_at !== undefined && (
+          <div className="cell">
+            <EnvironmentCheck
+              project_id={baseline.project_id}
+              baseline={baseline}
+              planned={baselinePlanned(baseline)}
+            />
+          </div>
+        )}
         <div className="cell">
           <div className="pst-f">
             {failed && (

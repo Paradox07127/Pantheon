@@ -1,7 +1,8 @@
 import { useState, type RefObject } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { ChevronRight } from 'lucide-react';
-import { EnvironmentCheck } from '../../components/EnvironmentCheck';
+import { Clip } from '../../components/Clip';
+import { EnvironmentCheck, type PlannedCommands } from '../../components/EnvironmentCheck';
 import { Markdown } from '../../components/Markdown';
 import { PathText } from '../../components/PathText';
 import { QuestionCard } from '../../components/QuestionCard';
@@ -248,6 +249,23 @@ export function AnsweredRound({ n, round }: { n: number; round: AnsweredRoundDat
     </>
   );
 }
+
+/** What the daemon checks of a folder: its gate without the commands turned off, then build, test and lint not in it. */
+export const baselinePlanned = (baseline: ProjectBaseline): PlannedCommands =>
+  (baseline.result?.folders ?? []).map((folder) => ({
+    root: folder.root,
+    commands: [
+      ...folder.gate
+        .filter((gate) => gate.enabled !== false)
+        .map(({ name, argv }) => ({ name, argv })),
+      ...(['build', 'test', 'lint'] as const).flatMap((name) => {
+        const entry = folder.commands?.[name];
+        return entry && !folder.gate.some((gate) => gate.argv.join('\0') === entry.argv.join('\0'))
+          ? [{ name, argv: entry.argv }]
+          : [];
+      }),
+    ],
+  }));
 
 /** The drafts key of the answers to the baseline's current round. */
 export const interviewDraft = (baseline: ProjectBaseline) =>
@@ -608,28 +626,30 @@ export function ReviewBaseline({
                 )}
                 <span className="mu">{folder.facts}</span>
               </div>
-              {folder.gate.map((i) => {
-                const item = draft.gate[i]!;
-                return (
-                  <label key={i} className="hm-pi">
-                    <input
-                      type="checkbox"
-                      checked={item.checked}
-                      onChange={(e) =>
-                        edit({
-                          gate: draft.gate.map((g, j) =>
-                            j === i ? { ...g, checked: e.target.checked } : g,
-                          ),
-                        })
-                      }
-                    />
-                    <span className="hm-line" title={item.command.name}>
-                      {item.command.name}
-                    </span>
-                    <span className="mu mono">{item.command.argv.join(' ')}</span>
-                  </label>
-                );
-              })}
+              <div className="hm-pis">
+                {folder.gate.map((i) => {
+                  const item = draft.gate[i]!;
+                  return (
+                    <label key={i} className="hm-pi">
+                      <input
+                        type="checkbox"
+                        checked={item.checked}
+                        onChange={(e) =>
+                          edit({
+                            gate: draft.gate.map((g, j) =>
+                              j === i ? { ...g, checked: e.target.checked } : g,
+                            ),
+                          })
+                        }
+                      />
+                      <span className="hm-line" title={item.command.name}>
+                        {item.command.name}
+                      </span>
+                      <Clip text={item.command.argv.join(' ')} className="mu mono" />
+                    </label>
+                  );
+                })}
+              </div>
             </fieldset>
           ))}
         </div>
@@ -641,20 +661,7 @@ export function ReviewBaseline({
               project_id={baseline.project_id}
               baseline={baseline}
               onOpenSession={onOpenSession}
-              // What the daemon checks of a folder: its gate, then build, test and lint not in it.
-              planned={(baseline.result?.folders ?? []).map((folder) => ({
-                root: folder.root,
-                commands: [
-                  ...folder.gate.map(({ name, argv }) => ({ name, argv })),
-                  ...(['build', 'test', 'lint'] as const).flatMap((name) => {
-                    const entry = folder.commands?.[name];
-                    return entry &&
-                      !folder.gate.some((gate) => gate.argv.join('\0') === entry.argv.join('\0'))
-                      ? [{ name, argv: entry.argv }]
-                      : [];
-                  }),
-                ],
-              }))}
+              planned={baselinePlanned(baseline)}
             />
           </div>
         </div>
@@ -680,37 +687,39 @@ export function ReviewBaseline({
                   {runtimeName(group.runtime)}
                 </span>
               </div>
-              {group.items.map((i) => {
-                const item = draft.extensions[i]!;
-                return (
-                  <label key={i} className="hm-pi hm-ext">
-                    <input
-                      type="checkbox"
-                      aria-label={t(
-                        {
-                          id: 'projects.baseline.keepOff',
-                          defaultMessage: 'Keep {runtime} {name} off',
-                        },
-                        { runtime: runtimeName(group.runtime), name: item.name },
-                      )}
-                      checked={item.checked}
-                      onChange={(e) =>
-                        edit({
-                          extensions: draft.extensions.map((x, j) =>
-                            j === i ? { ...x, checked: e.target.checked } : x,
-                          ),
-                        })
-                      }
-                    />
-                    <span className="hm-line mono" title={item.name}>
-                      {item.name}
-                    </span>
-                    <span className="mu hm-line" title={item.reason}>
-                      {item.reason}
-                    </span>
-                  </label>
-                );
-              })}
+              <div className="hm-pis">
+                {group.items.map((i) => {
+                  const item = draft.extensions[i]!;
+                  return (
+                    <label key={i} className="hm-pi hm-ext">
+                      <input
+                        type="checkbox"
+                        aria-label={t(
+                          {
+                            id: 'projects.baseline.keepOff',
+                            defaultMessage: 'Keep {runtime} {name} off',
+                          },
+                          { runtime: runtimeName(group.runtime), name: item.name },
+                        )}
+                        checked={item.checked}
+                        onChange={(e) =>
+                          edit({
+                            extensions: draft.extensions.map((x, j) =>
+                              j === i ? { ...x, checked: e.target.checked } : x,
+                            ),
+                          })
+                        }
+                      />
+                      <span className="hm-line mono" title={item.name}>
+                        {item.name}
+                      </span>
+                      <span className="mu hm-line" title={item.reason}>
+                        {item.reason}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </fieldset>
           ))}
         </div>

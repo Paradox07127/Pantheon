@@ -361,7 +361,7 @@ Caution: hold t9 until the user finishes their manual test of the importer (they
 
 1. Read the update in full (read_note if it was cut) and the failing gate's name and first error line. Read the session's last turns if you have the tools: what did it try during the hand-backs?
 2. Classify, using what Pantheon recorded before your own reading:
-   - Environment: Pantheon marks a gate failure as caused by the environment when the command timed out, could not start or was killed, also on a rerun. An error that only names the network or a missing tool is a clue until a rerun or the record confirms it.
+   - Environment: Pantheon marks a gate failure as caused by the environment when the command timed out, could not start, was killed or was refused by the gate sandbox, also on a rerun. An error that only names the network or a missing tool is a clue until a rerun or the record confirms it.
    - Flaky: the same commit passed and failed this check.
    - Broken before: the same check fails on the source branch without this task's commits. Check recent merged updates and git log for a change to that area.
    - Caused by the change: the error points at code or behaviour the task changed.

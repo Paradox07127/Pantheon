@@ -2629,15 +2629,15 @@ it.each([true, false])(
 const failing = ['sh', '-c', 'echo broken test >&2; exit 3'];
 const passing = ['sh', '-c', 'true'];
 
-/** A submitted baseline whose one folder proposes the gate command `test` with argv. */
-async function checkedBaseline(argv: string[]) {
+/** A submitted baseline whose one folder proposes the gate command `test` with argv, and setup. */
+async function checkedBaseline(argv: string[], setupArgv?: string[]) {
   const f = await setup({ managedWorkspaces: true });
   const head = f.populate();
   const baseline = await f.startBaseline();
   const folder = (argv: string[]) => ({
     ...f.folder(),
     gate: [{ name: 'test', argv, sources: ['file:package.json'] }],
-    commands: {},
+    commands: setupArgv ? { setup: { argv: setupArgv, sources: ['file:package.json'] } } : {},
   });
   await f.submitFolder(baseline, folder(argv));
   const submitted = await f.submit(baseline, f.result(head));
@@ -2650,12 +2650,13 @@ async function checkedBaseline(argv: string[]) {
       .list<SessionTurn>('session_turns')
       .filter((turn) => turn.session_id === baseline.session_id);
   /** Checks the proposed command the way the user's check of a submitted baseline does. */
-  const check = () =>
+  const check = (commands = argv) =>
     f.ctx.store.transaction(() =>
       startEnvironmentCheck(f.ctx, {
         project_id: f.project.id,
         root: f.project.roots[0]!,
-        commands: [{ name: 'test', argv }],
+        commands: [{ name: 'test', argv: commands }],
+        ...(setupArgv && { setup: { argv: setupArgv } }),
         base_ref: 'HEAD',
         cause: { kind: 'baseline', baseline_id: baseline.id, attempt: 1 },
       }),
@@ -2785,6 +2786,30 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)(
+  'sends no fix turn when the gate sandbox refused a proposed command in the fresh worktree',
+  async () => {
+    const { f, submitted, checks, turns, check, ended } = await checkedBaseline([
+      'sh',
+      '-c',
+      'echo "xcrun: error: unable to load libxcrun (dlopen(/x/libxcrun.dylib, 0x0005): tried: \'/x/libxcrun.dylib\' (file system sandbox blocked open()))." >&2; exit 1',
+    ]);
+    try {
+      const before = turns().length;
+      check();
+      await ended();
+      expect(checks()).toEqual([
+        expect.objectContaining({ state: 'inconclusive', reason_code: 'checks_environment' }),
+      ]);
+      expect(f.current(submitted).state).toBe('submitted');
+      expect(f.current(submitted).environment?.fix_requested_at).toBeUndefined();
+      expect(turns()).toHaveLength(before);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.skipIf(insideSandbox)(
   'writes the same project configuration on confirm with or without an environment check',
   async () => {
     const written: string[] = [];
@@ -2886,3 +2911,223 @@ it.skipIf(insideSandbox)(
     }
   },
 );
+
+it.skipIf(insideSandbox)(
+  'keeps only the newest check of each root in the baseline commands',
+  async () => {
+    const { f, submitted, checks, turns, check, ended } = await checkedBaseline(passing);
+    try {
+      const before = turns().length;
+      const first = check(['pantheon-missing-tool', 'test']);
+      await ended();
+      const again = check();
+      await ended();
+      expect(checks().map((row) => [row.id, row.state])).toEqual([
+        [first.id, 'inconclusive'],
+        [again.id, 'passed'],
+      ]);
+      expect(f.current(submitted)).toMatchObject({
+        state: 'submitted',
+        environment: {
+          check_ids: [first.id, again.id],
+          commands: [{ root: f.project.roots[0], name: 'test', state: 'passed' }],
+        },
+      });
+      expect(f.current(submitted).environment!.commands).toHaveLength(1);
+      expect(turns()).toHaveLength(before);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.skipIf(insideSandbox)(
+  'skips a turned-off proposed command and does not fail the check on a skippable one',
+  async () => {
+    const f = await setup({ managedWorkspaces: true });
+    try {
+      const head = f.populate();
+      const baseline = await f.startBaseline();
+      await f.submitFolder(baseline, {
+        ...f.folder(),
+        gate: [
+          { name: 'off', argv: failing, enabled: false, sources: ['file:package.json'] },
+          { name: 'optional', argv: failing, skippable: true, sources: ['file:package.json'] },
+          { name: 'test', argv: passing, sources: ['file:package.json'] },
+        ],
+        commands: {},
+      });
+      const submitted = await f.submit(baseline, f.result(head));
+      const turns = () =>
+        f.store
+          .list<SessionTurn>('session_turns')
+          .filter((turn) => turn.session_id === baseline.session_id).length;
+      const before = turns();
+      const [row] = f.call<EnvironmentCheck[]>('project.environment.verify', {
+        project_id: f.project.id,
+        baseline_id: baseline.id,
+      });
+      await eventually(
+        () => f.store.must<EnvironmentCheck>('environment_checks', row!.id).state !== 'running',
+        () => f.control.tick(),
+        20000,
+      );
+      const end = f.store.must<EnvironmentCheck>('environment_checks', row!.id);
+      expect(end.state).toBe('passed');
+      expect(end.commands.map((command) => command.name)).toEqual(['optional', 'test']);
+      expect(f.current(submitted).state).toBe('submitted');
+      expect(f.current(submitted).environment?.fix_requested_at).toBeUndefined();
+      expect(f.current(submitted).environment?.commands.map((command) => command.name)).toEqual([
+        'optional',
+        'test',
+      ]);
+      expect(turns()).toBe(before);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+const prepare = ['sh', '-c', 'touch prepared'];
+
+it
+  .skipIf(insideSandbox)
+  .each<[string, { worktree?: Project['worktree']; checked: boolean }, Project['worktree']]>([
+    [
+      'makes a setup that passed the worktree command',
+      { checked: true },
+      { copy_paths: [], command: { argv: prepare } },
+    ],
+    [
+      'keeps the copy paths of the project',
+      { worktree: { copy_paths: ['settings.local'] }, checked: true },
+      { copy_paths: ['settings.local'], command: { argv: prepare } },
+    ],
+    [
+      'keeps the worktree command the user set',
+      { worktree: { copy_paths: [], command: { argv: passing } }, checked: true },
+      { copy_paths: [], command: { argv: passing } },
+    ],
+    ['sets no worktree command without a check', { checked: false }, undefined],
+  ])('%s on confirm', async (_, { worktree, checked }, expected) => {
+  const { f, submitted, check, ended } = await checkedBaseline(passing, prepare);
+  try {
+    if (worktree)
+      f.call(
+        'project.worktree.set',
+        { project_id: f.project.id, ...worktree },
+        f.store.must<Project>('projects', f.project.id).revision,
+      );
+    if (checked) {
+      check();
+      await ended();
+    }
+    await f.call(
+      'project.baseline.confirm',
+      { baseline_id: submitted.id, answers: [] },
+      f.current(submitted).revision,
+    );
+    expect(f.store.must<Project>('projects', f.project.id).worktree).toEqual(expected);
+    expect(
+      JSON.parse(readFileSync(path.join(f.projectRoot, '.pantheon', 'config.json'), 'utf8'))
+        .commands,
+    ).toEqual({ setup: prepare });
+  } finally {
+    await f.close();
+  }
+});
+
+it.skipIf(insideSandbox)(
+  'sets no worktree command when the newest check of the setup failed',
+  async () => {
+    const broken = ['sh', '-c', 'echo no registry here; exit 4'];
+    const { f, submitted, checks, turns, check, ended, resubmit } = await checkedBaseline(
+      passing,
+      broken,
+    );
+    try {
+      check();
+      await ended();
+      const fix = turns().at(-1)!;
+      expect(fix.input).toContain('no registry here');
+      expect(fix.input).not.toContain('the way a worker gets one');
+      expect(fix.input).toContain('setup command');
+      await resubmit(passing);
+      await ended();
+      expect(checks().map((row) => row.reason_code)).toEqual(['setup_failed', 'setup_failed']);
+      await f.call(
+        'project.baseline.confirm',
+        { baseline_id: submitted.id, answers: [] },
+        f.current(submitted).revision,
+      );
+      expect(f.store.must<Project>('projects', f.project.id).worktree).toBeUndefined();
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+it.skipIf(insideSandbox).each<[string, string[], Project['worktree']]>([
+  ['sets the setup both folders propose', prepare, { copy_paths: [], command: { argv: prepare } }],
+  ['sets no setup when the folders propose different ones', passing, undefined],
+])('%s as the worktree command', async (_, other, expected) => {
+  const f = await setup({ managedWorkspaces: true });
+  try {
+    const repository = (name: string) => {
+      const root = path.join(f.root, name);
+      mkdirSync(path.join(root, 'src'), { recursive: true });
+      writeFileSync(path.join(root, 'README.md'), `# ${name}\n`);
+      writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: {} }));
+      writeFileSync(path.join(root, 'src/index.ts'), 'export {};\n');
+      gitIn(root, 'init', '--quiet');
+      gitIn(root, 'add', '.');
+      gitIn(root, 'commit', '--quiet', '-m', `Initial ${name} source`);
+      return realpathSync(root);
+    };
+    const api = repository('api'),
+      web = repository('web');
+    await f.call(
+      'project.environment.set',
+      { project_id: f.project.id, name: f.project.name, roots: [api, web], env: {} },
+      f.store.must<Project>('projects', f.project.id).revision,
+    );
+    const baseline = await f.startBaseline();
+    for (const [root, argv] of [
+      [api, prepare],
+      [web, other],
+    ] as const)
+      await f.submitFolder(baseline, {
+        root,
+        stage: 'active',
+        stack: ['TypeScript'],
+        context: { instructions: ['README.md'], docs: [], task_lists: [] },
+        gate: [{ name: 'test', argv: passing, sources: ['file:package.json'] }],
+        commands: { setup: { argv, sources: ['file:package.json'] } },
+      });
+    const submitted = await f.submit(baseline, f.result('0000000'));
+    const rows = f.call<EnvironmentCheck[]>('project.environment.verify', {
+      project_id: f.project.id,
+      baseline_id: baseline.id,
+    });
+    expect(rows).toHaveLength(2);
+    await eventually(
+      () =>
+        rows.every(
+          (row) => f.store.must<EnvironmentCheck>('environment_checks', row.id).state !== 'running',
+        ),
+      () => f.control.tick(),
+      20000,
+    );
+    expect(
+      rows.map((row) => f.store.must<EnvironmentCheck>('environment_checks', row.id).state),
+    ).toEqual(['passed', 'passed']);
+    await f.call(
+      'project.baseline.confirm',
+      { baseline_id: submitted.id, answers: [] },
+      f.current(submitted).revision,
+    );
+    expect(f.store.must<Project>('projects', f.project.id).worktree).toEqual(expected);
+  } finally {
+    await f.close();
+  }
+});

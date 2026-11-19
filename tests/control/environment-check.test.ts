@@ -100,6 +100,45 @@ it
       },
     ],
     [
+      'ends inconclusive when the gate sandbox refuses a library load',
+      {
+        gate: [
+          'sh',
+          '-c',
+          'echo "xcrun: error: unable to load libxcrun (dlopen(/x/libxcrun.dylib, 0x0005): tried: \'/x/libxcrun.dylib\' (file system sandbox blocked open()))." >&2; exit 1',
+        ],
+      },
+      {
+        state: 'inconclusive',
+        reason_code: 'checks_environment',
+        commands: [expect.objectContaining({ name: 'Gate', failure_class: 'environment' })],
+      },
+    ],
+    [
+      'ends inconclusive when the gate sandbox refuses a nested sandbox',
+      {
+        gate: [
+          'sh',
+          '-c',
+          'echo "sandbox-exec: sandbox_apply: Operation not permitted" >&2; exit 1',
+        ],
+      },
+      {
+        state: 'inconclusive',
+        reason_code: 'checks_environment',
+        commands: [expect.objectContaining({ name: 'Gate', failure_class: 'environment' })],
+      },
+    ],
+    [
+      'fails on a permission error that names no sandbox',
+      { gate: ['sh', '-c', 'echo "touch: /System/x: Operation not permitted" >&2; exit 1'] },
+      {
+        state: 'failed',
+        reason_code: 'checks_failed',
+        commands: [expect.objectContaining({ name: 'Gate', failure_class: 'code' })],
+      },
+    ],
+    [
       'fails with the provisioning output of a failing setup and runs no gate',
       { worktree: ['sh', '-c', 'echo no registry here; exit 4'], gate: ['sh', '-c', 'true'] },
       {

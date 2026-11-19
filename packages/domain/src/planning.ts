@@ -35,7 +35,14 @@ export interface BaselineFolder {
   stage: 'empty' | 'early' | 'active' | 'maintenance';
   stack?: string[];
   context?: { instructions: string[]; docs: string[]; task_lists: string[] };
-  gate: { name: string; argv: string[]; timeout_ms?: number; sources: string[] }[];
+  gate: {
+    name: string;
+    argv: string[];
+    timeout_ms?: number;
+    enabled?: boolean;
+    skippable?: boolean;
+    sources: string[];
+  }[];
   commands?: Partial<
     Record<'setup' | 'build' | 'test' | 'lint' | 'dev', { argv: string[]; sources: string[] }>
   >;
