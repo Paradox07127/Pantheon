@@ -430,6 +430,18 @@ function AgentContract({ profile }: { profile: AgentListed }) {
     revision: number;
     values: { budget: string; loudest?: Loudest; quiet: Hours | null };
   } | null>(null);
+  const sending = useRef<{ budget: string; loudest?: Loudest; quiet: Hours | null } | null>(null);
+  // What the daemon holds once the saves out and waiting are made; a blur sends a value that differs.
+  const held = (field: 'budget' | 'quiet') =>
+    ({
+      budget: String(contract.weekly_input_tokens ?? ''),
+      quiet: contract.quiet_hours ?? null,
+      ...(made.current?.id === profile.id && made.current.revision > profile.revision
+        ? made.current.values
+        : {}),
+      ...sending.current,
+      ...waiting.current?.values,
+    })[field];
   const save = async (
     field: 'budget' | 'loudest' | 'quiet',
     next: { budget?: string; loudest?: Loudest; quiet?: Hours | null },
@@ -452,6 +464,7 @@ function AgentContract({ profile }: { profile: AgentListed }) {
     setBusy(true);
     setRefusal(null);
     for (;;) {
+      sending.current = shown;
       const result = await runCommand(
         'agent.update',
         {
@@ -482,6 +495,7 @@ function AgentContract({ profile }: { profile: AgentListed }) {
       field = again.field;
       shown = queued;
     }
+    sending.current = null;
     saving.current = false;
     setBusy(false);
   };
@@ -515,7 +529,7 @@ function AgentContract({ profile }: { profile: AgentListed }) {
           aria-invalid={refusal?.field === 'budget' || undefined}
           onChange={(e) => set({ budget: e.target.value })}
           onBlur={() => {
-            if (budget !== String(contract.weekly_input_tokens ?? '')) void save('budget', {});
+            if (budget !== held('budget')) void save('budget', {});
           }}
         />
         {refused('budget')}
@@ -631,7 +645,7 @@ function AgentContract({ profile }: { profile: AgentListed }) {
                   aria-invalid={refusal?.field === 'quiet' || undefined}
                   onChange={(e) => set({ quiet: { ...quiet, [end]: e.target.value } })}
                   onBlur={() => {
-                    if (JSON.stringify(quiet) !== JSON.stringify(contract.quiet_hours ?? null))
+                    if (JSON.stringify(quiet) !== JSON.stringify(held('quiet')))
                       void save('quiet', {});
                   }}
                 />

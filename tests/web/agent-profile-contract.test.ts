@@ -389,6 +389,37 @@ describe('contract', () => {
     });
   });
 
+  it('saves a budget changed back to the profile value while the save of another value is out', async () => {
+    let profile = triage();
+    const contractOf = nodes(panel().value).find(
+      (n) => typeof n.type === 'function' && n.type.name === 'AgentContract',
+    )!.type as (props: unknown) => any;
+    const h = host(() => contractOf({ profile }));
+    let answer!: (result: unknown) => void;
+    runCommand.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    runCommand.mockImplementationOnce(async () => ({ ok: true, value: triage({ revision: 9 }) }));
+    const budget = () => labelled(h.value, zh('sessions.agents.contract.budget'));
+    budget().props.onChange({ target: { value: '500000' } });
+    h.render();
+    budget().props.onBlur();
+    budget().props.onChange({ target: { value: '2000000' } });
+    h.render();
+    budget().props.onBlur();
+    await h.flush();
+    const saved = triage({
+      revision: 8,
+      contract: { ...triage().contract, weekly_input_tokens: 500000 },
+    });
+    answer({ ok: true, value: saved });
+    await h.flush();
+    profile = saved;
+    h.render();
+    const sent = runCommand.mock.calls.filter((call) => call[0] === 'agent.update');
+    expect(sent.map((call) => (call[1] as any).revision)).toEqual([7, 8]);
+    expect((sent[1]![1] as any).contract.weekly_input_tokens).toBe(2000000);
+    expect(budget().props.value).toBe('2000000');
+  });
+
   it('sends an edit made after a save returned at the revision that save made, before the profile catches up', async () => {
     runCommand.mockImplementation(async () => ({
       ok: true,

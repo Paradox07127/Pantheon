@@ -111,7 +111,15 @@ export function replanTriggers(ctx: ControlContext): void {
             plan.pending_edits.find(
               (edit) =>
                 edit.status === 'applied' &&
-                edit.refutes?.some((refute) => refute.assumption_id === trigger.assumption_id),
+                edit.refutes?.some((refute) => refute.assumption_id === trigger.assumption_id) &&
+                !fired.some((event) => {
+                  const payload = event.payload as ReplanFired;
+                  return (
+                    same(payload, trigger) &&
+                    payload.task_id === taskId &&
+                    payload.edit_id === edit.edit_id
+                  );
+                }),
             );
           if (!refuting) continue;
           editId = refuting.edit_id;

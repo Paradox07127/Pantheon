@@ -341,6 +341,49 @@ it('fires an assumption condition once the lead applies the user saying the assu
   expect(fired(f)).toHaveLength(1);
 });
 
+it('fires an assumption condition again for a later applied edit that refutes it again', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  await settle(f, lead);
+  const trigger: ReplanTrigger = { type: 'assumption_false', assumption_id: 'csv-only' };
+  f.call(
+    'board.plan.update',
+    {
+      ...planInput(f, [trigger], ['exports']),
+      assumptions: [{ id: 'csv-only', text: 'Exports are CSV only.', milestone: 'm1' }],
+    },
+    null,
+    leadPrincipal(f, lead.id),
+  );
+  const refuteAndApply = (instead: string) => {
+    const { edit_id } = f.call<{ edit_id: string }>('board.plan.edit', {
+      project_id: f.project.id,
+      lead_session_id: lead.id,
+      base_version: f.store.must<BoardPlan>('board_plans', lead.id).plan_version,
+      ops: [{ type: 'refute_assumption', assumption_id: 'csv-only', instead }],
+    });
+    f.call(
+      'board.plan.edit',
+      {
+        project_id: f.project.id,
+        base_version: f.store.must<BoardPlan>('board_plans', lead.id).plan_version,
+        ops: [{ type: 'resolve_edit', edit_id, decision: 'apply' }],
+      },
+      null,
+      leadPrincipal(f, lead.id),
+    );
+    return edit_id;
+  };
+  const first = refuteAndApply('Exports are CSV and JSON.');
+  await f.control.tick();
+  const second = refuteAndApply('Exports are CSV, JSON and XML.');
+  await f.control.tick();
+  expect(fired(f).map((event) => (event.payload as { edit_id?: string }).edit_id)).toEqual([
+    first,
+    second,
+  ]);
+});
+
 it('accepts the re-plan event fired before the plan moved to a new lead', async () => {
   const f = await workbenchFixture();
   const lead = await leadWithMilestone(f, [{ type: 'handbacks', count: 2 }]);

@@ -200,6 +200,30 @@ it('replays the plan of the lead before a rotation', async () => {
   ).toEqual([['board.plan_updated', ['exports:planned']]]);
 });
 
+it('replays the current plan when asked with the id of a lead rotated away twice', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  writePlan(f, lead.id, ['exports']);
+  const second = await f.create('Carry on with the export feature');
+  const third = await f.create('Finish the export feature');
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  ctx.store.transaction(() =>
+    transferPlan(ctx, f.store.must<BoardPlan>('board_plans', lead.id), second.id, ''),
+  );
+  ctx.store.transaction(() =>
+    transferPlan(ctx, f.store.must<BoardPlan>('board_plans', second.id), third.id, ''),
+  );
+  for (const id of [lead.id, second.id])
+    expect(
+      f.control
+        .planReplay(user, id, 0, 100)
+        .frames.map((frame) => [
+          frame.kind,
+          frame.tasks.map((task) => `${task.id}:${task.status}`),
+        ]),
+    ).toEqual([['board.plan_updated', ['exports:planned']]]);
+});
+
 it('marks the new generation of a task merged when the session the user opened for it merges', async () => {
   const f = await workbenchFixture();
   const lead = await f.create('Plan the export feature');
@@ -253,6 +277,57 @@ it('marks the new generation of a task merged when the session the user opened f
     ['session.merged', 'exports', ['exports:merged']],
   ]);
 });
+
+it.each([
+  ['merged', 2],
+  ['planned', 1],
+])(
+  'shows a task %s when its worker merges at generation %i after the next lead changed the goal',
+  async (status, mergedGeneration) => {
+    const f = await workbenchFixture();
+    const lead = await f.create('Plan the export feature');
+    writePlan(f, lead.id, ['exports']);
+    const [worker] = dispatch(f, lead.id, 'exports', ['exports-worker']);
+    const successor = await f.create('Carry on with the export feature');
+    const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+    ctx.store.transaction(() =>
+      transferPlan(ctx, f.store.must<BoardPlan>('board_plans', lead.id), successor.id, ''),
+    );
+    f.call(
+      'board.plan.edit',
+      {
+        project_id: f.project.id,
+        base_version: f.store.must<BoardPlan>('board_plans', successor.id).plan_version,
+        ops: [{ type: 'set_task', task_id: 'exports', patch: { goal: 'Export as CSV' } }],
+      },
+      null,
+      {
+        id: `session:${successor.id}`,
+        role: 'lead',
+        project_id: f.project.id,
+        session_id: successor.id,
+        expires_at: f.store.now() + 60000,
+      },
+    );
+    expect(
+      f.store.must<BoardPlan>('board_plans', successor.id).generations!.exports!.generation,
+    ).toBe(2);
+    // The worker took the changed contract, or merged before it did.
+    const current = f.store.must<Session>('sessions', worker!.id);
+    const merging = f.store.update<Session>(
+      'sessions',
+      { ...current, task: { ...current.task!, generation: mergedGeneration } },
+      current.revision,
+    );
+    merge(f, merging);
+    expect(
+      f.control
+        .planReplay(user, successor.id, 0, 100)
+        .frames.at(-1)!
+        .tasks.map((task) => `${task.id}:${task.status}`),
+    ).toEqual([`exports:${status}`]);
+  },
+);
 
 it('gives each frame the task set of the plan update it follows', async () => {
   const { f, lead } = await replayedPlan();

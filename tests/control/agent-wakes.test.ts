@@ -276,7 +276,8 @@ it("lists a wake's messages and questions by their first line, cut at 140 charac
     risks: [],
     assumptions: [],
   });
-  as('task.start', { task_ids: ['export', 'import'] });
+  // A task named twice is one task started.
+  as('task.start', { task_ids: ['export', 'import', 'export'] });
   await eventually(ended, () => f.control.tick(), 20_000);
   expect(f.control.agentWakes(user, profile().id, 10)).toEqual([
     expect.objectContaining({

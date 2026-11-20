@@ -56,8 +56,8 @@ export function wakeOf(ctx: ControlContext, { turn, at, start, end }: Span): Age
       turn.session_id,
     ).map(brief),
     // An event is the agent's own when the inbox holds its command under the session's principal.
-    actions = ids<{ started: number }>(
-      "SELECT CASE WHEN kind='task.start_requested' THEN json_array_length(payload, '$.task_ids') ELSE 0 END AS started FROM events WHERE aggregate_id=? AND kind IN ('board.plan_updated','board.plan_proposed','task.start_requested','task.stop_requested') AND sequence>? AND sequence<? AND EXISTS(SELECT 1 FROM inbox WHERE source_key='session:'||events.aggregate_id||':command:'||events.causation_id)",
+    actions = ids<{ started: string | null }>(
+      "SELECT CASE WHEN kind='task.start_requested' THEN payload ->> '$.task_ids' END AS started FROM events WHERE aggregate_id=? AND kind IN ('board.plan_updated','board.plan_proposed','task.start_requested','task.stop_requested') AND sequence>? AND sequence<? AND EXISTS(SELECT 1 FROM inbox WHERE source_key='session:'||events.aggregate_id||':command:'||events.causation_id)",
       turn.session_id,
     );
   return {
@@ -80,7 +80,10 @@ export function wakeOf(ctx: ControlContext, { turn, at, start, end }: Span): Age
     actions: actions.length,
     messages,
     questions,
-    tasks_started: actions.reduce((sum, action) => sum + action.started, 0),
+    // A request may name a task twice, and a task waiting to dispatch may be started again.
+    tasks_started: new Set(
+      actions.flatMap((action) => (action.started ? (JSON.parse(action.started) as string[]) : [])),
+    ).size,
   };
 }
 

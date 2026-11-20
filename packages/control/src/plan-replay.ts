@@ -41,9 +41,19 @@ export function planReplay(
   limit: number,
   before?: number,
 ): PlanReplay {
-  const projectId = ctx.store.must<BoardPlan>('board_plans', leadId).project_id;
+  // A replay opened before a lead rotation asks with the old lead; it follows the plan to its lead now.
+  const moved = ctx.store.statement(
+    "SELECT aggregate_id FROM events WHERE kind='board.plan_transferred' AND payload ->> '$.from'=?",
+  );
+  let planId = leadId;
+  while (!ctx.store.get<BoardPlan>('board_plans', planId)) {
+    const to = moved.get(planId) as { aggregate_id: string } | undefined;
+    if (!to) break;
+    planId = to.aggregate_id;
+  }
+  const projectId = ctx.store.must<BoardPlan>('board_plans', planId).project_id;
   projectAccess(ctx, principal, projectId, 'project.read');
-  const lineage = new Set(planLineage(ctx, leadId));
+  const lineage = new Set(planLineage(ctx, planId));
   let plan: BoardPlan | undefined;
   // By task id, with the task generation the status was reached in; replaced, not changed, so a frame keeps its own.
   let statuses: Statuses = new Map();
@@ -98,14 +108,15 @@ export function planReplay(
         const dispatched = sessionTask.get(event.aggregate_id);
         taskId = dispatched ?? (task && lineage.has(task.lead_session_id) ? task.id : undefined);
         if (!taskId) continue;
-        const own = dispatched ? undefined : (task!.generation ?? taskGeneration(plan, taskId));
+        // The generation the session merged in: a contract change it took moved it past its dispatch.
         let part = parts.get(taskId)!;
-        if (own !== undefined && part?.generation !== own)
-          parts.set(taskId, (part = { generation: own, open: new Set() }));
+        const own =
+          task?.generation ?? (dispatched ? part.generation : taskGeneration(plan, taskId));
+        if (part?.generation !== own)
+          parts.set(taskId, (part = { generation: own, open: dispatched ? part.open : new Set() }));
         part.open.delete(event.aggregate_id);
-        const status = own === undefined ? statuses.get(taskId)! : { generation: own };
         if (!part.open.size)
-          statuses = new Map(statuses).set(taskId, { ...status, status: 'merged' });
+          statuses = new Map(statuses).set(taskId, { generation: own, status: 'merged' });
       }
     } else if (event.kind === 'task.accepted') {
       if (!onPlan) continue;
