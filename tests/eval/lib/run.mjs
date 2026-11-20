@@ -329,7 +329,11 @@ export async function runOne(spec) {
     const taskSession = await waitFor(
       async () =>
         (await events()).find((event) => event.kind === 'task.dispatched')?.payload.session_id ??
-        false,
+        // A real lead may claim the task and do it in its own session.
+        ((await events()).some(
+          (event) => event.kind === 'task.claimed' && event.aggregate_id === leadSession.id,
+        ) &&
+          leadSession.id),
       'the task session',
       spec.settleMs,
     );
@@ -350,7 +354,9 @@ export async function runOne(spec) {
       const row = await taskRow();
       // Nobody answers a permission request here, so its turn would stay running to the cap.
       // A running merge is not the end of the run, however long its gate prints no event.
-      if (row.waiting > 0 || (!turns.some(busy) && row.merge?.state !== 'running')) {
+      // The run itself answers the permission requests of a real lead's own session.
+      const unanswered = row.waiting > 0 && taskSession !== leadSession.id;
+      if (unanswered || (!turns.some(busy) && row.merge?.state !== 'running')) {
         settled = true;
         break;
       }
