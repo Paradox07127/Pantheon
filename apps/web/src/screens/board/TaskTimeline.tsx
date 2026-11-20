@@ -89,6 +89,20 @@ export const KINDS: Record<
       </>
     ),
   },
+  merge_retried: {
+    get label() {
+      return t({
+        id: 'board.task.trace.mergeRetried',
+        defaultMessage: 'Merge retried after the gates passed',
+      });
+    },
+    glyph: (
+      <>
+        <circle cx="4" cy="3" r="1.5" />
+        <path d="M4 4.5V12M4 4.8c0 1.8 1.6 2.2 3.2 2.2h3.3M8.8 5.2 10.6 7 8.8 8.8" />
+      </>
+    ),
+  },
   merge_blocked: {
     get label() {
       return t({ id: 'board.task.trace.mergeBlocked', defaultMessage: 'Merge blocked' });

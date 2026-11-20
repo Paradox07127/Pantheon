@@ -944,7 +944,7 @@ export function ChapterMark({ event }: { event: DaemonEvent }) {
     }
     const history = await runCommand(
       'memory.history',
-      { project_id: event.project_id, key, limit: 50 },
+      { project_id: event.project_id, key, ids: [previous, handoff] },
       null,
     );
     if (!history.ok) return setNotes({ error: failureText(history.error) });

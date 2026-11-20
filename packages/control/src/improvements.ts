@@ -699,14 +699,19 @@ export const improvementHandlers: Handlers = {
       'invalid_state',
       'The eval of this improvement is running',
     );
-    for (const version of request.conditions)
-      exportPlaybook(ctx, input.project_id, change.runtime, version);
     const { checkout, args, out } = playbookEval(
       ctx,
       improvement,
       change.runtime,
       request.conditions,
     );
+    requireThat(
+      existsSync(path.join(checkout, args[0]!)),
+      'invalid_state',
+      'Evals run only from a source checkout of Pantheon; this install has no scripts/eval.mjs',
+    );
+    for (const version of request.conditions)
+      exportPlaybook(ctx, input.project_id, change.runtime, version);
     const committed = afterCommit(ctx);
     running.add(improvement.id);
     void Promise.resolve()

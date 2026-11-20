@@ -8,6 +8,7 @@ export type LearnedAction = LearnedItem['actions'][number];
 const LEARNED_KINDS: ReadonlySet<string> = new Set([
   'improvement.proposed',
   'improvement.status_changed',
+  'improvement.evidence_added',
   'retrospective.recorded',
   'agent_proposal.created',
   'agent_proposal.resolved',

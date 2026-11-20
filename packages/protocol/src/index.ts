@@ -1704,7 +1704,7 @@ export const boardPlanInputSchema = z.strictObject({
           .max(4)
           .optional()
           .describe(
-            'Optional: up to 4 conditions on which you re-plan the milestone. When a task of the milestone meets handbacks, budget_ratio or stall, Pantheon sends you a replan note once per task generation; assumption_false is recorded only.',
+            'Optional: up to 4 conditions on which you re-plan the milestone. When a task of the milestone meets handbacks, budget_ratio or stall, Pantheon sends you a replan note once per task generation; for assumption_false, once you apply an edit of the user that says the assumption is wrong.',
           ),
       }),
     )
@@ -5605,7 +5605,8 @@ export interface SessionActivity {
  * What a task timeline entry records: lead_message is a task.messaged turn, report a
  * task.reported note, handback a turn the tracker queued on a task session, gate_passed and
  * gate_failed a session.gate_checked run, merge_blocked a blocked, skipped or cancelled merge,
- * user_edit a user's plan edit note.
+ * user_edit a user's plan edit note, merge_retried a merge started again after a user's gate
+ * run passed.
  */
 export type TaskTraceKind =
   | 'start_requested'
@@ -5617,6 +5618,7 @@ export type TaskTraceKind =
   | 'gate_passed'
   | 'gate_failed'
   | 'merge_started'
+  | 'merge_retried'
   | 'merge_blocked'
   | 'merged'
   | 'discarded'

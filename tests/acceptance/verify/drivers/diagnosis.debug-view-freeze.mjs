@@ -210,7 +210,10 @@ await reset();
 // An open menu: the view opens over it (Help menu action) and still picks inside it.
 // Off the Search button: it keeps focus after Escape closed the palette, and its tooltip covers the project switcher.
 // Focus returns to the button after the sheet's exit animation, so blur only once the scrims are gone.
-await page.waitFor(`!document.querySelector('.pj-scrim, .cmdk-scrim')`, 'the sheet to finish closing');
+await page.waitFor(
+  `!document.querySelector('.pj-scrim, .cmdk-scrim')`,
+  'the sheet to finish closing',
+);
 await page.evaluate('document.activeElement?.blur()');
 await move(side.x, side.y);
 await page.waitFor(
@@ -225,6 +228,8 @@ await page.waitFor(`!!document.querySelector('[role=menu]')`, 'the project menu 
 const item = await page.evaluate(`(() => {
   const el = [...document.querySelectorAll('[role=menu] [role=menuitem]')].find((e) => e.textContent.includes('项目设置'));
   if (!el) return null;
+  // The item is below the fold when the menu lists many projects.
+  el.scrollIntoView({ block: 'center' });
   const r = el.getBoundingClientRect();
   return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
 })()`);
@@ -256,7 +261,9 @@ check('在菜单里点 项目设置 选中了它', item && inMenu, {
 });
 // The settings page stays in the DOM once opened; only a visible close button means it is open.
 const settingsShown = () =>
-  page.evaluate(`(() => { const b = document.querySelector('button[aria-label="关闭设置"]'); return !!b && b.getClientRects().length > 0; })()`);
+  page.evaluate(
+    `(() => { const b = document.querySelector('button[aria-label="关闭设置"]'); return !!b && b.getClientRects().length > 0; })()`,
+  );
 check('点菜单项没有打开项目设置', await staysFalse(settingsShown));
 
 result.shot = await page.screenshot(result.id);
@@ -265,11 +272,16 @@ await reset();
 // Closing the view leaves the menu as it was, open; a click on its button would close it.
 check(
   '关闭调试视图后菜单仍开着',
-  await page.evaluate(`document.querySelector('button[aria-label="切换项目"]')?.getAttribute('aria-expanded') === 'true'`),
+  await page.evaluate(
+    `document.querySelector('button[aria-label="切换项目"]')?.getAttribute('aria-expanded') === 'true'`,
+  ),
 );
 if (!(await page.evaluate(`!!document.querySelector('[role=menu]')`)))
   await page.click({ role: 'button', name: '切换项目', exact: true });
 await page.waitFor(`!!document.querySelector('[role=menu]')`, 'the project menu to open');
+await page.evaluate(
+  `[...document.querySelectorAll('[role=menu] [role=menuitem]')].find((e) => e.textContent.includes('项目设置'))?.scrollIntoView({ block: 'center' })`,
+);
 await page.click({ role: 'menuitem', name: '项目设置', exact: true });
 check('对照组：关闭后点同一个 项目设置 打开设置页', await poll(settingsShown, 3000));
 await reset();

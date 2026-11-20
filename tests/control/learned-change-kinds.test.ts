@@ -305,6 +305,24 @@ it.each([
     'playbook=2_passes_more',
   ],
   [
+    'whose eval found it cheaper but the current version passes more',
+    () => [
+      receipt(
+        'playbook=1_cheaper',
+        runsFile([
+          ...evalRuns(2).map((run) =>
+            run.condition === 'playbook=1'
+              ? { ...run, outcome: 'merged', hidden_passed: true, input_tokens: 500 }
+              : run,
+          ),
+          ...evalRuns(2).map((run) => ({ ...run, task: `${String(run.task)}-only-current` })),
+        ]),
+      ),
+    ],
+    'eval_not_better',
+    'playbook=2_passes_more',
+  ],
+  [
     'whose verdict its runs do not show',
     () => [
       receipt(

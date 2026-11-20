@@ -1371,6 +1371,57 @@ it('merges a parallel part whose steps before the merge pass while an earlier pa
   expect(current(f, workers[0]!.id).merge).toMatchObject({ reason: 'gate_failed' });
 });
 
+it('keeps the out-of-scope allowance of a held merge when a workflow command blocks it', async () => {
+  let f!: Fixture;
+  vi.spyOn(validation, 'runValidationCommand').mockImplementation(async (input) => {
+    if (input.argv.includes('audit-part')) {
+      const held = f.store
+        .list<Session>('sessions')
+        .find((s) => s.merge?.reason === 'workflow_approval')!;
+      f.store.update(
+        'sessions',
+        {
+          ...held,
+          merge: { ...held.merge!, allow_out_of_scope: true, allowed_files: ['output.txt'] },
+        },
+        held.revision,
+      );
+    }
+    return validationResult(input.argv.includes('audit-part') ? 7 : 0);
+  });
+  const definition = empty();
+  definition.slots.before_merge = [
+    {
+      id: 'part-check',
+      title: 'Check the part',
+      kind: {
+        type: 'loop',
+        max: 1,
+        until: 'passes',
+        step: {
+          id: 'audit',
+          title: 'Audit part',
+          kind: { type: 'command', command: 'audit-part', timeout_seconds: 10 },
+        },
+      },
+    },
+  ];
+  const ready = await setup(definition);
+  f = ready.f;
+  f.call('workflow.policy.set', { project_id: f.project.id, gate_on_fail: 'stop' });
+  const worker = await build(f, ready.lead);
+  await eventually(
+    () => current(f, worker.id).merge?.reason === 'gate_failed',
+    () => f.control.tick(),
+    10000,
+  );
+  expect(current(f, worker.id).merge).toMatchObject({
+    reason: 'gate_failed',
+    allow_out_of_scope: true,
+    allowed_files: ['output.txt'],
+  });
+});
+
 it("lists each parallel worker with its part's goal and keeps briefing it after the plan drops the parts", async () => {
   const { f, lead } = await setup(empty(), [], {
     path: 'parallel',

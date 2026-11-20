@@ -781,6 +781,8 @@ function reportFailure(ctx: ControlContext, run: StepRun, reason: string, cause 
           reason: 'gate_failed',
           failure_class: failedCommand.failure_class,
           gate: { name: failedCommand.step.title, output: failedCommand.reason ?? '' },
+          ...(session.merge?.allow_out_of_scope ? { allow_out_of_scope: true } : {}),
+          ...(session.merge?.allowed_files ? { allowed_files: session.merge.allowed_files } : {}),
         },
       },
       session.revision,

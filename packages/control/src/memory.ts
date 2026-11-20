@@ -626,7 +626,7 @@ export const memoryHandlers: Handlers = {
     ensureProject(ctx, p, i.project_id, c.type);
     return {
       items: records(ctx, i.project_id)
-        .filter((r) => !i.key || r.key === i.key)
+        .filter((r) => (!i.key || r.key === i.key) && (!i.ids || i.ids.includes(r.id)))
         .reverse()
         .slice(0, i.limit)
         .map((r) => body(ctx, r)),

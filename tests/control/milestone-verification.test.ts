@@ -890,6 +890,21 @@ it
 });
 
 it.skipIf(insideSandbox)(
+  'picks a verifier other than the lead runtime for a task the lead merged directly',
+  async () => {
+    const { f, lead } = await mergedMilestone({ direct: 'source' });
+    await eventually(
+      () => rowsOf(f).some((row) => row.runtime !== undefined || row.state !== 'running'),
+      () => f.control.tick(),
+      20000,
+    );
+    const row = rowsOf(f)[0]!;
+    expect(row).toMatchObject({ runtime: 'cross-reviewer', independence: 'other_runtime' });
+    expect(row.runtime).not.toBe(f.store.must<Session>('sessions', lead.id).runtime);
+  },
+);
+
+it.skipIf(insideSandbox)(
   'ends the verification inconclusive when the verifier hands in no verdict',
   async () => {
     const setup = await mergedMilestone();

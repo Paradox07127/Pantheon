@@ -204,6 +204,8 @@ it("counts the contract's spend from local Monday, tasks in the week they starte
   const DAY = 24 * 60 * MINUTE;
   started(f, setNow, assistant.id, 'running', now - 2 * DAY);
   started(f, setNow, assistant.id, 'direct', now - DAY, 'task.claimed');
+  // The same task dispatched again in the same week.
+  started(f, setNow, assistant.id, 'running', now - DAY);
   started(f, setNow, assistant.id, 'late', now - 8 * DAY);
   retrospective(f, assistant.id, 'late', 'merged', now - 8 * DAY, now - MINUTE);
 

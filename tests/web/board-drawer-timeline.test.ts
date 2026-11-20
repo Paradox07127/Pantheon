@@ -85,6 +85,7 @@ const NAMES: Record<TaskTraceKind, string> = {
   gate_passed: trace('gatePassed'),
   gate_failed: trace('gateFailed'),
   merge_started: trace('mergeStarted'),
+  merge_retried: trace('mergeRetried'),
   merge_blocked: trace('mergeBlocked'),
   merged: trace('merged'),
   discarded: trace('discarded'),

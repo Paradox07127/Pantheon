@@ -306,7 +306,7 @@ it('fires an assumption condition once the lead applies the user saying the assu
   await f.control.tick();
   const events = fired(f);
   expect(events.map((event) => event.payload)).toEqual([
-    { milestone_id: milestoneRow(f).id, trigger, task_id: 'exports', generation: 1 },
+    { milestone_id: milestoneRow(f).id, trigger, task_id: 'exports', generation: 1, edit_id },
   ]);
   expect(replanNotes(f)).toEqual([
     expect.objectContaining({
@@ -319,6 +319,26 @@ it('fires an assumption condition once the lead applies the user saying the assu
   await f.control.tick();
   expect(fired(f)).toHaveLength(1);
   expect(replanNotes(f)).toHaveLength(1);
+
+  // A later re-plan changes the task's goal and keeps the assumption listed.
+  const input = planInput(
+    f,
+    [trigger],
+    ['exports'],
+    f.store.must<BoardPlan>('board_plans', lead.id).plan_version,
+  );
+  f.call(
+    'board.plan.update',
+    {
+      ...input,
+      tasks: input.tasks.map((task) => ({ ...task, goal: 'Export CSV and JSON' })),
+      assumptions: [{ id: 'csv-only', text: 'Exports are CSV only.', milestone: 'm1' }],
+    },
+    null,
+    leadPrincipal(f, lead.id),
+  );
+  await f.control.tick();
+  expect(fired(f)).toHaveLength(1);
 });
 
 it('accepts the re-plan event fired before the plan moved to a new lead', async () => {

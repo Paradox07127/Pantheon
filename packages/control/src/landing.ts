@@ -424,7 +424,14 @@ async function cloneCandidate(
   cancelled: () => boolean,
 ): Promise<string | undefined> {
   const candidate = path.join(temporary, 'repository');
-  await git(temporary, ['clone', '--no-hardlinks', '--quiet', '--', repository, candidate]);
+  const clone = () =>
+    git(temporary, ['clone', '--no-hardlinks', '--quiet', '--', repository, candidate]);
+  // A local clone copies object files one by one; a temporary one another git writes meanwhile can vanish first.
+  await clone().catch(async (error: Error) => {
+    if (!error.message.includes('failed to copy file')) throw error;
+    await rm(candidate, { recursive: true, force: true });
+    await clone();
+  });
   await git(candidate, ['checkout', '--quiet', '--detach', commit]);
   return (await copyCandidateDependencies(ctx, key, source, candidate, cancelled))
     ? candidate

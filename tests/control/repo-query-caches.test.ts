@@ -56,6 +56,8 @@ it('reads the timeline, blame and history of a HEAD with 120 000 commits', async
     input: commits.join(''),
     env: { PATH: process.env.PATH, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
   });
+  // Every imported commit points at the fixture's one loose tree; unpacked, a path walk reads it per commit.
+  git(f.source, 'repack', '-q', '-a', '-d');
   const input = { project_id: f.project.id, path: 'answer.txt' };
   expect(await f.control.repoFileHistory(user, input)).toMatchObject({ scanned: 500 });
   const timeline = await f.control.repoTimeline(user, {

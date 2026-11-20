@@ -240,6 +240,9 @@ export const changeKinds: { [T in Change['type']]: ChangeKind<T> } = {
         if (!shown.includes(verdict))
           return `The eval verdict ${verdict} is not what the runs in ${path} show: ${shown.join(', ')}`;
         if (verdict === 'no_conclusion') return `The eval in ${path} reached no conclusion`;
+        const against = shown.find((each) => each.startsWith(`${first}_`));
+        if (against)
+          return `The eval in ${path} shows ${against}, which favours ${first}, the playbook in force`;
         return [`${second}_leaks_less`, `${second}_passes_more`, `${second}_cheaper`].includes(
           verdict,
         )

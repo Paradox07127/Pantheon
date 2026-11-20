@@ -301,6 +301,14 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
+/* A wake's place while the wakes load: its first two lines, padded like a wake. */
+.ag-wkl {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-1) 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
 .ag-wg {
   display: grid;
   place-items: center;

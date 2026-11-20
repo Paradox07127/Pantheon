@@ -401,7 +401,7 @@ All settings writes require the user. `workflow.policy.reset` uses the policy ro
 | `memory.commit` | `memory_id`: string |  |
 | `memory.context` | `project_id`: string<br>`max_bytes?`: integer | memory_context (reviewer), memory_context (planner), memory_context (lead), memory_context (worker) |
 | `memory.get` | `memory_id`: string | memory_get (reviewer), memory_get (planner), memory_get (lead), memory_get (worker) |
-| `memory.history` | `project_id`: string<br>`key?`: string<br>`limit?`: integer |  |
+| `memory.history` | `project_id`: string<br>`key?`: string<br>`limit?`: integer<br>`ids?`: string[] |  |
 | `memory.maintain` | `project_id`: string |  |
 | `memory.propose` | `project_id`: string<br>`key`: string<br>`kind`: "decision" \| "report" \| "note"<br>`title?`: string<br>`summary?`: string<br>`tags?`: string[]<br>`references?`: object[]<br>`text`: string<br>`dependencies?`: string[]<br>`task?`: object<br>`expires_at?`: integer<br>`based_on?`: string | memory_propose (reviewer), memory_propose (planner), memory_propose (lead), memory_propose (worker) |
 | `memory.related` | `project_id`: string<br>`memory_id`: string<br>`state?`: "active" \| "draft" \| "archived" \| "all"<br>`kind?`: "decision" \| "report" \| "note"<br>`tag?`: string \| string[]<br>`task_id?`: string<br>`lead_session_id?`: string<br>`project_only?`: boolean<br>`origin?`: "plan"<br>`milestone_id?`: string<br>`q?`: string<br>`relation?`: "all" \| "dependency" \| "dependent" \| "version" \| "tag"<br>`depth?`: integer<br>`limit?`: integer | memory_related (reviewer), memory_related (planner), memory_related (lead), memory_related (worker) |

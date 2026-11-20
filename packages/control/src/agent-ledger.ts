@@ -65,7 +65,13 @@ export function agentLedger(
         told_user: week.filter((wake) => wake.outcome === 'told_user').length,
         asked: week.filter((wake) => wake.outcome === 'asked').length,
       },
-      tasks_started: starts.filter((event) => within(event.created_at)).length,
+      tasks_started: new Set(
+        starts
+          .filter((event) => within(event.created_at))
+          .map(
+            (event) => `${event.aggregate_id}:${(event.payload as { task_id: string }).task_id}`,
+          ),
+      ).size,
       tasks_merged: tasks.filter(
         (row) =>
           within(row.recorded_at) && (row.outcome === 'merged' || row.outcome === 'accepted'),

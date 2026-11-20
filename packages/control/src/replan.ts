@@ -22,6 +22,8 @@ export interface ReplanFired {
   generation: number;
   /** The hand-backs counted or the budget ratio reached; absent for a stall or a false assumption. */
   value?: number;
+  /** The applied edit that refuted the assumption; a false assumption fires once per such edit. */
+  edit_id?: string;
 }
 
 /** What the task did that met the condition. */
@@ -36,8 +38,9 @@ export function triggerText(fired: ReplanFired): string {
 }
 
 /**
- * Fires each re-plan condition of a lead milestone once per task generation that meets it: an event,
- * and a replan note unless one for the same milestone and condition still waits in the inbox.
+ * Fires each re-plan condition of a lead milestone once per task generation that meets it (a false
+ * assumption once per edit that refutes it): an event, and a replan note unless one for the same
+ * milestone and condition still waits in the inbox.
  */
 export function replanTriggers(ctx: ControlContext): void {
   const rows = ctx.store
@@ -76,7 +79,7 @@ export function replanTriggers(ctx: ControlContext): void {
             (session.task.generation ?? 1) === generation,
         );
       for (const trigger of row.replan_if!) {
-        let value: number | undefined;
+        let value: number | undefined, editId: string | undefined;
         if (trigger.type === 'handbacks') {
           // Pantheon's hand-backs to the sessions and the hand-backs of the task to the lead.
           value = bound.reduce(
@@ -103,14 +106,15 @@ export function replanTriggers(ctx: ControlContext): void {
           if (!stalled) continue;
         } else {
           // The lead applied the user's edit that says the assumption is wrong.
-          const refuted =
+          const refuting =
             plan.assumptions.some((assumption) => assumption.id === trigger.assumption_id) &&
-            plan.pending_edits.some(
+            plan.pending_edits.find(
               (edit) =>
                 edit.status === 'applied' &&
                 edit.refutes?.some((refute) => refute.assumption_id === trigger.assumption_id),
             );
-          if (!refuted) continue;
+          if (!refuting) continue;
+          editId = refuting.edit_id;
         }
         if (
           fired.some((event) => {
@@ -118,7 +122,9 @@ export function replanTriggers(ctx: ControlContext): void {
             return (
               same(payload, trigger) &&
               payload.task_id === taskId &&
-              payload.generation === generation
+              (editId === undefined
+                ? payload.generation === generation
+                : payload.edit_id === editId)
             );
           })
         )
@@ -129,6 +135,7 @@ export function replanTriggers(ctx: ControlContext): void {
           task_id: taskId,
           generation,
           ...(value === undefined ? {} : { value }),
+          ...(editId === undefined ? {} : { edit_id: editId }),
         };
         const event = ctx.store.event('board.replan_triggered', plan, projectId, payload);
         fired.push(event);

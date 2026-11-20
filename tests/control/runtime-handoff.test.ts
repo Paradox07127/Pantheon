@@ -396,7 +396,7 @@ it('preserves the original queued turns when a restart precedes the runtime hand
   writePlan(f, lead.id, planTask({ model: 'fixture', runtime: 'second' }));
   exitedProcess(f, worker.id);
   f.control.handles.clear();
-  await f.restart(() => undefined);
+  await f.restart(() => undefined, { abandon: true });
   f.control.adapters.set(second.name, second);
   const sent = vi.spyOn(second, 'send');
   await settle(f, worker);
@@ -424,7 +424,7 @@ it('reconciles a held input whose delivery receipt was lost across restart befor
   );
   f.store.update('session_turns', { ...first, state: 'running' }, first.revision);
   f.control.handles.clear();
-  await f.restart(() => undefined);
+  await f.restart(() => undefined, { abandon: true });
   const sent = vi.spyOn(second, 'send');
   for (let index = 0; index < 3; index++) await f.control.tick();
   expect(current(f, worker.id)).toMatchObject({

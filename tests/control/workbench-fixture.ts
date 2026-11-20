@@ -133,8 +133,9 @@ export async function workbenchFixture(
     readProcess: () => undefined,
   });
   const temporaryDirectories: string[] = [];
+  const replaced: Control[] = [];
   cleanups.push(async () => {
-    await control.shutdown();
+    for (const each of [...replaced, control]) await each.shutdown();
     trace?.close();
     store.close();
     rmSync(root, { recursive: true, force: true });
@@ -168,8 +169,15 @@ export async function workbenchFixture(
     await control.prefetchWorktreeReads(user, project.id);
     await Promise.all([...completions].filter((each) => !running.has(each)));
   };
-  /** Opens a new Control on the same database and leaves the old one running, as after a daemon crash. */
-  const restart = async (readProcess?: (pid: number) => ProcessIdentity | undefined) => {
+  /**
+   * Opens a new Control on the same database and leaves the old one running, as after a daemon crash.
+   * Cleanup shuts the old one down unless abandoned, for a test that took away what its shutdown stops.
+   */
+  const restart = async (
+    readProcess?: (pid: number) => ProcessIdentity | undefined,
+    options: { abandon?: boolean } = {},
+  ) => {
+    if (!options.abandon) replaced.push(control);
     control = new Control(store, files, [...control.adapters.values()], undefined, {
       ...controlOptions,
       readProcess,

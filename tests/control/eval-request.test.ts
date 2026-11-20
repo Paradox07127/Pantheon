@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
@@ -39,8 +40,11 @@ const sections = (reply: string) => ({
 });
 
 /** A project with two stored playbook versions, version 2 current, and a lead with two retrospectives. */
-async function opened(evalRunner?: (cwd: string, args: string[]) => Promise<number>) {
-  const f = await fixture({ controlOptions: { evalRunner } });
+async function opened(
+  evalRunner?: (cwd: string, args: string[]) => Promise<number>,
+  appRoot?: string,
+) {
+  const f = await fixture({ controlOptions: { evalRunner, appRoot } });
   fixtures.push(f);
   f.store.insert<Session>('sessions', {
     id: 'lead',
@@ -123,6 +127,23 @@ it('refuses to run the eval of a playbook change while the project eval runner i
   });
   const improvement = proposePlaybook(f);
   expect(refusal(() => runEval(f, improvement)).code).toBe('invalid_state');
+  expect(started).toEqual([]);
+});
+
+it('refuses to run the eval of a playbook change from an install without the eval script', async () => {
+  const started: string[][] = [];
+  const f = await opened(
+    async (_, args) => {
+      started.push(args);
+      return 0;
+    },
+    fs.mkdtempSync(path.join(os.tmpdir(), 'pantheon-installed-')),
+  );
+  const improvement = proposePlaybook(f);
+  f.call('workflow.policy.set', { project_id: f.project.id, eval_runner: 'on' }, null);
+  const refused = refusal(() => runEval(f, improvement));
+  expect(refused.code).toBe('invalid_state');
+  expect(refused.message).toMatch(/source checkout of Pantheon/);
   expect(started).toEqual([]);
 });
 

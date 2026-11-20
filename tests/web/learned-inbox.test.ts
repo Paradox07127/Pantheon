@@ -204,6 +204,8 @@ describe('learned inbox', () => {
     expect(bridge.reads).toBe(reads + 1);
     await push('memory.archived', 'pay', 13);
     expect(bridge.reads).toBe(reads + 2);
+    await push('improvement.evidence_added', 'pay', 14);
+    expect(bridge.reads).toBe(reads + 3);
   });
 
   it('groups the changes into needs you, on trial and in force, the reverted folded', () => {

@@ -3410,14 +3410,22 @@ async function completeMerge(ctx: ControlContext, sessionId: string, jobId: stri
       ? await mergedTasks(ctx, session.project_id, item.source, conflict_shas)
       : [];
   ctx.store.transaction(() => {
-    const current = ctx.store.must<Session>('sessions', session.id);
+    const current = ctx.store.must<Session>('sessions', session.id),
+      reason = unboundNow() ?? item.reason ?? item.state;
     const next = ctx.store.update(
       'sessions',
       {
         ...current,
         merge: {
           state: 'blocked' as const,
-          reason: unboundNow() ?? item.reason ?? item.state,
+          reason,
+          // The merge retried after the gates pass keeps what this merge allowed.
+          ...(reason === 'gate_failed' && current.merge?.allow_out_of_scope
+            ? { allow_out_of_scope: true }
+            : {}),
+          ...(reason === 'gate_failed' && current.merge?.allowed_files
+            ? { allowed_files: current.merge.allowed_files }
+            : {}),
           ...(conflicts ? { conflicts } : {}),
           ...(conflict_commits ? { conflict_commits } : {}),
           ...(conflict_tasks.length ? { conflict_tasks } : {}),
@@ -4013,9 +4021,9 @@ function retryMergeAfterGates(
             ctx,
             again.session,
             again.auto ? undefined : cause,
-            undefined,
+            again.session.merge!.allow_out_of_scope,
             GATES_PASSED,
-            undefined,
+            again.session.merge!.allowed_files,
             reads,
           );
         });

@@ -408,14 +408,14 @@ function AgentContract({ profile }: { profile: AgentListed }) {
     text: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
-  const live = draft?.revision === profile.revision ? draft : null;
+  const live = draft && draft.revision >= profile.revision ? draft : null;
   const budget = live?.budget ?? String(contract.weekly_input_tokens ?? '');
   const loudest = live?.loudest ?? contract.loudest;
   const quiet = live && 'quiet' in live ? live.quiet! : (contract.quiet_hours ?? null);
   const set = (patch: Omit<NonNullable<typeof draft>, 'revision'>) =>
     setDraft((now) => ({
-      ...(now?.revision === profile.revision ? now : {}),
-      revision: profile.revision,
+      ...(now && now.revision >= profile.revision ? now : {}),
+      revision: Math.max(now?.revision ?? profile.revision, profile.revision),
       ...patch,
     }));
   // One save at a time: a save asked for while one is out keeps the value it asked for and waits.
@@ -424,8 +424,12 @@ function AgentContract({ profile }: { profile: AgentListed }) {
     field: 'budget' | 'loudest' | 'quiet';
     values: { budget?: string; loudest?: Loudest; quiet?: Hours | null };
   } | null>(null);
-  // The profile list may not show the revision the last save made yet.
-  const made = useRef<{ id: string; revision: number } | null>(null);
+  // The profile list may not show the revision the last save made, nor the contract it wrote, yet.
+  const made = useRef<{
+    id: string;
+    revision: number;
+    values: { budget: string; loudest?: Loudest; quiet: Hours | null };
+  } | null>(null);
   const save = async (
     field: 'budget' | 'loudest' | 'quiet',
     next: { budget?: string; loudest?: Loudest; quiet?: Hours | null },
@@ -438,11 +442,13 @@ function AgentContract({ profile }: { profile: AgentListed }) {
       return;
     }
     saving.current = true;
-    let shown = { budget, loudest, quiet, ...next };
-    let revision =
+    const ahead =
       made.current?.id === profile.id && made.current.revision > profile.revision
-        ? made.current.revision
-        : profile.revision;
+        ? made.current
+        : null;
+    const { revision: _, ...edits } = live ?? {};
+    let shown = { budget, loudest, quiet, ...ahead?.values, ...edits, ...next };
+    let revision = ahead ? ahead.revision : profile.revision;
     setBusy(true);
     setRefusal(null);
     for (;;) {
@@ -466,13 +472,12 @@ function AgentContract({ profile }: { profile: AgentListed }) {
         break;
       }
       const saved = (result.value as AgentListed).revision;
-      made.current = { id: profile.id, revision: saved };
+      made.current = { id: profile.id, revision: saved, values: shown };
+      // The draft moves to the saved revision so it stays shown when the profile catches up.
+      setDraft((now) => (now ? { ...now, revision: Math.max(now.revision, saved) } : now));
       if (!again) break;
       const queued = { ...shown, ...again.values };
       if (JSON.stringify(queued) === JSON.stringify(shown)) break;
-      // The draft moves to the saved revision so it stays shown when the profile catches up.
-      const sent = revision;
-      setDraft((now) => (now?.revision === sent ? { ...now, revision: saved } : now));
       revision = saved;
       field = again.field;
       shown = queued;
@@ -738,7 +743,18 @@ function RecentWakes({ profile }: { profile: AgentListed }) {
       {wakes.error ? (
         <LoadError message={wakes.error} onRetry={wakes.reload} />
       ) : !wakes.data ? (
-        loadingRows(['60%', '40%', '54%', '36%'])
+        <div className="ag-wks" aria-busy="true">
+          {['60%', '40%', '54%', '36%', '48%'].map((width, i) => (
+            <div key={i} className="ag-wkl">
+              <span>
+                <Skeleton style={{ display: 'inline-block', height: 8, width }} />
+              </span>
+              <span className="cap">
+                <Skeleton style={{ display: 'inline-block', height: 8, width: '30%' }} />
+              </span>
+            </div>
+          ))}
+        </div>
       ) : wakes.data.length === 0 ? (
         <p className="ag-none">
           {t({ id: 'sessions.agents.wakes.empty', defaultMessage: 'No wakes yet' })}
@@ -959,7 +975,26 @@ function WeekLedger({ profile }: { profile: AgentListed }) {
       {week.error ? (
         <LoadError message={week.error} onRetry={week.reload} />
       ) : !data ? (
-        loadingRows(['50%', '80%'])
+        // Inline bars keep each line's height, so the grid stands as tall as the loaded one.
+        <div className="panel ag-lg" aria-busy="true">
+          <div className="cell ag-lw">
+            <span className="ag-big">
+              <Skeleton style={{ display: 'inline-block', height: 8, width: 64 }} />
+            </span>
+          </div>
+          {['nothing', 'acted', 'told', 'asked', 'started', 'merged', 'tokens', 'approved'].map(
+            (key) => (
+              <div key={key} className="cell">
+                <span className="ag-big">
+                  <Skeleton style={{ display: 'inline-block', height: 8, width: '40%' }} />
+                </span>
+                <span className="cap">
+                  <Skeleton style={{ display: 'inline-block', height: 8, width: '60%' }} />
+                </span>
+              </div>
+            ),
+          )}
+        </div>
       ) : data.wakes === 0 ? (
         <p className="ag-none">
           {t({ id: 'sessions.agents.week.empty', defaultMessage: 'No wakes this week' })}

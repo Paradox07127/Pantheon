@@ -177,7 +177,17 @@ function startVerifier(
   row: MilestoneVerification,
   diff: string,
 ): void {
-  const writers = [...new Set(tasks.flatMap(({ sessions }) => sessions.map((s) => s.runtime)))];
+  const plan = ctx.store.get<BoardPlan>('board_plans', milestone.owner_session_id!);
+  // A task the lead merged directly was written by the lead's runtime.
+  const writers = [
+    ...new Set(
+      tasks.flatMap(({ task, sessions }) => {
+        const direct = plan && currentDirectMerge(plan, task.id);
+        const lead = direct && ctx.store.get<Session>('sessions', direct.session_id);
+        return [...sessions.map((s) => s.runtime), ...(lead ? [lead.runtime] : [])];
+      }),
+    ),
+  ];
   const chosen = verifierRuntime(ctx, row.project_id, writers);
   if (!chosen)
     return finish(

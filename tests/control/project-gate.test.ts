@@ -310,6 +310,65 @@ it.skipIf(insideSandbox)(
 );
 
 it.skipIf(insideSandbox)(
+  'clones the candidate again when an object written meanwhile breaks the first clone',
+  async () => {
+    const f = await gateFixture(),
+      clone = await f.open(),
+      target = commit(clone.path),
+      commands = [
+        {
+          name: 'Read candidate',
+          argv: [
+            process.execPath,
+            '-e',
+            "process.stdout.write(require('node:fs').readFileSync('new.txt'))",
+          ],
+        },
+      ];
+    // The first clone leaves a partial candidate and dies as when another git renames its tmp_obj away.
+    const real = execFileSync('/bin/sh', ['-c', 'command -v git']).toString().trim(),
+      bin = mkdtempSync(path.join(process.cwd(), 'node_modules/.cache/racing-clone-git-')),
+      failed = path.join(bin, 'failed'),
+      previous = process.env.PATH;
+    writeFileSync(
+      path.join(bin, 'git'),
+      [
+        '#!/bin/sh',
+        'for arg; do last=$arg; done',
+        'for arg; do',
+        `  if [ "$arg" = clone ] && mkdir '${failed}' 2>/dev/null; then`,
+        '    mkdir -p "$last/.git/objects/1a"',
+        `    printf "fatal: failed to copy file to '%s/.git/objects/1a/tmp_obj_uX8yoT': No such file or directory\\n" "$last" >&2`,
+        '    exit 128',
+        '  fi',
+        'done',
+        `exec '${real}' "$@"`,
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${bin}${path.delimiter}${previous}`;
+    cleanups.push(async () => {
+      process.env.PATH = previous;
+      rmSync(bin, { recursive: true, force: true });
+    });
+    f.installGate(commands);
+    await f.merge();
+    await f.settle();
+    expect(existsSync(failed)).toBe(true);
+    expect(f.events('session.gate_checked')).toMatchObject([
+      {
+        payload: {
+          commit: target,
+          results: [{ ...commands[0], exit_code: 0, timed_out: false, output: 'accepted\n' }],
+        },
+      },
+    ]);
+    expect(f.current()).toMatchObject({ state: 'closed', outcome: 'merged' });
+  },
+);
+
+it.skipIf(insideSandbox)(
   'blocks on the first failed gate with combined output and leaves the source untouched',
   async () => {
     const f = await gateFixture(),

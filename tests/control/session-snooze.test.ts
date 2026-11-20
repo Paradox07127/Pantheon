@@ -183,7 +183,7 @@ it('brings a snoozed session back when a daemon restart fails its held input of 
   );
   f.store.update('session_turns', { ...first, state: 'running' }, first.revision);
   f.control.handles.clear();
-  await f.restart(() => undefined);
+  await f.restart(() => undefined, { abandon: true });
   expect(f.store.must<SessionTurn>('session_turns', first.id).state).toBe('failed');
   expect(current(f, session.id)).not.toHaveProperty('snoozed_at');
   expect(unsnoozed(f, session.id)).toEqual([{ reason: 'turn_ended' }]);
@@ -221,7 +221,7 @@ it('brings a snoozed session back when a daemon restart fails the turn ahead of 
     sent.revision,
   );
   f.control.handles.clear();
-  await f.restart(() => undefined);
+  await f.restart(() => undefined, { abandon: true });
   expect(f.store.must<SessionTurn>('session_turns', running.id).state).toBe('failed');
   expect(current(f, session.id)).not.toHaveProperty('snoozed_at');
   expect(unsnoozed(f, session.id)).toEqual([{ reason: 'turn_ended' }]);
@@ -250,7 +250,7 @@ it('brings a snoozed session back when a daemon restart fails its turn and nothi
   );
   const before = f.turns(session.id).map((turn) => turn.id);
   f.control.handles.clear();
-  await f.restart(() => undefined);
+  await f.restart(() => undefined, { abandon: true });
   expect(f.store.must<SessionTurn>('session_turns', running.id).state).toBe('failed');
   expect(f.turns(session.id).map((turn) => turn.id)).toEqual(before);
   expect(current(f, session.id)).not.toHaveProperty('snoozed_at');

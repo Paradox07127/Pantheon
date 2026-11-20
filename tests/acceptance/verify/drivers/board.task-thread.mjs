@@ -308,6 +308,53 @@ try {
       daemon: entries.map((e) => e.kind),
     },
   );
+  // The list read by its accessible name; each row's text starts with its time and label.
+  const listed = await page.evaluate(
+    `[...(document.querySelector(${JSON.stringify(`ol[aria-label="${TITLE} 的往来记录"]`)})?.children ?? [])].map((li) => li.innerText.replace(/\\s+/g, ' ').trim().slice(0, 200))`,
+  );
+  result.listed = listed;
+  const blockedAt = listed.findIndex((text) => /^\S+ 合并受阻 /.test(text));
+  const blockedEntry = entries.find((e) => e.kind === 'merge_blocked');
+  check(
+    '"合并受阻" 一行带原因 "落回门禁没通过"(task.thread 的 reason gate_failed)',
+    blockedAt >= 0 &&
+      listed[blockedAt].includes('落回门禁没通过') &&
+      blockedEntry?.text === 'gate_failed',
+    { row: listed[blockedAt], daemon: blockedEntry?.text },
+  );
+  check(
+    '"合并受阻" 后面一行是 "Pantheon 消息"',
+    blockedAt >= 0 && /^\S+ Pantheon 消息 /.test(listed[blockedAt + 1] ?? ''),
+    listed[blockedAt + 1],
+  );
+  check(
+    '"合并受阻" 和 "Pantheon 消息" 的行数等于 task.thread 的 merge_blocked、tracker_message 条数',
+    listed.filter((x) => /^\S+ 合并受阻 /.test(x)).length ===
+      entries.filter((e) => e.kind === 'merge_blocked').length &&
+      listed.filter((x) => /^\S+ Pantheon 消息 /.test(x)).length ===
+        entries.filter((e) => e.kind === 'tracker_message').length,
+    {
+      ui: [
+        listed.filter((x) => /^\S+ 合并受阻 /.test(x)).length,
+        listed.filter((x) => /^\S+ Pantheon 消息 /.test(x)).length,
+      ],
+    },
+  );
+  check(
+    '对照组：没有 "门禁通过" 之前就出现的 "已合并"',
+    listed.findIndex((x) => /^\S+ 已合并 /.test(x)) >
+      listed.findIndex((x) => /^\S+ 门禁通过 /.test(x)),
+    listed.map((x) => x.split(' ')[1]),
+  );
+  // The driver never sends session.merge: the merge after the passed gate is the daemon's retry.
+  const lastBlocked = listed.findLastIndex((x) => /^\S+ 合并受阻 /.test(x));
+  const passedAt = listed.findIndex((x) => /^\S+ 门禁通过 /.test(x));
+  const mergedAt = listed.findIndex((x) => /^\S+ 已合并 /.test(x));
+  check(
+    '门禁通过后没有手动合并也出现 "已合并"，排在最后一次 "合并受阻" 和 "门禁通过" 之后',
+    lastBlocked >= 0 && passedAt > lastBlocked && mergedAt > passedAt,
+    { lastBlocked, passedAt, mergedAt },
+  );
   const row = (kind) => t0?.rows.find((r) => r.kind === kind);
   check(
     'lead 消息行显示消息文字',

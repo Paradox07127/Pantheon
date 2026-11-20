@@ -179,6 +179,77 @@ it('marks a task merged when the session the user opened for it merges after the
       ]),
   ).toEqual([
     ['board.plan_updated', undefined, ['exports:planned']],
+    ['board.plan_updated', undefined, ['exports:planned']],
+    ['session.merged', 'exports', ['exports:merged']],
+  ]);
+});
+
+it('replays the plan of the lead before a rotation', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  writePlan(f, lead.id, ['exports']);
+  const successor = await f.create('Carry on with the export feature');
+  const ctx = (f.control as unknown as { ctx: ControlContext }).ctx;
+  ctx.store.transaction(() =>
+    transferPlan(ctx, f.store.must<BoardPlan>('board_plans', lead.id), successor.id, ''),
+  );
+  expect(
+    f.control
+      .planReplay(user, successor.id, 0, 100)
+      .frames.map((frame) => [frame.kind, frame.tasks.map((task) => `${task.id}:${task.status}`)]),
+  ).toEqual([['board.plan_updated', ['exports:planned']]]);
+});
+
+it('marks the new generation of a task merged when the session the user opened for it merges', async () => {
+  const f = await workbenchFixture();
+  const lead = await f.create('Plan the export feature');
+  writePlan(f, lead.id, ['exports']);
+  const [worker] = dispatch(f, lead.id, 'exports', ['exports-worker']);
+  merge(f, worker!);
+  const plan = f.store.must<BoardPlan>('board_plans', lead.id);
+  f.call(
+    'board.plan.edit',
+    {
+      project_id: f.project.id,
+      base_version: plan.plan_version,
+      ops: [{ type: 'set_task', task_id: 'exports', patch: { goal: 'Export as CSV' } }],
+    },
+    null,
+    {
+      id: `session:${lead.id}`,
+      role: 'lead',
+      project_id: f.project.id,
+      session_id: lead.id,
+      expires_at: f.store.now() + 60000,
+    },
+  );
+  const generation = f.store.must<BoardPlan>('board_plans', lead.id).generations!.exports!
+    .generation;
+  expect(generation).toBe(2);
+  const opened = f.store.insert<Session>('sessions', {
+    id: 'exports-opened-by-user',
+    revision: 1,
+    project_id: f.project.id,
+    runtime: f.adapter.name,
+    workspace_id: lead.workspace_id,
+    state: 'open',
+    turn_count: 0,
+    task: { lead_session_id: lead.id, id: 'exports', generation },
+  });
+  merge(f, opened);
+  expect(
+    f.control
+      .planReplay(user, lead.id, 0, 100)
+      .frames.map((frame) => [
+        frame.kind,
+        frame.task_id,
+        frame.tasks.map((task) => `${task.id}:${task.status}`),
+      ]),
+  ).toEqual([
+    ['board.plan_updated', undefined, ['exports:planned']],
+    ['task.dispatched', 'exports', ['exports:dispatched']],
+    ['session.merged', 'exports', ['exports:merged']],
+    ['board.plan_updated', undefined, ['exports:planned']],
     ['session.merged', 'exports', ['exports:merged']],
   ]);
 });

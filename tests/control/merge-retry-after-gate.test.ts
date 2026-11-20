@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import * as validation from '../../packages/control/dist/validation-executor.js';
-import type { Project, Session } from '@pantheon/domain';
+import type { BoardPlan, Project, Session } from '@pantheon/domain';
 import type { TaskTraceEntry } from '@pantheon/protocol';
 import { awaitWorkspaceReady, eventually, user } from '../helpers.js';
 import { boundTaskSession, git, workbenchFixture } from './workbench-fixture.js';
@@ -51,14 +51,56 @@ function gateResult(exitCode: number): validation.ValidationResult {
   };
 }
 
-/** An idle session with one commit whose merge a failed gate blocked; later gate runs pass unless queued otherwise. */
-async function blockedByGate(f: Fixture) {
+/** Binds the session to a board task whose scope leaves out answer.txt. */
+function bindNarrowTask(f: Fixture, sessionId: string) {
+  const leadId = 'lead-of-narrow-task';
+  f.store.insert<BoardPlan>('board_plans', {
+    id: leadId,
+    revision: 1,
+    project_id: f.project.id,
+    headline: 'Scoped work',
+    lanes: [{ id: 'core', title: 'Core' }],
+    tasks: [
+      {
+        id: 'narrow',
+        title: 'Narrow task',
+        goal: 'Change src only',
+        lane: 'core',
+        depends_on: [],
+        source: [],
+        scope: ['src'],
+        acceptance: [],
+      },
+    ],
+    risks: [],
+    assumptions: [],
+    plan_version: 0,
+    pending_edits: [],
+    inbox: [],
+    notified: {},
+    updated_at: f.store.now(),
+  });
+  const session = current(f, sessionId);
+  f.store.update<Session>(
+    'sessions',
+    { ...session, task: { lead_session_id: leadId, id: 'narrow' } },
+    session.revision,
+  );
+}
+
+/**
+ * An idle session with one commit whose merge a failed gate blocked; later gate runs pass unless
+ * queued otherwise. With allowOutOfScope the commit lies outside the session's task scope and the
+ * user's merge allows it.
+ */
+async function blockedByGate(f: Fixture, allowOutOfScope = false) {
   const session = await f.create();
   const workspace = await awaitWorkspaceReady(f.control, session.workspace_id!);
   await eventually(
     () => f.turns(session.id)[0]!.state === 'completed' && current(f, session.id).state === 'open',
     () => f.control.tick(),
   );
+  if (allowOutOfScope) bindNarrowTask(f, session.id);
   await f.call<Project>(
     'project.gate.set',
     { project_id: f.project.id, root: f.source, commands: [{ name: 'Tests', argv: ['check'] }] },
@@ -69,7 +111,11 @@ async function blockedByGate(f: Fixture) {
     .spyOn(validation, 'runValidationCommand')
     .mockResolvedValue(gateResult(0))
     .mockResolvedValueOnce(gateResult(1));
-  await f.call('session.merge', { session_id: session.id }, current(f, session.id).revision);
+  await f.call(
+    'session.merge',
+    { session_id: session.id, ...(allowOutOfScope ? { allow_out_of_scope: true } : {}) },
+    current(f, session.id).revision,
+  );
   await eventually(
     () => current(f, session.id).merge?.state === 'blocked',
     () => f.control.tick(),
@@ -98,21 +144,27 @@ async function runGatesToEnd(f: Fixture, sessionId: string) {
   await f.control.tick();
 }
 
-it('merges a gate-blocked session once a later gate run passes on the same commit', async () => {
-  const f = await workbenchFixture();
-  const { session, head } = await blockedByGate(f);
-  await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
-  await eventually(
-    () => current(f, session.id).outcome === 'merged',
-    () => f.control.tick(),
-    10000,
-  );
-  expect(git(f.source, 'rev-parse', 'HEAD')).toBe(head);
-  expect(payloads(f, session.id, 'session.merge_started')).toEqual([
-    {},
-    { reason: 'gates_passed' },
-  ]);
-});
+it.each([
+  ['', false],
+  [' and keeps the out-of-scope files the user allowed', true],
+])(
+  'merges a gate-blocked session once a later gate run passes on the same commit%s',
+  async (_label, allowOutOfScope) => {
+    const f = await workbenchFixture();
+    const { session, head } = await blockedByGate(f, allowOutOfScope);
+    await f.call('session.gates.run', { session_id: session.id }, current(f, session.id).revision);
+    await eventually(
+      () => current(f, session.id).outcome === 'merged',
+      () => f.control.tick(),
+      10000,
+    );
+    expect(git(f.source, 'rev-parse', 'HEAD')).toBe(head);
+    expect(payloads(f, session.id, 'session.merge_started')).toEqual([
+      {},
+      { reason: 'gates_passed' },
+    ]);
+  },
+);
 
 it('keeps the merge blocked when the gates pass on a newer commit', async () => {
   const f = await workbenchFixture();
@@ -185,8 +237,10 @@ it("tells in the task's trace that a merge was retried after the gates passed", 
     'lead-of-export',
     'export',
   ) as TaskTraceEntry[];
-  expect(entries.find((entry) => entry.kind === 'merge_started')).toMatchObject({
-    session_id: session.id,
-    text: 'Retried after the gates passed again',
-  });
+  expect(
+    entries.find((entry) => entry.session_id === session.id && entry.kind === 'merge_retried'),
+  ).toBeDefined();
+  expect(entries.some((entry) => entry.text === 'Retried after the gates passed again')).toBe(
+    false,
+  );
 });

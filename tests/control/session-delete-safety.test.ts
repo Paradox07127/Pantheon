@@ -421,7 +421,7 @@ it('removes a session deleted before a restart once recovery discards it', async
     },
     current(f, session.id).revision,
   );
-  await f.restart(() => undefined);
+  await f.restart(() => undefined, { abandon: true });
   expect(f.store.get<Session>('sessions', session.id)).toBeUndefined();
   expect(kinds(f, session.id)).toContain('session.deleted');
 });

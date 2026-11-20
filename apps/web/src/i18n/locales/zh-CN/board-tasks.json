@@ -95,6 +95,7 @@
   "board.task.trace.gatePassed": "门禁通过",
   "board.task.trace.gateFailed": "门禁失败",
   "board.task.trace.mergeStarted": "开始合并",
+  "board.task.trace.mergeRetried": "门禁通过后重试合并",
   "board.task.trace.mergeBlocked": "合并受阻",
   "board.task.trace.merged": "已合并",
   "board.task.trace.discarded": "已丢弃",

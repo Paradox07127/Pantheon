@@ -48,12 +48,12 @@ export function planReplay(
   // By task id, with the task generation the status was reached in; replaced, not changed, so a frame keeps its own.
   let statuses: Statuses = new Map();
   // The dispatched sessions of each task not merged yet, and the task each session was opened for.
-  const parts = new Map<string, Set<string>>(),
+  const parts = new Map<string, { generation: number; open: Set<string> }>(),
     sessionTask = new Map<string, string>(),
     frames: (Omit<PlanReplayFrame, 'tasks'> & { plan?: BoardPlan; statuses: Statuses })[] = [];
   for (const event of ctx.store.kindEvents(projectId, REPLAY_KINDS)) {
     const p = event.payload as Record<string, unknown>,
-      onPlan = event.aggregate_id === leadId;
+      onPlan = lineage.has(event.aggregate_id);
     let taskId: string | undefined,
       text: string | undefined,
       sessionId: string | undefined,
@@ -81,11 +81,9 @@ export function planReplay(
       sessionId = p.session_id as string;
       const sessions = (p.session_ids as string[] | undefined) ?? [sessionId];
       for (const id of sessions) sessionTask.set(id, taskId);
-      parts.set(taskId, new Set(sessions));
-      statuses = new Map(statuses).set(taskId, {
-        status: 'dispatched',
-        generation: taskGeneration(plan, taskId),
-      });
+      const generation = taskGeneration(plan, taskId);
+      parts.set(taskId, { generation, open: new Set(sessions) });
+      statuses = new Map(statuses).set(taskId, { status: 'dispatched', generation });
     } else if (event.kind === 'session.merged') {
       sessionId = event.aggregate_id;
       if (onPlan && p.direct === true) {
@@ -97,18 +95,17 @@ export function planReplay(
       } else {
         // A session the user opened from the board has no dispatch event; its own task binds it.
         const task = ctx.store.get<Session>('sessions', event.aggregate_id)?.task;
-        taskId =
-          sessionTask.get(event.aggregate_id) ??
-          (task && lineage.has(task.lead_session_id) ? task.id : undefined);
+        const dispatched = sessionTask.get(event.aggregate_id);
+        taskId = dispatched ?? (task && lineage.has(task.lead_session_id) ? task.id : undefined);
         if (!taskId) continue;
-        let open = parts.get(taskId);
-        if (!open) parts.set(taskId, (open = new Set()));
-        open.delete(event.aggregate_id);
-        const status = statuses.get(taskId) ?? {
-          status: 'merged' as const,
-          generation: task!.generation ?? taskGeneration(plan, taskId),
-        };
-        if (!open.size) statuses = new Map(statuses).set(taskId, { ...status, status: 'merged' });
+        const own = dispatched ? undefined : (task!.generation ?? taskGeneration(plan, taskId));
+        let part = parts.get(taskId)!;
+        if (own !== undefined && part?.generation !== own)
+          parts.set(taskId, (part = { generation: own, open: new Set() }));
+        part.open.delete(event.aggregate_id);
+        const status = own === undefined ? statuses.get(taskId)! : { generation: own };
+        if (!part.open.size)
+          statuses = new Map(statuses).set(taskId, { ...status, status: 'merged' });
       }
     } else if (event.kind === 'task.accepted') {
       if (!onPlan) continue;
@@ -119,7 +116,7 @@ export function planReplay(
       });
     } else {
       const milestone = event.payload as Milestone;
-      if (milestone.owner_session_id !== leadId) continue;
+      if (!lineage.has(milestone.owner_session_id!)) continue;
       text = milestone.title;
     }
     frames.push({

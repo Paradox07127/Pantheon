@@ -98,6 +98,26 @@ it('rejects stale proposals and concurrent commits without overwriting the curre
   ).toEqual(['first']);
 });
 
+it('reads the named records of a key past its newest fifty', async () => {
+  const f = await workbenchFixture();
+  const ids = Array.from({ length: 51 }, (_, n) => {
+    const r = f.call<any>('memory.propose', {
+      project_id: f.project.id,
+      key: 'handoff/agent-triage',
+      kind: 'note',
+      text: `handoff ${n}`,
+    });
+    f.call('memory.commit', { memory_id: r.id }, r.revision);
+    return r.id as string;
+  });
+  const items = f.call<any>('memory.history', {
+    project_id: f.project.id,
+    key: 'handoff/agent-triage',
+    ids: [ids[0]],
+  }).items;
+  expect(items.map((r: any) => r.id)).toEqual([ids[0]]);
+});
+
 it('expires memory at read time without relying on a scheduler and retains immutable history', async () => {
   const { fixture } = await import('../helpers.js');
   let now = 1000;

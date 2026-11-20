@@ -237,5 +237,6 @@ export const memoryInputSchemas = {
     project_id: id,
     key: z.string().max(120).optional(),
     limit: z.number().int().min(1).max(200).default(50),
+    ids: z.array(id).max(200).optional(),
   }),
 } as const;
