@@ -108,12 +108,6 @@ const NEXT_STEP: Partial<Record<NeedsYouItem['reason'], () => string>> = {
       defaultMessage:
         "The milestone's tasks are all done; the user checks its acceptance criteria and accepts it, or tells the lead what is still missing.",
     }),
-  improvement_awaiting_decision: () =>
-    t({
-      id: 'daemon.nextStep.improvementAwaitingDecision',
-      defaultMessage:
-        'The improvement proposal awaits the user; the user confirms it to start a trial, or rejects it.',
-    }),
   plan_proposal_awaiting_decision: () =>
     t({
       id: 'daemon.nextStep.planProposalAwaitingDecision',

@@ -3,13 +3,8 @@ import type { Improvement, LearnedGrade, TaskKind } from '@pantheon/domain';
 /** One learned change of a project, from whichever record holds it. */
 export interface LearnedItem {
   /** An improvement's change type, or the record it came from. */
-  kind:
-    | Improvement['change']['type']
-    | 'agent_change'
-    | 'workflow_definition'
-    | 'memory_note'
-    | 'runtime_review';
-  /** The id of the improvement, agent proposal, workflow definition or memory record. */
+  kind: Improvement['change']['type'] | 'workflow_definition' | 'memory_note' | 'runtime_review';
+  /** The id of the improvement, workflow definition or memory record. */
   id: string;
   /** The setting, agent name, gate root, playbook runtime or "default", memory title or key, or an experience's first sentence; absent for a worktree setup or workflow definition. */
   title?: string;

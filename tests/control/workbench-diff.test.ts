@@ -89,7 +89,7 @@ it.each(['answer.txt', 'answer.txt\n'])(
   },
 );
 
-it('lists a session as ready only once it has commits and nothing uncommitted', async () => {
+it('lists a session the user opened as ready once it has commits or uncommitted files', async () => {
   const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   // The list reuses a worktree read for two seconds; an edit outside a turn shows after that.
@@ -105,7 +105,7 @@ it('lists a session as ready only once it has commits and nothing uncommitted', 
   later();
   await f.prefetch();
   expect(f.list()[0]).toMatchObject({
-    state: 'idle',
+    state: 'ready',
     changes: { files: 1, additions: 1, deletions: 0 },
   });
   changeWorktree(workspace.path);
@@ -113,7 +113,7 @@ it('lists a session as ready only once it has commits and nothing uncommitted', 
   later();
   await f.prefetch();
   expect(f.list()[0]).toMatchObject({
-    state: 'idle',
+    state: 'ready',
     changes: {
       files: diff.files.length,
       additions: diff.files.reduce((sum, file) => sum + file.additions!, 0),

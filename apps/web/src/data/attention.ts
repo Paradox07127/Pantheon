@@ -16,8 +16,6 @@ export function decisionText(decision: NeedsYouItem['decision']): string | null 
       });
     case 'repeated_failure':
       return t({ id: 'data.attention.decision.repeatedFailure', defaultMessage: 'Failed twice' });
-    case 'agent_proposal':
-      return t({ id: 'data.attention.decision.agentProposal', defaultMessage: 'New agent' });
     case 'permission':
       return t({ id: 'data.attention.decision.permission', defaultMessage: 'Permission' });
     case 'budget':
@@ -57,7 +55,6 @@ const PRIMARY_KEYS: Readonly<Record<string, readonly NeedActionKey[]>> = {
   'workflow.step.decide': ['approve'],
   'external.approve': ['approve'],
   'workflow.definition.trial.decide': ['keep'],
-  'improvement.decide': ['confirm'],
   'workflow.policy.set': ['budget'],
 };
 

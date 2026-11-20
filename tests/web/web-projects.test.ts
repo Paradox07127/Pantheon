@@ -161,8 +161,6 @@ describe('project summary refresh', () => {
 
   it('reads the summary again after the events that change what needs you', () => {
     for (const kind of [
-      'improvement.proposed',
-      'improvement.status_changed',
       'lead.question_asked',
       'lead.question_answered',
       'workflow.step_created',

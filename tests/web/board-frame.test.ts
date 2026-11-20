@@ -29,7 +29,7 @@ import {
 } from '../../apps/web/src/data/request-target.js';
 import { useShell } from '../../apps/web/src/store.js';
 import type { DaemonEvent } from '../../apps/web/src/data/sync.js';
-import { NeedsStrip, useNeedImprovements } from '../../apps/web/src/screens/board/BoardFrame.js';
+import { NeedsStrip } from '../../apps/web/src/screens/board/BoardFrame.js';
 import { BoardView } from '../../apps/web/src/screens/board/BoardScreen.js';
 import { LeadPanel } from '../../apps/web/src/screens/board/LeadPanel.js';
 import { ProposalEdit } from '../../apps/web/src/screens/board/PlanProposals.js';
@@ -1942,61 +1942,6 @@ describe('needs-you row', () => {
     expect(shown.props.title).toBe(summary);
     expect(nodes(h.value).some((n) => n.type === 'button' && text(n) === act('approve'))).toBe(
       true,
-    );
-  });
-});
-
-describe('needs-you proposal card', () => {
-  it('shows the change a proposal makes, read from the project improvements', async () => {
-    const improvement = {
-      id: 'improvement-1',
-      revision: 1,
-      project_id: 'project-a',
-      source: 'lead',
-      retrospective_ids: ['r1', 'r2', 'r3'],
-      status: 'candidate',
-      proposed_at: NOW - 20_000,
-      change: { type: 'policy_change', param: 'max_parallel', from: 2, to: 3 },
-    };
-    const query = vi.fn(async () => ({ ok: true, value: [improvement] }));
-    vi.stubGlobal('window', { pantheon: { query } });
-    useBoard.setState({
-      board: { cursor: 1, projects: [], sessions: [], session_turns: [], workspaces: [] },
-    } as any);
-    const model = {
-      ...board([]),
-      needs: [
-        need({
-          source: { table: 'improvements', id: 'improvement-1', revision: 1 },
-          kind: 'improvement.candidate',
-          session_id: undefined,
-          status: 'candidate',
-          reason: 'improvement_awaiting_decision',
-          actions: [{ command: 'improvement.decide', allowed: true }],
-          binding: undefined,
-        }),
-      ],
-    };
-    const strip = mount(() =>
-      NeedsStrip({
-        model,
-        sessions: [],
-        run: async () => null,
-        onOpenSession: () => {},
-        improvements: useNeedImprovements(model).read,
-      }),
-    );
-    await strip.flush();
-    expect(query).toHaveBeenCalledWith('improvement.list', { project_id: 'project-a' });
-    const el = named(strip.value, 'RequestCard');
-    expect(el.props.improvement).toEqual(improvement);
-    const card = mount(() => (el.type as (props: unknown) => ReactNode)(el.props));
-    expect(text(card.value)).toContain(
-      say('data.workflowPolicy.change', {
-        what: zh('data.workflowPolicy.param.maxParallel'),
-        from: 2,
-        to: 3,
-      }),
     );
   });
 });

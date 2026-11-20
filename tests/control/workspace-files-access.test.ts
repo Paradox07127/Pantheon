@@ -43,7 +43,6 @@ it('lets a task worker read only its own worktree, never another session or the 
   writeFileSync(path.join(otherWorkspace.path, 'theirs.ts'), 'function theirsSymbol() {}');
   const worker = workerOf(f, own);
   expect(() => f.control.filesRead(worker, f.project.id, other.id, 'theirs.ts')).toThrow(denied);
-  expect(() => f.control.filesList(worker, f.project.id, other.id, undefined)).toThrow(denied);
   expect(() => f.control.symbolsSearch(worker, f.project.id, other.id, 'theirs')).toThrow(denied);
   expect(() => f.control.filesRead(worker, f.project.id, undefined, 'answer.txt')).toThrow(denied);
   expect(f.control.filesRead(worker, f.project.id, own.id, 'mine.ts').text).toContain('mineSymbol');
@@ -126,20 +125,6 @@ it('refuses to open a checked path whose parent became a symlink out of the work
       closeSync(swapped);
     }
   }).toThrow(expect.objectContaining({ code: 'invalid_input' }));
-});
-
-it('skips a listed file deleted before its size is read', async () => {
-  const f = await workbenchFixture();
-  writeFileSync(path.join(f.source, 'vanishing.txt'), 'soon gone');
-  const lstat = fs.lstatSync;
-  vi.spyOn(fs, 'lstatSync').mockImplementation(((target: fs.PathLike, options?: never) => {
-    if (path.basename(String(target)) === 'vanishing.txt')
-      throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
-    return lstat(target, options);
-  }) as typeof fs.lstatSync);
-  expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
-    { name: 'answer.txt', kind: 'file', size: 5 },
-  ]);
 });
 
 it('lets a task worker search only its own worktree for file names', async () => {

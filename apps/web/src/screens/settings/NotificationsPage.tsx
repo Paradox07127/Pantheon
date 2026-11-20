@@ -17,7 +17,7 @@ import { Row, Section } from './ProjectSettingsScreen';
 import './notifications-page.css';
 
 // Every rule key, in the order the names are listed.
-const KINDS = Object.keys(DECISION_NAME) as AttentionKind[];
+const KINDS = Object.keys(DECISION_NAME) as (keyof typeof DECISION_NAME)[];
 const DELIVERIES = Object.keys(DELIVERY_NAME) as AttentionDelivery[];
 
 type QuietField = 'from' | 'to';

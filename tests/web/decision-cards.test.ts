@@ -24,31 +24,6 @@ const NOW = Date.UTC(2026, 10, 19, 12);
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 
-const setting: NeedItem = {
-  source: { table: 'setting_proposals', id: 'proposal-1', revision: 1 },
-  kind: 'setting.proposal',
-  project_id: 'project-a',
-  session_id: 'assistant-1',
-  status: 'pending',
-  created_at: NOW - 6 * MIN,
-  reason: 'setting_proposal_awaiting_decision',
-  decision: 'other',
-  blocks: 0,
-  primary: 'setting.proposal.resolve',
-  actions: [
-    { command: 'setting.proposal.resolve', allowed: true, decision: 'approve' },
-    { command: 'setting.proposal.resolve', allowed: true, decision: 'reject' },
-  ],
-  setting_proposal: {
-    id: 'proposal-1',
-    param: 'plan_changes',
-    current: 'auto',
-    value: 'confirm',
-    quote: 'Ask me before you change the plan from now on.',
-    waited_ms: 6 * MIN,
-  },
-};
-
 const reassessed: NeedItem = {
   source: { table: 'board_plans', id: 'lead-1', revision: 3 },
   kind: 'board.plan.reassessment',
@@ -145,64 +120,6 @@ beforeEach(() => {
 afterEach(() => {
   unmountAll();
   vi.useRealTimers();
-});
-
-describe('a setting change the Assistant proposes', () => {
-  it('shows the setting, its value now and the proposed one, and the user words', () => {
-    const tree = card(setting, 'Assistant').h.value;
-    expect(tree.props['aria-label']).toBe(
-      zhf('components.requestCard.settingLabel', {
-        agent: 'Assistant',
-        setting: zh('settings.workflow.planChanges'),
-      }),
-    );
-    expect(text(tree)).toContain(zh('components.requestCard.settingChange'));
-    const shown = text(tree);
-    expect(shown.indexOf(zh('settings.workflow.planChanges.auto'))).toBeLessThan(
-      shown.indexOf(zh('settings.workflow.planChanges.confirm')),
-    );
-    expect(
-      nodes(tree).some(
-        (n) =>
-          n.props.role === 'img' &&
-          n.props['aria-label'] === zh('components.requestCard.settingTo'),
-      ),
-    ).toBe(true);
-    const quote = find(tree, (n) => n.type === 'blockquote');
-    expect(quote.props['aria-label']).toBe(zh('components.requestCard.yourWords'));
-    expect(text(quote)).toBe('Ask me before you change the plan from now on.');
-  });
-
-  it.each([
-    ['board.needs.actions.applySetting', 'approve'],
-    ['board.needs.actions.declineSetting', 'decline'],
-  ])('sends %s in place as decision %s', async (label, decision) => {
-    const { h, run } = card(setting, 'Assistant');
-    button(h.value, zh(label)).props.onClick();
-    await h.flush();
-    expect(run).toHaveBeenCalledWith(
-      'setting.proposal.resolve',
-      { proposal_id: 'proposal-1', decision },
-      null,
-    );
-  });
-
-  it('names the Apply button of two cards from one agent by their settings', () => {
-    const other: NeedItem = {
-      ...setting,
-      source: { ...setting.source, id: 'proposal-2' },
-      setting_proposal: { ...setting.setting_proposal!, id: 'proposal-2', param: 'max_parallel' },
-    };
-    const names = [setting, other].map(
-      (item) =>
-        button(card(item, 'Assistant').h.value, zh('board.needs.actions.applySetting')).props[
-          'aria-label'
-        ],
-    );
-    expect(names[0]).not.toBe(names[1]);
-    expect(names[0]).toContain(zh('settings.workflow.planChanges'));
-    expect(names[0]).toContain('Assistant');
-  });
 });
 
 describe('a paused plan with the lead reassessment', () => {

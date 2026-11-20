@@ -171,9 +171,8 @@ it('lists a blocked merge with its event time and the merge handler retry precon
   ]);
   writeFileSync(path.join(workspace.path, 'answer.txt'), 'changed\n');
   await readAhead();
-  expect(items()[0]!.actions).toEqual([
-    { command: 'session.merge', allowed: false, disabled_reason: 'uncommitted_changes' },
-  ]);
+  // The merge commits the uncommitted files of a session the user opened first.
+  expect(items()[0]!.actions).toEqual([{ command: 'session.merge', allowed: true }]);
   git(workspace.path, 'add', '.');
   git(workspace.path, 'commit', '--quiet', '-m', 'Change answer');
   await readAhead();

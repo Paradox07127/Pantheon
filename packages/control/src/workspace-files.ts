@@ -4,7 +4,6 @@ import {
   fstatSync,
   lstatSync,
   openSync,
-  readdirSync,
   readFileSync,
   readSync,
   realpathSync,
@@ -20,12 +19,7 @@ import {
   type Session,
   type Workspace,
 } from '@pantheon/domain';
-import type {
-  FilesListResult,
-  FilesReadResult,
-  SessionToolImage,
-  SymbolsSearchResult,
-} from '@pantheon/protocol';
+import type { FilesReadResult, SessionToolImage, SymbolsSearchResult } from '@pantheon/protocol';
 import {
   inside,
   projectAccess,
@@ -155,89 +149,6 @@ export function openInside(
     throw error;
   }
   return fd;
-}
-
-export function filesList(
-  ctx: ControlContext,
-  p: Principal,
-  projectId: string,
-  sessionId: string | undefined,
-  relative = '',
-): Promise<FilesListResult> {
-  const scope = workspaceRoot(ctx, p, projectId, sessionId),
-    root = scope.root;
-  const directory = workspacePath(scope, relative);
-  const fd = openInside(
-    root,
-    directory,
-    constants.O_RDONLY | constants.O_DIRECTORY,
-    scope.unreadable,
-  );
-  return listing(root, directory, fd, scope.unreadable).finally(() => closeSync(fd));
-}
-
-async function listing(
-  root: string,
-  directory: string,
-  fd: number,
-  unreadable: string[],
-): Promise<FilesListResult> {
-  const children = readdirSync(directory, { withFileTypes: true }).filter(
-    (entry) => entry.name !== '.git',
-  );
-  checkOpened(root, directory, fd, unreadable);
-  if (!children.length) return { entries: [], truncated: false };
-  const ignored = await runGit(
-    root,
-    ['check-ignore', '-z', '--stdin'],
-    Buffer.from(
-      children.map((entry) => path.relative(root, path.join(directory, entry.name))).join('\0') +
-        '\0',
-    ),
-    true,
-  );
-  requireThat(
-    ignored.exit_code === 0 || ignored.exit_code === 1,
-    'workspace_read_failed',
-    'Ignored files could not be checked',
-  );
-  const excluded = new Set(ignored.stdout.toString().split('\0'));
-  const listed = children.filter(
-    (entry) => !excluded.has(path.relative(root, path.join(directory, entry.name))),
-  );
-  // A link to a folder inside the workspace opens as that folder.
-  const folders = new Set(
-    listed
-      .filter((entry) => {
-        if (entry.isDirectory()) return true;
-        if (!entry.isSymbolicLink()) return false;
-        const target = path.join(directory, entry.name);
-        try {
-          return statSync(target).isDirectory() && inside(root, realpathSync(target));
-        } catch {
-          return false;
-        }
-      })
-      .map((entry) => entry.name),
-  );
-  listed.sort(
-    (a, b) =>
-      Number(folders.has(b.name)) - Number(folders.has(a.name)) ||
-      (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
-  );
-  const entries = listed.slice(0, 1000).flatMap((entry): FilesListResult['entries'] => {
-    if (folders.has(entry.name)) return [{ name: entry.name, kind: 'dir' }];
-    try {
-      const size = lstatSync(path.join(directory, entry.name)).size;
-      return [{ name: entry.name, kind: 'file', size }];
-    } catch (error) {
-      // An entry removed since the directory was read is no longer listed.
-      if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return [];
-      throw error;
-    }
-  });
-  checkOpened(root, directory, fd, unreadable);
-  return { entries, truncated: listed.length > 1000 };
 }
 
 export function filesRead(

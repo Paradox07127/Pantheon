@@ -1,26 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
-import type { Improvement, WorkflowPolicy } from '@pantheon/domain';
+import type { WorkflowPolicy } from '@pantheon/domain';
 import type { BridgeResult } from '@pantheon/protocol';
-import {
-  HookHost,
-  deferred,
-  find,
-  mount,
-  named,
-  nodes,
-  text,
-  unmountAll,
-} from './web-hook-host.js';
+import { HookHost, deferred, find, mount, nodes, text, unmountAll } from './web-hook-host.js';
 vi.mock('react', async (actual) => (await import('./web-hook-host.js')).reactMock(actual));
 vi.mock('../../apps/web/node_modules/zustand/esm/index.mjs', async (actual) =>
   (await import('./web-live-stores.js')).liveStores(actual as never),
 );
 import { useBoard } from '@/data/board';
-import { useCurrentProject } from '@/data/current-project';
 import { useSettingsView } from '@/screens/settings/view';
 import { WorkflowPage } from '@/screens/settings/WorkflowPage';
-import { useShell } from '@/store';
 import { t } from '@/i18n';
 import { zh } from './i18n-setup.js';
 
@@ -56,18 +45,6 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   budget: {},
   pinned: ['handback_limit'],
   ...patch,
-});
-
-const trial = (param: 'max_parallel'): Improvement => ({
-  id: 'imp-1',
-  revision: 1,
-  project_id: 'alpha',
-  source: 'daemon',
-  signal: 'queue_wait',
-  retrospective_ids: ['r1'],
-  status: 'trial',
-  change: { type: 'policy_change', param, from: 3, to: 2 },
-  proposed_at: 1,
 });
 
 let stored: Map<string, string>;
@@ -124,7 +101,7 @@ afterEach(() => {
 });
 
 describe('workflow settings page', () => {
-  it('groups the parameters into dispatch, tasks and acceptance, then improvement on its own', async () => {
+  it('groups the parameters into dispatch, tasks and acceptance', async () => {
     const h = await page();
     const groups = nodes(tree(h)).filter((n) => typeof n.props.title === 'string');
     expect(groups.map((g) => g.props.title)).toEqual(
@@ -136,8 +113,7 @@ describe('workflow settings page', () => {
     expect(rowNames(groups[1])).toEqual(['path', 'taskSizeHint', 'budget'].map(param));
     expect(rowNames(groups[2])).toEqual([param('acceptanceWake')]);
     expect(rowNames(tree(h))).not.toContain(param('handbackLimit'));
-    expect(rowNames(tree(h)).at(-1)).toBe(param('improvementMode'));
-    expect(groups.flatMap((g) => rowNames(g))).not.toContain(param('improvementMode'));
+    expect(rowNames(tree(h))).not.toContain(param('improvementMode'));
   });
 
   it('sends the plan changes choice the user picks', async () => {
@@ -297,26 +273,5 @@ describe('workflow settings page', () => {
       { project_id: 'alpha', question_defaults: { after_hours: 48 } },
       { project_id: 'alpha', question_defaults: null },
     ]);
-  });
-
-  it('ends a project’s page with its playbook', async () => {
-    const h = await page();
-    expect(named(tree(h), 'PlaybookEditor').props.project).toMatchObject({ id: 'alpha' });
-  });
-
-  it('marks a parameter on trial beside its name and opens the learned rules from it', async () => {
-    bridge.answers['improvement.list'] = [trial('max_parallel')];
-    useShell.setState({ screen: 'board', memoryTab: 'overview' });
-    useSettingsView.setState({ open: true });
-    const h = await page();
-    const chip = find(
-      labelled(tree(h), param('maxParallel')),
-      (n) => n.type === 'button' && text(n) === '改进试用中',
-    );
-    chip.props.onClick();
-    expect(useSettingsView.getState().open).toBe(false);
-    expect(useCurrentProject.getState().projectId).toBe('alpha');
-    expect(useShell.getState().memoryTab).toBe('overview');
-    expect(useShell.getState().screen).toBe('memory');
   });
 });

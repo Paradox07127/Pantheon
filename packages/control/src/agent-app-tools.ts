@@ -1,6 +1,5 @@
 import { requireThat, type Principal, type Session, type SessionTurn } from '@pantheon/domain';
 import { inputSchemas, type WorkbenchSession } from '@pantheon/protocol';
-import { appHelp } from './app-help.js';
 import { projectAccess, sessionPrincipal, type ControlContext, type Preparers } from './context.js';
 import { githubItems, githubPullDetail } from './github.js';
 import { sessionList } from './workbench-session.js';
@@ -69,12 +68,6 @@ export function finalOutput(ctx: ControlContext, sessionId: string, turnId: stri
 }
 
 export const agentAppToolPreparers: Preparers = {
-  'agent.app_help': (ctx, p, c) => {
-    const { topic } = inputSchemas['agent.app_help'].parse(c.input);
-    residentAccess(ctx, p, p.project_id ?? '', c.type);
-    const help = appHelp(topic);
-    return () => help;
-  },
   'agent.sessions': (ctx, p, c) => {
     const { state } = inputSchemas['agent.sessions'].parse(c.input);
     const projectId = p.project_id ?? '';

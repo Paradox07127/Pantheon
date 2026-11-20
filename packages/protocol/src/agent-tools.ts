@@ -18,19 +18,16 @@ const EFFORTS = [
 /** The lead tools of the agents profile group, by tool name. */
 export const agentTools = {
   list_agents: 'agent.agents',
-  propose_agent: 'agent.propose',
 } as const satisfies Record<string, string>;
 
 /** What each agents tool does; a costly one asks the user before every call. */
 export const agentToolEffects = {
   list_agents: 'read',
-  propose_agent: 'write',
 } as const satisfies Record<keyof typeof agentTools, 'read' | 'write' | 'costly'>;
 
 /** The agent profile tool group of each agents tool. */
 export const agentToolGroups = {
   list_agents: 'agents',
-  propose_agent: 'agents',
 } as const satisfies Record<keyof typeof agentTools, AgentToolGroup>;
 
 export const AGENT_TEMPLATE_NAMES = ['assistant', 'triage', 'ideas', 'goals', 'custom'] as const;
@@ -55,8 +52,6 @@ export const SIGNAL_SOURCES = [
 ] as const satisfies readonly SignalSource[];
 export const AGENT_EVENT_SOURCES = ['github', ...SIGNAL_SOURCES] as const;
 
-// The daemon checks that a routine has exactly one of every_minutes and at.
-const routineInput = z.strictObject(routineFields);
 // Only the user sets a precheck: agents propose and replace routines without one.
 const userRoutines = z
   .array(
@@ -87,7 +82,7 @@ const userRoutines = z
   .optional()
   .describe('Up to 10 routines; a change replaces the whole list.');
 
-/** The fields of an agent profile that agent.update changes and agent.propose may propose. */
+/** The fields of an agent profile that agent.update changes. */
 const changeFields = {
   name: z.string().min(1).max(80).optional().describe('The agent name, 1-80 characters.'),
   role: z
@@ -126,15 +121,9 @@ const changeFields = {
     .enum(EFFORTS)
     .optional()
     .describe('The reasoning effort; absent means the runtime default.'),
-  routines: z
-    .array(routineInput)
-    .max(10)
-    .optional()
-    .describe('Up to 10 routines; a change replaces the whole list.'),
 };
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
-// agent.propose and agent.proposal.resolve do not take it.
 const contract = z
   .strictObject({
     weekly_input_tokens: z.number().int().positive().optional(),
@@ -172,18 +161,6 @@ export const agentInputSchemas = {
   'agent.archive': z.strictObject({ agent_id: str }),
   /** AgentProfile; the user only. Runs the agent's enabled routines again. */
   'agent.unarchive': z.strictObject({ agent_id: str }),
-  /** AgentProposal; proposes a new agent with the agent.create fields, or with agent_id a change of the given fields, for the user to decide on. Resident leads with the agents group only. */
-  'agent.propose': z.strictObject({
-    project_id: str,
-    agent_id: str
-      .optional()
-      .describe('The id from list_agents of the agent to change; leave it out for a new agent.'),
-    ...changeFields,
-    template: z
-      .enum(AGENT_TEMPLATE_NAMES)
-      .optional()
-      .describe('For a new agent: ideas, goals or custom. Leave it out for a change.'),
-  }),
   /** Guide, the text of the named guide, or GuideList, the name and use of each guide, for a name it does not know. Lead sessions only. */
   'agent.guide': z.strictObject({
     name: z
@@ -194,10 +171,4 @@ export const agentInputSchemas = {
   }),
   /** AgentList; the project's agents with their role, tools and routines. Resident leads with the agents group only. */
   'agent.agents': z.strictObject({ project_id: str }),
-  /** AgentProposal; the user only. create applies the proposal with fields over it, decline turns it down; the proposing agent is told either way. */
-  'agent.proposal.resolve': z.strictObject({
-    proposal_id: str,
-    decision: z.enum(['create', 'decline']),
-    fields: z.strictObject(changeFields).optional(),
-  }),
 } as const satisfies Record<string, z.ZodType>;

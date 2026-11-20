@@ -177,7 +177,7 @@ export const sessionNoticeNow = (
 const defineMessage = (message: Message): Message => message;
 
 /** Each kind's name, in the order the settings list them. */
-export const DECISION_NAME: Record<AttentionKind, Message> = {
+export const DECISION_NAME: Record<Exclude<AttentionKind, 'agent_proposal'>, Message> = {
   plan_change: defineMessage({
     id: 'settings.notifications.planChange',
     defaultMessage: 'Plan change',
@@ -194,10 +194,6 @@ export const DECISION_NAME: Record<AttentionKind, Message> = {
   milestone_accept: defineMessage({
     id: 'settings.notifications.milestoneAccept',
     defaultMessage: 'Milestone to accept',
-  }),
-  agent_proposal: defineMessage({
-    id: 'settings.notifications.agentProposal',
-    defaultMessage: 'New agent',
   }),
   budget: defineMessage({ id: 'settings.notifications.budget', defaultMessage: 'Budget' }),
   improvement: defineMessage({
@@ -613,11 +609,7 @@ export function reviewNotice(
   };
 }
 
-const DECISIONS: readonly string[] = [
-  'milestone.ready_for_acceptance',
-  'improvement.candidate',
-  'board.plan.proposal',
-];
+const DECISIONS: readonly string[] = ['milestone.ready_for_acceptance', 'board.plan.proposal'];
 
 /**
  * The notices of the milestones ready for acceptance and the proposals that joined the list, each

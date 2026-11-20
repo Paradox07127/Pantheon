@@ -3,10 +3,8 @@ import { LoadError } from '../../components/LoadError';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Pin } from 'lucide-react';
-import type { Improvement } from '@pantheon/domain';
 import type { BoardSnapshot } from '@pantheon/protocol';
 import { runtimeName } from '../../components/RuntimeGlyph';
-import { useCurrentProject } from '../../data/current-project';
 import {
   clearGlobal,
   clearOverride,
@@ -20,19 +18,15 @@ import {
 } from '../../data/project-defaults';
 import { useRuntimeStatus } from '../../data/runtime-status';
 import {
-  changedParams,
   countRange,
   isPolicy,
   PARAM_LABEL,
   CHOSEN_PATHS,
   PATH_LABEL,
-  IMPROVEMENT_MODE_LABEL,
   PLAN_CHANGES_LABEL,
   setPolicy,
-  STATUS_LABEL,
   tierText,
   togglePin,
-  useImprovements,
   useWorkflowPolicy,
   WAKE_LABEL,
   type CountParam,
@@ -42,13 +36,10 @@ import {
 } from '../../data/workflow-policy';
 import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
-import { useShell } from '../../store';
 import { Overrides } from './Overrides';
-import { PlaybookEditor } from './PlaybookEditor';
 import { policyStepper, runtimeLimits } from './PolicyStepper';
 import { failureText, Loading, Row, Section, type Failure } from './ProjectSettingsScreen';
 import { AutoMergeSwitch } from './WorktreesPage';
-import { useSettingsView } from './view';
 import './workflow-page.css';
 
 type Project = BoardSnapshot['projects'][number];
@@ -115,36 +106,11 @@ function paramText(key: RowKey, value: unknown): string {
       ),
     );
   if (key === 'acceptance_wake') return WAKE_LABEL[value as WorkflowPolicy['acceptance_wake']];
-  if (key === 'improvement_mode')
-    return IMPROVEMENT_MODE_LABEL[value as WorkflowPolicy['improvement_mode']];
   if (key === 'plan_changes') return PLAN_CHANGES_LABEL[value as WorkflowPolicy['plan_changes']];
   if (key === 'gate_on_fail')
     return ON_FAIL_LABEL[value as NonNullable<WorkflowPolicy['gate_on_fail']>];
   return String(value);
 }
-
-function openLearned(projectId: string) {
-  useSettingsView.getState().close();
-  useCurrentProject.getState().choose(projectId);
-  const shell = useShell.getState();
-  shell.setMemoryTab('overview');
-  shell.setScreen('memory');
-}
-
-/** The chip beside a parameter's name that an improvement on trial or in effect changed. */
-export const improvementChip = (status: Improvement['status'], projectId: string) => (
-  <button
-    type="button"
-    className="chip wf-imp"
-    data-s={status}
-    onClick={() => openLearned(projectId)}
-  >
-    {t(
-      { id: 'settings.workflow.improvement', defaultMessage: 'Improvement {status}' },
-      { status: STATUS_LABEL[status] },
-    )}
-  </button>
-);
 
 /** A parameter's pin, which keeps improvements from changing it. */
 export const pinButton = (props: {
@@ -172,7 +138,6 @@ export const pinButton = (props: {
 export function WorkflowPage({ project, only }: { project: Project | null; only?: RowKey }) {
   const read = useWorkflowPolicy(project?.id ?? null);
   const defaults = useProjectDefaults();
-  const improvements = useImprovements(project?.id ?? null);
   const runtimeStatus = useRuntimeStatus().read;
   const setting = settingOf(defaults.data, 'workflow_policy');
   const autoMerge = settingOf(defaults.data, 'auto_merge');
@@ -234,7 +199,6 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
     return true;
   };
   const busy = pending !== null || source.stale;
-  const changed = changedParams(improvements.read ?? []);
 
   const draftOf = (key: string) => ({
     draft: drafts[key] ?? null,
@@ -355,7 +319,6 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
 
   /** A parameter's row: name, control and pin, then `wide` across the whole row. */
   const row = (key: RowKey, control: ReactNode, pin?: WorkflowParam, wide?: ReactNode) => {
-    const by = pin && changed.get(pin);
     const pinned = !!pin && policy.pinned.includes(pin);
     const pinCell = pin ? (
       pinButton({
@@ -378,7 +341,6 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
         >
           <span className="wf-nm">
             <span>{PARAM_LABEL[key]}</span>
-            {by && project && improvementChip(by.status, project.id)}
           </span>
           {control}
           {global ? (
@@ -568,18 +530,6 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
       ),
       'acceptance_wake',
     ),
-    improvement_mode: row(
-      'improvement_mode',
-      choice(
-        'improvement_mode',
-        PARAM_LABEL.improvement_mode,
-        policy.improvement_mode,
-        IMPROVEMENT_MODE_LABEL,
-        (improvement_mode) => ({
-          improvement_mode,
-        }),
-      ),
-    ),
     plan_changes: row(
       'plan_changes',
       choice(
@@ -657,10 +607,8 @@ export function WorkflowPage({ project, only }: { project: Project | null; only?
         <div className="ps-rows">
           {rows.plan_changes}
           {!global && rows.question_defaults}
-          {rows.improvement_mode}
         </div>
       </div>
-      {project && <PlaybookEditor project={project} />}
     </>
   );
 }

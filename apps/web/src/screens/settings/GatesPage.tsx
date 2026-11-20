@@ -10,13 +10,11 @@ import { Select } from '../../components/Select';
 import { useBaselineRead } from '../../data/baseline-read';
 import { runCommand } from '../../data/commands';
 import {
-  changedParams,
   countRange,
   isPolicy,
   PARAM_LABEL,
   setPolicy,
   togglePin,
-  useImprovements,
   useWorkflowPolicy,
   type PolicyPatch,
   type WorkflowPolicy,
@@ -40,7 +38,7 @@ import {
   type GateRun,
 } from './gate';
 import { failureText, Section, type Failure } from './ProjectSettingsScreen';
-import { improvementChip, pinButton } from './WorkflowPage';
+import { pinButton } from './WorkflowPage';
 import { EmptyState } from '../../components/EmptyState';
 import './gates.css';
 
@@ -551,7 +549,6 @@ function policySegments<T extends string>(props: PolicyChoice<T>) {
  */
 export function GatePolicy({ project }: { project: Project }) {
   const read = useWorkflowPolicy(project.id);
-  const improvements = useImprovements(project.id);
   const savedPolicy = useGatePolicySave((s) => s.saved);
   const pending = useGatePolicySave((s) => s.pending);
   const savedFailure = useGatePolicySave((s) => s.failure);
@@ -581,7 +578,6 @@ export function GatePolicy({ project }: { project: Project }) {
       current.handback_limit,
     ]),
   ].sort((a, b) => a - b);
-  const by = changedParams(improvements.read ?? []).get('handback_limit');
   const disabled = pending || read.stale;
   const save = (patch: GatePolicyPatch & Pick<PolicyPatch, 'pinned'>) =>
     void saveGatePolicy(policy, patch);
@@ -601,7 +597,6 @@ export function GatePolicy({ project }: { project: Project }) {
         <div className="ps-row wf-pr" data-setting-id="gates.handbackLimit">
           <span className="wf-nm">
             <span>{onFail}</span>
-            {by && improvementChip(by.status, project.id)}
           </span>
           <span className="gt-fail">
             {policySegments<Required<GatePolicyPatch>['gate_on_fail']>({

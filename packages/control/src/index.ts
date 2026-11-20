@@ -98,9 +98,8 @@ import {
   isPreparedChangeStory,
   prepareChangeStory,
 } from './change-story.js';
-import { rangeStoryList } from './range-story.js';
 import { projectIntroRead } from './project-intro.js';
-import { filesList, filesRead, sessionToolImage, symbolsSearch } from './workspace-files.js';
+import { filesRead, sessionToolImage, symbolsSearch } from './workspace-files.js';
 import { prepareRollback, readTurnDiff } from './checkpoint.js';
 import {
   addAttachment,
@@ -148,7 +147,6 @@ import { timerHandlers } from './timers.js';
 import { agentList, agentTemplates, ensureAgents } from './agents.js';
 import { agentRoutines, agentWakes } from './agent-wakes.js';
 import { agentLedger } from './agent-ledger.js';
-import { agentProposal } from './agent-proposals.js';
 import { recordTraceFindings, signalList } from './signals.js';
 import { continueSession } from './continuation.js';
 import { appendNote } from './lead-inbox.js';
@@ -782,9 +780,6 @@ export class Control extends EventEmitter {
   agentRoutines(principal: Principal, projectId: string) {
     return agentRoutines(this.ctx, principal, projectId);
   }
-  agentProposal(principal: Principal, proposalId: string) {
-    return agentProposal(this.ctx, principal, proposalId);
-  }
   signalList(principal: Principal, projectId: string, state?: 'open' | 'muted' | 'resolved') {
     return signalList(this.ctx, principal, projectId, state);
   }
@@ -863,9 +858,6 @@ export class Control extends EventEmitter {
   }
   changeStoryDiff(principal: Principal, storyId: string) {
     return changeStoryDiff(this.ctx, principal, storyId);
-  }
-  rangeStoryList(principal: Principal, projectId: string) {
-    return rangeStoryList(this.ctx, principal, projectId);
   }
   sessionSearch(
     principal: Principal,
@@ -996,7 +988,7 @@ export class Control extends EventEmitter {
       principal,
       review_id: session.review_id,
       baseline_id: session.baseline?.baseline_id,
-      story_id: session.change_story?.story_id ?? session.range_story?.story_id,
+      story_id: session.change_story?.story_id,
       ...(session.baseline ? { extension_runtimes: inventoryRuntimes(this.ctx) } : {}),
       allowed_tool_names:
         purposeSessionTools(session, sessionWorkspaceKind(this.ctx, session)) ??
@@ -1209,9 +1201,6 @@ export class Control extends EventEmitter {
   }
   filesSearch(principal: Principal, projectId: string, sessionId: string | undefined, q: string) {
     return filesSearch(this.ctx, principal, projectId, sessionId, q);
-  }
-  filesList(principal: Principal, projectId: string, sessionId: string | undefined, path?: string) {
-    return filesList(this.ctx, principal, projectId, sessionId, path);
   }
   filesRead(principal: Principal, projectId: string, sessionId: string | undefined, path: string) {
     return filesRead(this.ctx, principal, projectId, sessionId, path);

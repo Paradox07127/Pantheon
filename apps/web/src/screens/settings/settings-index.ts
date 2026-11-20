@@ -1,10 +1,5 @@
 import { KNOWN_RUNTIMES, runtimeName } from '../../components/RuntimeGlyph';
-import {
-  PATH_LABEL,
-  IMPROVEMENT_MODE_LABEL,
-  PLAN_CHANGES_LABEL,
-  WAKE_LABEL,
-} from '../../data/workflow-policy';
+import { PATH_LABEL, PLAN_CHANGES_LABEL, WAKE_LABEL } from '../../data/workflow-policy';
 import { DECISION_NAME, DELIVERY_NAME } from '../../data/notifications';
 import { LOCALE_NAMES, t, type Message } from '../../i18n';
 import { revealText } from '../../lib/platform-text';
@@ -116,10 +111,6 @@ const tasks = defineMessage({ id: 'settings.workflow.tasks', defaultMessage: 'Ta
 const acceptance = defineMessage({
   id: 'settings.workflow.acceptance',
   defaultMessage: 'Acceptance',
-});
-const improvementMode = defineMessage({
-  id: 'data.workflowPolicy.param.improvementMode',
-  defaultMessage: 'Workflow improvement',
 });
 const personal = defineMessage({
   id: 'settings.data.personal',
@@ -279,19 +270,6 @@ export const SETTINGS_INDEX: SettingRecord[] = [
     keywords: defineMessage({
       id: 'settings.search.keywords.baselineVisuals',
       defaultMessage: 'baseline, charts, visuals, pin',
-    }),
-  },
-  {
-    id: 'general.baselineRangeStory',
-    page: 'general',
-    section: baseline,
-    label: defineMessage({
-      id: 'settings.general.baselineRangeStory',
-      defaultMessage: 'Explain recent history on confirm',
-    }),
-    keywords: defineMessage({
-      id: 'settings.search.keywords.baselineRangeStory',
-      defaultMessage: 'baseline, commits, range story, 30 days',
     }),
   },
 
@@ -1608,15 +1586,7 @@ export const SETTINGS_INDEX: SettingRecord[] = [
   {
     id: 'workflow.planChanges',
     page: 'workflow',
-    section: improvementMode,
     label: defineMessage({ id: 'settings.workflow.planChanges', defaultMessage: 'Plan changes' }),
     options: () => Object.values(PLAN_CHANGES_LABEL),
-  },
-  {
-    id: 'workflow.improvementMode',
-    page: 'workflow',
-    section: improvementMode,
-    label: improvementMode,
-    options: () => Object.values(IMPROVEMENT_MODE_LABEL),
   },
 ];

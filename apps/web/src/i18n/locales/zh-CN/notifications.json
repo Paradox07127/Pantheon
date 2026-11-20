@@ -1,7 +1,6 @@
 {
   "data.notifications.test": "通知已开启",
   "settings.keepAwake.toggle": "会话运行时阻止休眠",
-  "settings.notifications.agentProposal": "新 agent",
   "settings.notifications.badge": "在应用图标上显示数量",
   "settings.notifications.brief": "仅简报",
   "settings.notifications.budget": "预算",

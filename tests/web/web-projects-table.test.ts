@@ -361,6 +361,7 @@ describe('project table row', () => {
         repeated_failure: 4,
         permission: 3,
         budget: 1,
+        external: 1,
         agent_proposal: 1,
       }),
     );
@@ -372,7 +373,7 @@ describe('project table row', () => {
     expect(labels[4]).toBe(
       zhf('projects.row.otherKinds', {
         count: 2,
-        kinds: [kindName('budget'), kindName('agentProposal')].join('，'),
+        kinds: [kindName('budget'), kindName('external')].join('，'),
       }),
     );
     expect(text(buttons(byKind(tree))[4])).toBe(zhf('projects.row.other', { count: 2 }));

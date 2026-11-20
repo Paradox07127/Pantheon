@@ -16,7 +16,7 @@ import { t } from '../../i18n';
 import { listText } from '../../lib/list-text';
 import { dayText } from '../../lib/time-text';
 import { OUTCOME } from './EntryDetail';
-import { kindIcon as kindGlyph } from './GraphLegend';
+import { kindIcon as kindGlyph } from './memory-kind';
 import './entry-list.css';
 
 export interface EntryListProps {

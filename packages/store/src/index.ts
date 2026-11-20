@@ -41,7 +41,6 @@ export const tables = [
   'project_baselines',
   'baseline_facts',
   'change_stories',
-  'range_stories',
   'board_plans',
   'retrospectives',
   'workflow_policies',

@@ -3,7 +3,7 @@ import type { BoardModel, BoardSnapshot, BoardTaskRung, CommandType } from '@pan
 import type { GlyphName } from '../../components/SessionStateIcon';
 import { agentName, shownAgents, templateName } from '../../data/agents';
 import { shortId } from '../../data/format';
-import { needReasonText, reasonText } from '../../data/needs-you';
+import { needReasonText, offeredNeeds, reasonText } from '../../data/needs-you';
 import { proposalTitle } from '../../data/plan-edit';
 import { ASSISTANT, choiceKey, type RequestChoice } from '../../data/request-target';
 import { t } from '../../i18n';
@@ -14,8 +14,9 @@ export type BoardLead = NonNullable<BoardModel['leads']>[number];
 export type BoardNeed = NonNullable<BoardModel['needs']>[number];
 /** A needs-you item from the board, or from the needs-you list, which counts no unblocked tasks. */
 export type NeedItem = Omit<BoardNeed, 'unblocks'> & { unblocks?: number };
-/** The needs the board lists. */
-export const boardNeeds = (model: Pick<BoardModel, 'needs'>): BoardNeed[] => model.needs ?? [];
+/** The needs the board lists that the interface offers. */
+export const boardNeeds = (model: Pick<BoardModel, 'needs'>): BoardNeed[] =>
+  offeredNeeds(model.needs ?? []) as BoardNeed[];
 export type SessionDefaults = BoardSnapshot['projects'][number]['session_defaults'];
 
 /* Requirement box */
@@ -181,8 +182,6 @@ export type NeedActionKey =
   | 'answer'
   | 'reply'
   | 'accept'
-  | 'confirm'
-  | 'decline'
   | 'merge'
   | 'merge_out_of_scope'
   | 'gates'
@@ -295,21 +294,6 @@ function itemActions(
         reason: null,
       },
     ];
-  if (item.kind === 'improvement.candidate') {
-    const reason = offReason(item, 'improvement.decide');
-    return [
-      {
-        key: 'confirm',
-        label: t({ id: 'board.needs.actions.confirm', defaultMessage: 'Confirm' }),
-        reason,
-      },
-      {
-        key: 'decline',
-        label: t({ id: 'board.needs.actions.decline', defaultMessage: 'Reject' }),
-        reason,
-      },
-    ];
-  }
   if (item.kind === 'workflow.definition.trial')
     return (['keep', 'revert'] as const).map((key) => ({
       key,
@@ -337,21 +321,6 @@ function itemActions(
         key: 'board',
         label: t({ id: 'board.needs.actions.board', defaultMessage: 'View on board' }),
         reason: null,
-      },
-    ];
-  }
-  if (item.kind === 'setting.proposal') {
-    const reason = offReason(item, 'setting.proposal.resolve');
-    return [
-      {
-        key: 'approve',
-        label: t({ id: 'board.needs.actions.applySetting', defaultMessage: 'Apply' }),
-        reason,
-      },
-      {
-        key: 'reject',
-        label: t({ id: 'board.needs.actions.declineSetting', defaultMessage: 'Decline' }),
-        reason,
       },
     ];
   }
@@ -633,16 +602,6 @@ export function needCommand(
       },
       revision: null,
     };
-  // The item's reject stands for the command's decline.
-  if (item.kind === 'setting.proposal' && (key === 'approve' || key === 'reject'))
-    return {
-      type: 'setting.proposal.resolve',
-      input: {
-        proposal_id: item.setting_proposal?.id ?? item.source.id,
-        decision: key === 'approve' ? 'approve' : 'decline',
-      },
-      revision: null,
-    };
   if (key === 'resume')
     return {
       type: 'board.plan.resume',
@@ -701,16 +660,6 @@ export function needCommand(
       input: { project_id: item.project_id, id: item.source.id, decision: key },
       revision: null,
     };
-  if (key === 'confirm' || key === 'decline')
-    return {
-      type: 'improvement.decide',
-      input: {
-        project_id: item.project_id,
-        improvement_id: item.source.id,
-        decision: key === 'confirm' ? 'confirm' : 'reject',
-      },
-      revision: null,
-    };
   return null;
 }
 
@@ -730,7 +679,7 @@ export const needSession = (
 ): string | null =>
   item.source.table === 'sessions'
     ? item.source.id
-    : item.source.table === 'milestones' || item.source.table === 'improvements'
+    : item.source.table === 'milestones'
       ? null
       : (item.question?.source?.session_id ?? item.session_id ?? null);
 
@@ -774,8 +723,7 @@ export function needWho(
 ): string {
   if (item.source.table === 'milestones')
     return model.milestones?.find((m) => m.id === item.source.id)?.title ?? reasonText(item.reason);
-  if (item.source.table === 'improvements' || item.source.table === 'workflow_policies')
-    return reasonText(item.reason);
+  if (item.source.table === 'workflow_policies') return reasonText(item.reason);
   const id = needSession(item);
   const task = item.task_id ? model.tasks.find((t) => t.id === item.task_id) : undefined;
   // A plan's task item is about the task, not the lead it names as its session.

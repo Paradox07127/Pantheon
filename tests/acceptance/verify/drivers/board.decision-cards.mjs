@@ -22,8 +22,7 @@ const watch = (state) =>
     return true;
   })()`);
 const states = () => page.evaluate('window.__verifyStates ?? []');
-// Clicks the button with text `text` inside the element `scope` (a page expression) with the mouse;
-// the two setting cards' buttons share one accessible name, so a name locator cannot tell them apart.
+// Clicks the button with text `text` inside the element `scope` (a page expression) with the mouse.
 const clickIn = async (scope, text) => {
   const at = await page.evaluate(`(() => {
     const b = [...((${scope})?.querySelectorAll('button') ?? [])].find((x) => x.textContent.trim() === ${JSON.stringify(text)});
@@ -38,9 +37,6 @@ const clickIn = async (scope, text) => {
   await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...m });
   await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...m, buttons: 0 });
 };
-const rowSel = (label) =>
-  `[...document.querySelectorAll('section[aria-label="需要你"] article')].find((a) => a.getAttribute('aria-label') === ${JSON.stringify(label)})`;
-
 // A step that throws still leaves the checks before it in the printed result.
 try {
   const stamp = Date.now();
@@ -57,7 +53,6 @@ try {
   );
   // A deadline on questions, so each question of a batch has its Keep open.
   await call('workflow.policy.set', { project_id, question_defaults: { after_hours: 24 } });
-  const policy0 = await query('workflow.policy', { project_id });
   const assistant = (await call('resident.open', { project_id, kind: 'assistant' })).id;
   const idle = () =>
     poll(async () => {
@@ -114,31 +109,6 @@ try {
       },
     ]),
   );
-  // Two setting changes the user asked for in the same message; one is applied, one declined.
-  const wantParallel = policy0.max_parallel === 2 ? 3 : 2;
-  const QUOTE_A = `Run ${wantParallel} tasks at a time ${stamp}`;
-  const QUOTE_B = `Wake the lead per milestone ${stamp}`;
-  const wakeNow = policy0.acceptance_wake ?? 'each_merge';
-  const wakeWant = wakeNow === 'milestone' ? 'each_merge' : 'milestone';
-  await send(
-    script(
-      [
-        {
-          tool: {
-            name: 'propose_setting',
-            arguments: { param: 'max_parallel', value: wantParallel, quote: QUOTE_A },
-          },
-        },
-        {
-          tool: {
-            name: 'propose_setting',
-            arguments: { param: 'acceptance_wake', value: wakeWant, quote: QUOTE_B },
-          },
-        },
-      ],
-      `${QUOTE_A}. ${QUOTE_B}.`,
-    ),
-  );
   // Two questions from the same lead make one batch row.
   const Q1 = `Which store for ${stamp}?`;
   const Q2 = `Which queue for ${stamp}?`;
@@ -175,14 +145,10 @@ try {
   const mine = async () => (await query('needs_you.list', { project_id })).items;
   const items = await poll(async () => {
     const list = await mine();
-    return (
-      list.filter((i) => i.kind === 'setting.proposal').length === 2 &&
-      list.filter((i) => i.kind === 'lead.question').length === 2 &&
-      list
-    );
+    return list.filter((i) => i.kind === 'lead.question').length === 2 && list;
   }, 20_000);
   check(
-    '前置：needs_you.list 有两条设置改动和同一 lead 的两条提问',
+    '前置：needs_you.list 有同一 lead 的两条提问',
     items,
     (await mine()).map((i) => [i.kind, i.reason]),
   );
@@ -218,40 +184,17 @@ try {
   if (folded?.name) await page.click({ role: 'button', name: folded.name, exact: true });
   const shown = await poll(async () => {
     const s = await page.evaluate(stripJs);
-    return s?.rows.length === 3 && s;
+    return s?.rows.length === 1 && s;
   });
   result.strip = shown || (await page.evaluate(stripJs));
   const firstStates = await states();
   result.first_open_states = firstStates;
   check(
-    '"需要你" 列表 3 行：两张设置改动卡 + 一张成批提问卡',
-    shown?.rows.length === 3,
+    '"需要你" 列表 1 行：一张成批提问卡',
+    shown?.rows.length === 1,
     result.strip?.rows.map((r) => [r.kind, r.label]),
   );
-  const settings = (shown?.rows ?? []).filter((r) => r.label?.includes('提议的设置改动'));
   const batch = (shown?.rows ?? []).find((r) => r.kind === '决定');
-  check(
-    '设置改动卡名 "{agent} 提议的设置改动：{设置}"，种类 "设置改动"',
-    settings.length === 2 && settings.every((r) => r.kind === '设置改动'),
-    settings.map((r) => [r.label, r.kind]),
-  );
-  const parallelRow = settings.find((r) => r.label.endsWith('并发上限'));
-  const wakeRow = settings.find((r) => r !== parallelRow);
-  check(
-    '设置改动卡写当前值 → 新值(并发上限 当前 → 提议)',
-    parallelRow?.text.includes(String(policy0.max_parallel)) &&
-      parallelRow.text.includes(String(wantParallel)),
-    parallelRow?.text,
-  );
-  check(
-    '设置改动卡有可点的 "应用" 和 "拒绝"',
-    settings.every(
-      (r) =>
-        r.buttons.some((b) => b.text === '应用' && !b.disabled) &&
-        r.buttons.some((b) => b.text === '拒绝' && !b.disabled),
-    ),
-    settings.map((r) => r.buttons),
-  );
   check(
     '成批卡种类 "决定"，含两条问题',
     batch?.questions.length === 2 && batch.questions.includes(Q1) && batch.questions.includes(Q2),
@@ -263,48 +206,9 @@ try {
       batch.buttons.filter((b) => b.text === '保持待答').length === 2,
     batch?.buttons,
   );
-  check(
-    '对照组：设置改动卡上没有 "全部回答"',
-    !settings.some((r) => r.buttons.some((b) => b.text === '全部回答')),
-  );
   result.shot = await page.screenshot(result.id);
 
-  // 2. Apply the max_parallel change; the policy changes.
-  result.apply_names = settings.map((r) => r.buttons.find((b) => b.text === '应用')?.label);
-  await clickIn(rowSel(parallelRow.label), '应用');
-  const applied = await poll(
-    async () => (await query('workflow.policy', { project_id })).max_parallel === wantParallel,
-  );
-  check(
-    `点 "应用" 后 workflow.policy.max_parallel 从 ${policy0.max_parallel} 变成 ${wantParallel}`,
-    applied,
-    (await query('workflow.policy', { project_id })).max_parallel,
-  );
-  const goneUi = await poll(async () => {
-    const s = await page.evaluate(stripJs);
-    return s && !s.rows.some((r) => r.label === parallelRow.label) && s;
-  });
-  check(
-    '应用后这张卡离开列表',
-    goneUi,
-    goneUi?.rows.map((r) => r.label),
-  );
-
-  // 3. Decline the other; the policy keeps its value.
-  await clickIn(rowSel(wakeRow.label), '拒绝');
-  const declined = await poll(async () => {
-    const list = await mine();
-    return !list.some((i) => i.kind === 'setting.proposal') && list;
-  });
-  const policy2 = await query('workflow.policy', { project_id });
-  check('点 "拒绝" 后 needs_you.list 里没有设置改动', declined);
-  check(
-    '对照组：拒绝后 acceptance_wake 没变',
-    (policy2.acceptance_wake ?? 'each_merge') === wakeNow,
-    policy2.acceptance_wake,
-  );
-
-  // 4. Keep one question open from the batch, then answer all.
+  // 2. Keep one question open from the batch, then answer all.
   const questionsOf = async () => (await mine()).filter((i) => i.kind === 'lead.question');
   const before = await questionsOf();
   const first = before.find((i) => i.question?.question === Q1) ?? before[0];

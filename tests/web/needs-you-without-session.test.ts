@@ -21,21 +21,21 @@ const milestone: NeedsYouItem = {
   actions: [{ command: 'milestone.accept', allowed: true }],
 };
 
-const proposal: NeedsYouItem = {
-  source: { table: 'improvements', id: 'improvement-1', revision: 1 },
-  kind: 'improvement.candidate',
+const trial: NeedsYouItem = {
+  source: { table: 'workflow_definitions', id: 'definition-1', revision: 1 },
+  kind: 'workflow.definition.trial',
   project_id: 'project-a',
-  status: 'candidate',
+  status: 'waiting',
   created_at: NOW - 30_000,
-  reason: 'improvement_awaiting_decision',
-  actions: [{ command: 'improvement.decide', allowed: true }],
+  reason: 'workflow_definition_trial_completed',
+  actions: [{ command: 'workflow.definition.trial.decide', allowed: true }],
 };
 
 const cards = (html: string) => html.split('class="rq"').length - 1;
 
 describe('needs-you items that are not about a session', () => {
   it('gives each its own card in the board strip, with no button that only opens a session', () => {
-    const needs = [milestone, proposal].map((item) => ({ ...item, unblocks: 0 })) as BoardNeed[];
+    const needs = [milestone, trial].map((item) => ({ ...item, unblocks: 0 })) as BoardNeed[];
     const html = renderToStaticMarkup(
       createElement(NeedsStrip, {
         model: { now: NOW, needs, tasks: [], milestones: [] } as unknown as BoardModel,
@@ -46,7 +46,7 @@ describe('needs-you items that are not about a session', () => {
     );
     expect(cards(html)).toBe(2);
     expect(html).toContain(`>${zh('board.needs.actions.accept')}</button>`);
-    expect(html).toContain(`>${zh('board.needs.actions.confirm')}</button>`);
+    expect(html).toContain(`>${zh('board.needs.actions.keepTrial')}</button>`);
     expect(html).not.toContain(zh('board.needs.actions.open'));
   });
 

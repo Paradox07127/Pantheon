@@ -76,8 +76,6 @@ describe('refetch trigger', () => {
     'task.accepted',
     'lead.question_kept_open',
     'lead.question_overruled',
-    'setting_proposal.created',
-    'setting_proposal.resolved',
     'board.plan_paused',
     'board.plan_resumed',
     'board.plan_reassessed',

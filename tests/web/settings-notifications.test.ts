@@ -112,7 +112,6 @@ const settingsWith = (
   ...(quiet_hours && { quiet_hours }),
   baseline_rounds: 5,
   baseline_visuals: true,
-  baseline_range_story: true,
   personal_answers: [],
 });
 
@@ -463,7 +462,6 @@ describe('the notifications page', () => {
       [say('repeatedFailure'), 'now'],
       [say('permission'), 'now'],
       [say('milestoneAccept'), 'brief'],
-      [say('agentProposal'), 'brief'],
       [say('budget'), 'never'],
       [say('improvement'), 'now'],
       [say('external'), 'now'],
@@ -471,7 +469,8 @@ describe('the notifications page', () => {
       [say('merged'), 'brief'],
       [say('overdueQuestion'), 'now'],
     ]);
-    expect(all).toHaveLength(ATTENTION_KINDS.length + 1);
+    // Every rule key but the agent proposals the interface does not offer, then the locked row.
+    expect(all).toHaveLength(ATTENTION_KINDS.length);
     expect(
       nodes(all[0]!.props.children).map((n) => [n.props.value, text(n.props.children)]),
     ).toEqual([
@@ -506,7 +505,7 @@ describe('the notifications page', () => {
   it('stands every choice empty and disabled until the settings are read', () => {
     const host = mount(() => NotificationsPage());
     expect(groups(host.value).map((g) => [g.props.value, g.props.disabled])).toEqual([
-      ...ATTENTION_KINDS.map(() => [null, true]),
+      ...ATTENTION_KINDS.filter((kind) => kind !== 'agent_proposal').map(() => [null, true]),
       ['now', true],
     ]);
   });

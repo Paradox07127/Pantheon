@@ -155,13 +155,6 @@ describe('request card head', () => {
       status: 'ready_for_acceptance',
       reason: 'milestone_ready_for_acceptance',
     },
-    proposal: {
-      ...base,
-      source: { table: 'improvements', id: 'improvement-1', revision: 1 },
-      kind: 'improvement.candidate',
-      status: 'candidate',
-      reason: 'improvement_awaiting_decision',
-    },
   } as unknown as Record<string, NeedItem>;
   const head = (item: NeedItem) => {
     const card = html(
@@ -190,7 +183,6 @@ describe('request card head', () => {
     expect(shapeOf(head(items.gate_failed!))).toBe('shield-cross');
     expect(shapeOf(head(items.failed!))).toBe('octagon-cross');
     expect(head(items.acceptance!)).toContain('data-state="awaiting_acceptance"');
-    expect(lucideNames(head(items.proposal!))).toContain('lightbulb');
   });
 });
 

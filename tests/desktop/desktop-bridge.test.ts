@@ -1864,47 +1864,6 @@ it('captures a window at the display pixel size and attaches it to the project a
   expect(attach).toHaveBeenCalledOnce();
 });
 
-it('captures an area of the calling window clamped to its content as a PNG data URL', async () => {
-  const electron = await startMain('darwin');
-  const window = electron.windows[0]!;
-  const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame };
-  const resized: number[] = [];
-  const capturePage = vi.fn(async (_rect: unknown) => ({
-    isEmpty: () => false,
-    getSize: () => ({ width: 2000, height: 400 }),
-    resize: ({ width }: { width: number }) => {
-      resized.push(width);
-      return { toDataURL: () => 'data:image/png;base64,AQID' };
-    },
-  }));
-  Object.assign(window.webContents, { capturePage });
-  const capture = electron.handlers.get('pantheon:captureRegion')!;
-  expect(await capture(event, { x: 1000.5, y: -20, width: 400, height: 100.2 })).toEqual({
-    ok: true,
-    value: 'data:image/png;base64,AQID',
-  });
-  expect(capturePage).toHaveBeenCalledWith({ x: 1000, y: 0, width: 200, height: 81 });
-  expect(resized).toEqual([1280]);
-  for (const rect of [
-    null,
-    'rect',
-    { x: 0, y: 0, width: 0, height: 10 },
-    { x: Number.NaN, y: 0, width: 10, height: 10 },
-    { x: 0, y: 0, width: Number.POSITIVE_INFINITY, height: 10 },
-    { x: '0', y: 0, width: 10, height: 10 },
-  ])
-    expect(await capture(event, rect)).toMatchObject({
-      ok: false,
-      error: { code: 'invalid_input' },
-    });
-  expect(capturePage).toHaveBeenCalledOnce();
-  capturePage.mockResolvedValueOnce({ isEmpty: () => true } as never);
-  expect(await capture(event, { x: 0, y: 0, width: 10, height: 10 })).toMatchObject({
-    ok: false,
-    error: { code: 'capture_failed' },
-  });
-});
-
 it('exposes listing and capturing windows and the screen recording settings through the preload', async () => {
   const invoke = vi.fn(async () => ({ ok: true, value: null }));
   let exposed: DesktopBridge;
@@ -1925,12 +1884,10 @@ it('exposes listing and capturing windows and the screen recording settings thro
   await import('../../apps/desktop/src/preload/index.js');
   await exposed!.listWindowSnapshots();
   await exposed!.snapshotWindow('project-a', 'window:200:0');
-  await exposed!.captureRegion({ x: 1, y: 2, width: 3, height: 4 });
   await exposed!.openPrivacySettings('screen');
   expect(invoke.mock.calls).toEqual([
     ['pantheon:listWindowSnapshots'],
     ['pantheon:snapshotWindow', 'project-a', 'window:200:0'],
-    ['pantheon:captureRegion', { x: 1, y: 2, width: 3, height: 4 }],
     ['pantheon:openPrivacySettings', 'screen'],
   ]);
 });

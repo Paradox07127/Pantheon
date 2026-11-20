@@ -348,7 +348,7 @@ function rollWhenDue(ctx: ControlContext, sessionId: string, cause: string): voi
 }
 
 /** Creates the agent with its routines; its session opens on its first message or trigger. */
-export function createAgent(
+function createAgent(
   ctx: ControlContext,
   projectId: string,
   fields: AgentFields,

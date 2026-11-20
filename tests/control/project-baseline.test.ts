@@ -24,7 +24,6 @@ import type {
   Project,
   ProjectBrief,
   ProjectBaseline,
-  RangeStory,
   Session,
   SessionTurn,
   Visual,
@@ -2580,51 +2579,49 @@ it.each([true, false])(
       expect(pinned.map((visual) => [visual.id, visual.pin!.size])).toEqual(
         visuals ? [['baseline-chart', 'M']] : [],
       );
+      expect(
+        f.store.list<Session>('sessions').filter((session) => 'range_story' in session),
+      ).toEqual([]);
     } finally {
       await f.close();
     }
   },
 );
 
-it.each([true, false])(
-  'explains the last thirty days of commits as a range story on confirm (setting on: %s)',
-  async (on) => {
-    const f = await setup({ userConfig: true });
-    try {
-      f.call('app.settings.set', { baseline_range_story: on });
-      f.populate();
-      const day = Math.floor(f.store.now() / 1000) - 86400;
-      execFileSync(
-        'git',
-        [
-          '-C',
-          f.projectRoot,
-          '-c',
-          'commit.gpgsign=false',
-          'commit',
-          '--quiet',
-          '--allow-empty',
-          '-m',
-          'Add the CSV exporter',
-        ],
-        { env: { ...gitEnv, GIT_COMMITTER_DATE: `@${day}`, GIT_AUTHOR_DATE: `@${day}` } },
-      );
-      const head = gitIn(f.projectRoot, 'rev-parse', 'HEAD');
-      const submitted = await f.handIn(f.startBaseline(), head);
-      await f.call(
-        'project.baseline.confirm',
-        { baseline_id: submitted.id, answers: [] },
-        submitted.revision,
-      );
-      const stories = f.store.list<RangeStory>('range_stories');
-      expect(stories).toEqual(
-        on ? [expect.objectContaining({ source: 'commits', state: 'running' })] : [],
-      );
-    } finally {
-      await f.close();
-    }
-  },
-);
+it('opens no session to explain the commits of the last thirty days on confirm', async () => {
+  const f = await setup({ userConfig: true });
+  try {
+    f.populate();
+    const day = Math.floor(f.store.now() / 1000) - 86400;
+    execFileSync(
+      'git',
+      [
+        '-C',
+        f.projectRoot,
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '--quiet',
+        '--allow-empty',
+        '-m',
+        'Add the CSV exporter',
+      ],
+      { env: { ...gitEnv, GIT_COMMITTER_DATE: `@${day}`, GIT_AUTHOR_DATE: `@${day}` } },
+    );
+    const head = gitIn(f.projectRoot, 'rev-parse', 'HEAD');
+    const submitted = await f.handIn(f.startBaseline(), head);
+    await f.call(
+      'project.baseline.confirm',
+      { baseline_id: submitted.id, answers: [] },
+      submitted.revision,
+    );
+    expect(f.store.list<Session>('sessions').filter((session) => 'range_story' in session)).toEqual(
+      [],
+    );
+  } finally {
+    await f.close();
+  }
+});
 
 const failing = ['sh', '-c', 'echo broken test >&2; exit 3'];
 const passing = ['sh', '-c', 'true'];

@@ -102,8 +102,6 @@ export type MenuAction =
   | 'back'
   | 'forward'
   | 'shortcuts'
-  | 'debug-view'
-  | 'disable-user-style'
   | 'personal-agent';
 /** The session a notification is about. */
 export interface NotificationTarget {
@@ -213,8 +211,6 @@ export interface DesktopBridge {
   appInfo(): Promise<AppInfo>;
   /** The absolute path of the folder holding the daemon log. */
   logsDir(): Promise<string>;
-  /** A dev build gives the repository root; a packaged build gives null. */
-  debugTarget(): Promise<{ repo_root: string } | null>;
   /** This window's last renderer crash, consumed by the first call after it. */
   lastCrash(): Promise<RendererCrash | null>;
   /** The crash after which the app loaded this page to draw only the crash page, read before the page renders. */
@@ -267,13 +263,6 @@ export interface DesktopBridge {
   >;
   /** Captures the window at full size and uploads it as a PNG attachment of the project. */
   snapshotWindow(project_id: string, id: string): Promise<BridgeResult<AttachmentMeta>>;
-  /** A PNG data URL of this window's area in CSS pixels; the page must hide its own overlay first. */
-  captureRegion(rect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }): Promise<BridgeResult<string>>;
   openInTerminal(workspace_id: string): Promise<BridgeResult<null>>;
   openInEditor(workspace_id: string): Promise<BridgeResult<null>>;
   /** Installed editors; selected is null when none is installed. */

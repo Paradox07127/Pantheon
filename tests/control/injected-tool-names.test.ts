@@ -42,7 +42,6 @@ const injected: Record<string, string> = {
   'baseline without visuals': baselineSkill({ rounds: 3, visuals: false }),
   intro: purpose({ intro: {} as Session['intro'] }),
   'change story': purpose({ change_story: {} as Session['change_story'] }),
-  'range story': purpose({ range_story: {} as Session['range_story'] }),
   reviewer: purpose({ review_id: 'review-1' }),
   memory: MEMORY_INSTRUCTIONS,
   'memory without writing': MEMORY_READ_INSTRUCTIONS,

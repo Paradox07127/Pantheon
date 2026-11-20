@@ -8,7 +8,6 @@ export type {
 export type { ChangeOutcome, ChangeOutcomeWindow } from './change-outcomes.js';
 import { z } from 'zod';
 import { changeStoryInputSchemas, type LandingDiff } from './change-story.js';
-import { rangeStoryInputSchemas } from './range-story.js';
 import { planReplayQuerySchema } from './plan-replay.js';
 import type { PendingReplan, ReplanHistoryTrigger } from './replan-history.js';
 import type { ProjectWaiting } from './project-waiting.js';
@@ -20,13 +19,6 @@ import { agentLedgerQuerySchemas } from './agent-ledger.js';
 export type { AgentLedgerWeek } from './agent-ledger.js';
 import { appInputSchemas, appToolEffects, appToolGroups, appTools } from './app-tools.js';
 import { agentInputSchemas, agentToolEffects, agentToolGroups, agentTools } from './agent-tools.js';
-import {
-  settingInputSchemas,
-  settingToolEffects,
-  settingToolGroups,
-  settingTools,
-} from './setting-tools.js';
-export { settingValues } from './setting-tools.js';
 import {
   reviewerTools,
   workflowInputSchemas,
@@ -99,7 +91,6 @@ export type {
   GraphColor,
   GraphIcon,
   GraphStatus,
-  AgentProposal,
   AgentRoutineInput,
   AgentToolGroup,
   ApprovalQuestion,
@@ -213,7 +204,6 @@ export interface GithubPullDetail {
 }
 export { prettifyError, ZodError, type ZodIssue } from 'zod';
 export * from './change-story.js';
-export * from './range-story.js';
 export * from './plan-replay.js';
 export * from './replan-history.js';
 export * from './project-waiting.js';
@@ -222,11 +212,11 @@ export * from './agent-chapters.js';
 
 // Lives here, not in domain: the web bundle imports protocol at run time, and domain imports node:crypto.
 export function sessionRole(
-  session: Pick<Session, 'review_id' | 'baseline' | 'change_story' | 'range_story'>,
+  session: Pick<Session, 'review_id' | 'baseline' | 'change_story'>,
 ): SessionRole {
   if (session.review_id) return 'reviewer';
   if (session.baseline) return 'baseline';
-  if (session.change_story || session.range_story) return 'story';
+  if (session.change_story) return 'story';
   return 'main';
 }
 
@@ -331,7 +321,6 @@ export const sessionTools = {
     ...alwaysOnTools,
     ...appTools,
     ...agentTools,
-    ...settingTools,
     ...workflowTools,
     ...planPauseTools,
     guide: 'agent.guide',
@@ -388,7 +377,6 @@ export const leadToolEffects = {
   ...alwaysOnToolEffects,
   ...appToolEffects,
   ...agentToolEffects,
-  ...settingToolEffects,
   ...workflowToolEffects,
   ...planPauseToolEffects,
   guide: 'read',
@@ -415,7 +403,6 @@ export const leadToolGroups: Record<
   ...inGroup(alwaysOnTools, 'always_on'),
   ...appToolGroups,
   ...agentToolGroups,
-  ...settingToolGroups,
   ...workflowToolGroups,
   ...planPauseToolGroups,
   project_read: 'board',
@@ -451,7 +438,6 @@ export const coordinationTools = {
   project_baseline_submit: 'project.baseline.submit',
   project_intro_submit: 'project.intro.submit',
   change_story_submit: 'change_story.submit',
-  range_story_submit: 'range_story.submit',
 } as const;
 
 export type {
@@ -1427,7 +1413,7 @@ export const userConfigSchema = z
     baseline_rounds: z.number().int().min(1).max(5).optional(),
     /** The baseline session draws explanation charts, pinned to the board on confirm; absent is on. */
     baseline_visuals: z.boolean().optional(),
-    /** Confirming a baseline explains the last 30 days of commits as a range story; absent is on. */
+    /** Retired; a stored value is accepted and ignored. */
     baseline_range_story: z.boolean().optional(),
     /** The decisions the personal agent may answer for the user; absent is none. */
     personal_answers: personalAnswers.optional(),
@@ -2311,12 +2297,10 @@ export interface SessionRecappedPayload extends SessionRecap {
 export const inputSchemas = {
   ...memoryInputSchemas,
   ...changeStoryInputSchemas,
-  ...rangeStoryInputSchemas,
   ...alwaysOnInputSchemas,
   ...agentWakeInputSchemas,
   ...appInputSchemas,
   ...agentInputSchemas,
-  ...settingInputSchemas,
   ...workflowInputSchemas,
   ...playbookInputSchemas,
   ...milestoneCheckInputSchemas,
@@ -3296,7 +3280,6 @@ export const inputSchemas = {
     quiet_hours: quietHours.nullable().optional(),
     baseline_rounds: z.number().int().min(1).max(5).optional(),
     baseline_visuals: z.boolean().optional(),
-    baseline_range_story: z.boolean().optional(),
     /** Replaces the decisions the personal agent may answer. */
     personal_answers: personalAnswers.optional(),
   }),
@@ -3338,8 +3321,6 @@ export const querySchemas = {
   'project.read': z.strictObject({ project_id: str }),
   /** The user only; returns the project's AgentProfile records, each with role_prompt, the built-in role prompt of its template. */
   'agent.list': z.strictObject({ project_id: str }),
-  /** The user only; returns the stored AgentProposal, with the fields the user edited once decided. */
-  'agent.proposal': z.strictObject({ proposal_id: str }),
   /** The user only; returns the defaults of the ideas, goals and custom templates a new agent starts from. */
   'agent.templates': z.strictObject({}),
   ...agentWakeQuerySchemas,
@@ -3357,11 +3338,6 @@ export const querySchemas = {
     project_id: str,
     session_id: str.optional(),
     q: z.string().max(200),
-  }),
-  'files.list': z.strictObject({
-    project_id: str,
-    session_id: str.optional(),
-    path: z.string().optional(),
   }),
   'files.read': z.strictObject({
     project_id: str,
@@ -3395,7 +3371,6 @@ export const querySchemas = {
   'session.reviews': z.strictObject({ session_id: str }),
   'change_story.list': z.strictObject({ project_id: str }),
   'change_story.diff': z.strictObject({ story_id: str }),
-  'range_story.list': z.strictObject({ project_id: str }),
   'session.create.preview': z
     .strictObject({
       project_id: str,
@@ -3588,7 +3563,6 @@ export interface AppSettings {
   quiet_hours?: { from: string; to: string };
   baseline_rounds: number;
   baseline_visuals: boolean;
-  baseline_range_story: boolean;
   /** The decisions the personal agent may answer for the user; empty unless the user turned one on. */
   personal_answers: PersonalAnswerKind[];
 }
@@ -4838,10 +4812,6 @@ export interface ProjectFactsRead {
       /** Items whose text is no longer found in the folder's checklists. */
       missing: number;
     })[];
-}
-export interface FilesListResult {
-  entries: { name: string; kind: 'file' | 'dir'; size?: number }[];
-  truncated: boolean;
 }
 export interface FilesReadResult {
   path: string;

@@ -6,7 +6,7 @@ import { useMemoryQuery, useMemoryTurn } from '../../data/memory';
 import { useMemoryView } from '../../data/memory-view';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
-import { kindIcon, kindText } from '../memory/GraphLegend';
+import { kindIcon, kindText } from '../memory/memory-kind';
 import './memory-used.css';
 
 /** Opens the memory entries, with `memoryId` selected when given. */

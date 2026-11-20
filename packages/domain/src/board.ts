@@ -449,9 +449,6 @@ export interface LeadNote {
     | 'external'
     | 'follow_up'
     | 'routine'
-    | 'agent_proposal'
-    /** The user decided on a setting change the Assistant proposed; wakes it. */
-    | 'setting_proposal'
     | 'signal'
     /** A message another agent of the project left for the user, sent to the main agent instead. */
     | 'agent_report'

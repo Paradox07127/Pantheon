@@ -18,28 +18,6 @@
 .wf-nm > :first-child {
   font-weight: 500;
 }
-.wf-imp {
-  font: inherit;
-  font-size: var(--fs-xs);
-  transition: background-color var(--dur-1) var(--ease-std);
-}
-.wf-imp:hover {
-  background: var(--st-hov);
-}
-.wf-imp::before {
-  content: '';
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--idle);
-}
-.wf-imp[data-s='trial']::before {
-  background: var(--run);
-}
-.wf-imp[data-s='active']::before {
-  background: var(--ok);
-}
 .ps-rows .wf-pin,
 .wf-stp .ib {
   width: 22px;

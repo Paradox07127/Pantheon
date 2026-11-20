@@ -10,7 +10,7 @@ import { dayText } from '../../lib/time-text';
 import { scrimFlag } from '../../lib/root-flag';
 import { numberText } from './AgentContextDialog';
 import { versionNumbers } from './EntryActions';
-import { kindIcon } from './GraphLegend';
+import { kindIcon } from './memory-kind';
 import './entry-actions.css';
 
 export interface PendingCardProps {

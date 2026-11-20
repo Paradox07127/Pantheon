@@ -136,8 +136,6 @@ const descriptions: Record<ToolCommand, string> = {
     'Submit the project-wide assessment: workstreams (each with its modules, depends_on, risks and the items, sections and commits that show its progress), contradictions, questions, and tasks (next tasks with scope, acceptance and dependencies). Each question has id, header (at most 12 characters), question, 2–4 options { label, description, preview? }, multiSelect, and optional recommended and kind; preview is { kind: "graph", spec } with at most 40 nodes or { kind: "mermaid", spec: { source } }. The first round has exactly one question with kind "direction": 2–3 options, each with a preview. The last round has empty questions. Call it once after every folder and project_intro_submit are submitted, and again in each later round with the complete revised assessment; after each call end the turn.',
   'change_story.submit':
     'Submit your interpretation of the landed diff as change cards. Call once; if it returns errors, fix them and submit again, then end the turn.',
-  'range_story.submit':
-    'Submit what was merged in the range as lines: 1–6 lines of 1–280 characters each. Call once; if it returns errors, fix them and submit again, then end the turn.',
   'browser.open':
     "Open an http or https url in this session's browser panel in the Pantheon desktop app; the user sees it, and it shares the user's cookies and logins. Use it to check a page your work changes or read documentation the user pointed to. Returns the final url and title once the page loads. Fails with browser_busy when the user is not viewing this session (ask them to open it, or go on without the browser), and fails when no desktop window is connected.",
   'browser.read':
@@ -152,8 +150,6 @@ const descriptions: Record<ToolCommand, string> = {
     'Read the HTML of the running Pantheon desktop app window, or of the first element the CSS selector (at most 200 characters) matches, and the named regions of the window with their rectangles. Regions are the [data-debug-region] elements. Fails when no desktop window is connected.',
   'app.logs':
     'Read the last lines of the Pantheon daemon log: lines (1–500, default 200) of them, only those containing grep (at most 200 characters) when given. Returns no lines while the log does not exist.',
-  'agent.app_help':
-    'Read the Pantheon app manual. Without topic: one line per command group and the screens where the user does things. With topic (a group name from that index): each command of the group, and the tool that calls it or the place in the app where the user does it. Use it when you are unsure what Pantheon can do; when only the user can do it, tell them where.',
   'agent.sessions':
     "List this project's sessions: id, title, type (resident, worker, direct or review), state, runtime, task, changed files and lines, and last activity. Optional state keeps only sessions in that state. Use it to find a session before session_read, or to see what is running before you report on progress.",
   'agent.session_read':
@@ -169,13 +165,9 @@ const descriptions: Record<ToolCommand, string> = {
   'agent.guide':
     "Read one Pantheon guide by name: the steps for a task that comes up rarely, such as writing a handoff note. Your instructions list the guides with when to read each; read the matching guide before you start that task, not after it. A guide holds procedure, not project facts or the user's decisions. Returns the guide's text. An unknown name returns the list of guides instead; pick a name from it and call again.",
   'agent.agents':
-    "List this project's agents: id, name, template, role, tool groups, routines, and archived_at for an archived one. Call it before propose_agent so you do not propose an agent that already exists.",
+    "List this project's agents: id, name, template, role, tool groups, routines, and archived_at for an archived one.",
   'workflow.step.verdict':
     'Hand in the verdict of the workflow step your current turn works on, when its prompt asks for one: verdict pass or fail, a summary of what you checked, and 1-8 evidence items, each a command you ran in this turn copied exactly or a file you changed. Call it before the turn ends; without a verdict the step waits for the user. A later call in the same turn replaces the verdict. Refused invalid_input for a command this turn did not run, and for a pass with nothing this turn shows; the error lists the commands that ran. Refused invalid_state when no step waits on this turn.',
-  'setting.propose':
-    "Propose a change of one project setting for the user to approve on a card, when the user states a standing rule such as 'propose plan changes before starting' (plan_changes confirm) or 'one task at a time' (max_parallel 1). Give param, value and quote, the user's words copied exactly from one of their messages; a quote no user message contains is refused. The card shows the current and the new value; the user's answer reaches you as a note.",
-  'agent.propose':
-    "Propose a new agent, or a change to one, for the user to approve on a card. New: template (ideas, goals or custom), name, role (a short label) and instructions (what it owns, how it works, when it speaks to the user), optionally brief, tools, listens, routines, runtime, model and effort. Change: agent_id and only the fields that change. Use it when the user asks for a standing helper or a kind of request keeps coming back. Fields the agent cannot take are refused now; the user's answer reaches you as a note.",
 };
 
 const INVENTORY_TOOL = 'project_extensions_inventory';
@@ -219,8 +211,7 @@ function inventoryText(inventories: InventoryView[]): string {
 const baselineBound = (type: CommandType) =>
   type === 'project.baseline.submit_folder' || type === 'project.baseline.submit';
 /** The session supplies these tools' story and revision; the model never sees them. */
-const storyBound = (type: CommandType) =>
-  type === 'change_story.submit' || type === 'range_story.submit';
+const storyBound = (type: CommandType) => type === 'change_story.submit';
 
 const browserTool = (type: CommandType) =>
   type === 'browser.open' ||
@@ -282,8 +273,6 @@ const boundRevision = (type: CommandType) =>
   type === 'agent.tell_user' ||
   type === 'agent.routine.set' ||
   type === 'agent.routine.cancel' ||
-  type === 'agent.propose' ||
-  type === 'setting.propose' ||
   type === 'agent.agents' ||
   type === 'agent.guide' ||
   type === 'workflow.step.verdict' ||
@@ -298,7 +287,6 @@ const terminalSubmits = new Set<CommandType>([
   'project.baseline.submit_folder',
   'project.baseline.submit',
   'change_story.submit',
-  'range_story.submit',
 ]);
 
 const accepted = (type: CommandType, receipt: unknown) => {
@@ -418,13 +406,11 @@ export async function createMcpServer(daemonUrl: string, token: string): Promise
             ? inputSchemas[type].omit({ baseline_id: true })
             : type === 'change_story.submit'
               ? inputSchemas[type].omit({ story_id: true })
-              : type === 'range_story.submit'
-                ? inputSchemas[type].omit({ story_id: true })
-                : type === 'board.plan.update'
-                  ? boardPlanInputSchema
-                  : type === 'visual.draw'
-                    ? visualDrawInputSchema
-                    : inputSchemas[type];
+              : type === 'board.plan.update'
+                ? boardPlanInputSchema
+                : type === 'visual.draw'
+                  ? visualDrawInputSchema
+                  : inputSchemas[type];
       boundInputs[name] = boundFields.filter(
         (field) => 'shape' in unbound && field in unbound.shape,
       );

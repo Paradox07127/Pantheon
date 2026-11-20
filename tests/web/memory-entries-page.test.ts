@@ -569,16 +569,6 @@ describe('memory entries page', () => {
     expect(useMemoryView.getState().selectedId).toBe('r1');
   });
 
-  it('shows an entry in the graph by selecting it and switching to the graph tab', async () => {
-    useMemoryView.setState({ selectedId: 'r2' });
-    const h = await mount();
-    await rerender(h);
-    useMemoryView.setState({ selectedId: null });
-    named(h.value, 'EntryActions').props.onShowInGraph();
-    expect(useMemoryView.getState().selectedId).toBe('r2');
-    expect(useShell.getState().memoryTab).toBe('graph');
-  });
-
   it('opens an entry from the overview with it selected', async () => {
     useShell.setState({ memoryTab: 'overview' });
     const h = mountHost(() => OverviewMemory({ projectId, onHold() {} }));

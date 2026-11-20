@@ -23,12 +23,10 @@ import { pendingApprovalItems, settledApprovalItems } from './needs-you-approval
 import { sessionItems } from './needs-you-sessions.js';
 import { milestoneItems, planItems } from './needs-you-plans.js';
 import {
-  agentProposalItems,
   definitionTrialItems,
   improvementItems,
   memoryBudgetItems,
   projectBudgetItems,
-  settingProposalItems,
   stepRunItems,
 } from './needs-you-workflow.js';
 import { taskRung, taskRungFacts } from './task-rung.js';
@@ -66,9 +64,7 @@ export const NEXT_STEP: Record<
   | 'improvement_awaiting_decision'
   | 'plan_proposal_awaiting_decision'
   | 'lane_plan_awaiting_approval'
-  | 'plan_reassessment_ready'
-  | 'agent_proposal_awaiting_decision'
-  | 'setting_proposal_awaiting_decision',
+  | 'plan_reassessment_ready',
   string
 > = {
   merge_stuck: 'The user checks the stuck merge and cancels it if needed.',
@@ -111,10 +107,6 @@ export const NEXT_STEP: Record<
     'Approve the plan to let its tasks start, or tell the lead what to change.',
   plan_reassessment_ready:
     'The lead re-assessed the paused plan; read what it would change, tell it what to do, and resume the plan to let its tasks start.',
-  agent_proposal_awaiting_decision:
-    'An agent proposes to create or change an agent; the user creates it, edits its fields before creating it, or declines it.',
-  setting_proposal_awaiting_decision:
-    "The Assistant proposes a change of a project setting, quoting the user's words; the user approves the change or declines it.",
   background_task_long:
     'A background command or agent of the session has run for 30 minutes; the user stops it, or waits for it to end.',
 };
@@ -379,8 +371,6 @@ export function needsYou(
       ...stepRunItems(ctx, scope, planOf),
       ...definitionTrialItems(ctx, scope),
       ...improvementItems(ctx, scope),
-      ...agentProposalItems(ctx, scope),
-      ...settingProposalItems(ctx, scope),
       ...projectBudgetItems(ctx, scope),
       ...memoryBudgetItems(ctx, scope),
     );

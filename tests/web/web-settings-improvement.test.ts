@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
-import type { Improvement, WorkflowPolicy } from '@pantheon/domain';
+import type { WorkflowPolicy } from '@pantheon/domain';
 import type { BridgeResult } from '@pantheon/protocol';
 import {
   find,
@@ -60,22 +60,6 @@ const policy = (patch: Partial<WorkflowPolicy> = {}): WorkflowPolicy => ({
   budget: {},
   pinned: ['handback_limit'],
   ...patch,
-});
-
-const improvement = (
-  id: string,
-  status: Improvement['status'],
-  change: Improvement['change'],
-): Improvement => ({
-  id,
-  revision: 1,
-  project_id: 'alpha',
-  source: 'daemon',
-  signal: 'queue_wait',
-  retrospective_ids: ['r1', 'r2'],
-  status,
-  change,
-  proposed_at: 1,
 });
 
 async function mount<T>(body: () => T) {
@@ -204,21 +188,6 @@ describe('workflow page', () => {
       { project_id: 'alpha', pinned: [] },
       { project_id: 'alpha', pinned: ['acceptance_wake', 'max_parallel'] },
     ]);
-  });
-
-  it('marks a parameter an improvement changed apart from a pinned one', async () => {
-    bridge.answers['workflow.policy'] = policy();
-    bridge.answers['improvement.list'] = [
-      improvement('imp-1', 'trial', {
-        type: 'policy_change',
-        param: 'max_parallel',
-        from: 2,
-        to: 3,
-      }),
-    ];
-    const h = await page();
-    expect(text(labelled(tree(h), param('maxParallel')))).toContain('改进试用中');
-    expect(text(labelled(tree(h), param('acceptanceWake')))).not.toContain('改进');
   });
 
   it('sets the concurrency of each runtime and pauses dispatch', async () => {

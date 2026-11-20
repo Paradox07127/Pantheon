@@ -127,7 +127,7 @@ describe('category header', () => {
         'settings.workflow.acceptance',
         'settings.pages.gates',
         'settings.worktrees.merging',
-        'data.workflowPolicy.param.improvementMode',
+        'settings.workflow.planChanges',
       ],
     ],
     [

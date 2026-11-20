@@ -13,7 +13,6 @@ const DECISION = {
   question: '问题',
   milestone_accept: '待验收的里程碑',
   repeated_failure: '失败两次',
-  agent_proposal: '新智能体',
   permission: '权限',
   budget: '预算',
   improvement: '改进',
@@ -30,9 +29,7 @@ for (const item of (await query('needs_you.list')).items) {
     const session = sessionsNow.find((s) => s.id === (item.session_id ?? item.source.id));
     if (['failed', 'idle', 'ready', 'done', 'merged', 'discarded'].includes(session?.state))
       await call('session.archive', { session_id: session.id }, session.revision);
-  } else if (item.kind === 'agent.proposal')
-    await call('agent.proposal.resolve', { proposal_id: item.source.id, decision: 'decline' });
-  else if (item.kind === 'permission')
+  } else if (item.kind === 'permission')
     await call(
       'approval.respond',
       { approval_id: item.source.id, decision: 'reject' },

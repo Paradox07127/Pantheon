@@ -189,27 +189,40 @@ it.each([
     onTask: false,
     gated: true,
     auto: true,
+    uncommitted: false,
+  },
+  {
+    name: 'does not commit or merge the uncommitted files of a session the user opened',
+    onTask: false,
+    gated: true,
+    auto: true,
+    uncommitted: true,
   },
   {
     name: 'does not merge when the project has auto-merge off',
     onTask: true,
     gated: true,
     auto: false,
+    uncommitted: false,
   },
   {
     name: 'does not merge when the project has no gate commands',
     onTask: true,
     gated: false,
     auto: true,
+    uncommitted: false,
   },
-])('$name', async ({ onTask, gated, auto }) => {
+])('$name', async ({ onTask, gated, auto, uncommitted }) => {
   const f = await mergeFixture();
   const { session, workspace, sourceHead } = await idleSession(f, onTask);
   if (gated) await setGate(f, passing);
   if (auto) setAutoMerge(f, true);
-  commit(workspace.path, 'answer.txt', 'kept\n');
+  const head = commit(workspace.path, 'answer.txt', 'kept\n');
+  if (uncommitted) writeFileSync(path.join(workspace.path, 'draft.txt'), 'draft\n');
   const turn = send(f, session.id);
   await settle(f, session.id, turn.id);
+  expect(git(workspace.path, 'rev-parse', 'HEAD')).toBe(head);
+  expect(git(workspace.path, 'status', '--porcelain')).toBe(uncommitted ? '?? draft.txt' : '');
   expect(payloads(f, session.id, 'session.merge_started')).toEqual([]);
   expect(current(f, session.id).merge).toBeUndefined();
   expect(current(f, session.id).outcome).toBeUndefined();

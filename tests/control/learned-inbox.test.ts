@@ -1,7 +1,6 @@
 import { expect, it } from 'vitest';
 import type {
   AgentProfile,
-  AgentProposal,
   Improvement,
   MemoryContext,
   MemoryRecord,
@@ -19,7 +18,7 @@ const empty = () => ({
   review: { max_rounds: 3 },
 });
 
-it('lists a policy trial, an agent change, a workflow trial and an agent note, each with its diff and group', async () => {
+it('lists a policy trial, a workflow trial and an agent note, each with its diff and group', async () => {
   const f = await workbenchFixture();
   const assistant = f.call<Session>('resident.open', {
     project_id: f.project.id,
@@ -32,14 +31,6 @@ it('lists a policy trial, an agent change, a workflow trial and an agent note, e
     session_id: assistant.id,
     expires_at: f.store.now() + 60_000,
   };
-  const assistantProfile = f.store
-    .list<AgentProfile>('agents')
-    .find((agent) => agent.project_id === f.project.id && agent.template === 'assistant')!;
-  const profile = f.call<AgentProfile>('agent.update', {
-    agent_id: assistantProfile.id,
-    revision: assistantProfile.revision,
-    instructions: 'Answer with the reasons.',
-  });
 
   f.store.insert<Improvement>('improvements', {
     id: 'policy-trial',
@@ -52,12 +43,6 @@ it('lists a policy trial, an agent change, a workflow trial and an agent note, e
     proposed_at: f.store.now(),
     trial_started_at: f.store.now(),
   });
-  const proposal = f.call<AgentProposal>(
-    'agent.propose',
-    { project_id: f.project.id, agent_id: profile.id, instructions: 'Answer in one line.' },
-    null,
-    resident,
-  );
   f.call('workflow.definition.set', {
     project_id: f.project.id,
     definition: {
@@ -92,21 +77,8 @@ it('lists a policy trial, an agent change, a workflow trial and an agent note, e
   const items = f.control
     .learnedList(user, f.project.id)
     .sort((a: LearnedItem, b: LearnedItem) => a.kind.localeCompare(b.kind));
-  expect(items).toHaveLength(4);
-  const [agent, memory, policy, workflow] = items;
-  expect(agent).toMatchObject({
-    kind: 'agent_instructions',
-    id: proposal.id,
-    grade: 'confirm',
-    status: 'pending',
-    group: 'needs_you',
-    diff: { from: 'Answer with the reasons.', to: 'Answer in one line.' },
-    evidence: [{ kind: 'session', id: assistant.id }],
-    actions: [
-      { command: 'agent.proposal.resolve', decision: 'create' },
-      { command: 'agent.proposal.resolve', decision: 'decline' },
-    ],
-  });
+  expect(items).toHaveLength(3);
+  const [memory, policy, workflow] = items;
   expect(memory).toMatchObject({
     kind: 'memory_note',
     id: note.id,
@@ -250,17 +222,10 @@ it('names each item and the retrospective or session behind it, and gives a tria
     null,
     resident,
   );
-  const proposal = f.call<AgentProposal>(
-    'agent.propose',
-    { project_id: f.project.id, agent_id: helper.id, role: 'Plan', instructions: 'Plan weekly.' },
-    null,
-    resident,
-  );
 
   const items = f.control.learnedList(user, f.project.id);
   const titles = Object.fromEntries(items.map((item) => [item.id, item.title]));
   expect(titles).toMatchObject({
-    [proposal.id]: 'Ideas',
     policy: 'max_parallel',
     experience: 'Run the export tests first.',
     gate: '/repo/app',
@@ -279,46 +244,6 @@ it('names each item and the retrospective or session behind it, and gives a tria
   expect(items.find((item) => item.id === 'tried-playbook')!.evidence).toEqual([
     { kind: 'eval_receipt', id: evalRuns.path, title: evalRuns.verdict },
   ]);
-});
-
-it('lists a proposal for several fields of an agent as an agent change and leaves out one for a removed agent', async () => {
-  const f = await workbenchFixture();
-  const assistant = f.call<Session>('resident.open', {
-    project_id: f.project.id,
-    kind: 'assistant',
-  });
-  const resident: Principal = {
-    id: `session:${assistant.id}`,
-    role: 'lead',
-    project_id: f.project.id,
-    session_id: assistant.id,
-    expires_at: f.store.now() + 60_000,
-  };
-  const ideas = f.call<AgentProfile>('agent.create', {
-    project_id: f.project.id,
-    template: 'ideas',
-    name: 'Ideas',
-    role: 'Idea',
-  });
-  const removed = f.call<AgentProfile>('agent.create', {
-    project_id: f.project.id,
-    template: 'ideas',
-    name: 'Drafts',
-    role: 'Idea',
-  });
-  const proposalFor = (agent: AgentProfile) =>
-    f.call<AgentProposal>(
-      'agent.propose',
-      { project_id: f.project.id, agent_id: agent.id, role: 'Plan', instructions: 'Plan weekly.' },
-      null,
-      resident,
-    );
-  const kept = proposalFor(ideas);
-  proposalFor(removed);
-  f.store.remove('agents', removed.id, removed.revision);
-
-  const items = f.control.learnedList(user, f.project.id);
-  expect(items.map((item) => [item.kind, item.id])).toEqual([['agent_change', kept.id]]);
 });
 
 type Fixture = Awaited<ReturnType<typeof workbenchFixture>>;

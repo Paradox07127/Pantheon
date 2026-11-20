@@ -355,11 +355,11 @@ describe('trace lanes of untitled sessions', () => {
         runtime: 'claude',
         review_id: 'code-review',
       }),
-      event('session.opened', 'story', { purpose: 'range_story' }),
+      event('session.opened', 'story', { purpose: 'change_story' }),
     ];
     expect(nameOf('plan-reviewer')).toMatch(/^Codex 计划审查，Codex，/);
     expect(nameOf('code-reviewer')).toMatch(/^Claude 代码审查，Claude，/);
-    expect(nameOf('story')).toMatch(/^区间解读，/);
+    expect(nameOf('story')).toMatch(/^改动解读，/);
     expect(nameOf('unknown')).toMatch(/^未命名会话，/);
     expect(text(sessionRow('plan-reviewer'))).toContain('Codex 计划审查');
   });

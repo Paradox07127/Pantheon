@@ -14,7 +14,6 @@ import { t as format } from '@/i18n';
 import { DEFAULT_FIX_LIMIT, lastDuration, placeRow, rowsOf } from '@/screens/settings/gate';
 import { FolderGate, GateGpu, GatePolicy } from '@/screens/settings/GatesPage';
 import { useSettingsView } from '@/screens/settings/view';
-import { useShell } from '@/store';
 
 type Command = { type: string; input: Record<string, unknown>; expected_revision: number | null };
 type Project = Parameters<typeof FolderGate>[0]['project'];
@@ -465,38 +464,6 @@ describe('the handback count after a failed gate', () => {
     expect(bridge.commands.map((c) => c.input)).toEqual([
       { project_id: 'alpha', pinned: ['handback_limit'] },
     ]);
-  });
-
-  it('marks a count on trial in its row and opens the learned rules from it', async () => {
-    bridge.answers['improvement.list'] = [
-      {
-        id: 'imp-1',
-        revision: 1,
-        project_id: 'alpha',
-        source: 'daemon',
-        signal: 'handback_loop',
-        retrospective_ids: ['r1'],
-        status: 'trial',
-        change: { type: 'policy_change', param: 'handback_limit', from: 3, to: 2 },
-        proposed_at: 1,
-      },
-    ];
-    useShell.setState({ screen: 'board', memoryTab: 'overview' });
-    useSettingsView.setState({ open: true });
-    const h = await fixLimit();
-    find(
-      row(h),
-      (n) =>
-        n.type === 'button' &&
-        text(n) ===
-          format(
-            { id: 'settings.workflow.improvement', defaultMessage: '' },
-            { status: zh('data.workflowPolicy.status.trial') },
-          ),
-    ).props.onClick();
-    expect(useSettingsView.getState().open).toBe(false);
-    expect(useShell.getState().memoryTab).toBe('overview');
-    expect(useShell.getState().screen).toBe('memory');
   });
 });
 

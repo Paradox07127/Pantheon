@@ -1,11 +1,8 @@
 import type {
-  AgentProfile,
-  AgentProposal,
   BoardPlan,
   Improvement,
   MemoryRecord,
   Project,
-  SettingProposal,
   StepRun,
   StoredWorkflowDefinition,
 } from '@pantheon/domain';
@@ -128,82 +125,6 @@ export function improvementItems(ctx: ControlContext, scope: NeedsYouScope): Nee
     });
   }
   return items;
-}
-
-/** Pending agent proposals. */
-export function agentProposalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
-  const { principal, listedProject } = scope;
-  const items: NeedsYouDraft[] = [];
-  for (const proposal of ctx.store.list<AgentProposal>('agent_proposals')) {
-    if (proposal.state !== 'pending' || !listedProject(proposal.project_id)) continue;
-    const target = proposal.agent_id
-      ? ctx.store.must<AgentProfile>('agents', proposal.agent_id)
-      : undefined;
-    items.push({
-      source: { table: 'agent_proposals', id: proposal.id, revision: proposal.revision },
-      kind: 'agent.proposal',
-      project_id: proposal.project_id,
-      session_id: proposal.session_id,
-      status: proposal.state,
-      created_at: proposal.at,
-      reason: 'agent_proposal_awaiting_decision',
-      decision: 'agent_proposal',
-      primary: 'agent.proposal.resolve',
-      actions: [
-        action('agent.proposal.resolve', () =>
-          projectAccess(ctx, principal, proposal.project_id, 'agent.proposal.resolve'),
-        ),
-      ],
-      agent_proposal: {
-        id: proposal.id,
-        name: proposal.fields.name ?? target!.name,
-        // A proposal names an agent of its own project, which is never the personal home.
-        template: (target?.template ?? proposal.fields.template!) as Exclude<
-          AgentProfile['template'],
-          'personal'
-        >,
-        ...(target && { agent_id: target.id }),
-        waited_ms: ctx.store.now() - proposal.at,
-      },
-      next_step: NEXT_STEP.agent_proposal_awaiting_decision,
-    });
-  }
-  return items;
-}
-
-/** Pending setting proposals. */
-export function settingProposalItems(ctx: ControlContext, scope: NeedsYouScope): NeedsYouDraft[] {
-  const { principal, listedProject } = scope;
-  return ctx.store
-    .list<SettingProposal>('setting_proposals')
-    .filter((proposal) => proposal.state === 'pending' && listedProject(proposal.project_id))
-    .map((proposal) => ({
-      source: { table: 'setting_proposals', id: proposal.id, revision: proposal.revision },
-      kind: 'setting.proposal',
-      project_id: proposal.project_id,
-      session_id: proposal.session_id,
-      status: proposal.state,
-      created_at: proposal.at,
-      reason: 'setting_proposal_awaiting_decision',
-      decision: 'other',
-      primary: 'setting.proposal.resolve',
-      // reject stands for the command's decline decision.
-      actions: (['approve', 'reject'] as const).map((decision) => ({
-        ...action('setting.proposal.resolve', () =>
-          projectAccess(ctx, principal, proposal.project_id, 'setting.proposal.resolve'),
-        ),
-        decision,
-      })),
-      setting_proposal: {
-        id: proposal.id,
-        param: proposal.param,
-        current: proposal.current,
-        value: proposal.value,
-        quote: proposal.quote,
-        waited_ms: ctx.store.now() - proposal.at,
-      },
-      next_step: NEXT_STEP.setting_proposal_awaiting_decision,
-    }));
 }
 
 /** Projects over their budget. */

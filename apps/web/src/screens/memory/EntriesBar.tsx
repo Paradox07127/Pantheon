@@ -12,7 +12,7 @@ import {
 } from '../../components/Menu';
 import { useMemoryView } from '../../data/memory-view';
 import { t } from '../../i18n';
-import { kindIcon } from './GraphLegend';
+import { kindIcon } from './memory-kind';
 import {
   NewMemoryDialog,
   saveMemory,

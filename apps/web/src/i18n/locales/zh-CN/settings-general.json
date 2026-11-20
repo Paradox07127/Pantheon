@@ -28,6 +28,5 @@
   "settings.general.baselineFewerRounds": "减少轮数",
   "settings.general.baselineMoreRounds": "增加轮数",
   "settings.general.baselineVisuals": "绘制解释图",
-  "settings.general.baselineRangeStory": "确认时解读近期历史",
   "settings.general.sessionRecap": "会话进度摘要"
 }

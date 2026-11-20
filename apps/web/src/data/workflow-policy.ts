@@ -2,17 +2,12 @@ import type {
   FlowPath,
   Improvement,
   Retrospective,
-  ImprovementSignal,
   TaskBudget,
   TaskKind,
   WorkflowParam,
   WorkflowPolicy,
 } from '@pantheon/domain';
-import type {
-  ImprovementListItem,
-  ImprovementSession,
-  WorkflowPolicyView,
-} from '@pantheon/protocol';
+import type { ImprovementListItem, WorkflowPolicyView } from '@pantheon/protocol';
 import { t } from '../i18n';
 import { listText } from '../lib/list-text';
 import { useBoard } from './board';
@@ -22,7 +17,6 @@ import { useQuery, useRefetchTick } from './workbench-sessions';
 export type {
   Improvement,
   ImprovementListItem,
-  ImprovementSession,
   Retrospective,
   WorkflowParam,
   WorkflowPolicy,
@@ -59,8 +53,6 @@ export interface PolicyPatch {
 
 /** The daemon's runtime_quota_threshold for a policy that stores none. */
 export const DEFAULT_QUOTA_THRESHOLD = 90;
-
-export type Decision = 'confirm' | 'reject' | 'revert' | 'pin';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object';
@@ -103,31 +95,6 @@ export const useImprovements = (project_id: string | null) =>
     undefined,
     { events: true },
   );
-
-const acceptImprovementSessions = (value: unknown): ImprovementSession[] | null =>
-  Array.isArray(value) &&
-  value.every(
-    (s) => isObject(s) && typeof s.session_id === 'string' && typeof s.delivered === 'boolean',
-  )
-    ? (value as ImprovementSession[])
-    : null;
-
-const improvementParams = (key: string) => {
-  const at = key.indexOf('\n');
-  return { project_id: key.slice(0, at), improvement_id: key.slice(at + 1) };
-};
-
-/** GET /v1/improvement.sessions, again after each event that can change the board; reads nothing without an improvement. */
-export const useImprovementSessions = (project_id: string, improvement_id: string | null) => {
-  const changed = useBoard((s) => s.changed);
-  return useQuery(
-    'improvement.sessions',
-    improvement_id && `${project_id}\n${improvement_id}`,
-    improvementParams,
-    acceptImprovementSessions,
-    changed,
-  );
-};
 
 /** A plan task of a project, by the task id its plan gives it. */
 export interface TaskRef {
@@ -182,22 +149,6 @@ export const setPolicy = (policy: WorkflowPolicy, patch: PolicyPatch): Promise<M
     policyRevision(policy),
   );
 
-export const decideImprovement = (
-  improvement: Improvement,
-  decision: Decision,
-  reject_reason?: NonNullable<Improvement['reject_reason']>,
-): Promise<MutationResult> =>
-  sendProjectCommand(
-    'improvement.decide',
-    {
-      project_id: improvement.project_id,
-      improvement_id: improvement.id,
-      decision,
-      ...(reject_reason && { reject_reason }),
-    },
-    null,
-  );
-
 export type CountParam = 'max_parallel' | 'max_parallel_limit' | 'handback_limit';
 
 /** The values the daemon accepts for a count, given the rest of the policy. */
@@ -212,21 +163,6 @@ export const togglePin = (policy: WorkflowPolicy, param: WorkflowParam): Workflo
   policy.pinned.includes(param)
     ? policy.pinned.filter((p) => p !== param)
     : [...policy.pinned, param];
-
-/** The newest improvement on trial or in force that changes each parameter. */
-export function changedParams(
-  improvements: readonly Improvement[],
-): Map<WorkflowParam, Improvement> {
-  const changed = new Map<WorkflowParam, Improvement>();
-  for (const i of improvements)
-    if (
-      i.change.type === 'policy_change' &&
-      (i.status === 'trial' || i.status === 'active') &&
-      !changed.has(i.change.param)
-    )
-      changed.set(i.change.param, i);
-  return changed;
-}
 
 // Labels are getters, so each is read in the language loaded by then.
 export const PARAM_LABEL: Record<
@@ -357,18 +293,6 @@ export const WAKE_LABEL: Record<WorkflowPolicy['acceptance_wake'], string> = {
   },
 };
 
-export const IMPROVEMENT_MODE_LABEL: Record<WorkflowPolicy['improvement_mode'], string> = {
-  get auto() {
-    return t({ id: 'data.workflowPolicy.mode.auto', defaultMessage: 'Try automatically' });
-  },
-  get confirm() {
-    return t({ id: 'data.workflowPolicy.mode.confirm', defaultMessage: 'Wait for confirmation' });
-  },
-  get off() {
-    return t({ id: 'data.workflowPolicy.mode.off', defaultMessage: 'Off' });
-  },
-};
-
 export const PLAN_CHANGES_LABEL: Record<WorkflowPolicy['plan_changes'], string> = {
   get auto() {
     return t({ id: 'settings.workflow.planChanges.auto', defaultMessage: 'Lead applies them' });
@@ -377,87 +301,6 @@ export const PLAN_CHANGES_LABEL: Record<WorkflowPolicy['plan_changes'], string> 
     return t({
       id: 'settings.workflow.planChanges.confirm',
       defaultMessage: 'Wait for my approval',
-    });
-  },
-};
-
-export const STATUS_LABEL: Record<Improvement['status'], string> = {
-  get candidate() {
-    return t({
-      id: 'data.workflowPolicy.status.candidate',
-      defaultMessage: 'Awaiting confirmation',
-    });
-  },
-  get trial() {
-    return t({ id: 'data.workflowPolicy.status.trial', defaultMessage: 'On trial' });
-  },
-  get active() {
-    return t({ id: 'data.workflowPolicy.status.active', defaultMessage: 'Active' });
-  },
-  get reverted() {
-    return t({ id: 'data.workflowPolicy.status.reverted', defaultMessage: 'Reverted' });
-  },
-  get rejected() {
-    return t({ id: 'data.workflowPolicy.status.rejected', defaultMessage: 'Rejected' });
-  },
-};
-
-const SIGNAL_LABEL: Record<ImprovementSignal, string> = {
-  get always_approved_command() {
-    return t({
-      id: 'data.workflowPolicy.signal.alwaysApprovedCommand',
-      defaultMessage: 'Always-approved command',
-    });
-  },
-  get late_gate_failure() {
-    return t({
-      id: 'data.workflowPolicy.signal.lateGateFailure',
-      defaultMessage: 'Late gate failure',
-    });
-  },
-  get dispatch_overhead() {
-    return t({
-      id: 'data.workflowPolicy.signal.dispatchOverhead',
-      defaultMessage: 'High dispatch overhead',
-    });
-  },
-  get direct_rework() {
-    return t({
-      id: 'data.workflowPolicy.signal.directRework',
-      defaultMessage: 'Rework after doing it directly',
-    });
-  },
-  get idle_wakeups() {
-    return t({ id: 'data.workflowPolicy.signal.idleWakeups', defaultMessage: 'Idle wake-ups' });
-  },
-  get queue_wait() {
-    return t({ id: 'data.workflowPolicy.signal.queueWait', defaultMessage: 'Queue waits' });
-  },
-  get merge_conflicts() {
-    return t({
-      id: 'data.workflowPolicy.signal.mergeConflicts',
-      defaultMessage: 'Merge conflicts',
-    });
-  },
-  get over_budget() {
-    return t({ id: 'data.workflowPolicy.signal.overBudget', defaultMessage: 'Over budget' });
-  },
-  get repeat_gate_failure() {
-    return t({
-      id: 'data.workflowPolicy.signal.repeatGateFailure',
-      defaultMessage: 'Gates failing repeatedly',
-    });
-  },
-  get repeat_turn_failure() {
-    return t({
-      id: 'data.workflowPolicy.signal.repeatTurnFailure',
-      defaultMessage: 'Turns failing repeatedly',
-    });
-  },
-  get handback_loop() {
-    return t({
-      id: 'data.workflowPolicy.signal.handbackLoop',
-      defaultMessage: 'Repeated handbacks',
     });
   },
 };
@@ -539,22 +382,3 @@ export function scopeText(change: Improvement['change']): string {
     ) || t({ id: 'data.workflowPolicy.allTasks', defaultMessage: 'All tasks' })
   );
 }
-
-/** Who proposed an improvement and what it rests on. */
-export const sourceText = (improvement: Improvement): string =>
-  listText(
-    improvement.source === 'lead'
-      ? t({ id: 'data.workflowPolicy.source.lead', defaultMessage: 'Proposed by the lead' })
-      : t({
-          id: 'data.workflowPolicy.source.retrospective',
-          defaultMessage: 'Proposed by a retrospective',
-        }),
-    improvement.signal && SIGNAL_LABEL[improvement.signal],
-    t(
-      {
-        id: 'data.workflowPolicy.retrospectives',
-        defaultMessage: '{count, plural, one {# retrospective} other {# retrospectives}}',
-      },
-      { count: improvement.retrospective_ids.length },
-    ),
-  );

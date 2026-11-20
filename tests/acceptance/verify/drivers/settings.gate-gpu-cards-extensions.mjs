@@ -4,7 +4,6 @@ const { page, query, call, errors, poll, names, newProject } = await open(proces
 });
 const result = { id: 'settings.gate-gpu-cards-extensions', checks: [] };
 const check = (what, ok, got) => result.checks.push({ what, ok: Boolean(ok), got });
-const script = (...steps) => `fixture-script\n${JSON.stringify(steps)}`;
 
 try {
   const stamp = Date.now();
@@ -102,84 +101,6 @@ try {
   );
   await page.click({ role: 'button', name: '关闭设置', exact: true });
 
-  // (b) Two setting changes of the same agent: their Apply buttons have different names.
-  const assistant = (await call('resident.open', { project_id, kind: 'assistant' })).id;
-  const idle = () =>
-    poll(async () => {
-      const s = (await query('session.list', { project_id })).find((x) => x.id === assistant);
-      return s?.last_turn && !['queued', 'running'].includes(s.last_turn.state) && s;
-    }, 30_000);
-  const policy0 = await query('workflow.policy', { project_id });
-  const wantParallel = policy0.max_parallel === 2 ? 3 : 2;
-  const wakeWant =
-    (policy0.acceptance_wake ?? 'each_merge') === 'milestone' ? 'each_merge' : 'milestone';
-  const QA = `Run ${wantParallel} at a time ${stamp}`;
-  const QB = `Wake per milestone ${stamp}`;
-  await idle();
-  await call(
-    'session.send',
-    {
-      session_id: assistant,
-      input: `${QA}. ${QB}.\n${script(
-        {
-          tool: {
-            name: 'propose_setting',
-            arguments: { param: 'max_parallel', value: wantParallel, quote: QA },
-          },
-        },
-        {
-          tool: {
-            name: 'propose_setting',
-            arguments: { param: 'acceptance_wake', value: wakeWant, quote: QB },
-          },
-        },
-      )}`,
-    },
-    (await board()).sessions.find((s) => s.id === assistant).revision,
-  );
-  await idle();
-  const proposals = await poll(async () => {
-    const items = (await query('needs_you.list', { project_id })).items.filter(
-      (i) => i.kind === 'setting.proposal',
-    );
-    return items.length === 2 && items;
-  }, 20_000);
-  check('前置：needs_you.list 有同一个 agent 的两条设置改动', proposals, proposals?.length);
-  await page.click({ role: 'button', name: '项目看板', exact: true });
-  await page.click({ role: 'radio', name: '总览', exact: true });
-  const folded = await poll(
-    async () => (await names('还有 ')).find((n) => n.role === 'button'),
-    3000,
-  );
-  if (folded?.name) await page.click({ role: 'button', name: folded.name, exact: true });
-  const cards = await poll(async () => {
-    const list =
-      await page.evaluate(`[...document.querySelectorAll('article')].filter((a) => (a.getAttribute('aria-label') ?? '').includes('提议的设置改动') && a.getClientRects().length).map((a) => ({
-      card: a.getAttribute('aria-label'),
-      apply: [...a.querySelectorAll('button')].filter((b) => b.textContent.trim() === '应用').map((b) => b.getAttribute('aria-label') ?? b.textContent.trim()),
-    }))`);
-    return list.length === 2 && list;
-  });
-  result.cards = cards;
-  const applies = (cards || []).flatMap((c) => c.apply);
-  check(
-    '两个 "应用" 按钮的可访问名称不同',
-    applies.length === 2 && applies[0] !== applies[1],
-    applies,
-  );
-  check(
-    '每个 "应用" 名称带本卡的设置名',
-    (cards || []).every((c) => {
-      const setting = c.card.split('提议的设置改动：')[1];
-      return setting && c.apply[0]?.includes(setting);
-    }),
-    cards,
-  );
-  check(
-    '对照组："应用" 名称不只是 "应用 {agent}"',
-    applies.every((a) => a.startsWith('应用') && a.includes('，')),
-    applies,
-  );
   result.shot = await page.screenshot(result.id);
 } catch (error) {
   check('驱动走完全部步骤', false, error.message.slice(0, 1200));

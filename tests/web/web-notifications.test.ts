@@ -338,13 +338,15 @@ describe('decision notices', () => {
     actions: [{ command: 'milestone.accept', allowed: true }],
   };
   const proposal: NeedsYouItem = {
-    source: { table: 'improvements', id: 'improvement-1', revision: 1 },
-    kind: 'improvement.candidate',
+    source: { table: 'board_plans', id: 'alpha-lead', revision: 1 },
+    kind: 'board.plan.proposal',
     project_id: 'alpha',
-    status: 'candidate',
+    session_id: 'alpha-lead',
+    request_id: 'proposal-1',
+    status: 'pending',
     created_at: 0,
-    reason: 'improvement_awaiting_decision',
-    actions: [{ command: 'improvement.decide', allowed: true }],
+    reason: 'plan_proposal_awaiting_decision',
+    actions: [{ command: 'board.plan.proposal.resolve', allowed: true }],
   };
   const withMilestone = {
     ...board,
@@ -361,14 +363,14 @@ describe('decision notices', () => {
         seen,
         [
           { ...milestone, decision: 'milestone_accept' },
-          { ...proposal, decision: 'improvement' },
+          { ...proposal, decision: 'plan_change' },
         ],
         withMilestone,
         DEFAULT_NOTIFICATIONS,
         rules(delivery),
       ).notices.map((n) => n.title);
     expect(sent({})).toEqual(['Alpha app']);
-    expect(sent({ milestone_accept: 'now', improvement: 'never' })).toEqual(['Beta app']);
+    expect(sent({ milestone_accept: 'now', plan_change: 'never' })).toEqual(['Beta app']);
   });
 
   it('notifies a milestone ready for acceptance and a new proposal once each while listed, opening the inbox', () => {
@@ -383,7 +385,7 @@ describe('decision notices', () => {
       },
       {
         title: 'Alpha app',
-        body: zh('data.reason.improvementAwaitingDecision'),
+        body: zh('data.reason.planProposalAwaitingDecision'),
         target: { project_id: 'alpha', session_id: '' },
       },
     ]);

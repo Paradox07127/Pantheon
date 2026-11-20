@@ -46,7 +46,7 @@ const inTextField = (target: EventTarget | null) => {
 };
 
 /** Keeps the last answer for the same key on screen while a fresh read of it is out. */
-export function useHeld<T>(key: string | null, data: T | null): T | null {
+function useHeld<T>(key: string | null, data: T | null): T | null {
   const [held, setHeld] = useState<{ key: string | null; data: T | null }>({
     key: null,
     data: null,
@@ -277,10 +277,6 @@ export function EntriesPage({ projectId }: { projectId: string }) {
       const id = (value as { id?: string } | null)?.id;
       if (id) select(id);
     });
-  const showInGraph = (id: string) => {
-    select(id);
-    useShell.getState().setMemoryTab('graph');
-  };
 
   const dialogOpen = creating || rewriting !== null;
   useEffect(() => {
@@ -365,7 +361,6 @@ export function EntriesPage({ projectId }: { projectId: string }) {
           }
           onRestore={() => restore(item.id, item.revision)}
           onOpen={select}
-          onShowInGraph={() => showInGraph(item.id)}
         />
       );
     side = (

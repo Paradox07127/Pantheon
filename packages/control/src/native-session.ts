@@ -21,11 +21,9 @@ function title(ctx: ControlContext, session: Session): string {
       ? 'Baseline assessment'
       : session.change_story
         ? 'Change story'
-        : session.range_story
-          ? 'Range story'
-          : session.review_id
-            ? 'Review'
-            : 'Project conversation';
+        : session.review_id
+          ? 'Review'
+          : 'Project conversation';
   const goal = ctx.store.get<ProjectBrief>('project_briefs', project.id)?.goal;
   return [project.name, purpose, goal]
     .filter(Boolean)

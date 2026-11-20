@@ -16,7 +16,6 @@
   "daemon.nextStep.leadTurnStalled": "lead 的回合长时间没有进展，或一个工具调用一直没结束；用户打断这个回合，再给 lead 发消息让它接着做。",
   "daemon.nextStep.leadPermission": "这是 lead 自己的权限请求，它的回合在等答复，期间收不到任务会话的报告；用户批准或拒绝后 lead 才能继续。",
   "daemon.nextStep.milestoneReadyForAcceptance": "里程碑的任务都已完成；用户核对验收标准后验收它，或给 lead 发消息说明还缺什么。",
-  "daemon.nextStep.improvementAwaitingDecision": "改进提案等用户决定；用户确认后开始试用，或拒绝它。",
   "daemon.nextStep.planProposalAwaitingDecision": "计划改动提议等用户决定；用户接受它、改过再接受，或拒绝它。",
   "daemon.nextStep.lanePlanAwaitingApproval": "批准计划后它的任务开工；也可以告诉 lead 要改什么。",
   "daemon.nextStep.backgroundTaskLong": "会话的一个后台命令或后台 agent 已运行 30 分钟；用户停掉它，或等它结束。",

@@ -321,13 +321,7 @@ function retryQueuedHandoff(ctx: ControlContext, sessionId: string, reason: stri
 
 /** A conversation the user talks to directly, outside any review or managed flow. */
 function directConversation(session: Session): boolean {
-  return !(
-    session.review_id ||
-    session.baseline ||
-    session.change_story ||
-    session.range_story ||
-    session.intro
-  );
+  return !(session.review_id || session.baseline || session.change_story || session.intro);
 }
 
 /**
@@ -1597,7 +1591,6 @@ export async function startTurn(ctx: ControlContext, key: string): Promise<void>
         session.runtime_review ||
         session.baseline ||
         session.change_story ||
-        session.range_story ||
         session.intro ||
         session.resident
         ? 'reviewer'

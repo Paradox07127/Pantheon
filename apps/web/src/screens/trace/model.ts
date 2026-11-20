@@ -244,8 +244,7 @@ export const isTraceEvent = (event: Pick<DaemonEvent, 'kind'>): boolean =>
 export const keepTraceEvent = (event: Pick<DaemonEvent, 'kind'>): boolean =>
   isTraceEvent(event) || event.kind === 'review.requested';
 
-export type SessionPurpose =
-  'plan_review' | 'code_review' | 'range_story' | 'change_story' | 'intro';
+export type SessionPurpose = 'plan_review' | 'code_review' | 'change_story' | 'intro';
 
 /** What each session was opened for, by session id, from its session.opened and review.requested events. */
 export function sessionPurposes(events: readonly DaemonEvent[]): Map<string, SessionPurpose> {
@@ -260,7 +259,7 @@ export function sessionPurposes(events: readonly DaemonEvent[]): Map<string, Ses
     const purpose = field(event.payload, 'purpose');
     if (review)
       purposes.set(event.aggregate_id, planReviews.has(review) ? 'plan_review' : 'code_review');
-    else if (purpose === 'range_story' || purpose === 'change_story' || purpose === 'intro')
+    else if (purpose === 'change_story' || purpose === 'intro')
       purposes.set(event.aggregate_id, purpose);
   }
   return purposes;
@@ -279,8 +278,6 @@ export function purposeTitle(purpose: SessionPurpose, runtime: string): string {
         { id: 'trace.session.codeReview', defaultMessage: '{runtime} code review' },
         { runtime },
       );
-    case 'range_story':
-      return t({ id: 'trace.session.rangeStory', defaultMessage: 'Range story' });
     case 'change_story':
       return t({ id: 'trace.session.changeStory', defaultMessage: 'Change story' });
     case 'intro':

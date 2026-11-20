@@ -12,9 +12,6 @@ export const SCREEN_NAMES: Record<Screen | 'settings', string> = {
   get insights() {
     return t({ id: 'app.screenName.insights', defaultMessage: 'Engineering board' });
   },
-  get runtime() {
-    return t({ id: 'app.screenName.runtime', defaultMessage: 'Runs' });
-  },
   get flow() {
     return t({ id: 'app.screenName.flow', defaultMessage: 'Flow chart' });
   },

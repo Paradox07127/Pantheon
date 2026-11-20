@@ -57,7 +57,7 @@ it('creates a worktree session whose first turn starts as a writer once the work
     env: { TMPDIR: tempDir },
     extensions: { mode: 'inherit' },
   });
-  expect(spec.control_instructions).toContain(ready.path);
+  expect(spec.control_instructions ?? '').toBe('');
   expect(spec.pantheon_mcp).toBeUndefined();
   expect(spec.sandbox!.writable_roots).toEqual(expected.writable_roots);
   expect(spec.sandbox!.protected_entries).toEqual(
@@ -872,8 +872,8 @@ it('gives a runtime whose adapter declares neither no question tool and no title
 });
 
 /** A runtime with a question tool whose sessions can hold a credential, in a project with a memory decision. */
-async function credentialedRuntime() {
-  const f = await declaredRuntime('agy', { questionTool: 'ask_human' });
+async function credentialedRuntime(runtime = 'agy') {
+  const f = await declaredRuntime(runtime, { questionTool: 'ask_human' });
   Object.assign(f.ctx, {
     issueSessionCredential: () => ({
       token_file: path.join(f.root, 'token'),
@@ -903,17 +903,17 @@ async function credentialedRuntime() {
   return { ...f, started };
 }
 
-it('runs a worktree session the user opened without Pantheon tools, text or memory', async () => {
-  const f = await credentialedRuntime();
-  const session = await f.create();
-  const { spec, input } = await f.started(session);
-  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
-  expect(spec.pantheon_mcp).toBeUndefined();
-  expect(spec.control_instructions).toBe(
-    `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
-  );
-  expect(input).not.toContain('[Pantheon current project memory]');
-});
+it.each(['claude', 'codex'])(
+  'runs a %s worktree session the user opened without Pantheon tools, text or memory',
+  async (runtime) => {
+    const f = await credentialedRuntime(runtime);
+    const session = await f.create();
+    const { spec, input } = await f.started(session);
+    expect(spec.pantheon_mcp).toBeUndefined();
+    expect(spec.control_instructions ?? '').toBe('');
+    expect(input).not.toContain('[Pantheon current project memory]');
+  },
+);
 
 it("runs a worktree session the user opened on the user's native home, extensions and daemon environment", async () => {
   stubDaemonEnvironment();
@@ -966,7 +966,12 @@ it.each<{
 ])('gives a worktree session $name the lead credential, guide and memory', async ({ open }) => {
   stubDaemonEnvironment();
   const f = await credentialedRuntime();
-  const { spec, input } = await f.started(await open(f));
+  const session = await open(f);
+  const { spec, input } = await f.started(session);
+  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
+  expect(spec.control_instructions).toContain(
+    `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
+  );
   expect(spec.pantheon_mcp).toBeDefined();
   expect(spec.native_state_dir).toContain('/native-sessions/');
   expect(spec.env_allowlist).toEqual(NATIVE_ENV_ALLOWLIST);

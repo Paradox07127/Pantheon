@@ -429,9 +429,9 @@ it.skipIf(insideSandbox)(
   },
 );
 
-it('refuses uncommitted work, no commits, a non-user principal and a discarded session', async () => {
+it('refuses no commits, a non-user principal and a discarded session', async () => {
   const f = await mergeFixture();
-  const { session, workspace } = await idleSession(f);
+  const { session } = await idleSession(f);
   const planner: Principal = {
     id: 'planner',
     role: 'planner',
@@ -443,6 +443,18 @@ it('refuses uncommitted work, no commits, a non-user principal and a discarded s
   await expect(merge(f, session.id)).rejects.toThrow(
     expect.objectContaining({ code: 'no_changes' }),
   );
+  expect(current(f, session.id).merge).toBeUndefined();
+  f.call<Session>('session.discard', { session_id: session.id }, current(f, session.id).revision);
+  await eventually(
+    () => current(f, session.id).outcome === 'discarded',
+    () => f.control.tick(),
+  );
+  expect(() => merge(f, session.id)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
+});
+
+it('refuses the uncommitted and untracked files of a task session, whose agent commits its own work', async () => {
+  const f = await mergeFixture();
+  const { session, workspace } = await taskSession(f, 'api');
   writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
   await expect(merge(f, session.id)).rejects.toThrow(
     expect.objectContaining({ code: 'uncommitted_changes' }),
@@ -458,12 +470,41 @@ it('refuses uncommitted work, no commits, a non-user principal and a discarded s
     expect.objectContaining({ code: 'uncommitted_changes' }),
   );
   expect(current(f, session.id).merge).toBeUndefined();
-  f.call<Session>('session.discard', { session_id: session.id }, current(f, session.id).revision);
-  await eventually(
-    () => current(f, session.id).outcome === 'discarded',
-    () => f.control.tick(),
-  );
-  expect(() => merge(f, session.id)).toThrow(expect.objectContaining({ code: 'invalid_state' }));
+  expect(git(workspace.path, 'log', '-1', '--format=%s')).toBe('Add the untracked file');
+});
+
+it.skipIf(insideSandbox)(
+  'commits the uncommitted and untracked files of a session the user opened under its title, then gates and merges that commit',
+  async () => {
+    const f = await mergeFixture();
+    const { session, workspace, sourceHead } = await idleSession(f);
+    await setGate(f, [{ name: 'Passes', argv: [process.execPath, '-e', 'process.exit(0)'] }]);
+    writeFileSync(path.join(workspace.path, 'answer.txt'), 'edited\n');
+    writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
+    expect((await merge(f, session.id)).merge).toEqual({ state: 'running' });
+    const head = git(workspace.path, 'rev-parse', 'HEAD');
+    expect(git(workspace.path, 'rev-parse', 'HEAD^')).toBe(sourceHead);
+    expect(git(workspace.path, 'log', '-1', '--format=%s')).toBe(current(f, session.id).title);
+    await settled(f, session.id);
+    expect(current(f, session.id)).toMatchObject({ state: 'closed', outcome: 'merged' });
+    expect(git(f.source, 'rev-parse', 'main')).toBe(head);
+    expect(git(f.source, 'show', 'main:untracked.txt')).toBe('new');
+    expect(git(f.source, 'show', 'main:answer.txt')).toBe('edited');
+    expect(payloads(f, session.id, 'session.gate_checked').map((each) => each.commit)).toEqual([
+      head,
+    ]);
+  },
+);
+
+it.each([
+  { name: 'a session the user opened', task: false, state: 'ready' },
+  { name: 'a task session', task: true, state: 'idle' },
+])('lists $name with only uncommitted files as $state', async ({ task, state }) => {
+  const f = await mergeFixture();
+  const { session, workspace } = task ? await taskSession(f, 'api') : await idleSession(f);
+  writeFileSync(path.join(workspace.path, 'untracked.txt'), 'new\n');
+  await f.prefetch();
+  expect(f.list().find((row) => row.id === session.id)?.state).toBe(state);
 });
 
 it('refuses to merge a session while its turn runs', async () => {

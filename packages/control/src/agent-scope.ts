@@ -83,17 +83,10 @@ export const AGENT_SCOPE: readonly AgentScopeRow[] = [
   },
   {
     capability: '权限请求、建 agent、外部事件开工、预算项',
-    project_level: '按章程代批自己 worker 的权限请求，可以提议新建 agent',
+    project_level: '按章程代批自己 worker 的权限请求',
     personal_level: '不能，始终留给用户',
     personal_actions: [],
-    never_personal: [
-      'approval.respond',
-      'agent.create',
-      'agent.propose',
-      'agent.proposal.resolve',
-      'external.approve',
-      'workflow.policy.set',
-    ],
+    never_personal: ['approval.respond', 'agent.create', 'external.approve', 'workflow.policy.set'],
   },
   {
     capability: '记忆和学到的改动',

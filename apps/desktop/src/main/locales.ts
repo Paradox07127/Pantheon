@@ -75,8 +75,6 @@ export interface MenuText {
   keyboardShortcuts: string;
   openLogs: string;
   copyDiagnostics: string;
-  debugView: string;
-  disableUserStyle: string;
   backgroundTitle: string;
   backgroundBody: (running: number) => string;
   openApp: (name: string) => string;
@@ -138,8 +136,6 @@ export const MENU_TEXT: Record<Locale, MenuText> = {
     keyboardShortcuts: 'Keyboard Shortcuts',
     openLogs: 'Open Logs Folder',
     copyDiagnostics: 'Copy Diagnostics',
-    debugView: 'Debug View…',
-    disableUserStyle: 'Turn Off User Styles',
     backgroundTitle: 'Pantheon is still running in the background',
     backgroundBody: (running) =>
       `${running} sessions keep running. Open it from the menu bar icon.`,
@@ -205,8 +201,6 @@ export const MENU_TEXT: Record<Locale, MenuText> = {
     keyboardShortcuts: '键盘快捷键',
     openLogs: '打开日志文件夹',
     copyDiagnostics: '复制诊断信息',
-    debugView: '调试视图…',
-    disableUserStyle: '关闭用户样式',
     backgroundTitle: 'Pantheon 还在后台运行',
     backgroundBody: (running) => `${running} 个会话继续跑。从菜单栏图标打开。`,
     openApp: (name) => `打开 ${name}`,

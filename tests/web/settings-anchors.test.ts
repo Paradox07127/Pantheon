@@ -138,7 +138,6 @@ const AFTER_MOUNT = [
   'general.autoGitInit',
   'general.baselineRounds',
   'general.baselineVisuals',
-  'general.baselineRangeStory',
   'editor.browser',
 ];
 // Shown only for a runtime that has them: Claude, verified kinds, a quota.

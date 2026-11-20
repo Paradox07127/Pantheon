@@ -11,7 +11,7 @@ import type {
 import { Markdown } from '../../components/Markdown';
 import { RuntimeGlyph } from '../../components/RuntimeGlyph';
 import { t } from '../../i18n';
-import { kindIcon } from './GraphLegend';
+import { kindIcon } from './memory-kind';
 import { diffLines } from '../../lib/text-diff';
 import { dayText } from '../../lib/time-text';
 import './entry-detail.css';

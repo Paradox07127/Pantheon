@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Client } from '../../apps/cli/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
 import { StdioClientTransport } from '../../apps/cli/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
@@ -15,8 +14,7 @@ import {
   type Session,
   type SessionTurn,
 } from '@pantheon/domain';
-import { command, inputSchemas, type CommandType } from '@pantheon/protocol';
-import { appHelpGroups } from '../../packages/control/dist/app-help.generated.js';
+import { command, type CommandType } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import type { LocalCommand } from '../../packages/control/src/local-command.js';
 import { fixture, user } from '../helpers.js';
@@ -54,57 +52,6 @@ const refusal = async (
 
 const openResident = (f: Awaited<ReturnType<typeof workbenchFixture>>) =>
   f.call<Session>('resident.open', { project_id: f.project.id, kind: 'assistant' });
-
-it('lists every command group without a topic and the tool or the app for each board command', async () => {
-  const f = await workbenchFixture();
-  const resident = credential(openResident(f));
-  const index = await run<{ groups: string[]; screens: string[] }>(
-    f,
-    resident,
-    'agent.app_help',
-    {},
-  );
-  for (const group of new Set(Object.keys(inputSchemas).map((name) => name.split('.')[0]!)))
-    expect(
-      index.groups.some((line) => line.startsWith(`${group}: `)),
-      group,
-    ).toBe(true);
-  for (const screen of ['Sessions', 'Board', 'Trace', 'Insights', 'Settings'])
-    expect(index.screens.some((line) => line.startsWith(`${screen}: `))).toBe(true);
-
-  const board = await run<{ commands: { type: string; tool: string }[] }>(
-    f,
-    resident,
-    'agent.app_help',
-    { topic: 'board' },
-  );
-  const tool = (type: string) => board.commands.find((each) => each.type === type)?.tool;
-  expect(tool('board.plan.update')).toBe('update_board');
-  expect(tool('board.plan.proposal.resolve')).toBe('the user does this in the app');
-});
-
-it('keeps the generated app manual in step with the protocol', () => {
-  execFileSync(process.execPath, [
-    fileURLToPath(new URL('../../scripts/app-help.mjs', import.meta.url)),
-    '--check',
-  ]);
-});
-
-it('ends the purpose of each group in the app manual with a whole sentence of a command', () => {
-  for (const { group, about, commands } of appHelpGroups) {
-    const last = about.split('; ').at(-1)!;
-    expect(
-      !about ||
-        commands.some((c) =>
-          c.about
-            ?.split(/(?<=\.)\s/)[0]!
-            .replace(/\.$/, '')
-            .endsWith(last),
-        ),
-      `${group}: ${about}`,
-    ).toBe(true);
-  }
-});
 
 it("lists the project's sessions with type and state, reads a long one within its size, and refuses another project's", async () => {
   const f = await workbenchFixture();
@@ -197,7 +144,6 @@ it('refuses a worker and a lead that is not a resident on each app tool', async 
   const direct = await f.create('Explain the answer file');
   const worker = await boundTaskSession(f, residentSession.id, 'a');
   const inputs: [CommandType, Record<string, unknown>][] = [
-    ['agent.app_help', {}],
     ['agent.sessions', {}],
     ['agent.session_read', { session_id: residentSession.id }],
     ['agent.github_items', { project_id: f.project.id, kind: 'pr' }],
@@ -260,7 +206,7 @@ async function residentMcp(tools?: AgentProfile['tools']) {
 }
 
 it('lists the app tools to the default assistant and none to a profile without their groups', async () => {
-  const appToolNames = ['app_help', 'session_list', 'session_read', 'github_items', 'github_pr'];
+  const appToolNames = ['session_list', 'session_read', 'github_items', 'github_pr'];
   const assistant = await residentMcp();
   for (const name of appToolNames) expect(assistant.names).toContain(name);
 

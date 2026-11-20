@@ -1,5 +1,5 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
-import { Check, CircleAlert, Clock, RefreshCw, Share2, Undo2 } from 'lucide-react';
+import { Check, CircleAlert, Clock, RefreshCw, Undo2 } from 'lucide-react';
 import type { MemoryRecord } from '@pantheon/domain';
 import { toast } from '../../components/Toast';
 import { t } from '../../i18n';
@@ -18,7 +18,6 @@ export interface EntryActionsProps {
   onRetract: () => void;
   onRestore: () => void;
   onOpen: (memoryId: string) => void;
-  onShowInGraph: () => void;
 }
 
 /** Committed versions of one key numbered from 1 by commit time. */
@@ -57,14 +56,7 @@ export function EntryActions({
   onRetract,
   onRestore,
   onOpen,
-  onShowInGraph,
 }: EntryActionsProps) {
-  const graph = (
-    <button type="button" className="btn ghost ma-end" disabled={busy} onClick={onShowInGraph}>
-      <Share2 aria-hidden="true" />
-      {t({ id: 'memory.actions.showInGraph', defaultMessage: 'Show in graph' })}
-    </button>
-  );
   if (item.state === 'draft')
     return (
       <div className="ma">
@@ -100,7 +92,6 @@ export function EntryActions({
               </AlertDialog.Popup>
             </AlertDialog.Portal>
           </AlertDialog.Root>
-          {graph}
         </div>
       </div>
     );
@@ -114,7 +105,6 @@ export function EntryActions({
           <button type="button" className="btn ghost" disabled={busy} onClick={onRetract}>
             {t({ id: 'memory.actions.retract', defaultMessage: 'Retract' })}
           </button>
-          {graph}
         </div>
       </div>
     );
@@ -182,7 +172,6 @@ export function EntryActions({
             defaultMessage: 'Takes effect only after another confirm',
           })}
         </span>
-        {graph}
       </div>
     </div>
   );

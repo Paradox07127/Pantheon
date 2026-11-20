@@ -14,7 +14,6 @@ const NAME = {
   repeated_failure: '失败两次',
   permission: '权限请求',
   milestone_accept: '待验收的里程碑',
-  agent_proposal: '新 agent',
   budget: '预算',
   improvement: '改进',
   external: '外部审批',
@@ -22,6 +21,8 @@ const NAME = {
   merged: '已合并',
 };
 const CHOICE = { now: '立即', brief: '仅简报', never: '从不' };
+// The rule keys the page lists: the interface offers no agent proposal.
+const SHOWN = ATTENTION_KINDS.filter((k) => k !== 'agent_proposal');
 const OVERDUE = '等了超过 4 小时的问题';
 
 // The daemon's own values before this run writes any: those it has when no rule is stored.
@@ -66,11 +67,11 @@ const openPage = async () => {
   await page.click({ role: 'button', name: '通知', exact: true });
   return poll(async () => {
     const g = await groups();
-    return g.length > ATTENTION_KINDS.length && g.every((x) => x.checked.length === 1) && g;
+    return g.length > SHOWN.length && g.every((x) => x.checked.length === 1) && g;
   });
 };
 const shownAs = (list, settings) =>
-  ATTENTION_KINDS.every(
+  SHOWN.every(
     (k) =>
       list.find((g) => g.name === NAME[k])?.checked[0] === CHOICE[settings.attention_delivery[k]],
   );
@@ -79,8 +80,8 @@ const shown = await openPage();
 const kindRows = (shown || []).filter((g) => g.name !== OVERDUE);
 check(
   '每个决定种类加 "已合并" 各一行',
-  kindRows.length === ATTENTION_KINDS.length &&
-    ATTENTION_KINDS.every((k) => kindRows.filter((g) => g.name === NAME[k]).length === 1),
+  kindRows.length === SHOWN.length &&
+    SHOWN.every((k) => kindRows.filter((g) => g.name === NAME[k]).length === 1),
   kindRows.map((g) => g.name),
 );
 check(
@@ -99,8 +100,8 @@ check(
   ),
 );
 check(
-  '界面上 待验收的里程碑、新 agent、已合并 选中 仅简报',
-  ['milestone_accept', 'agent_proposal', 'merged'].every(
+  '界面上 待验收的里程碑、已合并 选中 仅简报',
+  ['milestone_accept', 'merged'].every(
     (k) => kindRows.find((g) => g.name === NAME[k])?.checked[0] === '仅简报',
   ),
 );

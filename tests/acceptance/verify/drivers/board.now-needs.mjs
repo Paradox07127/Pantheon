@@ -14,7 +14,6 @@ const DECISION = {
   question: '问题',
   milestone_accept: '待验收的里程碑',
   repeated_failure: '失败两次',
-  agent_proposal: '新智能体',
   permission: '权限',
   budget: '预算',
   improvement: '改进',

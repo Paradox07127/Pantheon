@@ -636,31 +636,14 @@ describe('app diagnostics', () => {
   );
 
   it.each([
-    ['a packaged build', true, null, null, false],
-    ['a dev build without a port file', false, null, {}, false],
-    // The daemon reads the port file for each turn, so the target carries no port.
-    ['a dev build with a port file', false, '41235\n/devtools/browser/abc\n', {}, false],
-    [
-      'a dev build started with a debugging port',
-      false,
-      '41236\n/devtools/browser/abc\n',
-      {},
-      true,
-    ],
-  ] as const)('gives the debug target of %s', async (_name, packaged, portFile, target, given) => {
-    const root = tempRoot();
-    const { main, call, module } = await startMain('darwin', root, ({ module }) => {
+    ['a packaged build', true, false],
+    ['a dev build', false, false],
+    ['a dev build started with a debugging port', false, true],
+  ] as const)('opens a debugging port only in %s', async (_name, packaged, given) => {
+    const { module } = await startMain('darwin', tempRoot(), ({ module }) => {
       module.app.isPackaged = packaged;
       module.app.commandLine.hasSwitch.mockReturnValue(given);
       if (!packaged) fakeDaemon();
-      if (portFile !== null) {
-        mkdirSync(module.app.getPath('userData'), { recursive: true });
-        writeFileSync(path.join(module.app.getPath('userData'), 'DevToolsActivePort'), portFile);
-      }
-    });
-    expect(await call(main, 'pantheon:debugTarget')).toEqual({
-      ok: true,
-      value: target && { ...target, repo_root: path.resolve(root, 'app', '../..') },
     });
     expect(module.app.commandLine.appendSwitch.mock.calls).toEqual(
       packaged || given ? [] : [['remote-debugging-port', '0']],
@@ -1414,8 +1397,6 @@ describe('Help and About menus', () => {
         '键盘快捷键',
         '打开日志文件夹',
         '复制诊断信息',
-        '调试视图…',
-        '关闭用户样式',
         ...(platform === 'darwin' ? [] : ['关于 Pantheon']),
       ]);
       const appItems = menu[0]!.submenu as MenuItemConstructorOptions[];
@@ -1433,17 +1414,6 @@ describe('Help and About menus', () => {
       expect(main.webContents.sent).toEqual([]);
     },
   );
-
-  it('turns user styles off in the focused window and opens the debug view in the main one', async () => {
-    const { main, call, windows, focus, click } = await startMain('darwin');
-    await call(main, 'pantheon:openWindow', sessionRequest);
-    const session = windows[1]!;
-    focus(session);
-    click('关闭用户样式');
-    click('调试视图…');
-    expect(session.webContents.sent).toEqual([['pantheon:menu', 'disable-user-style']]);
-    expect(main.webContents.sent).toEqual([['pantheon:menu', 'debug-view']]);
-  });
 
   it.each(['darwin', 'win32', 'linux'] as const)(
     'gives the About panel the app name, version and chosen icon on %s',
@@ -2731,8 +2701,6 @@ describe('preload', () => {
     for (const [method, value] of [
       ['appInfo', info],
       ['logsDir', '/desktop/logs'],
-      ['debugTarget', { repo_root: '/work/pantheon' }],
-      ['debugTarget', null],
       ['lastCrash', crash],
       ['lastCrash', null],
     ] as const) {

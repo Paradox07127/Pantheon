@@ -68,7 +68,6 @@ const actionProps = (extra: Partial<EntryActionsProps> = {}): EntryActionsProps 
   onRetract: vi.fn(),
   onRestore: vi.fn(),
   onOpen: vi.fn(),
-  onShowInGraph: vi.fn(),
   ...extra,
 });
 const actionsHtml = (p: EntryActionsProps) => renderToStaticMarkup(createElement(EntryActions, p));
@@ -76,19 +75,17 @@ const button = (tree: ReturnType<typeof EntryActions>, label: string) =>
   find(tree, (n) => n.type === 'button' && plain(renderToStaticMarkup(n)).trim() === label);
 
 describe('memory entry actions', () => {
-  it('offers to confirm or discard a draft and to show it in the graph', () => {
+  it('offers to confirm or discard a draft', () => {
     const p = actionProps({ item: draft });
     const out = actionsHtml(p);
     expect(plain(out).trim()).toBe(
-      `${zh('memory.actions.commit')} ${zh('memory.actions.discard')} ${zh('memory.actions.showInGraph')}`,
+      `${zh('memory.actions.commit')} ${zh('memory.actions.discard')}`,
     );
     expect(out).toMatch(/class="btn pri"[^>]*>(?:<svg[\s\S]*?<\/svg>)?确认生效/);
     expect(out).toMatch(/class="btn ghost dng"[^>]*>丢弃/);
     const tree = EntryActions(p);
     button(tree, zh('memory.actions.commit')).props.onClick();
-    button(tree, zh('memory.actions.showInGraph')).props.onClick();
     expect(p.onCommit).toHaveBeenCalled();
-    expect(p.onShowInGraph).toHaveBeenCalled();
   });
 
   it('asks in an alert dialog before discarding a draft', () => {
@@ -112,7 +109,7 @@ describe('memory entry actions', () => {
     const p = actionProps();
     const out = actionsHtml(p);
     expect(plain(out).trim()).toBe(
-      `${zh('memory.actions.rewrite')} ${zh('memory.actions.retract')} ${zh('memory.actions.showInGraph')}`,
+      `${zh('memory.actions.rewrite')} ${zh('memory.actions.retract')}`,
     );
     expect(out).toMatch(/class="btn"[^>]*>改写/);
     expect(out).toMatch(/class="btn ghost"[^>]*>撤回/);
@@ -127,7 +124,7 @@ describe('memory entry actions', () => {
     const p = actionProps({ item: first });
     const out = actionsHtml(p);
     expect(plain(out)).toMatch(/被第 2 版替代 \d\d:\d\d/);
-    expect(plain(out)).toMatch(/恢复为草稿 要再确认一次才生效 在图谱里看/);
+    expect(plain(out)).toMatch(/恢复为草稿 要再确认一次才生效 *$/);
     const tree = EntryActions(p);
     button(tree, '被第 2 版替代').props.onClick();
     button(tree, zh('memory.actions.restore')).props.onClick();
@@ -145,8 +142,8 @@ describe('memory entry actions', () => {
 
   it('disables every action while one runs', () => {
     const out = actionsHtml(actionProps({ busy: true }));
-    expect(out.match(/<button/g)).toHaveLength(3);
-    expect(out.match(/disabled=""/g)).toHaveLength(3);
+    expect(out.match(/<button/g)).toHaveLength(2);
+    expect(out.match(/disabled=""/g)).toHaveLength(2);
   });
 });
 

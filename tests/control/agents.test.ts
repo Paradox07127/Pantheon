@@ -634,14 +634,13 @@ it('archives an agent between turns, closing its session and its routine timers,
   expect(pendingRoutines(f, helper.id)).toEqual(['hourly']);
 });
 
-it('lists propose_agent and list_agents to the default assistant and not to a lead that is not a resident', async () => {
+it('lists list_agents to the default assistant and not to a lead that is not a resident', async () => {
   const assistant = await residentTools();
-  expect(assistant.names).toEqual(expect.arrayContaining(['propose_agent', 'list_agents']));
+  expect(assistant.names).toEqual(expect.arrayContaining(['list_agents']));
   const f = await workbenchFixture();
   const direct = await f.create('Explain the answer file');
   const tools = leadSessionTools(f.control['ctx'] as ControlContext, current(f, direct.id));
   expect(tools).toContain('board.plan.update');
-  expect(tools).not.toContain('agent.propose');
   expect(tools).not.toContain('agent.agents');
 });
 

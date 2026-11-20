@@ -17,8 +17,6 @@ export interface NeedsYouItem {
       | 'workflow_policies'
       | 'workflow_definitions'
       | 'workflow_step_runs'
-      | 'agent_proposals'
-      | 'setting_proposals'
       | 'memory_records';
     id: string;
     revision: number;
@@ -39,8 +37,6 @@ export interface NeedsYouItem {
     | 'lead.question'
     | 'workflow.approval'
     | 'external.approval'
-    | 'agent.proposal'
-    | 'setting.proposal'
     | 'memory.decision_budget';
   project_id: string;
   /** The approval's session, or the lead of a plan item; absent on session items, whose source is the session. */
@@ -149,15 +145,6 @@ export interface NeedsYouItem {
   reassessment?: { done: string; blocked: string; change: string; at: number };
   /** On a lane waiting for plan approval: whether the automatic plan review of its tasks still runs. */
   plan_review_running?: boolean;
-  /** The setting a pending proposal changes, from its current to the proposed value, and the user's words it quotes. */
-  setting_proposal?: {
-    id: string;
-    param: string;
-    current: string | number | boolean;
-    value: string | number | boolean;
-    quote: string;
-    waited_ms: number;
-  };
   binding?: {
     action?: string;
     input_hash?: string;
@@ -242,8 +229,6 @@ export function touchesNeedsYou(kind: string): boolean {
       'workflow.step_changed',
       'workflow.definition_trial_completed',
       'workflow.definition_trial_decided',
-      'improvement.proposed',
-      'improvement.status_changed',
       'workflow.policy_changed',
       'lead.question_asked',
       'board.external_held',
@@ -251,8 +236,6 @@ export function touchesNeedsYou(kind: string): boolean {
       'lead.question_answered',
       'lead.question_kept_open',
       'lead.question_overruled',
-      'setting_proposal.created',
-      'setting_proposal.resolved',
       'board.plan_paused',
       'board.plan_resumed',
       'board.plan_reassessed',
@@ -475,11 +458,6 @@ function knownReason(code: string): string | null {
         id: 'data.reason.milestoneReadyForAcceptance',
         defaultMessage: 'Milestone ready for acceptance',
       });
-    case 'improvement_awaiting_decision':
-      return t({
-        id: 'data.reason.improvementAwaitingDecision',
-        defaultMessage: 'Improvement proposal awaiting a decision',
-      });
     case 'plan_proposal_awaiting_decision':
       return t({
         id: 'data.reason.planProposalAwaitingDecision',
@@ -506,11 +484,6 @@ function knownReason(code: string): string | null {
       return t({ id: 'data.reason.leadQuestion', defaultMessage: 'The lead asked a question' });
     case 'task_blocked':
       return t({ id: 'data.reason.taskBlocked', defaultMessage: 'A task reported it is blocked' });
-    case 'setting_proposal_awaiting_decision':
-      return t({
-        id: 'data.reason.settingProposalAwaitingDecision',
-        defaultMessage: 'Setting change awaiting your decision',
-      });
     case 'plan_reassessment_ready':
       return t({
         id: 'data.reason.planReassessmentReady',
@@ -792,10 +765,17 @@ export function ageText(created_at: number, now: number): string {
   );
 }
 
-/** The items the interface shows; the daemon still lists agent proposals, which it offers no decision on. */
+/** Kinds the daemon still lists that the interface offers no decision on. */
+const UNOFFERED_KINDS: readonly unknown[] = [
+  'agent.proposal',
+  'improvement.candidate',
+  'setting.proposal',
+];
+
+/** The items the interface shows: those of every kind but the proposals it offers no decision on. */
 export function offeredNeeds(items: readonly unknown[]): NeedsYouItem[] {
   return items.filter(
-    (item) => (item as { kind?: unknown } | null)?.kind !== 'agent.proposal',
+    (item) => !UNOFFERED_KINDS.includes((item as { kind?: unknown } | null)?.kind),
   ) as NeedsYouItem[];
 }
 

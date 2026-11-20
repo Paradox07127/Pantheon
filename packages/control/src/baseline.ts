@@ -67,13 +67,10 @@ import { acceptInput } from './session.js';
 import { queueTurn } from './task-tracking.js';
 import { readAppSettings } from './app-settings.js';
 import { visualHandlers } from './visual.js';
-import { rangeCommits, startRangeStory, type RangeCommit } from './range-story.js';
 import { startEnvironmentCheck } from './environment-check.js';
 
 export const BASELINE_WALL_TIME_MS = 30 * 60 * 1000;
 const FACTS_KEPT = 30;
-/** The range a confirmed baseline explains as a range story. */
-const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
 const NO_OVERRIDES: ExtensionOverrides = {
   disabled_mcp_servers: [],
   disabled_plugins: [],
@@ -658,11 +655,7 @@ export const baselinePreparers: Preparers = {
     // The gate check this confirmation makes reads the answers cached here.
     const git = await Promise.all(project.roots.map(gitFolderAsync));
     const gitRoots = new Set(project.roots.filter((_, index) => git[index]));
-    const now = ctx.store.now();
-    const commits = readAppSettings(ctx).baseline_range_story
-      ? await rangeCommits(ctx, project, now - RECENT_MS, now)
-      : [];
-    return (ctx, p, c) => confirm(ctx, p, c, gitRoots, now, commits);
+    return (ctx, p, c) => confirm(ctx, p, c, gitRoots);
   },
 };
 
@@ -936,14 +929,7 @@ function submit(
   return next;
 }
 
-function confirm(
-  ctx: ControlContext,
-  p: Principal,
-  c: Command,
-  gitRoots: Set<string>,
-  now: number,
-  commits: RangeCommit[],
-): unknown {
+function confirm(ctx: ControlContext, p: Principal, c: Command, gitRoots: Set<string>): unknown {
   const { input, baseline } = confirmTarget(ctx, p, c);
   revision(ctx, c, baseline);
   requireThat(
@@ -1080,21 +1066,6 @@ function confirm(
         type: 'visual.pin',
         input: { visual_id: visual.id, size: 'M' },
       });
-  if (readAppSettings(ctx).baseline_range_story) {
-    try {
-      startRangeStory(
-        ctx,
-        ctx.store.must<Project>('projects', projectId),
-        now - RECENT_MS,
-        now,
-        c.command_id,
-        commits,
-      );
-    } catch (error) {
-      // A project with no commits in the window gets no story; the confirm still stands.
-      if (!(error instanceof DomainError) || error.code !== 'invalid_input') throw error;
-    }
-  }
   if (!input.plan_board) return next;
   const brief = input.brief ?? result.brief;
   const starter = baseline.lead_session_id

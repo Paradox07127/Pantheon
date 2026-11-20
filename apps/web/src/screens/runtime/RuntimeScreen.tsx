@@ -19,7 +19,7 @@ import { currentLocale, t } from '../../i18n';
 import { shortcutKeys } from '../../lib/shortcuts';
 import { useDelayed } from '../../lib/use-delayed';
 import { useShell } from '../../store';
-import { LeadStates, NeedsStrip, useNeedImprovements } from '../board/BoardFrame';
+import { LeadStates, NeedsStrip } from '../board/BoardFrame';
 import { tokenText, type RunBoardCommand } from '../board/panels-model';
 import { CallDetail } from './CallDetail';
 import { CallTable } from './CallTable';
@@ -188,7 +188,6 @@ export function RunsView({
   const model = boardView.data;
   // A board already shown that a read is replacing gets its status bar only once that read runs long.
   const boardSlow = useDelayed(!!(boardView.loading || boardView.refreshing));
-  const improvements = useNeedImprovements(history ? null : model);
   const snapshot = useBoard((s) => s.board);
   const openSession = useShell((s) => s.openSession);
   // Completed work ages out even when the daemon has no new events to publish.
@@ -379,7 +378,6 @@ export function RunsView({
             run={run}
             stale={boardView.stale}
             onOpenSession={openSession}
-            improvements={improvements.read}
           />
         )}
         {history ? (

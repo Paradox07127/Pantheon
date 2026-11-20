@@ -2,7 +2,6 @@
   "memory.actions.retracted": "已撤回「{title}」",
   "memory.actions.retractedWith": "已撤回「{title}」和依据它的 {count} 条",
   "memory.actions.undo": "撤销",
-  "memory.actions.showInGraph": "在图谱里看",
   "memory.actions.commit": "确认生效",
   "memory.actions.discard": "丢弃",
   "memory.actions.cancel": "取消",

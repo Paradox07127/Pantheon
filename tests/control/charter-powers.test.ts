@@ -3,7 +3,6 @@ import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import {
   id,
-  type AgentProfile,
   type BoardPlan,
   type CharterMode,
   type CharterPower,
@@ -139,7 +138,7 @@ function commit(repository: string, name: string, contents: string) {
 }
 
 const scenarios: Record<
-  'plan_change' | 'accept_milestone' | 'merge_out_of_scope' | 'create_agent' | 'start_external',
+  'plan_change' | 'accept_milestone' | 'merge_out_of_scope' | 'start_external',
   (mode: CharterMode) => Promise<Outcome>
 > = {
   async plan_change(mode) {
@@ -289,35 +288,6 @@ const scenarios: Record<
       ...refusal,
     };
   },
-  async create_agent(mode) {
-    const f = await workbenchFixture();
-    setCharter(f, 'create_agent', mode);
-    const assistant = f.call<Session>('resident.open', {
-      project_id: f.project.id,
-      kind: 'assistant',
-    });
-    const refusal = await attempt(() =>
-      f.call(
-        'agent.propose',
-        {
-          project_id: f.project.id,
-          template: 'ideas',
-          name: 'Ideas',
-          role: 'Ideas',
-          instructions: 'Group the ideas by the screen they change.',
-          brief: 'The user keeps dropping loose ideas into the main conversation.',
-        },
-        null,
-        leadOf(f, assistant.id),
-      ),
-    );
-    return {
-      applied: f.store.list<AgentProfile>('agents').some((agent) => agent.name === 'Ideas'),
-      waiting: waiting(f, 'agent.proposal'),
-      recorded: recorded(f, 'create_agent'),
-      ...refusal,
-    };
-  },
   async start_external(mode) {
     const f = await workbenchFixture({
         externalSources: [{ id: 'stub', poll: async () => MINUTE }],
@@ -402,16 +372,6 @@ it.each<Row>([
     recorded: false,
     refused: 'permission_denied',
     reason: "The project's charter does not let a lead merge files outside a task's scope",
-  },
-  { power: 'create_agent', mode: 'ask', applied: false, waiting: true, recorded: true },
-  {
-    power: 'create_agent',
-    mode: 'off',
-    applied: false,
-    waiting: false,
-    recorded: false,
-    refused: 'permission_denied',
-    reason: "The project's charter does not let a lead propose agents",
   },
   { power: 'start_external', mode: 'on', applied: true, waiting: false, recorded: false },
   { power: 'start_external', mode: 'ask', applied: false, waiting: true, recorded: false },

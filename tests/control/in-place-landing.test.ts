@@ -146,12 +146,9 @@ it('runs a new folder session the user opened without Pantheon tools, text or me
   f.call('memory.commit', { memory_id: draft.id }, draft.revision);
   const send = vi.spyOn(f.adapter, 'send');
   const session = await folderSession(f, 'Look around');
-  const workspace = f.store.must<Workspace>('workspaces', session.workspace_id!);
   const spec = f.start.mock.calls.at(-1)![0] as SessionSpec;
   expect(spec.pantheon_mcp).toBeUndefined();
-  expect(spec.control_instructions).toBe(
-    `You are working in the project folder at ${workspace.path}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.`,
-  );
+  expect(spec.control_instructions ?? '').toBe('');
   expect(send.mock.calls[0]![1].input).not.toContain('[Pantheon current project memory]');
 });
 

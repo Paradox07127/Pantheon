@@ -399,7 +399,6 @@ describe('baseline group', () => {
                 auto_archive_merged: false,
                 baseline_rounds: rounds,
                 baseline_visuals: true,
-                baseline_range_story: true,
               },
             }
           : { ok: false as const, error: { code: 'unknown_route', message: method } },
@@ -421,17 +420,13 @@ describe('baseline group', () => {
   const sent = (bridge: ReturnType<typeof app>) =>
     bridge.command.mock.calls.map((c) => (c as unknown as [any])[0].input);
 
-  it('shows the group under its name with its three rows', async () => {
+  it('shows the group under its name with its two rows', async () => {
     app(3);
     const h = await baseline();
     const group = h.value as ReactElement<any>;
     expect(group.type).toBe(Section);
     expect(group.props.title).toBe(zh('settings.general.baseline'));
-    expect(rowLabels(h.value)).toEqual([
-      ROUNDS,
-      zh('settings.general.baselineVisuals'),
-      zh('settings.general.baselineRangeStory'),
-    ]);
+    expect(rowLabels(h.value)).toEqual([ROUNDS, zh('settings.general.baselineVisuals')]);
     expect(named$(h.value, ROUNDS).props.role).toBe('group');
     expect(text(named$(h.value, ROUNDS))).toContain('3');
   });
@@ -453,19 +448,32 @@ describe('baseline group', () => {
     expect(text(named$(h.value, ROUNDS))).toContain(String(next));
   });
 
-  it.each([
-    ['settings.general.baselineVisuals', 'baseline_visuals'],
-    ['settings.general.baselineRangeStory', 'baseline_range_story'],
-  ])('writes only its field from the %s switch', async (id, field) => {
-    const bridge = app(5);
+  it.each([['settings.general.baselineVisuals', 'baseline_visuals']])(
+    'writes only its field from the %s switch',
+    async (id, field) => {
+      const bridge = app(5);
+      const h = await baseline();
+      const toggle = () =>
+        find(h.value, (n) => n.type === 'input' && n.props['aria-label'] === zh(id));
+      expect(toggle().props.checked).toBe(true);
+      toggle().props.onChange({ target: { checked: false } });
+      await h.flush();
+      expect(sent(bridge)).toEqual([{ [field]: false }]);
+      expect(toggle().props.checked).toBe(false);
+    },
+  );
+
+  it('saves only the field of the row that changed', async () => {
+    const bridge = app(3);
     const h = await baseline();
-    const toggle = () =>
-      find(h.value, (n) => n.type === 'input' && n.props['aria-label'] === zh(id));
-    expect(toggle().props.checked).toBe(true);
-    toggle().props.onChange({ target: { checked: false } });
+    named$(h.value, FEWER).props.onClick();
     await h.flush();
-    expect(sent(bridge)).toEqual([{ [field]: false }]);
-    expect(toggle().props.checked).toBe(false);
+    find(
+      h.value,
+      (n) => n.type === 'input' && n.props['aria-label'] === zh('settings.general.baselineVisuals'),
+    ).props.onChange({ target: { checked: false } });
+    await h.flush();
+    expect(sent(bridge)).toEqual([{ baseline_rounds: 2 }, { baseline_visuals: false }]);
   });
 
   it('shows a failed save under the row it came from', async () => {
@@ -488,7 +496,6 @@ describe('baseline group', () => {
     expect(found('Follow-up rounds')).toContain('general.baselineRounds');
     expect(found('追问轮数')).toContain('general.baselineRounds');
     expect(found('绘制解释图')).toContain('general.baselineVisuals');
-    expect(found('确认时解读近期历史')).toContain('general.baselineRangeStory');
   });
 });
 

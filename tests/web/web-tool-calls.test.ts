@@ -291,8 +291,6 @@ describe('orchestration results', () => {
       { task_id: 't2', dequeued: true, sessions: [{ session_id: 's-2', step: 'discarded' }] },
       tc('stopped'),
     ],
-    ['propose_improvement', {}, { id: 'i-1', status: 'candidate' }, tc('improvement.candidate')],
-    ['propose_improvement', {}, { id: 'i-1', status: 'trial' }, tc('improvement.trial')],
     ['pantheon.sync_board', {}, { brief: BRIEF }, tc('read')],
     [
       'rerun_baseline',
@@ -393,26 +391,6 @@ describe('orchestration details', () => {
         receipt({ sessions: [{ session_id: 's-2', step: 'discarded' }] }),
       ),
     ).toEqual([{ name: tc('discarded'), code: 's-2' }]);
-    expect(
-      orchestrationDetail(
-        'propose_improvement',
-        {
-          retrospective_ids: ['r1', 'r2'],
-          change: { type: 'policy_change', param: 'max_parallel', to: 3 },
-        },
-        receipt({ status: 'candidate' }),
-      ),
-    ).toEqual([{ name: 'max_parallel', code: '3' }]);
-    expect(
-      orchestrationDetail(
-        'propose_improvement',
-        {
-          retrospective_ids: ['r1', 'r2'],
-          change: { type: 'experience', procedure: 'Run the tests first', runtime: 'codex' },
-        },
-        undefined,
-      ),
-    ).toEqual([{ name: tc('procedure'), text: 'Run the tests first', code: 'codex' }]);
     expect(
       orchestrationDetail(
         'request_review',

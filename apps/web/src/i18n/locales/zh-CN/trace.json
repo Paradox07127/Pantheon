@@ -53,7 +53,6 @@
   "trace.session.untitled": "未命名会话",
   "trace.session.planReview": "{runtime} 计划审查",
   "trace.session.codeReview": "{runtime} 代码审查",
-  "trace.session.rangeStory": "区间解读",
   "trace.session.changeStory": "改动解读",
   "trace.session.intro": "项目介绍",
   "trace.step.bar": "{name} {when}，{duration}，{status}",

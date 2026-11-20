@@ -87,19 +87,20 @@ it('blocks a session with no new commits', async () => {
   });
 });
 
-it('blocks uncommitted worktree changes and counts only committed changes', async () => {
+it('lets a session the user opened merge its uncommitted worktree changes and counts only committed changes', async () => {
   const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);
   commit(workspace.path, 'answer.txt', 'committed\n');
   writeFileSync(path.join(workspace.path, 'untracked.txt'), 'uncommitted\n');
-  expect(await f.control.sessionPreflight(user, session.id)).toMatchObject({
+  const preflight = await f.control.sessionPreflight(user, session.id);
+  expect(preflight).toMatchObject({
     commit_count: 1,
     files_changed: 1,
     worktree_clean: false,
     source_clean: true,
-    can_merge: false,
-    blocked_reason: 'uncommitted_changes',
+    can_merge: true,
   });
+  expect(preflight).not.toHaveProperty('blocked_reason');
 });
 
 it('blocks edited tracked files in the source folder but not untracked ones', async () => {

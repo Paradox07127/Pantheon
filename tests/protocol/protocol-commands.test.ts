@@ -21,7 +21,6 @@ it('defines a strict input schema for each unimplemented command and the queries
   expect(Object.keys(querySchemas).sort()).toEqual([
     'agent.ledger',
     'agent.list',
-    'agent.proposal',
     'agent.routines',
     'agent.templates',
     'agent.wakes',
@@ -40,7 +39,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'device.ssh_hosts',
     'extensions.inventory',
     'external.read',
-    'files.list',
     'files.read',
     'files.search',
     'github.items',
@@ -81,7 +79,6 @@ it('defines a strict input schema for each unimplemented command and the queries
     'project.trace.stats',
     'project.usage.read',
     'projects.summary',
-    'range_story.list',
     'retrospective.list',
     'routing.table',
     'runtime.models',

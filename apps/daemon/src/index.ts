@@ -605,7 +605,6 @@ export async function startDaemon(options: DaemonOptions) {
       'agent.wakes': (p, i) => control.agentWakes(p, i.agent_id, i.limit, i.routine_id),
       'agent.ledger': (p, i) => control.agentLedger(p, i.agent_id, i.weeks),
       'agent.routines': (p, i) => control.agentRoutines(p, i.project_id),
-      'agent.proposal': (p, i) => control.agentProposal(p, i.proposal_id),
       'retrospective.list': (p, i) => control.retrospectiveList(p, i.project_id, i.task_id),
       'routing.table': (p, i) => control.routingTable(p, i.project_id),
       'workflow.definition': (p, i) => control.workflowDefinition(p, i.project_id, i.id),
@@ -627,7 +626,6 @@ export async function startDaemon(options: DaemonOptions) {
       'project.facts.read': (p, i) => control.projectFactsRead(p, i.project_id),
       'change_story.list': (p, i) => control.changeStoryList(p, i.project_id),
       'change_story.diff': (p, i) => control.changeStoryDiff(p, i.story_id),
-      'range_story.list': (p, i) => control.rangeStoryList(p, i.project_id),
       'session.search': (p, i) => control.sessionSearch(p, i),
       'session.list': async (p, i) => {
         await prefetch(p, i.project_id);
@@ -696,7 +694,6 @@ export async function startDaemon(options: DaemonOptions) {
       'project.head': (p, i) => control.projectHead(p, i.project_id),
       'session.create.preview': (p, i) => control.sessionCreatePreview(p, i),
       'files.search': (p, i) => control.filesSearch(p, i.project_id, i.session_id, i.q),
-      'files.list': (p, i) => control.filesList(p, i.project_id, i.session_id, i.path),
       'files.read': (p, i) => control.filesRead(p, i.project_id, i.session_id, i.path),
       'session.tool_image': (p, i) => control.sessionToolImage(p, i.session_id, i.hash),
       'symbols.search': (p, i) => control.symbolsSearch(p, i.project_id, i.session_id, i.q),

@@ -16,7 +16,6 @@ const until = async (pred, ms = 10_000) => {
 await call('app.settings.set', {
   baseline_rounds: 3,
   baseline_visuals: true,
-  baseline_range_story: true,
 });
 await page.click({ role: 'button', name: '设置', exact: true });
 await page.click({ role: 'button', name: '通用', exact: true });
@@ -24,7 +23,7 @@ const ui = () =>
   page.evaluate(`(() => {
   const g = document.querySelector('[role=group][aria-label="追问轮数"]');
   const box = (n) => document.querySelector('input[type=checkbox][aria-label="' + n + '"]')?.checked;
-  return { rounds: g ? Number(g.querySelector('output').textContent) : null, visuals: box('绘制解释图'), story: box('确认时解读近期历史') };
+  return { rounds: g ? Number(g.querySelector('output').textContent) : null, visuals: box('绘制解释图') };
 })()`);
 const s0 = await settings();
 // The rows render once the page's settings read returns.
@@ -34,7 +33,7 @@ const u0 =
     return u.rounds !== null && u;
   })) || (await ui());
 result.before = {
-  daemon: { r: s0.baseline_rounds, v: s0.baseline_visuals, s: s0.baseline_range_story },
+  daemon: { r: s0.baseline_rounds, v: s0.baseline_visuals },
   ui: u0,
 };
 result.checks.push({
@@ -42,8 +41,8 @@ result.checks.push({
   ok: u0.rounds === s0.baseline_rounds,
 });
 result.checks.push({
-  what: '初始开关等于 baseline_visuals / baseline_range_story',
-  ok: u0.visuals === s0.baseline_visuals && u0.story === s0.baseline_range_story,
+  what: '初始开关等于 baseline_visuals',
+  ok: u0.visuals === s0.baseline_visuals,
 });
 await page.click({ role: 'button', name: '减少轮数', exact: true });
 const s1 = await until((s) => s.baseline_rounds === s0.baseline_rounds - 1);

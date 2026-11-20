@@ -190,17 +190,6 @@ it('searches files while the event loop runs and lists a folder again only when 
   expect(listings()).toBe(2);
 });
 
-it('lists a folder while the event loop runs, with one ignore check', async () => {
-  const f = await workbenchFixture();
-  const calls = gitWrapper(['check-ignore']);
-  const fired = timerFired();
-  expect((await f.control.filesList(user, f.project.id, undefined, undefined)).entries).toEqual([
-    { name: 'answer.txt', kind: 'file', size: 5 },
-  ]);
-  expect(fired()).toBe(true);
-  expect(calls()).toEqual(['check-ignore']);
-});
-
 it('reads the range and diff of a review request while the event loop runs', async () => {
   const f = await workbenchFixture();
   const { session, workspace } = await idleSession(f);

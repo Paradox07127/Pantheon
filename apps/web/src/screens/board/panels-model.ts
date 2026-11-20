@@ -196,7 +196,6 @@ export function milestoneSessions(
       !s.baseline &&
       !s.intro &&
       !s.change_story &&
-      !s.range_story &&
       !s.runtime_review &&
       !s.review_id,
   );

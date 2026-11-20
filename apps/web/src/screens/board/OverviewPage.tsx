@@ -4,25 +4,25 @@ import { useProjectBrief } from '../../data/project-brief';
 import { t } from '../../i18n';
 import { reducedMotion } from '../../lib/motion';
 import { useShell } from '../../store';
-import { NeedsStrip, useNeedImprovements } from './BoardFrame';
+import { NeedsStrip } from './BoardFrame';
 import { PanelBoundary, selectedIn, type BoardViewProps } from './BoardScreen';
 import { BoardDevices } from './BoardDevices';
 import { BriefCard } from './BriefCard';
+import { boardNeeds } from './frame-model';
 import { GoalsHead, GoalsSection } from './GoalsSection';
 import { LeadPanel, residentSessions } from './LeadPanel';
 import type { currentMilestone } from './MilestoneCard';
 import { TaskProgressStrip } from './ProgressCharts';
 
-/** The needs-you list with the proposals its items point at; the hooks sit here, as the page holds none. */
+/** The needs-you list; the hooks sit here, as the page holds none. */
 export function ProjectNeeds({
   projectId,
   ...props
-}: Omit<ComponentProps<typeof NeedsStrip>, 'improvements'> & {
+}: ComponentProps<typeof NeedsStrip> & {
   projectId: string;
 }) {
   // The task drawer is open beside the list.
   const drawer = useShell((s) => selectedIn(s, projectId, 'flow') !== null);
-  const improvements = useNeedImprovements(props.model);
   const brief = useProjectBrief(projectId);
   // The since-you-left card above lands with its own read; shown before it, the list would move down.
   const landed = useRef<string | null>(null);
@@ -30,7 +30,7 @@ export function ProjectNeeds({
   if (landed.current !== projectId) return null;
   return (
     <div className="bd-needs" data-drawer={drawer ? '' : undefined}>
-      <NeedsStrip {...props} improvements={improvements.read} />
+      <NeedsStrip {...props} />
     </div>
   );
 }
@@ -123,7 +123,7 @@ export function OverviewPage({
         )}
         {/* Side by side once both fit; one alone takes the whole row. */}
         <div className="bd-ov-row">
-          {model && projectId && actions && !!model.needs?.length && (
+          {model && projectId && actions && boardNeeds(model).length > 0 && (
             <ProjectNeeds
               projectId={projectId}
               model={model}

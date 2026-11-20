@@ -234,17 +234,6 @@ export function orchestrationLabel(
         detail: '',
         tasks: task,
       };
-    case 'propose_improvement': {
-      const change = record(i.change) ?? {};
-      return {
-        title: t({
-          id: 'data.toolCalls.action.proposeImprovement',
-          defaultMessage: 'Propose improvement',
-        }),
-        detail: text(change.param) ?? firstLine(change.procedure),
-        tasks: [],
-      };
-    }
     case 'sync_board':
       return {
         title: t({ id: 'data.toolCalls.action.syncBoard', defaultMessage: 'Sync board' }),
@@ -270,26 +259,6 @@ export function orchestrationLabel(
 }
 
 // Labels are getters, so each is read in the language loaded by then.
-const IMPROVEMENT_STATUS: Record<string, string> = {
-  get candidate() {
-    return t({
-      id: 'data.toolCalls.improvement.candidate',
-      defaultMessage: 'Awaiting confirmation',
-    });
-  },
-  get trial() {
-    return t({ id: 'data.toolCalls.improvement.trial', defaultMessage: 'On trial' });
-  },
-  get active() {
-    return t({ id: 'data.toolCalls.improvement.active', defaultMessage: 'Active' });
-  },
-  get rejected() {
-    return t({ id: 'data.toolCalls.improvement.rejected', defaultMessage: 'Rejected' });
-  },
-  get reverted() {
-    return t({ id: 'data.toolCalls.improvement.reverted', defaultMessage: 'Reverted' });
-  },
-};
 const BASELINE_STATE: Record<string, string> = {
   get running() {
     return t({ id: 'data.toolCalls.baseline.running', defaultMessage: 'Baseline running' });
@@ -389,8 +358,6 @@ export function orchestrationResult(
         : t({ id: 'data.toolCalls.stopped', defaultMessage: 'Stopped' });
     case 'interrupt_task':
       return t({ id: 'data.toolCalls.interrupted', defaultMessage: 'Interrupted' });
-    case 'propose_improvement':
-      return IMPROVEMENT_STATUS[String(r.status)] ?? '';
     case 'sync_board':
       return t({ id: 'data.toolCalls.read', defaultMessage: 'Read' });
     case 'rerun_baseline':
@@ -517,36 +484,6 @@ export function orchestrationDetail(
         });
       });
       break;
-    case 'propose_improvement': {
-      const change = record(i.change) ?? {};
-      entries =
-        change.type === 'policy_change'
-          ? [
-              entry({
-                name: text(change.param) ?? undefined,
-                text: text(change.tier) ?? undefined,
-                code: JSON.stringify(change.to) ?? undefined,
-              }),
-            ]
-          : change.type === 'experience'
-            ? [
-                entry({
-                  name: t({ id: 'data.toolCalls.procedure', defaultMessage: 'Procedure' }),
-                  text: text(change.procedure) ?? undefined,
-                  code: listText(text(change.domain), text(change.tier), text(change.runtime)),
-                }),
-                ...(text(change.countercondition)
-                  ? [
-                      entry({
-                        name: t({ id: 'data.toolCalls.exception', defaultMessage: 'Exception' }),
-                        text: text(change.countercondition)!,
-                      }),
-                    ]
-                  : []),
-              ]
-            : [];
-      break;
-    }
     case 'request_review':
       entries = [
         entry({

@@ -127,7 +127,7 @@ describe('memory used in a turn', () => {
       `Signature header format${version(1)}`,
     ]);
     expect(listed.map((row) => nodes(row)[1]!.props['aria-label'])).toEqual(
-      ['decision', 'decision', 'note'].map((kind) => zh(`memory.graphSide.kind.${kind}`)),
+      ['decision', 'decision', 'note'].map((kind) => zh(`memory.kind.${kind}`)),
     );
   });
 

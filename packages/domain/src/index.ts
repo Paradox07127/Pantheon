@@ -22,11 +22,9 @@ import type {
   WorkflowStep,
 } from './workflow.js';
 export type * from './change-story.js';
-export type * from './range-story.js';
 export type * from './trace.js';
 export type * from './task-thread.js';
 export type * from './playbook.js';
-export type * from './setting-proposal.js';
 import { createHash, randomUUID } from 'node:crypto';
 
 export const id = (): string => randomUUID();
@@ -433,8 +431,6 @@ export interface NeedsYouItem {
       | 'workflow_policies'
       | 'workflow_definitions'
       | 'workflow_step_runs'
-      | 'agent_proposals'
-      | 'setting_proposals'
       | 'memory_records';
     id: string;
     revision: number;
@@ -455,8 +451,6 @@ export interface NeedsYouItem {
     | 'lead.question'
     | 'workflow.approval'
     | 'external.approval'
-    | 'agent.proposal'
-    | 'setting.proposal'
     | 'memory.decision_budget';
   project_id: string;
   /**
@@ -510,8 +504,6 @@ export interface NeedsYouItem {
     | 'task_blocked'
     | 'workflow_approval'
     | 'external_approval'
-    | 'agent_proposal_awaiting_decision'
-    | 'setting_proposal_awaiting_decision'
     | 'plan_decisions_over_budget';
   /** What the user decides. */
   decision:
@@ -567,19 +559,6 @@ export interface NeedsYouItem {
   reassessment?: { done: string; blocked: string; change: string; at: number };
   /** On a lane waiting for plan approval: whether the automatic plan review of its tasks still runs. */
   plan_review_running?: boolean;
-  /** The agent a pending proposal creates or changes, and how long it has waited in milliseconds. */
-  agent_proposal?: {
-    id: string;
-    name: string;
-    template: Exclude<AgentProfile['template'], 'personal'>;
-    agent_id?: string;
-    waited_ms: number;
-  };
-  /** The setting a pending proposal changes, from its current to the proposed value, and the user's words it quotes. */
-  setting_proposal?: Pick<
-    import('./setting-proposal.js').SettingProposal,
-    'id' | 'param' | 'current' | 'value' | 'quote'
-  > & { waited_ms: number };
   binding?: {
     action?: string;
     input_hash?: string;
@@ -729,7 +708,6 @@ export interface Session extends Entity {
   native_fork?: { session_id: string; after: string };
   baseline?: import('./planning.js').BaselineTag;
   change_story?: import('./change-story.js').StoryTag;
-  range_story?: import('./change-story.js').StoryTag;
   intro?: true;
   /** Managed durable native history location; absent on legacy native sessions. */
   native_state_dir?: string;
@@ -954,7 +932,7 @@ export interface AgentContract {
   loudest?: 'feed' | 'notify' | 'ask';
   quiet_hours?: { from: string; to: string };
 }
-/** A routine as agent.create, agent.update and agent.propose take it: every_minutes or daily at a local HH:MM. */
+/** A routine as agent.create and agent.update take it: every_minutes or daily at a local HH:MM. */
 export interface AgentRoutineInput {
   id?: string;
   prompt: string;
@@ -979,22 +957,6 @@ export interface AgentFields {
   effort?: EffortLevel;
   routines?: AgentRoutineInput[];
   contract?: AgentContract;
-}
-/** An agent a resident proposes, or a change to one, that waits for the user's decision. */
-export interface AgentProposal extends Entity {
-  project_id: string;
-  /** The proposing resident session. */
-  session_id: string;
-  /** The agent the proposal changes; absent for a new agent. */
-  agent_id?: string;
-  /** The agent.create fields of a new agent, or the changed fields. */
-  fields: Partial<AgentFields>;
-  /** The fields the user changed when deciding; absent when none. */
-  edited_fields?: Partial<AgentFields>;
-  state: 'pending' | 'created' | 'changed' | 'declined';
-  result_agent_id?: string;
-  at: number;
-  resolved_at?: number;
 }
 /** A message an agent leaves for the user. */
 export interface AgentMessage extends Entity {
@@ -1021,7 +983,6 @@ export function credentialRole(
     | 'review_id'
     | 'baseline'
     | 'change_story'
-    | 'range_story'
     | 'intro'
     | 'workspace_id'
     | 'task'
@@ -1035,7 +996,6 @@ export function credentialRole(
   if (
     session.baseline ||
     session.change_story ||
-    session.range_story ||
     session.intro ||
     !session.workspace_id ||
     // An imported session reads like a planner; a new one in the project folder is a lead or worker.

@@ -127,9 +127,16 @@ export async function inPlaceSessionSpec(
     role: 'writer',
     control_instructions: [
       ...(session.task || planningLead ? [PLATFORM_CORE] : []),
-      session.in_place
-        ? `You are working in the project folder at ${workspace.path}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.`
-        : `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
+      // A session the user opened runs as the bare runtime would, without Pantheon's instructions.
+      ...(!pantheonTools
+        ? []
+        : session.in_place
+          ? [
+              `You are working in the project folder at ${workspace.path}, on its current branch. Commit your changes there; Pantheon runs the gates in this folder, and the session lands once they pass on the commit you leave. Do not write files outside the project folder.`,
+            ]
+          : [
+              `You are working for the user in their own folder at ${workspace.path}, inside the project folder ${workspace.source}. Your changes land directly on its current branch; there is no merge gate. Do not write files outside the project folder.`,
+            ]),
       ...(session.task ? [workerInstructions(ctx, session.task, questionTool)] : []),
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names.
       ...(planningLead ? [leadInstructions(startedLeadPlaybook(ctx, session))] : []),

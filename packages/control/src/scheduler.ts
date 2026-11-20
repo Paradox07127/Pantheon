@@ -17,7 +17,6 @@ import { autoMergesRead, mergeSession, rollbackTransaction } from './workbench-s
 import { removeReviewDirectories } from './review-removal.js';
 import { startWorkspaceProvisioning } from './provisioning.js';
 import { tickChangeStories } from './change-story.js';
-import { tickRangeStories } from './range-story.js';
 import { tickProjectBaselines } from './baseline.js';
 import { tickTaskTracking } from './task-tracking.js';
 import { tickPersonalAttention } from './personal-agent.js';
@@ -37,7 +36,6 @@ export async function tick(ctx: ControlContext): Promise<void> {
     if (reading) await reading;
     ctx.store.transaction(() => tickProjectBaselines(ctx));
     ctx.store.transaction(() => tickChangeStories(ctx));
-    ctx.store.transaction(() => tickRangeStories(ctx));
     tickExternalIntake(ctx);
     // The dispatch in the tracker's transaction opens sessions from these start points; awaited
     // only when there is git to read, so a tick with nothing to read does not yield here.

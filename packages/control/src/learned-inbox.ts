@@ -1,6 +1,5 @@
 import type {
   AgentProfile,
-  AgentProposal,
   BoardPlan,
   MemoryRecord,
   Principal,
@@ -114,42 +113,6 @@ export function learnedList(
             ? decide('revert', ...(change.type === 'policy_change' ? ['pin'] : []))
             : [],
       at: row.proposed_at,
-    });
-  }
-
-  for (const proposal of ctx.store.list<AgentProposal>('agent_proposals')) {
-    if (proposal.project_id !== projectId || !proposal.agent_id) continue;
-    const fields: Record<string, unknown> = { ...proposal.fields, ...proposal.edited_fields };
-    const names = Object.keys(fields);
-    const target = ctx.store.get<AgentProfile>('agents', proposal.agent_id) as unknown as
-      Record<string, unknown> | undefined;
-    if (!target) continue;
-    const shown = (of: Record<string, unknown>) =>
-      text(names.length === 1 ? of[names[0]!] : Object.fromEntries(names.map((n) => [n, of[n]])));
-    items.push({
-      kind:
-        names.length === 1 && names[0] === 'instructions' ? 'agent_instructions' : 'agent_change',
-      id: proposal.id,
-      title: target.name as string,
-      grade: 'confirm',
-      status: proposal.state,
-      group:
-        proposal.state === 'pending'
-          ? 'needs_you'
-          : proposal.state === 'changed'
-            ? 'in_force'
-            : 'reverted',
-      // A changed agent no longer holds the values the change replaced.
-      diff: { from: proposal.state === 'changed' ? '' : shown(target), to: shown(fields) },
-      evidence: [{ kind: 'session', id: proposal.session_id }],
-      actions:
-        proposal.state === 'pending'
-          ? (['create', 'decline'] as const).map((decision) => ({
-              command: 'agent.proposal.resolve',
-              decision,
-            }))
-          : [],
-      at: proposal.at,
     });
   }
 

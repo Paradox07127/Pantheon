@@ -28,7 +28,6 @@ import {
 import { allProjects } from './SettingsNav';
 import { UsagePage } from './UsagePage';
 import { useSettingsView } from './view';
-import { PlaybookEditor } from './PlaybookEditor';
 import { onOff, WorkflowPage } from './WorkflowPage';
 import { WorktreesPage } from './WorktreesPage';
 
@@ -114,7 +113,7 @@ export function ProjectListPage() {
   );
 }
 
-/** One project's own page: the settings it sets itself, then its gates, worktrees, question defaults, playbook, budget, extensions and environment. */
+/** One project's own page: the settings it sets itself, then its gates, worktrees, question defaults, budget, extensions and environment. */
 function ProjectDetail({ project }: { project: Project }) {
   const read = useProjectDefaults();
   const [busy, setBusy] = useState(false);
@@ -183,7 +182,6 @@ function ProjectDetail({ project }: { project: Project }) {
       <Section>
         <WorkflowPage project={project} only="question_defaults" />
       </Section>
-      <PlaybookEditor project={project} />
       <Section>
         <UsagePage project={project} only="project_budget" />
       </Section>

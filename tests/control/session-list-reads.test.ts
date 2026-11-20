@@ -134,7 +134,7 @@ it('lists the same sessions after a prefetch without a synchronous Git call', as
   await landedPrefetch();
   const read = f.list();
   const row = (id: string) => read.find((each) => each.id === id);
-  expect(row(session.id)).toMatchObject({ state: 'idle', changes: { files: 1 } });
+  expect(row(session.id)).toMatchObject({ state: 'ready', changes: { files: 1 } });
   expect(row(committed.id)).toMatchObject({ state: 'ready', changes: { files: 1 } });
   expect(row(checked.id)).toMatchObject({
     state: 'idle',

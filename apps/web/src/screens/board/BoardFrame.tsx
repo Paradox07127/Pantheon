@@ -10,7 +10,6 @@ import { Tip } from '../../components/Tip';
 import { nextKey } from '../../data/attention';
 import { useBoard } from '../../data/board';
 import { needsKey } from '../../data/notice-tiers';
-import { useImprovements, type Improvement } from '../../data/workflow-policy';
 import { t } from '../../i18n';
 import { useShell } from '../../store';
 import { acceptEvidence } from './Charts';
@@ -119,18 +118,9 @@ export function needContext(
   model: BoardModel,
   sessions: readonly SnapshotSession[],
   stored: readonly SnapshotMilestone[],
-  improvements: readonly Improvement[] | null,
 ): Pick<
   RequestCardProps,
-  | 'who'
-  | 'session'
-  | 'lead'
-  | 'task'
-  | 'rung'
-  | 'milestone'
-  | 'improvement'
-  | 'taskMilestone'
-  | 'proposal'
+  'who' | 'session' | 'lead' | 'task' | 'rung' | 'milestone' | 'taskMilestone' | 'proposal'
 > {
   const session = sessions.find((s) => s.id === needSession(item));
   const lead = session?.task && sessions.find((s) => s.id === session.task!.lead_session_id);
@@ -173,10 +163,6 @@ export function needContext(
       cells: model.tasks.filter((t) => t.milestone_id === milestone.id),
       evidence: acceptEvidence(milestone, model, sessions),
     },
-    improvement:
-      item.source.table === 'improvements'
-        ? improvements?.find((i) => i.id === item.source.id)
-        : undefined,
   };
 }
 
@@ -327,15 +313,6 @@ function LaneEstimate({ lane, estimate }: { lane: string; estimate: Estimate }) 
   );
 }
 
-/** The proposals the needs-you items point at, read only while the strip holds one. */
-export function useNeedImprovements(model: BoardModel | null) {
-  // Kept as the strip keeps its items, so a strip folding away still finds its proposals.
-  const needs = useKept(model?.needs?.length ? model.needs : null);
-  return useImprovements(
-    needs?.find((item) => item.source.table === 'improvements')?.project_id ?? null,
-  );
-}
-
 /** The items waiting on the user, those unblocking the most tasks first. */
 export function NeedsStrip({
   model,
@@ -343,7 +320,6 @@ export function NeedsStrip({
   run,
   onOpenSession,
   stale,
-  improvements,
   hidden,
   onShow,
   asked: stripAsked,
@@ -354,8 +330,6 @@ export function NeedsStrip({
   run: RunBoardCommand;
   onOpenSession: (sessionId: string) => void;
   stale?: boolean;
-  /** The read of `useNeedImprovements`. */
-  improvements?: readonly Improvement[] | null;
   /** Something else covers the strip; `onShow` uncovers it. */
   hidden?: boolean;
   onShow?: () => void;
@@ -488,7 +462,7 @@ export function NeedsStrip({
                     if (el) primaries.current.set(needKey(item), el);
                     else primaries.current.delete(needKey(item));
                   }}
-                  {...needContext(item, model, sessions, stored, improvements ?? null)}
+                  {...needContext(item, model, sessions, stored)}
                   {...(lane?.estimate && {
                     sub: <LaneEstimate lane={lane.title} estimate={lane.estimate} />,
                   })}

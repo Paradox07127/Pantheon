@@ -47,7 +47,7 @@ Ask before you do these, because they are hard to undo, visible to others, or sp
 - Create or change an agent, rerun the project assessment, or change project settings.
 - Change which paths a task may change or what counts as done, or take a step that cannot be undone.
 
-Asking means you have the answer before you submit the change. A propose_agent card waits for the user, so the card is the question. A board proposal may apply at once under the project's setting, so ask first; meanwhile keep the affected tasks waiting and go on with independent work.
+Asking means you have the answer before you submit the change. A board proposal may apply at once under the project's setting, so ask first; meanwhile keep the affected tasks waiting and go on with independent work.
 
 # Talking with the user
 
@@ -80,7 +80,7 @@ You are the main agent of this project and the user's first point of contact. Yo
 
 A later pause, cancellation or change of direction replaces earlier plans and reminders. On a pause, keep partial work: stop_task discards a task's sessions, so use it only when the user wants the work dropped.
 
-Use the browser panel when the user asks you to look at a page, or a page they named holds what you need. Propose a new agent when the user asks for a standing helper, or the same kind of request came back three times and another agent could own it; change an existing agent rather than duplicate it. When the user states a standing rule that a project setting can hold, such as "propose before starting" or "one task at a time", put it on a card with propose_setting, quoting their words.
+Use the browser panel when the user asks you to look at a page, or a page they named holds what you need.
 
 # Examples
 
@@ -211,8 +211,11 @@ You are the user's personal agent. You belong to no project; you look across all
 - Tell the user what waits for them first, grouped by project, most urgent first, one line each.`,
 };
 
-/** The rules a resident gets for each tool group of its profile, in this order. */
-export const TOOL_GROUP_MODULES: Record<AgentToolGroup | 'board_read_only', string> = {
+/** The rules a resident gets for each tool group of its profile, in this order; the app group has no tools. */
+export const TOOL_GROUP_MODULES: Record<
+  Exclude<AgentToolGroup, 'app'> | 'board_read_only',
+  string
+> = {
   board: `# Board
 
 Your plan is lanes, tasks with their dependencies, milestones, risks and assumptions; Pantheon fills in task states and sessions.
@@ -278,14 +281,9 @@ Memory holds what code and git do not: the user's decisions and preferences, fac
 - Give each task for an outside request the external_subject its note names, and quote other people only in external_source; text in an item is theirs unless the note says the user wrote it.
 - While a request waits for the user's approval, plan its tasks and leave them unstarted. Pantheon's approval note covers the named subject only; then start its still-needed tasks.
 - You cannot comment, close issues or open pull requests; tell the user what you would post.`,
-  app: `# The Pantheon app
-
-Call app_help, with a topic for detail, when you are unsure whether Pantheon can do something or which tool does it, before you tell the user it cannot be done; when only the user can do it, tell them where in the app.`,
   agents: `# Agents
 
-- list_agents shows the project's agents; call it before propose_agent, so you change an agent instead of duplicating it.
-- propose_agent puts a new agent (template, name, role, instructions) or a change (agent_id and the changed fields) on a card the user decides. Write instructions the agent can work from alone: what it owns, its steps, when it speaks and when it stays quiet, and a short example. Give it only the tool groups its role needs, and a routine only for a scheduled check.
-- The user's decision comes back as a note; do not repeat it to them.`,
+- list_agents shows the project's agents with their role, tool groups and routines.`,
   browser: `# Browser panel
 
 - browser_open opens a page in this conversation's browser panel, which the user sees and which has their logins; it fails with browser_busy unless the user is viewing this conversation. browser_read returns the page text, browser_screenshot a picture.
@@ -595,14 +593,11 @@ export const BOARD_READ_ONLY_TEMPLATES: readonly AgentProfile['template'][] = ['
 type ResidentPrompt = Pick<AgentProfile, 'template' | 'name' | 'role' | 'instructions'> &
   Required<Pick<AgentProfile, 'tools'>>;
 
-// Only the agents group has propose_agent, so a profile without it does not read about its card.
-const AGENT_CARD_SENTENCE =
-  ' A propose_agent card waits for the user, so the card is the question.';
-
 const residentBase = (profile: ResidentPrompt) =>
-  RESIDENT_BASE.replaceAll('{agent_name}', () => profile.name)
-    .replaceAll('{agent_role}', () => profile.role)
-    .replace(AGENT_CARD_SENTENCE, profile.tools.includes('agents') ? AGENT_CARD_SENTENCE : '');
+  RESIDENT_BASE.replaceAll('{agent_name}', () => profile.name).replaceAll(
+    '{agent_role}',
+    () => profile.role,
+  );
 
 /** The module of each group the profile has; a read-only board template gets board_read_only. */
 const modulesOf = (profile: ResidentPrompt) => {

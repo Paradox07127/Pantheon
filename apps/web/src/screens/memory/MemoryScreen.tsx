@@ -7,7 +7,6 @@ import { useShell, type MemoryTab } from '../../store';
 import { DiagramsPage } from './DiagramsPage';
 import { EntriesTopControls } from './EntriesBar';
 import { EntriesPage } from './EntriesPage';
-import { GraphTopControls, MemoryGraphView } from './MemoryGraphView';
 import { MemoryOverview } from './MemoryOverview';
 import { OverviewMemory } from './OverviewMemory';
 import '../board/board.css';
@@ -24,12 +23,6 @@ const TABS: { key: MemoryTab; label: string }[] = [
     key: 'entries',
     get label() {
       return t({ id: 'memory.tab.entries', defaultMessage: 'Entries' });
-    },
-  },
-  {
-    key: 'graph',
-    get label() {
-      return t({ id: 'memory.tab.graph', defaultMessage: 'Graph' });
     },
   },
   {
@@ -54,7 +47,6 @@ export function MemoryScreen({ projectId }: { projectId: string | null }) {
           ))}
         </Tabs.List>
         {projectId && tab === 'entries' && <EntriesTopControls projectId={projectId} />}
-        {projectId && tab === 'graph' && <GraphTopControls projectId={projectId} />}
       </TopBar>
       <main className="bd bd-paged">
         {projectId && <ProjectReadStatus label={SCREEN_NAMES.memory} projectId={projectId} />}
@@ -69,9 +61,6 @@ export function MemoryScreen({ projectId }: { projectId: string | null }) {
         </Tabs.Panel>
         <Tabs.Panel className="bd-body" value="entries">
           {projectId && <EntriesPage key={projectId} projectId={projectId} />}
-        </Tabs.Panel>
-        <Tabs.Panel className="bd-body" value="graph">
-          {projectId && <MemoryGraphView key={projectId} projectId={projectId} />}
         </Tabs.Panel>
         <Tabs.Panel className="bd-body" value="diagrams">
           {projectId && <DiagramsPage key={projectId} projectId={projectId} />}

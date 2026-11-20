@@ -481,6 +481,7 @@ it('creates the whole schema through known migrations in a memory and a file dat
     'memory_search_idx',
     'outbox',
     'project_intros',
+    'range_stories',
     'schema_migrations',
     'sqlite_sequence',
   ]

@@ -183,8 +183,6 @@ const wakingNote = (plan: BoardPlan, note: LeadNote) =>
   note.kind === 'external' ||
   note.kind === 'follow_up' ||
   note.kind === 'routine' ||
-  note.kind === 'agent_proposal' ||
-  note.kind === 'setting_proposal' ||
   note.kind === 'agent_report' ||
   note.kind === 'signal' ||
   note.kind === 'usage_reset' ||
@@ -207,8 +205,6 @@ const heldNoteBypass = (notes: LeadNote[]) =>
     (note) =>
       note.bypass_hold !== undefined ||
       note.kind === 'answer' ||
-      note.kind === 'agent_proposal' ||
-      note.kind === 'setting_proposal' ||
       (note.kind === 'user_edit' && (note.edit?.wake === true || note.edit?.applied === false)),
   );
 

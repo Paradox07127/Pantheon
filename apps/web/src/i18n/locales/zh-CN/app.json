@@ -1,7 +1,6 @@
 {
   "app.screenName.sessions": "会话",
   "app.screenName.board": "项目看板",
-  "app.screenName.runtime": "运行",
   "app.screenName.flow": "流程图",
   "app.screenName.trace": "轨迹",
   "app.screenName.memory": "记忆",

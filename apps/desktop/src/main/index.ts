@@ -461,10 +461,6 @@ handle('pantheon:appInfo', async () => ({
   } satisfies AppInfo,
 }));
 handle('pantheon:logsDir', async () => ({ ok: true, value: path.dirname(logFile) }));
-handle('pantheon:debugTarget', async () => ({
-  ok: true,
-  value: app.isPackaged ? null : { repo_root: repoRoot },
-}));
 handleFrom('pantheon:lastCrash', async (from) => {
   const crash = crashes.get(from) ?? null;
   crashes.delete(from);
@@ -887,49 +883,6 @@ for (const action of [
     return { ok: true, value: action === 'Open' ? { id } : null };
   });
 }
-handleFrom('pantheon:captureRegion', async (from, rect: unknown) => {
-  const { x, y, width, height } = (rect ?? {}) as Record<string, number>;
-  // Number.isFinite is false for anything but a finite number.
-  if (![x, y, width, height].every(Number.isFinite) || width! <= 0 || height! <= 0)
-    return {
-      ok: false,
-      error: { code: 'invalid_input', message: 'rect needs finite x, y and a positive size' },
-    };
-  const [contentWidth, contentHeight] = from.getContentSize();
-  const left = Math.max(0, Math.floor(x!));
-  const top = Math.max(0, Math.floor(y!));
-  const right = Math.min(contentWidth!, Math.ceil(x! + width!));
-  const bottom = Math.min(contentHeight!, Math.ceil(y! + height!));
-  const image =
-    right > left && bottom > top
-      ? await from.webContents.capturePage({
-          x: left,
-          y: top,
-          width: right - left,
-          height: bottom - top,
-        })
-      : null;
-  if (!image || image.isEmpty())
-    return {
-      ok: false,
-      error: { code: 'capture_failed', message: 'The area is outside the window or not painted' },
-    };
-  let shrunk = Math.min(image.getSize().width, 1280),
-    url = image.resize({ width: shrunk }).toDataURL();
-  while (url.length > CAPTURE_BASE64_MAX && shrunk > 320) {
-    shrunk = Math.round(shrunk * 0.75);
-    url = image.resize({ width: shrunk }).toDataURL();
-  }
-  if (url.length > CAPTURE_BASE64_MAX)
-    return {
-      ok: false,
-      error: {
-        code: 'capture_failed',
-        message: 'The capture is too large even at its narrowest width',
-      },
-    };
-  return { ok: true, value: url };
-});
 handleFrom('pantheon:visualServe', async (from, input: unknown) => {
   if (
     typeof input !== 'object' ||
@@ -1752,12 +1705,8 @@ const openFolder = async (folder: string): Promise<void> => {
 const sendMenuAction = (action: MenuAction): void => {
   const focused = focusedWindow();
   const context = focused && windows.get(focused);
-  // A session window has no settings, sidebar, projects screen or debug view of its own.
-  const mainOnly =
-    action === 'new-session' ||
-    action === 'open-project' ||
-    action === 'settings' ||
-    action === 'debug-view';
+  // A session window has no settings, sidebar or projects screen of its own.
+  const mainOnly = action === 'new-session' || action === 'open-project' || action === 'settings';
   if (action === 'about' || (context?.kind === 'session' && mainOnly)) {
     const main = reveal();
     if (action === 'new-session' && context?.project_id)

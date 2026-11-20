@@ -13,9 +13,8 @@ const SIGNAL_STATES = [
   'muted',
 ] as const satisfies readonly SignalIssue['state'][];
 
-/** The lead tools of the app, sessions and github profile groups, by tool name. */
+/** The lead tools of the sessions, github and signals profile groups, by tool name. */
 export const appTools = {
-  app_help: 'agent.app_help',
   session_list: 'agent.sessions',
   session_read: 'agent.session_read',
   github_items: 'agent.github_items',
@@ -26,7 +25,6 @@ export const appTools = {
 
 /** What each app tool does; a costly one asks the user before every call. */
 export const appToolEffects = {
-  app_help: 'read',
   session_list: 'read',
   session_read: 'read',
   github_items: 'read',
@@ -37,7 +35,6 @@ export const appToolEffects = {
 
 /** The agent profile tool group of each app tool. */
 export const appToolGroups = {
-  app_help: 'app',
   session_list: 'sessions',
   session_read: 'sessions',
   github_items: 'github',
@@ -47,15 +44,6 @@ export const appToolGroups = {
 } as const satisfies Record<keyof typeof appTools, AgentToolGroup>;
 
 export const appInputSchemas = {
-  /** AppHelp; the command groups and screens, or one group's commands and the tools that call them. Resident leads only. */
-  'agent.app_help': z.strictObject({
-    topic: z
-      .string()
-      .min(1)
-      .max(200)
-      .optional()
-      .describe('A command group name from the index; leave it out to read the index.'),
-  }),
   /** AgentSessionList; the project's listed sessions, optionally in one state. Resident leads only. */
   'agent.sessions': z.strictObject({
     state: z

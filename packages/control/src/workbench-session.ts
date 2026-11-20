@@ -320,7 +320,12 @@ export function workbenchSessionSpec(ctx: ControlContext, session: Session): Ses
     ...(pantheonTools ? {} : { user_session: true as const }),
     control_instructions: [
       ...(pantheonMcp && (session.task || planningLead) ? [PLATFORM_CORE] : []),
-      `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
+      // A session the user opened runs as the bare runtime would, without Pantheon's instructions.
+      ...(pantheonTools
+        ? [
+            `You are working for the user in the git worktree at ${workspace.path}. When your changes are complete, commit them there with git. Do not write files outside this worktree.`,
+          ]
+        : []),
       // A planning lead asks with ask_user, which LEAD_INSTRUCTIONS names; workerInstructions tells a task session.
       ...(questionTool && pantheonTools && !planningLead && !(pantheonMcp && session.task)
         ? [
@@ -1133,14 +1138,27 @@ function stateWorktree(
   state: WorkbenchSession['state'],
   facts: SessionGitFacts | null | undefined,
 ): ListedGit['worktree'] {
-  // Ready means mergeable work: commits on the base and nothing uncommitted, whatever files they change.
+  // Ready means mergeable work, whatever files it changes.
   return (workspace.kind !== 'in_place' || sessionBase(session, workspace)) && state === 'idle'
     ? (facts ?? null)
     : null;
 }
 
-const listsReady = (session: Session, workspace: Workspace, worktree: ListedGit['worktree']) =>
-  !!worktree?.clean && worktree.head !== sessionBase(session, workspace);
+/** Whether a merge the user starts commits the session's uncommitted files first: a worktree session the user opened. */
+const commitsOnMerge = (ctx: ControlContext, session: Session) =>
+  !session.in_place && !usesPantheonTools(ctx, session);
+
+/** Commits on the base and nothing uncommitted, or uncommitted files the merge commits. */
+const listsReady = (
+  ctx: ControlContext,
+  session: Session,
+  workspace: Workspace,
+  worktree: ListedGit['worktree'],
+) =>
+  !!worktree &&
+  (worktree.clean
+    ? worktree.head !== sessionBase(session, workspace)
+    : commitsOnMerge(ctx, session));
 
 /**
  * Whether the session lists as ready by the newest cached Git reads of its workspace, as a list
@@ -1163,6 +1181,7 @@ export function cachedReady(
   // A failed read (null) says no more than a missing one.
   if (facts == null) return undefined;
   return listsReady(
+    ctx,
     session,
     workspace,
     stateWorktree(session, workspace, listedState(ctx, session, waiting ? 1 : 0, undefined), facts),
@@ -1577,7 +1596,7 @@ export function sessionList(
       effort: session.requested_effort ?? null,
       permission_mode: session.permission_mode ?? 'ask',
       workspace_id: workspace.id,
-      state: listsReady(session, workspace, worktree) ? 'ready' : state,
+      state: listsReady(ctx, session, workspace, worktree) ? 'ready' : state,
       waiting,
       changes,
       merge: session.merge ? publicMerge(session.merge) : null,
@@ -3636,6 +3655,11 @@ const MERGE_STATE_UNKNOWN = {
   message: 'The repository states are not read yet',
 };
 
+const UNCOMMITTED = {
+  code: 'uncommitted_changes',
+  message: 'Commit or remove the uncommitted and untracked files first',
+};
+
 /** The first admission block; a repository state read does not know blocks as unknown. */
 function mergeBlockedReason(
   ctx: ControlContext,
@@ -3661,13 +3685,9 @@ function mergeBlockedReason(
   if (!worktree) return MERGE_STATE_UNKNOWN;
   if (session.in_place) return landBlockedReason(ctx, session, workspace, worktree);
   const { clean, head } = worktree;
-  // The session agent commits its own work; Pantheon never commits for it.
-  if (!clean)
-    return {
-      code: 'uncommitted_changes',
-      message: 'Commit or remove the uncommitted and untracked files first',
-    };
-  if (head === workspace.base_sha)
+  // Pantheon commits for a session the user opened when the user merges it; other session agents commit their own work.
+  if (!clean && !commitsOnMerge(ctx, session)) return UNCOMMITTED;
+  if (clean && head === workspace.base_sha)
     return { code: 'no_changes', message: 'The worktree has no commits to merge' };
   const source = read.source(workspace);
   if (!source) return MERGE_STATE_UNKNOWN;
@@ -3753,6 +3773,9 @@ export function admitMerge(
   reads: MergeReads,
 ): Session {
   requireMergeReady(ctx, session, reads);
+  // Only prepareMerge commits first, so any other merge of uncommitted files would leave them behind.
+  const worktree = reads.worktree(ctx.store.must<Workspace>('workspaces', session.workspace_id!));
+  requireThat(session.in_place || worktree!.clean, UNCOMMITTED.code, UNCOMMITTED.message);
   requireThat(
     workflowPolicy(ctx, session.project_id).gate_runner !== 'session' || !onDevice(session),
     'unsupported_capability',
@@ -4068,9 +4091,30 @@ function prepareMerge(ctx: ControlContext, p: Principal, c: Command): Promise<Ha
     throw new DomainError(blocked.code, blocked.message);
   const workspace = ctx.store.must<Workspace>('workspaces', session.workspace_id!);
   if (session.in_place) return prepareLand(ctx, session, workspace);
-  return readMergeStates(ctx, session.id, workspace).then(
-    (reads) => (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads),
-  );
+  return readMergeStates(ctx, session.id, workspace).then(async (reads) => {
+    if (commitsOnMerge(ctx, session) && !reads.worktree(workspace)?.clean) {
+      requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
+      // The merge's gates then check the new commit.
+      const worktree = await commitUncommitted(session, workspace);
+      reads = { ...reads, worktree: () => worktree };
+    }
+    return (ctx, p, c) => mergeRequest(ctx, p, c).admit(reads);
+  });
+}
+
+/** Commits the workspace's uncommitted and untracked files under the session title; its state after. */
+async function commitUncommitted(session: Session, workspace: Workspace): Promise<WorktreeState> {
+  for (const args of [
+    ['add', '--all'],
+    ['commit', '--quiet', '-m', session.title || 'Pantheon session'],
+  ]) {
+    const result = await userGit(workspace.path, args);
+    requireThat(result.ok, 'commit_failed', result.output || `git ${args[0]} failed`);
+  }
+  forgetWorktreeReads(workspace.id);
+  const state = worktreeStateOf(await runGit(workspace.path, BRANCH_STATUS, undefined, true));
+  requireThat(state, 'workspace_read_failed', 'Worktree status could not be read');
+  return state;
 }
 
 /**
@@ -4087,19 +4131,7 @@ async function prepareLand(
   requireMergeReady(ctx, ctx.store.must<Session>('sessions', session.id), reads);
   let worktree = reads.worktree(workspace)!;
   const committed = !worktree.clean;
-  if (committed) {
-    for (const args of [
-      ['add', '--all'],
-      ['commit', '--quiet', '-m', session.title || 'Pantheon session'],
-    ]) {
-      const result = await userGit(workspace.path, args);
-      requireThat(result.ok, 'commit_failed', result.output || `git ${args[0]} failed`);
-    }
-    forgetWorktreeReads(workspace.id);
-    const state = worktreeStateOf(await runGit(workspace.path, BRANCH_STATUS, undefined, true));
-    requireThat(state, 'workspace_read_failed', 'Worktree status could not be read');
-    worktree = state;
-  }
+  if (committed) worktree = await commitUncommitted(session, workspace);
   const base = session.in_place!.base_sha!,
     numstat = await runGit(
       workspace.path,

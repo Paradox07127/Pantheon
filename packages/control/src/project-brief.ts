@@ -53,14 +53,9 @@ const FAILURES: NeedsYouItem['kind'][] = [
   'session.gate_failed',
   'session.merge_blocked',
 ];
-const BRIEF_EVENTS = [
-  'session.merged',
-  'task.accepted',
-  'board.plan_updated',
-  'agent_proposal.created',
-];
+const BRIEF_EVENTS = ['session.merged', 'task.accepted', 'board.plan_updated'];
 
-/** What a needs-you item links to: its approval, proposal, milestone, question or task, else its source's latest event. */
+/** What a needs-you item links to: its approval, milestone, question or task, else its source's latest event. */
 function itemRef(
   ctx: ControlContext,
   item: NeedsYouItem,
@@ -68,7 +63,6 @@ function itemRef(
 ): ProjectBriefRef {
   const { table, id } = item.source;
   if (table === 'approvals') return { kind: 'approval', id };
-  if (table === 'agent_proposals') return { kind: 'proposal', id };
   if (table === 'milestones') return { kind: 'milestone', id };
   const asked =
     item.question &&
@@ -200,13 +194,6 @@ export function projectBrief(
         });
       }
   }
-  for (const event of events)
-    if (event.kind === 'agent_proposal.created')
-      items.push({
-        kind: 'proposal',
-        ref: { kind: 'proposal', id: event.aggregate_id },
-        at: event.created_at,
-      });
   const decided = decisionsForUser(ctx, principal, projectId, after + 1).items;
   if (decided.length) {
     const types = { permission: 0, answer: 0, plan_change: 0 };

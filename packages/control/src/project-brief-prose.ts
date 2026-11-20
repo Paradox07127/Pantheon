@@ -1,11 +1,4 @@
-import type {
-  AgentProposal,
-  Approval,
-  BoardPlan,
-  Milestone,
-  Principal,
-  Session,
-} from '@pantheon/domain';
+import type { Approval, BoardPlan, Milestone, Principal, Session } from '@pantheon/domain';
 import {
   inputSchemas,
   type ProjectBriefItem,
@@ -52,8 +45,6 @@ function refTitle(
       ?.tasks.find((task) => task.id === ref.id.slice(at + 1))?.title;
   }
   if (ref.kind === 'milestone') return ctx.store.get<Milestone>('milestones', ref.id)?.title;
-  if (ref.kind === 'proposal')
-    return ctx.store.get<AgentProposal>('agent_proposals', ref.id)?.fields.name;
   const session =
     ref.kind === 'merge'
       ? ref.id

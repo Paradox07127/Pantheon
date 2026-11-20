@@ -231,7 +231,7 @@ it('refuses a command body over 1 MiB with 413 and a clear message', async () =>
   });
 });
 
-it('routes workspace listing, file reading and symbol search through validated queries', async () => {
+it('routes file reading and symbol search through validated queries', async () => {
   daemon = await startDaemon({ directory: directory(), adapters: [], intervalMs: 60_000 });
   const projectRoot = path.join(directory(), 'project');
   mkdirSync(projectRoot);
@@ -247,10 +247,6 @@ it('routes workspace listing, file reading and symbol search through validated q
         { headers: { authorization: `Bearer ${daemon!.token}` } },
       ),
     );
-  expect(await (await query('files.list')).json()).toEqual({
-    entries: [{ name: 'answer.ts', kind: 'file', size: 28 }],
-    truncated: false,
-  });
   expect(await (await query('files.read', { path: 'answer.ts' })).json()).toEqual({
     path: 'answer.ts',
     text: 'export function answer() {}\n',

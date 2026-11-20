@@ -73,9 +73,9 @@ export function GeneralPage() {
 
 const ROUNDS_LOW = 1;
 const ROUNDS_HIGH = 5;
-type BaselineKey = 'baseline_rounds' | 'baseline_visuals' | 'baseline_range_story';
+type BaselineKey = 'baseline_rounds' | 'baseline_visuals';
 
-/** How a project baseline asks and explains: its question rounds, its charts and its story of recent commits. */
+/** How a project baseline asks and explains: its question rounds and its charts. */
 function BaselineSection() {
   const { settings, error, saving, save } = useAppSettings();
   // The setting last saved, whose row a failure shows under; null for a failed read.
@@ -158,14 +158,6 @@ function BaselineSection() {
           'baseline_visuals',
           t({ id: 'settings.general.baselineVisuals', defaultMessage: 'Draw explanation charts' }),
           'general.baselineVisuals',
-        )}
-        {switchRow(
-          'baseline_range_story',
-          t({
-            id: 'settings.general.baselineRangeStory',
-            defaultMessage: 'Explain recent history on confirm',
-          }),
-          'general.baselineRangeStory',
         )}
         {alert(null)}
       </div>

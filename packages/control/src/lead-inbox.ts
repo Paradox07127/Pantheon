@@ -548,18 +548,6 @@ function noteBlock(ctx: ControlContext, plan: BoardPlan, note: LeadNote, text: s
       `Last run: ${note.last_run_at === undefined ? 'never' : new Date(note.last_run_at).toISOString()}.`,
       `How to handle: read the last result first, so you report only what changed since then. Do the routine${ctx.store.get<Session>('sessions', plan.id)?.resident?.kind === 'personal' ? '.' : ' and write its result back under the same key if it keeps one.'}`,
     ];
-  else if (kind === 'agent_proposal')
-    lines = [
-      startTag(own),
-      `What happened: ${text}`,
-      "How to handle: the user already decided on the card, so do not tell them the outcome again. Check whether the agent was created or changed. You keep the requests and promises you hold; if the user should go on in the new agent's conversation, tell them its name and the open request in one line. If they declined, do not propose the same agent again unless the user brings it up; if they edited it, the agent works from their version.",
-    ];
-  else if (kind === 'setting_proposal')
-    lines = [
-      startTag(own),
-      `What happened: ${text}`,
-      'How to handle: the user already decided on the card, so do not tell them the outcome again. If they declined, do not propose the same change again unless the user brings it up.',
-    ];
   else if (kind === 'milestone_verified')
     lines = [
       startTag(own),

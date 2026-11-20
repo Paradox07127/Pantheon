@@ -253,7 +253,6 @@ describe('board refresh', () => {
       'workflow.definition_trial_decided',
       'board.plan_proposed',
       'board.plan_proposal_resolved',
-      'improvement.status_changed',
       'lead.question_asked',
     ]),
     ...each('reads the board again when a goal changes: ', [

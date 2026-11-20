@@ -17,7 +17,6 @@ export type Screen =
   | 'sessions'
   | 'board'
   | 'insights'
-  | 'runtime'
   | 'flow'
   | 'trace'
   | 'memory'
@@ -26,7 +25,7 @@ export type Screen =
   | 'personal';
 
 export type TraceTab = 'timeline' | 'runs' | 'activity' | 'diagnose' | 'approved';
-export type MemoryTab = 'overview' | 'entries' | 'graph' | 'diagrams';
+export type MemoryTab = 'overview' | 'entries' | 'diagrams';
 
 export type Theme = 'light' | 'dark' | 'system';
 

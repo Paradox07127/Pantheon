@@ -368,7 +368,7 @@ describe('needs-you actions of a task Pantheon or the lead still holds', () => {
     ['user', ['merge', 'gates', 'handoff', 'open']],
   ] as const)('offers a %s task these actions', (level, keys) => {
     const model = board([task('a', { rung: rung(level) })]);
-    const context = needContext(blocked, model, [worker], [], null);
+    const context = needContext(blocked, model, [worker], []);
     expect(context.rung).toBe(level);
     expect(needActions(blocked, worker, undefined, context.rung).map((a) => a.key)).toEqual(keys);
   });

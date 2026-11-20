@@ -107,20 +107,6 @@ describe('orchestration labels', () => {
       ['t2', 't9'],
     ],
     ['pantheon.interrupt_task', { task_id: 't2' }, action('interrupt'), '', ['t2']],
-    [
-      'propose_improvement',
-      { retrospective_ids: ['r1', 'r2'], change: { type: 'policy_change', param: 'max_parallel' } },
-      action('proposeImprovement'),
-      'max_parallel',
-      [],
-    ],
-    [
-      'propose_improvement',
-      { retrospective_ids: ['r1', 'r2'], change: { type: 'experience', procedure: 'Run\nmore' } },
-      action('proposeImprovement'),
-      'Run',
-      [],
-    ],
     ['mcp__pantheon__sync_board', {}, action('syncBoard'), '', []],
     ['rerun_baseline', {}, action('rerunBaseline'), '', []],
     [

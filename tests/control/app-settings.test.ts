@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -72,6 +72,25 @@ it('keeps delivery rules and quiet hours across reads, leaving the other kinds a
     permission: 'now',
   });
   expect(settings.quiet_hours).toEqual({ from: '22:00', to: '07:30' });
+});
+
+it('reads and saves settings over a config that still holds the commit range explanation switch', async () => {
+  const userConfigDir = mkdtempSync(path.join(os.tmpdir(), 'pantheon-app-settings-'));
+  writeFileSync(
+    path.join(userConfigDir, 'config.json'),
+    JSON.stringify({ version: 1, baseline_range_story: false }),
+  );
+  const f = await fixture({ controlOptions: { userConfigDir } });
+  cleanups.push(async () => {
+    await f.close();
+    rmSync(userConfigDir, { recursive: true, force: true });
+  });
+  expect(f.control.appSettings({ id: 'user', role: 'user' })).not.toHaveProperty(
+    'baseline_range_story',
+  );
+  const saved = f.call<AppSettings>('app.settings.set', { session_recap: false });
+  expect(saved.session_recap).toBe(false);
+  expect(saved).not.toHaveProperty('baseline_range_story');
 });
 
 it.each([

@@ -410,7 +410,7 @@ export const changeStoryHandlers: Handlers = {
 };
 
 /** The session has no live process, queued or running turn, or pending stop left. */
-export function sessionEnded(ctx: ControlContext, sessionId: string): boolean {
+function sessionEnded(ctx: ControlContext, sessionId: string): boolean {
   const session = ctx.store.must<Session>('sessions', sessionId);
   return (
     !session.stop_pending &&

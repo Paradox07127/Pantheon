@@ -15,7 +15,7 @@ import type {
   SessionSpec,
   Timer,
 } from '@pantheon/domain';
-import { command, inputSchemas } from '@pantheon/protocol';
+import { command } from '@pantheon/protocol';
 import type { ControlContext } from '../../packages/control/dist/context.js';
 import { TOOL_GROUP_MODULES } from '../../packages/control/dist/agent-prompts.js';
 import * as validation from '../../packages/control/dist/validation-executor.js';
@@ -352,22 +352,6 @@ it("keeps the user's precheck when the resident replaces the routine, and takes 
   expect(() =>
     as('agent.routine.set', { id: 'gated', prompt: 'Check', at: '18:00', enabled: true, precheck }),
   ).toThrow(/Unrecognized key.*precheck/);
-  expect(() =>
-    as('agent.propose', {
-      template: 'custom',
-      name: 'Watcher',
-      role: 'Watches',
-      instructions: 'Watch the gates.',
-      routines: [{ prompt: 'Check', every_minutes: 60, enabled: true, precheck }],
-    }),
-  ).toThrow(/Unrecognized key.*precheck/);
-  expect(
-    inputSchemas['agent.proposal.resolve'].safeParse({
-      proposal_id: 'proposal',
-      decision: 'create',
-      fields: { routines: [{ prompt: 'Check', every_minutes: 60, enabled: true, precheck }] },
-    }).success,
-  ).toBe(false);
 });
 
 it('neither wakes nor records a routine disabled while its precheck runs, and runs one precheck at a time', async () => {

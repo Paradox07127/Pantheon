@@ -126,7 +126,6 @@ it('refuses a plain folder and a repository without commits once git init is tur
     attention_delivery: expect.objectContaining({ question: 'now' }),
     baseline_rounds: 5,
     baseline_visuals: true,
-    baseline_range_story: true,
     personal_answers: [],
   });
   expect(f.control.appSettings(user)).toEqual({
@@ -137,7 +136,6 @@ it('refuses a plain folder and a repository without commits once git init is tur
     attention_delivery: expect.objectContaining({ question: 'now' }),
     baseline_rounds: 5,
     baseline_visuals: true,
-    baseline_range_story: true,
     personal_answers: [],
   });
   for (const root of [plain, uncommitted])
@@ -177,7 +175,6 @@ it('runs git init again on the next project.open after the setting is turned bac
     attention_delivery: expect.objectContaining({ question: 'now' }),
     baseline_rounds: 5,
     baseline_visuals: true,
-    baseline_range_story: true,
     personal_answers: [],
   });
   f.call('app.settings.set', { auto_git_init: false });

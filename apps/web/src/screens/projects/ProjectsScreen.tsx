@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { Menu } from '@base-ui/react/menu';
 import {
-  Bot,
   CircleDot,
   Ellipsis,
   Flag,
@@ -106,13 +105,15 @@ const COUNTS: readonly {
   },
 ];
 
-// The icon of each decision the user makes on what waits.
-const KIND_ICONS: Record<NonNullable<NeedsYouItem['decision']>, LucideIcon> = {
+// The icon of each decision the user makes on what waits; the interface offers no agent proposal.
+const KIND_ICONS: Record<
+  Exclude<NonNullable<NeedsYouItem['decision']>, 'agent_proposal'>,
+  LucideIcon
+> = {
   plan_change: Workflow,
   question: MessageSquare,
   milestone_accept: Flag,
   repeated_failure: TriangleAlert,
-  agent_proposal: Bot,
   permission: ShieldCheck,
   budget: Wallet,
   improvement: Lightbulb,
@@ -537,7 +538,8 @@ export function ProjectRow(props: {
   const counted = (
     Object.entries(waiting?.by_decision ?? {}) as [NonNullable<NeedsYouItem['decision']>, number][]
   )
-    .filter(([, count]) => count > 0)
+    // The daemon still counts the agent proposals the interface does not offer.
+    .filter(([decision, count]) => count > 0 && decision in KIND_ICONS)
     .sort(([, a], [, b]) => b - a);
   const kinds = counted.filter(([decision]) => decision !== 'other');
   const rest = kinds.slice(4);
@@ -545,7 +547,7 @@ export function ProjectRow(props: {
     .filter(([decision]) => !kinds.slice(0, 4).some(([shown]) => shown === decision))
     .reduce((n, [, count]) => n + count, 0);
   const kindIcon = (decision: NeedsYouItem['decision']) => {
-    const Icon = KIND_ICONS[decision ?? 'other'];
+    const Icon = KIND_ICONS[(decision ?? 'other') as keyof typeof KIND_ICONS];
     return <Icon className="ic-sm" aria-hidden="true" />;
   };
 

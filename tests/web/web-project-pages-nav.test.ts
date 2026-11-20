@@ -43,10 +43,9 @@ describe('project page entries', () => {
     const rail = render(true);
     const icons = [...rail.matchAll(/class="ib" aria-label="([^"]*)"/g)].map((m) => m[1]);
     expect(icons.slice(0, 4)).toEqual(PAGES);
-    for (const gone of [zh('app.screenName.runtime'), zh('app.screenName.flow')]) {
-      expect(open).not.toContain(`>${gone}</button>`);
-      expect(rail).not.toContain(`aria-label="${gone}"`);
-    }
+    const gone = zh('app.screenName.flow');
+    expect(open).not.toContain(`>${gone}</button>`);
+    expect(rail).not.toContain(`aria-label="${gone}"`);
   });
 });
 

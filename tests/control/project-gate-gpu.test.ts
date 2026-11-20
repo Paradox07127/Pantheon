@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import type { Project } from '@pantheon/domain';
-import { inputSchemas, sessionTools, type BoardSnapshot } from '@pantheon/protocol';
+import { sessionTools, type BoardSnapshot } from '@pantheon/protocol';
 import { fixture, user } from '../helpers.js';
 
 let f: Awaited<ReturnType<typeof fixture>>;
@@ -54,16 +54,8 @@ it.each([
   expect(read()).toEqual(before);
 });
 
-it('gives agents no tool and no setting proposal that opens the GPU to gate commands', async () => {
+it('gives agents no tool that opens the GPU to gate commands', async () => {
   f = await fixture();
   const tools = Object.values(sessionTools).flatMap((tools) => Object.values(tools));
   expect(tools).not.toContain('project.gateGpu.set');
-  expect(
-    inputSchemas['setting.propose'].safeParse({
-      project_id: f.project.id,
-      param: 'gate_gpu',
-      value: true,
-      quote: 'let the gates use the GPU',
-    }).success,
-  ).toBe(false);
 });

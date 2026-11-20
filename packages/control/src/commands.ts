@@ -4,7 +4,6 @@ import { projectIntroPreparers } from './project-intro.js';
 import { baselineHandlers, baselinePreparers } from './baseline.js';
 import { environmentCheckHandlers } from './environment-check.js';
 import { changeStoryHandlers } from './change-story.js';
-import { rangeStoryHandlers, rangeStoryPreparers } from './range-story.js';
 import type { Handlers, Preparers } from './context.js';
 import { projectFactHandlers } from './project-facts.js';
 import { projectGoalHandlers } from './project-goals.js';
@@ -36,8 +35,7 @@ import { agentAlwaysOnHandlers } from './agent-always-on.js';
 import { agentWakeHandlers } from './agent-wakes.js';
 import { agentAppToolPreparers } from './agent-app-tools.js';
 import { agentPromptPreparers } from './agent-prompts.js';
-import { agentProposalHandlers, agentProposalPreparers } from './agent-proposals.js';
-import { settingProposalHandlers } from './setting-proposals.js';
+import { agentPreparers } from './agents.js';
 import { signalHandlers, signalPreparers } from './signals.js';
 import { projectBriefHandlers } from './project-brief.js';
 import { briefProseHandlers } from './project-brief-prose.js';
@@ -53,7 +51,6 @@ export const handlers: Handlers = {
   ...baselineHandlers,
   ...environmentCheckHandlers,
   ...changeStoryHandlers,
-  ...rangeStoryHandlers,
   ...sessionHandlers,
   ...runtimeReviewHandlers,
   ...workbenchSessionHandlers,
@@ -77,8 +74,6 @@ export const handlers: Handlers = {
   ...frontDoorHandlers,
   ...agentAlwaysOnHandlers,
   ...agentWakeHandlers,
-  ...agentProposalHandlers,
-  ...settingProposalHandlers,
   ...signalHandlers,
   ...projectBriefHandlers,
   ...briefProseHandlers,
@@ -91,13 +86,12 @@ export const preparers: Preparers = {
   ...projectPreparers,
   ...baselinePreparers,
   ...projectIntroPreparers,
-  ...rangeStoryPreparers,
   'task.report': prepareTaskReport,
   'board.sync': prepareBoardSync,
   'review.request': prepareReviewRequest,
   'session.resolve': prepareResolve,
   ...agentAppToolPreparers,
-  ...agentProposalPreparers,
+  ...agentPreparers,
   ...agentPromptPreparers,
   ...signalPreparers,
   ...improvementPreparers,

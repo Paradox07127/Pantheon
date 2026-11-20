@@ -3,11 +3,15 @@ import {
   requireThat,
   type AgentFields,
   type AgentProfile,
+  type AgentRoutine,
+  type AgentToolGroup,
   type Principal,
   type Project,
   type Session,
 } from '@pantheon/domain';
+import { inputSchemas } from '@pantheon/protocol';
 import { runtime } from './admission.js';
+import { callingResident } from './agent-always-on.js';
 import { ROLE_PROMPTS } from './agent-prompts.js';
 import {
   AGENT_TEMPLATES,
@@ -15,7 +19,17 @@ import {
   residentProfile,
   type AgentTemplate,
 } from './agent-templates.js';
-import { projectAccess, userOnly, type ControlContext } from './context.js';
+import { projectAccess, userOnly, type ControlContext, type Preparers } from './context.js';
+
+interface AgentListItem {
+  id: string;
+  name: string;
+  template: AgentProfile['template'];
+  role: string;
+  tools: AgentToolGroup[];
+  routines: AgentRoutine[];
+  archived_at?: number;
+}
 
 /**
  * The project's agent profiles: creates the missing built-in ones and links the project's resident
@@ -179,3 +193,23 @@ export function checkAgentFields(
   const ids = fields.routines.flatMap((routine) => (routine.id === undefined ? [] : [routine.id]));
   requireThat(new Set(ids).size === ids.length, 'invalid_input', 'Give each routine its own id');
 }
+
+export const agentPreparers: Preparers = {
+  'agent.agents': (ctx, p, c) => {
+    const input = inputSchemas['agent.agents'].parse(c.input);
+    callingResident(ctx, p, input.project_id, c.type);
+    const agents = ctx.store
+      .list<AgentProfile>('agents')
+      .filter((agent) => agent.project_id === input.project_id)
+      .map((agent): AgentListItem => ({
+        id: agent.id,
+        name: agent.name,
+        template: agent.template,
+        role: agent.role,
+        tools: residentProfile(ctx.store, { kind: agent.template, agent_id: agent.id }).tools,
+        routines: agent.routines,
+        ...(agent.archived_at !== undefined && { archived_at: agent.archived_at }),
+      }));
+    return () => ({ agents });
+  },
+};

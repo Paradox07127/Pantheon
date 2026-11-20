@@ -1,21 +1,9 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import {
-  ArrowRight,
-  BookOpen,
-  Clock,
-  Ellipsis,
-  FlaskConical,
-  Gauge,
-  Lightbulb,
-  Pause,
-  Pencil,
-  Settings,
-} from 'lucide-react';
-import type { ApprovalQuestion, Improvement } from '@pantheon/domain';
+import { BookOpen, Clock, Ellipsis, FlaskConical, Gauge, Pause, Pencil } from 'lucide-react';
+import type { ApprovalQuestion } from '@pantheon/domain';
 import type { BoardTaskRung } from '@pantheon/protocol';
 import { blocksText, decisionText, primaryAction } from '../data/attention';
-import { useBoard } from '../data/board';
 import { openPlanMemory } from '../data/memory-view';
 import type { PlanProposal } from '../data/plan-edit';
 import {
@@ -27,13 +15,6 @@ import {
   type NeedsYouItem,
 } from '../data/needs-you';
 import { elapsedText } from '../data/transcript';
-import {
-  changeText,
-  PARAM_LABEL,
-  PLAN_CHANGES_LABEL,
-  sourceText,
-  WAKE_LABEL,
-} from '../data/workflow-policy';
 import { t } from '../i18n';
 import { nextStepText } from '../lib/daemon-text';
 import { AcceptDialog } from '../screens/board/Charts';
@@ -63,7 +44,6 @@ import { useDialogContent } from '../screens/board/TellLead';
 import { ResolveButtons } from '../screens/sessions/parts';
 import { openSettingsPage } from '../screens/settings/settings-jump';
 import { Clip } from './Clip';
-import { changeFrom, LearnedChangeDiff } from './LearnedChangeDiff';
 import { Menu, MenuItem } from './Menu';
 import { QuestionCard } from './QuestionCard';
 import { RuntimeGlyph } from './RuntimeGlyph';
@@ -98,7 +78,6 @@ export interface RequestCardProps {
   /** Who acts next on that task. */
   rung?: BoardTaskRung['rung'];
   milestone?: RequestMilestone;
-  improvement?: Improvement;
   /** The data is old: commands wait for a refresh, opening a session still works. */
   stale?: boolean;
   /** Shows the card in full elsewhere; the title of a compact card then picks it. */
@@ -119,12 +98,11 @@ export interface RequestCardProps {
 }
 
 // The waiting dot stays with approvals and questions; every other kind has its mark from elsewhere.
-const MARK: Record<NeedItem['kind'], ReactNode> = {
+// The proposal kinds the interface does not offer have none.
+const MARK: Partial<Record<NeedItem['kind'], ReactNode>> = {
   'workflow.approval': <span className="ss-dot waiting" aria-hidden="true" />,
   'external.approval': <span className="ss-dot waiting" aria-hidden="true" />,
   'board.lane.approval': <span className="ss-dot waiting" aria-hidden="true" />,
-  'agent.proposal': <span className="ss-dot waiting" aria-hidden="true" />,
-  'setting.proposal': <Settings className="ic-sm" aria-hidden="true" />,
   permission: <span className="ss-dot waiting" aria-hidden="true" />,
   'lead.question': <span className="ss-dot waiting" aria-hidden="true" />,
   'session.merge_blocked': <MergeBlockedGlyph />,
@@ -135,7 +113,6 @@ const MARK: Record<NeedItem['kind'], ReactNode> = {
   'board.plan.proposal': <Pencil className="ic-sm" aria-hidden="true" />,
   'board.plan.reassessment': <Pause className="ic-sm" aria-hidden="true" />,
   'workflow.definition.trial': <FlaskConical className="ic-sm" aria-hidden="true" />,
-  'improvement.candidate': <Lightbulb className="ic-sm" aria-hidden="true" />,
   'project.over_budget': <Gauge className="ic-sm" aria-hidden="true" />,
   'memory.decision_budget': <BookOpen className="ic-sm" aria-hidden="true" />,
 };
@@ -144,39 +121,11 @@ const PRIMARY: ReadonlySet<NeedActionKey> = new Set([
   'approve',
   'reply',
   'accept',
-  'confirm',
   'merge',
   'merge_out_of_scope',
   'keep',
   'resume',
 ]);
-
-/** A setting the Assistant proposes to change, by the settings pages' name for it. */
-const settingName = (param: string): string =>
-  param === 'external_events'
-    ? t({ id: 'settings.pages.external', defaultMessage: 'External requests' })
-    : param in PARAM_LABEL
-      ? PARAM_LABEL[param as keyof typeof PARAM_LABEL]
-      : param;
-
-/** A value of a proposed setting, in the settings pages' words for it. */
-function settingValue(param: string, value: string | number | boolean): string {
-  if (typeof value === 'boolean')
-    return value
-      ? t({ id: 'settings.workflow.on', defaultMessage: 'On' })
-      : t({ id: 'settings.workflow.off', defaultMessage: 'Off' });
-  if (param === 'plan_changes' && (value === 'auto' || value === 'confirm'))
-    return PLAN_CHANGES_LABEL[value];
-  if (param === 'acceptance_wake' && (value === 'each_merge' || value === 'milestone'))
-    return WAKE_LABEL[value];
-  if (param === 'external_events' && value === 'off')
-    return t({ id: 'settings.external.off', defaultMessage: 'Off' });
-  if (param === 'external_events' && value === 'approve')
-    return t({ id: 'settings.external.ask', defaultMessage: 'Ask me first' });
-  if (param === 'external_events' && value === 'auto')
-    return t({ id: 'settings.external.auto', defaultMessage: 'Start my own issues' });
-  return String(value);
-}
 
 /** One needs-you item with the buttons that settle it in place; compact in lists, full beside them. */
 export function RequestCard({
@@ -191,7 +140,6 @@ export function RequestCard({
   task,
   rung,
   milestone,
-  improvement,
   stale,
   onSelect,
   selected,
@@ -226,8 +174,6 @@ export function RequestCard({
   // A plan proposal row's change-then-accept editor opens under the row.
   const [editing, setEditing] = useState(false);
   const accepting = useDialogContent<{ stored: SnapshotMilestone }>();
-  // The board that draws the card draws it again on every read, so no subscription is needed.
-  const replaced = changeFrom(improvement, useBoard.getState().board?.projects);
   const full = size === 'full';
   const sessionId = needSession(item);
   const actions = stripActions(item, session, lead, rung);
@@ -278,11 +224,9 @@ export function RequestCard({
     if (
       !failure &&
       (command.type === 'approval.respond' ||
-        command.type === 'improvement.decide' ||
         command.type === 'workflow.step.decide' ||
         command.type === 'workflow.definition.trial.decide' ||
         command.type === 'lead.question.answer' ||
-        command.type === 'setting.proposal.resolve' ||
         command.type === 'board.plan.resume')
     )
       return;
@@ -315,21 +259,7 @@ export function RequestCard({
         ref={action === primary ? primaryRef : undefined}
         type="button"
         className={marked(action) ? 'btn pri' : 'btn'}
-        aria-label={
-          item.setting_proposal
-            ? t(
-                {
-                  id: 'components.requestCard.settingAction',
-                  defaultMessage: '{action} {setting}, {agent}',
-                },
-                {
-                  action: action.label,
-                  setting: settingName(item.setting_proposal.param),
-                  agent: who,
-                },
-              )
-            : `${action.label} ${who}`
-        }
+        aria-label={`${action.label} ${who}`}
         aria-disabled={off || undefined}
         aria-busy={held || undefined}
         aria-expanded={opens ? answering : undefined}
@@ -429,26 +359,11 @@ export function RequestCard({
   const next = nextStepText(item);
   const counts = milestone && milestoneCounts(milestone.milestone);
   const what =
-    item.kind === 'improvement.candidate' && improvement
-      ? improvement.change.type === 'gate_command'
-        ? t(
-            {
-              id: 'components.requestCard.gateCounts',
-              defaultMessage:
-                'Gate of {root}: {n, plural, one {# command} other {# commands}} to {m, plural, one {# command} other {# commands}}',
-            },
-            {
-              root: improvement.change.root,
-              n: ((replaced as typeof improvement.change.from) ?? []).length,
-              m: improvement.change.to.length,
-            },
-          )
-        : changeText(improvement.change)
-      : questions.length > 0
-        ? questions[0]!.question
-        : item.reason === 'task_blocked' && item.blocked
-          ? item.blocked.text
-          : needWhat(item, session);
+    questions.length > 0
+      ? questions[0]!.question
+      : item.reason === 'task_blocked' && item.blocked
+        ? item.blocked.text
+        : needWhat(item, session);
   const assumption = asked && (
     <p className="rq-next">
       {t(
@@ -484,18 +399,9 @@ export function RequestCard({
       </button>
     </div>
   );
-  const setting = item.kind === 'setting.proposal' ? item.setting_proposal : undefined;
   const reassessment = item.kind === 'board.plan.reassessment' ? item.reassessment : undefined;
   const detail = (
     <>
-      {setting && (
-        <blockquote
-          className="rq-quote"
-          aria-label={t({ id: 'components.requestCard.yourWords', defaultMessage: 'Your words' })}
-        >
-          {setting.quote}
-        </blockquote>
-      )}
       {reassessment && (
         <div
           className="rq-ra"
@@ -614,11 +520,9 @@ export function RequestCard({
 
   // A decision without a name of its own goes by the item's reason.
   const kind =
-    item.kind === 'setting.proposal'
-      ? t({ id: 'components.requestCard.settingChange', defaultMessage: 'Setting change' })
-      : item.kind === 'board.plan.reassessment'
-        ? t({ id: 'components.requestCard.planPaused', defaultMessage: 'Plan paused' })
-        : (noVerdictKind(item) ?? decisionText(item.decision) ?? reasonText(item.reason));
+    item.kind === 'board.plan.reassessment'
+      ? t({ id: 'components.requestCard.planPaused', defaultMessage: 'Plan paused' })
+      : (noVerdictKind(item) ?? decisionText(item.decision) ?? reasonText(item.reason));
   // Beside its kind label a step without a verdict needs only its title, a paused plan its name.
   const rowWhat =
     noVerdict(item) && item.step_title
@@ -631,9 +535,9 @@ export function RequestCard({
     { id: 'components.requestCard.more', defaultMessage: 'More actions: {name}' },
     { name: who },
   );
-  // A plan proposal or setting change row is decided in place, so both of its buttons show.
+  // A plan proposal row is decided in place, so both of its buttons show.
   const plan = item.kind === 'board.plan.proposal' ? proposal : undefined;
-  const inline = plan || setting ? actions : primary ? [primary] : [];
+  const inline = plan ? actions : primary ? [primary] : [];
   const rest = actions.filter((action) => !inline.includes(action));
   const adjust = t({ id: 'board.plan.proposal.adjust', defaultMessage: 'Change, then accept' });
   const waited = Math.max(0, now - item.created_at);
@@ -662,23 +566,6 @@ export function RequestCard({
     ),
   ].filter(Boolean);
 
-  // The row's count of commands hides what each one runs and whether its failure fails the gate.
-  const changeDiff = (improvement?.change.type === 'gate_command' ||
-    improvement?.change.type === 'worktree_setup') && (
-    <LearnedChangeDiff change={improvement.change} from={replaced} />
-  );
-  const change = setting && (
-    <span className="rq-set">
-      <b>{settingName(setting.param)}</b>
-      <code className="rq-val">{settingValue(setting.param, setting.current)}</code>
-      <ArrowRight
-        className="ic-sm"
-        role="img"
-        aria-label={t({ id: 'components.requestCard.settingTo', defaultMessage: 'to' })}
-      />
-      <code className="rq-val">{settingValue(setting.param, setting.value)}</code>
-    </span>
-  );
   const body = full ? (
     <div className="rqf-body">
       <p className="rq-what">{what}</p>
@@ -688,7 +575,6 @@ export function RequestCard({
         </div>
       )}
       {factRow}
-      {change}
       {detail}
       {milestone && counts && (
         <div className="rq-ms">
@@ -738,23 +624,6 @@ export function RequestCard({
             </ul>
           )}
         </div>
-      )}
-      {improvement && (
-        <>
-          {changeDiff}
-          {improvement.change.type === 'experience' && improvement.change.countercondition && (
-            <p className="rq-what">
-              {t(
-                {
-                  id: 'components.requestCard.countercondition',
-                  defaultMessage: 'Does not apply: {condition}',
-                },
-                { condition: improvement.change.countercondition },
-              )}
-            </p>
-          )}
-          <span className="rq-src">{sourceText(improvement)}</span>
-        </>
       )}
       {files.length > 0 && (
         <ul
@@ -806,7 +675,7 @@ export function RequestCard({
                   {summary}
                 </span>
               ) : (
-                (change ?? (rowWhat !== kind && <Clip text={rowWhat} />))
+                rowWhat !== kind && <Clip text={rowWhat} />
               )}
               {onSelect ? (
                 <Tip content={who}>
@@ -918,7 +787,6 @@ export function RequestCard({
         {item.kind === 'session.reconciling' && (
           <ResolveButtons item={item as NeedsYouItem} title={who} />
         )}
-        {changeDiff}
         {detail}
         {deadline}
         {answering && card}
@@ -932,20 +800,12 @@ export function RequestCard({
     <article
       className={full ? 'rqf' : 'rq'}
       aria-label={
-        setting
+        item.kind === 'board.plan.reassessment'
           ? t(
-              {
-                id: 'components.requestCard.settingLabel',
-                defaultMessage: 'Setting change from {agent}: {setting}',
-              },
-              { agent: who, setting: settingName(setting.param) },
+              { id: 'components.requestCard.pausedLabel', defaultMessage: 'Plan paused: {plan}' },
+              { plan: who },
             )
-          : item.kind === 'board.plan.reassessment'
-            ? t(
-                { id: 'components.requestCard.pausedLabel', defaultMessage: 'Plan paused: {plan}' },
-                { plan: who },
-              )
-            : who
+          : who
       }
       data-on={(selected && !full) || undefined}
     >

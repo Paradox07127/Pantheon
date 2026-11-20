@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import type { Principal, ProjectBaseline, ProjectIntro, RangeStory } from '@pantheon/domain';
+import type { Principal, ProjectBaseline, ProjectIntro } from '@pantheon/domain';
 import { countingGit, fixture, gitRunsOf, user } from '../helpers.js';
 
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -214,28 +214,4 @@ it('reads how far the introduction is behind without blocking', async () => {
     ),
   ).toBeGreaterThan(0);
   expect(behind).toBe(1);
-});
-
-it('reads the main-line commits of a range story with one git run per folder without blocking', async () => {
-  const f = await setup();
-  f.populate();
-  f.commit('Recent change', 0, { 'README.md': '# Notes\n\nRecent.\n' });
-  f.runs.reset();
-  f.runs.slowOn('--first-parent');
-  let story: RangeStory | undefined;
-  expect(
-    await f.ticksDuring(
-      async () =>
-        (story = await f.call<RangeStory | Promise<RangeStory>>('range_story.start', {
-          project_id: f.project.id,
-          from: now - DAY,
-          to: now + DAY,
-        })),
-    ),
-  ).toBeGreaterThan(0);
-  expect(story).toMatchObject({ state: 'running', source: 'commits' });
-  expect(gitRunsOf(f.runs.runs(), 'rev-parse').filter((args) => args.includes('--verify'))).toEqual(
-    [],
-  );
-  expect(gitRunsOf(f.runs.runs(), 'log')).toHaveLength(1);
 });
